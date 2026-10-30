@@ -62,7 +62,8 @@ export function plainEvent(text: string): string {
   return text
     .replace(/^Matched with (.+)$/, "$1 took your project")
     .replace(/proposal/g, "quote")
-    .replace(/^You sent your (.+) request$/, "You sent your $1 project");
+    .replace(/^You sent your (.+) request$/, "You sent your $1 project")
+    .replace(/(hvac)/g, "HVAC");
 }
 
 export type NextAction = { label: string; href: string; primary: boolean; external?: boolean };
@@ -109,11 +110,11 @@ export function nextStep(p: RequestPortalView, h: Pick<HomeDashboard, "key" | "f
     };
   }
   if (stage === 4) {
-    const due = won && won.nextDue && won.remaining > 0 && !won.payOnline ? ` ${won.nextDue.label} of ${usd.format(won.nextDue.amount)} comes next — ${won.orgName} will tell you how to pay.` : "";
+    const due = won && won.nextDue && won.remaining > 0 && !won.payOnline ? ` Next payment: ${won.nextDue.label.toLowerCase()}, ${usd.format(won.nextDue.amount)} — ${won.orgName} will tell you how to pay.` : "";
     return { text: `${p.visits[0].title} with ${p.visits[0].orgName}.${due}`, visit: p.visits[0], tone: "accent", action: message };
   }
   if (stage === 3) {
-    const due = won && won.nextDue && won.remaining > 0 ? ` ${won.nextDue.label} of ${usd.format(won.nextDue.amount)} comes next — ${won.orgName} will tell you how to pay.` : "";
+    const due = won && won.nextDue && won.remaining > 0 ? ` Next payment: ${won.nextDue.label.toLowerCase()}, ${usd.format(won.nextDue.amount)}${won.payOnline ? "" : ` — ${won.orgName} will tell you how to pay`}.` : "";
     return { text: `You approved the quote. ${org ?? "Your contractor"} will get in touch to set a date for the work.${due}`, visit: null, tone: "emerald", action: message };
   }
   if (stage === 2) {

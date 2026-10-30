@@ -140,7 +140,7 @@ export function PlannedList({ homeKey, plans, quotesHref, rangeHref }: { homeKey
             </div>
             {p.estimate && <p className={s.text}><b className={s.num}>{p.estimate.range}</b> · {p.estimate.material} · a range, not a quote</p>}
             {p.notes && !p.estimate && <p className={s.muted}>{p.notes}</p>}
-            <label className={s.field}>
+            <label className={s.field} style={{ maxWidth: 360 }}>
               <span className={s.muted} style={{ fontWeight: 500 }}>
                 {p.remindAt ? `${p.reminded ? "Last nudge" : "Reminder"} by email ${remindOn(p.remindAt)}` : p.reminded ? "Reminded" : "No reminder"}
               </span>

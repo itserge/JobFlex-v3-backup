@@ -8,6 +8,8 @@
 // So the link is the page the browser itself came from, read from
 // `document.referrer` on the same origin, and remembered for this tab so a
 // reload after accepting keeps it. Nothing is rendered on the server.
+// The home portal's project page (/home/<key>/project/<token>, 2026-10-30)
+// counts as a way back too.
 
 import { useSyncExternalStore } from "react";
 import s from "./home-back-link.module.css";
@@ -19,12 +21,12 @@ function backPath(): string | null {
   try {
     const ref = document.referrer ? new URL(document.referrer) : null;
     const path = ref && ref.origin === window.location.origin ? ref.pathname : null;
-    if (path && /^\/(home|request)\/[^/]+\/?$/.test(path)) {
+    if (path && /^\/(home|request)\/[^/]+(\/project\/[^/]+)?\/?$/.test(path)) {
       window.sessionStorage.setItem(KEY, path);
       return path;
     }
     const kept = window.sessionStorage.getItem(KEY);
-    return kept && /^\/(home|request)\/[^/]+\/?$/.test(kept) ? kept : null;
+    return kept && /^\/(home|request)\/[^/]+(\/project\/[^/]+)?\/?$/.test(kept) ? kept : null;
   } catch {
     return null;
   }
@@ -34,7 +36,7 @@ function backPath(): string | null {
 export function HomeBackLink({ phone = false }: { phone?: boolean }) {
   const path = useSyncExternalStore(noop, backPath, () => null);
   if (!path) return null;
-  const words = path.startsWith("/home/") ? "Back to your home dashboard" : "Back to your project";
+  const words = path.startsWith("/home/") && !path.includes("/project/") ? "Back to your home" : "Back to your project";
   if (phone) {
     return (
       <div className={s.bar}>

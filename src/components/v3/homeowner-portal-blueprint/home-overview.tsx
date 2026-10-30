@@ -10,13 +10,16 @@ import type { HomeDashboard } from "@/lib/home/portal";
 import type { RequestPortalView } from "@/lib/requestPortal";
 import { LocalTime } from "@/components/portal/live-time";
 import { Icon, PortalFrame, StatusTrack } from "./portal-frame";
-import { STEPS, houseLine, newProjectHref, nextStep, projectHref, projectTitle, stageOf } from "./view";
+import { HashForward } from "./hash-forward";
+import { STEPS, homeHref, houseLine, newProjectHref, nextStep, projectHref, projectTitle, stageOf } from "./view";
 import s from "./portal.module.css";
 
 /** Needs that belong to no project card: reviews, service-plan offers, plans whose month came. */
 function houseNeeds(h: HomeDashboard) {
+  // A review for a finished project is that project card's own action — said once.
+  const doneOrgs = h.projects.filter((p) => p.status2 === "DONE" && p.current).map((p) => p.current!.org.name);
   return h.needs
-    .filter((n) => n.kind === "review" || n.kind === "plan")
+    .filter((n) => n.kind === "plan" || (n.kind === "review" && !doneOrgs.some((o) => n.text.startsWith(o))))
     .map((n) => ({
       ...n,
       text: n.text.replace(/ offered you a plan: /, " offered you a service plan: ").replace(/ — ready to submit it\?$/, " — its month is here"),
@@ -37,6 +40,7 @@ export function HomeOverview({ h }: { h: HomeDashboard }) {
 
   return (
     <PortalFrame homeKey={h.key} tab="projects" email={h.email}>
+      <HashForward projectBase={`${homeHref(h.key)}/project`} />
       <section className={`${s.card} ${s.homeCard}`} aria-labelledby="home-title">
         <div className={s.homeTitle}>
           <p className={s.kicker}>{h.returning ? "Welcome back" : "Welcome"}, {h.firstName}</p>
@@ -104,7 +108,7 @@ export function ProjectCard({ p, h }: { p: RequestPortalView; h: HomeDashboard }
   const next = nextStep(p, h);
   const page = projectHref(h.key, p.token);
   return (
-    <article className={`${s.card} ${s.project}`} aria-labelledby={`p-${p.token}`} data-project-stage={STEPS[stage]}>
+    <article id={`folder-${p.token}`} className={`${s.card} ${s.project}`} aria-labelledby={`p-${p.token}`} data-project-stage={STEPS[stage]}>
       <div className={s.projectHead}>
         <div>
           <p className={s.kicker}>

@@ -82,7 +82,7 @@ export function CalendarPage({ h }: { h: HomeDashboard }) {
                         <span>{x.month ? date.getUTCFullYear() : date.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" })}</span>
                       </span>
                       <span className={s.eventBody}>
-                        {x.href ? <a href={x.href}>{x.title}</a> : <span>{x.title}</span>}
+                        {x.href ? <a className={s.rowLink} href={x.href}>{x.title}</a> : <span>{x.title}</span>}
                         <span className={s.muted}>{x.at ? <><LocalTime iso={x.at} kind="time" tz={x.tz} /> · </> : x.month ? "Sometime in the month · " : ""}{x.who}</span>
                       </span>
                     </li>

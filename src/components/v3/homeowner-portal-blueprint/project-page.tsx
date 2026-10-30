@@ -4,8 +4,8 @@
 // page (/request/[token]) stays as the emails' link and never learns the key.
 //
 // Phone: one column in the order a homeowner needs it — where it stands and
-// the next step, the quote, the contractor, photos, a note, what they asked
-// for, the history. Desk: the work on the left, the people and the record on
+// the next step, the contractor, a change to approve, the quote, the next
+// visit, photos, a note, what they asked for, the history. Desk: the work on the left, the people and the record on
 // the right.
 import Link from "next/link";
 import type { HomeDashboard } from "@/lib/home/portal";
@@ -34,7 +34,7 @@ export function ProjectPage({ h, p }: { h: HomeDashboard; p: RequestPortalView }
   const contractor = h.contractors.find((c) => c.org.id === cur?.org.id) ?? null;
 
   const status = (
-    <section className={s.card} aria-labelledby="status-title">
+    <section className={s.card} aria-labelledby="status-title" style={{ order: 1 }}>
       <div className={s.stack}>
         <p className={s.kicker}>
           {p.place ? `${p.place} · ` : ""}Sent <LocalTime iso={p.submittedAt} kind="date" tz={h.timeZone} />
@@ -62,7 +62,7 @@ export function ProjectPage({ h, p }: { h: HomeDashboard; p: RequestPortalView }
   );
 
   const changes = cur && p.changeOrders.length > 0 && (
-    <section className={`${s.card} ${s.attention}`} aria-labelledby="co-title">
+    <section className={`${s.card} ${s.attention}`} aria-labelledby="co-title" style={{ order: 3 }}>
       <h2 id="co-title" className={s.h2}>{p.changeOrders.length === 1 ? "A change needs your OK" : "Changes need your OK"}</h2>
       <div className={s.rows}>
         {p.changeOrders.map((c) => (
@@ -80,7 +80,7 @@ export function ProjectPage({ h, p }: { h: HomeDashboard; p: RequestPortalView }
   );
 
   const quotes = (
-    <section className={s.card} aria-labelledby="quote-title" id="quote">
+    <section className={s.card} aria-labelledby="quote-title" style={{ order: 4 }} id="quote">
       <h2 id="quote-title" className={s.h2}>{p.proposals.length > 1 ? "Quotes" : "Quote"}</h2>
       {current.length === 0 && (
         <div className={s.empty}>
@@ -107,7 +107,7 @@ export function ProjectPage({ h, p }: { h: HomeDashboard; p: RequestPortalView }
   );
 
   const pro = (
-    <section className={s.card} aria-labelledby="pro-title" id="contractor">
+    <section className={s.card} aria-labelledby="pro-title" style={{ order: 2 }} id="contractor">
       <div className={s.cardHead}>
         <h2 id="pro-title" className={s.h2}>Contractor</h2>
         {cur?.matchedAt && <span className={s.muted}>Since <LocalTime iso={cur.matchedAt} kind="date" tz={h.timeZone} /></span>}
@@ -151,12 +151,12 @@ export function ProjectPage({ h, p }: { h: HomeDashboard; p: RequestPortalView }
   );
 
   const visits = p.visits.length > 0 && (
-    <section className={s.card} aria-labelledby="visit-title">
+    <section className={s.card} aria-labelledby="visit-title" style={{ order: 5 }}>
       <h2 id="visit-title" className={s.h2}>Coming up</h2>
       <ul className={s.events}>
         {p.visits.map((v) => (
           <li key={v.startsAt} className={s.event}>
-            <span className={s.eventDate}><b><LocalTime iso={v.startsAt} kind="date" tz={v.timeZone} /></b></span>
+            <span className={s.eventDate}><b><LocalTime iso={v.startsAt} kind="day" tz={v.timeZone} /></b></span>
             <span className={s.eventBody}>
               <span>{v.title}</span>
               <span className={s.muted}><LocalTime iso={v.startsAt} kind="time" tz={v.timeZone} />–<LocalTime iso={v.endsAt} kind="time" tz={v.timeZone} /> · {v.orgName}</span>
@@ -169,7 +169,7 @@ export function ProjectPage({ h, p }: { h: HomeDashboard; p: RequestPortalView }
   );
 
   const files = (
-    <section className={s.card} aria-labelledby="files-title" id="files">
+    <section className={s.card} aria-labelledby="files-title" style={{ order: 6 }} id="files">
       <div className={s.cardHead}>
         <h2 id="files-title" className={s.h2}>Photos & files</h2>
         <span className={s.muted}>{folder.files.length ? `${folder.files.length} ${folder.files.length === 1 ? "file" : "files"}` : ""}</span>
@@ -179,14 +179,14 @@ export function ProjectPage({ h, p }: { h: HomeDashboard; p: RequestPortalView }
   );
 
   const message = cur && (
-    <section className={s.card} aria-labelledby="message-title" id="message">
+    <section className={s.card} aria-labelledby="message-title" style={{ order: 7 }} id="message">
       <h2 id="message-title" className={s.h2}>Note to {cur.org.name}</h2>
       <MessageBox homeKey={h.key} token={p.token} orgName={cur.org.name} sent={messages} timeZone={h.timeZone} />
     </section>
   );
 
   const about = (
-    <section className={s.card} aria-labelledby="about-title">
+    <section className={s.card} aria-labelledby="about-title" style={{ order: 8 }}>
       <h2 id="about-title" className={s.h2}>What you asked for</h2>
       {p.estimate && (
         <div className={s.pay} data-request-range>
@@ -205,7 +205,7 @@ export function ProjectPage({ h, p }: { h: HomeDashboard; p: RequestPortalView }
   );
 
   const history = p.events.length > 0 && (
-    <section className={s.card} aria-labelledby="history-title">
+    <section className={s.card} aria-labelledby="history-title" style={{ order: 9 }}>
       <h2 id="history-title" className={s.h2}>History</h2>
       <ol className={`${s.events} ${s.history}`}>
         {[...p.events].reverse().map((e, i) => (
@@ -223,7 +223,8 @@ export function ProjectPage({ h, p }: { h: HomeDashboard; p: RequestPortalView }
   return (
     <PortalFrame homeKey={h.key} house={houseLine(h)} tab="projects" email={h.email}>
       <Link className={s.btnText} href={homeHref(h.key)} style={{ justifySelf: "start", marginTop: -8 }}>← All projects</Link>
-      <div className={s.cols}>
+      {/* Phone: one column in the order a homeowner needs it (status, contractor, quote, photos…); desk: two. */}
+      <div className={`${s.cols} ${s.colsFlow}`}>
         <div className={s.col}>
           {status}
           {changes}

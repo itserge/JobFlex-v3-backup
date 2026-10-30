@@ -51,7 +51,7 @@ export function ContractorsPage({ h }: { h: HomeDashboard }) {
                       <ul className={s.rows}>
                         {theirs.map((p) => (
                           <li key={p.token} className={s.row} style={{ gridTemplateColumns: "minmax(0,1fr) auto", alignItems: "center" }}>
-                            <Link className={s.h3} href={projectHref(h.key, p.token)} style={{ textDecoration: "none" }}>{projectTitle(p)}</Link>
+                            <Link className={`${s.h3} ${s.rowLink}`} href={projectHref(h.key, p.token)}>{projectTitle(p)}</Link>
                             <span className={s.muted}><LocalTime iso={p.submittedAt} kind="date" tz={h.timeZone} /></span>
                           </li>
                         ))}

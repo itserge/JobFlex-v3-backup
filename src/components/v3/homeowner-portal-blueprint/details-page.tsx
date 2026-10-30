@@ -30,7 +30,7 @@ export function DetailsPage({ h }: { h: HomeDashboard }) {
                   <li key={i} className={s.row} style={{ gridTemplateColumns: "20px minmax(0,1fr)", alignItems: "start", gap: 10 }}>
                     <Icon id={d.kind === "pdf" ? "download" : "file"} small />
                     <span className={s.stack} style={{ gap: 2 }}>
-                      <a className={s.link} href={d.href} target={d.kind === "pdf" ? "_blank" : undefined} rel={d.kind === "pdf" ? "noopener noreferrer" : undefined}>{DOC_WORD(d.label)}</a>
+                      <a className={`${s.link} ${s.rowLink}`} href={d.href} target={d.kind === "pdf" ? "_blank" : undefined} rel={d.kind === "pdf" ? "noopener noreferrer" : undefined}>{DOC_WORD(d.label)}</a>
                       <span className={s.muted}>{d.orgName}{d.orgName ? " · " : ""}<LocalTime iso={d.at} kind="date" tz={h.timeZone} /></span>
                     </span>
                   </li>

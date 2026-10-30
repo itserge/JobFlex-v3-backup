@@ -49,7 +49,7 @@ export function MessageBox({ homeKey, token, orgName, sent, timeZone }: { homeKe
           <span>To {orgName}</span>
           <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={3} maxLength={1500} placeholder="A question, a day that works, something you forgot to mention…" required name="message-body" />
         </label>
-        <p className={s.fine}>We email it to {orgName}. They answer to your email.</p>
+        <p className={s.fine}>We email it to {orgName.replace(/\.$/, "")}. They answer to your email.</p>
         <div className={s.actions}>
           <button type="submit" className={s.btnPrimary} disabled={busy || body.trim().length < 2}>{busy ? "Sending…" : "Send note"}</button>
         </div>

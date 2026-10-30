@@ -64,13 +64,15 @@
 
 .wrap { max-width: 1180px; margin: 0 auto; padding: 20px var(--hp-pad) 48px; display: grid; gap: 16px; }
 .foot { max-width: 1180px; margin: 0 auto; padding: 0 var(--hp-pad) 40px; display: grid; gap: 8px; color: var(--ink-muted); font-size: 13px; }
-.foot a { color: var(--ink); }
+.foot a { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
 .live { display: inline-flex; align-items: center; gap: 8px; color: var(--ink-muted); font-size: 12.5px; }
 .live i { width: 8px; height: 8px; background: var(--emerald); }
 
 /* ── layout ── */
 .cols { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); align-items: start; }
 .col { display: grid; gap: 16px; min-width: 0; }
+/* The project page: on a phone both columns pour into one ordered list (each card carries its order). */
+.colsFlow > .col { display: contents; }
 
 /* ── type ── */
 .kicker { color: var(--ink-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
@@ -180,11 +182,13 @@
 .row:last-child { padding-bottom: 0; }
 .rowHead { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; }
 .rowHead > :first-child { min-width: 0; }
+.rowLink { display: flex; align-items: center; min-height: 44px; color: inherit; text-decoration: none; overflow-wrap: anywhere; }
+.rowLink:hover { color: var(--accent); }
 .meta { display: flex; flex-wrap: wrap; gap: 2px 12px; color: var(--ink-muted); font-size: 13px; }
 
 /* ── events (upcoming + history) ── */
 .events { display: grid; }
-.event { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 12px; padding: 12px 0; border-top: 1px solid var(--hair); }
+.event { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 12px; padding: 12px 0; border-top: 1px solid var(--hair); }
 .event:first-child { border-top: 0; padding-top: 0; }
 .eventDate { display: grid; align-content: start; gap: 1px; font-variant-numeric: tabular-nums; }
 .eventDate b { font-size: 14px; font-weight: 700; }
@@ -232,7 +236,7 @@
 .ok { color: var(--emerald); font-size: 13.5px; font-weight: 600; }
 .err { color: var(--rose); font-size: 13.5px; font-weight: 600; }
 .ideas { display: flex; flex-wrap: wrap; gap: 6px; }
-.idea { min-height: 36px; padding: 0 10px; border: 1.5px solid var(--hair); background: var(--sheet); font-size: 13px; font-weight: 500; cursor: pointer; }
+.idea { min-height: 44px; padding: 0 10px; border: 1.5px solid var(--hair); background: var(--sheet); font-size: 13px; font-weight: 500; cursor: pointer; }
 .idea:hover { border-color: var(--ink); }
 .idea[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
 .more > summary { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; cursor: pointer; font-size: 14px; font-weight: 600; list-style: none; }
@@ -317,6 +321,7 @@
   .h2 { font-size: 18px; }
   .cols { grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); gap: 20px; }
   .col { gap: 20px; }
+  .colsFlow > .col { display: grid; }
   .track { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .projectFoot .btnPrimary, .projectFoot .btn { flex: 0 0 auto; }
   .contact { display: flex; flex-wrap: wrap; }
