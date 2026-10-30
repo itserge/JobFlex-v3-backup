@@ -1,45 +1,264 @@
-/* Settings → Website estimators (2026-10-27): the JobFlex settings look — ink on paper, hairlines, blue for the on state. */
-.form { display: grid; gap: 18px; }
-.muted { color: #6b7280; font-size: 14px; }
-.err { color: #8a1c1c; font-size: 14px; }
-.ok { color: #1854a0; font-size: 14px; font-weight: 600; }
-.adminBox { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 14px; border-radius: 10px; background: #e7eefb; color: #0b0d12; font-size: 14px; line-height: 1.4; }
-.cards { display: grid; gap: 14px; }
-.card { border: 1px solid rgba(11, 13, 18, 0.14); border-radius: 12px; background: #fff; }
-.cardOn { border-color: #1854a0; box-shadow: 0 0 0 1px #1854a0 inset; }
-.cardHead { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 16px; }
-.cardTitle { font-weight: 800; font-size: 16px; letter-spacing: -0.01em; }
-.cardPrice { margin-top: 3px; font-size: 13px; color: #6b7280; }
-.switch { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; cursor: pointer; }
-.switch input { width: 18px; height: 18px; }
-.cardBody { display: grid; gap: 14px; padding: 0 16px 16px; border-top: 1px solid rgba(11, 13, 18, 0.08); padding-top: 14px; }
-.row { display: flex; flex-wrap: wrap; gap: 14px 20px; align-items: end; }
-.field { display: grid; gap: 6px; min-width: 200px; }
-.field > span { font-size: 12.5px; font-weight: 700; letter-spacing: 0.02em; color: #3b4150; }
-.field > span small { display: block; font-weight: 500; color: #6b7280; }
-.field input:not([type="range"]):not([type="checkbox"]), .field select { font: inherit; font-size: 14px; padding: 9px 11px; border: 1px solid rgba(11, 13, 18, 0.2); border-radius: 8px; background: #fff; color: #0b0d12; width: 100%; }
-.narrow { max-width: 320px; }
-.check { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip { font: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid rgba(11, 13, 18, 0.2); border-radius: 999px; background: #fff; color: #0b0d12; cursor: pointer; }
-.chipOn { background: #1854a0; border-color: #1854a0; color: #fff; }
-.snips { display: grid; gap: 10px; padding-top: 6px; border-top: 1px dashed rgba(11, 13, 18, 0.14); }
-.snip { display: grid; gap: 6px; }
-.snipHead { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; font-size: 13px; }
-.snipHead b { font-weight: 800; }
-.snipHead span { color: #6b7280; }
-.snipRow { display: flex; gap: 8px; align-items: center; }
-.snipRow input { flex: 1; min-width: 0; font: 12.5px/1.4 "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace; padding: 8px 10px; border: 1px solid rgba(11, 13, 18, 0.18); border-radius: 8px; background: #f7f6f2; color: #0b0d12; }
-.shared { display: grid; gap: 14px; padding: 14px 16px; border: 1px solid rgba(11, 13, 18, 0.14); border-radius: 12px; background: #fff; }
-.counts { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 14px; color: #3b4150; }
-.counts b { color: #0b0d12; }
-.foot { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
-.btn { font: inherit; font-size: 14px; font-weight: 700; padding: 10px 18px; border: 0; border-radius: 8px; background: #1854a0; color: #fff; cursor: pointer; }
-.btn:disabled { opacity: 0.5; cursor: default; }
-.btnGhost { font: inherit; font-size: 13px; font-weight: 700; padding: 8px 12px; border: 1px solid rgba(11, 13, 18, 0.2); border-radius: 8px; background: #fff; color: #0b0d12; cursor: pointer; text-decoration: none; white-space: nowrap; }
-.btnGhost:disabled { opacity: 0.5; }
-.money { margin-top: 6px; font-size: 13px; line-height: 1.4; color: #0b0d12; padding: 6px 10px; border-radius: 8px; background: #e7eefb; }
-.notes, .errors { margin: 0; padding: 10px 14px 10px 30px; border-radius: 10px; font-size: 14px; line-height: 1.5; }
-.notes { background: #e7f5ec; color: #0b3d1f; }
-.errors { background: #fff3f3; color: #8a1c1c; }
-.btnOff { opacity: 0.55; cursor: default; }
+/* Settings → Website estimators (2026-10-27; restyled 2026-10-30 to the Estimating pane). One piece for the desk pane
+   and the phone pane, so — like company-pricing-form.module.css, whose values it repeats — it reads the shared tokens
+   (--ink, --muted, --hair, --blueprint …) with fallbacks of its own, and on the phone page takes the Account tab's
+   field and switch values (mobile-settings.css .mst-fldL, .mst-in, .mst-tg).
+
+   The root carries data-nest, so the dashboard shell's `margin/padding: 0` reset (blueprint.module.css) skips this
+   tree, and every rule below weighs two classes or more — a one-class rule ties that reset, and the production build
+   emits the reset later. */
+
+.form[data-nest] { display: block; min-width: 0; color: var(--ink, #0a0a0a); }
+.form[data-nest],
+.form[data-nest] *,
+.form[data-nest] *::before,
+.form[data-nest] *::after { box-sizing: border-box; }
+
+/* ── the admin notice: an ink frame, a blueprint kicker, one sentence, the action on the right ── */
+.form .notice { display: flex; align-items: center; gap: 16px; margin: 0 0 22px; padding: 13px 14px;
+  border: 2px solid var(--ink, #0a0a0a); border-radius: var(--radius, 2px); background: var(--sheet, #fff); }
+.form .noticeTxt { flex: 1; min-width: 0; }
+.form .kicker { display: block; font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--blueprint, #1854a0); }
+.form .noticeTxt p { margin: 4px 0 0; font-size: 13px; line-height: 1.45; color: var(--ink-soft, #2a2a2a); }
+
+/* ── groups — the Estimating pane's: 22px apart over a 1.5px rule, 14px inside, an 11/800 caps head ── */
+.form .group { display: block; margin: 0; padding: 0; }
+.form .group + .group { margin-top: 22px; padding-top: 22px; border-top: 1.5px solid var(--hair, rgba(10,10,10,.12)); }
+.form .group > :not(:first-child) { margin-top: 14px; }
+.form .gh { margin: 0; font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink, #0a0a0a); }
+
+/* ── the trades: one framed list, rows split by a 1px rule, every row the same height and the same columns ── */
+.form .list { display: block; margin: 14px 0 0; padding: 0; list-style: none;
+  border: 1.5px solid var(--ink, #0a0a0a); border-radius: var(--radius, 2px); background: var(--sheet, #fff); }
+.form .trade { display: block; margin: 0; padding: 0; }
+.form .trade + .trade { border-top: 1px solid var(--hair-soft, var(--hair, rgba(10,10,10,.12))); }
+.form .row { display: grid; grid-template-columns: 34px minmax(0, 1fr) 120px 84px 46px; align-items: center;
+  gap: 14px; min-height: 68px; margin: 0; padding: 12px 14px; transition: background .15s var(--ease, ease); }
+.form .row:hover { background: var(--paper, #f2f0eb); }
+.form .tic { display: grid; place-items: center; width: 34px; height: 34px; margin: 0; padding: 0;
+  border: 1.5px solid var(--hair, rgba(10,10,10,.12)); border-radius: var(--radius, 2px); color: var(--muted, #555);
+  background: var(--sheet, #fff); transition: color .15s var(--ease, ease), border-color .15s var(--ease, ease); }
+.form .trade[data-on="true"] .tic { border-color: var(--ink, #0a0a0a); color: var(--blueprint, #1854a0); }
+.form .ico { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round;
+  stroke-linejoin: round; }
+.form .rowTxt { min-width: 0; }
+.form .rowTxt b { display: block; font-size: 13.5px; font-weight: 800; }
+.form .rowTxt span { display: block; margin-top: 3px; font-size: 12px; line-height: 1.45; color: var(--muted, #555);
+  overflow-wrap: anywhere; }
+.form .price { justify-self: end; font-size: 13.5px; font-weight: 800; font-variant-numeric: tabular-nums;
+  white-space: nowrap; }
+
+/* The state tag — Settings' `.badge2`, no dot: OFF muted, ON green, PREVIEW blueprint. */
+.form .tag { justify-self: start; display: inline-flex; align-items: center; margin: 0; padding: 4px 9px;
+  border: 1.5px solid var(--hair, rgba(10,10,10,.12)); border-radius: var(--radius, 2px);
+  background: var(--paper, #f2f0eb); color: var(--muted, #555);
+  font-size: 9.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.form .tag.tagOn { border-color: currentColor; color: var(--success, #3a7d44); background: rgba(58,125,68,.08); }
+.form .tag.tagPreview { border-color: currentColor; color: var(--blueprint, #1854a0); background: rgba(24,84,160,.07); }
+
+/* The app's switch (`.tg`): square, red off, green on. ::before widens the touch area past 44px; the drawing stays
+   46 × 25. */
+.form .tg { position: relative; flex-shrink: 0; width: 46px; height: 25px; margin: 0; padding: 0;
+  border: 1.5px solid var(--ink, #0a0a0a); border-radius: var(--radius, 2px); background: rgba(168,50,50,.14);
+  cursor: pointer; -webkit-appearance: none; appearance: none;
+  transition: background .2s var(--ease, ease), border-color .2s var(--ease, ease); }
+.form .tg::before { content: ""; position: absolute; inset: -11px -4px; }
+.form .tg::after { content: ""; position: absolute; top: 50%; left: 2px; width: 17px; height: 17px; border-radius: 0;
+  background: var(--danger, #a83232); transform: translateY(-50%);
+  transition: transform .2s var(--ease-out, ease-out), background .2s var(--ease, ease); }
+.form .tg[aria-checked="true"] { background: rgba(58,125,68,.16); }
+.form .tg[aria-checked="true"]::after { transform: translate(22px, -50%); background: var(--success, #3a7d44); }
+.form .tg:focus-visible { outline: 2px solid var(--blueprint, #1854a0); outline-offset: 2px; }
+.form .tg:disabled { cursor: not-allowed; opacity: .55; }
+
+/* What switching costs — the info line: a 3px blueprint edge on a faint blueprint wash. */
+.form .money { margin: 0 14px 12px 62px; padding: 10px 12px; border: 0; border-left: 3px solid var(--blueprint, #1854a0);
+  border-radius: 0; background: rgba(24,84,160,.05); font-size: 13px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+
+/* A trade that is on: its settings under the row, aligned with the name. */
+.form .body { display: grid; gap: 16px; margin: 0; padding: 4px 14px 18px 62px; }
+
+/* ── fields — the Estimating pane's `.fld` / `.lbl` / `.box` / `.in`, the hint on the label's line ── */
+.form .fld { display: block; min-width: 0; margin: 0; }
+.form .lbl { display: block; margin: 0 0 8px; font-family: var(--font-sans, var(--font, inherit)); font-size: 12px;
+  font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--ink, #0a0a0a); }
+.form .lblRow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin: 0 0 8px; }
+.form .lblRow .lbl { margin: 0; }
+.form .hintIn { font-size: 12px; line-height: 1.45; color: var(--muted, #555); }
+.form .hint { display: block; margin: 0; font-size: 12px; line-height: 1.45; color: var(--muted, #555); }
+
+.form .box { display: flex; align-items: center; gap: 6px; min-width: 0; height: 46px; margin: 0; padding: 0 12px;
+  border: 2px solid var(--ink, #0a0a0a); border-radius: var(--radius, 2px);
+  background: var(--paper-deep, #fff); box-shadow: none;
+  transition: border-color .15s var(--ease, ease), box-shadow .15s var(--ease, ease); }
+.form .box:focus-within { border-color: var(--blueprint, #1854a0);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--blueprint, #1854a0) 25%, transparent); }
+.form .box.boxNarrow { width: 160px; }
+.form .in { flex: 1; width: 100%; min-width: 0; height: 100%; margin: 0; padding: 0; border: 0; outline: none;
+  background: transparent; box-shadow: none; font: inherit; font-size: 14.5px; font-weight: 500;
+  font-variant-numeric: tabular-nums; color: var(--ink, #0a0a0a); -moz-appearance: textfield; }
+.form .in::-webkit-outer-spin-button,
+.form .in::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.form .in::placeholder { color: var(--muted-light, #888); opacity: 1; }
+.form .affix { flex-shrink: 0; font-style: normal; font-size: 13px; font-weight: 700; color: var(--muted, #555); }
+
+/* `appearance: auto` — the phone page resets every input to `none`, which drops the slider's track. */
+.form .range { display: block; width: 100%; max-width: 360px; height: 24px; margin: 0; -webkit-appearance: auto;
+  appearance: auto; background: transparent; accent-color: var(--blueprint, #1854a0); }
+
+/* The two choices — the Estimating pane's tiles. */
+.form .seg { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; max-width: 520px; }
+.form .segBtn { display: grid; align-content: center; gap: 3px; min-height: 60px; margin: 0; padding: 10px 12px;
+  text-align: left; cursor: pointer; border: 1.5px solid var(--hair, rgba(10,10,10,.12)); border-radius: var(--radius, 2px);
+  background: var(--sheet, #fff); color: var(--ink, #0a0a0a); font: inherit; -webkit-appearance: none; appearance: none;
+  transition: border-color .14s ease, background .14s ease; }
+.form .segBtn b { display: block; font-size: 13.5px; font-weight: 800; }
+.form .segBtn span { display: block; font-size: 12px; line-height: 1.35; color: var(--muted, #555); }
+.form .segBtn:hover:not([aria-checked="true"]) { border-color: var(--ink, #0a0a0a); }
+.form .segBtn[aria-checked="true"] { padding: 9.5px 11.5px; border: 2px solid var(--blueprint, #1854a0);
+  background: rgba(24,84,160,.06); }
+.form .segBtn[aria-checked="true"] b { color: var(--blueprint, #1854a0); }
+.form .segBtn:focus-visible { outline: 2px solid var(--blueprint, #1854a0); outline-offset: 2px; }
+
+/* Materials: square chips, flat, Inter (no mono caps); picked = the chosen tile's blueprint frame. */
+.form .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.form .chip { display: inline-flex; align-items: center; min-height: 36px; margin: 0; padding: 0 12px; cursor: pointer;
+  border: 1.5px solid var(--hair, rgba(10,10,10,.12)); border-radius: var(--radius, 2px); background: var(--sheet, #fff);
+  color: var(--ink, #0a0a0a); font: inherit; font-size: 13px; font-weight: 600; -webkit-appearance: none; appearance: none;
+  transition: border-color .14s ease, background .14s ease, color .14s ease; }
+.form .chip:hover:not([aria-pressed="true"]) { border-color: var(--ink, #0a0a0a); }
+.form .chip[aria-pressed="true"] { padding: 0 11.5px; border: 2px solid var(--blueprint, #1854a0);
+  background: rgba(24,84,160,.06); color: var(--blueprint, #1854a0); }
+.form .chip:focus-visible { outline: 2px solid var(--blueprint, #1854a0); outline-offset: 2px; }
+
+/* A switch inside a trade — the pane's switch row, smaller name. */
+.form .opt { display: flex; align-items: center; gap: 13px; margin: 0; padding: 0; }
+.form .optTxt { flex: 1; min-width: 0; }
+.form .optTxt b { display: block; font-size: 13px; font-weight: 800; }
+.form .optTxt span { display: block; margin-top: 3px; font-size: 12px; line-height: 1.45; color: var(--muted, #555); }
+
+/* ── this month: three flat ink-framed tiles ── */
+.form .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; max-width: 520px; }
+.form .tile { display: grid; gap: 6px; margin: 0; padding: 10px 12px; border: 1.5px solid var(--ink, #0a0a0a);
+  border-radius: var(--radius, 2px); background: var(--sheet, #fff); }
+.form .tile span { font-family: var(--font-mono, ui-monospace, monospace); font-size: 9.5px; font-weight: 600;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--muted, #555); }
+.form .tile b { font-size: 22px; font-weight: 900; line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+
+/* ── on your site: which estimator (Settings' sub-tab strip), then the three codes ── */
+.form .sub { display: flex; margin: 14px 0 0; border: 1.5px solid var(--ink, #0a0a0a); border-radius: var(--radius, 2px);
+  overflow: hidden; }
+.form .subBtn { flex: 1; min-height: 40px; margin: 0; padding: 0 12px; border: 0; border-right: 1.5px solid var(--hair, rgba(10,10,10,.12));
+  background: var(--sheet, #fff); color: var(--muted, #555); font: inherit; font-size: 11px; font-weight: 800;
+  letter-spacing: .1em; text-transform: uppercase; cursor: pointer; -webkit-appearance: none; appearance: none;
+  transition: background .15s var(--ease, ease), color .15s var(--ease, ease); }
+.form .subBtn:last-child { border-right: 0; }
+.form .subBtn:hover:not([aria-selected="true"]) { background: var(--paper, #f2f0eb); color: var(--ink, #0a0a0a); }
+.form .subBtn[aria-selected="true"] { background: var(--ink, #0a0a0a); color: var(--paper, #f2f0eb); }
+.form .subBtn:focus-visible { outline: 2px solid var(--blueprint, #1854a0); outline-offset: -4px; }
+.form .snips { display: grid; gap: 16px; margin: 14px 0 0; }
+.form .snipRow { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.form .box.boxCode { flex: 1; background: var(--paper, #f2f0eb); }
+.form .in.code { font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; font-weight: 500;
+  text-overflow: ellipsis; }
+
+/* ── buttons — the shell's `.btn`: square, 2px ink, 12/800 caps; primary blueprint; the offset only on hover ── */
+.form .btn { display: inline-flex; align-items: center; justify-content: center; gap: 9px; flex-shrink: 0;
+  height: 40px; margin: 0; padding: 0 16px; border: 2px solid var(--ink, #0a0a0a); border-radius: var(--radius, 2px);
+  font: inherit; font-size: 12px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+  white-space: nowrap; text-decoration: none; cursor: pointer; -webkit-appearance: none; appearance: none;
+  transition: transform .12s var(--ease, ease), box-shadow .12s var(--ease, ease), background .12s; }
+.form .btn:hover:not(:disabled):not(.btnOff) { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink, #0a0a0a); }
+.form .btn:active:not(:disabled) { transform: none; box-shadow: none; }
+.form .btn:focus-visible { outline: 2px solid var(--blueprint, #1854a0); outline-offset: 2px; }
+.form .btn:disabled { cursor: progress; opacity: .6; }
+.form .btn.btnPrimary { background: var(--blueprint, #1854a0); color: #fff; }
+.form .btn.btnPrimary:hover:not(:disabled) { background: var(--blueprint-dark, #0e3d7a); }
+.form .btn.btnGhost { background: #fff; color: var(--ink, #0a0a0a); }
+.form .btn.btnGhost:hover:not(:disabled):not(.btnOff) { background: var(--paper, #f2f0eb); }
+.form .btn.isDone { border-color: var(--success, #3a7d44); color: var(--success, #3a7d44); }
+.form .btn.btnOff { border-color: var(--hair, rgba(10,10,10,.12)); color: var(--muted, #555); cursor: default; }
+
+/* ── after a save: what happened, as info lines ── */
+.form .notes,
+.form .errors { margin: 22px 0 0; padding: 10px 12px 10px 30px; border: 0; border-left: 3px solid var(--blueprint, #1854a0);
+  border-radius: 0; background: rgba(24,84,160,.05); font-size: 13px; line-height: 1.5; }
+.form .errors { border-left-color: var(--danger, #a83232); background: rgba(168,50,50,.06); color: var(--danger, #a83232); }
+.form .note,
+.form.note { margin: 0; font-size: 13px; color: var(--muted, #555); }
+.form .group ~ .note { margin-top: 14px; }
+
+/* ── the foot: the state, then Save, at the right ── */
+.form .foot { display: flex; align-items: center; justify-content: flex-end; gap: 16px; margin: 22px 0 0; padding: 18px 0 0;
+  border-top: 1.5px solid var(--hair, rgba(10,10,10,.12)); }
+.form .status { margin: 0; text-align: right; font-size: 11px; font-weight: 800; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--muted, #555); }
+.form .isOk { color: var(--success, #3a7d44); }
+.form .isWarn { color: var(--warning-dark, #96691a); }
+.form .isErr,
+.form.isErr { color: var(--danger, #a83232); }
+
+@media (prefers-reduced-motion: reduce) {
+  .form .btn:hover:not(:disabled):not(.btnOff) { transform: none; }
+}
+
+/* Narrow desk: the Settings `.fin` goes to 16px (iOS zooms the page on focus under 16px). */
+@media (max-width: 1080px) {
+  .form .in { font-size: 16px; }
+  .form .in.code { font-size: 13px; }
+}
+
+/* ≤768 — the handheld layout: a row is icon · name over price and state · switch; tiles stay three across; the
+   actions run the full width at 44px and more. */
+@media (max-width: 768px) {
+  .form .notice { flex-direction: column; align-items: stretch; gap: 12px; }
+  .form .row { grid-template-columns: 34px auto auto minmax(0, 1fr) 46px;
+    grid-template-areas: "ic txt txt txt tg" "ic price tag . tg"; row-gap: 6px; column-gap: 10px;
+    padding: 12px; }
+  .form .tic { grid-area: ic; align-self: start; }
+  .form .rowTxt { grid-area: txt; }
+  .form .price { grid-area: price; justify-self: start; font-size: 13px; }
+  .form .tag { grid-area: tag; }
+  .form .tg { grid-area: tg; }
+  .form .money { margin: 0 12px 12px; }
+  .form .body { padding: 4px 12px 16px; }
+  .form .tiles { gap: 6px; max-width: none; }
+  .form .tile { gap: 5px; padding: 8px 9px; }
+  .form .tile span { font-size: 9px; letter-spacing: .1em; }
+  .form .tile b { font-size: 18px; }
+  .form .box.boxNarrow { width: 160px; }
+  .form .snipRow { flex-wrap: wrap; }
+  .form .snipRow .box { flex: 1 1 100%; }
+  .form .snipRow .btn { flex: 1 1 0; min-height: 44px; }
+  .form .chip { min-height: 44px; }
+  .form .subBtn { min-height: 44px; }
+  .form .btn { min-height: 44px; }
+  .form .foot { flex-direction: column-reverse; align-items: stretch; gap: 10px; }
+  .form .foot .btn { width: 100%; min-height: 48px; white-space: normal; }
+  .form .status { text-align: center; }
+}
+@media (max-width: 640px) {
+  .form .seg { grid-auto-flow: row; grid-auto-columns: auto; }
+}
+
+/* The phone page (mobile-settings.css): its Account fields and switches, value for value — as the Estimating pane. */
+:global(.jf-mobile-settings) .form .lbl { font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px; font-weight: 700; letter-spacing: .14em; color: var(--ink-soft, #2a2a2a); }
+:global(.jf-mobile-settings) .form .box { height: var(--field-h, 48px); border: 1.5px solid var(--ink, #0a0a0a);
+  background: var(--sheet, #fff); }
+:global(.jf-mobile-settings) .form .box.boxCode { background: var(--paper, #f2f0eb); }
+:global(.jf-mobile-settings) .form .box:focus-within { border-color: var(--blueprint, #1854a0); box-shadow: none; }
+:global(.jf-mobile-settings) .form .in { font-size: 16px; font-weight: 600; }
+:global(.jf-mobile-settings) .form .in.code { font-size: 13px; font-weight: 500; }
+:global(.jf-mobile-settings) .form .in:focus-visible { outline: none; }
+:global(.jf-mobile-settings) .form .box:has(.in:focus-visible) { outline: 2px solid var(--sky, #4a9eff); outline-offset: 2px; }
+:global(.jf-mobile-settings) .form .in::placeholder { color: var(--muted, #555); }
+:global(.jf-mobile-settings) .form .tg { width: 52px; height: 30px; }
+:global(.jf-mobile-settings) .form .tg::before { inset: -7px 0; }
+:global(.jf-mobile-settings) .form .tg::after { left: 1.5px; width: 20px; height: 20px; }
+:global(.jf-mobile-settings) .form .tg[aria-checked="true"] { background: rgba(58,125,68,.18); }
+:global(.jf-mobile-settings) .form .tg[aria-checked="true"]::after { transform: translate(23px, -50%); }
+@media (max-width: 768px) {
+  :global(.jf-mobile-settings) .form .row { grid-template-columns: 34px auto auto minmax(0, 1fr) 52px; }
+}
