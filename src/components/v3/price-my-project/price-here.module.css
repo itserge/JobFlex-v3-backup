@@ -1,48 +1,70 @@
-/* "Price it here" in the portal's box (2026-10-28). Drawn in the box's own drafting look — ink hairlines, square
-   corners, the blueprint blue for the one thing to press — from the tokens both wizards' roots define
-   (.jf-homeowner-landing on a desk, .jf-mobile-homeowner on a phone). Selectors carry one class more than the roots'
-   own `*`, `a` and `svg` rules so those never win (the phone root zeroes every padding). */
+/* "What are you planning?" over the portal's box, and the nudge under the words (2026-10-28; a plain choice above the
+   box since 2026-10-30). Blueprint from the tokens both wizards' roots define (.jf-homeowner-landing on a desk,
+   .jf-mobile-homeowner on a phone, each scaled by --s): white tiles on the paper, ink frames, square corners, the blue
+   for the tag and the one button. Selectors carry one class more than the roots' own `*`, `a`, `h2` and `svg` rules so
+   those never win (the phone root zeroes every padding). */
 
+/* ── The choice (compact, owner 2026-10-30): true px, not the page's --s scale — the tiles are measured as drawn.
+   The name beside its icon (two lines at most, the icon's height), the one-line hint under both. Desk: five in a row,
+   100px tall. Phone: two to a row, the last across it, 84px tall. ── */
+section.choice { margin: 0 0 16px; }
+.choice .h { margin: 0; font-family: inherit; font-size: 18px; font-weight: 800; line-height: 1.2; letter-spacing: 0;
+  text-transform: uppercase; color: var(--ink, #0a0a0a); }
+.choice .sub { margin: 4px 0 0; font-size: 14px; line-height: 1.4; color: var(--ink-soft, #2a2a2a); }
+
+.choice .tiles { display: grid; grid-template-columns: repeat(var(--n, 5), minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.choice a.tile { position: relative; display: grid; grid-template-columns: 36px minmax(0, 1fr); grid-template-areas: "pic name" "hint hint";
+  align-content: center; align-items: center; column-gap: 8px; min-width: 0; min-height: 100px; padding: 11px 12px;
+  border: 1.5px solid var(--hair, rgba(10, 10, 10, 0.16)); border-radius: var(--radius, 2px); background: #fff;
+  color: var(--ink, #0a0a0a); text-decoration: none; transition: border-color 0.15s ease; }
+.choice a.tile:hover { border-color: var(--ink, #0a0a0a); }
+.choice a.tileOn, .choice a.tileOn:hover { border: 2px solid var(--ink, #0a0a0a); padding: 10.5px 11.5px; }
+.choice a.tile:focus-visible { outline: 2px solid var(--blueprint, #1854a0); outline-offset: 2px; }
+.choice .pic { grid-area: pic; display: grid; place-items: center; width: 36px; height: 36px;
+  border: 1.5px solid var(--ink, #0a0a0a); border-radius: var(--radius, 2px); background: #fff; color: var(--blueprint, #1854a0); }
+.choice .pic svg { display: block; width: 28px; height: 28px; }
+.choice .name { grid-area: name; max-width: 100%; font-size: 15px; font-weight: 600; line-height: 1.2; color: var(--ink, #0a0a0a); overflow-wrap: anywhere; }
+.choice .hint { grid-area: hint; max-width: 100%; margin-top: 8px; font-size: 12px; font-weight: 400; line-height: 1.3; color: var(--muted, #555);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The tile the words point at: the ink frame and a blue tag on its top edge. */
+.choice .tag { position: absolute; top: -9px; right: 8px; padding: 2px 6px; border-radius: var(--radius, 2px); background: var(--blueprint, #1854a0); color: #fff;
+  font-size: 10px; font-weight: 800; line-height: 1.3; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+
+@media (max-width: 768px) {
+  .choice .h { font-size: 16px; }
+  .choice .sub { font-size: 13px; }
+  .choice .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .choice a.tile { min-height: 84px; padding: 10px; }
+  .choice a.tileOn, .choice a.tileOn:hover { padding: 9.5px; }
+  .choice .hint { margin-top: 6px; }
+  .choice a.tile:last-child:nth-child(odd) { grid-column: 1 / -1; }
+}
+
+/* ── The estimator the words point at: one line on what it does, the button into it ── */
 div.box { padding: calc(6px * var(--s, 1)) calc(20px * var(--s, 1)) calc(14px * var(--s, 1)); }
-
-.box .head { margin: 0 0 calc(8px * var(--s, 1)); font-family: var(--font-mono, ui-monospace, monospace); font-size: calc(9.5px * var(--s, 1)); font-weight: 600;
-  letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted, #555); }
-
-.box .tiles { display: flex; flex-wrap: wrap; gap: calc(6px * var(--s, 1)); }
-.box a.tile { display: inline-flex; align-items: center; gap: calc(7px * var(--s, 1)); min-height: calc(38px * var(--s, 1)); padding: 0 calc(12px * var(--s, 1)) 0 calc(8px * var(--s, 1));
-  border: calc(1.5px * var(--s, 1)) solid var(--ink, #0a0a0a); border-radius: var(--radius, 2px); background: var(--paper, #f2f0eb); color: var(--ink, #0a0a0a);
-  font-size: calc(10.5px * var(--s, 1)); font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; text-decoration: none; white-space: nowrap;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, color 0.15s ease; }
-.box a.tile:hover { transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink, #0a0a0a); }
-.box a.tileOn { background: var(--ink, #0a0a0a); color: var(--paper, #f2f0eb); }
-.box .pic { display: inline-flex; width: calc(20px * var(--s, 1)); height: calc(20px * var(--s, 1)); color: var(--blueprint, #1854a0); }
-.box a.tileOn .pic { color: var(--sky, #4a9eff); }
-.box .pic svg, .box .nudgePic svg { display: block; width: 100%; height: 100%; }
-
-/* The estimator the words point at: one line on what it does, the button into it. */
 .box a.nudge { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: calc(10px * var(--s, 1)) calc(12px * var(--s, 1));
-  margin: 0 0 calc(12px * var(--s, 1)); padding: calc(12px * var(--s, 1)) calc(14px * var(--s, 1));
+  padding: calc(12px * var(--s, 1)) calc(14px * var(--s, 1));
   border: calc(2px * var(--s, 1)) solid var(--blueprint, #1854a0); border-radius: var(--radius, 2px); background: rgba(24, 84, 160, 0.06);
   color: var(--ink, #0a0a0a); text-decoration: none; animation: ph_in 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 .box .nudgePic { display: inline-flex; width: calc(30px * var(--s, 1)); height: calc(30px * var(--s, 1)); color: var(--blueprint, #1854a0); }
+.box .nudgePic svg { display: block; width: 100%; height: 100%; }
 .box .nudgeT { font-size: calc(13.5px * var(--s, 1)); font-weight: 600; line-height: 1.45; color: var(--ink-soft, #2a2a2a); }
 .box .nudgeGo { display: inline-flex; align-items: center; height: calc(40px * var(--s, 1)); padding: 0 calc(16px * var(--s, 1));
   border: calc(2px * var(--s, 1)) solid var(--ink, #0a0a0a); border-radius: var(--radius, 2px); background: var(--blueprint, #1854a0); color: #fff;
   font-size: calc(11.5px * var(--s, 1)); font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap;
   box-shadow: 3px 3px 0 var(--ink, #0a0a0a); transition: transform 0.1s ease, box-shadow 0.1s ease; }
 .box a.nudge:hover .nudgeGo { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ink, #0a0a0a); }
-.box a.tile:focus-visible, .box a.nudge:focus-visible { outline: 2px solid var(--blueprint, #1854a0); outline-offset: 2px; }
+.box a.nudge:focus-visible { outline: 2px solid var(--blueprint, #1854a0); outline-offset: 2px; }
 
 /* A narrow box (a phone, a small window): the button under the words, as wide as the box. */
 @media (max-width: 640px) {
   div.box { padding-left: 16px; padding-right: 16px; }
   .box a.nudge { grid-template-columns: auto minmax(0, 1fr); }
   .box .nudgeGo { grid-column: 1 / -1; justify-content: center; min-height: 44px; }
-  .box a.tile { min-height: 44px; }
 }
 
 @keyframes ph_in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) {
   .box a.nudge { animation: none; }
-  .box a.tile, .box .nudgeGo { transition: none; }
+  .choice a.tile, .box .nudgeGo { transition: none; }
 }

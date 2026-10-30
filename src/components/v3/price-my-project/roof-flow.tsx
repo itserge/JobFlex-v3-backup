@@ -12,22 +12,14 @@ import { PlaceField, type Site } from "./place-field";
 import { QuestionCards } from "./question-cards";
 import { RangeView, type Priced } from "./range-view";
 import { QuotesForm, type ResumePlan } from "./quotes-form";
+import { PriceRail } from "./price-row";
 import s from "./price.module.css";
 
 type Step = "address" | "questions" | "range";
 export type RoofRead = Extract<PublicRoofReadResult, { ok: true }>;
 
-function Steps({ at }: { at: Step }) {
-  const order: Step[] = ["address", "questions", "range"];
-  const i = order.indexOf(at);
-  return (
-    <div className={s.steps} aria-hidden="true">
-      {order.map((st, k) => (
-        <span key={st} className={`${s.step}${k <= i ? ` ${s.stepOn}` : ""}`} />
-      ))}
-    </div>
-  );
-}
+const ORDER: Step[] = ["address", "questions", "range"];
+const STEP_LABELS = ["Address", "Your roof", "Your range"];
 
 /** A range saved from the dashboard or the email, picked up at the form (the server prices it again from the cache). */
 export type Resume = { site: Site; priced: Priced; plan: ResumePlan };
@@ -70,7 +62,7 @@ export function RoofFlow({ prefill, resume }: { prefill: Site | null; resume?: R
 
   return (
     <div style={{ display: "grid", gap: 18 }} data-price-flow={step}>
-      <Steps at={step} />
+      <PriceRail steps={STEP_LABELS} at={ORDER.indexOf(step)} />
       {/* The honeypot: a person never sees it; a script fills it and is refused before any call. */}
       <input ref={hpRef} className={s.hp} type="text" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" defaultValue="" />
 

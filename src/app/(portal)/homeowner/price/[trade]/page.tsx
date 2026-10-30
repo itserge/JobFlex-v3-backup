@@ -9,7 +9,7 @@
 // Outside the (marketing) group on purpose: its smooth wheel would fight the 3D views' own wheel.
 import type { Metadata, Route } from "next";
 import { notFound, redirect } from "next/navigation";
-import { PriceChrome } from "@/components/v3/price-my-project/price-row";
+import { PriceChrome, PriceHead } from "@/components/v3/price-my-project/price-row";
 import { RoofFlow, type Resume } from "@/components/v3/price-my-project/roof-flow";
 import type { Site } from "@/components/v3/price-my-project/place-field";
 import { WebDeck } from "@/components/v3/web-estimate/web-deck";
@@ -38,6 +38,15 @@ const TITLES: Record<PortalTrade, { title: string; description: string }> = {
   fence: { title: "Price my fence", description: "Draw your fence on your lot from the air and see a price range in about a minute. A local JobFlex pro confirms on site." },
   hvac: { title: "Price my heating & cooling", description: "Your house looked up, the system sized to it, a price range in about a minute. A local JobFlex pro confirms on site." },
   smart: { title: "Price my project", description: "Kitchens, baths and other projects priced from your words and photos — a range in about a minute. A local JobFlex pro confirms on site." },
+};
+
+/** Each estimator page's head (PriceHead): the kicker, the H1, the one-line lead — true of the estimator as it runs. */
+const HEADS: Record<PortalTrade, { kicker: string; title: string; lede: string }> = {
+  roof: { kicker: "Price my roof", title: "Your roof, read from the sky.", lede: "Type your address, answer three questions, see a range for your house. An estimate, not a quote — a local JobFlex pro confirms on site." },
+  deck: { kicker: "Price my deck", title: "Design your deck in 3D.", lede: "Type your address, design the deck on your lot and see the price as you build it. A local JobFlex pro confirms on site." },
+  fence: { kicker: "Price my fence", title: "Draw your fence on your lot.", lede: "Draw it on your lot from the air and see a price range in about a minute. A local JobFlex pro confirms on site." },
+  hvac: { kicker: "Price my heating & cooling", title: "A system sized to your house.", lede: "We look up your house, size the system to it and show a price range in about a minute. A local JobFlex pro confirms on site." },
+  smart: { kicker: "Price my project", title: "Priced from your words.", lede: "Kitchens, baths and other projects priced from your description and photos — a range in about a minute. A local JobFlex pro confirms on site." },
 };
 
 /** Where a trade's describe-and-match intake starts when the house estimators are off. */
@@ -96,13 +105,9 @@ export default async function PortalPricePage({ params, searchParams }: { params
         : null;
     return (
       <PriceChrome at="roof" house={house}>
-        <div style={{ display: "grid", gap: 8 }}>
-          <p className={s.kicker}>Price my roof</p>
-          <h1 className={s.h1}>Your roof, read from the sky.</h1>
-          <p className={s.lede}>Type your address, answer three questions, see a range for your house. An estimate, not a quote — a local JobFlex pro confirms on site.</p>
-        </div>
+        <PriceHead kicker={HEADS.roof.kicker} title={HEADS.roof.title} lede={HEADS.roof.lede} />
         <RoofFlow prefill={prefill} resume={resume} />
-        <p className={s.small}>{PRO_IS}</p>
+        <p className={s.note}>{PRO_IS}</p>
       </PriceChrome>
     );
   }
@@ -115,8 +120,10 @@ export default async function PortalPricePage({ params, searchParams }: { params
     redirect((door?.href ?? "/homeowner") as Route);
   }
   return (
-    <PriceChrome at={trade} house={house} bare>
-      <main style={{ minHeight: "70vh" }}>
+    <PriceChrome at={trade} house={house}>
+      <PriceHead kicker={HEADS[trade].kicker} title={HEADS[trade].title} lede={HEADS[trade].lede} />
+      {/* The website estimator as it is; the Blueprint reaches it only through this wrapper (price.module.css .house). */}
+      <div className={s.house} data-house>
         {m.trade === "deck" ? (
           <WebDeck shop={m.shop} title={m.title} embed={false} />
         ) : m.trade === "fence" ? (
@@ -126,7 +133,7 @@ export default async function PortalPricePage({ params, searchParams }: { params
         ) : (
           <WebSmart shop={m.shop} title={m.title} basis={m.basis} askEmail={m.askEmail} embed={false} />
         )}
-      </main>
+      </div>
     </PriceChrome>
   );
 }

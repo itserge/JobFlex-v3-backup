@@ -59,7 +59,7 @@ import { browserTimeZone, type WizardPrefill } from "@/lib/home/prefill";
 import { prefersReducedMotion, referralCodeFromUrl, testKeyFromUrl } from "../homeowner-landing/use-homeowner-behavior";
 import { usePlaceholderCycle } from "../homeowner-landing/wizard/use-placeholder-cycle";
 import { attachmentsLine, useRequestAttachments } from "../homeowner-landing/wizard/use-request-attachments";
-import { PriceHere } from "@/components/v3/price-my-project/price-here";
+import { PriceChoice, PriceNudge } from "@/components/v3/price-my-project/price-here";
 
 /** useLayoutEffect warns during SSR; useEffect is inert there, so it stands in. */
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
@@ -421,8 +421,8 @@ export function MobileHomeownerWizard({ uid, prefill = null, house = false }: { 
           wrapClassName="dictate" buttonClassName="mic" onClassName="on" noteClassName="dictate-note" />
       </div>
       {chips(true)}
-      {/* ONE PORTAL (2026-10-28): the estimators right here, the one the words point at lit (lib/home/portalPrice). */}
-      <PriceHere desc={desc} house={house} />
+      {/* ONE PORTAL (2026-10-28): once the words point at an estimator, the way into it (lib/home/portalPrice). */}
+      <PriceNudge desc={desc} house={house} />
       <div className="tools">
         <input
           type="file"
@@ -689,7 +689,9 @@ export function MobileHomeownerWizard({ uid, prefill = null, house = false }: { 
             : paneDone;
 
   return (
-    <div className="win-wrap">
+    <div id="plan" className="win-wrap">
+      {/* "What are you planning?" (owner, 2026-10-30): the estimators as a plain choice over the box while it asks for words. */}
+      {step === 0 && !thinking ? <PriceChoice desc={desc} house={house} /> : null}
       <div
         className={dragging ? "win drag anim a4" : "win anim a4"}
         ref={rootRef}

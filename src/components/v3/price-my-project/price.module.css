@@ -1,133 +1,240 @@
-/* "PRICE MY PROJECT" (2026-10-27; in the portal at /homeowner/price/<trade> since 2026-10-28) — the homeowner's own room, the home
-   dashboard's look (warm paper, white panels with a hairline, a serif for the
-   big words, JobFlex blue only where something is to be done), never the
-   contractor app's. One stylesheet for the row, the roof flow, the range
-   screen and the quotes form; 390 px first, a 16 px gutter, nothing scrolls
-   sideways. */
+/* "PRICE MY PROJECT" (2026-10-27; in the portal at /homeowner/price/<trade> since 2026-10-28) — the portal's
+   estimator pages in the JobFlex Blueprint (owner, 2026-10-30: "read as JobFlex, same as the dashboard pages"):
+   drafting paper, white panels in ink frames, square corners, uppercase Inter headings, the blue only for the one
+   thing to press. Tokens are globals.css's; no palette of its own. One stylesheet for the bar, the head, the roof
+   flow, the range screen, the quotes form and the house estimators' wrapper (.house, data-house). 390 px first,
+   a 16 px gutter, the dashboard's content width (960 px), nothing scrolls sideways. */
 
 .page {
-  --h-paper: #f4f1ea;
-  --h-panel: #ffffff;
-  --h-ink: #1d1b17;
-  --h-soft: #3f3b34;
-  --h-muted: #6e685d;
-  --h-faint: #9a9388;
-  --h-line: rgba(29, 27, 23, 0.12);
-  --h-line-strong: rgba(29, 27, 23, 0.28);
-  --h-green: #2f6b4f;
-  --h-green-soft: #e4efe8;
-  --h-blue: #1854a0;
-  --h-blue-ink: #0e3d7a;
-  --h-blue-soft: #e6edf7;
-  --h-amber: #b88420;
-  --h-amber-soft: #f6efdd;
-  --h-rose: #a83232;
-  --h-r: 10px;
-  --h-serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, "Times New Roman", serif;
   min-height: 100dvh;
-  background: var(--h-paper);
-  color: var(--h-ink);
+  /* The drafting grid behind content, never over type: faint, and every panel on it is white. */
+  background-color: var(--paper);
+  background-image: linear-gradient(rgba(10, 10, 10, 0.028) 1px, transparent 1px), linear-gradient(90deg, rgba(10, 10, 10, 0.028) 1px, transparent 1px);
+  background-size: 38px 38px;
+  background-position: -1px -1px;
+  color: var(--ink);
   font: 15px/1.55 var(--font-sans);
-  -webkit-font-smoothing: antialiased;
 }
 .page * { box-sizing: border-box; }
-.page :is(h1, h2, h3, p, ul, ol) { margin: 0; }
-.page :is(h1, h2, h3, p, li, a, dd, dt) { overflow-wrap: anywhere; }
-.page a { color: var(--h-blue); text-decoration: none; }
-.page :is(a, button, input, label):focus-visible { outline: 2px solid var(--h-blue); outline-offset: 3px; }
+/* Resets at zero specificity, so the house estimators' own classes (web-estimate.css) keep their margins and colours. */
+:where(.page) :where(h1, h2, h3, p, ul, ol) { margin: 0; }
+:where(.page) :where(h1, h2, h3, p, li, a, dd, dt) { overflow-wrap: anywhere; }
+:where(.page) a { color: var(--accent); text-decoration: none; }
+.page :is(a, button, input, label, select, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* ── Top bar ── */
-.top { border-bottom: 1px solid var(--h-line); background: var(--h-panel); }
-.topIn { display: flex; align-items: center; justify-content: space-between; gap: 12px; max-width: 1040px; min-height: 56px; margin: 0 auto; padding: 0 16px; }
-.page .brand { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; color: var(--h-ink); font-size: 19px; font-weight: 800; letter-spacing: -0.01em; }
-.page .topLink { display: inline-flex; align-items: center; min-height: 44px; color: var(--h-muted); font: 700 12px/1.2 var(--font-sans); letter-spacing: 0.08em; text-transform: uppercase; }
-.page .topLink:hover { color: var(--h-blue); }
+/* ── The portal's bar: the mark and its tag, the way back, the estimators as tabs ── */
+.top { border-bottom: 2px solid var(--ink); background: var(--paper-deep); }
+.topIn { display: flex; align-items: center; justify-content: space-between; gap: 12px; max-width: 960px; min-height: 60px; margin: 0 auto; padding: 0 16px; }
+.page .brand { display: inline-flex; align-items: center; gap: 8px; min-width: 0; min-height: 44px; color: var(--ink); font-size: 20px; font-weight: 800; letter-spacing: -0.01em; }
+.page .portalTag { margin-left: 4px; padding: 3px 7px; border: 1.5px solid var(--ink); border-radius: var(--r-sm); color: var(--ink); font: 800 10.5px/1.2 var(--font-sans); letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap; }
+.page .topLink { flex: none; display: inline-flex; align-items: center; min-height: 44px; color: var(--ink); font: 700 14px/1.2 var(--font-sans); text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 4px; }
+.page .topLink:hover { color: var(--accent); }
 
-.main { display: grid; gap: 24px; max-width: 1040px; margin: 0 auto; padding: 24px 16px 48px; }
-
-/* ── Words ── */
-.kicker { color: var(--h-blue); font: 800 11.5px/1.2 var(--font-sans); letter-spacing: 0.12em; text-transform: uppercase; }
-.h1 { font: 400 34px/1.1 var(--h-serif); letter-spacing: -0.01em; }
-.h2 { font: 400 26px/1.15 var(--h-serif); }
-.lede { max-width: 56ch; color: var(--h-soft); font-size: 16px; }
-.muted { color: var(--h-muted); font-size: 13.5px; }
-.small { color: var(--h-faint); font-size: 12.5px; }
-@media (min-width: 720px) { .h1 { font-size: 44px; } .h2 { font-size: 30px; } }
-
-/* ── The portal's bar over an estimator (2026-10-28, one home portal): the five estimators, the one on screen
-   marked, "describe it" for everything else. One line that scrolls inside itself on a phone — never the page. ── */
-.portalTag { margin-left: 4px; padding: 3px 8px; border-radius: 999px; background: var(--h-blue-soft); color: var(--h-blue-ink); font: 800 10.5px/1.2 var(--font-sans); letter-spacing: 0.08em; text-transform: uppercase; }
-@media (max-width: 420px) { .portalTag { display: none; } }
-.switch { border-top: 1px solid var(--h-line); }
-.switchIn { display: flex; gap: 8px; max-width: 1040px; margin: 0 auto; padding: 10px 16px; overflow-x: auto; scrollbar-width: none; }
+.switch { border-top: 1px solid var(--ink); }
+.switchIn { display: flex; gap: 4px; max-width: 960px; margin: 0 auto; padding: 0 16px; overflow-x: auto; scrollbar-width: none; }
 .switchIn::-webkit-scrollbar { display: none; }
-.page .sw { flex: none; display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 12px 6px 8px; border: 1.5px solid var(--h-line); border-radius: 999px; background: var(--h-panel); color: var(--h-ink); font: 700 13.5px/1.2 var(--font-sans); white-space: nowrap; }
-.page .sw:hover { border-color: var(--h-line-strong); }
-.page .swOn { border-color: var(--h-blue); background: var(--h-blue-soft); color: var(--h-blue-ink); }
-.swPic { display: inline-flex; width: 24px; height: 24px; color: var(--h-blue); }
-.swPic svg { width: 24px; height: 24px; }
-.page .swQuiet { padding-left: 12px; border-style: dashed; color: var(--h-muted); font-weight: 600; }
+.page .sw { flex: none; position: relative; display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 12px; color: var(--ink-muted); font: 700 14px/1.2 var(--font-sans); white-space: nowrap; transition: color 150ms var(--ease-out); }
+.page .sw::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: 0; height: 3px; background: transparent; transition: background-color 150ms var(--ease-out); }
+.page .sw:hover { color: var(--ink); }
+.page .sw:hover::after { background: var(--ink-line); }
+.page .swOn { color: var(--ink); font-weight: 800; }
+.page .swOn::after, .page .swOn:hover::after { background: var(--ink); }
+.swPic { display: inline-flex; width: 20px; height: 20px; color: var(--accent); }
+.swPic svg { width: 20px; height: 20px; }
+.page .swQuiet { margin-left: auto; color: var(--ink-muted); font-weight: 600; text-decoration: underline; text-underline-offset: 4px; }
+.page .swQuiet::after { display: none; }
+
+.main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; max-width: 960px; margin: 0 auto; padding: 32px 16px 56px; }
+/* The deck studio, once open, is a whole workspace: the page gives it the window's width. */
+.main:has([data-web-step="design"]) { max-width: none; }
+
+/* ── Page head: kicker, display H1, one-line lead ── */
+.head { display: grid; gap: 8px; }
+.kicker { color: var(--accent); font: 600 11px/1.3 var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; }
+.h1 { font: 900 32px/1.05 var(--font-display, var(--font-sans)); letter-spacing: -0.02em; text-transform: uppercase; }
+.h2 { font: 900 20px/1.15 var(--font-sans); letter-spacing: -0.01em; text-transform: uppercase; }
+.lede { max-width: 64ch; color: var(--ink-soft); font-size: 15px; }
+.muted { color: var(--ink-muted); font-size: 13.5px; }
+.small { color: var(--ink-muted); font-size: 12.5px; }
+/* The footnote under a panel ("Estimates by JobFlex…"): the Blueprint note, a quiet line on an ink rule. */
+.note { padding: 2px 0 2px 12px; border-left: 2px solid var(--ink); color: var(--ink-muted); font-size: 12.5px; line-height: 1.5; }
+
+/* ── The step rail: numbered squares with labels ── */
+.rail { display: flex; align-items: center; gap: 0; padding: 0; list-style: none; }
+.railStep { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 8px; color: var(--ink-muted); font: 700 12.5px/1.2 var(--font-sans); }
+.railStep:last-child { flex: none; }
+.railSq { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border: 1.5px solid var(--ink); border-radius: var(--r-sm); background: var(--paper-deep); color: var(--ink); font: 800 12px/1 var(--font-sans); font-variant-numeric: tabular-nums; }
+.railLine { flex: 1 1 auto; min-width: 12px; height: 1px; margin: 0 12px 0 4px; background: var(--ink); opacity: 0.25; }
+.railDone { color: var(--ink); }
+.railDone .railSq { background: var(--ink); color: var(--paper-deep); }
+.railOn { color: var(--ink); font-weight: 800; }
+.railOn .railSq { border-color: var(--ink); background: var(--accent); color: #fff; }
 
 /* ── Panels, fields, buttons (the roof flow) ── */
-.panel { display: grid; gap: 16px; padding: 20px 16px; border: 1px solid var(--h-line); border-radius: var(--h-r); background: var(--h-panel); }
-@media (min-width: 720px) { .panel { padding: 28px 28px; } }
-.field { display: grid; gap: 6px; }
-.label { font: 700 13px/1.3 var(--font-sans); color: var(--h-soft); }
-.page .input { width: 100%; min-height: 48px; padding: 10px 14px; border: 1px solid var(--h-line-strong); border-radius: 8px; background: #fff; color: var(--h-ink); font: 16px/1.3 var(--font-sans); }
-.page .input:focus { border-color: var(--h-blue); outline: 2px solid var(--h-blue); outline-offset: 0; }
+.panel { display: grid; gap: 16px; padding: 24px; border: 2px solid var(--ink); border-radius: var(--r-sm); background: var(--paper-deep); }
+.field { display: grid; gap: 8px; }
+.label { color: var(--ink); font: 800 12px/1.4 var(--font-sans); letter-spacing: 0.08em; text-transform: uppercase; }
+.page .input { width: 100%; min-height: 48px; padding: 10px 12px; border: 2px solid var(--ink); border-radius: var(--r-sm); background: var(--paper-deep); color: var(--ink); font: 16px/1.3 var(--font-sans); }
+.page .input:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* The roof's Places field (components/ui/Input inside PlacesAutocomplete): the wrapper is the frame. */
+.page .placeBox { height: auto; min-height: 48px; padding: 0 6px 0 12px; border: 2px solid var(--ink); border-radius: var(--r-sm); background: var(--paper-deep); box-shadow: none; }
+.page .placeBox:focus-within { box-shadow: none; outline: 2px solid var(--accent); outline-offset: 2px; }
+.page .placeBox input { width: 0; min-height: 44px; font-size: 16px; } /* width 0: the field grows into the frame, never widens the page */
+.page .placeBox button { height: 36px; padding: 0 12px; border: 1.5px solid var(--ink); border-radius: var(--r-sm); background: var(--accent); color: #fff; font: 800 12px/1 var(--font-sans); letter-spacing: 0.06em; text-transform: uppercase; }
+.page .placeBox button:hover:not(:disabled) { background: var(--accent-ink); }
+.page .placeBox button:disabled { opacity: 1; border-color: var(--ink-faint); background: var(--paper-deep); color: var(--ink-muted); cursor: not-allowed; }
 .hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
-.acts { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-.page .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 10px 18px; border: 1.5px solid var(--h-blue); border-radius: 8px; background: var(--h-blue); color: #fff; font: 700 15px/1.2 var(--font-sans); cursor: pointer; }
-.page .btn:hover { background: var(--h-blue-ink); border-color: var(--h-blue-ink); }
-.page .btn:disabled { opacity: 0.55; cursor: default; }
-.page .btnGhost { background: transparent; color: var(--h-blue); }
-.page .btnGhost:hover { background: var(--h-blue-soft); }
-.page .btnQuiet { min-height: 40px; padding: 6px 10px; border-color: transparent; background: transparent; color: var(--h-muted); font-weight: 600; }
-.page .btnQuiet:hover { color: var(--h-ink); background: transparent; border-color: transparent; }
-.err { padding: 10px 12px; border-radius: 8px; background: #fbe9e9; color: var(--h-rose); font-size: 14px; }
-.ok { padding: 10px 12px; border-radius: 8px; background: var(--h-green-soft); color: var(--h-green); font-size: 14px; }
-.steps { display: flex; gap: 6px; }
-.step { flex: 1; height: 4px; border-radius: 2px; background: var(--h-line); }
-.stepOn { background: var(--h-blue); }
+.acts { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.page .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 10px 20px; border: 2px solid var(--ink); border-radius: var(--r-sm); background: var(--accent); color: #fff; font: 800 13px/1.2 var(--font-sans); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; transition: background-color 150ms var(--ease-out), color 150ms var(--ease-out); }
+.page .btn:hover:not(:disabled) { background: var(--accent-ink); }
+.page .btn:disabled { border-color: var(--ink-faint); background: var(--paper-deep); color: var(--ink-muted); cursor: not-allowed; }
+.page .btnGhost { background: var(--paper-deep); color: var(--ink); }
+.page .btnGhost:hover:not(:disabled) { background: var(--paper); }
+.page .btnQuiet { min-height: 40px; padding: 6px 4px; border-color: transparent; background: transparent; color: var(--ink); font: 700 13.5px/1.2 var(--font-sans); letter-spacing: 0; text-transform: none; text-decoration: underline; text-underline-offset: 4px; }
+.page .btnQuiet:hover:not(:disabled) { color: var(--accent); background: transparent; border-color: transparent; }
+.err { padding: 10px 12px; border: 2px solid var(--rose); border-radius: var(--r-sm); background: color-mix(in srgb, var(--rose) 6%, #fff); color: var(--rose); font-size: 14px; font-weight: 600; }
+.ok { padding: 10px 12px; border: 2px solid var(--emerald); border-radius: var(--r-sm); background: color-mix(in srgb, var(--emerald) 8%, #fff); color: var(--emerald); font-size: 14px; font-weight: 600; }
 
 /* ── Picture answers ── */
 .q { display: grid; gap: 10px; }
-.qT { font: 700 16px/1.3 var(--font-sans); }
+.qT { font: 800 15px/1.3 var(--font-sans); letter-spacing: 0.02em; text-transform: uppercase; }
 .opts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .opts3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (min-width: 720px) { .opts { grid-template-columns: repeat(3, minmax(0, 1fr)); } .opts5 { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
-.page .opt { display: grid; gap: 4px; justify-items: start; min-height: 64px; padding: 10px 12px; border: 1.5px solid var(--h-line); border-radius: 8px; background: #fff; color: var(--h-ink); text-align: left; font: 600 14px/1.25 var(--font-sans); cursor: pointer; }
-.page .opt:hover { border-color: var(--h-line-strong); }
-.page .optOn { border-color: var(--h-blue); background: var(--h-blue-soft); box-shadow: inset 0 0 0 1px var(--h-blue); }
-.optB { color: var(--h-muted); font-size: 12px; font-weight: 500; }
+.page .opt { display: grid; gap: 4px; align-content: start; justify-items: start; min-height: 64px; padding: 10px 12px; border: 1.5px solid var(--ink); border-radius: var(--r-sm); background: var(--paper-deep); color: var(--ink); text-align: left; font: 700 14px/1.25 var(--font-sans); cursor: pointer; transition: background-color 150ms var(--ease-out); }
+.page .opt:hover { background: var(--paper); }
+.page .optOn, .page .optOn:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); box-shadow: inset 0 0 0 1px var(--accent); }
+.optB { color: var(--ink-muted); font-size: 12px; font-weight: 500; }
 .checks { display: flex; flex-wrap: wrap; gap: 8px; }
-.page .check { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 12px; border: 1.5px solid var(--h-line); border-radius: 999px; background: #fff; font-size: 14px; cursor: pointer; }
-.page .checkOn { border-color: var(--h-blue); background: var(--h-blue-soft); }
+.page .check { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 6px 12px; border: 1.5px solid var(--ink); border-radius: var(--r-sm); background: var(--paper-deep); font-size: 14px; font-weight: 600; cursor: pointer; }
+.page .check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.page .checkOn { border-color: var(--accent); background: var(--accent-soft); }
 
 /* ── The range ── */
 .rangeWrap { display: grid; gap: 18px; }
-.rangeNum { font: 400 40px/1.05 var(--h-serif); letter-spacing: -0.01em; }
-@media (min-width: 720px) { .rangeNum { font-size: 56px; } }
-.rangeBasis { color: var(--h-soft); font-size: 15px; }
-.typical { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: baseline; padding: 8px 12px; border-radius: 8px; background: var(--h-paper); color: var(--h-soft); font-size: 14px; }
-.incl { display: grid; gap: 6px; padding-left: 18px; color: var(--h-soft); font-size: 14px; }
+.rangeNum { font: 900 40px/1.05 var(--font-sans); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+@media (min-width: 720px) { .rangeNum { font-size: 52px; } }
+.rangeBasis { color: var(--ink-soft); font-size: 15px; }
+.typical { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: baseline; padding: 8px 12px; border: 1px solid var(--ink-line); border-radius: var(--r-sm); background: var(--paper); color: var(--ink-soft); font-size: 14px; }
+.incl { display: grid; gap: 6px; padding-left: 18px; color: var(--ink-soft); font-size: 14px; }
 .chips { display: grid; gap: 12px; }
 .chipRow { display: grid; gap: 6px; }
-.chipT { font: 700 12px/1.2 var(--font-sans); letter-spacing: 0.06em; text-transform: uppercase; color: var(--h-muted); }
+.chipT { color: var(--ink); font: 800 12px/1.2 var(--font-sans); letter-spacing: 0.08em; text-transform: uppercase; }
 .chipSet { display: flex; flex-wrap: wrap; gap: 6px; }
-.page .chip { min-height: 38px; padding: 6px 12px; border: 1.5px solid var(--h-line); border-radius: 999px; background: #fff; color: var(--h-ink); font: 600 13.5px/1.2 var(--font-sans); cursor: pointer; }
-.page .chipOn { border-color: var(--h-blue); background: var(--h-blue); color: #fff; }
-.budget { display: grid; gap: 8px; padding: 14px; border-radius: 8px; background: var(--h-amber-soft); }
+.page .chip { min-height: 40px; padding: 6px 12px; border: 1.5px solid var(--ink); border-radius: var(--r-sm); background: var(--paper-deep); color: var(--ink); font: 600 13.5px/1.2 var(--font-sans); cursor: pointer; }
+.page .chip:hover { background: var(--paper); }
+.page .chipOn, .page .chipOn:hover { border-color: var(--accent); background: var(--accent); color: #fff; }
+.budget { display: grid; gap: 8px; padding: 14px; border: 1.5px solid var(--amber, #b88420); border-radius: var(--r-sm); background: color-mix(in srgb, var(--amber, #b88420) 8%, #fff); }
 .budgetRow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .page .budgetIn { width: 160px; min-height: 44px; }
-.budgetSay { color: var(--h-soft); font-size: 14px; }
+.budgetSay { color: var(--ink-soft); font-size: 14px; }
 .compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.cmp { display: grid; gap: 4px; padding: 12px; border: 1px solid var(--h-line); border-radius: 8px; background: var(--h-paper); }
-.cmpT { font: 700 13.5px/1.2 var(--font-sans); }
-.cmpN { font: 400 22px/1.1 var(--h-serif); }
-.disclaim { color: var(--h-muted); font-size: 13px; }
-.consent { display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start; color: var(--h-soft); font-size: 13px; line-height: 1.45; }
-.consent input { width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--h-blue); }
+.cmp { display: grid; gap: 4px; padding: 12px; border: 1.5px solid var(--ink); border-radius: var(--r-sm); background: var(--paper-deep); }
+.cmpT { font: 800 13px/1.2 var(--font-sans); letter-spacing: 0.04em; text-transform: uppercase; }
+.cmpN { font: 900 22px/1.1 var(--font-sans); font-variant-numeric: tabular-nums; }
+.disclaim { color: var(--ink-muted); font-size: 13px; }
+.consent { display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start; color: var(--ink-soft); font-size: 13px; line-height: 1.45; }
+.consent input { width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--accent); }
 .two { display: grid; gap: 12px; }
 @media (min-width: 720px) { .two { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .photos { display: grid; gap: 8px; }
+
+/* ── The house estimators (deck, fence, heating & cooling, any project): the website estimator, left as it is, and
+   only what clashes redrawn through the wrapper (data-house) — never in web-estimate/*. Their title is the page
+   head's H1, so their own is hidden; their bars become the step rail; cards, fields and buttons take the frames. ── */
+.house { min-width: 0; }
+.house :global(.we) { max-width: none; margin: 0; padding: 0; font-family: var(--font-sans); color: var(--ink); --we-ink: var(--ink); --we-soft: var(--ink-soft); --we-muted: var(--ink-muted); --we-paper: var(--paper); --we-hair: var(--ink-line); }
+.house :global(.we.we-fence) { max-width: none; }
+.house :global(.we-head[data-web-house]) { display: none; }
+
+.house :global(.we-steps) { display: flex; align-items: center; gap: 0; margin: 0 0 20px; padding: 0; counter-reset: none; }
+.house :global(.we-steps li) { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 8px; height: auto; border-radius: 0; background: transparent; opacity: 1; color: var(--ink-muted); font: 700 12.5px/1.2 var(--font-sans); }
+.house :global(.we-steps li:last-child) { flex: none; }
+.house :global(.we-steps li i) { order: 1; flex: none; display: grid; place-items: center; width: 26px; height: 26px; border: 1.5px solid var(--ink); border-radius: var(--r-sm); background: var(--paper-deep); color: var(--ink); font: 800 12px/1 var(--font-sans); font-style: normal; font-variant-numeric: tabular-nums; }
+.house :global(.we-steps li)::before { order: 2; white-space: nowrap; }
+.house :global(.we-steps li:not(:last-child))::after { content: ""; order: 3; flex: 1 1 auto; min-width: 12px; height: 1px; margin: 0 12px 0 4px; background: var(--ink); opacity: 0.25; }
+.house :global(.we-steps li.done), .house :global(.we-steps li.on) { background: transparent; opacity: 1; }
+.house :global(.we-steps li.done) { color: var(--ink); }
+.house :global(.we-steps li.done i) { background: var(--ink); color: var(--paper-deep); }
+.house :global(.we-steps li.on) { color: var(--ink); font-weight: 800; }
+.house :global(.we-steps li.on i) { background: var(--accent); color: #fff; }
+/* The labels (the components carry the numbers only). */
+.house :global([data-web-estimate="hvac"] .we-steps li:nth-child(1))::before { content: "Address"; }
+.house :global([data-web-estimate="hvac"] .we-steps li:nth-child(2))::before { content: "Your house"; }
+.house :global([data-web-estimate="hvac"] .we-steps li:nth-child(3))::before { content: "Sizing"; }
+.house :global([data-web-estimate="hvac"] .we-steps li:nth-child(4))::before { content: "Price"; }
+.house :global([data-web-estimate="hvac"] .we-steps li:nth-child(5))::before { content: "Quotes"; }
+.house :global([data-web-estimate="fence"] .we-steps li:nth-child(1))::before { content: "Address"; }
+.house :global([data-web-estimate="fence"] .we-steps li:nth-child(2))::before { content: "Draw it"; }
+.house :global([data-web-estimate="fence"] .we-steps li:nth-child(3))::before { content: "Price"; }
+.house :global([data-web-estimate="fence"] .we-steps li:nth-child(4))::before { content: "Quotes"; }
+.house :global([data-web-estimate="smart"] .we-steps li:nth-child(1))::before { content: "Describe"; }
+.house :global([data-web-estimate="smart"] .we-steps li:nth-child(2))::before { content: "Questions"; }
+.house :global([data-web-estimate="smart"] .we-steps li:nth-child(3))::before { content: "Price"; }
+.house :global([data-web-estimate="smart"] .we-steps li:nth-child(4))::before { content: "Quotes"; }
+
+.house :global(.we-card) { padding: 24px; border: 2px solid var(--ink); border-radius: var(--r-sm); background: var(--paper-deep); box-shadow: none; }
+.house :global(.we-card h2) { font: 900 20px/1.15 var(--font-sans); letter-spacing: -0.01em; text-transform: uppercase; }
+.house :global(.we-h2) { font: 900 16px/1.2 var(--font-sans); letter-spacing: 0.02em; text-transform: uppercase; }
+.house :global(.we-sub) { color: var(--ink-soft); font-size: 15px; }
+.house :global(.we-kicker) { color: var(--accent); font: 600 11px/1.3 var(--font-mono); letter-spacing: 0.14em; }
+.house :global(.we-big) { font-family: var(--font-sans); }
+
+.house :global(:is(.we-q, .we-form label) > span),
+.house :global(.we-q-lbl),
+.house :global(.we-photos > span) { color: var(--ink); font: 800 12px/1.4 var(--font-sans); letter-spacing: 0.08em; text-transform: uppercase; }
+.house :global(:is(.we-q, .we-form label, .we-photos) > span small) { font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--ink-muted); }
+.house :global(:is(.we-q input, .we-q select, .we-form input, .we-form textarea)) { min-height: 48px; padding: 10px 12px; border: 2px solid var(--ink); border-radius: var(--r-sm); background: var(--paper-deep); font-size: 16px; }
+.house :global(.we-form .we-consent input) { min-height: 0; width: 18px; height: 18px; padding: 0; border-width: 1.5px; accent-color: var(--accent); }
+.house :global(.we-input) { min-height: 48px; border: 2px solid var(--ink); border-radius: var(--r-sm); background: var(--paper-deep); }
+.house :global(.we-input div) { height: auto; min-height: 44px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.house :global(.we-input input) { font-size: 16px; padding: 10px 6px; }
+.house :global(:is(.we-input:focus-within, .we-q input:focus, .we-q select:focus, .we-form input:focus, .we-form textarea:focus)) { outline: 2px solid var(--accent); outline-offset: 2px; border-color: var(--ink); }
+
+.house :global(.we-btn) { min-height: 48px; padding: 12px 20px; border: 2px solid var(--ink); border-radius: var(--r-sm); background: var(--accent); color: #fff; font: 800 13px/1.2 var(--font-sans); letter-spacing: 0.06em; text-transform: uppercase; box-shadow: none; transition: background-color 150ms var(--ease-out), color 150ms var(--ease-out); }
+.house :global(.we-btn:hover:not(:disabled)) { background: var(--accent-ink); }
+.house :global(.we-btn:disabled) { opacity: 1; border-color: var(--ink-faint); background: var(--paper-deep); color: var(--ink-muted); cursor: not-allowed; }
+.house :global(.we-btn.we-ghost) { background: var(--paper-deep); color: var(--ink); box-shadow: none; }
+.house :global(.we-btn.we-ghost:hover:not(:disabled)) { background: var(--paper); }
+.house :global(.we-btn.we-ghost.on) { border-color: var(--ink); background: var(--ink); color: var(--paper-deep); }
+.house :global(.we-btn.we-wide) { font-size: 14px; }
+.house :global(.we-btn.we-sm) { min-height: 40px; padding: 8px 12px; font-size: 12px; }
+.house :global(.we-link) { color: var(--ink); font-weight: 700; text-decoration-thickness: 1.5px; text-underline-offset: 4px; }
+
+.house :global(.we-choice) { border: 1.5px solid var(--ink); border-radius: var(--r-sm); background: var(--paper-deep); transition: background-color 150ms var(--ease-out); }
+.house :global(.we-choice:hover) { background: var(--paper); }
+.house :global(.we-choice.on), .house :global(.we-choice.on:hover) { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.house :global(:is(.we-note, .we-facts > div)) { border: 1px solid var(--ink-line); border-radius: var(--r-sm); background: var(--paper); }
+.house :global(.we-err) { border: 2px solid var(--rose); border-radius: var(--r-sm); background: color-mix(in srgb, var(--rose) 6%, #fff); color: var(--rose); font-weight: 600; }
+.house :global(:is(.we-map, .we-fence-stage)) { border: 2px solid var(--ink); border-radius: var(--r-sm); box-shadow: none; }
+.house :global(.we-thumbs img) { border: 1.5px solid var(--ink); border-radius: var(--r-sm); box-shadow: none; }
+.house :global(.we-tick) { border: 2px solid var(--ink); border-radius: var(--r-sm); }
+.house :global(.we-foot) { margin-top: 20px; padding: 2px 0 2px 12px; border-left: 2px solid var(--ink); color: var(--ink-muted); font-size: 12.5px; text-align: left; }
+.house :global(.we-foot b) { color: var(--ink); }
+
+/* ── A phone (≤768): one column, the tabs slide sideways, panels full-width in the 16 px gutter, buttons full-width,
+   the rail keeps its squares and names only the step on screen. ── */
+@media (max-width: 768px) {
+  .topIn { min-height: 56px; }
+  .page .brand { font-size: 18px; }
+  .page .topLink { font-size: 13px; }
+  .page .sw { min-height: 48px; padding: 0 10px; }
+  .page .swQuiet { margin-left: 0; }
+  .main { gap: 16px; padding: 20px 16px 40px; }
+  .h1 { font-size: 26px; }
+  .lede { font-size: 14.5px; }
+  .panel { padding: 20px 16px; }
+  .acts { display: grid; }
+  .page .acts .btn, .page .acts .btnGhost { width: 100%; }
+  .railStep { font-size: 12px; }
+  .railStep:not(.railOn) .railLbl { display: none; }
+  .house :global(.we-card) { padding: 20px 16px; }
+  .house :global(.we-btn:not(.we-sm)) { width: 100%; }
+  .house :global(.we-row) { flex-direction: column; gap: 0; }
+  .house :global(.we-steps li:not(.on))::before { display: none; }
+}
+@media (max-width: 420px) { .page .portalTag { display: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .page .sw, .page .sw::after, .page .btn, .page .opt, .house :global(.we-btn), .house :global(.we-choice) { transition: none; }
+}

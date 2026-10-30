@@ -27,6 +27,7 @@ export function PlaceField({ initial, onConfirm }: { initial: Site | null; onCon
         <PlacesAutocomplete
           enableFind
           placeholder="Street address"
+          inputWrapperClassName={s.placeBox}
           onPick={(p) => {
             const next = siteFromPick(p);
             if (!next) {

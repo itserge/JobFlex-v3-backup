@@ -404,7 +404,9 @@ body:has(.jf-homeowner-landing)::before { content: none; }
   font-size: calc(11px * var(--s)); font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
 .jf-homeowner-landing .tr:hover { transform: translate(calc(-1px * var(--s)),calc(-1px * var(--s))); box-shadow: calc(4px * var(--s)) calc(4px * var(--s)) 0 var(--shadow); }
 .jf-homeowner-landing .tr .ic { width: calc(20px * var(--s)); height: calc(20px * var(--s)); flex-shrink: 0; }
-.jf-homeowner-landing .tr span { white-space: nowrap; }
+/* The words wrap rather than run past the frame (owner, 2026-10-30: "A price range in about a minute" pushed its icon
+   and text out of the card from ~1100px up); every size stays the donor's. */
+.jf-homeowner-landing .tr span { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .jf-homeowner-landing .tr:nth-child(1) svg { color: var(--warning); }
 .jf-homeowner-landing .tr:nth-child(2) svg { color: var(--blueprint); }
 .jf-homeowner-landing .tr:nth-child(3) svg { color: var(--success); }
