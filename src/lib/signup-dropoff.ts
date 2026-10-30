@@ -14,7 +14,7 @@
 // The alert rule is here too: the last hour's problems by reason, and which of them is worth an email.
 import { TRAFFIC_EVENTS as E } from "./traffic-contract";
 import { BROWSER_TYPE_SQL, HOST_SQL, IN_APP_SQL, UA_SQL, visitorRuleSql, type VisitorScope } from "./traffic-visitor";
-import { SIGNUP_REASONS, durationWords, reasonWords, screenName, sideOf, type SignupSide } from "./signup-watch-shared";
+import { BROWSER_NOISE_PATTERN, SIGNUP_REASONS, durationWords, problemOf, reasonWords, screenName, type SignupSide } from "./signup-watch-shared";
 
 export const DROPOFF_DAYS = [7, 30] as const;
 export type DropoffDays = (typeof DROPOFF_DAYS)[number];
@@ -66,7 +66,9 @@ export function buildDropoffQuery(days: number, scope: VisitorScope = "productio
 /** The last hour's problems on the form, one row per reason: who met it (visits), how often, a sample of its words. */
 export function buildAlertQuery(minutes = 60, scope: VisitorScope = "production"): string {
   const m = Math.max(5, Math.min(240, Math.round(minutes)));
-  return `SELECT ${prop("reason")} AS reason, any(${prop("side")}), uniq(${VISIT_KEY}), count(),
+  // The browser's own failures (problemOf) are one reason of their own here too, never a page_error of ours.
+  const reason = `if(${prop("reason")} IN ('browser_error', 'outside_script') OR match(lower(${prop("message")}), '${BROWSER_NOISE_PATTERN.replace(/\\/g, "\\\\")}'), 'browser_error', ${prop("reason")})`;
+  return `SELECT ${reason} AS reason, if(reason = 'browser_error', 'outside', any(${prop("side")})), uniq(${VISIT_KEY}), count(),
     anyIf(${prop("message")}, ${prop("message")} != ''), any(${prop("screen")})
     FROM events
     WHERE timestamp > now() - INTERVAL ${m} MINUTE AND timestamp <= now() AND event = '${E.signupProblem}' AND ${RULE(scope)}
@@ -123,10 +125,10 @@ export function dropoffVisitFromRow(row: unknown[]): DropoffVisit | null {
   }).filter((b): b is DropoffBox => !!b);
   const problems = arr(row[16]).map((s): DropoffProblem | null => {
     const parts = s.split("|");
-    const reason = parts[0];
-    if (!reason) return null;
-    const side: SignupSide = sideOf(parts[1], reason);
-    return { reason, side, screen: parts[2] || "", field: parts[3] || "", at: num(parts[4]) * 1000, message: parts.slice(5).join("|") };
+    if (!parts[0]) return null;
+    const message = parts.slice(5).join("|");
+    const { reason, side } = problemOf(parts[0], parts[1], message);
+    return { reason, side, screen: parts[2] || "", field: parts[3] || "", at: num(parts[4]) * 1000, message };
   }).filter((p): p is DropoffProblem => !!p);
   const leaveRaw = text(row[17]);
   const [kind, lScreen, lField, lProblem] = leaveRaw.split("|");
@@ -229,6 +231,8 @@ const median = (xs: number[], least = 2): number | null => {
 };
 const pctWords = (n: number, of: number) => (of > 0 ? `${Math.round((n / of) * 100)}%` : "—");
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+/** Ours first, then the form's refusals, the browser's own failures last. */
+const SIDE_ORDER: Record<SignupSide, number> = { ours: 0, theirs: 1, outside: 2 };
 
 /** The furthest screen a visit saw (by the order of the form). */
 export function furthestScreen(v: DropoffVisit): DropoffScreen {
@@ -336,7 +340,7 @@ export function buildDropoffReport(visits: DropoffVisit[], days: number, now: nu
   const top = (m: Map<string, number>) => [...m.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
   const problems: DropoffProblemRow[] = [...probMap.entries()]
     .map(([reason, r]) => ({ reason, words: reasonWords(reason), side: r.side, visits: r.visits.size, times: r.times, finishedAnyway: r.finished.size, screen: top(r.screens), message: top(r.messages) }))
-    .sort((a, b) => (a.side === b.side ? 0 : a.side === "ours" ? -1 : 1) || b.visits - a.visits || b.times - a.times);
+    .sort((a, b) => SIDE_ORDER[a.side] - SIDE_ORDER[b.side] || b.visits - a.visits || b.times - a.times);
 
   // ── devices ──
   const devMap = new Map<string, { visits: number; finished: number }>();
@@ -365,7 +369,8 @@ export function buildDropoffReport(visits: DropoffVisit[], days: number, now: nu
   // ── the verdict: of the watched visits that stopped, what came first ──
   const counted = stopped.filter((v) => v.watched);
   const ours = counted.filter((v) => v.problems.some((p) => p.side === "ours"));
-  const theirs = counted.filter((v) => !ours.includes(v) && v.problems.length > 0);
+  // The browser's own failures are shown, never the verdict: a visit that met only those left by its choice.
+  const theirs = counted.filter((v) => !ours.includes(v) && v.problems.some((p) => p.side === "theirs"));
   const choice = counted.length - ours.length - theirs.length;
   const topReason = (vs: DropoffVisit[], side: SignupSide) => {
     const m = new Map<string, number>();
@@ -427,7 +432,8 @@ export function problemGroupFromRow(row: unknown[]): SignupProblemGroup | null {
   const reason = text(row[0]);
   if (!reason) return null;
   const side = text(row[1]);
-  return { reason, side: sideOf(side, reason), visits: num(row[2]), times: num(row[3]), message: text(row[4]), screen: text(row[5]) };
+  const message = text(row[4]);
+  return { ...problemOf(reason, side, message), visits: num(row[2]), times: num(row[3]), message, screen: text(row[5]) };
 }
 
 /** The last hour's reasons worth a person's attention: three visitors on one reason, or two on a hard fault of ours. */

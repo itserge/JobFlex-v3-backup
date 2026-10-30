@@ -10,7 +10,7 @@
 // nothing here can stop a sign-up — and nothing is sent off /auth/register.
 import { flushTrafficNow, trackTraffic } from "@/lib/traffic-client";
 import { TRAFFIC_EVENTS } from "@/lib/traffic-contract";
-import { fieldName, isOutsideScriptError, reasonOfMessage, reasonSide, scrubWords, type SignupSide } from "@/lib/signup-watch-shared";
+import { fieldName, isBrowserNoise, isForeignFile, isOutsideScriptError, reasonOfMessage, reasonSide, scrubWords, type SignupSide } from "@/lib/signup-watch-shared";
 
 type Leaving = "closed" | "google" | "checkout" | "done";
 interface Position {
@@ -176,12 +176,18 @@ export function startSignupWatch(): () => void {
     const file = e.filename || "";
     if (/^(chrome|moz|safari)-extension:/.test(file) || /ResizeObserver loop/i.test(e.message || "")) return;
     // A script from another site failing tells us only "Script error." — not ours, and not theirs: said as such.
-    if (isOutsideScriptError(e.message, file, e.lineno)) return signupProblem("outside_script", { message: "Script error." });
+    if (isOutsideScriptError(e.message, file, e.lineno)) return signupProblem("browser_error", { message: "Script error." });
+    // The in-app browser's own bridge ("Java object is gone"), or a file served from another site: the browser's.
+    if (isBrowserNoise(e.message) || isForeignFile(file, window.location.host)) {
+      const host = isForeignFile(file, window.location.host) ? ` (${new URL(file).host})` : "";
+      return signupProblem("browser_error", { message: `${e.message || "Script error"}${host}` });
+    }
     signupProblem("page_error", { message: e.message || "Script error" });
   };
   const onRejection = (e: PromiseRejectionEvent) => {
     const why = e.reason instanceof Error ? e.reason.message : typeof e.reason === "string" ? e.reason : "";
-    if (/Failed to fetch|NetworkError|Load failed|network/i.test(why)) signupProblem("network", { message: why });
+    if (isBrowserNoise(why)) signupProblem("browser_error", { message: why });
+    else if (/Failed to fetch|NetworkError|Load failed|network/i.test(why)) signupProblem("network", { message: why });
     else signupProblem("page_error", { message: why || "Unhandled rejection" });
   };
 

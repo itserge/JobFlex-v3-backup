@@ -112,7 +112,7 @@ export function SignupStopsPanel({ timezone }: { timezone: string }) {
         {r.problems.length > 0 && <div className={s.tableScroll}>
           <table className={`${s.table} ${s.analystTable}`} data-testid="stops-problems">
             <thead><tr><th>What happened</th><th>Whose side</th><th>Visitors</th><th>Times</th><th>Finished anyway</th><th>Screen</th><th>What they saw</th></tr></thead>
-            <tbody>{r.problems.map((p) => <tr key={p.reason} data-side={p.side}><td>{p.words}</td><td><span className={s.sideChip} data-side={p.side}>{p.side === "ours" ? "Ours" : "Theirs"}</span></td><td>{p.visits}</td><td>{p.times}</td><td>{p.finishedAnyway}</td><td>{p.screen ? screenName(p.screen) : ""}</td><td className={s.stopsMessage}>{p.message}</td></tr>)}</tbody>
+            <tbody>{r.problems.map((p) => <tr key={p.reason} data-side={p.side}><td>{p.words}</td><td><span className={s.sideChip} data-side={p.side}>{p.side === "ours" ? "Ours" : p.side === "outside" ? "Not ours" : "Theirs"}</span></td><td>{p.visits}</td><td>{p.times}</td><td>{p.finishedAnyway}</td><td>{p.screen ? screenName(p.screen) : ""}</td><td className={s.stopsMessage}>{p.message}</td></tr>)}</tbody>
           </table>
         </div>}
 
@@ -130,7 +130,7 @@ export function SignupStopsPanel({ timezone }: { timezone: string }) {
           </table>
         </div>}
 
-        <p className={s.footnote}>A visit is one browser session that opened /auth/register on www.jobflex.app, bots and previews out. &ldquo;Stopped&rdquo; means it ended without a sign-up and the same visitor did not finish on a later visit; a visit still active in the last 30 minutes is &ldquo;still on the form&rdquo;. Box-by-box detail, problems and the verdict come from the form&apos;s watcher, live from Oct 14 — earlier visits count in the screens only. A fault of ours is anything the visitor did not cause: our server, the code email, a limit of ours, the page breaking or loading slowly. No typed value ever leaves the browser — only the box&apos;s name, how long, filled or not.</p>
+        <p className={s.footnote}>A visit is one browser session that opened /auth/register on www.jobflex.app, bots and previews out. &ldquo;Stopped&rdquo; means it ended without a sign-up and the same visitor did not finish on a later visit; a visit still active in the last 30 minutes is &ldquo;still on the form&rdquo;. Box-by-box detail, problems and the verdict come from the form&apos;s watcher, live from Oct 14 — earlier visits count in the screens only. A fault of ours is anything the visitor did not cause: our server, the code email, a limit of ours, the page breaking or loading slowly. The browser&apos;s own failures — a Facebook or Instagram in-app browser&apos;s bridge (&ldquo;Java object is gone&rdquo;), a bare &ldquo;Script error.&rdquo; or a file from another site — are &ldquo;Not ours&rdquo; and never count in the verdict. No typed value ever leaves the browser — only the box&apos;s name, how long, filled or not.</p>
       </>}
     </section>
   );

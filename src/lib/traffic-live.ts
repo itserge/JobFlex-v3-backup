@@ -30,7 +30,8 @@ import { TRAFFIC_EVENTS as E, pageLabel, type StaleNote } from "./traffic-contra
 // Who counts and what is "from an ad": one rule for the whole page (2026-10-01).
 import { BROWSER_TYPE_SQL, HOST_SQL, TRAFFIC_SINCE, UA_SQL, carriesAdTag, isCountedEvent, sinceSql, trafficDayStartMs, visitorRuleSql } from "./traffic-visitor";
 import { resolveLandingVariant, VARIANT_TRADE } from "@/components/v3/landing-e/landing-variants";
-import { durationWords, reasonWords, screenName, sideOf, type SignupSide } from "./signup-watch-shared";
+import { browserErrorWords, durationWords, problemOf, reasonWords, screenName, type SignupSide } from "./signup-watch-shared";
+import { detectInAppBrowser } from "./inAppBrowser";
 
 export const LIVE_WINDOW_MINUTES = 30;
 export const LIVE_ACTIVE_MINUTES = 5;
@@ -601,6 +602,8 @@ export function formWatchOf(visit: readonly LiveEvent[], now = Date.now()): Live
   const madeAccount = visit.some((e) => eventStage(e) === "signed-up");
   const toCard = visit.some((e) => e.event === E.opened);
   const trueScreen = (s: string) => (s === "done" && !madeAccount && toCard ? "checkout" : s);
+  // The app whose webview the visit was in, for the browser's own failures: "Browser error (Facebook in-app), not ours".
+  const inApp = detectInAppBrowser(visit.find((e) => e.ua)?.ua);
   const boxes = new Map<string, { field: string; secs: number; filled: boolean; valid: boolean; edits: number; visits: number }>();
   let inBox: LiveFormWatch["inBox"] = null;
   const problems: LiveFormWatch["problems"] = [];
@@ -623,8 +626,9 @@ export function formWatchOf(visit: readonly LiveEvent[], now = Date.now()): Live
       boxes.set(e.field, b);
       if (inBox && inBox.field === e.field) inBox = null;
     } else if (e.event === E.signupProblem && e.reason) {
-      const side = sideOf(e.side, e.reason);
-      problems.unshift({ at: iso, reason: e.reason, words: reasonWords(e.reason), side, message: e.message || "", screen: e.screen || screen, field: e.field || "" });
+      const { reason, side } = problemOf(e.reason, e.side, e.message);
+      const words = reason === "browser_error" ? browserErrorWords(inApp) : reasonWords(reason);
+      problems.unshift({ at: iso, reason, words, side, message: e.message || "", screen: e.screen || screen, field: e.field || "" });
     } else if (e.event === E.signupAway) {
       away = { since: iso };
     } else if (e.event === E.signupBack) {

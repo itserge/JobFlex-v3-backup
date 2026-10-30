@@ -9,9 +9,10 @@
 //   theirs — the form refused what they gave it (an empty box, a wrong code, an address already in use) or they chose
 //            to go.
 
-//   outside — a script that is not ours failed with no details the browser would give (a cross-origin "Script
-//            error." — Google sign-in, the Meta pixel, a Facebook or Instagram in-app browser's own code): neither ours
-//            to fix nor the visitor's doing, and never the verdict on why they stopped (2026-10-16).
+//   outside — the browser failed, not our code: a script from another site (a cross-origin "Script error." — Google
+//            sign-in, the Meta pixel), a Facebook or Instagram in-app browser's own bridge ("Java object is gone"), the
+//            ResizeObserver notice: neither ours to fix nor the visitor's doing, and never the verdict on why they
+//            stopped (2026-10-16; by its words too since 2026-10-30, see problemOf).
 export type SignupSide = "ours" | "theirs" | "outside";
 /** A side read back from an event or a row; anything unknown is the reason's own side. */
 export function sideOf(raw: unknown, reason: string): SignupSide {
@@ -20,6 +21,42 @@ export function sideOf(raw: unknown, reason: string): SignupSide {
 /** The browser's whole word on a cross-origin script failure: "Script error." with no file, no line — nothing to act on. */
 export function isOutsideScriptError(message: string | null | undefined, filename?: string | null, lineno?: number | null): boolean {
   return /^\s*script error\.?\s*$/i.test(message ?? "") && !filename && !lineno;
+}
+
+// The browser's own failures, by their words (2026-10-30): an Android webview's JS bridge torn down under the page
+// (Facebook's and Instagram's in-app browsers — "Error invoking postMessage: Java object is gone"), a cross-origin
+// "Script error." with no stack, the browser's ResizeObserver loop notice. Lower case, one source for the browser's
+// RegExp and the PostHog query's match(lower(message), …) — re2 and JS read it the same.
+export const BROWSER_NOISE_PATTERN = "java object is gone|error invoking postmessage|resizeobserver loop|^\\s*(uncaught\\s+)?script error\\.?\\s*$";
+const BROWSER_NOISE = new RegExp(BROWSER_NOISE_PATTERN, "i");
+/** True when the words are the browser's (or the in-app webview's) own failure, never our code's. */
+export function isBrowserNoise(message: string | null | undefined): boolean {
+  return BROWSER_NOISE.test(message ?? "");
+}
+/** True when the failing script's file is on another site (a pixel, Google sign-in, the in-app browser's injected
+ *  code). No file at all is not "another site": that is the words' call. */
+export function isForeignFile(filename: string | null | undefined, ourHost: string): boolean {
+  if (!filename || /^(blob|data):/i.test(filename)) return false;
+  try {
+    return new URL(filename).host.toLowerCase() !== ourHost.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A problem as stored, read back: a page error in the browser's words (or an outside script) is "browser_error" on
+ * the outside — the events sent before 2026-10-30 said "page_error · ours" for it; anything else keeps its reason and
+ * its side.
+ */
+export function problemOf(reason: string, rawSide: unknown, message: string | null | undefined): { reason: string; side: SignupSide } {
+  if (reason === "browser_error" || reason === "outside_script" || isBrowserNoise(message)) return { reason: "browser_error", side: "outside" };
+  return { reason, side: sideOf(rawSide, reason) };
+}
+/** "Browser error (Facebook in-app), not ours" — the app named when the visit's browser was one's webview. */
+export function browserErrorWords(app?: string | null): string {
+  const name = app ? `${app.charAt(0).toUpperCase()}${app.slice(1)} in-app` : "";
+  return `Browser error${name ? ` (${name})` : ""}, not ours`;
 }
 
 /** Element id → the box's name on the admin's screen. */
@@ -105,7 +142,9 @@ export const SIGNUP_REASONS: Readonly<Record<string, { words: string; side: Sign
   trial_rejected: { words: "Trial start refused", side: "ours" },
   trial_unavailable: { words: "Trial start unavailable", side: "ours" },
   page_error: { words: "The page threw an error", side: "ours" },
-  outside_script: { words: "An outside script failed — no details", side: "outside" },
+  // outside — the browser's, never the verdict (problemOf folds outside_script, sent before 2026-10-30, into it)
+  browser_error: { words: "Browser error, not ours", side: "outside" },
+  outside_script: { words: "Browser error, not ours", side: "outside" },
   page_crash: { words: "The page crashed", side: "ours" },
   slow_form: { words: "The form was slow to start", side: "ours" },
   network: { words: "The connection dropped mid-step", side: "ours" },
