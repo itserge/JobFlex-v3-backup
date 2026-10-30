@@ -7,7 +7,7 @@
 import { SEO_TRADES, type SeoTrade } from "./trades";
 import { SEO_PHRASES } from "./keywords";
 import { nearbyCities, citiesInState, rankIn, SEO_CITIES, type SeoCity } from "./cities";
-import { CENSUS_NAICS, CENSUS_NAICS_WORDS } from "./census";
+import { censusParagraphs } from "./census";
 import { CENSUS_ACS_YEARS, CENSUS_CBP_YEAR } from "./city-census.data";
 import { quote, costModel, bookSources, calibration } from "./pricing";
 import { stateFacts, permitFor, LUMBER_WORDS } from "./local";
@@ -293,69 +293,14 @@ function calibrationNote(trade: SeoTrade): string[] {
   ];
 }
 
-/** Rounded so a count doesn't read as more exact than it is: 7, 45, 230. */
-function aboutCount(n: number): number {
-  return n < 20 ? n : n < 100 ? Math.round(n / 5) * 5 : Math.round(n / 10) * 10;
-}
-/** A home value to the nearest $5,000 (under $500k) or $10,000. */
-const aboutValue = (v: number) => (v < 500_000 ? Math.round(v / 5000) * 5000 : Math.round(v / 10_000) * 10_000);
-const share = (x: number) => `${Math.round(x * 100)}%`;
-/** "Western Connecticut Planning Region" reads with "the". */
-const countyWords = (c: string) => (/Planning Region$/.test(c) ? `the ${c}` : c);
-
-/**
- * The Census facts of the city this work cares about (phase 2,
- * docs/seo-phase-2.md): how old the homes are, how they heat, how many are
- * houses of their own, what the job is next to a home's value, and how many
- * of the work's contractors the county has. Each sentence needs its field.
- */
+/** The city's Census paragraphs for this work (./census censusParagraphs): bucketed wording, set against the nearest city, in the work's own order. */
 function censusFacts(trade: SeoTrade, city: SeoCity, avg: number): CostFact[] {
-  const c = city.census;
-  if (!c) return [];
-  const out: CostFact[] = [];
-  const homes: string[] = [];
-  const t = trade.slug;
-  if ((t === "roof-replacement" || t === "siding-installation") && c.yearBuilt != null) {
-    const what = t === "roof-replacement" ? "most roofs there have been replaced at least once already" : "most of their walls have been re-sided or painted over at least once";
-    homes.push(`The median ${city.city} home was built in ${c.yearBuilt}${c.pre1980 != null ? `, and ${share(c.pre1980)} of its homes date from before 1980` : ""}; on houses that age, ${what}.`);
-  }
-  if (t === "house-painting" && c.pre1980 != null) {
-    homes.push(`${share(c.pre1980)} of ${city.city}'s homes were built before 1980${c.yearBuilt != null ? `; the median one in ${c.yearBuilt}` : ""}. In a home built before 1978, a painter who disturbs old paint must follow the EPA's lead-safe (RRP) rules — a certified renovator, containment and a careful cleanup — which adds time to the job.`);
-  }
-  if (t === "hvac-replacement" && c.heat?.gas != null && c.heat.electric != null) {
-    const extra = [c.heat.oil != null && c.heat.oil >= 0.05 ? `${share(c.heat.oil)} with fuel oil` : null, c.heat.propane != null && c.heat.propane >= 0.05 ? `${share(c.heat.propane)} with propane` : null].filter(Boolean);
-    homes.push(`${share(c.heat.gas)} of ${city.city}'s occupied homes heat with utility gas and ${share(c.heat.electric)} with electricity${extra.length ? `; ${extra.join(" and ")}` : ""}.`);
-    homes.push(
-      c.heat.gas > c.heat.electric
-        ? "So the usual job here pairs a new gas furnace with the air conditioner, and a heat pump is the switch some owners make."
-        : "So electric heat — a heat pump or an electric furnace with the air conditioner — is the usual system here.",
-    );
-  }
-  if (t !== "hvac-replacement" && t !== "house-painting" && c.singleFamily != null) {
-    const what = t === "fence-installation" || t === "deck-building" ? "the homes with a yard of their own" : "the homes with a roof and walls of their own";
-    homes.push(`${share(c.singleFamily)} of ${city.city}'s homes are single-family detached houses — ${what}${c.owners != null ? `; ${share(c.owners)} of homes are lived in by their owners` : ""}.`);
-  }
-  if (c.homeValue != null && c.homeValue > 0) {
-    const p = (avg / c.homeValue) * 100;
-    homes.push(`The median owner-occupied home in ${city.city} is valued at about ${usd(aboutValue(c.homeValue))}; the typical ${trade.lower} here, at ${usd(avg)}, comes to about ${p < 1 ? p.toFixed(1) : Math.round(p)}% of that.`);
-  }
-  if (homes.length) out.push({ title: `Homes in ${city.city}`, text: homes.join(" ") });
-
-  // A borough is a county itself; its Census name is the county's.
-  const county = c.county ?? (/ County$/.test(c.name) ? c.name : null);
-  if (county) {
-    const naics = CENSUS_NAICS[t];
-    const n = c.contractors[naics];
-    const where = c.county ? `${city.city} is in ${countyWords(county)}` : `In Census terms ${city.city} is ${county}`;
-    out.push({
-      title: `Contractors in ${county}`,
-      text:
-        n != null && n > 0
-          ? `${where}, where the Census Bureau counted about ${aboutCount(n)} ${CENSUS_NAICS_WORDS[naics]} with a payroll in ${CENSUS_CBP_YEAR} (County Business Patterns).${naics === "238990" ? ` That class holds ${t === "deck-building" ? "deck" : "fence"} builders along with other specialty trades, so only some of them do this work.` : ""}`
-          : `${where}.`,
-    });
-  }
-  return out;
+  if (!city.census) return [];
+  const n = nearbyCities(city, 1)[0];
+  const near = n?.census ? { city: n.city, census: n.census } : null;
+  const list = citiesInState(city.state).flatMap((o) => (o.slug !== city.slug && o.census ? [o.census] : []));
+  const peers = { stateName: city.stateName, list };
+  return censusParagraphs(city.census, { slug: city.slug, city: city.city, trade: trade.slug, lower: trade.lower, avg, usd, cbpYear: CENSUS_CBP_YEAR, near, peers });
 }
 
 function typicalAvgAt(trade: SeoTrade, factor: number): number {
