@@ -331,6 +331,22 @@ is the small calculator and the page-view event. The exception covers
 content-only public pages with no app state; anything with a signed-in
 shell keeps the switch.
 
+The homeowner portal `/home/*` (brief of 2026-10-30;
+[homeowner-portal-blueprint](src/components/v3/homeowner-portal-blueprint/portal.module.css))
+is written for a homeowner, not a contractor, and follows that brief where
+it differs from the dashboard: headings Inter 700 in sentence case (no
+uppercase titles, no serif), body Inter 13.5–14px at 500–600, kickers 11px
+600 tracked caps as plain text (never chips), white cards in a 1.5px
+`--hair` frame with square corners and no shadow, secondary buttons white in
+a 1.5px ink frame, one blue primary per block, square checkboxes. A project
+shows a six-step bar (Sent → Contractor matched → Quote received → Approved
+→ Scheduled → Done: reached steps ink with a square check, the current one
+blue, the rest grey; 3 × 2 on a phone, one row on a desk), one line "What
+happens next" and one main action. Words: "quote", "contractor"; no
+"matched"/"routing" on a button. It has no shell and renders on the server
+for someone holding only a link, so it takes the cost guides' one-tree rule
+(phone CSS by default, one `@media (min-width: 769px)` for two columns).
+
 ## Implementation and review
 
 Deck estimator (owner refinements, 2026-10-18): use one continuous scrolling
