@@ -1,9 +1,9 @@
-// CALENDAR, a section of /home/[key] (one page since 2026-10-31): what is coming, as a list — "Nov 4 ·
-// Site visit · Alder Peak Roofing" — with "Add to phone calendar" (the same
-// .ics as before); the planned projects with their months; "Planning
-// something for later? Put it on the calendar". A compact month grid only on
-// a desk, on the right. Plans moved here from the old "Plans" anchor: every
-// plan has a month and was already in the calendar and its .ics.
+// CALENDAR, a section of /home/[key] (one page since 2026-10-31; the side
+// column on a desk): what is coming, as a list — "Nov 5 · Install day ·
+// Bright Air" — with "Add to phone calendar" (the same .ics as before), then
+// the planned projects with their months and "Plan something for later",
+// folded so the column stays short. Plans moved here from the old "Plans"
+// anchor: every plan has a month and was already in the calendar and its .ics.
 import type { HomeDashboard } from "@/lib/home/portal";
 import { LocalTime } from "@/components/portal/live-time";
 import { Icon, Section } from "./portal-frame";
@@ -15,15 +15,6 @@ type Upcoming = { key: string; ymd: string; at: string | null; tz: string; title
 
 function ymdIn(iso: string, tz: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
-}
-
-function monthGrid(year: number, month: number): Array<string | null> {
-  const lead = new Date(Date.UTC(year, month, 1)).getUTCDay();
-  const days = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-  const cells: Array<string | null> = Array.from({ length: lead }, () => null);
-  for (let d = 1; d <= days; d++) cells.push(`${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
-  while (cells.length % 7) cells.push(null);
-  return cells;
 }
 
 export function CalendarSection({ h }: { h: HomeDashboard }) {
@@ -47,95 +38,55 @@ export function CalendarSection({ h }: { h: HomeDashboard }) {
   }
   const submitted = h.plans.filter((p) => p.status === "SUBMITTED" && p.token);
 
-  // The grid: this month and the next, every calendar day the dashboard knows (past ones grey).
-  const [ty, tm] = [Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1];
-  const byDay = new Map<string, "visit" | "plan" | "past">();
-  for (const it of h.calendar) {
-    const kind = it.kind === "plan" ? "plan" : it.kind === "visit" ? "visit" : "past";
-    if (!byDay.has(it.date) || kind === "visit") byDay.set(it.date, kind);
-  }
-  const months = [0, 1].map((i) => {
-    const d = new Date(Date.UTC(ty, tm + i, 1));
-    return { y: d.getUTCFullYear(), m: d.getUTCMonth(), label: d.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" }) };
-  });
-
   return (
     <Section id="calendar" kicker="Visits and plans" title="Calendar">
-      <div className={s.cols}>
-        <div className={s.col}>
-          <section className={s.card} aria-labelledby="up-title">
-            <div className={s.cardHead}>
-              <h3 id="up-title" className={s.h2}>Coming up</h3>
-              <a className={s.btnText} href={`${homeHref(h.key)}/calendar.ics`} data-ics><Icon id="cal" small />Add to phone calendar</a>
-            </div>
-            {upcoming.length === 0 ? (
-              <p className={s.muted}>Nothing on the calendar yet. Visits your contractor books and the projects you plan show up here.</p>
-            ) : (
-              <ul className={s.events}>
-                {upcoming.map((x) => {
-                  const date = new Date(`${x.ymd}T12:00:00Z`);
-                  return (
-                    <li key={x.key} className={s.event} data-upcoming>
-                      <span className={s.eventDate}>
-                        <b>{x.month ? date.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" }) : date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}</b>
-                        <span>{x.month ? date.getUTCFullYear() : date.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" })}</span>
-                      </span>
-                      <span className={s.eventBody}>
-                        {x.href ? <a className={s.rowLink} href={x.href}>{x.title}</a> : <span>{x.title}</span>}
-                        <span className={s.muted}>{x.at ? <><LocalTime iso={x.at} kind="time" tz={x.tz} /> · </> : x.month ? "Sometime in the month · " : ""}{x.who}</span>
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </section>
-
-          <section className={s.card} aria-labelledby="ahead-title" id="plan">
-            <h3 id="ahead-title" className={s.h2}>Planning something for later?</h3>
-            <p className={s.text}>Put it on the calendar. When the month comes, we remind you — and one tap gets you quotes.</p>
-            <PlanAheadForm homeKey={h.key} />
-          </section>
-
-          {planned.length > 0 && (
-            <section className={s.card} aria-labelledby="planned-title">
-              <h3 id="planned-title" className={s.h2}>Planned</h3>
-              <PlannedList homeKey={h.key} plans={planned} quotesHref={quotesHref} rangeHref={rangeHref} />
-              {submitted.length > 0 && (
-                <p className={s.muted}>
-                  Sent from here:{" "}
-                  {submitted.map((p, i) => (
-                    <span key={p.id}>{i > 0 ? ", " : ""}<a className={s.link} href={projectHref(h.key, p.token!)}>{p.title}</a></span>
-                  ))}
-                </p>
-              )}
-            </section>
-          )}
+      <section className={`${s.card} ${s.compact}`} aria-labelledby="up-title">
+        <div className={s.cardHead}>
+          <h3 id="up-title" className={s.h2}>Coming up</h3>
+          <a className={s.btnText} href={`${homeHref(h.key)}/calendar.ics`} data-ics><Icon id="cal" small />Add to phone calendar</a>
         </div>
+        {upcoming.length === 0 ? (
+          <p className={s.muted}>Nothing on the calendar yet. Visits your contractor books and the projects you plan show up here.</p>
+        ) : (
+          <ul className={s.events}>
+            {upcoming.map((x) => {
+              const date = new Date(`${x.ymd}T12:00:00Z`);
+              return (
+                <li key={x.key} className={s.event} data-upcoming>
+                  <span className={s.eventDate}>
+                    <b>{x.month ? date.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" }) : date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}</b>
+                    <span>{x.month ? date.getUTCFullYear() : date.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" })}</span>
+                  </span>
+                  <span className={s.eventBody}>
+                    {x.href ? <a className={s.rowLink} href={x.href}>{x.title}</a> : <span>{x.title}</span>}
+                    <span className={s.sub}>{x.at ? <><LocalTime iso={x.at} kind="time" tz={x.tz} /> · </> : x.month ? "Sometime in the month · " : ""}{x.who}</span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
 
-        <div className={`${s.col} ${s.month}`} aria-hidden="true">
-          <section className={s.card}>
-            {months.map((mo) => (
-              <div key={mo.label}>
-                <p className={s.monthName}>{mo.label}</p>
-                <div className={s.grid}>
-                  {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => <span key={i} className={s.dow}>{d}</span>)}
-                  {monthGrid(mo.y, mo.m).map((ymd, i) => {
-                    const kind = ymd ? byDay.get(ymd) : undefined;
-                    const cls = [s.day, !ymd ? s.dayPad : "", ymd === today ? s.dayToday : "", kind ? s.dayHas : ""].join(" ");
-                    return <span key={i} className={cls} data-kind={kind && ymd && ymd < today ? "past" : kind}>{ymd ? Number(ymd.slice(8, 10)) : ""}</span>;
-                  })}
-                </div>
-              </div>
+      <section className={`${s.card} ${s.compact}`} aria-labelledby="planned-title" id="plan">
+        <h3 id="planned-title" className={s.h2}>Planned</h3>
+        {planned.length > 0 && <PlannedList homeKey={h.key} plans={planned} quotesHref={quotesHref} rangeHref={rangeHref} />}
+        {submitted.length > 0 && (
+          <p className={s.sub}>
+            Sent from here:{" "}
+            {submitted.map((p, i) => (
+              <span key={p.id}>{i > 0 ? ", " : ""}<a className={s.link} href={projectHref(h.key, p.token!)}>{p.title}</a></span>
             ))}
-            <p className={`${s.muted} ${s.legend}`}>
-              <span><i data-kind="visit" />Visit</span>
-              <span><i data-kind="plan" />Planned</span>
-              <span><i data-kind="past" />Past</span>
-            </p>
-          </section>
-        </div>
-      </div>
+          </p>
+        )}
+        <details className={s.fold} open={planned.length === 0}>
+          <summary>Planning something for later?</summary>
+          <div className={s.foldBody}>
+            <p className={s.sub}>Put it on the calendar. When the month comes, we remind you — and one tap gets you quotes.</p>
+            <PlanAheadForm homeKey={h.key} />
+          </div>
+        </details>
+      </section>
     </Section>
   );
 }

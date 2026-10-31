@@ -131,32 +131,36 @@ export function PlannedList({ homeKey, plans, quotesHref, rangeHref }: { homeKey
 
   return (
     <>
-      <ul className={s.rows}>
+      <ul className={s.planList}>
         {plans.map((p) => (
-          <li key={p.id} className={s.row} data-plan>
-            <div className={s.rowHead}>
-              <p className={s.h3}>{p.title}</p>
-              <span className={s.num} style={{ fontWeight: 600 }}>{p.when}</span>
-            </div>
-            {p.estimate && <p className={s.text}><b className={s.num}>{p.estimate.range}</b> · {p.estimate.material} · a range, not a quote</p>}
-            {p.notes && !p.estimate && <p className={s.muted}>{p.notes}</p>}
-            <label className={s.field} style={{ maxWidth: 360 }}>
-              <span className={s.muted} style={{ fontWeight: 500 }}>
-                {p.remindAt ? `${p.reminded ? "Last nudge" : "Reminder"} by email ${remindOn(p.remindAt)}` : p.reminded ? "Reminded" : "No reminder"}
-              </span>
-              <select value={p.remindMode} disabled={busy} onChange={(e) => void change(p.id, { remind: e.target.value as RemindMode })} aria-label={`Remind me about ${p.title}`}>
-                {REMIND_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-              </select>
-            </label>
-            <div className={s.actions}>
-              {rangeHref[p.id] ? (
-                <a className={s.btnPrimary} href={rangeHref[p.id]}>Get quotes</a>
-              ) : (
-                <Link className={s.btnPrimary} href={quotesHref[p.id] as Route}>Get quotes now</Link>
-              )}
-              <button type="button" className={s.btnText} disabled={busy} onClick={() => void change(p.id, { status: "DONE" })}>Mark done</button>
-              <button type="button" className={s.btnText} disabled={busy} onClick={() => void change(p.id, { status: "DROPPED" })}>Remove</button>
-            </div>
+          <li key={p.id} data-plan>
+            <details className={`${s.fold} ${s.planRow}`}>
+              <summary>
+                <p className={s.h3}>{p.title}</p>
+                <span className={s.sub}>{p.when}</span>
+              </summary>
+              <div className={s.foldBody}>
+                {p.estimate && <p className={s.text}><b className={s.num}>{p.estimate.range}</b> · {p.estimate.material} · a range, not a quote</p>}
+                {p.notes && !p.estimate && <p className={s.muted}>{p.notes}</p>}
+                <label className={s.field} style={{ maxWidth: 360 }}>
+                  <span className={s.muted} style={{ fontWeight: 500 }}>
+                    {p.remindAt ? `${p.reminded ? "Last nudge" : "Reminder"} by email ${remindOn(p.remindAt)}` : p.reminded ? "Reminded" : "No reminder"}
+                  </span>
+                  <select value={p.remindMode} disabled={busy} onChange={(e) => void change(p.id, { remind: e.target.value as RemindMode })} aria-label={`Remind me about ${p.title}`}>
+                    {REMIND_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
+                </label>
+                <div className={s.actions}>
+                  {rangeHref[p.id] ? (
+                    <a className={s.btnPrimary} href={rangeHref[p.id]}>Get quotes</a>
+                  ) : (
+                    <Link className={s.btnPrimary} href={quotesHref[p.id] as Route}>Get quotes now</Link>
+                  )}
+                  <button type="button" className={s.btnText} disabled={busy} onClick={() => void change(p.id, { status: "DONE" })}>Mark done</button>
+                  <button type="button" className={s.btnText} disabled={busy} onClick={() => void change(p.id, { status: "DROPPED" })}>Remove</button>
+                </div>
+              </div>
+            </details>
           </li>
         ))}
       </ul>

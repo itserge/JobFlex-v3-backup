@@ -94,15 +94,15 @@ export function PortalFrame({ homeKey, house, tab, onePage = false, live = true,
   );
 }
 
-/** A section of the home page: its kicker and uppercase title on one rule, then its content. */
+/** A section of the home page: its uppercase title and kicker on one 40px rule, then its content. */
 export function Section({ id, kicker, title, children }: { id: string; kicker: string; title: string; children: ReactNode }) {
   return (
     <section id={id} className={s.section} aria-labelledby={`${id}-title`}>
       <div className={s.secHead}>
-        <p className={s.kicker}>{kicker}</p>
         <h2 id={`${id}-title`} className={s.secTitle}>{title}</h2>
+        <p className={s.kicker}>{kicker}</p>
       </div>
-      {children}
+      <div className={s.secBody}>{children}</div>
     </section>
   );
 }
