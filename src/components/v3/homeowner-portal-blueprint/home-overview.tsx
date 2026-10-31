@@ -120,6 +120,7 @@ export function ProjectCard({ p, h }: { p: RequestPortalView; h: HomeDashboard }
           </h3>
           {p.current && <p className={s.muted}>{p.current.org.name}</p>}
         </div>
+        <span className={s.stamp} data-tone={stage === 5 ? "emerald" : stage === 2 ? "accent" : stage === 0 ? "muted" : undefined}>{STEPS[stage]}</span>
       </div>
       <StatusTrack stage={stage} label={`${projectTitle(p)}: ${STEPS[stage]}`} />
       <p className={s.next} data-tone={next.tone}>
@@ -137,7 +138,7 @@ export function ProjectCard({ p, h }: { p: RequestPortalView; h: HomeDashboard }
         {next.action && (
           <a className={next.action.primary ? s.btnPrimary : s.btn} href={next.action.href}>{next.action.label}</a>
         )}
-        <Link className={s.btnText} href={page}>
+        <Link className={s.btn} href={page}>
           Open project
           <Icon id="arrow" small />
         </Link>

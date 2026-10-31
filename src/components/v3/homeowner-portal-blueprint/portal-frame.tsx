@@ -35,37 +35,46 @@ export function PortalFrame({ homeKey, house, tab, live = true, startCta = true,
     <div className={s.hp} data-nest data-home-portal>
       <Sprite />
       <header className={s.top}>
-        <div className={s.topIn}>
-          <div className={s.topRow}>
+        <div className={s.bar}>
+          <div className={s.barIn}>
             <Link className={s.brand} href={homeKey ? homeHref(homeKey) : "/"} aria-label="JobFlex Home">
-              <ProductMark />
-              <span className={s.brandWord}>JobFlex <span>Home</span></span>
+              <ProductMark tone="paper" />
+              <span className={s.brandText}>
+                <span className={s.brandWord}>JobFlex</span>
+                <span className={s.brandTag}>Homeowner portal</span>
+              </span>
             </Link>
+            {house && (
+              <p className={s.house}>
+                <Icon id="pin" small />
+                {house}
+              </p>
+            )}
             {homeKey && startCta && (
-              <Link className={s.btnPrimary} href={newProjectHref(homeKey)} data-home-start>
+              <Link className={`${s.btnPrimary} ${s.start}`} href={newProjectHref(homeKey)} aria-label="Start a project" data-home-start>
                 <Icon id="plus" small />
-                Start a project
+                Start<span className={s.startMore}> a project</span>
               </Link>
             )}
           </div>
-          {house && (
-            <p className={s.house}>
-              <Icon id="pin" small />
-              {house}
-            </p>
-          )}
-          {homeKey ? (
-            <nav className={s.nav} aria-label="Your home">
+        </div>
+        {homeKey && (
+          <nav className={s.tabs} aria-label="Your home">
+            <div className={s.tabsIn}>
               {TABS.map((t) => (
-                <Link key={t.id} className={s.navLink} href={`${homeHref(homeKey)}${t.path}` as Route} aria-current={tab === t.id ? "page" : undefined}>
+                <Link key={t.id} className={s.tab} href={`${homeHref(homeKey)}${t.path}` as Route} aria-current={tab === t.id ? "page" : undefined}>
                   {t.label}
                 </Link>
               ))}
-            </nav>
-          ) : (
-            <div style={{ height: 10 }} />
-          )}
-        </div>
+            </div>
+          </nav>
+        )}
+        {house && (
+          <p className={s.houseLine}>
+            <Icon id="pin" small />
+            {house}
+          </p>
+        )}
       </header>
       <main className={s.wrap}>{children}</main>
       <footer className={s.foot}>
@@ -84,7 +93,7 @@ export function PortalFrame({ homeKey, house, tab, live = true, startCta = true,
   );
 }
 
-/** The six-step bar: reached steps in ink with a square check, the step the project is on in blue, the rest grey. */
+/** The six-step rail: numbered squares — reached ones filled ink, the step the project is on blue, the rest outlined. */
 export function StatusTrack({ stage, label }: { stage: number; label: string }) {
   return (
     <ol className={s.track} aria-label={label}>
@@ -92,11 +101,7 @@ export function StatusTrack({ stage, label }: { stage: number; label: string }) 
         const state = i < stage ? "done" : i === stage ? "now" : "todo";
         return (
           <li key={st} className={s.trackStep} data-state={state} aria-current={state === "now" ? "step" : undefined}>
-            <span className={s.trackMark} aria-hidden="true">
-              {state !== "todo" && (
-                <svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
-              )}
-            </span>
+            <span className={s.trackMark} aria-hidden="true" />
             <span>
               {st}
               <span className={s.srOnly}>{state === "done" ? " — done" : state === "now" ? " — where it is now" : ""}</span>
