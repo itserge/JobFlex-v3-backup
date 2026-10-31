@@ -446,11 +446,6 @@ export function HomeownerWizard({ uid, prefill = null, house = false }: { uid: s
           defaultValue={desc}
           onChange={onDescInput}
         />
-        {/* Press and speak — the words land in the field as they are recognised,
-            as on the Smart Proposal (owner, 2026-09-21). The field is uncontrolled,
-            so the text goes in the way typing would and onDescInput still runs. */}
-        <DictateButton value={desc} onChange={(next) => setTextareaValue(descRef.current, next)} icon={<MicIcon />} label="Speak your project"
-          wrapClassName="dictate" buttonClassName="mic" onClassName="on" noteClassName="dictate-note" />
       </div>
       {chips(true)}
       {/* ONE PORTAL (2026-10-28): once the words point at an estimator, the way into it (lib/home/portalPrice). */}
@@ -476,6 +471,12 @@ export function HomeownerWizard({ uid, prefill = null, house = false }: { uid: s
           </svg>
           Photos &amp; video
         </button>
+        {/* Press and speak — the words land in the field as they are recognised,
+            as on the Smart Proposal (owner, 2026-09-21). The field is uncontrolled,
+            so the text goes in the way typing would and onDescInput still runs.
+            In the footer beside Photos since 2026-10-31, so the whole box fits the first screen. */}
+        <DictateButton value={desc} onChange={(next) => setTextareaValue(descRef.current, next)} icon={<MicIcon />} label="Speak your project"
+          wrapClassName="dictate" buttonClassName="mic" onClassName="on" noteClassName="dictate-note" />
         <button className="go go-refine" type="button" disabled={!canRefine} onClick={onRefine}>
           Continue
           <svg className="ic">

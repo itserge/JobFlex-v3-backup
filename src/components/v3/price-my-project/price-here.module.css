@@ -4,40 +4,41 @@
    for the tag and the one button. Selectors carry one class more than the roots' own `*`, `a`, `h2` and `svg` rules so
    those never win (the phone root zeroes every padding). */
 
-/* ── The choice (compact, owner 2026-10-30): true px, not the page's --s scale — the tiles are measured as drawn.
-   The name beside its icon (two lines at most, the icon's height), the one-line hint under both. Desk: five in a row,
-   100px tall. Phone: two to a row, the last across it, 84px tall. ── */
+/* ── The choice (compact, owner 2026-10-30; one row under the first screen's fold rule 2026-10-31): true px, not the
+   page's --s scale — the tiles are measured as drawn. A mono kicker over them; in each tile the name beside its icon
+   (two lines at most), the one-line hint under both. Desk: five in a row, 72px tall. Phone: two to a row, 64px tall,
+   the last across it as one 48px line (icon, name, hint). ── */
 section.choice { margin: 0 0 16px; }
-.choice .h { margin: 0; font-family: inherit; font-size: 18px; font-weight: 800; line-height: 1.2; letter-spacing: 0;
-  text-transform: uppercase; color: var(--ink, #0a0a0a); }
-.choice .sub { margin: 4px 0 0; font-size: 14px; line-height: 1.4; color: var(--ink-soft, #2a2a2a); }
+.choice .h { margin: 0; font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; font-weight: 700; line-height: 1.3;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--blueprint, #1854a0); }
 
-.choice .tiles { display: grid; grid-template-columns: repeat(var(--n, 5), minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
-.choice a.tile { position: relative; display: grid; grid-template-columns: 36px minmax(0, 1fr); grid-template-areas: "pic name" "hint hint";
-  align-content: center; align-items: center; column-gap: 8px; min-width: 0; min-height: 100px; padding: 11px 12px;
+.choice .tiles { display: grid; grid-template-columns: repeat(var(--n, 5), minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.choice a.tile { position: relative; display: grid; grid-template-columns: 30px minmax(0, 1fr); grid-template-areas: "pic name" "hint hint";
+  align-content: center; align-items: center; column-gap: 8px; min-width: 0; min-height: 72px; padding: 7px 10px;
   border: 1.5px solid var(--hair, rgba(10, 10, 10, 0.16)); border-radius: var(--radius, 2px); background: #fff;
   color: var(--ink, #0a0a0a); text-decoration: none; transition: border-color 0.15s ease; }
 .choice a.tile:hover { border-color: var(--ink, #0a0a0a); }
-.choice a.tileOn, .choice a.tileOn:hover { border: 2px solid var(--ink, #0a0a0a); padding: 10.5px 11.5px; }
+.choice a.tileOn, .choice a.tileOn:hover { border: 2px solid var(--ink, #0a0a0a); padding: 6.5px 9.5px; }
 .choice a.tile:focus-visible { outline: 2px solid var(--blueprint, #1854a0); outline-offset: 2px; }
-.choice .pic { grid-area: pic; display: grid; place-items: center; width: 36px; height: 36px;
+.choice .pic { grid-area: pic; display: grid; place-items: center; width: 30px; height: 30px;
   border: 1.5px solid var(--ink, #0a0a0a); border-radius: var(--radius, 2px); background: #fff; color: var(--blueprint, #1854a0); }
-.choice .pic svg { display: block; width: 28px; height: 28px; }
-.choice .name { grid-area: name; max-width: 100%; font-size: 15px; font-weight: 600; line-height: 1.2; color: var(--ink, #0a0a0a); overflow-wrap: anywhere; }
-.choice .hint { grid-area: hint; max-width: 100%; margin-top: 8px; font-size: 12px; font-weight: 400; line-height: 1.3; color: var(--muted, #555);
+.choice .pic svg { display: block; width: 24px; height: 24px; }
+.choice .name { grid-area: name; max-width: 100%; font-size: 15px; font-weight: 600; line-height: 1.15; color: var(--ink, #0a0a0a); overflow-wrap: anywhere; }
+.choice .hint { grid-area: hint; max-width: 100%; margin-top: 4px; font-size: 12px; font-weight: 400; line-height: 1.3; color: var(--muted, #555);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* The tile the words point at: the ink frame and a blue tag on its top edge. */
 .choice .tag { position: absolute; top: -9px; right: 8px; padding: 2px 6px; border-radius: var(--radius, 2px); background: var(--blueprint, #1854a0); color: #fff;
   font-size: 10px; font-weight: 800; line-height: 1.3; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
 
 @media (max-width: 768px) {
-  .choice .h { font-size: 16px; }
-  .choice .sub { font-size: 13px; }
-  .choice .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .choice a.tile { min-height: 84px; padding: 10px; }
-  .choice a.tileOn, .choice a.tileOn:hover { padding: 9.5px; }
-  .choice .hint { margin-top: 6px; }
-  .choice a.tile:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  section.choice { margin-bottom: 12px; }
+  .choice .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 6px; }
+  .choice a.tile { min-height: 64px; padding: 5px 10px; }
+  .choice a.tileOn, .choice a.tileOn:hover { padding: 4.5px 9.5px; }
+  .choice .name { font-size: 14px; line-height: 1.1; }
+  .choice a.tile:last-child:nth-child(odd) { grid-column: 1 / -1; grid-template-columns: 30px auto minmax(0, 1fr);
+    grid-template-areas: "pic name hint"; min-height: 48px; }
+  .choice a.tile:last-child:nth-child(odd) .hint { margin-top: 0; }
 }
 
 /* ── The estimator the words point at: one line on what it does, the button into it ── */

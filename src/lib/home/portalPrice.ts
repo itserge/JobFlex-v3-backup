@@ -62,9 +62,10 @@ export function movedPricePath(pathname: string): string | null {
   return null;
 }
 
-/** The portal's promise under the headline (desk and phone say the same) — only what the estimators on now do. */
+/** The portal's promise under the headline (desk and phone say the same) — only what the estimators on now do; two lines
+ *  on a desk (2026-10-31: the dashboard line is the proof cards' to say). */
 export function portalHeroSub(house: boolean): string {
   return house
-    ? "Write what you’re planning. Roofs, decks, fences, heating & cooling and remodels are priced for your house right here, in about a minute; anything else becomes a written scope. Then a local pro on JobFlex takes it — free, no account needed. Your own home dashboard comes with your first project."
-    : "Write what you’re planning. Roofs are priced for your house right here, in about a minute; anything else becomes a written scope a local pro on JobFlex can price — free, no account needed. Your own home dashboard comes with your first project.";
+    ? "Roofs, decks, fences, heating & cooling and remodels are priced for your house in about a minute. Then a local pro on JobFlex takes it — free, no account needed."
+    : "Roofs are priced for your house in about a minute; anything else becomes a written scope a local pro on JobFlex can price — free, no account needed.";
 }

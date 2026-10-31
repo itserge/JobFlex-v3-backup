@@ -384,7 +384,7 @@ body:has(.jf-mobile-homeowner)::before { content: none; }
    ============================================================ */
 .jf-mobile-homeowner .hero {
   position: relative;
-  padding: calc(26px * var(--s)) var(--gutter) calc(24px * var(--s));
+  padding: 24px var(--gutter) calc(24px * var(--s));
   border-bottom: var(--border);
 }
 .jf-mobile-homeowner .hero-in { width: var(--col); margin: 0 auto; }
@@ -412,8 +412,10 @@ body:has(.jf-mobile-homeowner)::before { content: none; }
    viewport by ~calc(14px * var(--s)) once the inverse plate's padding is counted. Dropped, and
    the plate's horizontal padding trimmed calc(13px * var(--s)) → calc(9px * var(--s)), so the line wraps
    naturally instead of pushing the document sideways. */
+/* First screen (2026-10-31), true px: badge 24 under the bar → 16 → H1 → 16 → four-line lead (15/1.5) → 20 → the
+   tiles' kicker → tiles → 12 → the box, whose head starts by y=560 at 390×844. */
 .jf-mobile-homeowner .h1 {
-  margin-top: calc(20px * var(--s));
+  margin-top: 16px;
   font-size: clamp(calc(29px * var(--s)), 8.6vw, calc(46px * var(--s)));
   font-weight: 900;
   letter-spacing: -0.045em;
@@ -429,11 +431,11 @@ body:has(.jf-mobile-homeowner)::before { content: none; }
   color: var(--paper);
 }
 .jf-mobile-homeowner .h1-sub {
-  margin-top: calc(14px * var(--s));
+  margin-top: 16px;
   max-width: 42ch;
-  font-size: calc(14.5px * var(--s));
+  font-size: 15px;
   font-weight: 500;
-  line-height: 1.6;
+  line-height: 1.5;
   color: var(--ink-soft);
 }
 
@@ -444,7 +446,7 @@ body:has(.jf-mobile-homeowner)::before { content: none; }
    house treatment here rather than carried across, at the standardised calc(3px * var(--s))
    depth against the deeper --shadow-deep alpha so it still reads as the one
    elevated object on the page.                                             */
-.jf-mobile-homeowner .win-wrap { width: var(--col); margin: calc(24px * var(--s)) auto 0; }
+.jf-mobile-homeowner .win-wrap { width: var(--col); margin: 20px auto 0; }
 .jf-mobile-homeowner .win {
   position: relative;
   border: var(--border);
@@ -546,10 +548,14 @@ body:has(.jf-mobile-homeowner)::before { content: none; }
 
 /* calc(16px * var(--s)) is a hard floor on every text control: below it iOS Safari zooms the
    viewport on focus and the visitor has to pinch back out. */
+/* Three lines at rest (2026-10-31: the box's head and first lines in the first screen); the old height once the
+   visitor is in it, and longer with the words where the browser sizes a field to its content (never to the
+   typewriter's placeholder, so the field stays still). */
 .jf-mobile-homeowner .desc {
   display: block;
   width: 100%;
-  min-height: calc(132px * var(--s));
+  min-height: calc(3lh + 19px * var(--s));
+  max-height: calc(12lh + 19px * var(--s));
   resize: none;
   border: none;
   background: transparent;
@@ -559,6 +565,8 @@ body:has(.jf-mobile-homeowner)::before { content: none; }
   line-height: 1.6;
   color: var(--ink);
 }
+.jf-mobile-homeowner .desc:focus { min-height: calc(132px * var(--s)); }
+.jf-mobile-homeowner .desc:focus, .jf-mobile-homeowner .desc:not(:placeholder-shown) { field-sizing: content; }
 .jf-mobile-homeowner .desc::placeholder { color: var(--muted); }
 /* The typewriter's fades (use-placeholder-cycle.ts): opacity only, so the
    field never moves; still under reduced motion. */

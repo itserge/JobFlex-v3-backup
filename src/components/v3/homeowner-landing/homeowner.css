@@ -191,9 +191,12 @@ body:has(.jf-homeowner-landing)::before { content: none; }
    2. HERO — центрированная колонка с мастером
       (centred column holding the wizard)
    ============================================================ */
-.jf-homeowner-landing .hero { position: relative; padding: clamp(calc(30px * var(--s)), 5.4vh, calc(62px * var(--s))) clamp(calc(18px * var(--s)), 4vw, calc(54px * var(--s))) clamp(calc(20px * var(--s)), 3vh, calc(34px * var(--s)));
+/* First screen (2026-10-31): the whole describe box — ink header to Continue — fits 1440×900 and 1366×768 at the top.
+   The rhythm in true px: badge 40 under the nav → 20 → H1 (64) → 16 → two-line lead → 28 → the tiles' kicker → tiles
+   → 16 → the box (three-line field, 10px footer padding): Continue ends at y≈762 on both. */
+.jf-homeowner-landing .hero { position: relative; padding: 40px clamp(calc(18px * var(--s)), 4vw, calc(54px * var(--s))) clamp(calc(20px * var(--s)), 3vh, calc(34px * var(--s)));
   border-bottom: var(--border); min-height: calc(100vh - 58px);
-  display: flex; flex-direction: column; justify-content: center; }
+  display: flex; flex-direction: column; justify-content: flex-start; }
 .jf-homeowner-landing .hero > * { width: 100%; }
 .jf-homeowner-landing .hero-in { max-width: calc(1180px * var(--s)); margin: 0 auto; }
 .jf-homeowner-landing .hero-top { display: flex; flex-direction: column; align-items: center; text-align: center; }
@@ -201,12 +204,12 @@ body:has(.jf-homeowner-landing)::before { content: none; }
   border: var(--border); border-radius: var(--radius); background: var(--success-soft);
   box-shadow: calc(3px * var(--s)) calc(3px * var(--s)) 0 var(--shadow);
   font-size: calc(10px * var(--s)); font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase; }
-.jf-homeowner-landing .h1 { margin-top: calc(22px * var(--s)); font-size: clamp(calc(31px * var(--s)), 5.6vw, calc(78px * var(--s))); font-weight: 900;
+.jf-homeowner-landing .h1 { margin-top: 20px; font-size: clamp(calc(31px * var(--s)), 5.6vw, 64px); font-weight: 900;
   letter-spacing: -0.05em; line-height: 0.98; text-transform: uppercase; text-wrap: balance; }
 .jf-homeowner-landing .h1 .inv { display: inline-block; padding: 0 calc(13px * var(--s)) calc(3px * var(--s)); border-radius: var(--radius);
   background: var(--ink); color: var(--paper); }
 .jf-homeowner-landing .h1-nw { white-space: nowrap; }
-.jf-homeowner-landing .h1-sub { margin-top: calc(16px * var(--s)); max-width: 46ch; font-size: calc(16px * var(--s)); font-weight: 500;
+.jf-homeowner-landing .h1-sub { margin-top: 16px; max-width: calc(760px * var(--s)); font-size: calc(16px * var(--s)); font-weight: 500;
   line-height: 1.6; color: var(--ink-soft); }
 
 /* ---- окно мастера ---- (the wizard window) */
@@ -219,7 +222,7 @@ body:has(.jf-homeowner-landing)::before { content: none; }
 
 /* окно мастера — консоль: чернильная шапка, небесный прогресс
    (wizard window as a console: ink header, sky progress) */
-.jf-homeowner-landing .win-wrap { position: relative; max-width: calc(760px * var(--s)); margin: clamp(calc(24px * var(--s)), 4vh, calc(46px * var(--s))) auto 0; }
+.jf-homeowner-landing .win-wrap { position: relative; max-width: calc(760px * var(--s)); margin: 28px auto 0; }
 .jf-homeowner-landing .win-head { display: flex; align-items: center; justify-content: space-between; gap: calc(14px * var(--s));
   padding: calc(13px * var(--s)) calc(20px * var(--s)); border-bottom: var(--border-thin);
   background: var(--ink); border-bottom-color: var(--ink); color: var(--paper); }
@@ -247,9 +250,14 @@ body:has(.jf-homeowner-landing)::before { content: none; }
 .jf-homeowner-landing .think-t { font-family: var(--font-mono); font-size: calc(11px * var(--s)); font-weight: 600;
   letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
 
-.jf-homeowner-landing .desc { display: block; width: 100%; min-height: calc(138px * var(--s)); resize: none; border: none;
+/* Three lines at rest (2026-10-31, the first-screen fit); five once the visitor is in it, and longer with the words
+   where the browser sizes a field to its content — never to the typewriter's placeholder, so the field stays still. */
+.jf-homeowner-landing .desc { display: block; width: 100%; min-height: calc(3lh + 24px * var(--s)); max-height: calc(12lh + 24px * var(--s));
+  resize: none; border: none;
   background: transparent; outline: none; padding: calc(18px * var(--s)) calc(20px * var(--s)) calc(6px * var(--s));
-  font-size: calc(16px * var(--s)); line-height: 1.6; color: var(--ink); }
+  font-size: calc(16px * var(--s)); line-height: 1.6; color: var(--ink); transition: min-height .2s var(--ease-out); }
+.jf-homeowner-landing .desc:focus { min-height: calc(138px * var(--s)); }
+.jf-homeowner-landing .desc:focus, .jf-homeowner-landing .desc:not(:placeholder-shown) { field-sizing: content; }
 .jf-homeowner-landing .desc::placeholder { color: var(--muted); }
 /* The typewriter's fades (use-placeholder-cycle.ts): opacity only, so the
    field never moves; still under reduced motion. */
@@ -283,7 +291,7 @@ body:has(.jf-homeowner-landing)::before { content: none; }
 .jf-homeowner-landing .done-files .ups { padding: 0; justify-content: center; }
 
 .jf-homeowner-landing .tools { display: flex; flex-wrap: wrap; align-items: center; gap: calc(9px * var(--s));
-  padding: calc(13px * var(--s)) calc(20px * var(--s)); border-top: var(--border-thin); }
+  padding: 10px calc(20px * var(--s)); border-top: var(--border-thin); }
 .jf-homeowner-landing .tool { display: inline-flex; align-items: center; gap: calc(8px * var(--s)); height: calc(40px * var(--s)); padding: 0 calc(14px * var(--s));
   border: var(--border-thin); border-radius: var(--radius); background: var(--paper);
   font-size: calc(11px * var(--s)); font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
@@ -824,14 +832,15 @@ body:has(.jf-homeowner-landing)::before { content: none; }
   filter: brightness(0) invert(1);
 }
 
-/* Press and speak, under the description (2026-09-21) — the Smart Proposal's
-   microphone in this page's kit. Hidden where the browser cannot listen. */
-.jf-homeowner-landing .dictate { display: flex; align-items: center; flex-wrap: wrap; gap: calc(8px * var(--s)) calc(12px * var(--s)); margin: calc(6px * var(--s)) calc(20px * var(--s)) calc(8px * var(--s)); }
-.jf-homeowner-landing .mic { display: inline-flex; align-items: center; gap: calc(8px * var(--s)); min-height: calc(36px * var(--s)); padding: 0 calc(12px * var(--s)); border: calc(1.5px * var(--s)) solid var(--ink); border-radius: var(--radius); background: #fff; font-family: var(--font-mono); font-size: calc(11px * var(--s)); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink); cursor: pointer; }
+/* Press and speak (2026-09-21) — the Smart Proposal's microphone in this page's kit. Hidden where the browser cannot
+   listen. In the footer bar beside Photos since 2026-10-31: the button is one of the row's items, the note a row of its
+   own under it. */
+.jf-homeowner-landing .dictate { display: contents; }
+.jf-homeowner-landing .mic { display: inline-flex; align-items: center; gap: calc(8px * var(--s)); min-height: calc(36px * var(--s)); height: calc(40px * var(--s)); padding: 0 calc(12px * var(--s)); border: calc(1.5px * var(--s)) solid var(--ink); border-radius: var(--radius); background: #fff; font-family: var(--font-mono); font-size: calc(11px * var(--s)); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink); cursor: pointer; }
 .jf-homeowner-landing .mic:hover { background: var(--ink); color: var(--paper); }
 .jf-homeowner-landing .mic .ic { width: calc(15px * var(--s)); height: calc(15px * var(--s)); }
 .jf-homeowner-landing .mic.on { border-color: var(--danger, #a83232); color: var(--danger, #a83232); background: #fff; }
 .jf-homeowner-landing .mic.on .ic { animation: jfho-mic-pulse 1.2s ease-in-out infinite; }
-.jf-homeowner-landing .dictate-note { flex: 1 1 100%; font-size: calc(12.5px * var(--s)); color: var(--danger, #a83232); }
+.jf-homeowner-landing .dictate-note { order: 9; flex: 1 1 100%; font-size: calc(12.5px * var(--s)); color: var(--danger, #a83232); }
 @keyframes jfho-mic-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.25); opacity: 0.55; } }
 @media (prefers-reduced-motion: reduce) { .jf-homeowner-landing .mic.on .ic { animation: none; } }

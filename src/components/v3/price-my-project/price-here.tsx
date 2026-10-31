@@ -35,13 +35,12 @@ function useLit(desc: string, house: boolean) {
   return { cards, lit, pick };
 }
 
-/** The choice over the describe box: heading, one line, a tile per estimator. */
+/** The choice over the describe box: a kicker and a tile per estimator (the tiles' hints say what each does). */
 export function PriceChoice({ desc, house }: { desc: string; house: boolean }) {
   const { cards, lit, pick } = useLit(desc, house);
   return (
     <section className={s.choice} aria-labelledby="price-choice-h" data-price-here={lit ? lit.trade : ""}>
       <h2 className={s.h} id="price-choice-h">What are you planning?</h2>
-      <p className={s.sub}>Pick one and we’ll price it in about a minute, or just describe it below.</p>
       <div className={s.tiles} style={{ "--n": cards.length } as CSSProperties}>
         {cards.map((c) => {
           const on = lit?.key === c.key;
