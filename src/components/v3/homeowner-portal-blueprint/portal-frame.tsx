@@ -107,7 +107,10 @@ export function Section({ id, kicker, title, children }: { id: string; kicker: s
   );
 }
 
-/** The six-step rail: numbered squares — reached ones filled ink, the step the project is on blue, the rest outlined. */
+/** The rail's words: one short word a step, so no label wraps (the stamp and the screen reader keep the full STEPS). */
+const RAIL = ["Sent", "Matched", "Quote", "Approved", "Scheduled", "Done"] as const;
+
+/** The six-step rail: numbered squares on a rule — reached ones filled ink, the step the project is on blue, the rest outlined. */
 export function StatusTrack({ stage, label }: { stage: number; label: string }) {
   return (
     <ol className={s.track} aria-label={label}>
@@ -116,10 +119,8 @@ export function StatusTrack({ stage, label }: { stage: number; label: string }) 
         return (
           <li key={st} className={s.trackStep} data-state={state} aria-current={state === "now" ? "step" : undefined}>
             <span className={s.trackMark} aria-hidden="true" />
-            <span>
-              {st}
-              <span className={s.srOnly}>{state === "done" ? " — done" : state === "now" ? " — where it is now" : ""}</span>
-            </span>
+            <span aria-hidden="true">{RAIL[i]}</span>
+            <span className={s.srOnly}>{st}{state === "done" ? " — done" : state === "now" ? " — where it is now" : ""}</span>
           </li>
         );
       })}

@@ -96,7 +96,7 @@ export function nextStep(p: RequestPortalView, h: Pick<HomeDashboard, "key" | "f
   }
   if (asks.length > 0) {
     const a = asks[0];
-    return { text: `${a.orgName} asked for photos${a.note ? `: “${a.note}”` : ""}.`, visit: null, tone: "amber", action: { label: "Add photos", href: `${page}#files`, primary: true } };
+    return { text: `${a.orgName} asked for photos${a.note ? `: “${a.note}”` : ""}.`, visit: null, tone: "amber", action: { label: "Add photos", href: `${page}#files`, primary: false } };
   }
 
   const stage = stageOf(p);

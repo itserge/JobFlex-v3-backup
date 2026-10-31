@@ -17,7 +17,7 @@
   --hair: var(--ink-line);
   --sheet: var(--paper-deep);
   --hp-pad: 16px;
-  --hp-card-pad: 16px;
+  --hp-card-pad: 20px;
   --hp-btn-h: 44px;
   min-height: 100vh;
   /* The body already draws the drafting grid on --paper (globals.css); the
@@ -53,7 +53,7 @@
 .brand { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; color: var(--paper); text-decoration: none; --pmark-h: 22px; }
 .brandText { display: grid; gap: 3px; }
 .brandWord { font-size: 18px; font-weight: 900; letter-spacing: -0.02em; line-height: 1; white-space: nowrap; }
-.brandTag { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.16em; line-height: 1; text-transform: uppercase; color: var(--paper); opacity: 0.72; white-space: nowrap; }
+.brandTag { font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.16em; line-height: 1; text-transform: uppercase; color: var(--paper); opacity: 0.72; white-space: nowrap; }
 .house { display: none; }
 .bar .start { margin-left: auto; padding: 0 14px; gap: 0; }
 .start svg { margin-right: 8px; }
@@ -71,14 +71,21 @@
 .tab[aria-current] { color: var(--ink); }
 .tab[aria-current]::after { content: ""; position: absolute; left: var(--tab-x); right: var(--tab-x); bottom: 0; height: 2px; background: var(--ink); }
 
-/* ── a section of the home page: title + kicker on one 40px rule, 24px above, 12px below ── */
-.section { display: grid; gap: 12px; min-width: 0; padding-top: 8px; scroll-margin-top: 60px; }
-.secHead { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; min-height: 40px; border-bottom: 2px solid var(--ink); }
+/* ── a section of the home page: title + kicker on one 44px rule, 32px above, 16px below ── */
+.section { display: grid; gap: 16px; min-width: 0; padding-top: 16px; scroll-margin-top: 60px; }
+.secHead { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; min-height: 44px; border-bottom: 2px solid var(--ink); }
 .secTitle { font-family: var(--font-display); font-size: 20px; font-weight: 900; line-height: 1.05; letter-spacing: -0.01em; text-transform: uppercase; }
-.secBody { display: grid; gap: 12px; min-width: 0; }
-/* Details folds on a phone; the button only shows there (FoldSection). */
+.secBody { display: grid; gap: 16px; min-width: 0; }
+
+/* ── the side cards (Calendar, Details): one card each, the title row is the head ── */
+.sideCard { --hp-card-pad: 16px; gap: 12px; font-size: 14px; scroll-margin-top: 60px; }
+.sideBody { display: grid; gap: 12px; min-width: 0; }
+.sideCard .kicker { font-size: 12px; }
+.sideGroup { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--hair); }
+/* Details folds on a phone; the Show/Hide button only shows there (SideCard). */
 .foldBtn { margin-left: auto; min-height: 44px; padding: 0 2px; border: 0; background: none; color: var(--ink); font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 1.5px; cursor: pointer; }
-.section[data-fold="closed"] > .secBody { display: none; }
+.sideCard[data-fold="closed"] > .sideBody { display: none; }
+.sideCard[data-fold="closed"] > .cardHead:first-child { margin-bottom: calc(var(--hp-card-pad) * -1 + 4px); border-bottom: 0; }
 
 /* ── the home sheet: one column on a phone (house → projects → calendar → contractors → details),
       two on a desk ≥1024px — main 1fr, a sticky side column 360px ── */
@@ -110,7 +117,7 @@
 .h3 { font-size: 14px; font-weight: 800; line-height: 1.3; letter-spacing: 0.04em; }
 .text { color: var(--ink-soft); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
 .muted { color: var(--ink-muted); font-size: 13px; line-height: 1.45; }
-.sub { color: var(--ink-muted); font-size: 12px; font-weight: 500; line-height: 1.45; overflow-wrap: anywhere; }
+.sub { color: var(--ink-muted); font-size: 13px; font-weight: 500; line-height: 1.45; overflow-wrap: anywhere; }
 .inlineLink { color: inherit; text-decoration: underline; text-decoration-color: var(--ink-faint); text-underline-offset: 2px; }
 .inlineLink:hover { color: var(--accent); text-decoration-color: currentColor; }
 .num { font-variant-numeric: tabular-nums; }
@@ -118,7 +125,7 @@
 .link:hover { color: var(--accent); }
 
 /* ── panels: white, an ink frame, square, no shadow ── */
-.card { display: grid; gap: 10px; min-width: 0; padding: var(--hp-card-pad); background: var(--sheet); border: var(--frame); border-radius: 0; }
+.card { display: grid; gap: 12px; min-width: 0; padding: var(--hp-card-pad); background: var(--sheet); border: var(--frame); border-radius: 0; }
 .cardHead { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
 .cardHead > :first-child { min-width: 0; }
 /* The dashboard card pattern: the title row (title left, a card action right) on a 1px rule across the card. */
@@ -157,33 +164,32 @@
 .contact { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .contact .btn { padding: 0 6px; }
 
-/* ── the home card: address left; facts and the two actions right (one row on a desk) ── */
-.homeCard { gap: 12px; padding: 20px; }
-.homeTitle { display: grid; gap: 4px; min-width: 0; }
-.homeCard .h1 { font-size: 22px; }
-.homeSide { display: grid; gap: 8px; justify-items: start; }
-.homeFacts { display: flex; flex-wrap: wrap; gap: 2px 6px; color: var(--ink-soft); font-size: 13px; font-weight: 500; }
-.homeFacts b { font-weight: 800; color: var(--ink); }
+/* ── the home card: welcome, the address with the two actions on its row, then the facts ── */
+.homeCard { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "kicker" "addr" "facts" "acts"; gap: 6px; padding: 20px; }
+.homeKicker { grid-area: kicker; }
+.homeCard .homeAddress { grid-area: addr; font-size: 22px; }
+.homeFacts { grid-area: facts; color: var(--ink-muted); font-size: 14px; font-weight: 500; }
+.homeActions { grid-area: acts; margin-top: 8px; }
 
 /* ── needs ── */
 .needRow { display: flex; align-items: center; justify-content: space-between; gap: 10px 14px; flex-wrap: wrap; padding: 12px 0; border-top: 1px solid var(--hair); }
 .needRow:first-of-type { border-top: 0; padding-top: 0; }
 .needRow > :first-child { flex: 1 1 220px; min-width: 0; }
 
-/* ── a project card: where/when + status · title · contractor · the rail beside the next step; actions only when there are any ── */
-.project { gap: 8px; }
-.projectHead { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; min-width: 0; }
+/* ── a project card: four rows, full width — where/when + status · title · contractor · the step rail · the next step and its action ── */
+.project { gap: 12px; }
+.projectHead { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; min-height: 32px; min-width: 0; margin-top: -4px; }
 .projectHead .kicker { min-width: 0; }
-.projectTitle { font-family: var(--font-display); font-size: 18px; font-weight: 900; line-height: 1.2; text-transform: uppercase; overflow-wrap: anywhere; }
+.projectTitle { font-family: var(--font-display); font-size: 20px; font-weight: 900; line-height: 1.2; text-transform: uppercase; overflow-wrap: anywhere; }
 .projectTitle a { text-decoration: none; }
 .projectTitle a:hover { color: var(--accent); }
-.projectWho { color: var(--ink-muted); font-family: var(--font-sans); font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none; }
-.projectBody { display: grid; gap: 10px; min-width: 0; padding-top: 2px; }
-.nextLine { align-self: start; padding: 6px 10px; background: var(--paper); border-left: 3px solid var(--ink); color: var(--ink); font-size: 13px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
-.nextLine b { margin-right: 6px; color: var(--accent); font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; }
-.nextLine[data-tone="amber"] { border-left-color: var(--amber); }
-.nextLine[data-tone="emerald"] { border-left-color: var(--emerald); }
-.openLink { display: inline-flex; align-items: center; gap: 4px; min-height: var(--hp-btn-h); margin-left: auto; color: var(--ink); font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1.5px; white-space: nowrap; }
+.projectWho { color: var(--ink-muted); font-family: var(--font-sans); font-size: 14px; font-weight: 600; letter-spacing: 0; text-transform: none; }
+/* "Next:" and one sentence; a phone lets it wrap (no pointer to read a title), a desk keeps it to one line. */
+.nextLine { min-width: 0; color: var(--ink); font-size: 14px; font-weight: 500; line-height: 1.45; overflow-wrap: anywhere; }
+.nextLine b { margin-right: 4px; color: var(--accent); font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; }
+.projectActs { display: grid; justify-items: start; gap: 4px; }
+.projectActs .btn, .projectActs .btnPrimary { width: 100%; }
+.openLink { display: inline-flex; align-items: center; gap: 4px; min-height: var(--hp-btn-h); color: var(--ink); font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1.5px; white-space: nowrap; }
 .openLink:hover { color: var(--accent); }
 
 /* ── finished projects: a "Done (n)" rule, then one 48px row each that opens ── */
@@ -198,7 +204,7 @@
 .doneRow .openLink { margin-left: 0; }
 .doneTitle { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .doneTitle b { font-size: 14px; font-weight: 900; letter-spacing: 0.02em; text-transform: uppercase; }
-.doneBody { display: grid; gap: 10px; padding: 4px var(--hp-card-pad) var(--hp-card-pad); }
+.doneBody { display: grid; gap: 12px; padding: 4px var(--hp-card-pad) var(--hp-card-pad); }
 
 /* The Blueprint note: a left ink rule on the paper (the project page). */
 .next { display: grid; gap: 4px; padding: 12px 14px; background: var(--paper); border-left: 3px solid var(--ink); }
@@ -206,29 +212,30 @@
 .next span { color: var(--ink); font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 .next[data-tone="amber"] { border-left-color: var(--amber); }
 .next[data-tone="emerald"] { border-left-color: var(--emerald); }
-.projectFoot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
-.projectFoot .btn, .projectFoot .btnPrimary { padding: 0 12px; letter-spacing: 0.06em; }
+.projectFoot { display: grid; gap: 8px; min-width: 0; }
 
 /* ── status stamps: near-square, Inter 800 caps, a semantic frame and soft fill ── */
-.stamp { display: inline-flex; align-items: center; gap: 6px; min-height: 22px; padding: 2px 7px; border: var(--frame-thin); border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); font-size: 10.5px; font-weight: 800; letter-spacing: 0.1em; line-height: 1.1; text-transform: uppercase; white-space: nowrap; flex: none; }
+.stamp { display: inline-flex; align-items: center; gap: 6px; min-height: 22px; padding: 2px 7px; border: var(--frame-thin); border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); font-size: 11px; font-weight: 800; letter-spacing: 0.1em; line-height: 1.1; text-transform: uppercase; white-space: nowrap; flex: none; }
 .stamp[data-tone="accent"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
 .stamp[data-tone="emerald"] { border-color: var(--emerald); background: rgba(58, 125, 68, 0.08); color: #2c6335; }
 .stamp[data-tone="amber"] { border-color: var(--amber); background: rgba(184, 132, 32, 0.08); color: #7a5612; }
 .stamp[data-tone="rose"] { border-color: var(--rose); background: rgba(168, 50, 50, 0.08); color: var(--rose); }
 .stamp[data-tone="muted"] { border-color: var(--ink-faint); background: rgba(10, 10, 10, 0.04); color: var(--ink-muted); }
 
-/* ── the step rail: numbered squares on a 1px rule, labels under.
-      3 × 2 on a phone (the labels stay readable), one row of six on a desk. ── */
-.track { --sq: 20px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 10px; counter-reset: hp-step; }
-.trackStep { position: relative; display: grid; justify-items: start; gap: 4px; padding-right: 6px; color: var(--ink-muted); font-size: 11px; font-weight: 600; line-height: 1.25; counter-increment: hp-step; }
+/* ── the step rail: six numbered 22px squares joined by a rule, one-word labels on one line.
+      A phone scrolls the row sideways; a desk spreads it across the card. ── */
+.track { --sq: 22px; display: flex; overflow-x: auto; scrollbar-width: none; counter-reset: hp-step; }
+.track::-webkit-scrollbar { display: none; }
+.trackStep { position: relative; flex: 1 0 76px; display: grid; justify-items: start; gap: 6px; padding-right: 8px; color: var(--ink-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; line-height: 1.2; text-transform: uppercase; white-space: nowrap; counter-increment: hp-step; }
 .trackStep::before { content: ""; position: absolute; top: calc(var(--sq) / 2); left: var(--sq); right: 0; border-top: 1px solid var(--ink-faint); }
-.trackStep:nth-child(3n)::before { display: none; }
+.trackStep:last-child { flex: 0 0 auto; padding-right: 0; }
+.trackStep:last-child::before { display: none; }
 .trackMark { position: relative; z-index: 1; display: grid; place-items: center; width: var(--sq); height: var(--sq); border: var(--frame-thin); background: var(--sheet); color: var(--ink); font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
 .trackMark::before { content: counter(hp-step); }
 .trackStep[data-state="done"] { color: var(--ink); }
 .trackStep[data-state="done"]::before { border-top-color: var(--ink); }
 .trackStep[data-state="done"] .trackMark { background: var(--ink); color: var(--paper-deep); }
-.trackStep[data-state="now"] { color: var(--accent); font-weight: 800; }
+.trackStep[data-state="now"] { color: var(--accent); font-weight: 700; }
 .trackStep[data-state="now"] .trackMark { border-color: var(--accent); background: var(--accent); color: var(--paper-deep); }
 
 /* ── facts: a definition grid — mono caps label, value; stacked on a phone, two columns on a desk ── */
@@ -240,13 +247,16 @@
 
 /* ── documents: icon · title over who and when · a square open/download ── */
 .docs { display: grid; }
-.doc { display: grid; grid-template-columns: 18px minmax(0, 1fr) 44px; align-items: center; gap: 10px; min-height: 48px; padding: 2px 0; border-top: 1px solid var(--hair); }
+.doc { position: relative; display: grid; grid-template-columns: 18px minmax(0, 1fr) 44px; align-items: center; gap: 10px; min-height: 44px; padding: 2px 0; border-top: 1px solid var(--hair); }
 .doc:first-child { border-top: 0; padding-top: 0; }
 .docText { display: grid; gap: 1px; min-width: 0; }
-.docName { display: flex; align-items: center; min-height: 44px; margin: -12px 0 -12px; color: var(--ink); font-size: 13.5px; font-weight: 700; line-height: 1.3; text-decoration: none; overflow-wrap: anywhere; }
-.docName:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+/* The title is one line (the whole name in its title); its link covers the row, so the row is the target. */
+.docTitle { display: block; overflow: hidden; color: var(--ink); font-size: 14px; font-weight: 700; line-height: 1.35; white-space: nowrap; text-overflow: ellipsis; }
+.docName { color: inherit; text-decoration: none; }
+.docName::after { content: ""; position: absolute; inset: 0; }
+.doc:hover .docName { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
 /* A 36px square drawn inside a 44px target. */
-.docGo { display: grid; place-items: center; width: 44px; height: 44px; color: var(--ink); }
+.docGo { position: relative; z-index: 1; display: grid; place-items: center; width: 44px; height: 44px; color: var(--ink); }
 .docGo > span { display: grid; place-items: center; width: 36px; height: 36px; border: var(--frame-thin); background: var(--sheet); transition: transform 0.12s var(--ease-out), box-shadow 0.12s var(--ease-out); }
 .docGo:hover > span { transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
 
@@ -267,14 +277,15 @@
 .person { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 56px; padding: 6px 0; border-top: 1px solid var(--hair); }
 .person:first-child { border-top: 0; }
 .personText { display: grid; gap: 1px; min-width: 0; }
+.personText .h3 { font-family: var(--font-sans); font-weight: 700; letter-spacing: 0; text-transform: none; }
 .iconRow { display: flex; }
 /* A 32px square drawn inside a 44px target. */
 .iconBtn { display: grid; place-items: center; width: 40px; height: 44px; color: var(--ink); }
 .iconBtn > span { display: grid; place-items: center; width: 32px; height: 32px; border: var(--frame-thin); background: var(--sheet); transition: transform 0.12s var(--ease-out), box-shadow 0.12s var(--ease-out); }
 .iconBtn:hover > span { transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
 
-/* ── folds: planned projects, "planning something for later?" ── */
-.fold > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: var(--hp-btn-h); cursor: pointer; list-style: none; font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
+/* ── planned projects: a plain list, each row opening to its reminder and actions; "+ Plan something" ── */
+.fold > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: var(--hp-btn-h); cursor: pointer; list-style: none; }
 .fold > summary::-webkit-details-marker { display: none; }
 .fold > summary::after { content: "+"; display: grid; place-items: center; flex: none; width: 18px; height: 18px; border: var(--frame-thin); font-size: 13px; line-height: 1; }
 .fold[open] > summary::after { content: "–"; }
@@ -282,9 +293,12 @@
 .planList { display: grid; }
 .planList > li { border-top: 1px solid var(--hair); }
 .planList > li:first-child { border-top: 0; }
-.planRow > summary { text-transform: none; letter-spacing: 0; }
-.planRow > summary .h3 { flex: 1; min-width: 0; }
+.planRow > summary .h3 { flex: 1; min-width: 0; font-family: var(--font-sans); font-weight: 600; letter-spacing: 0; text-transform: none; }
 .planRow > summary .sub { white-space: nowrap; }
+.planAdd > summary { display: inline-flex; align-items: center; gap: 6px; min-height: var(--hp-btn-h); cursor: pointer; list-style: none; color: var(--ink); font-size: 14px; font-weight: 700; text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 1.5px; }
+.planAdd > summary::-webkit-details-marker { display: none; }
+.planAdd > summary:hover { color: var(--accent); }
+.planAdd[open] > summary { margin-bottom: 8px; }
 
 /* ── lists of rows (plans, events) ── */
 .rows { display: grid; }
@@ -299,16 +313,17 @@
 
 /* ── events (upcoming + history): the dashboard's framed mono date ── */
 .events { display: grid; }
-.event { display: grid; grid-template-columns: 60px minmax(0, 1fr); align-items: start; gap: 12px; padding: 8px 0; border-top: 1px solid var(--hair); }
-.event:first-child { border-top: 0; padding-top: 0; }
-.eventDate { display: grid; justify-items: center; gap: 1px; padding: 4px; border: var(--frame-thin); background: var(--sheet); font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: center; }
-.eventDate b { font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
-.eventDate span { color: var(--ink-muted); font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.event { display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: center; gap: 12px; min-height: 56px; padding: 6px 0; border-top: 1px solid var(--hair); }
+.event:first-child { border-top: 0; }
+/* The date square: month over day. */
+.eventDate { display: grid; place-content: center; justify-items: center; width: 44px; height: 44px; border: var(--frame-thin); background: var(--sheet); font-family: var(--font-mono); font-variant-numeric: tabular-nums; line-height: 1.05; text-align: center; }
+.eventDate span { color: var(--ink-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.eventDate b { font-size: 16px; font-weight: 700; }
 .eventBody { display: grid; gap: 2px; min-width: 0; }
 .eventBody > :first-child { font-weight: 700; overflow-wrap: anywhere; }
 .eventBody > .rowLink { min-height: var(--hp-btn-h); margin: calc((22px - var(--hp-btn-h)) / 2) 0; }
 .eventBody a { color: inherit; }
-.history .event { grid-template-columns: minmax(0, 1fr); gap: 2px; padding-left: 14px; border-top: 0; border-left: 1px solid var(--ink); }
+.history .event { grid-template-columns: minmax(0, 1fr); gap: 2px; min-height: 0; padding-left: 14px; border-top: 0; border-left: 1px solid var(--ink); }
 .history .event:first-child { padding-top: 0; }
 
 /* ── forms: mono caps labels, white fields in an ink frame ── */
@@ -325,7 +340,7 @@
 .field textarea { min-height: 96px; resize: vertical; }
 .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent); outline: none; box-shadow: inset 0 0 0 1px var(--accent); }
 .field input[readonly] { background: var(--paper); color: var(--ink-muted); border-color: var(--ink-faint); }
-.fine { color: var(--ink-soft); font-size: 12.5px; line-height: 1.45; }
+.fine { color: var(--ink-soft); font-size: 13px; line-height: 1.45; }
 .ok { color: var(--emerald); font-size: 13.5px; font-weight: 700; }
 .err { color: var(--rose); font-size: 13.5px; font-weight: 700; }
 .ideas { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -348,13 +363,13 @@
 .drop[data-over="true"] { border-color: var(--accent); background: var(--accent-soft); }
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
 .tile { position: relative; display: grid; gap: 4px; min-width: 0; }
-.tileLink { display: grid; place-items: center; aspect-ratio: 1; overflow: hidden; border: var(--frame-thin); background: var(--paper); color: var(--ink); font-size: 12.5px; font-weight: 700; text-decoration: none; }
+.tileLink { display: grid; place-items: center; aspect-ratio: 1; overflow: hidden; border: var(--frame-thin); background: var(--paper); color: var(--ink); font-size: 13px; font-weight: 700; text-decoration: none; }
 .tileLink img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.tileName { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tileName { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tileX { position: absolute; top: 0; right: 0; display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-left: var(--frame-thin); border-bottom: var(--frame-thin); background: var(--sheet); cursor: pointer; }
 .tileX:hover { background: rgba(168, 50, 50, 0.08); color: var(--rose); }
 .progress { display: grid; gap: 6px; }
-.progress li { display: grid; grid-template-columns: minmax(0, 1fr) 96px; align-items: center; gap: 10px; font-size: 12.5px; }
+.progress li { display: grid; grid-template-columns: minmax(0, 1fr) 96px; align-items: center; gap: 10px; font-size: 13px; }
 .meter { height: 8px; background: var(--paper); border: 1px solid var(--ink); }
 .meter i { display: block; height: 100%; background: var(--accent); transition: width 0.2s; }
 .ask { padding: 12px 14px; background: var(--paper); border-left: 3px solid var(--amber); font-size: 13.5px; font-weight: 600; }
@@ -409,15 +424,19 @@
 /* ── the desk ── */
 @media (min-width: 769px) {
   .hp { --hp-pad: 32px; }
-  .section[data-fold] > .secBody { display: grid; }
+  .sideCard[data-fold] > .sideBody { display: grid; }
+  .sideCard[data-fold="closed"] > .cardHead:first-child { margin-bottom: 2px; border-bottom: 1px solid var(--ink); }
   .foldBtn { display: none; }
-  .homeCard { grid-template-columns: minmax(0, 1fr) auto; align-items: end; column-gap: 24px; }
-  .homeCard .h1 { font-size: 24px; }
-  .homeSide { justify-items: end; }
-  .projectBody { grid-template-columns: minmax(0, 1fr) 300px; grid-template-areas: "rail next" "foot next"; gap: 8px 16px; align-items: start; }
-  .projectBody > .track { grid-area: rail; }
-  .projectBody > .nextLine { grid-area: next; }
-  .projectBody > .projectFoot { grid-area: foot; }
+  .homeCard { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "kicker kicker" "addr acts" "facts facts"; align-items: center; column-gap: 24px; row-gap: 6px; }
+  .homeCard .homeAddress { font-size: 24px; }
+  .homeActions { margin-top: 0; justify-content: flex-end; }
+  .projectFoot { display: flex; align-items: center; gap: 16px; min-height: 44px; }
+  .nextLine { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .projectActs { display: flex; align-items: center; gap: 16px; flex: none; }
+  .projectActs .btn, .projectActs .btnPrimary { width: auto; }
+  .track { overflow: visible; }
+  .trackStep { flex: 1 1 0; min-width: 0; }
+  .trackStep:last-child { flex: 0 0 auto; }
   .barIn { min-height: 64px; gap: 20px; }
   .brand { --pmark-h: 24px; }
   .brandText { display: flex; align-items: center; gap: 16px; }
@@ -437,9 +456,6 @@
   .cols { grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); gap: 20px; }
   .col { gap: 20px; }
   .colsFlow > .col { display: grid; }
-  .track { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-  .trackStep:nth-child(3n)::before { display: block; }
-  .trackStep:last-child::before { display: none; }
   .contact { display: flex; flex-wrap: wrap; }
   .contact .btn { padding: 0 16px; }
   .formRow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -453,11 +469,9 @@
 /* ── the wide desk: the two-column sheet, 36px controls ── */
 @media (min-width: 1024px) {
   .hp { --hp-btn-h: 36px; }
-  .homeSheet { display: grid; grid-template-columns: minmax(720px, 1fr) 360px; gap: 20px; align-items: start; }
+  .homeSheet { display: grid; grid-template-columns: minmax(720px, 1fr) 360px; gap: 24px; align-items: start; }
   .mainCol { display: grid; gap: 16px; min-width: 0; }
   .sideCol { position: sticky; top: 68px; display: grid; gap: 16px; max-height: calc(100vh - 88px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
-  .sideCol .section:first-child { padding-top: 0; }
-  .mainCol > .homeCard + .section { padding-top: 8px; }
   .field input, .field select, .field textarea, .input { min-height: 40px; }
   .idea { min-height: 36px; }
 }

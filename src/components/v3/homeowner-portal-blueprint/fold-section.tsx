@@ -1,24 +1,26 @@
 "use client";
 
-// A HOME-PAGE SECTION THAT FOLDS ON A PHONE (2026-10-31): Details (your
-// details, your link, documents) sits closed under its header on a phone so
-// the page ends near two screens; a tap on the header opens it. It opens on
-// its own when the address names it (#details, the old /details link) or a
-// tab sends the reader there (AnchorTabs' "hp:goto"). On a desk it is
-// always open and the header is plain — the button only shows ≤768px.
+// A SIDE CARD OF THE HOME PAGE (2026-10-31): Calendar and Details are one
+// card each — the card's title row is the section's head, so the tabs' anchors
+// (#calendar, #details) land on it. With `fold`, the card sits closed under
+// its title on a phone so the page stays short; a tap on Show opens it. It
+// opens on its own when the address names it (#details, the old /details
+// link) or a tab sends the reader there (AnchorTabs' "hp:goto"). On a desk it
+// is always open and the Show/Hide button is hidden.
 
 import * as React from "react";
 import s from "./portal.module.css";
 
-export function FoldSection({ id, kicker, title, children }: { id: string; kicker: string; title: string; children: React.ReactNode }) {
-  const [open, setOpen] = React.useState(false);
+export function SideCard({ id, title, action, fold = false, children }: { id: string; title: string; action?: React.ReactNode; fold?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = React.useState(!fold);
   const ref = React.useRef<HTMLElement>(null);
 
   React.useEffect(() => {
+    if (!fold) return;
     const byHash = () => {
       if (window.location.hash !== `#${id}`) return;
       setOpen(true);
-      // The browser scrolled to the closed section; once open, bring its head under the tabs again.
+      // The browser scrolled to the closed card; once open, bring its head under the tabs again.
       window.requestAnimationFrame(() => ref.current?.scrollIntoView({ block: "start" }));
     };
     const byTab = (e: Event) => {
@@ -31,19 +33,21 @@ export function FoldSection({ id, kicker, title, children }: { id: string; kicke
       window.removeEventListener("hashchange", byHash);
       window.removeEventListener("hp:goto", byTab);
     };
-  }, [id]);
+  }, [id, fold]);
 
   return (
-    <section ref={ref} id={id} className={s.section} aria-labelledby={`${id}-title`} data-fold={open ? "open" : "closed"}>
-      <div className={s.secHead}>
-        <h2 id={`${id}-title`} className={s.secTitle}>{title}</h2>
-        <p className={s.kicker}>{kicker}</p>
-        <button type="button" className={s.foldBtn} aria-expanded={open} aria-controls={`${id}-body`} onClick={() => setOpen((v) => !v)}>
-          {open ? "Hide" : "Show"}
-          <span className={s.srOnly}> {title}</span>
-        </button>
+    <section ref={ref} id={id} className={`${s.card} ${s.sideCard}`} aria-labelledby={`${id}-title`} data-fold={fold ? (open ? "open" : "closed") : undefined}>
+      <div className={s.cardHead}>
+        <h2 id={`${id}-title`} className={s.h2}>{title}</h2>
+        {action}
+        {fold && (
+          <button type="button" className={s.foldBtn} aria-expanded={open} aria-controls={`${id}-body`} onClick={() => setOpen((v) => !v)}>
+            {open ? "Hide" : "Show"}
+            <span className={s.srOnly}> {title}</span>
+          </button>
+        )}
       </div>
-      <div id={`${id}-body`} className={s.secBody}>{children}</div>
+      <div id={`${id}-body`} className={s.sideBody}>{children}</div>
     </section>
   );
 }

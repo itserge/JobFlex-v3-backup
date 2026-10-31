@@ -49,24 +49,20 @@ export function HomeOverview({ h }: { h: HomeDashboard }) {
       <div className={s.homeSheet}>
         <div className={s.mainCol}>
           <section className={`${s.card} ${s.homeCard}`} aria-labelledby="home-title">
-            <div className={s.homeTitle}>
-              <p className={s.kicker}>{h.returning ? "Welcome back" : "Welcome"}, {h.firstName}</p>
-              <h1 id="home-title" className={s.h1}>{houseLine(h)}</h1>
+            <p className={`${s.kicker} ${s.homeKicker}`}>{h.returning ? "Welcome back" : "Welcome"}, {h.firstName}</p>
+            <h1 id="home-title" className={`${s.h1} ${s.homeAddress}`}>{houseLine(h)}</h1>
+            <div className={`${s.actions} ${s.homeActions}`}>
+              <Link className={s.btnPrimary} href={start}>
+                <Icon id="plus" small />
+                Start a project
+              </Link>
+              <Link className={s.btnText} href={`/homeowner?home=${encodeURIComponent(h.key)}`}>See a price range first</Link>
             </div>
-            <div className={s.homeSide}>
-              <p className={s.homeFacts}>
-                <span><b>{active.length === 0 ? "None" : active.length}</b> in progress</span>
-                {record.length > 0 && <span>· {record.length} done</span>}
-                {h.projects.length > 0 && quotes === 0 && <span>· no quotes yet</span>}
-              </p>
-              <div className={s.actions}>
-                <Link className={s.btnPrimary} href={start}>
-                  <Icon id="plus" small />
-                  Start a project
-                </Link>
-                <Link className={s.btnText} href={`/homeowner?home=${encodeURIComponent(h.key)}`}>See a price range first</Link>
-              </div>
-            </div>
+            <p className={s.homeFacts}>
+              {active.length === 0 ? "Nothing" : active.length} in progress
+              {record.length > 0 && ` · ${record.length} done`}
+              {h.projects.length > 0 && quotes === 0 && " · no quotes yet"}
+            </p>
           </section>
 
           <Section id="projects" kicker={`${active.length} in progress`} title="Projects">
@@ -121,29 +117,39 @@ export function HomeOverview({ h }: { h: HomeDashboard }) {
 /** Sent · Contractor matched · Quote received (it waits on you) · Approved · Scheduled · Done. */
 const STAGE_TONE = ["muted", "accent", "amber", "emerald", "accent", "emerald"] as const;
 
-/** The next step as one line: when (for a visit), then what. */
+/** "Next:" and the sentence on one line (the whole sentence in its title); the visit's day and time first when there is one. */
 function NextLine({ p, h }: { p: RequestPortalView; h: HomeDashboard }) {
   const next = nextStep(p, h);
   return (
-    <p className={s.nextLine} data-tone={next.tone}>
-      <b>Next</b>
-      <span>
-        {next.visit && (
-          <>
-            <LocalTime iso={next.visit.startsAt} kind="day" tz={next.visit.timeZone} />, <LocalTime iso={next.visit.startsAt} kind="time" tz={next.visit.timeZone} /> ·{" "}
-          </>
-        )}
-        {next.text}
-      </span>
+    <p className={s.nextLine} title={next.text}>
+      <b>Next:</b>{" "}
+      {next.visit && (
+        <>
+          <LocalTime iso={next.visit.startsAt} kind="day" tz={next.visit.timeZone} />, <LocalTime iso={next.visit.startsAt} kind="time" tz={next.visit.timeZone} /> ·{" "}
+        </>
+      )}
+      {next.text}
     </p>
   );
 }
 
-/** Three rows: where and when + status · title · contractor · the rail (with the action under it, when there is one) beside the next step. */
+/** The card's last row: the next step as a line, then its one action and "Open project". */
+function CardFoot({ p, h, open = true }: { p: RequestPortalView; h: HomeDashboard; open?: boolean }) {
+  const next = nextStep(p, h);
+  return (
+    <div className={s.projectFoot}>
+      <NextLine p={p} h={h} />
+      <div className={s.projectActs}>
+        {next.action && <a className={next.action.primary ? s.btnPrimary : s.btn} href={next.action.href}>{next.action.label}</a>}
+        {open && <Link className={s.openLink} href={projectHref(h.key, p.token)}>Open project <Icon id="arrow" small /></Link>}
+      </div>
+    </div>
+  );
+}
+
+/** Four rows, full width: where and when + status · title · contractor · the step rail · the next step and its action. */
 export function ProjectCard({ p, h }: { p: RequestPortalView; h: HomeDashboard }) {
   const stage = stageOf(p);
-  const next = nextStep(p, h);
-  const page = projectHref(h.key, p.token);
   return (
     <article id={`folder-${p.token}`} className={`${s.card} ${s.project}`} aria-labelledby={`p-${p.token}`} data-project-stage={STEPS[stage]}>
       <div className={s.projectHead}>
@@ -153,19 +159,11 @@ export function ProjectCard({ p, h }: { p: RequestPortalView; h: HomeDashboard }
         <span className={s.stamp} data-tone={STAGE_TONE[stage]}>{STEPS[stage]}</span>
       </div>
       <h3 id={`p-${p.token}`} className={s.projectTitle}>
-        <Link href={page}>{projectTitle(p)}</Link>
+        <Link href={projectHref(h.key, p.token)}>{projectTitle(p)}</Link>
         {p.current && <span className={s.projectWho}> · {p.current.org.name}</span>}
       </h3>
-      <div className={s.projectBody}>
-        <StatusTrack stage={stage} label={`${projectTitle(p)}: ${STEPS[stage]}`} />
-        <NextLine p={p} h={h} />
-        {next.action && (
-          <div className={s.projectFoot}>
-            <a className={next.action.primary ? s.btnPrimary : s.btn} href={next.action.href}>{next.action.label}</a>
-            <Link className={s.openLink} href={page}>Open project <Icon id="arrow" small /></Link>
-          </div>
-        )}
-      </div>
+      <StatusTrack stage={stage} label={`${projectTitle(p)}: ${STEPS[stage]}`} />
+      <CardFoot p={p} h={h} />
     </article>
   );
 }
@@ -173,8 +171,6 @@ export function ProjectCard({ p, h }: { p: RequestPortalView; h: HomeDashboard }
 /** A finished project: one 48px row — title · contractor · Done · Open project — that opens to its rail and next step. */
 function DoneRow({ p, h }: { p: RequestPortalView; h: HomeDashboard }) {
   const stage = stageOf(p);
-  const next = nextStep(p, h);
-  const page = projectHref(h.key, p.token);
   return (
     <details id={`folder-${p.token}`} className={s.doneRow} data-project-stage={STEPS[stage]}>
       <summary>
@@ -183,18 +179,11 @@ function DoneRow({ p, h }: { p: RequestPortalView; h: HomeDashboard }) {
           {p.current && <span className={s.projectWho}> · {p.current.org.name}</span>}
         </span>
         <span className={s.stamp} data-tone="emerald">Done</span>
-        <Link className={s.openLink} href={page}>Open project <Icon id="arrow" small /></Link>
+        <Link className={s.openLink} href={projectHref(h.key, p.token)}>Open project <Icon id="arrow" small /></Link>
       </summary>
       <div className={s.doneBody}>
-        <div className={s.projectBody}>
-          <StatusTrack stage={stage} label={`${projectTitle(p)}: ${STEPS[stage]}`} />
-          <NextLine p={p} h={h} />
-          {next.action && (
-            <div className={s.projectFoot}>
-              <a className={next.action.primary ? s.btnPrimary : s.btn} href={next.action.href}>{next.action.label}</a>
-            </div>
-          )}
-        </div>
+        <StatusTrack stage={stage} label={`${projectTitle(p)}: ${STEPS[stage]}`} />
+        <CardFoot p={p} h={h} open={false} />
       </div>
     </details>
   );
