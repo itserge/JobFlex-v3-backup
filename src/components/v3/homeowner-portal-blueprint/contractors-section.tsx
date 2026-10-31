@@ -1,23 +1,23 @@
-// /home/[key]/contractors (2026-10-30): every contractor a project is or was
-// with — name, phone, Call / Text / Email in one row, booking and hire-again —
-// then the service plans (memberships) they run or offered.
+// CONTRACTORS, a section of /home/[key] (one page since 2026-10-31): every
+// contractor a project is or was with — name, phone, Call / Text / Email in
+// one row, booking and hire-again — then the service plans (memberships)
+// they run or offered.
 import Link from "next/link";
 import type { HomeDashboard } from "@/lib/home/portal";
 import { publicReviewsPath } from "@/lib/reviews/publicSummary";
 import { LocalTime } from "@/components/portal/live-time";
-import { Icon, PortalFrame } from "./portal-frame";
-import { houseLine, newProjectHref, projectHref, projectTitle } from "./view";
+import { Icon, Section } from "./portal-frame";
+import { newProjectHref, projectHref, projectTitle } from "./view";
 import s from "./portal.module.css";
 
-export function ContractorsPage({ h }: { h: HomeDashboard }) {
+export function ContractorsSection({ h }: { h: HomeDashboard }) {
   return (
-    <PortalFrame homeKey={h.key} house={houseLine(h)} tab="contractors" email={h.email}>
-      <h1 className={s.h1}>Your contractors</h1>
+    <Section id="contractors" kicker="Who works on your house" title="Contractors">
       <div className={s.cols}>
         <div className={s.col}>
           {h.contractors.length === 0 ? (
             <section className={`${s.card} ${s.empty}`}>
-              <h2 className={s.h3}>No contractors yet</h2>
+              <h3 className={s.h3}>No contractors yet</h3>
               <p className={s.text}>When a local contractor takes one of your projects, they show up here with their phone and email.</p>
               <Link className={s.btnPrimary} href={newProjectHref(h.key)}>Start a project</Link>
             </section>
@@ -27,7 +27,7 @@ export function ContractorsPage({ h }: { h: HomeDashboard }) {
               return (
                 <section key={c.org.id} className={s.card} aria-labelledby={`org-${c.org.id}`} data-contractor>
                   <div className={s.stack}>
-                    <h2 id={`org-${c.org.id}`} className={s.h2}>{c.org.name}</h2>
+                    <h3 id={`org-${c.org.id}`} className={`${s.h2} ${s.entity}`}>{c.org.name}</h3>
                     <div className={s.meta}>
                       {c.org.phoneDisplay && <span className={s.num}>{c.org.phoneDisplay}</span>}
                       {c.org.place && <span>{c.org.place}</span>}
@@ -69,7 +69,7 @@ export function ContractorsPage({ h }: { h: HomeDashboard }) {
         </div>
         <div className={s.col}>
           <section className={s.card} aria-labelledby="plans-title">
-            <h2 id="plans-title" className={s.h2}>Service plans</h2>
+            <h3 id="plans-title" className={s.h2}>Service plans</h3>
             {h.memberships.length === 0 ? (
               <p className={s.muted}>When a contractor offers you a maintenance plan — a yearly tune-up, a roof check — it shows up here.</p>
             ) : (
@@ -93,6 +93,6 @@ export function ContractorsPage({ h }: { h: HomeDashboard }) {
           </section>
         </div>
       </div>
-    </PortalFrame>
+    </Section>
   );
 }

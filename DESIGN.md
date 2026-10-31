@@ -329,7 +329,8 @@ frames, uppercase headings, the answer card first, one blue primary action
 per block, 44px touch targets, and no framer-motion — the only client code
 is the small calculator and the page-view event. The exception covers
 content-only public pages with no app state; anything with a signed-in
-shell keeps the switch.
+shell keeps the switch. The same exception covers the homeowner portal `/home/*`
+(owner, 2026-10-31).
 
 ## Implementation and review
 

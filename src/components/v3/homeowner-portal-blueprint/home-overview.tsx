@@ -1,15 +1,19 @@
-// /home/[key] in Blueprint (2026-10-30): the house first (its address, how
-// many projects are moving, one "Start a project"), then whatever waits on
-// the homeowner outside a project (a review, a service plan, a plan whose
-// month came), then each project as a card — a six-step bar, one line on
-// what happens next, one main action. Finished projects follow as the
-// house's record. No counters: a "0 hired" or "$0 invested" told nobody
-// anything.
+// /home/[key] in Blueprint — ONE page (2026-10-31, as the portal was before
+// the 2026-10-30 rebuild split it): the house first (its address, how many
+// projects are moving, one "Start a project"), then the sections the sticky
+// tabs scroll to — Projects (whatever waits on the homeowner outside a
+// project, then each project as a card: a six-step rail, one line on what
+// happens next, one main action; finished projects as the house's record),
+// Contractors, Calendar, Details. No counters: a "0 hired" or "$0 invested"
+// told nobody anything.
 import Link from "next/link";
 import type { HomeDashboard } from "@/lib/home/portal";
 import type { RequestPortalView } from "@/lib/requestPortal";
 import { LocalTime } from "@/components/portal/live-time";
-import { Icon, PortalFrame, StatusTrack } from "./portal-frame";
+import { Icon, PortalFrame, Section, StatusTrack } from "./portal-frame";
+import { ContractorsSection } from "./contractors-section";
+import { CalendarSection } from "./calendar-section";
+import { DetailsSection } from "./details-section";
 import { HashForward } from "./hash-forward";
 import { STEPS, homeHref, houseLine, newProjectHref, nextStep, projectHref, projectTitle, stageOf } from "./view";
 import s from "./portal.module.css";
@@ -36,10 +40,8 @@ export function HomeOverview({ h }: { h: HomeDashboard }) {
   const needs = houseNeeds(h);
   const start = newProjectHref(h.key);
 
-  // The house line is the card's title here, so the frame does not repeat it.
-
   return (
-    <PortalFrame homeKey={h.key} tab="projects" email={h.email}>
+    <PortalFrame homeKey={h.key} house={houseLine(h)} tab="projects" onePage email={h.email}>
       <HashForward projectBase={`${homeHref(h.key)}/project`} />
       <section className={`${s.card} ${s.homeCard}`} aria-labelledby="home-title">
         <div className={s.homeTitle}>
@@ -60,24 +62,20 @@ export function HomeOverview({ h }: { h: HomeDashboard }) {
         </div>
       </section>
 
-      {needs.length > 0 && (
-        <section className={`${s.card} ${s.attention}`} aria-labelledby="needs-title">
-          <div className={s.cardHead}>
-            <h2 id="needs-title" className={s.h2}>{needs.length === 1 ? "One thing needs you" : `${needs.length} things need you`}</h2>
+      <Section id="projects" kicker={active.length === 1 ? "Your project" : "Your projects"} title="Projects">
+        {needs.length > 0 && (
+          <div className={`${s.card} ${s.attention}`}>
+            <h3 className={s.h2}>{needs.length === 1 ? "One thing needs you" : `${needs.length} things need you`}</h3>
+            <div>
+              {needs.map((n, i) => (
+                <div key={i} className={s.needRow}>
+                  <p className={s.text}>{n.text}</p>
+                  <a className={s.btn} href={n.href}>{n.word}</a>
+                </div>
+              ))}
+            </div>
           </div>
-          <div>
-            {needs.map((n, i) => (
-              <div key={i} className={s.needRow}>
-                <p className={s.text}>{n.text}</p>
-                <a className={s.btn} href={n.href}>{n.word}</a>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <section className={s.stack} aria-labelledby="projects-title" id="projects">
-        <h2 id="projects-title" className={s.kicker}>{active.length === 1 ? "Your project" : "Your projects"}</h2>
+        )}
         {active.length === 0 ? (
           <div className={`${s.card} ${s.empty}`}>
             <h3 className={s.h3}>{record.length ? "Nothing in progress right now" : "No projects yet"}</h3>
@@ -85,23 +83,25 @@ export function HomeOverview({ h }: { h: HomeDashboard }) {
             <Link className={s.btnPrimary} href={start}>Start a project</Link>
           </div>
         ) : (
-          <div className={s.col}>
-            {active.map((p) => <ProjectCard key={p.token} p={p} h={h} />)}
-          </div>
+          active.map((p) => <ProjectCard key={p.token} p={p} h={h} />)
         )}
-      </section>
-
-      {record.length > 0 && (
-        <section className={s.stack} aria-labelledby="record-title">
-          <h2 id="record-title" className={s.kicker}>Done on your house</h2>
-          <div className={s.col}>
+        {record.length > 0 && (
+          <>
+            <h3 className={`${s.kicker} ${s.subKicker}`}>Done on your house</h3>
             {record.map((p) => <ProjectCard key={p.token} p={p} h={h} />)}
-          </div>
-        </section>
-      )}
+          </>
+        )}
+      </Section>
+
+      <ContractorsSection h={h} />
+      <CalendarSection h={h} />
+      <DetailsSection h={h} />
     </PortalFrame>
   );
 }
+
+/** Sent · Contractor matched · Quote received (it waits on you) · Approved · Scheduled · Done. */
+const STAGE_TONE = ["muted", "accent", "amber", "emerald", "accent", "emerald"] as const;
 
 export function ProjectCard({ p, h }: { p: RequestPortalView; h: HomeDashboard }) {
   const stage = stageOf(p);
@@ -120,7 +120,7 @@ export function ProjectCard({ p, h }: { p: RequestPortalView; h: HomeDashboard }
           </h3>
           {p.current && <p className={s.muted}>{p.current.org.name}</p>}
         </div>
-        <span className={s.stamp} data-tone={stage === 5 ? "emerald" : stage === 2 ? "accent" : stage === 0 ? "muted" : undefined}>{STEPS[stage]}</span>
+        <span className={s.stamp} data-tone={STAGE_TONE[stage]}>{STEPS[stage]}</span>
       </div>
       <StatusTrack stage={stage} label={`${projectTitle(p)}: ${STEPS[stage]}`} />
       <p className={s.next} data-tone={next.tone}>

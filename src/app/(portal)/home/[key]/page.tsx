@@ -3,9 +3,9 @@
 // the key the emails carry. No account, no password (lib/home/portal says who
 // may see what).
 //
-// Since 2026-10-30 the portal is pages, not one long page of anchors:
-// Projects (here) · Contractors · Calendar (with the plans) · Details, each a
-// route beside this one, plus /project/[token] and /new (Start a project).
+// Since 2026-10-31 it is one page again: Projects · Contractors · Calendar
+// (with the plans) · Details are its sections and the sticky tabs are anchors
+// (the old /contractors, /calendar, /details routes redirect to them); /project/[token] and /new stay pages.
 // The pieces live in components/v3/homeowner-portal-blueprint; every page
 // re-reads itself while open (LiveRefresh in the frame).
 import type { Metadata } from "next";

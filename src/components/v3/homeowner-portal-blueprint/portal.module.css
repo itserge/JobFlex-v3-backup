@@ -47,8 +47,7 @@
 .ic { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .icSm { width: 15px; height: 15px; }
 
-/* ── the frame: the ink bar (mark, portal tag, house, one action), then the tabs ── */
-.top { position: relative; z-index: 20; }
+/* ── the frame: the ink bar (mark, portal tag, house, one action), then the sticky tabs ── */
 .bar { background: var(--ink); color: var(--paper); border-bottom: var(--frame); }
 .barIn { max-width: 1180px; margin: 0 auto; padding: 8px var(--hp-pad); display: flex; align-items: center; gap: 12px; min-height: 60px; }
 .brand { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; color: var(--paper); text-decoration: none; --pmark-h: 22px; }
@@ -56,23 +55,27 @@
 .brandWord { font-size: 18px; font-weight: 900; letter-spacing: -0.02em; line-height: 1; white-space: nowrap; }
 .brandTag { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.16em; line-height: 1; text-transform: uppercase; color: var(--paper); opacity: 0.72; white-space: nowrap; }
 .house { display: none; }
-.houseLine { display: flex; align-items: center; gap: 6px; max-width: 1180px; margin: 0 auto; padding: 10px var(--hp-pad) 0; color: var(--ink-muted); font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
 .bar .start { margin-left: auto; padding: 0 14px; gap: 0; }
 .start svg { margin-right: 8px; }
 .startMore { display: none; white-space: pre; }
-/* On the ink bar the ink primary keeps a paper frame so it reads as a button. */
-.bar .btnPrimary { border-color: var(--paper); }
+/* The one filled-ink primary: "Start a project" on the ink bar, as on the landing — a paper frame so it reads as a button. */
+.bar .btnPrimary { background: var(--ink); border-color: var(--paper); color: var(--paper-deep); }
 .bar .btnPrimary:hover { background: var(--accent); border-color: var(--paper); box-shadow: none; transform: none; }
 
-.tabs { background: var(--paper); border-bottom: var(--frame); }
-.tabsIn { max-width: 1180px; margin: 0 auto; padding: 0 var(--hp-pad); display: flex; justify-content: space-between; overflow-x: auto; scrollbar-width: none; }
+.tabs { position: sticky; top: 0; z-index: 30; background: var(--paper); border-bottom: 1px solid var(--ink-line); }
+.tabsIn { max-width: 1180px; height: 48px; margin: 0 auto; padding: 0 calc(var(--hp-pad) - 8px); display: flex; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .tabsIn::-webkit-scrollbar { display: none; }
-.tab { position: relative; display: flex; align-items: center; justify-content: center; flex: none; min-height: 48px; padding: 0 6px; color: var(--ink-muted); font-size: 11px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; text-decoration: none; white-space: nowrap; transition: color 0.14s, background 0.14s; }
-.tab:first-child { margin-left: -6px; }
-.tab:last-child { margin-right: -6px; }
+/* Phone: the four share the row (11px, 8px sides) so none hides off the edge; the desk takes the full 12px / 16px. */
+.tab { --tab-x: 8px; position: relative; display: flex; align-items: center; justify-content: center; flex: 1 1 auto; height: 100%; padding: 0 var(--tab-x); color: var(--ink-muted); font-size: 11px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; text-decoration: none; white-space: nowrap; transition: color 0.14s, background 0.14s; }
 .tab:hover { color: var(--ink); background: var(--paper-deep); }
-.tab[aria-current="page"] { color: var(--ink); }
-.tab[aria-current="page"]::after { content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 3px; background: var(--ink); }
+.tab[aria-current] { color: var(--ink); }
+.tab[aria-current]::after { content: ""; position: absolute; left: var(--tab-x); right: var(--tab-x); bottom: 0; height: 2px; background: var(--ink); }
+
+/* ── a section of the home page: kicker + uppercase title on one rule ── */
+.section { display: grid; gap: 16px; min-width: 0; padding-top: 16px; scroll-margin-top: 60px; }
+.secHead { display: grid; gap: 6px; padding-bottom: 10px; border-bottom: 2px solid var(--ink); }
+.secTitle { font-family: var(--font-display); font-size: 22px; font-weight: 900; line-height: 1.05; letter-spacing: -0.01em; text-transform: uppercase; }
+.subKicker { padding-top: 8px; }
 
 .wrap { max-width: 1180px; margin: 0 auto; padding: 20px var(--hp-pad) 48px; display: grid; gap: 16px; }
 .foot { max-width: 1180px; margin: 0 auto; padding: 16px var(--hp-pad) 40px; display: grid; gap: 8px; border-top: 1px solid var(--ink); color: var(--ink-muted); font-size: 13px; }
@@ -102,6 +105,11 @@
 .card { display: grid; gap: 16px; min-width: 0; padding: var(--hp-card-pad); background: var(--sheet); border: var(--frame); border-radius: 0; }
 .cardHead { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
 .cardHead > :first-child { min-width: 0; }
+/* The dashboard card pattern: the title row (title left, a card action right) on a 1px rule across the card. */
+.card > .h2:first-child,
+.card > .cardHead:first-child { margin: 0 calc(var(--hp-card-pad) * -1); padding: 0 var(--hp-card-pad) 14px; border-bottom: 1px solid var(--ink); }
+.card > .cardHead:first-child { padding-bottom: 6px; }
+.entity { font-size: 18px; }
 .rule { height: 0; margin: 0 calc(var(--hp-card-pad) * -1); border-top: 1px solid var(--ink); }
 .stack { display: grid; gap: 6px; min-width: 0; }
 .attention { border-color: var(--amber); box-shadow: inset 4px 0 0 var(--amber); }
@@ -118,14 +126,15 @@
 }
 .btn:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
 .btn:active, .btnPrimary:active { transform: none; box-shadow: none; }
-.btnPrimary { background: var(--ink); color: var(--paper-deep); }
-.btnPrimary:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--accent); }
+/* Primary: blue in the ink frame (DESIGN.md). */
+.btnPrimary { background: var(--accent); color: #fff; }
+.btnPrimary:hover { background: var(--accent-ink); transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
 .btn:disabled, .btnPrimary:disabled { cursor: not-allowed; transform: none; box-shadow: none; background: var(--paper); border-color: var(--ink-faint); color: var(--ink-muted); }
 .btnText { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 2px; border: 0; background: none; color: var(--ink); font-size: 14px; font-weight: 700; text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 1.5px; cursor: pointer; }
 .btnText:hover { color: var(--accent); }
 .btnText:disabled { color: var(--ink-muted); cursor: not-allowed; }
 .btnWide { width: 100%; }
-.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .contact { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .contact .btn { padding: 0 6px; }
 
@@ -157,12 +166,12 @@
 .projectFoot .btnPrimary, .projectFoot .btn { flex: 1 1 100%; }
 
 /* ── status stamps: near-square, Inter 800 caps, a semantic frame and soft fill ── */
-.stamp { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; padding: 3px 8px; border: var(--frame-thin); background: var(--sheet); color: var(--ink); font-size: 10.5px; font-weight: 800; letter-spacing: 0.1em; line-height: 1.1; text-transform: uppercase; white-space: nowrap; flex: none; }
+.stamp { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; padding: 3px 8px; border: var(--frame-thin); border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); font-size: 10.5px; font-weight: 800; letter-spacing: 0.1em; line-height: 1.1; text-transform: uppercase; white-space: nowrap; flex: none; }
 .stamp[data-tone="accent"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
 .stamp[data-tone="emerald"] { border-color: var(--emerald); background: rgba(58, 125, 68, 0.08); color: #2c6335; }
 .stamp[data-tone="amber"] { border-color: var(--amber); background: rgba(184, 132, 32, 0.08); color: #7a5612; }
 .stamp[data-tone="rose"] { border-color: var(--rose); background: rgba(168, 50, 50, 0.08); color: var(--rose); }
-.stamp[data-tone="muted"] { border-color: var(--ink-faint); color: var(--ink-muted); }
+.stamp[data-tone="muted"] { border-color: var(--ink-faint); background: rgba(10, 10, 10, 0.04); color: var(--ink-muted); }
 
 /* ── the step rail: numbered squares on a 1px rule, labels under.
       3 × 2 on a phone (the labels stay readable), one row of six on a desk. ── */
@@ -178,11 +187,24 @@
 .trackStep[data-state="now"] { color: var(--accent); font-weight: 800; }
 .trackStep[data-state="now"] .trackMark { border-color: var(--accent); background: var(--accent); color: var(--paper-deep); }
 
-/* ── facts (label / value) ── */
-.facts { display: grid; gap: 10px; }
-.facts > div { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
-.facts dt { color: var(--ink-muted); font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+/* ── facts: a definition grid — mono caps label, value; stacked on a phone, two columns on a desk ── */
+.facts { display: grid; }
+.facts > div { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 10px 0; border-top: 1px solid var(--hair); }
+.facts > div:first-child { border-top: 0; padding-top: 0; }
+.facts dt { color: var(--ink-muted); font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; line-height: 1.6; text-transform: uppercase; }
 .facts dd { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+
+/* ── documents: icon · title over who and when · a square open/download ── */
+.docs { display: grid; }
+.doc { display: grid; grid-template-columns: 18px minmax(0, 1fr) 44px; align-items: center; gap: 12px; min-height: 56px; padding: 6px 0; border-top: 1px solid var(--hair); }
+.doc:first-child { border-top: 0; padding-top: 0; }
+.docText { display: grid; gap: 1px; min-width: 0; }
+.docName { display: flex; align-items: center; min-height: 44px; margin: -6px 0 -8px; color: var(--ink); font-size: 14px; font-weight: 700; line-height: 1.3; text-decoration: none; overflow-wrap: anywhere; }
+.docName:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+/* A 36px square drawn inside a 44px target. */
+.docGo { display: grid; place-items: center; width: 44px; height: 44px; color: var(--ink); }
+.docGo > span { display: grid; place-items: center; width: 36px; height: 36px; border: var(--frame-thin); background: var(--sheet); transition: transform 0.12s var(--ease-out), box-shadow 0.12s var(--ease-out); }
+.docGo:hover > span { transform: translate(-1px, -1px); box-shadow: 2px 2px 0 var(--ink); }
 
 /* ── the quote ── */
 .quote { display: grid; gap: 14px; }
@@ -344,16 +366,16 @@
   .brandWord { font-size: 20px; }
   .brandTag { padding-left: 16px; border-left: 1px solid rgba(242, 240, 235, 0.35); line-height: 20px; }
   .house { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--paper); opacity: 0.8; font-size: 13px; font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-  .houseLine { display: none; }
   .startMore { display: inline; }
   .bar .start { padding: 0 16px; flex: none; }
-  .tabsIn { justify-content: flex-start; gap: 4px; }
-  .tab { padding: 0 16px; font-size: 12px; letter-spacing: 0.06em; }
-  .tab:first-child { margin-left: -16px; }
-  .tab:last-child { margin-right: 0; }
   .wrap { padding-top: 28px; gap: 20px; }
   .h1 { font-size: 32px; }
   .h2 { font-size: 18px; }
+  .secTitle { font-size: 26px; }
+  .tab { --tab-x: 16px; flex: none; font-size: 12px; letter-spacing: 0.06em; }
+  .entity { font-size: 20px; }
+  .tabsIn { padding: 0 calc(var(--hp-pad) - 16px); }
+  .facts > div { grid-template-columns: 120px minmax(0, 1fr); gap: 16px; align-items: baseline; }
   .projectTitle { font-size: 20px; }
   .cols { grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); gap: 20px; }
   .col { gap: 20px; }

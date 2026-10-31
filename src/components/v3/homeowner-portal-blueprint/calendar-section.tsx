@@ -1,4 +1,4 @@
-// /home/[key]/calendar (2026-10-30): what is coming, as a list — "Nov 4 ·
+// CALENDAR, a section of /home/[key] (one page since 2026-10-31): what is coming, as a list — "Nov 4 ·
 // Site visit · Alder Peak Roofing" — with "Add to phone calendar" (the same
 // .ics as before); the planned projects with their months; "Planning
 // something for later? Put it on the calendar". A compact month grid only on
@@ -6,9 +6,9 @@
 // plan has a month and was already in the calendar and its .ics.
 import type { HomeDashboard } from "@/lib/home/portal";
 import { LocalTime } from "@/components/portal/live-time";
-import { Icon, PortalFrame } from "./portal-frame";
+import { Icon, Section } from "./portal-frame";
 import { PlanAheadForm, PlannedList } from "./plan-ahead";
-import { homeHref, houseLine, newProjectHref, projectHref } from "./view";
+import { homeHref, newProjectHref, projectHref } from "./view";
 import s from "./portal.module.css";
 
 type Upcoming = { key: string; ymd: string; at: string | null; tz: string; title: string; who: string; href: string | null; month: string | null };
@@ -26,7 +26,7 @@ function monthGrid(year: number, month: number): Array<string | null> {
   return cells;
 }
 
-export function CalendarPage({ h }: { h: HomeDashboard }) {
+export function CalendarSection({ h }: { h: HomeDashboard }) {
   const today = ymdIn(new Date().toISOString(), h.timeZone);
   const items: Upcoming[] = [];
   for (const p of h.projects) {
@@ -60,13 +60,12 @@ export function CalendarPage({ h }: { h: HomeDashboard }) {
   });
 
   return (
-    <PortalFrame homeKey={h.key} house={houseLine(h)} tab="calendar" email={h.email}>
-      <h1 className={s.h1}>Calendar</h1>
+    <Section id="calendar" kicker="Visits and plans" title="Calendar">
       <div className={s.cols}>
         <div className={s.col}>
           <section className={s.card} aria-labelledby="up-title">
             <div className={s.cardHead}>
-              <h2 id="up-title" className={s.h2}>Coming up</h2>
+              <h3 id="up-title" className={s.h2}>Coming up</h3>
               <a className={s.btnText} href={`${homeHref(h.key)}/calendar.ics`} data-ics><Icon id="cal" small />Add to phone calendar</a>
             </div>
             {upcoming.length === 0 ? (
@@ -93,16 +92,14 @@ export function CalendarPage({ h }: { h: HomeDashboard }) {
           </section>
 
           <section className={s.card} aria-labelledby="ahead-title" id="plan">
-            <div className={s.stack}>
-              <h2 id="ahead-title" className={s.h2}>Planning something for later?</h2>
-              <p className={s.text}>Put it on the calendar. When the month comes, we remind you — and one tap gets you quotes.</p>
-            </div>
+            <h3 id="ahead-title" className={s.h2}>Planning something for later?</h3>
+            <p className={s.text}>Put it on the calendar. When the month comes, we remind you — and one tap gets you quotes.</p>
             <PlanAheadForm homeKey={h.key} />
           </section>
 
           {planned.length > 0 && (
             <section className={s.card} aria-labelledby="planned-title">
-              <h2 id="planned-title" className={s.h2}>Planned</h2>
+              <h3 id="planned-title" className={s.h2}>Planned</h3>
               <PlannedList homeKey={h.key} plans={planned} quotesHref={quotesHref} rangeHref={rangeHref} />
               {submitted.length > 0 && (
                 <p className={s.muted}>
@@ -139,6 +136,6 @@ export function CalendarPage({ h }: { h: HomeDashboard }) {
           </section>
         </div>
       </div>
-    </PortalFrame>
+    </Section>
   );
 }
