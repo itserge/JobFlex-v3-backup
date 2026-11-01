@@ -1,7 +1,8 @@
-// DETAILS, one card of /home/[key] (the side column on a desk, folded under
-// its title on a phone): the homeowner's own details as a definition grid,
-// the paperwork every contractor sent (quotes, their PDFs, change orders) as
-// 44px rows under a kicker, and how the link works as a quiet paragraph.
+// YOUR DETAILS and DOCUMENTS, two cards at the foot of the side column of
+// /home/[key] (the end of the page on a phone): what the homeowner told us as a
+// two-column grid with Edit details and "Email me this link"; every quote, PDF
+// and change order a contractor sent as 44px rows; then one quiet line on how
+// the link works.
 import { LocalTime } from "@/components/portal/live-time";
 import type { HomeDashboard } from "@/lib/home/portal";
 import { Icon } from "./portal-frame";
@@ -13,10 +14,11 @@ const DOC_WORD = (label: string) => label.replace(/proposal/gi, (m) => (m[0] ===
 
 export function DetailsSection({ h }: { h: HomeDashboard }) {
   return (
-    <SideCard id="details" title="Details" fold>
-      <DetailsForm homeKey={h.key} details={h.details} />
-      <div className={s.sideGroup}>
-        <p className={s.kicker}>Documents</p>
+    <>
+      <SideCard id="details" title="Your details">
+        <DetailsForm homeKey={h.key} details={h.details} />
+      </SideCard>
+      <SideCard id="documents" title="Documents">
         {h.documents.length === 0 ? (
           <p className={s.sub}>Quotes, their PDFs and change orders land here as contractors send them.</p>
         ) : (
@@ -39,10 +41,8 @@ export function DetailsSection({ h }: { h: HomeDashboard }) {
             })}
           </ul>
         )}
-      </div>
-      <p className={`${s.sub} ${s.sideGroup}`}>
-        Your link: no account, no password — this page&apos;s link is your key. Keep it, and share it carefully; anyone with it can see your projects. With JobFlex since <LocalTime iso={h.since} kind="date" tz={h.timeZone} />.
-      </p>
-    </SideCard>
+      </SideCard>
+      <p className={s.keyNote}>This page&apos;s link is your key — keep it and share it carefully.</p>
+    </>
   );
 }

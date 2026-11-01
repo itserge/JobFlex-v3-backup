@@ -94,36 +94,34 @@ export function PortalFrame({ homeKey, house, tab, onePage = false, live = true,
   );
 }
 
-/** A section of the home page: its uppercase title and kicker on one 40px rule, then its content. */
-export function Section({ id, kicker, title, children }: { id: string; kicker: string; title: string; children: ReactNode }) {
+/** A section of the home page: its uppercase title (and a small sub-label) on one rule, then its content. */
+export function Section({ id, kicker, title, children }: { id: string; kicker?: string; title: string; children: ReactNode }) {
   return (
     <section id={id} className={s.section} aria-labelledby={`${id}-title`}>
       <div className={s.secHead}>
         <h2 id={`${id}-title`} className={s.secTitle}>{title}</h2>
-        <p className={s.kicker}>{kicker}</p>
+        {kicker && <p className={s.kicker}>{kicker}</p>}
       </div>
       <div className={s.secBody}>{children}</div>
     </section>
   );
 }
 
-/** The rail's words: one short word a step, so no label wraps (the stamp and the screen reader keep the full STEPS). */
-const RAIL = ["Sent", "Matched", "Quote", "Approved", "Scheduled", "Done"] as const;
-
-/** The six-step rail: numbered squares on a rule — reached ones filled ink, the step the project is on blue, the rest outlined. */
-export function StatusTrack({ stage, label }: { stage: number; label: string }) {
+/**
+ * How far a project has come: a thin bar of six segments (reached ones ink,
+ * the current one blue, the rest a line) and ONE line under it in words —
+ * "Step 2 of 6 · contractor matched Oct 29". No numbered squares, no row of
+ * six labels: a homeowner reads the sentence, the bar only shows the share.
+ */
+export function StatusTrack({ stage, caption }: { stage: number; caption: string }) {
   return (
-    <ol className={s.track} aria-label={label}>
-      {STEPS.map((st, i) => {
-        const state = i < stage ? "done" : i === stage ? "now" : "todo";
-        return (
-          <li key={st} className={s.trackStep} data-state={state} aria-current={state === "now" ? "step" : undefined}>
-            <span className={s.trackMark} aria-hidden="true" />
-            <span aria-hidden="true">{RAIL[i]}</span>
-            <span className={s.srOnly}>{st}{state === "done" ? " — done" : state === "now" ? " — where it is now" : ""}</span>
-          </li>
-        );
-      })}
-    </ol>
+    <div className={s.progress6}>
+      <ol className={s.bar6} aria-hidden="true">
+        {STEPS.map((st, i) => (
+          <li key={st} data-state={i < stage ? "done" : i === stage ? "now" : "todo"} />
+        ))}
+      </ol>
+      <p className={s.barCaption}>{caption}</p>
+    </div>
   );
 }

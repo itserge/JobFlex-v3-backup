@@ -1,26 +1,26 @@
 "use client";
 
-// THE HOME PAGE'S TABS (2026-10-31): Projects · Contractors · Calendar ·
-// Details are sections of one page; the tabs are anchors to them.
+// THE HOME PAGE'S TABS: Projects · Contractors · Calendar · Details are
+// sections of one page; the tabs are anchors to them.
 //
 // Scroll-spy by section top: the underlined tab is the last section whose top
 // has passed under this bar (the last one once the page bottoms out). On a
-// desk Calendar and Details live in a sticky side column that scrolls on its
-// own ([data-side]); there the spy reads the column's own scroll, so the
-// window decides between Projects and Contractors and the column between
-// Calendar and Details — whichever the reader moved last. A tap scrolls the
-// window (or the side column) to the section — smooth unless the reader asked
-// for reduced motion — and tells a folded section to open ("hp:goto"); while
-// that scroll runs the tapped tab stays underlined (a short section at the
-// page's foot cannot reach the bar). On a phone the row may scroll sideways,
-// so the underlined tab is kept in view.
+// desk Calendar and Details sit in the side column beside Projects, so their
+// tops say nothing about where the reader is; there the spy follows the main
+// column only, and a tap on Calendar or Details underlines that tab until the
+// reader scrolls on. A tap scrolls to the section — smooth unless the reader
+// asked for reduced motion — and tells a folded card to open ("hp:goto");
+// while that scroll runs the tapped tab stays underlined. On a phone the row
+// may scroll sideways, so the underlined tab is kept in view.
 
 import * as React from "react";
 import s from "./portal.module.css";
 
-function sideColumn(): HTMLElement | null {
-  const side = document.querySelector<HTMLElement>("[data-side]");
-  return side && getComputedStyle(side).position === "sticky" ? side : null;
+/** True when the side column stands beside the main one (a desk), not under it. */
+function sideBeside(el: Element | null): boolean {
+  const side = el?.closest("aside");
+  const main = side?.parentElement?.firstElementChild;
+  return !!side && !!main && main !== side && Math.abs(side.getBoundingClientRect().top - main.getBoundingClientRect().top) < 2;
 }
 
 export function AnchorTabs({ tabs }: { tabs: Array<{ id: string; label: string }> }) {
@@ -34,15 +34,6 @@ export function AnchorTabs({ tabs }: { tabs: Array<{ id: string; label: string }
   React.useEffect(() => {
     const list = ids.split(" ");
     let raf = 0;
-    let from: "window" | "side" = "window";
-    const lastPassed = (cands: string[], line: number) => {
-      let pick = cands[0];
-      for (const id of cands) {
-        const el = document.getElementById(id);
-        if (el && el.getBoundingClientRect().top <= line) pick = id;
-      }
-      return pick;
-    };
     const read = () => {
       raf = 0;
       const hold = held.current;
@@ -52,38 +43,27 @@ export function AnchorTabs({ tabs }: { tabs: Array<{ id: string; label: string }
         return;
       }
       held.current = null;
-      const side = sideColumn();
-      const inSide = (id: string) => !!side && !!document.getElementById(id)?.closest("[data-side]");
-      if (side && from === "side") {
-        const cands = list.filter(inSide);
-        let pick = lastPassed(cands, side.getBoundingClientRect().top + 24);
-        if (side.scrollTop > 0 && side.scrollTop + side.clientHeight >= side.scrollHeight - 2) pick = cands[cands.length - 1];
-        setCur(pick);
-        return;
+      const present = list.filter((id) => document.getElementById(id));
+      const cands = present.filter((id) => !sideBeside(document.getElementById(id)));
+      if (!cands.length) return;
+      const line = (navRef.current?.getBoundingClientRect().bottom ?? 0) + 24;
+      let pick = cands[0];
+      for (const id of cands) {
+        if ((document.getElementById(id)?.getBoundingClientRect().top ?? Infinity) <= line) pick = id;
       }
-      const cands = list.filter((id) => !inSide(id));
-      let pick = lastPassed(cands, (navRef.current?.getBoundingClientRect().bottom ?? 0) + 24);
       const doc = document.documentElement;
       if (window.scrollY > 0 && window.innerHeight + window.scrollY >= doc.scrollHeight - 2) pick = cands[cands.length - 1];
       setCur(pick);
     };
-    const onWindow = () => {
-      from = "window";
+    const onScroll = () => {
       if (!raf) raf = window.requestAnimationFrame(read);
     };
-    const onSide = () => {
-      from = "side";
-      if (!raf) raf = window.requestAnimationFrame(read);
-    };
-    const sideEl = document.querySelector<HTMLElement>("[data-side]");
     read();
-    window.addEventListener("scroll", onWindow, { passive: true });
-    window.addEventListener("resize", onWindow);
-    sideEl?.addEventListener("scroll", onSide, { passive: true });
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
     return () => {
-      window.removeEventListener("scroll", onWindow);
-      window.removeEventListener("resize", onWindow);
-      sideEl?.removeEventListener("scroll", onSide);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
       if (raf) window.cancelAnimationFrame(raf);
     };
   }, [ids]);
@@ -105,18 +85,10 @@ export function AnchorTabs({ tabs }: { tabs: Array<{ id: string; label: string }
     window.dispatchEvent(new CustomEvent("hp:goto", { detail: id }));
     held.current = { id, until: e.timeStamp + 600 };
     const behavior: ScrollBehavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
-    // A frame later, so a section that unfolds on "hp:goto" has its height when the scroll is measured.
+    // A frame later, so a card that unfolds on "hp:goto" has its height when the scroll is measured.
     window.requestAnimationFrame(() => {
-      const side = sideColumn();
-      if (side && el.closest("[data-side]")) {
-        side.scrollTo({ top: Math.max(0, el.getBoundingClientRect().top - side.getBoundingClientRect().top + side.scrollTop), behavior });
-        // Past the end of the sheet the sticky column rides up with it; bring it back to its pinned place.
-        const lift = parseFloat(getComputedStyle(side).top) - side.getBoundingClientRect().top;
-        if (lift > 1) window.scrollBy({ top: -lift, behavior });
-      } else {
-        const bar = navRef.current?.offsetHeight ?? 0;
-        window.scrollTo({ top: Math.max(0, el.getBoundingClientRect().top + window.scrollY - bar - 12), behavior });
-      }
+      const bar = navRef.current?.offsetHeight ?? 0;
+      window.scrollTo({ top: Math.max(0, el.getBoundingClientRect().top + window.scrollY - bar - 12), behavior });
     });
     window.history.replaceState(window.history.state, "", `#${id}`);
     setCur(id);

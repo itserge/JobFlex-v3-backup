@@ -136,8 +136,11 @@ export function PlannedList({ homeKey, plans, quotesHref, rangeHref }: { homeKey
           <li key={p.id} data-plan>
             <details className={`${s.fold} ${s.planRow}`}>
               <summary>
-                <p className={s.h3}>{p.title}</p>
-                <span className={s.sub}>{p.when}</span>
+                <span className={s.eventDate} aria-hidden="true">
+                  <span>{new Date(`${p.date}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", timeZone: "UTC" })}</span>
+                  <b data-year>{p.date.slice(0, 4)}</b>
+                </span>
+                <p className={s.planText}><b>{p.when}</b> — {p.title}</p>
               </summary>
               <div className={s.foldBody}>
                 {p.estimate && <p className={s.text}><b className={s.num}>{p.estimate.range}</b> · {p.estimate.material} · a range, not a quote</p>}

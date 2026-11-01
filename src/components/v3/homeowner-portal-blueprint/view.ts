@@ -149,3 +149,65 @@ export function phoneShown(raw: string): string {
   if (d.length === 11 && d.startsWith("1")) return `(${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`;
   return raw;
 }
+
+/** "Oct 29" in the home's zone — server-rendered words, not a live clock. */
+export function shortDate(iso: string, tz: string): string {
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: tz }).format(new Date(iso));
+}
+
+/** "AP" — the contractor's initials for its square. */
+export function initials(name: string): string {
+  const words = name.replace(/[^A-Za-z0-9 &]/g, " ").split(/\s+/).filter((w) => w && w !== "&");
+  return (words.length > 1 ? words[0][0] + words[1][0] : (words[0] ?? "?").slice(0, 2)).toUpperCase();
+}
+
+/** Where a project stands, as the homeowner would say it — the phrase beside the title and its dot's tone. */
+export function statusOf(p: RequestPortalView): { text: string; tone: "muted" | "accent" | "amber" | "emerald" } {
+  const stage = stageOf(p);
+  const org = p.current?.org.name ?? null;
+  if (stage === 5) return { text: "Done", tone: "emerald" };
+  if (stage === 4) return { text: `Scheduled for ${shortDate(p.visits[0].startsAt, p.visits[0].timeZone)}`, tone: "accent" };
+  if (stage === 3) return { text: "Approved — scheduling", tone: "emerald" };
+  if (stage === 2) {
+    const open = p.proposals.find(isOpenQuote);
+    return open ? { text: `Quote ready — ${usd.format(open.total)}`, tone: "amber" } : { text: "Quote turned down", tone: "muted" };
+  }
+  if (stage === 1) return { text: `${org ?? "A contractor"} is on it`, tone: "accent" };
+  return { text: "Waiting for a contractor", tone: "muted" };
+}
+
+/** The words under the progress bar: "Step 2 of 6 · contractor matched Oct 29". */
+export function stepCaption(p: RequestPortalView, tz: string): string {
+  const stage = stageOf(p);
+  const lastEvent = p.events.length ? p.events[p.events.length - 1].at : null;
+  const latestQuote = p.proposals.filter((q) => q.current && q.sentAt).map((q) => q.sentAt!).sort().pop() ?? null;
+  const when: Array<{ words: string; at: string | null }> = [
+    { words: "sent", at: p.submittedAt },
+    { words: "contractor matched", at: p.current?.matchedAt ?? lastEvent },
+    { words: "quote received", at: latestQuote ?? lastEvent },
+    { words: "quote approved", at: lastEvent },
+    { words: "work scheduled for", at: p.visits[0]?.startsAt ?? null },
+    { words: "work done", at: lastEvent },
+  ];
+  const w = when[stage];
+  return `Step ${stage + 1} of 6 · ${w.words}${w.at ? ` ${shortDate(w.at, tz)}` : ""}`;
+}
+
+/** What the homeowner has to do on a project, if anything — a plain sentence and the one button for "Needs you". */
+export function needOf(p: RequestPortalView, h: Pick<HomeDashboard, "key" | "folders" | "needs">): { text: string; label: string; href: string } | null {
+  const page = projectHref(h.key, p.token);
+  const org = p.current?.org.name ?? null;
+  const open = p.proposals.find(isOpenQuote) ?? null;
+  const won = p.proposals.find(isWonQuote) ?? null;
+  const asks = (h.folders[p.token]?.requests ?? []).filter((r) => !r.fulfilledAt);
+  const what = projectTitle(p).toLowerCase();
+  if (org && p.changeOrders.length > 0) return { text: `A change to your ${what} quote needs your OK`, label: "Review change", href: `/co/${encodeURIComponent(p.changeOrders[0].token)}` };
+  if (open) return { text: `${open.orgName} sent a quote for ${usd.format(open.total)}`, label: "Open quote", href: quoteHref(open.publicId) };
+  if (won && won.nextDue && won.remaining > 0 && won.payOnline) return { text: `${won.nextDue.label} of ${usd.format(won.nextDue.amount)} is due to ${won.orgName}`, label: `Pay ${usd.format(won.nextDue.amount)}`, href: quoteHref(won.publicId) };
+  if (asks.length > 0) return { text: `${asks[0].orgName} asked for photos${asks[0].note ? ` — “${asks[0].note}”` : ` of your ${what} project`}`, label: "Add photos", href: `${page}#files` };
+  if (stageOf(p) === 5 && org) {
+    const review = h.needs.find((n) => n.kind === "review" && n.text.startsWith(org));
+    if (review) return { text: `How did ${org} do on your ${what}? Tell the next homeowner`, label: "Leave a review", href: review.href };
+  }
+  return null;
+}

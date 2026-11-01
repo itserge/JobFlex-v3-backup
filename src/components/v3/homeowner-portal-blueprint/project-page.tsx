@@ -16,7 +16,7 @@ import { Icon, PortalFrame, StatusTrack } from "./portal-frame";
 import { FolderBox } from "./folder-box";
 import { MessageBox } from "./message-box";
 import { RerouteSheet } from "./reroute-sheet";
-import { QUOTE_STAGE, STEPS, homeHref, houseLine, isOpenQuote, isWonQuote, nextStep, plainEvent, projectTitle, quoteHref, quotePdfHref, stageOf, usd, usdCents } from "./view";
+import { QUOTE_STAGE, homeHref, houseLine, isOpenQuote, isWonQuote, nextStep, plainEvent, projectTitle, quoteHref, quotePdfHref, stageOf, stepCaption, usd, usdCents } from "./view";
 import s from "./portal.module.css";
 
 const pct = (fraction: number) => `${Math.round(fraction * 100 * 100) / 100}%`;
@@ -41,7 +41,7 @@ export function ProjectPage({ h, p }: { h: HomeDashboard; p: RequestPortalView }
         </p>
         <h1 id="status-title" className={s.h1}>{projectTitle(p)}</h1>
       </div>
-      <StatusTrack stage={stage} label={`Progress: ${STEPS[stage]}`} />
+      <StatusTrack stage={stage} caption={stepCaption(p, h.timeZone)} />
       <p className={s.next} data-tone={next.tone}>
         <b>What happens next</b>
         <span>

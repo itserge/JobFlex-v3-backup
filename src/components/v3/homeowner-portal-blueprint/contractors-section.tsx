@@ -1,63 +1,70 @@
-// CONTRACTORS, a section of /home/[key] (one page since 2026-10-31): one
-// row per contractor a project is or was with — name, the work they do for
-// this house, then Call / Text / Email as square icons on the right; "Hire
-// again" and online booking as quiet links in the row. Service plans
-// (memberships) follow only when there are any.
+// YOUR CONTRACTORS, a section of /home/[key]: one 56px row per contractor a
+// project is or was with — their initials in a square, the name, the work they
+// do for this house and what they are on now, then Call / Text / Email as
+// square icons. "Hire again" and online booking stay as quiet links in the
+// row. Hidden when there are none. Service plans (memberships) follow only
+// when there are any.
 import Link from "next/link";
 import type { HomeDashboard } from "@/lib/home/portal";
-import { publicReviewsPath } from "@/lib/reviews/publicSummary";
+import type { PortalOrg } from "@/lib/requestPortal";
 import { LocalTime } from "@/components/portal/live-time";
 import { Icon, Section } from "./portal-frame";
-import { newProjectHref, projectHref, projectTitle } from "./view";
+import { initials, newProjectHref, projectTitle } from "./view";
 import s from "./portal.module.css";
 
-export function ContractorsSection({ h }: { h: HomeDashboard }) {
+/** The contractor's initials in a 32px ink square. */
+export function OrgSquare({ name }: { name: string }) {
+  return <span className={s.orgSquare} aria-hidden="true">{initials(name)}</span>;
+}
+
+/** Call · Text · Email as 32px squares (each a 44px target). */
+export function ContactIcons({ org }: { org: PortalOrg }) {
   return (
-    <Section id="contractors" kicker="Who works on your house" title="Contractors">
-      {h.contractors.length === 0 ? (
-        <div className={`${s.card} ${s.empty}`}>
-          <h3 className={s.h3}>No contractors yet</h3>
-          <p className={s.text}>When a local contractor takes one of your projects, they show up here with their phone and email.</p>
-          <Link className={s.btnPrimary} href={newProjectHref(h.key)}>Start a project</Link>
-        </div>
-      ) : (
+    <span className={s.iconRow} data-contact-icons>
+      {org.telHref && <a className={s.iconBtn} href={org.telHref} aria-label={`Call ${org.name}${org.phoneDisplay ? `, ${org.phoneDisplay}` : ""}`} title={org.phoneDisplay ?? "Call"}><span><Icon id="phone" small /></span></a>}
+      {org.smsHref && <a className={s.iconBtn} href={org.smsHref} aria-label={`Text ${org.name}`} title="Text"><span><Icon id="sms" small /></span></a>}
+      {org.email && <a className={s.iconBtn} href={`mailto:${org.email}`} aria-label={`Email ${org.name}`} title={org.email}><span><Icon id="msg" small /></span></a>}
+    </span>
+  );
+}
+
+export function ContractorsSection({ h }: { h: HomeDashboard }) {
+  if (h.contractors.length === 0 && h.memberships.length === 0) return null;
+  return (
+    <Section id="contractors" title="Your contractors">
+      {h.contractors.length > 0 && (
         <ul className={`${s.card} ${s.list}`}>
           {h.contractors.map((c) => {
             const theirs = h.projects.filter((p) => p.current?.org.id === c.org.id || p.previous.some((x) => x.org.id === c.org.id));
+            const now = theirs.filter((p) => p.current?.org.id === c.org.id && p.status2 !== "DONE");
+            const trades = [...new Set(theirs.map(projectTitle))].join(", ");
             return (
               <li key={c.org.id} className={s.person} data-contractor>
+                <OrgSquare name={c.org.name} />
                 <div className={s.personText}>
-                  <p className={s.h3}>{c.org.name}</p>
+                  <p className={s.personName}>{c.org.name}</p>
                   <p className={s.sub}>
-                    {theirs.map((p, i) => (
-                      <span key={p.token}>{i > 0 ? ", " : ""}<Link className={s.inlineLink} href={projectHref(h.key, p.token)}>{projectTitle(p)}</Link></span>
-                    ))}
-                    {c.org.rating && (
-                      <> · <a className={s.inlineLink} href={publicReviewsPath(c.org.slug)} target="_blank" rel="noopener noreferrer">★ {c.org.rating.avg.toFixed(1)}</a></>
-                    )}
+                    {now.length > 0 ? `Working on: ${now.map(projectTitle).join(", ")}` : trades}
+                    {c.org.rating && <> · ★ {c.org.rating.avg.toFixed(1)}</>}
                     {" · "}<Link className={s.inlineLink} href={newProjectHref(h.key, { with: c.org.id })}>Hire again</Link>
                     {c.bookingHref && <> · <a className={s.inlineLink} href={c.bookingHref}>Book a visit</a></>}
                   </p>
                 </div>
-                <div className={s.iconRow}>
-                  {c.org.telHref && <a className={s.iconBtn} href={c.org.telHref} aria-label={`Call ${c.org.name}${c.org.phoneDisplay ? `, ${c.org.phoneDisplay}` : ""}`} title={c.org.phoneDisplay ?? "Call"}><span><Icon id="phone" small /></span></a>}
-                  {c.org.smsHref && <a className={s.iconBtn} href={c.org.smsHref} aria-label={`Text ${c.org.name}`} title="Text"><span><Icon id="sms" small /></span></a>}
-                  {c.org.email && <a className={s.iconBtn} href={`mailto:${c.org.email}`} aria-label={`Email ${c.org.name}`} title={c.org.email}><span><Icon id="msg" small /></span></a>}
-                </div>
+                <ContactIcons org={c.org} />
               </li>
             );
           })}
         </ul>
       )}
       {h.memberships.length > 0 && (
-        <section className={`${s.card} ${s.compact}`} aria-labelledby="plans-title">
+        <section className={s.card} aria-labelledby="plans-title">
           <h3 id="plans-title" className={s.h2}>Service plans</h3>
           <ul className={s.rows}>
             {h.memberships.map((m) => (
               <li key={m.href} className={s.row}>
                 <div className={s.rowHead}>
-                  <p className={s.h3}>{m.name}</p>
-                  <span className={s.stamp} data-tone={m.status === "ACTIVE" ? "emerald" : "accent"}>{m.status === "ACTIVE" ? "Member" : "Offered to you"}</span>
+                  <p className={s.personName}>{m.name}</p>
+                  <p className={s.status} data-tone={m.status === "ACTIVE" ? "emerald" : "accent"}>{m.status === "ACTIVE" ? "You're a member" : "Offered to you"}</p>
                 </div>
                 <p className={s.sub}>
                   {m.orgName}

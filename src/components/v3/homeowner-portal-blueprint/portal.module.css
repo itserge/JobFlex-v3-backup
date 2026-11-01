@@ -71,31 +71,29 @@
 .tab[aria-current] { color: var(--ink); }
 .tab[aria-current]::after { content: ""; position: absolute; left: var(--tab-x); right: var(--tab-x); bottom: 0; height: 2px; background: var(--ink); }
 
-/* ── a section of the home page: title + kicker on one 44px rule, 32px above, 16px below ── */
-.section { display: grid; gap: 16px; min-width: 0; padding-top: 16px; scroll-margin-top: 60px; }
+/* ── a section of the home page: its title on a 2px rule, 32px above, 24px to the first card ── */
+.section { display: grid; min-width: 0; padding-top: 16px; scroll-margin-top: 60px; }
 .secHead { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; min-height: 44px; border-bottom: 2px solid var(--ink); }
-.secTitle { font-family: var(--font-display); font-size: 20px; font-weight: 900; line-height: 1.05; letter-spacing: -0.01em; text-transform: uppercase; }
-.secBody { display: grid; gap: 16px; min-width: 0; }
+.secTitle { font-family: var(--font-display); font-size: 20px; font-weight: 800; line-height: 1.05; letter-spacing: 0; text-transform: uppercase; }
+.secBody { display: grid; gap: 16px; min-width: 0; margin-top: 24px; }
 
 /* ── the side cards (Calendar, Details): one card each, the title row is the head ── */
 .sideCard { --hp-card-pad: 16px; gap: 12px; font-size: 14px; scroll-margin-top: 60px; }
 .sideBody { display: grid; gap: 12px; min-width: 0; }
-.sideCard .kicker { font-size: 12px; }
+.groupTitle { font-size: 14px; font-weight: 800; }
 .sideGroup { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--hair); }
 /* Details folds on a phone; the Show/Hide button only shows there (SideCard). */
 .foldBtn { margin-left: auto; min-height: 44px; padding: 0 2px; border: 0; background: none; color: var(--ink); font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 1.5px; cursor: pointer; }
 .sideCard[data-fold="closed"] > .sideBody { display: none; }
 .sideCard[data-fold="closed"] > .cardHead:first-child { margin-bottom: calc(var(--hp-card-pad) * -1 + 4px); border-bottom: 0; }
 
-/* ── the home sheet: one column on a phone (house → projects → calendar → contractors → details),
-      two on a desk ≥1024px — main 1fr, a sticky side column 360px ── */
-.homeSheet { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-.mainCol, .sideCol { display: contents; }
-.homeCard { order: 1; }
-.mainCol > .section { order: 2; }
-.orderCalendar { order: 3; }
-.orderContractors { order: 4; }
-.orderDetails { order: 5; }
+/* ── the welcome band (no frame), then the sheet: one column on a phone; on a desk ≥1024px the
+      main column beside a 360px side column — both scroll with the page ── */
+.welcome { display: grid; gap: 14px; padding: 4px 0 20px; border-bottom: 1px solid var(--ink); }
+.welcomeText { display: grid; gap: 6px; min-width: 0; }
+.welcomeLine { color: var(--ink-soft); font-size: 15px; font-weight: 400; line-height: 1.45; overflow-wrap: anywhere; }
+.homeSheet { display: grid; gap: 16px; min-width: 0; }
+.mainCol, .sideCol { display: grid; gap: 16px; min-width: 0; align-content: start; }
 
 .wrap { max-width: 1180px; margin: 0 auto; padding: 16px var(--hp-pad) 40px; display: grid; gap: 16px; }
 .foot { max-width: 1180px; margin: 0 auto; padding: 16px var(--hp-pad) 40px; display: grid; gap: 8px; border-top: 1px solid var(--ink); color: var(--ink-muted); font-size: 13px; }
@@ -164,47 +162,49 @@
 .contact { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .contact .btn { padding: 0 6px; }
 
-/* ── the home card: welcome, the address with the two actions on its row, then the facts ── */
-.homeCard { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "kicker" "addr" "facts" "acts"; gap: 6px; padding: 20px; }
-.homeKicker { grid-area: kicker; }
-.homeCard .homeAddress { grid-area: addr; font-size: 22px; }
-.homeFacts { grid-area: facts; color: var(--ink-muted); font-size: 14px; font-weight: 500; }
-.homeActions { grid-area: acts; margin-top: 8px; }
+/* ── Needs you: what the homeowner has to do, in plain words, each with its button ── */
+.needs { padding: 0 20px 4px; background: var(--sheet); border: var(--frame); box-shadow: inset 4px 0 0 var(--accent); }
+.needsTitle { display: flex; align-items: center; min-height: 44px; margin: 0 -20px; padding: 0 20px; border-bottom: 1px solid var(--ink); font-family: var(--font-display); font-size: 16px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
+.needRow { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; min-height: 56px; padding: 12px 0; border-top: 1px solid var(--hair); }
+.needRow:first-child { border-top: 0; }
+.needRow p { color: var(--ink); font-size: 15px; font-weight: 500; line-height: 1.4; overflow-wrap: anywhere; }
 
-/* ── needs ── */
-.needRow { display: flex; align-items: center; justify-content: space-between; gap: 10px 14px; flex-wrap: wrap; padding: 12px 0; border-top: 1px solid var(--hair); }
-.needRow:first-of-type { border-top: 0; padding-top: 0; }
-.needRow > :first-child { flex: 1 1 220px; min-width: 0; }
-
-/* ── a project card: four rows, full width — where/when + status · title · contractor · the step rail · the next step and its action ── */
-.project { gap: 12px; }
-.projectHead { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; min-height: 32px; min-width: 0; margin-top: -4px; }
-.projectHead .kicker { min-width: 0; }
-.projectTitle { font-family: var(--font-display); font-size: 20px; font-weight: 900; line-height: 1.2; text-transform: uppercase; overflow-wrap: anywhere; }
+/* ── a project card: the title with where it stands · who is on it · how far it has come — then its one action ── */
+.project { gap: 16px; }
+.projectHead { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 16px; min-width: 0; }
+.projectTitle { font-family: var(--font-display); font-size: 20px; font-weight: 800; line-height: 1.2; text-transform: uppercase; overflow-wrap: anywhere; }
 .projectTitle a { text-decoration: none; }
 .projectTitle a:hover { color: var(--accent); }
-.projectWho { color: var(--ink-muted); font-family: var(--font-sans); font-size: 14px; font-weight: 600; letter-spacing: 0; text-transform: none; }
-/* "Next:" and one sentence; a phone lets it wrap (no pointer to read a title), a desk keeps it to one line. */
-.nextLine { min-width: 0; color: var(--ink); font-size: 14px; font-weight: 500; line-height: 1.45; overflow-wrap: anywhere; }
-.nextLine b { margin-right: 4px; color: var(--accent); font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; }
-.projectActs { display: grid; justify-items: start; gap: 4px; }
-.projectActs .btn, .projectActs .btnPrimary { width: 100%; }
+/* Where it stands, as a phrase with a flat coloured square (no shadow behind a colour square). */
+.status { display: inline-flex; align-items: center; gap: 8px; color: var(--ink-soft); font-size: 13px; font-weight: 600; }
+.status::before { content: ""; flex: none; width: 8px; height: 8px; background: var(--accent); }
+.status[data-tone="muted"]::before { background: var(--ink-faint); }
+.status[data-tone="amber"]::before { background: var(--amber); }
+.status[data-tone="emerald"]::before { background: var(--emerald); }
+.who { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-width: 0; }
+.orgSquare { display: grid; place-items: center; width: 32px; height: 32px; border: var(--frame-thin); background: var(--paper); color: var(--ink); font-size: 12px; font-weight: 800; letter-spacing: 0.02em; }
+.whoText { display: grid; min-width: 0; }
+.whoText b { font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+.waiting { color: var(--ink-muted); font-size: 14px; line-height: 1.45; }
+/* How far it has come: six thin segments and one line of words. */
+.progress6 { display: grid; gap: 8px; }
+.bar6 { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 3px; }
+.bar6 li { height: 6px; background: var(--ink-line); }
+.bar6 li[data-state="done"] { background: var(--ink); }
+.bar6 li[data-state="now"] { background: var(--accent); }
+.barCaption { color: var(--ink-soft); font-size: 13px; font-weight: 500; }
+.projectFoot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; }
+.projectFoot .btn, .projectFoot .btnPrimary { flex: 1 1 100%; }
 .openLink { display: inline-flex; align-items: center; gap: 4px; min-height: var(--hp-btn-h); color: var(--ink); font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1.5px; white-space: nowrap; }
 .openLink:hover { color: var(--accent); }
 
-/* ── finished projects: a "Done (n)" rule, then one 48px row each that opens ── */
+/* ── finished projects: a "Done (n)" rule, then one 48px row each ── */
 .doneGroup { display: grid; }
-.doneHead { display: flex; align-items: center; min-height: 32px; margin-bottom: 8px; border-bottom: 1px solid var(--ink); color: var(--ink-muted); font-size: 12px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
-.doneRow { background: var(--sheet); border: var(--frame); }
+.doneHead { display: flex; align-items: center; min-height: 32px; margin-bottom: 8px; border-bottom: 1px solid var(--ink); color: var(--ink-muted); font-size: 13px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
+.doneRow { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 16px; min-height: 48px; padding: 0 20px; background: var(--sheet); border: var(--frame); }
 .doneRow + .doneRow { margin-top: -2px; }
-.doneRow > summary { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto auto; align-items: center; gap: 10px; min-height: 48px; padding: 0 var(--hp-card-pad); cursor: pointer; list-style: none; }
-.doneRow > summary::-webkit-details-marker { display: none; }
-.doneRow > summary::before { content: "+"; display: grid; place-items: center; width: 18px; height: 18px; border: var(--frame-thin); font-size: 13px; font-weight: 700; line-height: 1; }
-.doneRow[open] > summary::before { content: "–"; }
-.doneRow .openLink { margin-left: 0; }
 .doneTitle { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.doneTitle b { font-size: 14px; font-weight: 900; letter-spacing: 0.02em; text-transform: uppercase; }
-.doneBody { display: grid; gap: 12px; padding: 4px var(--hp-card-pad) var(--hp-card-pad); }
+.doneTitle b { font-size: 14px; font-weight: 800; text-transform: uppercase; }
 
 /* The Blueprint note: a left ink rule on the paper (the project page). */
 .next { display: grid; gap: 4px; padding: 12px 14px; background: var(--paper); border-left: 3px solid var(--ink); }
@@ -212,7 +212,6 @@
 .next span { color: var(--ink); font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 .next[data-tone="amber"] { border-left-color: var(--amber); }
 .next[data-tone="emerald"] { border-left-color: var(--emerald); }
-.projectFoot { display: grid; gap: 8px; min-width: 0; }
 
 /* ── status stamps: near-square, Inter 800 caps, a semantic frame and soft fill ── */
 .stamp { display: inline-flex; align-items: center; gap: 6px; min-height: 22px; padding: 2px 7px; border: var(--frame-thin); border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); font-size: 11px; font-weight: 800; letter-spacing: 0.1em; line-height: 1.1; text-transform: uppercase; white-space: nowrap; flex: none; }
@@ -221,22 +220,6 @@
 .stamp[data-tone="amber"] { border-color: var(--amber); background: rgba(184, 132, 32, 0.08); color: #7a5612; }
 .stamp[data-tone="rose"] { border-color: var(--rose); background: rgba(168, 50, 50, 0.08); color: var(--rose); }
 .stamp[data-tone="muted"] { border-color: var(--ink-faint); background: rgba(10, 10, 10, 0.04); color: var(--ink-muted); }
-
-/* ── the step rail: six numbered 22px squares joined by a rule, one-word labels on one line.
-      A phone scrolls the row sideways; a desk spreads it across the card. ── */
-.track { --sq: 22px; display: flex; overflow-x: auto; scrollbar-width: none; counter-reset: hp-step; }
-.track::-webkit-scrollbar { display: none; }
-.trackStep { position: relative; flex: 1 0 76px; display: grid; justify-items: start; gap: 6px; padding-right: 8px; color: var(--ink-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; line-height: 1.2; text-transform: uppercase; white-space: nowrap; counter-increment: hp-step; }
-.trackStep::before { content: ""; position: absolute; top: calc(var(--sq) / 2); left: var(--sq); right: 0; border-top: 1px solid var(--ink-faint); }
-.trackStep:last-child { flex: 0 0 auto; padding-right: 0; }
-.trackStep:last-child::before { display: none; }
-.trackMark { position: relative; z-index: 1; display: grid; place-items: center; width: var(--sq); height: var(--sq); border: var(--frame-thin); background: var(--sheet); color: var(--ink); font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
-.trackMark::before { content: counter(hp-step); }
-.trackStep[data-state="done"] { color: var(--ink); }
-.trackStep[data-state="done"]::before { border-top-color: var(--ink); }
-.trackStep[data-state="done"] .trackMark { background: var(--ink); color: var(--paper-deep); }
-.trackStep[data-state="now"] { color: var(--accent); font-weight: 700; }
-.trackStep[data-state="now"] .trackMark { border-color: var(--accent); background: var(--accent); color: var(--paper-deep); }
 
 /* ── facts: a definition grid — mono caps label, value; stacked on a phone, two columns on a desk ── */
 .facts { display: grid; }
@@ -274,10 +257,10 @@
 
 /* ── contractors: 56px rows — name and work left, Call / Text / Email as square icons right ── */
 .list { gap: 0; padding-top: 0; padding-bottom: 0; }
-.person { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 56px; padding: 6px 0; border-top: 1px solid var(--hair); }
+.person { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 56px; padding: 6px 0; border-top: 1px solid var(--hair); }
 .person:first-child { border-top: 0; }
 .personText { display: grid; gap: 1px; min-width: 0; }
-.personText .h3 { font-family: var(--font-sans); font-weight: 700; letter-spacing: 0; text-transform: none; }
+.personName { font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
 .iconRow { display: flex; }
 /* A 32px square drawn inside a 44px target. */
 .iconBtn { display: grid; place-items: center; width: 40px; height: 44px; color: var(--ink); }
@@ -293,12 +276,34 @@
 .planList { display: grid; }
 .planList > li { border-top: 1px solid var(--hair); }
 .planList > li:first-child { border-top: 0; }
-.planRow > summary .h3 { flex: 1; min-width: 0; font-family: var(--font-sans); font-weight: 600; letter-spacing: 0; text-transform: none; }
-.planRow > summary .sub { white-space: nowrap; }
+.planRow > summary { gap: 12px; min-height: 56px; }
+.planText { flex: 1; min-width: 0; font-size: 14px; overflow-wrap: anywhere; }
+.planText b { font-weight: 700; }
 .planAdd > summary { display: inline-flex; align-items: center; gap: 6px; min-height: var(--hp-btn-h); cursor: pointer; list-style: none; color: var(--ink); font-size: 14px; font-weight: 700; text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 1.5px; }
 .planAdd > summary::-webkit-details-marker { display: none; }
 .planAdd > summary:hover { color: var(--accent); }
+.planAdd[open] { flex-basis: 100%; }
 .planAdd[open] > summary { margin-bottom: 8px; }
+
+/* ── the calendar: the month, then what is coming in words, then the foot ── */
+.month { display: grid; gap: 8px; }
+.monthHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.monthName { font-size: 15px; font-weight: 800; }
+.monthNav { display: grid; place-items: center; width: var(--hp-btn-h); height: var(--hp-btn-h); border: var(--frame-thin); background: var(--sheet); color: var(--ink); font-size: 18px; font-weight: 700; line-height: 1; cursor: pointer; }
+.monthNav:hover { background: var(--paper); }
+.monthGrid { --cell: 44px; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.dow { display: grid; place-items: center; height: 24px; color: var(--ink-muted); font-size: 11px; font-weight: 700; }
+.day, .dayPad { position: relative; display: grid; place-items: center; height: var(--cell); }
+.day { color: var(--ink); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.day[data-today] { outline: 2px solid var(--ink); outline-offset: -4px; font-weight: 800; }
+.day[data-mark]::after { content: ""; position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%); }
+.day[data-mark="visit"]::after { width: 6px; height: 6px; background: var(--accent); }
+.day[data-mark="plan"]::after { width: 12px; height: 2px; background: var(--ink-muted); }
+.eventText { display: flex; align-items: center; min-height: 44px; color: var(--ink); font-size: 14px; line-height: 1.35; text-decoration: none; overflow-wrap: anywhere; }
+.eventText b { font-weight: 700; margin-right: 4px; }
+.eventText:hover { text-decoration: underline; text-underline-offset: 3px; }
+.calFoot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 12px; padding-top: 4px; border-top: 1px solid var(--hair); }
+.keyNote { padding: 0 2px; color: var(--ink-muted); font-size: 13px; }
 
 /* ── lists of rows (plans, events) ── */
 .rows { display: grid; }
@@ -319,6 +324,7 @@
 .eventDate { display: grid; place-content: center; justify-items: center; width: 44px; height: 44px; border: var(--frame-thin); background: var(--sheet); font-family: var(--font-mono); font-variant-numeric: tabular-nums; line-height: 1.05; text-align: center; }
 .eventDate span { color: var(--ink-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
 .eventDate b { font-size: 16px; font-weight: 700; }
+.eventDate b[data-year] { font-size: 11px; }
 .eventBody { display: grid; gap: 2px; min-width: 0; }
 .eventBody > :first-child { font-weight: 700; overflow-wrap: anywhere; }
 .eventBody > .rowLink { min-height: var(--hp-btn-h); margin: calc((22px - var(--hp-btn-h)) / 2) 0; }
@@ -427,16 +433,10 @@
   .sideCard[data-fold] > .sideBody { display: grid; }
   .sideCard[data-fold="closed"] > .cardHead:first-child { margin-bottom: 2px; border-bottom: 1px solid var(--ink); }
   .foldBtn { display: none; }
-  .homeCard { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "kicker kicker" "addr acts" "facts facts"; align-items: center; column-gap: 24px; row-gap: 6px; }
-  .homeCard .homeAddress { font-size: 24px; }
-  .homeActions { margin-top: 0; justify-content: flex-end; }
-  .projectFoot { display: flex; align-items: center; gap: 16px; min-height: 44px; }
-  .nextLine { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-  .projectActs { display: flex; align-items: center; gap: 16px; flex: none; }
-  .projectActs .btn, .projectActs .btnPrimary { width: auto; }
-  .track { overflow: visible; }
-  .trackStep { flex: 1 1 0; min-width: 0; }
-  .trackStep:last-child { flex: 0 0 auto; }
+  .welcome { grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 24px; }
+  .welcome .actions { justify-content: flex-end; }
+  .needRow { grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: 6px 0; }
+  .projectFoot .btn, .projectFoot .btnPrimary { flex: 0 0 auto; }
   .barIn { min-height: 64px; gap: 20px; }
   .brand { --pmark-h: 24px; }
   .brandText { display: flex; align-items: center; gap: 16px; }
@@ -448,7 +448,6 @@
   .wrap { padding-top: 20px; }
   .h1 { font-size: 32px; }
   .h2 { font-size: 18px; }
-  .secTitle { font-size: 22px; }
   .tab { --tab-x: 16px; flex: none; font-size: 12px; letter-spacing: 0.06em; }
   .entity { font-size: 20px; }
   .tabsIn { padding: 0 calc(var(--hp-pad) - 16px); }
@@ -469,9 +468,9 @@
 /* ── the wide desk: the two-column sheet, 36px controls ── */
 @media (min-width: 1024px) {
   .hp { --hp-btn-h: 36px; }
-  .homeSheet { display: grid; grid-template-columns: minmax(720px, 1fr) 360px; gap: 24px; align-items: start; }
-  .mainCol { display: grid; gap: 16px; min-width: 0; }
-  .sideCol { position: sticky; top: 68px; display: grid; gap: 16px; max-height: calc(100vh - 88px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+  .homeSheet { grid-template-columns: minmax(0, 1fr) 360px; gap: 24px; align-items: start; }
+  .btnBig { min-height: 40px; }
+  .monthGrid { --cell: 36px; }
   .field input, .field select, .field textarea, .input { min-height: 40px; }
   .idea { min-height: 36px; }
 }
