@@ -78,8 +78,9 @@ export function WebEstimate(p: WebEstimateProps) {
 
   async function send() {
     setBusy(true); setError(null);
-    if (!est) { setError("Run the estimate first."); setBusy(false); return; }
-    const r = await webLead(p.shop.slug, p.trade, est.token, contact).catch(() => ({ ok: false as const, error: "Something went wrong — try again." }));
+    if (!est && p.shop.house) { setError("Run the estimate first."); setBusy(false); return; }
+    // no price (resting, no read of the house): the request goes with the address alone
+    const r = await (est ? webLead(p.shop.slug, p.trade, est.token, contact) : webLead(p.shop.slug, p.trade, null, { ...contact, address: addressIn() })).catch(() => ({ ok: false as const, error: "Something went wrong — try again." }));
     setBusy(false);
     if (!r.ok) { setError(r.error); return; }
     if (r.next) { window.location.assign(r.next); return; }   // the house: the homeowner's own request page
@@ -168,9 +169,10 @@ export function WebEstimate(p: WebEstimateProps) {
       {step === "quote" && (
         <section className="we-card" data-web-step="quote">
           <h2>{est ? "Where should the quote go?" : "Leave your details"}</h2>
-          {!est && error ? <p className="we-note">{error}</p> : null}
+          {!est && !p.shop.house ? <p className="we-note" data-web-no-price>{error ?? `No price this time — ${p.shop.name} will price it and get back to you.`}</p> : !est && error ? <p className="we-note">{error}</p> : null}
           {est ? <p className="we-sub">{p.shop.house ? PRO_CAP : p.shop.name} will send the full quote for <b>{band}</b> and confirm it with you.</p> : null}
           <form className="we-form" onSubmit={(e) => { e.preventDefault(); void send(); }}>
+            {!est && !p.shop.house ? <label><span>Address of the house</span><input required value={typed} autoComplete="street-address" onChange={(e) => { setTyped(e.target.value); setAddress(null); }} data-web-address /></label> : null}
             <label><span>Your name</span><input required value={contact.name} onChange={(e) => setContact({ ...contact, name: e.target.value })} autoComplete="name" data-web-name /></label>
             <label><span>Phone</span><input required type="tel" value={contact.phone} onChange={(e) => setContact({ ...contact, phone: e.target.value })} autoComplete="tel" inputMode="tel" data-web-phone /></label>
             {p.askEmail ? <label><span>Email {p.shop.house ? null : <small>for a copy of the estimate</small>}</span><input type="email" required={!!p.shop.house} value={contact.email} onChange={(e) => setContact({ ...contact, email: e.target.value })} autoComplete="email" data-web-email /></label> : null}
@@ -181,9 +183,9 @@ export function WebEstimate(p: WebEstimateProps) {
             {error && !est && step === "quote" && contact.name ? null : null}
             <div className="we-row">
               <button type="button" className="we-btn we-ghost" onClick={() => setStep(est ? "price" : "address")}>Back</button>
-              <button type="submit" className="we-btn" disabled={busy || !est} data-web-send>{busy ? "Sending…" : "Send my request"}</button>
+              <button type="submit" className="we-btn" disabled={busy || (!est && (!!p.shop.house || typed.trim().length < 5))} data-web-send>{busy ? "Sending…" : "Send my request"}</button>
             </div>
-            {!est ? <p className="we-fine">The estimate couldn&apos;t be made from the address alone. {p.shop.house ? <a className="we-link" href="/homeowner">{pw.call}</a> : <>Call {p.shop.name}{p.shop.phone ? ` at ${p.shop.phone}` : ""} and they will price it by hand.</>}</p> : null}
+            {!est && p.shop.house ? <p className="we-fine">The estimate couldn&apos;t be made from the address alone. <a className="we-link" href="/homeowner">{pw.call}</a></p> : null}
           </form>
         </section>
       )}
@@ -192,7 +194,7 @@ export function WebEstimate(p: WebEstimateProps) {
         <section className="we-card we-done" data-web-step="done" data-web-lead={leadId ?? ""}>
           <div className="we-tick" aria-hidden="true">✓</div>
           <h2>Sent to {p.shop.name}.</h2>
-          <p className="we-sub">They have your address, the {p.trade === "hvac" ? "sizing" : "measurements"} and the price you saw{contact.email ? `, and a copy is on its way to ${contact.email}` : ""}. Expect a call{p.shop.phone ? `, or reach them at ${p.shop.phone}` : ""}.</p>
+          <p className="we-sub">{est ? <>They have your address, the {p.trade === "hvac" ? "sizing" : "measurements"} and the price you saw</> : <>They have your request and will price it and get back to you</>}{contact.email ? `, and a copy is on its way to ${contact.email}` : ""}. Expect a call{p.shop.phone ? `, or reach them at ${p.shop.phone}` : ""}.</p>
           {p.embed ? <button type="button" className="we-btn we-ghost" onClick={() => tell("close")}>Close</button> : p.shop.website ? <a className="we-btn we-ghost" href={p.shop.website.startsWith("http") ? p.shop.website : `https://${p.shop.website}`}>Back to {p.shop.name}</a> : null}
         </section>
       )}

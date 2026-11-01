@@ -81,6 +81,16 @@
 .we-map { margin: 14px 0 6px; border-radius: 12px; overflow: hidden; box-shadow: 0 0 0 1px var(--we-hair); background: #e9e7e1; }
 .we-map > div:first-child { min-height: 280px; }
 .we-map .we-fine { margin: 8px 12px 10px; }
+/* The pin map (roof-estimator-blueprint/address-pin-preview): its own sizes live under the dashboard shell
+   (.jf-blueprint .content), so on this page the map had no height and the pin could not be seen or moved. */
+.we-map .rf-pin { position: relative; }
+.we-map .rf-pin-map { width: 100%; height: clamp(240px, 42vw, 340px); background: #e9e7e1; }
+.we-map .rf-pin-caption { margin: 10px 12px 0; font-size: 15px; font-weight: 800; line-height: 1.3; color: var(--we-ink, #0b0d12); }
+.we-map .rf-pin-note { margin: 6px 12px 10px; font-size: 13px; line-height: 1.45; color: var(--we-soft, #555); }
+.we-map .rf-pin-veil { display: none; }
+.we-map .rf-pin-sweep { position: absolute; left: 0; right: 0; top: 0; height: 34%; pointer-events: none; background: linear-gradient(180deg, rgba(255,255,255,0), rgba(255,255,255,.35)); animation: we-sweep 1.4s linear infinite; }
+@keyframes we-sweep { from { transform: translateY(-100%); } to { transform: translateY(300%); } }
+@media (prefers-reduced-motion: reduce) { .we-map .rf-pin-sweep { animation: none; } }
 .we-facts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 14px; margin: 14px 0 8px; padding: 0; }
 .we-facts > div { padding: 12px 14px; border-radius: 10px; background: var(--we-paper); }
 .we-facts dt { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--we-muted); }

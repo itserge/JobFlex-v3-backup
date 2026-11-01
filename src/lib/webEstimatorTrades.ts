@@ -81,6 +81,17 @@ export function webTradeChoices(shop: WebShop, trade: WebTrade): WebChoice[] {
   }
 }
 
+/** A roof under 2/12 is a flat roof (2026-11-01): shingles, tile, shakes and slate need a slope to shed water, so a
+ *  flat roof is offered — and priced — as a membrane only, the dashboard's low-slope package. */
+export const FLAT_ROOF_PITCH12 = 2;
+export const isFlatRoof = (pitch12: number | null | undefined): boolean => typeof pitch12 === "number" && Number.isFinite(pitch12) && pitch12 < FLAT_ROOF_PITCH12;
+
+/** The materials the roof step offers once the roof is measured: a flat roof gets the membrane alone. */
+export function webRoofChoices(shop: WebShop, pitch12: number | null | undefined): WebChoice[] {
+  if (isFlatRoof(pitch12)) return ROOF_FAMILIES.filter((f) => f.id === "low-slope").map((f) => ({ id: f.id, label: f.label, note: ROOF_CHOICE_NOTE[f.id] }));
+  return webTradeChoices(shop, "roof").filter((c) => c.id !== "low-slope");
+}
+
 /** Everything a shop could offer for a trade (the settings pane's picker). */
 export function webTradeAllChoices(trade: WebTrade): WebChoice[] {
   switch (trade) {
@@ -189,30 +200,40 @@ function roofFacts(est: SolarRoofEstimate, state: string | null): RoofFacts {
 /** THE ROOF MEASURED FROM THE AIR, kept apart from the pricing (2026-10-28): the website measures once, shows it on
  *  the house, and prices each material the homeowner tries from that one measurement. */
 export interface WebRoofMeasure { est: SolarRoofEstimate; pin: NonNullable<Awaited<ReturnType<typeof pinFor>>>; parts: ReturnType<typeof parts>; address: WebAddress }
-export type WebRoofMeasureResult = { ok: true; measure: WebRoofMeasure } | Extract<WebTradeOutcome, { ok: false }>;
+export type WebRoofMeasureResult = { ok: true; measure: WebRoofMeasure } | Extract<WebTradeOutcome, { ok: false }> | { ok: false; error: string; code: "pin"; pin: { lat: number; lng: number } };
 
 export async function measureWebRoof(shop: WebShop, a: WebAddress): Promise<WebRoofMeasureResult> {
   void shop;
   const p = parts(a);
   const pin = await pinFor(a);
   if (!pin) return { ok: false, error: "We couldn't find that address. Check the street and the city.", code: "address" };
-  let est: SolarRoofEstimate;
-  try {
-    const insights = await getBuildingInsights(pin.lat, pin.lng);
-    const r = estimateSolarRoof(insights, pin);
-    if (!r.ok) return { ok: false, error: "We couldn't measure this roof from the air. Leave your details and we'll measure it in person.", code: "no-coverage" };
-    est = r.estimate;
-  } catch (err) {
-    if (err instanceof SolarUnavailableError && err.kind === "no-coverage") return { ok: false, error: "We couldn't measure this roof from the air. Leave your details and we'll measure it in person.", code: "no-coverage" };
-    return { ok: false, error: "The aerial measurement isn't answering right now. Leave your details and we'll measure it.", code: "unavailable" };
+  // HIGH imagery first; where Google has none, MEDIUM — many US homes have nothing better, and the homeowner's rough
+  // range does not need the contractor's precision (the homeowner portal's rule, actions/publicEstimate, 2026-10-28).
+  // The second call is made only on "no coverage at HIGH".
+  const NONE = { ok: false as const, error: "We couldn't measure this roof from the air. Leave your details and we'll measure it in person.", code: "no-coverage" as const };
+  for (const quality of ["HIGH", "MEDIUM"] as const) {
+    try {
+      const insights = await getBuildingInsights(pin.lat, pin.lng, quality);
+      const r = estimateSolarRoof(insights, pin, undefined, { minQuality: "MEDIUM" });
+      // The building Google found is not under the pin (a geocode on the street): the homeowner moves the pin onto the
+      // roof and measures again — the address step keeps them, with the map.
+      if (!r.ok && /match the pin|location is missing/i.test(r.error)) return { ok: false, error: "We found a building near that address, but not under the pin. Drag the pin onto your roof, then measure again.", code: "pin", pin: { lat: pin.lat, lng: pin.lng } };
+      if (!r.ok) return NONE;
+      return { ok: true, measure: { est: r.estimate, pin, parts: p, address: a } };
+    } catch (err) {
+      if (!(err instanceof SolarUnavailableError && err.kind === "no-coverage")) return { ok: false, error: "The aerial measurement isn't answering right now. Leave your details and we'll measure it.", code: "unavailable" };
+    }
   }
-  return { ok: true, measure: { est, pin, parts: p, address: a } };
+  return NONE;
 }
+
+const pkgLine = (l: { name: string; quantity: number; unit: string; unitPrice: number; basis?: unknown }) => ({ name: l.name, quantity: l.quantity, unit: l.unit, unitPrice: l.unitPrice, basis: l.basis ?? null });
 
 /** The measured roof in the family the homeowner picked, priced in the shop's book (its systems, brands, rates). */
 export async function priceWebRoof(shop: WebShop, m: WebRoofMeasure, pick: string | null): Promise<WebTradeOutcome> {
   const { est, pin, parts: p } = m;
-  const family = (ROOF_FAMILIES.find((f) => f.id === pick)?.id ?? "asphalt") as RoofFamily;
+  // A flat roof is priced as a membrane whatever was asked; a sloped one never is.
+  const family = (isFlatRoof(est.predominantPitch12) ? "low-slope" : ROOF_FAMILIES.find((f) => f.id === pick && f.id !== "low-slope")?.id ?? "asphalt") as RoofFamily;
   const state = p.state || pin.state?.toUpperCase() || shop.state;
   const facts = roofFacts(est, state);
   const book = await roofBook(shop.id);
@@ -229,13 +250,17 @@ export async function priceWebRoof(shop: WebShop, m: WebRoofMeasure, pick: strin
   const summary = `Your roof measures about ${squares} squares (${Math.round(est.areaSqft).toLocaleString("en-US")} sq ft) at a ${est.pitchLabel} pitch, ${est.segmentCount} roof planes, from aerial imagery${est.imageryDate ? ` of ${est.imageryDate.slice(0, 4)}` : ""}.`;
   return {
     ok: true, summary, choice, cents: Math.round(total * 100), ...p,
-    facts: { pin, areaSqft: est.areaSqft, squares: facts.squares, pitchLabel: est.pitchLabel, pitchFamilies: est.pitchFamilies, segmentCount: est.segmentCount, imageryDate: est.imageryDate, imageryQuality: est.imageryQuality, family, systemId: sys.id, product: brand ?? null, solar: est },
+    facts: { pin, areaSqft: est.areaSqft, squares: facts.squares, pitchLabel: est.pitchLabel, pitchFamilies: est.pitchFamilies, segmentCount: est.segmentCount, imageryDate: est.imageryDate, imageryQuality: est.imageryQuality, family, systemId: sys.id, product: brand ?? null, solar: est,
+      // The package as priced — its choices and its lines — so the lead opens in the roof estimator on the same number
+      // (lib/webHandoff roofSeedFromWebLead).
+      spec: live, lines: { materials: pkg.materials.map(pkgLine), labor: pkg.labor.map(pkgLine), scope: pkg.scope, assumptions: pkg.assumptions } },
   };
 }
 
 async function roofEstimate(shop: WebShop, input: WebTradeInput): Promise<WebTradeOutcome> {
   const m = await measureWebRoof(shop, input.address);
-  if (!m.ok) return m;
+  // the one-shot path has no map to move a pin on: a building off the pin is "no read" there
+  if (!m.ok) return m.code === "pin" ? { ok: false, error: m.error, code: "no-coverage" } : m;
   return priceWebRoof(shop, m.measure, input.choice);
 }
 

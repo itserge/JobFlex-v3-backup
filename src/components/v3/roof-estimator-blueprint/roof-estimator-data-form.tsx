@@ -41,6 +41,7 @@ import { estimateRoof, convertRoofEstimateToProposal, loadRoofFromProposal, open
 import { DECK_LOCK_WORDS, PROPOSAL_STATUS_WORDS, type LinkedDeckProposal } from "@/lib/deck/proposalEdit";
 // The card's own key for "this roof" (it counts the existing material and storeys too).
 import { factsKey } from "./roof-package-builder";
+import type { WebRoofSeed } from "@/lib/webHandoff";
 import {
   reportPlanLimit,
   reportPlanLimitResult,
@@ -440,7 +441,7 @@ function StructureRow(p: {
   );
 }
 
-export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, measurementEnabled = false, initialAddress, leadEstimateId, proposalId, homeState = null }: { aiEnabled?: boolean; evEnabled?: boolean; measurementEnabled?: boolean; initialAddress?: string; leadEstimateId?: string; proposalId?: string; homeState?: string | null } = {}) {
+export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, measurementEnabled = false, initialAddress, leadEstimateId, webRoof, proposalId, homeState = null }: { aiEnabled?: boolean; evEnabled?: boolean; measurementEnabled?: boolean; initialAddress?: string; leadEstimateId?: string; webRoof?: WebRoofSeed; proposalId?: string; homeState?: string | null } = {}) {
   const router = useRouter();
 
   // ── Screen ──
@@ -1414,6 +1415,36 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
     // runManual is this render's handler; the lead opens once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leadEstimateId]);
+
+  // A WEBSITE ESTIMATOR'S ROOF LEAD (2026-11-01): the aerial measurement the website read opens (stored — nothing is
+  // ordered), the package the website priced is seeded into the build card once the facts exist (leadSpecRef, above),
+  // and its lines are the estimate — the contractor sees the number the homeowner saw.
+  const openedWebRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!webRoof || openedWebRef.current) return;
+    openedWebRef.current = true;
+    void (async () => {
+      leadSpecRef.current = webRoof.spec;
+      if (!(await openRecent(webRoof.measurementId))) {
+        leadSpecRef.current = null;
+        return;
+      }
+      const toLine = (l: { name: string; quantity: number; unitPrice: number; unit: string }): EditableLine => ({ id: nanoid(6), name: l.name, quantity: l.quantity, unitPrice: l.unitPrice, unit: l.unit });
+      lastSpecRef.current = webRoof.spec;
+      setMaterials(webRoof.materials.map(toLine));
+      setLabor(webRoof.labor.map(toLine));
+      setTitle(`${webRoof.spec.systemName?.trim() || "Roof"} · ${webRoof.address || "site"}`);
+      setScopeText(webRoof.scope);
+      const shown = webRoof.shown.low === webRoof.shown.high ? `$${webRoof.shown.low.toLocaleString("en-US")}` : `$${webRoof.shown.low.toLocaleString("en-US")} – $${webRoof.shown.high.toLocaleString("en-US")}`;
+      setAssumptions([`From your website estimator: the homeowner chose ${webRoof.choice} and saw ${shown} before tax. Priced from an aerial read — measure before you sign.`, ...webRoof.assumptions]);
+      setTablesEdited(false);
+      setSampleEstimate(false);
+      toast.success("The homeowner's estimate is open", `${webRoof.choice} — the lines below are the price they saw.`);
+      revealTables();
+    })();
+    // openRecent / revealTables are this render's handlers; the lead opens once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [webRoof]);
 
   async function generate() {
     const t = totals;

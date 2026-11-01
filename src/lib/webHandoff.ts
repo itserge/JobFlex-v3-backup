@@ -1,12 +1,13 @@
 // OPENING PRICED (2026-10-28): a lead from a website estimator — or from the house (/estimate/jobflex/<trade>, bought on
 // the Lead Center) — carries the record the public page priced from (`webLead:<leadId>`, lib/webEstimator
-// WebLeadRecord). The deck and the roof already open priced (actions/webEstimator openWebLeadInEstimator); the fence,
+// WebLeadRecord). The deck opens priced (actions/webEstimator openWebLeadInEstimator); the roof (2026-11-01), the fence,
 // HVAC and Smart Proposal estimators open with the address and the words only. These readers turn the record's facts
 // into the one thing each of those estimators applies at open — the fence as drawn, the house with its tier, the
 // generated lines — so the contractor opens it priced in their own book. The estimator's page reads the record by the
 // seed's lead id (the seed cookie is ~4 KB and carries none of this). Pure; the server read is lib/webEstimatorServer
 // readWebLeadFor. Design: docs/superpowers/specs/2026-10-28-home-portal-house-estimators-design.md.
 import type { WebLeadRecord } from "./webEstimator";
+import type { RoofPackageSpec } from "./roofPackage/takeoff";
 import type { SiteFacts } from "./hvac/intake";
 import { estimateSchema, type GeneratedEstimate } from "./estimatorSchema";
 
@@ -16,6 +17,53 @@ const pinOf = (v: unknown): { lat: number; lng: number } | null => {
   const lat = num(p?.lat), lng = num(p?.lng);
   return lat !== null && lng !== null ? { lat, lng } : null;
 };
+
+// ── the roof: what webRoofPrice stored (lib/webEstimatorTrades priceWebRoof, 2026-11-01) ──
+
+export type WebRoofSeedLine = { name: string; quantity: number; unitPrice: number; unit: string };
+export type WebRoofSeed = {
+  /** The aerial measurement row the hand-off wrote (openWebLeadInEstimator): opened, nothing ordered. */
+  measurementId: string;
+  /** The package's choices as the website priced them — the system (the material the homeowner chose; a flat roof's
+   *  membrane), the brand, the shop's rates — seeded into the build card. */
+  spec: RoofPackageSpec;
+  materials: WebRoofSeedLine[];
+  labor: WebRoofSeedLine[];
+  scope: string;
+  assumptions: string[];
+  /** The words of what they chose and the price they saw: the estimator's note. */
+  choice: string;
+  address: string;
+  shown: { low: number; high: number };
+};
+
+export function roofSeedFromWebLead(rec: WebLeadRecord): WebRoofSeed | null {
+  if (rec.trade !== "roof" || rec.estimate.trade !== "roof") return null;
+  const f = rec.estimate.facts;
+  const measurementId = typeof f.measurementId === "string" && /^[\w-]{1,64}$/.test(f.measurementId) ? f.measurementId : null;
+  const spec = f.spec && typeof f.spec === "object" && typeof (f.spec as { systemId?: unknown }).systemId === "string" ? (f.spec as RoofPackageSpec) : null;
+  const lines = (f.lines && typeof f.lines === "object" ? f.lines : {}) as { materials?: unknown; labor?: unknown; scope?: unknown; assumptions?: unknown };
+  const line = (v: unknown): WebRoofSeedLine | null => {
+    const l = v as { name?: unknown; quantity?: unknown; unitPrice?: unknown; unit?: unknown } | null;
+    const quantity = num(l?.quantity), unitPrice = num(l?.unitPrice);
+    return l && typeof l.name === "string" && quantity !== null && unitPrice !== null ? { name: l.name, quantity, unitPrice, unit: typeof l.unit === "string" ? l.unit : "" } : null;
+  };
+  const list = (v: unknown) => (Array.isArray(v) ? v.slice(0, 200).map(line).filter((l): l is WebRoofSeedLine => !!l) : []);
+  const materials = list(lines.materials), labor = list(lines.labor);
+  if (!measurementId || !spec || !materials.length) return null;
+  const words = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, 60) : []);
+  return {
+    measurementId,
+    spec,
+    materials,
+    labor,
+    scope: words(lines.scope).join("\n"),
+    assumptions: words(lines.assumptions),
+    choice: rec.estimate.choice,
+    address: [rec.estimate.address, rec.estimate.city].filter(Boolean).join(", "),
+    shown: rec.estimate.band,
+  };
+}
 
 // ── the fence: what webFencePrice stored (actions/webEstimator) ──
 

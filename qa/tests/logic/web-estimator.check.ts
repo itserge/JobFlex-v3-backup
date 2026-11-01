@@ -10,6 +10,7 @@ import {
   WEB_LEAD_SOURCE,
   cleanHost,
   embedSnippets,
+  embedButtonInk,
   homeownerEmail,
   hostAllowed,
   splitTypedAddress,
@@ -52,7 +53,9 @@ check("the other trades default off", !s.trades.hvac.on && !s.trades.fence.on &&
 // the embed
 const e = embedSnippets("https://www.jobflex.app/", "ridgeline-roofing", "roof");
 check("the link", e.link === "https://www.jobflex.app/estimate/ridgeline-roofing/roof");
-check("the button tag names the shop and trade", /estimator\.js" data-shop="ridgeline-roofing" data-trade="roof" async/.test(e.button));
+check("the button tag names the shop and trade, the trade's words, the blue when no colour", /estimator\.js" data-shop="ridgeline-roofing" data-trade="roof" data-label="Get my roof price" data-color="#1854a0" async/.test(e.button));
+check("the button carries the shop's brand colour; junk falls back", /data-color="#111113"/.test(embedSnippets("https://x.app", "s", "fence", "#111113").button) && /data-color="#1854a0"/.test(embedSnippets("https://x.app", "s", "fence", "red;x:y").button));
+check("ink on a light colour, white on a dark one", embedButtonInk("#ffeb3b") === "#0b0d12" && embedButtonInk("#111113") === "#ffffff");
 check("the iframe points at the embed view", /src="https:\/\/www\.jobflex\.app\/estimate\/ridgeline-roofing\/roof\?embed=1"/.test(e.iframe));
 
 // the domain rule

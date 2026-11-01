@@ -21,7 +21,10 @@ import {
   WEB_TRADE,
   emptyCounts,
   homeownerEmail,
+  homeownerUnpricedEmail,
   leadDescription,
+  unpricedLeadDescription,
+  type WebUnpricedWhy,
   monthKey,
   normalizeWebEstimatorSettings,
   webCountsKey,
@@ -230,6 +233,42 @@ export async function createWebLead(shop: WebShop, est: WebEstimateRecord, conta
     try { await notifyLeadCreated(lead.id); } catch (err) { console.error("[web-estimator] lead alert failed:", err instanceof Error ? err.message : err); }
     if (contact.email) {
       const m = homeownerEmail({ shop: shop.name, trade, band: est.band, show: est.show, summary: est.summary, choice: est.choice, phone: contact.phone, note: tradeSettings.note || undefined });
+      try {
+        await sendEmail({ to: contact.email, subject: m.subject, text: m.text, html: `<pre style="font:15px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;white-space:pre-wrap">${escapeHtml(m.text)}</pre>`, organizationId: shop.id });
+      } catch (err) { console.error("[web-estimator] homeowner email failed:", err instanceof Error ? err.message : err); }
+    }
+  });
+  return { leadId: lead.id };
+}
+
+/** A request with no price (the estimator resting, or no read of this house): the Lead with no estimate record — the
+ *  lead page reads it as an ordinary website lead — the shop's usual alert, the homeowner told the shop prices it.
+ *  Counted as a lead only. */
+export async function createWebLeadUnpriced(shop: WebShop, trade: WebTrade, a: { address: string; city: string | null; state: string | null; zip: string | null }, contact: WebLeadContact, why: WebUnpricedWhy): Promise<{ leadId: string }> {
+  const lead = await db.lead.create({
+    data: {
+      organizationId: shop.id,
+      name: contact.name,
+      email: contact.email,
+      phone: contact.phone,
+      address: a.address,
+      city: a.city,
+      state: a.state,
+      zip: a.zip,
+      projectType: PROJECT_TYPE[trade],
+      description: unpricedLeadDescription(trade, why, contact.note ? `Homeowner's note: "${contact.note}"` : ""),
+      source: WEB_LEAD_SOURCE,
+      status: "NEW",
+    },
+    select: { id: true },
+  });
+  const where = [a.address, a.city, a.state].filter(Boolean).join(", ");
+  await logActivity({ organizationId: shop.id, actorId: null, kind: "LEAD_WEBSITE", leadId: lead.id, summary: `${contact.name} asked for a ${PROJECT_TYPE[trade].toLowerCase()} quote on the website — no price shown${why === "resting" ? " (the estimator was resting)" : ""} — ${where}` }).catch(() => {});
+  await bumpWebCount(shop.id, "leads").catch(() => {});
+  afterResponse(async () => {
+    try { await notifyLeadCreated(lead.id); } catch (err) { console.error("[web-estimator] lead alert failed:", err instanceof Error ? err.message : err); }
+    if (contact.email) {
+      const m = homeownerUnpricedEmail({ shop: shop.name, trade, address: where, phone: contact.phone });
       try {
         await sendEmail({ to: contact.email, subject: m.subject, text: m.text, html: `<pre style="font:15px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;white-space:pre-wrap">${escapeHtml(m.text)}</pre>`, organizationId: shop.id });
       } catch (err) { console.error("[web-estimator] homeowner email failed:", err instanceof Error ? err.message : err); }

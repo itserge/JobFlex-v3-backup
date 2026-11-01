@@ -58,6 +58,8 @@ export function WebFence(p: WebFenceProps) {
   const [view, setView] = React.useState<"map" | "3d">("map");
   const [typedFeet, setTypedFeet] = React.useState("");
   const [typedGates, setTypedGates] = React.useState("1");
+  /** Why there is no price (the estimator resting for the month): the form still takes the request. */
+  const [noPrice, setNoPrice] = React.useState<string | null>(null);
   const [byHand, setByHand] = React.useState(false);
   const [est, setEst] = React.useState<WebEstimateView | null>(null);
   const [contactIn, setContact] = React.useState({ name: "", phone: "", email: "", note: "", consent: false, company: "" });
@@ -118,13 +120,16 @@ export function WebFence(p: WebFenceProps) {
     if (!runs.some((n) => Number.isFinite(n) && n > 0)) { setBusy(false); setError(hand ? "How many feet of fence?" : "Draw the fence line on the map first — tap the corners."); return; }
     const r = await webFencePrice(p.shop.slug, { address: addressIn(), runsFt: runs, type: style, heightFt, gates: nGates, doubles: nDoubles, points: hand ? null : points }).catch(() => ({ ok: false as const, error: "Something went wrong — try again." }));
     setBusy(false);
-    if (!r.ok) { setError(r.error); return; }
+    if (!r.ok) {
+      if (!p.shop.house && "code" in r && (r.code === "capped" || r.code === "unavailable")) { setEst(null); setNoPrice(r.error); setStep("quote"); return; }
+      setError(r.error); return;
+    }
     setEst(r.estimate); setStep("price");
   }
   async function sendNow() {
     setBusy(true); setError(null);
-    if (!est) { setBusy(false); return; }
-    const r = await webLead(p.shop.slug, "fence", est.token, contact).catch(() => ({ ok: false as const, error: "Something went wrong — try again." }));
+    // no price (the estimator resting): the request goes with the address alone
+    const r = await (est ? webLead(p.shop.slug, "fence", est.token, contact) : webLead(p.shop.slug, "fence", null, { ...contact, address: addressIn() })).catch(() => ({ ok: false as const, error: "Something went wrong — try again." }));
     setBusy(false);
     if (!r.ok) { setError(r.error); return; }
     if (r.next) { clearCarriedWords(); window.location.assign(r.next); return; }   // the house: the homeowner's own request page
@@ -223,9 +228,10 @@ export function WebFence(p: WebFenceProps) {
 
       {step === "quote" && (
         <section className="we-card" data-web-step="quote">
-          <h2>Your full quote</h2>
-          {est ? <p className="we-note">{est.summary} <b>{price}</b> as {est.choice}. {p.shop.house ? PRO_CAP : p.shop.name} confirms it line by line.</p> : null}
+          <h2>{est ? "Your full quote" : "Leave your details"}</h2>
+          {est ? <p className="we-note">{est.summary} <b>{price}</b> as {est.choice}. {p.shop.house ? PRO_CAP : p.shop.name} confirms it line by line.</p> : <p className="we-note" data-web-no-price>{noPrice ?? `No price this time — ${p.shop.name} will price it and get back to you.`}</p>}
           <form className="we-form" onSubmit={(e) => { e.preventDefault(); void sendNow(); }}>
+            {!est ? <label><span>Address of the house</span><input value={typed} autoComplete="street-address" onChange={(e) => { setTyped(e.target.value); setAddress(null); }} data-web-address /></label> : null}
             <label><span>Your name</span><input value={contact.name} autoComplete="name" onChange={(e) => setContact({ ...contact, name: e.target.value })} data-web-name /></label>
             <label><span>Phone</span><input value={contact.phone} inputMode="tel" autoComplete="tel" onChange={(e) => setContact({ ...contact, phone: e.target.value })} data-web-phone /></label>
             {p.askEmail ? <label><span>Email {p.shop.house ? null : <small>for your copy of the price</small>}</span><input type="email" required={!!p.shop.house} value={contact.email} autoComplete="email" onChange={(e) => setContact({ ...contact, email: e.target.value })} data-web-email /></label> : null}
@@ -234,8 +240,8 @@ export function WebFence(p: WebFenceProps) {
             <input className="we-hp" tabIndex={-1} autoComplete="off" value={contact.company} onChange={(e) => setContact({ ...contact, company: e.target.value })} aria-hidden="true" name="company" />
             {error ? <p className="we-err" role="alert">{error}</p> : null}
             <div className="we-row">
-              <button type="button" className="we-btn we-ghost" onClick={() => setStep("price")} disabled={busy}>Back</button>
-              <button type="submit" className="we-btn" disabled={busy || !est} data-web-send>{busy ? "Sending…" : "Send my request"}</button>
+              <button type="button" className="we-btn we-ghost" onClick={() => setStep(est ? "price" : "draw")} disabled={busy}>Back</button>
+              <button type="submit" className="we-btn" disabled={busy || (!est && typed.trim().length < 5)} data-web-send>{busy ? "Sending…" : "Send my request"}</button>
             </div>
           </form>
         </section>
@@ -245,7 +251,7 @@ export function WebFence(p: WebFenceProps) {
         <section className="we-card we-done" data-web-step="done" data-web-lead={leadId ?? ""}>
           <div className="we-tick">✓</div>
           <h2>Sent to {p.shop.name}</h2>
-          <p className="we-sub">They have your fence as you drew it and the price you saw, and will be in touch{contact.phone ? ` at ${contact.phone}` : ""} to confirm the details.</p>
+          <p className="we-sub">{est ? <>They have your fence as you drew it and the price you saw, and will be in touch</> : <>They have your request and will price it and get back to you</>}{contact.phone ? ` at ${contact.phone}` : ""} to confirm the details.</p>
           {p.embed ? <button type="button" className="we-btn we-ghost" onClick={() => tell("close")}>Close</button> : null}
         </section>
       )}

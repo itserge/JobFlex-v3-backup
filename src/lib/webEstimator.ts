@@ -235,13 +235,26 @@ export const bandWords = (b: { low: number; high: number }): string => (b.low ==
 
 // ── the embed
 
-/** The three ways onto a website, from the app's base URL, the slug and the trade. */
-export function embedSnippets(base: string, slug: string, trade: WebTrade): { link: string; button: string; iframe: string } {
+/** The button's colour when the shop has set no brand colour — the blueprint blue. */
+export const WEB_BUTTON_COLOR = "#1854a0";
+/** The shop's brand colour (Settings → Company) as the button paints it: a hex colour, else the blueprint blue. */
+export const embedButtonColor = (c: string | null | undefined): string => (c && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(c.trim()) ? c.trim().toLowerCase() : WEB_BUTTON_COLOR);
+/** White or ink on the button, whichever reads on its colour (the same rule public/embed/estimator.js applies). */
+export function embedButtonInk(color: string): string {
+  const h = embedButtonColor(color).slice(1);
+  const full = h.length === 3 ? h.replace(/./g, (x) => x + x) : h;
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.4 ? "#0b0d12" : "#ffffff";
+}
+
+/** The three ways onto a website, from the app's base URL, the slug and the trade. The button carries the trade's
+ *  words and the shop's brand colour (`color`, Settings → Company), so it paints as the shop's own. */
+export function embedSnippets(base: string, slug: string, trade: WebTrade, color?: string | null): { link: string; button: string; iframe: string } {
   const b = base.replace(/\/+$/, "");
   const link = `${b}/estimate/${slug}/${trade}`;
   return {
     link,
-    button: `<script src="${b}/embed/estimator.js" data-shop="${slug}" data-trade="${trade}" async></script>`,
+    button: `<script src="${b}/embed/estimator.js" data-shop="${slug}" data-trade="${trade}" data-label="${WEB_TRADE[trade].button}" data-color="${embedButtonColor(color)}" async></script>`,
     iframe: `<iframe src="${link}?embed=1" title="${WEB_TRADE[trade].title}" style="width:100%;min-height:720px;border:0;border-radius:12px" loading="lazy" allow="geolocation"></iframe>`,
   };
 }
@@ -265,7 +278,7 @@ export function splitTypedAddress(a: { address: string; city: string; state: str
 
 /** What one click on the lead page does for each trade — said plainly, no more than the estimator will do. */
 export const HANDOFF_WORDS: Record<WebTrade, string> = {
-  roof: "Their aerial measurement is on file — it is the top row under Recent measurements; pick it, choose the package, send the proposal.",
+  roof: "Opens on their aerial measurement with the material they chose, priced in your book — the number they saw.",
   hvac: "Opens with their house looked up and sized, the tier they picked selected and priced in your book — adjust, then send the proposal.",
   fence: "Opens on their lot with the fence as they drew it — the style, the height, the gates — priced in your book.",
   deck: "Opens as a draft with their deck designed and priced the way they saw it — adjust, then send the proposal.",
@@ -297,6 +310,33 @@ export const emptyCounts = (): WebMonthCounts => ({ views: 0, estimates: 0, lead
 export function leadDescription(trade: WebTrade, parts: { summary: string; choice: string; band: { low: number; high: number }; show: "range" | "exact"; note?: string }): string {
   const price = parts.show === "exact" ? `Priced at ${money(parts.band.low)}` : `Shown ${bandWords(parts.band)}`;
   return [`From the ${WEB_TRADE[trade].name.replace(" on your website", "").toLowerCase()} on your website.`, parts.summary, parts.choice ? `Chose: ${parts.choice}.` : "", `${price} (before tax).`, parts.note || ""].filter(Boolean).join(" ");
+}
+
+// ── A REQUEST WITH NO PRICE (2026-11-01): the estimator resting for the month (the shop's cap), or no aerial read of
+// this house — the form still takes the request; the lead says no price was shown, the homeowner is told the shop
+// prices it. Counted as a lead, never an estimate.
+
+export type WebUnpricedWhy = "resting" | "unpriced";
+export const isWebUnpricedWhy = (v: unknown): v is WebUnpricedWhy => v === "resting" || v === "unpriced";
+
+/** The lead's words when no price was shown. */
+export function unpricedLeadDescription(trade: WebTrade, why: WebUnpricedWhy, note?: string | null): string {
+  const tool = WEB_TRADE[trade].name.replace(" on your website", "").toLowerCase();
+  const when = why === "resting" ? "Sent while the estimator was resting for the month (your monthly cap)" : "The estimator couldn't price this address";
+  return [`From the ${tool} on your website.`, `${when} — no price was shown. Price it and get back to them.`, note || ""].filter(Boolean).join(" ");
+}
+
+/** The homeowner's confirmation when no price was shown. */
+export function homeownerUnpricedEmail(input: { shop: string; trade: WebTrade; address: string; phone?: string | null }): { subject: string; text: string } {
+  const t = WEB_TRADE[input.trade];
+  return {
+    subject: `Your request — ${input.shop}`,
+    text: [
+      `Thanks for using the ${t.name.replace(" on your website", "").toLowerCase()} on ${input.shop}'s website.`,
+      ``,
+      `We couldn't show a price online this time. ${input.shop} has your request for ${input.address} and will price it and get back to you${input.phone ? ` at ${input.phone}` : ""}.`,
+    ].join("\n"),
+  };
 }
 
 /** What the homeowner's confirmation says. */

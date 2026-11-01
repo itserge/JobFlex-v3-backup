@@ -160,6 +160,9 @@
 .form .snips { display: grid; gap: 16px; margin: 14px 0 0; }
 .form .snipRow { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .form .box.boxCode { flex: 1; background: var(--paper, #f2f0eb); }
+/* The embed button as it paints on the shop's site (its own look — public/embed/estimator.js), on a plain page. */
+.form .sitePrev { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin: 10px 0 0; padding: 14px;
+  border: 1px dashed var(--hair, rgba(10,10,10,.12)); border-radius: var(--radius, 2px); background: #fff; }
 .form .in.code { font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; font-weight: 500;
   text-overflow: ellipsis; }
 

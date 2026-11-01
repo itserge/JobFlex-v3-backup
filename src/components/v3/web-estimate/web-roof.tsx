@@ -39,6 +39,8 @@ export function WebRoof(p: WebRoofProps) {
   const [est, setEst] = React.useState<WebEstimateView | null>(null);
   const [contact, setContact] = React.useState({ name: "", phone: "", email: "", note: "", consent: false, company: "" });
   const [leadId, setLeadId] = React.useState<string | null>(null);
+  /** Why there is no price (the estimator resting for the month, no read from the air): the form still takes the request. */
+  const [noPrice, setNoPrice] = React.useState<string | null>(null);
   const viewed = React.useRef(false);
 
   React.useEffect(() => {
@@ -58,7 +60,9 @@ export function WebRoof(p: WebRoofProps) {
     setBusy(false);
     if (!r.ok) {
       // no roof from the air, a resting estimator: the homeowner may still ask for the quote by hand
-      if ("code" in r && (r.code === "no-coverage" || r.code === "capped" || r.code === "unavailable")) { setEst(null); setError(r.error); setStep("quote"); return; }
+      if ("code" in r && (r.code === "no-coverage" || r.code === "capped" || r.code === "unavailable")) { setEst(null); setNoPrice(r.error); setStep("quote"); return; }
+      // the building Google found is not under the pin: the map shows where the pin is, to drag it onto the roof
+      if ("pin" in r && r.pin) { setPin(r.pin); setMoved(false); }
       setError(r.error); setStep("address"); return;
     }
     setMeasure(r);
@@ -77,8 +81,8 @@ export function WebRoof(p: WebRoofProps) {
   }
   async function sendNow() {
     setBusy(true); setError(null);
-    if (!est) { setError(`Call ${p.shop.name}${p.shop.phone ? ` at ${p.shop.phone}` : ""} — they will measure it in person.`); setBusy(false); return; }
-    const r = await webLead(p.shop.slug, "roof", est.token, contact).catch(() => ({ ok: false as const, error: "Something went wrong — try again." }));
+    // no price (resting, or no read from the air): the request goes with the address alone
+    const r = await (est ? webLead(p.shop.slug, "roof", est.token, contact) : webLead(p.shop.slug, "roof", null, { ...contact, address: addressIn() })).catch(() => ({ ok: false as const, error: "Something went wrong — try again." }));
     setBusy(false);
     if (!r.ok) { setError(r.error); return; }
     setLeadId(r.leadId); setStep("done"); tell("lead");
@@ -161,8 +165,9 @@ export function WebRoof(p: WebRoofProps) {
       {step === "quote" && (
         <section className="we-card" data-web-step="quote">
           <h2>{est ? "Your full quote" : "Leave your details"}</h2>
-          {est ? <p className="we-note">{est.summary} <b>{price}</b> as {est.choice}. {p.shop.name} confirms it line by line.</p> : null}
+          {est ? <p className="we-note">{est.summary} <b>{price}</b> as {est.choice}. {p.shop.name} confirms it line by line.</p> : <p className="we-note" data-web-no-price>{noPrice ?? `No price this time — ${p.shop.name} will price it and get back to you.`}</p>}
           <form className="we-form" onSubmit={(e) => { e.preventDefault(); void sendNow(); }}>
+            {!est ? <label><span>Address of the house</span><input value={typed} autoComplete="street-address" onChange={(e) => { setTyped(e.target.value); setAddress(null); }} data-web-address /></label> : null}
             <label><span>Your name</span><input value={contact.name} autoComplete="name" onChange={(e) => setContact({ ...contact, name: e.target.value })} data-web-name /></label>
             <label><span>Phone</span><input value={contact.phone} inputMode="tel" autoComplete="tel" onChange={(e) => setContact({ ...contact, phone: e.target.value })} data-web-phone /></label>
             {p.askEmail ? <label><span>Email <small>for your copy of the price</small></span><input type="email" value={contact.email} autoComplete="email" onChange={(e) => setContact({ ...contact, email: e.target.value })} data-web-email /></label> : null}
@@ -172,9 +177,8 @@ export function WebRoof(p: WebRoofProps) {
             {error ? <p className="we-err" role="alert">{error}</p> : null}
             <div className="we-row">
               <button type="button" className="we-btn we-ghost" onClick={() => setStep(est ? "price" : "address")} disabled={busy}>Back</button>
-              <button type="submit" className="we-btn" disabled={busy || !est} data-web-send>{busy ? "Sending…" : "Send my request"}</button>
+              <button type="submit" className="we-btn" disabled={busy || (!est && typed.trim().length < 5)} data-web-send>{busy ? "Sending…" : "Send my request"}</button>
             </div>
-            {!est ? <p className="we-fine">The roof couldn&apos;t be measured from the air. Call {p.shop.name}{p.shop.phone ? ` at ${p.shop.phone}` : ""} and they will measure it in person.</p> : null}
           </form>
         </section>
       )}
@@ -183,7 +187,7 @@ export function WebRoof(p: WebRoofProps) {
         <section className="we-card we-done" data-web-step="done" data-web-lead={leadId ?? ""}>
           <div className="we-tick">✓</div>
           <h2>Sent to {p.shop.name}</h2>
-          <p className="we-sub">They have your roof&apos;s measurement and the price you saw, and will be in touch{contact.phone ? ` at ${contact.phone}` : ""} to confirm the details.</p>
+          <p className="we-sub">{est ? <>They have your roof&apos;s measurement and the price you saw, and will be in touch</> : <>They have your request and will price it and get back to you</>}{contact.phone ? ` at ${contact.phone}` : ""} to confirm the details.</p>
           {p.embed ? <button type="button" className="we-btn we-ghost" onClick={() => tell("close")}>Close</button> : null}
         </section>
       )}

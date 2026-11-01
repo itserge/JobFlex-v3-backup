@@ -12,9 +12,17 @@
   var origin = (function () { try { return new URL(me.src).origin; } catch { return "https://www.jobflex.app"; } })();
   var host = location.hostname;
   var url = origin + "/estimate/" + encodeURIComponent(shop) + "/" + encodeURIComponent(trade) + "?embed=1&host=" + encodeURIComponent(host);
-  var color = me.getAttribute("data-color") || "#1854a0";
-  var labels = { roof: "Get my roof price", hvac: "Price my new system", fence: "Price my fence", deck: "Design my deck" };
-  var label = me.getAttribute("data-label") || labels[trade] || "Get my price";
+  // The shop's brand colour and the trade's words ride on the tag (Settings → Website estimators writes both); a colour
+  // that is not a plain hex falls back to the blueprint blue, and the text is white or ink, whichever reads on it.
+  var color = (me.getAttribute("data-color") || "").trim();
+  if (!/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(color)) color = "#1854a0";
+  var ink = (function () {
+    var h = color.slice(1); if (h.length === 3) h = h.replace(/./g, function (x) { return x + x; });
+    var l = [0, 2, 4].map(function (i) { var v = parseInt(h.slice(i, i + 2), 16) / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+    return 0.2126 * l[0] + 0.7152 * l[1] + 0.0722 * l[2] > 0.4 ? "#0b0d12" : "#fff";
+  })();
+  var labels = { roof: "Get my roof price", hvac: "Price my new system", fence: "Price my fence", deck: "Design my deck", smart: "Price my project" };
+  var label = (me.getAttribute("data-label") || "").trim().slice(0, 60) || labels[trade] || "Get my price";
 
   function frame(parent, height) {
     var f = document.createElement("iframe");
@@ -36,7 +44,7 @@
   btn.type = "button"; btn.textContent = label;
   btn.setAttribute("data-jobflex-estimator", trade);
   btn.style.cssText = "display:inline-flex;align-items:center;gap:10px;padding:14px 22px;border:0;border-radius:10px;background:" + color +
-    ";color:#fff;font:600 16px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;cursor:pointer;box-shadow:0 8px 20px -8px rgba(0,0,0,.35)";
+    ";color:" + ink + ";font:600 16px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;cursor:pointer;box-shadow:0 8px 20px -8px rgba(0,0,0,.35)";
   me.parentNode.insertBefore(btn, me);
 
   var overlay = null;

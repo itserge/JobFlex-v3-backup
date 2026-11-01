@@ -111,6 +111,8 @@ export interface NewLeadInput {
   org: OrgBrand;
   leadName: string;
   phone: string | null;
+  /** The lead's email, on its own row when there is one. */
+  email?: string | null;
   project: string | null;
   source: string;
   enquiry?: string | null;
@@ -120,6 +122,7 @@ export interface NewLeadInput {
 export function buildNewLead(i: NewLeadInput): EmailDoc {
   const box: BoxRow[] = [
     { type: "field", label: "Phone", value: i.phone ?? "—" },
+    ...(i.email ? [{ type: "field" as const, label: "Email", value: i.email }] : []),
     { type: "field", label: "Project", value: i.project ?? "—" },
     { type: "field", label: "Source", value: i.source },
     { type: "cond", label: "Call within", chip: "1 hour", tone: "warn" },

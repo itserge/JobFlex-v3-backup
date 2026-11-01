@@ -52,6 +52,7 @@ import {
   setWebEstimatorOpen,
   storeWebEstimate,
   webCapReached,
+  createWebLeadUnpriced,
   webEstimatorOpen,
   webShopBySlug,
   writeWebSettings,
@@ -62,7 +63,7 @@ import {
   storeWebHvac,
   updateWebHvac,
 } from "@/lib/webEstimatorServer";
-import { imageryWords, measureWebRoof, priceWebDeckDesign, priceWebFenceDrawn, priceWebRoof, runWebTrade, sizeWebHvac, webDeckBase, webTradeAllChoices, webTradeChoices, webTradeQuestions, type WebAddress, type WebChoice, type WebQuestion } from "@/lib/webEstimatorTrades";
+import { imageryWords, measureWebRoof, priceWebDeckDesign, priceWebFenceDrawn, priceWebRoof, runWebTrade, sizeWebHvac, webDeckBase, webRoofChoices, webTradeAllChoices, webTradeChoices, webTradeQuestions, type WebAddress, type WebChoice, type WebQuestion } from "@/lib/webEstimatorTrades";
 import { randomBytes } from "node:crypto";
 import { CLIENT_TOKEN_RE, mergeClientDesign, type ClientDesignLink } from "@/lib/deck/clientDesign";
 import { normalizeDeckDesign, type DeckDesign } from "@/lib/deck/design";
@@ -82,6 +83,8 @@ export interface WebEstimatorView {
   settings: WebEstimatorSettings;
   slug: string;
   base: string;
+  /** The shop's brand colour (Settings → Company), the embed button's; null when none is set. */
+  brandColor: string | null;
   counts: WebMonthCounts;
   /** Everything each trade could offer (the pickers). */
   choices: Record<WebTrade, WebChoice[]>;
@@ -107,13 +110,13 @@ export async function loadWebEstimator(): Promise<{ ok: true; view: WebEstimator
   try { ctx = await requireManager(); } catch (err) { if (err instanceof UnauthorizedError || err instanceof NoOrgError) return { ok: false, error: DENIED }; throw err; }
   const [admin, open, org, settings, counts] = await Promise.all([
     platformAdmin(), webEstimatorOpen(),
-    db.organization.findUnique({ where: { id: ctx.organizationId }, select: { slug: true } }),
+    db.organization.findUnique({ where: { id: ctx.organizationId }, select: { slug: true, primaryColor: true } }),
     readWebSettings(ctx.organizationId), readWebCounts(ctx.organizationId),
   ]);
   if (!open && !admin) return { ok: false, error: DENIED };
   const choices = Object.fromEntries(WEB_TRADES.map((t) => [t, webTradeAllChoices(t)])) as Record<WebTrade, WebChoice[]>;
   const billing = { ...(await webBilling(ctx.organizationId, open)), owner: isOwnerRole(ctx.role) };
-  return { ok: true, view: { settings, slug: org?.slug ?? "", base: await appBaseUrl(), counts, choices, canEdit: true, admin, open, billing } };
+  return { ok: true, view: { settings, slug: org?.slug ?? "", base: await appBaseUrl(), brandColor: org?.primaryColor ?? null, counts, choices, canEdit: true, admin, open, billing } };
 }
 
 const tradeLabel = (t: WebTrade) => WEB_TRADE[t].name.replace(" on your website", "");
@@ -310,7 +313,7 @@ export interface WebRoofFacts {
   pin: { lat: number; lng: number };
 }
 
-export async function webRoofMeasure(slug: unknown, raw: unknown): Promise<{ ok: true; token: string; facts: WebRoofFacts; choices: WebChoice[] } | (Fail & { code?: string })> {
+export async function webRoofMeasure(slug: unknown, raw: unknown): Promise<{ ok: true; token: string; facts: WebRoofFacts; choices: WebChoice[] } | (Fail & { code?: string; pin?: { lat: number; lng: number } })> {
   const r = await liveShop(slug, "roof");
   if ("ok" in r) return r;
   const { shop } = r;
@@ -322,14 +325,14 @@ export async function webRoofMeasure(slug: unknown, raw: unknown): Promise<{ ok:
   if (!input) return { ok: false, error: "Type the address of the house.", code: "address" };
   await noteRequestOrg(shop.id).catch(() => {});
   const m = await measureWebRoof(shop, input.address);
-  if (!m.ok) return { ok: false, error: m.error, code: m.code };
+  if (!m.ok) return { ok: false, error: m.error, code: m.code, ...("pin" in m ? { pin: m.pin } : {}) };
   const rec = await storeWebRoof(shop.id, m.measure);
   const est = m.measure.est;
   return {
     ok: true,
     token: rec.token,
     facts: { squares: Math.round(est.areaSqft / 100), areaSqft: Math.round(est.areaSqft), footprintSqft: Math.round(est.footprintSqft), pitchLabel: est.pitchLabel, segmentCount: est.segmentCount, imagery: imageryWords(est.imageryDate), pin: { lat: m.measure.pin.lat, lng: m.measure.pin.lng } },
-    choices: webTradeChoices(shop, "roof"),
+    choices: webRoofChoices(shop, est.predominantPitch12),
   };
 }
 
@@ -522,8 +525,11 @@ export async function webLead(slug: unknown, trade: unknown, token: unknown, raw
   const ip = await clientIp();
   const braked = (await brake(`web-lead-ip:${ip}`, 6, 10 * MINUTE, "requests")) ?? (await brake(`web-lead-shop:${shop.id}`, shopHourly(shop).leads, HOUR, "requests"));
   if (braked) return { ok: false, error: braked };
+  // No token (null): a request with no price — the estimator resting for the month, or no read of this house. The
+  // form stays live; the lead carries the address and says no price was shown (lib/webEstimatorServer).
+  const unpriced = token === null && !isHouse(shop);
   const est = typeof token === "string" ? await readWebEstimate(token, shop.id) : null;
-  if (!est) return { ok: false, error: "That estimate has expired — run it again, it only takes a moment." };
+  if (!est && !unpriced) return { ok: false, error: "That estimate has expired — run it again, it only takes a moment." };
   const c = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const s = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
   const name = s(c.name, 80), phone = s(c.phone, 40), email = s(c.email, 120) || null, note = s(c.note, 500) || null;
@@ -532,6 +538,14 @@ export async function webLead(slug: unknown, trade: unknown, token: unknown, raw
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, error: "That email doesn't look right." };
   if (c.consent !== true) return { ok: false, error: isHouse(shop) ? `Tick the box so ${PRO} may contact you.` : "Tick the box so the shop may contact you." };
   if (typeof c.company === "string" && c.company.trim()) return { ok: true, leadId: "ok" };   // the honeypot: a bot filled the hidden field
+  if (!est) {
+    const where = cleanInput(c);
+    if (!where) return { ok: false, error: "The address of the house, please." };
+    const why = (await webCapReached(shop)) ? "resting" : "unpriced";
+    const a = where.address;
+    const { leadId } = await createWebLeadUnpriced(shop, r.trade, { address: a.address, city: a.city || null, state: a.state || null, zip: a.zip || null }, { name, phone, email, note }, why);
+    return { ok: true, leadId };
+  }
   if (isHouse(shop)) {
     // THE HOUSE (2026-10-28): a Lead Center lead with the estimate beside it; the request page next.
     if (!email) return { ok: false, error: "Your email, please — your request page and your dashboard are sent there." };
@@ -731,9 +745,9 @@ export async function webPageModel(slug: string, trade: string, host: string | n
     title: WEB_TRADE[trade].title,
     basis: shop.settings.trades[trade].note || WEB_TRADE[trade].basis,
     askEmail: shop.settings.trades[trade].askEmail,
-    choices: webTradeChoices(shop, trade),
+    choices: trade === "roof" ? webRoofChoices(shop, null) : webTradeChoices(shop, trade),
     questions: webTradeQuestions(trade) as WebQuestion[],
     hostOk: hostAllowed(shop.settings.domains, host, appHost),
-    snippets: embedSnippets(base, shop.slug, trade),
+    snippets: embedSnippets(base, shop.slug, trade, shop.primaryColor),
   };
 }

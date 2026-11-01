@@ -24,6 +24,8 @@ import { requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { parseStateZip } from "@/lib/fence/market";
 import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
+import { readWebLeadFor } from "@/lib/webEstimatorServer";
+import { roofSeedFromWebLead, type WebRoofSeed } from "@/lib/webHandoff";
 
 /** The hand-off seed for this company's roof estimator, or null — never an error. */
 async function readRoofSeed() {
@@ -74,6 +76,17 @@ export default async function RoofEstimatorPage({ searchParams }: { searchParams
   // address only (2026-09-26). A lead with just a town or a ZIP opens here too
   // now; its field starts empty for the street, and the strip shows the rest.
   const seed = await readRoofSeed();
+  // A website estimator's roof lead (2026-11-01): its aerial measurement, the package the website priced and its lines.
+  let webRoof: WebRoofSeed | null = null;
+  if (seed?.leadId) {
+    try {
+      const { organizationId } = await requireOrg();
+      const rec = await readWebLeadFor(seed.leadId, organizationId, "roof");
+      webRoof = rec ? roofSeedFromWebLead(rec) : null;
+    } catch {
+      webRoof = null;
+    }
+  }
   // A saved roof proposal opened again from the proposal builder (2026-10-13):
   // the estimator loads it (loadRoofFromProposal checks it is this company's).
   const raw = (await searchParams).proposal;
@@ -98,6 +111,7 @@ export default async function RoofEstimatorPage({ searchParams }: { searchParams
         drawingEnabled={drawingEnabled}
         initialAddress={seed?.address && looksLikeStreetAddress(seed.address) ? seed.address : undefined}
         leadEstimateId={seed?.platformLeadId ?? undefined}
+        webRoof={webRoof ?? undefined}
         proposalId={proposalId}
         homeState={homeState}
       />

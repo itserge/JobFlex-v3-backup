@@ -12,8 +12,9 @@
 // card plan asks Stripe what today costs (the rest of this period) before anything is saved; Save puts the line on
 // and says what was charged. Off takes the line off (a credit). In a trial, free until it ends.
 import { useEffect, useState, useTransition } from "react";
+import type * as React from "react";
 import { loadWebEstimator, quoteWebAddon, saveWebEstimator, setWebEstimatorOpenAction, type WebEstimatorView } from "@/actions/webEstimator";
-import { SPREAD_MAX, SPREAD_MIN, WEB_TRADE, WEB_TRADES, embedSnippets, type WebEstimatorSettings, type WebTrade } from "@/lib/webEstimator";
+import { SPREAD_MAX, SPREAD_MIN, WEB_TRADE, WEB_TRADES, embedButtonColor, embedButtonInk, embedSnippets, type WebEstimatorSettings, type WebTrade } from "@/lib/webEstimator";
 import { dollars, webAddonCents, webAddonPriceWords, webBillingWords, webModeBills } from "@/lib/webAddon";
 import styles from "./web-estimator-form.module.css";
 
@@ -257,7 +258,7 @@ export function WebEstimatorForm() {
               ))}
             </div>
           ) : null}
-          <Snippets base={view.base} slug={view.slug} trade={embedTrade} copied={copied} onCopy={copy} saved={view.settings.trades[embedTrade].on && !dirty} />
+          <Snippets base={view.base} slug={view.slug} color={view.brandColor} trade={embedTrade} copied={copied} onCopy={copy} saved={view.settings.trades[embedTrade].on && !dirty} />
         </section>
       ) : null}
 
@@ -275,8 +276,15 @@ export function WebEstimatorForm() {
   );
 }
 
-function Snippets({ base, slug, trade, copied, onCopy, saved }: { base: string; slug: string; trade: WebTrade; copied: string | null; onCopy: (what: string, text: string) => void; saved: boolean }) {
-  const s = embedSnippets(base, slug, trade);
+// The button as public/embed/estimator.js paints it on the shop's site — its own look, not the app's: the shop's
+// brand colour, the trade's words, white or ink on it.
+const sitePreview = (color: string): React.CSSProperties => ({
+  display: "inline-flex", alignItems: "center", padding: "14px 22px", border: 0, borderRadius: 10, background: color, color: embedButtonInk(color),
+  font: "600 16px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif", boxShadow: "0 8px 20px -8px rgba(0,0,0,.35)", cursor: "default",
+});
+
+function Snippets({ base, slug, color, trade, copied, onCopy, saved }: { base: string; slug: string; color: string | null; trade: WebTrade; copied: string | null; onCopy: (what: string, text: string) => void; saved: boolean }) {
+  const s = embedSnippets(base, slug, trade, color);
   const rows: Array<[string, string, string, string]> = [
     ["button", "The button", 'one line where your site builder takes "custom HTML" or "embed code"', s.button],
     ["link", "The link", "a button on your site, Google Business Profile, Facebook, an email, a QR code", s.link],
@@ -294,6 +302,12 @@ function Snippets({ base, slug, trade, copied, onCopy, saved }: { base: string; 
             <button type="button" className={`${styles.btn} ${styles.btnGhost} ${copied === `${trade}:${k}` ? styles.isDone : ""}`} onClick={() => onCopy(`${trade}:${k}`, code)}>{copied === `${trade}:${k}` ? "Copied" : "Copy"}</button>
             {k === "link" ? (saved ? <a className={`${styles.btn} ${styles.btnGhost}`} href={code} target="_blank" rel="noreferrer" data-web-preview={trade}>Preview</a> : <span className={`${styles.btn} ${styles.btnGhost} ${styles.btnOff}`} title="The page answers once this is saved as On" data-web-preview-wait={trade}>Save first</span>) : null}
           </div>
+          {k === "button" ? (
+            <div className={styles.sitePrev} data-web-button-preview>
+              <span className={styles.hintIn}>On your site:</span>
+              <span style={sitePreview(embedButtonColor(color))} aria-hidden="true">{WEB_TRADE[trade].button}</span>
+            </div>
+          ) : null}
         </div>
       ))}
     </div>

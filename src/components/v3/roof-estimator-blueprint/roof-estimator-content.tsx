@@ -21,6 +21,7 @@ import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-bluepri
 import { initRoofEstimatorContent } from "./roof-estimator-behavior";
 import { RoofEstimatorBlueprintForm } from "./roof-estimator-blueprint-form";
 import { RoofEstimatorDataForm } from "./roof-estimator-data-form";
+import type { WebRoofSeed } from "@/lib/webHandoff";
 import { RoofEstimatorSprite } from "./sprite";
 
 export function RoofEstimatorContent({
@@ -30,6 +31,7 @@ export function RoofEstimatorContent({
   drawingEnabled = true,
   initialAddress,
   leadEstimateId,
+  webRoof,
   proposalId,
   homeState = null,
 }: {
@@ -37,6 +39,8 @@ export function RoofEstimatorContent({
   initialAddress?: string;
   /** A Lead Center lead the homeowner priced on /price (2026-10-27): its whole hidden estimate opens here. */
   leadEstimateId?: string;
+  /** A website estimator's roof lead (2026-11-01): opens on its measurement, priced as the homeowner saw it. */
+  webRoof?: WebRoofSeed;
   /** A saved roof proposal to open again and update (2026-10-13). */
   proposalId?: string;
   /** The shop's own state — the brand picker's fallback when the roof has no address (2026-10-16). */
@@ -70,7 +74,7 @@ export function RoofEstimatorContent({
         drawingEnabled && evEnabled ? (
           <RoofEstimatorBlueprintForm aiEnabled={aiEnabled} />
         ) : (
-          <RoofEstimatorDataForm aiEnabled={aiEnabled} evEnabled={evEnabled} measurementEnabled={measurementEnabled} initialAddress={initialAddress} leadEstimateId={leadEstimateId} proposalId={proposalId} homeState={homeState} />
+          <RoofEstimatorDataForm aiEnabled={aiEnabled} evEnabled={evEnabled} measurementEnabled={measurementEnabled} initialAddress={initialAddress} leadEstimateId={leadEstimateId} webRoof={webRoof} proposalId={proposalId} homeState={homeState} />
         )
       ) : (
         <div className="card rf-card">
