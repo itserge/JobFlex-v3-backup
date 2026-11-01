@@ -7,11 +7,8 @@ import { getPlanBySlug, revalidatePlanSurfaces } from "@/lib/planCatalogServer";
 import {
   applyPlanChange,
   previewPlanChange as previewPlanChangeFor,
-  rebookScheduledSwitch,
-  readScheduledSwitch,
   releaseScheduledSwitch,
   type PlanChangeDone,
-  type ScheduledSwitch,
   type PlanChangePreview,
   type PlanChangeRefusal,
 } from "@/lib/planChange";
@@ -27,7 +24,8 @@ import {
 import { planSnapshot, reportPlanChange } from "@/lib/activation-events";
 import { logServerError } from "@/lib/server-events";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
-import { FREE_SWITCH_META, LIVE_STATUSES, freeSwitchBooked, onFreePlan } from "@/lib/freePlan";
+import { LIVE_STATUSES, freeSwitchBooked, onFreePlan } from "@/lib/freePlan";
+import { bookFreeSwitch, heldSwitchKey, keepFreeSwitch, rebookHeldSwitch, sendFreeSwitchEmail } from "@/lib/freeSwitch";
 import { checkCancelFeedback } from "@/lib/cancelFeedback";
 import { trackActivation } from "@/lib/activation-events";
 
@@ -239,8 +237,8 @@ export type CancelSubscriptionResult =
   | { ok: true; endsAt: string | null }
   | { ok: false; error: string };
 
-/** The booked switch the move to Free let go of, for "Keep" (SyncState). */
-const heldSwitchKey = (orgId: string) => `freeHeldSwitch:${orgId}`;
+/* The Stripe side of the booking and of Keep lives in lib/freeSwitch — the
+   platform admin's cancel (lib/adminCancel) books it the same way. */
 
 export async function cancelSubscription(feedback?: unknown): Promise<CancelSubscriptionResult> {
   const { organizationId, user } = await requireOwner();
@@ -255,19 +253,7 @@ export async function cancelSubscription(feedback?: unknown): Promise<CancelSubs
   if (sub.externalSubId && isStripeEnabled()) {
     const { stripe } = await getStripeClient();
     try {
-      // A booked YEAR → MONTH switch holds the subscription on a schedule,
-      // which refuses cancel_at_period_end: the switch goes first, and is
-      // remembered for "Keep".
-      const held = await readScheduledSwitch(organizationId).catch(() => null);
-      if (held) {
-        const cursor = JSON.stringify(held);
-        await db.syncState.upsert({ where: { key: heldSwitchKey(organizationId) }, update: { cursor }, create: { key: heldSwitchKey(organizationId), cursor } });
-      }
-      await releaseScheduledSwitch(organizationId, stripe);
-      const updated = await stripe.subscriptions.update(sub.externalSubId, {
-        cancel_at_period_end: true,
-        metadata: { [FREE_SWITCH_META]: "1" },
-      });
+      const updated = await bookFreeSwitch(organizationId, sub.externalSubId, stripe);
       endsAt = subscriptionPeriodEndDate(updated) ?? endsAt;
     } catch (err) {
       console.warn("[billing] cancelSubscription failed:", err);
@@ -308,32 +294,15 @@ export async function resumeSubscription(): Promise<CancelSubscriptionResult> {
   if (sub.externalSubId && isStripeEnabled()) {
     const { stripe, mode } = await getStripeClient();
     try {
-      const current = await stripe.subscriptions.retrieve(sub.externalSubId);
+      const updated = await keepFreeSwitch(sub.externalSubId, stripe);
       // Already over: Stripe ended it and the company is on Free.
-      if (current.status === "canceled" || current.status === "incomplete_expired") {
-        return { ok: false, error: "Your plan has already switched to Free. Choose a plan to start again." };
-      }
-      const updated = await stripe.subscriptions.update(sub.externalSubId, {
-        cancel_at_period_end: false,
-        metadata: { [FREE_SWITCH_META]: "" },
-      });
+      if (!updated) return { ok: false, error: "Your plan has already switched to Free. Choose a plan to start again." };
       endsAt = subscriptionPeriodEndDate(updated) ?? endsAt;
     } catch (err) {
       console.warn("[billing] resumeSubscription failed:", err);
       return { ok: false, error: "Couldn't keep the subscription. Try again." };
     }
-    // Everything as it was: a YEAR → MONTH switch the cancel let go of is booked again.
-    const row = await db.syncState.findUnique({ where: { key: heldSwitchKey(organizationId) } }).catch(() => null);
-    if (row) {
-      try {
-        const held = JSON.parse(row.cursor) as ScheduledSwitch;
-        if (held.subId === sub.externalSubId && !(await rebookScheduledSwitch(organizationId, held, { stripe, mode }))) {
-          console.warn(`[billing] ${sub.externalSubId}: the booked switch could not be put back after Keep`);
-        }
-      } catch (err) {
-        console.warn("[billing] resumeSubscription: the booked switch could not be put back:", err);
-      }
-    }
+    await rebookHeldSwitch(organizationId, sub.externalSubId, { stripe, mode });
   }
   await db.syncState.deleteMany({ where: { key: heldSwitchKey(organizationId) } }).catch(() => {});
 
@@ -346,31 +315,6 @@ export async function resumeSubscription(): Promise<CancelSubscriptionResult> {
   revalidatePath("/dashboard/settings");
   await billingSaved(organizationId, user.id, "Updated billing settings — subscription resumed", { canceled: false });
   return { ok: true, endsAt: endsAt ? endsAt.toISOString() : null };
-}
-
-/** "Your plan switches to Free on <date>" — to the owner, after the booking,
- *  with the way back ("Keep <plan>") one tap away in Settings → Billing. */
-async function sendFreeSwitchEmail(organizationId: string, plan: string, endsAt: Date | null): Promise<void> {
-  const owner = await db.membership.findFirst({
-    where: { organizationId, role: "OWNER", organization: { deletedAt: null } },
-    orderBy: { createdAt: "asc" },
-    select: { user: { select: { email: true, name: true } }, organization: { select: { billingEmail: true } } },
-  });
-  const email = owner?.organization.billingEmail || owner?.user.email;
-  if (!email) return;
-  const [{ appBaseUrl }, { renderEmail }, { sendEmail }, { buildFreeSwitchBooked }, { getPlanDisplayName }] = await Promise.all([
-    import("@/lib/appUrl"),
-    import("@/lib/email/renderEmail"),
-    import("@/lib/sdk/resend"),
-    import("@/lib/email/build/billing"),
-    import("@/lib/planCatalogServer"),
-  ]);
-  const base = (await appBaseUrl()).replace(/\/$/, "");
-  const planName = await getPlanDisplayName(plan).catch(() => plan);
-  const { subject, html } = renderEmail(
-    buildFreeSwitchBooked({ name: owner?.user.name ?? null, planName, switchAt: endsAt, href: `${base}/dashboard/settings?tab=billing` }),
-  );
-  await sendEmail({ to: email, subject, html });
 }
 
 /* ── CHANGE PLAN IN PLACE ────────────────────────────────────────────────

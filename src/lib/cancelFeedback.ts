@@ -27,7 +27,17 @@ export function isCancelReason(v: unknown): v is CancelReason {
   return typeof v === "string" && KEYS.has(v);
 }
 
+/** Written by a platform admin's cancel (lib/adminCancel, 2026-11-01) with the
+ *  admin's own words as otherText. Read back like the others, but never in
+ *  the owner's list and never accepted from the window (checkCancelFeedback). */
+export const ADMIN_REASON = "admin";
+export type StoredReason = CancelReason | typeof ADMIN_REASON;
+/** The admin's own words (otherText) — the window and the server check the same bounds. */
+export const ADMIN_NOTE_MIN = 3;
+export const ADMIN_NOTE_MAX = 300;
+
 export function reasonLabel(key: string): string {
+  if (key === ADMIN_REASON) return "Cancelled by JobFlex admin";
   return CANCEL_REASONS.find((r) => r.key === key)?.label ?? key;
 }
 
@@ -55,10 +65,10 @@ export function checkCancelFeedback(raw: unknown): CancelFeedbackCheck {
 }
 
 /** CancellationFeedback.reasons → the keys it holds (unknown words dropped). */
-export function parseReasons(json: string | null | undefined): CancelReason[] {
+export function parseReasons(json: string | null | undefined): StoredReason[] {
   try {
     const v: unknown = JSON.parse(json ?? "[]");
-    return Array.isArray(v) ? v.filter(isCancelReason) : [];
+    return Array.isArray(v) ? v.filter((k): k is StoredReason => isCancelReason(k) || k === ADMIN_REASON) : [];
   } catch {
     return [];
   }

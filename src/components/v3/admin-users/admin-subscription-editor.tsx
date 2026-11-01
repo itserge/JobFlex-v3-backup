@@ -30,6 +30,7 @@ import shared from "./admin-shared.module.css";
 import s from "./admin-users.module.css";
 import { makeCx, Field, Select, Toggle, Note, errorMessage, toDay, fromDay } from "./admin-kit";
 import { planDisplayName } from "@/lib/planCatalog";
+import { AdminCancelSubscription } from "./admin-cancel-subscription";
 
 const cx = makeCx(s, shared);
 const usd = (c: number) => "$" + (c / 100).toFixed(2);
@@ -254,6 +255,9 @@ export function SubscriptionEditor({ user, plans }: { user: AdminUserDTO; plans:
           </span>
         ) : null}
       </div>
+
+      {/* Cancel the live Stripe subscription (lib/adminCancel) — a grant has its own End below. */}
+      <AdminCancelSubscription orgId={orgId} orgName={user.orgName} planName={planDisplayName(user.recordPlan, plans)} provider={user.provider} />
 
       {mark ? (
         <Note>

@@ -5,7 +5,6 @@ import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
 import { runWebhookEnvelope } from "@/lib/webhookEnvelope";
 import {
   syncSubscriptionFromStripe,
-  markSubscriptionCanceled,
   markSubscriptionPastDue,
   accrueForInvoice,
   reverseForCharge,
@@ -14,18 +13,16 @@ import {
   handleConnectAccountUpdate,
   handleTransferEvent,
 } from "@/lib/stripeSync";
-import { confirmSyncingFromStripe } from "@/lib/planGrant";
 import { processReferralEffectsForInvoice } from "@/lib/referralRewards";
 import { trackActivation } from "@/lib/activation-events";
-import { finishCardCheckout, noteCardlessTrialEnded } from "@/lib/cardlessTrial";
+import { finishCardCheckout } from "@/lib/cardlessTrial";
 import { CARD_UPDATE_PURPOSE, finishCardUpdate, sendDunningEmail } from "@/lib/cardUpdate";
 import { completeFromCheckoutSession, completeFromPaymentIntent } from "@/lib/leadCenter/purchase";
 import { completeFromPackSession } from "@/lib/aiDesk/packs";
 import { cancelReplacedSubscription } from "@/lib/checkoutReturn";
 import { invoiceSubscriptionId, refId } from "@/lib/stripeCompat";
 import { alertDisputeClosed, alertDisputeOpened, alertInvoiceFailed, alertInvoicePaid, alertOneTimeCharge } from "@/lib/adminAlertsPayments";
-import { mirrorDeckAddon } from "@/lib/deckAddonBilling";
-import { mirrorWebAddons } from "@/lib/webAddonBilling";
+import { onSubscriptionDeleted, onSubscriptionUpdated } from "@/lib/subscriptionEvents";
 import { markFailuresRecovered, noteInvoiceFailure } from "@/lib/paymentFailures";
 import { textOwnerPaymentFailed } from "@/lib/billingProblemText";
 
@@ -111,30 +108,15 @@ async function dispatch(event: Stripe.Event, stripe: Stripe) {
     case "customer.subscription.updated": {
       const sub = await freshSubscription(stripe, event);
       if (!sub) break; // gone from Stripe: nothing live to write
-      await syncSubscriptionFromStripe(sub, stripe);
-      // An admin change written from Stripe's reply is "syncing" until Stripe
-      // reports the subscription back in that state (lib/planGrant).
-      await confirmSyncingFromStripe(sub).catch((err) => console.warn("[webhook] sync mark:", err));
-      // The Deck Studio add-on's line (lib/deckAddonBilling): on the subscription or not, the record follows.
-      await mirrorDeckAddon(sub).catch((err) => console.warn("[webhook] deck add-on mirror:", err));
-      // The website estimators' lines (lib/webAddonBilling): the record follows what is on the subscription.
-      await mirrorWebAddons(sub).catch((err) => console.warn("[webhook] website add-on mirror:", err));
+      // The mirror, the syncing mark and the add-on records (lib/subscriptionEvents — the admin's cancel runs it too).
+      await onSubscriptionUpdated(sub, stripe);
       break;
     }
     case "customer.subscription.deleted": {
       // Gone from Stripe altogether: the event's own copy is the last word,
       // and a deletion is final whenever it arrives.
       const sub = (await freshSubscription(stripe, event)) ?? (event.data.object as Stripe.Subscription);
-      // A card-less trial that ran out lands as TRIAL_ENDED, not CANCELED
-      // (lib/stripeSync, isCardlessTrialLapse) — both are the Free plan.
-      if (sub.status === "canceled" || sub.status === "incomplete_expired") {
-        await markSubscriptionCanceled(sub);
-        await noteCardlessTrialEnded(sub);
-      } else {
-        await syncSubscriptionFromStripe(sub, stripe);
-      }
-      await mirrorDeckAddon(sub, true).catch((err) => console.warn("[webhook] deck add-on mirror:", err));
-      await mirrorWebAddons(sub, true).catch((err) => console.warn("[webhook] website add-on mirror:", err));
+      await onSubscriptionDeleted(sub, stripe);
       break;
     }
     // Three days before any trial ends. The mirror follows the subscription
