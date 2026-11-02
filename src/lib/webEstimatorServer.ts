@@ -273,6 +273,11 @@ export async function createWebLeadUnpriced(shop: WebShop, trade: WebTrade, a: {
   await bumpWebCount(shop.id, "leads").catch(() => {});
   afterResponse(async () => {
     try { await notifyLeadCreated(lead.id); } catch (err) { console.error("[web-estimator] lead alert failed:", err instanceof Error ? err.message : err); }
+    // SmartBook, as in createWebLead: the form asks the same contact box before an unpriced lead is made too.
+    try {
+      const { startSmartBook } = await import("@/lib/smartbook/engine");
+      await startSmartBook(lead.id, "website", { consent: { text: "website", call: true } });
+    } catch (err) { console.error("[web-estimator] smartbook failed:", err instanceof Error ? err.message : err); }
     if (contact.email) {
       const m = homeownerUnpricedEmail({ shop: shop.name, trade, address: where, phone: contact.phone });
       try {

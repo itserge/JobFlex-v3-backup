@@ -142,12 +142,12 @@ export const GUIDES: Guide[] = [
     feature: "website",
     steps: [
       {
-        text: "Open Settings → Website estimators. You’ll see Your estimators on your website, a card for each estimator.",
+        text: "Open Settings → Website estimators. You’ll see Your estimators on your website, a row for each estimator under Estimators.",
         open: "/dashboard/settings?pane=website",
         show: "website:trades",
       },
       {
-        text: "Turn a card On — Roof estimator on your website, for example. The card says what it adds to your plan.",
+        text: "Flip a row’s switch on — Roof estimator, for example. The row says what it adds to your plan.",
       },
       {
         text: "Choose what The homeowner sees: A price range or The exact figure. Tick Ask for their email too if you want it.",
@@ -156,7 +156,7 @@ export const GUIDES: Guide[] = [
         text: "Under Your websites, type your site name, like ridgelineroofing.com — the button runs only there. Leave it blank for any site.",
       },
       {
-        text: "Press Save (Save and add to my plan when a card is new). Then copy The link, The button or On the page and paste it on your site.",
+        text: "Press Save (Save and add to my plan when you switched an estimator on). Then copy The link, The button or On the page and paste it on your site.",
         show: "website:save",
       },
       {
