@@ -17,7 +17,9 @@ import {
   type AdminSubscriptionPreviewResult,
   type VerifySyncResult,
 } from "@/lib/subscriptionEditor";
+import { cancelAsAdmin, readAdminCancelState, undoCancelAsAdmin, type AdminCancelMode, type AdminCancelResult, type AdminCancelState } from "@/lib/adminCancel";
 
+export type { AdminCancelMode, AdminCancelResult, AdminCancelState } from "@/lib/adminCancel";
 export type {
   AdminSubscriptionApplyResult,
   AdminSubscriptionChangeInput,
@@ -32,6 +34,33 @@ function afterWrite() {
   revalidatePath("/admin/subscribers");
   revalidatePlanSurfaces();
   revalidatePath("/dashboard/subscription");
+}
+
+/* Cancel a live Stripe subscription from the organization's card (lib/adminCancel):
+   at the end of the paid period, or now. The owner's own cancel stays in
+   Settings → Billing only. */
+export async function adminCancelSubscription(orgId: string, mode: AdminCancelMode, reason: string, notify: boolean): Promise<AdminCancelResult> {
+  const admin = await requirePlatformAdmin();
+  const r = await cancelAsAdmin({ organizationId: orgId, mode, reason, notify }, admin);
+  if (r.ok) {
+    afterWrite();
+    revalidatePath("/admin/cancellations");
+  }
+  return r;
+}
+
+/** What the card's cancel strip shows: status, period end, a booked cancel and who made it. */
+export async function adminCancelState(orgId: string): Promise<AdminCancelState> {
+  await requirePlatformAdmin();
+  return readAdminCancelState(orgId);
+}
+
+/** Undo a booked cancel at the period end — the owner's or an admin's. */
+export async function adminUndoCancellation(orgId: string): Promise<AdminCancelResult> {
+  const admin = await requirePlatformAdmin();
+  const r = await undoCancelAsAdmin(orgId, admin);
+  if (r.ok) afterWrite();
+  return r;
 }
 
 export async function previewAdminSubscriptionChange(raw: unknown): Promise<AdminSubscriptionPreviewResult> {

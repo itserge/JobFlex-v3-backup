@@ -8,7 +8,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { statsHiddenIds, countedOrgs } from "@/lib/statsHidden";
 import { parseTradeTypes } from "@/lib/tradeTypes";
-import { parseReasons } from "@/lib/cancelFeedback";
+import { ADMIN_REASON, parseReasons } from "@/lib/cancelFeedback";
 import { signupSource } from "@/lib/traffic-live";
 import { VARIANT_TRADE, resolveLandingVariant } from "@/components/v3/landing-e/landing-variants";
 import {
@@ -224,6 +224,8 @@ export async function readCustDev(opts: { now?: number; recordScore?: boolean } 
     const w = who(c.organizationId);
     if (!w) continue;
     const reasons = parseReasons(c.reasons);
+    // A platform admin's cancel (lib/adminCancel): its words are support's note, not the customer's voice.
+    if (reasons.includes(ADMIN_REASON)) continue;
     cancels.push({ id: c.id, orgId: c.organizationId, at: c.createdAt.getTime(), reasons, otherText: c.otherText });
     voice.push({ id: `c:${c.id}`, at: c.createdAt.getTime(), ...w, source: "cancel", text: c.otherText ?? "", reasons });
   }

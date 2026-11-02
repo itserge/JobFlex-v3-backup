@@ -55,6 +55,7 @@ import {
   type SortState,
 } from "./subscriber-sort";
 import so from "./subscriber-sort.module.css";
+import { AdminCancelSubscription } from "@/components/v3/admin-users/admin-cancel-subscription";
 
 export interface SubscriberRowDTO extends BillingFacts {
   id: string;
@@ -759,6 +760,13 @@ function Detail({ row }: { row: SubscriberRowDTO }) {
           </div>
         </dl>
       )}
+
+      {/* Cancel from here too (lib/adminCancel): the strip reads the org's own record. */}
+      {row.organizationId ? (
+        <div className={s.detailCancel}>
+          <AdminCancelSubscription orgId={row.organizationId} orgName={row.orgName} planName={row.planName} provider={row.provider} />
+        </div>
+      ) : null}
     </>
   );
 }

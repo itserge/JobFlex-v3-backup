@@ -241,3 +241,33 @@
   :global(.jf-blueprint .content) .au-head-actions > :global(label) { flex: 1 1 100%; min-width: 0; order: 1; }
   :global(.jf-blueprint .content) .au-internal-filter { order: 2; min-height: 44px; }
 }
+
+/* ── Cancel subscription (2026-11-01; admin-cancel-subscription.tsx) ─────
+   The card's strip — state on the left, its one action on the right — and
+   the confirm window's facts, square radios and footnote. Also mounted on
+   /admin/subscribers, so nothing here leans on the account sheet. */
+:global(.jf-blueprint .content) .au-cxl { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 8px 12px; border: 1.5px solid var(--hair); border-radius: var(--radius); background: #fff; }
+:global(.jf-blueprint .content) .au-cxl-t { min-width: 0; font-size: 12px; font-weight: 700; color: var(--ink); overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .au-cxl[data-admin-cancel="booked"] .au-cxl-t,
+:global(.jf-blueprint .content) .au-cxl[data-admin-cancel="CANCELED"] .au-cxl-t { color: var(--danger); }
+:global(.jf-blueprint .content) .au-cxl-facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; padding: 10px 12px; border: 1.5px dashed var(--hair); background: var(--paper); }
+:global(.jf-blueprint .content) .au-cxl-facts dt { font-size: 11px; color: var(--muted); }
+:global(.jf-blueprint .content) .au-cxl-facts dd { margin: 0; font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .au-cxl-note { margin: 0; font-size: 12px; line-height: 1.45; color: var(--ink-soft); }
+:global(.jf-blueprint .content) .au-pick { display: grid; border: 1.5px solid var(--hair); background: #fff; }
+:global(.jf-blueprint .content) .au-pick-row {
+  display: grid; grid-template-columns: 18px 1fr; align-items: start; gap: 10px;
+  min-height: 44px; padding: 10px 12px; border: 0; border-top: 1.5px solid var(--hair);
+  background: transparent; text-align: left; cursor: pointer; font: inherit; color: var(--ink);
+}
+:global(.jf-blueprint .content) .au-pick-row:first-child { border-top: 0; }
+:global(.jf-blueprint .content) .au-pick-row[aria-checked="true"] { background: var(--accent-soft); }
+:global(.jf-blueprint .content) .au-pick-row:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -4px; }
+:global(.jf-blueprint .content) .au-pick-box { width: 16px; height: 16px; margin-top: 1px; border: 2px solid var(--ink); background: #fff; }
+:global(.jf-blueprint .content) .au-pick-row[aria-checked="true"] .au-pick-box { background: var(--ink); }
+:global(.jf-blueprint .content) .au-pick-l { display: grid; gap: 2px; min-width: 0; }
+:global(.jf-blueprint .content) .au-pick-l b { font-size: 13px; font-weight: 800; overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .au-pick-l span { font-size: 12px; color: var(--muted); }
+@media (max-width: 768px) {
+  :global(.jf-blueprint .content) .au-cxl > button { flex: 1 1 100%; }
+}

@@ -151,7 +151,10 @@ export function buildPaymentFailed(i: PaymentFailedInput): EmailDoc {
 /* THE SWITCH TO FREE, BOOKED (owner, 2026-10-13; lib/freePlan): sent when
    the owner cancels from Settings → Billing. It says the one date that
    matters, that nothing more is billed and the data stays, and offers the
-   way back — "Keep <plan>" opens Settings → Billing, where it is one press. */
+   way back — "Keep <plan>" opens Settings → Billing, where it is one press.
+   The same letter when JobFlex support cancels it (lib/adminCancel,
+   2026-11-01): it does not say "you cancelled", and when the plan ended today
+   it says so and offers a plan instead of Keep. */
 export interface FreeSwitchBookedInput {
   name: string | null;
   planName: string;
@@ -159,18 +162,43 @@ export interface FreeSwitchBookedInput {
   switchAt: Date | null;
   /** Absolute link to /dashboard/settings?tab=billing. */
   href: string;
+  /** Cancelled by JobFlex support, not by the owner. */
+  byJobflex?: boolean;
+  /** Ended today — already on the Free plan, nothing left to keep. */
+  endedNow?: boolean;
 }
 
 export function buildFreeSwitchBooked(i: FreeSwitchBookedInput): EmailDoc {
   const first = i.name?.trim().split(/\s+/)[0] || "there";
+  if (i.endedNow) {
+    return {
+      subject: "Your plan has switched to Free",
+      lockup: PLATFORM_LOCKUP,
+      kicker: { text: "Plan cancelled", tone: "warn" },
+      headline: "Your account is on the Free plan",
+      prose: [
+        `Hi ${first} — your ${i.planName} subscription has been cancelled and ended today. You won't be billed again.`,
+        "Your account is on the Free plan now. Your proposals, clients and jobs stay where they are. Nothing is refunded for the days you didn't use.",
+      ],
+      box: [
+        { type: "field", label: "Plan", value: i.planName },
+        { type: "field", label: "Next charge", value: "None" },
+        { type: "cond", label: "Switched to Free", chip: "Today", tone: "warn" },
+      ],
+      cta: { label: "Choose a plan", href: i.href },
+      after: ["Want it back? Choose a plan any time from Settings → Billing. Questions? Reply to this email."],
+      footer: PLATFORM_FOOTER,
+    };
+  }
   const when = i.switchAt ? DATE_FMT.format(i.switchAt) : null;
+  const opener = i.byJobflex ? `your ${i.planName} subscription has been cancelled` : `you cancelled ${i.planName}`;
   return {
     subject: when ? `Your plan switches to Free on ${when}` : "Your plan switches to Free at the end of this cycle",
     lockup: PLATFORM_LOCKUP,
     kicker: { text: "Plan cancelled", tone: "warn" },
     headline: when ? `Your plan switches to Free on ${when}` : "Your plan switches to Free",
     prose: [
-      `Hi ${first} — you cancelled ${i.planName}. You keep it until ${when ?? "the end of the cycle you've already paid for"}, and you won't be billed again.`,
+      `Hi ${first} — ${opener}. You keep it until ${when ?? "the end of the cycle you've already paid for"}, and you won't be billed again.`,
       "Then your account moves to the Free plan. Your proposals, clients and jobs stay where they are. Nothing is refunded for the days you don't use.",
     ],
     box: [

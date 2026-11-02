@@ -15,7 +15,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { longDate, shortDate } from "@/lib/format";
-import { CANCEL_REASONS, reasonLabel, type CancelReason } from "@/lib/cancelFeedback";
+import { ADMIN_REASON, CANCEL_REASONS, reasonLabel, type StoredReason } from "@/lib/cancelFeedback";
 import { NOW_WORDS, isBack, type CameBack, type NowWord } from "@/lib/cameBack";
 import { Chip, Empty, KpiStrip, Meta, cx, useReveal, type Tone } from "@/components/v3/admin-influencers/admin-ui";
 import ui from "@/components/v3/admin-influencers/admin-ui.module.css";
@@ -26,14 +26,16 @@ export interface CancellationDTO {
   orgName: string;
   email: string;
   planName: string;
-  reasons: CancelReason[];
+  reasons: StoredReason[];
   otherText: string | null;
   /** When the plan switches to Free (the end of the paid cycle or trial). */
   periodEnd: string | null;
   createdAt: string;
 }
 
-type Filter = "ALL" | "BACK" | CancelReason;
+type Filter = "ALL" | "BACK" | StoredReason;
+/** The owner's reasons, then a platform admin's cancels (lib/adminCancel). */
+const REASON_FILTERS = [...CANCEL_REASONS, { key: ADMIN_REASON, label: "By admin" }];
 const NOW_TONE: Record<NowWord, Tone> = { paying: "ok", trial: "wait", failing: "bad", gone: "mute" };
 
 /** What a cancelled company is today, as a chip. */
@@ -200,14 +202,14 @@ export function AdminCancellationsContent({ rows, last30, cameBack = null }: { r
               <span className={ui.tdLbl}>Reason</span>
               <span className="bp-sel bp-sel--admin">
                 <select className="bp-sel-in" value={filter} aria-label="Filter by reason" onChange={(e) => setFilter(e.target.value as Filter)}>
-                  {([{ key: "ALL", label: "All reasons" }, ...(cameBack ? [{ key: "BACK", label: "Came back" }] : []), ...CANCEL_REASONS] as { key: Filter; label: string }[]).map((f) => (
+                  {([{ key: "ALL", label: "All reasons" }, ...(cameBack ? [{ key: "BACK", label: "Came back" }] : []), ...REASON_FILTERS] as { key: Filter; label: string }[]).map((f) => (
                     <option key={f.key} value={f.key}>{`${f.label} (${f.key === "BACK" ? backCount : counts.get(f.key) ?? 0})`}</option>
                   ))}
                 </select>
               </span>
             </label>
             <div className={cx(ui.filters, styles.filters)} role="group" aria-label="Filter by reason">
-              {([{ key: "ALL", label: "All" }, ...(cameBack ? [{ key: "BACK", label: "Came back" }] : []), ...CANCEL_REASONS] as { key: Filter; label: string }[]).map((f) => (
+              {([{ key: "ALL", label: "All" }, ...(cameBack ? [{ key: "BACK", label: "Came back" }] : []), ...REASON_FILTERS] as { key: Filter; label: string }[]).map((f) => (
                 <button
                   key={f.key}
                   type="button"
