@@ -280,6 +280,10 @@ const left = investorFigures({ ...base, outcomes: [{ date: "2026-10-01", outcome
 check("a converted one that left since still converted (2 of 3); never paid counts against", left.rate.paid === 2 && left.rate.ended === 3 && left.outcomes?.leftAfterPaying === 2 && left.outcomes?.unpaid === 1);
 check("the lead says how many came back", /3 converted to a paid plan \(1 of them came back after the trial had ended\) — 75%/.test(standingSentence(fe)), standingSentence(fe));
 check("a card inside its retry window is not 'paid, then left' — it has not paid yet", fe.outcomes?.leftAfterPaying === 0);
+// PAID, THEN REFUNDED (owner, 2026-11-02): every payment back = not converted, and not "paid, then left".
+const back = investorFigures({ ...base, outcomes: [...ended.outcomes!, { date: "2026-10-03", outcome: "refunded", payingNow: false }] });
+check("a customer refunded in full counts against the rate: 3 of 5 = 60%", back.rate.paid === 3 && back.rate.ended === 5 && back.rate.pct === 60, `${back.rate.paid} of ${back.rate.ended}`);
+check("…counted apart as refunded, not as 'paid, then left' nor 'canceled'", back.outcomes?.refunded === 1 && back.outcomes?.leftAfterPaying === 0 && back.outcomes?.canceled === 1 && fe.outcomes?.refunded === 0);
 check("no outcomes read: the rate falls back to paying ÷ paying + lapsed, and there is no count", f.outcomes === null && f.rate.paid === 2 && f.rate.ended === 3);
 const withOc: ModelInput = { ...base, outcomes: [{ date: "2026-10-05", cohort: "nocard", outcome: "paid", payingNow: true }, { date: "2026-10-02", cohort: "card", outcome: "came-back", payingNow: true, afterDays: 3 }, { date: "2026-10-02", cohort: "card", outcome: "canceled", payingNow: false }], cohorts: { lapsed: { card: 1, nocard: 0 }, signups: [{ date: "2026-10-02", cohort: "card" }, { date: "2026-10-05", cohort: "nocard" }], policy: [], current: "card" } };
 const cutOc = splitApart(withOc);

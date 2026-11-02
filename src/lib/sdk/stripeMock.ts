@@ -11,7 +11,8 @@
 //
 // WHAT IT KNOWS. The subset the subscription paths use — subscriptions
 // retrieve / update / cancel / list, invoices list / createPreview, customers,
-// prices, accounts. Anything else throws loudly ("not implemented"), which is
+// prices, accounts; and the refunds and disputes lists the investor page reads
+// (lib/investorPayments), from rows a harness writes. Anything else throws loudly ("not implemented"), which is
 // the point: a path that reaches Stripe unexpectedly fails the rehearsal
 // instead of quietly doing nothing.
 //
@@ -132,6 +133,17 @@ export interface MockInvoice {
   description?: string;
 }
 
+/** A refund or a dispute as the investor page reads it: the payment it names, how much, and where it stands. */
+export interface MockMoneyBack {
+  id: string;
+  amount: number;
+  /** Refund: succeeded | pending | failed | canceled. Dispute: needs_response | under_review | won | lost … */
+  status: string;
+  charge: string | null;
+  payment_intent: string | null;
+  created: number;
+}
+
 export interface MockCall {
   at: number;
   method: string;
@@ -149,6 +161,8 @@ export interface MockStore {
   calls: MockCall[];
   paymentIntents: Record<string, MockPaymentIntent>;
   checkouts: Record<string, MockCheckoutSession>;
+  refunds?: MockMoneyBack[];
+  disputes?: MockMoneyBack[];
 }
 
 export class MockStripeError extends Error {
@@ -684,7 +698,26 @@ export function mockStripeClient(file: string): Stripe {
     },
   };
 
-  const implemented: Record<string, unknown> = { subscriptions, invoices, customers, prices, accounts, paymentIntents, checkout };
+  // The refunds and disputes a harness wrote, newest first, as Stripe lists them.
+  const moneyBack = (what: "refunds" | "disputes") => ({
+    async list(params?: Params) {
+      const s = load();
+      record(s, `${what}.list`, [params]);
+      save(s);
+      let rows = (s[what] ?? []).slice();
+      const created = params?.created as { gte?: number } | undefined;
+      if (typeof created?.gte === "number") rows = rows.filter((r) => r.created >= created.gte!);
+      rows.sort((a, b) => b.created - a.created);
+      const after = params?.starting_after as string | undefined;
+      if (after) rows = rows.slice(rows.findIndex((r) => r.id === after) + 1);
+      const limit = Number(params?.limit ?? 10);
+      return { object: "list", data: rows.slice(0, limit).map((r) => ({ ...r, object: what === "refunds" ? "refund" : "dispute" })), has_more: rows.length > limit, url: `/v1/${what}` };
+    },
+  });
+  const refunds = moneyBack("refunds");
+  const disputes = moneyBack("disputes");
+
+  const implemented: Record<string, unknown> = { subscriptions, invoices, customers, prices, accounts, paymentIntents, checkout, refunds, disputes };
 
   const guard = (path: string, target: unknown): unknown =>
     new Proxy(target as object, {

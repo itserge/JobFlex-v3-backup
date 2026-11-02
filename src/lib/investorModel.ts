@@ -61,8 +61,12 @@ export type TrialOutcome =
   /** Paid, but later: the trial ended without a payment and they paid days after (a retry that went through, a card
    *  put in later, a come-back). Converted. */
   | "came-back"
-  /** Canceled before the trial ended, never paid. */
+  /** Canceled before the trial ended, never paid — from the day the cancel is booked (2026-11-02), not the trial's
+   *  last day: the trial's days are kept, the plan is not. */
   | "canceled"
+  /** Paid, then got all of it back — refunded, or lost to a chargeback (owner, 2026-11-02: "after a week they got
+   *  refunded — do you track those?"). Not converted: nothing was kept. */
+  | "refunded"
   /** The trial ended and no payment ever went through (the card failed and was given up, or no card). */
   | "unpaid"
   /** The trial ended on a paid plan whose first charge is still being retried (up to RETRY_DAYS after the end):
@@ -205,6 +209,8 @@ export interface InvestorFigures {
     /** Converted (either way), not paying today. */
     leftAfterPaying: number;
     canceled: number;
+    /** Paid, then refunded in full (or lost to a chargeback) — counted as not converted. */
+    refunded: number;
     unpaid: number;
     retrying: number;
   } | null;
@@ -474,8 +480,8 @@ export function investorFigures(input: ModelInput): InvestorFigures {
   // ── THE MEASURED RATE: of the trials that have ended, the share paying today. Nothing ended = no rate, and
   // nothing is expected of the running trials (the curve then counts the paying accounts alone).
   // Read from how each trial ended when that is known: converted = on a paid plan — paid on time or later (one that
-  // left since still converted), or a first charge still inside its two-week retry window. Else: paying today ÷
-  // paying + lapsed.
+  // left since still converted, unless every payment went back), or a first charge still inside its two-week retry
+  // window. Else: paying today ÷ paying + lapsed.
   const oc = input.outcomes ?? null;
   const count = (k: TrialOutcome) => (oc ?? []).filter((o) => o.outcome === k).length;
   const converted = oc ? oc.filter((o) => CONVERTED.has(o.outcome)).length : won.length;
@@ -563,7 +569,7 @@ export function investorFigures(input: ModelInput): InvestorFigures {
     paying: { count: input.paying.length, mrrCents: payingMrr, arrCents: payingMrr * 12, revenueToDateCents: revenueToDate, preexisting: preexisting.length, preexistingMrrCents: preexisting.reduce((x, p) => x + p.monthlyCents, 0), won: won.length, wonMrrCents: wonMrr, fromNoCard: fromNoCard.length, fromNoCardMrrCents: fromNoCard.reduce((x, p) => x + p.monthlyCents, 0) },
     lapsed: input.lapsed,
     outcomes: oc
-      ? { paidAtEnd: count("paid"), cameBack: count("came-back"), cameBackDays: median(oc.filter((o) => o.outcome === "came-back" && typeof o.afterDays === "number").map((o) => o.afterDays as number)), leftAfterPaying: oc.filter((o) => (o.outcome === "paid" || o.outcome === "came-back") && !o.payingNow).length, canceled: count("canceled"), unpaid: count("unpaid"), retrying: count("retrying") }
+      ? { paidAtEnd: count("paid"), cameBack: count("came-back"), cameBackDays: median(oc.filter((o) => o.outcome === "came-back" && typeof o.afterDays === "number").map((o) => o.afterDays as number)), leftAfterPaying: oc.filter((o) => (o.outcome === "paid" || o.outcome === "came-back") && !o.payingNow).length, canceled: count("canceled"), refunded: count("refunded"), unpaid: count("unpaid"), retrying: count("retrying") }
       : null,
     // From whole numbers: 23 of 40 is 57.5% and reads 58% (0.575 as a float rounds down to 57).
     rate: { paid: converted, ended, share, pct: ended > 0 ? Math.round((converted * 100) / ended) : null, lowPct: range ? toPct(range.low) : null, highPct: range ? toPct(range.high) : null },
