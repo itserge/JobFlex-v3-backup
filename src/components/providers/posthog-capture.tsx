@@ -8,7 +8,13 @@ import { TRAFFIC_EXPERIMENTS_ACTIVE } from "@/lib/traffic-experiments";
 import { isQaVisitor } from "@/lib/qaEmail";
 
 const KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY;
-const HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com";
+// INGEST THROUGH OUR OWN DOMAIN (2026-11-02). Every PostHog request goes to
+// /ingest/… on this site and next.config.ts rewrites it to PostHog US
+// (us.i.posthog.com, static assets from us-assets.i.posthog.com), so ad and
+// tracking blockers that drop *.posthog.com let it through. No env override:
+// the proxy is the one route. ui_host keeps the toolbar's links on PostHog.
+const HOST = "/ingest";
+const UI_HOST = "https://us.posthog.com";
 const internal = (path: string) => path === "/admin" || path.startsWith("/admin/");
 
 // THE LIBRARY LOADS AFTER THE PAGE, NOT WITH IT (landing-e pass C,
@@ -35,7 +41,7 @@ function loadPostHog(): Promise<PostHog | null> {
     const posthog = m.default;
     if (!posthog.__loaded) {
       posthog.init(KEY, {
-        api_host: HOST, capture_pageview: false, person_profiles: "identified_only",
+        api_host: HOST, ui_host: UI_HOST, capture_pageview: false, person_profiles: "identified_only",
         capture_pageleave: true, autocapture: false,
         advanced_disable_feature_flags: !TRAFFIC_EXPERIMENTS_ACTIVE,
         // Off at init; the route effect below starts it on public paths only.

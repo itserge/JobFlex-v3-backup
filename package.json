@@ -62,7 +62,7 @@
     "openai": "6.16.0",
     "pdfjs-dist": "^4.10.38",
     "postal-mime": "2.7.5",
-    "posthog-js": "^1.422.1",
+    "posthog-js": "1.444.4",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "react-hook-form": "^7.54.0",

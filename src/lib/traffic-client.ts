@@ -69,7 +69,8 @@ function deliver(item: Queued) {
    posthog-js will adopt when it loads on the next page: the id is written
    into the persistence record the library reads at init. */
 const KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY;
-const HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com";
+// The same /ingest proxy as posthog-capture (next.config.ts rewrites it to PostHog US).
+const HOST = "/ingest";
 /** A v4 UUID; `crypto.randomUUID` needs a secure context, a LAN address is not one. */
 function uuid(): string {
   const c = globalThis.crypto as Crypto | undefined;

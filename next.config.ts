@@ -52,6 +52,13 @@ const nextConfig: NextConfig = {
   productionBrowserSourceMaps: process.env.VERCEL_ENV === "preview",
   // Do not advertise the framework in every response.
   poweredByHeader: false,
+  skipTrailingSlashRedirect: true,
+  async rewrites() {
+    return [
+      { source: "/ingest/static/:path*", destination: "https://us-assets.i.posthog.com/static/:path*" },
+      { source: "/ingest/:path*", destination: "https://us.i.posthog.com/:path*" },
+    ];
+  },
   // Deployment skew protection. A phone that loaded the app from one build and
   // is still open when the next one ships will, on its next navigation, ask the
   // CDN for a chunk filename only the old build ever emitted — a 404 that
