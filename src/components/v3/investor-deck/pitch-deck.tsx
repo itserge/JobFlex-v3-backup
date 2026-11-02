@@ -16,6 +16,9 @@ import { TOUR_SHOTS, tourSrc } from "./tour-shots";
 import { ALL_TRADE_SHOPS, FINANCING, HOURS_FACT, LEAD_PRICES, LEADER, MARKET_FACTS, type PitchSource } from "./pitch-facts";
 import { useSlides } from "./use-slides";
 import { useFullscreen } from "./use-fullscreen";
+import type { CustomerCost } from "@/lib/investorModel";
+import { CustomerCostChart, type CustomerCostWords } from "@/components/v3/admin-investors/customer-cost-chart";
+import rep from "@/components/v3/admin-investors/investor-report.module.css";
 import s from "./investor-deck.module.css";
 
 export interface PitchData {
@@ -33,6 +36,8 @@ export interface PitchData {
     /** What the cost of a customer and the payback are counted on: the signups whose trial is over (2026-11-02). */
     matured: { through: string | null; spendCents: number; won: number; wonMrrCents: number };
     expectedPayers: number | null; expectedMrrCents: number | null;
+    /** What a customer costs, from the first day (2026-11-02): the Figures page's chart and its words, and its today. */
+    cost: CustomerCost; costWords: CustomerCostWords; today: string;
   };
   leadPrice: { minCents: number; maxCents: number };
   deskPack: { minutes: number; cents: number };
@@ -430,6 +435,20 @@ export function PitchDeck({ data, offer }: { data: PitchData; offer: ReactNode }
             <div data-kpi="spend"><b>{dollars(u.spendCents)}</b><span>spent on ads since {longDate(t.since)}</span></div>
           </div>
           <p className={s.note}>Read live from the ad accounts, Stripe and the sign-ups — the Figures page shows the month-by-month curve.</p>
+        </div>
+      ),
+    });
+
+    // WHAT A CUSTOMER COSTS, FROM THE FIRST DAY (owner, 2026-11-02): the Figures page's chart, slim — the words under it.
+    out.push({
+      id: "customer-cost", kicker: "Unit economics · what a customer costs, from the first day",
+      body: (
+        <div>
+          <h2 className={s.title}>What a customer costs — and where today&apos;s pace takes it</h2>
+          <div className={rep.rep}>
+            <CustomerCostChart cost={u.cost} story={u.costWords} today={u.today} ratePct={t.ratePct} compact />
+          </div>
+          <p className={s.note}>{[u.costWords.now, u.costWords.paidBack].filter(Boolean).join(" ")}</p>
         </div>
       ),
     });
