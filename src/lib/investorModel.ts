@@ -236,6 +236,60 @@ export interface InvestorFigures {
   /** A month in on the first day against today (2026-10-25: "3.3× in 17 days"): the multiple is null from $0. */
   growth: { fromCents: number; toCents: number; days: number; multiple: number | null };
   curve: CurvePoint[];
+  /** What a customer costs, from the first day to `COST_AHEAD_DAYS` past today (2026-11-02, customerCostSeries). */
+  cost: CustomerCost;
+}
+
+/* ── WHAT A CUSTOMER COSTS, FROM THE FIRST DAY (owner, 2026-11-02: "a projection at the current spending and the
+   customers already converted — how the cost per customer gets reduced as we go; show the current position, from the
+   beginning"). Two figures a day, both counted the way "Per paying customer" is — on the signups whose trial is over,
+   so no ad dollar waits on trials still running:
+     · to win — the ads up to that cut ÷ the customers those signups became;
+     · after paying — the same ads less what those customers have paid by that day (list price), ÷ the same customers.
+       It falls as they pay; at $0 the ads' own customers have paid back every counted ad dollar.
+   Up to today: counted (paying today). Past today, at today's pace: the ads at the last full week's spend a day, the
+   running trials and the signups still to come (the last week's pace) converting at the measured rate, each paying
+   its list price from its trial's end. No churn is modelled. Week by week: each week's ads ÷ the customers its
+   signups became. ── */
+
+/** How far past today the cost of a customer is drawn. */
+export const COST_AHEAD_DAYS = 90;
+
+export interface CostPoint {
+  date: string;
+  /** The signups counted on that day: up to `through` — the day less the trial and one day. */
+  through: string;
+  /** Their ads, the customers they became (fractional past today: expected) and what those customers paid by that day. */
+  spendCents: number;
+  customers: number;
+  paidCents: number;
+  /** Ads ÷ customers: what a customer cost to win. null = no customer yet. */
+  grossCents: number | null;
+  /** (Ads − what they paid) ÷ customers: what a customer still costs after paying. Below zero: paid back. */
+  netCents: number | null;
+  projected: boolean;
+}
+export interface CostWeek {
+  /** Seven signup days from the start day (the last may still be running). */
+  from: string;
+  to: string;
+  spendCents: number;
+  /** Paying today; and the trials of the week still running, at the measured rate. */
+  paying: number;
+  expected: number;
+  /** Ads ÷ (paying + expected); null = no customer (or no measured rate for a week still in trial). */
+  costCents: number | null;
+  /** counted = every trial of the week is over; trial = some still running (that part expected). */
+  state: "counted" | "trial";
+}
+export interface CustomerCost {
+  aheadDays: number;
+  points: CostPoint[];
+  weeks: CostWeek[];
+  /** At today's pace: a new customer's cost (ads a day ÷ customers a day), what a month of theirs pays, and the months it takes. */
+  pace: { costCents: number | null; spendPerDayCents: number; signupsPerDay: number; customersPerDay: number | null; monthlyCents: number; paybackMonths: number | null };
+  /** The first day from today on that "after paying" reaches $0, searched as far as the horizon; null = not by then. */
+  paidBack: { date: string | null; daysFromToday: number | null; searchedDays: number };
 }
 
 const DAY_MS = 86_400_000;
@@ -272,6 +326,103 @@ const median = (xs: number[]): number | null => {
   const m = Math.floor(s.length / 2);
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
+
+/** One customer of the ads (or the measured share of one): the signup day it belongs to, and the day it pays from. */
+interface CostStream { cohort: string; weight: number; start: string; monthlyCents: number; counted: boolean }
+
+/** What a customer costs, day by day and week by week (CustomerCost). Pure; investorFigures hands it its parts. */
+export function customerCostSeries(a: {
+  since: string;
+  today: string;
+  trialDays: number;
+  horizonDays: number;
+  spendByDay: ReadonlyMap<string, number>;
+  perDayProjectedCents: number;
+  won: ReadonlyArray<PayingAccount>;
+  /** The running trials, each with the day it pays from if it converts. */
+  trials: ReadonlyArray<{ createdAt: string; end: string; monthlyCents: number | null }>;
+  share: number | null;
+  signupsPerDay: number;
+  /** What a customer still to come pays a month: the running trials' average, else the paying ones'. */
+  monthlyCents: number;
+}): CustomerCost {
+  const { since, today, share } = a;
+  const cut = (d: string) => addDays(d, -(a.trialDays + 1));
+  const through = cut(today);
+  const searchTo = addDays(today, Math.max(COST_AHEAD_DAYS, a.horizonDays));
+  const cohortOf = (p: PayingAccount) => dayOf(p.signedUpAt ?? p.startedAt);
+  // Paying today (counted), then — past today only — the running trials and the signups still to come at the share.
+  const streams: CostStream[] = a.won.map((p) => ({ cohort: cohortOf(p), weight: 1, start: dayOf(p.startedAt), monthlyCents: p.monthlyCents, counted: true }));
+  const customersPerDay = share === null ? null : a.signupsPerDay * share;
+  if (share !== null) {
+    for (const t of a.trials) streams.push({ cohort: dayOf(t.createdAt), weight: share, start: t.end, monthlyCents: t.monthlyCents ?? a.monthlyCents, counted: false });
+    if (customersPerDay) for (let c = addDays(today, 1); c <= cut(searchTo); c = addDays(c, 1)) streams.push({ cohort: c, weight: customersPerDay, start: addDays(c, a.trialDays), monthlyCents: a.monthlyCents, counted: false });
+  }
+  // The ads up to each signup day: booked or budgeted to today, then the last full week's pace.
+  const spendTo = new Map<string, number>();
+  let run = 0;
+  for (let d = since; d <= cut(searchTo); d = addDays(d, 1)) {
+    run += d <= today ? (a.spendByDay.get(d) ?? 0) : a.perDayProjectedCents;
+    spendTo.set(d, run);
+  }
+  const r1 = (n: number) => Math.round(n * 10) / 10;
+  const at = (date: string): CostPoint => {
+    const c = cut(date);
+    const projected = date > today;
+    const spend = c < since ? 0 : (spendTo.get(c) ?? 0);
+    let customers = 0;
+    let paid = 0;
+    for (const s of streams) {
+      if (s.cohort > c || (!projected && !s.counted)) continue;
+      customers += s.weight;
+      const days = daysBetween(s.start, date) + 1;
+      if (days > 0) paid += (s.weight * s.monthlyCents * days) / 30;
+    }
+    return {
+      date, through: c, spendCents: r0(spend), customers: r1(customers), paidCents: r0(paid),
+      grossCents: customers > 0 ? r0(spend / customers) : null,
+      netCents: customers > 0 ? r0((spend - paid) / customers) : null,
+      projected,
+    };
+  };
+  const points: CostPoint[] = [];
+  for (let d = since; d <= addDays(today, COST_AHEAD_DAYS); d = addDays(d, 1)) points.push(at(d));
+  // Paid back: the first day from today on that the ads' own customers have paid every counted ad dollar.
+  let paidBack: string | null = null;
+  for (let d = today; d <= searchTo && paidBack === null; d = addDays(d, 1)) {
+    const p = d <= addDays(today, COST_AHEAD_DAYS) ? points[daysBetween(since, d)] : at(d);
+    if (p.spendCents > 0 && p.netCents !== null && p.netCents <= 0) paidBack = d;
+  }
+  // Week by week, from the start day: each week's ads ÷ the customers its signups became.
+  const weeks: CostWeek[] = [];
+  for (let from = since; from <= today; from = addDays(from, 7)) {
+    const to = addDays(from, 6);
+    let spend = 0;
+    for (let d = from; d <= to && d <= today; d = addDays(d, 1)) spend += a.spendByDay.get(d) ?? 0;
+    const inWeek = (day: string) => day >= from && day <= to;
+    const paying = a.won.filter((p) => inWeek(cohortOf(p))).length;
+    const running = a.trials.filter((t) => inWeek(dayOf(t.createdAt))).length;
+    const expected = share === null ? 0 : running * share;
+    const state: CostWeek["state"] = to <= through && running === 0 ? "counted" : "trial";
+    const n = paying + expected;
+    weeks.push({ from, to, spendCents: spend, paying, expected: r1(expected), costCents: (state === "trial" && share === null) || n <= 0 ? null : r0(spend / n), state });
+  }
+  const paceCost = customersPerDay && a.perDayProjectedCents > 0 ? r0(a.perDayProjectedCents / customersPerDay) : null;
+  return {
+    aheadDays: COST_AHEAD_DAYS,
+    points,
+    weeks,
+    pace: {
+      costCents: paceCost,
+      spendPerDayCents: a.perDayProjectedCents,
+      signupsPerDay: Math.round(a.signupsPerDay * 100) / 100,
+      customersPerDay: customersPerDay === null ? null : Math.round(customersPerDay * 100) / 100,
+      monthlyCents: a.monthlyCents,
+      paybackMonths: paceCost !== null && a.monthlyCents > 0 ? r1(paceCost / a.monthlyCents) : null,
+    },
+    paidBack: { date: paidBack, daysFromToday: paidBack ? daysBetween(today, paidBack) : null, searchedDays: daysBetween(today, searchTo) },
+  };
+}
 
 export function investorFigures(input: ModelInput): InvestorFigures {
   const { since, today, settings: a } = input;
@@ -385,6 +536,11 @@ export function investorFigures(input: ModelInput): InvestorFigures {
   const breakEven = cross
     ? { date: cross.date, daysFromToday: daysBetween(today, cross.date), withinHorizon: true }
     : { date: null, daysFromToday: null, withinHorizon: false };
+  const cost = customerCostSeries({
+    since, today, trialDays, horizonDays: horizon, spendByDay, perDayProjectedCents: perDayProjected, won,
+    trials: trials.map((t) => ({ createdAt: t.createdAt, end: trialEnd(t), monthlyCents: t.monthlyCents })),
+    share, signupsPerDay, monthlyCents: avgTrialMonthly > 0 ? avgTrialMonthly : won.length ? r0(wonMrr / won.length) : 0,
+  });
 
   // A cost needs both a spend and something to divide it by; without either there is no figure.
   const div = (n: number, d: number) => (n > 0 && d > 0 ? r0(n / d) : null);
@@ -437,6 +593,7 @@ export function investorFigures(input: ModelInput): InvestorFigures {
       return { fromCents: from, toCents: to, days: Math.max(0, ti), multiple: from > 0 ? Math.round((to / from) * 10) / 10 : null };
     })(),
     curve,
+    cost,
   };
 }
 
@@ -779,6 +936,48 @@ export function outlookSentence(f: InvestorFigures): string {
   }
   const why = f.rate.pct === null ? " Until a trial ends, only the accounts already paying are counted." : f.rate.pct === 0 ? " No trial that ended is paying yet, so the running trials add nothing." : "";
   return `At today's pace the ads do not pay for themselves within ${f.curve.length - f.daysLive} days: ${dollars(f.spend.perDayProjectedCents)} a day goes out against ${run} a month coming in.${why}`;
+}
+
+/** The cost of a customer in plain words (2026-11-02): today, week by week, at today's pace, at the end of the view,
+ *  and the day the ads' own customers have paid them back. Each line says what it counts; a rise reads as a rise. */
+export function customerCostStory(f: InvestorFigures): { now: string; weeks: string | null; pace: string | null; ahead: string | null; paidBack: string | null } {
+  const c = f.cost;
+  const m = f.unit.matured;
+  const now = c.points.find((p) => p.date === f.today) ?? null;
+  const end = c.points.at(-1) ?? null;
+  const range = (w: CostWeek) => (w.from.slice(0, 7) === w.to.slice(0, 7) ? `${shortDay(w.from)}–${Number(w.to.slice(8))}` : `${shortDay(w.from)}–${shortDay(w.to)}`);
+  const change = (from: number, to: number) => (to === from ? "no change" : `${Math.abs(Math.round(((to - from) / from) * 100))}% ${to < from ? "less" : "more"}`);
+
+  let nowWords: string;
+  if (m.through === null) nowWords = `No trial is over yet, so no customer is counted — the first are counted on ${longDate(addDays(f.since, f.trials.lengthDays + 1))}.`;
+  else if (!now || now.grossCents === null) nowWords = `The signups whose trial is over — up to ${shortDay(m.through)} — have not brought a paying customer yet; ${dollars(m.spendCents)} of ads are counted against them.`;
+  else nowWords = `Today a customer has cost ${dollars(now.grossCents)} to win (${dollars(now.spendCents)} of ads up to ${shortDay(m.through)} ÷ ${plural(m.won, "paying customer", "paying customers")})${now.netCents === null ? "." : now.netCents <= 0 ? ", and those customers have already paid it back." : `, and ${dollars(now.netCents)} after what those customers have paid since.`}`;
+
+  const counted = c.weeks.filter((w) => w.state === "counted" && w.costCents !== null);
+  const weeks = counted.length >= 2
+    ? `Week by week: ${dollars(counted[0].costCents!)} a customer for the first week's signups (${range(counted[0])}), ${dollars(counted.at(-1)!.costCents!)} for the latest week whose trials are over (${range(counted.at(-1)!)}) — ${change(counted[0].costCents!, counted.at(-1)!.costCents!)}.`
+    : counted.length === 1
+      ? `One week's trials are over so far: ${dollars(counted[0].costCents!)} a customer for the signups of ${range(counted[0])}.`
+      : null;
+
+  const p = c.pace;
+  const pace = p.costCents === null
+    ? null
+    : `At today's pace — ${dollars(p.spendPerDayCents)} a day on ads, ${p.signupsPerDay} ${p.signupsPerDay === 1 ? "signup" : "signups"} a day, ${f.rate.pct}% converting — a new customer costs ${dollars(p.costCents)} to win${p.paybackMonths !== null ? ` and pays it back in ${p.paybackMonths} months at ${dollars(p.monthlyCents)} a month` : ""}.`;
+
+  const ahead = end && end.grossCents !== null && end.netCents !== null && now && now.grossCents !== null && f.rate.share !== null
+    ? `In ${c.aheadDays} days at that pace (${longDate(end.date)}): ${dollars(end.grossCents)} a customer to win — ${end.grossCents === now.grossCents ? "the same as" : end.grossCents < now.grossCents ? "down from" : "up from"} ${dollars(now.grossCents)} today — and ${end.netCents <= 0 ? "already paid back" : `${dollars(end.netCents)} after what they have paid`}, with about ${Math.round(end.customers)} customers counted.`
+    : null;
+
+  const paidBack = f.spend.totalCents === 0 || m.through === null
+    ? null
+    : c.paidBack.date
+      ? c.paidBack.daysFromToday === 0
+        ? "The ads' own customers have already paid back every ad dollar counted."
+        : `At that pace the ads' own customers pay back every ad dollar counted on ${longDate(c.paidBack.date)} — in ${c.paidBack.daysFromToday} days.`
+      : `At that pace the ads' own customers do not pay back the ads counted within the next ${c.paidBack.searchedDays} days.`;
+
+  return { now: nowWords, weeks, pace, ahead, paidBack };
 }
 
 /** Which day since the launch today is (owner, 2026-10-24: "add the days count after JobFlex launched"): the

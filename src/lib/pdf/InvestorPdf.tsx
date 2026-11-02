@@ -6,7 +6,7 @@
 import * as React from "react";
 import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 import type { InvestorReport } from "@/lib/investors";
-import { dollars, longDate, monthlyPace, outlookSentence, payMonthlyDay, runRateReading, runRateStory, runRateWindow, standingSentence, type CurvePoint } from "@/lib/investorModel";
+import { customerCostStory, dollars, longDate, monthlyPace, outlookSentence, payMonthlyDay, runRateReading, runRateStory, runRateWindow, standingSentence, type CurvePoint } from "@/lib/investorModel";
 
 const s = StyleSheet.create({
   page: { padding: 40, fontFamily: "Helvetica", fontSize: 10, color: "#0a0a0a" },
@@ -140,6 +140,41 @@ export function InvestorPdfDocument({ report }: { report: InvestorReport }) {
               );
             });
           })()}
+        </View>
+        {/* What a customer costs, from the first day (2026-11-02, lib/investorModel customerCostSeries): the words, the
+            days that matter — the first counted, today, a month on at a time — and each week's signups. */}
+        <View wrap={false}>
+          <Text style={s.h2}>What a customer costs, from the first day</Text>
+          {(() => {
+            const st = customerCostStory(f);
+            return <Text style={s.li}>{[st.now, st.weeks, st.pace, st.ahead, st.paidBack].filter(Boolean).join(" ")}</Text>;
+          })()}
+          <View style={s.row}><Text style={[s.c1, { fontFamily: "Helvetica-Bold" }]}>Day</Text><Text style={s.c2}>To win</Text><Text style={s.c2}>After paying</Text><Text style={s.c2}>Customers</Text></View>
+          {(() => {
+            const pts = f.cost.points;
+            const first = pts.findIndex((p) => p.grossCents !== null && !p.projected);
+            const ti = pts.findIndex((p) => p.date === f.today);
+            const picks = [...new Set([first, ti, ti + 30, ti + 60, pts.length - 1].filter((i) => i >= 0 && i < pts.length))].sort((x, y) => x - y);
+            return picks.map((i) => {
+              const p = pts[i];
+              return (
+                <View key={p.date} style={[s.row, ...(p.date === f.today ? [s.rowStrong] : [])]}>
+                  <Text style={s.c1}>{longDate(p.date)}{i === first && i !== ti ? " · first counted" : p.date === f.today ? " · today" : p.projected ? " · at today's pace" : ""}</Text>
+                  <Text style={s.c2}>{money(p.grossCents)}</Text>
+                  <Text style={s.c2}>{p.netCents === null ? "—" : p.netCents <= 0 ? "paid back" : dollars(p.netCents)}</Text>
+                  <Text style={s.c2}>{about(p.customers)}</Text>
+                </View>
+              );
+            });
+          })()}
+          <View style={s.row}><Text style={[s.c1, { fontFamily: "Helvetica-Bold" }]}>Week of signups</Text><Text style={s.c2}>A customer</Text><Text style={s.c3}>Ads ÷ the customers they became</Text></View>
+          {f.cost.weeks.map((w) => (
+            <View key={w.from} style={s.row}>
+              <Text style={s.c1}>{longDate(w.from)}{w.state === "trial" ? " · trials running" : ""}</Text>
+              <Text style={s.c2}>{w.costCents === null ? "—" : `${w.state === "trial" ? "about " : ""}${dollars(w.costCents)}`}</Text>
+              <Text style={s.c3}>{dollars(w.spendCents)} ÷ {w.paying} paying{w.expected ? ` + about ${Math.round(w.expected * 10) / 10} expected` : ""}</Text>
+            </View>
+          ))}
         </View>
         {report.spend.byPlatform.length > 0 && (
           <>

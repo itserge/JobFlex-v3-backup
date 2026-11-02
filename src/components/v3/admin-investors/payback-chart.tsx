@@ -27,16 +27,16 @@ const W = 760;
 const H = 320;
 const PAD = { r: 124, t: 22, b: 40 };
 
-const niceMax = (v: number) => {
+export const niceMax = (v: number) => {
   if (v <= 0) return 100;
   const p = 10 ** Math.floor(Math.log10(v));
   const m = v / p;
   const step = m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10;
   return step * p;
 };
-const short = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+export const short = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 /** "$1.2M", "$48k", "$650" — the axis and the line ends. */
-const compact = (cents: number) => {
+export const compact = (cents: number) => {
   const d = cents / 100;
   const unit = (v: number, suffix: string) => `$${v >= 10 || Number.isInteger(v) ? Math.round(v) : v.toFixed(1)}${suffix}`;
   if (d >= 1e6) return unit(d / 1e6, "M");
