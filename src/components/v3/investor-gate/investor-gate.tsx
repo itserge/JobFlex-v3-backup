@@ -8,8 +8,14 @@
 // 2026-10-20 (owner: "don't open the link till we approve it"): with approvals on, the door sends a request — the
 // reader then waits on InvestorWaiting, which asks every little while and opens the page itself when an admin says
 // yes. An email already let in, typed in a new browser, gets an open link by email instead of the figures.
+//
+// 2026-11-02 (owner: "when they click send for approval it just clicks and does nothing … transfer this button to
+// showing reviewing"): once the door has the request, the button says so — "Request sent — under review" — and stays
+// pressed until the waiting page is up (the page is fetched again behind it, which can take a few seconds). A
+// signed-in admin is still let in without approval (owner, 2026-11-02: keep skipping for admins), and the button and
+// the note say so plainly, with the way to try the reader's door: a private window.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { introduceInvestorAction, investorRequestStatusAction, sendInvestorOfferAction } from "@/actions/investorGate";
 import { INVESTOR_KINDS, OFFER_AMOUNTS, OFFER_INSTRUMENTS, OFFER_TIMELINES, OFFER_TYPES, type InvestorVisitorView } from "@/lib/investorGate";
@@ -60,6 +66,20 @@ export function InvestorGate({ token, admin = false, approval = true, notice }: 
   const [busy, setBusy] = useState(false);
   /** The address an open link was sent to — this email was let in before, from another browser. */
   const [mailed, setMailed] = useState<string | null>(null);
+  /** The door has it: under review (a request), or opening (let in). Held while the page is fetched again. */
+  const [sent, setSent] = useState<"review" | "open" | null>(null);
+  const [refreshing, startRefresh] = useTransition();
+  const wasRefreshing = useRef(false);
+  // The page came back and this is still the door (the pass did not take): let them try again.
+  useEffect(() => {
+    if (wasRefreshing.current && !refreshing && sent) {
+      setSent(null);
+      setError("That did not open. Try again in a moment.");
+    }
+    wasRefreshing.current = refreshing;
+  }, [refreshing, sent]);
+  /** Approval applies to this reader: approvals are on and they are not a signed-in admin. */
+  const review = approval && !admin;
   const set = (k: keyof typeof f, v: string) => {
     setF((x) => ({ ...x, [k]: v }));
     setProblems((p) => ({ ...p, [k]: "" }));
@@ -80,7 +100,8 @@ export function InvestorGate({ token, admin = false, approval = true, notice }: 
         setMailed(r.email);
         return;
       }
-      router.refresh();
+      setSent("outcome" in r && r.outcome === "pending" ? "review" : "open");
+      startRefresh(() => router.refresh());
     } catch {
       setError("That did not go through. Check the connection and try again.");
     } finally {
@@ -106,7 +127,11 @@ export function InvestorGate({ token, admin = false, approval = true, notice }: 
           We know this email — it was let in before. For your security the figures don&apos;t open on an address alone: we&apos;ve sent a link to <b>{maskEmail(mailed)}</b>. Open it on this device and the page opens.
         </p>
       ) : null}
-      {admin ? <p className={s.note} data-admin-note>You are signed in as an admin. Every reader goes through this door before the figures — go through it yourself to see the page as they do. Your entry is marked as yours and kept out of the reader list, and nobody is emailed about it.</p> : null}
+      {admin ? (
+        <p className={s.note} data-admin-note>
+          You are signed in as an admin, so this opens <b>without approval</b>: your entry is marked as yours, kept out of the reader list on Admin → Investors, and nobody is emailed about it.{approval ? " To try what an investor sees — the request, “under review”, and your approval — open this link in a private window where you are not signed in." : ""}
+        </p>
+      ) : null}
       <form className={s.form} onSubmit={submit} noValidate>
         <div className={s.pair}>
           <Field id="inv-name" label="Your name" problem={problems.name}>
@@ -133,8 +158,8 @@ export function InvestorGate({ token, admin = false, approval = true, notice }: 
             {error}
           </p>
         ) : null}
-        <button type="submit" className={s.primary} disabled={busy} data-investor-open>
-          {busy ? (approval ? "Sending…" : "Opening…") : approval ? "Ask to see the figures" : "See the figures"}
+        <button type="submit" className={s.primary} disabled={busy || sent !== null} aria-live="polite" data-investor-open data-sent={sent ?? undefined}>
+          {sent === "review" ? "Request sent — under review" : sent === "open" ? "Opening the figures…" : busy ? (review ? "Sending your request…" : "Opening…") : admin ? "See the figures — admin, no approval" : approval ? "Ask to see the figures" : "See the figures"}
         </button>
         <p className={s.fine}>Used only to know who is reading and to answer you. Never shared.</p>
       </form>
@@ -189,9 +214,9 @@ export function InvestorWaiting({ token, visitor, status }: { token: string; vis
       <p className={s.sub}>
         We look at each request before the figures open. The moment we do, you&apos;ll get an email at <b>{maskEmail(visitor.email)}</b> with your link — and this page opens on its own, so you can leave it open.
       </p>
-      <p className={s.wait} role="status">
+      <p className={s.wait} role="status" data-under-review>
         <span className={s.waitDot} aria-hidden="true" />
-        Waiting for approval · {visitor.company}
+        Under review — waiting for our approval · {visitor.company}
       </p>
       <div className={s.waitOffer}>
         <span>While you wait — we accept VC offers.</span>

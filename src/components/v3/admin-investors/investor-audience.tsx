@@ -150,7 +150,7 @@ export function InvestorAudience({ visitors: allVisitors, offers: allOffers, lin
       ) : (
         <p className={s.empty}>Nobody has opened the link yet.</p>
       )}
-      {tests ? <p className={s.hint} data-admin-tests>{tests === 1 ? "One entry of your own" : `${tests} entries of your own`} (an admin going through the door, or a test offer) left out.</p> : null}
+      {tests ? <p className={s.hint} data-admin-tests>{tests === 1 ? "One entry of your own" : `${tests} entries of your own`} (an admin going through the door while signed in — let in without approval — or a test offer) left out.</p> : null}
     </section>
   );
 }
