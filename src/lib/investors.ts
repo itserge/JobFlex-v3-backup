@@ -17,7 +17,7 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 import { db } from "@/lib/db";
 import { countedOrgs, statsHiddenIds } from "@/lib/statsHidden";
-import { signupState } from "@/lib/traffic-live";
+import { signupState, type SignupState } from "@/lib/traffic-live";
 import { TRAFFIC_SINCE, TRAFFIC_SINCE_MS, TRAFFIC_TZ } from "@/lib/traffic-visitor";
 import { fetchInvestorVisitors } from "@/lib/traffic-server";
 import { valueSignups } from "@/lib/trialProjectionRead";
@@ -260,7 +260,7 @@ export interface InvestorReport {
   /** WHAT CAME IN (2026-10-24): Stripe's paid subscription invoices since the start day from the accounts counted
    *  here — all of them, and the part from the customers the period brought (signed up since the start day).
    *  read false = Stripe not read, with why; never a guess. */
-  collected: { read: boolean; error: string | null; cents: number; invoices: number; wonCents: number };
+  collected: { read: boolean; error: string | null; cents: number; invoices: number; wonCents: number; /** Of those payments, refunded or lost to a chargeback since — already out of `cents` and `wonCents` (2026-11-02). */ refundedCents: number };
   /** JOBS PAID WITH FINANCING (2026-10-28, lib/financing): Wisetack's payouts to JobFlex contractors — Payment rows
    *  provider WISETACK + PAID, all time, measured. The page shows the line only once there is one. */
   financed: { jobs: number; cents: number };
@@ -322,21 +322,46 @@ export async function investorReport({ refreshMeta = false }: { refreshMeta?: bo
   // Every paying account; the ones from before the start day are named, not counted.
   const payingAll = await db.subscription.findMany({
     where: { status: "ACTIVE", organization: countedOrgs(hidden) },
-    select: { organizationId: true, plan: true, status: true, trialEndsAt: true, stripePriceId: true, externalSubId: true, externalCustomerId: true, provider: true, createdAt: true, organization: { select: { createdAt: true } } },
+    select: { organizationId: true, plan: true, status: true, trialEndsAt: true, canceledAt: true, stripePriceId: true, externalSubId: true, externalCustomerId: true, provider: true, createdAt: true, organization: { select: { createdAt: true } } },
   });
 
-  const payRow = (p: (typeof payingAll)[number]) => ({ orgId: p.organizationId, createdAt: p.organization.createdAt, state: "paying" as const, sub: { plan: p.plan, status: p.status, trialEndsAt: p.trialEndsAt, stripePriceId: p.stripePriceId, externalSubId: p.externalSubId, provider: p.provider }, customer: p.externalCustomerId, subCreatedAt: p.createdAt, trialEndsAt: p.trialEndsAt, canceledAt: null as Date | null });
-  const rows = [
+  const payRow = (p: (typeof payingAll)[number]) => ({ orgId: p.organizationId, createdAt: p.organization.createdAt, state: "paying" as SignupState, sub: { plan: p.plan, status: p.status, trialEndsAt: p.trialEndsAt, stripePriceId: p.stripePriceId, externalSubId: p.externalSubId, provider: p.provider }, customer: p.externalCustomerId, subCreatedAt: p.createdAt, trialEndsAt: p.trialEndsAt, canceledAt: p.canceledAt });
+  const listed = [
     ...orgs.map((o) => ({ orgId: o.id, createdAt: o.createdAt, state: signupState(o.subscription?.status ?? ""), sub: o.subscription ? { plan: o.subscription.plan, status: o.subscription.status, trialEndsAt: o.subscription.trialEndsAt, stripePriceId: o.subscription.stripePriceId, externalSubId: o.subscription.externalSubId, provider: o.subscription.provider } : null, customer: o.subscription?.externalCustomerId ?? null, subCreatedAt: o.subscription?.createdAt ?? o.createdAt, trialEndsAt: o.subscription?.trialEndsAt ?? null, canceledAt: o.subscription?.canceledAt ?? null })),
     ...payingAll.filter((p) => p.organization.createdAt.getTime() >= sinceMs && !orgs.some((o) => o.id === p.organizationId)).map(payRow),
   ];
-  const beforeRows = payingAll.filter((p) => p.organization.createdAt.getTime() < sinceMs).map(payRow);
+  const listedBefore = payingAll.filter((p) => p.organization.createdAt.getTime() < sinceMs).map(payRow);
+  // WHAT CAME IN: Stripe's payments from every account of the period and the ones paying from before it, net of what
+  // went back — read once (beside the prices), for the money, for who has left already and for how each trial ended.
+  const customers = new Set([...listed, ...listedBefore].map((r) => r.customer).filter((c): c is string => !!c));
+  const paidRead = readSubscriptionPayments(sinceMs, customers, (ms) => dayIn(new Date(ms)));
   let values = new Map<string, { monthlyCents: number | null; chance?: number }>();
   try {
-    values = (await valueSignups([...rows, ...beforeRows].map((r) => ({ orgId: r.orgId, createdAt: r.createdAt, state: r.state, sub: r.sub })), Date.now())).values;
+    values = (await valueSignups([...listed, ...listedBefore].map((r) => ({ orgId: r.orgId, createdAt: r.createdAt, state: r.state, sub: r.sub })), Date.now())).values;
   } catch {
     values = new Map();
   }
+  const paid = await paidRead;
+  // WHAT WAS KEPT (owner, 2026-11-02): a payment counts for what was not refunded or lost to a chargeback. The first
+  // payment kept, by customer; and the customers who paid and got every cent back.
+  const firstPaid = new Map<string, string>();
+  const paidOnce = new Set<string>();
+  if (paid.ok) {
+    for (const p of paid.payments) {
+      paidOnce.add(p.customer);
+      const d = firstPaid.get(p.customer);
+      if (p.cents > p.refundedCents && (!d || p.date < d)) firstPaid.set(p.customer, p.date);
+    }
+  }
+  const refundedAll = (customer: string | null) => !!customer && paidOnce.has(customer) && !firstPaid.has(customer);
+  // WHO HAS LEFT ALREADY (owner, 2026-11-02: "somebody signs up on a free trial and the next day cancels"): a cancel
+  // keeps the days already given, so Stripe says "trialing" (or "active") until they run out. A trial with its cancel
+  // booked has ended with no payment from that day; a paying account with its cancel booked and every payment
+  // refunded has paid nothing. Both count as gone at once — "Keep my plan" takes the booking back, and them with it.
+  // A refund with the plan left on stays paying: Stripe bills it again.
+  const leftAlready = (r: (typeof listed)[number]) => r.canceledAt !== null && (r.state === "trial" || (r.state === "paying" && refundedAll(r.customer)));
+  const rows = listed.map((r) => (leftAlready(r) ? { ...r, state: "lapsed" as SignupState } : r));
+  const beforeRows = listedBefore.filter((r) => !leftAlready(r));
 
   // HOW EACH TRIAL STARTED (2026-10-13): a card-less trial leaves its record (lib/trialState); everything else took a card.
   const nocardIds = new Set<string>();
@@ -353,9 +378,13 @@ export async function investorReport({ refreshMeta = false }: { refreshMeta?: bo
   const cohortOf = (orgId: string): TrialCohort => (nocardIds.has(orgId) ? "nocard" : "card");
 
   const payRowOf = (r: (typeof rows)[number], preexisting: boolean) => {
-    // Paying from the trial's end when there was one, else from the subscription.
-    const ends = r.trialEndsAt && r.trialEndsAt.getTime() < Date.now() ? r.trialEndsAt : r.subCreatedAt;
-    return { startedAt: dayIn(ends), monthlyCents: values.get(r.orgId)?.monthlyCents ?? 0, signedUpAt: dayIn(r.createdAt), cohort: cohortOf(r.orgId), preexisting };
+    // Paying from the trial's end when there was one, else from the subscription — but one that came back days after
+    // its trial ended (canceled, a card that failed, refunded; owner, 2026-11-02: "after a few weeks they decide to
+    // come back") pays from its first payment kept, as "came back later" reads it. An account paying from before the
+    // start day keeps its own: its first payment read here is a renewal.
+    const ends = dayIn(r.trialEndsAt && r.trialEndsAt.getTime() < Date.now() ? r.trialEndsAt : r.subCreatedAt);
+    const back = !preexisting && r.customer ? firstPaid.get(r.customer) : undefined;
+    return { startedAt: back && daysBetween(ends, back) >= 2 ? back : ends, monthlyCents: values.get(r.orgId)?.monthlyCents ?? 0, signedUpAt: dayIn(r.createdAt), cohort: cohortOf(r.orgId), preexisting };
   };
   // The accounts paying from before the start day (owner, 2026-10-13: "add them to With a card, paying"): they
   // took a card, so they sit in that cohort — paying, never signups of the period (lib/investorModel).
@@ -407,13 +436,9 @@ export async function investorReport({ refreshMeta = false }: { refreshMeta?: bo
   const apartSet = new Set(first.days);
   const onCard = (r: (typeof rows)[number]) => cohortOf(r.orgId) === "card" && !apartSet.has(dayIn(r.createdAt));
 
-  // WHAT CAME IN: Stripe's payments from every account of the period and the ones paying from before it — read once,
-  // for the money and for how each trial ended (who paid when).
-  const customers = new Set([...rows, ...beforeRows].map((r) => r.customer).filter((c): c is string => !!c));
-  const [cardVisitors, startVisitors, paid] = await Promise.all([
+  const [cardVisitors, startVisitors] = await Promise.all([
     fetchInvestorVisitors(first.cardSince, TRAFFIC_TZ).catch(() => null),
     first.cardSince === since ? Promise.resolve(null) : fetchInvestorVisitors(since, TRAFFIC_TZ).catch(() => null),
-    readSubscriptionPayments(sinceMs, customers, (ms) => dayIn(new Date(ms))),
   ]);
   const visitors = cardVisitors ? cardVisitors.visitors : null;
   const firstAdDay = (startVisitors ?? cardVisitors)?.firstAdDay ?? null;
@@ -423,9 +448,8 @@ export async function investorReport({ refreshMeta = false }: { refreshMeta?: bo
   // a payment went through: within a day of the trial's end ("paid"), or later ("came-back" — a retry that went
   // through, a card put in later, a return), one that left since still converted; or a first charge still failing
   // inside its two-week retry window ("retrying"). Not converted = canceled before the end, or no payment two weeks
-  // after the end. Stripe not read: paying today = paid, the rest by status.
-  const firstPaid = new Map<string, string>();
-  if (paid.ok) for (const p of paid.payments) { const d = firstPaid.get(p.customer); if (!d || p.date < d) firstPaid.set(p.customer, p.date); }
+  // after the end; paid and refunded in full; a cancel booked during the trial. Stripe not read: paying today = paid,
+  // the rest by status.
   const outcomeOf = (r: (typeof rows)[number]): EndedTrial => {
     const base = { date: dayIn(r.createdAt), cohort: cohortOf(r.orgId), payingNow: r.state === "paying" };
     const end = r.trialEndsAt ? dayIn(r.trialEndsAt) : null;
@@ -435,9 +459,11 @@ export async function investorReport({ refreshMeta = false }: { refreshMeta?: bo
       return after >= 2 ? { ...base, outcome: "came-back", afterDays: after } : { ...base, outcome: "paid" };
     }
     if (base.payingNow) return { ...base, outcome: "paid" };
+    if (refundedAll(r.customer)) return { ...base, outcome: "refunded" };
     const status = (r.sub?.status ?? "").toUpperCase();
     // A first charge still failing: converted inside the two-week retry window, never paid after it — until it pays.
     if (status === "PAST_DUE") return r.trialEndsAt && Date.now() - r.trialEndsAt.getTime() > RETRY_DAYS * 86_400_000 ? { ...base, outcome: "unpaid" } : { ...base, outcome: "retrying" };
+    if (status === "TRIALING" && r.canceledAt) return { ...base, outcome: "canceled" };
     if (status === "CANCELED" && (!r.trialEndsAt || !r.canceledAt || r.canceledAt.getTime() <= r.trialEndsAt.getTime())) return { ...base, outcome: "canceled" };
     return { ...base, outcome: "unpaid" };
   };
@@ -447,10 +473,10 @@ export async function investorReport({ refreshMeta = false }: { refreshMeta?: bo
   // the no-card trials that pay now, and the ones paying from before the start day.
   const wonCustomers = new Set(rows.filter((r) => onCard(r) && r.customer).map((r) => r.customer as string));
   const countedCustomers = new Set([...wonCustomers, ...rows.filter((r) => !onCard(r) && r.state === "paying" && r.customer).map((r) => r.customer as string), ...beforeRows.map((r) => r.customer).filter((c): c is string => !!c)]);
-  const sum = (only: (customer: string) => boolean) => (paid.ok ? paid.payments.filter((p) => only(p.customer)).reduce((a, p) => a + p.cents, 0) : 0);
+  const sum = (only: (customer: string) => boolean, of: (p: { cents: number; refundedCents: number }) => number = (p) => p.cents - p.refundedCents) => (paid.ok ? paid.payments.filter((p) => only(p.customer)).reduce((a, p) => a + of(p), 0) : 0);
   const collected = paid.ok
-    ? { read: true, error: null, cents: sum((c) => countedCustomers.has(c)), invoices: paid.payments.filter((p) => countedCustomers.has(p.customer)).length, wonCents: sum((c) => wonCustomers.has(c)) }
-    : { read: false, error: paid.error, cents: 0, invoices: 0, wonCents: 0 };
+    ? { read: true, error: null, cents: sum((c) => countedCustomers.has(c)), invoices: paid.payments.filter((p) => countedCustomers.has(p.customer)).length, wonCents: sum((c) => wonCustomers.has(c)), refundedCents: sum((c) => countedCustomers.has(c), (p) => p.refundedCents) }
+    : { read: false, error: paid.error, cents: 0, invoices: 0, wonCents: 0, refundedCents: 0 };
 
   const wisetackPaid = await db.payment.findMany({ where: { provider: "WISETACK", status: "PAID" }, select: { proposalId: true, amount: true } }).catch(() => []);
   const financed = { jobs: new Set(wisetackPaid.map((p) => p.proposalId ?? "")).size, cents: Math.round(wisetackPaid.reduce((a, p) => a + p.amount, 0) * 100) };

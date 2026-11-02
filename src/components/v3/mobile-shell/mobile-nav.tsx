@@ -63,6 +63,7 @@ import styles from "./mobile-nav.module.css";
 import "@/components/v3/estimators-blueprint/estimators-global.css";
 import { MobileSprite } from "./sprite";
 import { TourChip } from "@/components/v3/onboarding-tour/tour-chip";
+import { SmartHelpRow } from "@/components/v3/smarthelp/smarthelp-row";
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -132,6 +133,8 @@ export function MobileNav() {
   const [open, setOpen] = useState(false);
   const navScrollRef = useRef<HTMLElement>(null);
   const indicatorRef = useRef<HTMLDivElement>(null);
+  // Where focus goes back when SmartHelp, opened from the drawer, closes: the drawer's row is gone by then.
+  const menuBtnRef = useRef<HTMLButtonElement>(null);
 
   /* Derived from the URL, never held in state. A label string only moved the
      highlight, which is why the drawer could once change the plate without
@@ -341,6 +344,7 @@ export function MobileNav() {
           type="button"
           aria-label="Open navigation"
           data-tour="nav-menu"
+          ref={menuBtnRef}
           aria-expanded={open}
           onClick={() => setOpen(true)}
         >
@@ -447,6 +451,8 @@ export function MobileNav() {
         {/* The first-estimate tour, paused or under way (components/v3/onboarding-tour) — at the head of
             the drawer, where the trial ribbon's dock never covers it. */}
         <TourChip onPick={() => setOpen(false)} />
+        {/* SmartHelp (components/v3/smarthelp): the drawer closes, then the sheet comes up. */}
+        <SmartHelpRow variant="drawer" onBeforeOpen={() => setOpen(false)} opener={() => menuBtnRef.current} />
         <nav className={styles.sbScroll} ref={navScrollRef}>
           <div className={styles.sbIndicator} ref={indicatorRef} />
           {sections.map((sec) => (

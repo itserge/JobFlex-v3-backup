@@ -152,6 +152,15 @@ function rowHtml(row: BoxRow): string {
   </tr></table>
 </td></tr>`;
     }
+    case "choice": {
+      const href = esc(safeHref(row.href));
+      return twoCol(
+        `<a href="${href}" class="item" style="font-size:15.5px;font-weight:800;line-height:1.4;color:${C.ink};font-family:${SANS};text-decoration:none;">${esc(row.label)}</a>`,
+        `<a href="${href}" style="font-size:14px;font-weight:800;color:${C.accent};font-family:${SANS};text-decoration:underline;text-underline-offset:3px;">${esc(row.action)} &rarr;</a>`,
+        14,
+        "middle",
+      );
+    }
     case "cond":
       // The condition is the row the 2px rule points at, so its label reads at
       // the chip's own size rather than annotation size — sized just above the
@@ -250,6 +259,7 @@ function plainText(doc: EmailDoc): string {
     else if (r.type === "field") lines.push(`${r.label}: ${r.value}`);
     else if (r.type === "rate") lines.push(`${r.label} ${r.rate}  ${r.amount}`);
     else if (r.type === "anchor") lines.push(`${r.label.toUpperCase()}  ${r.value}`);
+    else if (r.type === "choice") lines.push(`${r.label} — ${r.action}: ${r.href}`);
     else lines.push(`${r.label}: ${r.chip}`);
   }
   if (doc.box?.length) lines.push("");

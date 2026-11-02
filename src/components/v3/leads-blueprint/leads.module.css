@@ -729,6 +729,15 @@
 .bp :global(.content .lsrc-b i) { width: 8px; height: 8px; border-radius: 50%; background: var(--t, var(--ink-faint)); flex: 0 0 auto; }
 .bp :global(.content .lsrc-b--jobflex) { color: var(--accent); font-weight: 600; }
 .bp :global(.content .lsrc-b--jobflex i) { background: var(--accent); }
+/* SmartBook's word for the lead (2026-10-31), under its stage: the source tag's dot and plain text. */
+.bp :global(.content .lsb-b) { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; font-weight: 600; line-height: 1.25; color: var(--ink-soft); }
+.bp :global(.content .lsb-b i) { width: 8px; height: 8px; border-radius: 50%; background: var(--t, var(--ink-faint)); flex: 0 0 auto; }
+/* Facebook lead ads (owner, 2026-10-30): the source's own blue as a small pill with the "f". */
+.bp :global(.content .lsrc-b--fb) {
+  gap: 4px; padding: 2px 7px 2px 5px; border-radius: 999px;
+  background: var(--t); color: var(--paper-deep); font-weight: 700; font-size: 11.5px;
+}
+.bp :global(.content .lsrc-b--fb svg) { width: 12px; height: 12px; fill: currentColor; stroke: none; flex: 0 0 auto; }
 .bp :global(.content .fld-note) { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
 
 .bp :global(.content .ptabs) { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }

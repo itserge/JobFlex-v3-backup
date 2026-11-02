@@ -116,6 +116,17 @@
 }
 :global(.jf-blueprint .content) .replyMeta { margin-bottom: 4px; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted, #555); overflow-wrap: anywhere; }
 :global(.jf-blueprint .content) .replyBody { font-size: 13.5px; line-height: 1.5; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Our answers as the customer sees them (2026-10-29, lib/support/replyCards): paragraphs, an offer card in blue, a note card in ink. */
+:global(.jf-blueprint .content) .replyBlocks { display: grid; gap: 8px; }
+:global(.jf-blueprint .content) .replyBlocks p { margin: 0; }
+:global(.jf-blueprint .content) .replyCard { display: grid; gap: 3px; padding: 10px 12px; border: 2px solid var(--ink); border-radius: 2px; background: #fff; white-space: normal; }
+:global(.jf-blueprint .content) .replyCard b { font-size: 14px; font-weight: 800; }
+:global(.jf-blueprint .content) .replyCard p { white-space: pre-wrap; }
+:global(.jf-blueprint .content) .replyCard--offer { border-color: #1854a0; background: #eef4fc; box-shadow: 3px 3px 0 #1854a0; }
+:global(.jf-blueprint .content) .replyCard--offer b { color: #10223d; }
+:global(.jf-blueprint .content) .replyCard--note { box-shadow: 3px 3px 0 var(--ink); }
+:global(.jf-blueprint .content) .cardPreview { display: grid; gap: 6px; padding: 10px 12px; border: 1px dashed var(--line, rgba(10,10,10,.25)); border-radius: 2px; background: var(--paper); }
+:global(.jf-blueprint .content) .cardPreviewH { font: 700 10.5px/1.2 var(--font-mono, ui-monospace, monospace); letter-spacing: .14em; text-transform: uppercase; color: var(--muted, #555); }
 /* ── The conversation (2026-10-17): one dialog per ticket ──────
    The customer's messages on the left on paper, ours on the
    right edged in blueprint, the AI's dashed. Near-square frames,

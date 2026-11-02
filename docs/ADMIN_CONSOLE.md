@@ -79,6 +79,9 @@ customer.subscription.deleted
 invoice.paid
 invoice.payment_failed
 charge.refunded
+charge.dispute.created          # a company disputes its JobFlex charge: commissions held + the team's "Disputes" text
+charge.dispute.funds_withdrawn  # an inquiry escalated to a chargeback: the second text
+charge.dispute.closed           # won / lost / inquiry closed
 account.updated          # Connect onboarding status
 transfer.created
 transfer.reversed

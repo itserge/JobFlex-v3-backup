@@ -150,4 +150,13 @@ export async function afterOfferAccepted(opts: {
   } catch (err) {
     console.warn("[lead-offers] matched notify failed:", err);
   }
+  // SmartBook (2026-10-31): the homeowner agreed on the request form to be contacted by phone, text or email by the
+  // contractors it is sent to (LeadSource.consentAt, lib/leadConsent) — so the accepted lead may be texted at once.
+  try {
+    const consent = await db.leadSource.findUnique({ where: { platformLeadId: opts.platformLeadId }, select: { consentAt: true } });
+    const { startSmartBook } = await import("@/lib/smartbook/engine");
+    await startSmartBook(opts.leadId, "jobflex", { consent: consent?.consentAt ? { text: "lead-center", call: true } : undefined });
+  } catch (err) {
+    console.warn("[lead-offers] smartbook failed:", err);
+  }
 }

@@ -87,7 +87,7 @@ export function DayPicker({ days, day, onDay }: { days: PublicDay[]; day: string
 }
 
 /** The day's times under Morning / Afternoon / Evening, read off each label's own first clock time. */
-export function SlotGroups({ slots, onSlot, disabled, attr }: { slots: Array<{ iso: string; label: string }>; onSlot: (s: { iso: string; label: string }) => void; disabled?: boolean; attr: "book" | "manage" }) {
+export function SlotGroups({ slots, onSlot, disabled, attr }: { slots: Array<{ iso: string; label: string }>; onSlot: (s: { iso: string; label: string }) => void; disabled?: boolean; attr: "book" | "manage" | "pick" }) {
   const hourOf = (label: string) => {
     const m = label.match(/(\d{1,2})(?::\d{2})?\s*([AP]M)/i);
     if (!m) return 12;
@@ -100,7 +100,7 @@ export function SlotGroups({ slots, onSlot, disabled, attr }: { slots: Array<{ i
     { name: "Evening", items: slots.filter((s) => hourOf(s.label) >= 17) },
   ].filter((g) => g.items.length);
   return (
-    <div className="jfb-times" {...(attr === "book" ? { "data-book-slots": "" } : { "data-manage-slots": "" })}>
+    <div className="jfb-times" {...{ [`data-${attr}-slots`]: "" }}>
       {groups.map((g) => (
         <div key={g.name} className="jfb-times-g">
           <div className="jfb-times-k">{g.name}</div>

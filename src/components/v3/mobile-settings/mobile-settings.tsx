@@ -5,6 +5,7 @@ import { ProcessorSubpane } from "@/components/v3/settings-blueprint/panes/proce
 import { StaxSubpane } from "@/components/v3/settings-blueprint/panes/stax-subpane";
 import { FinancingSubpane } from "@/components/v3/settings-blueprint/panes/financing-subpane";
 import { MetaConnection } from "@/components/v3/settings-blueprint/meta-connection";
+import { RampConnection } from "@/components/v3/settings-blueprint/panes/ramp-connection";
 
 // SETTINGS · HANDHELD — /dashboard/settings on a phone, and the standalone
 // preview at /mobile-settings-v1.
@@ -94,7 +95,7 @@ import {
   CONNECT_ACTION,
   CURRENCY_SELECT,
   DEFAULT_RAIL,
-  DEFAULT_SUBTAB,
+  railKeyFor,
   isVisibleSubTab,
   integrationSubTabs,
   DISCONNECT_ACTION,
@@ -158,6 +159,7 @@ import "./mobile-settings.css";
 import { isRefusal } from "@/lib/actionResult";
 import { CompanyPricingForm } from "@/components/v3/company-pricing/company-pricing-form";
 import { WebEstimatorForm } from "@/components/v3/web-estimator/web-estimator-form";
+import { SmartBookSettingsForm } from "@/components/v3/smartbook/smartbook-settings";
 
 /* ══════════════════════════ small shared bits ══════════════════════════ */
 
@@ -613,11 +615,6 @@ function PaymentsPane({
   const p = data.payments;
   const c = p.connections;
   const router = useRouter();
-  const oauth = notice?.stripe
-    ? { name: "Stripe", ...PROCESSOR_OAUTH_NOTICE[notice.stripe] }
-    : notice?.square
-      ? { name: "Square", ...PROCESSOR_OAUTH_NOTICE[notice.square] }
-      : null;
 
   const [currency, setCurrency] = useState<string>(currencyOptionFor(p.currency));
   const [depositPct, setDepositPct] = useState<string>(p.depositPct);
@@ -663,12 +660,6 @@ function PaymentsPane({
 
   return (
     <>
-      {oauth && oauth.title ? (
-        <div className="mst-note" role="status">
-          <span className={oauth.tone === "ok" ? "mst-noteK" : "mst-noteK is-warn"}>{`${oauth.name} — ${oauth.title}`}</span>
-          <span>{oauth.sub}</span>
-        </div>
-      ) : null}
       {/* ── Get paid ── */}
       <section className="mst-card">
         <CardHeader card={PROCESSORS_CARD} />
@@ -876,7 +867,7 @@ function PaymentsPane({
 
 /* ══════════════════════════════ BILLING ══════════════════════════════ */
 
-function BillingPane({ data }: { data: SettingsData }) {
+function BillingPane({ data, shown }: { data: SettingsData; shown: boolean }) {
   const b = data.billing;
   const [billingEmail, setBillingEmail] = useState(b.billingEmail);
 
@@ -902,6 +893,7 @@ function BillingPane({ data }: { data: SettingsData }) {
               offer={b.cancel}
               freeSwitch={b.freeSwitch}
               changeHref={b.subscriptionHref}
+              shown={shown}
             >
               {PLAN_PRIMARY_ACTION.icon ? <Ic name={PLAN_PRIMARY_ACTION.icon} /> : null}
               {PLAN_PRIMARY_ACTION.label}
@@ -947,21 +939,28 @@ function BillingPane({ data }: { data: SettingsData }) {
 
 /* ════════════════════════════ INTEGRATIONS ════════════════════════════ */
 
+/** The phone's first Integrations / Payments tab: the Get paid summary, bank transfer and the payment defaults. */
+const GET_PAID_TAB = { key: "getpaid", label: "Get paid" } as const;
+
 function IntegrationsPane({
   data,
   sub: wanted,
   notice,
+  openPicker,
 }: {
   data: SettingsData;
   sub?: SubTabKey;
   notice?: OAuthNotice;
+  openPicker: (p: PickerSpec) => void;
 }) {
-  const { gmail, meta, stripe, square, connections } = data.integrations;
+  const { gmail, meta, ramp, stripe, square, connections } = data.integrations;
 
-  // Gmail joins the bar only for viewers it is switched on for, once
-  // connected, or while a dropped grant is waiting to be reconnected.
-  const tabs = integrationSubTabs({ gmail: !gmail.comingSoon || gmail.connected || Boolean(gmail.revokedAt) });
-  const [sub, setSub] = useState<SubTabKey>(isVisibleSubTab(wanted, tabs) ? (wanted as SubTabKey) : DEFAULT_SUBTAB);
+  // Payments joined Integrations on 2026-10-30 (owner): Get paid leads, then
+  // Gmail — only for viewers it is switched on for, once connected, or while a
+  // dropped grant is waiting to be reconnected — Meta, Ramp and the processors.
+  const tabs = [GET_PAID_TAB, ...integrationSubTabs({ gmail: !gmail.comingSoon || gmail.connected || Boolean(gmail.revokedAt) })];
+  const returnedFrom: SubTabKey = notice?.square ? "square" : notice?.stripe ? "stripe" : "getpaid";
+  const [sub, setSub] = useState<SubTabKey>(isVisibleSubTab(wanted, tabs) ? (wanted as SubTabKey) : returnedFrom);
   // The page can steer the subtab (Payments → Manage, or ?sub= after OAuth):
   // derive from the prop when it changes, without an effect.
   const [seenWanted, setSeenWanted] = useState(wanted);
@@ -970,9 +969,21 @@ function IntegrationsPane({
     if (wanted) setSub(wanted);
   }
 
+  const oauth = notice?.stripe
+    ? { name: "Stripe", ...PROCESSOR_OAUTH_NOTICE[notice.stripe] }
+    : notice?.square
+      ? { name: "Square", ...PROCESSOR_OAUTH_NOTICE[notice.square] }
+      : null;
+
   return (
     <>
-      <div className="mst-subrail">
+      {oauth && oauth.title ? (
+        <div className="mst-note" role="status">
+          <span className={oauth.tone === "ok" ? "mst-noteK" : "mst-noteK is-warn"}>{`${oauth.name} — ${oauth.title}`}</span>
+          <span>{oauth.sub}</span>
+        </div>
+      ) : null}
+      <div className="mst-subrail" data-tour="payments:processors">
         <div className="mst-subrailIn">
           {tabs.map((t) => (
             <button
@@ -988,6 +999,11 @@ function IntegrationsPane({
         </div>
       </div>
 
+      {/* ── Get paid — "Manage" on a processor row opens its tab ── */}
+      <div className={sub === "getpaid" ? "mst-subpane is-on" : "mst-subpane"}>
+        <PaymentsPane data={data} navigate={(_rail, next) => next && setSub(next)} openPicker={openPicker} notice={notice} />
+      </div>
+
       {/* ── Gmail ── */}
       <div className={sub === "gmail" ? "mst-subpane is-on" : "mst-subpane"}>
         <GmailConnection data={gmail} notice={notice?.gmail} mobile />
@@ -996,6 +1012,11 @@ function IntegrationsPane({
       {/* ── Meta business ── */}
       <div className={sub === "meta" ? "mst-subpane is-on" : "mst-subpane"}>
         <MetaConnection data={meta} mobile />
+      </div>
+
+      {/* ── Ramp cards ── */}
+      <div className={sub === "ramp" ? "mst-subpane is-on" : "mst-subpane"}>
+        <RampConnection data={ramp} mobile />
       </div>
 
       {/* ── Stripe / Square ── */}
@@ -1233,18 +1254,17 @@ function WebsitePaneMobile() {
 
 /* ═════════════════════════════ THE PAGE ═════════════════════════════ */
 
-const RAIL_KEYS = new Set<string>(RAIL_ITEMS.map((r) => r.key));
-const SUB_KEYS = new Set<string>(["gmail", "meta", "stripe", "square", "stax", "financing"]);
+const SUB_KEYS = new Set<string>(["getpaid", "gmail", "meta", "ramp", "stripe", "square", "stax"]);
 
 const RAIL_ICON: Record<RailKey, IconName> = {
   account: "i-users",
-  payments: "i-card",
   billing: "i-receipt",
   integrations: "i-globe",
   notifications: "i-bell",
   desk: "i-phone",
   estimating: "i-hardhat",
   website: "i-globe",
+  smartbook: "i-cal",
 };
 
 export function MobileSettings({
@@ -1265,8 +1285,9 @@ export function MobileSettings({
     financing: params.get("financing") ?? undefined,
   };
 
+  // A sub-tab (?sub=stripe|gmail|…) always means Integrations / Payments; ?tab=payments is its old name.
   const [active, setActive] = useState<RailKey>(
-    tabParam && RAIL_KEYS.has(tabParam) ? (tabParam as RailKey) : (initialPane ?? DEFAULT_RAIL),
+    subParam && SUB_KEYS.has(subParam) ? "integrations" : (railKeyFor(tabParam) ?? initialPane ?? DEFAULT_RAIL),
   );
   const [sub, setSub] = useState<SubTabKey | undefined>(
     subParam && SUB_KEYS.has(subParam) ? (subParam as SubTabKey) : undefined,
@@ -1467,14 +1488,11 @@ export function MobileSettings({
             <div className={active === "account" ? "mst-pane is-on" : "mst-pane"}>
               <AccountPane data={data} />
             </div>
-            <div className={active === "payments" ? "mst-pane is-on" : "mst-pane"}>
-              <PaymentsPane data={data} navigate={navigate} openPicker={openPicker} notice={notice} />
-            </div>
             <div className={active === "billing" ? "mst-pane is-on" : "mst-pane"}>
-              <BillingPane data={data} />
+              <BillingPane data={data} shown={active === "billing"} />
             </div>
             <div className={active === "integrations" ? "mst-pane is-on" : "mst-pane"}>
-              <IntegrationsPane data={data} sub={sub} notice={notice} />
+              <IntegrationsPane data={data} sub={sub} notice={notice} openPicker={openPicker} />
             </div>
             <div className={active === "notifications" ? "mst-pane is-on" : "mst-pane"}>
               <NotificationsPane data={data} />
@@ -1487,6 +1505,10 @@ export function MobileSettings({
                 <WebsitePaneMobile />
               </div>
             ) : null}
+            {/* SmartBook (2026-10-31): the desk pane's own form, a phone's width. */}
+            <div className={active === "smartbook" ? "mst-pane is-on" : "mst-pane"} id="smartbook">
+              <SmartBookSettingsForm mobile onOpen={(where) => (where === "meta" ? navigate("integrations", "meta") : navigate("notifications"))} />
+            </div>
           </div>
 
           {/* Log out — the last thing on the page, in every section. Same

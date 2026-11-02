@@ -166,6 +166,20 @@ export async function invoiceChargeId(inv: Stripe.Invoice, stripe?: Stripe | nul
   return null;
 }
 
+/**
+ * Every payment this invoice names — charge and PaymentIntent ids — with no
+ * lookup: the old `charge` / `payment_intent` fields when the payload has
+ * them, and the invoice's payments when expanded (`expand: ["payments"]`).
+ * The keys a refund or a dispute of the invoice is matched on: each of those
+ * names its charge and, when it has one, its PaymentIntent.
+ */
+export function invoicePaymentKeys(inv: Stripe.Invoice): string[] {
+  const l = legacy<LegacyInvoice & { payment_intent?: Ref }>(inv);
+  const keys = [refId(l.charge), refId(l.payment_intent)];
+  for (const p of inv.payments?.data ?? []) keys.push(refId(p.payment?.charge), refId(p.payment?.payment_intent));
+  return [...new Set(keys.filter((k): k is string => !!k))];
+}
+
 // ── charge ─────────────────────────────────────────────
 
 /**

@@ -921,7 +921,7 @@ function CompanyBoard({ seed }: { seed: CompanySeed }) {
                 </div>
                 <div className={styles.cardBody}>
                   <div className={styles.zoneLbl}>Brand color</div>
-                  <div className={styles.swatches}>
+                  <div className={styles.swatches} data-tour="branding:color">
                     {COLOR_PRESETS.map((c) => (
                       <button
                         key={c}
@@ -990,6 +990,7 @@ function CompanyBoard({ seed }: { seed: CompanySeed }) {
                   />
                   <button
                     className={`${styles.logoDrop}${logoBusy ? ` ${styles.busy}` : ""}`}
+                    data-tour="branding:logo"
                     type="button"
                     aria-busy={logoBusy}
                     onClick={() => {
@@ -1111,6 +1112,7 @@ function CompanyBoard({ seed }: { seed: CompanySeed }) {
                     <input
                       className={styles.pinput}
                       id="mcoLeadAddr"
+                      data-tour="profile:lead-address"
                       type="text"
                       placeholder="Street, city, state, zip"
                       autoComplete="off"
@@ -1187,7 +1189,7 @@ function CompanyBoard({ seed }: { seed: CompanySeed }) {
                       {trades.length} of {TRADE_TYPES.length}
                     </span>
                   </div>
-                  <div className={styles.trades}>
+                  <div className={styles.trades} data-tour="profile:trades">
                     {TRADE_TYPES.map((t) => {
                       const on = trades.includes(t);
                       return (

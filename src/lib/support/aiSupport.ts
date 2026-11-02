@@ -24,17 +24,24 @@ import { trialExtensionEligible } from "@/lib/trialExtension";
 // the request's organization through lib/trialMeter, and a new ticket's
 // answer runs inside the CUSTOMER's request — their trial AI budget would pay
 // for our support. Answering tickets is the platform's cost, so this client is
-// not metered. Same key, same model (resolveOpenAIModel), same sampling rule.
+// not metered (lib/support/unmeteredOpenAI, shared with SmartHelp). Same key,
+// same model (resolveOpenAIModel), same sampling rule.
 //
 // NOTHING HERE CHANGES AN ACCOUNT. It reads the customer's facts, writes a
 // letter, keeps a record (SyncState `supportAi:<ticketId>`, `supportAi:
 // settings` — no schema change) and sends email. A fix is a proposal that
 // waits for an admin's Approve; "Mark fixed" only tells the customer.
+//
+// A SMARTHELP HAND-OFF ("Ask a person", 2026-10-30) is marked in the same
+// transaction that files it (SyncState `supportOrigin:<ticketId>`), so none
+// exists unmarked: every answer the AI writes for it — the first, a
+// follow-up, the safety net's — waits for a person to send.
 
-import OpenAI from "openai";
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { isOpenAIEnabled, resolveOpenAIModel, samplingOptions } from "@/lib/sdk/openai";
+import { unmeteredOpenAI } from "@/lib/support/unmeteredOpenAI";
 import { isEmailEnabled, sendEmail } from "@/lib/sdk/resend";
 import { supportRecipients, supportTicketRef } from "@/lib/notify";
 import { postSupportMessage, recipientForTicket, threadOf, threadsFor } from "@/lib/supportThread";
@@ -57,6 +64,7 @@ import {
   recordFor,
   supportAiAnswerSchema,
   supportAiMode,
+  supportOriginOf,
   supportSystemPrompt,
   supportUserPrompt,
   teamCopyEmail,
@@ -66,10 +74,12 @@ import {
   type SupportAiMode,
   type SupportAiOutcome,
   type SupportAiRecord,
+  type SupportOrigin,
 } from "./aiReply";
 
 const SETTINGS_KEY = "supportAi:settings";
 const RECORD_KEY = (ticketId: string) => `supportAi:${ticketId}`;
+const ORIGIN_KEY = (ticketId: string) => `supportOrigin:${ticketId}`;
 const TEAM_SIGNATURE = "JobFlex support";
 
 // ── The switch and the records ───────────────────────────────────────────────
@@ -109,6 +119,21 @@ export async function supportAiForTickets(ticketIds: string[]): Promise<Record<s
 async function writeSupportAi(ticketId: string, rec: SupportAiRecord): Promise<void> {
   const cursor = JSON.stringify(rec);
   await db.syncState.upsert({ where: { key: RECORD_KEY(ticketId) }, create: { key: RECORD_KEY(ticketId), cursor }, update: { cursor } });
+}
+
+/** Marks a ticket filed from SmartHelp's "Ask a person": the AI only drafts for it. `tx` is the transaction that
+ *  creates the ticket (actions/support), so a hand-off never exists unmarked. `logId`: the SmartHelp question it
+ *  carries, or null. */
+export async function markSmartHelpTicket(tx: Prisma.TransactionClient, ticketId: string, logId: string | null): Promise<void> {
+  const cursor = JSON.stringify({ origin: "smarthelp", logId });
+  await tx.syncState.upsert({ where: { key: ORIGIN_KEY(ticketId) }, create: { key: ORIGIN_KEY(ticketId), cursor }, update: { cursor } });
+}
+
+/** Where a ticket came from (aiReply supportOriginOf): no row is none. A failed read REJECTS rather than taking a
+ *  hand-off for a plain ticket — every caller of answerTicketWithAi catches it, and the safety net tries again. */
+async function readSupportOrigin(ticketId: string): Promise<SupportOrigin | undefined> {
+  const row = await db.syncState.findUnique({ where: { key: ORIGIN_KEY(ticketId) }, select: { cursor: true } });
+  return supportOriginOf(row?.cursor);
 }
 
 // ── What the model is told about the customer ───────────────────────────────
@@ -204,14 +229,10 @@ async function accountFacts(t: TicketRow): Promise<string[]> {
 
 // ── The call ─────────────────────────────────────────────────────────────────
 
-/** Unmetered on purpose — see the header. Reads OPENAI_BASE_URL like the SDK always does. */
-function supportClient(): OpenAI {
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 1, timeout: 120_000 });
-}
-
+/** Unmetered on purpose — see the header. */
 async function askModel(system: string, user: string): Promise<{ model: string; text: string }> {
   const model = await resolveOpenAIModel();
-  const completion = await supportClient().chat.completions.create({
+  const completion = await unmeteredOpenAI().chat.completions.create({
     model,
     ...(await samplingOptions(0.3)),
     messages: [
@@ -270,7 +291,7 @@ export async function answerTicketWithAi(ticketId: string, opts: AnswerOptions):
   const link = `${base.replace(/\/$/, "")}/admin/support?ticket=${t.id}`;
   const customerEmail = t.user?.email ?? null;
   const ticketForMail = { ref, subject: t.subject, body: t.body, orgName: t.organization.name, customerEmail };
-  const [previous, thread] = await Promise.all([readSupportAi(t.id), threadOf(t.id)]);
+  const [previous, thread, origin] = await Promise.all([readSupportAi(t.id), threadOf(t.id), readSupportOrigin(t.id)]);
   const automatic = opts.trigger !== "admin";
 
   // In the conversation the AI keeps out once a person leads it (owner, 2026-10-17).
@@ -316,7 +337,8 @@ export async function answerTicketWithAi(ticketId: string, opts: AnswerOptions):
   // A person may have written while the model was reading: their word stands, the AI's is a draft.
   const overtaken = automatic && (await threadOf(t.id)).some((m) => m.from === "team");
   const effective: SupportAiMode = !automatic || overtaken ? "draft" : mode;
-  const delivery = deliveryFor(answer, effective);
+  // A SmartHelp hand-off is held here on every trigger — the first answer, a follow-up, the safety net's.
+  const delivery = deliveryFor(answer, effective, origin);
   let outcome: SupportAiOutcome = effective === "auto" ? "held" : "drafted";
   let reason: string | undefined = overtaken ? "A person on the team answered while the AI was reading." : undefined;
   let sentBody: string | null = null;

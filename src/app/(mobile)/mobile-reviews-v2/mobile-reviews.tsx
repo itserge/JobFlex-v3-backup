@@ -565,6 +565,7 @@ export function MobileReviews({ entries, jobs, publicHref, publicRating }: Mobil
                   review URL to copy. A link belongs to ONE request and is
                   copied from that row's sheet, which is where its token is. */}
               <button
+                data-tour="reviews:request"
                 className={`${styles.btn} ${styles.btnPrimary}`}
                 type="button"
                 onClick={openAsk}

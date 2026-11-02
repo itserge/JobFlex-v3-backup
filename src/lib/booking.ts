@@ -129,15 +129,22 @@ export function zonedParts(d: Date, timeZone: string): { y: number; m: number; d
   return { y: +p.year, m: +p.month, d: +p.day, h: +p.hour, min: +p.minute, dow };
 }
 
-/** The instant when the shop's clock reads y-m-d h:min. */
+/**
+ * The instant when the shop's clock reads y-m-d h:min. The offset is read twice: on the day the clocks change the
+ * first guess sits on the other side of the change (8 AM on the first Sunday of November came out as 7 AM).
+ */
 export function zonedInstant(y: number, m: number, d: number, h: number, min: number, timeZone: string): Date {
-  const guess = new Date(Date.UTC(y, m - 1, d, h, min, 0));
+  const want = Date.UTC(y, m - 1, d, h, min, 0);
   try {
-    const p = zonedParts(guess, timeZone);
-    const asUtc = Date.UTC(p.y, p.m - 1, p.d, p.h, p.min, 0);
-    return new Date(guess.getTime() - (asUtc - guess.getTime()));
+    const offsetAt = (t: number) => {
+      const p = zonedParts(new Date(t), timeZone);
+      return Date.UTC(p.y, p.m - 1, p.d, p.h, p.min, 0) - t;
+    };
+    const first = want - offsetAt(want);
+    const second = want - offsetAt(first);
+    return new Date(second);
   } catch {
-    return guess;
+    return new Date(want);
   }
 }
 
@@ -208,8 +215,8 @@ export function slotLabel(s: Slot, timeZone: string, arrivalWindow: number): str
 
 /** The scope a booking hands the lead: the service, the answers, the customer's words. */
 /** The lead's scope for a booked visit. `channel` "ai-desk": the desk booked it on a call, and the notes are what the caller said. */
-export function bookingScope(service: BookingService, answers: Array<{ label: string; value: string }>, notes: string | null | undefined, channel: "online" | "ai-desk" = "online"): string {
-  const lines = [channel === "ai-desk" ? `${service.label} booked by phone with the AI desk.` : `${service.label} booked online.`];
+export function bookingScope(service: BookingService, answers: Array<{ label: string; value: string }>, notes: string | null | undefined, channel: "online" | "ai-desk" | "smartbook" = "online"): string {
+  const lines = [channel === "ai-desk" ? `${service.label} booked by phone with the AI desk.` : channel === "smartbook" ? `${service.label} booked with SmartBook.` : `${service.label} booked online.`];
   for (const a of answers) if (a.value) lines.push(`${a.label} ${a.value}`);
   if (notes?.trim()) lines.push(`${channel === "ai-desk" ? "On the call" : "In their words"}: ${notes.trim()}`);
   return lines.join("\n");

@@ -186,7 +186,7 @@ export function MobileBlueprintEstimator() {
           <Ic id="i-plans" className="mbe-drop-ic" />
           <h2 className="mbe-drop-h">{opening != null ? `Opening the plans · ${opening} page${opening === 1 ? "" : "s"}` : "Drop the plan set here"}</h2>
           <p className="mbe-p">A PDF of the plans, or photos of the sheets — up to {MAX_PLAN_PAGES} pages.</p>
-          <button type="button" className="mbe-btn mbe-btn--primary mbe-btn--wide" disabled={opening != null} aria-busy={opening != null} onClick={() => fileInput.current?.click()}>
+          <button type="button" className="mbe-btn mbe-btn--primary mbe-btn--wide" disabled={opening != null} aria-busy={opening != null} onClick={() => fileInput.current?.click()} data-tour="blueprint:upload">
             {opening != null ? "Opening…" : "Choose the plans"}
           </button>
           {errEl}

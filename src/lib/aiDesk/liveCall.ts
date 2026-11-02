@@ -5,7 +5,9 @@
 //               it), its voice, the time cap
 //   openTimes   the next open visits from the online-booking calendar, in words
 //   bookVisit   one of them, booked the way the booking page books (lib/bookingBook)
-//   takeMessage a lead with the caller's words, and the office told
+//   takeMessage a lead with the caller's words, and the office told; "Texts: yes" in them is the caller's yes to
+//               SmartBook's texts (2026-10-31)
+//   A caller SmartBook is scheduling (lib/smartbook/phone): the brief says so and brings tools that act on their lead
 //   finishCall  the transcript and outcome on the Phone page; the summary as before
 import { db } from "@/lib/db";
 import { toE164 } from "@/lib/phone";
@@ -58,8 +60,15 @@ async function knownCaller(organizationId: string, from: string): Promise<{ name
   return { name: match.name, lastVisit: last ? `${last.title} (${last.startsAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })})` : null };
 }
 
-export async function callBrief(t: { callSid: string; organizationId: string; from: string }): Promise<{ ok: true; instructions: string; voice: string; maxSeconds: number; callSid: string } | { ok: false; error: string }> {
-  const [facts, settings, caller, balance] = await Promise.all([companyFacts(t.organizationId), readDeskSettings(t.organizationId), knownCaller(t.organizationId, t.from).catch(() => null), deskBalanceFor(t.organizationId).catch(() => null)]);
+export async function callBrief(t: { callSid: string; organizationId: string; from: string }): Promise<{ ok: true; instructions: string; voice: string; maxSeconds: number; callSid: string; tools?: unknown[] } | { ok: false; error: string }> {
+  const [facts, settings, caller, balance, smart] = await Promise.all([
+    companyFacts(t.organizationId),
+    readDeskSettings(t.organizationId),
+    knownCaller(t.organizationId, t.from).catch(() => null),
+    deskBalanceFor(t.organizationId).catch(() => null),
+    // SmartBook (2026-10-31): a lead it is scheduling — their times, their request — and the tools that act on that lead.
+    import("@/lib/smartbook/phone").then((m) => m.deskCallExtras(t.organizationId, t.from)).catch(() => null),
+  ]);
   if (!facts) return { ok: false, error: "no such company" };
   // Out of minutes: the webhook already routed the call elsewhere; this is the second lock.
   if (balance?.out) return { ok: false, error: "out of minutes" };
@@ -69,10 +78,24 @@ export async function callBrief(t: { callSid: string; organizationId: string; fr
   const extras = [
     `THIS CALL: it is ${nowWords} (${facts.timezone}). The caller's number is ${t.from}${caller ? `, which belongs to ${caller.name}, a client the company knows${caller.lastVisit ? ` (last visit: ${caller.lastVisit})` : ""} — greet them by name once they confirm it is them` : " — not a client the company knows yet"}.`,
     "Offer only times that open_times returns, and book only with book_visit. When the caller gives no other number, their phone is the number they are calling from.",
-  ].join("\n");
+    // SmartBook follows a message up with times — by text only with the caller's yes (owner, 2026-10-31, decision 2).
+    !smart && (await textsAfterMessage(t.organizationId)) ? "TEXTS: before take_message, ask whether the company may text them at that number about times for a visit, and add a line \"Texts: yes\" or \"Texts: no\" to the message." : "",
+    smart?.lines ?? "",
+  ].filter(Boolean).join("\n");
   // A call is capped at ten minutes, or at what is left on the balance (a minute at least, so the desk can say so).
   const maxSeconds = balance ? Math.max(60, Math.min(600, balance.remainingSeconds)) : 600;
-  return { ok: true, instructions: `${deskInstructions(profile, facts, settings.mode, settings.forwarding)}\n\n${extras}`, voice: settings.voice, maxSeconds, callSid: t.callSid };
+  return { ok: true, instructions: `${deskInstructions(profile, facts, settings.mode, settings.forwarding)}\n\n${extras}`, voice: settings.voice, maxSeconds, callSid: t.callSid, ...(smart ? { tools: smart.tools } : {}) };
+}
+
+/** SmartBook would text a caller who left a message (it is on, answers desk messages, and texts). */
+async function textsAfterMessage(organizationId: string): Promise<boolean> {
+  try {
+    const [{ readSmartBookSettings }, org] = await Promise.all([import("@/lib/smartbook/engine"), db.organization.findUnique({ where: { id: organizationId }, select: { smsFromNumber: true } })]);
+    const s = await readSmartBookSettings(organizationId);
+    return s.on && s.sources.desk && s.text && !!org?.smsFromNumber;
+  } catch {
+    return false;
+  }
 }
 
 type OrgRow = { id: string; name: string | null; slug: string; timezone: string; logoUrl: string | null; phone: string | null; billingEmail: string | null; gmailSettingsJson: string | null; gmailTokensJson: string | null; tradeTypesJson: string | null; bookingSettingsJson: string | null };
@@ -131,13 +154,22 @@ export async function takeMessage(organizationId: string, callSid: string, input
   const name = input.name.trim().slice(0, 80) || "Caller";
   const phone = toE164(input.phone) ?? input.phone.trim().slice(0, 30);
   const about = input.about.trim().slice(0, 2000);
-  const lead = await db.lead.create({ data: { organizationId, name, phone, email: emailFromNotes(about), description: about, source: "phone", status: "NEW" }, select: { id: true } });
+  const lead = await db.lead.create({ data: { organizationId, name, phone, email: emailFromNotes(about), description: stripTextsLine(about), source: "phone", status: "NEW" }, select: { id: true } });
   await db.aiPhoneCall.updateMany({ where: { callSid }, data: { leadId: lead.id, summary: `Message from ${name}: ${about.slice(0, 100)}` } });
   await logActivity({ organizationId, actorId: null, kind: "CREATED", summary: `The AI desk took a message from ${name} (${phone}): ${about.slice(0, 120)}`, leadId: lead.id });
+  // SmartBook (2026-10-31) follows up with times — by text only when the caller said yes on the call ("Texts: yes",
+  // asked by the brief); an email heard on a call is never used (the desk's rule, bookingBook).
+  const textsOk = /^\s*texts?\s*:\s*yes\b/im.test(about);
+  void import("@/lib/smartbook/engine").then((m) => m.startSmartBook(lead.id, "desk", { trustEmail: false, consent: { text: textsOk ? "phone-call" : null } })).catch(() => null);
   return { ok: true };
 }
 
-export async function finishCall(t: { callSid: string; organizationId: string }, input: { outcome: CallOutcome["outcome"]; transcript: Array<{ role: string; text: string }>; seconds: number; booked: { appointmentId: string } | null; messageTaken: boolean; error?: string | null }): Promise<void> {
+/** The desk's "Texts: yes/no" line is for SmartBook, not the lead's description. */
+const stripTextsLine = (about: string) => about.replace(/^\s*texts?\s*:\s*(yes|no)\b.*$/gim, "").replace(/\n{2,}/g, "\n").trim();
+
+/** `newLead: false` — the desk's own call to a lead (lib/aiDesk/leadCalls): its transcript never makes a second lead; SmartBook's callers
+ *  pass it too (the lead is on file). */
+export async function finishCall(t: { callSid: string; organizationId: string }, input: { outcome: CallOutcome["outcome"]; transcript: Array<{ role: string; text: string }>; seconds: number; booked: { appointmentId: string } | null; messageTaken: boolean; error?: string | null }, opts: { newLead?: boolean } = {}): Promise<void> {
   const text = input.transcript.map((l) => `${l.role === "desk" ? "Desk" : "Caller"}: ${l.text}`).join("\n").slice(0, 20_000);
   const outcome: CallOutcome = { outcome: input.outcome, appointmentId: input.booked?.appointmentId ?? null, seconds: Math.max(0, Math.round(input.seconds)), messageTaken: input.messageTaken, at: new Date().toISOString(), error: typeof input.error === "string" && input.error ? input.error.slice(0, 300) : null };
   const key = outcomeKey(t.callSid);
@@ -149,5 +181,5 @@ export async function finishCall(t: { callSid: string; organizationId: string },
   await settleDeskUse(t.organizationId);
   void import("@/lib/trialMeter").then((m) => m.notePaidCall("openai", "realtime-minute", { units: Math.max(1, Math.ceil(outcome.seconds / 60)), orgId: t.organizationId })).catch(() => null);
   // The transcript on the Phone page, summarized as before; a lead only when the desk booked nothing and took no message.
-  if (text) await attachTranscript(t.callSid, text, { lead: !input.booked && !input.messageTaken }).catch(() => null);
+  if (text) await attachTranscript(t.callSid, text, { lead: opts.newLead !== false && !input.booked && !input.messageTaken }).catch(() => null);
 }

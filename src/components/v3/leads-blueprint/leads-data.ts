@@ -28,6 +28,8 @@ export type Lead = {
   assignee: string | null;
   age: string;
   desc: string;
+  /** Where SmartBook stands with this lead (2026-10-31, lib/smartbook/status): "Needs you", "Booked" … */
+  smart?: { label: string; tone: "accent" | "amber" | "emerald" | "muted" } | null;
 };
 
 export type Offer = {

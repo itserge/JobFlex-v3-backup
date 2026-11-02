@@ -655,7 +655,7 @@ export function MobileWorkers() {
             <div className={styles.kicker}>Crew</div>
             <h1 className={styles.pageTitle}>Workers</h1>
             <div className={styles.pageActions}>
-              <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" onClick={() => openForm(null)}>
+              <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" onClick={() => openForm(null)} data-tour="team:invite">
                 <Icon id="i-userplus" />Invite worker
               </button>
             </div>

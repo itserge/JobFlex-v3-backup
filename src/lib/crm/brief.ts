@@ -115,9 +115,15 @@ export type CallRow = {
   leadId: string | null;
   leadName: string | null;
   fromNumber: string;
+  /** The AI desk's own call to a lead (2026-10-31, lib/aiDesk/leadCalls): how it went — read from the call's state,
+   *  since the transcript's summary replaces the words the desk wrote during the call. */
+  desk?: "booked" | "reached" | "missed" | "calling" | null;
 };
 
 export type BookingRow = { id: string; name: string; serviceLabel: string; startsAt: Date; status: string; createdAt: Date; appointmentId: string | null };
+
+/** A visit on the calendar for a lead (2026-10-31) — any day, so "reached, no visit booked" can tell. */
+export type LeadVisitRow = { leadId: string; startsAt: Date; status: string };
 
 export type AppointmentRow = {
   id: string;
@@ -195,8 +201,10 @@ export type BriefInput = {
   followUps: FollowUpRow[];
   /** Change orders SENT and unanswered. */
   changeOrders: ChangeOrderRow[];
-  /** Calls, the last 2 days. */
+  /** Calls, the last 2 days — the desk's own calls to leads (direction OUTBOUND) among them. */
   calls: CallRow[];
+  /** Visits booked for leads, the last 180 days and ahead, canceled ones left out (2026-10-31). */
+  leadVisits?: LeadVisitRow[];
   /** Bookings made in the last 2 days or still ahead. */
   bookings: BookingRow[];
   /** From yesterday to eight days out. */
@@ -616,6 +624,11 @@ export function buildToday(input: BriefInput): TodayBrief {
 
   // ── SALES ────────────────────────────────────────────────────────────────
   if (viewer !== "estimator") {
+    // The AI desk's own calls to leads (lib/aiDesk/leadCalls), newest first: what it tried shows on the lead's line.
+    const deskCalls = input.calls.filter((c) => c.direction === "OUTBOUND" && c.leadId).sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+    const deskTried = new Map<string, CallRow>();
+    for (const c of deskCalls) if (!deskTried.has(c.leadId!)) deskTried.set(c.leadId!, c);
+
     const uncontacted = input.leads
       .filter((l) => myLead(l) && !l.contactedAt && ["NEW", "ROUTED", "CLAIMED"].includes(l.status) && now.getTime() - l.createdAt.getTime() >= 3_600_000)
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
@@ -632,7 +645,54 @@ export function buildToday(input: BriefInput): TodayBrief {
         cta: "Call back",
         href: uncontacted.length === 1 ? HREF.lead(uncontacted[0].id) : HREF.leads,
         goto: null,
-        items: uncontacted.map((l) => ({ label: l.name, sub: `${l.projectType ?? "enquiry"} · waiting ${ago(l.createdAt, now).replace(" ago", "")}${l.assigneeName ? ` · ${l.assigneeName}` : ""}`, href: HREF.lead(l.id), amount: null })),
+        items: uncontacted.map((l) => {
+          const tried = deskTried.get(l.id);
+          return { label: l.name, sub: `${l.projectType ?? "enquiry"} · waiting ${ago(l.createdAt, now).replace(" ago", "")}${tried ? ` · AI desk tried ${ago(tried.startedAt, now)}` : ""}${l.assigneeName ? ` · ${l.assigneeName}` : ""}`, href: HREF.lead(l.id), amount: null };
+        }),
+      });
+    }
+
+    // Reached, but nothing on the calendar (2026-10-31): the step between the first call and a price. A day after
+    // the contact, so the call that is booking it right now is not nagged.
+    const visited = new Set((input.leadVisits ?? []).filter((v) => v.status !== "CANCELED").map((v) => v.leadId));
+    const noVisit = input.leads
+      .filter((l) => myLead(l) && (l.contactedAt || l.status === "CONTACTED") && !["QUOTED", "WON", "LOST", "ARCHIVED"].includes(l.status) && !visited.has(l.id) && now.getTime() - (l.contactedAt ?? l.createdAt).getTime() >= 86_400_000)
+      .sort((a, b) => (a.contactedAt ?? a.createdAt).getTime() - (b.contactedAt ?? b.createdAt).getTime());
+    if (noVisit.length) {
+      drafts.push({
+        key: "sales.no-visit",
+        group: "sales",
+        tone: "warn",
+        title: `${plural(noVisit.length, "lead")} reached, no visit booked`,
+        why: "You've talked — now get on their calendar. Book the visit from the lead's page while the call is fresh.",
+        count: noVisit.length,
+        amount: null,
+        cta: "Book the visit",
+        href: noVisit.length === 1 ? HREF.lead(noVisit[0].id) : HREF.leads,
+        goto: null,
+        items: noVisit.map((l) => ({ label: l.name, sub: `${l.projectType ?? "enquiry"} · reached ${ago(l.contactedAt ?? l.createdAt, now)}${l.assigneeName ? ` · ${l.assigneeName}` : ""}`, href: HREF.lead(l.id), amount: null })),
+      });
+    }
+
+    // What the AI desk did with new leads since yesterday: the visits it booked, and the people it didn't reach — a
+    // person calls those back.
+    const deskSince = Array.from(deskTried.values()).filter((c) => c.startedAt >= yesterday && (office || !sales || input.leads.some((l) => l.id === c.leadId && myLead(l))));
+    if (deskSince.length) {
+      const booked = deskSince.filter((c) => c.desk === "booked");
+      const missed = deskSince.filter((c) => c.desk === "missed");
+      const how = (c: CallRow) => (c.desk === "booked" ? "booked a visit" : c.desk === "reached" ? "talked with them" : c.desk === "missed" ? "didn't reach them" : c.desk === "calling" ? "calling now" : (c.summary ?? c.status.toLowerCase()));
+      drafts.push({
+        key: "sales.desk-calls",
+        group: "sales",
+        tone: missed.length ? "warn" : "ok",
+        title: `The AI desk called ${plural(deskSince.length, "lead")}${booked.length ? ` · ${booked.length} booked` : ""}`,
+        why: missed.length ? "The ones it didn't reach still need a person — a call from you is the next try." : "Check the visits it booked and the notes it took.",
+        count: deskSince.length,
+        amount: null,
+        cta: missed.length ? "Call them back" : "See the calls",
+        href: HREF.phone,
+        goto: null,
+        items: deskSince.map((c) => ({ label: c.leadName ?? c.fromNumber, sub: `${how(c)} · ${ago(c.startedAt, now)}`, href: HREF.lead(c.leadId!), amount: null })),
       });
     }
 
@@ -732,8 +792,9 @@ export function buildToday(input: BriefInput): TodayBrief {
   }
 
   if (viewer !== "estimator") {
+    // The rows say INBOUND (lib/aiPhoneCalls); "IN" was never written, so this check never fired before 2026-10-31.
     const missed = input.calls
-      .filter((c) => c.direction === "IN" && c.startedAt >= yesterday && !c.leadId)
+      .filter((c) => (c.direction === "INBOUND" || c.direction === "IN") && c.startedAt >= yesterday && !c.leadId)
       .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
     if (missed.length) {
       drafts.push({
@@ -1205,6 +1266,8 @@ export function buildOffice(input: BriefInput): OfficeBrief {
   // ── Funnel, 30 days ────────────────────────────────────────────────────
   const leadsIn = input.leads.filter((l) => l.createdAt >= d30);
   const contacted = leadsIn.filter((l) => l.contactedAt || !["NEW", "ROUTED", "CLAIMED"].includes(l.status));
+  const visitedIds = new Set((input.leadVisits ?? []).filter((v) => v.status !== "CANCELED").map((v) => v.leadId));
+  const visited = leadsIn.filter((l) => visitedIds.has(l.id));
   const sent30 = input.proposals.filter((x) => x.sentAt && x.sentAt >= d30);
   const won30 = input.proposals.filter((x) => x.acceptedAt && x.acceptedAt >= d30);
   const paid30 = paid.filter((x) => x.paidAt >= d30);
@@ -1213,6 +1276,7 @@ export function buildOffice(input: BriefInput): OfficeBrief {
     steps: [
       { key: "leads", label: "Leads in", count: leadsIn.length, value: null },
       { key: "contacted", label: "Contacted", count: contacted.length, value: null },
+      { key: "visited", label: "Visit booked", count: visited.length, value: null },
       { key: "sent", label: "Proposals sent", count: sent30.length, value: sum(sent30.map((x) => ({ amount: x.total }))) },
       { key: "won", label: "Won", count: won30.length, value: sum(won30.map((x) => ({ amount: x.total }))) },
       { key: "paid", label: "Paid", count: new Set(paid30.map((x) => x.proposalId ?? x.id)).size, value: sum(paid30) },

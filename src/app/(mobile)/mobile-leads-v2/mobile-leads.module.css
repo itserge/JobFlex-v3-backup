@@ -666,6 +666,12 @@
 .lsrc i { width: 8px; height: 8px; border-radius: 50%; background: var(--t, var(--muted-light)); flex: 0 0 auto; }
 .lsrcJf { color: var(--blueprint); font-weight: 600; }
 .lsrcJf i { background: var(--blueprint); }
+/* SmartBook's word for the lead (2026-10-31): the same flat dot and plain text. */
+.lsb { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; line-height: 1.25; color: var(--muted); white-space: nowrap; }
+.lsb i { width: 8px; height: 8px; border-radius: 50%; background: var(--t, var(--muted-light)); flex: 0 0 auto; }
+/* Facebook lead ads (owner, 2026-10-30): the source's own blue as a small pill with the "f". */
+.lsrcFb { gap: 4px; padding: 2px 7px 2px 5px; border-radius: 999px; background: var(--t); color: var(--paper-deep); font-weight: 700; }
+.lsrcFb svg { width: 12px; height: 12px; fill: currentColor; flex: 0 0 auto; }
 
 /* ── WHERE THE LEADS CAME FROM (2026-10-16) — FILTERS (owner, 2026-10-18) ──
    One row: All / JobFlex / Your own as the Blueprint segmented control —

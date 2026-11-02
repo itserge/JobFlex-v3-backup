@@ -5,6 +5,7 @@ import { withEmailRetry, recipientLabel } from "./emailRetry";
 import { isQaEmail } from "@/lib/qaEmail";
 import { previewRecipients } from "@/lib/emailPreviewGuard";
 import type { EmailLogEntry, EmailKind } from "@/lib/emailLog";
+import { activeCapture } from "@/lib/leadCenter/outboxContext";
 
 let client: Resend | null = null;
 
@@ -90,6 +91,15 @@ export async function sendEmail(opts: {
   // automated checks' @qa.jobflex.test addresses. Same gate as qaTestModeOn,
   // read here without the database so this module stays importable anywhere.
   const recipients = Array.isArray(opts.to) ? opts.to : [opts.to];
+
+  // THE LEAD CENTER TEST ENVIRONMENT (lib/leadCenter/sandbox, 2026-10-29): a test-environment lead's letters are
+  // recorded on the Lead Center, whole, and never sent. The mail log still gets its row, marked skipped.
+  const capture = activeCapture();
+  if (capture && recipients.length > 0) {
+    await capture.record({ channel: "email", to: recipients.join(", "), subject: opts.subject, body: opts.html, what: opts.kind ?? null });
+    await log(recipients, { transport: "skipped", status: "skipped", providerId: "lead-test:captured" });
+    return { id: "lead-test:captured", skipped: true as const };
+  }
   if (process.env.QA_TEST_MODE === "1" && !!process.env.QA_SECRET && process.env.VERCEL_ENV !== "production" && recipients.length > 0 && recipients.every((r) => isQaEmail(r))) {
     await log(recipients, { transport: "skipped", status: "skipped", providerId: "qa-test-mode:skipped" });
     return { id: "qa-test-mode:skipped", skipped: true as const };

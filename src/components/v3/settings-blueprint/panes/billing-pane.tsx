@@ -62,7 +62,7 @@ function CardHeader({ head, badge }: { head: CardHead; badge?: Badge | null }) {
   );
 }
 
-export function BillingPane({ data }: PaneProps) {
+export function BillingPane({ data, shown }: PaneProps) {
   const b = data.billing;
   const [billingEmail, setBillingEmail] = useState(b.billingEmail);
 
@@ -101,6 +101,7 @@ export function BillingPane({ data }: PaneProps) {
                   offer={b.cancel}
                   freeSwitch={b.freeSwitch}
                   changeHref={b.subscriptionHref}
+                  shown={shown}
                 >
                   {PLAN_PRIMARY_ACTION.icon ? <Icon name={PLAN_PRIMARY_ACTION.icon} /> : null}
                   {PLAN_PRIMARY_ACTION.label}

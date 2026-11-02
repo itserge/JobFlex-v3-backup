@@ -76,7 +76,7 @@ export async function afterStreamTwiml(input: { to: string; from: string; callSi
   return recordingTwiml({ baseUrl: input.base, greeting: `${greetingFor(org.name).replace(/^Thanks for calling ([^.]+)\./, "Thanks for calling $1. Our assistant can't take the call right now.")}`, maxLengthSec: 180 });
 }
 
-async function assistantOnPlan(organizationId: string): Promise<boolean> {
+export async function assistantOnPlan(organizationId: string): Promise<boolean> {
   const [quota, locked] = await Promise.all([checkPlanLimit(organizationId, "aiPhoneCalls"), isPageLocked(organizationId, "phone")]);
   return quota.allowed && !locked;
 }

@@ -2146,3 +2146,32 @@
     padding: 18px 14px 20px;
   }
 }
+
+/* Call new leads (2026-10-31, desk-lead-calls): the rules the desk keeps, one ruled line each, a flat ink square
+   marking each. Two classes, so the shell's production reset cannot zero the spacing. */
+.desk .rules {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--k-soft);
+}
+.desk .rules li {
+  position: relative;
+  padding: 8px 0 8px 18px;
+  border-bottom: 1.5px solid var(--k-line);
+}
+.desk .rules li:last-child {
+  border-bottom: 0;
+}
+.desk .rules li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 15px;
+  width: 6px;
+  height: 6px;
+  background: var(--k-ink);
+}

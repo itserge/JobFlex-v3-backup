@@ -619,7 +619,7 @@ export function HousePhotoCard({ hp, design }: { hp: HousePhotoState; design: De
   const n = design.house.openings?.length ?? 0;
   const wins = design.house.openings?.filter((o) => o.kind === "window").length ?? 0;
   return (
-    <div className="v1-hp-card" data-deck-house-photo={photo ? "built" : "none"}>
+    <div className="v1-hp-card" data-deck-house-photo={photo ? "built" : "none"} data-tour="deck:house-photo">
       {photo ? (
         <div className="v1-hp-built">
           {hp.thumb ? (

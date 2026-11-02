@@ -199,7 +199,7 @@ export function DeskTest({ desk }: { desk: DeskSettingsData }) {
 
   const live = phase === "live";
   return (
-    <div className={`${s.sec} ${s.test}`} id="desk-test" data-desk-test data-phase={phase}>
+    <div className={`${s.sec} ${s.test}`} id="desk-test" data-desk-test data-phase={phase} data-tour="ai-desk:test">
       <div className={s.h}>{C.testTitle}</div>
       <p className={s.note}>{C.testSub}</p>
       <div className={s.testBar}>

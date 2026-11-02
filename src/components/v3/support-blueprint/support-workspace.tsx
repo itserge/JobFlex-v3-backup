@@ -37,7 +37,7 @@ import { useRouter } from "next/navigation";
 import { postSupportReply, submitSupportTicket, supportConversation } from "@/actions/support";
 import { liveSupportAnswer } from "@/actions/supportLive";
 import { REPLY_LIMITS, type ThreadMessage } from "@/lib/supportReply";
-import { answerParts } from "@/lib/support/aiState";
+import { answerBlocks, type AnswerPiece } from "@/lib/support/aiState";
 import { relative } from "@/lib/format";
 import { toast } from "@/components/ui/Toast";
 import "./support.css";
@@ -663,6 +663,25 @@ function Conversation({
 }
 
 /** One message: yours on the right; ours and the AI's — signed JobFlex support — on the left, on a blueprint rule. */
+/** One paragraph of our answer: words, line breaks, JobFlex's own links. */
+function AnswerPieces({ parts }: { parts: AnswerPiece[] }) {
+  return (
+    <>
+      {parts.map((piece, j) =>
+        "br" in piece ? (
+          <br key={j} />
+        ) : "path" in piece ? (
+          <Link key={j} href={piece.path as Route} className="sup-textlink">
+            {piece.label}
+          </Link>
+        ) : (
+          <span key={j}>{piece.text}</span>
+        ),
+      )}
+    </>
+  );
+}
+
 function Bubble({ m }: { m: ThreadMessage }) {
   const mine = m.from === "customer";
   return (
@@ -675,23 +694,24 @@ function Bubble({ m }: { m: ThreadMessage }) {
       {mine ? (
         <p className="sup-msg-body">{m.body}</p>
       ) : (
-        // Our answers: paragraphs, JobFlex's own links clickable (answerParts, the Help window's rule).
+        // Our answers: paragraphs and cards ("[offer]" / "[note]"), JobFlex's own links clickable (the Help window's rule).
         <div className="sup-msg-body">
-          {answerParts(m.body).map((para, i) => (
-            <p key={i}>
-              {para.map((piece, j) =>
-                "br" in piece ? (
-                  <br key={j} />
-                ) : "path" in piece ? (
-                  <Link key={j} href={piece.path as Route} className="sup-textlink">
-                    {piece.label}
-                  </Link>
-                ) : (
-                  <span key={j}>{piece.text}</span>
-                ),
-              )}
-            </p>
-          ))}
+          {answerBlocks(m.body).map((b, i) =>
+            b.kind === "text" ? (
+              <p key={i}>
+                <AnswerPieces parts={b.parts} />
+              </p>
+            ) : (
+              <div key={i} className={`sup-card sup-card--${b.kind}`} data-support-card={b.kind}>
+                <b>{b.title}</b>
+                {b.parts.length ? (
+                  <p>
+                    <AnswerPieces parts={b.parts} />
+                  </p>
+                ) : null}
+              </div>
+            ),
+          )}
         </div>
       )}
     </div>

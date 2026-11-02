@@ -125,11 +125,11 @@ export function OwnNumber({ view, configured }: { view: SmsRegistrationView | nu
   const showDone = view.stage === "none" && !open && !view.legacy && !view.assigned?.house;
   const showGet = fresh && !open && !view.legacy;
   const getButton = view.paying ? (
-    <button type="button" className="tk-btn tk-btn--primary" disabled={!configured || busy !== null} onClick={() => setOpen(true)} data-get-number>
+    <button type="button" className="tk-btn tk-btn--primary" disabled={!configured || busy !== null} onClick={() => setOpen(true)} data-get-number data-tour="texting:get-number">
       {view.stage === "failed" ? C.resubmit : lent ? lent.button : C.get}
     </button>
   ) : (
-    <p className="tk-note" data-sms-paid-only>{C.paidOnly}</p>
+    <p className="tk-note" data-sms-paid-only data-tour="texting:get-number">{C.paidOnly}</p>
   );
   // What went wrong, in one place: the stage's words, Twilio's reasons, the error.
   const trouble = view.stage === "rejected" || view.stage === "failed" || view.legacy;
@@ -324,7 +324,7 @@ export function OwnNumber({ view, configured }: { view: SmsRegistrationView | nu
               </p>
             ) : null}
             <div className="tk-acts">
-              <button type="submit" className="tk-btn tk-btn--primary" disabled={busy !== null || !configured || !view.bookingOn}>
+              <button type="submit" className="tk-btn tk-btn--primary" disabled={busy !== null || !configured || !view.bookingOn} data-tour="texting:register">
                 {busy === "submit" ? "Sending to Twilio…" : view.stage === "rejected" ? C.resubmit : C.submit}
               </button>
               {fresh ? (

@@ -87,7 +87,7 @@ export function ReviewsContent({
               ) : null}
             </a>
           ) : null}
-          <button className="btn btn-primary" type="button" id="rvReqBtn">
+          <button className="btn btn-primary" type="button" id="rvReqBtn" data-tour="reviews:request">
             <svg className="ic">
               <use href="#i-plus" />
             </svg>

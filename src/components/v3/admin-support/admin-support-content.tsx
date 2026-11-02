@@ -42,6 +42,7 @@ import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import { replyToSupportTicket, updateTicketStatus } from "@/actions/admin";
 import type { ThreadMessage } from "@/lib/supportReply";
+import { hasReplyCard, replyBlocks } from "@/lib/support/replyCards";
 import { approveSupportFix, askSupportAi, declineSupportFix, extendTrialFromSupport, markSupportFixed, redraftSupportAnswers, setSupportAiMode } from "@/actions/supportAi";
 import {
   SUPPORT_AI_CATEGORY_LABEL,
@@ -73,6 +74,24 @@ import { useAdminMotion } from "@/components/v3/admin-users/use-admin-motion";
 import s from "./admin-support.module.css";
 
 const cx = makeCx(s, shared);
+
+/** One of our answers: its paragraphs, and its cards ("[offer]" / "[note]", lib/support/replyCards) drawn as the customer sees them. */
+function ReplyCards({ body }: { body: string }) {
+  return (
+    <div className={cx("replyBody", "replyBlocks")}>
+      {replyBlocks(body).map((b, i) =>
+        b.kind === "text" ? (
+          <p key={i}>{b.text}</p>
+        ) : (
+          <div key={i} className={cx("replyCard", b.kind === "offer" ? "replyCard--offer" : "replyCard--note")} data-support-card={b.kind}>
+            <b>{b.title}</b>
+            {b.text ? <p>{b.text}</p> : null}
+          </div>
+        ),
+      )}
+    </div>
+  );
+}
 
 export interface SupportTicketDTO {
   /** Whether the team can add trial days for this company (the offer the AI makes on a cancellation), 2026-10-26. */
@@ -898,7 +917,7 @@ function TicketDetail({
                 {m.channel === "email" ? " · by email" : ""}
                 {m.from !== "customer" && m.to ? ` · emailed to ${m.to}` : ""}
               </div>
-              <div className={cx("replyBody")}>{m.body}</div>
+              {m.from === "customer" ? <div className={cx("replyBody")}>{m.body}</div> : <ReplyCards body={m.body} />}
             </div>
           ))}
           <div ref={endRef} />
@@ -942,6 +961,13 @@ function TicketDetail({
             ) : null}
           </div>
           {replyError ? <Note tone="danger">{replyError}</Note> : null}
+          {/* A draft with cards ("[offer]" / "[note]"): how the customer will see it, as it is typed. */}
+          {hasReplyCard(draft) ? (
+            <div className={cx("cardPreview")} data-support-card-preview>
+              <span className={cx("cardPreviewH")}>How they&apos;ll see it</span>
+              <ReplyCards body={draft} />
+            </div>
+          ) : null}
         </div>
 
         {/* What the support AI did here — and, for a bug, the fix waiting for a decision. */}

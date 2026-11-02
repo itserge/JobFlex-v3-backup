@@ -75,3 +75,12 @@
 .mobile.surface :global(.mono-box) { flex-wrap: wrap; }
 .mobile.surface :global(.mono-box code) { flex-basis: 100%; }
 @media (prefers-reduced-motion: reduce) { .surface.surface :global(button.tg[role="switch"])::before, .surface.surface :global(button.tg[role="switch"])::after { transition: none; } }
+
+/* Ramp cards (2026-10-29, round 2): the card table and the give-a-card form's selects. */
+.surface.surface .field select { width: 100%; min-width: 0; min-height: 46px; padding: 10px 12px; border: 2px solid var(--ink); border-radius: var(--r-sm); background: var(--sheet,var(--paper-deep)); color: var(--ink); font: 500 14.5px/1.4 var(--font-sans); }
+.surface select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.cardTable { width: 100%; border-collapse: collapse; font: 500 13.5px/1.4 var(--font-sans); }
+.cardTable th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--ink-line); color: var(--ink-muted); font: 800 11px/1.4 var(--font-sans); letter-spacing: .08em; text-transform: uppercase; }
+.cardTable td { padding: 8px; border-bottom: 1px solid var(--ink-line); vertical-align: middle; }
+.cardTable td:last-child { text-align: right; white-space: nowrap; }
+.muted { color: var(--ink-muted); font-size: 13px; }

@@ -23,7 +23,7 @@ import { completeFromCheckoutSession, completeFromPaymentIntent } from "@/lib/le
 import { completeFromPackSession } from "@/lib/aiDesk/packs";
 import { cancelReplacedSubscription } from "@/lib/checkoutReturn";
 import { invoiceSubscriptionId, refId } from "@/lib/stripeCompat";
-import { alertInvoiceFailed, alertInvoicePaid, alertOneTimeCharge } from "@/lib/adminAlertsPayments";
+import { alertDisputeClosed, alertDisputeOpened, alertInvoiceFailed, alertInvoicePaid, alertOneTimeCharge } from "@/lib/adminAlertsPayments";
 import { mirrorDeckAddon } from "@/lib/deckAddonBilling";
 import { mirrorWebAddons } from "@/lib/webAddonBilling";
 import { markFailuresRecovered, noteInvoiceFailure } from "@/lib/paymentFailures";
@@ -228,10 +228,19 @@ async function dispatch(event: Stripe.Event, stripe: Stripe) {
     // opened or closed — a retried delivery must not move the hold clock.
     case "charge.dispute.created": {
       await holdForDispute(event.data.object as Stripe.Dispute, new Date(event.created * 1000));
+      // The team's "Disputes" text (owner, 2026-10-29): who, how much, why, the evidence date (lib/disputeWords).
+      await alertDisputeOpened(event.data.object as Stripe.Dispute, event.livemode, stripe).catch((err) => console.warn("[adminAlerts] dispute text:", err));
+      break;
+    }
+    case "charge.dispute.funds_withdrawn": {
+      // An inquiry the bank escalated: the same dispute, now a chargeback — the team's second text (an ordinary
+      // chargeback already texted on created; disputeOpenedKey keeps it to one).
+      await alertDisputeOpened(event.data.object as Stripe.Dispute, event.livemode, stripe).catch((err) => console.warn("[adminAlerts] dispute text:", err));
       break;
     }
     case "charge.dispute.closed": {
       await settleDispute(event.data.object as Stripe.Dispute, event.id, new Date(event.created * 1000));
+      await alertDisputeClosed(event.data.object as Stripe.Dispute, event.livemode, stripe).catch((err) => console.warn("[adminAlerts] dispute text:", err));
       break;
     }
     case "account.updated": {

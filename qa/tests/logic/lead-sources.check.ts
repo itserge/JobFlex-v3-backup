@@ -92,7 +92,7 @@ check("a desk booking from before the marker is still the desk's", visitVia({ bo
 check("…found from the appointment's own first line too", visitVia({ booking: { notes: null }, notes: "Booked by phone · the AI desk · $89\nPhone +18015550100" }) === "ai-desk");
 check("a plan visit is the plan's", visitVia({ planVisit: { label: "Spring tune-up" } }) === "plan");
 check("anything else is the office's", visitVia({}) === "team");
-check("every channel has its own colour", new Set(Object.values(VISIT_VIA).map((v) => v.tone)).size === 4);
+check("every channel has its own colour", new Set(Object.values(VISIT_VIA).map((v) => v.tone)).size === Object.keys(VISIT_VIA).length);
 check("every channel has a tag and a badge", Object.values(VISIT_VIA).every((v) => v.tag && v.badge && v.icon.startsWith("i-")));
 check("the desk's note head no longer says online", bookingNoteHead("ai-desk", "$89", null) === "Booked by phone · the AI desk · $89" && !/online/i.test(bookingNoteHead("ai-desk", "$89", null)));
 check("an online booking's note head is unchanged", bookingNoteHead("online", "$89", "Comfort Club") === "Booked online · $89 · member of the Comfort Club");

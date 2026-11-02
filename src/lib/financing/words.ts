@@ -55,7 +55,7 @@ export function lockWords(why: LockReason, limits: { minMinor: number | null; ma
     case "not_open":
       return "Financing isn't open for your account yet.";
     case "not_set_up":
-      return "Set up financing first: Settings → Payments → Financing.";
+      return "Set up financing first: Settings → Integrations / Payments → Financing.";
     case "waiting":
       return "Waiting for Wisetack to approve your account.";
     case "declined":

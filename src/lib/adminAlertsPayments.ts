@@ -20,6 +20,7 @@ import { db } from "@/lib/db";
 import { invoiceSubscriptionId, refId } from "@/lib/stripeCompat";
 import { getPlanDisplayName } from "@/lib/planCatalogServer";
 import { admin, fireAdminAlert, short } from "@/lib/adminAlerts";
+import { disputeClosedText, disputeOpenedKey, disputeOpenedText, type DisputeInfo } from "@/lib/disputeWords";
 
 const LEAD_PURPOSE = "lead-purchase";
 const PACK_PURPOSE = "desk-pack";
@@ -159,4 +160,56 @@ export async function alertOneTimeCharge(info: {
     `JobFlex: payment received — ${money(info.cents, info.currency ?? "usd")} from ${short(org?.name ?? "A company")} (${what}).${testMark(info.livemode)} ${await admin("/admin/revenue")}`,
     `paid:pi:${info.paymentIntentId}`,
   );
+}
+
+/** Whose charge a dispute is about: the charge's customer → the subscription mirror → the company. Best effort, three
+ *  seconds at most (the dispute carries only the charge's id); without it the text still goes. */
+async function disputeOwner(dispute: Stripe.Dispute, stripe: Stripe | null): Promise<{ orgName: string; plan: string | null }> {
+  const ask = (async () => {
+    const chargeId = refId(dispute.charge);
+    if (!stripe || !chargeId) return null;
+    const charge = await stripe.charges.retrieve(chargeId);
+    const customerId = refId(charge.customer);
+    const mirror = customerId ? await db.subscription.findFirst({ where: { externalCustomerId: customerId }, select: { organizationId: true, plan: true } }).catch(() => null) : null;
+    const org = mirror ? await db.organization.findUnique({ where: { id: mirror.organizationId }, select: { name: true } }).catch(() => null) : null;
+    return { orgName: org?.name ?? charge.billing_details?.name ?? charge.billing_details?.email ?? charge.receipt_email ?? null, plan: mirror?.plan ?? null };
+  })();
+  const timeout = new Promise<null>((r) => setTimeout(() => r(null), 3000));
+  try {
+    const found = await Promise.race([ask, timeout]);
+    return { orgName: found?.orgName ?? "A customer", plan: found?.plan ? await planWords(found.plan) : null };
+  } catch {
+    return { orgName: "A customer", plan: null };
+  }
+}
+
+async function disputeInfo(dispute: Stripe.Dispute, livemode: boolean, stripe: Stripe | null): Promise<DisputeInfo> {
+  const { orgName, plan } = await disputeOwner(dispute, stripe);
+  return {
+    id: dispute.id,
+    orgName: short(orgName),
+    plan,
+    cents: dispute.amount ?? 0,
+    currency: dispute.currency ?? "usd",
+    reason: dispute.reason ?? "general",
+    status: dispute.status ?? "needs_response",
+    dueBy: dispute.evidence_details?.due_by ?? null,
+    livemode,
+    adminUrl: await admin("/admin/subscribers"),
+  };
+}
+
+/** charge.dispute.created / funds_withdrawn — a company took a JobFlex charge to its bank (owner, 2026-10-29): the
+ *  inquiry, and the chargeback (an escalated inquiry included), one text each. */
+export async function alertDisputeOpened(dispute: Stripe.Dispute, livemode: boolean, stripe: Stripe | null): Promise<void> {
+  const once = dispute.id ? disputeOpenedKey(dispute.id, dispute.status ?? "needs_response") : null;
+  if (!once) return;
+  await fireAdminAlert("dispute", disputeOpenedText(await disputeInfo(dispute, livemode, stripe)), once);
+}
+
+/** charge.dispute.closed — won, lost, or the inquiry closed. */
+export async function alertDisputeClosed(dispute: Stripe.Dispute, livemode: boolean, stripe: Stripe | null): Promise<void> {
+  if (!dispute.id) return;
+  const feeCents = (dispute.balance_transactions ?? []).reduce((n, b) => n + (b.fee ?? 0), 0);
+  await fireAdminAlert("dispute", disputeClosedText({ ...(await disputeInfo(dispute, livemode, stripe)), feeCents }), `dispute:closed:${dispute.id}`);
 }

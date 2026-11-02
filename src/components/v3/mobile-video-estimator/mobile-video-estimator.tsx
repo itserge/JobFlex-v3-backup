@@ -463,6 +463,7 @@ export function MobileVideoEstimator({
                 className="mve-btn mve-btn-primary mve-add"
                 type="button"
                 onClick={openPicker}
+                data-tour="video:add"
               >
                 <Icon id="i-plus" />
                 Add video

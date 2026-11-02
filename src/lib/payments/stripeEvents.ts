@@ -177,7 +177,7 @@ export async function dispatchStripeEvent(event: Stripe.Event, ctx: StripeEventC
       await notifyPaymentIssue({
         organizationId: conn.organizationId,
         title: "Stripe was disconnected",
-        detail: "JobFlex was removed from your Stripe account. Reconnect it in Settings → Payments to take card payments again.",
+        detail: "JobFlex was removed from your Stripe account. Reconnect it in Settings → Integrations / Payments to take card payments again.",
       });
       return;
     }

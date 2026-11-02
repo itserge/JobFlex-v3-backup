@@ -67,7 +67,7 @@ export function BookingContent({ data }: { data: BookingDashboard }) {
       {/* THE LINK and THE NUMBERS, side by side (owner, 2026-10-28: "two columns in a single row", the numbers 2×2). */}
       <div className="bk-top">
       {/* THE LINK — the page's first job: where it is, and one tap to copy it. */}
-      <section className="bk-card bk-link" data-booking-share>
+      <section className="bk-card bk-link" data-booking-share data-tour="booking:link">
         <div className="bk-link-main">
           <h2 className="bk-h2">Your booking link</h2>
           <p className="bk-lead">Put it on your website, Google profile, email signature, invoices and trucks.</p>
@@ -187,7 +187,7 @@ export function BookingContent({ data }: { data: BookingDashboard }) {
             <h2 className="bk-h2">Hours and rules</h2>
           </div>
           <form action={saveBookingSettings} className="bk-form">
-            <label className="bk-switch">
+            <label className="bk-switch" data-tour="booking:on">
               <input type="checkbox" name="enabled" defaultChecked={settings.enabled} />
               <span className="bk-switch-box" aria-hidden="true" />
               <span>

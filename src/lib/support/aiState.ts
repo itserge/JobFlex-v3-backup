@@ -6,6 +6,7 @@
 // prompts and letters and re-exports all of this for the server.
 
 import type { ThreadMessage } from "@/lib/supportReply";
+import { replyBlocks, type ReplyCardKind } from "./replyCards";
 
 // ── The switch ───────────────────────────────────────────────────────────────
 
@@ -186,41 +187,48 @@ export type AnswerPiece = { text: string } | { br: true } | { path: string; labe
 
 const OWN_LINK = /https?:\/\/(?:www\.)?jobflex\.app(\/[^\s<>"'()]*)?/gi;
 
+/** One paragraph's pieces: words, line breaks, JobFlex's own links as clickable paths (any other address stays text). */
+function piecesOf(p: string): AnswerPiece[] {
+  const out: AnswerPiece[] = [];
+  const words = (s: string) => {
+    s.split("\n").forEach((line, i) => {
+      if (i > 0) out.push({ br: true });
+      if (line) out.push({ text: line });
+    });
+  };
+  let last = 0;
+  for (const m of p.matchAll(OWN_LINK)) {
+    const at = m.index ?? 0;
+    if (at > last) words(p.slice(last, at));
+    let label = m[0];
+    const trail = label.match(/[.,;:!?]+$/)?.[0] ?? "";
+    if (trail) label = label.slice(0, -trail.length);
+    const path = (m[1] ?? "/").slice(0, (m[1] ?? "/").length - (m[1] ? trail.length : 0)) || "/";
+    out.push({ path, label });
+    if (trail) out.push({ text: trail });
+    last = at + m[0].length;
+  }
+  if (last < p.length) words(p.slice(last));
+  return out;
+}
+
+/** The email's closing "just reply to this email" line, dropped in the app — the window has its own "I still need help". */
+const isReplyLine = (p: string) => /reply to this email/i.test(p) && p.length < 200;
+
 /**
- * The answer's paragraphs for the Help window. Links to JobFlex's own pages
- * become clickable PATHS — they open on whatever host the customer is on —
- * and any other address stays plain text: an answer never links off the app.
- * The email's closing "just reply to this email" line is dropped here; the
- * window has its own "I still need help".
+ * The answer as the Help window and the support page draw it: paragraphs, and the cards (lib/support/replyCards —
+ * "[offer] …" / "[note] …") as cards with their title. Links to JobFlex's own pages become clickable PATHS — they open
+ * on whatever host the customer is on — and any other address stays plain text: an answer never links off the app.
  */
+export type AnswerBlock = { kind: "text"; parts: AnswerPiece[] } | { kind: ReplyCardKind; title: string; parts: AnswerPiece[] };
+export function answerBlocks(body: string): AnswerBlock[] {
+  const blocks = replyBlocks(body);
+  const lastB = blocks[blocks.length - 1];
+  if (blocks.length > 1 && lastB.kind === "text" && isReplyLine(lastB.text)) blocks.pop();
+  return blocks.map((b) => (b.kind === "text" ? { kind: "text", parts: piecesOf(b.text) } : { kind: b.kind, title: b.title, parts: piecesOf(b.text) }));
+}
+
+/** The answer's paragraphs, flat (a card's title and text as one paragraph) — answerBlocks draws the cards. */
 export function answerParts(body: string): AnswerPiece[][] {
-  const paras = body
-    .replace(/\r\n/g, "\n")
-    .split(/\n{2,}/)
-    .map((p) => p.trim())
-    .filter(Boolean);
-  if (paras.length > 1 && /reply to this email/i.test(paras[paras.length - 1]) && paras[paras.length - 1].length < 200) paras.pop();
-  return paras.map((p) => {
-    const out: AnswerPiece[] = [];
-    const words = (s: string) => {
-      s.split("\n").forEach((line, i) => {
-        if (i > 0) out.push({ br: true });
-        if (line) out.push({ text: line });
-      });
-    };
-    let last = 0;
-    for (const m of p.matchAll(OWN_LINK)) {
-      const at = m.index ?? 0;
-      if (at > last) words(p.slice(last, at));
-      let label = m[0];
-      const trail = label.match(/[.,;:!?]+$/)?.[0] ?? "";
-      if (trail) label = label.slice(0, -trail.length);
-      const path = (m[1] ?? "/").slice(0, (m[1] ?? "/").length - (m[1] ? trail.length : 0)) || "/";
-      out.push({ path, label });
-      if (trail) out.push({ text: trail });
-      last = at + m[0].length;
-    }
-    if (last < p.length) words(p.slice(last));
-    return out;
-  });
+  return answerBlocks(body).map((b) => (b.kind === "text" ? b.parts : [{ text: b.title }, ...(b.parts.length ? [{ br: true } as AnswerPiece, ...b.parts] : [])]));
 }

@@ -2238,8 +2238,25 @@
 .bp :global(.content #allCard .ppl-acts-k) { display: none; }
 /* The accepted day rides on the status badge. */
 .bp :global(.pstatus-d) { margin-left: 6px; padding-left: 6px; border-left: 1.5px solid currentColor; font-style: normal; font-family: var(--font-mono); letter-spacing: 0.06em; }
-/* Sent stays a stamp; Resend is a real button beside it. */
-.bp :global(.content .pbar .pbar-btn.pact--resend) { color: var(--blueprint); }
+/* SENT TURNS INTO RESEND (owner, 2026-10-29: "the sent message when hovered turns into a resend button, and it
+   has to be visible you can hover over it"). One button, two faces stacked in the same cell so the plate keeps its
+   width: Sent and when, in green; on hover or keyboard focus the plate goes blueprint blue and reads Resend. The
+   send icon at the plate's end says there is more under it. Without a hover (touch) both faces show, side by side. */
+.bp :global(.content .pbar .pbar-btn.pact--swap) { display: inline-grid; grid-template-columns: auto; align-items: center; padding: 0 12px; cursor: pointer; border-color: var(--success); }
+.bp :global(.content .pbar .pbar-btn.pact--swap > .pswap) { grid-area: 1 / 1; display: inline-flex; align-items: center; gap: 6px; transition: opacity 0.12s var(--ease); }
+.bp :global(.content .pbar .pbar-btn.pact--swap > .pswap--resend) { opacity: 0; justify-content: center; }
+.bp :global(.content .pbar .pbar-btn.pact--swap > .pswap--sent::after) { content: ""; width: 0; height: 0; margin-left: 2px; border-left: 5px solid currentColor; border-top: 4px solid transparent; border-bottom: 4px solid transparent; opacity: 0.55; }
+.bp :global(.content .pbar .pbar-btn.pact--swap:hover),
+.bp :global(.content .pbar .pbar-btn.pact--swap:focus-visible) { background: var(--blueprint); border-color: var(--blueprint); color: #fff; }
+.bp :global(.content .pbar .pbar-btn.pact--swap:hover > .pswap--sent),
+.bp :global(.content .pbar .pbar-btn.pact--swap:focus-visible > .pswap--sent) { opacity: 0; }
+.bp :global(.content .pbar .pbar-btn.pact--swap:hover > .pswap--resend),
+.bp :global(.content .pbar .pbar-btn.pact--swap:focus-visible > .pswap--resend) { opacity: 1; }
+@media (hover: none) {
+  .bp :global(.content .pbar .pbar-btn.pact--swap) { grid-template-columns: auto auto; column-gap: 10px; }
+  .bp :global(.content .pbar .pbar-btn.pact--swap > .pswap--resend) { grid-area: 1 / 2; opacity: 1; padding-left: 10px; border-left: 1.5px solid currentColor; color: var(--blueprint); }
+  .bp :global(.content .pbar .pbar-btn.pact--swap > .pswap--sent::after) { display: none; }
+}
 
 /* ── Payments lined up (owner, 2026-10-28: "the payment cards and the buttons more inlined"): the stage boxes and
    the three buttons share one top and one bottom; the buttons a step shorter so the column is the boxes' height. ── */
@@ -2249,3 +2266,29 @@
 .bp :global(.content #allCard .ppl-side) { display: flex; flex-direction: column; justify-content: flex-start; }
 .bp :global(.content #allCard .ppl-acts) { gap: 5px; }
 .bp :global(.content #allCard .ppl-act) { height: 30px; }
+
+/* THE TABS, BIGGER AND IN COLOUR (owner, 2026-10-29: "make the All / Completed / Accepted buttons a bit bigger, and
+   add a bit of colour"). Each tab carries its own colour — All the blueprint blue, Accepted green as its status
+   badge, Completed the darker paid green — as a bar at its left edge and on its count; the open tab fills with a
+   tint of it and takes its offset shadow. */
+.bp :global(.content .ptabs .ptab) {
+  --tab: var(--blueprint);
+  gap: 10px; min-height: 46px; padding: 11px 20px 11px 17px;
+  border-left: 4px solid var(--tab);
+  font-size: 14.5px;
+}
+.bp :global(.content .ptabs .ptab[data-tab="accepted"]) { --tab: var(--success); }
+.bp :global(.content .ptabs .ptab[data-tab="completed"]) { --tab: var(--success-dark); }
+.bp :global(.content .ptabs .ptab .ptab-count) {
+  padding: 3px 7px; border-radius: var(--radius);
+  background: color-mix(in srgb, var(--tab) 11%, #fff); color: var(--tab);
+  font-size: 12px; font-weight: 700;
+}
+.bp :global(.content .ptabs .ptab:hover) { background: color-mix(in srgb, var(--tab) 6%, #fff); color: var(--ink); }
+.bp :global(.content .ptabs .ptab.active) {
+  padding: 10.5px 19.5px 10.5px 17px;
+  border: 2px solid var(--tab); border-left-width: 4px;
+  background: color-mix(in srgb, var(--tab) 9%, #fff); color: var(--ink);
+  box-shadow: 2px 2px 0 var(--tab);
+}
+.bp :global(.content .ptabs .ptab.active .ptab-count) { background: var(--tab); color: #fff; }

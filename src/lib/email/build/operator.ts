@@ -524,9 +524,11 @@ export interface BookedOnlineInput {
   /** Who they are to the company: a plan member, a new lead, or a customer on file. */
   who: "member" | "lead" | "client";
   href: string;
+  /** SmartBook booked it with a new lead (2026-10-31): said so, and `href` opens the lead. */
+  via?: "smartbook";
 }
 
-/** A customer booked a visit on the company's booking page — to the office (2026-10-28). */
+/** A customer booked a visit on the company's booking page — to the office (2026-10-28). SmartBook's bookings too. */
 export function buildBookedOnline(i: BookedOnlineInput): EmailDoc {
   const box: BoxRow[] = [
     { type: "field", label: "Service", value: i.service },
@@ -538,14 +540,53 @@ export function buildBookedOnline(i: BookedOnlineInput): EmailDoc {
     { type: "cond", label: "Customer", chip: i.who === "member" ? "Plan member" : i.who === "lead" ? "New lead" : "On file", tone: i.who === "lead" ? "warn" : "ok" },
   ];
   return {
-    subject: `Booked online — ${i.name}, ${i.service}`,
+    subject: i.via === "smartbook" ? `SmartBook booked — ${i.name}, ${i.service}` : `Booked online — ${i.name}, ${i.service}`,
     lockup: orgLockup(i.org),
-    kicker: { text: "Booked online", tone: "ok" },
+    kicker: { text: i.via === "smartbook" ? "SmartBook" : "Booked online", tone: "ok" },
     headline: i.when,
-    prose: [`${i.name} booked ${i.service.toLowerCase()} on your booking page. It is on your calendar.`],
+    prose: [i.via === "smartbook" ? `SmartBook booked ${i.name} for ${i.service.toLowerCase()}. It is on your calendar.` : `${i.name} booked ${i.service.toLowerCase()} on your booking page. It is on your calendar.`],
     box,
     after: i.notes ? [`"${truncate(i.notes, 400)}"`] : undefined,
-    cta: { label: "Open online booking", href: i.href },
+    cta: { label: i.via === "smartbook" ? "Open the lead" : "Open online booking", href: i.href },
+    footer: orgFooter(i.org),
+  };
+}
+
+export interface SmartBookRequestInput {
+  org: OrgBrand;
+  name: string;
+  /** "Sat Nov 7, 9am", or "Sat Nov 7, morning" when they named no hour. */
+  asked: string;
+  /** What the calendar holds then, in a line ("Your calendar is free then"). */
+  calendar: string;
+  source: string;
+  project: string | null;
+  phone: string | null;
+  words: string | null;
+  href: string;
+}
+
+/**
+ * SmartBook (owner, 2026-10-31: "if customer offers his date and time … you send this to us, and we confirm"): a new
+ * lead asked for a time of their own. One button opens the answer page (Confirm · Other times · Another time); the
+ * text with the same request can be answered YES / NO too.
+ */
+export function buildSmartBookRequest(i: SmartBookRequestInput): EmailDoc {
+  const box: BoxRow[] = [
+    { type: "field", label: "Asks for", value: i.asked },
+    { type: "field", label: "Calendar", value: i.calendar },
+    { type: "field", label: "Lead", value: [i.source, i.project].filter(Boolean).join(" · ") || "—" },
+    { type: "field", label: "Phone", value: i.phone || "—" },
+  ];
+  return {
+    subject: `${i.name} asks for ${i.asked}`,
+    lockup: orgLockup(i.org),
+    kicker: { text: "SmartBook · answer the customer", tone: "warn" },
+    headline: i.asked,
+    prose: [`${i.name} would like a visit then. SmartBook told them you'll check and get back to them shortly — say yes, offer other times, or name another time.`],
+    box,
+    after: [...(i.words ? [`In their words: "${truncate(i.words, 300)}"`] : []), "Or reply YES or NO to SmartBook's text."],
+    cta: { label: "Answer the request", href: i.href },
     footer: orgFooter(i.org),
   };
 }

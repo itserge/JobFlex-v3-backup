@@ -16,3 +16,10 @@ JobFlex works with them.
 | `stax-app-icon.png` | staxpayments.com/apple-touch-icon.png — reference for the icon's colours | — |
 
 Do not add a mark for an app JobFlex does not integrate with.
+
+## Ramp review video (2026-10-31)
+
+`ramp-demo.mp4` is the demo for Ramp's production-access application, served at
+www.jobflex.app/integrations/ramp-demo.mp4. It shows Connect in Ramp's sandbox,
+then one card per scope (the scopes in `src/lib/ramp/client.ts`). It is linked
+only from that application.

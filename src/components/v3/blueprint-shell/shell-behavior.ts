@@ -140,7 +140,10 @@ export function initBlueprintShell(root: HTMLElement, opts: {
           if (ticking) return;
           ticking = true;
           requestAnimationFrame(() => {
-            mainEl.style.setProperty("--gy", (-(scrolled * 0.06)).toFixed(1) + "px");
+            // Write background-position itself, not a `--gy` custom property: custom properties inherit,
+            // so setting one on .main restyled every node in the page on every scroll frame (2026-10-30,
+            // perf: ~23ms of style recalc per frame on /dashboard/proposals, scrolling ran under 45fps).
+            mainEl.style.backgroundPosition = "0 " + (-(scrolled * 0.06)).toFixed(1) + "px";
             ticking = false;
           });
         },

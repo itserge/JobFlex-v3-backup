@@ -25,6 +25,9 @@
 :global(.jf-blueprint .content) .said { margin: 12px 0 0; font-size: 14px; line-height: 1.5; color: var(--ink); }
 :global(.jf-blueprint .content) .from { margin: 12px 0 0; font-size: 13px; line-height: 1.5; color: var(--ink-soft); }
 :global(.jf-blueprint .content) .from b { color: var(--ink); font-weight: 800; font-variant-numeric: tabular-nums; }
+/* Why a Run button is grey (2026-10-31). */
+:global(.jf-blueprint .content) .idle { margin: 12px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 13px; line-height: 1.5; color: var(--ink-soft); }
+:global(.jf-blueprint .content) .idle b { color: var(--ink); font-weight: 800; }
 
 :global(.jf-blueprint .content) .test { margin-top: 18px; padding-top: 14px; border-top: 1.5px solid var(--hair); }
 :global(.jf-blueprint .content) .testH { font-size: 12px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); margin-bottom: 8px; }

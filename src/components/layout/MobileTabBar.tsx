@@ -25,6 +25,7 @@ import { logOutEverywhere } from "@/components/v3/blueprint-shell/sign-out";
 import { cn } from "@/lib/cn";
 import { MobileDrawer } from "@/components/ui/MobileDrawer";
 import { openSupportComposer } from "@/components/v3/support-widget/support-widget";
+import { SmartHelpRow } from "@/components/v3/smarthelp/smarthelp-row";
 import { NavBadge } from "./NavBadge";
 
 type TabKey = "dashboard" | "proposals" | "schedule" | "jobs" | "leads" | "clients" | "smart" | "more";
@@ -278,6 +279,9 @@ export function MobileTabBar({
               <NavBadge count={badges?.[item.href] ?? 0} className="shrink-0" />
             </Link>
           ))}
+          {/* SmartHelp (components/v3/smarthelp), above Help: like Help, opened on the next frame after the drawer
+              closes, with focus handed back to the More tab. */}
+          <SmartHelpRow variant="more" onBeforeOpen={() => setMoreOpen(false)} opener={() => moreTabRef.current} />
           {/* Help — this group's handheld launcher for the support composer
               the layout mounts. It is a row in the drawer, not a corner
               button: below 768 the bottom-right of every page in this group is

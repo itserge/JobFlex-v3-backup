@@ -10,6 +10,7 @@ import { getRoutingMode } from "@/lib/leadCenter/routingMode";
 import { loadRankingInputs, rankWith } from "@/lib/leadCenter/matching";
 import { purchasesByPlatformLead } from "@/lib/leadCenter/purchase";
 import { readTestKey } from "@/lib/leadCenter/testLeads";
+import { readSandboxRuns } from "@/lib/leadCenter/sandbox";
 import { appBaseUrl } from "@/lib/appUrl";
 import { orgRatingsByIds } from "@/lib/reviews/publicSummary";
 import { SEO_SOURCE_RE } from "@/lib/seo/links";
@@ -26,6 +27,7 @@ import {
   type OrgPickDTO,
   type RankEntry,
   type StatsDTO,
+  type TestRunDTO,
 } from "@/components/v3/admin-lead-center/lead-center-content";
 
 /** The Source column: a cost guide by its work and city, any other start by the page it was sent from. */
@@ -377,6 +379,12 @@ export default async function AdminLeadCenterPage() {
   // The test link, whole (the admin copies it): /homeowner?test=<key>.
   const testKey = await readTestKey();
   const testLink = testKey ? { link: `${await appBaseUrl()}/homeowner?test=${testKey.key}`, createdAt: testKey.createdAt } : null;
+  // The test environment's runs (lib/leadCenter/sandbox): which test leads route automatically, who production
+  // would have offered each to, and every email and text recorded instead of sent.
+  const runs = await readSandboxRuns(platformLeads.filter((p) => p.isTest).map((p) => p.id));
+  const testRuns: Record<string, TestRunDTO> = Object.fromEntries(
+    [...runs].map(([id, r]) => [id, { createdAt: r.createdAt, wouldRank: r.wouldRank, messages: [...r.messages].reverse() }]),
+  );
 
   return (
     <AdminLeadCenterContent
@@ -388,6 +396,7 @@ export default async function AdminLeadCenterPage() {
       houseOrgId={houseOrg}
       savedRanges={savedRanges}
       testLink={testLink}
+      testRuns={testRuns}
     />
   );
 }

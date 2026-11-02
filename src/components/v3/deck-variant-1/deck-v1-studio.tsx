@@ -2676,7 +2676,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
             {preview ? <Lock size={15} strokeWidth={2.5} aria-hidden="true" /> : <FileText size={16} strokeWidth={2.5} aria-hidden="true" />}
             {saveState === "saving" ? "Saving…" : "Save draft"}
           </button>
-          <button type="button" className={cx("v1-btn", sendOpen && "is-on")} aria-expanded={sendOpen} onClick={() => (preview ? askAddon("Send the design to your client with Deck Studio") : setSendOpen((v) => !v))} data-v1-send>
+          <button type="button" className={cx("v1-btn", sendOpen && "is-on")} aria-expanded={sendOpen} onClick={() => (preview ? askAddon("Send the design to your client with Deck Studio") : setSendOpen((v) => !v))} data-v1-send data-tour="deck:send">
             {preview ? <Lock size={15} strokeWidth={2.5} aria-hidden="true" /> : <Send size={16} strokeWidth={2.5} aria-hidden="true" />}
             Send to client{inbox.length ? <span className="v1-count">{inbox.length}</span> : null}
           </button>
@@ -3251,7 +3251,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
               <div className="v1-view-acts">
                 {/* The design to the client, in sight from the first step (owner, 2026-10-22: "I don't see the option to send
                     the design to the client") — with the count of designs that came back. The panel opens at the finish. */}
-                <button type="button" className={cx("v1-btn", "v1-btn-sm", "v1-dock-btn", "v1-send-btn", sendOpen && "is-on")} onClick={openSend} aria-label={inbox.length ? `Send to client — ${inbox.length} came back` : "Send to client"} data-v1-view-send>
+                <button type="button" className={cx("v1-btn", "v1-btn-sm", "v1-dock-btn", "v1-send-btn", sendOpen && "is-on")} onClick={openSend} aria-label={inbox.length ? `Send to client — ${inbox.length} came back` : "Send to client"} data-v1-view-send data-tour="deck:send">
                   {preview ? <Lock size={14} strokeWidth={2.5} aria-hidden="true" /> : <Send size={16} aria-hidden="true" />}
                   <span aria-hidden="true">
                     Send<span className="v1-hide-s"> to client</span>

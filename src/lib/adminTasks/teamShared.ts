@@ -25,7 +25,7 @@
  * time"; then "text when payment got charged in Stripe or failed"). Off for everyone
  * until ticked — an alert text costs money and attention.
  * The texts themselves: lib/adminAlerts. */
-export const ALERT_KEYS = ["signup", "converted", "canceled", "paid", "failed", "support", "investor", "surge", "cleanup", "email", "qa"] as const;
+export const ALERT_KEYS = ["signup", "converted", "canceled", "paid", "failed", "dispute", "support", "investor", "surge", "cleanup", "email", "qa"] as const;
 export type AlertKey = (typeof ALERT_KEYS)[number];
 export const ALERT_WORDS: Record<AlertKey, { label: string; hint: string }> = {
   signup: { label: "Sign-ups", hint: "a company signs up" },
@@ -33,6 +33,8 @@ export const ALERT_WORDS: Record<AlertKey, { label: string; hint: string }> = {
   canceled: { label: "Trial cancels", hint: "a trial cancels before it ends" },
   paid: { label: "Payments", hint: "Stripe charges a company — plans, leads, minute packs" },
   failed: { label: "Failed payments", hint: "a plan charge is declined — the first try and the last" },
+  // 2026-10-29 (lib/disputeWords): a company disputes a JobFlex charge with its bank — and how it ends.
+  dispute: { label: "Disputes", hint: "a company disputes a charge with its bank (a chargeback) — and when it's won or lost" },
   support: { label: "Support", hint: "a support ticket arrives" },
   investor: { label: "Investor link requests", hint: "someone asks to see the investor figures — approve or decline" },
   surge: { label: "Traffic surge", hint: "the site is busy right now" },

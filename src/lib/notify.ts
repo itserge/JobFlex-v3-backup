@@ -6,6 +6,8 @@
 // signature-or-token-gated routes that own the resource. The one genuinely
 // user-invoked sender (notifyPaymentReminder) stays a guarded action in
 // src/actions/notify.ts.
+import { inLeadSandbox } from "@/lib/leadCenter/sandbox";
+import { activeCapture } from "@/lib/leadCenter/outboxContext";
 import { db } from "@/lib/db";
 import { FENCE_PLAN_EVENT } from "@/lib/fence/planSvg";
 import { DECK_PLAN_EVENT } from "@/lib/deck/convertSchema";
@@ -598,6 +600,12 @@ export async function notifyAssignmentResponded(
  */
 type SmsOutcome = "sent" | "disabled" | "invalid-number" | "failed";
 
+/** The lead an offer belongs to — for the test environment's switch (lib/leadCenter/sandbox). */
+async function platformLeadOfOffer(offerId: string): Promise<string | null> {
+  const o = await db.leadOffer.findUnique({ where: { id: offerId }, select: { platformLeadId: true } }).catch(() => null);
+  return o?.platformLeadId ?? null;
+}
+
 async function sendLeadSms(
   raw: string | null | undefined,
   body: string,
@@ -611,6 +619,25 @@ async function sendLeadSms(
     .filter(Boolean)
     .join(" ");
 
+  // THE TEST ENVIRONMENT (lib/leadCenter/sandbox): the text is recorded with the gate that decides it — so a test
+  // run shows the texts production would send AND the ones it would hold back, and why. Nothing is sent.
+  const capture = activeCapture();
+  if (capture) {
+    const optedIn = ctx.what.startsWith("homeowner-") || !ctx.orgId
+      ? false
+      : parseLeadsSettings((await db.organization.findUnique({ where: { id: ctx.orgId }, select: { leadsSettingsJson: true } }).catch(() => null))?.leadsSettingsJson).instantSms;
+    const note = !raw
+      ? "Would not send: no phone on file"
+      : ctx.what.startsWith("homeowner-")
+        ? "Would not send: homeowners are not texted yet"
+        : !optedIn
+          ? "Would not send: the shop has not turned on lead texts"
+          : !toE164(raw)
+            ? "Would not send: not a usable US/CA number"
+            : "Would send from JobFlex's number";
+    await capture.record({ channel: "sms", to: raw ?? "(no phone)", body, what: ctx.what, note });
+    return "disabled";
+  }
   if (!raw) return "invalid-number";
   // Who may get JobFlex's own texts (2026-10-02, the opt-in the JobFlex number
   // is registered on): a shop that turned on "Text new leads to the company
@@ -664,6 +691,9 @@ async function sendLeadSms(
 // Instant confirmation to the homeowner on submission. Email always; SMS when
 // they left a phone number.
 export async function notifyHomeownerRequestReceived(platformLeadId: string) {
+  return inLeadSandbox(platformLeadId, () => notifyHomeownerRequestReceivedNow(platformLeadId));
+}
+async function notifyHomeownerRequestReceivedNow(platformLeadId: string) {
   const pl = await db.platformLead.findUnique({ where: { id: platformLeadId } });
   if (!pl) return { skipped: true as const };
 
@@ -688,6 +718,9 @@ export async function notifyHomeownerRequestReceived(platformLeadId: string) {
 // Pings the offered shop: email to its OWNER (see ownerEmailFor) + optional SMS
 // to the org phone.
 export async function notifyLeadOfferCreated(offerId: string) {
+  return inLeadSandbox(await platformLeadOfOffer(offerId), () => notifyLeadOfferCreatedNow(offerId));
+}
+async function notifyLeadOfferCreatedNow(offerId: string) {
   const offer = await db.leadOffer.findUnique({
     where: { id: offerId },
     include: {
@@ -732,6 +765,9 @@ export async function notifyLeadOfferCreated(offerId: string) {
  * thing that knows the clock is nearly out (lib/leadCenter/cascade).
  */
 export async function notifyLeadOfferExpiring(offerId: string) {
+  return inLeadSandbox(await platformLeadOfOffer(offerId), () => notifyLeadOfferExpiringNow(offerId));
+}
+async function notifyLeadOfferExpiringNow(offerId: string) {
   const offer = await db.leadOffer.findUnique({
     where: { id: offerId },
     include: {
@@ -778,6 +814,9 @@ export async function notifyLeadOfferExpiring(offerId: string) {
 // "You're matched" to the homeowner once a contractor accepts (or an admin
 // assigns). Includes the shop's name and contact so they know who's calling.
 export async function notifyHomeownerMatched(platformLeadId: string) {
+  return inLeadSandbox(platformLeadId, () => notifyHomeownerMatchedNow(platformLeadId));
+}
+async function notifyHomeownerMatchedNow(platformLeadId: string) {
   const pl = await db.platformLead.findUnique({ where: { id: platformLeadId } });
   if (!pl || !pl.matchedOrgId) return { skipped: true as const };
   const org = await db.organization.findUnique({
@@ -843,6 +882,13 @@ export async function notifyShopClientRequestedReroute(
   prevOrgId: string,
   reason: string | null,
 ) {
+  return inLeadSandbox(platformLeadId, () => notifyShopClientRequestedRerouteNow(platformLeadId, prevOrgId, reason));
+}
+async function notifyShopClientRequestedRerouteNow(
+  platformLeadId: string,
+  prevOrgId: string,
+  reason: string | null,
+) {
   const [pl, org] = await Promise.all([
     db.platformLead.findUnique({ where: { id: platformLeadId } }),
     db.organization.findUnique({
@@ -869,6 +915,9 @@ export async function notifyShopClientRequestedReroute(
 
 /** To the homeowner, right after their button press: we're re-matching. */
 export async function notifyHomeownerRerouting(platformLeadId: string) {
+  return inLeadSandbox(platformLeadId, () => notifyHomeownerReroutingNow(platformLeadId));
+}
+async function notifyHomeownerReroutingNow(platformLeadId: string) {
   const pl = await db.platformLead.findUnique({ where: { id: platformLeadId } });
   if (!pl) return { skipped: true as const };
 
@@ -895,6 +944,9 @@ export async function notifyHomeownerRerouting(platformLeadId: string) {
  * timeframe promised (owner's rule #3).
  */
 export async function notifyHomeownerManualQueue(platformLeadId: string) {
+  return inLeadSandbox(platformLeadId, () => notifyHomeownerManualQueueNow(platformLeadId));
+}
+async function notifyHomeownerManualQueueNow(platformLeadId: string) {
   const pl = await db.platformLead.findUnique({ where: { id: platformLeadId } });
   if (!pl) return { skipped: true as const };
 

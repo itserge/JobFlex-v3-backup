@@ -141,35 +141,38 @@ function PaymentSummary({ p }: { p: ProposalRow }) {
 }
 
 /**
- * SEND ON THE CARD (owner, 2026-10-23: "Send proposal, or it's been sent") — the desk row's rule
- * (proposals-data → sendState): a draft gets the green button across the card; one out and waiting says when it
- * went, with Send again; a signed or declined one keeps the stamp alone.
+ * THE ALL-TAB CARD ON THE PHONE (owner, 2026-10-30: keep card C, "we also need the mobile version", and "the cards
+ * gotta be separated") — the desk's two-panel dossier (proposals-blueprint/cards/card-c.ts) stacked for one column:
+ * each proposal its own framed card, a gap between cards. Top, the job: kind, title, client · city, the client's
+ * design, then a ruled Status | Views | Updated ledger. Under it the money plate on its tinted ground: Quote /
+ * Contract, the amount, the paid track with a tick where each stage ends, then the stages — the one being chased
+ * framed, with Mark paid / Invoice / Remind (each 44px). Foot: one ruled bar — Open (blue), Send or Sent ⇄ Resend,
+ * and ⋮ for the rest (client view, change order, copy link, delete live in the actions sheet).
  */
-function RowSend({ p, onSend }: { p: ProposalRow; onSend: () => void }) {
-  const s = sendState(p);
-  if (s === "none") return null;
-  if (s === "send") {
-    return (
-      <button className={styles.mSend} type="button" data-row-send="send" onClick={onSend}>
-        <Icon id="i-send" />Send proposal
-      </button>
-    );
-  }
-  return (
-    <div className={styles.mSent} data-row-send={s}>
-      <span className={styles.mSentStamp}><Icon id="i-check" />Sent {p.sentAgo}</span>
-      {s === "resend" ? <button className={styles.mSentAgain} type="button" onClick={onSend}>Send again</button> : null}
-    </div>
-  );
+const SIGNED = new Set(["ACCEPTED", "COMPLETED", "PAID"]);
+
+function paidPct(p: ProposalRow): number {
+  const contract = p.contract ?? p.total;
+  if (contract > 0 && p.owed <= 0) return 100;
+  return contract > 0 ? Math.max(0, Math.min(100, Math.round(((p.paidAmt ?? 0) / contract) * 100))) : 0;
 }
 
-/**
- * PAYMENTS ON THE CARD (owner, 2026-10-23: "get the payment options visible at the main proposal row"). Each
- * stage with where it stands; once signed, the next stage's Mark paid, Invoice and Remind — the contract card's
- * writes, the invoice through the sheet's card / bank / client's-choice step. Before signing, the schedule the
- * client will pay by.
- */
-function RowPay({ p, writing, onMarkPaid, onInvoice, onRemind }: {
+/** Stage boundaries as % of the contract — skipped within a point of either end. */
+function stageTicks(p: ProposalRow): number[] {
+  const contract = p.contract ?? p.total;
+  const insts = p.inst ?? [];
+  if (contract <= 0 || insts.length < 2) return [];
+  const out: number[] = [];
+  let acc = 0;
+  for (let i = 0; i < insts.length - 1; i++) {
+    acc += instDollars(p, insts[i]);
+    const at = Math.round((acc / contract) * 10000) / 100;
+    if (at > 1 && at < 99) out.push(at);
+  }
+  return out;
+}
+
+function CardMoney({ p, writing, onMarkPaid, onInvoice, onRemind }: {
   p: ProposalRow;
   writing: boolean;
   onMarkPaid: (it: Installment) => void;
@@ -177,61 +180,128 @@ function RowPay({ p, writing, onMarkPaid, onInvoice, onRemind }: {
   onRemind: (it: Installment | null) => void;
 }) {
   const state = payState(p);
-  if (!state) return null;
+  const contract = p.contract ?? p.total;
+  const head = (
+    <>
+      <div className={styles.cmMk}>{SIGNED.has(p.status) ? "Contract" : "Quote"}</div>
+      <div className={styles.cmAmt}>{money(contract)}</div>
+    </>
+  );
+  // Nothing to collect: declined, archived, or no payment plan yet — one calm line.
+  if (!state) {
+    const calm = p.status === "DECLINED" ? "Declined — nothing to collect" : p.status === "ARCHIVED" ? "Archived" : "No payment plan yet";
+    return (
+      <div className={`${styles.cmMoney} ${styles.cmCalm}${p.status === "DECLINED" ? " " + styles.cmDeclined : ""}`}>
+        {head}
+        <p className={styles.cmCalmLine}>{calm}</p>
+      </div>
+    );
+  }
   const insts = p.inst ?? [];
   const next = state === "collect" ? nextStage(p) : null;
   const pending = next?.status === "PENDING";
-  return (
-    <div className={`${styles.mPay} ${state === "paid" ? styles.mPayPaid : state === "plan" ? styles.mPayPlan : ""}`} data-row-pay={state}>
-      <div className={styles.mPayHead}>
-        <span className={styles.mPayLbl}><Icon id="i-card" />Payments</span>
-        {state === "plan" ? (
-          <span className={styles.mPayNote}>Billed after {p.clientId ? p.client.split(/\s+/)[0] : "the client"} accepts</span>
-        ) : state === "paid" ? (
-          <span className={styles.mPayOk}><Icon id="i-check" />Paid in full</span>
-        ) : (
-          <span className={styles.mPayNote}><b>{money(p.owed)}</b> left</span>
-        )}
+  const pct = state === "plan" ? 0 : paidPct(p);
+  const tier = state === "plan" ? styles.cmBarPlan : styles[TRACK_TIER[paidTier(p)]];
+  const acts = (it: Installment | null) =>
+    p.canBill === false ? null : (
+      <div className={styles.cmActs}>
+        {it ? (
+          <button className={`${styles.cmAct} ${styles.cmActPaid}`} type="button" disabled={writing || pending}
+            onClick={() => onMarkPaid(it)}><Icon id="i-check" />Mark paid</button>
+        ) : null}
+        <button className={`${styles.cmAct} ${styles.cmActInv}`} type="button" disabled={writing || pending}
+          onClick={() => onInvoice(it)}><Icon id="i-send" />Invoice</button>
+        <button className={`${styles.cmAct} ${styles.cmActRem}`} type="button" disabled={writing || !p.clientEmail}
+          onClick={() => onRemind(it)}><Icon id="i-bell" />Remind</button>
       </div>
-      <ul className={styles.mPayList}>
-        {insts.map((it) => {
+    );
+  return (
+    <div className={styles.cmMoney} data-row-pay={state}>
+      {head}
+      <div className={`${styles.cmBar} ${tier ?? ""}`} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}
+        aria-valuetext={state === "plan" ? "Not billed yet" : `${money(p.paidAmt ?? 0)} paid of ${money(contract)}`}>
+        <span style={{ width: pct + "%" }} />
+        {stageTicks(p).map((t) => <i key={t} className={styles.cmTick} style={{ left: t + "%" }} />)}
+      </div>
+      {state === "plan" ? (
+        <div className={styles.cmLine}>
+          <span>{insts.length || 1} {insts.length === 1 ? "payment" : "payments"}</span>
+          <span>Billed after {p.clientId && p.client ? p.client.split(/\s+/)[0] : "the client"} accepts</span>
+        </div>
+      ) : state === "paid" ? (
+        <div className={`${styles.cmLine} ${styles.cmLineOk}`}><span><Icon id="i-check" />Paid in full</span></div>
+      ) : (
+        <div className={styles.cmLine}>
+          <span><b>{money(p.paidAmt ?? 0)}</b> paid</span>
+          <span className={styles.cmDue}><b>{money(p.owed)}</b> due</span>
+        </div>
+      )}
+      <ol className={styles.cmStages}>
+        {insts.map((it, i) => {
+          const share = it.pct ? <em>{Math.round(it.amount)}%</em> : null;
+          const amount = money(instDollars(p, it));
+          if (next && it.id === next.id) {
+            return (
+              <li key={it.id} className={`${styles.cmSt} ${styles.cmStNext}${it.overdue ? " " + styles.cmStLate : ""}`} data-stage={it.id}>
+                <span className={styles.cmStK}>{it.label}{share}</span>
+                <span className={styles.cmStV}>{amount}</span>
+                <span className={styles.cmStFacts}>{stageFacts(it).join(" · ") || "Next to collect"}</span>
+                {acts(next)}
+              </li>
+            );
+          }
           const paid = it.status === "PAID";
-          const isNext = next?.id === it.id;
-          const tail = paid ? (it.paidOn ? `paid ${it.paidOn}` : "paid") : it.status === "WAIVED" ? "closed" : isNext ? stageFacts(it).join(" · ") : "";
-          const tone = paid ? styles.mStPaid : isNext ? (it.overdue ? `${styles.mStNext} ${styles.mStLate}` : styles.mStNext) : state === "plan" ? styles.mStPlan : "";
+          const tail = paid ? (it.paidOn ? `Paid ${it.paidOn}` : "Paid")
+            : it.status === "WAIVED" ? "Closed"
+            : it.due ? `Due ${it.due}`
+            // Not signed yet: only the first stage is billed on signing; the rest follow it.
+            : state === "plan" && i === 0 ? "After signing" : "Later";
           return (
-            <li key={it.id} className={`${styles.mSt} ${tone}`} data-stage={it.id}>
-              <span className={styles.mStL}>
-                {paid ? <Icon id="i-check" /> : null}
-                {it.label}
-                {state === "plan" && it.pct ? <em>{Math.round(it.amount)}%</em> : null}
-              </span>
-              <span className={styles.mStV}>{money(instDollars(p, it))}</span>
-              {tail ? <span className={styles.mStT}>{tail}</span> : null}
+            <li key={it.id} className={`${styles.cmSt}${paid ? " " + styles.cmStPaid : it.status === "WAIVED" ? " " + styles.cmStClosed : ""}`} data-stage={it.id}>
+              <span className={styles.cmStM}>{paid ? <Icon id="i-check" /> : <i aria-hidden="true" />}</span>
+              <span className={styles.cmStK}>{it.label}{share}</span>
+              <span className={styles.cmStS}>{tail}</span>
+              <span className={styles.cmStV}>{amount}</span>
             </li>
           );
         })}
+        {/* Signed with no schedule: the balance is the one thing to collect. */}
         {!insts.length && state === "collect" ? (
-          <li className={`${styles.mSt} ${styles.mStNext}`}>
-            <span className={styles.mStL}>Balance</span>
-            <span className={styles.mStV}>{money(p.owed)}</span>
+          <li className={`${styles.cmSt} ${styles.cmStNext}`}>
+            <span className={styles.cmStK}>Balance</span>
+            <span className={styles.cmStV}>{money(p.owed)}</span>
+            <span className={styles.cmStFacts}>Next to collect</span>
+            {acts(null)}
           </li>
         ) : null}
-      </ul>
-      {state === "collect" && p.canBill !== false ? (
-        <div className={styles.mPayActs}>
-          {next ? (
-            <button className={`${styles.mPayAct} ${styles.mActPaid}`} type="button" disabled={writing || pending}
-              onClick={() => onMarkPaid(next)}><Icon id="i-check" />Mark paid</button>
-          ) : null}
-          <button className={`${styles.mPayAct} ${styles.mActInv}`} type="button" disabled={writing || pending}
-            onClick={() => onInvoice(next)}><Icon id="i-send" />Invoice</button>
-          <button className={`${styles.mPayAct} ${styles.mActRem}`} type="button" disabled={writing || !p.clientEmail}
-            onClick={() => onRemind(next)}><Icon id="i-bell" />Remind</button>
-        </div>
-      ) : null}
+      </ol>
+      {/* A sales rep or an estimator reads what is left instead of the billing buttons. */}
+      {state === "collect" && p.canBill === false ? <p className={styles.cmLeft}><b>{money(p.owed)}</b> left to collect</p> : null}
       <RowFinancing p={p} />
     </div>
+  );
+}
+
+function CardSend({ p, onSend }: { p: ProposalRow; onSend: () => void }) {
+  const s = sendState(p);
+  if (s === "none") return <span className={styles.cmCellFill} aria-hidden="true" />;
+  if (s === "send") {
+    return (
+      <button className={`${styles.cmCell} ${styles.cmSend}`} type="button" data-row-send="send" onClick={onSend}
+        title={p.clientEmail ? "Send to " + p.clientEmail : "Send to the client"}>
+        <Icon id="i-send" />Send
+      </button>
+    );
+  }
+  // One button (owner, 2026-10-29): Sent and when; on hover or focus it reads Resend. A phone has no hover, so
+  // there both halves show side by side.
+  return (
+    <button className={`${styles.cmCell} ${styles.cmSwap}`} type="button" data-row-send={s} onClick={onSend}
+      title={"Sent " + (p.sentAgo ?? "") + " — send it again" + (p.clientEmail ? " to " + p.clientEmail : "")}
+      aria-label={"Sent " + (p.sentAgo ?? "") + ". Resend"}>
+      <span className={styles.cmSwapSent}><Icon id="i-check" />Sent <small>{p.sentAgo}</small></span>
+      <span className={styles.cmSwapResend}><Icon id="i-send" />Resend</span>
+    </button>
   );
 }
 
@@ -644,7 +714,9 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
       if (ticking) return;
       ticking = true;
       requestAnimationFrame(() => {
-        host.style.setProperty("--gy", `${(-(host.scrollTop * 0.06)).toFixed(1)}px`);
+        // --grid-y is registered non-inheriting (globals.css), so this restyles the scroller and its
+        // grid ::before only, not every row under it.
+        host.style.setProperty("--grid-y", `${(-(host.scrollTop * 0.06)).toFixed(1)}px`);
         ticking = false;
       });
     };
@@ -1162,11 +1234,11 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
           </div>
 
           {/* TABS */}
-          <div className={styles.ptabs}>
+          <div className={styles.ptabs} data-active={tab}>
             <span className={styles.ptabInd} style={{ transform: `translateX(${tabIndex * 100}%)` }} />
             {TABS.map((t) => (
               <button key={t.key} className={`${styles.ptab} ${tab === t.key ? styles.active : ""}`}
-                type="button" aria-current={tab === t.key ? "page" : undefined} onClick={() => setTab(t.key)}>
+                type="button" data-tab={t.key} aria-current={tab === t.key ? "page" : undefined} onClick={() => setTab(t.key)}>
                 {t.label}
                 <span className={styles.ptabCount}>{counts[t.key]}</span>
               </button>
@@ -1244,7 +1316,7 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
                   : "No proposals match this filter."}
               </div>
             ) : (
-              <div className={styles.pledger}>
+              <div className={styles.cmList}>
                 {sliceAll.map((p, i) => {
                   const st = statusPlate(p.status);
                   const c = p.projectId ? chains.get(p.projectId) : undefined;
@@ -1268,51 +1340,55 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
                         </span>
                       </Link>
                     ) : null}
-                    <div className={`${styles.prow} ${styles.rowIn} ${styles.prowTap}${inChain ? " " + styles.prowChain : ""}${last ? " " + styles.prowChainEnd : ""}`} style={{ animationDelay: `${i * 45}ms` }} data-mrow={p.id}
+                    <article className={`${styles.cm} ${styles.rowIn}${inChain ? " " + styles.cmChain : ""}${last ? " " + styles.cmChainEnd : ""}`} style={{ animationDelay: `${i * 45}ms` }} data-mrow={p.id}
                       role="link" tabIndex={0} aria-label={`Open ${p.title}`}
-                      onClick={(e) => openFromTap(e, p.id)} onKeyDown={(e) => { if (e.key === "Enter") router.push(`/dashboard/proposals/${p.id}`); }}>
-                      <div>
-                        {/* The owner only when it is someone else (2026-09-25); no "1mo ago" above the
-                            title (owner, 2026-10-20). */}
+                      onClick={(e) => openFromTap(e, p.id)} onKeyDown={(e) => { if (e.key === "Enter" && e.target === e.currentTarget) router.push(`/dashboard/proposals/${p.id}`); }}>
+                      <div className={styles.cmJob}>
+                        {/* The owner only when it is someone else (2026-09-25). */}
                         {p.mine ? null : (
                           <div className={styles.prowId}>{p.ownerWho ? <Who who={p.ownerWho} compact /> : p.owner}</div>
                         )}
                         <KindMark k={p.kind} />
-                        <div className={styles.prowTitle}>{p.title}</div>
+                        <div className={styles.cmTitle}>{p.title}</div>
+                        {p.client || p.city || (p.projectName && !inChain) ? (
+                          <div className={styles.cmSub}>
+                            {[p.client, p.city].filter(Boolean).join(" · ")}
+                            {p.projectName && !inChain ? <span className={styles.prowProj}> · {p.projectName}</span> : null}
+                          </div>
+                        ) : null}
+                        {/* The client's deck design on this proposal (2026-10-13): where it stands; Open when it came back. */}
+                        {p.clientDesign ? (
+                          <div className={`${styles.prowClient}${p.clientDesign.unseen ? " " + styles.prowClientNew : p.clientDesign.standing === "returned" ? " " + styles.prowClientBack : ""}`} data-client-design={p.clientDesign.standing}>
+                            <Icon id="i-deck" />
+                            <span>{p.clientDesign.line}</span>
+                            {p.clientDesign.draftId ? <Link href={`/dashboard/deck-estimator?draft=${p.clientDesign.draftId}`} onClick={(e) => e.stopPropagation()}>Open design</Link> : null}
+                          </div>
+                        ) : null}
+                        <dl className={styles.cmFacts}>
+                          <div className={styles.cmF}>
+                            <dt>Status</dt>
+                            <dd>
+                              <span className={`${styles.pstatus} ${st.cls ? styles[st.cls] : ""}`}>{st.label}</span>
+                              {p.decided ? <small className={p.status === "DECLINED" ? styles.prowDeclined : styles.prowAccepted}>{p.decided}</small> : null}
+                            </dd>
+                          </div>
+                          <div className={styles.cmF}><dt>Views</dt><dd><Views p={p} /></dd></div>
+                          <div className={styles.cmF}><dt>Updated</dt><dd>{p.updated}</dd></div>
+                        </dl>
                       </div>
-                      <button className={styles.prowOpen} type="button"
-                        aria-label={`Actions for ${p.title}`} onClick={() => setSheetId(p.id)}>
-                        <Icon id="i-dots" />
-                      </button>
-                      {/* Row 2 — who and where, hard left; accepted / declined on its own line under it
-                          (owner, 2026-10-20). */}
-                      <div className={styles.prowWho}>
-                        {[p.client, p.city].filter(Boolean).join(" · ")}
-                        {p.projectName && !inChain ? <span className={styles.prowProj}> · {p.projectName}</span> : null}
-                        {p.decided ? <div className={p.status === "DECLINED" ? styles.prowDeclined : styles.prowAccepted}>{p.decided}</div> : null}
-                      </div>
-                      {/* The client's deck design on this proposal (2026-10-13): where it stands; Open when it came back. */}
-                      {p.clientDesign ? (
-                        <div className={`${styles.prowClient}${p.clientDesign.unseen ? " " + styles.prowClientNew : p.clientDesign.standing === "returned" ? " " + styles.prowClientBack : ""}`} data-client-design={p.clientDesign.standing}>
-                          <Icon id="i-deck" />
-                          <span>{p.clientDesign.line}</span>
-                          {p.clientDesign.draftId ? <Link href={`/dashboard/deck-estimator?draft=${p.clientDesign.draftId}`} onClick={(e) => e.stopPropagation()}>Open design</Link> : null}
-                        </div>
-                      ) : null}
-                      {/* Row 3 — badge leads, price closes at the far right. */}
-                      <div className={styles.prowFoot}>
-                        <span className={`${styles.pstatus} ${st.cls ? styles[st.cls] : ""}`}>{st.label}</span>
-                        <Views p={p} />
-                        <span className={styles.prowMoney}>{money(p.contract ?? p.total)}
-                          {["ACCEPTED", "COMPLETED", "PAID"].includes(p.status) && <small className={styles.paidAmount}>{money(p.paidAmt ?? 0)} paid</small>}
-                        </span>
-                      </div>
-                      <RowSend p={p} onSend={() => openSend(p)} />
-                      <RowPay p={p} writing={writing}
+                      <CardMoney p={p} writing={writing}
                         onMarkPaid={(it) => void runMarkPaid(it.id)}
                         onInvoice={(it) => openInvoice(p, it)}
                         onRemind={(it) => void runReminder(p, it?.id ?? "")} />
-                    </div>
+                      <div className={styles.cmFoot}>
+                        <Link className={`${styles.cmCell} ${styles.cmOpen}`} href={`/dashboard/proposals/${p.id}`}><Icon id="i-file" />Open</Link>
+                        <CardSend p={p} onSend={() => openSend(p)} />
+                        <button className={`${styles.cmCell} ${styles.cmMore}`} type="button"
+                          aria-label={`More actions for ${p.title}`} onClick={() => setSheetId(p.id)}>
+                          <Icon id="i-dots" />
+                        </button>
+                      </div>
+                    </article>
                     </Fragment>
                   );
                 })}
@@ -1601,8 +1677,8 @@ export function MobileProposals({ rows }: { rows?: ProposalRow[] }) {
             </p>
             {invAsk.err ? <p className={styles.psendErr} role="alert">{invAsk.err}</p> : null}
             {([
-              ["card", "i-card", styles.pmiBpSolid, "Card", invOpts?.card ? `Hosted checkout · ${invOpts.cardVia.join(" / ")}` : "No card processor connected — Settings → Payments", !invOpts?.card],
-              ["bank", "i-out", styles.pmiBp, "Bank transfer", invOpts?.bank ? "Your transfer details go in the email" : "Add bank-transfer instructions in Settings → Payments", !invOpts?.bank],
+              ["card", "i-card", styles.pmiBpSolid, "Card", invOpts?.card ? `Hosted checkout · ${invOpts.cardVia.join(" / ")}` : "No card processor connected — Settings → Integrations / Payments", !invOpts?.card],
+              ["bank", "i-out", styles.pmiBp, "Bank transfer", invOpts?.bank ? "Your transfer details go in the email" : "Add bank-transfer instructions in Settings → Integrations / Payments", !invOpts?.bank],
               ["any", "i-send", styles.pmiOkSolid, "Client's choice", "Card or bank — they pick on the page", !(invOpts?.card || invOpts?.bank)],
             ] as const).map(([method, icon, tone, title, sub, off]) => (
               <button key={method} className={styles.pmenuItem} type="button" disabled={writing || !invOpts || off}

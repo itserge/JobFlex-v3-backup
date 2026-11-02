@@ -25,7 +25,8 @@ import { notePaidCall } from "@/lib/trialMeter";
 import { readDeskSettings, saveDeskSettings } from "@/lib/aiDesk/numbers";
 import { db } from "@/lib/db";
 import { toE164 } from "@/lib/phone";
-import { clock, DESK_FORWARDING, DESK_MODES, DESK_PACK, dollars, minutesLeftWords, minutesOf, validTimezone, VOICES, type DeskBalance, type DeskForwarding, type DeskMode, type DeskPackRecord, type DeskVoice } from "@/lib/aiDesk/shared";
+import { cleanLeadCalls, clock, DESK_FORWARDING, DESK_MODES, DESK_PACK, dollars, minutesLeftWords, minutesOf, validTimezone, VOICES, type DeskBalance, type DeskForwarding, type DeskLeadCalls, type DeskMode, type DeskPackRecord, type DeskVoice } from "@/lib/aiDesk/shared";
+import { leadCallReadiness } from "@/lib/aiDesk/leadCalls";
 import { deskBalanceFor, readDeskPacks, setAutoTopUp, settleDeskUse } from "@/lib/aiDesk/minutes";
 import { chargePackOnFile, finishPackCheckout, startPackPurchase, type PackStep } from "@/lib/aiDesk/packs";
 import { ASK_FORMAT, cleanCompose, cleanProfile, COMPOSE_SYSTEM, composePrompt, deskInstructions, EMPTY_PROFILE, gapQuestions, profileFromFacts, withFinancingAnswer, type DeskFaq, type DeskProfile } from "@/lib/aiDesk/profile";
@@ -487,4 +488,23 @@ export async function setDeskAutoTopUp(on: boolean): Promise<DeskActionResult<{ 
   await logActivity({ organizationId, actorId: user.id, kind: TRAIL_KINDS.SETTINGS, summary: packs.autoTopUp ? `Auto top-up on: ${DESK_PACK.minutes} AI desk minutes (${dollars(DESK_PACK.cents)}) when the desk runs out` : "Auto top-up off for the AI desk" });
   revalidatePath(SETTINGS_PATH);
   return { ok: true, autoTopUp: packs.autoTopUp, note: packs.autoTopUp ? "Auto top-up is on." : "Auto top-up is off." };
+}
+
+/**
+ * "Call new leads" (owner, 2026-10-31; lib/aiDesk/leadCalls): on or off, and how long a new lead waits for a person
+ * before the desk calls it. Turning it on asks the same things a call needs — a live desk with its number, the
+ * business written, minutes — so it is never "on" for a desk that cannot dial.
+ */
+export async function setDeskLeadCalls(onRaw: boolean, afterMinutesRaw: number): Promise<DeskActionResult<{ leadCalls: DeskLeadCalls }>> {
+  const { organizationId, user } = await requireManager();
+  const leadCalls = cleanLeadCalls({ on: onRaw === true, afterMinutes: afterMinutesRaw });
+  if (leadCalls.on) {
+    const ready = await leadCallReadiness(organizationId);
+    if (!ready.ok) return { ok: false, error: ready.why };
+  }
+  const current = await readDeskSettings(organizationId);
+  await saveDeskSettings(organizationId, { ...current, leadCalls });
+  await logActivity({ organizationId, actorId: user.id, kind: TRAIL_KINDS.SETTINGS, summary: leadCalls.on ? `The AI desk calls new leads nobody reached within ${leadCalls.afterMinutes} minutes` : "The AI desk no longer calls new leads by itself" });
+  revalidatePath(SETTINGS_PATH);
+  return { ok: true, leadCalls, note: leadCalls.on ? `On. A new lead nobody reached in ${leadCalls.afterMinutes} minutes gets one call from the desk.` : "Off. The desk calls a lead only when someone presses the button on its page." };
 }

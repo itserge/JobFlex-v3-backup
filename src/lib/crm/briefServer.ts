@@ -9,7 +9,8 @@
 import { db } from "@/lib/db";
 import { isEstimatorRole, isSalesRole } from "@/lib/orgContext";
 import { viewerTimeZone } from "@/lib/viewerTz";
-import { addDays, buildBrief, dayKeyTz, startOfDayTz, type BriefInput, type CrmBrief, type ViewerKind } from "./brief";
+import { readLeadCalls } from "@/lib/aiDesk/leadCalls";
+import { addDays, buildBrief, dayKeyTz, startOfDayTz, type BriefInput, type CallRow, type CrmBrief, type ViewerKind } from "./brief";
 
 export const CHECKS_KEY = (organizationId: string, userId: string, dayKey: string) => `crmChecks:${organizationId}:${userId}:${dayKey}`;
 
@@ -99,7 +100,7 @@ export async function readCrmBrief(input: { organizationId: string; userId: stri
       select: { id: true, title: true, total: true, amount: true, sentAt: true, proposalId: true, jobId: true, job: { select: { client: { select: { name: true } } } }, proposal: { select: { client: { select: { name: true } } } } },
       take: 200,
     }),
-    db.aiPhoneCall.findMany({ where: { organizationId, startedAt: { gte: d2 } }, select: { id: true, direction: true, status: true, startedAt: true, summary: true, leadId: true, fromNumber: true, lead: { select: { name: true } } }, take: 200 }),
+    db.aiPhoneCall.findMany({ where: { organizationId, startedAt: { gte: d2 } }, select: { id: true, direction: true, status: true, startedAt: true, summary: true, leadId: true, fromNumber: true, callSid: true, lead: { select: { name: true } } }, take: 200 }),
     db.booking.findMany({ where: { organizationId, OR: [{ createdAt: { gte: d2 } }, { startsAt: { gte: today } }] }, select: { id: true, name: true, serviceLabel: true, startsAt: true, status: true, createdAt: true, appointmentId: true }, take: 200 }),
     db.appointment.findMany({
       where: { organizationId, startsAt: { gte: yesterday, lt: in8 } },
@@ -145,6 +146,22 @@ export async function readCrmBrief(input: { organizationId: string; userId: stri
   const extra = missing.length ? await db.proposal.findMany({ where: { id: { in: [...new Set(missing)] } }, select: { id: true, title: true, client: { select: { name: true } } } }) : [];
   const extraById = new Map(extra.map((p) => [p.id, p]));
 
+  // The desk's own calls to leads (lib/aiDesk/leadCalls): how each went, from the lead's call state — and the visits
+  // booked for leads, any day in the last half year and ahead (2026-10-31).
+  const [deskCalls, leadVisits] = await Promise.all([
+    readLeadCalls([...new Set(calls.flatMap((c) => (c.direction === "OUTBOUND" && c.leadId ? [c.leadId] : [])))]),
+    db.appointment.findMany({ where: { organizationId, leadId: { not: null }, status: { not: "CANCELED" }, startsAt: { gte: d180 } }, select: { leadId: true, startsAt: true, status: true }, take: 2000 }),
+  ]);
+  const deskOutcome = (c: { direction: string; leadId: string | null; callSid: string }): CallRow["desk"] => {
+    if (c.direction !== "OUTBOUND" || !c.leadId) return null;
+    const s = deskCalls.get(c.leadId);
+    // The state is the lead's newest desk call only; an older call reads by its summary.
+    if (!s || s.sid !== c.callSid) return null;
+    if (s.status === "calling" || s.status === "talking") return "calling";
+    if (s.result === "booked") return "booked";
+    return s.result ? "reached" : "missed";
+  };
+
   const briefInput: BriefInput = {
     now,
     tz,
@@ -177,7 +194,8 @@ export async function readCrmBrief(input: { organizationId: string; userId: stri
       return { id: f.id, runAt: f.runAt, proposalId: f.proposalId, clientName: p?.client?.name ?? null, title: p?.title ?? f.note ?? null };
     }),
     changeOrders: changeOrders.map((c) => ({ id: c.id, title: c.title, total: c.total ?? c.amount, sentAt: c.sentAt, proposalId: c.proposalId, jobId: c.jobId, clientName: c.job?.client?.name ?? c.proposal?.client?.name ?? null })),
-    calls: calls.map((c) => ({ id: c.id, direction: c.direction, status: c.status, startedAt: c.startedAt, summary: c.summary, leadId: c.leadId, leadName: c.lead?.name ?? null, fromNumber: c.fromNumber })),
+    calls: calls.map((c) => ({ id: c.id, direction: c.direction, status: c.status, startedAt: c.startedAt, summary: c.summary, leadId: c.leadId, leadName: c.lead?.name ?? null, fromNumber: c.fromNumber, desk: deskOutcome(c) })),
+    leadVisits: leadVisits.flatMap((v) => (v.leadId ? [{ leadId: v.leadId, startsAt: v.startsAt, status: v.status }] : [])),
     bookings,
     appointments: appointments.map((a) => ({
       id: a.id,

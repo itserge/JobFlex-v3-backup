@@ -108,7 +108,7 @@ export async function refreshMerchant(orgId: string): Promise<OrgFinancing> {
 
 const DECIDED_WORDS: Partial<Record<OrgFinancing["state"], string>> = {
   approved: "Wisetack approved your company for monthly payments — turn it on for any proposal.",
-  needs_info: "Wisetack needs a little more for your financing application — finish it in Settings → Payments → Financing.",
+  needs_info: "Wisetack needs a little more for your financing application — finish it in Settings → Integrations / Payments → Financing.",
   declined: "Wisetack didn't approve your financing application — their email says why.",
   paused: "Wisetack paused financing on your account.",
 };

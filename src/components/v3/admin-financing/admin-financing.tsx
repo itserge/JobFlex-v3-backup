@@ -18,7 +18,7 @@ const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-
 const MODES: Array<{ mode: FinancingSwitch["mode"]; label: string; sub: string }> = [
   { mode: "off", label: "Off", sub: "Nobody sees financing." },
   { mode: "pilot", label: "Pilot", sub: "Only the companies listed below." },
-  { mode: "all", label: "Everyone", sub: "Every company sees Settings → Payments → Financing." },
+  { mode: "all", label: "Everyone", sub: "Every company sees Settings → Integrations / Payments → Financing." },
 ];
 const MERCHANT_TONE: Record<string, Tone> = { approved: "ok", started: "wait", review: "wait", needs_info: "wait", declined: "bad", paused: "bad", none: "mute" };
 const MERCHANT_WORD: Record<string, string> = { approved: "Approved", started: "Started", review: "In review", needs_info: "Needs info", declined: "Declined", paused: "Paused", none: "—" };

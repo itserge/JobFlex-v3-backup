@@ -237,7 +237,7 @@ export function DeskBrief({ desk, onWritten, onReview }: { desk: DeskSettingsDat
         ))}
       </nav>
       {/* 1 · what kind of business */}
-      <div className={`${s.sec} ${s.card}`} id="desk-kind" data-desk-business>
+      <div className={`${s.sec} ${s.card}`} id="desk-kind" data-desk-business data-tour="ai-desk:kind">
         <label className={s.h} htmlFor="desk-business">
           {C.kindTitle}
         </label>
@@ -310,7 +310,7 @@ export function DeskBrief({ desk, onWritten, onReview }: { desk: DeskSettingsDat
       </div>
 
       {/* 2 · the business, in their own words → the professional write-up the desk answers from */}
-      <div className={`${s.sec} ${s.card} ${s.describe}`} id="desk-describe" data-desk-describe>
+      <div className={`${s.sec} ${s.card} ${s.describe}`} id="desk-describe" data-desk-describe data-tour="ai-desk:describe">
         <label className={s.h} htmlFor="desk-brief">
           {C.describeTitle}
         </label>

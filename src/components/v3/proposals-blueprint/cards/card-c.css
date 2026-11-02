@@ -1,0 +1,326 @@
+/* All-list card, variant C — "Two-panel dossier". Every rule scoped under .content #allCard[data-card="c"], and
+   every selector carries ≥ 2 classes so the dashboard shell's production reset never ties it.
+
+   Type scale (one role per size):
+     24px / 800  the title — the card's focal point
+     22px / 900  the quote / contract amount (tabular)
+     15px / 500  client · city
+     14px / 600  ledger values, stage amounts 14 / 800
+     13px / 700  actions; 13–13.5px money lines
+     10.5px mono caps  ledger labels and the plate's kicker */
+
+/* ── The table becomes a stack of cards ── */
+.content #allCard[data-card="c"] .ptable thead { display: none; }
+.content #allCard[data-card="c"] .ptable { min-width: 0; }
+.content #allCard[data-card="c"] .ptable tr.prow.cc-row td.cc-td:first-child {
+  position: relative;
+  padding: 0 0 20px;
+  border: 0;
+  background: transparent;
+  vertical-align: top;
+}
+.content #allCard[data-card="c"] .ptable tr.prow.cc-row:hover td.cc-td:first-child { background: transparent; }
+
+/* Project chain: cards indent under the project header on a blueprint rail with a flat square joint. */
+.content #allCard[data-card="c"] .ptable tr.prow--chain.cc-row td.cc-td:first-child { padding-left: 30px; }
+.content #allCard[data-card="c"] .ptable tr.prow--chain.cc-row td.cc-td:first-child::before {
+  content: ""; position: absolute; left: 11px; top: -10px; bottom: 0; width: 2px; height: auto; margin: 0;
+  border: 0; border-radius: 0; opacity: 1;
+  background: color-mix(in srgb, var(--blueprint) 40%, transparent);
+}
+.content #allCard[data-card="c"] .ptable tr.prow--chain-end.cc-row td.cc-td:first-child::before { bottom: auto; height: 42px; }
+.content #allCard[data-card="c"] .ptable tr.prow--chain.cc-row td.cc-td:first-child::after {
+  content: ""; position: absolute; left: 6px; top: 26px; width: 12px; height: 12px; margin: 0;
+  border: 2px solid var(--blueprint); border-radius: 0; background: var(--paper-deep);
+}
+.content #allCard[data-card="c"] .ptable tr.prow-grp td { padding: 20px 2px 10px; }
+
+/* ── The card ── */
+.content #allCard[data-card="c"] .cc-wrap { container: cc / inline-size; }
+.content #allCard[data-card="c"] .cc-wrap .cc {
+  --cc-plate: color-mix(in srgb, var(--blueprint) 6%, var(--paper-deep));
+  --cc-rule: var(--ink-line);
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(330px, 2fr);
+  grid-template-areas: "job money" "foot foot";
+  margin: 0;
+  border: 2px solid var(--ink);
+  background: var(--paper-deep);
+  font-family: var(--font-sans);
+  color: var(--ink);
+  transition: background 0.15s;
+}
+.content #allCard[data-card="c"] .prow.is-leaving .cc { background: var(--danger-soft); }
+
+/* ── LEFT: the job ── */
+.content #allCard[data-card="c"] .cc .cc-job {
+  grid-area: job;
+  display: flex; flex-direction: column; align-items: flex-start;
+  min-width: 0;
+  padding: 22px 24px 20px;
+}
+.content #allCard[data-card="c"] .cc .pkind { margin: 0 0 8px; font-size: 13px; }
+.content #allCard[data-card="c"] .cc .pkind b { font-weight: 700; }
+.content #allCard[data-card="c"] .cc .cc-title {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;
+  max-width: 46ch;
+  font-size: 24px; font-weight: 800; line-height: 1.16; letter-spacing: -0.015em;
+  color: var(--ink); text-decoration: none; overflow-wrap: anywhere;
+}
+.content #allCard[data-card="c"] .cc .cc-title:hover,
+.content #allCard[data-card="c"] .cc-row:hover .cc .cc-title { color: var(--blueprint); }
+.content #allCard[data-card="c"] .cc .cc-title:hover { text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 2px; }
+.content #allCard[data-card="c"] .cc .cc-title:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 3px; }
+.content #allCard[data-card="c"] .cc .cc-sub { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin-top: 6px; font-size: 15px; font-weight: 500; line-height: 1.35; color: var(--ink-soft); overflow-wrap: anywhere; }
+.content #allCard[data-card="c"] .cc .pt-cd { margin-top: 12px; font-size: 13px; padding: 5px 10px 5px 8px; }
+
+/* The ledger: label over value, one ruled row of four, a second row when there is more to say. */
+.content #allCard[data-card="c"] .cc .cc-facts {
+  align-self: stretch;
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  row-gap: 14px;
+  margin: 20px 0 0; padding: 14px 0 0;
+  border-top: 1.5px solid var(--ink);
+}
+.content #allCard[data-card="c"] .cc .cc-f { min-width: 0; padding: 0 12px; border-left: 1px solid var(--cc-rule); }
+.content #allCard[data-card="c"] .cc .cc-f:nth-child(4n + 1) { padding-left: 0; border-left: 0; }
+.content #allCard[data-card="c"] .cc .cc-f dt {
+  margin: 0 0 7px;
+  font: 700 10.5px/1.2 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.content #allCard[data-card="c"] .cc .cc-f dd {
+  margin: 0;
+  font-size: 14px; font-weight: 600; line-height: 1.3; color: var(--ink);
+  font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+}
+.content #allCard[data-card="c"] .cc .cc-f .pstatus { max-width: 100%; font-size: 10.5px; padding: 4px 8px; white-space: normal; line-height: 1.5; }
+.content #allCard[data-card="c"] .cc .cc-f .pt-views {
+  display: inline-flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
+  min-width: 0; padding: 0; border: 0; background: transparent; color: var(--ink);
+  font-family: var(--font-sans); white-space: normal;
+}
+.content #allCard[data-card="c"] .cc .cc-f .pt-views b { font: 800 15px/1.2 var(--font-sans); font-variant-numeric: tabular-nums; }
+.content #allCard[data-card="c"] .cc .cc-f .pt-views i {
+  font: 500 13px/1.2 var(--font-sans); letter-spacing: 0; text-transform: none; color: var(--ink-muted); opacity: 1;
+}
+.content #allCard[data-card="c"] .cc .cc-f .pt-views--seen b { color: var(--blueprint); }
+.content #allCard[data-card="c"] .cc .cc-f .pt-views--none b,
+.content #allCard[data-card="c"] .cc .cc-f .pt-views--none i { color: var(--warning-dark); }
+.content #allCard[data-card="c"] .cc .cc-f .pt-views--na { color: var(--ink-faint); }
+.content #allCard[data-card="c"] .cc .cc-co.cc-co--wait { color: var(--warning-dark); font-weight: 700; }
+.content #allCard[data-card="c"] .cc .cc-f .who { max-width: 100%; }
+
+/* ── RIGHT: the money plate ── */
+.content #allCard[data-card="c"] .cc .cc-money {
+  grid-area: money;
+  display: flex; flex-direction: column;
+  min-width: 0;
+  padding: 22px 22px 20px;
+  border-left: 2px solid var(--ink);
+  background: var(--cc-plate);
+}
+.content #allCard[data-card="c"] .cc .cc-mk {
+  font: 700 10.5px/1.2 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-muted);
+}
+.content #allCard[data-card="c"] .cc .cc-amt {
+  margin-top: 6px;
+  font-size: 22px; font-weight: 900; line-height: 1.1; letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums; color: var(--ink); overflow-wrap: anywhere;
+}
+.content #allCard[data-card="c"] .cc .cc-money--declined .cc-amt { color: var(--ink-muted); }
+.content #allCard[data-card="c"] .cc .cc-money--calm .cc-calm {
+  margin: 12px 0 0; padding-top: 12px; border-top: 1px solid var(--cc-rule);
+  font-size: 13.5px; font-weight: 600; color: var(--ink-muted);
+}
+
+/* Paid-vs-contract track; the ticks are where one stage ends and the next begins. */
+.content #allCard[data-card="c"] .cc .cc-bar {
+  position: relative; height: 10px; margin-top: 14px;
+  border: 1.5px solid var(--ink); background: var(--paper-deep);
+}
+.content #allCard[data-card="c"] .cc .cc-bar > span { display: block; height: 100%; background: var(--blueprint); }
+.content #allCard[data-card="c"] .cc .cc-bar--low > span { background: var(--danger); }
+.content #allCard[data-card="c"] .cc .cc-bar--part > span { background: var(--warning); }
+.content #allCard[data-card="c"] .cc .cc-bar--full > span { background: var(--success); }
+.content #allCard[data-card="c"] .cc .cc-bar--plan { border-color: var(--ink-line); }
+.content #allCard[data-card="c"] .cc .cc-bar--plan .cc-tick { background: var(--ink-muted); }
+.content #allCard[data-card="c"] .cc .cc-bar .cc-tick {
+  position: absolute; top: -4px; bottom: -4px; width: 1.5px; margin-left: -0.75px; background: var(--ink);
+}
+
+.content #allCard[data-card="c"] .cc .cc-line {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  margin-top: 8px;
+  font-size: 13.5px; font-weight: 600; color: var(--ink-soft); font-variant-numeric: tabular-nums;
+}
+.content #allCard[data-card="c"] .cc .cc-line b { font-weight: 800; color: var(--ink); }
+.content #allCard[data-card="c"] .cc .cc-line .cc-line-r { text-align: right; }
+.content #allCard[data-card="c"] .cc .cc-line .cc-due b { color: var(--warning-dark); }
+.content #allCard[data-card="c"] .cc .cc-line.cc-line--ok > span:first-child {
+  display: inline-flex; align-items: center; gap: 6px; font-weight: 800; color: var(--success-dark);
+}
+.content #allCard[data-card="c"] .cc .cc-line.cc-line--ok .ic { width: 14px; height: 14px; }
+
+/* The stages, a compact ledger. */
+.content #allCard[data-card="c"] .cc .cc-stages { margin: 14px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--cc-rule); }
+.content #allCard[data-card="c"] .cc .cc-st {
+  display: grid; grid-template-columns: 16px minmax(0, 1fr) auto auto; align-items: baseline; column-gap: 8px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--cc-rule);
+  font-size: 13.5px; line-height: 1.3;
+}
+.content #allCard[data-card="c"] .cc .cc-st-m { align-self: center; display: inline-flex; justify-content: center; }
+.content #allCard[data-card="c"] .cc .cc-st-m .ic { width: 14px; height: 14px; }
+.content #allCard[data-card="c"] .cc .cc-st .cc-dot { display: block; width: 8px; height: 8px; border: 1.5px solid var(--ink-muted); }
+.content #allCard[data-card="c"] .cc .cc-st-k { min-width: 0; font-weight: 700; color: var(--ink); overflow-wrap: anywhere; }
+.content #allCard[data-card="c"] .cc .cc-st-k em { margin-left: 6px; font-style: normal; font-weight: 500; color: var(--ink-muted); }
+.content #allCard[data-card="c"] .cc .cc-st-s { font-size: 12.5px; font-weight: 500; color: var(--ink-muted); white-space: nowrap; text-align: right; }
+.content #allCard[data-card="c"] .cc .cc-st-v { font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; color: var(--ink); }
+.content #allCard[data-card="c"] .cc .cc-st--paid .cc-st-m,
+.content #allCard[data-card="c"] .cc .cc-st--paid .cc-st-s,
+.content #allCard[data-card="c"] .cc .cc-st--paid .cc-st-v { color: var(--success-dark); }
+.content #allCard[data-card="c"] .cc .cc-st--closed .cc-st-v { text-decoration: line-through; color: var(--ink-muted); }
+
+/* The stage being chased: a white framed block with a blue (red when late) edge, its facts, then the actions. */
+.content #allCard[data-card="c"] .cc .cc-st.cc-st--next {
+  grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px;
+  margin: 8px 0; padding: 12px 14px 14px 16px;
+  border: 1.5px solid var(--ink);
+  box-shadow: inset 4px 0 0 var(--blueprint);
+  background: var(--paper-deep);
+}
+.content #allCard[data-card="c"] .cc .cc-st--next .cc-st-k { font-size: 14px; }
+.content #allCard[data-card="c"] .cc .cc-st--next .cc-st-v { font-size: 18px; font-weight: 900; color: var(--blueprint); overflow-wrap: anywhere; }
+.content #allCard[data-card="c"] .cc .cc-st--next .cc-st-facts {
+  grid-column: 1 / -1;
+  font-size: 13px; font-weight: 600; color: var(--ink-soft);
+}
+.content #allCard[data-card="c"] .cc .cc-st--next.is-late { box-shadow: inset 4px 0 0 var(--danger); }
+.content #allCard[data-card="c"] .cc .cc-st--next.is-late .cc-st-v,
+.content #allCard[data-card="c"] .cc .cc-st--next.is-late .cc-st-facts { color: var(--danger); }
+
+/* Mark paid (the one filled action) across, Send invoice and Remind under it. */
+.content #allCard[data-card="c"] .cc .cc-st--next .ppl-acts {
+  grid-column: 1 / -1;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px;
+  width: auto; max-width: none; margin: 10px 0 0;
+}
+.content #allCard[data-card="c"] .cc .ppl-act {
+  width: 100%; min-width: 0; min-height: 44px; height: auto; justify-content: center; gap: 7px; padding: 4px 8px;
+  border: 1.5px solid; border-radius: var(--radius);
+  font: 700 13px/1.15 var(--font-sans); text-align: center; white-space: normal;
+}
+.content #allCard[data-card="c"] .cc .ppl-act .ic { width: 14px; height: 14px; }
+.content #allCard[data-card="c"] .cc .ppl-act--paid {
+  grid-column: 1 / -1; background: var(--success); border-color: var(--success); color: var(--paper-deep);
+}
+.content #allCard[data-card="c"] .cc .ppl-act--paid:hover:not(:disabled) { background: var(--success-dark); }
+.content #allCard[data-card="c"] .cc .ppl-act--inv { background: var(--paper-deep); border-color: var(--blueprint); color: var(--blueprint); }
+.content #allCard[data-card="c"] .cc .ppl-act--inv:hover:not(:disabled) { background: var(--accent-soft); }
+.content #allCard[data-card="c"] .cc .ppl-act--rem { background: var(--paper-deep); border-color: var(--warning); color: var(--warning-dark); }
+.content #allCard[data-card="c"] .cc .ppl-act--rem:hover:not(:disabled) { background: var(--warning-soft); }
+.content #allCard[data-card="c"] .cc .ppl-act:disabled { opacity: 0.45; cursor: not-allowed; }
+.content #allCard[data-card="c"] .cc .ppl-act:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+.content #allCard[data-card="c"] .cc .ppl-act.is-flashed { color: var(--paper-deep); background: var(--success); border-color: var(--success); }
+
+.content #allCard[data-card="c"] .cc .cc-left { margin: 10px 0 0; font-size: 13.5px; font-weight: 600; color: var(--ink-soft); }
+.content #allCard[data-card="c"] .cc .cc-left b { color: var(--warning-dark); font-weight: 800; }
+
+/* Financing: one ruled line at the plate's foot. */
+.content #allCard[data-card="c"] .cc .ppl-fin {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
+  margin: 12px 0 0; padding: 0;
+}
+.content #allCard[data-card="c"] .cc .ppl-fin .ppl-note {
+  display: inline-flex; align-items: flex-start; gap: 6px; margin: 0;
+  font-size: 12.5px; font-weight: 600; line-height: 1.35; color: var(--ink-soft); text-align: left;
+}
+.content #allCard[data-card="c"] .cc .ppl-fin .ppl-note .ic { flex: none; width: 14px; height: 14px; margin-top: 1px; }
+.content #allCard[data-card="c"] .cc .ppl-fin .ppl-act { width: auto; border-color: var(--ink); background: var(--paper-deep); color: var(--ink); }
+.content #allCard[data-card="c"] .cc .ppl-fin .ppl-act:hover { background: var(--accent-soft); }
+
+/* ── FOOT: one ruled bar of cells; Open the blue cell, Delete apart at the far end ── */
+.content #allCard[data-card="c"] .cc .cc-foot {
+  grid-area: foot;
+  display: flex; flex-wrap: wrap; align-items: stretch;
+  border-top: 2px solid var(--ink);
+  background: var(--paper-deep);
+}
+.content #allCard[data-card="c"] .cc .cc-foot .cc-c,
+.content #allCard[data-card="c"] .cc .cc-foot .pact {
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 44px; padding: 0 16px; margin: 0;
+  border: 0; border-right: 1px solid var(--cc-rule); border-radius: 0;
+  background: transparent; color: var(--ink);
+  font: 700 13px/1 var(--font-sans); letter-spacing: 0; text-transform: none; text-decoration: none; white-space: nowrap;
+  box-shadow: none; transform: none; cursor: pointer;
+  transition: background 0.12s;
+}
+.content #allCard[data-card="c"] .cc .cc-foot .ic { width: 14px; height: 14px; flex: none; }
+.content #allCard[data-card="c"] .cc .cc-foot .pact span,
+.content #allCard[data-card="c"] .cc .cc-foot .pact small { display: inline; }
+.content #allCard[data-card="c"] .cc .cc-foot .cc-c:hover,
+.content #allCard[data-card="c"] .cc .cc-foot .pact:hover { background: var(--accent-soft); transform: none; box-shadow: none; }
+.content #allCard[data-card="c"] .cc .cc-foot .cc-c:focus-visible,
+.content #allCard[data-card="c"] .cc .cc-foot .pact:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -3px; }
+.content #allCard[data-card="c"] .cc .cc-foot .cc-c.cc-c--open {
+  padding: 0 22px; background: var(--blueprint); color: var(--paper-deep); border-right-color: var(--ink);
+  font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;
+}
+.content #allCard[data-card="c"] .cc .cc-foot .cc-c.cc-c--open:hover { background: var(--blueprint-dark); }
+.content #allCard[data-card="c"] .cc .cc-foot .pact.pact--send { background: var(--success); color: var(--paper-deep); }
+.content #allCard[data-card="c"] .cc .cc-foot .pact.pact--send:hover { background: var(--success-dark); }
+/* Sent ⇄ Resend: one cell, two faces stacked so it keeps its width — Sent and when in green; on hover or focus the
+   cell goes blueprint blue and reads Resend; on touch, pressing it does the same. Resend never shows beside Sent. */
+.content #allCard[data-card="c"] .cc .cc-foot .pact.pact--swap { display: inline-grid; grid-template-columns: auto; color: var(--success-dark); }
+.content #allCard[data-card="c"] .cc .cc-foot .pact.pact--swap > .pswap { grid-area: 1 / 1; display: inline-flex; align-items: baseline; gap: 6px; transition: opacity 0.12s; }
+.content #allCard[data-card="c"] .cc .cc-foot .pact.pact--swap > .pswap .ic { align-self: center; }
+.content #allCard[data-card="c"] .cc .cc-foot .pact.pact--swap > .pswap--resend { opacity: 0; justify-content: center; }
+.content #allCard[data-card="c"] .cc .cc-foot .pact.pact--swap small { font: 500 12.5px/1 var(--font-sans); color: var(--ink-muted); }
+.content #allCard[data-card="c"] .cc .cc-foot .pact.pact--swap:hover,
+.content #allCard[data-card="c"] .cc .cc-foot .pact.pact--swap:focus-visible { background: var(--blueprint); color: var(--paper-deep); }
+.content #allCard[data-card="c"] .cc .cc-foot .pact.pact--swap:hover > .pswap--sent,
+.content #allCard[data-card="c"] .cc .cc-foot .pact.pact--swap:focus-visible > .pswap--sent { opacity: 0; }
+.content #allCard[data-card="c"] .cc .cc-foot .pact.pact--swap:hover > .pswap--resend,
+.content #allCard[data-card="c"] .cc .cc-foot .pact.pact--swap:focus-visible > .pswap--resend { opacity: 1; }
+.content #allCard[data-card="c"] .cc .cc-foot .pact.pact--swap:active { background: var(--blueprint); color: var(--paper-deep); }
+.content #allCard[data-card="c"] .cc .cc-foot .pact.pact--swap:active > .pswap--sent { opacity: 0; }
+.content #allCard[data-card="c"] .cc .cc-foot .pact.pact--swap:active > .pswap--resend { opacity: 1; }
+.content #allCard[data-card="c"] .cc .cc-foot .cc-c.cc-c--del {
+  margin-left: auto; border-right: 0; border-left: 1px solid var(--cc-rule); color: var(--danger);
+}
+.content #allCard[data-card="c"] .cc .cc-foot .cc-c.cc-c--del:hover { background: var(--danger-soft); }
+
+/* ── Narrow sheet (the 1024 desk): the plate drops under the job as a full-width band — the amount and its track on
+   the left, the stages on the right — and the action bar drops its icons so its cells stay on one line. ── */
+@container cc (max-width: 780px) {
+  .content #allCard[data-card="c"] .cc-wrap .cc {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "job" "money" "foot";
+  }
+  .content #allCard[data-card="c"] .cc .cc-money {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); column-gap: 28px; align-items: start;
+    border-left: 0; border-top: 2px solid var(--ink);
+  }
+  .content #allCard[data-card="c"] .cc .cc-money > .cc-sum { grid-column: 1; grid-row: 1 / span 3; }
+  .content #allCard[data-card="c"] .cc .cc-money > .cc-stages,
+  .content #allCard[data-card="c"] .cc .cc-money > .ppl-fin,
+  .content #allCard[data-card="c"] .cc .cc-money > .cc-left { grid-column: 2; }
+  .content #allCard[data-card="c"] .cc .cc-money > .cc-stages { margin-top: 0; }
+  .content #allCard[data-card="c"] .cc .cc-money.cc-money--calm {
+    display: flex; flex-flow: row wrap; align-items: baseline; column-gap: 20px; padding-block: 16px;
+  }
+  .content #allCard[data-card="c"] .cc .cc-money--calm .cc-mk { flex-basis: 100%; }
+  .content #allCard[data-card="c"] .cc .cc-money--calm .cc-calm { margin: 0; padding: 0; border: 0; }
+  .content #allCard[data-card="c"] .cc .cc-foot .cc-c,
+  .content #allCard[data-card="c"] .cc .cc-foot .pact { padding: 0 11px; font-size: 12.5px; }
+  .content #allCard[data-card="c"] .cc .cc-foot .cc-c.cc-c--open { padding: 0 16px; }
+  .content #allCard[data-card="c"] .cc .cc-foot .ic { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .content #allCard[data-card="c"] .cc-wrap .cc,
+  .content #allCard[data-card="c"] .cc .cc-foot .cc-c,
+  .content #allCard[data-card="c"] .cc .ppl-act { transition: none; }
+}

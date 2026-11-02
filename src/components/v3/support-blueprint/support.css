@@ -413,6 +413,21 @@
 .jf-support .sup-msg-body p + p {
   margin-top: 8px;
 }
+/* Cards in our answer (2026-10-29, lib/support/replyCards): an offer in blue, a note in ink. */
+.jf-support .sup-msg-body .sup-card {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0;
+  padding: 12px 14px;
+  border: 2px solid var(--ink);
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.jf-support .sup-msg-body .sup-card b { font-size: 15px; font-weight: 800; line-height: 1.3; }
+.jf-support .sup-msg-body .sup-card p { margin: 0; }
+.jf-support .sup-msg-body .sup-card--offer { border-color: #1854a0; background: #eef4fc; box-shadow: 3px 3px 0 #1854a0; }
+.jf-support .sup-msg-body .sup-card--offer b { color: #10223d; }
 
 /* ── The reply box, and the form's fields ────────────────────────────────── */
 .jf-support .sup-chat .sup-compose {

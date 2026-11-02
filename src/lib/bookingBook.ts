@@ -133,7 +133,7 @@ export async function deskAvailabilityFor(org: OrgRow, service: BookingService, 
   return { mode: "reserved", days };
 }
 
-async function emailCustomer(org: OrgRow, to: string | null | undefined, doc: Omit<EmailDoc, "lockup" | "footer">): Promise<boolean> {
+export async function emailCustomer(org: OrgRow, to: string | null | undefined, doc: Omit<EmailDoc, "lockup" | "footer">): Promise<boolean> {
   if (!to) return false;
   try {
     const name = org.name ?? "Your contractor";
@@ -155,10 +155,14 @@ export interface NewBooking {
   address?: string | null;
   notes?: string | null;
   answers: Array<{ key: string; label: string; value: string }>;
-  /** Who booked: the customer on the booking page (default) or the AI desk on a call. */
-  channel?: "online" | "ai-desk";
+  /** Who booked: the customer on the booking page (default), the AI desk on a call, or SmartBook with a new lead. */
+  channel?: "online" | "ai-desk" | "smartbook";
   /** The desk's call, kept with the visit so the calendar can point back to it. */
   callSid?: string | null;
+  /** SmartBook: the lead the visit is for (it already exists — no client match, no new lead). */
+  leadId?: string | null;
+  /** SmartBook: the company said yes to this exact time, so it is booked even outside the open slots. */
+  confirmed?: boolean;
 }
 
 export interface BookingReceipt {
@@ -186,11 +190,16 @@ export async function createBooking(org: OrgRow, input: NewBooking, now = new Da
   if (!service) return { ok: false, error: "That service is no longer offered online." };
   const startsAt = new Date(input.startsAtISO);
   if (!Number.isFinite(startsAt.getTime())) return { ok: false, error: "Pick a time." };
-  const channel = input.channel === "ai-desk" ? "ai-desk" : "online";
+  const channel = input.channel === "ai-desk" || input.channel === "smartbook" ? input.channel : "online";
   const desk = channel === "ai-desk";
-  // The desk books from its own hours (open hours, or only what was reserved); the booking page from the open hours.
-  const days: DeskDaySlots[] = desk ? (await deskAvailabilityFor(org, service, now)).days : (await availabilityFor(org, service, now)).map((d) => ({ ...d, slots: d.slots.map((x) => ({ ...x, userId: null, windowId: "" })) }));
-  const slot = days.flatMap((d) => d.slots).find((s) => s.startsAt.getTime() === startsAt.getTime());
+  const smart = channel === "smartbook";
+  // SmartBook books onto the lead it is talking with (lib/smartbook, 2026-10-31).
+  const ownLead = smart && input.leadId ? await db.lead.findFirst({ where: { id: input.leadId, organizationId: org.id }, select: { id: true } }) : null;
+  if (smart && !ownLead) return { ok: false, error: "That lead is no longer on file." };
+  // The desk and SmartBook book from the desk's hours (open hours, or only what was reserved); the booking page from
+  // the open hours. A time the company confirmed by name is booked as it stands.
+  const days: DeskDaySlots[] = smart && input.confirmed ? [] : desk || smart ? (await deskAvailabilityFor(org, service, now)).days : (await availabilityFor(org, service, now)).map((d) => ({ ...d, slots: d.slots.map((x) => ({ ...x, userId: null, windowId: "" })) }));
+  const slot = smart && input.confirmed ? { startsAt, endsAt: new Date(startsAt.getTime() + service.minutes * 60000), userId: null, windowId: "" } : days.flatMap((d) => d.slots).find((s) => s.startsAt.getTime() === startsAt.getTime());
   if (!slot) return { ok: false, error: "That time was just taken — please pick another." };
   // A person's reserved hours: the visit is theirs — on their calendar (assigned, or made in their name when they have
   // no crew profile), and in the text the office gets.
@@ -200,7 +209,7 @@ export async function createBooking(org: OrgRow, input: NewBooking, now = new Da
   const phone = input.phone?.trim() || null;
   // A caller is matched by their number (the desk rarely has an email); a web
   // booking only by email — a number typed into a form proves nothing.
-  const client = (email ? await clientByEmail(org.id, email) : null) ?? (desk && phone ? await clientByPhone(org.id, phone) : null);
+  const client = smart ? null : (email ? await clientByEmail(org.id, email) : null) ?? (desk && phone ? await clientByPhone(org.id, phone) : null);
   const knownLead = !client && desk && phone ? await openLeadByPhone(org.id, phone) : null;
   const memberPlan = client ? await db.servicePlan.findFirst({ where: { organizationId: org.id, clientId: client.id, status: "ACTIVE" }, select: { name: true } }) : null;
   const member = !!memberPlan;
@@ -210,7 +219,7 @@ export async function createBooking(org: OrgRow, input: NewBooking, now = new Da
   let manageToken = "";
   let bookedAppointmentId: string | null = null;
   await db.$transaction(async (tx) => {
-    let leadId: string | null = knownLead?.id ?? null;
+    let leadId: string | null = knownLead?.id ?? ownLead?.id ?? null;
     // A caller with an open lead: what the desk learned on this call joins what the lead already says.
     if (knownLead) {
       const cur = await tx.lead.findUnique({ where: { id: knownLead.id }, select: { scope: true, description: true, email: true } });
@@ -251,19 +260,19 @@ export async function createBooking(org: OrgRow, input: NewBooking, now = new Da
     const marker: AptSource = { channel, callSid: desk ? input.callSid?.trim().slice(0, 64) || null : null, at: now.toISOString() };
     await tx.syncState.upsert({ where: { key: aptSourceKey(appt.id) }, create: { key: aptSourceKey(appt.id), cursor: JSON.stringify(marker) }, update: { cursor: JSON.stringify(marker) } });
     const tail = member ? " · member" : knownLead ? " · lead on file" : leadId ? " · new lead" : "";
-    const summary = desk ? `The AI desk booked ${input.name} for ${service.label.toLowerCase()} on a call — ${when}${tail}` : `${input.name} booked ${service.label.toLowerCase()} — ${when}${tail}`;
+    const summary = desk ? `The AI desk booked ${input.name} for ${service.label.toLowerCase()} on a call — ${when}${tail}` : smart ? `SmartBook booked ${input.name} for ${service.label.toLowerCase()} — ${when}` : `${input.name} booked ${service.label.toLowerCase()} — ${when}${tail}`;
     await tx.activityEvent.create({ data: { organizationId: org.id, kind: "BOOKING_NEW", clientId: client?.id ?? null, leadId, summary, meta: JSON.stringify({ href: "/dashboard/booking", appointmentId: appt.id, channel }) } });
   });
   // The office hears about it by text (2026-09-29): "Booked: … · online."
   // A desk booking says so: "Booked: … · by the AI desk."
   if (bookedAppointmentId) {
     const id = bookedAppointmentId;
-    afterResponse(() => textAppointmentBooked(id, null, desk ? "the AI desk" : "online"));
+    afterResponse(() => textAppointmentBooked(id, null, desk ? "the AI desk" : smart ? "SmartBook" : "online"));
   }
   // And by email (owner, 2026-10-28): a booking from the page mails every office member who keeps "Booked online"
   // on — the Blueprint office mail (email/build/operator → buildBookedOnline), after the response like the text.
   if (bookedAppointmentId && !desk) {
-    const href = `${await appBaseUrl()}/dashboard/booking`;
+    const href = smart && ownLead ? `${await appBaseUrl()}/dashboard/leads/${ownLead.id}` : `${await appBaseUrl()}/dashboard/booking`;
     afterResponse(() =>
       sendToMembersByPref(
         org.id,
@@ -281,6 +290,7 @@ export async function createBooking(org: OrgRow, input: NewBooking, now = new Da
           notes: input.notes?.trim() || null,
           who: member ? "member" : client ? "client" : "lead",
           href,
+          ...(smart ? { via: "smartbook" as const } : {}),
         }),
       ).then(() => undefined),
     );
@@ -305,14 +315,15 @@ export async function bookingByToken(token: string) {
   return db.booking.findUnique({ where: { manageToken: token }, include: { organization: { select: ORG_SELECT }, appointment: { select: { id: true, status: true } } } });
 }
 
-export async function rescheduleBooking(token: string, startsAtISO: string, now = new Date()): Promise<{ ok: boolean; error?: string; when?: string }> {
+/** `checked`: SmartBook moved it to a time it found open in the desk's hours (or the company confirmed) — no second look. */
+export async function rescheduleBooking(token: string, startsAtISO: string, now = new Date(), opts: { checked?: boolean } = {}): Promise<{ ok: boolean; error?: string; when?: string }> {
   const b = await bookingByToken(token);
   if (!b || b.status === "CANCELED") return { ok: false, error: "This visit can no longer be changed." };
   const settings = settingsOf(b.organization);
   const service = settings.services.find((s) => s.key === b.serviceKey) ?? { key: b.serviceKey, label: b.serviceLabel, kind: "other" as const, minutes: b.minutes, priceText: "", trade: "" };
   const startsAt = new Date(startsAtISO);
-  const days = await availabilityFor(b.organization, service, now);
-  const slot = days.flatMap((d) => d.slots).find((s) => s.startsAt.getTime() === startsAt.getTime());
+  const days = opts.checked ? [] : await availabilityFor(b.organization, service, now);
+  const slot = opts.checked && Number.isFinite(startsAt.getTime()) ? { startsAt, endsAt: new Date(startsAt.getTime() + b.minutes * 60000) } : days.flatMap((d) => d.slots).find((s) => s.startsAt.getTime() === startsAt.getTime());
   if (!slot) return { ok: false, error: "That time is not open — pick another." };
   const tz = b.organization.timezone || "America/New_York";
   const when = slotLabel(slot, tz, settings.arrivalWindow);

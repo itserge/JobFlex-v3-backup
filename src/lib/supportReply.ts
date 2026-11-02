@@ -9,6 +9,8 @@
 // to the customer, the customer's reply to the support inbox — with the
 // message, a short history and an "Open conversation" button on the ticket.
 
+import { replyBlocks, replyPlainText } from "./support/replyCards";
+
 export const REPLY_LIMITS = { min: 2, body: 4000 } as const;
 
 export const MESSAGE_FROM = ["customer", "team", "ai"] as const;
@@ -140,7 +142,8 @@ export function conversationLetter(input: {
 }): ConversationLetter {
   const { message, ticket } = input;
   const toCustomer = input.to === "customer";
-  const paras = paragraphsOf(message.body);
+  // Paragraphs, and the cards an answer may carry ("[offer]" / "[note]", lib/support/replyCards) — only in our letters.
+  const blocks = toCustomer ? replyBlocks(message.body) : paragraphsOf(message.body).map((text) => ({ kind: "text" as const, text }));
   // The team and the AI sign as the team on one line; a person signs over the team.
   const sender = message.by.trim();
   const team = message.from === "ai" || !sender || /jobflex/i.test(sender);
@@ -170,7 +173,14 @@ export function conversationLetter(input: {
     '<div style="max-width:560px;margin:0 auto;padding:28px 20px;">',
     input.replyByEmail ? `<p style="margin:0 0 20px;font:11px/1.4 ${FONT};color:#9a9a9a;">${esc(REPLY_ABOVE)}</p>` : "",
     head ? `<p style="margin:0 0 14px;font:600 13px/1.5 ${FONT};color:#1a1a1a;">${esc(head)}</p>` : "",
-    ...paras.map((x) => `<p ${P}>${br(x)}</p>`),
+    ...blocks.map((b) =>
+      b.kind === "text"
+        ? `<p ${P}>${br(b.text)}</p>`
+        : `<div style="margin:4px 0 20px;padding:16px 18px;border:2px solid ${b.kind === "offer" ? "#1854a0" : "#0a0a0a"};border-radius:3px;background:${b.kind === "offer" ? "#eef4fc" : "#f6f4ef"};">` +
+          `<div style="margin:0 0 6px;font:800 16px/1.3 ${FONT};color:${b.kind === "offer" ? "#10223d" : "#0a0a0a"};">${esc(b.title)}</div>` +
+          (b.text ? `<div style="font:15px/1.55 ${FONT};color:#1a1a1a;">${br(b.text)}</div>` : "") +
+          "</div>",
+    ),
     toCustomer
       ? `<p style="margin:24px 0 0;font:15px/1.5 ${FONT};color:#1a1a1a;">${esc(signName)}<br><span style="color:#6a6a6a;">${esc(signLine)}</span></p>`
       : "",
@@ -197,7 +207,7 @@ export function conversationLetter(input: {
   const text = [
     input.replyByEmail ? REPLY_ABOVE : "",
     head,
-    ...paras,
+    toCustomer ? replyPlainText(message.body) : paragraphsOf(message.body).join("\n\n"),
     toCustomer ? `${signName}\n${signLine}` : "",
     input.link ? `Open conversation: ${input.link}` : "",
     [replyLine, where].filter(Boolean).join(" "),

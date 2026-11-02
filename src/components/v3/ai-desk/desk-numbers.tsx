@@ -379,7 +379,7 @@ export function DeskNumbers({ desk, registration, onNumber }: { desk: DeskSettin
       </div>
 
       {/* how customers reach the desk */}
-      <div className={s.sec} role="radiogroup" aria-label={C.forwardTitle}>
+      <div className={s.sec} role="radiogroup" aria-label={C.forwardTitle} data-tour="ai-desk:forwarding">
         <div className={s.h}>{C.forwardTitle}</div>
         {!number ? <p className={s.note}>{C.forwardNeedsNumber}</p> : null}
         <div className={s.radios}>

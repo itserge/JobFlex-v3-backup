@@ -286,3 +286,58 @@
   .jf-book .jfb-cal-mo { display: none; }
   .jf-book .jfb-slot { padding: 0 4px; font-size: 13.5px; letter-spacing: -0.01em; }
 }
+
+/* ── SmartBook (2026-10-31): the customer's page /b/<token> and the company's answer page /b/r/<token> ──
+   The times on offer as numbered rows (pick, then "Book this time" in the panel under them), the booking page's
+   calendar for every other time, "Suggest a time", "Prefer texts?". The same sheet, lines and blue as the rest. */
+.jf-book .jfb-pick { display: grid; gap: 16px; }
+.jf-book .jfb-pick > .jfb-h2--gap:first-child { margin-top: 0; }
+.jf-book .jfb-offers { display: grid; gap: 10px; }
+.jf-book .jfb-offer {
+  display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 14px;
+  width: 100%; min-height: 64px; padding: 10px 16px 10px 12px; margin: 0;
+  border: 2px solid var(--jfb-ink); border-radius: var(--radius, 2px); background: #fff;
+  color: var(--jfb-ink); font: inherit; text-align: left; cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+}
+.jf-book .jfb-offer:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--jfb-ink); }
+.jf-book .jfb-offer:active { transform: none; box-shadow: none; }
+.jf-book .jfb-offer:focus-visible { outline: 3px solid var(--jfb-blue); outline-offset: 2px; }
+.jf-book .jfb-offer:disabled { cursor: progress; opacity: 0.6; transform: none; box-shadow: none; }
+.jf-book .jfb-offer-n { display: grid; place-items: center; width: 32px; height: 32px; border: 2px solid currentColor; font: 800 14px/1 var(--font-mono, ui-monospace, monospace); }
+.jf-book .jfb-offer-t { display: grid; gap: 2px; min-width: 0; }
+.jf-book .jfb-offer-t b { font-size: 18px; font-weight: 900; line-height: 1.2; }
+.jf-book .jfb-offer-t span { font-size: 16px; font-weight: 700; color: var(--jfb-soft); font-variant-numeric: tabular-nums; }
+.jf-book .jfb-offer-go { font-size: 15px; font-weight: 800; color: var(--jfb-blue); text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.jf-book .jfb-offer.is-on { border-color: var(--jfb-blue); background: var(--jfb-blue); color: #fff; }
+.jf-book .jfb-offer.is-on .jfb-offer-t span, .jf-book .jfb-offer.is-on .jfb-offer-go { color: #fff; text-decoration: none; }
+.jf-book .jfb-pick .jfb-when .jfb-acts { margin-top: 12px; align-items: center; }
+.jf-book .jfb-when-sub { font-size: 15px; color: var(--jfb-soft); }
+.jf-book .jfb-more { display: grid; justify-items: start; gap: 12px; }
+.jf-book .jfb-more .jfb-move { width: 100%; padding-top: 0; border-top: 0; }
+.jf-book .jfb-linkbtn {
+  min-height: 44px; padding: 0 4px; margin: 0; border: 0; background: transparent;
+  color: var(--jfb-blue); font: 800 15px/1.2 var(--font-sans, Inter, system-ui, sans-serif); text-align: left;
+  text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; cursor: pointer;
+}
+.jf-book .jfb-linkbtn:hover { color: var(--jfb-blue-ink); }
+.jf-book .jfb-linkbtn:focus-visible { outline: 3px solid var(--jfb-blue); outline-offset: 2px; }
+.jf-book .jfb-linkbtn:disabled { opacity: 0.55; cursor: progress; }
+.jf-book .jfb-suggest .jfb-h2 { margin-bottom: 0; }
+.jf-book .jfb-opt-note { font-size: 13px; font-weight: 600; color: var(--jfb-muted); }
+.jf-book .jfb-texts { display: grid; gap: 12px; margin-top: 8px; padding-top: 20px; border-top: 2px solid var(--jfb-ink); }
+.jf-book .jfb-texts .jfb-h2 { margin: 0; }
+.jf-book .jfb-err--top { margin: 0; }
+.jf-book .jfb-acts--stack { flex-direction: column; }
+.jf-book .jfb-acts--stack .jfb-btn { width: 100%; flex: none; }
+.jf-book .jfb-sum-r--plain { grid-template-columns: 110px minmax(0, 1fr); }
+.jf-book .jfb-sum-r--plain dd a { color: var(--jfb-blue); text-decoration: underline; text-underline-offset: 2px; }
+@media (max-width: 560px) {
+  .jf-book .jfb-offer { grid-template-columns: 30px minmax(0, 1fr) auto; gap: 10px; padding: 10px 12px 10px 10px; }
+  .jf-book .jfb-offer-n { width: 28px; height: 28px; font-size: 13px; }
+  .jf-book .jfb-offer-t b { font-size: 17px; }
+  .jf-book .jfb-offer-t span { font-size: 15px; }
+  .jf-book .jfb-pick .jfb-when .jfb-acts .jfb-linkbtn { flex: 1 1 100%; text-align: center; }
+  .jf-book .jfb-more > .jfb-btn { width: 100%; }
+  .jf-book .jfb-sum-r--plain { grid-template-columns: minmax(0, 1fr); }
+}

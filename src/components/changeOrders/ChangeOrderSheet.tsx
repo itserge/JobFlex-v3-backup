@@ -612,7 +612,7 @@ export function ChangeOrderSheet({
                             </Button>
                           )}
                           {!ctx.invoice.card && !ctx.invoice.bank && (
-                            <span className="text-[12px] text-rose-700">No way to pay is set up — connect a processor or add bank-transfer details in Settings → Payments.</span>
+                            <span className="text-[12px] text-rose-700">No way to pay is set up — connect a processor or add bank-transfer details in Settings → Integrations / Payments.</span>
                           )}
                           <Button size="sm" variant="ghost" onClick={() => setInvoiceFor(null)}>Cancel</Button>
                         </div>

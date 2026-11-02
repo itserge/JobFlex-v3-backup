@@ -9,6 +9,7 @@ import { textAppointmentBooked, textAppointmentCancelled, textAppointmentMoved a
 import { crewOfAppointment, textAppointmentMoved, textCrewCancelled } from "@/lib/sms/crew";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { requirePage } from "@/lib/customPageAccess";
+import { markLeadContacted } from "@/lib/leads/contacted";
 
 const when = (d: Date) =>
   d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
@@ -165,6 +166,13 @@ export async function createAppointment(raw: unknown) {
   if (workerIds?.length) {
     const { added } = await syncAssignments(organizationId, apt.id, workerIds);
     await notifyNewlyStaffed(apt.id, added);
+  }
+  // A visit booked for a lead means someone reached them (owner-approved 2026-10-31): the CRM's "not called back"
+  // clears, the lead moves on to CONTACTED, and a sales rep keeps the lead they booked (lib/leads/contacted).
+  if (apt.leadId && apt.status === "SCHEDULED") {
+    await markLeadContacted(organizationId, apt.leadId, { status: true, claimFor: isSalesRole(role) ? user.id : null });
+    revalidatePath("/dashboard/leads");
+    revalidatePath(`/dashboard/leads/${apt.leadId}`);
   }
   revalidatePath("/dashboard/calendar");
   await logActivity({

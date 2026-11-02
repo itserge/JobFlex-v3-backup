@@ -7,7 +7,11 @@ import { metaId, metaPageSchema, metaGraph, metaLeadSchema, metaLeadFields } fro
 
 // Namespaced records in the existing atomic key/value store: no schema push.
 const pendingKey = (org: string) => `meta:pending:${org}`;
-const pageKey = (page: string) => `meta:page:${page}`;
+// One row per Page PER WORKSPACE (owner, 2026-10-30: several JobFlex accounts take leads from one company's
+// Page). Before that a Page had a single owner row keyed by the Page alone; those rows are still read as the
+// connection of the workspace they name, and are dropped when that workspace disconnects or reconnects.
+const pageKey = (page: string, org: string) => `meta:page:${page}:${org}`;
+const legacyPageKey = (page: string) => `meta:page:${page}`;
 const jobKey = (org: string) => `meta:import:${org}`;
 const pendingSchema = z.object({ actorId: z.string(), userId: metaId, expiresAt: z.number(), pages: z.array(metaPageSchema) });
 const connectionSchema = z.object({ organizationId: z.string(), userId: metaId, pageId: metaId, pageName: z.string(), tokenBox: z.string(), generation: z.string() });
@@ -22,14 +26,23 @@ function nextCursor(paging: z.infer<typeof pagingSchema>) {
 function pageFromSettings(value: string | null) {
   try { return metaId.safeParse(JSON.parse(value || "{}").pageId).data; } catch { return undefined; }
 }
+/** This workspace's own row for the Page — the per-workspace key first, then a pre-2026-10-30 row that names it. */
+async function connectionRow(client: { syncState: typeof db.syncState }, pageId: string, organizationId: string) {
+  for (const key of [pageKey(pageId, organizationId), legacyPageKey(pageId)]) {
+    const row = await client.syncState.findUnique({ where: { key } });
+    if (!row) continue;
+    let parsed;
+    try { parsed = connectionSchema.safeParse(JSON.parse(row.cursor)); } catch { continue; }
+    if (parsed.success && parsed.data.organizationId === organizationId) return { row, connection: parsed.data };
+  }
+  return null;
+}
 export async function getMetaConnection(organizationId: string) {
   const org = await db.organization.findFirst({ where: { id: organizationId, deletedAt: null }, select: { metaSettingsJson: true } });
   const pageId = pageFromSettings(org?.metaSettingsJson || null);
   if (!pageId) return null;
-  const row = await db.syncState.findUnique({ where: { key: pageKey(pageId) } });
-  if (!row) return null;
-  const parsed = connectionSchema.safeParse(JSON.parse(row.cursor));
-  return parsed.success && parsed.data.organizationId === organizationId ? { ...parsed.data, stored: row.cursor } : null;
+  const found = await connectionRow(db, pageId, organizationId);
+  return found ? { ...found.connection, stored: found.row.cursor, key: found.row.key } : null;
 }
 export async function saveMetaCandidates(organizationId: string, actorId: string, grant: { userId: string; pages: z.infer<typeof metaPageSchema>[] }) {
   if (await getMetaConnection(organizationId)) throw new Error("Disconnect the current Page before choosing another Page.");
@@ -70,9 +83,11 @@ export async function selectMetaPage(organizationId: string, actorId: string, pa
     if (pageFromSettings(org.metaSettingsJson)) throw new Error("Disconnect the current Page first.");
     const consumed = await tx.syncState.deleteMany({ where: { key: pendingKey(organizationId), cursor: pending.stored } });
     if (!consumed.count) throw new Error("Authorization changed. Connect Meta again.");
-    const existing = await tx.syncState.findUnique({ where: { key: pageKey(pageId) } });
-    if (existing) throw new Error("This Page is already connected to a workspace. Disconnect it there first.");
-    await tx.syncState.create({ data: { key: pageKey(pageId), cursor: JSON.stringify(connection) } });
+    // Other workspaces connected to the same Page keep their own rows. A row of THIS workspace can only be a
+    // leftover here (its settings name no Page — checked above), so it gives way to the new one.
+    const stale = await connectionRow(tx, pageId, organizationId);
+    if (stale) await tx.syncState.deleteMany({ where: { key: stale.row.key, cursor: stale.row.cursor } });
+    await tx.syncState.upsert({ where: { key: pageKey(pageId, organizationId) }, create: { key: pageKey(pageId, organizationId), cursor: JSON.stringify(connection) }, update: { cursor: JSON.stringify(connection) } });
     const saved = await tx.organization.updateMany({ where: { id: organizationId, metaSettingsJson: org.metaSettingsJson }, data: { metaSettingsJson: JSON.stringify({ connected: true, autoCreate: false, autoText: false, pageId, defaultPage: page.name, formCategory: "auto" }) } });
     if (saved.count !== 1) throw new Error("Connection changed. Please try again.");
   });
@@ -82,10 +97,9 @@ export async function disconnectMetaPage(organizationId: string, expectedUserId?
     const org = await tx.organization.findUnique({ where: { id: organizationId }, select: { metaSettingsJson: true } });
     if (!org) return;
     const pageId = pageFromSettings(org.metaSettingsJson);
-    const row = pageId ? await tx.syncState.findUnique({ where: { key: pageKey(pageId) } }) : null;
-    const connection = row ? connectionSchema.parse(JSON.parse(row.cursor)) : null;
-    if (expectedUserId && connection?.userId !== expectedUserId) return;
-    if (row && connection?.organizationId === organizationId) await tx.syncState.deleteMany({ where: { key: row.key, cursor: row.cursor } });
+    const found = pageId ? await connectionRow(tx, pageId, organizationId) : null;
+    if (expectedUserId && found?.connection.userId !== expectedUserId) return;
+    if (found) await tx.syncState.deleteMany({ where: { key: found.row.key, cursor: found.row.cursor } });
     await tx.syncState.deleteMany({ where: { key: { in: [pendingKey(organizationId), jobKey(organizationId)] } } });
     const changed = await tx.organization.updateMany({ where: { id: organizationId, metaSettingsJson: org.metaSettingsJson }, data: { metaSettingsJson: JSON.stringify({ connected: false, autoCreate: false, autoText: false, defaultPage: "", formCategory: "auto" }) } });
     if (!changed.count) throw new Error("Connection changed. Please try again.");
@@ -125,7 +139,7 @@ export async function importMetaBatch(organizationId: string, actorId: string, r
     await db.$transaction(async tx => {
       // Touch the ownership row to serialize against disconnect; the same
       // transaction that imports a batch must still own this exact grant.
-      const owned = await tx.syncState.updateMany({ where: { key: pageKey(connection.pageId), cursor: connection.stored }, data: { cursor: connection.stored } });
+      const owned = await tx.syncState.updateMany({ where: { key: connection.key, cursor: connection.stored }, data: { cursor: connection.stored } });
       const org = await tx.organization.findFirst({ where: { id: organizationId, deletedAt: null }, select: { id: true } });
       if (!owned.count || !org) throw new Error("Meta was disconnected. Import stopped.");
       for (const lead of batch.data) {

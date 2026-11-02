@@ -313,7 +313,7 @@ export function VideoEstimatorContent({
             </button>
             <div className={cx("vt-empty-t")}>{drag ? "Drop to add" : "Drop a walkthrough"}</div>
             <div className={cx("vt-empty-m")}>MP4 / MOV &middot; up to 5 min &middot; say the measurements as you walk</div>
-            <button className={cx("btn", "btn-primary", "vt-add")} type="button" onClick={openPicker}>
+            <button className={cx("btn", "btn-primary", "vt-add")} type="button" onClick={openPicker} data-tour="video:add">
               <svg className={cx("ic")}>
                 <use href="#i-plus" />
               </svg>

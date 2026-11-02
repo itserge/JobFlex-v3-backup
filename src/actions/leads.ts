@@ -12,17 +12,8 @@ import { db } from "@/lib/db";
 import { LeadStatus } from "@/lib/prismaEnums";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
 import { requirePage } from "@/lib/customPageAccess";
-
-// Sales reps may only act on leads inside their visibility slice: assigned to
-// them, claimed by them, or still NEW in the shared pool. Managers see it all.
-function salesCanTouchLead(
-  lead: { assignedToId: string | null; claimedById: string | null; status: string },
-  userId: string,
-): boolean {
-  return (
-    lead.assignedToId === userId || lead.claimedById === userId || lead.status === LeadStatus.NEW
-  );
-}
+import { callLead } from "@/lib/aiDesk/leadCalls";
+import { salesCanTouchLead } from "@/lib/leads/salesAccess";
 
 const statusSchema = z.enum([
   LeadStatus.NEW,
@@ -56,6 +47,27 @@ export async function updateLeadStatus(id: string, next: string) {
   revalidatePath("/dashboard/leads");
   revalidatePath("/dashboard/leads/kanban");
   return { ok: true };
+}
+
+// "Have the AI desk call" on the lead page (owner, 2026-10-31; lib/aiDesk/leadCalls): one call now, from the
+// company's desk number, on the desk's own setup. An envelope, never a throw — production redacts thrown messages,
+// and the reason the desk can't call (no number, the hours, they texted STOP…) is what the button must say.
+export async function callLeadWithDesk(id: string): Promise<{ ok: true; message: string } | { ok: false; message: string }> {
+  try {
+    const { organizationId, user, role } = await requireSalesOrManager();
+    await requirePage(organizationId, "leads");
+    const lead = await db.lead.findUnique({ where: { id }, select: { organizationId: true, assignedToId: true, claimedById: true, status: true } });
+    if (!lead || lead.organizationId !== organizationId) return { ok: false, message: "That lead isn't here any more." };
+    if (isSalesRole(role) && !salesCanTouchLead(lead, user.id)) return { ok: false, message: "You can only have the desk call your own leads." };
+    const r = await callLead(organizationId, id, { by: user.id, auto: false });
+    if (!r.ok) return { ok: false, message: r.error };
+    revalidatePath(`/dashboard/leads/${id}`);
+    return { ok: true, message: "The AI desk is calling them now. How it went shows here and on the Phone page." };
+  } catch (err) {
+    if (err instanceof UnauthorizedError) return { ok: false, message: "Your role can't have the desk call leads." };
+    console.warn("[leads] desk call failed:", err instanceof Error ? err.message : err);
+    return { ok: false, message: "The desk couldn't call right now. Try again in a minute." };
+  }
 }
 
 // Accept an incoming lead: mark CLAIMED and record who took it + when.

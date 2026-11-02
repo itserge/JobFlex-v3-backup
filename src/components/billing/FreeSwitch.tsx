@@ -188,6 +188,7 @@ export function ManageSubscription({
   offer,
   freeSwitch,
   changeHref,
+  shown,
   className,
   children,
 }: {
@@ -199,6 +200,8 @@ export function ManageSubscription({
   /** Booked: the window shows the notice and "Keep <plan>" instead. */
   freeSwitch: { at: string | null; planName: string } | null;
   changeHref: string;
+  /** False while its pane sits mounted but hidden (both Settings layouts keep every pane mounted). */
+  shown: boolean;
   className?: string;
   children: ReactNode;
 }) {
@@ -223,16 +226,17 @@ export function ManageSubscription({
 
   /* Settings reads Stripe (the card) only for a page opened on Billing.
      Reached from another pane, the window would show the database alone —
-     so the pane asks the server again, as ?tab=billing. */
+     so the pane asks the server again, as ?tab=billing. Only once Billing is
+     on screen: a hidden pane asking moved every Settings link there. */
   const pathname = usePathname();
   const params = useSearchParams();
   useEffect(() => {
-    if (view.live) return;
+    if (view.live || !shown) return;
     const q = new URLSearchParams(params.toString());
     q.delete("pane");
     q.set("tab", "billing");
     router.replace(`${pathname}?${q.toString()}` as Route, { scroll: false });
-  }, [view.live, pathname, params, router]);
+  }, [view.live, shown, pathname, params, router]);
 
   const book = useCallback(async () => {
     if (busy) return;

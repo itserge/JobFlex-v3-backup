@@ -130,6 +130,18 @@ const STATUS_TONE: Record<string, string> = {
   ARCHIVED: styles.lstArchived,
 };
 
+/** SmartBook's word for the lead (2026-10-31): the source tag's flat dot and plain text, as on the desk table. */
+const SMART_DOT: Record<string, string> = { accent: "var(--accent)", amber: "var(--amber)", emerald: "var(--emerald)", muted: "var(--muted-light)" };
+function SmartTag({ s }: { s: Lead["smart"] }) {
+  if (!s) return null;
+  return (
+    <span className={styles.lsb}>
+      <i style={{ "--t": SMART_DOT[s.tone] ?? SMART_DOT.muted } as React.CSSProperties} aria-hidden="true" />
+      SmartBook · {s.label}
+    </span>
+  );
+}
+
 /** The trade tag's percentage doubles as a fill gauge, as on the desktop sheet. */
 type GaugeStyle = React.CSSProperties & { "--p": string };
 const gauge = (conf: number): GaugeStyle => ({ "--p": `${Math.round(conf * 100)}%` });
@@ -938,7 +950,7 @@ export function MobileLeads() {
               {/* "Import" opens the CSV pane, not the paste pane: paste is now a
                   one-lead action and belongs behind New lead's own tab strip. */}
               <button className={`${styles.btn} ${styles.btnGhost}`} type="button"
-                onClick={() => openAdd("file")}>
+                onClick={() => openAdd("file")} data-tour="leads:import">
                 <Icon id="i-file" />Import
               </button>
             </div>
@@ -1173,6 +1185,10 @@ export function MobileLeads() {
                       </span>
                       {leadSide(l.source) === "jobflex" ? (
                         <span className={`${styles.lsrc} ${styles.lsrcJf}`}><i aria-hidden="true" />JobFlex</span>
+                      ) : leadSourceOf(l.source).key === "facebook" ? (
+                        <span className={`${styles.lsrc} ${styles.lsrcFb}`} style={{ "--t": leadSourceOf(l.source).tone } as React.CSSProperties} title="From your Facebook lead ads">
+                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" /></svg>Facebook
+                        </span>
                       ) : (
                         <span className={styles.lsrc}>
                           <i style={{ "--t": leadSourceOf(l.source).tone } as React.CSSProperties} aria-hidden="true" />
@@ -1183,6 +1199,7 @@ export function MobileLeads() {
                     <div className={styles.lrowFoot}>
                       <span className={styles.lrowBadges}>
                         <span className={`${styles.pstatus} ${STATUS_TONE[l.status] ?? ""}`}>{l.status}</span>
+                        <SmartTag s={l.smart} />
                         {l.spec ? (
                           <span className={styles.ltrade} style={gauge(l.conf)}>
                             {l.spec}<b className={styles.ltradePct}>{pct(l.conf)}</b>
@@ -1336,6 +1353,7 @@ export function MobileLeads() {
                           <div className={styles.icardMeta}>
                             {l.age} · {srcLabel(l.source)} · {l.city}
                           </div>
+                          <SmartTag s={l.smart} />
                         </div>
                         <span className={`${styles.pstatus} ${STATUS_TONE[l.status] ?? ""}`}>{l.status}</span>
                       </div>

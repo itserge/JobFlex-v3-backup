@@ -63,6 +63,7 @@ import { mountIsland, type Island } from "@/components/v3/blueprint-shell/react-
 import { clientProposalUrl } from "@/lib/proposalLink";
 import { whoHtml } from "@/lib/team/who";
 import { familyCounts, kindWord, type WorkFamily } from "@/lib/proposalKind";
+import { renderCardC, type CardKit } from "./cards";
 import {
   PAGE_ACC,
   PAGE_ALL,
@@ -210,6 +211,27 @@ export function initProposalsContent(
   function fmtMoney(n: number) {
     return "$" + Math.round(n).toLocaleString("en-US");
   }
+  // The All tab draws each proposal through the dossier card (cards/card-c.ts, owner's pick 2026-10-30); the kit
+  // hands it this page's helpers so its figures and buttons are the classic card's.
+  const cardKit: CardKit = {
+    esc,
+    fmtMoney,
+    proposalHref: (id) => proposalHref(id),
+    subLine: (p) => subLine(p),
+    kindHtml: (p) => kindHtml(p),
+    clientDesignHtml: (p) => clientDesignHtml(p),
+    bloomOnce: (id, kind, at) => bloomOnce(id, kind, at),
+    viewsCellHtml: (p) => viewsCellHtml(p),
+    paidCellHtml: (p) => paidCellHtml(p),
+    payBarHtml: (p, withTotal) => payBarHtml(p, withTotal),
+    sendCellHtml: (p) => sendCellHtml(p),
+    payActsHtml: (p, next) => payActsHtml(p, next),
+    finHtml: (p) => finHtml(p),
+    instDollars: (p, it) => instDollars(p, it),
+    payRowHtml: (p, chain) => payRowHtml(p, chain),
+    barRowHtml: (p, chain) => barRowHtml(p, chain),
+    classicHtml: (p, chain) => classicRowHtml(p, chain),
+  };
   /** Money that has to be exact because a write uses the same figure: the
    *  invoice dialog's quote and the confirmation of what was actually sent. */
   function fmtCents(n: number) {
@@ -609,8 +631,8 @@ export function initProposalsContent(
 
   /**
    * SEND ON THE ROW (owner, 2026-10-23: "Send proposal, or it's been sent"). A draft carries a green Send; a
-   * proposal out and waiting says when it went, and a click sends it again; a signed or declined one keeps the
-   * stamp alone (proposals-data → sendState). The dialog is the menu's Send to client.
+   * proposal already sent reads Sent and when, and turns into Resend on hover — signed or not. The dialog is the
+   * menu's Send to client.
    */
   function sendCellHtml(p: ProposalRow): string {
     const s = sendState(p);
@@ -623,10 +645,16 @@ export function initProposalsContent(
       );
     }
     // Once sent it can always go again, and says so (owner, 2026-10-28: "make it possible and visible you can
-    // resend it"): the stamp says when, Resend beside it opens the same send dialog.
+    // resend it"; 2026-10-29: "the sent message when hovered turns into a resend button"). One button: it reads
+    // Sent and when, and on hover or focus the same plate turns into Resend and opens the send dialog. Without a
+    // hover (touch) both halves show side by side.
     return (
-      '<span class="pact pact--sent is-static" title="' + esc("Sent " + p.sentAgo) + '"><svg class="ic"><use href="#i-check"/></svg><span>Sent</span> <small>' + esc(p.sentAgo ?? "") + "</small></span>" +
-      '<button class="pact pact--resend" type="button" data-act="send" title="' + esc("Send it again" + (p.clientEmail ? " to " + p.clientEmail : "")) + '"><svg class="ic"><use href="#i-send"/></svg><span>Resend</span></button>'
+      '<button class="pact pact--sent pact--swap" type="button" data-act="send" title="' +
+      esc("Sent " + (p.sentAgo ?? "") + " — send it again" + (p.clientEmail ? " to " + p.clientEmail : "")) +
+      '" aria-label="' + esc("Sent " + (p.sentAgo ?? "") + ". Resend") + '">' +
+      '<span class="pswap pswap--sent"><svg class="ic"><use href="#i-check"/></svg>Sent <small>' + esc(p.sentAgo ?? "") + "</small></span>" +
+      '<span class="pswap pswap--resend"><svg class="ic"><use href="#i-send"/></svg>Resend</span>' +
+      "</button>"
     );
   }
 
@@ -772,6 +800,9 @@ export function initProposalsContent(
     return { rows, pages, slice: rows.slice((pstate.pageAll - 1) * PAGE_ALL, pstate.pageAll * PAGE_ALL) };
   }
   function allRowHtml(p: ProposalRow, chain = "") {
+    return renderCardC(p, chain, cardKit);
+  }
+  function classicRowHtml(p: ProposalRow, chain = "") {
     const st = statusPlate(p.status);
     const pay = payRowHtml(p, chain);
     return (
@@ -2004,12 +2035,12 @@ export function initProposalsContent(
     if (card) {
       card.disabled = !invOpts.card;
       const sub = card.querySelector(".inv-sub");
-      if (sub) sub.textContent = invOpts.card ? "Hosted checkout · " + invOpts.cardVia.join(" / ") : "No card processor connected — Settings → Payments";
+      if (sub) sub.textContent = invOpts.card ? "Hosted checkout · " + invOpts.cardVia.join(" / ") : "No card processor connected — Settings → Integrations / Payments";
     }
     if (bank) {
       bank.disabled = !invOpts.bank;
       const sub = bank.querySelector(".inv-sub");
-      if (sub) sub.textContent = invOpts.bank ? "Your transfer details go in the email; the portal shows only those" : "Add bank-transfer instructions in Settings → Payments";
+      if (sub) sub.textContent = invOpts.bank ? "Your transfer details go in the email; the portal shows only those" : "Add bank-transfer instructions in Settings → Integrations / Payments";
     }
     if (any) any.disabled = !(invOpts.card || invOpts.bank);
   }

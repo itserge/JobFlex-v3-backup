@@ -60,9 +60,26 @@ export type DeskSettings = {
   business: string;
   /** The parts of the profile the contractor should still check (lib/aiDesk/tradePresets), highlighted until they do. */
   review: DeskReviewItem[];
+  /** The desk calls new leads (owner, 2026-10-31; lib/aiDesk/leadCalls): a lead with a phone that nobody reached
+   *  `afterMinutes` after it came in gets one call, inside calling hours. Off until the owner turns it on. */
+  leadCalls: DeskLeadCalls;
 };
 
-export const DEFAULT_DESK: DeskSettings = { mode: "ANSWER", forwarding: "none", voice: "marin", brief: "", profile: null, profileUpdatedAt: null, questions: [], business: "", review: [] };
+export type DeskLeadCalls = { on: boolean; afterMinutes: number };
+/** How long a new lead waits for a person before the desk calls it — the choices on the settings card. */
+export const LEAD_CALL_DELAYS = [5, 10, 15, 30, 60] as const;
+export const DEFAULT_LEAD_CALLS: DeskLeadCalls = { on: false, afterMinutes: 10 };
+
+export function cleanLeadCalls(raw: unknown): DeskLeadCalls {
+  const o = raw && typeof raw === "object" ? (raw as Partial<DeskLeadCalls>) : {};
+  const minutes = Number(o.afterMinutes);
+  return {
+    on: o.on === true,
+    afterMinutes: (LEAD_CALL_DELAYS as readonly number[]).includes(minutes) ? minutes : DEFAULT_LEAD_CALLS.afterMinutes,
+  };
+}
+
+export const DEFAULT_DESK: DeskSettings = { mode: "ANSWER", forwarding: "none", voice: "marin", brief: "", profile: null, profileUpdatedAt: null, questions: [], business: "", review: [], leadCalls: DEFAULT_LEAD_CALLS };
 
 /** The zones a US/Canadian contractor picks from; any IANA zone is accepted on save. */
 export const US_TIMEZONES: ReadonlyArray<{ id: string; label: string }> = [
@@ -113,6 +130,7 @@ export function parseDeskSettings(json: string | null | undefined): DeskSettings
       questions: Array.isArray(raw.questions) ? raw.questions.filter((x): x is string => typeof x === "string").slice(0, 8) : [],
       business: typeof raw.business === "string" ? raw.business.replace(/\s+/g, " ").trim().slice(0, 200) : "",
       review: cleanReview(raw.review),
+      leadCalls: cleanLeadCalls(raw.leadCalls),
     };
   } catch {
     return { ...DEFAULT_DESK };

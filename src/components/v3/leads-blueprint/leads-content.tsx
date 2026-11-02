@@ -100,7 +100,7 @@ export function LeadsContent({ leads: allLeads, offers: allOffers }: { leads: Le
               the Lead Center, which is the one thing a bare count cannot say. */}
           <span className="ptab-new is-hidden">New lead came in</span>
         </button>
-        <button className="ptab ptab--action" type="button" data-tab="import" id="goImport">
+        <button className="ptab ptab--action" type="button" data-tab="import" id="goImport" data-tour="leads:import">
           <svg className="ic"><use href="#i-file" /></svg>
           Import leads
         </button>

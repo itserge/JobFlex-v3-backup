@@ -464,6 +464,84 @@
   :global(.jf-blueprint .content) .tlConfirm :global(.btn) { min-height: 44px; }
 }
 
+/* ── The test environment (owner, 2026-10-29) — lib/leadCenter/sandbox ──────
+   The switch under the quick-create form, then the runs: where each stands, its offers beside who production would
+   offer it to, and its recorded messages, each readable whole. */
+:global(.jf-blueprint .content) .tlAuto {
+  display: flex; align-items: flex-start; gap: 10px; margin-top: 12px; padding: 12px;
+  min-height: 44px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
+  background: #fff; font-size: 12.5px; line-height: 1.45; color: var(--ink-soft); cursor: pointer;
+}
+:global(.jf-blueprint .content) .tlAuto input { flex-shrink: 0; width: 18px; height: 18px; margin-top: 1px; accent-color: var(--blueprint); }
+:global(.jf-blueprint .content) .tlAuto b { display: block; margin-bottom: 2px; font-size: 13px; color: var(--ink); }
+:global(.jf-blueprint .content) .tlAutoOn { border-color: var(--blueprint); background: color-mix(in srgb, var(--blueprint) 6%, #fff); }
+
+:global(.jf-blueprint .content) .trWrap { margin-top: 24px; padding-top: 20px; border-top: 2px solid var(--ink); }
+:global(.jf-blueprint .content) .trWarn {
+  margin-top: 4px; padding: 10px 12px; border: 1.5px solid var(--warning); border-radius: var(--radius);
+  background: var(--warning-soft); font-size: 12.5px; color: var(--ink);
+}
+:global(.jf-blueprint .content) .trList { display: grid; gap: 14px; margin-top: 14px; }
+:global(.jf-blueprint .content) .trRun { border: 2px solid var(--ink); border-radius: var(--radius); background: #fff; box-shadow: 3px 3px 0 var(--ink); }
+:global(.jf-blueprint .content) .trHead {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 12px 14px;
+  border-bottom: 1.5px solid var(--hair-soft);
+}
+:global(.jf-blueprint .content) .trName {
+  flex: 1 1 220px; min-width: 0; padding: 0; border: 0; background: none; text-align: left; cursor: pointer;
+  font-size: 14px; font-weight: 800; color: var(--ink);
+}
+:global(.jf-blueprint .content) .trName:hover { color: var(--blueprint); text-decoration: underline; }
+:global(.jf-blueprint .content) .trTime { flex-shrink: 0; font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+:global(.jf-blueprint .content) .trNow {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 14px;
+  background: var(--paper-deep); border-bottom: 1.5px solid var(--hair-soft);
+}
+:global(.jf-blueprint .content) .trNowT { font-size: 13.5px; font-weight: 700; color: var(--ink); }
+:global(.jf-blueprint .content) .trActs { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+:global(.jf-blueprint .content) .trCols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; padding: 12px 14px; }
+:global(.jf-blueprint .content) .trSub {
+  margin-bottom: 7px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted);
+}
+:global(.jf-blueprint .content) .trOffers { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
+:global(.jf-blueprint .content) .trOffers li { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+:global(.jf-blueprint .content) .trOffers li span { width: 18px; flex-shrink: 0; font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+:global(.jf-blueprint .content) .trOffers li b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:global(.jf-blueprint .content) .trOffers li em { margin-left: auto; flex-shrink: 0; font-style: normal; font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); }
+:global(.jf-blueprint .content) .trDim { margin: 0; padding: 0 14px 12px; font-size: 12.5px; color: var(--muted); }
+:global(.jf-blueprint .content) .trCols .trDim { padding: 0; }
+:global(.jf-blueprint .content) .trSubRow {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 14px 0; border-top: 1.5px solid var(--hair-soft);
+}
+:global(.jf-blueprint .content) .trSubRow .trSub { margin-bottom: 0; }
+:global(.jf-blueprint .content) .trMsgs { display: grid; gap: 8px; margin: 0; padding: 10px 14px 14px; list-style: none; }
+:global(.jf-blueprint .content) .trMsg { border: 1.5px solid var(--hair-soft); border-radius: var(--radius); }
+:global(.jf-blueprint .content) .trMsgRow { display: flex; align-items: center; gap: 10px; padding: 9px 10px; }
+:global(.jf-blueprint .content) .trTag {
+  flex-shrink: 0; min-width: 48px; padding: 3px 6px; border-radius: var(--radius); text-align: center;
+  background: color-mix(in srgb, var(--blueprint) 12%, #fff); color: var(--blueprint);
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+}
+:global(.jf-blueprint .content) .trTagSms { background: var(--success-soft); color: var(--success-dark); }
+:global(.jf-blueprint .content) .trMsgMain { flex: 1; min-width: 0; }
+:global(.jf-blueprint .content) .trMsgTo { font-family: var(--font-mono); font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:global(.jf-blueprint .content) .trMsgSubj { margin-top: 2px; font-size: 13px; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:global(.jf-blueprint .content) .trMsgNote { margin-top: 2px; font-size: 12px; color: var(--ink-soft); }
+:global(.jf-blueprint .content) .trFrame { display: block; width: 100%; height: 520px; border: 0; border-top: 1.5px solid var(--hair-soft); background: #fff; }
+:global(.jf-blueprint .content) .trSms { margin: 0; padding: 12px; border-top: 1.5px solid var(--hair-soft); font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; }
+@media (max-width: 860px) {
+  :global(.jf-blueprint .content) .trCols { grid-template-columns: minmax(0, 1fr); }
+  :global(.jf-blueprint .content) .trActs { width: 100%; margin-left: 0; }
+  :global(.jf-blueprint .content) .trActs :global(.btn) { flex: 1 1 0; min-height: 44px; }
+  :global(.jf-blueprint .content) .trMsgRow { flex-wrap: wrap; }
+  :global(.jf-blueprint .content) .trMsgMain { flex-basis: calc(100% - 60px); }
+  :global(.jf-blueprint .content) .trMsgRow :global(.btn), :global(.jf-blueprint .content) .trSubRow :global(.btn) { min-height: 44px; }
+  :global(.jf-blueprint .content) .trName { min-height: 44px; }
+  :global(.jf-blueprint .content) .trFrame { height: 440px; }
+}
+
 /* Manual mode (2026-10-03): the cascade's buttons stay visible but off, and
    say why on the button itself. */
 :global(.jf-blueprint .content) .modeTag {

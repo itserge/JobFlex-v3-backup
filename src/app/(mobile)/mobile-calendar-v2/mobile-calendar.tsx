@@ -72,6 +72,7 @@ import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import styles from "./mobile-calendar.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
+import { SmartBookRequests } from "@/components/v3/smartbook/smartbook-requests";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
 import { getCalendarSeed } from "@/app/dashboard/calendar/calendar-actions";
@@ -908,6 +909,12 @@ function CalendarBoard({ book }: { book: CalendarBook }) {
       workers: e.workers.slice(),
     })),
   );
+  /* A visit SmartBook's Requests card booked (2026-10-31): the visits are read again, so the Yes lands on the grid. */
+  const reloadEvents = () => {
+    getCalendarSeed()
+      .then((b) => setData(b.events.map((e) => ({ ...e, start: new Date(e.start), end: new Date(e.end), workers: e.workers.slice() }))))
+      .catch(() => {});
+  };
   const [tray, setTray] = useState<TrayJob[]>(() => book.tray.map((j) => ({ ...j })));
   const [inbox, setInbox] = useState<InboxItem[]>(() => book.inbox.map((r) => ({ ...r })));
   /** Crew answers not yet looked at — rides the bell with the pending count;
@@ -1895,6 +1902,10 @@ function CalendarBoard({ book }: { book: CalendarBook }) {
               )}
             </div>
           </div>
+
+          {/* SMARTBOOK REQUESTS (2026-10-31): customers waiting on a time they named — only when one waits, for the
+              office and the sales reps; the card loads itself. */}
+          {book.canManage || book.canSmartBook ? <SmartBookRequests mobile onBooked={reloadEvents} /> : null}
 
           {/* VIEW TABS — also the only aggregate left on the page: the count on
               each tab says how much is in that range, in the control you would

@@ -231,6 +231,12 @@ export async function createWebLead(shop: WebShop, est: WebEstimateRecord, conta
   // the shop's own new-lead alert (text + email by their preferences) and the homeowner's confirmation, after the response
   afterResponse(async () => {
     try { await notifyLeadCreated(lead.id); } catch (err) { console.error("[web-estimator] lead alert failed:", err instanceof Error ? err.message : err); }
+    // SmartBook (2026-10-31): the times by text and email at once. Every website form asks the box "<shop> may call,
+    // text or email me about this …" before a lead is made (actions/webEstimator), so that yes is kept for texts.
+    try {
+      const { startSmartBook } = await import("@/lib/smartbook/engine");
+      await startSmartBook(lead.id, "website", { consent: { text: "website", call: true } });
+    } catch (err) { console.error("[web-estimator] smartbook failed:", err instanceof Error ? err.message : err); }
     if (contact.email) {
       const m = homeownerEmail({ shop: shop.name, trade, band: est.band, show: est.show, summary: est.summary, choice: est.choice, phone: contact.phone, note: tradeSettings.note || undefined });
       try {

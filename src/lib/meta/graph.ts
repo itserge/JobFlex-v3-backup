@@ -13,6 +13,9 @@ export const metaLeadSchema = z.object({
   // Meta omits values for unanswered fields (including optional inbox_url).
   // Keep those fields empty instead of rejecting every lead in the batch.
   field_data: z.array(z.object({ name: z.string(), values: z.array(z.string()).default([]) })).default([]),
+  // The form's own consent boxes (Meta's "custom disclaimer"), as the person ticked them — read by the automatic
+  // sync for SmartBook (2026-10-31); the import does not ask for them.
+  custom_disclaimer_responses: z.array(z.object({ checkbox_key: z.string(), is_checked: z.union([z.boolean(), z.string(), z.number()]).optional() })).optional().catch(undefined),
 });
 export type MetaLead = z.infer<typeof metaLeadSchema>;
 
@@ -33,8 +36,16 @@ export class MetaApiError extends Error {
   }
 }
 
+// The QA Lab's fake Facebook (qa/walks/smartbook.walk.ts, 2026-10-31): META_GRAPH_BASE, only in QA test mode — the
+// lib/qaTestMode gate, read here without the database — and never on Vercel production.
+function graphBase() {
+  const fake = process.env.META_GRAPH_BASE?.trim();
+  const qa = process.env.QA_TEST_MODE === "1" && !!process.env.QA_SECRET && process.env.VERCEL_ENV !== "production";
+  return fake && qa ? fake.replace(/\/$/, "") : "https://graph.facebook.com";
+}
+
 async function graphRequest(path: string, params: Record<string, string>, token?: string, method = "GET") {
-  const url = new URL(`https://graph.facebook.com/${version()}/${path}`);
+  const url = new URL(`${graphBase()}/${version()}/${path}`);
   const query = new URLSearchParams(params);
   if (token) query.set("appsecret_proof", crypto.createHmac("sha256", process.env.META_APP_SECRET!).update(token).digest("hex"));
   if (method === "GET") url.search = query.toString();
@@ -152,4 +163,20 @@ export function metaLeadFields(lead: MetaLead) {
     projectType: read("project_type", "service"),
     description: lead.field_data.map(v => `${v.name}: ${v.values.join(", ")}`).join("\n").slice(0, 20000),
   };
+}
+
+// A form's consent boxes, by what they say (SmartBook, 2026-10-31: "text when they agreed"): the box whose words name
+// texts or SMS is the yes to texts, the one naming calls the yes to calls; one box may say both.
+export const metaFormLegalSchema = z.object({
+  legal_content: z.object({ custom_disclaimer: z.object({ checkboxes: z.array(z.object({ key: z.string(), text: z.string().default("") })).default([]) }).optional() }).optional(),
+});
+export function consentKeysOf(form: z.infer<typeof metaFormLegalSchema>): { text: string | null; call: string | null } {
+  const boxes = form.legal_content?.custom_disclaimer?.checkboxes ?? [];
+  const words = (b: { text: string }) => b.text.replace(/<[^>]+>/g, " ").toLowerCase();
+  const text = boxes.find((b) => /\b(texts?|texting|sms|text messages?|messages)\b/.test(words(b)))?.key ?? null;
+  const call = boxes.find((b) => /\b(calls?|calling|phone calls?|call me)\b/.test(words(b)))?.key ?? null;
+  return { text, call };
+}
+export function tickedBoxes(lead: MetaLead): Set<string> {
+  return new Set((lead.custom_disclaimer_responses ?? []).filter((r) => r.is_checked === true || r.is_checked === 1 || /^(1|true|yes)$/i.test(String(r.is_checked ?? ""))).map((r) => r.checkbox_key));
 }

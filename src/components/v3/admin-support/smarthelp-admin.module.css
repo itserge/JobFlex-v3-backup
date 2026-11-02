@@ -1,0 +1,16 @@
+/* ADMIN · SUPPORT → SMARTHELP. The "Tickets | SmartHelp" tabs are links (each
+   view reads only its own data), drawn with the admin seg control (ui.seg),
+   which is made for buttons: a link centres nothing by itself. Inside the
+   blueprint shell's .content, so every rule has the shell's two classes. */
+
+:global(.jf-blueprint .content) .views {
+  width: auto;
+  max-width: 360px;
+  margin: 0 0 18px;
+}
+:global(.jf-blueprint .content) .view {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}

@@ -19,6 +19,7 @@ import { DESK_COPY as C, type DeskSettingsData } from "@/components/v3/settings-
 import { deskOverview, firstTab, SETUP_TABS, type DeskTab, type TabState } from "./desk-overview";
 import { DeskBooking } from "./desk-booking";
 import { DeskBrief } from "./desk-brief";
+import { DeskLeadCalls } from "./desk-lead-calls";
 import { DeskMinutes } from "./desk-minutes";
 import { DeskNumbers } from "./desk-numbers";
 import { DeskVoiceAndTest } from "./desk-voice";
@@ -330,6 +331,9 @@ export function DeskSteps({
           })}
         </ol>
       </section>
+
+      {/* Call new leads (2026-10-31): the desk dials the leads nobody reached — off until the owner turns it on */}
+      <DeskLeadCalls desk={desk} />
 
       {/* Minutes, opened from the strip */}
       <section

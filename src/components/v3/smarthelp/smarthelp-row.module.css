@@ -1,0 +1,115 @@
+/* SMARTHELP · THE SIDEBAR ROW (owner-approved look, 2026-10-29). It lives inside
+   the shells' sidebars and drawers, so its root carries data-nest and every rule
+   here has two classes — the shell's margin/padding reset ties a single class
+   and wins on prod. */
+
+.wrap.wrap {
+  display: block;
+  margin: 0 0 12px;
+  padding: 0 3px 3px 0; /* room for the hard shadow inside the sidebar's clip */
+}
+.wrap.blueprint {
+  margin: 4px 12px 10px;
+}
+.wrap.drawer {
+  margin: 4px 14px 10px;
+}
+.wrap.more {
+  margin: 0 0 8px;
+}
+
+.wrap .row {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 6px 10px 6px 7px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--ink);
+  color: #fff;
+  box-shadow: 3px 3px 0 var(--accent);
+  font-family: var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow 140ms var(--ease-out), transform 140ms var(--ease-out);
+}
+.wrap .row:hover {
+  box-shadow: 4px 4px 0 var(--accent);
+  transform: translate(-1px, -1px);
+}
+.wrap .row:active {
+  box-shadow: 1px 1px 0 var(--accent);
+  transform: translate(2px, 2px);
+}
+.wrap .row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.wrap .mark {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  border-radius: var(--r-sm);
+  background: #fff;
+  color: var(--ink);
+}
+.wrap .mark svg {
+  width: 16px;
+  height: 16px;
+}
+.wrap .name {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wrap .ask {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 1px 5px;
+  border: 1.5px solid #fff;
+  border-radius: 0;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 14px;
+}
+
+/* The desk sidebar folded to its icon rail: the white square alone. */
+:global([data-sb="fold"]) .wrap.blueprint {
+  margin: 4px auto 10px;
+  width: max-content;
+}
+:global([data-sb="fold"]) .wrap .row {
+  width: 44px;
+  padding: 0;
+  justify-content: center;
+}
+:global([data-sb="fold"]) .wrap .name,
+:global([data-sb="fold"]) .wrap .ask {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wrap .row {
+    transition: none;
+  }
+  .wrap .row:hover,
+  .wrap .row:active {
+    transform: none;
+  }
+}

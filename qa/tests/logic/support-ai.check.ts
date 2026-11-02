@@ -2,6 +2,7 @@
 // waits for a person, the notes around an answer, the copy to the support inbox, the fix brief, the row badges —
 // and the handbook it reads. Pure: no model, no database, no mail.
 //   NODE_PATH="" npx --no-install tsx --tsconfig tsconfig.json qa/tests/logic/support-ai.check.ts
+import { createHash } from "node:crypto";
 import {
   DEFAULT_SUPPORT_AI_MODE,
   SEND_CONFIDENCE_MIN,
@@ -20,6 +21,7 @@ import {
   recordFor,
   supportAiAnswerSchema,
   supportAiMode,
+  supportOriginOf,
   supportSystemPrompt,
   supportUserPrompt,
   teamCopyEmail,
@@ -111,6 +113,13 @@ check("the rules: the customer's language, exact names and links, nothing invent
 const user = supportUserPrompt({ ticket: { ref: "J7RCFS", subject: "S", body: "B", category: "technical", priority: "high", filedAt: "2026-10-15" }, facts: ["Plan Professional"], thread: [{ by: "JobFlex support", at: "t", body: "earlier" }], errors: [], appUrl: "https://jobflex.app/" });
 check("the ticket as the model reads it: ref, words, facts, the thread, errors, links", user.includes("TICKET J7RCFS") && user.includes("Message:\nB") && user.includes("- Plan Professional") && user.includes("ALREADY ANSWERED") && user.includes("- none recorded") && user.includes("Links go to https://jobflex.app."));
 check("the system message is the rules then the handbook", supportSystemPrompt().startsWith(SUPPORT_AI_RULES) && supportSystemPrompt().includes("HANDBOOK"));
+// SmartHelp moved the NEVER topics into PERSON_ONLY_TOPICS and interpolated them back (2026-10-29): the rules must read
+// byte for byte as at origin/main 646ab9eb — length + sha256 taken before that edit. A deliberate change to the rules
+// updates this pin.
+check(
+  "the rules read exactly as before PERSON_ONLY_TOPICS was moved out",
+  SUPPORT_AI_RULES.length === 6809 && createHash("sha256").update(SUPPORT_AI_RULES, "utf8").digest("hex") === "0014eadd6ebcbfc8bcd117c130a30e3c455e8843b87f0fd89743661ff61e135a",
+);
 
 // ── The answer in the Help window ───────────────────────────────────────────
 const thread: ThreadMessage[] = [
@@ -148,7 +157,16 @@ check("…carries no secrets (keys, tokens, webhook secrets)", !/\b(sk-[A-Za-z0-
 check("…and no personal addresses — only JobFlex's own", (SUPPORT_HANDBOOK.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}/gi) ?? []).every((e) => /@(jobflex\.app|platform\.jobflex\.local|example\.com)$/i.test(e)), (SUPPORT_HANDBOOK.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}/gi) ?? []).filter((e) => !/@(jobflex\.app|platform\.jobflex\.local|example\.com)$/i.test(e)).slice(0, 5).join(", "));
 
 // ── Cancellations and the offer (owner, 2026-10-26) ───────────────────────────
-check("the rules on a cancellation: ask why, give the steps anyway, what they'd leave, the two-week offer only when available, a person sends it", /CANCELLATIONS/.test(SUPPORT_AI_RULES) && /ONE honest question/.test(SUPPORT_AI_RULES) && /nobody should feel trapped/.test(SUPPORT_AI_RULES) && /two more weeks, free/.test(SUPPORT_AI_RULES) && /ONLY when the ACCOUNT FACTS say "TRIAL EXTENSION: AVAILABLE"/.test(SUPPORT_AI_RULES) && /Someone is leaving — a person sends this one/.test(SUPPORT_AI_RULES) && /never pushy/.test(SUPPORT_AI_RULES));
+check(
+  "the rules on a cancellation (2026-10-29): the offer card first, the price-for-life card, then the steps, the question last; a person sends it",
+  /CANCELLATIONS/.test(SUPPORT_AI_RULES) && /starts with \[offer\] or \[note\]/.test(SUPPORT_AI_RULES) && /Two more weeks, free/.test(SUPPORT_AI_RULES) &&
+    /When the ACCOUNT FACTS say "TRIAL EXTENSION: AVAILABLE"/.test(SUPPORT_AI_RULES) && /Today's price — yours for life/.test(SUPPORT_AI_RULES) &&
+    /nobody should feel trapped/.test(SUPPORT_AI_RULES) && /Someone is leaving — a person sends this one/.test(SUPPORT_AI_RULES) && /never pushy/.test(SUPPORT_AI_RULES) &&
+    SUPPORT_AI_RULES.indexOf("The [offer] card, first") < SUPPORT_AI_RULES.indexOf("The [note] card") &&
+    SUPPORT_AI_RULES.indexOf("The [note] card") < SUPPORT_AI_RULES.indexOf("If you'd still like to cancel") &&
+    SUPPORT_AI_RULES.indexOf("If you'd still like to cancel") < SUPPORT_AI_RULES.indexOf("One short honest question"),
+);
+check("the bug report's bullets sit under BUGS again, not under CANCELLATIONS", SUPPORT_AI_RULES.indexOf('Fill "bug" for the team') > SUPPORT_AI_RULES.indexOf("BUGS —") && SUPPORT_AI_RULES.indexOf('Fill "bug" for the team') < SUPPORT_AI_RULES.indexOf("CANCELLATIONS —"));
 check("the rules on a bug: double-check with the team, fix as soon as we can; a doubted figure is a bug and asks for the exact case", /double-check it with our team/.test(SUPPORT_AI_RULES) && /SOMETHING LOOKS WRONG/.test(SUPPORT_AI_RULES) && /exact address, proposal or screen/.test(SUPPORT_AI_RULES) && /Never say it's fixed, never give a date/.test(SUPPORT_AI_RULES));
 const d = (daysFromNow: number) => new Date(Date.now() + daysFromNow * 86_400_000);
 const onTrial = extensionOfferFact({ status: "TRIALING", trialEndsAt: d(5), provider: "STRIPE", plan: "professional" }, null);
@@ -161,6 +179,18 @@ check("no subscription, or a plan granted by hand: not available", !extensionOff
 const pending = extensionOfferFact({ status: "TRIALING", trialEndsAt: d(5), provider: "STRIPE" }, { days: 14 });
 check("a request already pending: say we're on it, don't offer again", pending.eligible && /PENDING/.test(pending.fact) && /don't offer again/.test(pending.fact));
 check("the offer's words never trip the money regex, so a draft in auto mode isn't held for that reason", !commitsMoneyOrData("If you simply haven't had time to explore it properly, we'll gladly add two more weeks, free — just reply yes and we'll set it up."));
+
+// ── SmartHelp's "Ask a person" (2026-10-30): the hand-off waits for a person ──
+const SMARTHELP_HELD = "Came from SmartHelp — a person sends this one.";
+check("a SmartHelp hand-off is never sent on its own: when nothing else holds it, held with its reason", (() => { const d = deliveryFor(howTo, "auto", "smarthelp"); return !d.send && d.reason === SMARTHELP_HELD; })());
+check("…the same sure answer without the mark still goes out", deliveryFor(howTo, "auto").send === true);
+check("…drafts-only and off keep their own reason", [deliveryFor(howTo, "draft", "smarthelp"), deliveryFor(howTo, "off", "smarthelp")].every((x) => !x.send && x.reason === "The AI is set to draft for you."));
+check("…and an answer the model held for a person keeps the model's own reason", (() => { const x = deliveryFor({ ...howTo, needsHuman: true, humanReason: "Refund request" }, "auto", "smarthelp"); return !x.send && x.reason === "Refund request"; })());
+check(
+  "the mark is read from the ticket's row; no row, a broken one or another origin is none",
+  supportOriginOf('{"origin":"smarthelp","logId":"2026-10-30T10:15:00.000Z-1a2b3c4d"}') === "smarthelp" && supportOriginOf('{"origin":"smarthelp","logId":null}') === "smarthelp" &&
+    [null, undefined, "", "{bad", "null", "[]", '"smarthelp"', '{"origin":"email","logId":null}', '{"logId":"x"}'].every((raw) => supportOriginOf(raw) === undefined),
+);
 
 console.log(bad ? `\n${bad} FAILED` : "\nall passed");
 process.exit(bad ? 1 : 0);

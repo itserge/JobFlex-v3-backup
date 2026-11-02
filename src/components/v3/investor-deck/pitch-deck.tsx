@@ -16,6 +16,9 @@ import { TOUR_SHOTS, tourSrc } from "./tour-shots";
 import { ALL_TRADE_SHOPS, FINANCING, HOURS_FACT, LEAD_PRICES, LEADER, MARKET_FACTS, type PitchSource } from "./pitch-facts";
 import { useSlides } from "./use-slides";
 import { useFullscreen } from "./use-fullscreen";
+import type { CustomerCost } from "@/lib/investorModel";
+import { CustomerCostChart, type CustomerCostWords } from "@/components/v3/admin-investors/customer-cost-chart";
+import rep from "@/components/v3/admin-investors/investor-report.module.css";
 import s from "./investor-deck.module.css";
 
 export interface PitchData {
@@ -30,7 +33,11 @@ export interface PitchData {
   unit: {
     spendCents: number; won: number; wonMrrCents: number; arrCents: number;
     costPerPayingCents: number | null; costPerSignupCents: number | null; paybackMonths: number | null;
+    /** What the cost of a customer and the payback are counted on: the signups whose trial is over (2026-11-02). */
+    matured: { through: string | null; spendCents: number; won: number; wonMrrCents: number };
     expectedPayers: number | null; expectedMrrCents: number | null;
+    /** What a customer costs, from the first day (2026-11-02): the Figures page's chart and its words, and its today. */
+    cost: CustomerCost; costWords: CustomerCostWords; today: string;
   };
   leadPrice: { minCents: number; maxCents: number };
   deskPack: { minutes: number; cents: number };
@@ -329,7 +336,7 @@ export function PitchDeck({ data, offer }: { data: PitchData; offer: ReactNode }
             <div>
               <h2 className={s.title}>Clients pay over time. Contractors are paid in full. JobFlex earns a share.</h2>
               <ol className={s.market2}>
-                <li><i>Contractor</i><b>Approved once, inside JobFlex</b><span>Settings → Payments → Financing: the application arrives filled in with what JobFlex knows; the lender approves the business once.</span></li>
+                <li><i>Contractor</i><b>Approved once, inside JobFlex</b><span>Settings → Integrations / Payments → Financing: the application arrives filled in with what JobFlex knows; the lender approves the business once.</span></li>
                 <li><i>Client</i><b>&ldquo;Pay over time&rdquo; on the proposal</b><span>On their phone, the amount filled in; checking the rate doesn&apos;t touch their credit score. Jobs from {dollars(FINANCING.jobMinCents)} to {dollars(FINANCING.jobMaxCents)}.</span></li>
                 <li><i>JobFlex</i><b>Paid on every financed job</b><span>The contractor is paid in full 1–3 business days after the job; the lender carries the loan — JobFlex never lends. The lender pays its software partners a share: our target is {FINANCING.shareLowPct}–{FINANCING.shareHighPct}% of each financed job.</span></li>
               </ol>
@@ -420,14 +427,28 @@ export function PitchDeck({ data, offer }: { data: PitchData; offer: ReactNode }
         <div>
           <h2 className={s.title}>What a customer costs, and how fast it comes back</h2>
           <div className={s.kpis}>
-            <div data-kpi="cost-per-paying"><b>{money(u.costPerPayingCents)}</b><span>{u.won > 0 ? `ad spend per paying customer · ${dollars(u.spendCents)} ÷ ${n(u.won)}` : "ad spend per paying customer · none paying yet"}</span></div>
-            <div data-kpi="payback"><b>{u.paybackMonths === null ? "—" : `${Math.round(u.paybackMonths * 10) / 10} mo`}</b><span>{u.wonMrrCents > 0 ? `to earn the spend back · at those customers' ${dollars(u.wonMrrCents)} a month` : "to earn the spend back · once a customer pays"}</span></div>
+            <div data-kpi="cost-per-paying"><b>{money(u.costPerPayingCents)}</b><span>{u.matured.through === null ? "ad spend per paying customer · once the first trials are over" : u.matured.won > 0 ? `ad spend per paying customer · ${dollars(u.matured.spendCents)} ÷ ${n(u.matured.won)} · the ads up to ${longDate(u.matured.through)}, whose trials are over` : "ad spend per paying customer · none yet from the trials that are over"}</span></div>
+            <div data-kpi="payback"><b>{u.paybackMonths === null ? "—" : `${Math.round(u.paybackMonths * 10) / 10} mo`}</b><span>{u.matured.wonMrrCents > 0 ? `to earn the spend back · at those customers' ${dollars(u.matured.wonMrrCents)} a month` : "to earn the spend back · once a customer pays"}</span></div>
             <div data-kpi="arr"><b>{dollars(u.arrCents)}</b><span>a year, at today&apos;s paying customers</span></div>
             <div data-kpi="per-signup"><b>{money(u.costPerSignupCents)}</b><span>ad spend per sign-up with a card</span></div>
             <div data-kpi="expected"><b>{u.expectedPayers === null ? "—" : `≈${n(Math.round(u.expectedPayers))}`}</b><span>{u.expectedPayers === null ? "of the running trials will pay · once a trial has ended" : `of the running trials will pay at the measured rate${u.expectedMrrCents ? ` · +${dollars(u.expectedMrrCents)}/mo` : ""}`}</span></div>
             <div data-kpi="spend"><b>{dollars(u.spendCents)}</b><span>spent on ads since {longDate(t.since)}</span></div>
           </div>
           <p className={s.note}>Read live from the ad accounts, Stripe and the sign-ups — the Figures page shows the month-by-month curve.</p>
+        </div>
+      ),
+    });
+
+    // WHAT A CUSTOMER COSTS, FROM THE FIRST DAY (owner, 2026-11-02): the Figures page's chart, slim — the words under it.
+    out.push({
+      id: "customer-cost", kicker: "Unit economics · what a customer costs, from the first day",
+      body: (
+        <div>
+          <h2 className={s.title}>What a customer costs — and where today&apos;s pace takes it</h2>
+          <div className={rep.rep}>
+            <CustomerCostChart cost={u.cost} story={u.costWords} today={u.today} ratePct={t.ratePct} compact />
+          </div>
+          <p className={s.note}>{[u.costWords.now, u.costWords.paidBack].filter(Boolean).join(" ")}</p>
         </div>
       ),
     });
@@ -440,7 +461,7 @@ export function PitchDeck({ data, offer }: { data: PitchData; offer: ReactNode }
           <div className={s.judge}>
             {[
               ["Do trials turn into customers?", t.ratePct === null ? "No trial has ended yet" : `${t.ratePct}% — ${t.ratePaid} of ${t.rateEnded} ended trials`, t.rateLowPct !== null && t.rateHighPct !== null ? `The 90% range is ${t.rateLowPct}–${t.rateHighPct}%; it narrows with every trial that ends.` : "Measured as each trial ends."],
-              ["Does the ad money come back?", u.paybackMonths === null ? "Not yet measured" : `${money(u.costPerPayingCents)} a customer, back in ${Math.round(u.paybackMonths * 10) / 10} months`, "Spend ÷ the paying customers the ads brought, then months of their plan to repay it."],
+              ["Does the ad money come back?", u.paybackMonths === null ? "Not yet measured" : `${money(u.costPerPayingCents)} a customer, back in ${Math.round(u.paybackMonths * 10) / 10} months`, "Spend ÷ the paying customers the ads brought — counted on the signups whose trial is over — then months of their plan to repay it."],
               ["Is the second engine ready?", "Built — not open yet", "The homeowner portal, the routing to one shop and the charge on Accept all work today; it is not open to homeowners yet."],
               ["Does a shop earn JobFlex more than its plan?", "Two more lines, built", `AI desk minute packs (${price(data.deskPack.cents)} for ${n(data.deskPack.minutes)}), and homeowner leads charged on Accept once the portal opens.`],
             ].map(([q, a, why]) => (

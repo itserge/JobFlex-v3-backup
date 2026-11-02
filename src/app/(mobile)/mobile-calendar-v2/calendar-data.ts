@@ -82,7 +82,7 @@ export type CalEvent = {
   /** Appointment only — how the visit was booked (lib/calendar/visitVia):
    *  the AI desk on a call, the customer online, a service plan, or the team.
    *  The card wears it as a tag; the sheet says it in words. */
-  via?: "ai-desk" | "online" | "plan" | "team";
+  via?: "ai-desk" | "online" | "plan" | "team" | "smartbook";
   /** "By the AI desk, on a phone call · Oct 16". */
   booked?: string;
   /** What the visit is for: the booked service, the plan visit, the lead's project. */
@@ -154,6 +154,8 @@ export type CalendarBook = {
   links: LinkOption[];
   createKinds: CalKind[];
   canManage: boolean;
+  /** SmartBook's Requests card (see the desktop seed). */
+  canSmartBook?: boolean;
   /** The AI desk's reserved hours (see the desktop seed). */
   desk?: { mode: "open-hours" | "reserved"; timeZone: string; me: string; people: Array<{ userId: string; name: string }> };
 };

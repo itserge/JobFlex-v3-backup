@@ -267,9 +267,17 @@ export function initLeadsContent(
   /** The source as a flat dot and its name (owner, 2026-10-18) — JobFlex's in the blueprint tone. */
   function srcBadge(v: string | null) {
     const s = leadSourceOf(v);
-    return s.side === "jobflex"
-      ? '<span class="lsrc-b lsrc-b--jobflex" title="Sent to you by JobFlex"><i></i>JobFlex</span>'
-      : '<span class="lsrc-b" title="' + esc(s.label) + '"><i style="--t:' + s.tone + '"></i>' + esc(s.short) + "</span>";
+    if (s.side === "jobflex") return '<span class="lsrc-b lsrc-b--jobflex" title="Sent to you by JobFlex"><i></i>JobFlex</span>';
+    // Facebook lead ads (owner, 2026-10-30): a Facebook-blue badge with the "f", not just a dot.
+    if (s.key === "facebook")
+      return '<span class="lsrc-b lsrc-b--fb" style="--t:' + s.tone + '" title="From your Facebook lead ads"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>Facebook</span>';
+    return '<span class="lsrc-b" title="' + esc(s.label) + '"><i style="--t:' + s.tone + '"></i>' + esc(s.short) + "</span>";
+  }
+  /** SmartBook's word for the lead (2026-10-31) under its stage: the same flat dot and plain text as the source tag. */
+  const SMART_TONE: Record<string, string> = { accent: "var(--accent)", amber: "var(--amber)", emerald: "var(--emerald)", muted: "var(--ink-faint)" };
+  function smartTag(s: Lead["smart"]) {
+    if (!s) return "";
+    return '<span class="lsb-b" title="SmartBook: ' + esc(s.label) + '"><i style="--t:' + (SMART_TONE[s.tone] ?? SMART_TONE.muted) + '"></i>SmartBook · ' + esc(s.label) + "</span>";
   }
   function initials(n: string) {
     const p = n
@@ -608,7 +616,9 @@ export function initLeadsContent(
             l.status.toLowerCase() +
             '">' +
             l.status +
-            "</span></td>" +
+            "</span>" +
+            smartTag(l.smart) +
+            "</td>" +
             '<td><span class="pt-mono">' +
             esc(l.assignee || "—") +
             "</span></td>" +

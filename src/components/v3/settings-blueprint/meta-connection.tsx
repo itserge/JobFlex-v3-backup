@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowDownToLine, ArrowUpRight, Check, ChevronDown, Facebook, Link2, Pause, ShieldCheck } from "lucide-react";
-import { chooseMetaPage, disconnectMeta, importMetaLeads } from "@/actions/metaLeads";
+import { chooseMetaPage, disconnectMeta, importMetaLeads, setMetaLeadsAuto } from "@/actions/metaLeads";
 import type { MetaData } from "./settings-data";
 import styles from "./meta-connection.module.css";
 
@@ -61,6 +61,11 @@ export function MetaConnection({ data, mobile = false }: { data: MetaData; mobil
   const [paused, setPaused] = useState(false);
   const [importResult, setImportResult] = useState<{ imported: number; skipped: number; done: boolean } | null>(null);
   const running = useRef(false);
+  const [auto, setAuto] = useState(data.autoImport);
+  const [autoBusy, setAutoBusy] = useState(false);
+  // A refresh after another change (reconnect, disconnect) brings the stored value back.
+  const [seenAuto, setSeenAuto] = useState(data.autoImport);
+  if (data.autoImport !== seenAuto) { setSeenAuto(data.autoImport); setAuto(data.autoImport); }
   useEffect(() => () => { running.current = false; }, []);
   const primary = `${styles.button} ${styles.primary}`;
   const secondary = styles.button;
@@ -92,6 +97,17 @@ export function MetaConnection({ data, mobile = false }: { data: MetaData; mobil
     } catch { setError(true); setMessage("Could not disconnect. Please try again."); }
     finally { setBusy(false); }
   }
+  async function toggleAuto() {
+    if (autoBusy) return;
+    const next = !auto;
+    setAuto(next); setAutoBusy(true); setError(false); setMessage("");
+    try {
+      const result = await setMetaLeadsAuto(next);
+      if (!result.ok) { setAuto(!next); setError(true); setMessage(result.error); }
+      else { setMessage(next ? "On. New Facebook leads show up in Leads within about 5 minutes." : "Off. New Facebook leads wait for Import leads."); router.refresh(); }
+    } catch { setAuto(!next); setError(true); setMessage("Could not save. Please try again."); }
+    finally { setAutoBusy(false); }
+  }
   async function startImport(resume: boolean) {
     if (running.current) return;
     running.current = true;
@@ -118,7 +134,7 @@ export function MetaConnection({ data, mobile = false }: { data: MetaData; mobil
   }
 
   return (
-    <section className={`${styles.root} ${mobile ? styles.mobile : ""}`} aria-label="Meta Business connection">
+    <section className={`${styles.root} ${mobile ? styles.mobile : ""}`} aria-label="Meta Business connection" data-tour="leads:meta">
       <header className={styles.header}>
         <div className={styles.brand}><Facebook size={22} aria-hidden="true" /><h2>Meta Business</h2></div>
         <span className={`${styles.status} ${data.connected ? styles.connected : ""}`}>
@@ -141,6 +157,17 @@ export function MetaConnection({ data, mobile = false }: { data: MetaData; mobil
               {(data.canResume || paused) && !importing && <button type="button" className={secondary} disabled={busy || !data.canManage || data.comingSoon} onClick={() => void startImport(true)}>Resume import</button>}
               {importing && <button type="button" className={secondary} onClick={() => { running.current = false; setMessage("Pausing after the current batch…"); }}><Pause size={16} aria-hidden="true" />Pause import</button>}
             </div>
+          </div>
+          <div className={styles.task}>
+            <div className={styles.taskCopy}>
+              <h4 id={mobile ? "meta-auto-mobile" : "meta-auto-desktop"}>New leads come in by themselves</h4>
+              <p>Every new Facebook lead lands in Leads within about 5 minutes, marked Facebook.</p>
+            </div>
+            <button type="button" role="switch" aria-checked={auto} aria-labelledby={mobile ? "meta-auto-mobile" : "meta-auto-desktop"} className={styles.switch}
+              disabled={autoBusy || !data.canManage || data.comingSoon} onClick={() => void toggleAuto()}>
+              <span className={styles.switchTrack} aria-hidden="true"><span className={styles.switchKnob} /></span>
+              <span className={styles.switchWord}>{auto ? "On" : "Off"}</span>
+            </button>
           </div>
           {importResult && <div className={styles.importResult} role="status" aria-live="polite">
             <div className={styles.importCounts}><span className={styles.imported}><strong>{importResult.imported}</strong> imported</span><span className={styles.skipped}><strong>{importResult.skipped}</strong> already imported</span></div>

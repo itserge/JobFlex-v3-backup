@@ -87,9 +87,10 @@
    The html/body rules are document scaffolding and stay with the shell.
    ============================================================ */
 .bp :global(.content *:not(:where([data-mnav], [data-mnav] *, [data-nest], [data-nest] *))) { margin: 0; padding: 0; box-sizing: border-box; }
-.bp :global(.content button) { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
-.bp :global(.content a) { text-decoration: none; color: inherit; }
-.bp :global(.content ul), .bp :global(.content ol) { list-style: none; }
+/* A nested component (`data-nest`: SmartBook's Requests card, 2026-10-31) keeps its own buttons, links and lists. */
+.bp :global(.content button:not(:where([data-nest] *))) { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+.bp :global(.content a:not(:where([data-nest] *))) { text-decoration: none; color: inherit; }
+.bp :global(.content ul:not(:where([data-nest] *))), .bp :global(.content ol:not(:where([data-nest] *))) { list-style: none; }
 .bp :global(.content input), .bp :global(.content select) { font-family: inherit; }
 .bp :global(.content svg.ic) { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; shape-rendering: geometricPrecision; }
 

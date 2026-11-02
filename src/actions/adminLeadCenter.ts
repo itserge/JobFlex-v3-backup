@@ -2,7 +2,7 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requirePlatformAdmin } from "@/lib/orgContext";
-import { startCascade } from "@/lib/leadCenter/cascade";
+import { expireOfferNow, remindOfferNow, startCascade } from "@/lib/leadCenter/cascade";
 import { offerPlatformLeadToOrg } from "@/lib/leadCenter/route";
 import { buildRanking } from "@/lib/leadCenter/matching";
 import { getRoutingMode, setRoutingMode, type RoutingMode } from "@/lib/leadCenter/routingMode";
@@ -11,6 +11,8 @@ import { setHouseOrgId } from "@/lib/publicEstimate/store";
 import { adminRefund, dollars, MAX_LEAD_PRICE_CENTS, MIN_LEAD_PRICE_CENTS } from "@/lib/leadCenter/purchase";
 import { rotateTestKey } from "@/lib/leadCenter/testLeads";
 import { createHomeownerLead } from "@/lib/leadCenter/intake";
+import { clearSandboxMessages, isSandboxLead, readSandboxBody } from "@/lib/leadCenter/sandbox";
+import { isTradeType } from "@/lib/tradeTypes";
 import { appBaseUrl } from "@/lib/appUrl";
 import { z } from "zod";
 
@@ -229,13 +231,81 @@ const testLeadInput = z.object({
   email: z.string().trim().email().max(200),
   zip: z.string().trim().regex(/^\d{5}$/, "A 5-digit ZIP"),
   description: z.string().trim().min(10).max(4000),
+  /** A street line, for a pin closer than the ZIP's middle. */
+  address: z.string().trim().max(200).optional(),
+  /** The test environment (lib/leadCenter/sandbox): route automatically among internal organizations, send nothing. */
+  auto: z.boolean().optional(),
+  /** The trade, taken as read instead of asking the detector — so a run routes when the model is off. */
+  trade: z.string().trim().max(60).optional(),
 });
 
-/** "Create test lead" — the homeowner intake itself, marked test, no wizard. */
+/** "Create test lead" — the homeowner intake itself, marked test, no wizard. With `auto` it is a test-environment
+ *  lead: the automatic path among internal organizations, every email and text recorded instead of sent. */
 export async function createTestLead(raw: unknown): Promise<{ ok: true; platformLeadId: string; statusPath: string }> {
   await requirePlatformAdmin();
-  const data = testLeadInput.parse(raw);
-  const res = await createHomeownerLead(data, { isTest: true });
+  const { auto, trade, address, ...data } = testLeadInput.parse(raw);
+  if (trade && !isTradeType(trade)) throw new Error("Pick a trade from the list");
+  const res = await createHomeownerLead(
+    { ...data, address: address || undefined },
+    {
+      isTest: true,
+      sandbox: auto === true,
+      known: trade && isTradeType(trade) ? { trade: { trade, confidence: 1, reason: "Chosen on the Lead Center test run" } } : null,
+    },
+  );
   revalidatePath("/admin/lead-center");
   return { ok: true, platformLeadId: res.platformLeadId, statusPath: res.statusPath };
+}
+
+// ── The test environment (lib/leadCenter/sandbox, 2026-10-29) ──────────────────────────────────────────────────
+// Every one of these refuses a lead that is not a test-environment lead: they move the clock of a run, never of a
+// real request.
+
+async function requireSandboxLead(platformLeadId: string): Promise<void> {
+  const pl = await db.platformLead.findUnique({ where: { id: platformLeadId }, select: { isTest: true } });
+  if (!pl?.isTest || !(await isSandboxLead(platformLeadId))) throw new Error("That is not a test-environment lead.");
+}
+
+async function openOfferOf(platformLeadId: string) {
+  const offer = await db.leadOffer.findFirst({ where: { platformLeadId, status: "OFFERED" }, orderBy: { createdAt: "desc" }, select: { id: true } });
+  if (!offer) throw new Error("No offer is open on this lead.");
+  return offer;
+}
+
+/** "Let it lapse now": the open offer expires, and the lead moves on as after 24 hours. */
+export async function expireTestOffer(platformLeadId: string): Promise<{ ok: true }> {
+  await requirePlatformAdmin();
+  await requireSandboxLead(platformLeadId);
+  const offer = await openOfferOf(platformLeadId);
+  if (!(await expireOfferNow(offer.id))) throw new Error("The offer was answered a moment ago — refresh.");
+  revalidatePath("/admin/lead-center");
+  return { ok: true };
+}
+
+/** "Send the reminder now": the two-hours-left letter and text, recorded. */
+export async function remindTestOffer(platformLeadId: string): Promise<{ ok: true }> {
+  await requirePlatformAdmin();
+  await requireSandboxLead(platformLeadId);
+  const offer = await openOfferOf(platformLeadId);
+  await remindOfferNow(offer.id);
+  revalidatePath("/admin/lead-center");
+  return { ok: true };
+}
+
+/** One captured message, whole — the letter's HTML or the text's words. */
+export async function readTestMessage(platformLeadId: string, n: number): Promise<{ ok: true; body: string }> {
+  await requirePlatformAdmin();
+  await requireSandboxLead(platformLeadId);
+  const body = await readSandboxBody(platformLeadId, Math.trunc(n));
+  if (body == null) throw new Error("That message is no longer kept.");
+  return { ok: true, body };
+}
+
+/** Empty a run's log of messages. */
+export async function clearTestMessages(platformLeadId: string): Promise<{ ok: true }> {
+  await requirePlatformAdmin();
+  await requireSandboxLead(platformLeadId);
+  await clearSandboxMessages(platformLeadId);
+  revalidatePath("/admin/lead-center");
+  return { ok: true };
 }

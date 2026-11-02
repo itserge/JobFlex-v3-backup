@@ -83,6 +83,7 @@ import {
 import { NotificationBell } from "@/components/v3/blueprint-shell/notification-bell";
 import { Who } from "@/components/v3/who/who";
 import { TourChip } from "@/components/v3/onboarding-tour/tour-chip";
+import { SmartHelpRow } from "@/components/v3/smarthelp/smarthelp-row";
 import { TourShowMe } from "@/components/v3/onboarding-tour/tour-show-me";
 
 const prefersReducedMotion = () =>
@@ -1436,6 +1437,8 @@ function DashboardView({ data, notice, sample }: { data: DashboardData; notice?:
         {/* The first-estimate tour, paused or under way (components/v3/onboarding-tour) — at the head of
             the drawer, where the trial ribbon's dock never covers it. */}
         <TourChip onPick={() => setNavOpen(false)} />
+        {/* SmartHelp (components/v3/smarthelp): the drawer closes, then the sheet comes up. */}
+        <SmartHelpRow variant="drawer" onBeforeOpen={() => setNavOpen(false)} />
         <nav className={styles.sbScroll} ref={navScrollRef}>
           <div className={styles.sbIndicator} ref={indicatorRef} />
           {navSections.map((sec) => (

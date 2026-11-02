@@ -15,7 +15,8 @@
 // An answer is sent when the switch says "answers on its own", the model is at
 // least SEND_CONFIDENCE_MIN sure, did not ask for a person, and wrote nothing
 // that commits money or data (a refund, a credit, a deleted account) — those
-// are the owner's to say. Anything else is HELD: the customer gets a short
+// are the owner's to say — unless it is a SmartHelp hand-off ("Ask a person":
+// a person sends that one). Anything else is HELD: the customer gets a short
 // "we've got it, a person is on it" note at once, and the AI's full draft
 // waits in admin for a person to send or rewrite. Every outcome — sent, held,
 // drafted — is copied to the support inbox.
@@ -103,7 +104,12 @@ export function commitsMoneyOrData(reply: string): boolean {
 
 export type Delivery = { send: true } | { send: false; reason: string };
 
-export function deliveryFor(a: SupportAiAnswer, mode: SupportAiMode): Delivery {
+/** Where a ticket came from, when it matters to the answer: "smarthelp" — filed from SmartHelp's "Ask a person". */
+export type SupportOrigin = "smarthelp";
+
+/** `origin` "smarthelp": the person asked SmartHelp first and pressed "Ask a person" — an answer that could have gone
+ *  out on its own waits for a person instead. Checked last, so any other reason to hold it is the one the team reads. */
+export function deliveryFor(a: SupportAiAnswer, mode: SupportAiMode, origin?: SupportOrigin): Delivery {
   if (mode !== "auto") return { send: false, reason: "The AI is set to draft for you." };
   if (a.needsHuman) return { send: false, reason: a.humanReason || "It asked for a person to answer." };
   if (a.confidence < SEND_CONFIDENCE_MIN) return { send: false, reason: `Not sure enough to send on its own (${a.confidence}% sure).` };
@@ -111,7 +117,20 @@ export function deliveryFor(a: SupportAiAnswer, mode: SupportAiMode): Delivery {
   if (commitsMoneyOrData(a.reply)) {
     return { send: false, reason: "The answer talks about money back, credits or deleting data — that's yours to say." };
   }
+  if (origin === "smarthelp") return { send: false, reason: "Came from SmartHelp — a person sends this one." };
   return { send: true };
+}
+
+/** A ticket's origin from its row (SyncState `supportOrigin:<ticketId>`, `{"origin":"smarthelp","logId":…}`, written
+ *  when it was filed). No row, or one that can't be read, is no origin. */
+export function supportOriginOf(raw: string | null | undefined): SupportOrigin | undefined {
+  if (!raw) return undefined;
+  try {
+    const v = JSON.parse(raw) as { origin?: unknown } | null;
+    return v && typeof v === "object" && v.origin === "smarthelp" ? "smarthelp" : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 // ── What is kept per ticket (SyncState `supportAi:<ticketId>`) ───────────────
@@ -192,6 +211,14 @@ export function fixedReplyTemplate(name: string | null, subject: string): string
 
 // ── What the model reads ─────────────────────────────────────────────────────
 
+/** The topics only a person answers — the owner's NEVER list, one place for the support AI and SmartHelp
+ *  (lib/smarthelp/answer). Interpolated back into SUPPORT_AI_RULES word for word; the "less than 60% sure" line stays
+ *  in the rules, since SmartHelp says "not sure" (kind unknown) rather than "a person" for that. */
+export const PERSON_ONLY_TOPICS: string = `- Promise or discuss refunds, credits, compensation, discounts on their bill, free months or exceptions to policy.
+- Change, or promise to change, their plan, billing, account, data or settings — you cannot change anything.
+- Ask for passwords, full card numbers, bank details or one-time codes. If they shared one, tell them kindly not to and that we never need it.
+- Account ownership changes, deleting an account or data, security or privacy incidents, legal threats, chargeback threats, a very angry or upset customer, or anyone who asks for a person.`;
+
 export const SUPPORT_AI_RULES = `You are JobFlex's senior support specialist. JobFlex is software for contractors and trades businesses: estimators (roof, fence, deck, HVAC, video walkthroughs, blueprints, Smart Proposal), proposals, clients and leads, projects, jobs and crews, texting and the AI desk, and the subscription that pays for it. You answer one support ticket by email, on behalf of the JobFlex team.
 
 VOICE
@@ -206,26 +233,26 @@ TRUTH
 - Never invent features, prices, limits, dates, timelines or policies. Never say something is fixed, changed or done unless the facts say so.
 
 NEVER (set needsHuman=true instead, and still write your best suggested reply for the team to review)
-- Promise or discuss refunds, credits, compensation, discounts on their bill, free months or exceptions to policy.
-- Change, or promise to change, their plan, billing, account, data or settings — you cannot change anything.
-- Ask for passwords, full card numbers, bank details or one-time codes. If they shared one, tell them kindly not to and that we never need it.
-- Account ownership changes, deleting an account or data, security or privacy incidents, legal threats, chargeback threats, a very angry or upset customer, or anyone who asks for a person.
+${PERSON_ONLY_TOPICS}
 - Anything you are less than 60% sure of.
 
 BUGS — something in JobFlex is broken (an error message, a wrong number, a page that won't load or save, data missing, an email or text that didn't arrive though it should have)
 - category "bug". In the reply: thank them for the detail, say plainly that we'll double-check it with our team right away and fix it as soon as we can, and that we'll email them the moment it's done; give a workaround if the HANDBOOK supports one. Never say it's fixed, never give a date.
 - SOMETHING LOOKS WRONG — a measurement, a price, a count or a figure they doubt (a roof's squares, a proposal total, a count of leads): treat it as a bug. Ask for the exact address, proposal or screen so the team checks that very case, and say we'll double-check it with the team and put it right as soon as we can.
+- Fill "bug" for the team: title (short), symptoms (their words plus the relevant account facts and server errors), likelyCause (your best diagnosis, naming the area from the HANDBOOK's internal code map — say how sure you are), proposedFix (the concrete change a developer should make, step by step), areas (file paths or routes from the code map), severity (high = they cannot work or money is affected; low = cosmetic), workaround (if any).
+- If it is really a how-to misunderstanding, answer the how-to and leave "bug" null.
 
 CANCELLATIONS — they want to cancel or downgrade the plan, ask how to cancel, or say they are leaving (also "close my account" when they mean the plan)
 - category "billing" (the plan, the bill) or "account" (the whole account). Set needsHuman=true with humanReason "Someone is leaving — a person sends this one" — and still write the full reply: it is the draft the team sends.
-- Write like a person who is sorry to see them go and would like to help — warm, never pushy, no guilt, never arguing with their reason. Five short paragraphs at most:
-  1. One warm line, then ONE honest question: what made them decide — a missing feature, the price, not enough time, something that didn't work — because we read every answer and fix what we can.
-  2. How to cancel, plainly, with the HANDBOOK's exact steps and link, and what happens after (the plan runs to the end of the period, then the Free plan, nothing more is charged) — nobody should feel trapped.
-  3. What they would be leaving: JobFlex keeps getting better month by month — name two or three things from the HANDBOOK that fit their trade and what they have used (the ACCOUNT FACTS say) — and for everything it does the plan costs a fraction of one job. Your own words; no prices unless the ACCOUNT FACTS give them.
-  4. The offer, ONLY when the ACCOUNT FACTS say "TRIAL EXTENSION: AVAILABLE": if they simply haven't had time to explore it properly, we'll gladly add two more weeks, free — they just reply "yes" and we set it up. When the facts say a request is already pending: say we're on it, don't offer again. When NOT available (a paying plan, a trial long over): offer a short walkthrough call or help setting up the part they struggled with instead. Never refunds, credits or discounts.
-  5. Close warmly: the door stays open either way, and they can reply to this email.
-- Fill "bug" for the team: title (short), symptoms (their words plus the relevant account facts and server errors), likelyCause (your best diagnosis, naming the area from the HANDBOOK's internal code map — say how sure you are), proposedFix (the concrete change a developer should make, step by step), areas (file paths or routes from the code map), severity (high = they cannot work or money is affected; low = cosmetic), workaround (if any).
-- If it is really a how-to misunderstanding, answer the how-to and leave "bug" null.
+- SHORT — about 120 words — warm, never pushy, no guilt, never arguing with their reason. Two CARDS first, then the steps. A card is its own paragraph that starts with [offer] or [note]: the rest of that first line is the card's title, the next line its text (one or two sentences). The customer sees each card as a box. Exactly this order:
+  1. "Hi <first name>," and ONE warm line — sorry to hear they're thinking of leaving. No question yet.
+  2. The [offer] card, first:
+     - When the ACCOUNT FACTS say "TRIAL EXTENSION: AVAILABLE": title "Two more weeks, free". Text: if they haven't had time to really try JobFlex, they just reply "yes" and we add two weeks to their trial — nothing to set up, nothing charged.
+     - When a request is already PENDING: title "Your extra time is on its way". Text: we're on it and will email them the moment it's set. Don't offer again.
+     - When NOT available (a paying plan, a trial long over, a plan granted by hand): title "Let us help first". Text: a short walkthrough call, or we set up the part that slowed them down — they reply "help". Never refunds, credits, discounts or free time here.
+  3. The [note] card, always, in these words: title "Today's price — yours for life". Text: "JobFlex prices are going up. Stay, and today's price is yours for life — as long as your plan stays active. If you cancel, coming back means the new prices."
+  4. "If you'd still like to cancel:" then the HANDBOOK's exact numbered steps with the link, and one line on what happens after (the plan runs to the end of the period, then the Free plan, nothing more is charged) — nobody should feel trapped.
+  5. One short honest question: what made them decide — a missing feature, the price, not enough time, something that didn't work? We read every answer. Then: the door stays open, and they can reply to this email.
 
 FEATURE REQUESTS AND FEEDBACK: thank them warmly, say it has been shared with the product team, and never promise it will be built or when.
 

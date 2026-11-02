@@ -111,7 +111,7 @@ export function BlueprintEstimator() {
           </svg>
           <h2 className={s.h2}>{opening != null ? `Opening the plans · ${opening} page${opening === 1 ? "" : "s"}` : "Drop the plan set here"}</h2>
           <p className={s.p}>A PDF of the plans, or photos of the sheets — up to {MAX_PLAN_PAGES} pages.</p>
-          <button type="button" className={s.btnPrimary} disabled={opening != null} onClick={() => fileInput.current?.click()}>
+          <button type="button" className={s.btnPrimary} disabled={opening != null} onClick={() => fileInput.current?.click()} data-tour="blueprint:upload">
             {opening != null ? "Opening…" : "Choose the plans"}
           </button>
           {err && <div className={s.err}>{err}</div>}

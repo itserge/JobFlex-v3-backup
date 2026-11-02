@@ -138,7 +138,7 @@ export async function dispatchSquareEvent(event: SquareEvent, ctx: SquareEventCo
       await notifyPaymentIssue({
         organizationId: conn.organizationId,
         title: "Square was disconnected",
-        detail: "JobFlex was removed from your Square account. Reconnect it in Settings → Payments to take Square payments again.",
+        detail: "JobFlex was removed from your Square account. Reconnect it in Settings → Integrations / Payments to take Square payments again.",
       });
       return;
     }

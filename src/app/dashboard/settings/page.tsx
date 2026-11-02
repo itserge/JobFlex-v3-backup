@@ -31,17 +31,16 @@ import type { Metadata } from "next";
 import { NoOrgError, UnauthorizedError, requireOrg } from "@/lib/orgContext";
 import { loadSettingsData } from "@/lib/settings/loadSettingsData";
 import { SettingsResponsive } from "./settings-responsive";
+import { railKeyFor } from "@/components/v3/settings-blueprint/settings-data";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "JobFlex · Settings",
   description:
-    "Settings — account, payments, billing, integrations and notifications on one sheet.",
+    "Settings — account, billing, integrations and payments, and notifications on one sheet.",
 };
 
-const PANE_KEYS = ["account", "payments", "billing", "integrations", "notifications", "desk", "estimating", "website"] as const;
-type PaneKey = (typeof PANE_KEYS)[number];
 
 export default async function SettingsPage({
   searchParams,
@@ -73,7 +72,8 @@ export default async function SettingsPage({
     const query = destination.toString();
     redirect(`/dashboard/texting${query ? `?${query}` : ""}`);
   }
-  const initialPane = PANE_KEYS.includes(rawPane as PaneKey) ? (rawPane as PaneKey) : undefined;
+  // ?pane=payments (the section's old name) opens Integrations / Payments.
+  const initialPane = railKeyFor(rawPane);
   let ctx;
   try {
     ctx = await requireOrg();

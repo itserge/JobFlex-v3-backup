@@ -63,7 +63,7 @@ export async function GET(req: Request) {
         organizationId: conn.organizationId,
         title: "Square connection needs renewing",
         detail:
-          "We couldn't renew your Square access token, so clients can't pay through Square until you reconnect it in Settings → Payments.",
+          "We couldn't renew your Square access token, so clients can't pay through Square until you reconnect it in Settings → Integrations / Payments.",
       }).catch(() => {});
     }
   }

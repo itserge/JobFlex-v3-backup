@@ -6,7 +6,8 @@ import { requireOrg, requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { notifySupportTicket, supportTicketRef } from "@/lib/notify";
 import { rateLimitShared, retryInWords } from "@/lib/rateLimit";
-import { answerTicketWithAi, readSupportAi } from "@/lib/support/aiSupport";
+import { answerTicketWithAi, markSmartHelpTicket, readSupportAi } from "@/lib/support/aiSupport";
+import { setQuestionOutcome } from "@/lib/smarthelp/server";
 import { alertSupportTicket } from "@/lib/adminAlerts";
 import { acceptSupportMessage } from "@/lib/support/acceptMessage";
 import { checkReply, openingMessage, type ThreadMessage } from "@/lib/supportReply";
@@ -33,6 +34,10 @@ const ticketInput = z.object({
   body: z.string().trim().min(1, "Describe the issue").max(5000),
   category: z.enum(SUPPORT_CATEGORIES).default("general"),
   priority: z.enum(SUPPORT_PRIORITIES).default("normal"),
+  // SmartHelp's "Ask a person" (2026-10-30): the composer it opened pre-filled marks the ticket as its hand-off, with
+  // the SmartHelp question it carries — the support AI then only drafts for it, and a person sends.
+  origin: z.literal("smarthelp").optional(),
+  smartHelpLogId: z.string().max(80).optional(),
 });
 
 /** The message's first line, clipped to a subject-sized string. The user's own
@@ -44,6 +49,17 @@ function subjectFromBody(body: string): string {
   const cut = firstLine.slice(0, 80);
   const lastSpace = cut.lastIndexOf(" ");
   return `${(lastSpace > 40 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
+}
+
+/** A SmartHelp hand-off's question is marked "person" — only its asker's own counts (lib/smarthelp/server). Runs after
+ *  the response, best-effort: a failure is a log line, never the ticket's. */
+async function markQuestionForPerson(logId: string, userId: string, ref: string): Promise<void> {
+  try {
+    const r = await setQuestionOutcome(logId, userId, "person");
+    if (r !== "ok") console.warn(`[support] ${ref}: its SmartHelp question was not marked "person" (${r}).`);
+  } catch (err) {
+    console.warn(`[support] ${ref}: its SmartHelp question was not marked "person":`, err instanceof Error ? err.message : err);
+  }
 }
 
 export interface SubmitTicketResult {
@@ -90,17 +106,25 @@ export async function submitSupportTicket(raw: unknown): Promise<SubmitTicketRes
   const data = ticketInput.parse(raw);
   const subject = data.subject?.trim() || subjectFromBody(data.body);
 
-  const ticket = await db.supportTicket.create({
-    data: {
-      organizationId,
-      userId: user.id,
-      subject,
-      body: data.body,
-      category: data.category,
-      priority: data.priority,
-      status: "OPEN",
-    },
-  });
+  const fields = {
+    organizationId,
+    userId: user.id,
+    subject,
+    body: data.body,
+    category: data.category,
+    priority: data.priority,
+    status: "OPEN",
+  };
+  // A SmartHelp hand-off is created and marked in one transaction (lib/support/aiSupport): none exists unmarked, so
+  // the support AI never answers one on its own. Every other ticket is created as it always was.
+  const handoff = data.origin === "smarthelp" ? { logId: data.smartHelpLogId || null } : null;
+  const ticket = handoff
+    ? await db.$transaction(async (tx) => {
+        const created = await tx.supportTicket.create({ data: fields });
+        await markSmartHelpTicket(tx, created.id, handoff.logId);
+        return created;
+      })
+    : await db.supportTicket.create({ data: fields });
 
   // Heads-up to the operator. Best-effort by contract — notifySupportTicket
   // never throws, so a dead transport cannot fail a submission that is already
@@ -128,13 +152,15 @@ export async function submitSupportTicket(raw: unknown): Promise<SubmitTicketRes
 
   // The support AI reads it and answers (owner, 2026-10-15) — after the
   // response, so "Send" never waits on a model. What it may send on its own,
-  // and the copy every outcome sends to the support inbox: lib/support.
-  after(() =>
-    answerTicketWithAi(ticket.id, { trigger: "new" }).then(
+  // and the copy every outcome sends to the support inbox: lib/support. A
+  // SmartHelp hand-off's question is marked "person" first, here too.
+  after(async () => {
+    if (handoff?.logId) await markQuestionForPerson(handoff.logId, user.id, ref);
+    await answerTicketWithAi(ticket.id, { trigger: "new" }).then(
       () => undefined,
       (err) => console.error(`[support-ai] ticket ${ref} was not answered:`, err instanceof Error ? err.message : err),
-    ),
-  );
+    );
+  });
 
   revalidatePath("/dashboard/support");
   revalidatePath("/admin/support");

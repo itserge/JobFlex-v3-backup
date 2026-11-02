@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireManager } from "@/lib/orgContext";
 import { metaAllowed, MetaApiError } from "@/lib/meta/graph";
 import { disconnectMetaPage, importMetaBatch, selectMetaPage } from "@/lib/meta/connections";
+import { setMetaAutoImport } from "@/lib/meta/autoImport";
 import { requirePage } from "@/lib/customPageAccess";
 
 function message(error: unknown) {
@@ -43,5 +44,16 @@ export async function importMetaLeads(restart: boolean = false) {
     const result = await importMetaBatch(organizationId, user.id, restart === true);
     refresh();
     return { ok: true as const, ...result };
+  } catch (error) { return { ok: false as const, error: message(error) }; }
+}
+/** The Settings switch: new Facebook leads come into Leads by themselves (the cron, every 5 minutes). */
+export async function setMetaLeadsAuto(on: boolean) {
+  try {
+    const { organizationId, user } = await requireManager();
+    await requirePage(organizationId, "leads");
+    if (!metaAllowed(user.email)) return { ok: false as const, error: "Meta is not enabled for this account yet." };
+    await setMetaAutoImport(organizationId, on === true);
+    refresh();
+    return { ok: true as const };
   } catch (error) { return { ok: false as const, error: message(error) }; }
 }

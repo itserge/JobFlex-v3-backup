@@ -93,8 +93,8 @@ export async function sendInvoice(input: { proposalId: string; installmentId: st
   if (!proposal.client?.email && !toE164(proposal.client?.phone)) return fail("The client has no email or phone on file.");
   const settings = parsePaymentSettings(proposal.organization.paymentSettingsJson);
   const opts = await invoiceOptionsFor(proposal.organizationId, proposal.currency);
-  if (input.method === "card" && !opts.card) return fail("No card processor is connected (Settings → Payments).");
-  if (input.method === "bank" && !opts.bank) return fail("Bank-transfer instructions aren't set (Settings → Payments).");
+  if (input.method === "card" && !opts.card) return fail("No card processor is connected (Settings → Integrations / Payments).");
+  if (input.method === "bank" && !opts.bank) return fail("Bank-transfer instructions aren't set (Settings → Integrations / Payments).");
 
   const installments = proposal.installments.length ? proposal.installments : await ensureSchedule(proposal.id);
   const schedule = resolveSchedule({ ...contractSchedule(proposal.total, proposal.changeOrders), currency: proposal.currency, installments });

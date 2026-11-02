@@ -88,7 +88,7 @@ export function DeskHours({ hoursWords }: { hoursWords: string }) {
   const reservedNone = view.mode === "reserved" && !view.windows.length;
   return (
     <div className={h.root} data-desk-hours data-mode={view.mode}>
-      <div className={s.sec} role="radiogroup" aria-label="Where the desk books visits">
+      <div className={s.sec} role="radiogroup" aria-label="Where the desk books visits" data-tour="ai-desk:hours">
         <div className={s.h}>Where the desk books visits</div>
         <div className={s.radios}>
           {(

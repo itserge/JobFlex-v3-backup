@@ -14,6 +14,7 @@ import { geocodeAddress } from "@/lib/maps";
 import { startCascade } from "@/lib/leadCenter/cascade";
 import { getRoutingMode, MANUAL_MODE_REASON } from "@/lib/leadCenter/routingMode";
 import { TEST_QUEUE_REASON } from "@/lib/leadCenter/testLeads";
+import { markSandboxLead } from "@/lib/leadCenter/sandbox";
 import { writeProfessionalScope } from "@/lib/leadScope";
 import { adoptLeads, findOrCreateHome, homePath, mayShowHomeKey } from "@/lib/home/portal";
 
@@ -79,6 +80,9 @@ async function geocodeOrReuse(parts: {
 // leads stuck in MATCHING.
 export interface IntakeOptions {
   isTest: boolean;
+  /** A test-environment lead (lib/leadCenter/sandbox): with isTest, routed automatically among internal
+   *  organizations, and every email and text on its path recorded instead of sent. */
+  sandbox?: boolean;
   /** Submitted from the home dashboard: its key, and the plan it fulfils (lib/home/portal). */
   homeKey?: string | null;
   planId?: string | null;
@@ -160,6 +164,11 @@ export async function createHomeownerLead(data: HomeownerIntake, opts: IntakeOpt
     },
   });
 
+  // The test environment's mark goes on first, before anything below can send a letter (lib/leadCenter/sandbox).
+  // Without it the run would mail for real, so a failed mark stops here, loudly.
+  const sandbox = opts.isTest && opts.sandbox === true;
+  if (sandbox) await markSandboxLead(platformLead.id);
+
   // Where it was started (the cost guides) and the consent it was sent with
   // (2026-10-26): best-effort, like the rest after the two inserts — without
   // the table the request still goes, loudly, since the consent record is lost.
@@ -220,7 +229,18 @@ export async function createHomeownerLead(data: HomeownerIntake, opts: IntakeOpt
   //   3. a confident classification starts the cascade as before.
   try {
     const decision = routeDecision(detected);
-    if (opts.isTest) {
+    if (sandbox) {
+      // 0a. a test-environment lead takes the automatic path among internal organizations, whatever the mode —
+      //     unless the detector could not say the trade, as for anyone.
+      if (decision.route === "MANUAL_QUEUE") {
+        await db.platformLead.update({
+          where: { id: platformLead.id },
+          data: { status: "MANUAL_QUEUE", queueReason: `${decision.queueReason}: ${decision.note}`.slice(0, 250) },
+        });
+      } else {
+        await startCascade(platformLead.id);
+      }
+    } else if (opts.isTest) {
       // 0. a test lead never reaches the cascade, whatever the mode.
       await db.platformLead.update({
         where: { id: platformLead.id },

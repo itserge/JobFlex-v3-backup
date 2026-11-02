@@ -26,7 +26,7 @@ import type { Metadata, Viewport } from "next";
 import { NoOrgError, UnauthorizedError, requireOrg } from "@/lib/orgContext";
 import { loadSettingsData } from "@/lib/settings/loadSettingsData";
 import { MobileSettings } from "@/components/v3/mobile-settings/mobile-settings";
-import type { RailKey } from "@/components/v3/settings-blueprint/settings-data";
+import { railKeyFor } from "@/components/v3/settings-blueprint/settings-data";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +46,6 @@ export const viewport: Viewport = {
   themeColor: "#0a0a0a",
 };
 
-const PANE_KEYS = ["account", "payments", "billing", "integrations", "notifications", "desk", "estimating", "website"] as const;
 
 export default async function MobileSettingsV1Page({
   searchParams,
@@ -66,7 +65,7 @@ export default async function MobileSettingsV1Page({
     }
     redirect(`/dashboard/settings?${destination.toString()}`);
   }
-  const initialPane = PANE_KEYS.includes(rawPane as RailKey) ? (rawPane as RailKey) : undefined;
+  const initialPane = railKeyFor(rawPane);
 
   let ctx;
   try {

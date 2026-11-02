@@ -37,6 +37,7 @@ import {
   type TourStep,
 } from "@/lib/onboarding/tour-paths";
 import type { TourView } from "@/lib/onboarding/progress";
+import { firstVisibleTarget, frameOf } from "@/lib/onboarding/targets";
 import { HANDHELD, useIsHandheld } from "@/components/v3/responsive-shell/use-handheld";
 import { publishTour } from "./tour-store";
 import styles from "./onboarding-tour.module.css";
@@ -47,7 +48,6 @@ type Box = { top: number; left: number; width: number; height: number };
 const TICK_MS = 350;
 /** A conditional step whose element has not appeared by then is not this page's. */
 const WHEN_GRACE_MS = 2000;
-const FRAME_PAD = 6;
 /** The docked card's distance from the screen's edges: desk, phone. */
 const DOCK_DESK = 24;
 const DOCK_PHONE = 12;
@@ -76,24 +76,12 @@ function onRoute(step: TourStep, pathname: string): boolean {
   return !step.route || pathname === step.route || pathname.startsWith(step.route + "/");
 }
 
-/** The first target on the page and on screen sideways (a closed drawer's link sits off the left edge). */
+/** The step's element — the first of its targets on the page and on screen sideways (lib/onboarding/targets) —
+ *  and the name it carries (the menu button has words of its own). */
 function findTarget(step: TourStep): { el: HTMLElement; name: string } | null {
   const names = step.handheldTargets && window.matchMedia(HANDHELD).matches ? step.handheldTargets : step.targets;
-  for (const name of names) {
-    let first: HTMLElement | null = null;
-    for (const el of document.querySelectorAll<HTMLElement>(`[data-tour="${name}"]`)) {
-      if (!isShown(el) || el.closest('[aria-hidden="true"]')) continue;
-      // A closed drawer that is only made invisible (visibility, opacity) still has a box.
-      if (el.checkVisibility && !el.checkVisibility({ visibilityProperty: true, opacityProperty: true })) continue;
-      const r = el.getBoundingClientRect();
-      if (r.width <= 0 || r.right <= 0 || r.left >= window.innerWidth) continue;
-      // Two of the same (HVAC's Convert in the summary and under the lines): the one on screen.
-      if (r.bottom > 0 && r.top < window.innerHeight) return { el, name };
-      first ??= el;
-    }
-    if (first) return { el: first, name };
-  }
-  return null;
+  const el = firstVisibleTarget(names);
+  return el ? { el, name: el.dataset.tour ?? "" } : null;
 }
 
 /** Another surface's modal is open (the estimator's question, the email panel, the plan-limit dialog): stand aside. */
@@ -131,17 +119,6 @@ function dockBox(handheld: boolean, w: number, h: number): Box {
 
 function overlaps(a: Box, b: Box): boolean {
   return a.left < b.left + b.width && a.left + a.width > b.left && a.top < b.top + b.height && a.top + a.height > b.top;
-}
-
-function framed(r: DOMRect): Box | null {
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  const top = Math.max(r.top - FRAME_PAD, 4);
-  const left = Math.max(r.left - FRAME_PAD, 4);
-  const bottom = Math.min(r.bottom + FRAME_PAD, vh - 4);
-  const right = Math.min(r.right + FRAME_PAD, vw - 4);
-  if (bottom - top < 8 || right - left < 8) return null;
-  return { top, left, width: right - left, height: bottom - top };
 }
 
 export function OnboardingTour({ view }: { view: TourView }) {
@@ -367,7 +344,7 @@ export function OnboardingTour({ view }: { view: TourView }) {
     const fixed = pinned(el);
     let quiet = 0;
     const paint = () => {
-      let b = framed(el.getBoundingClientRect());
+      let b = frameOf(el.getBoundingClientRect());
       // Taller than the room above the card (the roof report on a phone): the frame ends at the card.
       if (b && !fixed && cardRef.current?.getClientRects().length) {
         const { w, h } = cardSizeRef.current;
@@ -456,7 +433,7 @@ export function OnboardingTour({ view }: { view: TourView }) {
       if (!el.isConnected) return;
       const r = el.getBoundingClientRect();
       const off = r.bottom <= TOP_CLEAR || r.top >= window.innerHeight;
-      if (off || dockedOver(framed(r))) reveal(el);
+      if (off || dockedOver(frameOf(r))) reveal(el);
     }, RECHECK_MS);
     return () => window.clearTimeout(again);
   }, [showing, target, step, nextSpot, blocked, reveal, dockedOver]);

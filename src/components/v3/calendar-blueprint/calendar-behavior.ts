@@ -37,6 +37,7 @@ import {
 } from "@/actions/jobs";
 import { assignWorker, markAssignmentAccepted, unassignWorker } from "@/actions/workers";
 import { markNavSeen } from "@/actions/notifications";
+import { getCalendarSeed } from "@/app/dashboard/calendar/calendar-actions";
 import { VISIT_VIA } from "@/lib/calendar/visitVia";
 import { expandWindows, spanWords, zonedHhmm, zonedYmd } from "@/lib/deskHours";
 import { removeDeskHours, reserveDeskHours } from "@/actions/deskHours";
@@ -3286,6 +3287,25 @@ export function initCalendarContent(
   // motion block: the marker is information, not decoration).
   const nowTick = window.setInterval(syncNowLine, 30000);
   disposers.push(() => window.clearInterval(nowTick));
+
+  // A visit booked from outside the grid — SmartBook's Requests card above it (2026-10-31): the visits are read
+  // again and the view redrawn, so the Yes lands on the calendar without a reload.
+  if (wired) {
+    on(window, "jf:calendar-reload", function () {
+      getCalendarSeed()
+        .then(function (fresh) {
+          eventsData.splice(
+            0,
+            eventsData.length,
+            ...fresh.events.map((e) => ({ ...e, start: new Date(e.start), end: new Date(e.end), workers: e.workers.slice(), assignmentIds: { ...(e.assignmentIds || {}) } })),
+          );
+          renderCal();
+        })
+        .catch(function () {
+          /* the next visit to the page reads it */
+        });
+    });
+  }
 
   // The mobile nav drawer and FLUID SCALE belong to the persistent chrome and
   // live in components/v3/blueprint-shell/shell-behavior.ts.

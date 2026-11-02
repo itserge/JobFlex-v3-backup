@@ -29,6 +29,7 @@ import { PLAN_ENDED_TEXT_MESSAGE, sendText } from "@/lib/sms/send";
 import { smsAllowanceFailure, type PlanLimitFailure } from "@/lib/planLimits";
 import { parseGmailSettings } from "@/lib/settings";
 import { enforceTrialCap } from "@/lib/trialMeter";
+import { pauseForPerson } from "@/lib/smartbook/engine";
 
 export type ClientChannel = "email" | "sms";
 
@@ -159,6 +160,9 @@ export async function messageClient(input: {
           : `Texted ${to} — ${firstLine(body)}`,
     },
   });
+
+  // A person wrote to them: SmartBook steps back on that conversation (it would otherwise answer their reply).
+  await pauseForPerson(organizationId, input.channel === "sms" ? { phone: to } : { email: to }, { actorId: user.id, who: user.name?.trim() || user.email || "Someone on your team" }).catch(() => null);
 
   return { channel: input.channel, to, delivered };
 }

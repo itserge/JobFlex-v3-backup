@@ -135,7 +135,7 @@ export function ProposalsContent({ rows }: { rows: ProposalRow[] }) {
 
       {/* TAB: ALL */}
       <section className="ppanel" data-panel="all">
-        <div className="card card--table" id="allCard">
+        <div className="card card--table" id="allCard" data-card="c">
           <table className="ptable">
             <thead>
               <tr>

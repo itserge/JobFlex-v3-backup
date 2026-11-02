@@ -20,6 +20,7 @@ import { relative } from "@/lib/format";
 import { contactsLocked } from "@/lib/leadCenter/contacts";
 import type { Lead, Offer } from "./leads-data";
 import { requirePage } from "@/lib/customPageAccess";
+import { smartBookChips } from "@/lib/smartbook/office";
 
 /** "Bothell, WA". Either half may be missing on a real row. */
 function placeLabel(city: string | null, state: string | null): string {
@@ -37,7 +38,7 @@ export async function loadMobileLeads(): Promise<MobileLeadsSnapshot> {
   const { organizationId, role, user } = await requireRouteAccess("/dashboard/leads");
   await requirePage(organizationId, "leads");
 
-  const [leadRows, offerRows] = await Promise.all([
+  const [leadRows, offerRows, chips] = await Promise.all([
     db.lead.findMany({
       where: {
         organizationId,
@@ -56,6 +57,7 @@ export async function loadMobileLeads(): Promise<MobileLeadsSnapshot> {
       orderBy: { expiresAt: "asc" },
       include: { platformLead: true },
     }),
+    smartBookChips(organizationId).catch(() => new Map()),
   ]);
 
   const leads: Lead[] = leadRows.map((l) => ({
@@ -82,6 +84,7 @@ export async function loadMobileLeads(): Promise<MobileLeadsSnapshot> {
     mine: l.assignedToId === user.id || l.claimedById === user.id,
     age: relative(l.createdAt),
     desc: l.scope ?? l.description ?? "",
+    smart: chips.get(l.id) ?? null,
   }));
 
   const now = Date.now();

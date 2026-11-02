@@ -125,7 +125,7 @@ export function CompanyContent({ org, activity, members, canEdit, nameUnset = fa
 
               <div className="co-color">
                 <div className="kpi-lbl">Brand color</div>
-                <div className="swatches" id="swatches"></div>
+                <div className="swatches" id="swatches" data-tour="branding:color"></div>
               </div>
 
               <div className="save-line" id="saveBranding"></div>
@@ -145,7 +145,7 @@ export function CompanyContent({ org, activity, members, canEdit, nameUnset = fa
                     inside a button is invalid) that the behavior opens on
                     click and on drop; the chosen file is read and saved
                     through updateBranding. */}
-                <button className="logo-drop" type="button" id="logoDrop" aria-busy="false">
+                <button className="logo-drop" type="button" id="logoDrop" aria-busy="false" data-tour="branding:logo">
                   <svg className="ic">
                     <use href="#i-imgadd" />
                   </svg>
@@ -193,6 +193,7 @@ export function CompanyContent({ org, activity, members, canEdit, nameUnset = fa
                 <input
                   className="cf-in"
                   data-l="addr"
+                  data-tour="profile:lead-address"
                   placeholder="Street, city, state, zip"
                   defaultValue={org.address}
                 />
@@ -219,7 +220,7 @@ export function CompanyContent({ org, activity, members, canEdit, nameUnset = fa
             </div>
             <div className="co-trades">
               <div className="kpi-lbl">Trades you take</div>
-              <div className="trades" id="trades"></div>
+              <div className="trades" id="trades" data-tour="profile:trades"></div>
               {/* Picking "Other" has to ask WHICH other — a chip that names
                   nothing cannot be matched against and reads as a dead end.
                   Hidden until the chip is on; the behavior module owns that. */}

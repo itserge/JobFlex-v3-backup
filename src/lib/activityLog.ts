@@ -35,6 +35,9 @@ export const TRAIL_KINDS = {
   SERVICE_REMINDER_DONE: "SERVICE_REMINDER_DONE",
   SERVICE_LINK: "SERVICE_LINK",
   SERVICE_PREFS: "SERVICE_PREFS",
+  // SmartBook (2026-10-31, lib/smartbook): every text and email it sends a lead, and every reply — the lead's
+  // conversation, not the bell. What needs the company (a time to confirm, a hand-off) is SMARTBOOK_ASK, which rings.
+  SMARTBOOK: "SMARTBOOK",
 } as const;
 export type TrailKind = (typeof TRAIL_KINDS)[keyof typeof TRAIL_KINDS];
 

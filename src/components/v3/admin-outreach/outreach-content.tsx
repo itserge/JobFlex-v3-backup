@@ -8,6 +8,7 @@
 // admin's own phone with the script a contractor hears.
 // 2026-10-25 "Find contractors": a trade in an area, so many a day — found online (Google's Places, their websites read
 // for an email) and put on the list, every morning when asked; "On a schedule" works the list every hour on its own.
+// 2026-10-31: under the Run buttons, why each grey one is grey (the owner never saw the box at the top of the page).
 // Furniture: the partner-money kit (admin-influencers/admin-ui). The page is a server component: router.refresh().
 
 import { useImperativeHandle, useMemo, useRef, useState } from "react";
@@ -60,6 +61,32 @@ const ROUTE: Record<OutreachRow["route"]["kind"], { label: string; tone: Tone }>
   none: { label: "No contact", tone: "mute" },
 };
 const last = (r: OutreachRow): OutreachCall | null => r.calls[r.calls.length - 1] ?? null;
+const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
+
+/** Why each Run button is grey, in words: what the server lacks (readiness.missing, split as callProspect splits it),
+ *  else what the list lacks — the landlines' reasons for waiting counted, the same words as each contractor's drawer. */
+function idleWords(rows: OutreachRow[], readiness: OutreachReadiness, funnel: Funnel, callable: number, toEmail: number, callLabel: string): Array<{ key: string; button: string; why: string }> {
+  const out: Array<{ key: string; button: string; why: string }> = [];
+  if (rows.length && !funnel.unchecked) out.push({ key: "lines", button: "Check lines", why: "every number on the list is checked already." });
+  if (!readiness.calls) out.push({ key: "call", button: callLabel, why: readiness.missing.filter((m) => !/mail|postal|^Texts/i.test(m)).join(" ") || "calls aren't set up." });
+  else if (rows.length && !callable) {
+    const held = new Map<string, number>();
+    for (const r of rows) {
+      const why = r.route.kind === "ai-call" ? (r.waitWhy ?? r.seqWhy ?? "").split(" — ")[0] : "";
+      if (why) held.set(why, (held.get(why) ?? 0) + 1);
+    }
+    out.push({
+      key: "call",
+      button: callLabel,
+      why: held.size
+        ? `no one the AI may call right now: ${[...held].sort((a, b) => b[1] - a[1]).map(([w, n]) => `${n} — ${lower(w)}`).join("; ")}.`
+        : `no landline on the list — the AI cold-calls only landlines${funnel.emailOnly ? `; the ${funnel.emailOnly} cell phones and internet lines get the email, and are called once they ask` : ""}.`,
+    });
+  }
+  if (!readiness.emails) out.push({ key: "email", button: "Email the call-me link", why: readiness.missing.filter((m) => /mail|postal/i.test(m)).join(" ") || "email isn't set up on this server." });
+  else if (rows.length && !toEmail) out.push({ key: "email", button: "Email the call-me link", why: rows.some((r) => r.email) ? "everyone with an email address was written to already." : "no one on the list has an email address." });
+  return out;
+}
 const match = (r: OutreachRow, f: Filter) =>
   f === "all" ? true : f === "called" ? r.calls.length > 0 : f === "interested" ? !!r.interest && r.interest.level !== "cold" : f === "dnc" ? !!r.dnc : r.route.kind === f;
 
@@ -78,6 +105,8 @@ export function AdminOutreachContent({ rows, readiness, funnel, hunts, settings,
   const shown = useMemo(() => rows.filter((r) => match(r, filter)), [rows, filter]);
   const callableCount = rows.filter((r) => r.route.kind === "ai-call" && !r.waitWhy && !r.seqWhy).length;
   const toEmail = rows.filter(emailDue).length;
+  const callLabel = `Call the next ${Math.min(5, callableCount) || 5}`;
+  const idle = idleWords(rows, readiness, funnel, callableCount, toEmail, callLabel);
 
   const run = async <R extends { ok: true } | { ok: false; error: string }>(key: string, fn: () => Promise<R>, words: (r: Extract<R, { ok: true }>) => string) => {
     setBusy(key);
@@ -253,7 +282,7 @@ export function AdminOutreachContent({ rows, readiness, funnel, hunts, settings,
         <div className="card-head">
           <div className="card-titles">
             <div className="card-title">Add contractors</div>
-            <div className="card-sub">Paste rows from a spreadsheet or a CSV: business, owner&rsquo;s name, phone, email, trade, state, city — any order, with or without a header row. Companies already on JobFlex are left out.</div>
+            <div className="card-sub">Paste rows from a spreadsheet or a CSV: business, owner&rsquo;s name, phone, email, trade, state, city — any order, with or without a header row. Companies already on JobFlex are left out. Only for a list of your own — the contractors found above are on the list already.</div>
           </div>
         </div>
         <div className={styles.field}>
@@ -298,7 +327,7 @@ export function AdminOutreachContent({ rows, readiness, funnel, hunts, settings,
             Check lines{funnel.unchecked ? ` (${funnel.unchecked})` : ""}
           </button>
           <button type="button" className={cx("btn btn-primary", busy === "call" && ui.btnBusy)} disabled={!!busy || !readiness.calls || !callableCount} onClick={() => void run("call", () => callOutreachNext(5), (r) => `Calling ${r.placed}${r.failed ? `; ${r.failed} didn't go out (${r.errors.join("; ")})` : ""}${r.waiting ? `; ${r.waiting} more ready` : ""}.`)} data-outreach-call>
-            Call the next {Math.min(5, callableCount) || 5}
+            {callLabel}
           </button>
           <button type="button" className={cx("btn", busy === "email" && ui.btnBusy)} disabled={!!busy || !readiness.emails || !toEmail} onClick={() => void run("email", () => emailOutreach(20), (r) => `Emailed ${r.sent}${r.skipped ? ` (${r.skipped} had unsubscribed)` : ""}${r.error ? ` — ${r.error}` : ""}.`)} data-outreach-email>
             Email the call-me link{toEmail ? ` (${Math.min(20, toEmail)})` : ""}
@@ -309,6 +338,15 @@ export function AdminOutreachContent({ rows, readiness, funnel, hunts, settings,
             Calls go from <b>{readiness.from.replace(/^\+1(\d{3})(\d{3})(\d{4})$/, "($1) $2-$3")}</b>
             {readiness.texts ? " · the text after a call too" : ""}
           </p>
+        ) : null}
+        {idle.length && !busy ? (
+          <ul className={styles.idle} data-outreach-idle>
+            {idle.map((x) => (
+              <li key={x.key} data-idle={x.key}>
+                <b>{x.button}</b> is grey: {x.why}
+              </li>
+            ))}
+          </ul>
         ) : null}
         {said ? (
           <p className={styles.said} role="status" data-outreach-said>

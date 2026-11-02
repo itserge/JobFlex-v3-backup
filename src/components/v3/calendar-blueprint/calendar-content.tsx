@@ -25,6 +25,7 @@ import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { JobOffers } from "@/components/v3/jobs-blueprint/job-offers";
+import { SmartBookRequests } from "@/components/v3/smartbook/smartbook-requests";
 import { initCalendarContent } from "./calendar-behavior";
 import type { CalendarSeed } from "./calendar-data";
 import "./calendar-global.css";
@@ -77,6 +78,13 @@ export function CalendarContent({ seed }: { seed?: CalendarSeed }) {
           <h1 className="page-title">Calendar</h1>
         </div>
       </div>
+
+      {/* SMARTBOOK REQUESTS (2026-10-31): customers waiting on the company for a time they named — drawn only when
+          one waits, for the office and the sales reps (the card loads itself). A Yes that books asks the grid to read
+          its visits again (calendar-behavior, `jf:calendar-reload`). Workers see nothing here. */}
+      {canManage || seed?.canSmartBook ? (
+        <SmartBookRequests onBooked={() => window.dispatchEvent(new Event("jf:calendar-reload"))} />
+      ) : null}
 
       {/* TOOLBAR: navigation · title · views · inbox · create · tray */}
       <div className="cal-bar">

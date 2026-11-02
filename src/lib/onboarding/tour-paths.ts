@@ -442,5 +442,5 @@ export function tourCount(path: TourPathId, step: number): { done: number; total
 export const NEXT_STEPS = [
   { id: "send", title: "Send it to a client", body: "A proposal works once a client opens it. Send your first one — to yourself, if you want to see it first.", live: true },
   { id: "follow-ups", title: "Turn on follow-ups", body: "CRM → Workflows → Turn on defaults: a reminder goes out when a client hasn't opened or answered.", live: false },
-  { id: "payments", title: "Connect payments", body: "Settings → Payments: clients pay the deposit from the proposal.", live: false },
+  { id: "payments", title: "Connect payments", body: "Settings → Integrations / Payments: clients pay the deposit from the proposal.", live: false },
 ] as const;

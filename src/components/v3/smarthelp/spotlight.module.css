@@ -1,0 +1,28 @@
+/* SMARTHELP · SHOW ME (2026-10-30). Portalled to <body>, outside the dashboard
+   shell's resets, so single-class rules hold. The lit element gets a 2px accent
+   frame with a hard ink shadow — square, flat, nothing dimmed: the person is
+   following steps on this page and needs to see all of it. */
+
+.frame {
+  position: fixed;
+  z-index: var(--tour-z);
+  pointer-events: none;
+  border: 2px solid var(--accent);
+  border-radius: var(--r-sm);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .frame {
+    animation: spotIn 180ms var(--ease-out);
+  }
+}
+
+@keyframes spotIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

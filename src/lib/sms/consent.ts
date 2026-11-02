@@ -6,6 +6,10 @@
 // `smsok:<orgId>:<E.164>` (no schema change) with a trail row, and the sending
 // chokepoint (send.ts) asks for it before a company's own number texts anyone
 // who is not on the team. STOP still wins: SmsOptOut is checked first.
+//
+// SmartBook (owner, 2026-10-31: "text when they agreed") keeps the same yes from the other places a customer gives it:
+// the consent box on the company's Facebook lead form, a website estimator's box, a Lead Center request (its own
+// consent covers the contractors it is sent to), and the "Prefer texts? Tap here" in SmartBook's email.
 
 import { db } from "@/lib/db";
 import { toE164 } from "@/lib/phone";
@@ -13,11 +17,21 @@ import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 
 const keyOf = (organizationId: string, phone: string) => `smsok:${organizationId}:${phone}`;
 
+export type ConsentSource = "booking" | "facebook-form" | "website" | "lead-center" | "email-tap" | "phone-call";
+const CONSENT_WHERE: Record<ConsentSource, string> = {
+  booking: "on the booking page",
+  "facebook-form": "on the Facebook lead form",
+  website: "on the website estimator",
+  "lead-center": "with their JobFlex request",
+  "email-tap": "from SmartBook's email",
+  "phone-call": "on a call with the AI desk",
+};
+
 /** Keep a client's yes. False when the phone cannot be read. */
 export async function recordTextConsent(
   organizationId: string,
   rawPhone: string,
-  how: { source: "booking"; name?: string | null; leadId?: string | null; clientId?: string | null },
+  how: { source: ConsentSource; name?: string | null; leadId?: string | null; clientId?: string | null },
 ): Promise<boolean> {
   const phone = toE164(rawPhone);
   if (!phone) return false;
@@ -27,7 +41,7 @@ export async function recordTextConsent(
     organizationId,
     actorId: null,
     kind: TRAIL_KINDS.CLIENT,
-    summary: `${how.name?.trim() || "A client"} agreed to texts about their visit and estimate on the booking page`,
+    summary: `${how.name?.trim() || "A client"} agreed to texts about their visit and estimate ${CONSENT_WHERE[how.source]}`,
     leadId: how.leadId ?? null,
     clientId: how.clientId ?? null,
     meta: { phoneLast4: phone.slice(-4), source: how.source },

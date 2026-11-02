@@ -23,6 +23,7 @@ import { LeadProfileNudge } from "@/components/dashboard/LeadProfileNudge";
 import { LeadsContent } from "@/components/v3/leads-blueprint/leads-content";
 import type { Lead, Offer } from "@/components/v3/leads-blueprint/leads-data";
 import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
+import { smartBookChips } from "@/lib/smartbook/office";
 
 export const dynamic = "force-dynamic";
 
@@ -56,7 +57,7 @@ export default async function LeadsPage() {
   // Sales reps see leads assigned to them, claimed by them, or still NEW (so
   // they can claim from the shared pool). Managers see the whole pipeline.
   // Live Lead Center offers (24h window) surface alongside them in Incoming.
-  const [leadRows, offerRows] = await Promise.all([
+  const [leadRows, offerRows, chips] = await Promise.all([
     db.lead.findMany({
       where: {
         organizationId,
@@ -72,6 +73,7 @@ export default async function LeadsPage() {
       orderBy: { expiresAt: "asc" },
       include: { platformLead: true },
     }),
+    smartBookChips(organizationId).catch(() => new Map()),
   ]);
 
   const leads: Lead[] = leadRows.map((l) => ({
@@ -90,6 +92,7 @@ export default async function LeadsPage() {
     age: relative(l.createdAt),
     // The scope written for a contractor when the request carried one.
     desc: l.scope ?? l.description ?? "",
+    smart: chips.get(l.id) ?? null,
   }));
 
   // `new Date()`, not `Date.now()`: the react-hooks purity rule flags the

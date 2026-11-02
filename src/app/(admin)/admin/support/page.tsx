@@ -21,6 +21,8 @@ import { recipientsForTickets, threadsFor } from "@/lib/supportThread";
 import { readSupportAiMode, supportAiForTickets } from "@/lib/support/aiSupport";
 import { extensionOfferFact } from "@/lib/support/aiReply";
 import { supportRecipients } from "@/lib/notify";
+import { listSmartHelp } from "@/lib/smarthelp/server";
+import { SmartHelpAdmin, SupportViewTabs } from "@/components/v3/admin-support/smarthelp-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +34,7 @@ export const metadata: Metadata = {
 export default async function AdminSupportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ ticket?: string | string[] }>;
+  searchParams: Promise<{ ticket?: string | string[]; view?: string | string[] }>;
 }) {
   const admin = await requirePlatformAdmin();
   // The name a reply is signed with (replyToSupportTicket), so the box can say so.
@@ -40,6 +42,17 @@ export default async function AdminSupportPage({
   // ?ticket=<id> opens that ticket — the link a task made from it carries.
   const sp = await searchParams;
   const openTicketId = typeof sp.ticket === "string" ? sp.ticket : null;
+
+  // ?view=smarthelp: what contractors ask SmartHelp (2026-10-30). Its own reads only — none of the tickets'.
+  if (sp.view === "smarthelp") {
+    const { questions, guides } = await listSmartHelp();
+    return (
+      <>
+        <SupportViewTabs view="smarthelp" />
+        <SmartHelpAdmin questions={questions} guides={guides} now={new Date().toISOString()} />
+      </>
+    );
+  }
 
   const [rows, open, inProgress, resolved, closed, unread] = await Promise.all([
     db.supportTicket.findMany({
@@ -108,6 +121,7 @@ export default async function AdminSupportPage({
 
   return (
     <>
+      <SupportViewTabs view="tickets" />
       {/* Unread is per ticket since the conversation (2026-10-17): opening a
           ticket reads it, and a customer's next message makes it unread again. */}
       <AdminSupportContent

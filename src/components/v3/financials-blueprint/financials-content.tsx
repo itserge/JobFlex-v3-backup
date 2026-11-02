@@ -30,6 +30,7 @@ import { DeskExpenseFilter } from "./desk-expense-filter";
 import { JobCostCard, OfficeReview } from "@/components/v3/crew-board/office-review";
 import { EMPTY_OFFICE_MONEY, type OfficeMoney } from "@/components/v3/crew-board/office-review-data";
 import { FinancialsSprite } from "./sprite";
+import { RampCardSpend } from "./ramp-card-spend";
 
 export type FinancialsContentProps = {
   /** The org's real jobs. Receipt capture books an expense against one of
@@ -339,6 +340,8 @@ export function FinancialsContent(props: FinancialsContentProps) {
         {/* Stage D (2026-09-30): the crew's receipts waiting for the owner or a
             manager, and what is owed to workers — on top, where the work is. */}
         <OfficeReview data={props.office ?? EMPTY_OFFICE_MONEY} onChanged={reloadExpenses} />
+        {/* Ramp (2026-10-29): the swipes still waiting for a job, placed here by the office. Nothing when Ramp is not connected. */}
+        <RampCardSpend jobs={props.jobs} />
         <div className="card card--table">
           <div className="tb-head">
             <span className="kpi-lbl">Expenses</span>

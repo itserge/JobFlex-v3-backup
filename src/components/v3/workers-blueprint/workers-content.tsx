@@ -66,7 +66,7 @@ export function WorkersContent({ entries }: { entries: WorkerEntry[] }) {
             </svg>
             <input type="search" id="wkSearch" placeholder="Search name or email…" autoComplete="off" />
           </label>
-          <button className="btn btn-primary" type="button" id="inviteBtn">
+          <button className="btn btn-primary" type="button" id="inviteBtn" data-tour="team:invite">
             <svg className="ic">
               <use href="#i-plus" />
             </svg>

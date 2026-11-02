@@ -304,9 +304,10 @@
 .brief .fL { font-size: 12px; font-weight: 800; }
 .brief .fBarWrap { height: 16px; background: var(--b-paper); border: 1px solid var(--b-hair); border-radius: 2px; overflow: hidden; }
 .brief .fBar { display: block; height: 100%; background: var(--b-bp); transition: width 0.6s var(--b-ease); }
-.brief .fstep:nth-child(2) .fBar { background: var(--b-sky); }
-.brief .fstep:nth-child(4) .fBar { background: var(--b-ok); }
-.brief .fstep:nth-child(5) .fBar { background: var(--b-ink); }
+/* By the step, not its place: "Visit booked" (2026-10-31) sits between Contacted and Proposals sent. */
+.brief .fstep[data-step="contacted"] .fBar { background: var(--b-sky); }
+.brief .fstep[data-step="won"] .fBar { background: var(--b-ok); }
+.brief .fstep[data-step="paid"] .fBar { background: var(--b-ink); }
 .brief .fN { font-family: var(--b-mono); font-size: 13px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
 .brief .fV { font-family: var(--b-mono); font-size: 11px; color: var(--b-faint); text-align: right; font-variant-numeric: tabular-nums; }
 

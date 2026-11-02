@@ -63,9 +63,14 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { submitSupportTicket } from "@/actions/support";
 import { answerSupportVerdict, liveSupportAnswer } from "@/actions/supportLive";
-import { answerParts, type LiveState } from "@/lib/support/aiState";
+import { answerBlocks, type AnswerPiece, type LiveState } from "@/lib/support/aiState";
 import { lockScroll } from "@/lib/scrollLock";
+// The categories, the message limit and SmartHelp's hand-off are the composer's pure half (./composer).
+import { BODY_MAX, CATEGORIES, composerOpening, composerTicket, type HandoffMark, type SupportPrefill } from "./composer";
+import { SmartHelpRoot } from "@/components/v3/smarthelp/smarthelp";
 import "./support-widget.css";
+
+export type { SupportPrefill } from "./composer";
 
 /** Longest panel transition (the handheld sheet's 0.28s slide). */
 const EXIT_MS = 280;
@@ -73,44 +78,50 @@ const EXIT_MS = 280;
 /** The one channel between a launcher and the composer. */
 const OPEN_EVENT = "jf:support";
 
-/** The model's own taxonomy — `SupportTicket.category`, the same five values
- *  the /dashboard/support form writes and the admin triage filters on. Four of
- *  them, in the words the owner used: a bug, a billing problem, an account
- *  problem, a question. Nothing new is invented here; "feature" is the one
- *  value left out, because an idea is not a call for help. */
-const CATEGORIES = [
-  { value: "technical", label: "Bug" },
-  { value: "billing", label: "Billing" },
-  { value: "account", label: "Account" },
-  { value: "general", label: "Question" },
-] as const;
-
-/** `SupportTicket.body` is capped at 5000 by the action's validator. */
-const BODY_MAX = 5000;
 /** How long the window waits for the AI's answer before saying it will come by email. */
 const LIVE_WAIT_MS = 90_000;
 const LIVE_FIRST_MS = 1_200;
 const LIVE_EVERY_MS = 2_000;
 
-/** The AI's answer, as paragraphs; JobFlex's own links clickable (lib/support/aiState answerParts). */
+/** A paragraph's pieces: words, line breaks, JobFlex's own links. */
+function Pieces({ parts }: { parts: AnswerPiece[] }) {
+  return (
+    <>
+      {parts.map((piece, k) =>
+        "br" in piece ? (
+          <br key={k} />
+        ) : "path" in piece ? (
+          <a key={k} href={piece.path}>
+            {piece.label}
+          </a>
+        ) : (
+          <span key={k}>{piece.text}</span>
+        ),
+      )}
+    </>
+  );
+}
+
+/** The AI's answer, as paragraphs and cards ("[offer]" / "[note]", lib/support/replyCards); JobFlex's own links clickable. */
 function AnswerBody({ body }: { body: string }) {
   return (
     <div className="jfsup-answer" data-support-live-answer>
-      {answerParts(body).map((para, i) => (
-        <p key={i}>
-          {para.map((piece, k) =>
-            "br" in piece ? (
-              <br key={k} />
-            ) : "path" in piece ? (
-              <a key={k} href={piece.path}>
-                {piece.label}
-              </a>
-            ) : (
-              <span key={k}>{piece.text}</span>
-            ),
-          )}
-        </p>
-      ))}
+      {answerBlocks(body).map((b, i) =>
+        b.kind === "text" ? (
+          <p key={i}>
+            <Pieces parts={b.parts} />
+          </p>
+        ) : (
+          <div key={i} className={`jfsup-card jfsup-card--${b.kind}`} data-support-card={b.kind}>
+            <b>{b.title}</b>
+            {b.parts.length ? (
+              <p>
+                <Pieces parts={b.parts} />
+              </p>
+            ) : null}
+          </div>
+        ),
+      )}
     </div>
   );
 }
@@ -180,7 +191,7 @@ function Icon({ d, className }: { d: string[]; className?: string }) {
 }
 
 /** What a launcher may hand the composer along with the request to open. */
-type OpenDetail = { opener: HTMLElement | null };
+type OpenDetail = { opener: HTMLElement | null; prefill: SupportPrefill | null };
 
 /**
  * Open the composer from anywhere. For a host whose Help control is not an
@@ -191,9 +202,13 @@ type OpenDetail = { opener: HTMLElement | null };
  * `document.activeElement`, and a drawer that closes as it opens the composer
  * leaves focus on a node that is about to unmount. Focus then has nowhere to go
  * and lands on `<body>` — the whole page's tab order, from the top.
+ *
+ * `prefill` is SmartHelp's hand-off: the message (clipped to the composer's own
+ * limit) and category, and the mark the send carries. Opened without one, the
+ * composer is as it always was, and a mark left by an earlier hand-off is gone.
  */
-export function openSupportComposer(opener?: HTMLElement | null): void {
-  const detail: OpenDetail = { opener: opener ?? null };
+export function openSupportComposer(opener?: HTMLElement | null, prefill?: SupportPrefill): void {
+  const detail: OpenDetail = { opener: opener ?? null, prefill: prefill ?? null };
   document.dispatchEvent(new CustomEvent<OpenDetail>(OPEN_EVENT, { detail }));
 }
 
@@ -488,6 +503,8 @@ export function SupportWidget({
    *  surface draws, or the tab bar's More row below 768. Focus goes back to it
    *  on close. */
   const openerRef = useRef<HTMLElement | null>(null);
+  /** The SmartHelp hand-off mark this opening carries to the send, or null — set by every `show()`. */
+  const handoffRef = useRef<HandoffMark>(null);
   /** True only while the dialog owns focus. Cleared BEFORE the close path
    *  moves focus out, so the containment guard below does not fight it. */
   const trapping = useRef(false);
@@ -529,7 +546,7 @@ export function SupportWidget({
     );
   }, []);
 
-  const show = useCallback((opener?: HTMLElement | null) => {
+  const show = useCallback((opener?: HTMLElement | null, prefill?: SupportPrefill | null) => {
     if (!signedIn) return;
     // Caught mid-exit: `open` is still true, so the enter effect below will not
     // re-run and the panel would sit in its faded-out state forever. Putting
@@ -549,6 +566,15 @@ export function SupportWidget({
     const active = document.activeElement;
     const focused = active instanceof HTMLElement && active !== document.body ? active : null;
     openerRef.current = isRendered(opener) ? opener : focused;
+    // SmartHelp's hand-off starts from its words and category, and its mark
+    // rides on the send (./composer). Any other opening carries no mark, so one
+    // left by an earlier hand-off never files a ticket the person started.
+    const opening = composerOpening(prefill);
+    handoffRef.current = opening.mark;
+    if (opening.start) {
+      setMessage(opening.start.message);
+      setCategory(opening.start.category);
+    }
     setError(null);
     setFiled(null);
     setLive(null);
@@ -561,7 +587,10 @@ export function SupportWidget({
 
   // Any launcher, anywhere in the document.
   useEffect(() => {
-    const onOpen = (e: Event) => show((e as CustomEvent<OpenDetail>).detail?.opener ?? null);
+    const onOpen = (e: Event) => {
+      const detail = (e as CustomEvent<OpenDetail>).detail;
+      show(detail?.opener ?? null, detail?.prefill ?? null);
+    };
     document.addEventListener(OPEN_EVENT, onOpen);
     return () => document.removeEventListener(OPEN_EVENT, onOpen);
   }, [show]);
@@ -740,7 +769,7 @@ export function SupportWidget({
     setBusy(true);
     setError(null);
     try {
-      const result = await submitSupportTicket({ body, category });
+      const result = await submitSupportTicket(composerTicket(body, category, handoffRef.current));
       setFiled({ id: result.id, ref: result.ref, notified: result.notified });
       setLive({ state: "pending" });
       setVerdict(null);
@@ -756,7 +785,7 @@ export function SupportWidget({
 
   const cls = ["jfsup", open && "jfsup--open", on && "jfsup--on"].filter(Boolean).join(" ");
 
-  return (
+  const widget = (
     // data-nest: the widget resets itself (.jfsup *); a page root's reset steps around it (docs/design/mobile.md).
     <div className={cls} data-nest="">
       {/* The launcher travels WITH the widget now: one mount is one button, so
@@ -929,5 +958,14 @@ export function SupportWidget({
         )}
       </div>
     </div>
+  );
+
+  // SmartHelp (components/v3/smarthelp) lives beside the composer, so it is wherever Help is — and in the same
+  // stacking context, under the composer that its "Ask a person" opens.
+  return (
+    <>
+      {widget}
+      <SmartHelpRoot />
+    </>
   );
 }

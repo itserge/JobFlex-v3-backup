@@ -121,7 +121,8 @@
   background-image: linear-gradient(var(--grid-light) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid-light) 1px, transparent 1px);
   background-size: 40px 40px;
-  background-position: 0 var(--gy, 0px);
+  --grid-y: inherit;
+  background-position: 0 var(--grid-y);
   pointer-events: none;
   z-index: 0;
 }
@@ -284,6 +285,20 @@
   transition: transform 0.34s var(--ease-soft);
   pointer-events: none;
 }
+/* THE TABS, BIGGER AND IN COLOUR (owner, 2026-10-29: "a bit bigger, and add a bit of colour") — the desk's
+   colours: All blueprint blue, Accepted green, Done the darker paid green, on the count, the open tab's tint and
+   the sliding rule under it. At 320px the label stays 13px so "Accepted" and its count still fit a third. */
+.ptab { --tab: var(--blueprint); min-height: 54px; font-size: 14px; }
+.ptab[data-tab="accepted"] { --tab: var(--success); }
+.ptab[data-tab="completed"] { --tab: var(--success-dark, #2c5f34); }
+.ptab .ptabCount { height: 21px; border-color: color-mix(in srgb, var(--tab) 35%, #fff); background: color-mix(in srgb, var(--tab) 10%, #fff); color: var(--tab); font-weight: 700; }
+.ptab.active { background: color-mix(in srgb, var(--tab) 10%, var(--paper)); }
+.ptab.active .ptabCount { border-color: var(--tab); background: var(--tab); color: #fff; }
+.ptabs { --ind: var(--blueprint); }
+.ptabs[data-active="accepted"] { --ind: var(--success); }
+.ptabs[data-active="completed"] { --ind: var(--success-dark, #2c5f34); }
+.ptabs .ptabInd { height: 4px; background: var(--ind); transition: transform 0.34s var(--ease-soft), background 0.2s; }
+@media (max-width: 340px) { .ptab { font-size: 13px; } }
 /* ============================================================
    FILTER — one dropdown instead of a six-chip rail (owner's call,
    2026-07-29). Custom .dd, never a native select: a button with a
@@ -1318,16 +1333,27 @@
   display: flex; align-items: center; gap: 10px;
   margin-top: 10px;
 }
-.mSentStamp { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--success-dark, #2c6335); }
-.mSentStamp svg { width: 15px; height: 15px; }
-.mSentAgain {
-  margin-left: auto;
+.mSentSwap {
+  display: inline-grid; grid-template-columns: auto; align-items: center;
   min-height: 44px; padding: 0 14px;
   border: 1.5px solid var(--success); border-radius: var(--radius);
   background: var(--success-soft); color: var(--success-dark, #2c6335);
-  font-size: 12.5px; font-weight: 800;
+  font-size: 13px; font-weight: 800; cursor: pointer;
 }
-.mSentAgain:active { background: var(--success); color: #fff; }
+.mSwapSent, .mSwapResend { grid-area: 1 / 1; display: inline-flex; align-items: center; gap: 6px; transition: opacity 0.12s var(--ease); }
+.mSwapSent svg, .mSwapResend svg { width: 15px; height: 15px; }
+.mSwapResend { opacity: 0; justify-content: center; }
+.mSentSwap:hover, .mSentSwap:focus-visible { background: var(--blueprint); border-color: var(--blueprint); color: #fff; }
+.mSentSwap:hover .mSwapSent, .mSentSwap:focus-visible .mSwapSent { opacity: 0; }
+.mSentSwap:hover .mSwapResend, .mSentSwap:focus-visible .mSwapResend { opacity: 1; }
+@media (hover: none) {
+  .mSentSwap { grid-template-columns: auto auto; column-gap: 12px; }
+  .mSwapResend { grid-area: 1 / 2; opacity: 1; padding-left: 12px; border-left: 1.5px solid currentColor; color: var(--blueprint); }
+  .mSentSwap:hover, .mSentSwap:focus-visible { background: var(--success-soft); border-color: var(--success); color: var(--success-dark, #2c6335); }
+  .mSentSwap:hover .mSwapSent { opacity: 1; }
+  .mSentSwap:active { background: var(--blueprint); border-color: var(--blueprint); color: #fff; }
+  .mSentSwap:active .mSwapResend { color: #fff; }
+}
 
 .mPay {
   grid-column: 1 / -1;
@@ -1380,4 +1406,214 @@
 .mActPaid:active:not(:disabled) { background: var(--success); color: #fff; }
 .mActInv:active:not(:disabled) { background: var(--blueprint); color: #fff; }
 .mActRem:active:not(:disabled) { background: var(--warning); color: #fff; }
-.mSend:focus-visible, .mSentAgain:focus-visible, .mPayAct:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+.mSend:focus-visible, .mSentSwap:focus-visible, .mPayAct:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+
+/* ── THE ALL-TAB CARD (owner, 2026-10-30: keep card C on the phone, cards separated) ────────────────────────
+   The desk's two-panel dossier stacked for one column. Every proposal is its own 2px ink frame with a gap
+   under it. Type scale, one role per size: 20px/800 the title, 22px/900 the amount, 14.5px client · city,
+   14px ledger values, 13.5px stage lines, 10.5px mono caps for the ledger labels and the plate's kicker. */
+.cmList { display: flex; flex-direction: column; gap: 14px; }
+.cmList .cm {
+  display: block;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.cmList .cm:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+
+/* Project chain: the header, then its cards indented on a blueprint rail with a square joint. */
+.cmList .pgrp { margin-bottom: -6px; border: 2px solid var(--ink); border-radius: var(--radius); background: #fff; }
+.cmList .cm.cmChain { position: relative; margin-left: 16px; }
+.cmList .cm.cmChain::before {
+  content: ""; position: absolute; left: -11px; top: -22px; bottom: -16px; width: 2px;
+  background: color-mix(in srgb, var(--blueprint) 40%, transparent);
+}
+.cmList .cm.cmChainEnd::before { bottom: auto; height: 56px; }
+.cmList .cm.cmChain::after {
+  content: ""; position: absolute; left: -16px; top: 28px; width: 12px; height: 12px;
+  border: 2px solid var(--blueprint); background: var(--paper);
+}
+
+/* ── The job ── */
+.cm .cmJob { padding: 16px var(--card-pad) 16px; }
+.cm .cmJob .pkind { margin: 0 0 6px; }
+.cm .cmJob .pkSq { border-radius: 0; }
+.cm .cmTitle {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;
+  font-size: 20px; font-weight: 800; line-height: 1.18; letter-spacing: -0.015em;
+  color: var(--ink); overflow-wrap: anywhere;
+}
+.cm .cmSub { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin-top: 5px; font-size: 14.5px; font-weight: 500; line-height: 1.35; color: var(--ink-soft); overflow-wrap: anywhere; }
+.cm .prowClient { margin-top: 10px; }
+.cm .prowClient a { min-height: 44px; }
+.cmList .pgrpName { overflow-wrap: anywhere; }
+
+/* The ledger: label over value, three ruled columns under a 1.5px ink rule. */
+.cm .cmFacts {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 14px 0 0; padding: 12px 0 0;
+  border-top: 1.5px solid var(--ink);
+}
+.cm .cmF { min-width: 0; padding: 0 10px; border-left: 1px solid var(--hair); }
+.cm .cmF:first-child { padding-left: 0; border-left: 0; }
+.cm .cmF dt {
+  margin: 0 0 6px;
+  font: 700 10.5px/1.2 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+}
+.cm .cmF dd { margin: 0; font-size: 14px; font-weight: 600; line-height: 1.3; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.cm .cmF .prowAccepted, .cm .cmF .prowDeclined { margin-top: 5px; font-size: 11.5px; }
+.cm .cmF .views b { font-size: 14px; }
+.cm .cmF .viewsNa { font-size: 10.5px; }
+/* A long status (Completed, Accepted) never runs into the Views column. */
+.cm .cmF .pstatus { max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: top; }
+.cm .cmF .viewsNone b, .cm .cmF .viewsNone b small, .cm .cmF .viewsNone i { color: var(--warning-dark, #8a6113); }
+
+/* ── The money plate ── */
+.cm .cmMoney {
+  padding: 14px var(--card-pad) 16px;
+  border-top: 2px solid var(--ink);
+  background: color-mix(in srgb, var(--blueprint) 6%, #fff);
+}
+.cm .cmMk { font: 700 10.5px/1.2 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.cm .cmAmt { margin-top: 5px; font-size: 22px; font-weight: 900; line-height: 1.1; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.cm .cmCalm { display: grid; grid-template-columns: auto 1fr; grid-template-areas: "mk mk" "amt line"; align-items: baseline; column-gap: 16px; }
+.cm .cmCalm .cmMk { grid-area: mk; }
+.cm .cmCalm .cmAmt { grid-area: amt; }
+.cm .cmCalmLine { grid-area: line; margin: 0; text-align: right; font-size: 13.5px; font-weight: 600; color: var(--muted); }
+.cm .cmDeclined .cmAmt { color: var(--muted); }
+
+/* Paid-vs-contract track; a tick where one stage ends and the next begins. */
+.cm .cmBar { position: relative; height: 10px; margin-top: 12px; border: 1.5px solid var(--ink); background: #fff; }
+.cm .cmBar > span { display: block; height: 100%; background: var(--blueprint); }
+.cm .cmBar.trackLow > span { background: var(--danger); }
+.cm .cmBar.trackPart > span { background: var(--warning); }
+.cm .cmBar.trackFull > span { background: var(--success); }
+.cm .cmBar.cmBarPlan { border-color: var(--hair); }
+.cm .cmTick { position: absolute; top: -4px; bottom: -4px; width: 1.5px; margin-left: -0.75px; background: var(--ink); }
+.cm .cmBarPlan .cmTick { background: var(--muted-light); }
+
+.cm .cmLine {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 4px 12px; flex-wrap: wrap;
+  margin-top: 8px;
+  font-size: 13.5px; font-weight: 600; color: var(--ink-soft); font-variant-numeric: tabular-nums;
+}
+.cm .cmLine > span:last-child:not(:first-child) { text-align: right; }
+.cm .cmLine b { font-weight: 800; color: var(--ink); }
+.cm .cmLine .cmDue b { color: var(--warning-dark, #8a6113); }
+.cm .cmLineOk > span { display: inline-flex; align-items: center; gap: 6px; font-weight: 800; color: var(--success-dark, #2c5f34); }
+.cm .cmLineOk svg { width: 14px; height: 14px; }
+
+/* The stages, a compact ledger: mark, label + share and amount, then what happened / when UNDER the label — so a
+   long label and a big amount never squeeze each other off the card. */
+.cm .cmStages { margin: 12px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--hair); }
+.cm .cmSt {
+  display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: baseline; column-gap: 8px; row-gap: 2px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--hair);
+  font-size: 13.5px; line-height: 1.3;
+}
+.cm .cmStM { grid-column: 1; grid-row: 1; align-self: center; display: inline-flex; justify-content: center; }
+.cm .cmStM svg { width: 13px; height: 13px; }
+.cm .cmStM i { display: block; width: 8px; height: 8px; border: 1.5px solid var(--muted); }
+.cm .cmStK { grid-column: 2; grid-row: 1; min-width: 0; font-weight: 700; overflow-wrap: anywhere; }
+.cm .cmStK em { margin-left: 5px; font-style: normal; font-weight: 500; color: var(--muted); }
+.cm .cmStS { grid-column: 2 / -1; grid-row: 2; font-size: 12px; font-weight: 500; color: var(--muted); }
+.cm .cmStV { grid-column: 3; grid-row: 1; font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; }
+.cm .cmStPaid .cmStM, .cm .cmStPaid .cmStS, .cm .cmStPaid .cmStV { color: var(--success-dark, #2c5f34); }
+.cm .cmStClosed .cmStV { text-decoration: line-through; color: var(--muted); }
+
+/* The stage being chased: a white frame with a blue (red when late) edge, its facts, then the actions. */
+.cm .cmSt.cmStNext {
+  grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px;
+  margin: 8px 0; padding: 12px 12px 12px 14px;
+  border: 1.5px solid var(--ink);
+  box-shadow: inset 4px 0 0 var(--blueprint);
+  background: #fff;
+}
+.cm .cmStNext .cmStK { grid-column: 1; font-size: 14px; }
+.cm .cmStNext .cmStV { grid-column: 2; font-size: 18px; font-weight: 900; color: var(--blueprint); overflow-wrap: anywhere; }
+.cm .cmStFacts { grid-column: 1 / -1; grid-row: 2; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); }
+.cm .cmStNext.cmStLate { box-shadow: inset 4px 0 0 var(--danger); }
+.cm .cmStLate .cmStV, .cm .cmStLate .cmStFacts { color: var(--danger); }
+
+/* Mark paid across, Invoice and Remind under it. */
+.cm .cmActs { grid-column: 1 / -1; grid-row: 3; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
+.cm .cmAct {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  min-width: 0; min-height: 44px; padding: 4px 8px;
+  border: 1.5px solid; border-radius: var(--radius);
+  background: #fff;
+  font-size: 13px; font-weight: 800; line-height: 1.15; text-align: center;
+}
+.cm .cmAct svg { width: 15px; height: 15px; }
+.cm .cmAct:disabled { opacity: 0.45; }
+.cm .cmActPaid { grid-column: 1 / -1; border-color: var(--success); background: var(--success); color: #fff; }
+.cm .cmActPaid:active:not(:disabled) { background: var(--success-dark, #2c5f34); }
+.cm .cmActInv { border-color: var(--blueprint); color: var(--blueprint); }
+.cm .cmActInv:active:not(:disabled) { background: var(--accent-soft); }
+.cm .cmActRem { border-color: var(--warning); color: var(--warning-dark, #8a6113); }
+.cm .cmActRem:active:not(:disabled) { background: var(--warning-soft); }
+.cm .cmLeft { margin: 10px 0 0; font-size: 13.5px; font-weight: 600; color: var(--ink-soft); }
+.cm .cmLeft b { color: var(--warning-dark, #8a6113); font-weight: 800; }
+.cm .cmMoney [data-fin-row] { display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin-top: 12px; }
+.cm .cmMoney [data-fin-row] > span { display: flex; align-items: flex-start; gap: 7px; font-size: 13px; font-weight: 600; line-height: 1.35; color: var(--ink-soft); text-align: left; }
+.cm .cmMoney [data-fin-row] > span svg { flex: none; width: 15px; height: 15px; margin-top: 1px; }
+.cm .cmMoney [data-fin-row] > button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  width: 100%; min-height: 44px; padding: 0 12px;
+  border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; color: var(--ink);
+  font-size: 13px; font-weight: 800;
+}
+.cm .cmMoney [data-fin-row] > button svg { width: 15px; height: 15px; }
+.cm .cmMoney [data-fin-row] > button:active:not(:disabled) { background: var(--accent-soft); }
+
+/* ── Foot: one ruled bar — Open the blue cell, Send / Sent ⇄ Resend, ⋮ for the rest ── */
+.cm .cmFoot { display: flex; align-items: stretch; border-top: 2px solid var(--ink); }
+.cm .cmCell {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  min-height: 48px; padding: 0 14px; margin: 0;
+  border: 0; border-right: 1px solid var(--hair); border-radius: 0;
+  background: transparent; color: var(--ink);
+  font-size: 13px; font-weight: 800; text-decoration: none; white-space: nowrap;
+  cursor: pointer;
+}
+.cm .cmCell svg { width: 15px; height: 15px; flex: none; }
+.cm .cmCell:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -3px; }
+.cm .cmCell.cmOpen {
+  padding: 0 16px; border-right-color: var(--ink);
+  background: var(--blueprint); color: #fff;
+  letter-spacing: 0.06em; text-transform: uppercase;
+}
+.cm .cmCell.cmOpen:active { background: var(--blueprint-dark); }
+.cm .cmCell.cmSend, .cm .cmCell.cmSwap, .cm .cmCellFill { flex: 1 1 auto; min-width: 0; }
+.cm .cmCellFill { border-right: 1px solid var(--hair); }
+.cm .cmCell.cmSend { background: var(--success); color: #fff; letter-spacing: 0.06em; text-transform: uppercase; }
+.cm .cmCell.cmSend:active { background: var(--success-dark, #2c5f34); }
+.cm .cmCell.cmMore { flex: none; width: 48px; padding: 0; border-right: 0; }
+.cm .cmCell.cmMore:active { background: var(--accent-soft); }
+
+/* Sent ⇄ Resend: one cell, two faces stacked in the same spot. It reads Sent and when; on hover, keyboard focus or
+   a press it goes blue and Resend takes Sent's place — tapping it opens the send dialog. */
+.cm .cmSwap { display: inline-grid; grid-template-columns: auto; padding: 0 12px; color: var(--success-dark, #2c5f34); }
+.cm .cmSwapSent, .cm .cmSwapResend { grid-area: 1 / 1; display: inline-flex; align-items: baseline; justify-content: center; gap: 6px; transition: opacity 0.12s var(--ease); }
+.cm .cmSwapSent svg, .cm .cmSwapResend svg { align-self: center; }
+.cm .cmSwapSent small { font-size: 12px; font-weight: 500; color: var(--muted); }
+.cm .cmSwapResend { opacity: 0; }
+.cm .cmSwap:hover, .cm .cmSwap:focus-visible, .cm .cmSwap:active { background: var(--blueprint); color: #fff; }
+.cm .cmSwap:hover .cmSwapSent, .cm .cmSwap:focus-visible .cmSwapSent, .cm .cmSwap:active .cmSwapSent { opacity: 0; }
+.cm .cmSwap:hover .cmSwapResend, .cm .cmSwap:focus-visible .cmSwapResend, .cm .cmSwap:active .cmSwapResend { opacity: 1; }
+/* A 320px phone, or a chained card on a small one: the foot keeps one line — Sent drops when, Open its icon, and the
+   status plate tightens. */
+.cmList .cm { container-type: inline-size; }
+@container (max-width: 330px) {
+  .cm .cmSwapSent small, .cm .cmOpen svg { display: none; }
+  .cm .cmCell.cmOpen { padding: 0 14px; }
+  .cm .cmF .pstatus { letter-spacing: 0.06em; padding: 3px 5px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cm .cmSwapSent, .cm .cmSwapResend { transition: none; }
+}

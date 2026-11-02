@@ -20,7 +20,10 @@ export type BoxRow =
   | { type: "field"; label: string; value: string }
   | { type: "rate"; label: string; rate: string; amount: string }
   | { type: "anchor"; label: string; value: string }
-  | { type: "cond"; label: string; chip: string; tone?: Tone };
+  | { type: "cond"; label: string; chip: string; tone?: Tone }
+  /** A choice the reader taps, one per row (SmartBook's offered times, 2026-10-31): the choice in ink, its action in
+   *  blue — both the same link. Several choices are peers (hairlines between them). */
+  | { type: "choice"; label: string; action: string; href: string };
 
 export interface EmailDoc {
   subject: string;

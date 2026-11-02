@@ -50,12 +50,14 @@ import type { SmsRegistrationView } from "@/lib/sms/registrationShared";
 import { isSecretBoxConfigured } from "@/lib/crypto/secretBox";
 import { metaAllowed } from "@/lib/meta/graph";
 import { metaConnectionView } from "@/lib/meta/connections";
+import { rampConnectionView } from "@/lib/ramp/connection";
 import { getPaymentConnectionStatus } from "@/lib/payments/connections";
 import { parseNotificationPrefs } from "@/lib/notificationPrefsShared";
 import { financingReadiness, orgFinancingView } from "@/lib/financing/service";
 import { deskAnswerState } from "@/lib/financing/desk";
 import {
   parseGmailSettings,
+  parseMetaSettings,
   parsePaymentSettings,
 } from "@/lib/settings";
 import type { Badge, BillingData, DeskSettingsData, SettingsData, SmsRosterRow, SmsSettingsData } from "@/components/v3/settings-blueprint/settings-data";
@@ -184,6 +186,7 @@ export async function loadSettingsData(ctx: SettingsOrgContext, opts: { billingL
   const payment = parsePaymentSettings(org.paymentSettingsJson);
   const gmail = parseGmailSettings(org.gmailSettingsJson);
   const meta = await metaConnectionView(organizationId, user.id);
+  const ramp = await rampConnectionView(organizationId);
   const gmailConnected = Boolean(org.gmailTokensJson);
 
   const isOwner = isOwnerRole(role);
@@ -268,7 +271,9 @@ export async function loadSettingsData(ctx: SettingsOrgContext, opts: { billingL
         orgName: org.name,
         defaultPage: meta.pageName,
         formCategory: "auto",
+        autoImport: meta.connected && parseMetaSettings(org.metaSettingsJson).autoCreate,
       },
+      ramp: { ...ramp, canManage: isOwnerOrManager(role) },
       stripe: {
         key: "stripe",
         // Usable by OAuth (Connect configured) or by a pasted key (secret box).
@@ -656,8 +661,9 @@ async function loadDeskSettings(organizationId: string, role: string): Promise<D
   const { numbersAssignedTo } = await import("@/lib/aiDesk/numbers");
   const { readRegistration } = await import("@/lib/sms/registration");
   const { settingsOf } = await import("@/lib/bookingBook");
+  const { leadCallReadiness } = await import("@/lib/aiDesk/leadCalls");
   const canManage = ["OWNER", "ADMIN", "MANAGER"].includes(role);
-  const [settings, facts, phoneLocked, use, minutes, assignedNumbers, registration, orgRow] = await Promise.all([
+  const [settings, facts, phoneLocked, use, minutes, assignedNumbers, registration, orgRow, leadCallsReady] = await Promise.all([
     readDeskSettings(organizationId).catch(() => null),
     companyFacts(organizationId).catch(() => null),
     isPageLocked(organizationId, "phone").catch(() => true),
@@ -666,6 +672,7 @@ async function loadDeskSettings(organizationId: string, role: string): Promise<D
     numbersAssignedTo(organizationId),
     readRegistration(organizationId).catch(() => null),
     db.organization.findUnique({ where: { id: organizationId }, select: { phone: true, timezone: true, tradeTypesJson: true, bookingSettingsJson: true } }).catch(() => null),
+    leadCallReadiness(organizationId).catch(() => ({ ok: false as const, why: "The desk can't place calls right now." })),
   ]);
   const bookingSettings = orgRow ? settingsOf(orgRow) : null;
   const { callsGo, parseDeskSettings, prettyPhone } = await import("@/lib/aiDesk/shared");
@@ -704,6 +711,7 @@ async function loadDeskSettings(organizationId: string, role: string): Promise<D
     review: d.profile ? d.review : [],
     forwardCheck: forwardCheckView(await readForwardCheck(organizationId).catch(() => null), { forwarding: d.forwarding, phone: toE164(orgRow?.phone ?? ""), desk: toE164(registration?.number ?? "") ?? toE164(assignedNumbers[0] ?? "") }),
     facts: facts ?? factsFor({ name: "", phone: null, address: null, website: null, trades: [], hours: [], services: [], bookingUrl: null, timezone: null }),
+    leadCalls: { ...d.leadCalls, ready: leadCallsReady.ok, why: leadCallsReady.ok ? null : leadCallsReady.why },
   };
 }
 

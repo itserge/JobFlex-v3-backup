@@ -511,5 +511,6 @@ export async function buildCalendarSeed(): Promise<CalendarSeed> {
     links,
     createKinds,
     canManage,
+    canSmartBook: canManage || sales,
   };
 }

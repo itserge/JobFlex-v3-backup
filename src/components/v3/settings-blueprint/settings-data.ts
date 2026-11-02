@@ -130,13 +130,13 @@ export const COPIED_LABEL = 'Copied' as const;
 
 export type RailKey =
   | 'account'
-  | 'payments'
   | 'billing'
   | 'integrations'
   | 'notifications'
   | 'desk'
   | 'estimating'
-  | 'website';
+  | 'website'
+  | 'smartbook';
 
 export interface RailItem {
   readonly key: RailKey;
@@ -151,10 +151,13 @@ export interface RailItem {
 
 export const RAIL_ITEMS: readonly RailItem[] = [
   { key: 'account', label: 'Account', icon: 'i-users' },
-  { key: 'payments', label: 'Payments', icon: 'i-card' },
   { key: 'billing', label: 'Billing', icon: 'i-receipt' },
-  { key: 'integrations', label: 'Integrations', icon: 'i-globe' },
+  // Payments joined Integrations on 2026-10-30 (owner): one section, the processors are its Stripe / Square / Stax tabs.
+  { key: 'integrations', label: 'Integrations / Payments', icon: 'i-globe' },
   { key: 'notifications', label: 'Notifications', icon: 'i-bell' },
+  // SmartBook (2026-10-31): new leads — Facebook, the website estimators, Lead Center, the AI desk — get open times
+  // from the calendar by text and email and book themselves; a time they name comes to the company to confirm.
+  { key: 'smartbook', label: 'SmartBook', icon: 'i-cal', isNew: true, sub: 'New leads get open times from your calendar by text and email and book themselves. A time they name comes to you first.' },
   // Texting left Settings on 2026-10-16 for its own page, /dashboard/texting (sidebar → Automation, under AI desk);
   // ?pane=texting and ?tab=texting redirect there (app/dashboard/settings/page.tsx).
   // Estimating (2026-10-16): the company's own estimating method — labor by the crew-hour or person-hour, its markup,
@@ -167,6 +170,13 @@ export const RAIL_ITEMS: readonly RailItem[] = [
 ];
 
 export const RAIL_NEW_BADGE = 'NEW' as const;
+
+/** A ?tab= / ?pane= value as a rail key. `payments` is the section's old name — the OAuth returns, emails and
+ *  guides still link to it — and opens Integrations / Payments. */
+export function railKeyFor(raw: string | null | undefined): RailKey | undefined {
+  if (raw === 'payments') return 'integrations';
+  return RAIL_ITEMS.some((r) => r.key === raw) ? (raw as RailKey) : undefined;
+}
 
 /** Donor default `.kicker` text (matches the initially active rail item). */
 export const DEFAULT_RAIL: RailKey = 'account';
@@ -568,7 +578,8 @@ export const BILLING_CONTACT_LABELS = { billingEmail: 'Billing email' } as const
 /* Integrations pane — subtabs                                         */
 /* ------------------------------------------------------------------ */
 
-export type SubTabKey = 'gmail' | 'meta' | 'stripe' | 'square' | 'stax' | 'financing';
+/** `getpaid` is the phone's Get paid tab (processor summary, bank transfer, defaults); the desktop has no such tab. */
+export type SubTabKey = 'getpaid' | 'gmail' | 'meta' | 'ramp' | 'stripe' | 'square' | 'stax' | 'financing';
 
 export interface SubTab {
   readonly key: SubTabKey;
@@ -592,31 +603,18 @@ export function comingSoonNote(name: string): string {
    remains visible only for enabled or previously connected accounts. */
 export const INTEGRATION_SUBTABS: readonly SubTab[] = [
   { key: 'meta', label: 'Meta business' },
+  { key: 'ramp', label: 'Ramp cards' },
   { key: 'stripe', label: 'Stripe' },
   { key: 'square', label: 'Square' },
   { key: 'stax', label: 'Stax' },
 ];
 
-/** Add Gmail for viewers who can use or reconnect it. */
-export function integrationSubTabs(show: { gmail: boolean }): readonly SubTab[] {
+/** Add Gmail for viewers who can use or reconnect it, and Financing (Wisetack, 2026-10-28) once JobFlex lets the account in. */
+export function integrationSubTabs(show: { gmail: boolean; financing?: boolean }): readonly SubTab[] {
   const lead: SubTab[] = [];
   if (show.gmail) lead.push({ key: 'gmail', label: 'Gmail' });
-  return [...lead, ...INTEGRATION_SUBTABS];
-}
-
-export const DEFAULT_SUBTAB: SubTabKey = 'stripe';
-
-/* DESKTOP SPLIT (owner, 2026-09-26): the three payment processors moved from
-   Integrations into the Payments pane; Integrations keeps Gmail and Meta. The
-   handheld build still reads integrationSubTabs() above, unchanged. */
-export const PAYMENT_SUB_KEYS: ReadonlySet<SubTabKey> = new Set<SubTabKey>(['stripe', 'square', 'stax', 'financing']);
-export const PAYMENT_SUBTABS: readonly SubTab[] = INTEGRATION_SUBTABS.filter((t) => PAYMENT_SUB_KEYS.has(t.key));
-/** The Payments strip: the three processors, and Financing (Wisetack, 2026-10-28) once JobFlex lets the account in. */
-export function paymentSubTabs(show: { financing: boolean }): readonly SubTab[] {
-  return show.financing ? [...PAYMENT_SUBTABS, { key: 'financing', label: 'Financing' }] : PAYMENT_SUBTABS;
-}
-export function connectionSubTabs(show: { gmail: boolean }): readonly SubTab[] {
-  return integrationSubTabs(show).filter((t) => !PAYMENT_SUB_KEYS.has(t.key));
+  const tail: SubTab[] = show.financing ? [{ key: 'financing', label: 'Financing' }] : [];
+  return [...lead, ...INTEGRATION_SUBTABS, ...tail];
 }
 
 export function isVisibleSubTab(key: SubTabKey | undefined, tabs: readonly SubTab[] = INTEGRATION_SUBTABS): boolean {
@@ -779,6 +777,7 @@ export const NOTIFICATION_ICONS: Record<PrefKey, IconName> = {
   'trade-reply': 'i-board',
   'appointment-booked': 'i-cal',
   'booking-online': 'i-cal',
+  'smartbook-request': 'i-cal',
   'appointment-moved': 'i-clock',
   'service-reminder': 'i-check',
   // Text-only crew events (never in the matrix) — listed so the map is total.
@@ -1454,6 +1453,8 @@ export interface MetaData {
   canManage: boolean;
   canResume: boolean;
   lastImportAt: string | null;
+  /** New Facebook leads come into Leads by themselves (lib/meta/autoImport, the cron every 5 minutes). */
+  autoImport: boolean;
 }
 
 /** The deep view of one payment link (Integrations → Stripe / Square). */
@@ -1466,9 +1467,28 @@ export interface ProcessorIntegrationData {
   lastEventAt: string | null;
 }
 
+/** Ramp cards (2026-10-29): the company's Ramp business, connected or not, and what the card is allowed to do. */
+export interface RampData {
+  enabled: boolean;
+  connected: boolean;
+  businessName: string;
+  connectedAt: string | null;
+  lastSyncAt: string | null;
+  lastSyncCount: number;
+  lastError: string | null;
+  fieldReady: boolean;
+  webhookReady: boolean;
+  askByText: boolean;
+  requireJob: boolean;
+  billsApproved: boolean;
+  connectHref: string;
+  canManage: boolean;
+}
+
 export interface IntegrationsData {
   gmail: GmailData;
   meta: MetaData;
+  ramp: RampData;
   stripe: ProcessorIntegrationData;
   square: ProcessorIntegrationData;
   connections: PaymentConnectionStatusView;
@@ -1515,6 +1535,9 @@ export interface DeskSettingsData {
   /** Whether the business phone really forwards to the desk, for the forwarding chosen (lib/aiDesk/forwardCheck). */
   forwardCheck: ForwardCheck | null;
   facts: CompanyFacts;
+  /** Call new leads (2026-10-31, lib/aiDesk/leadCalls): the switch, the wait, and whether the desk could dial now —
+   *  `why` says what is missing when it could not. */
+  leadCalls: { on: boolean; afterMinutes: number; ready: boolean; why: string | null };
 }
 
 export interface DeskMinutesData {
@@ -1549,6 +1572,8 @@ export interface PaneProps {
   /** What an OAuth round trip came back with (?gmail= / ?stripe= / ?square=),
    *  shown once as a note on the tab it concerns. */
   notice?: OAuthNotice;
+  /** This pane is the one on screen — every pane stays mounted, the others hidden. */
+  shown: boolean;
 }
 
 /** The status words the OAuth routes redirect back with. */
@@ -1587,8 +1612,8 @@ export const PROCESSOR_OAUTH_NOTICE: Record<string, { title: string; sub: string
 };
 
 export const GMAIL_REVOKED_NOTE = {
-  title: 'Gmail disconnected — emails are going from the JobFlex address',
-  sub: 'Google no longer accepts the connection (the permission was removed or expired). Reconnect to send from your own address again.',
+  title: 'Reconnect Gmail to send from your own address',
+  sub: 'Google ended JobFlex’s access — usually after a Gmail password change or when access is removed in your Google account. Emails still go out from the JobFlex address meanwhile. Press Reconnect Gmail and approve; it takes a few seconds.',
 } as const;
 export const GMAIL_RECONNECT_ACTION: ActionSpec = { label: 'Reconnect Gmail', icon: 'i-google' };
 export const GMAIL_TEST_ACTION: ActionSpec = { label: 'Send test email' };

@@ -1,0 +1,623 @@
+/* SMARTHELP · THE PANEL (owner-approved look, 2026-10-29). Mounted beside the
+   Help composer in every shell, so the root carries data-nest and every rule
+   here has two classes — the shells' margin/padding reset ties a single class
+   and wins on prod. Blueprint: white, square corners, ink frames, one blue
+   action; the header is the sidebar row's ink block on its hard accent shadow.
+   Nothing blurred, no gradient, no pill. */
+
+.root .panel {
+  position: fixed;
+  z-index: 58;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  background: #fff;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  line-height: 1.4;
+  outline: none;
+}
+
+/* ≥1024: beside the page, which globals.css moves over by the same 380px. */
+.root .desk,
+.root .mid {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 380px;
+  border-left: 2px solid var(--ink);
+}
+/* 769–1023: over the page, so it says where it ends. */
+.root .mid {
+  box-shadow: -4px 0 0 var(--ink);
+}
+/* ≤768: the bottom sheet. */
+.root .sheet {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 85dvh;
+  border-top: 2px solid var(--ink);
+  padding-bottom: var(--msheet-safe-b);
+}
+.root .scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 57;
+  background: var(--msheet-scrim);
+}
+.root .grab {
+  flex: 0 0 auto;
+  width: var(--msheet-grab-w);
+  height: var(--msheet-grab-h);
+  margin: 8px auto 6px;
+  background: var(--ink-line);
+}
+
+/* ── The header: the ink block ───────────────────────────────────────── */
+.root .head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 3px;
+  padding: 10px 8px 10px 14px;
+  background: var(--ink);
+  color: #fff;
+  box-shadow: 0 3px 0 var(--accent);
+}
+.root .mark {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  border-radius: var(--r-sm);
+  background: #fff;
+  color: var(--ink);
+}
+.root .mark svg {
+  width: 16px;
+  height: 16px;
+}
+.root .headName {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: #fff;
+}
+.root .askTag {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 1px 5px;
+  border: 1.5px solid #fff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 14px;
+}
+.root .close {
+  appearance: none;
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin: -6px 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+}
+.root .close svg {
+  width: 20px;
+  height: 20px;
+}
+.root .close:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.root .close:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -4px;
+}
+
+/* ── The scrolling middle ────────────────────────────────────────────── */
+.root .body {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 14px 16px 18px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.root .intro {
+  margin: 0 0 14px;
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+.root .wait {
+  margin: 8px 0;
+  font-size: 14px;
+  color: var(--ink-muted);
+}
+.root .err {
+  display: block;
+  margin: 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--rose);
+}
+.root .miss {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  font-size: 13px;
+}
+.root .back {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  margin: 0 0 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.root .back svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* The guides */
+.root .group {
+  margin: 0 0 18px;
+}
+.root .groupName {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.root .cards {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.root .card {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 6px 10px 6px 6px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms var(--ease-out), background-color 140ms var(--ease-out);
+}
+.root .card:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.root .card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.root .cardIcon {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin: 0;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+}
+.root .cardIcon svg {
+  width: 16px;
+  height: 16px;
+}
+.root .cardTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+.root .dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin: 0;
+  background: var(--accent);
+}
+.root .done {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  margin: 0;
+  color: var(--ink-muted);
+}
+.root .done svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* An answer: a guide's steps or a typed question's reply */
+.root .entry {
+  margin: 0 0 18px;
+  padding: 0 0 16px;
+  border-bottom: 1px solid var(--ink-line);
+}
+.root .entry:last-child {
+  border-bottom: 0;
+}
+.root .entryTitle {
+  margin: 0 0 10px;
+  font-size: 16px;
+  font-weight: 800;
+}
+.root .q {
+  margin: 0 0 10px;
+  padding: 0 0 0 10px;
+  border-left: 3px solid var(--accent);
+  font-size: 14px;
+  font-weight: 700;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.root .replyTitle {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.root .note {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.root .steps {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.root .step {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  gap: 10px;
+  margin: 0;
+}
+.root .num {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  font-weight: 800;
+}
+.root .stepBody {
+  min-width: 0;
+  margin: 0;
+}
+.root .stepText {
+  margin: 2px 0 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.root .stepActs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 0;
+}
+.root .blocked {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+.root .btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  margin: 0;
+  padding: 0 12px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.root .btn:hover {
+  background: var(--accent-soft);
+}
+.root .btn:focus-visible,
+.root .link:focus-visible,
+.root .thumb:focus-visible,
+.root .back:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.root .btnShow {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.root .btnPrimary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+.root .btnPrimary:hover {
+  background: var(--accent);
+  filter: brightness(1.1);
+}
+.root .btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.root .link {
+  appearance: none;
+  margin: 0 0 0 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.root .link:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.root .personRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 10px 0;
+}
+.root .rate {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+.root .rateQ,
+.root .thanks {
+  margin: 0 4px 0 0;
+}
+.root .thumb {
+  appearance: none;
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--ink-line);
+  border-radius: var(--r-sm);
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+}
+.root .thumb:hover {
+  border-color: var(--ink);
+}
+.root .thumb svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ── The ask box and the foot ────────────────────────────────────────── */
+.root .askBox {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px 8px;
+  border-top: 1.5px solid var(--ink);
+}
+.root .input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  max-height: 140px;
+  margin: 0;
+  padding: 8px 10px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  resize: none;
+}
+.root .input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+}
+.root .askBox .btn {
+  min-height: 44px;
+}
+.root .foot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0 12px 12px;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+/* ── Folded: the "Back to SmartHelp" bar ─────────────────────────────── */
+/* Top middle: the corners are the menu and Help, the foot is the tab bar and the create button. */
+.root .bar {
+  position: fixed;
+  z-index: 58;
+  top: calc(env(safe-area-inset-top, 0px) + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: stretch;
+  max-width: calc(100vw - 24px);
+  margin: 0;
+  background: var(--ink);
+  color: #fff;
+  box-shadow: 3px 3px 0 var(--accent);
+  font-family: var(--font-sans);
+}
+.root .barOpen,
+.root .barClose {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+.root .barOpen {
+  gap: 8px;
+  min-width: 0;
+  padding: 0 10px 0 8px;
+  text-align: left;
+}
+.root .barTxt {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.root .barMiss {
+  max-width: 220px;
+  margin: 0;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.root .barClose {
+  justify-content: center;
+  width: 44px;
+  padding: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.25);
+}
+.root .barClose svg {
+  width: 18px;
+  height: 18px;
+}
+.root .barOpen:focus-visible,
+.root .barClose:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -4px;
+}
+
+.root .sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Phone: every control is a 44px target; 16px type in the box so iOS doesn't zoom. */
+@media (max-width: 768px) {
+  .root .btn,
+  .root .thumb {
+    min-height: 44px;
+  }
+  .root .thumb {
+    width: 44px;
+    height: 44px;
+  }
+  .root .input {
+    font-size: 16px;
+  }
+  .root .foot {
+    padding-bottom: 14px;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .root .desk,
+  .root .mid {
+    animation: shIn 200ms var(--ease-out);
+  }
+  .root .sheet {
+    animation: shUp 240ms var(--ease-out);
+  }
+}
+@keyframes shIn {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes shUp {
+  from {
+    transform: translateY(32px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}

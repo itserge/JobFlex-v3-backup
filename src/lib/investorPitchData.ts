@@ -3,6 +3,7 @@ import "server-only";
 // the prices the live plan catalogue, the comparison the landing page's researched table, the raise and what is next
 // the owner's words. Built here once, for the deck on the investor link's page and for the deck's own page (./pitch).
 import type { InvestorReport } from "@/lib/investors";
+import { customerCostStory } from "@/lib/investorModel";
 import type { InvestorPitch } from "@/lib/investorPitch";
 import { askLines, splitLines } from "@/lib/investorPitchShared";
 import { MAX_LEAD_PRICE_CENTS, MIN_LEAD_PRICE_CENTS } from "@/lib/leadCenter/purchase";
@@ -26,8 +27,9 @@ export function buildPitchData(token: string, report: InvestorReport, plans: rea
     },
     unit: {
       spendCents: f.spend.totalCents, won: f.paying.won, wonMrrCents: f.paying.wonMrrCents, arrCents: f.paying.arrCents,
-      costPerPayingCents: f.unit.costPerPayingCents, costPerSignupCents: f.unit.costPerSignupCents, paybackMonths: f.unit.paybackMonths,
+      costPerPayingCents: f.unit.costPerPayingCents, costPerSignupCents: f.unit.costPerSignupCents, paybackMonths: f.unit.paybackMonths, matured: f.unit.matured,
       expectedPayers: f.expected.payers, expectedMrrCents: f.expected.mrrCents,
+      cost: f.cost, costWords: customerCostStory(f), today: f.today,
     },
     leadPrice: { minCents: MIN_LEAD_PRICE_CENTS, maxCents: MAX_LEAD_PRICE_CENTS },
     deskPack: { minutes: DESK_PACK.minutes, cents: DESK_PACK.cents },

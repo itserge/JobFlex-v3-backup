@@ -408,7 +408,7 @@ export function OfficePanel({ office, company }: { office: OfficeBrief; company?
           </h3>
           <ol className={s.funnel} data-crm-funnel>
             {office.funnel.steps.map((st) => (
-              <li key={st.key} className={s.fstep}>
+              <li key={st.key} className={s.fstep} data-step={st.key}>
                 <span className={s.fL}>{st.label}</span>
                 <span className={s.fBarWrap}>
                   <span className={s.fBar} style={{ width: `${Math.max(4, (st.count / maxFunnel) * 100)}%` }} />

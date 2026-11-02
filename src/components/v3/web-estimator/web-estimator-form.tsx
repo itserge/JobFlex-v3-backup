@@ -110,7 +110,7 @@ export function WebEstimatorForm() {
 
       <section className={styles.group}>
         <h4 className={styles.gh}>Estimators</h4>
-        <ul className={styles.list}>
+        <ul className={styles.list} data-tour="website:trades">
           {WEB_TRADES.map((t) => {
             const info = WEB_TRADE[t], ts = settings.trades[t], held = billing.held[t] ?? null, q = quotes[t];
             const words = view.open
@@ -268,7 +268,7 @@ export function WebEstimatorForm() {
 
       <div className={styles.foot}>
         {status ? <p className={`${styles.status} ${statusTone}`} role="status" aria-live="polite" data-web-saved={saved && !pending ? "" : undefined}>{status}</p> : null}
-        <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={pending} onClick={save} data-web-save>
+        <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={pending} onClick={save} data-web-save data-tour="website:save">
           {pending ? "Saving…" : adding.length ? `Save and add to my plan (${adding.map(firstWord).join(", ")})` : removing.length ? "Save and take off my plan" : "Save"}
         </button>
       </div>

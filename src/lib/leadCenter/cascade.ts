@@ -12,10 +12,11 @@
 // each step re-validates the next candidate's live eligibility and skips orgs
 // that have since opted out, lost their geocode, or dropped the trade.
 import { db } from "@/lib/db";
-import { buildRanking, withinServiceRadius, type Candidate } from "./matching";
+import { loadRankingInputs, rankWith, withinServiceRadius, type Candidate } from "./matching";
 import { parseTradeTypes, orgCoversTrade, isTradeType, type TradeType } from "@/lib/tradeTypes";
 import { notifyLeadOfferCreated } from "@/lib/notify";
 import { TEST_QUEUE_REASON } from "./testLeads";
+import { isSandboxLead, setWouldRank } from "./sandbox";
 import { getRoutingMode, MANUAL_MODE_REASON, RETURNED_REASON } from "./routingMode";
 import { readLeadEstimates } from "./estimateStore";
 import { autoPriceOn, exclusiveOf, offerPriceFor } from "./autoPrice";
@@ -74,14 +75,16 @@ export async function startCascade(platformLeadId: string): Promise<void> {
   // Only drive fresh/stuck leads — the cron re-drive may race a submission
   // that already progressed.
   if (!pl || pl.status !== "MATCHING") return;
-  // A test lead never reaches a shop through the cascade (lib/leadCenter/testLeads).
-  if (pl.isTest) {
+  // A test lead never reaches a shop through the cascade (lib/leadCenter/testLeads) — except a test-environment
+  // lead (lib/leadCenter/sandbox), which runs it among JobFlex's own organizations, whatever the routing mode.
+  const sandbox = pl.isTest && (await isSandboxLead(platformLeadId));
+  if (pl.isTest && !sandbox) {
     await parkInManualQueue(platformLeadId, TEST_QUEUE_REASON, { tellHomeowner: false });
     return;
   }
   // Manual mode (lib/leadCenter/routingMode): the cascade does not start — the
   // cron's re-drive of a stuck lead included.
-  if ((await getRoutingMode()) === "MANUAL") {
+  if (!sandbox && (await getRoutingMode()) === "MANUAL") {
     await parkInManualQueue(platformLeadId, MANUAL_MODE_REASON, { tellHomeowner: false });
     return;
   }
@@ -99,7 +102,16 @@ export async function startCascade(platformLeadId: string): Promise<void> {
     return;
   }
 
-  const ranking = await buildRanking(pl);
+  const inputs = await loadRankingInputs();
+  let ranking: Candidate[];
+  if (sandbox) {
+    // What production would do, kept for the test run; what this run does, among internal organizations only.
+    const real = rankWith(pl, inputs);
+    await setWouldRank(platformLeadId, real.map((c) => ({ orgId: c.orgId, orgName: c.orgName, score: c.score, distanceMi: c.distanceMi })));
+    ranking = rankWith(pl, { ...inputs, orgs: inputs.orgs.filter((o) => o.isInternal) });
+  } else {
+    ranking = rankWith(pl, inputs);
+  }
   await db.platformLead.update({
     where: { id: platformLeadId },
     data: { rankingJson: JSON.stringify(ranking) },
@@ -120,14 +132,16 @@ export async function advanceCascade(platformLeadId: string): Promise<void> {
   if (!pl) return;
   // Terminal states — e.g. an admin manually assigned while an offer was open.
   if (pl.status === "MATCHED" || pl.status === "MANUAL_QUEUE") return;
-  // A test lead an internal shop passed on goes back to the admin, not onward.
-  if (pl.isTest) {
+  // A test lead an internal shop passed on goes back to the admin, not onward — a test-environment lead goes on,
+  // to the next internal organization, as a real one would (lib/leadCenter/sandbox).
+  const sandbox = pl.isTest && (await isSandboxLead(platformLeadId));
+  if (pl.isTest && !sandbox) {
     await parkInManualQueue(platformLeadId, TEST_QUEUE_REASON, { tellHomeowner: false });
     return;
   }
   // Manual mode: a pass, a lapse or the homeowner's "another contractor" puts
   // the lead back in the queue for a person — never on to the next shop.
-  if ((await getRoutingMode()) === "MANUAL") {
+  if (!sandbox && (await getRoutingMode()) === "MANUAL") {
     await parkInManualQueue(platformLeadId, MANUAL_MODE_REASON, { tellHomeowner: false });
     return;
   }
@@ -171,9 +185,11 @@ async function offerToNext(platformLeadId: string): Promise<void> {
 
     const org = await db.organization.findUnique({
       where: { id: cand.orgId },
-      select: { id: true, leadOffersEnabled: true, lat: true, lng: true, tradeTypesJson: true, serviceRadiusMiles: true },
+      select: { id: true, leadOffersEnabled: true, lat: true, lng: true, tradeTypesJson: true, serviceRadiusMiles: true, isInternal: true },
     });
     if (!org || !org.leadOffersEnabled || org.lat == null || org.lng == null) continue;
+    // A test lead reaches JobFlex's own organizations only (lib/leadCenter/testLeads), whatever its snapshot says.
+    if (pl.isTest && !org.isInternal) continue;
     if (!orgCoversTrade(parseTradeTypes(org.tradeTypesJson), detected)) continue;
     // The radius as it is NOW: a shop that narrowed it since the snapshot is skipped.
     if (!withinServiceRadius(pl, org)) continue;
@@ -349,4 +365,26 @@ export async function runDueOfferSweep(): Promise<{
   }
 
   return { expired, advanced, reminded, redriven: stuck.length + orphaned.length };
+}
+
+// ── The test environment's clock (lib/leadCenter/sandbox, 2026-10-29) ───────────────────────────────────────────
+// A test run cannot wait 24 hours for an offer to lapse or 22 for its reminder. These do now what the sweep does at
+// its time — the same transition, the same advance, the same letters (recorded, not sent). Platform-admin actions
+// call them for test-environment leads only.
+
+/** Lapse an open offer now and move the lead on, exactly as the sweep does when its 24 hours are up. */
+export async function expireOfferNow(offerId: string): Promise<boolean> {
+  const o = await db.leadOffer.findUnique({ where: { id: offerId }, select: { platformLeadId: true } });
+  if (!o) return false;
+  const res = await db.leadOffer.updateMany({ where: { id: offerId, status: "OFFERED" }, data: { status: "EXPIRED", expiresAt: new Date() } });
+  if (res.count === 0) return false;
+  await db.syncState.delete({ where: { key: remindedKey(offerId) } }).catch(() => {});
+  await advanceCascade(o.platformLeadId);
+  return true;
+}
+
+/** The two-hours-left reminder, now. */
+export async function remindOfferNow(offerId: string): Promise<void> {
+  const { notifyLeadOfferExpiring } = await import("@/lib/notify");
+  await notifyLeadOfferExpiring(offerId);
 }

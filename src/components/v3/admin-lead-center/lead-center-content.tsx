@@ -39,8 +39,12 @@ import { toast } from "@/components/ui/Toast";
 import { relative, shortDate } from "@/lib/format";
 import {
   manualAssignPlatformLead,
+  clearTestMessages,
   createTestLead,
+  expireTestOffer,
+  readTestMessage,
   refundLeadPurchase,
+  remindTestOffer,
   requeuePlatformLead,
   rotateLeadTestKey,
   routeAllWaitingLeads,
@@ -53,6 +57,7 @@ import {
 } from "@/actions/adminLeadCenter";
 import { PRICED_TRADES, TRADE_NOUN, estimatorNameFor, suggestedLeadPriceCents, type LeadEstimate, type PricedTrade } from "@/lib/leadCenter/estimate";
 import type { RoutingMode } from "@/lib/leadCenter/routingMode";
+import { TRADE_TYPES } from "@/lib/tradeTypes";
 import { LeadMap, type MapFilter } from "./lead-map";
 import {
   Chip,
@@ -177,6 +182,25 @@ export interface PlatformLeadDTO {
     /** Sent by an admin, not the cascade. */
     manual: boolean;
   } | null;
+}
+
+/** A test-environment run (lib/leadCenter/sandbox): who production would have offered it to, and every email and
+ *  text its path made — recorded, never sent. */
+export interface TestRunDTO {
+  createdAt: string;
+  /** The real ranking's first shops; null until it routed. */
+  wouldRank: { orgId: string; orgName: string; score: number; distanceMi: number | null }[] | null;
+  /** Newest first. */
+  messages: {
+    n: number;
+    at: string;
+    channel: "email" | "sms";
+    to: string;
+    subject?: string | null;
+    note?: string | null;
+    what?: string | null;
+    excerpt: string;
+  }[];
 }
 
 /** A CONTRACTOR — one of our shops, not a homeowner. */
@@ -393,6 +417,7 @@ export function AdminLeadCenterContent({
   houseOrgId,
   savedRanges,
   testLink,
+  testRuns,
 }: {
   leads: PlatformLeadDTO[];
   orgs: OrgPickDTO[];
@@ -406,6 +431,8 @@ export function AdminLeadCenterContent({
   savedRanges: SavedRangeDTO[];
   /** The /homeowner?test=<key> link, whole; null until one is created. */
   testLink: { link: string; createdAt: string } | null;
+  /** The test environment's runs, by lead id (lib/leadCenter/sandbox). */
+  testRuns: Record<string, TestRunDTO>;
 }) {
   const router = useRouter();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -704,7 +731,7 @@ export function AdminLeadCenterContent({
         </section>
       ) : null}
 
-      <TestLeadsCard testLink={testLink} />
+      <TestLeadsCard testLink={testLink} leads={leads} orgs={orgs} testRuns={testRuns} onOpenLead={openLead} />
 
       <div ref={mapRef}>
         <MapCard
@@ -2109,12 +2136,27 @@ function InternalSwitch({ shop }: { shop: OrgPickDTO }) {
   );
 }
 
-function TestLeadsCard({ testLink }: { testLink: { link: string; createdAt: string } | null }) {
+function TestLeadsCard({
+  testLink,
+  leads,
+  orgs,
+  testRuns,
+  onOpenLead,
+}: {
+  testLink: { link: string; createdAt: string } | null;
+  leads: PlatformLeadDTO[];
+  orgs: OrgPickDTO[];
+  testRuns: Record<string, TestRunDTO>;
+  onOpenLead: (id: string) => void;
+}) {
   const router = useRouter();
   const [link, setLink] = useState(testLink);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "", email: "", zip: "", description: "" });
+  // THE TEST ENVIRONMENT (owner, 2026-10-29): on by default — a run routes automatically to the internal
+  // organizations, and every email and text is recorded below instead of sent.
+  const blank = { name: "", email: "", zip: "", address: "", trade: "", description: "", auto: true };
+  const [form, setForm] = useState(blank);
 
   async function rotate() {
     if (busy) return;
@@ -2156,10 +2198,14 @@ function TestLeadsCard({ testLink }: { testLink: { link: string; createdAt: stri
         name: form.name.trim(),
         email: form.email.trim(),
         zip: form.zip.trim(),
+        address: form.address.trim() || undefined,
+        trade: form.trade || undefined,
         description: form.description.trim(),
+        auto: form.auto,
       });
-      toast.success("Test lead created", "It is in the queue, marked TEST — send it to an internal organization.");
-      setForm({ name: "", email: "", zip: "", description: "" });
+      if (form.auto) toast.success("Test run started", "It routes to your internal organizations. Nothing is sent — every message is listed under Test runs.");
+      else toast.success("Test lead created", "It is in the queue, marked TEST — send it to an internal organization.");
+      setForm({ ...blank, auto: form.auto });
       router.refresh();
     } catch (err) {
       toast.error("Couldn't create the test lead", actionError(err));
@@ -2168,7 +2214,7 @@ function TestLeadsCard({ testLink }: { testLink: { link: string; createdAt: stri
     }
   }
 
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+  const set = (k: Exclude<keyof typeof form, "auto">) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
   return (
@@ -2179,7 +2225,8 @@ function TestLeadsCard({ testLink }: { testLink: { link: string; createdAt: stri
             Test leads
           </div>
           <div className="card-sub">
-            Never cascade, internal organizations only, kept out of every number on this page.
+            Internal organizations only, kept out of every number on this page. In the test environment a lead routes
+            automatically and nothing is sent.
           </div>
         </div>
       </div>
@@ -2256,20 +2303,252 @@ function TestLeadsCard({ testLink }: { testLink: { link: string; createdAt: stri
               <input className={styles.tlIn} inputMode="numeric" maxLength={5} value={form.zip} onChange={set("zip")} autoComplete="off" />
             </label>
             <label className={cx(styles.tlField, styles.tlWide)}>
+              <span>Street · optional, for a closer pin</span>
+              <input className={styles.tlIn} value={form.address} onChange={set("address")} autoComplete="off" />
+            </label>
+            <label className={cx(styles.tlField, styles.tlWide)}>
+              <span>Trade</span>
+              <select className={styles.tlIn} value={form.trade} onChange={set("trade")}>
+                <option value="">Let the AI read it from the description</option>
+                {TRADE_TYPES.filter((t) => t !== "Other").map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className={cx(styles.tlField, styles.tlWide)}>
               <span>Description</span>
               <textarea className={cx(styles.tlIn, styles.tlArea)} rows={3} value={form.description} onChange={set("description")} />
             </label>
           </div>
+          <label className={cx(styles.tlAuto, form.auto && styles.tlAutoOn)}>
+            <input type="checkbox" checked={form.auto} onChange={(e) => setForm((f) => ({ ...f, auto: e.target.checked }))} />
+            <span>
+              <b>Test environment</b>
+              {form.auto
+                ? "Routes automatically, offer by offer, to internal organizations. Every email and text is recorded under Test runs, and nothing is sent."
+                : "Off: the lead parks in the queue for you to send by hand, and its emails go out for real."}
+            </span>
+          </label>
           <button
             className={cx("btn btn-primary", ui.btnSm, busy === "lead" && ui.btnBusy, styles.tlGen)}
             type="button"
             disabled={busy !== null || !formOk}
             onClick={() => void create()}
           >
-            {busy === "lead" ? "Creating…" : "Create test lead"}
+            {busy === "lead" ? "Creating…" : form.auto ? "Start test run" : "Create test lead"}
           </button>
         </div>
       </div>
+
+      <TestRuns leads={leads} orgs={orgs} testRuns={testRuns} onOpenLead={onOpenLead} />
     </section>
+  );
+}
+
+/* ============================================================
+   TEST RUNS (owner, 2026-10-29: "a testing environment where we can send out automatic leads without actually
+   sending, so we can test and debug") — lib/leadCenter/sandbox. Each run: where it stands now, the offers it made,
+   who production would have offered it to, and every email and text, recorded and readable whole. The clock is in
+   the admin's hands: an offer can lapse now, its reminder go now.
+   ============================================================ */
+
+function TestRuns({
+  leads,
+  orgs,
+  testRuns,
+  onOpenLead,
+}: {
+  leads: PlatformLeadDTO[];
+  orgs: OrgPickDTO[];
+  testRuns: Record<string, TestRunDTO>;
+  onOpenLead: (id: string) => void;
+}) {
+  const runs = leads.filter((l) => testRuns[l.id]).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const ready = orgs.filter((o) => o.isInternal && isMatchable(o));
+  return (
+    <div className={styles.trWrap} data-test-runs>
+      <div className={styles.tlLbl}>Test runs · {runs.length}</div>
+      {ready.length === 0 ? (
+        <p className={styles.trWarn}>
+          No internal organization can take a lead yet, so a run has nowhere to go. Open a shop such as QA Co below, turn
+          on Internal, and make sure it has lead offers on, an address and a trade.
+        </p>
+      ) : (
+        <p className={styles.tlNote}>Runs go to {ready.map((o) => o.name).join(", ")}, ranked the way production ranks.</p>
+      )}
+      {runs.length === 0 ? (
+        <p className={styles.tlNote}>No runs yet. Start one above with the test environment on.</p>
+      ) : (
+        <div className={styles.trList}>
+          {runs.map((l) => (
+            <TestRunItem key={l.id} lead={l} run={testRuns[l.id]} onOpenLead={onOpenLead} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const OFFER_WORD: Record<string, string> = { OFFERED: "Open", ACCEPTED: "Accepted", DECLINED: "Passed", EXPIRED: "Lapsed", CANCELLED: "Withdrawn" };
+
+function TestRunItem({ lead, run, onOpenLead }: { lead: PlatformLeadDTO; run: TestRunDTO; onOpenLead: (id: string) => void }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState<"lapse" | "remind" | "clear" | null>(null);
+  const [openN, setOpenN] = useState<number | null>(null);
+  const [bodies, setBodies] = useState<Record<number, string>>({});
+  const st = statusTone(lead);
+
+  async function act(kind: "lapse" | "remind" | "clear") {
+    if (busy) return;
+    setBusy(kind);
+    try {
+      if (kind === "lapse") await expireTestOffer(lead.id);
+      else if (kind === "remind") await remindTestOffer(lead.id);
+      else await clearTestMessages(lead.id);
+      toast.success(
+        kind === "lapse" ? "Offer lapsed" : kind === "remind" ? "Reminder recorded" : "Log cleared",
+        kind === "lapse" ? "The lead moved on, as it would after 24 hours." : kind === "remind" ? "The two-hours-left letter is in the log, not sent." : "The run keeps going; new messages land here.",
+      );
+      router.refresh();
+    } catch (err) {
+      toast.error("Couldn't do that", actionError(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function view(n: number) {
+    if (openN === n) {
+      setOpenN(null);
+      return;
+    }
+    setOpenN(n);
+    if (bodies[n] != null) return;
+    try {
+      const r = await readTestMessage(lead.id, n);
+      setBodies((b) => ({ ...b, [n]: r.body }));
+    } catch (err) {
+      setOpenN(null);
+      toast.error("Couldn't open the message", actionError(err));
+    }
+  }
+
+  const now =
+    lead.status === "OFFERED" && lead.activeOffer
+      ? `Offered to ${lead.activeOffer.orgName} · offer ${lead.activeOffer.attempt} of 3`
+      : lead.status === "MATCHED"
+        ? `Accepted by ${lead.matchedOrgName ?? "a shop"}`
+        : lead.status === "MANUAL_QUEUE"
+          ? `In the queue · ${destinationNote(lead)}`
+          : "Routing…";
+
+  return (
+    <article className={styles.trRun}>
+      <header className={styles.trHead}>
+        <span className={styles.testTag}>Test</span>
+        <button className={styles.trName} type="button" onClick={() => onOpenLead(lead.id)} title="Open the lead">
+          {lead.name} · {lead.detectedTrade ?? lead.projectType ?? "Trade unread"} · {place(lead)}
+        </button>
+        <Chip tone={st.tone}>{st.label}</Chip>
+        <span className={styles.trTime}>{relative(lead.createdAt)}</span>
+      </header>
+
+      <div className={styles.trNow}>
+        <span className={styles.trNowT}>{now}</span>
+        {lead.status === "OFFERED" && lead.activeOffer ? <Countdown until={lead.activeOffer.expiresAt} /> : null}
+        {lead.status === "OFFERED" ? (
+          <span className={styles.trActs}>
+            <button className={cx("btn btn-primary", ui.btnSm, busy === "lapse" && ui.btnBusy)} type="button" disabled={busy !== null} onClick={() => void act("lapse")}>
+              {busy === "lapse" ? "Lapsing…" : "Let it lapse now"}
+            </button>
+            <button className={cx("btn btn-ghost", ui.btnSm, busy === "remind" && ui.btnBusy)} type="button" disabled={busy !== null} onClick={() => void act("remind")}>
+              {busy === "remind" ? "Sending…" : "Send the reminder now"}
+            </button>
+          </span>
+        ) : null}
+      </div>
+
+      <div className={styles.trCols}>
+        <div>
+          <div className={styles.trSub}>Offers in this run</div>
+          {lead.offers.length ? (
+            <ol className={styles.trOffers}>
+              {lead.offers.map((o) => (
+                <li key={o.id}>
+                  <span>{o.attempt}</span>
+                  <b>{o.orgName}</b>
+                  <em>{OFFER_WORD[o.status] ?? o.status}</em>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className={styles.trDim}>None yet.</p>
+          )}
+        </div>
+        <div>
+          <div className={styles.trSub}>Production would offer it to</div>
+          {run.wouldRank == null ? (
+            <p className={styles.trDim}>Not ranked. The run stopped before routing.</p>
+          ) : run.wouldRank.length ? (
+            <ol className={styles.trOffers}>
+              {run.wouldRank.map((c, i) => (
+                <li key={c.orgId}>
+                  <span>{i + 1}</span>
+                  <b>{c.orgName}</b>
+                  <em>
+                    {Math.round(c.score * 100)}
+                    {c.distanceMi != null ? ` · ${c.distanceMi} mi` : ""}
+                  </em>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className={styles.trDim}>Nobody. No real shop covers this trade and area.</p>
+          )}
+        </div>
+      </div>
+
+      <div className={styles.trSubRow}>
+        <div className={styles.trSub}>Messages · recorded, not sent · {run.messages.length}</div>
+        {run.messages.length ? (
+          <button className={cx("btn btn-ghost", ui.btnSm, busy === "clear" && ui.btnBusy)} type="button" disabled={busy !== null} onClick={() => void act("clear")}>
+            {busy === "clear" ? "Clearing…" : "Clear log"}
+          </button>
+        ) : null}
+      </div>
+      {run.messages.length ? (
+        <ul className={styles.trMsgs}>
+          {run.messages.map((m) => (
+            <li key={m.n} className={styles.trMsg}>
+              <div className={styles.trMsgRow}>
+                <span className={cx(styles.trTag, m.channel === "sms" && styles.trTagSms)}>{m.channel === "sms" ? "Text" : "Email"}</span>
+                <div className={styles.trMsgMain}>
+                  <div className={styles.trMsgTo}>To {m.to}</div>
+                  <div className={styles.trMsgSubj}>{m.channel === "email" ? (m.subject ?? "(no subject)") : m.excerpt}</div>
+                  {m.note ? <div className={styles.trMsgNote}>{m.note}</div> : null}
+                </div>
+                <span className={styles.trTime}>{relative(m.at)}</span>
+                <button className={cx("btn btn-ghost", ui.btnSm)} type="button" aria-expanded={openN === m.n} onClick={() => void view(m.n)}>
+                  {openN === m.n ? "Hide" : "View"}
+                </button>
+              </div>
+              {openN === m.n ? (
+                bodies[m.n] == null ? (
+                  <p className={styles.trDim}>Opening…</p>
+                ) : m.channel === "email" ? (
+                  <iframe className={styles.trFrame} sandbox="" srcDoc={bodies[m.n]} title={`Recorded email: ${m.subject ?? ""}`} />
+                ) : (
+                  <p className={styles.trSms}>{bodies[m.n]}</p>
+                )
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className={styles.trDim}>Nothing yet. The homeowner&apos;s confirmation and each offer&apos;s letter land here.</p>
+      )}
+    </article>
   );
 }

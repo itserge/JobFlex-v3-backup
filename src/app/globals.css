@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Graph-paper parallax offset, written on a scroller every scroll frame. Registered as NON-inheriting so a
+   write restyles only the scroller and the pseudo-element that asks for it with `--grid-y: inherit`; an
+   ordinary custom property inherits, and writing one restyled the whole page each frame (2026-10-30). */
+@property --grid-y {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
 :root {
   /* ─── palette (blueprint drafting-paper) ────────── */
   --paper: #f2f0eb;
@@ -300,5 +309,33 @@ body {
 @media (max-width: 768px) {
   [data-desk-fallback] > * {
     visibility: hidden;
+  }
+}
+
+/* SmartHelp's desk panel (components/v3/smarthelp, 2026-10-30) stands on the
+   right, 380px wide, beside the page — not over it: the person is following
+   steps on that page. The page moves over while the panel is drawn. Below
+   1024px the panel is over the page (and a sheet on a phone), so nothing
+   moves. */
+@media (min-width: 1024px) {
+  html[data-smarthelp-open] body {
+    padding-right: 380px;
+  }
+}
+/* The Help corner (components/v3/support-widget: its plate, then the composer
+   it opens) stands left of SmartHelp's panel while the panel is up, so it never
+   sits on the panel's ask box. */
+@media (min-width: 769px) {
+  html[data-smarthelp-open] .jfsup,
+  html[data-smarthelp-open] .jfsup-fab.jfsup-fab {
+    right: calc(380px + 22px);
+  }
+}
+/* On a phone the panel is a sheet across the whole width, its ask box where the
+   plate stands: the plate steps out while the sheet is up (the sheet has its
+   own Ask a person) and is back with the "Back to SmartHelp" bar. */
+@media (max-width: 768px) {
+  html[data-smarthelp-open] .jfsup-fab.jfsup-fab {
+    display: none;
   }
 }

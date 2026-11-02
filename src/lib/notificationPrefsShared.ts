@@ -21,6 +21,7 @@ export type PrefKey =
   | "change-order"
   | "appointment-booked"
   | "booking-online"
+  | "smartbook-request"
   | "appointment-moved"
   | "service-reminder"
   | "job-scheduled"
@@ -85,6 +86,10 @@ export const PREF_EVENTS: readonly PrefEventMeta[] = [
   // Online booking (owner, 2026-10-28: "when somebody books online the contractor gets an email"): a customer
   // booked on the company's booking page — the bell, and the Blueprint email (notify → notifyBookedOnline).
   { key: "booking-online", name: "Booked online", sub: "A customer booked a visit on your booking page", emailAvailable: true, smsAvailable: false, seed: [true, true, false] },
+  // SmartBook (owner, 2026-10-31: "if customer offers his date and time … you send this to us, and we confirm"): a new
+  // lead asked for a time of their own and waits for the company's yes — answered by replying to the text
+  // (lib/smartbook) or from the email's answer page (/b/r/<token>). Text, email and bell.
+  { key: "smartbook-request", name: "SmartBook: a customer asks for a time", sub: "A new lead wants a day or time of their own — reply YES, NO or another time", emailAvailable: true, smsAvailable: true, seed: [true, true, true], audience: { office: true, sales: true }, example: "Ridgeline Roofing Co.: 📅 Sarah Mitchell (Facebook · roof replacement) asks for Sat Nov 8, 9am. Your calendar is free then. Reply YES to confirm, NO to offer other times, or another day and time." },
   { key: "appointment-moved", name: "Appointment moved or cancelled", sub: "A visit changes day or time, or comes off the calendar", emailAvailable: false, smsAvailable: true, seed: [true, false, true], audience: { office: true, sales: true }, example: "Moved: Roof inspection · Sarah Mitchell — was Tue Oct 7, 9 AM, now Thu Oct 9, 1 PM." },
   // HVAC services (2026-10-18): the service desk's own reminders — one digest a day, a heads-up before plan
   // visits, the contractor's own reminders on their day (lib/serviceDeskBook). In the bell for everyone;
@@ -162,7 +167,7 @@ export const SMS_URGENT_KEYS: readonly PrefKey[] = ["lead-assigned"];
 export type SmsGroupKey = "crew" | "sales" | "money";
 export const SMS_GROUPS: readonly { key: SmsGroupKey; label: string; sub: string; keys: readonly PrefKey[] }[] = [
   { key: "crew", label: "Crew on site", sub: "Started, back for another day, completed, photos and videos", keys: ["job-started", "job-completed", "job-photos", "worker-responded"] },
-  { key: "sales", label: "Sales & leads", sub: "A new lead, a proposal accepted or declined", keys: ["lead-assigned", "proposal-accepted", "proposal-declined"] },
+  { key: "sales", label: "Sales & leads", sub: "A new lead, a SmartBook time to confirm, a proposal accepted or declined", keys: ["lead-assigned", "smartbook-request", "proposal-accepted", "proposal-declined"] },
   { key: "money", label: "Money", sub: "A payment, a change order answered, financing", keys: ["payment-received", "change-order", "financing"] },
 ];
 /** Which groups a member's stored matrix has on: a group is on when any of
@@ -308,6 +313,8 @@ export function prefKeyForEvent(e: EventLike): PrefKey | null {
     case "BOOKING_MOVED":
     case "BOOKING_CANCELED":
       return "appointment-moved";
+    case "SMARTBOOK_ASK":
+      return "smartbook-request";
     case "STARTED":
       return "job-started";
     case "MEDIA":
