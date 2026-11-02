@@ -16,7 +16,8 @@ import "server-only";
 // reader's page waits and opens on its own the moment an admin approves; the approval email carries a personal open
 // link (signed with the link's token, so a new link ends it too) for any other device. The same email typed again in
 // another browser is not let in on the strength of the address — that address is sent an open link instead. An admin
-// is never kept waiting; the switch "Approve each reader" (lib/investors approveReaders) turns all of it off.
+// is never kept waiting (kept so on 2026-11-02, said so on the door); the switch "Approve each reader" (lib/investors
+// approveReaders) turns all of it off.
 import { createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
 import { db } from "@/lib/db";
@@ -181,8 +182,10 @@ export async function introduceVisitor(token: string, linkMadeAt: string | null,
   const review = opts.approveReaders !== false && !opts.admin;
   const list = await readInvestorVisitors();
   const now = new Date().toISOString();
-  // The same person on the same link (same email) is one reader who came back, not two.
-  const same = list.findIndex((v) => v.email === input.email && v.linkMadeAt === linkMadeAt);
+  // The same person on the same link (same email) is one reader who came back, not two — but an admin's walk-through and
+  // a reader are never the same entry (2026-11-02): the email an admin tried the door with, typed in a browser no admin
+  // is signed in to, is somebody's request and waits like one; an admin trying it never turns a reader into a test.
+  const same = list.findIndex((v) => v.email === input.email && v.linkMadeAt === linkMadeAt && Boolean(v.admin) === Boolean(opts.admin));
   if (same >= 0) {
     const was = list[same];
     const st = statusOf(was);
