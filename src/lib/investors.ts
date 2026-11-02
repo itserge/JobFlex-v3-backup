@@ -25,6 +25,9 @@ import { investorFigures, splitApart, launchDay, daysBetween, RETRY_DAYS, PLATFO
 import { cardlessKey } from "@/lib/trialState";
 import { readTrialPolicyHistory, signupTrialState } from "@/lib/trialPolicyServer";
 import { readSubscriptionPayments } from "@/lib/investorPayments";
+import { readSubscribersData, type SubscribersData } from "@/lib/subscribersRead";
+import { computeMetrics } from "@/components/v3/admin-subscribers/billing-metrics";
+import type { RecurringInput } from "@/lib/investorRecurring";
 
 export const AD_SPEND_KEY = "adSpend";
 export const INVESTOR_SETTINGS_KEY = "investorSettings";
@@ -261,6 +264,9 @@ export interface InvestorReport {
    *  here — all of them, and the part from the customers the period brought (signed up since the start day).
    *  read false = Stripe not read, with why; never a guess. */
   collected: { read: boolean; error: string | null; cents: number; invoices: number; wonCents: number; /** Of those payments, refunded or lost to a chargeback since — already out of `cents` and `wonCents` (2026-11-02). */ refundedCents: number };
+  /** RECURRING REVENUE — MRR AND ARR (2026-11-02, lib/investorRecurring): what Stripe bills today by the MRR rule,
+   *  a day at a time back to the start day, and the pace ahead's inputs. null = neither Stripe nor the record read. */
+  recurring: RecurringInput | null;
   /** JOBS PAID WITH FINANCING (2026-10-28, lib/financing): Wisetack's payouts to JobFlex contractors — Payment rows
    *  provider WISETACK + PAID, all time, measured. The page shows the line only once there is one. */
   financed: { jobs: number; cents: number };
@@ -293,6 +299,22 @@ const todayIn = (tz: string) => {
   return `${n("year")}-${n("month")}-${n("day")}`;
 };
 
+/** The subscribers read (lib/subscribersRead) for the recurring revenue: kept ten minutes per instance, as Stripe's
+ *  payments are (lib/investorPayments) — the Figures page, the shared link and the PDF each ask. A read that fell back
+ *  to the platform's record, or failed, is asked again after a minute; one that takes too long is not waited for. */
+let subsKept: { at: number; ttl: number; value: SubscribersData | null } | null = null;
+async function subscribersFresh(): Promise<SubscribersData | null> {
+  if (subsKept && Date.now() - subsKept.at < subsKept.ttl) return subsKept.value;
+  let value: SubscribersData | null = null;
+  try {
+    value = await Promise.race([readSubscribersData(), new Promise<null>((resolve) => setTimeout(() => resolve(null), 10_000))]);
+  } catch (err) {
+    console.warn("[investors] subscribers read failed:", err instanceof Error ? err.message : err);
+  }
+  subsKept = { at: Date.now(), ttl: value && (value.stripeLive || !value.stripeEnabled) ? 10 * 60_000 : 60_000, value };
+  return value;
+}
+
 export async function investorReport({ refreshMeta = false }: { refreshMeta?: boolean } = {}): Promise<InvestorReport> {
   // The admin's own read asks Meta first when the last read is over an hour old
   // (owner, 2026-10-08: "live spending"); the shared link and the PDF read what is kept.
@@ -317,17 +339,17 @@ export async function investorReport({ refreshMeta = false }: { refreshMeta?: bo
     where: { createdAt: { gte: new Date(sinceMs) }, ...countedOrgs(hidden) },
     orderBy: { createdAt: "desc" },
     take: 5000,
-    select: { id: true, createdAt: true, utmCampaign: true, utmContent: true, utmSource: true, subscription: { select: { plan: true, status: true, trialEndsAt: true, canceledAt: true, stripePriceId: true, externalSubId: true, externalCustomerId: true, provider: true, createdAt: true } } },
+    select: { id: true, createdAt: true, utmCampaign: true, utmContent: true, utmSource: true, subscription: { select: { plan: true, status: true, trialEndsAt: true, canceledAt: true, currentPeriodEnd: true, stripePriceId: true, externalSubId: true, externalCustomerId: true, provider: true, createdAt: true } } },
   });
   // Every paying account; the ones from before the start day are named, not counted.
   const payingAll = await db.subscription.findMany({
     where: { status: "ACTIVE", organization: countedOrgs(hidden) },
-    select: { organizationId: true, plan: true, status: true, trialEndsAt: true, canceledAt: true, stripePriceId: true, externalSubId: true, externalCustomerId: true, provider: true, createdAt: true, organization: { select: { createdAt: true } } },
+    select: { organizationId: true, plan: true, status: true, trialEndsAt: true, canceledAt: true, currentPeriodEnd: true, stripePriceId: true, externalSubId: true, externalCustomerId: true, provider: true, createdAt: true, organization: { select: { createdAt: true } } },
   });
 
-  const payRow = (p: (typeof payingAll)[number]) => ({ orgId: p.organizationId, createdAt: p.organization.createdAt, state: "paying" as SignupState, sub: { plan: p.plan, status: p.status, trialEndsAt: p.trialEndsAt, stripePriceId: p.stripePriceId, externalSubId: p.externalSubId, provider: p.provider }, customer: p.externalCustomerId, subCreatedAt: p.createdAt, trialEndsAt: p.trialEndsAt, canceledAt: p.canceledAt });
+  const payRow = (p: (typeof payingAll)[number]) => ({ orgId: p.organizationId, createdAt: p.organization.createdAt, state: "paying" as SignupState, sub: { plan: p.plan, status: p.status, trialEndsAt: p.trialEndsAt, stripePriceId: p.stripePriceId, externalSubId: p.externalSubId, provider: p.provider }, customer: p.externalCustomerId, subCreatedAt: p.createdAt, trialEndsAt: p.trialEndsAt, canceledAt: p.canceledAt, currentPeriodEnd: p.currentPeriodEnd });
   const listed = [
-    ...orgs.map((o) => ({ orgId: o.id, createdAt: o.createdAt, state: signupState(o.subscription?.status ?? ""), sub: o.subscription ? { plan: o.subscription.plan, status: o.subscription.status, trialEndsAt: o.subscription.trialEndsAt, stripePriceId: o.subscription.stripePriceId, externalSubId: o.subscription.externalSubId, provider: o.subscription.provider } : null, customer: o.subscription?.externalCustomerId ?? null, subCreatedAt: o.subscription?.createdAt ?? o.createdAt, trialEndsAt: o.subscription?.trialEndsAt ?? null, canceledAt: o.subscription?.canceledAt ?? null })),
+    ...orgs.map((o) => ({ orgId: o.id, createdAt: o.createdAt, state: signupState(o.subscription?.status ?? ""), sub: o.subscription ? { plan: o.subscription.plan, status: o.subscription.status, trialEndsAt: o.subscription.trialEndsAt, stripePriceId: o.subscription.stripePriceId, externalSubId: o.subscription.externalSubId, provider: o.subscription.provider } : null, customer: o.subscription?.externalCustomerId ?? null, subCreatedAt: o.subscription?.createdAt ?? o.createdAt, trialEndsAt: o.subscription?.trialEndsAt ?? null, canceledAt: o.subscription?.canceledAt ?? null, currentPeriodEnd: o.subscription?.currentPeriodEnd ?? null })),
     ...payingAll.filter((p) => p.organization.createdAt.getTime() >= sinceMs && !orgs.some((o) => o.id === p.organizationId)).map(payRow),
   ];
   const listedBefore = payingAll.filter((p) => p.organization.createdAt.getTime() < sinceMs).map(payRow);
@@ -335,6 +357,7 @@ export async function investorReport({ refreshMeta = false }: { refreshMeta?: bo
   // went back — read once (beside the prices), for the money, for who has left already and for how each trial ended.
   const customers = new Set([...listed, ...listedBefore].map((r) => r.customer).filter((c): c is string => !!c));
   const paidRead = readSubscriptionPayments(sinceMs, customers, (ms) => dayIn(new Date(ms)));
+  const subsRead = subscribersFresh();
   let values = new Map<string, { monthlyCents: number | null; chance?: number }>();
   try {
     values = (await valueSignups([...listed, ...listedBefore].map((r) => ({ orgId: r.orgId, createdAt: r.createdAt, state: r.state, sub: r.sub })), Date.now())).values;
@@ -500,5 +523,73 @@ export async function investorReport({ refreshMeta = false }: { refreshMeta?: bo
   const dailyRows = whole.curve.filter((p) => !p.projected && p.date >= from30 && p.date >= cardSince && p.date <= today && !apartSet.has(p.date)).map((p) => ({
     date: p.date, spendCents: p.spendDayCents, source: p.spendSource === "projected" ? ("none" as const) : p.spendSource, clicks: clicksByDay.has(p.date) ? (clicksByDay.get(p.date) ?? 0) : null, signups: signupsByDay.get(p.date) ?? 0,
   }));
-  return { figures, settings, startDay: since, spend: { entries, byPlatform }, visitorsKnown: visitors !== null, payingUnpriced, before, firstAdDay, meta: { configured: metaAdsConfigured(), ...metaStatus }, periods, insights, dailyRows, collected, financed, launch: launchDay(settings.launchDate ?? since, today, settings.launchDate !== null), at: new Date().toISOString() };
+  // RECURRING REVENUE — MRR AND ARR (owner, 2026-11-02; lib/investorRecurring): what Stripe bills, by the MRR rule
+  // (billing-metrics, as Admin → Revenue reads it), over every account counted here — hidden and test accounts out,
+  // both kinds of trial in, a subscription no account claims out — and a day at a time back to the start day: each
+  // account from the day it started paying (payRowOf) to the end of its last paid period. Ahead: the card days' pace.
+  const subs = await subsRead;
+  let recurring: RecurringInput | null = null;
+  if (subs) {
+    const countedOrgs = new Set([...listed, ...listedBefore].map((r) => r.orgId));
+    const mine = subs.rows.filter((x) => x.organizationId !== null && countedOrgs.has(x.organizationId));
+    const metrics = computeMetrics(mine, subs.metrics.currency);
+    const billedNow = new Map<string, number>();
+    for (const x of mine) if (x.countsTowardMrr) billedNow.set(x.organizationId!, (billedNow.get(x.organizationId!) ?? 0) + x.amountCents);
+    // What an account is (or was, or will be after its trial) billed a month: its own subscription's, else its newest.
+    const billOf = (r: (typeof rows)[number]) => {
+      const own = mine.filter((x) => x.organizationId === r.orgId);
+      const row = own.find((x) => x.externalSubId !== null && x.externalSubId === r.sub?.externalSubId) ?? own.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+      return row && row.amountCents > 0 ? row.amountCents : (values.get(r.orgId)?.monthlyCents ?? 0);
+    };
+    const keptFirst = (r: (typeof rows)[number]) => (r.customer ? firstPaid.get(r.customer) : undefined);
+    const streams: Array<{ start: string; end: string | null; cents: number }> = [];
+    for (const [r, preexisting] of [...rows.map((r) => [r, false] as const), ...listedBefore.map((r) => [r, true] as const)]) {
+      const now = billedNow.get(r.orgId) ?? 0;
+      const start = payRowOf(r, preexisting).startedAt;
+      if (now > 0) streams.push({ start: start < today ? start : today, end: null, cents: now });
+      else if (keptFirst(r)) {
+        const end = dayIn(r.currentPeriodEnd ?? r.canceledAt ?? new Date());
+        if (end > start && end <= today) streams.push({ start, end, cents: billOf(r) });
+      }
+    }
+    const on = (d: string) => streams.filter((x) => x.start <= d && (x.end === null || x.end > d));
+    const history: RecurringInput["history"] = [];
+    for (let d = since; d <= today; d = addDays(d, 1)) { const live = on(d); history.push({ date: d, mrrCents: live.reduce((a, x) => a + x.cents, 0), customers: live.length }); }
+    const from = addDays(today, -29) > since ? addDays(today, -29) : since;
+    const began = streams.filter((x) => x.start >= from && x.start <= today);
+    const left = streams.filter((x) => x.end !== null && x.end >= from && x.end <= today);
+    // The trials running now on the card days — the ones the measured rate is applied to — by the day each ends.
+    const ending = new Map<string, { cents: number; count: number }>();
+    for (const r of rows.filter((r) => r.state === "trial" && onCard(r))) {
+      const end = r.trialEndsAt ? dayIn(r.trialEndsAt) : addDays(dayIn(r.createdAt), figures.trials.lengthDays);
+      const e = ending.get(end) ?? { cents: 0, count: 0 };
+      ending.set(end, { cents: e.cents + billOf(r), count: e.count + 1 });
+    }
+    const trialsEnding = [...ending].map(([date, e]) => ({ date, ...e })).sort((a, b) => a.date.localeCompare(b.date));
+    const trialCents = trialsEnding.reduce((a, t) => a + t.cents, 0);
+    const trialCount = trialsEnding.reduce((a, t) => a + t.count, 0);
+    // First-month churn: the accounts of the period whose first payment kept is over a month old, and who of them pays
+    // no more; else the first renewal still to come.
+    const firsts = rows.map((r) => ({ r, first: keptFirst(r) })).filter((x): x is { r: (typeof rows)[number]; first: string } => !!x.first);
+    const due = firsts.filter((x) => x.first <= addDays(today, -31));
+    const renewals = firsts.filter((x) => (billedNow.get(x.r.orgId) ?? 0) > 0).map((x) => addDays(x.first, 30)).filter((d) => d > today).sort();
+    recurring = {
+      since, today,
+      basis: subs.stripeLive ? "stripe" : "record",
+      error: subs.stripeError,
+      mrrCents: metrics.mrrCents,
+      customers: metrics.mrrSubCount,
+      history,
+      moved: { from, days: daysBetween(from, today) + 1, startCents: on(addDays(from, -1)).reduce((a, x) => a + x.cents, 0), newCents: began.reduce((a, x) => a + x.cents, 0), newCount: began.length, lostCents: left.reduce((a, x) => a + x.cents, 0), lostCount: left.length },
+      trialsEnding,
+      signupsPerDay: figures.unit.signupsPerDay,
+      spendPerDayCents: figures.spend.perDayProjectedCents,
+      trialDays: figures.trials.lengthDays,
+      newCustomerCents: trialCount > 0 && trialCents > 0 ? Math.round(trialCents / trialCount) : metrics.mrrSubCount > 0 ? Math.round(metrics.mrrCents / metrics.mrrSubCount) : figures.trials.avgMonthlyCents,
+      converted: figures.rate.paid,
+      ended: figures.rate.ended,
+      churn: { left: due.filter((x) => (billedNow.get(x.r.orgId) ?? 0) === 0).length, due: due.length, firstRenewal: renewals[0] ?? null },
+    };
+  }
+  return { figures, settings, startDay: since, spend: { entries, byPlatform }, visitorsKnown: visitors !== null, payingUnpriced, before, firstAdDay, meta: { configured: metaAdsConfigured(), ...metaStatus }, periods, insights, dailyRows, collected, recurring, financed, launch: launchDay(settings.launchDate ?? since, today, settings.launchDate !== null), at: new Date().toISOString() };
 }
