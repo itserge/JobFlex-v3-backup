@@ -30,6 +30,8 @@ export interface PitchData {
   unit: {
     spendCents: number; won: number; wonMrrCents: number; arrCents: number;
     costPerPayingCents: number | null; costPerSignupCents: number | null; paybackMonths: number | null;
+    /** What the cost of a customer and the payback are counted on: the signups whose trial is over (2026-11-02). */
+    matured: { through: string | null; spendCents: number; won: number; wonMrrCents: number };
     expectedPayers: number | null; expectedMrrCents: number | null;
   };
   leadPrice: { minCents: number; maxCents: number };
@@ -420,8 +422,8 @@ export function PitchDeck({ data, offer }: { data: PitchData; offer: ReactNode }
         <div>
           <h2 className={s.title}>What a customer costs, and how fast it comes back</h2>
           <div className={s.kpis}>
-            <div data-kpi="cost-per-paying"><b>{money(u.costPerPayingCents)}</b><span>{u.won > 0 ? `ad spend per paying customer · ${dollars(u.spendCents)} ÷ ${n(u.won)}` : "ad spend per paying customer · none paying yet"}</span></div>
-            <div data-kpi="payback"><b>{u.paybackMonths === null ? "—" : `${Math.round(u.paybackMonths * 10) / 10} mo`}</b><span>{u.wonMrrCents > 0 ? `to earn the spend back · at those customers' ${dollars(u.wonMrrCents)} a month` : "to earn the spend back · once a customer pays"}</span></div>
+            <div data-kpi="cost-per-paying"><b>{money(u.costPerPayingCents)}</b><span>{u.matured.through === null ? "ad spend per paying customer · once the first trials are over" : u.matured.won > 0 ? `ad spend per paying customer · ${dollars(u.matured.spendCents)} ÷ ${n(u.matured.won)} · the ads up to ${longDate(u.matured.through)}, whose trials are over` : "ad spend per paying customer · none yet from the trials that are over"}</span></div>
+            <div data-kpi="payback"><b>{u.paybackMonths === null ? "—" : `${Math.round(u.paybackMonths * 10) / 10} mo`}</b><span>{u.matured.wonMrrCents > 0 ? `to earn the spend back · at those customers' ${dollars(u.matured.wonMrrCents)} a month` : "to earn the spend back · once a customer pays"}</span></div>
             <div data-kpi="arr"><b>{dollars(u.arrCents)}</b><span>a year, at today&apos;s paying customers</span></div>
             <div data-kpi="per-signup"><b>{money(u.costPerSignupCents)}</b><span>ad spend per sign-up with a card</span></div>
             <div data-kpi="expected"><b>{u.expectedPayers === null ? "—" : `≈${n(Math.round(u.expectedPayers))}`}</b><span>{u.expectedPayers === null ? "of the running trials will pay · once a trial has ended" : `of the running trials will pay at the measured rate${u.expectedMrrCents ? ` · +${dollars(u.expectedMrrCents)}/mo` : ""}`}</span></div>
@@ -440,7 +442,7 @@ export function PitchDeck({ data, offer }: { data: PitchData; offer: ReactNode }
           <div className={s.judge}>
             {[
               ["Do trials turn into customers?", t.ratePct === null ? "No trial has ended yet" : `${t.ratePct}% — ${t.ratePaid} of ${t.rateEnded} ended trials`, t.rateLowPct !== null && t.rateHighPct !== null ? `The 90% range is ${t.rateLowPct}–${t.rateHighPct}%; it narrows with every trial that ends.` : "Measured as each trial ends."],
-              ["Does the ad money come back?", u.paybackMonths === null ? "Not yet measured" : `${money(u.costPerPayingCents)} a customer, back in ${Math.round(u.paybackMonths * 10) / 10} months`, "Spend ÷ the paying customers the ads brought, then months of their plan to repay it."],
+              ["Does the ad money come back?", u.paybackMonths === null ? "Not yet measured" : `${money(u.costPerPayingCents)} a customer, back in ${Math.round(u.paybackMonths * 10) / 10} months`, "Spend ÷ the paying customers the ads brought — counted on the signups whose trial is over — then months of their plan to repay it."],
               ["Is the second engine ready?", "Built — not open yet", "The homeowner portal, the routing to one shop and the charge on Accept all work today; it is not open to homeowners yet."],
               ["Does a shop earn JobFlex more than its plan?", "Two more lines, built", `AI desk minute packs (${price(data.deskPack.cents)} for ${n(data.deskPack.minutes)}), and homeowner leads charged on Accept once the portal opens.`],
             ].map(([q, a, why]) => (

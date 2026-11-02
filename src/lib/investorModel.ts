@@ -213,7 +213,8 @@ export interface InvestorFigures {
   unit: {
     costPerVisitorCents: number | null;
     costPerSignupCents: number | null;
-    /** Spend ÷ the paying customers the period brought — counted, not expected. */
+    /** Spend ÷ the paying customers the period brought — counted, not expected — for the signups whose trial is over:
+     *  the spend up to `matured.through` ÷ the customers those signups became (2026-11-02). */
     costPerPayingCents: number | null;
     /** Spend ÷ (those customers + the running trials expected to convert at the measured rate) — EXPECTED, said so
      *  (owner, 2026-10-25: "cost per lead to make better stats" → the honest kind: per lead, and per customer once the
@@ -221,8 +222,13 @@ export interface InvestorFigures {
     costPerCustomerExpectedCents: number | null;
     visitorToSignupPct: number | null;
     signupsPerDay: number;
-    /** Spend ÷ the monthly list price of those customers — months for them to earn the spend back. */
+    /** That same spend ÷ the monthly list price of those customers — months for them to earn the spend back. */
     paybackMonths: number | null;
+    /** THE SIGNUPS WHOSE TRIAL IS OVER (owner, 2026-11-02: "during the 7 days of the trial we already spent on ads … it
+     *  is divided per paying customers upfront"): the last trial's worth of spend brought trials still running, so the
+     *  counted cost reads the signups through `through` alone — the spend up to that day, the customers they became
+     *  and those customers' monthly list price. through null = no trial of the period is over yet. */
+    matured: { through: string | null; spendCents: number; won: number; wonMrrCents: number };
     /** Revenue to date at list price ÷ spend to date. */
     returnToDatePct: number | null;
   };
@@ -382,6 +388,13 @@ export function investorFigures(input: ModelInput): InvestorFigures {
 
   // A cost needs both a spend and something to divide it by; without either there is no figure.
   const div = (n: number, d: number) => (n > 0 && d > 0 ? r0(n / d) : null);
+  // The counted cost of a customer: the signups whose trial is over — through the day before the last trial's worth of
+  // days, so a trial started late that day has ended too — the spend up to that day, and the customers they became.
+  const maturedThrough = addDays(today, -(trialDays + 1));
+  const matured = maturedThrough >= since;
+  const maturedSpend = matured ? [...spendByDay].filter(([d]) => d <= maturedThrough).reduce((x, [, c]) => x + c, 0) : 0;
+  const maturedWon = matured ? won.filter((p) => dayOf(p.signedUpAt ?? p.startedAt) <= maturedThrough) : [];
+  const maturedWonMrr = maturedWon.reduce((x, p) => x + p.monthlyCents, 0);
   const toPct = (x: number) => Math.round(x * 100);
   return {
     since,
@@ -408,11 +421,12 @@ export function investorFigures(input: ModelInput): InvestorFigures {
     unit: {
       costPerVisitorCents: input.visitors ? div(totalSpend, input.visitors) : null,
       costPerSignupCents: div(totalSpend, signups),
-      costPerPayingCents: div(totalSpend, won.length),
+      costPerPayingCents: div(maturedSpend, maturedWon.length),
       costPerCustomerExpectedCents: share === null || totalSpend <= 0 || won.length + trials.length * share <= 0 ? null : r0(totalSpend / (won.length + trials.length * share)),
       visitorToSignupPct: input.visitors ? Math.round((signups / input.visitors) * 1000) / 10 : null,
       signupsPerDay: Math.round(signupsPerDay * 100) / 100,
-      paybackMonths: wonMrr > 0 && totalSpend > 0 ? Math.round((totalSpend / wonMrr) * 10) / 10 : null,
+      paybackMonths: maturedWonMrr > 0 && maturedSpend > 0 ? Math.round((maturedSpend / maturedWonMrr) * 10) / 10 : null,
+      matured: { through: matured ? maturedThrough : null, spendCents: maturedSpend, won: maturedWon.length, wonMrrCents: maturedWonMrr },
       returnToDatePct: totalSpend > 0 ? Math.round((revenueToDate / totalSpend) * 100) : null,
     },
     breakEven,

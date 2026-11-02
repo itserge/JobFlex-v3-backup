@@ -26,7 +26,7 @@ export function buildPitchData(token: string, report: InvestorReport, plans: rea
     },
     unit: {
       spendCents: f.spend.totalCents, won: f.paying.won, wonMrrCents: f.paying.wonMrrCents, arrCents: f.paying.arrCents,
-      costPerPayingCents: f.unit.costPerPayingCents, costPerSignupCents: f.unit.costPerSignupCents, paybackMonths: f.unit.paybackMonths,
+      costPerPayingCents: f.unit.costPerPayingCents, costPerSignupCents: f.unit.costPerSignupCents, paybackMonths: f.unit.paybackMonths, matured: f.unit.matured,
       expectedPayers: f.expected.payers, expectedMrrCents: f.expected.mrrCents,
     },
     leadPrice: { minCents: MIN_LEAD_PRICE_CENTS, maxCents: MAX_LEAD_PRICE_CENTS },

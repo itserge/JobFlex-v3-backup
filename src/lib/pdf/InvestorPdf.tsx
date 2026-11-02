@@ -50,8 +50,9 @@ export function InvestorPdfDocument({ report }: { report: InvestorReport }) {
   const a = report.settings;
   const r = f.rate;
   const ex = f.expected;
+  const m = f.unit.matured;
   const got = report.collected;
-  const read = new Date(report.at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+  const read =new Date(report.at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
   const about = (v: number) => (Number.isInteger(v) ? String(v) : `about ${Math.round(v)}`);
   const range = r.lowPct !== null && r.highPct !== null ? `likely ${r.lowPct}–${r.highPct}%` : "";
   const exRange = ex.payersLow !== null && ex.payersHigh !== null && ex.payersLow !== ex.payersHigh ? `likely ${ex.payersLow}–${ex.payersHigh} · ` : "";
@@ -69,8 +70,9 @@ export function InvestorPdfDocument({ report }: { report: InvestorReport }) {
     ["Customers the ads brought", String(f.paying.won), `paying · ${dollars(f.paying.wonMrrCents)}/mo`],
     ["Per lead (signup)", money(f.unit.costPerSignupCents), `${f.signups} signed up`, true],
     ["Per customer, expected", f.unit.costPerCustomerExpectedCents !== null ? `≈ ${dollars(f.unit.costPerCustomerExpectedCents)}` : "—", f.unit.costPerCustomerExpectedCents !== null ? `once the running trials convert at ${r.pct}%` : "once a trial has ended"],
-    ["Per paying customer", money(f.unit.costPerPayingCents), f.paying.won > 0 ? `${dollars(f.spend.totalCents)} ÷ ${f.paying.won} paying today` : "none paying yet"],
-    ["Earns the spend back in", pct(f.unit.paybackMonths, " mo"), f.paying.wonMrrCents > 0 ? `at ${dollars(f.paying.wonMrrCents)} a month` : "once a customer pays"],
+    // Counted on the signups whose trial is over (2026-11-02, lib/investorModel unit.matured).
+    ["Per paying customer", money(f.unit.costPerPayingCents), m.through === null ? "once the first trials are over" : m.won > 0 ? `${dollars(m.spendCents)} ÷ ${m.won} paying · ads up to ${longDate(m.through)}, trials over` : `none yet from signups up to ${longDate(m.through)}`],
+    ["Earns the spend back in", pct(f.unit.paybackMonths, " mo"), m.wonMrrCents > 0 ? `at ${dollars(m.wonMrrCents)} a month` : "once a customer pays"],
   ];
   return (
     <Document title="JobFlex · Investor figures" author="JobFlex">

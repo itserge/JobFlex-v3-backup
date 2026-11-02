@@ -12,6 +12,8 @@
 // CARD DAYS ONLY (owner, 2026-10-24/25): the days free trials needed no card are out
 // whole — their spend shown nowhere; the no-card trials that pay now count as paying.
 // How many came back later (paid after their trial had ended) is counted.
+// THE COST OF A CUSTOMER (owner, 2026-11-02): counted on the signups whose trial is over — the last trial's worth of
+// ads bought trials still running, and dividing it by the customers of the weeks before overstated the cost.
 import type { ReactNode } from "react";
 import { dollars, longDate, outlookSentence, standingSentence, type InvestorFigures } from "@/lib/investorModel";
 import type { InvestorReport } from "@/lib/investors";
@@ -31,6 +33,8 @@ export function InvestorReportView({ report, shared = false, between }: { report
   const be = f.breakEven;
   const r = f.rate;
   const ex = f.expected;
+  // The counted cost of a customer reads the signups whose trial is over (2026-11-02, lib/investorModel unit.matured).
+  const m = f.unit.matured;
   const got = report.collected;
   const periods = report.periods;
   const cardLater = f.since !== report.startDay;
@@ -103,8 +107,8 @@ export function InvestorReportView({ report, shared = false, between }: { report
               <tr><td>Customers the ads brought</td><td className={s.num}>{n(f.paying.won)}</td><td className={s.sub}>paying today · {dollars(f.paying.wonMrrCents)}/mo</td></tr>
               <tr><td>Per signup</td><td className={s.num}>{money(f.unit.costPerSignupCents)}</td><td className={s.sub}>{n(f.signups)} signed up with a card</td></tr>
               <tr data-row="cost-per-customer-expected"><td>Per customer, expected</td><td className={s.num}>{f.unit.costPerCustomerExpectedCents !== null ? `≈ ${dollars(f.unit.costPerCustomerExpectedCents)}` : "—"}</td><td className={s.sub}>{f.unit.costPerCustomerExpectedCents !== null && ex.payers !== null ? `${dollars(f.spend.totalCents)} ÷ (${f.paying.won} paying + ≈${Math.round(ex.payers)} of the trials running, at ${r.pct}%)` : "once a trial has ended"}</td></tr>
-              <tr className={s.strong} data-row="cost-per-paying"><td>Per paying customer</td><td className={s.num}>{money(f.unit.costPerPayingCents)}</td><td className={s.sub}>{f.paying.won > 0 ? `${dollars(f.spend.totalCents)} ÷ ${f.paying.won} paying` : "none paying yet"}</td></tr>
-              <tr><td>Earns the spend back in</td><td className={s.num}>{pct(f.unit.paybackMonths, " months")}</td><td className={s.sub}>{f.paying.wonMrrCents > 0 ? `at those customers' ${dollars(f.paying.wonMrrCents)} a month` : "once a customer pays"}</td></tr>
+              <tr className={s.strong} data-row="cost-per-paying"><td>Per paying customer</td><td className={s.num}>{money(f.unit.costPerPayingCents)}</td><td className={s.sub}>{m.through === null ? "once the first trials are over" : m.won > 0 ? `${dollars(m.spendCents)} ÷ ${m.won} paying · the ads up to ${shortDate(m.through)}, whose trials are over` : `none yet from the signups up to ${shortDate(m.through)}`}</td></tr>
+              <tr><td>Earns the spend back in</td><td className={s.num}>{pct(f.unit.paybackMonths, " months")}</td><td className={s.sub}>{m.wonMrrCents > 0 ? `at those customers' ${dollars(m.wonMrrCents)} a month` : "once a customer pays"}</td></tr>
               <tr><td>Per visitor</td><td className={s.num}>{money(f.unit.costPerVisitorCents)}</td><td className={s.sub}>{f.visitors === null ? "no visitor count" : `${n(f.visitors)} visitors`}</td></tr>
             </tbody>
           </table>
@@ -159,6 +163,7 @@ export function InvestorReportView({ report, shared = false, between }: { report
           <li>Counting from {longDate(report.startDay)}, the day the first campaign went live{cardLater ? ` — the figures from ${longDate(f.since)}, from when every trial needed a card` : ""} — only what happened from that day on. Visitors are unique people on www.jobflex.app{cardLater ? ` since ${longDate(f.since)}` : ""}, bots and previews out.</li>
           <li data-method="rate">Nothing here is a share we chose. &ldquo;Trial to paid&rdquo; is measured on the trials that have ended ({r.pct === null ? "none has ended yet" : `${r.paid} of ${r.ended} converted`}): converted means the trial moved to a paid plan — one that left since still converted, and one paid after its trial had ended is counted under &ldquo;came back later&rdquo;; not converted means canceled during the trial, or not paid two weeks after it ended (and converted again if it pays later). &ldquo;Likely&rdquo; is the 90% range for that many trials — it narrows as more trials end. The trials running now are expected to pay at the measured rate.</li>
           <li>Ad spend is {a.dailyBudgetCents !== null && a.dailyBudgetCents !== undefined && a.budgetFrom ? `the daily budget — ${dollars(a.dailyBudgetCents)} for all ads together — counted as spent every day since ${longDate(a.budgetFrom)}${f.spend.bookedDays ? `, with ${f.spend.bookedDays} ${f.spend.bookedDays === 1 ? "day" : "days"} at the figure booked for it` : ""}` : "what was booked per day; a day with nothing booked counts as zero"}{shared ? "" : " (set on this page; Meta's own figures per day once its API token is connected)"}. Tomorrow on it runs at the last full week&apos;s pace, {dollars(f.spend.perDayProjectedCents)} a day.</li>
+          <li data-method="cost">&ldquo;Per lead&rdquo; is all the ad spend ÷ every signup. The last {f.trials.lengthDays} days of ads brought trials that are still running, so &ldquo;Per paying customer&rdquo; and &ldquo;Earns the spend back in&rdquo; count only the signups whose trial is over{m.through ? ` — up to ${longDate(m.through)}` : ""}: the ad spend up to that day ÷ the customers those signups became. &ldquo;Per customer, expected&rdquo; counts all the spend, with the running trials at the measured rate.</li>
           <li>&ldquo;Collected so far&rdquo; is what Stripe took for subscriptions since the start day from the accounts counted here. A trial or a paying account is valued at its plan&apos;s monthly list price: a yearly plan as a twelfth, a custom plan by its pages. Discounts, taxes and churn are not modelled in the list-price figures.</li>
           <li>The curve: each paying account earns a thirtieth of its monthly price a day from the day it started paying; a running trial, at the measured rate, from the day it ends; signups still to come arrive at the last week&apos;s pace ({f.unit.signupsPerDay}/day), at the average trial price ({dollars(f.trials.avgMonthlyCents)}/mo), and pay at the measured rate after a {f.trials.lengthDays}-day trial. Spend continues at {dollars(f.spend.perDayProjectedCents)}/day for {a.horizonDays} days.</li>
           <li data-left-out>{cardLater ? `Ad spend, visitors, signups and the trial-to-paid rate are counted from ${longDate(f.since)}, from when every trial needed a card. ` : "Every trial counted here took a card. "}{f.paying.fromNoCard > 0 ? `${f.paying.fromNoCard} paying ${f.paying.fromNoCard === 1 ? "customer" : "customers"} who started on an earlier free trial without a card ${f.paying.fromNoCard === 1 ? "is" : "are"} counted as paying (${dollars(f.paying.fromNoCardMrrCents)}/mo, and what ${f.paying.fromNoCard === 1 ? "it pays" : "they pay"}) — not as signups, in the rate, or in the cost of a customer.` : ""}</li>
