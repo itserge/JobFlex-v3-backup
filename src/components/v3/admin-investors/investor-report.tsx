@@ -21,6 +21,7 @@ import { customerCostStory, dollars, longDate, outlookSentence, standingSentence
 import type { InvestorReport } from "@/lib/investors";
 import { CustomerCostChart } from "./customer-cost-chart";
 import { PaybackChart } from "./payback-chart";
+import { RecurringChart } from "./recurring-chart";
 import { SpendBars } from "./spend-bars";
 import s from "./investor-report.module.css";
 
@@ -39,6 +40,7 @@ export function InvestorReportView({ report, shared = false, between }: { report
   // The counted cost of a customer reads the signups whose trial is over (2026-11-02, lib/investorModel unit.matured).
   const m = f.unit.matured;
   const got = report.collected;
+  const rec = report.recurring;
   const periods = report.periods;
   const cardLater = f.since !== report.startDay;
   const oc = f.outcomes;
@@ -72,12 +74,21 @@ export function InvestorReportView({ report, shared = false, between }: { report
         <Kpi label="Ad spend" value={dollars(f.spend.totalCents)} note={budgetWords} tone="ink" />
         <Kpi label="Visitors" value={f.visitors === null ? "—" : n(f.visitors)} note={f.visitors === null ? "analytics not reached" : `${money(f.unit.costPerVisitorCents)} each`} />
         <Kpi label="Signed up" value={n(f.signups)} note={`${f.unit.signupsPerDay}/day · ${pct(f.unit.visitorToSignupPct)} of visitors · ${money(f.unit.costPerSignupCents)} each`} />
-        <Kpi label="Paying" data="paying" value={n(f.paying.count)} note={`${dollars(f.paying.mrrCents)}/mo · ${dollars(f.paying.arrCents)} a year${f.paying.fromNoCard > 0 ? ` · ${f.paying.fromNoCard} started without a card` : ""}${report.payingUnpriced > 0 ? ` · ${report.payingUnpriced} without a list price` : ""}`} tone="good" />
+        <Kpi label="Paying" data="paying" value={n(f.paying.count)} note={`${rec ? `${dollars(rec.mrrCents)} MRR · ${dollars(rec.mrrCents * 12)} ARR` : `${dollars(f.paying.mrrCents)}/mo · ${dollars(f.paying.arrCents)} a year`}${f.paying.fromNoCard > 0 ? ` · ${f.paying.fromNoCard} started without a card` : ""}${report.payingUnpriced > 0 ? ` · ${report.payingUnpriced} without a list price` : ""}`} tone="good" />
         <Kpi label="Trial to paid" value={pct(r.pct)} note={r.pct === null ? "no trial has ended yet" : `${r.paid} of ${r.ended} ended trials converted${oc && oc.cameBack > 0 ? ` · ${oc.cameBack} came back later` : ""}${range ? ` · ${range}` : ""}`} tone="blue" data="rate" />
         <Kpi label="On trial now" value={n(f.trials.count)} note={ex.payers === null ? "no measured rate to predict with yet" : `${about(ex.payers)} expected to pay${expectedRange ? ` (${expectedRange})` : ""} · +${dollars(ex.mrrCents ?? 0)}/mo`} tone="trial" data="trials" />
       </section>
 
       {between}
+
+      {/* Recurring revenue (owner, 2026-11-02): what Stripe bills, from the first day, and where today's pace leads. */}
+      <section className={s.card} data-recurring-card>
+        <div className={s.cardHead}>
+          <h2 className={s.h2}>Recurring revenue — MRR and ARR</h2>
+          <span className={s.cardNote}>{rec ? (rec.basis === "stripe" ? "What Stripe bills a month, after discounts · counted to today, today's pace ahead" : `Stripe not read${rec.error ? ` (${rec.error})` : ""} — the platform's own record, at list prices`) : "Not read — Stripe and the record both failed to answer"}</span>
+        </div>
+        {rec ? <RecurringChart input={rec} /> : null}
+      </section>
 
       <div className={s.twoUp}>
         {/* Who stays after the trial: counted on the trials that ended, then applied to the ones running. */}
@@ -173,6 +184,7 @@ export function InvestorReportView({ report, shared = false, between }: { report
           <li>Ad spend is {a.dailyBudgetCents !== null && a.dailyBudgetCents !== undefined && a.budgetFrom ? `the daily budget — ${dollars(a.dailyBudgetCents)} for all ads together — counted as spent every day since ${longDate(a.budgetFrom)}${f.spend.bookedDays ? `, with ${f.spend.bookedDays} ${f.spend.bookedDays === 1 ? "day" : "days"} at the figure booked for it` : ""}` : "what was booked per day; a day with nothing booked counts as zero"}{shared ? "" : " (set on this page; Meta's own figures per day once its API token is connected)"}. Tomorrow on it runs at the last full week&apos;s pace, {dollars(f.spend.perDayProjectedCents)} a day.</li>
           <li data-method="cost">&ldquo;Per lead&rdquo; is all the ad spend ÷ every signup. The last {f.trials.lengthDays} days of ads brought trials that are still running, so &ldquo;Per paying customer&rdquo; and &ldquo;Earns the spend back in&rdquo; count only the signups whose trial is over{m.through ? ` — up to ${longDate(m.through)}` : ""}: the ad spend up to that day ÷ the customers those signups became. &ldquo;Per customer, expected&rdquo; counts all the spend, with the running trials at the measured rate.</li>
           <li data-method="cost-chart">&ldquo;What a customer costs&rdquo; counts each day the same way: the ads up to {f.trials.lengthDays + 1} days before it ÷ the customers those signups became (&ldquo;to win&rdquo;), and the same less what those customers have paid by that day at list price (&ldquo;after paying&rdquo;). Up to today it counts only the customers paying today. Past today it runs at today&apos;s pace — {dollars(f.cost.pace.spendPerDayCents)} a day on ads, {f.cost.pace.signupsPerDay} signups a day{r.pct === null ? "" : `, ${r.pct}% of trials converting`} — and every customer still to come pays {dollars(f.cost.pace.monthlyCents)} a month from the end of their trial. Churn is not modelled. &ldquo;Paid back by their customers&rdquo; is the first day what those customers have paid covers every ad dollar counted. A week&apos;s cost is its ads ÷ the customers its signups became; where trials still run, they count at the measured rate.</li>
+          <li data-method="recurring">MRR is what Stripe bills a month, by the same rule as Admin → Revenue: active paid plans, a standing coupon taken off, a yearly plan as a twelfth — no trials, no complimentary plans, no test or hidden accounts, and no Stripe subscription that no JobFlex account claims. ARR is MRR × 12. Back to the start day, each account counts from the day it started paying to the end of its last paid period, at what it is billed. Ahead, at today&apos;s pace: the last full week&apos;s signups a day — in proportion to the daily ad budget when the slider moves it, which holds today&apos;s cost per signup — converting at the measured trial-to-paid rate after a {f.trials.lengthDays}-day trial, each billed what a new customer is billed today; the trials running now convert at the same rate on the day each ends. Churn is measured — of the customers whose first month is over, the share who left — and taken off every month once one is due; none is taken off before. The likely range joins the rate&apos;s and the churn&apos;s 90% ranges. Discounts that end, plan changes and price rises are not modelled.</li>
           <li data-method="collected">&ldquo;Collected so far&rdquo; is what Stripe took for subscriptions since the start day from the accounts counted here, less what went back: refunds, done or on the way, and chargebacks lost. A customer refunded in full who has booked a cancel no longer counts as paying. A trial or a paying account is valued at its plan&apos;s monthly list price: a yearly plan as a twelfth, a custom plan by its pages. Discounts, taxes and churn are not modelled in the list-price figures.</li>
           <li>The curve: each paying account earns a thirtieth of its monthly price a day from the day it started paying; a running trial, at the measured rate, from the day it ends; signups still to come arrive at the last week&apos;s pace ({f.unit.signupsPerDay}/day), at the average trial price ({dollars(f.trials.avgMonthlyCents)}/mo), and pay at the measured rate after a {f.trials.lengthDays}-day trial. Spend continues at {dollars(f.spend.perDayProjectedCents)}/day for {a.horizonDays} days.</li>
           <li data-left-out>{cardLater ? `Ad spend, visitors, signups and the trial-to-paid rate are counted from ${longDate(f.since)}, from when every trial needed a card. ` : "Every trial counted here took a card. "}{f.paying.fromNoCard > 0 ? `${f.paying.fromNoCard} paying ${f.paying.fromNoCard === 1 ? "customer" : "customers"} who started on an earlier free trial without a card ${f.paying.fromNoCard === 1 ? "is" : "are"} counted as paying (${dollars(f.paying.fromNoCardMrrCents)}/mo, and what ${f.paying.fromNoCard === 1 ? "it pays" : "they pay"}) — not as signups, in the rate, or in the cost of a customer.` : ""}</li>

@@ -18,6 +18,8 @@ import { useSlides } from "./use-slides";
 import { useFullscreen } from "./use-fullscreen";
 import type { CustomerCost } from "@/lib/investorModel";
 import { CustomerCostChart, type CustomerCostWords } from "@/components/v3/admin-investors/customer-cost-chart";
+import { RecurringChart } from "@/components/v3/admin-investors/recurring-chart";
+import { recurringAhead, recurringStory, type RecurringInput } from "@/lib/investorRecurring";
 import rep from "@/components/v3/admin-investors/investor-report.module.css";
 import s from "./investor-deck.module.css";
 
@@ -39,6 +41,8 @@ export interface PitchData {
     /** What a customer costs, from the first day (2026-11-02): the Figures page's chart and its words, and its today. */
     cost: CustomerCost; costWords: CustomerCostWords; today: string;
   };
+  /** Recurring revenue — MRR and ARR (2026-11-02): the Figures page's own reading; null = not read. */
+  recurring: RecurringInput | null;
   leadPrice: { minCents: number; maxCents: number };
   deskPack: { minutes: number; cents: number };
   plans: Array<{ name: string; priceCents: number; yearlyPriceCents: number | null; trialDays: number; highlight: boolean; features: string[] }>;
@@ -411,7 +415,7 @@ export function PitchDeck({ data, offer }: { data: PitchData; offer: ReactNode }
           <div className={s.kpis}>
             <div data-kpi="day"><b>Day {n(data.launch.day)}</b><span>since JobFlex launched · {longDate(data.launch.date)}</span></div>
             <div data-kpi="signed-up"><b>{n(t.signups)}</b><span>signed up with a card since {longDate(t.since)}</span></div>
-            <div data-kpi="paying"><b>{n(t.paying)}</b><span>paying · {dollars(t.payingMrrCents)}/mo</span></div>
+            <div data-kpi="paying"><b>{n(t.paying)}</b><span>paying · {dollars(t.payingMrrCents)} {data.recurring ? "MRR" : "a month"}</span></div>
             <div data-kpi="rate"><b>{t.ratePct === null ? "—" : `${t.ratePct}%`}</b><span>{t.ratePct === null ? "trial to paid · no trial has ended yet" : `trial to paid · ${t.ratePaid} of ${t.rateEnded} ended trials${t.rateLowPct !== null && t.rateHighPct !== null ? ` · 90% range ${t.rateLowPct}–${t.rateHighPct}%` : ""}`}</span></div>
             <div data-kpi="trials"><b>{n(t.trialsNow)}</b><span>on trial now</span></div>
             <div data-kpi="collected"><b>{t.collected.read ? dollars(t.collected.cents) : "—"}</b><span>{t.collected.read ? `collected so far · Stripe, ${t.collected.invoices} ${t.collected.invoices === 1 ? "payment" : "payments"}` : "collected · Stripe not read"}</span></div>
@@ -421,6 +425,24 @@ export function PitchDeck({ data, offer }: { data: PitchData; offer: ReactNode }
       ),
     });
 
+    // RECURRING REVENUE — MRR AND ARR (owner, 2026-11-02): the Figures page's chart, slim — the words under it.
+    const rec = data.recurring;
+    if (rec) {
+      const words = recurringStory(rec, recurringAhead(rec));
+      out.push({
+        id: "recurring", kicker: "Traction · recurring revenue, MRR and ARR",
+        body: (
+          <div>
+            <h2 className={s.title}>What JobFlex bills — and where today&apos;s pace takes it</h2>
+            <div className={rep.rep}>
+              <RecurringChart input={rec} compact />
+            </div>
+            <p className={s.note}>{[words.now, words.ahead].filter(Boolean).join(" ")}</p>
+          </div>
+        ),
+      });
+    }
+
     out.push({
       id: "unit", kicker: "Unit economics · measured, not modeled",
       body: (
@@ -429,7 +451,7 @@ export function PitchDeck({ data, offer }: { data: PitchData; offer: ReactNode }
           <div className={s.kpis}>
             <div data-kpi="cost-per-paying"><b>{money(u.costPerPayingCents)}</b><span>{u.matured.through === null ? "ad spend per paying customer · once the first trials are over" : u.matured.won > 0 ? `ad spend per paying customer · ${dollars(u.matured.spendCents)} ÷ ${n(u.matured.won)} · the ads up to ${longDate(u.matured.through)}, whose trials are over` : "ad spend per paying customer · none yet from the trials that are over"}</span></div>
             <div data-kpi="payback"><b>{u.paybackMonths === null ? "—" : `${Math.round(u.paybackMonths * 10) / 10} mo`}</b><span>{u.matured.wonMrrCents > 0 ? `to earn the spend back · at those customers' ${dollars(u.matured.wonMrrCents)} a month` : "to earn the spend back · once a customer pays"}</span></div>
-            <div data-kpi="arr"><b>{dollars(u.arrCents)}</b><span>a year, at today&apos;s paying customers</span></div>
+            <div data-kpi="arr"><b>{dollars(u.arrCents)}</b><span>{data.recurring ? "ARR · what Stripe bills, × 12" : "a year, at today's paying customers"}</span></div>
             <div data-kpi="per-signup"><b>{money(u.costPerSignupCents)}</b><span>ad spend per sign-up with a card</span></div>
             <div data-kpi="expected"><b>{u.expectedPayers === null ? "—" : `≈${n(Math.round(u.expectedPayers))}`}</b><span>{u.expectedPayers === null ? "of the running trials will pay · once a trial has ended" : `of the running trials will pay at the measured rate${u.expectedMrrCents ? ` · +${dollars(u.expectedMrrCents)}/mo` : ""}`}</span></div>
             <div data-kpi="spend"><b>{dollars(u.spendCents)}</b><span>spent on ads since {longDate(t.since)}</span></div>

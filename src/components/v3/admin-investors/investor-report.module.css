@@ -220,3 +220,12 @@
 .swHatch { background: repeating-linear-gradient(135deg, rgba(10, 10, 10, .5) 0 2px, #fff 2px 5px); }
 @media (max-width: 1100px) { .readings4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 760px) { .readings4 { grid-template-columns: minmax(0, 1fr); } }
+
+/* Recurring revenue — MRR and ARR (2026-11-02): the likely range, the milestones. */
+.band { fill: var(--rep-blue); opacity: .12; }
+.legend i.swBox.swBand { background: color-mix(in srgb, var(--rep-blue) 18%, #fff); border-color: transparent; }
+.legend i.swBox.swMark { border-radius: 50%; border: 3px solid var(--rep-blue); background: #fff; }
+.milestones { margin-top: 12px; }
+.milestones td:first-child { color: var(--rep-blue); }
+@media (max-width: 520px) { .milestones .sub { display: block; } }
+.markLabel { paint-order: stroke; stroke: var(--rep-paper); stroke-width: 4px; stroke-linejoin: round; }

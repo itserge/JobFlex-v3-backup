@@ -20,17 +20,18 @@ export function buildPitchData(token: string, report: InvestorReport, plans: rea
     token,
     launch: { day: report.launch.day, date: report.launch.date },
     traction: {
-      since: f.since, signups: f.signups, paying: f.paying.count, payingMrrCents: f.paying.mrrCents, trialsNow: f.trials.count,
+      since: f.since, signups: f.signups, paying: f.paying.count, payingMrrCents: report.recurring?.mrrCents ?? f.paying.mrrCents, trialsNow: f.trials.count,
       ratePct: f.rate.pct, ratePaid: f.rate.paid, rateEnded: f.rate.ended, rateLowPct: f.rate.lowPct, rateHighPct: f.rate.highPct,
       collected: { read: report.collected.read, cents: report.collected.cents, invoices: report.collected.invoices },
       at: report.at,
     },
     unit: {
-      spendCents: f.spend.totalCents, won: f.paying.won, wonMrrCents: f.paying.wonMrrCents, arrCents: f.paying.arrCents,
+      spendCents: f.spend.totalCents, won: f.paying.won, wonMrrCents: f.paying.wonMrrCents, arrCents: report.recurring ? report.recurring.mrrCents * 12 : f.paying.arrCents,
       costPerPayingCents: f.unit.costPerPayingCents, costPerSignupCents: f.unit.costPerSignupCents, paybackMonths: f.unit.paybackMonths, matured: f.unit.matured,
       expectedPayers: f.expected.payers, expectedMrrCents: f.expected.mrrCents,
       cost: f.cost, costWords: customerCostStory(f), today: f.today,
     },
+    recurring: report.recurring,
     leadPrice: { minCents: MIN_LEAD_PRICE_CENTS, maxCents: MAX_LEAD_PRICE_CENTS },
     deskPack: { minutes: DESK_PACK.minutes, cents: DESK_PACK.cents },
     plans: plans
