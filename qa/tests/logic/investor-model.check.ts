@@ -75,12 +75,52 @@ console.log("── paying against the spend");
 check("paying: 2 accounts, $158 MRR, $1,896 ARR; both won by the period", f.paying.count === 2 && f.paying.mrrCents === 15800 && f.paying.arrCents === 189600 && f.paying.won === 2 && f.paying.wonMrrCents === 15800);
 check("revenue to date at list price: 5 days of $79 + 1 day of $79 = $15.80", f.paying.revenueToDateCents === Math.round((7900 * 5) / 30) + Math.round(7900 / 30));
 check("signups = trials + paying + lapsed = 7", f.signups === 7);
-check("cost per paying customer is counted, not expected: $700 ÷ 2 = $350", f.unit.costPerPayingCents === 35000);
-check("earns the spend back in $700 ÷ $158 = 4.4 months; return to date 2%", f.unit.paybackMonths === 4.4 && f.unit.returnToDatePct === 2);
+check("cost per paying customer counts only the signups whose trial is over: none here yet (launched Sep 30, 7-day trials)", f.unit.costPerPayingCents === null && f.unit.matured.through === null && f.unit.matured.won === 0);
+check("…so no payback yet either; return to date 2%", f.unit.paybackMonths === null && f.unit.returnToDatePct === 2);
 check("cost per visitor $1, per signup $100; visitor → signup 1%", f.unit.costPerVisitorCents === 100 && f.unit.costPerSignupCents === 10000 && f.unit.visitorToSignupPct === 1);
 check("signup pace over the full days: 3 signups Sep 30–Oct 5 = 0.5 a day", f.unit.signupsPerDay === 0.5);
 const withLapsedDates = investorFigures({ ...base, lapsedSignups: [{ date: "2026-10-03" }] });
 check("a lapsed signup counts in the pace too — the rate applies to every signup, the leavers included", withLapsedDates.unit.signupsPerDay === 0.67 && withLapsedDates.curve[6].signups === 7);
+
+// ── THE COST OF A CUSTOMER, COUNTED ON THE TRIALS THAT ARE OVER (owner, 2026-11-02): the last week's ads bought trials
+// still running — dividing them by the customers of the weeks before overstated the cost.
+console.log("── the cost of a customer: the trials that are over");
+const longer: ModelInput = {
+  ...base,
+  since: "2026-09-20",
+  spend: Array.from({ length: 17 }, (_, i) => ({ date: addDays("2026-09-20", i), cents: 10000 })),
+  paying: [
+    { startedAt: "2026-09-29", monthlyCents: 7900, signedUpAt: "2026-09-22" },
+    { startedAt: "2026-10-04", monthlyCents: 7900, signedUpAt: "2026-09-27" },
+    { startedAt: "2026-10-03", monthlyCents: 19900, signedUpAt: "2026-10-01" },
+    { startedAt: "2026-09-30", monthlyCents: 9900, signedUpAt: "2026-09-23", fromNoCard: true },
+    { startedAt: "2026-09-01", monthlyCents: 9900, signedUpAt: "2026-08-20", preexisting: true },
+  ],
+};
+const fl = investorFigures(longer);
+check("7-day trials, today Oct 6: the signups up to Sep 28 are over (one started late on Sep 28 ended Oct 5)", fl.trials.lengthDays === 7 && fl.unit.matured.through === "2026-09-28");
+check("…the spend up to that day: Sep 20–28, 9 days × $100 = $900 — not the $1,700 since the launch", fl.unit.matured.spendCents === 90000 && fl.spend.totalCents === 170000);
+check("…÷ the 2 customers those signups became = $450 (the Oct 1 signup that paid early waits for its week; no-card and earlier payers never count)", fl.unit.matured.won === 2 && fl.unit.costPerPayingCents === 45000 && fl.paying.won === 3);
+check("…earns it back in $900 ÷ $158 = 5.7 months", fl.unit.matured.wonMrrCents === 15800 && fl.unit.paybackMonths === 5.7);
+check("…the old way read $1,700 ÷ 3 = $567: the last week's spend charged to customers it had no time to win yet", Math.round(fl.spend.totalCents / fl.paying.won) === 56667 && fl.unit.costPerPayingCents! < 56667);
+// The owner's own case (2026-11-02): today Nov 2, $100 a day since Oct 8. Paid today = signed up Oct 26; paid yesterday
+// = signed up Oct 25. None of the last week's ad days — nor today's — is charged to a customer.
+const ownerCase = investorFigures({
+  ...base,
+  since: "2026-10-08",
+  today: "2026-11-02",
+  spend: Array.from({ length: 26 }, (_, i) => ({ date: addDays("2026-10-08", i), cents: 10000 })),
+  paying: [
+    { signedUpAt: "2026-10-10", startedAt: "2026-10-17", monthlyCents: 7900 },
+    { signedUpAt: "2026-10-25", startedAt: "2026-11-01", monthlyCents: 7900 },
+    { signedUpAt: "2026-10-26", startedAt: "2026-11-02", monthlyCents: 7900 },
+  ],
+  trials: [{ createdAt: "2026-10-28", endsAt: "2026-11-04", monthlyCents: 7900 }],
+});
+check("the owner's case: the ads Oct 26–Nov 2 ($800, today too) are left out; Oct 8–25 ($1,800) counted", ownerCase.unit.matured.through === "2026-10-25" && ownerCase.unit.matured.spendCents === 180000 && ownerCase.spend.totalCents - ownerCase.unit.matured.spendCents === 80000);
+check("…paid yesterday (signed up Oct 25) counts; paid today (signed up Oct 26) waits a day, with its day's ads: $1,800 ÷ 2", ownerCase.unit.matured.won === 2 && ownerCase.unit.costPerPayingCents === 90000);
+const notYet = investorFigures({ ...longer, paying: longer.paying.filter((p) => p.signedUpAt === "2026-10-01") });
+check("trials over, none of them paying: no cost and no payback, the day and its spend kept", notYet.unit.matured.through === "2026-09-28" && notYet.unit.matured.won === 0 && notYet.unit.matured.spendCents === 90000 && notYet.unit.costPerPayingCents === null && notYet.unit.paybackMonths === null);
 
 console.log("── the curve");
 check("one point per day from the launch to the horizon, booked then projected", f.curve.length === 7 + 180 && f.curve[0].date === "2026-09-30" && !f.curve[6].projected && f.curve[7].projected);
@@ -145,7 +185,7 @@ const withEarly = investorFigures({ ...base, paying: [...base.paying, { startedA
 const fromStartEarly = runRateStory(withEarly.curve, "2026-10-06", 30, 67).past ?? "";
 check("…and with accounts already paying that first day: the true multiple and the total — the start not shown", fromStartEarly === "Since Sep 30, monthly revenue grew 2.6×, to $257. A month of ads stayed at $3,000." && !/\$99/.test(fromStartEarly), fromStartEarly);
 check("the growth: a month in on the first day against today, the multiple only from a real start", withEarly.growth.fromCents === 9900 && withEarly.growth.toCents === 25700 && withEarly.growth.multiple === 2.6 && withEarly.growth.days === 6 && f.growth.fromCents === 0 && f.growth.multiple === null);
-check("cost per lead = spend ÷ signups ($100); per customer EXPECTED = spend ÷ (2 paying + 4 trials × 2/3) = $700 ÷ 4.67 = $150; measured per paying stays $350", f.unit.costPerSignupCents === 10000 && f.unit.costPerCustomerExpectedCents === 15000 && f.unit.costPerPayingCents === 35000);
+check("cost per lead = spend ÷ signups ($100); per customer EXPECTED = spend ÷ (2 paying + 4 trials × 2/3) = $700 ÷ 4.67 = $150; the counted one waits for a trial to be over", f.unit.costPerSignupCents === 10000 && f.unit.costPerCustomerExpectedCents === 15000 && f.unit.costPerPayingCents === null);
 check("…and no expected cost without a measured rate", investorFigures({ ...base, paying: [], lapsed: 0 }).unit.costPerCustomerExpectedCents === null);
 check("…a shorter view still says how it moved in those days", /^In the last 2 days, revenue per month grew \$79/.test(runRateStory(withEarly.curve, "2026-10-06", 2, 67).past ?? ""));
 check("one day: \"Since yesterday\"", (runRateStory(f.curve, "2026-10-06", 1, 67).past ?? "").startsWith("Since yesterday, revenue per month grew $79 (+100%), from $79 to $158"));
@@ -239,7 +279,7 @@ check("the no-card days Oct 5–6 go apart; the card days stay; the start day st
 check("their WHOLE spend goes apart ($200) and the card days keep theirs ($500) — together the whole", cut.spendCents === 20000 && cut.apart.spend.totalCents === 20000 && cut.card.spend.totalCents === 50000 && cut.card.spend.totalCents + cut.spendCents === whole.spend.totalCents);
 check("each side counts its own accounts: card 1 trial, 1 won, 1 lapsed; apart 3 trials, 1 paying", cut.card.trials.count === 1 && cut.card.paying.won === 1 && cut.card.lapsed === 1 && cut.apart.trials.count === 3 && cut.apart.paying.count === 1 && cut.apart.lapsed === 0);
 check("a no-card trial that pays now joins the card side's paying, marked (2026-10-25): 2 paying, 1 from no card, $79", cut.card.paying.count === 2 && cut.card.paying.fromNoCard === 1 && cut.card.paying.fromNoCardMrrCents === 7900 && cut.card.paying.mrrCents === 15800);
-check("…but not its signups, its rate, or the cost of a customer: $500 ÷ 1 won", cut.card.signups === 3 && cut.card.rate.paid === 1 && cut.card.unit.costPerPayingCents === 50000 && cut.card.unit.paybackMonths === Math.round((50000 / 7900) * 10) / 10);
+check("…but not its signups, its rate, or the customers won: 1 won (no card trial over yet, so no cost yet)", cut.card.signups === 3 && cut.card.rate.paid === 1 && cut.card.paying.won === 1 && cut.card.unit.costPerPayingCents === null && cut.card.unit.matured.won === 0);
 check("…the signups add up to the whole, and the apart ones are told by kind (4 no card, 0 card)", cut.card.signups + cut.apart.signups === whole.signups && cut.signups.nocard === 4 && cut.signups.card === 0);
 check("each side measures its own rate: card 1 of 2 = 50%, no card 1 of 1 = 100%", cut.card.rate.pct === 50 && cut.card.rate.ended === 2 && cut.apart.rate.pct === 100 && cut.apart.rate.ended === 1);
 check("the kind a new signup gets today keeps spending forward (no card here); the card side stands still", cut.apart.spend.perDayProjectedCents === whole.spend.perDayProjectedCents && cut.card.spend.perDayProjectedCents === 0 && cut.card.curve.filter((p) => p.projected).every((p) => p.spendCents === 50000));
