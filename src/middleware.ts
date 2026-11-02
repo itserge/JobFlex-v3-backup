@@ -85,6 +85,23 @@ const MOVED_PAGES: Record<string, string> = {
   "/dashboard/advanced-ai/roof": "/dashboard/roof-estimator",
 };
 
+/* ONE ADDRESS PER PAGE, WITHOUT THE TRAILING SLASH (2026-11-02). next.config.ts
+   sets skipTrailingSlashRedirect for the PostHog proxy (/ingest/e/ must reach
+   PostHog with its slash), which also took Next's own /page/ → /page redirect off
+   every other route — /cost/roof-replacement/dallas-tx/ answered 200 as a
+   duplicate of the canonical page. The redirect is put back here: 308, query
+   kept. Not for /ingest (the proxy), /api, /_next, or a file with an extension. */
+function trailingSlashTarget(req: NextRequest): URL | null {
+  const { pathname } = req.nextUrl;
+  if (pathname === "/" || !pathname.endsWith("/")) return null;
+  if (/^\/(ingest|api|_next)(\/|$)/.test(pathname)) return null;
+  const trimmed = pathname.replace(/\/+$/, "") || "/";
+  if (/\.[\w]+$/.test(trimmed)) return null;
+  // A plain URL, not req.nextUrl.clone(): NextURL remembers the incoming slash and
+  // writes it back onto any pathname set on it, so the redirect pointed at itself.
+  return new URL(trimmed + req.nextUrl.search, req.url);
+}
+
 /* THE CONSENT MODEL BY COUNTRY (owner, 2026-09-30; lib/consent). Vercel's
    x-vercel-ip-country decides notice or opt-in once, on the first page this
    browser asks for, and the answer — never the country — is kept a year in
@@ -92,6 +109,8 @@ const MOVED_PAGES: Record<string, string> = {
    request header read there rendered every page per request, /pricing's
    catalogue read included. No header (localhost) is the US: notice. */
 export async function middleware(req: NextRequest) {
+  const slashless = trailingSlashTarget(req);
+  if (slashless) return NextResponse.redirect(slashless, 308);
   const offerPath = req.nextUrl.pathname === "/" || req.nextUrl.pathname === "/pricing" || req.nextUrl.pathname.startsWith("/auth/register");
   const existingOffer = req.cookies.get(TRIAL_OFFER_COOKIE)?.value;
   let assigned: string | null = null;
