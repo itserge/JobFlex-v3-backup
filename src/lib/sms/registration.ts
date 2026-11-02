@@ -180,7 +180,8 @@ export async function submitRegistration(organizationId: string, actorId: string
     } else {
       // A closed or failed submission is replaced: one verification per number.
       if (state.verificationSid) await client.messaging.v1.tollfreeVerifications(state.verificationSid).remove().catch(() => null);
-      v = await client.messaging.v1.tollfreeVerifications.create({ ...fields, tollfreePhoneNumberSid: state.numberSid!, externalReferenceId: `org:${organizationId}` });
+      // Letters, digits and dashes only, like JobFlex's own "jobflex-platform-tollfree": Twilio refused "org:org_…" (22207).
+      v = await client.messaging.v1.tollfreeVerifications.create({ ...fields, tollfreePhoneNumberSid: state.numberSid!, externalReferenceId: `org-${organizationId.replace(/[^A-Za-z0-9-]/g, "-")}` });
     }
     const now = new Date().toISOString();
     state = { ...state, stage: stageFor(v.status), verificationSid: v.sid, submittedAt: now, checkedAt: now, reasons: [], editAllowed: undefined, editUntil: null, error: null, details };
