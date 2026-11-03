@@ -6,7 +6,7 @@
 import { MAP_HISTORY_LIMIT, MAP_SPANS, buildMapHistoryQuery, isMapSpan, mapHistoryEventsFromRow, mapSpanLabel } from "../../../src/lib/traffic-live";
 import { PRESIDENTIAL_2024, partyOf } from "../../../src/lib/usPolitics";
 import { TRAFFIC_SINCE_TZ, TRAFFIC_TZ, trafficDayStartMs } from "../../../src/lib/traffic-visitor";
-import { AD_PLATFORM_KEYS, adTagsOf, buildConvertedQuery, buildLiveQuery, prospectsOf, isAdId, landingTradeOf, buildLiveTotalsQuery, classifySource, liveEventFromRow, liveTotalsFromRow, eventStage, liveHeadline, minutesIntoDay, signupLedgerSummary, signupPlanLabel, signupState, platformCards, screenLabel, shapeLive, shortId, visitSummary, type FreshSignup, type LiveEvent } from "../../../src/lib/traffic-live";
+import { AD_PLATFORM_KEYS, adTagsOf, buildLiveQuery, convertedOf, prospectsOf, isAdId, landingTradeOf, buildLiveTotalsQuery, classifySource, liveEventFromRow, liveTotalsFromRow, eventStage, liveHeadline, minutesIntoDay, signupLedgerSummary, signupPlanLabel, signupState, platformCards, screenLabel, shapeLive, shortId, visitSummary, type FreshSignup, type LiveEvent } from "../../../src/lib/traffic-live";
 
 let bad = 0;
 const check = (name: string, ok: boolean, extra = "") => {
@@ -139,7 +139,7 @@ check("the place is the latest event that had one", moved.lat === 47.61 && moved
 
 // ── the query and its rows
 const sql = buildLiveQuery();
-check("the live query reads the last 30 minutes of the events that matter", /INTERVAL 30 MINUTE/.test(sql) && /'\$pageview'/.test(sql) && /'jf_signup_completed'/.test(sql) && /toUnixTimestamp\(timestamp\) \* 1000/.test(sql) && /LIMIT 4000/.test(sql));
+check("the live query reads the last 30 minutes of the events that matter", /INTERVAL 30 MINUTE/.test(sql) && /'\$pageview'/.test(sql) && /'jf_signup_completed'/.test(sql) && /toUnixTimestamp\(timestamp\) \* 1000/.test(sql) && /LIMIT 7000/.test(sql));
 check("the window is clamped", /INTERVAL 5 MINUTE/.test(buildLiveQuery(1)) && /INTERVAL 120 MINUTE/.test(buildLiveQuery(999)));
 const row = ["person-1", "anon-1", "$pageview", 1_790_000_000_000, "/", "https://jobflex.app/", "s1", "jobflex.app", "production", "facebook", "paid", "camp", "", "l.facebook.com", "Mobile", "Mobile Safari", "iOS", "United States", "Texas", "Dallas", "", "", "", ""];
 const e1 = liveEventFromRow(row);
@@ -355,8 +355,12 @@ check("eventStage reads one event the way the ranking does",
 console.log(bad ? `\n${bad} failing` : "\nall green");
 
 // ── prospects (owner, 2026-10-02): new visitors trying to convert, no members; a convert stays a day
-const cq = buildConvertedQuery();
-check("the converts query reads the last day of everyone who completed a signup in it, with the live columns", /INTERVAL 24 HOUR/.test(cq) && /distinct_id IN \(SELECT distinct_id FROM events WHERE event = 'jf_signup_completed'/.test(cq) && /jf_org_id/.test(cq) && /toUnixTimestamp\(timestamp\) \* 1000/.test(cq) && /LIMIT 3000/.test(cq));
+// One query since 2026-11-02: the window OR the last day of everyone who completed a signup in it.
+check("the same query reads the last day of everyone who completed a signup in it, with the live columns", /INTERVAL 24 HOUR AND event IN/.test(sql) && /AND \(timestamp > now\(\) - INTERVAL 30 MINUTE\s+OR distinct_id IN \(SELECT distinct_id FROM events WHERE event = 'jf_signup_completed' AND timestamp > now\(\) - INTERVAL 24 HOUR\)\)/.test(sql) && /jf_org_id/.test(sql));
+const rows = [ev({ person: "p-new", distinctId: "d-new", at: min(2) }), ev({ person: "p-conv", distinctId: "d-conv", at: min(180), pathname: "/auth/register" }), ev({ person: "p-conv", distinctId: "d-conv", at: min(178), event: "jf_signup_completed", verified: "true" })];
+const conv = convertedOf(rows);
+check("convertedOf takes the converts back out — every event of a distinct id that completed, nobody else", conv.length === 2 && conv.every((e) => e.distinctId === "d-conv") && convertedOf(rows.slice(0, 1)).length === 0);
+check("the window's half is shaped by time: the convert's three-hour-old events stay out of it", shapeLive(rows, [], NOW).visitors.map((v) => v.id).join() === shapeLive(rows.slice(0, 1), [], NOW).visitors.map((v) => v.id).join());
 const dayWin = shapeLive([ev({ person: "p-old", at: min(180), pathname: "/auth/register" }), ev({ person: "p-old", at: min(178), event: "jf_signup_completed", pathname: "/auth/register", outcome: "trial_started", plan: "pro", verified: "true", city: "Denver" })], [], NOW, { windowMinutes: 24 * 60 });
 check("a day-long window shapes a three-hour-old signup as signed up, and says the window is a day", dayWin.visitors.length === 1 && dayWin.visitors[0].stage === "signed-up" && dayWin.windowMinutes === 1440 && dayWin.converted.length === 0);
 check("the half-hour window does not hold it", shapeLive([ev({ person: "p-old", at: min(180) })], [], NOW).visitors.length === 0 && shapeLive([], [], NOW).windowMinutes === 30);

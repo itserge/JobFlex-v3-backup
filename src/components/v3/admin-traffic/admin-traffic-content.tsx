@@ -8,7 +8,7 @@ import { getTrafficExportMarkdown } from "@/actions/trafficExport";
 import { getAdsManagerClicks } from "@/actions/trafficClicks";
 import { downloadText, reportToCsv } from "@/lib/traffic-export";
 import { toast } from "@/components/ui/toast-store";
-import { pageLabel, percent, staleLabel, type SignupAttribution, type StageVisitor, type StageVisitorsReport, type TrafficFilters, type TrafficReport } from "@/lib/traffic-contract";
+import { asOfLabel, pageLabel, percent, type SignupAttribution, type StageVisitor, type StageVisitorsReport, type TrafficFilters, type TrafficReport } from "@/lib/traffic-contract";
 import { AdsReconciliation, DailyPeople } from "./daily-tables";
 import { dateInZone, shiftDate } from "@/lib/traffic-query";
 import { Sheet, useMdl } from "@/components/v3/admin-influencers/admin-ui";
@@ -83,13 +83,14 @@ export function AdminTrafficContent({ data, deferred = false, signups: initialSi
   const update = (changes: Partial<TrafficFilters>) => setDraft(d => ({ ...d, ...changes }));
   // What was last asked for — the retry below asks for it again.
   const wanted = useRef(data.filters);
-  function load(next: TrafficFilters) {
+  // `force` is the Refresh button: PostHog asked again past the server's half-hour cache, 30 s apart at most.
+  function load(next: TrafficFilters, force = false) {
     const id = ++request.current;
     wanted.current = next;
     setError("");
     startTransition(async () => {
       try {
-        const [result, attributed] = await Promise.all([getTrafficDashboard({ ...next }), getSignupAttribution({ ...next }).catch(() => null)]);
+        const [result, attributed] = await Promise.all([getTrafficDashboard({ ...next, force }), getSignupAttribution({ ...next }).catch(() => null)]);
         if (id !== request.current) return;
         // PostHog down (2026-10-03) and figures on screen: they stay, dated,
         // and the page asks again — the banner alone is for a page with
@@ -174,11 +175,11 @@ export function AdminTrafficContent({ data, deferred = false, signups: initialSi
       <div className={s.headerActions}><span className={s.status} data-state={report.status === "ok" && !report.errors.length && !stale ? "ok" : "warning"}><i/>{deferred && !report.totals && !error ? "Loading PostHog…" : report.status === "disabled" ? "Not connected" : report.status !== "ok" ? "Unavailable" : stale ? "PostHog unavailable" : report.errors.length ? "Partial data" : "PostHog connected"}</span>
         <button className={s.button} onClick={() => void exportEverything()} disabled={exporting} aria-busy={exporting}><FileText size={15} aria-hidden="true"/>{exporting ? "Preparing…" : "Export everything"}</button>
         <button className={s.button} onClick={() => void exportReport(report, ledger)} disabled={!t || pending}><ArrowDownToLine size={15}/>Export CSV</button>
-        <button className={s.iconButton} aria-label="Refresh traffic" onClick={() => load(filters)} disabled={pending}><RefreshCw size={17} className={pending ? s.spin : ""}/></button>
+        <button className={s.iconButton} aria-label="Refresh traffic" title="Ask PostHog again now (at most every 30 s)" onClick={() => load(filters, true)} disabled={pending}><RefreshCw size={17} className={pending ? s.spin : ""}/></button>
       </div>
     </header>
 
-    <div className={s.lifetime}><span>Visitors since {TRAFFIC_SINCE_SHORT} <strong>{n(report.lifetime ?? live?.totals?.allTime)}</strong></span><span>Today <strong>{n(report.today ?? live?.totals?.today)}</strong></span><span className={s.scope}>{filters.environment === "all" ? "www.jobflex.app + localhost" : filters.environment === "development" ? "Localhost only" : "www.jobflex.app"} / no bots, no previews / counted from {TRAFFIC_SINCE_LABEL}, {TRAFFIC_SINCE_WHY}</span><span className={s.updated}>{pending ? "Querying PostHog..." : `Updated ${new Date(report.fetchedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: filters.timezone })}`}</span></div>
+    <div className={s.lifetime}><span>Visitors since {TRAFFIC_SINCE_SHORT} <strong>{n(report.lifetime ?? live?.totals?.allTime)}</strong></span><span>Today <strong>{n(report.today ?? live?.totals?.today)}</strong></span><span className={s.scope}>{filters.environment === "all" ? "www.jobflex.app + localhost" : filters.environment === "development" ? "Localhost only" : "www.jobflex.app"} / no bots, no previews / counted from {TRAFFIC_SINCE_LABEL}, {TRAFFIC_SINCE_WHY}</span><span className={s.updated} data-as-of={stale ? "" : undefined} title={stale?.reason}>{pending ? "Querying PostHog..." : stale ? `${asOfLabel(stale, filters.timezone)}${stale.scope ? ` · ${stale.scope}` : ""}` : `Updated ${new Date(report.fetchedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: filters.timezone })}`}</span></div>
 
     {/* Who is on the site this minute, where from, how far they got (2026-09-28). */}
     {live && <LivePanel initial={live} timezone={filters.timezone} fullHistory={filters.fullHistory} ledger={ledger}/>}
@@ -207,7 +208,6 @@ export function AdminTrafficContent({ data, deferred = false, signups: initialSi
       <div className={s.filterFooter}><span className={s.activeTimezone}>{filters.timezone}</span><span className={s.unsaved}>{changed ? "Filters changed. Apply to update." : `${filters.from} to ${filters.to} / inclusive`}</span><button className={s.textButton} onClick={() => { const next = { ...data.filters, from: shiftDate(today, -29), to: today }; setDraft(next); load(next); }} disabled={pending}>Reset</button><button className={s.primary} onClick={() => load(draft)} disabled={pending}>{pending ? "Updating..." : "Apply filters"}<ArrowUpRight size={16}/></button></div>
     </section>
 
-    {stale && <div className={s.notice} role="status" data-stale><Info size={18}/><div><strong>{staleLabel(stale, filters.timezone)}</strong><p>{stale.reason} Asking again every {STALE_RETRY_MS / 1000} s.</p></div></div>}
     {(error || (report.message && !stale) || report.errors.length > 0) && <div className={s.notice} role="alert"><Info size={18}/><div><strong>{error || report.message || "Some reports are unavailable."}</strong>{report.errors.length > 0 && <details><summary>Query details</summary>{report.errors.map(e => <p key={e}>{e}</p>)}</details>}</div></div>}
 
     <div className={s.sectionLabel}><span>01 / Audience</span><span>{filters.page ? pageLabel(filters.page) : "All pages"}{filters.audience !== "all" ? ` / ${filters.audience}` : ""}</span></div>

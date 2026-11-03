@@ -352,9 +352,12 @@ export interface LiveReport {
    *  {{ad.id}} as numbers), keyed by the id as it arrives. Filled in by the
    *  admin's server action. */
   adNames?: Record<string, string>;
-  /** PostHog did not answer: this is the last report it did answer for
-   *  (lib/traffic-server) — or, with a scope, a fresh one but for that part. */
+  /** PostHog did not answer: the window (visitors, counts, map) is its last
+   *  answer, as of `since` (lib/posthog-cache) — "as of" under "On the site now". */
   stale?: StaleNote;
+  /** The same for the totals ("Visitors today", "Visitors since …"), which
+   *  are their own query and may be old while the window is fresh. */
+  totalsStale?: StaleNote;
   /** Where a visit's session replay opens: this + the session id (2026-10-14). */
   replayBase?: string | null;
   /** Spent on ads today (lib/adSpendToday, 2026-10-15) — filled in by the admin's server action. */
@@ -1208,24 +1211,29 @@ export function platformCards(visitors: LiveVisitor[], signups: FreshSignup[]): 
 /** The events the live view reads, as a HogQL list. */
 const liveEventsSql = () => ["'$pageview'", ...[E.step, E.attempt, E.opened, E.completed, E.landingView, E.ctaClick, ...WATCH_EVENTS].map((e) => `'${e}'`)].join(", ");
 
-/** The one HogQL query behind the panel: the window's events, one row each. */
-export function buildLiveQuery(windowMinutes = LIVE_WINDOW_MINUTES): string {
-  return `${liveSelectSql()}
-    WHERE timestamp > now() - INTERVAL ${Math.max(5, Math.min(120, Math.round(windowMinutes)))} MINUTE AND event IN (${liveEventsSql()})
-    ORDER BY timestamp DESC LIMIT 4000`;
-}
-
-/** The last day's events of everyone who completed a signup in it, for the
- *  prospects map (which keeps a convert for CONVERTED_HOURS): the same
- *  columns, so the same parser and shaping read them. The subquery is on
+/** The one HogQL query behind the panel, one row per event: the window's
+ *  events, and the last day's events of everyone who completed a signup in it,
+ *  for the prospects map (which keeps a convert for CONVERTED_HOURS). Two
+ *  queries until 2026-11-02, folded into one so "Live now" costs one PostHog
+ *  query a minute; convertedOf takes the converts back out. The subquery is on
  *  distinct_id — the server-side completion event and the browser's own
  *  pageviews share it. */
-export function buildConvertedQuery(hours = CONVERTED_HOURS): string {
+export function buildLiveQuery(windowMinutes = LIVE_WINDOW_MINUTES, hours = CONVERTED_HOURS): string {
   const h = Math.max(1, Math.min(72, Math.round(hours)));
   return `${liveSelectSql()}
     WHERE timestamp > now() - INTERVAL ${h} HOUR AND event IN (${liveEventsSql()})
-      AND distinct_id IN (SELECT distinct_id FROM events WHERE event = '${E.completed}' AND timestamp > now() - INTERVAL ${h} HOUR)
-    ORDER BY timestamp DESC LIMIT 3000`;
+      AND (timestamp > now() - INTERVAL ${Math.max(5, Math.min(120, Math.round(windowMinutes)))} MINUTE
+        OR distinct_id IN (SELECT distinct_id FROM events WHERE event = '${E.completed}' AND timestamp > now() - INTERVAL ${h} HOUR))
+    ORDER BY timestamp DESC LIMIT 7000`;
+}
+
+/** The converts among the live rows: every event of a distinct id that
+ *  completed a signup — the second half of buildLiveQuery's WHERE (the
+ *  completion is one of the events it reads). shapeLive keeps the window's
+ *  half by time on its own. */
+export function convertedOf(events: LiveEvent[]): LiveEvent[] {
+  const done = new Set(events.filter((e) => e.event === E.completed && e.distinctId).map((e) => e.distinctId));
+  return done.size ? events.filter((e) => done.has(e.distinctId)) : [];
 }
 
 // ── The map over a longer span (2026-10-03) ───────────────────────────────

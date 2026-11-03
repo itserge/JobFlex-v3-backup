@@ -4,11 +4,13 @@
  * so we need a smart approach to track where they stop and what's wrong"). Under the analyst: the week's or the
  * month's sign-up visits read as one verdict (of those who stopped — a fault of ours, refused by the form, or their
  * own choice), how far each screen gets them, the box they stop in, every problem with its side, and which phones
- * and browsers finish. Reads on mount, on the switch, and every ten minutes while the tab is open (lib/signup-dropoff).
+ * and browsers finish. Reads on mount, on the switch, and every ten minutes while the tab is open (lib/signup-dropoff);
+ * the server asks PostHog every half hour (lib/posthog-cache), Refresh now — 30 s apart at most.
  */
 import { useCallback, useEffect, useState } from "react";
 import { Info, RefreshCw, Route } from "lucide-react";
 import { getSignupDropoff, type SignupDropoffResult } from "@/actions/trafficDashboard";
+import { asOfLabel, type StaleNote } from "@/lib/traffic-contract";
 import { DROPOFF_DAYS, pctWords, secsWords, visitsWords, type DropoffDays, type DropoffReport } from "@/lib/signup-dropoff";
 import { screenName } from "@/lib/signup-watch-shared";
 import s from "./traffic.module.css";
@@ -40,7 +42,7 @@ function Verdict({ r }: { r: DropoffReport }) {
 export function SignupStopsPanel({ timezone }: { timezone: string }) {
   const [days, setDays] = useState<DropoffDays>(7);
   const [result, setResult] = useState<SignupDropoffResult | null>(null);
-  const [kept, setKept] = useState<{ report: DropoffReport; readAt: string } | null>(null);
+  const [kept, setKept] = useState<{ report: DropoffReport; readAt: string; stale?: StaleNote } | null>(null);
   const [pending, setPending] = useState(false);
   const load = useCallback(async (span: DropoffDays, force = false) => {
     setPending(true);
@@ -48,7 +50,7 @@ export function SignupStopsPanel({ timezone }: { timezone: string }) {
       const next = await getSignupDropoff({ days: span, force });
       setResult(next);
       // PostHog down with a reading on screen: the reading stays, dated.
-      if (next.status === "ok") setKept({ report: next.report, readAt: next.readAt });
+      if (next.status === "ok") setKept({ report: next.report, readAt: next.readAt, stale: next.stale });
     } catch (err) {
       setResult({ status: "error", message: err instanceof Error ? err.message : "The report could not read." });
     } finally {
@@ -68,7 +70,7 @@ export function SignupStopsPanel({ timezone }: { timezone: string }) {
       <div className={s.cardHead}>
         <div>
           <h2><Route size={18} aria-hidden="true"/> Where sign-ups stop</h2>
-          <span className={s.micro}>Every visit to the sign-up form · last {days} days · which screen and box they stop in, and whose fault it was{kept ? ` · read at ${clock(kept.readAt, timezone)}` : ""}</span>
+          <span className={s.micro}>Every visit to the sign-up form · last {days} days · which screen and box they stop in, and whose fault it was{kept?.stale ? <span data-as-of title={kept.stale.reason}> · {asOfLabel(kept.stale, timezone)}</span> : kept ? ` · read at ${clock(kept.readAt, timezone)}` : ""}</span>
         </div>
         <div className={s.headerActions}>
           <div className={s.segment} role="group" aria-label="Span">{DROPOFF_DAYS.map((d) => <button key={d} type="button" aria-pressed={days === d} onClick={() => setDays(d)} disabled={pending && days !== d}>{d}D</button>)}</div>

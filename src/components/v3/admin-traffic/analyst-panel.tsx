@@ -4,8 +4,9 @@
  * landing and where the sign-up loses them — the last week read as
  * findings, each a line of evidence and one thing to try, with a headline
  * of what is going on. Reads once on mount and every ten minutes while the
- * tab is open (the server caches the week for ten minutes); Refresh reads
- * now. Quiet until twenty visits from ads have landed.
+ * tab is open; the server asks PostHog for the week every half hour
+ * (lib/posthog-cache), and Refresh asks it now — 30 s apart at most. Quiet
+ * until twenty visits from ads have landed.
  */
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Info, Lightbulb, RefreshCw, Sparkles } from "lucide-react";
@@ -13,7 +14,7 @@ import { getTrafficAnalyst, type AnalystResult } from "@/actions/trafficDashboar
 import { AnalystExport } from "./analyst-export";
 import { AnalystMoney } from "./analyst-money";
 import { pct, type AnalystFinding, type AnalystSectionReach } from "@/lib/traffic-analyst";
-import { staleLabel } from "@/lib/traffic-contract";
+import { asOfLabel } from "@/lib/traffic-contract";
 import s from "./traffic.module.css";
 
 const READ_EVERY_MS = 10 * 60_000;
@@ -63,14 +64,13 @@ export function AnalystPanel({ timezone }: { timezone: string }) {
       <div className={s.cardHead}>
         <div>
           <h2><Sparkles size={18} aria-hidden="true"/> The analyst</h2>
-          <span className={s.micro}>What people do on the landing and where the sign-up loses them · {r?.period ?? "last 7 days"} · reads again every 10 minutes{result ? ` · read at ${clock(result.fetchedAt, timezone)}` : ""}</span>
+          <span className={s.micro}>What people do on the landing and where the sign-up loses them · {r?.period ?? "last 7 days"} · PostHog read every 30 minutes{result?.stale ? <span data-as-of title={result.stale.reason}> · {asOfLabel(result.stale, timezone)}</span> : result ? ` · read at ${clock(result.fetchedAt, timezone)}` : ""}</span>
         </div>
         <div className={s.headerActions}><AnalystExport result={result} timezone={timezone}/>
         <button type="button" className={s.iconButton} aria-label="Read again now" title="Read again now" onClick={() => void load(true)} disabled={pending}><RefreshCw size={16} className={pending ? s.spin : ""}/></button></div>
       </div>
 
       {!result && <div className={s.analystEmpty}>Reading the last week…</div>}
-      {result?.stale && <div className={s.notice} role="status" data-stale><Info size={16}/><div><strong>{staleLabel(result.stale, timezone)}</strong><p>{result.stale.reason} Reading again every 10 minutes.</p></div></div>}
       {(error || (result && result.status !== "ok")) && <div className={s.notice} role="status"><Info size={16}/><div><strong>{error || result?.message}</strong></div></div>}
 
       {ok && <>

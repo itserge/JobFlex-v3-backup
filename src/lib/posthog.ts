@@ -17,8 +17,13 @@
 //
 // Results are cached in memory for TTL_MS so an admin refreshing the page
 // does not burn the project's query budget; a failed call is cached for a
-// shorter window so a flapping upstream does not hammer either.
+// shorter window so a flapping upstream does not hammer either. Underneath,
+// each query's answer is kept by lib/posthog-cache (2026-11-02): five minutes,
+// shared with every instance through SyncState, and the last answer when
+// PostHog says its query limit is reached — the team's 120 an hour is shared
+// with /admin/traffic.
 
+import { POSTHOG_TTL, cachedRows } from "./posthog-cache";
 import { BROWSER_TYPE_SQL, HOST_SQL, TRAFFIC_SINCE, UA_SQL, sinceSql, visitorRuleSql } from "./traffic-visitor";
 
 export const POSTHOG_ENV = {
@@ -91,7 +96,10 @@ async function hogql(query: string): Promise<unknown[][]> {
   });
   const body = (await res.json().catch(() => ({}))) as HogQLResponse;
   if (!res.ok) {
-    throw new Error(body.detail || body.error || `PostHog replied ${res.status}`);
+    // The status and Retry-After ride along: a 429 pauses every PostHog read (lib/posthog-cache).
+    const retryAfter = Number(res.headers.get("retry-after"));
+    throw Object.assign(new Error(res.status === 429 ? "PostHog query limit reached. Try again shortly." : body.detail || body.error || `PostHog replied ${res.status}`),
+      { status: res.status, retryAfterMs: Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 0 });
   }
   return Array.isArray(body.results) ? body.results : [];
 }
@@ -106,9 +114,9 @@ async function hogql(query: string): Promise<unknown[][]> {
 export async function recentServerErrors(organizationId: string, days = 7): Promise<string[]> {
   if (!isPostHogEnabled() || !/^[a-z0-9]{8,40}$/i.test(organizationId)) return [];
   const span = Math.max(1, Math.min(30, Math.round(days)));
-  const rows = await hogql(
+  const { rows } = await cachedRows(`server errors|${organizationId}|${span}`, POSTHOG_TTL.today, () => hogql(
     `SELECT timestamp, properties.scope, properties.code, properties.where FROM events WHERE event = 'server_error' AND properties.organizationId = '${organizationId}' AND timestamp > now() - INTERVAL ${span} DAY ORDER BY timestamp DESC LIMIT 12`,
-  );
+  ));
   return rows.map((r) => {
     const at = r[0] instanceof Date ? r[0].toISOString() : String(r[0] ?? "");
     const where = r[3] ? ` · ${String(r[3]).slice(0, 140)}` : "";
@@ -164,11 +172,12 @@ const WINDOWS_SQL = `
   WHERE ${COUNTED}`;
 
 async function fetchSnapshot(): Promise<TrafficSnapshot> {
-  const [dailyRows, pathRows, windowRows] = await Promise.all([
-    hogql(DAILY_SQL),
-    hogql(PATHS_SQL),
-    hogql(WINDOWS_SQL),
+  const [dailyRead, pathRead, windowRead] = await Promise.all([
+    cachedRows("snapshot|daily", POSTHOG_TTL.today, () => hogql(DAILY_SQL)),
+    cachedRows("snapshot|paths", POSTHOG_TTL.today, () => hogql(PATHS_SQL)),
+    cachedRows("snapshot|windows", POSTHOG_TTL.today, () => hogql(WINDOWS_SQL)),
   ]);
+  const [dailyRows, pathRows, windowRows] = [dailyRead.rows, pathRead.rows, windowRead.rows];
 
   const byDay = new Map<string, TrafficDay>();
   for (const r of dailyRows) {
@@ -200,7 +209,8 @@ async function fetchSnapshot(): Promise<TrafficSnapshot> {
     visitors7d: num(w[1]),
     visitors30d: num(w[2]),
     pageviews30d: num(w[3]),
-    fetchedAt: new Date().toISOString(),
+    // When PostHog answered: the oldest of the three, a cached one included.
+    fetchedAt: new Date(Math.min(dailyRead.at, pathRead.at, windowRead.at)).toISOString(),
   };
 }
 
