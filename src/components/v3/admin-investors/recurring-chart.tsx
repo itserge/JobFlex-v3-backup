@@ -6,6 +6,11 @@
 // its likely range (shaded); the ARR milestones on the way, marked. A slider for the daily ad budget redraws what is
 // ahead — what more ads would buy, signups in proportion. A hover or tap reads one day. Plain SVG with the run-rate
 // chart's furniture; the same component on the Figures page and the deck (compact: no words, no slider).
+//
+// NOTHING ABOVE THE SLIDER MOVES WHILE IT DOES (owner, 2026-11-02: "when I'm moving it, the whole screen shakes and
+// it's hard to stop"): the words above are today's pace and stay put; what the slider's budget brings is one line
+// under it, in room kept for it; the way back sits in its place all the time; the chart's scale starts from today's
+// pace and only grows.
 import { useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { daysBetween, dollars, longDate } from "@/lib/investorModel";
 import { aheadAt, bigDollars, dayOfYear, milestoneWhen, recurringAhead, recurringStory, type RecurringInput } from "@/lib/investorRecurring";
@@ -24,7 +29,9 @@ export function RecurringChart({ input, compact: slim = false }: { input: Recurr
   const [cur, setCur] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const ahead = useMemo(() => recurringAhead(input, budget), [input, budget]);
-  const story = useMemo(() => recurringStory(input, ahead), [input, ahead]);
+  // The words above the slider read today's pace, whatever the slider says — they must not reflow under a drag.
+  const atToday = useMemo(() => recurringAhead(input), [input]);
+  const story = useMemo(() => recurringStory(input, atToday), [input, atToday]);
   const moved = budget !== base;
   const step = base >= 10_000 ? 1_000 : 500;
   const maxBudget = Math.max(step * 10, Math.ceil((base * 10) / step) * step);
@@ -43,7 +50,7 @@ export function RecurringChart({ input, compact: slim = false }: { input: Recurr
   const end = pts[n - 1];
   const endAhead = aheadAt(ahead, ahead.points.length - 1);
 
-  const top = Math.max(100_00, ...pts.map((p) => p.high));
+  const top = Math.max(100_00, ...pts.map((p) => p.high), ...atToday.points.map((p) => p.highCents));
   const tick = niceMax(top / 4);
   const hi = Math.ceil(top / tick) * tick;
   const ticks = Array.from({ length: Math.round(hi / tick) + 1 }, (_, i) => i * tick);
@@ -60,6 +67,15 @@ export function RecurringChart({ input, compact: slim = false }: { input: Recurr
   const marks = ahead.milestones
     .map((m) => ({ m, k: m.date ? pts.findIndex((p) => p.date === m.date) : -1 }))
     .filter((x): x is { m: (typeof ahead.milestones)[number]; k: number } => x.k >= 0);
+
+  // A milestone's name is left off when it would sit on the one before it (close in time and in money): the dot stays,
+  // and the table under the chart names every one. Read from the last, the highest, which is always named.
+  const named = marks.map(() => true);
+  for (let i = marks.length - 2, keptAt = marks.length - 1; i >= 0; i--) {
+    const near = Math.abs(x(marks[i].k) - x(marks[keptAt].k)) < 84 && Math.abs(y(marks[i].m.arrCents / 12) - y(marks[keptAt].m.arrCents / 12)) < 18;
+    named[i] = !near;
+    if (!near) keptAt = i;
+  }
 
   const place = (clientX: number) => {
     const el = svgRef.current;
@@ -92,22 +108,25 @@ export function RecurringChart({ input, compact: slim = false }: { input: Recurr
           {story.pace && <p data-story="pace">{story.pace}</p>}
           {story.ahead && <p className={s.storyCross} data-story="ahead">{story.ahead}</p>}
           <p data-story="churn">{story.churn}</p>
-          {moved && (
-            <p className={s.storyWhatIf} data-story="budget">
-              {`At ${dollars(budget)} a day on ads${times !== null ? ` — ${times}× today's` : ""} — signups in proportion, today's cost per signup held (a bigger budget usually pays more a signup): ${bigDollars(endAhead.mrrCents * 12)} ARR in 12 months${million?.date ? `, $1M ARR on ${longDate(million.date)}` : million ? ", $1M ARR not within five years" : ""}.`}
-            </p>
-          )}
         </div>
       )}
       {!slim && base > 0 && ahead.share !== null && (
-        <div className={s.whatIf} data-budget>
-          <label className={s.whatIfLabel} htmlFor="recurring-budget">What if the ads got more a day? <b>{dollars(budget)}</b><span> · today {dollars(base)}</span></label>
+        <div className={`${s.whatIf} ${s.budget}`} data-budget>
+          <div className={s.budgetHead}>
+            <label className={s.whatIfLabel} htmlFor="recurring-budget">What if the ads got more a day? <b className={s.budgetValue}>{dollars(budget)}</b><span> · today {dollars(base)}</span></label>
+            <button type="button" className={s.whatIfReset} onClick={() => setBudget(base)} style={moved ? undefined : { visibility: "hidden" }} tabIndex={moved ? undefined : -1} aria-hidden={moved ? undefined : true}>Back to {dollars(base)} a day</button>
+          </div>
           <div className={s.whatIfControl}>
             <button type="button" className={s.whatIfStep} aria-label={`${dollars(step)} a day less`} data-budget-step="-1" disabled={budget <= 0} onClick={() => setBudget((v) => Math.max(0, v - step))}>−</button>
             <input id="recurring-budget" className={s.whatIfRange} type="range" min={0} max={maxBudget} step={step} value={budget} onChange={(e) => setBudget(Number(e.target.value))} aria-valuetext={`${dollars(budget)} a day on ads`} />
             <button type="button" className={s.whatIfStep} aria-label={`${dollars(step)} a day more`} data-budget-step="1" disabled={budget >= maxBudget} onClick={() => setBudget((v) => Math.min(maxBudget, v + step))}>+</button>
           </div>
-          {moved && <button type="button" className={s.whatIfReset} onClick={() => setBudget(base)}>Back to {dollars(base)} a day</button>}
+          <p className={s.budgetSays} aria-live="polite" data-story={moved ? "budget" : "budget-hint"}>
+            {moved
+              ? `At ${dollars(budget)} a day${times !== null ? ` — ${times}× today's` : ""}: ${bigDollars(endAhead.mrrCents * 12)} ARR in 12 months${million?.date ? `, $1M ARR on ${longDate(million.date)}` : million ? ", $1M ARR not within five years" : ""}.`
+              : "Move it to see what a bigger daily ad budget would bring."}
+            <span> Signups in proportion, at today&apos;s cost per signup — a bigger budget usually pays more a signup.</span>
+          </p>
         </div>
       )}
       <figure className={s.chart}>
@@ -144,10 +163,10 @@ export function RecurringChart({ input, compact: slim = false }: { input: Recurr
             {todayK < n - 1 && <path d={line(todayK, n - 1)} className={`${s.lineReal} ${s.dash}`} />}
             <circle cx={x(todayK)} cy={y(today.mrr)} r={4} className={`${s.dot} ${s.lineReal}`} />
             {/* Each milestone, named above and to the left of its day — clear of the line, which climbs from there. */}
-            {marks.map(({ m, k }) => (
+            {marks.map(({ m, k }, i) => (
               <g key={m.arrCents} data-milestone={m.arrCents}>
                 <circle cx={x(k)} cy={y(m.arrCents / 12)} r={5} className={s.mark} />
-                <text x={x(k) - 8} y={y(m.arrCents / 12) - 9} textAnchor="end" className={`${s.axisStrong} ${s.markLabel}`}>{bigDollars(m.arrCents)} ARR</text>
+                {named[i] && <text x={x(k) - 8} y={y(m.arrCents / 12) - 9} textAnchor="end" className={`${s.axisStrong} ${s.markLabel}`}>{bigDollars(m.arrCents)} ARR</text>}
               </g>
             ))}
             {/* The line says its value where it ends. */}
