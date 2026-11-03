@@ -1,5 +1,5 @@
 // THE ANALYST'S READING, server side (2026-10-04): the week's sessions from
-// PostHog (traffic-server's ten-minute cache), the owner's names for the ads
+// PostHog (lib/posthog-cache, half an hour), the owner's names for the ads
 // (SyncState adname:*), analyse() over them, and what the ads' accounts are
 // now (lib/traffic-money, from the database). Shared by the admin's actions —
 // the panel, its exports, "Export everything" — so each of them reads the
@@ -12,7 +12,7 @@ import type { StaleNote } from "./traffic-contract";
 import { adNameKey, signupState } from "./traffic-live";
 import { adMoney, type AdMoney } from "./traffic-money";
 import { parseTrafficFilters } from "./traffic-query";
-import { fetchAnalystSessions, orLastGood, posthogApiConfig } from "./traffic-server";
+import { fetchAnalystSessions, posthogApiConfig } from "./traffic-server";
 import { TRAFFIC_SINCE_MS } from "./traffic-visitor";
 
 export interface AnalystResult {
@@ -78,7 +78,7 @@ export async function readAnalyst(input: { timezone?: unknown; force?: unknown }
   try {
     if (!posthogApiConfig()) return none("disabled", "Connect a PostHog personal key with query:read and a numeric project ID.");
     // PostHog down: the week as it last read, and from when.
-    const { value: { sessions, readAt }, stale } = await orLastGood("analyst", fetchAnalystSessions(input.force === true));
+    const { sessions, readAt, stale } = await fetchAnalystSessions(input.force === true);
     const sessionNames = await adNamesForTags(sessions.flatMap((s) => [s.utmCampaign, s.utmContent]));
     const at = Date.parse(readAt);
     const windowFrom = analystWindowFrom(at);

@@ -12,7 +12,7 @@ import { valueSignups } from "@/lib/trialProjectionRead";
 import { countedOrgs, setStatsHidden, statsHiddenIds } from "@/lib/statsHidden";
 import { qaOrgIds } from "@/lib/qaTestMode";
 import { lapseReasons } from "@/lib/lapseReason";
-import type { SignupAttribution } from "@/lib/traffic-contract";
+import type { SignupAttribution, StaleNote } from "@/lib/traffic-contract";
 import { adNameKey, adTagsOf, isMapSpan, signupLedgerSummary, signupPlanLabel, signupSource, signupState, type FreshSignup, type LiveReport, type LiveVisitor, type MapHistory, type MapSpan, type SignupLedger, type SignupRecord } from "@/lib/traffic-live";
 
 /** The organizations made in the last day (or the map's longer span), with
@@ -56,8 +56,9 @@ export async function getLiveTraffic(input: Record<string, unknown> = {}): Promi
     // "Today" is the page's one day (TRAFFIC_TZ, lib/traffic-visitor) for
     // the visitors and the signups alike — not the caller's zone, and not
     // the last 24 hours the signup rows above reach back.
-    // Live mode (15 s) asks for a shorter server cache so each tick moves.
-    fast: input.fast === true,
+    // The Refresh button: PostHog asked again, unless it was in the last 30 s
+    // (lib/posthog-cache). The 15-second poll never forces — it gets the minute's answer.
+    force: input.force === true,
     // Counted from TRAFFIC_SINCE unless the admin asks for the full history.
     fullHistory: input.fullHistory === true,
   });
@@ -278,7 +279,7 @@ export async function setSignupHidden(input: Record<string, unknown> = {}): Prom
 
 export async function getTrafficDashboard(input: Record<string, unknown> = {}) {
   await requirePlatformAdmin();
-  return getTrafficReport(parseTrafficFilters(input));
+  return getTrafficReport(parseTrafficFilters(input), { force: input.force === true });
 }
 
 /** The A/B bench's figures, when its tab opens (2026-10-01). */
@@ -289,7 +290,7 @@ export async function getTrafficExperimentsAction(input: Record<string, unknown>
 
 /** THE ANALYST (2026-10-02): what people do on the landing and where the
  *  sign-up loses them, over the last week, as findings — with the owner's
- *  names for the ads. `force` skips the ten-minute cache (the Refresh button). */
+ *  names for the ads. `force` is the Refresh button: past the half-hour cache, 30 s apart at most (lib/posthog-cache). */
 export async function getTrafficAnalyst(input: Record<string, unknown> = {}): Promise<AnalystResult> {
   await requirePlatformAdmin();
   // The reading itself — PostHog, the ad names, the analysis — is shared with
@@ -302,7 +303,7 @@ export type { AnalystResult };
  *  the problems with whose side they are on, and one verdict (lib/signup-dropoff). PostHog down → an error the
  *  panel shows beside its last reading. */
 export type SignupDropoffResult =
-  | { status: "ok"; report: DropoffReport; readAt: string }
+  | { status: "ok"; report: DropoffReport; readAt: string; stale?: StaleNote }
   | { status: "off" | "error"; message: string };
 export async function getSignupDropoff(input: { days?: unknown; force?: unknown } = {}): Promise<SignupDropoffResult> {
   await requirePlatformAdmin();
@@ -310,7 +311,7 @@ export async function getSignupDropoff(input: { days?: unknown; force?: unknown 
   try {
     if (!posthogApiConfig()) return { status: "off", message: "PostHog's reading key is not set." };
     const read = await fetchSignupDropoff(days, input.force === true);
-    return { status: "ok", report: read.report, readAt: read.readAt };
+    return { status: "ok", report: read.report, readAt: read.readAt, ...(read.stale ? { stale: read.stale } : {}) };
   } catch (err) {
     return { status: "error", message: err instanceof Error && err.name === "TimeoutError" ? "PostHog took too long." : err instanceof Error ? err.message : "PostHog did not answer." };
   }

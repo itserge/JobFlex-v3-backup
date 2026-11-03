@@ -5,7 +5,8 @@
 // stubbed fetch here; nothing leaves the machine. Takes ~15 s (one real
 // eight-second timeout). Static imports only (tsx has no top-level await).
 //   npx --no-install tsx --tsconfig tsconfig.json qa/tests/logic/traffic-stale.check.ts
-import { getLiveTraffic, getMapHistory, getTrafficReport, orLastGood, runTrafficQuery } from "../../../src/lib/traffic-server";
+import { getLiveTraffic, getMapHistory, getTrafficReport, runTrafficQuery } from "../../../src/lib/traffic-server";
+import { resetPosthogAnswers } from "../../../src/lib/posthog-cache";
 import { buildTrafficQueries, parseTrafficFilters } from "../../../src/lib/traffic-query";
 import { staleLabel } from "../../../src/lib/traffic-contract";
 
@@ -56,6 +57,8 @@ const failing = async (p: Promise<unknown>) => { try { await p; return ""; } cat
 async function main() {
   // AbortSignal.timeout does not hold the process open; the hung query below needs something that does.
   const alive = setInterval(() => {}, 1_000);
+  // The answers live in this process only (lib/posthog-cache): no database here.
+  resetPosthogAnswers({ store: null });
   // ── one query: the retry
   let n = 0;
   plan.down = () => ++n === 1;
@@ -91,19 +94,21 @@ async function main() {
 
   later(10); plan.down = (name) => name === "live totals";
   const noTotals = await getLiveTraffic([]);
-  check("the totals query down: the window is fresh, the totals are the last ones read, and the note says which part is old",
-    noTotals.status === "ok" && noTotals.visitors.length === 1 && noTotals.totals?.allTime === 700 && noTotals.stale?.scope === "the totals" && noTotals.fetchedAt !== first.fetchedAt,
-    JSON.stringify(noTotals.stale ?? null));
+  check("the totals query down: the window is fresh, the totals are the last ones read, and only the totals say how old",
+    noTotals.status === "ok" && noTotals.visitors.length === 1 && noTotals.totals?.allTime === 700 && !noTotals.stale && noTotals.totalsStale?.since === first.fetchedAt && noTotals.fetchedAt !== first.fetchedAt,
+    JSON.stringify({ stale: noTotals.stale ?? null, totalsStale: noTotals.totalsStale ?? null }));
 
   later(10); plan.down = () => true;
   const down = await getLiveTraffic([]);
   check("PostHog down: the last report is shown, whole, dated to when it was read",
-    down.status === "ok" && down.visitors.length === 1 && down.totals?.allTime === 700 && down.stale?.since === noTotals.fetchedAt && down.fetchedAt === noTotals.fetchedAt && !down.stale?.scope && /503/.test(down.stale?.reason ?? ""),
+    down.status === "ok" && down.visitors.length === 1 && down.totals?.allTime === 700 && down.stale?.since === noTotals.fetchedAt && down.fetchedAt === noTotals.fetchedAt && !down.stale?.scope && /503/.test(down.stale?.reason ?? "") && !!down.totalsStale,
     JSON.stringify(down.stale ?? null));
   check("the note reads the way the page prints it", /^PostHog unavailable, showing data from \d{1,2}:\d\d [AP]M$/.test(staleLabel({ since: new Date().toISOString(), reason: "" }, "America/Los_Angeles"))
     && /^PostHog unavailable for the totals, showing data from /.test(staleLabel({ since: new Date().toISOString(), reason: "", scope: "the totals" }, "UTC"))
     && /showing data from [A-Z][a-z]{2} \d{1,2}, \d{1,2}:\d\d [AP]M$/.test(staleLabel({ since: "2026-09-30T19:00:00Z", reason: "" }, "UTC")), staleLabel({ since: "2026-09-30T19:00:00Z", reason: "" }, "UTC"));
 
+  // A cold instance with nothing stored: no answer anywhere to fall back on.
+  resetPosthogAnswers();
   const cold = await getLiveTraffic([], { includeDevelopment: true });
   check("a reading that was never answered is the error, in words — the banner is for an empty cache only",
     cold.status === "error" && /503/.test(cold.message ?? "") && !cold.stale && cold.visitors.length === 0, `${cold.status} · ${cold.message}`);
@@ -139,9 +144,6 @@ async function main() {
   const other = await getTrafficReport(parseTrafficFilters({ from: "2026-09-30", to: "2026-10-02", timezone: "America/Los_Angeles" }));
   check("a range never read has nothing to fall back on: the error, with each query named",
     other.status === "error" && /503/.test(other.message ?? "") && other.errors.length === Object.keys(buildTrafficQueries(filters)).length && !other.stale, `${other.status} · ${other.errors.length}`);
-
-  const kept = await orLastGood("check-never", Promise.reject(new Error("x"))).then(() => "kept", () => "thrown");
-  check("orLastGood throws when there was no earlier answer", kept === "thrown");
 
   clearInterval(alive);
   console.warn = quiet;

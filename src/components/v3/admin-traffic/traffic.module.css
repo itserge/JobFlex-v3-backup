@@ -28,6 +28,8 @@
 :global(.jf-blueprint) .lifetime strong { font:850 22px var(--font); letter-spacing:-.04em; color:var(--ink); }
 :global(.jf-blueprint) .scope { color:var(--muted); font-size:11px; }
 :global(.jf-blueprint) .updated { margin-left:auto; font-size:11px; color:var(--muted); white-space:nowrap; }
+:global(.jf-blueprint) .updated[data-as-of] { color:var(--warning-dark); }
+:global(.jf-blueprint) .micro [data-as-of] { color:var(--warning-dark); }
 
 /* ── Filter panel: one white plate, three rows ──────────────── */
 :global(.jf-blueprint) .filterPanel { position:relative; z-index:5; border:2px solid var(--ink); border-radius:2px; background:var(--traffic-plate); }
@@ -377,6 +379,8 @@
 :global(.jf-blueprint) .liveTotals span { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--traffic-label); }
 :global(.jf-blueprint) .liveTotals strong { font:850 34px/1 var(--font); letter-spacing:-.05em; font-variant-numeric:tabular-nums; }
 :global(.jf-blueprint) .liveTotals small { font:600 11px/1.4 var(--font-mono); color:var(--muted); }
+/* "as of 9:41 PM" (2026-11-02): the figure is PostHog's last answer — amber, small, under the number. */
+:global(.jf-blueprint) .liveTotals small[data-as-of] { color:var(--warning-dark); margin-top:-2px; }
 :global(.jf-blueprint) .liveTotals > div[data-tone="lead"] strong { color:var(--blueprint); }
 :global(.jf-blueprint) .liveTotals small[data-trend="up"] { color:var(--success-dark); }
 :global(.jf-blueprint) .liveTotals small[data-trend="down"] { color:var(--danger-dark, #9b2c2c); }

@@ -10,7 +10,7 @@ import { Building2, Info, KeyRound, Megaphone, MousePointerClick, PlayCircle, Re
 import { getLiveTraffic, getMapHistory, nameAdTag } from "@/actions/trafficDashboard";
 import { MAP_HISTORY_LIMIT, MAP_SPANS, isAdId, mapSpanLabel, prospectsOf, type LiveReport, type LiveStage, type LiveVisitor, type MapHistory, type MapSpan, type SignupLedger } from "@/lib/traffic-live";
 import { TRAFFIC_SINCE_LABEL, TRAFFIC_SINCE_MS, TRAFFIC_SINCE_SHORT } from "@/lib/traffic-visitor";
-import { staleLabel } from "@/lib/traffic-contract";
+import { asOfLabel, staleLabel, type StaleNote } from "@/lib/traffic-contract";
 import { dollars } from "@/lib/investorModel";
 import { perAdSignupCents, type AdSpendToday } from "@/lib/adSpendTodayShared";
 import { LivePlatforms } from "./live-platforms";
@@ -30,10 +30,12 @@ import rail from "./signup-rail.module.css";
 import s from "./traffic.module.css";
 
 /** Live mode (2026-09-30): the owner watches this while an ad runs, so the
- *  panel refreshes every 15 s instead of 45. It costs PostHog queries, so it
- *  is a switch — remembered per browser — and it only ticks while this tab is
- *  actually in front. The heavy site-wide totals are NOT on this clock; the
- *  server caches those for minutes (lib/traffic-server fetchLiveTotals). */
+ *  panel asks this server every 15 s instead of 45 — a switch, remembered per
+ *  browser, ticking only while this tab is in front. PostHog is NOT on this
+ *  clock (2026-11-02, after its query limit ran out in a quarter hour): the
+ *  server asks it for the window at most once a minute and for the totals
+ *  every five, whoever is watching (lib/posthog-cache), so a tick between
+ *  reads brings the same answer and "updated" says when PostHog gave it. */
 const LIVE_POLL_MS = 15_000;
 const POLL_MS = 45_000;
 const LIVE_MODE_KEY = "jf.traffic.liveMode";
@@ -78,6 +80,11 @@ function AdSpendTile({ spend, adSignups, timezone }: { spend: AdSpendToday | nul
       <small>{note}</small>
     </div>
   );
+}
+
+/** "as of 9:41 PM" under a figure that is PostHog's last answer — why, on hover. */
+function AsOf({ note, timezone }: { note?: StaleNote; timezone: string }) {
+  return note ? <small data-as-of title={note.reason}>{asOfLabel(note, timezone)}</small> : null;
 }
 
 function clock(iso: string, timezone: string): string {
@@ -125,11 +132,12 @@ export function LivePanel({ initial, timezone, fullHistory = false, ledger = nul
   const request = useRef(0);
   // Stable: it takes the one thing that changes as an argument, so the poll
   // below is armed once per setting, not once per tick of the clock.
-  const load = useCallback(async (dev: boolean, fast = false) => {
+  // `force` is the Refresh button: the server asks PostHog again unless it did in the last 30 s.
+  const load = useCallback(async (dev: boolean, force = false) => {
     const id = ++request.current;
     setPending(true);
     try {
-      const next = await getLiveTraffic({ includeDevelopment: dev, fast, fullHistory });
+      const next = await getLiveTraffic({ includeDevelopment: dev, force, fullHistory });
       // Only what changed is handed down: an answer with the same visitors
       // keeps the same objects, so the map, the cards and the rows skip their
       // render (2026-10-01).
@@ -137,7 +145,7 @@ export function LivePanel({ initial, timezone, fullHistory = false, ledger = nul
       // poll goes on; an empty panel with a banner is for a page that has
       // nothing to show. The server does the same from its own memory — this
       // covers the instance that has none.
-      if (id === request.current) { setReport((prev) => (next.status === "error" && prev.status === "ok" ? { ...prev, stale: { since: prev.fetchedAt, reason: next.message ?? "" } } : sameReport(prev, next))); setError(""); }
+      if (id === request.current) { setReport((prev) => (next.status === "error" && prev.status === "ok" ? { ...prev, stale: prev.stale ?? { since: prev.fetchedAt, reason: next.message ?? "" }, totalsStale: prev.totalsStale ?? (prev.totals ? { since: prev.fetchedAt, reason: next.message ?? "" } : undefined) } : sameReport(prev, next))); setError(""); }
     } catch (err) {
       if (id === request.current) setError(err instanceof Error ? err.message : "Could not refresh the live view.");
     } finally {
@@ -148,7 +156,7 @@ export function LivePanel({ initial, timezone, fullHistory = false, ledger = nul
   const firstWindow = useRef(true);
   useEffect(() => {
     if (firstWindow.current) { firstWindow.current = false; return; }
-    void load(includeDev, liveMode);
+    void load(includeDev);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only the window switch reloads here
   }, [fullHistory]);
 
@@ -163,17 +171,18 @@ export function LivePanel({ initial, timezone, fullHistory = false, ledger = nul
   const toggleLiveMode = (on: boolean) => {
     setLiveMode(on);
     try { window.localStorage.setItem(LIVE_MODE_KEY, on ? "on" : "off"); } catch { /* not worth a word to the user */ }
-    if (on) void load(includeDev, true);
+    if (on) void load(includeDev);
   };
-  // Poll while the tab is in front — or, with the sound on, behind; a tab brought back refreshes at once.
-  // The "n s ago" figures tick on their own, ten seconds at a time.
+  // Poll while the tab is in front — paused behind it, unless the sound is on (owner, 2026-10-23: the chime is for
+  // a tab nobody looks at); a tab brought back refreshes at once. Either way PostHog is asked on the server's
+  // clock, not this one. The "n s ago" figures tick on their own, ten seconds at a time.
   useEffect(() => {
     const every = liveMode ? LIVE_POLL_MS : POLL_MS;
-    const poll = window.setInterval(() => { if (document.visibilityState === "visible" || soundOn) void load(includeDev, liveMode); }, every);
+    const poll = window.setInterval(() => { if (document.visibilityState === "visible" || soundOn) void load(includeDev); }, every);
     // In live mode the "n s ago" figures keep up with the poll; the shared
     // clock (./ticker) moves only those labels, and stops in a hidden tab.
     setClockPeriod(liveMode ? 1_000 : 10_000);
-    const onVisible = () => { if (document.visibilityState === "visible") void load(includeDev, liveMode); };
+    const onVisible = () => { if (document.visibilityState === "visible") void load(includeDev); };
     document.addEventListener("visibilitychange", onVisible);
     return () => { window.clearInterval(poll); document.removeEventListener("visibilitychange", onVisible); };
   }, [includeDev, liveMode, load, soundOn]);
@@ -272,11 +281,11 @@ export function LivePanel({ initial, timezone, fullHistory = false, ledger = nul
     <div className={s.liveHead}>
       <div className={s.liveTitle}><span className={s.livePulse} data-on={live && c.onSite > 0}/><h2>Live now</h2><span className={s.micro}>Last {report.activeMinutes} minutes on the site · seen within {report.windowMinutes} · {liveMode ? `live — every ${LIVE_POLL_MS / 1000} s` : `every ${POLL_MS / 1000} s`} {soundOn ? "— sound on, also in the background" : "while this tab is open"} · updated <Ago iso={report.fetchedAt}/></span></div>
       <div className={s.liveTools}>
-        <label className={s.liveToggle} data-live={liveMode} title={`Refresh every ${LIVE_POLL_MS / 1000} seconds instead of ${POLL_MS / 1000}`}><input type="checkbox" checked={liveMode} onChange={(e) => toggleLiveMode(e.target.checked)}/>Live · {LIVE_POLL_MS / 1000} s</label>
+        <label className={s.liveToggle} data-live={liveMode} title={`Refresh every ${LIVE_POLL_MS / 1000} seconds instead of ${POLL_MS / 1000} — PostHog itself is read once a minute`}><input type="checkbox" checked={liveMode} onChange={(e) => toggleLiveMode(e.target.checked)}/>Live · {LIVE_POLL_MS / 1000} s</label>
         <label className={s.liveToggle} data-live={soundOn} data-sound-toggle title="A chime when someone reaches the checkout (entering a card), a ka-ching when someone signs up — and it keeps checking while this tab is in the background"><input type="checkbox" checked={soundOn} onChange={(e) => toggleSound(e.target.checked)}/>Sound</label>
         <label className={s.liveToggle}><input type="checkbox" checked={adsOnly} onChange={(e) => setAdsOnly(e.target.checked)}/>From ads only</label>
-        <label className={s.liveToggle}><input type="checkbox" checked={includeDev} onChange={(e) => { setIncludeDev(e.target.checked); void load(e.target.checked, liveMode); }}/>Include localhost</label>
-        <button type="button" className={s.iconButton} aria-label="Refresh live view" onClick={() => void load(includeDev, liveMode)} disabled={pending}><RefreshCw size={16} className={pending ? s.spin : ""}/></button>
+        <label className={s.liveToggle}><input type="checkbox" checked={includeDev} onChange={(e) => { setIncludeDev(e.target.checked); void load(e.target.checked); }}/>Include localhost</label>
+        <button type="button" className={s.iconButton} aria-label="Refresh live view" title="Ask PostHog again now (at most every 30 s)" onClick={() => void load(includeDev, true)} disabled={pending}><RefreshCw size={16} className={pending ? s.spin : ""}/></button>
       </div>
     </div>
     {/* ONE stat row (2026-10-01). It used to be two — four totals over six
@@ -287,11 +296,13 @@ export function LivePanel({ initial, timezone, fullHistory = false, ledger = nul
       <div data-tone="now">
         <span>On the site now</span>
         <strong>{fmt(c.onSite)}</strong>
+        <AsOf note={report.stale} timezone={timezone}/>
         <small>{c.fromAds > 0 ? `${fmt(c.fromAds)} from ads` : "none from ads"}{c.signingUp > 0 ? ` · ${fmt(c.signingUp)} signing up` : ""}</small>
       </div>
       <div data-tone="lead">
         <span>Visitors today</span>
         <strong>{t ? fmt(t.today) : "—"}</strong>
+        <AsOf note={report.totalsStale} timezone={timezone}/>
         <small data-trend={trend === null ? "flat" : trend > 0 ? "up" : trend < 0 ? "down" : "flat"}>
           {!t ? "totals unavailable"
             : youngDay ? `the day is ${dayAge} old`
@@ -310,6 +321,7 @@ export function LivePanel({ initial, timezone, fullHistory = false, ledger = nul
       <div data-tone="mute">
         <span>Visitors since {TRAFFIC_SINCE_SHORT}</span>
         <strong>{t ? fmt(t.allTime) : "—"}</strong>
+        <AsOf note={report.totalsStale} timezone={timezone}/>
         <small>{t ? `${fmt(t.last7Days)} in the last 7 days · ${fmt(t.yesterday)} yesterday` : "totals unavailable"}</small>
       </div>
     </div>
@@ -324,7 +336,6 @@ export function LivePanel({ initial, timezone, fullHistory = false, ledger = nul
         return <span key={stage} className={s.liveFunnelStep} data-stage={stage} data-zero={n === 0}><i aria-hidden="true"/>{label}<b>{fmt(n)}</b></span>;
       })}
     </div>}
-    {report.stale && <div className={s.notice} role="status" data-stale><Info size={16}/><div><strong>{staleLabel(report.stale, timezone)}</strong><p>{report.stale.reason} Still asking every {(liveMode ? LIVE_POLL_MS : POLL_MS) / 1000} s.</p></div></div>}
     {(error || (report.message && !report.stale)) && <div className={s.notice} role="status"><Info size={16}/><div><strong>{error || report.message}</strong></div></div>}
     {live && <>
       {/* The platforms: a card each, the ad platforms always; pressed, a filter. */}

@@ -160,7 +160,8 @@ export type SurgeCheck = { count: number; threshold: number; fired: boolean; arm
 /** The five-minute cron's whole job. One text per surge: fires at or above the
  *  threshold while armed; re-arms once the count thins to 60% of it, or after three hours. */
 export async function checkTrafficSurge(): Promise<SurgeCheck> {
-  const [{ surgeThreshold }, events] = await Promise.all([alertSettings(), fetchLiveEvents()]);
+  // Up to two minutes old: with /admin/traffic open this is the minute the page already read (lib/posthog-cache).
+  const [{ surgeThreshold }, events] = await Promise.all([alertSettings(), fetchLiveEvents(2 * 60_000)]);
   const count = onlineNowCount(events);
   const state = ((await readJson(SURGE_KEY)) as SurgeState | null) ?? {};
   const last = state.lastAlertAt ? Date.parse(state.lastAlertAt) : 0;

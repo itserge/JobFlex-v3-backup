@@ -91,16 +91,22 @@ export interface StageVisitorsReport {
  *  it did give, read at `since`. `scope` names the part that is old when the
  *  rest is fresh ("the totals", "pages, funnel"); none = all of it. */
 export interface StaleNote { since: string; reason: string; scope?: string }
+/** 9:41 PM — or Oct 30, 9:41 PM for an answer from another day. */
+function staleClock(since: string, timezone: string): string {
+  try {
+    const d = new Date(since);
+    const day = (x: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(x);
+    return new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "numeric", minute: "2-digit", ...(day(d) === day(new Date()) ? {} : { month: "short", day: "numeric" }) }).format(d);
+  } catch { return since; /* an unreadable time or zone: the stamp as it came */ }
+}
 /** "PostHog unavailable, showing data from 9:41 PM" — the one wording, everywhere. */
 export function staleLabel(stale: StaleNote, timezone: string): string {
-  let at = stale.since;
-  try {
-    const d = new Date(stale.since);
-    const day = (x: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(x);
-    // An answer from another day says which day.
-    at = new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "numeric", minute: "2-digit", ...(day(d) === day(new Date()) ? {} : { month: "short", day: "numeric" }) }).format(d);
-  } catch { /* an unreadable time or zone: the stamp as it came */ }
-  return `PostHog unavailable${stale.scope ? ` for ${stale.scope}` : ""}, showing data from ${at}`;
+  return `PostHog unavailable${stale.scope ? ` for ${stale.scope}` : ""}, showing data from ${staleClock(stale.since, timezone)}`;
+}
+/** "as of 9:41 PM" — the small line under a figure that is PostHog's last
+ *  answer (2026-11-02); the banner is for a page with nothing to show. */
+export function asOfLabel(stale: StaleNote, timezone: string): string {
+  return `as of ${staleClock(stale.since, timezone)}`;
 }
 export interface TrafficReport {
   filters: TrafficFilters;
