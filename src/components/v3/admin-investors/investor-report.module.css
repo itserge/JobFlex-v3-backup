@@ -229,3 +229,11 @@
 .milestones td:first-child { color: var(--rep-blue); }
 @media (max-width: 520px) { .milestones .sub { display: block; } }
 .markLabel { paint-order: stroke; stroke: var(--rep-paper); stroke-width: 4px; stroke-linejoin: round; }
+/* The MRR budget slider (2026-11-02): nothing in it changes size while it moves. */
+.whatIf.budget { display: grid; gap: 8px; max-width: 600px; }
+.budgetHead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 14px; }
+.budgetValue { display: inline-block; min-width: 6.2ch; font-variant-numeric: tabular-nums; }
+.whatIf.budget .whatIfControl { max-width: none; }
+.budgetSays { margin: 0; min-height: calc(1.45em * 3); font: 600 12px/1.45 var(--rep-mono); color: var(--rep-ink); }
+.budgetSays span { color: var(--rep-muted); font-weight: 500; }
+@media (max-width: 520px) { .budgetSays { min-height: calc(1.45em * 5); } }
