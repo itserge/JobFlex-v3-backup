@@ -277,7 +277,7 @@ interface LiveMapMarker {
 }
 type GMapsLib = { Map: new (el: HTMLElement, opts: Record<string, unknown>) => LiveGoogleMap };
 type MarkerCtor = new (opts: Record<string, unknown>) => LiveMapMarker;
-/** What the building outlines need of the SDK: a shape that can be taken off the map, bounds to frame it. */
+/** What the building markers need of the SDK: a marker that can be taken off the map, bounds to frame a building. */
 interface MapOverlay {
   setMap(map: unknown): void;
   setAnimation?(a: unknown): void;
@@ -290,7 +290,6 @@ interface MapBounds {
 type OverlayCtor = new (opts: Record<string, unknown>) => MapOverlay;
 type OutlineSdk = {
   Marker?: OverlayCtor;
-  Polygon?: OverlayCtor;
   LatLngBounds?: new () => MapBounds;
   Point?: PointCtor;
   Animation?: { BOUNCE: unknown };
@@ -372,7 +371,6 @@ function StructureRow(p: {
   noLocationNote: boolean;
   measureThis: boolean;
   busy: boolean;
-  onHover: React.Dispatch<React.SetStateAction<number | null>>;
   onTick: (i: number, on: boolean) => void;
   onMakeMain: (i: number) => void;
   onShowOnMap: (i: number) => void;
@@ -386,10 +384,6 @@ function StructureRow(p: {
       className={"rf-details-row" + (o.offLot ? " is-offlot" : "") + (p.focus ? " is-focus" : "")}
       data-structure={i}
       data-building={n ?? undefined}
-      onMouseEnter={() => p.onHover(i)}
-      onMouseLeave={() => p.onHover((h) => (h === i ? null : h))}
-      onFocus={() => p.onHover(i)}
-      onBlur={() => p.onHover((h) => (h === i ? null : h))}
     >
       <dt>
         <label className={"rf-attach" + (p.ticked ? "" : " is-off")}>
@@ -502,12 +496,9 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
   const mapHostRef = React.useRef<HTMLDivElement | null>(null);
   const liveMapRef = React.useRef<{ host: HTMLDivElement; map: LiveGoogleMap; marker: LiveMapMarker | null } | null>(null);
   const [mapDown, setMapDown] = React.useState(false);
-  // Which measurement the live map is centred on — the outlines below draw
-  // only once the map exists for it.
+  // Which measurement the live map is centred on — the building markers below
+  // draw only once the map exists for it.
   const [mapReadyFor, setMapReadyFor] = React.useState<string | null>(null);
-  // The other-building row under the pointer or focus: its pin shows faintly
-  // on the map so the contractor sees which one it is before ticking it.
-  const [hoverBuilding, setHoverBuilding] = React.useState<number | null>(null);
   // "Show on map": the building asked for — its pin shown and framed with the house, ticked or not (a phone has no hover).
   const [focusBuilding, setFocusBuilding] = React.useState<number | null>(null);
   const [allBuildings, setAllBuildings] = React.useState(false);
@@ -1838,11 +1829,11 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
     return n < 0 ? null : n + 1;
   };
 
-  // The buildings on the map (owner, 2026-10-10: "when I tick a box, show on the map which one that is"; outlines
-  // since 2026-10-26, owner: "contours with the same numbers as the list"). Every building of the answer is drawn:
-  // the main one in blueprint, a ticked one in its colour with its number on it, the rest as a thin white line.
-  // A building is chosen on the map by a click — its row is brought into view. What was just ticked, or asked
-  // for with "Show on map", is framed with the main building once.
+  // The buildings on the map (owner, 2026-10-10: "when I tick a box, show on the map which one that is"). Outlines
+  // REMOVED 2026-11-03 (owner: no building outlines on the aerial map): only the buildings in the estimate show, as
+  // a numbered circle at the middle of their outline (main in blueprint, a ticked one in its colour). A building is
+  // chosen on the map by a click on its marker — its row is brought into view. What was just ticked, or asked for
+  // with "Show on map", is framed with the main building once (the outline still gives the bounds).
   const overlaysRef = React.useRef<MapOverlay[]>([]);
   const framedRef = React.useRef<{ on: string | null; ticked: ReadonlySet<number>; focus: number | null }>({ on: null, ticked: new Set(), focus: null });
   const outlineKey = (inst?.structures ?? []).map((s, i) => `${i}:${s.outline?.length ?? 0}`).join(",");
@@ -1856,7 +1847,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
       overlaysRef.current = [];
     };
     clear();
-    if (!live || !inst || !sdk?.Polygon || !mapReadyFor || view !== "satellite" || panel !== "report") return clear;
+    if (!live || !inst || !sdk || !mapReadyFor || view !== "satellite" || panel !== "report") return clear;
     const map = live.map as LiveGoogleMap & {
       fitBounds?: (b: MapBounds, pad?: number) => void;
       getZoom?: () => number;
@@ -1866,35 +1857,21 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
       const ring = s.outline ?? [];
       if (ring.length < 3) return;
       const n = numberOf(i);
+      if (n == null || !sdk.Marker) return;
       const isMain = i === mainPick.index;
-      const lit = i === focusBuilding || i === hoverBuilding;
-      const colour = isMain ? MAIN_COLOR : n != null ? buildingColor(n - 2) : "#ffffff";
-      const shape = new sdk.Polygon!({
+      const colour = isMain ? MAIN_COLOR : buildingColor(n - 2);
+      const tag = new sdk.Marker({
         map,
-        paths: ring,
-        strokeColor: lit && n == null ? "#ffd84a" : colour,
-        strokeOpacity: n != null || lit ? 1 : 0.85,
-        strokeWeight: isMain ? 3.5 : n != null ? 3 : lit ? 2.5 : 1.5,
-        fillColor: colour,
-        fillOpacity: isMain ? 0.22 : n != null ? 0.18 : lit ? 0.12 : 0.05,
+        position: ringCenter(ring),
         clickable: true,
-        zIndex: isMain ? 4 : n != null ? 3 : lit ? 2 : 1,
+        zIndex: 7,
+        title: `Building ${n} of ${includedOrder.length}`,
+        label: { text: String(n), color: isMain ? "#ffffff" : "#0a0a0a", fontSize: "12px", fontWeight: "800" },
+        // Beside the building's middle, not on it: the person's pin often stands there.
+        icon: { path: 0, scale: 11, fillColor: colour, fillOpacity: 1, strokeColor: "#0a0a0a", strokeWeight: 1.5, ...(sdk.Point ? { anchor: new sdk.Point(-1.7, 0) } : {}) },
       });
-      shape.addListener?.("click", () => pickRef.current(i));
-      overlaysRef.current.push(shape);
-      if (n != null && sdk.Marker) {
-        const tag = new sdk.Marker({
-          map,
-          position: ringCenter(ring),
-          clickable: false,
-          zIndex: 7,
-          title: `Building ${n} of ${includedOrder.length}`,
-          label: { text: String(n), color: isMain ? "#ffffff" : "#0a0a0a", fontSize: "12px", fontWeight: "800" },
-          // Beside the outline's middle, not on it: the person's pin often stands there.
-          icon: { path: 0, scale: 11, fillColor: colour, fillOpacity: 1, strokeColor: "#0a0a0a", strokeWeight: 1.5, ...(sdk.Point ? { anchor: new sdk.Point(-1.7, 0) } : {}) },
-        });
-        overlaysRef.current.push(tag);
-      }
+      tag.addListener?.("click", () => pickRef.current(i));
+      overlaysRef.current.push(tag);
     });
     const ticked = otherStructures.filter(({ i }) => extra.has(i)).map(({ i }) => i);
     // A measurement opened with buildings already ticked (kept on the row) opens on its main building: only a tick
@@ -1919,7 +1896,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
     return clear;
     // outlineKey / includedKey stand for the outlines and the numbering; the arrays are rebuilt every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapReadyFor, view, panel, extra, hoverBuilding, focusBuilding, outlineKey, includedKey, mapLat, mapLng]);
+  }, [mapReadyFor, view, panel, extra, focusBuilding, outlineKey, includedKey, mapLat, mapLng]);
   /** "Show on map": the satellite view, the map in sight on a phone, and the building framed with the house. */
   const showOnMap = (i: number) => {
     if (view !== "satellite") setView("satellite");
@@ -2876,7 +2853,6 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
                         noLocationNote={extra.has(o.i) && liveMap && view === "satellite" && (o.s.outline?.length ?? 0) < 3}
                         measureThis={SHOW_MEASURE_THIS && !o.offLot && evEnabled && (o.s.outline?.length ?? 0) >= 3}
                         busy={busy}
-                        onHover={setHoverBuilding}
                         onTick={onTickBuilding}
                         onMakeMain={onMakeMain}
                         onShowOnMap={showOnMap}
