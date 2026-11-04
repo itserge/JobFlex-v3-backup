@@ -1,7 +1,7 @@
 "use client";
 
-// THE PAGE-VIEW BEACON (2026-09-24). Mounted by the signed-in layouts for a
-// company in its first weeks; on every route change it tells actions/pageView
+// THE PAGE-VIEW BEACON (2026-09-24). Mounted by the signed-in layouts (every
+// company since 2026-11-04); on every route change it tells actions/pageView
 // which screen opened — half a second late, so a redirect bounce is not a
 // view. Renders nothing, never throws.
 
