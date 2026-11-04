@@ -7,7 +7,8 @@
 //
 // 2026-10-20 (owner: "don't open the link till we approve it"): with approvals on, the door sends a request — the
 // reader then waits on InvestorWaiting, which asks every little while and opens the page itself when an admin says
-// yes. An email already let in, typed in a new browser, gets an open link by email instead of the figures.
+// yes. An email already let in, typed in a new browser, opens the figures there (owner, 2026-11-03: "once it's
+// approved by us, he can open it from the phone, from email, as long as it's the same link").
 //
 // 2026-11-02 (owner: "when they click send for approval it just clicks and does nothing … transfer this button to
 // showing reviewing"): once the door has the request, the button says so — "Request sent — under review" — and stays
@@ -58,14 +59,12 @@ const maskEmail = (e: string) => {
   return domain ? `${user.slice(0, 1)}•••@${domain}` : e;
 };
 
-export function InvestorGate({ token, admin = false, approval = true, notice }: { token: string; admin?: boolean; approval?: boolean; notice?: "expired" | "closed" }) {
+export function InvestorGate({ token, admin = false, approval = true, notice }: { token: string; admin?: boolean; approval?: boolean; notice?: "bad" | "closed" }) {
   const router = useRouter();
   const [f, setF] = useState({ name: "", company: "", kind: "", email: "", phone: "" });
   const [problems, setProblems] = useState<Problems>({});
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  /** The address an open link was sent to — this email was let in before, from another browser. */
-  const [mailed, setMailed] = useState<string | null>(null);
   /** The door has it: under review (a request), or opening (let in). Held while the page is fetched again. */
   const [sent, setSent] = useState<"review" | "open" | null>(null);
   const [refreshing, startRefresh] = useTransition();
@@ -96,10 +95,6 @@ export function InvestorGate({ token, admin = false, approval = true, notice }: 
         setProblems("problems" in r ? (r.problems ?? {}) : {});
         return;
       }
-      if ("outcome" in r && r.outcome === "check-email") {
-        setMailed(r.email);
-        return;
-      }
       setSent("outcome" in r && r.outcome === "pending" ? "review" : "open");
       startRefresh(() => router.refresh());
     } catch {
@@ -114,17 +109,12 @@ export function InvestorGate({ token, admin = false, approval = true, notice }: 
       <h1 className={s.h1}>Before the figures — who&apos;s reading?</h1>
       <p className={s.sub}>
         {approval
-          ? "The live numbers — what the ads cost, how many contractors start a trial, and how soon the ads pay for themselves — are shared one reader at a time. Tell us who you are; we look at each request and open the page for you. You'll hear by email, and this page opens on its own."
+          ? "The live numbers — what the ads cost, how many contractors start a trial, and how soon the ads pay for themselves — are shared one reader at a time. Tell us who you are; we look at each request and open the page for you. You'll hear by email, and this page opens on its own. Already let in? Type the same email and it opens on this device too."
           : "The live numbers are one step away: what the ads cost, how many contractors start a trial, and how soon the ads pay for themselves. Tell us who you are and the page opens — this browser remembers you."}
       </p>
       {notice ? (
         <p className={s.note} data-open-notice={notice}>
-          {notice === "expired" ? "That open link has expired or belongs to an earlier link. Ask again below — it only takes a moment." : "That request has not been approved yet. Ask again below, or wait for our email."}
-        </p>
-      ) : null}
-      {mailed ? (
-        <p className={s.note} role="status" data-open-mailed>
-          We know this email — it was let in before. For your security the figures don&apos;t open on an address alone: we&apos;ve sent a link to <b>{maskEmail(mailed)}</b>. Open it on this device and the page opens.
+          {notice === "bad" ? "That open link did not work — it may have been cut short when it was copied. Type the email you were let in with below and the figures open." : "That request has not been approved yet. Ask again below, or wait for our email."}
         </p>
       ) : null}
       {admin ? (
