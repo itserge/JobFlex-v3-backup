@@ -61,6 +61,7 @@ import styles from "./mobile-projects.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
+import { createClient } from "@/actions/clients";
 import { archiveProject, createProject, listProjectClients, listProjects, updateProject } from "@/actions/projects";
 import {
   FILTERS,
@@ -498,6 +499,9 @@ export function MobileProjects() {
   // sheet opens; a picked client names a still-blank project for them.
   const [clientChoices, setClientChoices] = useState<Array<{ id: string; name: string; street: string }> | null>(null);
   const [clientPick, setClientPick] = useState("");
+  // "+ New client…" (2026-11-04): the client is made with the project.
+  const [newClient, setNewClient] = useState({ name: "", phone: "" });
+  const [clientErr, setClientErr] = useState(false);
   const nameAutoRef = useRef(false);
   const [draftStatus, setDraftStatus] = useState<string>(STATUSES[0]);
   const [nameErr, setNameErr] = useState(false);
@@ -841,6 +845,8 @@ export function MobileProjects() {
   const openNew = () => {
     setForm({ name: "", scope: "", starts: "", ends: "", budget: "" });
     setClientPick("");
+    setNewClient({ name: "", phone: "" });
+    setClientErr(false);
     nameAutoRef.current = false;
     if (!clientChoices) void listProjectClients().then(setClientChoices).catch(() => setClientChoices([]));
     setDraftStatus(STATUSES[0]);
@@ -870,9 +876,22 @@ export function MobileProjects() {
       nameRef.current?.focus();
       return;
     }
+    const making = clientPick === "__new";
+    if (making && !newClient.name.trim()) {
+      setClientErr(true);
+      return;
+    }
     setSaving(true);
     setSaveErr(null);
     try {
+      let clientId = making ? null : clientPick || null;
+      if (making) {
+        const made = await createClient({ name: newClient.name.trim(), phone: newClient.phone.trim() || undefined });
+        clientId = made.id;
+        // Picked from now on, so a refused project does not make the client twice on the second press.
+        setClientChoices((list) => [{ id: made.id, name: made.name, street: "" }, ...(list ?? [])]);
+        setClientPick(made.id);
+      }
       // The action's schema coerces the dates; the month grid writes the same
       // "YYYY-MM-DD" the native control produced, read as UTC midnight —
       // exactly what `listProjects` formats back for the row plates.
@@ -883,7 +902,7 @@ export function MobileProjects() {
         startsAt: ISO_DATE.test(form.starts) ? form.starts : null,
         endsAt: ISO_DATE.test(form.ends) ? form.ends : null,
         budget: Math.round(Number(form.budget.replace(/[^\d.]/g, "")) || 0),
-        clientId: clientPick || null,
+        clientId,
       });
       await load();
       // Drop back to All, so a project created while a filter was active is
@@ -1251,6 +1270,7 @@ export function MobileProjects() {
                 if (c) setNameErr(false);
               }}>
               <option value="">{clientChoices ? "No client" : "Loading clients…"}</option>
+              <option value="__new">+ New client…</option>
               {(clientChoices ?? []).map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -1258,6 +1278,26 @@ export function MobileProjects() {
                 </option>
               ))}
             </select>
+            {clientPick === "__new" ? (
+              <>
+                <input className={`${styles.pinput} ${styles.fldMore}`} id="mpClientName" type="text" placeholder="Client name"
+                  autoComplete="off" aria-label="New client's name" value={newClient.name}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setNewClient((c) => ({ ...c, name: v }));
+                    if (v.trim()) setClientErr(false);
+                    setForm((f) => {
+                      if (f.name.trim() && !nameAutoRef.current) return f;
+                      nameAutoRef.current = !!v.trim();
+                      return { ...f, name: v.trim() };
+                    });
+                  }} />
+                <input className={`${styles.pinput} ${styles.fldMore}`} id="mpClientPhone" type="tel" inputMode="tel" placeholder="Phone (optional)"
+                  autoComplete="off" aria-label="New client's phone" value={newClient.phone}
+                  onChange={(e) => setNewClient((c) => ({ ...c, phone: e.target.value }))} />
+                {clientErr ? <span className={styles.fldErr}>Enter the client&apos;s name</span> : null}
+              </>
+            ) : null}
             <span className={styles.fldHint}>Its proposals can join the project from the project page.</span>
           </div>
 
@@ -1320,11 +1360,11 @@ export function MobileProjects() {
           </div>
 
           <div className={styles.fld}>
-            <label className={styles.fldLbl} htmlFor="mpBudget">Budget</label>
+            <label className={styles.fldLbl} htmlFor="mpBudget">Cost budget</label>
             <input className={styles.pinput} id="mpBudget" name="budget" type="text"
               inputMode="numeric" placeholder="74,300" autoComplete="off" value={form.budget}
               onChange={(e) => setForm((f) => ({ ...f, budget: e.target.value }))} />
-            <span className={styles.fldHint}>Leave it blank and the figure reads as a dash.</span>
+            <span className={styles.fldHint}>What the work should cost you — materials, labor, subs. Not the client&apos;s price: that comes from the proposals.</span>
           </div>
         </form>
         <div className={styles.formFoot}>

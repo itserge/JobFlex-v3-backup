@@ -199,10 +199,16 @@ export type JdTrailRow = {
  * THE JOB'S OWN MONEY (2026-09-20) — office editions only, null for a field
  * worker. Worked out by lib/jobCosting from figures the app already holds:
  * the contract (proposal + approved change orders), what has been collected,
- * the estimate's own cost side, the crew's pay and the booked receipts.
+ * the plan (a project job's share of the project's cost budget), the crew's
+ * pay and the booked receipts.
  */
 export type JdMoney = {
   contract: number;
+  /** The contract before sales tax — the profit is worked from it. */
+  revenue: number;
+  salesTax: number;
+  /** Where the plan comes from: the project's cost budget, or none (a lone job has no cost plan). */
+  planFrom: "project" | null;
   collected: number;
   outstanding: number;
   plannedCost: number;
@@ -217,6 +223,8 @@ export type JdMoney = {
   stockUnpriced: string[];
   cost: number;
   costIsPlanned: boolean;
+  /** False while nothing is booked and there is no plan — the profit is not known yet. */
+  costKnown: boolean;
   profit: number;
   marginPct: number;
   plannedProfit: number;
@@ -262,8 +270,10 @@ export type JobDetailRecord = {
   id: string;
   title: string;
   status: StatusKey;
-  /** Page head: "Aug 11 → Aug 14, 2026", or "Unscheduled". */
+  /** Page head: "Aug 11 → Aug 14, 2026", or "No dates yet". */
   dates: string;
+  /** No start and no end: a "Scheduled" job is waiting for its dates, and the head says so. */
+  undated: boolean;
   /** Overview's Dates cell — the same span, terser. */
   fieldDates: string;
   clientName: string | null;
@@ -288,6 +298,8 @@ export type JobDetailRecord = {
   /** Null unless `Job.proposalId` resolves. The proposal section renders ONLY
    *  when this is set — no linked proposal, no section. */
   proposal: { id: string; title: string; total: number } | null;
+  /** The project the job belongs to — the head links back to it. Null off a project and on the worker edition. */
+  project: { id: string; name: string } | null;
   events: JdEvent[];
   crew: JdCrew[];
   changes: JdChange[];

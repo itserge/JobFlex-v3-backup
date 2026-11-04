@@ -69,12 +69,19 @@ export async function createJob(raw: unknown) {
     proposalId: data.proposalId,
   });
 
+  // A proposal in a project makes its job there (2026-11-04: this path left it out, so the job's crew pay and receipts
+  // never reached the project's money).
+  const projectId = data.proposalId
+    ? ((await db.proposal.findUnique({ where: { id: data.proposalId }, select: { projectId: true } }))?.projectId ?? null)
+    : null;
+
   const job = await db.job.create({
     data: {
       organizationId,
       title: data.title,
       clientId: data.clientId ?? null,
       proposalId: data.proposalId ?? null,
+      projectId,
       status: data.status ?? JobStatus.SCHEDULED,
       scopeOfWork: data.scopeOfWork ?? null,
       notes: data.notes ?? null,
@@ -506,6 +513,8 @@ export async function createJobEvent(raw: unknown) {
           title: proposal.title,
           clientId: proposal.clientId,
           proposalId: proposal.id,
+          // A proposal in a project makes its job there.
+          projectId: proposal.projectId ?? null,
           status: JobStatus.SCHEDULED,
           scopeOfWork: proposal.scopeOfWork ?? null,
           startsAt,

@@ -22,6 +22,8 @@ export type CalEvent = {
   /** JobEvent only: the Job that owns the status and the crew roster. A jobless
    *  event (the optional-job path in createJobEvent) has null here. */
   jobId?: string | null;
+  /** JobEvent only: the project its job belongs to (2026-11-04) — the project chips, the Projects lane and the tag. */
+  projectId?: string | null;
   /** JobAssignment row id per worker id. Removing crew needs the ASSIGNMENT id
    *  (unassignWorker takes that, not the worker), so the mapping ships with the
    *  event instead of being re-queried on save. */
@@ -76,6 +78,9 @@ export type CalEvent = {
 
 /** `userId`: the login behind the crew profile — reserved AI desk hours are kept by user (lib/deskHours). */
 export type CalWorker = { id: string; name: string; role: string; userId?: string };
+/** A project on the calendar (2026-11-04): its name and its colour slot (globals.css `--proj-0`…`--proj-5`), fixed
+ *  by the order the company made its projects in, so a project keeps its colour whatever else is on the calendar. */
+export type CalProject = { id: string; name: string; tone: number };
 /** Per-worker JobAssignment response for a job event's crew, keyed by
  *  workerId — PENDING | ACCEPTED | DECLINED | COMPLETED. Absent on fixture
  *  rows and non-job events. */
@@ -213,6 +218,8 @@ export type CalendarSeed = {
    * field worker gets them read-only rather than a server rejection per click.
    */
   canManage: boolean;
+  /** The projects whose jobs are on the calendar — the chips above it (2026-11-04). */
+  projects?: CalProject[];
   /** SmartBook's Requests card (2026-10-31): the office and the sales reps answer customers' own times. */
   canSmartBook?: boolean;
   /** The AI desk's reserved hours: where it books from, the shop's clock, who I am, who hours can be reserved for. */

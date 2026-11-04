@@ -50,6 +50,8 @@ export type CalEvent = {
    *  what "Open job" navigates to; a jobless event (appointment, blocked time,
    *  or the optional-job path in createJobEvent) has none. */
   jobId?: string | null;
+  /** JobEvent only: the project its job belongs to (2026-11-04) — the lanes, the project chips and the row's tag. */
+  projectId?: string | null;
   kind: CalKind;
   title: string;
   start: Date;
@@ -158,6 +160,8 @@ export type CalendarBook = {
   canSmartBook?: boolean;
   /** The AI desk's reserved hours (see the desktop seed). */
   desk?: { mode: "open-hours" | "reserved"; timeZone: string; me: string; people: Array<{ userId: string; name: string }> };
+  /** The projects whose jobs are on the calendar, with their colour slot (see the desktop seed). */
+  projects?: Array<{ id: string; name: string; tone: number }>;
 };
 
 /** The book last installed — the identity guard, so a re-render is a no-op. */

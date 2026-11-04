@@ -28,7 +28,7 @@ export function AnnouncementBanner({ announcements, onDismiss }: AnnouncementBan
   const [primary, ...rest] = sorted;
 
   return (
-    <div className={styles.root} data-nest>
+    <div className={styles.root} data-nest data-announcement>
       <AnnouncementRow a={primary} onDismiss={onDismiss} />
       {rest.length > 0 && (
         <div className="relative">

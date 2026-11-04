@@ -81,3 +81,13 @@ html.eff-1280 .jf-blueprint .content .stage-col:nth-child(2n) { border-right: no
 html.eff-1280 .jf-blueprint .content .stage-col:nth-child(5) { border-bottom: none; }
 html.eff-1000 .jf-blueprint .content .grid-11 { grid-template-columns: 1fr; }
 html.eff-1000 .jf-blueprint .content .page-title { font-size: 38px; }
+
+/* THE CALENDAR IN ITS OWN WINDOW (owner, 2026-11-04). `?view=standalone` draws
+   `[data-cal-window]` at the head of the page; the shell's sidebar, its overlay
+   and the topbar go away and the page takes the full width. A selector, not a
+   script, so the window never paints the chrome first. */
+.jf-blueprint:has([data-cal-window]) .layout { grid-template-columns: 1fr; }
+.jf-blueprint:has([data-cal-window]) .layout > .sb,
+.jf-blueprint:has([data-cal-window]) .sb-overlay,
+.jf-blueprint:has([data-cal-window]) .main > .topbar,
+.jf-blueprint:has([data-cal-window]) .content [data-announcement] { display: none; }

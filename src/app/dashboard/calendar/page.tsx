@@ -30,7 +30,9 @@ export const metadata: Metadata = {
   description: "Calendar — month, week and crew views with an unscheduled-work tray on one sheet.",
 };
 
-export default async function CalendarPage() {
+export default async function CalendarPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  // `?view=standalone` — the calendar in its own window, without the sidebar and topbar (2026-11-04).
+  const standalone = (await searchParams).view === "standalone";
   const gate = await customPageGate("calendar");
   if (gate) return gate;
   let seed: CalendarSeed;
@@ -49,7 +51,7 @@ export default async function CalendarPage() {
           responsive shell swaps this page for the handheld build and stamps
           from there instead (see responsive-dashboard-shell's HANDHELD_SEEN). */}
       <MarkNavSeen surface="calendar" />
-      <CalendarContent seed={seed} />
+      <CalendarContent seed={seed} standalone={standalone} />
     </>
   );
 }

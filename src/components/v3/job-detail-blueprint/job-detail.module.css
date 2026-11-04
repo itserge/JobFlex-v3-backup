@@ -144,6 +144,10 @@
 /* ═══════ JOB DETAIL ═══════ */
 
 :global(.jf-blueprint .content) .jd-kick { display: flex; align-items: center; gap: 8px; }
+/* Back to the job's project (2026-11-04): a plain ink link above the kicker. */
+:global(.jf-blueprint .content) .jd-proj { display: inline-flex; align-items: center; min-height: 28px; margin-bottom: 6px;
+  font-size: 12.5px; font-weight: 800; color: var(--blueprint); text-decoration: none; }
+:global(.jf-blueprint .content) .jd-proj:hover { text-decoration: underline; }
 :global(.jf-blueprint .content) .jd-st { display: inline-flex; padding: 2px 9px; border: 1.5px solid var(--warning);
   border-radius: var(--radius); color: var(--warning); background: rgba(184,132,32,.08);
   font-size: 11px; font-weight: 800; letter-spacing: .12em; }

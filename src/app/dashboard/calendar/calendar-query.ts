@@ -166,6 +166,7 @@ export async function buildCalendarSeed(): Promise<CalendarSeed> {
         job: {
           select: {
             status: true,
+            projectId: true,
             client: { select: { name: true, phone: true, address: true, city: true, state: true } },
             proposal: { select: { scopeOfWork: true } },
             assignments: { select: { id: true, workerId: true, status: true } },
@@ -320,6 +321,7 @@ export async function buildCalendarSeed(): Promise<CalendarSeed> {
     id: e.id,
     rid: e.id,
     jobId: e.jobId,
+    projectId: e.job?.projectId ?? null,
     kind: "job" as const,
     title: e.title,
     start: e.startsAt,
@@ -500,6 +502,19 @@ export async function buildCalendarSeed(): Promise<CalendarSeed> {
     ? memberships.filter((m) => !isWorkerRole(m.role)).map((m) => ({ userId: m.userId, name: nameByUser.get(m.userId) ?? "Team member" }))
     : [{ userId, name: nameByUser.get(userId) ?? "Me" }];
 
+  // THE PROJECTS ON THE CALENDAR (owner, 2026-11-04: "if it's a project running, above the calendar you can mark the
+  // projects, each a different colour with the name of the project"). A project's colour slot is its place in the
+  // order the company made its projects, so it never moves when another project starts or is archived. Six slots
+  // (globals.css --proj-*): the first three tell apart in every pairing (the categorical palette's all-pairs set), and
+  // past three the project's NAME rides on every chip, so the colour is never the only thing telling them apart.
+  const onCalendar = new Set(jobEvents.map((e) => e.projectId).filter((x): x is string => !!x));
+  const projectOrder = onCalendar.size
+    ? await db.project.findMany({ where: { organizationId }, orderBy: { createdAt: "asc" }, select: { id: true, name: true } })
+    : [];
+  const projects = projectOrder
+    .map((p, i) => ({ id: p.id, name: p.name, tone: i % 6 }))
+    .filter((p) => onCalendar.has(p.id));
+
   return {
     today: new Date().toISOString(),
     events: [...jobEvents, ...appointmentEvents, ...blockedEvents, ...deskEvents],
@@ -512,5 +527,6 @@ export async function buildCalendarSeed(): Promise<CalendarSeed> {
     createKinds,
     canManage,
     canSmartBook: canManage || sales,
+    projects,
   };
 }

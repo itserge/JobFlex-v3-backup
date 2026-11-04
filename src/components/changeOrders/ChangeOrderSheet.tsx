@@ -356,7 +356,7 @@ export function ChangeOrderSheet({
                   return (
                     <div key={l.id} className="bps-plate space-y-1.5">
                       <div className="flex items-center gap-1.5">
-                        <Input value={l.name} onChange={(e) => setFree((rows) => rows.map((r) => (r.id === l.id ? { ...r, name: e.target.value } : r)))} placeholder={l.kind === "labor" ? "Extra labor — e.g. demo old fence" : "Item — e.g. 6 ft cedar panel"} />
+                        <Input value={l.name} onChange={(e) => setFree((rows) => rows.map((r) => (r.id === l.id ? { ...r, name: e.target.value } : r)))} placeholder={l.kind === "labor" ? "Extra labor — e.g. remove the old tile" : "Item — e.g. upgraded vanity"} />
                         <div className="bps-seg">
                           {(["material", "labor"] as const).map((k) => (
                             <button
@@ -660,7 +660,7 @@ export function ChangeOrderSheet({
           )}
           {type.intro && <p className="text-[12px] text-[color:var(--ink-muted)] -mt-2">{type.intro}</p>}
 
-          <Input label="Title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={type.key === "custom" ? "e.g. Extra 20 ft of fence, west side" : undefined} />
+          <Input label="Title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={type.key === "custom" ? "e.g. Move the kitchen outlet, add two pot lights" : undefined} />
 
           {type.areas ? (
             <>

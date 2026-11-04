@@ -17,7 +17,7 @@
 
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
-import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
+import { isEstimatorRole, isWorkerRole, requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { ProjectsContent } from "@/components/v3/projects-blueprint/projects-content";
 import { loadProjectBook } from "@/components/v3/projects-blueprint/project-book-load";
@@ -31,9 +31,11 @@ export const metadata: Metadata = {
 
 export default async function ProjectsPage() {
   let organizationId: string;
+  let role: string;
   try {
     const ctx = await requireOrg();
     organizationId = ctx.organizationId;
+    role = ctx.role;
   } catch (err) {
     if (err instanceof UnauthorizedError) redirect("/auth/login?next=%2Fdashboard%2Fprojects");
     if (err instanceof NoOrgError) redirect("/dashboard?error=forbidden");
@@ -52,5 +54,6 @@ export default async function ProjectsPage() {
   ]);
   const clients = clientRows.map((c) => ({ id: c.id, name: c.name, street: (c.address ?? "").split("\n")[0]?.trim() ?? "" }));
 
-  return <ProjectsContent projects={rows} clients={clients} />;
+  // "+ New client…" is createClient's door: sales and managers (an estimator is refused there).
+  return <ProjectsContent projects={rows} clients={clients} canAddClient={!isEstimatorRole(role) && !isWorkerRole(role)} />;
 }

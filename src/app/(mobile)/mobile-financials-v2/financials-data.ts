@@ -140,6 +140,8 @@ export type FinancialsSnapshot = {
   invoiceTargets: InvoiceTarget[];
   /** Stage D: the review queue, owed to workers, cost by job (lib/officeMoney). */
   office?: OfficeMoney;
+  /** What each project makes (lib/projectMoney, 2026-11-04). */
+  projects?: import("@/components/v3/financials-blueprint/financials-data").FinancialsProject[];
 };
 
 /** The honest starting state: no revenue, no expenses, no pipeline. What the

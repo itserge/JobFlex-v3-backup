@@ -63,6 +63,7 @@ import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
 import { safeHref } from "@/lib/safeHref";
 import { loadFinancials } from "@/actions/financialsMobile";
+import { FinancialsProjects, type FinancialsProject } from "@/components/v3/financials-blueprint/financials-projects";
 import { JobCostCard, OfficeReview } from "@/components/v3/crew-board/office-review";
 import { EMPTY_OFFICE_MONEY, EXPENSE_STATUS_FILTERS, type OfficeMoney } from "@/components/v3/crew-board/office-review-data";
 import { loadFinancialsWho } from "./who-action";
@@ -271,6 +272,8 @@ export function MobileFinancials() {
   /** Contracts that still owe money — the invoice picker's list, read from the
    *  proposals by the snapshot, not derived from the book. */
   const [invoiceTargets, setInvoiceTargets] = useState<InvoiceTarget[]>([]);
+  // What each project makes (2026-11-04) — the desk's Projects card, from the same snapshot.
+  const [projects, setProjects] = useState<FinancialsProject[]>([]);
   /** WHO DID IT — the marks by row id, read beside the book. Empty until it
    *  lands and after a failed read: a missing mark is a blank, never an error. */
   const [whoBook, setWhoBook] = useState<FinancialsWho>(EMPTY_WHO);
@@ -361,6 +364,7 @@ export function MobileFinancials() {
     setOrders(snap.orders);
     setInvoices(snap.invoices);
     setInvoiceTargets(snap.invoiceTargets);
+    setProjects(snap.projects ?? []);
     setLoadErr(null);
     setReady(true);
   }, []);
@@ -1692,6 +1696,8 @@ export function MobileFinancials() {
               </ul>
             </div>
           )}
+
+          {tab === "overview" && ready && <FinancialsProjects projects={projects} />}
 
           {/* ============ EXPENSES: the office's side (stage D) ============
               The crew's receipts waiting for review and what is owed to

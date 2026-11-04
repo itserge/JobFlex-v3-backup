@@ -1380,6 +1380,8 @@
 .bp :global(.content .fld-err) { display: none; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--danger); }
 .bp :global(.content .fld.is-err .pinput) { border-color: var(--danger); box-shadow: 2px 2px 0 rgba(168, 50, 50, 0.22); }
 .bp :global(.content .fld.is-err .fld-err) { display: block; }
+.bp :global(.content .fld-hint) { font-size: 11.5px; line-height: 1.45; color: var(--muted); }
+.bp :global(.content .mdl-row.is-hidden) { display: none; }
 
 /* dialog-level failure (the create action refused) — a boxed danger note above
    the first field, in the same shape the Workers dialogs use */
@@ -1477,6 +1479,7 @@
 .bp :global(.content .pj-flags) { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
 .bp :global(.content .pj-flag) { display: inline-block; max-width: 100%; padding: 2px 6px; border: 1px solid; border-radius: var(--radius); font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bp :global(.content .pj-flag--over) { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+.bp :global(.content .pj-flag--loss) { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
 .bp :global(.content .pj-flag--warn) { border-color: var(--warning); color: var(--warning-dark); background: var(--warning-soft); }
 .bp :global(.content .pj-flag--waiting) { border-color: var(--sky); color: var(--blueprint); background: rgba(74, 158, 255, 0.13); }
 .bp :global(.content .pj-flag--unbudgeted) { border-color: var(--hair); color: var(--muted); }

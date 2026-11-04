@@ -27,12 +27,15 @@ import type {
 } from "./financials-data";
 import { FinancialsActions } from "./financials-actions";
 import { DeskExpenseFilter } from "./desk-expense-filter";
+import { FinancialsProjects, type FinancialsProject } from "./financials-projects";
 import { JobCostCard, OfficeReview } from "@/components/v3/crew-board/office-review";
 import { EMPTY_OFFICE_MONEY, type OfficeMoney } from "@/components/v3/crew-board/office-review-data";
 import { FinancialsSprite } from "./sprite";
 import { RampCardSpend } from "./ramp-card-spend";
 
 export type FinancialsContentProps = {
+  /** Each project's money (lib/projectMoney) — the overview's Projects card (2026-11-04). */
+  projects?: FinancialsProject[];
   /** The org's real jobs. Receipt capture books an expense against one of
    *  these, so the picker cannot be a fixture — the id it submits has to
    *  exist. */
@@ -221,6 +224,8 @@ export function FinancialsContent(props: FinancialsContentProps) {
             <ul className="att-list" id="attList"></ul>
           </div>
         </div>
+
+        <FinancialsProjects projects={props.projects ?? []} />
       </section>
 
       {/* ========== OVERHEAD ==========

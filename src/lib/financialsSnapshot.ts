@@ -22,9 +22,11 @@ import type { OfficeMoney } from "@/components/v3/crew-board/office-review-data"
 import { getFinancialsRollup, getMonthlyRollup } from "@/actions/financials";
 import { contractSchedule } from "@/lib/contractTotal";
 import { fromMinor, resolveSchedule } from "@/lib/paymentSchedule";
+import { projectMoney } from "@/lib/projectMoney";
 import type {
   ChangeOrder,
   Expense,
+  FinancialsProject,
   Invoice,
   InvoiceTarget,
   MonthPoint,
@@ -49,6 +51,8 @@ export type FinancialsSnapshot = {
   /** The review queue, what is owed to workers, the cost of each job and the
    *  purchases for stock (stage D, lib/officeMoney). */
   office: OfficeMoney;
+  /** What each live project makes (lib/projectMoney) — the overview's Projects card (2026-11-04). */
+  projects: FinancialsProject[];
 };
 
 /** The ledger plate the tables print: "Jul 22", never a full date. Formatted
@@ -61,7 +65,7 @@ function plate(d: Date | null): string {
 export async function getFinancialsSnapshot(
   organizationId: string,
 ): Promise<FinancialsSnapshot> {
-  const [rollupRaw, monthlyRaw, expenseRows, orderRows, invoiceRows, jobs, openContracts, office] = await Promise.all([
+  const [rollupRaw, monthlyRaw, expenseRows, orderRows, invoiceRows, jobs, openContracts, office, projects] = await Promise.all([
     getFinancialsRollup(organizationId),
     getMonthlyRollup(organizationId, 12),
     // Receipts for jobs AND purchases for stock (no job) — stage D.
@@ -112,6 +116,7 @@ export async function getFinancialsSnapshot(
       },
     }),
     getOfficeMoney(organizationId),
+    projectRows(organizationId),
   ]);
 
   // Invoices carry a clientId, not a client relation, so the names are looked
@@ -201,5 +206,38 @@ export async function getFinancialsSnapshot(
     })
     .filter((t) => t.owed > 0);
 
-  return { jobs, monthly, rollup, expenses, orders, invoices, invoiceTargets, office };
+  return { jobs, monthly, rollup, expenses, orders, invoices, invoiceTargets, office, projects };
+}
+
+/** The live projects (not archived), the most recently touched first, with their money. */
+async function projectRows(organizationId: string): Promise<FinancialsProject[]> {
+  const rows = await db.project.findMany({
+    where: { organizationId, status: { not: "ARCHIVED" } },
+    orderBy: { updatedAt: "desc" },
+    take: 30,
+    select: { id: true, name: true, status: true, client: { select: { name: true } } },
+  });
+  const money = await projectMoney(organizationId, rows.map((r) => r.id));
+  return rows.flatMap((r) => {
+    const m = money.get(r.id);
+    if (!m) return [];
+    return [
+      {
+        id: r.id,
+        name: r.name,
+        clientName: r.client?.name ?? null,
+        status: r.status,
+        contract: m.contract,
+        pipeline: m.pipeline,
+        spent: m.spent,
+        budget: m.budget,
+        margin: m.margin,
+        marginPct: m.marginPct,
+        marginState: m.marginState,
+        uncovered: m.uncovered,
+        collected: m.collected,
+        owed: m.owed,
+      },
+    ];
+  });
 }

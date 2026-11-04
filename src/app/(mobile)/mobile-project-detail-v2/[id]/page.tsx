@@ -19,7 +19,8 @@
 
 import { notFound, redirect } from "next/navigation";
 import type { Metadata, Viewport } from "next";
-import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
+import { isOwnerOrManager, requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
+import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
 import { loadProjectDetail } from "@/components/v3/project-detail-blueprint/project-detail-load";
 import { MobileProjectDetail } from "@/components/v3/mobile-project-detail/mobile-project-detail";
 
@@ -48,9 +49,11 @@ export default async function MobileProjectDetailV2Page({
   const { id } = await params;
 
   let organizationId: string;
+  let role: string;
   try {
     const ctx = await requireOrg();
     organizationId = ctx.organizationId;
+    role = ctx.role;
   } catch (err) {
     if (err instanceof UnauthorizedError) {
       redirect(`/auth/login?next=${encodeURIComponent(`/mobile-project-detail-v2/${id}`)}`);
@@ -62,5 +65,9 @@ export default async function MobileProjectDetailV2Page({
   const props = await loadProjectDetail(id, organizationId);
   if (!props) notFound();
 
-  return <MobileProjectDetail {...props} />;
+  // What this role may open from the page — an estimator runs projects but has no client record or job page
+  // (lib/roleRoutes), so those read as plain text for them (2026-11-04).
+  const gate = ROLE_ROUTE_GATES[role];
+  const opens = (path: string) => !gate || isPathAllowed(gate, path);
+  return <MobileProjectDetail {...props} canManage={isOwnerOrManager(role)} opens={{ client: opens("/dashboard/client-detail"), jobs: opens("/dashboard/jobs") }} />;
 }
