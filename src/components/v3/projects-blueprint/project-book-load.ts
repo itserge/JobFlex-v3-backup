@@ -2,13 +2,13 @@
 // (the desktop page's server component and the handheld build's
 // `listProjects` action), so the two can never describe the book differently.
 //
-// The figures are the project page's own (lib/contractTotal, the budget card's
-// spend): sold = accepted, completed and paid proposals with their approved
-// change orders; open = what is still with the client; spent = costs logged on
-// the project plus every expense on its jobs.
+// The figures are the project page's own — one read, lib/projectMoney: sold = accepted, completed and paid proposals
+// with their approved change orders, before sales tax; open = drafts, sent and viewed, before tax; spent = costs logged
+// on the project plus its jobs' receipts, crew pay and stock.
 
 import { db } from "@/lib/db";
-import { contractTotal } from "@/lib/contractTotal";
+import { projectMoney } from "@/lib/projectMoney";
+import { CATEGORY_LABEL } from "@/lib/projectBudget";
 import type { Project } from "./projects-data";
 
 /** "Jul 08" in UTC — project dates are stored as UTC midnight (the action
@@ -28,8 +28,7 @@ function ago(d: Date): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-const SOLD = new Set(["ACCEPTED", "COMPLETED", "PAID"]);
-const OPEN = new Set(["SENT", "VIEWED"]);
+const OPEN = new Set(["DRAFT", "SENT", "VIEWED"]);
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 export async function loadProjectBook(organizationId: string): Promise<Project[]> {
@@ -46,10 +45,10 @@ export async function loadProjectBook(organizationId: string): Promise<Project[]
       expenses: { select: { amount: true, createdAt: true } },
     },
   });
+  const money = await projectMoney(organizationId, projects.map((p) => p.id));
   return projects.map((p) => {
-    const sold = p.proposals.filter((x) => SOLD.has(x.status)).reduce((n, x) => n + contractTotal(x.total, x.changeOrders), 0);
+    const m = money.get(p.id);
     const openOnes = p.proposals.filter((x) => OPEN.has(x.status));
-    const spent = p.expenses.reduce((n, e) => n + e.amount, 0) + p.jobs.reduce((n, j) => n + j.expenses.reduce((m, e) => m + e.amount, 0), 0);
     // "Updated" is the newest thing on the project, not just the row itself.
     const last = [p.updatedAt, ...p.jobs.map((j) => j.updatedAt), ...p.proposals.map((x) => x.updatedAt), ...p.expenses.map((e) => e.createdAt)].reduce((a, b) => (b > a ? b : a));
     return {
@@ -65,10 +64,14 @@ export async function loadProjectBook(organizationId: string): Promise<Project[]
       inProgressJobs: p.jobs.filter((j) => j.status === "IN_PROGRESS").length,
       clientName: p.client?.name ?? null,
       proposalCount: p.proposals.length,
-      sold: r2(sold),
-      open: r2(openOnes.reduce((n, x) => n + x.total, 0)),
+      sold: r2(m?.contract ?? 0),
+      open: r2(m?.pipeline ?? 0),
       openCount: openOnes.length,
-      spent: r2(spent),
+      spent: r2(m?.spent ?? 0),
+      margin: m?.margin ?? null,
+      marginState: m?.marginState ?? "none",
+      overCategories: (m?.overCategories ?? []).map((c) => CATEGORY_LABEL[c]),
+      owed: m?.owed ?? 0,
       updatedAgo: ago(last),
     };
   });

@@ -76,6 +76,7 @@ import { SmartBookRequests } from "@/components/v3/smartbook/smartbook-requests"
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
 import { getCalendarSeed } from "@/app/dashboard/calendar/calendar-actions";
+import { LANES, readPick, savePick, shownBy, type Lane } from "@/components/v3/calendar-blueprint/calendar-lanes";
 import {
   createJobEvent,
   deleteJobEvent,
@@ -215,11 +216,15 @@ const TONE_DOT: Record<string, string> = {
  * remounts every row — which would restart the row's entrance animation each
  * time the search box changed.
  */
+type CalProject = { id: string; name: string; tone: number };
+
 function EventRow({
-  e, i, landed, showDay, onOpen, onSelect,
+  e, i, landed, showDay, onOpen, onSelect, project,
 }: {
   e: CalEvent; i: number; landed: boolean; showDay?: boolean;
   onOpen: (id: string) => void; onSelect: (id: string) => void;
+  /** The project a job belongs to — a light wash of its colour and its name on the row (2026-11-04). */
+  project?: CalProject;
 }) {
   const tone = toneKey(e);
   const today = sameDay(e.start, TODAY);
@@ -233,8 +238,9 @@ function EventRow({
   const visit = e.kind === "appointment" ? VISIT_VIA[e.via || "team"] : null;
   return (
     <div
-      className={`${styles.erow} ${blocked ? styles.isBlocked : ""} ${e.kind === "desk" ? styles.isDesk : ""} ${visit ? styles.isVisit : ""} ${visit && e.status === "CANCELED" ? styles.isVisitOff : ""} ${styles.rowIn} ${landed ? styles.landed : ""}`}
+      className={`${styles.erow} ${blocked ? styles.isBlocked : ""} ${e.kind === "desk" ? styles.isDesk : ""} ${visit ? styles.isVisit : ""} ${visit && e.status === "CANCELED" ? styles.isVisitOff : ""} ${project ? styles.isProj : ""} ${styles.rowIn} ${landed ? styles.landed : ""}`}
       style={{ animationDelay: `${i * 45}ms`, ...(visit ? ({ "--via": visit.tone } as React.CSSProperties) : {}) }}
+      data-tone={project?.tone}
     >
       {/* Time is the one thing a calendar row is about, so it takes the left
           plate. Today is ALWAYS filled blueprint — the reference's rule. */}
@@ -273,8 +279,16 @@ function EventRow({
       >
         <Icon id="i-dots" />
       </button>
-      {/* Row 2 — who and where, hard left */}
-      <div className={styles.ewho}>{whoWhere(e)}</div>
+      {/* Row 2 — who and where, hard left; a project's job names its project first. */}
+      <div className={styles.ewho}>
+        {project ? (
+          <span className={styles.eproj}>
+            <i />
+            {project.name}
+          </span>
+        ) : null}
+        {whoWhere(e)}
+      </div>
       {/* Row 3 — badge leads, the duration closes at the far right */}
       <div className={styles.erowFoot}>
         <span className={`${styles.estatus} ${visit ? styles.stVia : TONE_BADGE[tone] ?? ""}`}>
@@ -909,10 +923,26 @@ function CalendarBoard({ book }: { book: CalendarBook }) {
       workers: e.workers.slice(),
     })),
   );
+  /* The projects on the calendar and what the grid shows — the lanes and the picked projects (calendar-lanes,
+     2026-11-04). The pick is this browser's; picks for a project no longer on the calendar are dropped. */
+  const [projects, setProjects] = useState<CalProject[]>(() => (book.projects ?? []).map((p) => ({ ...p })));
+  const projById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
+  const [pick, setPickState] = useState<{ lane: Lane; projects: string[] }>(() => {
+    const p = readPick();
+    const live = new Set((book.projects ?? []).map((x) => x.id));
+    return { lane: p.lane, projects: p.projects.filter((id) => live.has(id)) };
+  });
+  const setPick = (next: { lane: Lane; projects: string[] }) => {
+    setPickState(next);
+    savePick(next.lane, next.projects);
+  };
   /* A visit SmartBook's Requests card booked (2026-10-31): the visits are read again, so the Yes lands on the grid. */
   const reloadEvents = () => {
     getCalendarSeed()
-      .then((b) => setData(b.events.map((e) => ({ ...e, start: new Date(e.start), end: new Date(e.end), workers: e.workers.slice() }))))
+      .then((b) => {
+        setData(b.events.map((e) => ({ ...e, start: new Date(e.start), end: new Date(e.end), workers: e.workers.slice() })));
+        setProjects((b.projects ?? []).map((p) => ({ ...p })));
+      })
       .catch(() => {});
   };
   const [tray, setTray] = useState<TrayJob[]>(() => book.tray.map((j) => ({ ...j })));
@@ -1138,8 +1168,8 @@ function CalendarBoard({ book }: { book: CalendarBook }) {
 
   /* ---------- derived ranges ------------------------------------------- */
   const visible = useMemo(
-    () => data.filter((e) => matchesFilter(e, filter) && matchesQuery(e, query)),
-    [data, filter, query],
+    () => data.filter((e) => shownBy(e, pick.lane, pick.projects) && matchesFilter(e, filter) && matchesQuery(e, query)),
+    [data, filter, query, pick],
   );
   const weekStart = useMemo(() => startOfWeek(cursor), [cursor]);
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
@@ -1279,6 +1309,10 @@ function CalendarBoard({ book }: { book: CalendarBook }) {
       { act: "job", icon: "i-jobs", tone: styles.miBp, title: "Open job",
         sub: e.jobId ? "Full record, crew and photos" : "This event is not attached to a job",
         disabled: !e.jobId },
+      // A project's job opens its project — the hub with its money, crew and other jobs (2026-11-04).
+      ...(e.projectId && projById.has(e.projectId)
+        ? [{ act: "project", icon: "i-folder", tone: styles.miBp, title: "Open project", sub: projById.get(e.projectId)!.name }]
+        : []),
       { act: "edit", icon: "i-file", tone: styles.miBp, title: "Edit event",
         sub: "Time, crew, status and notes" },
       { act: "call", icon: "i-phone", tone: styles.miSky, title: "Call client",
@@ -1294,7 +1328,7 @@ function CalendarBoard({ book }: { book: CalendarBook }) {
       { act: "del", icon: "i-trash", tone: styles.miDanger, title: "Delete event",
         sub: "Removes it from the calendar", danger: true },
     ];
-  }, [actEvent, book.canManage, book.desk?.me]);
+  }, [actEvent, book.canManage, book.desk?.me, projById]);
 
   /** The jobs board's own href shape (jobs-behavior.ts `jobHref`), so the two
    *  surfaces cannot disagree about where a job lives. A client-side push, not
@@ -1336,6 +1370,10 @@ function CalendarBoard({ book }: { book: CalendarBook }) {
     }
     if (act === "job") {
       if (e.jobId) openJob(e.jobId);
+      return;
+    }
+    if (act === "project") {
+      if (e.projectId) router.push(("/dashboard/projects/" + encodeURIComponent(e.projectId)) as Route);
       return;
     }
     if (act === "del") {
@@ -2031,6 +2069,48 @@ function CalendarBoard({ book }: { book: CalendarBook }) {
             </div>
           </div>
 
+          {/* LANES + PROJECTS (2026-11-04) — what the grid shows, and a chip per project on the calendar in its colour.
+              A project chip picks it (several may be picked) and moves to the Projects lane; Appointments or Installs
+              let the picks go. */}
+          <div className={styles.lanes}>
+            <div className={styles.laneSw} role="group" aria-label="Show on the calendar">
+              {LANES.map(([k, label]) => (
+                <button
+                  key={k}
+                  type="button"
+                  className={`${styles.laneBtn} ${pick.lane === k ? styles.on : ""}`}
+                  aria-pressed={pick.lane === k}
+                  onClick={() => setPick({ lane: k, projects: k === "appointments" || k === "installs" ? [] : pick.projects })}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {projects.length && pick.lane !== "appointments" && pick.lane !== "installs" ? (
+              <div className={styles.projs} role="group" aria-label="Projects">
+                {projects.map((p) => {
+                  const on = pick.projects.includes(p.id);
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className={`${styles.proj} ${on ? styles.on : ""}`}
+                      data-tone={p.tone}
+                      aria-pressed={on}
+                      onClick={() => {
+                        const next = on ? pick.projects.filter((x) => x !== p.id) : [...pick.projects, p.id];
+                        setPick({ lane: next.length ? "projects" : pick.lane, projects: next });
+                      }}
+                    >
+                      <i />
+                      {p.name}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+
           {/* ============ VIEW: MONTH ============ */}
           {view === "month" && (
             <div className={styles.mcard}>
@@ -2100,6 +2180,7 @@ function CalendarBoard({ book }: { book: CalendarBook }) {
                   {dayEvents.map((e, i) => (
                     <EventRow
                       e={e}
+                      project={e.projectId ? projById.get(e.projectId) : undefined}
                       i={i}
                       key={e.id}
                       landed={landedId === e.id}
@@ -2168,6 +2249,7 @@ function CalendarBoard({ book }: { book: CalendarBook }) {
                             {evs.map((e, i) => (
                               <EventRow
                                 e={e}
+                                project={e.projectId ? projById.get(e.projectId) : undefined}
                                 i={i}
                                 key={e.id}
                                 landed={landedId === e.id}
@@ -2245,6 +2327,7 @@ function CalendarBoard({ book }: { book: CalendarBook }) {
                             {evs.map((e, i) => (
                               <EventRow
                                 e={e}
+                                project={e.projectId ? projById.get(e.projectId) : undefined}
                                 i={i}
                                 key={e.id}
                                 landed={landedId === e.id}

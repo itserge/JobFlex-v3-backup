@@ -30,18 +30,25 @@ export type Project = {
   proposalCount?: number;
   /** Sold: accepted, completed and paid proposals, with approved change orders. */
   sold?: number;
-  /** Still with the client: sent and viewed proposals, and how many. */
+  /** Still to win: draft, sent and viewed proposals, before tax, and how many (the project page counts the same). */
   open?: number;
   openCount?: number;
-  /** Spent: costs logged on the project plus its jobs' expenses. */
+  /** Spent: costs logged on the project plus its jobs' receipts, crew pay and stock (lib/projectMoney). */
   spent?: number;
+  /** Before sales tax, as the project page shows it (2026-11-04). */
+  margin?: number | null;
+  marginState?: "none" | "short" | "projected" | "sold";
+  /** Categories over their budget, by name ("Subcontractors"). */
+  overCategories?: string[];
+  /** Billed and not yet paid by the client. */
+  owed?: number;
   inProgressJobs?: number;
   /** "2h ago" — when anything on the project last moved. */
   updatedAgo?: string;
 };
 
 /** What a row is flagged for, most urgent first. */
-export type ProjectFlag = { kind: "over" | "warn" | "waiting" | "unbudgeted"; text: string };
+export type ProjectFlag = { kind: "over" | "warn" | "loss" | "waiting" | "unbudgeted"; text: string };
 
 /** "$3,860" — whole dollars. */
 export function money(n: number): string {
@@ -63,7 +70,11 @@ export function projectFlags(p: Project): ProjectFlag[] {
   const spent = p.spent ?? 0;
   const sold = p.sold ?? 0;
   if (p.budget > 0 && spent > p.budget) flags.push({ kind: "over", text: `${moneyShort(spent - p.budget)} over budget` });
+  // One category over is an overrun even while the whole budget has room (owner walk 2026-11-04: Subcontractors $3,000
+  // over read "all clear" on the list).
+  else if (p.overCategories?.length) flags.push({ kind: "over", text: `${p.overCategories.join(", ")} over budget` });
   else if (p.budget > 0 && spent >= p.budget * 0.8) flags.push({ kind: "warn", text: `${Math.round((spent / p.budget) * 100)}% of budget spent` });
+  if (p.marginState === "sold" && p.margin != null && p.margin < 0 && p.status !== "COMPLETED") flags.push({ kind: "loss", text: `Losing ${moneyShort(-p.margin)}` });
   else if (p.budget <= 0 && (sold > 0 || spent > 0) && p.status !== "COMPLETED") flags.push({ kind: "unbudgeted", text: "No budget set" });
   if ((p.openCount ?? 0) > 0 && p.status !== "COMPLETED") flags.push({ kind: "waiting", text: `${p.openCount} waiting on client` });
   return flags;

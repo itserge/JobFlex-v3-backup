@@ -67,22 +67,31 @@ import {
   type PdAvailProposal,
   type PdBudget,
   type PdJob,
+  type PdOpens,
+  type PdPayments,
   type PdProject,
+  type PdWorker,
   type PdProposal,
   attachableFirst,
   badgeMod,
   bucketOf,
+  changeOrderDoor,
+  jobLabel,
   labelOf,
   monthKey,
   proposalLabel,
   proposalMeta,
   proposalTone,
   shortDate,
+  withLocalDays,
 } from "@/components/v3/project-detail-blueprint/project-detail-data";
 import "./mobile-project-detail.css";
 import { LooseProposalsStrip } from "@/components/v3/project-links/loose-proposals-strip";
 import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
 import { ProjectBudgetCard } from "@/components/v3/project-links/project-budget-card";
+import { ProjectPaymentsCard } from "@/components/v3/project-links/project-payments-card";
+import { ProjectCombine } from "@/components/v3/project-links/project-combine";
+import { ProjectCrewSheet } from "@/components/v3/project-links/project-crew-sheet";
 
 const DAY_MS = 86400000;
 
@@ -93,7 +102,7 @@ function proposalsSummary(list: PdProposal[]): string {
   if (!list.length) return "None yet";
   const sold = list.filter((p) => proposalTone(p.status) === "done").reduce((n, p) => n + p.contract, 0);
   const open = list.filter((p) => proposalTone(p.status) === "prog" || proposalTone(p.status) === "sch").reduce((n, p) => n + p.total, 0);
-  return [String(list.length), sold ? `${wholeDollars(sold)} sold` : null, open ? `${wholeDollars(open)} open` : null].filter(Boolean).join(" · ");
+  return [String(list.length), sold ? `${wholeDollars(sold)} sold with tax` : null, open ? `${wholeDollars(open)} open` : null].filter(Boolean).join(" · ");
 }
 
 const prefersReducedMotion = () =>
@@ -277,12 +286,16 @@ function windowOf(project: PdProject, jobs: PdJob[]): { w0: number; w1: number }
 }
 
 export function MobileProjectDetail({
-  project,
+  project: projectIn,
   jobs,
   proposals = [],
   availableProposals,
   looseProposals = [],
   budget,
+  canManage = false,
+  opens = { client: true, jobs: true },
+  payments = [],
+  roster = [],
 }: {
   project: PdProject;
   jobs: PdJob[];
@@ -290,7 +303,13 @@ export function MobileProjectDetail({
   availableProposals: PdAvailProposal[];
   looseProposals?: Array<{ id: string; title: string; total: number }>;
   budget?: PdBudget;
+  canManage?: boolean;
+  opens?: PdOpens;
+  payments?: PdPayments;
+  roster?: PdWorker[];
 }) {
+  // The project's dates are days, not moments (withLocalDays).
+  const project = useMemo(() => withLocalDays(projectIn), [projectIn]);
   const router = useRouter();
   const search = useSearchParams();
   const [, startTransition] = useTransition();
@@ -309,6 +328,8 @@ export function MobileProjectDetail({
   const [attachOpen, setAttachOpen] = useState(false);
   // The proposal whose change orders are open (2026-09-18).
   const [coFor, setCoFor] = useState<string | null>(null);
+  // The job whose Schedule & crew sheet is open (2026-11-04).
+  const [crewFor, setCrewFor] = useState<PdJob | null>(null);
 
   // The authoritative lists are the server's, so the optimistic move is a set
   // of ids laid OVER them: once router.refresh() lands, the job is already in
@@ -494,7 +515,8 @@ export function MobileProjectDetail({
 
   /* ---------- KPI --------------------------------------------------------- */
   const kJobs = shownJobs.length;
-  const kSch = shownJobs.filter((j) => j.status === "SCHEDULED").length;
+  // Scheduled = on the calendar; an accepted job with no dates yet is not (2026-11-04).
+  const kSch = shownJobs.filter((j) => j.status === "SCHEDULED" && !!j.startsAt).length;
   const kProg = shownJobs.filter((j) => j.status === "IN_PROGRESS").length;
 
   const hasWindow = Boolean(project.startsAt && project.endsAt);
@@ -520,9 +542,13 @@ export function MobileProjectDetail({
                 call, 2026-08-12): the drawer already carries the way back, and
                 on a phone the project name should own the top of the page. */}
             {project.client ? (
-              <Link className="mpd-client" href={`/dashboard/client-detail?client=${project.client.id}` as Route}>
-                {project.client.name}
-              </Link>
+              opens.client ? (
+                <Link className="mpd-client" href={`/dashboard/client-detail?client=${project.client.id}` as Route}>
+                  {project.client.name}
+                </Link>
+              ) : (
+                <span className="mpd-client">{project.client.name}</span>
+              )
             ) : null}
             <h1 className="mpd-title">{project.name}</h1>
             <div className="mpd-dateline">
@@ -544,7 +570,7 @@ export function MobileProjectDetail({
           <div className="mpd-mast">
             <div className="mpd-mast-top">
               <div className="mpd-mast-lbl">
-                Budget
+                Cost budget
                 <span className="mpd-mast-rule" />
               </div>
               <CountUp className="mpd-mast-val" text={money(project.budget)} />
@@ -590,10 +616,12 @@ export function MobileProjectDetail({
                   </span>
                 </Link>
                 <span className={`mpd-b mpd-b--${proposalTone(p.status) === "bad" ? "sch" : proposalTone(p.status)}`}>{proposalLabel(p.status)}</span>
-                <button className="mpd-prop-co" type="button" aria-label={`Change orders for ${p.title}`} onClick={() => setCoFor(p.id)}>
-                  <Icon id="i-plus" />
-                  CO
-                </button>
+                {changeOrderDoor(p, canManage) ? (
+                  <button className="mpd-prop-co" type="button" aria-label={`Change orders for ${p.title}`} onClick={() => setCoFor(p.id)}>
+                    <Icon id="i-plus" />
+                    CO
+                  </button>
+                ) : null}
               </div>
             ))}
             <button
@@ -618,12 +646,23 @@ export function MobileProjectDetail({
             </button>
           </section>
 
+          {/* ============ ONE PROPOSAL FOR ALL OF IT (2026-11-04) ============ */}
+          <div className="mpd-budget">
+            <ProjectCombine projectId={project.id} projectName={project.name} proposals={proposals} />
+          </div>
+
           {/* ============ BUDGET (2026-09-18) ============ */}
           {budget ? (
             <div className="mpd-budget">
               <ProjectBudgetCard projectId={project.id} budget={budget} />
             </div>
           ) : null}
+
+          {/* ============ PAYMENTS (2026-11-04) ============ */}
+          <div className="mpd-budget">
+            <ProjectPaymentsCard payments={payments} canManage={canManage} />
+          </div>
+          <ProjectCrewSheet key={crewFor?.id ?? "none"} job={crewFor} roster={roster} onClose={() => setCrewFor(null)} />
 
           {/* ============ VIEW BAR ============ */}
           <div className="mpd-views">
@@ -664,7 +703,7 @@ export function MobileProjectDetail({
 
           {/* ============ VIEW BODY ============ */}
           {view === "list" ? (
-            <ListView jobs={shownJobs} listF={listF} onFilter={setListF} />
+            <ListView jobs={shownJobs} listF={listF} onFilter={setListF} openJobs={opens.jobs} onCrew={canManage ? setCrewFor : null} />
           ) : view === "calendar" ? (
             <CalView project={project} jobs={shownJobs} calF={calF} onFilter={setCalF} />
           ) : (
@@ -737,14 +776,31 @@ export function MobileProjectDetail({
 
 /* ================================ LIST ================================= */
 
+/** A job row: a link to the job, or a plain row for a role that cannot open it. */
+function RowLink({ className, href, children }: { className: string; href: string | null; children: React.ReactNode }) {
+  return href ? (
+    <Link className={className} href={href as Route} data-pd-job>
+      {children}
+    </Link>
+  ) : (
+    <div className={className}>{children}</div>
+  );
+}
+
 function ListView({
   jobs,
   listF,
   onFilter,
+  openJobs,
+  onCrew,
 }: {
   jobs: PdJob[];
   listF: ListFilter;
   onFilter: (f: ListFilter) => void;
+  /** False for a role with no job page: the rows stay plain. */
+  openJobs: boolean;
+  /** Opens Schedule & crew for a job — owners and managers; null hides the button. */
+  onCrew: ((j: PdJob) => void) | null;
 }) {
   const counts: Record<ListFilter, number> = {
     all: jobs.length,
@@ -778,17 +834,25 @@ function ListView({
       </div>
       {vis.length ? (
         vis.map((j) => (
-          <div className="mpd-row mpd-row-in" key={j.id}>
-            <div className="mpd-row-txt">
-              <div className="mpd-row-n">{j.title}</div>
-              <div className="mpd-row-m">
-                {j.clientName ?? "Unassigned"}
-                {j.startsAt
-                  ? ` · ${shortDate(j.startsAt)}${j.endsAt ? ` → ${shortDate(j.endsAt)}` : ""}`
-                  : " · unscheduled"}
+          <div className="mpd-jobrow mpd-row-in" key={j.id}>
+            <RowLink className={`mpd-row${openJobs ? " mpd-row--link" : ""}`} href={openJobs ? `/dashboard/jobs/${j.id}` : null}>
+              <div className="mpd-row-txt">
+                <div className="mpd-row-n">{j.title}</div>
+                <div className="mpd-row-m">
+                  {j.clientName ?? "Unassigned"}
+                  {j.startsAt
+                    ? ` · ${shortDate(j.startsAt)}${j.endsAt ? ` → ${shortDate(j.endsAt)}` : ""}`
+                    : " · no dates yet"}
+                </div>
+                {j.crew?.length ? <div className="mpd-row-crew">Crew · {j.crew.map((c) => c.name).join(", ")}</div> : null}
               </div>
-            </div>
-            <span className={`mpd-b mpd-b--${badgeMod(j.status)}`}>{labelOf(j.status)}</span>
+              <span className={`mpd-b mpd-b--${badgeMod(j.status)}`}>{jobLabel(j)}</span>
+            </RowLink>
+            {onCrew ? (
+              <button className="mpd-btn mpd-crew-btn" type="button" onClick={() => onCrew(j)} data-pd-crew={j.title}>
+                {j.startsAt || j.crew?.length ? "Schedule & crew" : "Schedule"}
+              </button>
+            ) : null}
           </div>
         ))
       ) : (

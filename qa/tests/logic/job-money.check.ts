@@ -41,6 +41,23 @@ check("no contract, no lines: zeros, no division by zero", bare.cost === 0 && ba
 const junk = jobMoney({ contract: -5, collected: -2, lines: [{ quantity: -3, materialCost: 10, laborCost: 10 }], crewPay: [-100, 50], expenses: [Number.NaN, 25] });
 check("negatives and nonsense never make money", junk.contract === 0 && junk.collected === 0 && junk.planned.total === 0 && junk.crew === 50 && junk.expenses === 25);
 
+// 2026-11-04: the builder's material / labor columns split the PRICE, so the job page passes the plan itself (a
+// project job's share of the project's cost budget) and works the profit before sales tax.
+const priced: CostingLine[] = [{ quantity: 1, materialCost: 6000, laborCost: 4000 }];
+const share = jobMoney({ contract: 10_825, revenue: 10_000, collected: 2000, lines: priced, plannedCost: 7000, crewPay: [], expenses: [] });
+check("a project job is planned at its budget share, split like its lines — never at the price",
+  share.planned.total === 7000 && share.planned.material === 4200 && share.planned.labor === 2800 && share.costIsPlanned, JSON.stringify(share.planned));
+check("the profit is worked before sales tax; the tax is shown apart",
+  share.revenue === 10_000 && share.salesTax === 825 && share.profit === 3000 && share.marginPct === 30, `${share.revenue} ${share.salesTax} ${share.profit} ${share.marginPct}%`);
+check("what is still to collect keeps the tax — the client pays it", share.outstanding === 8825, String(share.outstanding));
+const lone = jobMoney({ contract: 10_825, revenue: 10_000, collected: 0, lines: priced, plannedCost: 0, crewPay: [], expenses: [] });
+check("a lone job with nothing booked has no cost yet — its profit is not called the whole price",
+  !lone.costKnown && !lone.costIsPlanned && lone.planned.total === 0 && lone.cost === 0, JSON.stringify({ known: lone.costKnown, cost: lone.cost }));
+const lonePaid = jobMoney({ contract: 10_825, revenue: 10_000, collected: 0, lines: priced, plannedCost: 0, crewPay: [3000], expenses: [2500] });
+check("once crew pay and receipts are booked it is known", lonePaid.costKnown && lonePaid.profit === 4500 && lonePaid.marginPct === 45, `${lonePaid.profit}`);
+const odd = jobMoney({ contract: 500, revenue: 900, collected: 0, lines: [], crewPay: [], expenses: [] });
+check("the before-tax figure is never above the contract", odd.revenue === 500 && odd.salesTax === 0);
+
 const crew = crewTotals([
   { assignmentId: "a1", workerId: "w1", name: "Ivan", pay: 6000, paidAt: "2026-09-19T00:00:00.000Z" },
   { assignmentId: "a2", workerId: "w2", name: "Pete", pay: 3500, paidAt: null },

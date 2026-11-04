@@ -42,6 +42,17 @@
   --tool-hvac: #0d7a8a;
   --tool-deck: #a0582a;
   --tool-design: #66702a;
+  /* The Remodeling bay's Projects hub (2026-11-04) — a colour no tool wears. */
+  --tool-project: #c9961a;
+  /* A project's colour on the calendar (2026-11-04): six of the categorical palette's hues, red and green left out
+     (they read as canceled / done). Slots 0–2 tell apart in every pairing; past them the project's name is always on
+     the chip. Text never wears these — a swatch beside the name does. */
+  --proj-0: #2a78d6;
+  --proj-1: #eb6834;
+  --proj-2: #1baf7a;
+  --proj-3: #eda100;
+  --proj-4: #e87ba4;
+  --proj-5: #6250d6;
 
   /* ─── typography ──────────────────────────────── */
   --font-display: var(--font-inter);

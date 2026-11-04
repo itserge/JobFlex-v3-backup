@@ -2,7 +2,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { InstallmentStatus, MEASUREMENT_TYPES } from "@/lib/prismaEnums";
-import { diffUnpaid, resolveSchedule } from "@/lib/paymentSchedule";
+import { diffUnpaid, fromMinor, resolveSchedule, toMinor } from "@/lib/paymentSchedule";
 import { expireOpenCheckoutsForProposal } from "@/lib/payments/checkouts";
 import { repriceOpenInvoices } from "@/lib/payments/invoiceRecord";
 import { contractSchedule } from "@/lib/contractTotal";
@@ -11,7 +11,7 @@ import { randomUUID } from "node:crypto";
 // Proposal actions use requireProposalStaff: managers operate on any org
 // proposal; SALES / ESTIMATOR callers get `proposalScope` ({ ownerId }) which is
 // AND-ed into every lookup so they can only touch proposals they own.
-import { requireProposalStaff } from "@/lib/orgContext";
+import { requireManager, requireProposalStaff } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { recordInventoryLink } from "@/lib/inventoryPick";
 import { ProposalStatus } from "@/lib/prismaEnums";
@@ -946,4 +946,71 @@ export async function removeProposalPhoto(
     });
   }
   revalidatePath("/dashboard/proposals");
+}
+
+const paymentRequestInput = z.object({
+  proposalId: z.string().min(1),
+  label: z.string().trim().min(1).max(60),
+  amount: z.number().positive(),
+  isPercent: z.boolean(),
+});
+
+/**
+ * REQUEST A PAYMENT (owner, 2026-11-04: "in the projects get the payments as
+ * well, where you can send to the client like for deposits or for that job
+ * done, request a payment"). Adds one stage to a SOLD proposal's schedule,
+ * next in line after what is paid or being paid, through upsertInstallments —
+ * the builder's own write — so paid stages stay frozen, a checkout whose money
+ * changed is expired and the open invoices are re-priced. What it asks for
+ * comes out of the end of the schedule: the remaining balance is authoritative
+ * and the last stages clamp (lib/paymentSchedule). Returns the new stage, for
+ * the caller to invoice.
+ */
+export async function addPaymentRequest(raw: unknown): Promise<{ installmentId: string }> {
+  const { organizationId, user } = await requireManager();
+  const data = paymentRequestInput.parse(raw);
+  const prev = await db.proposal.findFirst({
+    where: { id: data.proposalId, organizationId },
+    select: { id: true, title: true, status: true, total: true, currency: true, clientId: true, projectId: true, installments: { orderBy: { position: "asc" } } },
+  });
+  if (!prev) throw new Error("Not found");
+  if (prev.status !== ProposalStatus.ACCEPTED && prev.status !== ProposalStatus.COMPLETED) {
+    throw new Error("A payment is requested on an accepted proposal");
+  }
+  if (data.isPercent && data.amount > 100) throw new Error("A percentage is 100 at most");
+  const cos = await approvedChangeOrders(prev.id);
+  const schedule = resolveSchedule({ ...contractSchedule(prev.total, cos), currency: prev.currency, installments: prev.installments });
+  if (schedule.remainingMinor <= 0) throw new Error("Nothing is owed on this proposal");
+  const askMinor = data.isPercent ? Math.round((toMinor(prev.total) * data.amount) / 100) : toMinor(data.amount);
+  if (askMinor > schedule.remainingMinor) {
+    throw new Error(`Only $${fromMinor(schedule.remainingMinor).toLocaleString("en-US", { minimumFractionDigits: 2 })} is still owed`);
+  }
+
+  const own = prev.installments.filter((st) => !st.changeOrderId);
+  const now = Date.now();
+  let at = 0;
+  own.forEach((st, i) => {
+    if (isLockedStage(st, now)) at = i + 1;
+  });
+  const incoming: StageInput[] = own.map((st) => ({ id: st.id, label: st.label, amount: st.amount, isPercent: st.isPercent }));
+  incoming.splice(at, 0, { label: data.label, amount: data.amount, isPercent: data.isPercent });
+  await upsertInstallments(organizationId, prev.id, prev, { total: prev.total, currency: prev.currency }, incoming);
+
+  const made = await db.installment.findFirst({
+    where: { proposalId: prev.id, position: at, label: data.label, changeOrderId: null, status: InstallmentStatus.UNPAID },
+    select: { id: true },
+  });
+  if (!made) throw new Error("Could not add the payment");
+  await logActivity({
+    organizationId,
+    actorId: user.id,
+    kind: TRAIL_KINDS.PAY,
+    summary: `Asked for ${data.label} (${data.isPercent ? `${data.amount}%` : `$${data.amount.toLocaleString("en-US")}`}) on ${prev.title}`,
+    proposalId: prev.id,
+    clientId: prev.clientId,
+    meta: { installmentId: made.id, projectId: prev.projectId ?? undefined },
+  });
+  revalidatePath("/dashboard/proposals");
+  if (prev.projectId) revalidatePath(`/dashboard/projects/${prev.projectId}`);
+  return { installmentId: made.id };
 }

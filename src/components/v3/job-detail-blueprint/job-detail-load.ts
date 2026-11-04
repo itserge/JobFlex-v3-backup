@@ -26,7 +26,8 @@ import { mediaOf } from "@/lib/jobMediaShared";
 import { storageMode } from "@/lib/media/privateStore";
 import { mediaHref } from "@/lib/media/signedLink";
 import { loadCrewBoard } from "@/components/v3/crew-board/crew-board-load";
-import { contractTotal } from "@/lib/contractTotal";
+import { contractRevenue, contractTotal } from "@/lib/contractTotal";
+import { projectMoney } from "@/lib/projectMoney";
 import { crewTotals, jobMoney } from "@/lib/jobCosting";
 import { jobCostOf, type JobCost } from "@/lib/jobCost";
 import { isTradeId, pickList } from "@/lib/inventory";
@@ -83,7 +84,7 @@ function sameDay(a: Date, b: Date): boolean {
 
 /** Page head: the job's own span. */
 function headDates(startsAt: Date | null, endsAt: Date | null): string {
-  if (!startsAt && !endsAt) return "Unscheduled";
+  if (!startsAt && !endsAt) return "No dates yet";
   if (startsAt && endsAt && !sameDay(startsAt, endsAt)) {
     return `${day(startsAt)} → ${dayYear(endsAt)}`;
   }
@@ -294,17 +295,19 @@ export async function loadJobDetail(
     where: { id },
     include: {
       client: true,
+      project: { select: { id: true, name: true } },
       proposal: {
         select: {
           id: true,
           title: true,
           total: true,
-          // The job's money card: the estimate's own cost side and what the
-          // client has actually paid (lib/jobCosting).
+          taxTotal: true,
+          // The job's money card: the lines' material / labor split and what
+          // the client has actually paid, less refunds (lib/jobCosting).
           trade: true,
           description: true,
           lineItems: { select: { name: true, measurementType: true, quantity: true, materialCost: true, laborCost: true } },
-          payments: { where: { status: "PAID" }, select: { amount: true } },
+          payments: { where: { status: { in: ["PAID", "PARTIAL", "PARTIALLY_REFUNDED"] } }, select: { amount: true, refundedAmount: true } },
           changeOrders: { orderBy: { createdAt: "asc" } },
         },
       },
@@ -365,17 +368,25 @@ export async function loadJobDetail(
   }));
 
   // THE JOB'S OWN MONEY (2026-09-20). Every figure is already on this record:
-  // the contract is the proposal plus its approved change orders, the planned
-  // cost is the estimate's material and labor COST columns, and the actual
-  // cost is the crew's pay plus the booked receipts (lib/jobCosting).
+  // the contract is the proposal plus its approved change orders, and the
+  // actual cost is the crew's pay plus the booked receipts (lib/jobCosting).
   // The booked cost is lib/jobCost's — the ONE function Financials' "Cost by
   // job" reads too (stage D), so the two agree to the cent: crew pay, approved
   // receipts, and stock issued to the job at the movements' prices.
+  // The profit is worked before sales tax, and the plan is NOT the lines'
+  // material / labor columns — the builder splits the price there, not the
+  // cost (2026-11-04). A project's job is planned at the project's own cost
+  // share (its cost budget ÷ what its proposals price — lib/projectMoney), so
+  // the job and its project tell one story; any other job has no plan.
   const cost = await jobCostOf(organizationId, job.id);
+  const revenue = job.proposal ? contractRevenue(job.proposal.total, job.proposal.taxTotal, job.proposal.changeOrders) : 0;
+  const share = job.projectId ? ((await projectMoney(organizationId, [job.projectId])).get(job.projectId)?.costShare ?? null) : null;
   const m = jobMoney({
     contract: job.proposal ? contractTotal(job.proposal.total, job.proposal.changeOrders) : 0,
-    collected: job.proposal ? job.proposal.payments.reduce((a, p) => a + p.amount, 0) : 0,
+    revenue,
+    collected: job.proposal ? job.proposal.payments.reduce((a, p) => a + Math.max(0, p.amount - (p.refundedAmount ?? 0)), 0) : 0,
     lines: job.proposal?.lineItems ?? [],
+    plannedCost: share != null ? revenue * share : 0,
     crewPay: [cost.crew],
     expenses: [cost.receipts],
     pendingExpenses: [cost.receiptsPending],
@@ -383,6 +394,9 @@ export async function loadJobDetail(
   });
   const money: JdMoney = {
     contract: m.contract,
+    revenue: m.revenue,
+    salesTax: m.salesTax,
+    planFrom: share != null ? "project" : null,
     collected: m.collected,
     outstanding: m.outstanding,
     plannedCost: m.planned.total,
@@ -394,6 +408,7 @@ export async function loadJobDetail(
     stockUnpriced: cost.unpriced,
     cost: m.cost,
     costIsPlanned: m.costIsPlanned,
+    costKnown: m.costKnown,
     profit: m.profit,
     marginPct: m.marginPct,
     plannedProfit: m.plannedProfit,
@@ -458,6 +473,7 @@ export async function loadJobDetail(
     title: job.title,
     status: STATUS_TO_KEY[job.status] ?? "sch",
     dates: headDates(job.startsAt, job.endsAt),
+    undated: !job.startsAt && !job.endsAt,
     fieldDates: fieldDates(job.startsAt, job.endsAt),
     clientName: job.client?.name ?? null,
     scopeOfWork: job.scopeOfWork?.trim() || null,
@@ -474,9 +490,12 @@ export async function loadJobDetail(
     // `Job.proposalId` decides the whole proposal section. The include above
     // resolves it to a row; a dangling id (proposal deleted) reads as no
     // proposal, which is the honest answer — there is nothing to open.
+    // The button shows what the client owes now — with the approved change
+    // orders, as the money card does (2026-11-04).
     proposal: job.proposal
-      ? { id: job.proposal.id, title: job.proposal.title, total: job.proposal.total }
+      ? { id: job.proposal.id, title: job.proposal.title, total: contractTotal(job.proposal.total, job.proposal.changeOrders) }
       : null,
+    project: job.project ? { id: job.project.id, name: job.project.name } : null,
     // Both worker-edition affordances. The office record is unchanged: it has
     // "Add to schedule", which books the CREW, and a desk.
     directionsUrl: null,
@@ -606,6 +625,7 @@ async function loadWorkerScoped(
     title: job.title,
     status: STATUS_TO_KEY[job.status] ?? "sch",
     dates: headDates(job.startsAt, job.endsAt),
+    undated: !job.startsAt && !job.endsAt,
     fieldDates: fieldDates(job.startsAt, job.endsAt),
     clientName: job.client?.name ?? null,
     scopeOfWork: job.scopeOfWork?.trim() || null,
@@ -620,6 +640,7 @@ async function loadWorkerScoped(
         }
       : null,
     proposal: null,
+    project: null,
     directionsUrl: addressLine ? directionsUrl(addressLine) : null,
     calendarUrl: job.startsAt
       ? calendarUrl(job.title, job.startsAt, job.endsAt, addressLine)

@@ -11,6 +11,7 @@
 //   active-item indicator, the graph-paper parallax and press feedback on
 //   shell controls.
 
+import { createClient } from "@/actions/clients";
 import { createProject } from "@/actions/projects";
 import { closeMdl, openMdl, MDL_EXIT_MS } from "@/components/v3/blueprint-shell/mdl-motion";
 import { staggerIn } from "@/components/v3/blueprint-shell/list-motion";
@@ -229,7 +230,8 @@ export function initProjectsContent(
       '<td><div class="pj-jobs">' +
       (p.jobCount > 0
         ? '<b class="' + (done ? "done" : "") + '">' + p.completedJobs + " of " + p.jobCount + "</b><span>" +
-          (done ? "done" : (p.inProgressJobs ?? 0) > 0 ? (p.inProgressJobs ?? 0) + " in progress" : "scheduled") + "</span>" +
+          // "0 of 3 scheduled" read as none of them on the calendar; the count is the jobs DONE (2026-11-04).
+          ((p.inProgressJobs ?? 0) > 0 && !done ? "done · " + (p.inProgressJobs ?? 0) + " in progress" : "done") + "</span>" +
           '<div class="pjc-track pj-track"><div class="pjc-fill' + (done ? " done" : "") + '" data-w="' + pct + '"></div></div>'
         : '<b class="pj-zero">—</b><span>no jobs yet</span>') +
       "</div></td>" +
@@ -260,11 +262,12 @@ export function initProjectsContent(
     put("pjKActive", String(active.length));
     put("pjKActiveSub", onHold ? onHold + " on hold" : projectsData.length + " in the book");
     put("pjKSold", money(sold));
-    put("pjKSoldSub", open > 0 ? moneyShort(open) + " still with clients" : "accepted, with approved changes");
+    put("pjKSoldSub", open > 0 ? moneyShort(open) + " still open · before tax" : "accepted, with approved changes · before tax");
     put("pjKSpent", money(spent));
     put("pjKSpentSub", budget > 0 ? Math.round((spent / budget) * 100) + "% of " + moneyShort(budget) + " budgeted" : "no budgets set yet");
     put("pjKAttn", String(attn.length));
-    put("pjKAttnSub", over ? over + " over budget" : attn.length ? "waiting or near the line" : "all clear");
+    const losing = projectsData.filter((p) => flagsOf(p).some((f) => f.kind === "loss")).length;
+    put("pjKAttnSub", over ? over + " over budget" : losing ? losing + " losing money" : attn.length ? "waiting or near the line" : "all clear");
     const attnVal = $("#pjKAttn");
     if (attnVal) attnVal.classList.toggle("pj-k--bad", over > 0);
   }
@@ -412,6 +415,14 @@ export function initProjectsContent(
 
     function markErr(on: boolean) {
       pjDlg!.querySelector<HTMLElement>('[data-fld="name"]')?.classList.toggle("is-err", on);
+      if (!on) pjDlg!.querySelector<HTMLElement>('[data-fld="client"]')?.classList.remove("is-err");
+    }
+
+    /** "+ New client…" opens the name and phone fields under the picker. */
+    function paintNewClient() {
+      const open = pjDlg!.querySelector<HTMLSelectElement>("#pjfClient")?.value === "__new";
+      $("#pjfNewClient")?.classList.toggle("is-hidden", !open);
+      return open;
     }
 
     /** The server action's own refusal text — the plan-limit message and the
@@ -465,6 +476,7 @@ export function initProjectsContent(
 
     function resetDlg() {
       pjForm!.reset();
+      paintNewClient();
       nameAuto = false;
       draftStatus = STATUSES[0];
       paintStatus();
@@ -486,6 +498,11 @@ export function initProjectsContent(
       });
       on(clientSelEl, "change", () => {
         const opt = clientSelEl.selectedOptions[0];
+        if (paintNewClient()) {
+          // The new client's name names the project as they type it, as a picked one does.
+          requestAnimationFrame(() => inp("#pjfClientName")?.focus());
+          return;
+        }
         if (!clientSelEl.value || !opt) {
           if (nameAuto) {
             nameInput.value = "";
@@ -500,6 +517,14 @@ export function initProjectsContent(
         nameAuto = true;
         markErr(false);
       });
+      const newNameEl = inp("#pjfClientName");
+      if (newNameEl) {
+        on(newNameEl, "input", () => {
+          if (nameInput.value.trim() && !nameAuto) return;
+          nameInput.value = newNameEl.value.trim();
+          nameAuto = !!nameInput.value;
+        });
+      }
     }
 
     on(pjDlg, "click", (e) => {
@@ -568,11 +593,29 @@ export function initProjectsContent(
         Number((inp("#pjfBudget")?.value || "").replace(/[^\d.]/g, "")) || 0,
       );
       const clientSel = pjDlg!.querySelector<HTMLSelectElement>("#pjfClient");
-      const clientId = clientSel?.value || null;
-      const clientName = clientSel && clientSel.value ? (clientSel.selectedOptions[0]?.textContent ?? "").split(" — ")[0] : null;
+      const making = clientSel?.value === "__new";
+      const newName = (inp("#pjfClientName")?.value || "").trim();
+      if (making && !newName) {
+        pjDlg!.querySelector<HTMLElement>('[data-fld="client"]')?.classList.add("is-err");
+        inp("#pjfClientName")?.focus();
+        return;
+      }
+      let clientId = making ? null : clientSel?.value || null;
+      const clientName = making ? newName : clientSel && clientSel.value ? (clientSel.selectedOptions[0]?.textContent ?? "").split(" — ")[0] : null;
 
       setBusy(true);
       try {
+        if (making) {
+          const made = await createClient({ name: newName, phone: (inp("#pjfClientPhone")?.value || "").trim() || undefined });
+          clientId = made.id;
+          // Keep it picked if the project itself is refused, so a second press does not make the client twice.
+          const opt = document.createElement("option");
+          opt.value = made.id;
+          opt.textContent = made.name;
+          clientSel!.insertBefore(opt, clientSel!.options[2] ?? null);
+          clientSel!.value = made.id;
+          paintNewClient();
+        }
         // The action's schema coerces the dates; "YYYY-MM-DD" is read as UTC
         // midnight, which is exactly what the page formats back for display.
         const res = await createProject({

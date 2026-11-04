@@ -2599,3 +2599,70 @@
 /* The visit's sheet: the channel tag sits ABOVE "By the customer, on your booking page", not inline with it. */
 .bp :global(.content .sf-via > span:last-child) { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
 .bp :global(.content .sf-via .evc-via) { margin: 0; height: 18px; padding: 0 7px; font-size: 9.5px; }
+
+/* ============================================================
+   LANES + PROJECTS (owner, 2026-11-04) — above the grid: what it shows (All ·
+   Projects · Appointments · Installs, the SmartSpace lanes) and a chip per
+   project on the calendar in the project's colour (globals.css --proj-*).
+   The colour is a swatch beside the name, never the text: past three projects
+   the name is what tells them apart.
+   ============================================================ */
+.bp :global(.content .cal-lanes) { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin: -4px 0 14px; }
+.bp :global(.content .cal-lanes:empty) { display: none; }
+.bp :global(.content .cal-lane-sw) {
+  display: inline-flex; height: 34px;
+  border: 1.5px solid var(--ink); border-radius: var(--radius);
+  background: #fff; overflow: hidden;
+}
+.bp :global(.content .cal-lane-sw .vsw-btn) {
+  display: inline-flex; align-items: center; height: 100%; padding: 0 14px;
+  border-right: 1.5px solid var(--ink);
+  font-size: 11.5px; font-weight: 800; letter-spacing: 0.02em; color: var(--ink); background: #fff;
+  transition: background 0.12s, color 0.12s;
+}
+.bp :global(.content .cal-lane-sw .vsw-btn:last-child) { border-right: none; }
+.bp :global(.content .cal-lane-sw .vsw-btn:hover) { background: var(--paper-deep); }
+.bp :global(.content .cal-lane-sw .vsw-btn.active) { background: var(--ink); color: var(--paper); }
+
+.bp :global(.content [data-tone="0"]) { --proj: var(--proj-0); }
+.bp :global(.content [data-tone="1"]) { --proj: var(--proj-1); }
+.bp :global(.content [data-tone="2"]) { --proj: var(--proj-2); }
+.bp :global(.content [data-tone="3"]) { --proj: var(--proj-3); }
+.bp :global(.content [data-tone="4"]) { --proj: var(--proj-4); }
+.bp :global(.content [data-tone="5"]) { --proj: var(--proj-5); }
+
+.bp :global(.content .cal-projs) { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.bp :global(.content .cal-proj), .bp :global(.content .cal-proj-all) {
+  display: inline-flex; align-items: center; gap: 7px; height: 32px; max-width: 260px; padding: 0 11px;
+  border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff;
+  font-size: 12px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: background 0.12s, color 0.12s;
+}
+.bp :global(.content .cal-proj i) { flex: 0 0 auto; width: 11px; height: 11px; border: 1px solid var(--ink); background: var(--proj); }
+.bp :global(.content .cal-proj:hover) { background: var(--paper-deep); }
+.bp :global(.content .cal-proj.on) { background: var(--ink); color: var(--paper); box-shadow: 2px 2px 0 var(--proj); }
+.bp :global(.content .cal-proj.on i) { border-color: var(--paper); }
+.bp :global(.content .cal-proj-all) { border-style: dashed; color: var(--muted); font-weight: 600; }
+.bp :global(.content .cal-proj-all:hover) { color: var(--ink); }
+
+/* A project's job on the grid: a light wash of its colour, and the name in its tag. */
+.bp :global(.content .evc.evc--proj) { background: color-mix(in srgb, var(--proj) 11%, #fff); }
+.bp :global(.content .evc-proj) {
+  display: inline-flex; align-items: center; gap: 4px; max-width: 100%; vertical-align: 1px;
+  margin-right: 5px; font-family: var(--font-sans); font-size: 9.5px; font-weight: 800; color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bp :global(.content .evc-proj i) { flex: 0 0 auto; width: 7px; height: 7px; border: 1px solid var(--ink); background: var(--proj); }
+
+/* The pop-out link wears the toolbar's ghost button. */
+.bp :global(.content .cal-popout) { text-decoration: none; }
+
+/* The calendar in its own window: a slim head where the page head was. */
+.bp :global(.content .cal-window-head) {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1.5px solid var(--ink);
+}
+.bp :global(.content .cal-window-mark) { font-size: 15px; font-weight: 600; color: var(--muted); }
+.bp :global(.content .cal-window-mark b) { font-weight: 900; color: var(--ink); text-transform: uppercase; letter-spacing: 0.02em; }
+.bp :global(.content .cal-window-note) { margin-right: auto; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
+.bp :global(.content .cal-window-head .btn) { text-decoration: none; }

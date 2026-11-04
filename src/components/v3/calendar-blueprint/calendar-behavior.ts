@@ -61,10 +61,12 @@ import {
   type CalendarSeed,
   type CalEvent,
   type CalKind,
+  type CalProject,
   type InboxItem,
   type LinkOption,
   type TrayJob,
 } from "./calendar-data";
+import { LANES, readPick, savePick, shownBy, type Lane } from "./calendar-lanes";
 
 export type CalendarContentOptions = {
   /** The org's real calendar, read server-side. Omit to fall back to the donor
@@ -83,12 +85,18 @@ export type CalendarContentOptions = {
    *  Optional: the standalone mock route mounts this module with no router, and
    *  the fixture has no job ids to open anyway. */
   navigate?: (href: string) => void;
+  /** The calendar in its own window (`?view=standalone`, 2026-11-04): kept fresh on a timer, since it is the screen
+   *  left open while the office works in another one. */
+  standalone?: boolean;
 };
 
 /** The jobs board's own href shape (jobs-behavior.ts `jobHref`) — one shape, so
  *  the two surfaces cannot disagree about where a job lives. */
 function jobHref(id: string): string {
   return "/dashboard/jobs/" + encodeURIComponent(id);
+}
+function projectHref(id: string): string {
+  return "/dashboard/projects/" + encodeURIComponent(id);
 }
 
 /**
@@ -281,6 +289,9 @@ export function initCalendarContent(
    *  count and clears when the sheet opens (seen-stamped server-side). */
   let inboxUnseen = seed?.inboxUnseen ?? 0;
   let evSeq = 100;
+  /** The projects whose jobs are on the calendar, by id — chips, tags, the Projects lane. */
+  let projectsData: CalProject[] = (seed?.projects ?? []).map((p) => ({ ...p }));
+  let projIndex = new Map(projectsData.map((p) => [p.id, p]));
 
   // ---------- write plumbing ----------
   /** Failed writes have to say so. A drag-to-reschedule happens with no sheet
@@ -397,6 +408,9 @@ export function initCalendarContent(
     workers: [] as string[],
     statuses: [] as string[],
     query: "",
+    /** The lane and the picked projects (2026-11-04) — restored from this browser. */
+    lane: "all" as Lane,
+    projects: [] as string[],
     dragEvent: null as string | null,
     dragJob: null as string | null,
     /** Minutes between a dragged block's start and the point it was grabbed. */
@@ -423,6 +437,12 @@ export function initCalendarContent(
       allDay: false,
     },
   };
+  {
+    const pick = readPick();
+    cal.lane = pick.lane;
+    // Only projects still on the calendar; a pick for one that left it is dropped.
+    cal.projects = pick.projects.filter((id) => projIndex.has(id));
+  }
 
   function sameDay(a: Date, b: Date) {
     return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -496,6 +516,18 @@ export function initCalendarContent(
     if (e.kind === "appointment") return VISIT_VIA[e.via || "team"].icon;
     return KIND_IC[e.kind] || "i-cal";
   }
+  /** A project's job carries its project: a swatch in the project's colour and the name, which is what tells two
+   *  projects apart past the three colours that always can (globals.css --proj-*). */
+  function projTag(e: CalEvent) {
+    const p = e.projectId ? projIndex.get(e.projectId) : undefined;
+    if (!p) return "";
+    return '<span class="evc-proj" data-tone="' + p.tone + '"><i></i>' + esc(p.name) + "</span>";
+  }
+  /** The chip's own class and colour slot for a project's job — a light wash of the project's colour. */
+  function projAttrs(e: CalEvent) {
+    const p = e.projectId ? projIndex.get(e.projectId) : undefined;
+    return p ? ' data-tone="' + p.tone + '"' : "";
+  }
   /** "AI DESK" / "ONLINE" / "PLAN" / "OFFICE" — only visits carry one. */
   function viaTag(e: CalEvent) {
     if (e.kind !== "appointment") return "";
@@ -505,6 +537,8 @@ export function initCalendarContent(
   function visibleEvents() {
     const q = cal.query.trim().toLowerCase();
     return eventsData.filter(function (e) {
+      // The lane and the picked projects (calendar-lanes).
+      if (!shownBy(e, cal.lane, cal.projects)) return false;
       if (cal.statuses.length && cal.statuses.indexOf(e.status) === -1) return false;
       if (cal.workers.length && !e.workers.some(function (w) { return cal.workers.indexOf(w) !== -1; })) return false;
       if (!q) return true;
@@ -645,6 +679,36 @@ export function initCalendarContent(
     if (clearN) clearN.textContent = String(n);
     byId("calClear")?.classList.toggle("is-hidden", n === 0);
   }
+  /** The lane switch and the project chips above the grid (2026-11-04). A project chip picks that project — several
+   *  may be picked — and moves the grid to the Projects lane; a lane other than All or Projects lets the picks go. */
+  function renderLanes() {
+    const host = byId("calLanes");
+    if (!host) return;
+    const sw =
+      '<div class="vsw cal-lane-sw" role="group" aria-label="Show on the calendar">' +
+      LANES.map(function ([k, label]) {
+        const on = cal.lane === k;
+        return '<button class="vsw-btn' + (on ? " active" : "") + '" type="button" data-lane="' + k + '" aria-pressed="' + on + '">' + label + "</button>";
+      }).join("") +
+      "</div>";
+    const chips = projectsData.length && cal.lane !== "appointments" && cal.lane !== "installs"
+      ? '<div class="cal-projs" role="group" aria-label="Projects">' +
+        projectsData.map(function (p) {
+          const on = cal.projects.indexOf(p.id) !== -1;
+          return '<button class="cal-proj' + (on ? " on" : "") + '" type="button" data-proj="' + esc(p.id) + '" data-tone="' + p.tone + '" aria-pressed="' + on + '"><i></i>' + esc(p.name) + "</button>";
+        }).join("") +
+        (cal.projects.length ? '<button class="cal-proj-all" type="button" data-proj-all>All projects</button>' : "") +
+        "</div>"
+      : "";
+    host.innerHTML = sw + chips;
+    host.classList.toggle("has-projs", !!chips);
+  }
+  function pickChanged() {
+    savePick(cal.lane, cal.projects);
+    renderLanes();
+    renderGrid();
+  }
+
   function renderFilters() {
     const wf = byId("workerFilter");
     if (wf) {
@@ -701,11 +765,12 @@ export function initCalendarContent(
   }
 
   function chipHtml(e: CalEvent, compact: boolean) {
-    return '<button class="evc ' + statusCls(e) + '" type="button" draggable="' + canDrag(e) + '" data-ev="' + e.id + '">' +
+    const proj = projTag(e);
+    return '<button class="evc ' + statusCls(e) + (proj ? " evc--proj" : "") + '" type="button" draggable="' + canDrag(e) + '" data-ev="' + e.id + '"' + projAttrs(e) + ">" +
       '<span class="evc-t"><svg class="ic"><use href="#' + evIcon(e) + '"/></svg><span class="evc-txt">' + esc(e.title) + "</span></span>" +
       (compact
-        ? (e.kind === "appointment" ? '<span class="evc-time">' + viaTag(e) + "</span>" : "")
-        : '<span class="evc-time">' + viaTag(e) + (e.allDay ? "All day" : fmtTime(e.start)) + " · " + esc(workerNames(e).join(", ") || (e.orgWide ? "everyone" : "unassigned")) + "</span>") +
+        ? (e.kind === "appointment" || proj ? '<span class="evc-time">' + viaTag(e) + proj + "</span>" : "")
+        : '<span class="evc-time">' + viaTag(e) + proj + (e.allDay ? "All day" : fmtTime(e.start)) + " · " + esc(workerNames(e).join(", ") || (e.orgWide ? "everyone" : "unassigned")) + "</span>") +
       "</button>";
   }
 
@@ -1102,13 +1167,14 @@ export function initCalendarContent(
 
   function weekEvHtml(p: Placed) {
     const short = p.height < 42;
-    return '<button class="evc wg-ev ' + statusCls(p.e) + (short ? " is-short" : "") +
+    const proj = projTag(p.e);
+    return '<button class="evc wg-ev ' + statusCls(p.e) + (proj ? " evc--proj" : "") + (short ? " is-short" : "") +
       (flushTop(p.top, p.height).onLine ? " is-flush-top" : "") + '" type="button" draggable="' + canDrag(p.e) + '"' +
-      ' data-ev="' + p.e.id + '"' +
+      ' data-ev="' + p.e.id + '"' + projAttrs(p.e) +
       ' style="' + geoStyle(p) + '">' +
       '<span class="evc-t"><svg class="ic"><use href="#' + evIcon(p.e) + '"/></svg>' +
       '<span class="evc-txt">' + esc(p.e.title) + "</span></span>" +
-      '<span class="wg-ev-time">' + viaTag(p.e) + fmtRange(p.e.start, p.e.end) + "</span>" +
+      '<span class="wg-ev-time">' + viaTag(p.e) + proj + fmtRange(p.e.start, p.e.end) + "</span>" +
       // The two edge grips. Rendered inside the block (which is the containing
       // block for them) and marked aria-hidden: they are a pointer affordance
       // for a gesture the sheet's own start/end pickers already expose to the
@@ -1152,7 +1218,7 @@ export function initCalendarContent(
       if (evs.length) adAny = true;
       adCols.push('<div class="wg-ad-cell" data-day="' + day.toISOString() + '">' +
         evs.map(function (e) {
-          return '<button class="evc wg-ad-ev ' + statusCls(e) + '" type="button" draggable="true" data-ev="' + e.id + '">' +
+          return '<button class="evc wg-ad-ev ' + statusCls(e) + (e.projectId && projIndex.has(e.projectId) ? " evc--proj" : "") + '" type="button" draggable="true" data-ev="' + e.id + '"' + projAttrs(e) + ">" +
             '<span class="evc-t"><svg class="ic"><use href="#' + evIcon(e) + '"/></svg>' +
             '<span class="evc-txt">' + esc(e.title) + "</span></span></button>";
         }).join("") + "</div>");
@@ -1258,7 +1324,7 @@ export function initCalendarContent(
   const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   function renderCal() {
-    renderBar(); renderFilters();
+    renderBar(); renderFilters(); renderLanes();
     byId("monthCard")?.classList.toggle("is-hidden", cal.view !== "month");
     byId("weekCard")?.classList.toggle("is-hidden", cal.view !== "week");
     byId("teamCard")?.classList.toggle("is-hidden", cal.view !== "team");
@@ -1749,6 +1815,11 @@ export function initCalendarContent(
           ? '<button class="btn btn-ghost btn--sm" type="button" data-act="open-job" data-job="' +
             esc(e.jobId) + '"><svg class="ic"><use href="#i-jobs"/></svg>Open job</button>'
           : "") +
+        // A project's job opens its project too — the hub with its money, crew and the rest of its jobs (2026-11-04).
+        (e.projectId && projIndex.has(e.projectId)
+          ? '<button class="btn btn-ghost btn--sm" type="button" data-act="open-project" data-project="' +
+            esc(e.projectId) + '"><svg class="ic"><use href="#i-folder"/></svg>Open project</button>'
+          : "") +
         // The one destructive control on this page, so it carries the house
         // danger treatment (`btn--danger`) rather than reading as a third
         // equal-weight ghost button next to Save and Open job. Same modifier and
@@ -2030,6 +2101,29 @@ export function initCalendarContent(
     });
   }
   bindFilter("workerFilter", "workers", "w");
+  onId("calLanes", "click", function (e) {
+    const t = asEl(e.target);
+    if (!t) return;
+    closeFdd();
+    const lane = t.closest<HTMLElement>("[data-lane]")?.dataset.lane as Lane | undefined;
+    if (lane) {
+      cal.lane = lane;
+      if (lane === "appointments" || lane === "installs") cal.projects = [];
+      pickChanged();
+      return;
+    }
+    if (t.closest("[data-proj-all]")) {
+      cal.projects = [];
+      pickChanged();
+      return;
+    }
+    const id = t.closest<HTMLElement>("[data-proj]")?.dataset.proj;
+    if (!id) return;
+    const i = cal.projects.indexOf(id);
+    if (i === -1) cal.projects.push(id); else cal.projects.splice(i, 1);
+    if (cal.projects.length && cal.lane !== "projects") cal.lane = "projects";
+    pickChanged();
+  });
   // Statuses are plain toggles, no menu to open or close.
   onId("statusFilter", "click", function (e) {
     const b = asEl(e.target)?.closest<HTMLElement>("[data-s]");
@@ -2740,7 +2834,19 @@ export function initCalendarContent(
       if (!jobId) return;
       closeSheet();
       const href = jobHref(jobId);
-      if (options.navigate) options.navigate(href);
+      if (options.standalone) window.open(href, "jobflex-app");
+      else if (options.navigate) options.navigate(href);
+      else window.location.assign(href);
+      return;
+    }
+    if (act.dataset.act === "open-project") {
+      const projectId = act.dataset.project;
+      if (!projectId) return;
+      closeSheet();
+      const href = projectHref(projectId);
+      // From its own window the calendar stays put: the project opens in the app's window or a new tab.
+      if (options.standalone) window.open(href, "jobflex-app");
+      else if (options.navigate) options.navigate(href);
       else window.location.assign(href);
       return;
     }
@@ -3299,12 +3405,26 @@ export function initCalendarContent(
             eventsData.length,
             ...fresh.events.map((e) => ({ ...e, start: new Date(e.start), end: new Date(e.end), workers: e.workers.slice(), assignmentIds: { ...(e.assignmentIds || {}) } })),
           );
+          projectsData = (fresh.projects ?? []).map((p) => ({ ...p }));
+          projIndex = new Map(projectsData.map((p) => [p.id, p]));
+          cal.projects = cal.projects.filter((id) => projIndex.has(id));
           renderCal();
         })
         .catch(function () {
           /* the next visit to the page reads it */
         });
     });
+    // THE CALENDAR'S OWN WINDOW stays current by itself: read again every two minutes, and the moment it is looked at
+    // after being in the background — unless a sheet is open or a drag is under way, which a redraw would break.
+    if (options.standalone) {
+      const fresh = () => {
+        if (document.hidden || cal.sheet || cal.dragEvent || cal.dragJob) return;
+        window.dispatchEvent(new Event("jf:calendar-reload"));
+      };
+      const t = window.setInterval(fresh, 120000);
+      disposers.push(() => window.clearInterval(t));
+      on(document, "visibilitychange", fresh);
+    }
   }
 
   // The mobile nav drawer and FLUID SCALE belong to the persistent chrome and

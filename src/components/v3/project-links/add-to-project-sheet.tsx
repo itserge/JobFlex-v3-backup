@@ -71,6 +71,10 @@ export function AddToProjectSheet() {
       setOpen(true);
       clientProjectOptions(clientId)
         .then((d) => {
+          if ("refused" in d) {
+            setLoadError(d.refused);
+            return;
+          }
           setData(d);
           const own = d.projects.find((p) => p.forThisClient);
           setMode(own ? "existing" : "new");
