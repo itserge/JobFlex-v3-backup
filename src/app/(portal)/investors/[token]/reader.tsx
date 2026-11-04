@@ -22,7 +22,7 @@ async function signedInAdmin(): Promise<boolean> {
 
 /** The reader, or the page to show instead (not active · introduce yourself · waiting for our yes). */
 export async function investorReader(token: string, opts: { openWord?: string; countVisit?: boolean } = {}): Promise<{ visitor: InvestorVisitor } | { door: ReactNode }> {
-  const notice = opts.openWord === "expired" || opts.openWord === "closed" ? opts.openWord : undefined;
+  const notice = opts.openWord === "bad" || opts.openWord === "closed" ? opts.openWord : undefined;
   const open = /^[A-Za-z0-9_-]{16,64}$/.test(token) && (await investorLinkOpen(token));
   if (!open) {
     return {

@@ -34,7 +34,7 @@ async function limit(key: string, max: number): Promise<string | null> {
   }
 }
 
-export async function introduceInvestorAction(token: unknown, raw: unknown): Promise<Result | { ok: true; outcome: IntroOutcome; email: string }> {
+export async function introduceInvestorAction(token: unknown, raw: unknown): Promise<Result | { ok: true; outcome: IntroOutcome }> {
   const t = await linkLive(token);
   if (!t) return { ok: false, error: "This link is no longer active. Ask for a current one." };
   const slow = await limit("inv-intro", 8);
@@ -43,7 +43,7 @@ export async function introduceInvestorAction(token: unknown, raw: unknown): Pro
   if (Object.keys(problems).length) return { ok: false, error: "A few details are missing.", problems: problems as Record<string, string> };
   const settings = await readInvestorSettings();
   const { outcome } = await introduceVisitor(t, settings.linkMadeAt, value, { admin: await isAdmin(), approveReaders: settings.approveReaders });
-  return { ok: true, outcome, email: value.email };
+  return { ok: true, outcome };
 }
 
 /** The waiting page asks, every little while, whether we have said yes (2026-10-20). Reads only this browser's own

@@ -13,7 +13,7 @@
 // AND WAITS FOR OUR YES (owner, 2026-10-20): with approvals on, a reader who
 // introduced themselves waits here (InvestorWaiting) until an admin approves on
 // /admin/investors; the page opens on its own then. ?open= carries a word back
-// from an open link that could not open (expired, or not approved).
+// from an open link that could not open (cut short, or not approved).
 //
 // BESIDE IT (owner, 2026-10-25): the pitch deck (./pitch) and the platform tour (./tour), behind the same door
 // (./reader) and reached from the tabs under the greeting.
