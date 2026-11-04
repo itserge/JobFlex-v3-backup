@@ -15,6 +15,9 @@
 // pressed until the waiting page is up (the page is fetched again behind it, which can take a few seconds). A
 // signed-in admin is still let in without approval (owner, 2026-11-02: keep skipping for admins), and the button and
 // the note say so plainly, with the way to try the reader's door: a private window.
+//
+// 2026-11-03 (owner: "when they open the link, above the form, there should be a text blurb about JobFlex"): what
+// JobFlex is comes first, so an investor knows what they are asking to see — in the owner's own words (2026-11-04).
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -52,13 +55,28 @@ function Chips({ name, options, value, onPick, problem }: { name: string; option
   );
 }
 
-/** Before the figures: who is reading. An admin goes through it too (2026-10-14), to see the page as a reader does. */
 /** "j•••@acme.vc": enough for the reader to know which inbox to look in. */
 const maskEmail = (e: string) => {
   const [user, domain] = e.split("@");
   return domain ? `${user.slice(0, 1)}•••@${domain}` : e;
 };
 
+/** What JobFlex is, before the door — the owner's own blurb, word for word (2026-11-04). */
+function AboutJobFlex() {
+  return (
+    <section className={s.blurb} aria-label="About JobFlex" data-investor-blurb>
+      <h1 className={s.blurbTitle}>JobFlex — AI-Powered Estimating &amp; Business Management for Contractors</h1>
+      <p className={s.lede}>JobFlex is an all-in-one AI-powered platform designed for contractors across all construction and home improvement trades.</p>
+      <p className={s.blurbText}>From roofing, HVAC, fencing, decking, and gutters to remodeling and general contracting, JobFlex simplifies estimating, project management, and business operations with intelligent automation.</p>
+      <p className={s.blurbText}>The platform combines AI-powered estimates, property measurements, material takeoffs, professional proposals, CRM, scheduling, payments, and customer financing solutions in one streamlined workspace.</p>
+      <p className={s.blurbText}>JobFlex also features a dedicated Homeowner Portal, allowing homeowners to submit projects and connect with contractors, creating new opportunities for business growth.</p>
+      <p className={s.blurbClose}>Built for contractors of every specialty, JobFlex helps businesses save time, win more projects, and scale efficiently.</p>
+      <a className={s.blurbSite} href="https://jobflex.app" target="_blank" rel="noopener noreferrer">jobflex.app</a>
+    </section>
+  );
+}
+
+/** Before the figures: who is reading. An admin goes through it too (2026-10-14), to see the page as a reader does. */
 export function InvestorGate({ token, admin = false, approval = true, notice }: { token: string; admin?: boolean; approval?: boolean; notice?: "bad" | "closed" }) {
   const router = useRouter();
   const [f, setF] = useState({ name: "", company: "", kind: "", email: "", phone: "" });
@@ -106,7 +124,8 @@ export function InvestorGate({ token, admin = false, approval = true, notice }: 
   return (
     <div className={s.gate} data-investor-gate>
       <div className={s.kicker}>JobFlex · Investors</div>
-      <h1 className={s.h1}>Before the figures — who&apos;s reading?</h1>
+      <AboutJobFlex />
+      <h2 className={`${s.h2} ${s.doorTitle}`}>Before the figures — who&apos;s reading?</h2>
       <p className={s.sub}>
         {approval
           ? "The live numbers — what the ads cost, how many contractors start a trial, and how soon the ads pay for themselves — are shared one reader at a time. Tell us who you are; we look at each request and open the page for you. You'll hear by email, and this page opens on its own. Already let in? Type the same email and it opens on this device too."
