@@ -144,6 +144,15 @@ Press **Upgrade / Downgrade / Switch to annual / Switch to monthly** on a card, 
 - Effect: "You keep <plan> until <date> — the cycle you've already paid for — and you won't be billed again. Then your account moves to the Free plan. Nothing is refunded for the days you don't use." Email: "Your plan switches to Free on <date>". Cancelling during a trial: no charge.
 - Undo before the date: **Keep <plan>** (Settings → Billing or Subscription). After: "Your plan has already switched to Free. Choose a plan to start again." — paid at once, no new trial.
 - Comp plans: "Your plan is complimentary — there's nothing to cancel."
+- Cancelling is NOT on the **Subscription** page in the left menu (plans, the card and invoices only — no cancel button there). On a computer the left menu has no word "Settings": it is the gear icon next to the person's name at its foot; on a phone, **Settings** is in the bar at the bottom.
+
+**The steps to send the customer — word for word, only <plan> and <date> filled in** (walked on the app 2026-11-03, computer and phone; a customer told "follow the steps" missed the small **Continue to cancel** link):
+1. Open Settings → Billing: https://www.jobflex.app/dashboard/settings?pane=billing — or, on a computer, click the gear icon next to your name at the bottom of the left menu (on a phone, tap Settings in the bar at the bottom), then Billing.
+2. Click **Manage subscription**. Only the account owner has this button — anyone else sees "Ask your owner".
+3. At the bottom of the window that opens, click **Cancel subscription**.
+4. On "Before you go", click **Continue to cancel** — the link under the big **Keep <plan>** button.
+5. Tick at least one reason under "Why are you cancelling?", then click **Cancel subscription**.
+After that you keep <plan> until <date> and won't be billed again; then your account moves to the Free plan, and your data stays. Nothing is refunded for the days you don't use (on a trial, nothing is charged).
 
 ### Failed payment
 - Stripe retries; tools stay open meanwhile. Ribbon "Payment failed · Check your payment." → **Review payment** (Subscription). Card "Payment needs attention": **Review & pay $X**, **Update card**, **Check payment status**, next try date. Others see "Ask the owner to update the card."
