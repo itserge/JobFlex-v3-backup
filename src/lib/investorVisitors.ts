@@ -22,7 +22,11 @@ import "server-only";
 // email, as long as it's the same link"): an investor sent the link lost the figures hours later on another device. No
 // clock on the pass or on the open link — the browser keeps the pass as long as it keeps any cookie — and the email let
 // in, typed at the door of the same link in a new browser, opens the figures there and then. What still closes it: a
-// decline (read on every page) or a new link (the token is in every signature).
+// decline (read on every page) or closing the link they hold (the token is in every signature).
+//
+// SEVERAL LINKS (owner, 2026-11-04: "create two or three … send it to people … they fill it up and it says link is not
+// active"): a new link no longer ends the others — each is closed on its own (lib/investors links). A reader is filed
+// under the link they came through; the email they were let in with opens any live link's door.
 import { createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
 import { db } from "@/lib/db";
@@ -188,16 +192,17 @@ export async function introduceVisitor(token: string, linkMadeAt: string | null,
   const review = opts.approveReaders !== false && !opts.admin;
   const list = await readInvestorVisitors();
   const now = new Date().toISOString();
-  // The same person on the same link (same email) is one reader who came back, not two — but an admin's walk-through and
-  // a reader are never the same entry (2026-11-02): the email an admin tried the door with, typed in a browser no admin
-  // is signed in to, is somebody's request and waits like one; an admin trying it never turns a reader into a test.
-  const same = list.findIndex((v) => v.email === input.email && v.linkMadeAt === linkMadeAt && Boolean(v.admin) === Boolean(opts.admin));
+  // The same person (same email) is one reader who came back, not two — on any of the live links since 2026-11-04 (the
+  // owner sends several; a yes is the person's, not the link's) — but an admin's walk-through and a reader are never the
+  // same entry (2026-11-02): the email an admin tried the door with, typed in a browser no admin is signed in to, is
+  // somebody's request and waits like one; an admin trying it never turns a reader into a test.
+  const same = list.findIndex((v) => v.email === input.email && Boolean(v.admin) === Boolean(opts.admin));
   if (same >= 0) {
     const was = list[same];
     const st = statusOf(was);
-    // Let in before, on this link: this browser opens too — the phone after the laptop (owner, 2026-11-03). A request
-    // still waiting waits here as well, and a no stays a no.
-    const visitor: InvestorVisitor = { ...was, name: input.name, company: input.company, kind: input.kind, phone: input.phone ?? was.phone, visits: was.visits + 1, lastSeen: now, admin: opts.admin || was.admin || undefined, ...(opts.admin || !review ? { status: st === "declined" && !opts.admin ? "declined" : "approved" } : {}) };
+    // Let in before: this browser opens too — the phone after the laptop (owner, 2026-11-03), another of our links. A
+    // request still waiting waits here as well, and a no stays a no. The entry moves to the link they came through now.
+    const visitor: InvestorVisitor = { ...was, linkMadeAt, name: input.name, company: input.company, kind: input.kind, phone: input.phone ?? was.phone, visits: was.visits + 1, lastSeen: now, admin: opts.admin || was.admin || undefined, ...(opts.admin || !review ? { status: st === "declined" && !opts.admin ? "declined" : "approved" } : {}) };
     list.splice(same, 1);
     await writeList(VISITORS_KEY, [visitor, ...list], 1000);
     await setPass(visitor.id, token);

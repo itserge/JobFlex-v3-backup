@@ -12,6 +12,7 @@ import { AdminInvestorsContent } from "@/components/v3/admin-investors/admin-inv
 import { InvestorAudience } from "@/components/v3/admin-investors/investor-audience";
 import { readInvestorOffers, readInvestorVisitors } from "@/lib/investorVisitors";
 import { readInvestorPitch } from "@/lib/investorPitch";
+import { readersOf } from "@/lib/investorGate";
 import { PitchWordsPanel } from "@/components/v3/admin-investors/pitch-words-panel";
 
 export const dynamic = "force-dynamic";
@@ -32,13 +33,17 @@ export default async function AdminInvestorsPage({ searchParams }: { searchParam
   const [visitors, offers, pitch] = await Promise.all([readInvestorVisitors(), readInvestorOffers(), readInvestorPitch()]);
   const a = report.settings;
   const linkBase = a.linkToken && a.linkEnabled ? `${proto}://${host}/investors/${a.linkToken}` : null;
+  // How many readers came through each link (several links since 2026-11-04), the admins' own tries left out.
+  const readersByLink: Record<string, number> = {};
+  for (const v of readersOf(visitors)) if (v.linkMadeAt) readersByLink[v.linkMadeAt] = (readersByLink[v.linkMadeAt] ?? 0) + 1;
   return (
     <AdminInvestorsContent
       initial={report}
       origin={`${proto}://${host}`}
+      readersByLink={readersByLink}
       adjust={adjust === "1"}
       pitch={<PitchWordsPanel initial={pitch} linkBase={linkBase} />}
-      audience={<InvestorAudience visitors={visitors} offers={offers} linkMadeAt={report.settings.linkMadeAt} approveReaders={report.settings.approveReaders} review={typeof review === "string" ? review.slice(0, 40) : undefined} />}
+      audience={<InvestorAudience visitors={visitors} offers={offers} liveLinks={report.settings.links.filter((l) => l.enabled).map((l) => l.madeAt)} approveReaders={report.settings.approveReaders} review={typeof review === "string" ? review.slice(0, 40) : undefined} />}
     />
   );
 }
