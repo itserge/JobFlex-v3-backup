@@ -42,7 +42,9 @@ export async function introduceInvestorAction(token: unknown, raw: unknown): Pro
   const { value, problems } = checkIntro((raw ?? {}) as Record<string, string>);
   if (Object.keys(problems).length) return { ok: false, error: "A few details are missing.", problems: problems as Record<string, string> };
   const settings = await readInvestorSettings();
-  const { outcome } = await introduceVisitor(t, settings.linkMadeAt, value, { admin: await isAdmin(), approveReaders: settings.approveReaders });
+  // The reader is filed under the link they came through (one of several since 2026-11-04).
+  const madeAt = settings.links.find((l) => l.enabled && l.token === t)?.madeAt ?? null;
+  const { outcome } = await introduceVisitor(t, madeAt, value, { admin: await isAdmin(), approveReaders: settings.approveReaders });
   return { ok: true, outcome };
 }
 
