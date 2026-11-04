@@ -63,6 +63,26 @@
 .periodValue { font-size: 22px; font-weight: 900; letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .period[data-period="today"] .periodValue, .period[data-period="all"] .periodValue { color: var(--rep-blue); }
 .periodNote { font: 600 10.5px/1.4 var(--rep-mono); color: var(--rep-muted); overflow-wrap: anywhere; }
+/* People using JobFlex (2026-11-04): the range buttons, the sentence, one series of bars in the report's blue, the
+   numbers folded away. */
+.usageRanges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.usageRange { min-height: 34px; padding: 0 12px; border: 1.5px solid var(--rep-ink); border-radius: 2px; background: #fff; color: var(--rep-ink); font: 700 11px var(--rep-mono); letter-spacing: .1em; text-transform: uppercase; cursor: pointer; }
+.usageRange:hover { background: var(--rep-paper); }
+.usageRange[aria-pressed="true"] { background: var(--rep-ink); color: #fff; }
+.usageRange:focus-visible { outline: 2px solid var(--rep-blue); outline-offset: 2px; }
+.usageLine { margin: 0 0 10px; max-width: 78ch; font-size: 15px; font-weight: 600; line-height: 1.45; text-wrap: pretty; }
+/* Drawn at its own width: never the report charts' 640px floor and sideways scroll on a phone. */
+.chartInner.usageInner { min-width: 0; }
+.usageBar { fill: var(--rep-blue); }
+.usageBarOn { fill: var(--accent-ink, #0e3d7a); }
+.usageHit { fill: transparent; cursor: pointer; outline: none; }
+.usageHit:focus-visible { fill: var(--rep-line); }
+.usageTable { margin-top: 10px; font: 600 11px/1.5 var(--rep-mono); color: var(--rep-muted); }
+.usageTable summary { cursor: pointer; width: max-content; text-decoration: underline; text-underline-offset: 3px; }
+.usageTable table { margin-top: 8px; width: 100%; border-collapse: collapse; }
+.usageTable th, .usageTable td { padding: 4px 8px; border-bottom: 1px solid var(--rep-line); text-align: right; font-variant-numeric: tabular-nums; }
+.usageTable th:first-child { text-align: left; }
+.usageTable thead th { color: var(--rep-ink); letter-spacing: .06em; text-transform: uppercase; font-size: 10px; }
 .bars { margin: 0 0 6px; }
 .bars svg { display: block; width: 100%; height: auto; }
 .bar { fill: var(--rep-ink); }

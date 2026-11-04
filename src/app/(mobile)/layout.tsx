@@ -125,7 +125,7 @@ export default async function MobileGroupLayout({ children }: { children: ReactN
   return (
     <>
       {children}
-      {organizationId && <TrialWatchMount organizationId={organizationId} email={email} />}
+      {organizationId && <TrialWatchMount />}
     </>
   );
 }

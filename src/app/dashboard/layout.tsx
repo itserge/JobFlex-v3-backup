@@ -125,9 +125,6 @@ export default async function DashboardBlueprintLayout({
   // up server-side when an admin asks).
   let userId: string | null = null;
   let plan: string | null = null;
-  // For the trial watch (components/v3/trial-watch): the beacon while the
-  // company is new, the watermark while it has not paid.
-  let email: string | null = null;
   // The card-less trial's ribbon (lib/cardlessTrial): days left and the card
   // button, or "Trial ended" while the workspace is read-only. Null on every
   // other subscription; a failed read costs the ribbon, never the page.
@@ -148,7 +145,6 @@ export default async function DashboardBlueprintLayout({
     role = ctx.role;
     organizationId = ctx.organizationId;
     userId = ctx.user.id;
-    email = ctx.user.email ?? null;
     name = ctx.user.name || ctx.user.email || "Account";
     hidden = hiddenPagesFor(ctx.user.email);
     // A Google signup lands here with a placeholder org. The owner finishes
@@ -295,7 +291,7 @@ export default async function DashboardBlueprintLayout({
         }
       >
         <TrafficContext role={role} plan={plan} organizationId={organizationId} userId={userId} />
-        {organizationId && <TrialWatchMount organizationId={organizationId} email={email} />}
+        {organizationId && <TrialWatchMount />}
         {trial && !onTrialPage && !trialDismissed && <TrialRibbon view={trial} isOwner={role === "OWNER"} orgId={organizationId ?? ""} />}
         {paymentFailed && !trial && <PaymentRibbon isOwner={role === "OWNER"} />}
         {autoWelcome && <AutoPlanWelcome view={autoWelcome} />}

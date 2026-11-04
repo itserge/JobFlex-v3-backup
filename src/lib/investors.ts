@@ -28,6 +28,7 @@ import { readSubscriptionPayments } from "@/lib/investorPayments";
 import { readSubscribersData, type SubscribersData } from "@/lib/subscribersRead";
 import { computeMetrics } from "@/components/v3/admin-subscribers/billing-metrics";
 import type { RecurringInput } from "@/lib/investorRecurring";
+import { readInvestorUsage, type InvestorUsage } from "@/lib/investorUsage";
 
 export const AD_SPEND_KEY = "adSpend";
 export const INVESTOR_SETTINGS_KEY = "investorSettings";
@@ -327,6 +328,9 @@ export interface InvestorReport {
   /** DAYS SINCE LAUNCH (2026-10-24): the day JobFlex launched (the setting, else the start day) and which day today
    *  is — the launch day is day 1. */
   launch: { date: string; day: number; set: boolean };
+  /** PEOPLE USING JOBFLEX (owner, 2026-11-04): members at work, their companies, estimates made and proposals sent
+   *  over 24 hours, 7 and 30 days, 3 months and a year (lib/investorUsage). null = not read. */
+  usage: InvestorUsage | null;
   /** When this was read. */
   at: string;
 }
@@ -381,6 +385,11 @@ export async function investorReport({ refreshMeta = false }: { refreshMeta?: bo
       console.warn("[investors] Meta refresh skipped:", err instanceof Error ? err.message : err);
     }
   }
+  // Who uses the app is read beside the money; a failed read leaves the page without it, never without the figures.
+  const usageRead = readInvestorUsage().catch((err) => {
+    console.warn("[investors] usage read failed:", err instanceof Error ? err.message : err);
+    return null;
+  });
   const [entries, settings, hidden, metaStatus, insights] = await Promise.all([readAdSpend(), readInvestorSettings(), statsHiddenIds(), readMetaStatus(), readMetaInsights()]);
   const today = todayIn(TRAFFIC_TZ);
   // Every day on this page is a day on the page's clock (the ad spend's days are): a signup at 6 PM in Seattle is that day's.
@@ -646,5 +655,5 @@ export async function investorReport({ refreshMeta = false }: { refreshMeta?: bo
       churn: { left: due.filter((x) => (billedNow.get(x.r.orgId) ?? 0) === 0).length, due: due.length, firstRenewal: renewals[0] ?? null },
     };
   }
-  return { figures, settings, startDay: since, spend: { entries, byPlatform }, visitorsKnown: visitors !== null, payingUnpriced, before, firstAdDay, meta: { configured: metaAdsConfigured(), ...metaStatus }, periods, insights, dailyRows, collected, recurring, financed, launch: launchDay(settings.launchDate ?? since, today, settings.launchDate !== null), at: new Date().toISOString() };
+  return { figures, settings, startDay: since, spend: { entries, byPlatform }, visitorsKnown: visitors !== null, payingUnpriced, before, firstAdDay, meta: { configured: metaAdsConfigured(), ...metaStatus }, periods, insights, dailyRows, collected, recurring, financed, launch: launchDay(settings.launchDate ?? since, today, settings.launchDate !== null), usage: await usageRead, at: new Date().toISOString() };
 }

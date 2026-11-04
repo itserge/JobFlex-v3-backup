@@ -16,6 +16,9 @@
 // ads bought trials still running, and dividing it by the customers of the weeks before overstated the cost.
 // WHAT A CUSTOMER COSTS, FROM THE FIRST DAY (owner, 2026-11-02): to win and after paying, day by day and week by week,
 // then at today's pace (customer-cost-chart).
+// PEOPLE USING JOBFLEX (owner, 2026-11-04: "prove to investors that users are using the platform … per day, 7 days,
+// 30 days, three months and a year … positive, but don't show too much"; then "I need a chart"): people at work, a
+// bar for each hour, day, week or month, right under the headline numbers (usage-chart, lib/investorUsage).
 import type { ReactNode } from "react";
 import { customerCostStory, dollars, longDate, outlookSentence, standingSentence, type InvestorFigures } from "@/lib/investorModel";
 import type { InvestorReport } from "@/lib/investors";
@@ -23,6 +26,7 @@ import { CustomerCostChart } from "./customer-cost-chart";
 import { PaybackChart } from "./payback-chart";
 import { RecurringChart } from "./recurring-chart";
 import { SpendBars } from "./spend-bars";
+import { UsageChart } from "./usage-chart";
 import s from "./investor-report.module.css";
 
 const n = (v: number) => v.toLocaleString("en-US");
@@ -80,6 +84,8 @@ export function InvestorReportView({ report, shared = false, between }: { report
       </section>
 
       {between}
+
+      {report.usage ? <UsageChart usage={report.usage} /> : null}
 
       {/* Recurring revenue (owner, 2026-11-02): what Stripe bills, from the first day, and where today's pace leads. */}
       <section className={s.card} data-recurring-card>
