@@ -151,11 +151,11 @@ export function AdminTwilioContent({ data }: { data: TwilioPageData }) {
       <div className="card">
         <div className="card-head">
           <div className="card-titles">
-            <div className="card-title">JobFlex Assistant number</div>
+            <div className="card-title">JobFlex AI Operator number</div>
             <div className="card-sub">
-              The number contractors text to run JobFlex (Settings → Assistant links their phone). While testing it can be JobFlex&apos;s own number: its
-              texts already come in through the Messaging Service, and the Assistant takes only linked phones and link codes. Only platform admins have
-              the Assistant until it is opened to every account (Settings → Assistant).
+              The number contractors text to run JobFlex (Settings → AI Operator links their phone). While testing it can be JobFlex&apos;s own number: its
+              texts already come in through the Messaging Service, and the AI Operator takes only linked phones and link codes. Only platform admins have
+              the AI Operator until it is opened to every account (Settings → AI Operator).
             </div>
           </div>
           {data.assistant?.stored || data.assistant?.env ? (
@@ -167,7 +167,7 @@ export function AdminTwilioContent({ data }: { data: TwilioPageData }) {
         <hr className="card-rule" />
         <div className={i.form}>
           <label className={i.field}>
-            <span>Assistant number{data.assistant?.env && !data.assistant?.stored ? ` — the server's env has ${data.assistant.env}` : ""}</span>
+            <span>AI Operator number{data.assistant?.env && !data.assistant?.stored ? ` — the server's env has ${data.assistant.env}` : ""}</span>
             <input value={assistantFrom} onChange={(e) => setAssistantFrom(e.target.value)} placeholder="+18668975760" spellCheck={false} autoComplete="off" name="assistant-number" />
           </label>
         </div>

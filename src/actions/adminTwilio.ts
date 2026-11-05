@@ -103,11 +103,11 @@ export async function saveAssistantNumber(raw: unknown): Promise<AdminTwilioResu
   if (!typed) {
     await setAssistantNumber(null);
     revalidatePath(PAGE);
-    return { ok: true, note: "Cleared. The Assistant answers in the app only, unless the server has TWILIO_ASSISTANT_FROM." };
+    return { ok: true, note: "Cleared. The AI Operator answers in the app only, unless the server has TWILIO_ASSISTANT_FROM." };
   }
   const e164 = toE164(typed);
   if (!e164) return { ok: false, error: "The number must be a US or Canadian number, like +18668975760." };
   await setAssistantNumber(e164);
   revalidatePath(PAGE);
-  return { ok: true, note: `Saved. Texts to ${e164} from a linked phone now go to the Assistant (within a minute on every server).` };
+  return { ok: true, note: `Saved. Texts to ${e164} from a linked phone now go to the AI Operator (within a minute on every server).` };
 }

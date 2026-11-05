@@ -265,7 +265,7 @@ export function Conversation({
         }}
       >
         <label className={s.srOnly} htmlFor={boxId}>
-          Ask or tell the Assistant
+          Ask or tell the AI Operator
         </label>
         <textarea
           id={boxId}
@@ -284,7 +284,7 @@ export function Conversation({
             type="button"
             className={`${s.mic} ${talk ? (speech.speaking ? s.micSpeaking : s.micOn) : ""}`}
             aria-pressed={talk}
-            aria-label={talk ? "Stop talking" : "Talk to the Assistant — it answers out loud"}
+            aria-label={talk ? "Stop talking" : "Talk to the AI Operator — it answers out loud"}
             title={talk ? "Stop talking" : "Talk"}
             onClick={() => (talk ? endTalk() : startTalk())}
           >

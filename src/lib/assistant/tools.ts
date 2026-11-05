@@ -279,7 +279,7 @@ const sendProposal: WriteTool<{ proposalId: string; email: string | null; client
     );
     const title = p?.title ?? "the proposal";
     return {
-      say: r.to ? `Sent "${title}" to ${r.client ?? r.to} (${r.to}). I'll tell you when they open it.` : `Marked "${title}" as sent, but no email went out: there's no email on file.`,
+      say: r.to ? `Sent "${title}" to ${r.client ?? r.to} (${r.to}). Ask me any time whether they've opened it.` : `Marked "${title}" as sent, but no email went out: there's no email on file.`,
       result: r,
     };
   },

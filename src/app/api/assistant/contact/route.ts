@@ -33,14 +33,14 @@ function fold(line: string): string {
 
 export async function GET() {
   const number = await assistantNumber();
-  if (!number) return NextResponse.json({ error: "The JobFlex Assistant's number isn't set up yet." }, { status: 404 });
+  if (!number) return NextResponse.json({ error: "The JobFlex AI Operator's number isn't set up yet." }, { status: 404 });
   const base = await appBaseUrl();
   const pic = await logo(base);
   const lines = [
     "BEGIN:VCARD",
     "VERSION:3.0",
-    "N:Assistant;JobFlex;;;",
-    "FN:JobFlex Assistant",
+    "N:AI Operator;JobFlex;;;",
+    "FN:JobFlex AI Operator",
     "ORG:JobFlex",
     `TEL;TYPE=CELL,VOICE,TEXT:${number}`,
     `URL:${base}/assistant`,
@@ -52,7 +52,7 @@ export async function GET() {
     status: 200,
     headers: {
       "Content-Type": "text/vcard; charset=utf-8",
-      "Content-Disposition": 'inline; filename="JobFlex Assistant.vcf"',
+      "Content-Disposition": 'inline; filename="JobFlex AI Operator.vcf"',
       "Cache-Control": "public, max-age=3600",
     },
   });

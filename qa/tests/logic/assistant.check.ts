@@ -123,7 +123,7 @@ function check(name: string, ok: boolean, extra?: unknown) {
   check("linked text: under three segments' worth (459 chars)", linked.length <= 459, linked.length);
   check("help text: STOP, YES / NO and where to write", /STOP/.test(SMS_WORDS.help) && /YES/.test(SMS_WORDS.help) && /NO/.test(SMS_WORDS.help) && /support@jobflex\.app/.test(SMS_WORDS.help));
   check("no text tells anyone to reply CANCEL (a carrier stop word)", Object.values(SMS_WORDS).every((w) => typeof w !== "string" || !/reply cancel/i.test(w)));
-  check("not-linked text: how to link, and STOP", /Settings → Assistant/.test(SMS_WORDS.notLinked) && /STOP/.test(SMS_WORDS.notLinked));
+  check("not-linked text: how to link, and STOP", /Settings → AI Operator/.test(SMS_WORDS.notLinked) && /STOP/.test(SMS_WORDS.notLinked));
 }
 
 // ── read out loud ───────────────────────────────────────────────────────────

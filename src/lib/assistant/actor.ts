@@ -80,10 +80,10 @@ export async function refusal(actor: AssistantActor, need: Capability, writes: b
     open = assistantOpenFor(actor.userId);
     openFor.set(actor, open);
   }
-  if (!(await open)) return "The JobFlex Assistant is coming soon to your account.";
+  if (!(await open)) return "The JobFlex AI Operator is coming soon to your account.";
   if (!roleAllows(actor.role, need)) {
     return actor.role === "INSTALLER"
-      ? "The Assistant is for the office. Your jobs and schedule are in your crew app."
+      ? "The AI Operator is for the office. Your jobs and schedule are in your crew app."
       : "Your role in JobFlex doesn't allow that. Ask your owner or a manager.";
   }
   const page = PAGE_OF[need];

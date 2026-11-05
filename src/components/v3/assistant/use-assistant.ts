@@ -44,7 +44,7 @@ export function useAssistant(): AssistantState {
         setFeed(f);
         setError(null);
       })
-      .catch(() => setError("The Assistant couldn't load just now. Close it and open it again."))
+      .catch(() => setError("The AI Operator couldn't load just now. Close it and open it again."))
       .finally(() => {
         loading.current = false;
       });

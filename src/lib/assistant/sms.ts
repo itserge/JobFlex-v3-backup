@@ -45,14 +45,14 @@ const isHelp = (body: string) => /^\s*(help|info)\s*[.!?]*\s*$/i.test(body);
 
 export const SMS_WORDS = {
   linked: (first: string, org: string, card: string) =>
-    `JobFlex Assistant: this phone is now linked to ${first} at ${org}. Text me what you need — "what's on tomorrow?", "build a 12 by 12 deck with a roof for Sarah", "send the Smith proposal". I read every change back first. Save me to your contacts: ${card} Msg & data rates may apply. Reply HELP for help, STOP to stop.`,
-  badCode: "JobFlex Assistant: that code didn't work — it may have expired. Open JobFlex → Settings → Assistant for a new one.",
-  notLinked: "JobFlex Assistant: this phone isn't linked to a JobFlex account. To link it, open JobFlex → Settings → Assistant and text the code shown there. Reply STOP to stop.",
-  paused: "JobFlex Assistant is paused for this phone. Reply START to turn it back on.",
-  started: "JobFlex Assistant is back on for this phone. Text me what you need.",
-  help: "JobFlex Assistant: text me what you need in JobFlex — estimates (\"build a 12 by 12 deck with a roof\"), your schedule, proposals, crew texts, payment reminders. I read every change back; reply YES to do it or NO to skip it. Msg & data rates may apply. Reply STOP to stop. Help: support@jobflex.app",
-  gone: "JobFlex Assistant: this phone's link has ended — you're no longer on that company's team in JobFlex.",
-  slow: "JobFlex Assistant: that's a lot of texts for one hour — give me a few minutes.",
+    `JobFlex AI Operator: this phone is now linked to ${first} at ${org}. Text me what you need — "what's on tomorrow?", "build a 12 by 12 deck with a roof for Sarah", "send the Smith proposal". I read every change back first. Save me to your contacts: ${card} Msg & data rates may apply. Reply HELP for help, STOP to stop.`,
+  badCode: "JobFlex AI Operator: that code didn't work — it may have expired. Open JobFlex → Settings → AI Operator for a new one.",
+  notLinked: "JobFlex AI Operator: this phone isn't linked to a JobFlex account. To link it, open JobFlex → Settings → AI Operator and text the code shown there. Reply STOP to stop.",
+  paused: "JobFlex AI Operator is paused for this phone. Reply START to turn it back on.",
+  started: "JobFlex AI Operator is back on for this phone. Text me what you need.",
+  help: "JobFlex AI Operator: text me what you need in JobFlex — estimates (\"build a 12 by 12 deck with a roof\"), your schedule, proposals, crew texts, payment reminders. I read every change back; reply YES to do it or NO to skip it. Msg & data rates may apply. Reply STOP to stop. Help: support@jobflex.app",
+  gone: "JobFlex AI Operator: this phone's link has ended — you're no longer on that company's team in JobFlex.",
+  slow: "JobFlex AI Operator: that's a lot of texts for one hour — give me a few minutes.",
 } as const;
 
 // ── sending ─────────────────────────────────────────────────────────────────

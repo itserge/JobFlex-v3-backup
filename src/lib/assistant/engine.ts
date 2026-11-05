@@ -62,7 +62,7 @@ export interface TurnResult {
 export function systemPrompt(actor: AssistantActor, now: Date, waiting: string | null, built: string[] = []): string {
   const short = actor.channel === "sms" ? "one or two text messages, under 300 characters" : "a few short lines";
   return [
-    `You are the JobFlex Assistant for ${actor.orgName}, a contracting business. You help ${actor.userName} (role ${actor.role}) run the business by talking or texting.`,
+    `You are the JobFlex AI Operator for ${actor.orgName}, a contracting business. You help ${actor.userName} (role ${actor.role}) run the business by talking or texting.`,
     `Now: ${nowWords(now, actor.timezone)} (${actor.timezone}). Today's date is ${dayOf(now, actor.timezone)}.`,
     "RULES",
     "- Names, ids, dates, counts and money come only from tool results. Never guess a number, a price, a date or an id.",
@@ -294,9 +294,9 @@ export async function handleTurn(input: TurnInput): Promise<TurnResult> {
   // ── the model's turn ──
   const limit = await checkPlanLimit(actor.organizationId, "assistantCommands", 1, { actorId: actor.userId });
   if (!limit.allowed) {
-    return say(`You've used this month's ${limit.limit ?? ""} Assistant requests. A bigger plan raises the number (Settings → Billing).`.replace("  ", " "));
+    return say(`You've used this month's ${limit.limit ?? ""} AI Operator requests. A bigger plan raises the number (Settings → Billing).`.replace("  ", " "));
   }
-  if (!isOpenAIEnabled()) return say("The Assistant isn't switched on here yet (no AI key on this server).");
+  if (!isOpenAIEnabled()) return say("The AI Operator isn't switched on here yet (no AI key on this server).");
   // A digit answering the model's "1 or 2?" is part of the last request, not a new one.
   await db.assistantMessage.update({ where: { id: inbound.id }, data: { countsAsCommand: quick?.kind !== "digit" } });
   await noteRequestOrg(actor.organizationId).catch(() => undefined);
@@ -321,7 +321,7 @@ export async function handleTurn(input: TurnInput): Promise<TurnResult> {
     client = getOpenAI();
     model = await resolveOpenAIModel();
   } catch {
-    return say("The Assistant couldn't start just now. Try again in a minute.");
+    return say("The AI Operator couldn't start just now. Try again in a minute.");
   }
 
   for (let round = 0; round < MAX_ROUNDS; round++) {

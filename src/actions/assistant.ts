@@ -110,7 +110,7 @@ export async function startAssistantLink(): Promise<{ ok: true; code: string; ex
   const { assistantNumber, startLink } = await import("@/lib/assistant/phone");
   const closed = await refusal(actor, "today", false);
   if (closed) return { ok: false, error: closed };
-  if (!(await assistantNumber())) return { ok: false, error: "Texting the Assistant isn't set up yet." };
+  if (!(await assistantNumber())) return { ok: false, error: "Texting the AI Operator isn't set up yet." };
   return startLink(actor.organizationId, actor.userId);
 }
 

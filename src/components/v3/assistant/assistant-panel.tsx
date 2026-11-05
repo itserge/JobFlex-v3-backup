@@ -114,14 +114,14 @@ export function AssistantRoot() {
           </span>
           <div className={s.headText}>
             <h2 className={s.headName} id={titleId}>
-              Assistant
+              AI Operator
             </h2>
             <p className={s.headSub}>Ask, or tell JobFlex what to do.</p>
           </div>
           <span className={s.tag} aria-hidden="true">
             NEW
           </span>
-          <button type="button" className={s.close} aria-label="Close the Assistant" onClick={close}>
+          <button type="button" className={s.close} aria-label="Close the AI Operator" onClick={close}>
             <X />
           </button>
         </header>

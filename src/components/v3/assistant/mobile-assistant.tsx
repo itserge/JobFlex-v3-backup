@@ -28,7 +28,7 @@ export function MobileAssistant() {
             <AudioLines />
           </span>
           <div className="mas-headText">
-            <h1 className="mas-title">Assistant</h1>
+            <h1 className="mas-title">AI Operator</h1>
             <p className="mas-sub">Ask, or tell JobFlex what to do.</p>
           </div>
           <span className="mas-tag" aria-hidden="true">
