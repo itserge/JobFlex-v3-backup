@@ -25,12 +25,14 @@ import { deliverTaskReply } from "@/lib/adminTasks/team";
 import { deliverRampReply, planRampReply } from "@/lib/ramp/sync";
 import { isBareKeyword, smartBookClaim, smartBookReply, type Claim } from "@/lib/smartbook/inbound";
 import { SMS_WORDS, answerAssistantText, claimsSharedText, keepInbound, sendAssistantText } from "@/lib/assistant/sms";
+import { runAndReport } from "@/lib/assistant/runner";
 import { assistantNumber, linkForPhone, setPhoneActive } from "@/lib/assistant/phone";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 // SmartBook reads a reply and answers it after the response: a model call, the booking, the texts back.
-export const maxDuration = 60;
+// 300 (2026-11-05): a JobFlex Assistant build texted to this number runs after the answer (a minute's AI estimate).
+export const maxDuration = 300;
 
 const twiml = () => new NextResponse("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response></Response>", { headers: { "Content-Type": "text/xml" } });
 
@@ -76,7 +78,12 @@ export async function POST(req: Request) {
   if (to && to === assistantLine) {
     const text = { from, to, body, sid };
     if (await claimsSharedText(text).catch(() => false)) {
-      if (await keepInbound(text)) after(() => answerAssistantText(text));
+      if (await keepInbound(text))
+        after(async () => {
+          // A build (a minute's AI estimate) runs after the answer and texts its result (lib/assistant/runner).
+          const running = await answerAssistantText(text);
+          if (running) await runAndReport(running, new Date(), { early: true }).catch(() => false);
+        });
       return twiml();
     }
   }

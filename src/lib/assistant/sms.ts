@@ -29,7 +29,7 @@ import { isTwilioEnabled, sendSMS } from "@/lib/sdk/twilio";
 import { actorFor } from "@/lib/assistant/actor";
 import { handleTurn } from "@/lib/assistant/engine";
 import { assistantNumber, claimLink, codeIn, linkForPhone, setPhoneActive } from "@/lib/assistant/phone";
-import { APPROVAL_TTL_MS } from "@/lib/assistant/shared";
+import { APPROVAL_TTL_MS, smsPlain } from "@/lib/assistant/shared";
 
 const CAP_PER_PHONE_PER_DAY = 150;
 const CAP_ALL_PER_DAY = 5000;
@@ -45,14 +45,14 @@ const isHelp = (body: string) => /^\s*(help|info)\s*[.!?]*\s*$/i.test(body);
 
 export const SMS_WORDS = {
   linked: (first: string, org: string, card: string) =>
-    `JobFlex Assistant: this phone is now linked to ${first} at ${org}. Text me what you need — "what's on tomorrow?", "send the Smith proposal". I read every change back first. Save me to your contacts: ${card} Msg & data rates may apply. Reply HELP for help, STOP to stop.`,
-  badCode: "JobFlex Assistant: that code didn't work — it may have expired. Open JobFlex → Settings → Assistant for a new one.",
-  notLinked: "JobFlex Assistant: this phone isn't linked to a JobFlex account. To link it, open JobFlex → Settings → Assistant and text the code shown there. Reply STOP to stop.",
-  paused: "JobFlex Assistant is paused for this phone. Reply START to turn it back on.",
-  started: "JobFlex Assistant is back on for this phone. Text me what you need.",
-  help: "JobFlex Assistant: text me what you need in JobFlex — your schedule, proposals, crew texts, payment reminders. I read every change back; reply YES to do it or NO to skip it. Msg & data rates may apply. Reply STOP to stop. Help: support@jobflex.app",
-  gone: "JobFlex Assistant: this phone's link has ended — you're no longer on that company's team in JobFlex.",
-  slow: "JobFlex Assistant: that's a lot of texts for one hour — give me a few minutes.",
+    `JobFlex AI Operator: this phone is now linked to ${first} at ${org}. Text me what you need — "what's on tomorrow?", "build a 12 by 12 deck with a roof for Sarah", "send the Smith proposal". I read every change back first. Save me to your contacts: ${card} Msg & data rates may apply. Reply HELP for help, STOP to stop.`,
+  badCode: "JobFlex AI Operator: that code didn't work — it may have expired. Open JobFlex → Settings → AI Operator for a new one.",
+  notLinked: "JobFlex AI Operator: this phone isn't linked to a JobFlex account. To link it, open JobFlex → Settings → AI Operator and text the code shown there. Reply STOP to stop.",
+  paused: "JobFlex AI Operator is paused for this phone. Reply START to turn it back on.",
+  started: "JobFlex AI Operator is back on for this phone. Text me what you need.",
+  help: "JobFlex AI Operator: text me what you need in JobFlex — estimates (\"build a 12 by 12 deck with a roof\"), your schedule, proposals, crew texts, payment reminders. I read every change back; reply YES to do it or NO to skip it. Msg & data rates may apply. Reply STOP to stop. Help: support@jobflex.app",
+  gone: "JobFlex AI Operator: this phone's link has ended — you're no longer on that company's team in JobFlex.",
+  slow: "JobFlex AI Operator: that's a lot of texts for one hour — give me a few minutes.",
 } as const;
 
 // ── sending ─────────────────────────────────────────────────────────────────
@@ -62,7 +62,7 @@ export async function sendAssistantText(toRaw: string, body: string, kind = "job
   const to = toE164(toRaw);
   if (!to) return false;
   const from = await assistantNumber();
-  const text = body.trim().slice(0, 1200);
+  const text = smsPlain(body).trim().slice(0, 1200);
   if (!text) return false;
   const skipped = (error: string) =>
     db.smsMessage.create({ data: { organizationId: null, direction: "OUT", to, from, body: text, kind, status: "SKIPPED", error } }).then(() => false).catch(() => false);
@@ -139,34 +139,37 @@ export async function claimsSharedText(m: InboundText, now = new Date()): Promis
 }
 
 /** Answer one text. Never throws: a failure is logged, the person hears nothing worse than silence. */
-export async function answerAssistantText(m: InboundText): Promise<void> {
+/** Answer a text. Returns a build left to run after the answer (a minute's estimate) — the route runs it
+ *  (lib/assistant/runner runAndReport, which texts the result) — or null. Never throws. */
+export async function answerAssistantText(m: InboundText): Promise<string | null> {
   try {
-    await answer(m);
+    return await answer(m);
   } catch (err) {
     console.error(`[assistant-sms] …${m.from.slice(-4)}: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
   }
 }
 
-async function answer(m: InboundText): Promise<void> {
+async function answer(m: InboundText): Promise<string | null> {
   const phone = toE164(m.from);
-  if (!phone) return;
+  if (!phone) return null;
   const body = m.body.trim();
-  if (!body) return;
+  if (!body) return null;
 
   // Twilio has stopped this phone already; the link pauses with it. Nothing is sent (Twilio confirms).
   if (isCarrierStop(body)) {
     await setPhoneActive(phone, false);
-    return;
+    return null;
   }
   const flood = await rateLimitShared(`assistant:in:${phone}`, IN_PER_PHONE_PER_HOUR, HOUR).catch(() => ({ ok: true }));
   if (!flood.ok) {
     const once = await rateLimitShared(`assistant:slow:${phone}`, 1, HOUR).catch(() => ({ ok: false }));
     if (once.ok) await sendAssistantText(phone, SMS_WORDS.slow, "jobflex-assistant-slow");
-    return;
+    return null;
   }
   if (isHelp(body)) {
     await sendAssistantText(phone, SMS_WORDS.help, "jobflex-assistant-help");
-    return;
+    return null;
   }
 
   const code = codeIn(body);
@@ -174,7 +177,7 @@ async function answer(m: InboundText): Promise<void> {
     const claimed = await claimLink(phone, code);
     if (!claimed) {
       await sendAssistantText(phone, SMS_WORDS.badCode, "jobflex-assistant-link");
-      return;
+      return null;
     }
     const [org, user] = await Promise.all([
       db.organization.findUnique({ where: { id: claimed.organizationId }, select: { name: true } }),
@@ -182,32 +185,33 @@ async function answer(m: InboundText): Promise<void> {
     ]);
     const first = ((user?.name ?? "").trim().split(/\s+/)[0] || (user?.email ?? "").split("@")[0] || "you").slice(0, 40);
     await sendAssistantText(phone, SMS_WORDS.linked(first, (org?.name ?? "your company").slice(0, 60), `${await appBaseUrl()}/api/assistant/contact`), "jobflex-assistant-link");
-    return;
+    return null;
   }
 
   const link = await linkForPhone(phone);
   if (!link) {
     const twice = await rateLimitShared(`assistant:unknown:${phone}`, 2, DAY).catch(() => ({ ok: false }));
     if (twice.ok) await sendAssistantText(phone, SMS_WORDS.notLinked, "jobflex-assistant-unlinked");
-    return;
+    return null;
   }
   if (!link.active) {
     if (isCarrierStart(body)) {
       await setPhoneActive(phone, true);
       await sendAssistantText(phone, SMS_WORDS.started, "jobflex-assistant-start");
-      return;
+      return null;
     }
     const once = await rateLimitShared(`assistant:paused:${phone}`, 1, DAY).catch(() => ({ ok: false }));
     if (once.ok) await sendAssistantText(phone, SMS_WORDS.paused, "jobflex-assistant-paused");
-    return;
+    return null;
   }
 
   const actor = await actorFor(link.organizationId, link.userId, "sms");
   if (!actor) {
     await db.assistantLink.deleteMany({ where: { phone } });
     await sendAssistantText(phone, SMS_WORDS.gone, "jobflex-assistant-gone");
-    return;
+    return null;
   }
   const turn = await handleTurn({ actor, text: body, externalId: m.sid });
   if (turn.reply) await sendAssistantText(phone, turn.reply, "jobflex-assistant-reply");
+  return turn.running ?? null;
 }

@@ -13,6 +13,11 @@
 //   "remind <words>"                              → find(proposal) → payment_reminder
 //   "how much did we make" / "profit"             → money(this month | last month)
 //   "unsigned" / "follow up"                      → open_proposals
+//   "build|price|estimate … deck|pergola|gazebo 12 by 16 [roof] [for <name>]" → find(any) → build_deck (slice 3)
+//   "build|price|estimate <anything else> [for <name>]" → find(any) → build_estimate
+//   "change …" / "make it …" / "use …"            → change_deck | change_estimate on the newest built (the system prompt's list)
+//   "send it"                                      → send_proposal on the newest built
+//   Smart Proposal's own run (response_format json_object, no tools): a small estimate in the old draft shape.
 //   Speech (POST /v1/audio/speech, the Talk mode's voice): 0.3 s of silence as an MP3, so a page plays it and goes on.
 //   NODE_PATH="" npx --no-install tsx qa/fixtures/assistant-fake-openai.ts     (FAKE_OPENAI_PORT, default 4601)
 import http from "node:http";
@@ -80,7 +85,30 @@ function soFar(messages: Msg[]): Map<string, unknown> {
   return out;
 }
 
-type Found = { proposals?: Array<{ id: string; title: string; client: string | null; total: string }>; jobs?: Array<{ id: string; title: string; client: string | null; proposalId: string | null }>; workers?: Array<{ id: string; name: string }> };
+type Found = { proposals?: Array<{ id: string; title: string; client: string | null; total: string }>; jobs?: Array<{ id: string; title: string; client: string | null; proposalId: string | null }>; workers?: Array<{ id: string; name: string }>; clients?: Array<{ id: string; name: string }>; leads?: Array<{ id: string; name: string }> };
+
+/** Smart Proposal's estimate, in the old quote-draft shape lib/estimate/legacy-estimate reads. */
+function fakeEstimate(prompt: string) {
+  const type = /Project type: ([^\n]+)/.exec(prompt)?.[1]?.trim() || "Job";
+  const roof = /roof/i.test(type), fence = /fence/i.test(type);
+  const lineItems = roof
+    ? [
+        { name: "Tear-off and disposal, one layer", measurementType: "unit", quantity: 22, unitPrice: 95, materialCost: 20, laborCost: 75, total: 2090 },
+        { name: "Architectural shingles", measurementType: "unit", quantity: 22, unitPrice: 240, materialCost: 150, laborCost: 90, total: 5280 },
+        { name: "Synthetic underlayment", measurementType: "unit", quantity: 22, unitPrice: 45, materialCost: 30, laborCost: 15, total: 990 },
+        { name: "Drip edge and flashing", measurementType: "fixed", fixedPrice: 650, total: 650 },
+      ]
+    : fence
+      ? [
+          { name: "Cedar privacy fence, 6 ft", measurementType: "linearft", quantity: 150, unitPrice: 38, materialCost: 22, laborCost: 16, total: 5700 },
+          { name: "Walk gate", measurementType: "unit", quantity: 1, unitPrice: 450, materialCost: 280, laborCost: 170, total: 450 },
+        ]
+      : [
+          { name: `${type} — materials`, measurementType: "fixed", fixedPrice: 2400, total: 2400 },
+          { name: `${type} — labor`, measurementType: "hour", quantity: 24, unitPrice: 85, total: 2040 },
+        ];
+  return { title: `${type} estimate`, summary: `${type}, priced on the stand.`, scope: ["Prepare the site", "Do the work", "Clean up and haul away"], pricing: { lineItems, notes: ["A fake estimate from the stand's model."] }, timeline: "3 days" };
+}
 type Crew = { workers: Array<{ id: string; name: string; texts: boolean }> };
 
 function answer(body: { messages: Msg[] }) {
@@ -97,6 +125,26 @@ function answer(body: { messages: Msg[] }) {
     if (o?.notDone) return reply(o.notDone);
     if (o?.error) return reply(`That didn't work: ${o.error}`);
   }
+
+  // Slice 3: build, change, send what was built (the newest in the system prompt's "built lately" list).
+  const lately = /proposalId=(\S+) · "[^"]*" · (deck|estimate)/.exec(system);
+  if (/\b(build|price|estimate|quote)\b/.test(text) && !/^\s*(change|make it|use)\b/.test(text)) {
+    const name = /\bfor (\w+)/i.exec(user)?.[1];
+    const f = done.get("find") as Found | undefined;
+    if (name && !f) return call("find", { query: name, kind: "any" });
+    const clientId = f?.clients?.[0]?.id ?? null;
+    const leadId = clientId ? null : (f?.leads?.[0]?.id ?? null);
+    if (/\b(deck|pergola|gazebo)\b/.test(text)) {
+      const size = /(\d+(?:\.\d+)?)\s*(?:x|by|×)\s*(\d+(?:\.\d+)?)/.exec(text);
+      if (!size) return reply("How big is it — feet along the house, and how far out?");
+      const cover = /\broof\b|covered/.test(text) ? "roof" : /pergola/.test(text) ? "pergola" : /gazebo/.test(text) ? "gazebo" : "none";
+      return call("build_deck", { clientId, leadId, address: null, widthFt: +size[1], depthFt: +size[2], heightFt: null, cover, boards: /composite|cedar|trex|pressure.treated/.exec(text)?.[0] ?? null, rail: /aluminum|cable|glass/.exec(text)?.[0] ?? null, stairs: /\bstairs?\b/.test(text) ? true : null, more: null });
+    }
+    const projectType = /roof/.test(text) ? "Roof replacement" : /fence/.test(text) ? "Fence" : /paint/.test(text) ? "Interior painting" : "General repair";
+    return call("build_estimate", { projectType, description: user, clientId, leadId, address: null });
+  }
+  if (/^\s*(change|make it|use)\b/.test(text) && lately) return call(lately[2] === "deck" ? "change_deck" : "change_estimate", { proposalId: lately[1], change: user.replace(/^\s*change( it)?[:,]?\s*/i, "") || user });
+  if (/\bsend it\b/.test(text) && lately) return call("send_proposal", { proposalId: lately[1], email: /\S+@\S+\.\w+/.exec(user)?.[0] ?? null, clientName: null });
 
   if (/\bsend\b/.test(text)) {
     const f = done.get("find") as Found | undefined;
@@ -182,7 +230,14 @@ http
       res.setHeader("content-type", "application/json");
       if (req.url?.includes("/chat/completions")) {
         try {
-          res.end(JSON.stringify(answer(JSON.parse(raw || "{}"))));
+          const body = JSON.parse(raw || "{}") as { messages?: Msg[]; tools?: unknown[]; response_format?: { type?: string } };
+          // Smart Proposal's run: JSON out, no tools — the estimate itself.
+          if (body.response_format?.type === "json_object" && !body.tools?.length) {
+            const prompt = (body.messages ?? []).map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? ""))).join("\n");
+            res.end(JSON.stringify(reply(JSON.stringify(fakeEstimate(prompt)))));
+            return;
+          }
+          res.end(JSON.stringify(answer(body as { messages: Msg[] })));
         } catch (err) {
           res.statusCode = 500;
           res.end(JSON.stringify({ error: { message: String(err) } }));

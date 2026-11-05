@@ -153,7 +153,7 @@ export const LIMIT_DEFS: readonly LimitDef[] = [
   // limit"). A request the model reads counts; YES / NO / a reply digit does
   // not. Each one is an OpenAI call JobFlex pays for, so — like the paid
   // lookups — a plan without a number meters at its tier's default.
-  { key: "assistantCommands", label: "Assistant commands", scope: "monthly", hint: "Requests to the JobFlex Assistant per cycle (YES / NO answers don't count)" },
+  { key: "assistantCommands", label: "AI Operator commands", scope: "monthly", hint: "Requests to the JobFlex AI Operator per cycle (YES / NO answers don't count)" },
 ] as const;
 
 export const LIMIT_KEYS = LIMIT_DEFS.map((d) => d.key) as LimitKey[];

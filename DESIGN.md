@@ -287,17 +287,17 @@ monthly" is one 12px line (weight 600) under the price.
   shadow, nothing dimmed. Folded (Show me below the desk, Open on a phone) it
   is a 44px ink "Back to SmartHelp" bar at the top middle of the screen — the
   corners are the menu and Help, the foot is the tab bar and create button.
-- The Assistant (2026-11-04, shown to the owner for approval;
+- The AI Operator — called the Assistant until the owner renamed it on 2026-11-05 (2026-11-04, shown to the owner for approval;
   [assistant](src/components/v3/assistant/assistant.module.css)). Its row sits
   right under SmartHelp in every nav, and SmartHelp stays the one filled row:
   white in a 1.5px ink frame, a blue square holding Lucide AudioLines in white,
-  ink 800 "Assistant", a square "NEW" tag framed in blue; no shadow, the hover a
+  ink 800 "AI Operator", a square "NEW" tag framed in blue; no shadow, the hover a
   light blueprint fill; the folded rail shows the square alone; hidden for the
   field crew. The desk panel is SmartHelp's geometry (380px beside the page at
   ≥1024, over it at 769–1023, the two never open together) with a `--paper`
   head ruled in 2px ink. A phone has no sheet: the rows go to the page
   `/mobile-assistant-v1` — the handheld chrome, a `--paper` head (36px blue
-  square, 22px 900 caps "Assistant"), the conversation filling the screen and
+  square, 22px 900 caps "AI Operator"), the conversation filling the screen and
   the box on its foot above the home indicator. The conversation is
   SmartBook's square bubbles (the person's white in ink, the Assistant's
   `--accent-soft` in accent). A proposed change is a card in a 2px ink frame:
@@ -311,7 +311,13 @@ monthly" is one 12px line (weight 600) under the price.
   conversation: the square turns rose while it listens and blue while it
   speaks, and a live line sits over the box — what is being heard, "Listening
   — just talk.", "Working on it…", "Speaking…" (rose-tinted, blueprint-tinted
-  while speaking). Settings → Assistant
+  while speaking). A build (2026-11-05: "build a 12 by 12 deck with a roof for
+  Sarah") answers "On it…" in a plain bubble, a "Pricing it…" working line holds
+  the place while it prices, and the result is the send card: the price, what
+  is in it, "Open it: the proposal" (an 600 underlined link in the card's own
+  ink, opened beside the panel), then the send read-back with Do it / Cancel.
+  The empty state's first example row after "What's on tomorrow?" is "Build a
+  12 × 12 deck with a roof for …". Settings → AI Operator
   ([assistant-settings](src/components/v3/assistant/assistant-settings.module.css))
   is one card in SmartBook's treatment — stamp Linked emerald, Paused amber,
   Not linked / Texting soon muted — with ruled sections In the app, From your

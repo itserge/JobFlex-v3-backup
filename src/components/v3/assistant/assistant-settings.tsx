@@ -16,7 +16,7 @@ import { loadAssistantPhone, setAssistantOpen, setAssistantPhoneOn, startAssista
 import { openAssistant } from "./events";
 import s from "./assistant-settings.module.css";
 
-const EXAMPLES = ["What's on tomorrow?", "Who owes me money?", "Send the Smith roof proposal", "Put the Lee fence on Thursday with Mike", "Tell everybody: start at 7 tomorrow"];
+const EXAMPLES = ["What's on tomorrow?", "Build a 12 by 12 deck with a roof for Sarah", "Price a roof replacement for the Lee house, 2,200 sq ft", "Send the Smith roof proposal", "Put the Lee fence on Thursday with Mike", "Tell everybody: start at 7 tomorrow"];
 
 function since(iso: string | null): string {
   if (!iso) return "";
@@ -39,7 +39,7 @@ export function AssistantSettings({ mobile = false }: { mobile?: boolean }) {
         if (v.link && v.link.phone !== wasLinked.current) setCode(null);
         wasLinked.current = v.link?.phone ?? null;
       })
-      .catch(() => setError("Couldn't load the Assistant settings. Reload the page."));
+      .catch(() => setError("Couldn't load the AI Operator settings. Reload the page."));
   }, []);
 
   useEffect(() => {
@@ -98,7 +98,7 @@ export function AssistantSettings({ mobile = false }: { mobile?: boolean }) {
           <AudioLines />
         </span>
         <h3 className={s.title} id="assistant-settings-title">
-          JobFlex Assistant
+          JobFlex AI Operator
         </h3>
         <span className={s.stamp} data-tone={st.tone}>
           {st.label}
@@ -107,8 +107,8 @@ export function AssistantSettings({ mobile = false }: { mobile?: boolean }) {
 
       <div className={s.body}>
         <p className={s.lead}>
-          Run JobFlex by talking or texting. Ask about your day, or tell it to send a proposal, schedule a job, text the crew or remind a client to pay — it reads every change back
-          before it does anything.
+          Run JobFlex by talking or texting. Ask about your day, or tell it to price a job, send a proposal, schedule a job, text the crew or remind a client to pay. Pricing
+          makes a draft only; anything that reaches someone else, or changes the calendar, is read back first and waits for your yes.
         </p>
 
         {view.closed ? <p className={s.note}>{view.closed}</p> : null}
@@ -118,8 +118,8 @@ export function AssistantSettings({ mobile = false }: { mobile?: boolean }) {
             <h4 className={s.h}>Who has it (platform admins only)</h4>
             <p className={s.text}>
               {view.preview.openToAll
-                ? "Open to every account: every office and sales member sees the Assistant."
-                : "Only platform admins can see and use the Assistant right now. Try it, then open it to everyone."}
+                ? "Open to every account: every office and sales member sees the AI Operator."
+                : "Only platform admins can see and use the AI Operator right now. Try it, then open it to everyone."}
             </p>
             <button
               type="button"
@@ -127,11 +127,11 @@ export function AssistantSettings({ mobile = false }: { mobile?: boolean }) {
               disabled={busy}
               onClick={() => {
                 const opening = !view.preview!.openToAll;
-                if (opening && !window.confirm("Every JobFlex account will see the Assistant. Open it now?")) return;
+                if (opening && !window.confirm("Every JobFlex account will see the AI Operator. Open it now?")) return;
                 void run(async () => setView(await setAssistantOpen(opening)));
               }}
             >
-              {view.preview.openToAll ? "Back to platform admins only" : "Open the Assistant to every account"}
+              {view.preview.openToAll ? "Back to platform admins only" : "Open the AI Operator to every account"}
             </button>
           </div>
         ) : null}
@@ -139,10 +139,10 @@ export function AssistantSettings({ mobile = false }: { mobile?: boolean }) {
         {!view.closed ? (
           <div className={s.section}>
             <h4 className={s.h}>In the app</h4>
-            <p className={s.text}>Open Assistant at the top of the menu. Type, or tap the microphone and just talk — it answers out loud.</p>
+            <p className={s.text}>Open AI Operator at the top of the menu. Type, or tap the microphone and just talk — it answers out loud.</p>
             {!mobile ? (
               <button type="button" className={s.secondary} onClick={(e) => openAssistant(e.currentTarget)}>
-                Open the Assistant
+                Open the AI Operator
               </button>
             ) : null}
           </div>
@@ -152,7 +152,7 @@ export function AssistantSettings({ mobile = false }: { mobile?: boolean }) {
           <div className={s.section}>
             <h4 className={s.h}>From your phone, by text</h4>
             {!view.number ? (
-              <p className={s.note}>Texting the Assistant turns on when JobFlex&apos;s Assistant number is ready. Until then, use it in the app.</p>
+              <p className={s.note}>Texting the AI Operator turns on when JobFlex&apos;s AI Operator number is ready. Until then, use it in the app.</p>
             ) : view.link ? (
               <>
                 <div className={s.row}>
@@ -220,7 +220,7 @@ export function AssistantSettings({ mobile = false }: { mobile?: boolean }) {
                   Waiting for your text… The code works for 15 minutes.
                 </p>
                 <p className={s.consent}>
-                  By texting the code you agree to get texts from the JobFlex Assistant about your JobFlex account and answers to what you ask. How many depends on you. Msg &amp; data
+                  By texting the code you agree to get texts from the JobFlex AI Operator about your JobFlex account and answers to what you ask. How many depends on you. Msg &amp; data
                   rates may apply. Reply STOP to stop, HELP for help. <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a> · <a href="/assistant">How it works</a>
                 </p>
               </>

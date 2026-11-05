@@ -121,7 +121,15 @@
   margin: 0;
   font-size: 15px;
   line-height: 1.45;
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+/* A link in a reply (a build's proposal): the ink it sits in, underlined, never a second blue. */
+.root .link {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .root .cardActions {
   display: grid;

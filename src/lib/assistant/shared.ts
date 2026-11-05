@@ -184,3 +184,18 @@ export interface AssistantFeed {
   /** This cycle's commands: used / the plan's number (null = unlimited). */
   usage: { used: number; limit: number | null };
 }
+
+/** A text message in the plain GSM alphabet (2026-11-05): one ×, — or curly quote turns a whole text into UCS-2,
+ *  70 characters a segment instead of 160 — a build's reply (the deck's facts) would cost three times over. */
+export function smsPlain(text: string): string {
+  return text
+    .replace(/[\u201C\u201D\u201E\u00AB\u00BB]/g, '"')
+    .replace(/[\u2018\u2019\u201A\u2032]/g, "'")
+    .replace(/\s*[\u2014\u2013]\s*/g, " - ")
+    .replace(/\u00D7/g, "x")
+    .replace(/\s*\u00B7\s*/g, ", ")
+    .replace(/\u2026/g, "...")
+    .replace(/[\u2022\u25AA]/g, "-")
+    .replace(/[\u00A0\u2009\u202F]/g, " ")
+    .replace(/\u2192/g, "->");
+}

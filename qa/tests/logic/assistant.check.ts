@@ -12,6 +12,7 @@ import {
   dayRange,
   money,
   quickReply,
+  smsPlain,
   spanWords,
   stillAwaiting,
   timeOf,
@@ -95,12 +96,15 @@ function check(name: string, ok: boolean, extra?: unknown) {
 
 // ── who may ask for what ────────────────────────────────────────────────────
 {
-  const all: Capability[] = ["today", "proposals.read", "proposals.send", "schedule.read", "schedule.write", "crew.read", "crew.text", "money.read", "payments.remind"];
+  const all: Capability[] = ["today", "proposals.read", "proposals.send", "schedule.read", "schedule.write", "crew.read", "crew.text", "money.read", "payments.remind", "estimates.build"];
   for (const role of ["OWNER", "ADMIN", "MANAGER"]) check(`roles: ${role} may do everything`, all.every((c) => roleAllows(role, c)), all.filter((c) => !roleAllows(role, c)));
   check("roles: a field worker is refused everything (the crew portal is theirs)", all.every((c) => !roleAllows("INSTALLER", c)));
   check("roles: SALES sends proposals", roleAllows("SALES", "proposals.send"));
   check("roles: SALES never schedules, texts the crew, reads money or sends reminders", !roleAllows("SALES", "schedule.write") && !roleAllows("SALES", "crew.text") && !roleAllows("SALES", "money.read") && !roleAllows("SALES", "payments.remind"));
   check("roles: ESTIMATOR sends proposals but never schedules or texts the crew", roleAllows("ESTIMATOR", "proposals.send") && !roleAllows("ESTIMATOR", "schedule.write") && !roleAllows("ESTIMATOR", "crew.text"));
+  // Slice 3 (2026-11-05): pricing a job is requireEstimatorOrManager's — estimators and managers, never SALES or the crew.
+  check("roles: ESTIMATOR builds estimates", roleAllows("ESTIMATOR", "estimates.build"));
+  check("roles: SALES never builds an estimate (it sends what an estimator priced)", !roleAllows("SALES", "estimates.build"));
   check("roles: SALES and ESTIMATOR see only their own proposals", ownProposalsOnly("SALES") && ownProposalsOnly("ESTIMATOR") && !ownProposalsOnly("OWNER") && !ownProposalsOnly("MANAGER"));
 }
 
@@ -119,7 +123,7 @@ function check(name: string, ok: boolean, extra?: unknown) {
   check("linked text: under three segments' worth (459 chars)", linked.length <= 459, linked.length);
   check("help text: STOP, YES / NO and where to write", /STOP/.test(SMS_WORDS.help) && /YES/.test(SMS_WORDS.help) && /NO/.test(SMS_WORDS.help) && /support@jobflex\.app/.test(SMS_WORDS.help));
   check("no text tells anyone to reply CANCEL (a carrier stop word)", Object.values(SMS_WORDS).every((w) => typeof w !== "string" || !/reply cancel/i.test(w)));
-  check("not-linked text: how to link, and STOP", /Settings → Assistant/.test(SMS_WORDS.notLinked) && /STOP/.test(SMS_WORDS.notLinked));
+  check("not-linked text: how to link, and STOP", /Settings → AI Operator/.test(SMS_WORDS.notLinked) && /STOP/.test(SMS_WORDS.notLinked));
 }
 
 // ── read out loud ───────────────────────────────────────────────────────────
@@ -127,6 +131,10 @@ function check(name: string, ok: boolean, extra?: unknown) {
   check("speech: the tap prompt becomes a spoken one", forSpeech('Send "X" ($16,164) to John. Tap Do it to go ahead, or Cancel.') === 'Send "X" ($16,164) to John. Say yes to do it, or no.');
   check("speech: a time range is read with 'to'", forSpeech("Fri, Nov 6, 9:00 AM–2:00 PM") === "Fri, Nov 6, 9:00 AM to 2:00 PM", forSpeech("Fri, Nov 6, 9:00 AM–2:00 PM"));
   check("speech: a dash becomes a pause", forSpeech("Done — on Friday") === "Done, on Friday");
+  const built = 'Built "12 ft × 12 ft covered deck" for Sarah: $16,068. Open it: https://www.jobflex.app/dashboard/proposals/abc123';
+  const facts = 'Built \u201c12 ft \u00d7 12 ft covered deck\u201d \u2014 12 ft \u00d7 12 ft covered deck \u00b7 144 sq ft \u00b7 Capped composite \u2014 mid line\u2026';
+  check("texts: a build's reply is plain GSM (one \u00d7 or \u2014 would make every segment 70 characters)", smsPlain(facts) === 'Built "12 ft x 12 ft covered deck" - 12 ft x 12 ft covered deck, 144 sq ft, Capped composite - mid line...' && !/[^\x00-\x7F£¥èéùìòÇØøÅåÆæßÉÄÖÑÜ§¿äöñüà]/.test(smsPlain(facts)), smsPlain(facts));
+  check("speech: a build's link is never read out", forSpeech(built) === 'Built "12 ft × 12 ft covered deck" for Sarah: $16,068. The link is on your screen.', forSpeech(built));
 }
 
 console.log(bad ? `\n${bad} FAILED` : "\nall ok");

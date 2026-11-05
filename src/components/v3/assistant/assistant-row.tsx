@@ -47,13 +47,13 @@ export function AssistantRow({ variant, onBeforeOpen, role }: { variant: Variant
       <span className={styles.mark} aria-hidden="true">
         <AudioLines />
       </span>
-      <span className={styles.name}>Assistant</span>
+      <span className={styles.name}>AI Operator</span>
       <span className={styles.tag} aria-hidden="true">
         NEW
       </span>
     </>
   );
-  const label = "Assistant — ask or tell JobFlex what to do";
+  const label = "AI Operator — ask or tell JobFlex what to do";
   return (
     <div className={`${styles.wrap} ${styles[variant]}`} data-nest="">
       {variant === "drawer" || variant === "more" ? (
@@ -61,7 +61,7 @@ export function AssistantRow({ variant, onBeforeOpen, role }: { variant: Variant
           {inner}
         </Link>
       ) : (
-        <button type="button" className={styles.row} aria-label={label} title="Assistant" onClick={(e) => openAssistant(e.currentTarget)}>
+        <button type="button" className={styles.row} aria-label={label} title="AI Operator" onClick={(e) => openAssistant(e.currentTarget)}>
           {inner}
         </button>
       )}
