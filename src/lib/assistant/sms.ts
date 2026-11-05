@@ -29,6 +29,7 @@ import { isTwilioEnabled, sendSMS } from "@/lib/sdk/twilio";
 import { actorFor } from "@/lib/assistant/actor";
 import { handleTurn } from "@/lib/assistant/engine";
 import { assistantNumber, claimLink, codeIn, linkForPhone, setPhoneActive } from "@/lib/assistant/phone";
+import { APPROVAL_TTL_MS } from "@/lib/assistant/shared";
 
 const CAP_PER_PHONE_PER_DAY = 150;
 const CAP_ALL_PER_DAY = 5000;
@@ -105,6 +106,36 @@ export async function keepInbound(m: InboundText): Promise<boolean> {
   } catch {
     return !m.sid;
   }
+}
+
+/**
+ * THE SHARED NUMBER (owner, 2026-11-04: "connect it to the JobFlex admin account
+ * where Twilio already exists, just to test"). While TWILIO_ASSISTANT_FROM is
+ * JobFlex's own toll-free number, its texts come in through the company
+ * numbers' route (/api/twilio/sms — the Messaging Service's inbound URL), and
+ * that route asks here first: is this one the Assistant's? Yes for a link code,
+ * and for a linked, active phone — unless it is JobFlex's own team answering a
+ * task text (lib/adminTasks/textReply) while the Assistant waits on nothing from
+ * them. Bare STOP / START / HELP stay that route's (it pauses and resumes the
+ * link with them). On a number of its own (/api/twilio/assistant/sms) every text
+ * is the Assistant's.
+ */
+export async function claimsSharedText(m: InboundText, now = new Date()): Promise<boolean> {
+  const number = assistantNumber();
+  if (!number || toE164(m.to) !== number) return false;
+  const body = m.body.trim();
+  if (!body || isCarrierStop(body) || /^\s*(start|unstop)\s*[.!]*\s*$/i.test(body) || isHelp(body)) return false;
+  if (codeIn(body)) return true;
+  const link = await linkForPhone(m.from);
+  if (!link || !link.active) return false;
+  const waiting = await db.assistantAction.findFirst({
+    where: { organizationId: link.organizationId, userId: link.userId, status: { in: ["AWAITING", "QUEUED"] }, createdAt: { gte: new Date(now.getTime() - APPROVAL_TTL_MS) } },
+    select: { id: true },
+  });
+  if (waiting) return true;
+  const { planTaskReply } = await import("@/lib/adminTasks/textReply");
+  const task = await planTaskReply(m.from, body).catch(() => null);
+  return !task?.handled;
 }
 
 /** Answer one text. Never throws: a failure is logged, the person hears nothing worse than silence. */

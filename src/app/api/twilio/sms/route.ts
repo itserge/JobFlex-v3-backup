@@ -24,6 +24,8 @@ import { planTaskReply } from "@/lib/adminTasks/textReply";
 import { deliverTaskReply } from "@/lib/adminTasks/team";
 import { deliverRampReply, planRampReply } from "@/lib/ramp/sync";
 import { isBareKeyword, smartBookClaim, smartBookReply, type Claim } from "@/lib/smartbook/inbound";
+import { SMS_WORDS, answerAssistantText, claimsSharedText, keepInbound, sendAssistantText } from "@/lib/assistant/sms";
+import { assistantNumber, linkForPhone, setPhoneActive } from "@/lib/assistant/phone";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,7 +65,18 @@ export async function POST(req: Request) {
   if (isStopWord(body)) {
     await db.smsOptOut.upsert({ where: { phone: from }, create: { phone: from, body: clip(body, 60) }, update: { stoppedAt: new Date(), body: clip(body, 60) } });
     await db.smsMessage.create({ data: { direction: "IN", to, from, body, kind: "stop", status: "RECEIVED", sid } }).catch(() => null);
+    // STOP to the number the JobFlex Assistant shares (lib/assistant/sms claimsSharedText) pauses its link too.
+    if (to && to === assistantNumber()) await setPhoneActive(from, false).catch(() => false);
     return twiml();
+  }
+  // The JobFlex Assistant on this number (2026-11-04, while it shares JobFlex's own): a link code, or a linked phone's
+  // request — answered after the response. JobFlex's team answering a task text goes on below (claimsSharedText).
+  if (to && to === assistantNumber()) {
+    const text = { from, to, body, sid };
+    if (await claimsSharedText(text).catch(() => false)) {
+      if (await keepInbound(text)) after(() => answerAssistantText(text));
+      return twiml();
+    }
   }
   // JobFlex's team answering a task text, on JobFlex's number (not a company's own). Ahead of START so a plain
   // "yes" counts as OK; HELP and the other START words go on below.
@@ -97,12 +110,19 @@ export async function POST(req: Request) {
   if (isStartWord(body)) {
     await db.smsOptOut.deleteMany({ where: { phone: from } });
     await db.smsMessage.create({ data: { direction: "IN", to, from, body, kind: "start", status: "RECEIVED", sid } }).catch(() => null);
+    // START on the number the Assistant shares turns its link back on.
+    if (to && to === assistantNumber()) await setPhoneActive(from, true).catch(() => false);
     return twiml();
   }
   if (isHelpWord(body)) {
     // HELP always gets an answer (the carriers require it). On a company's own
     // number the company answers, from that number (2026-10-02).
     const company = to ? await db.organization.findFirst({ where: { smsFromNumber: to }, select: { id: true, name: true, phone: true } }) : null;
+    // A phone linked to the JobFlex Assistant, on the number it shares: the Assistant's own HELP.
+    if (!company && to && to === assistantNumber() && (await linkForPhone(from).catch(() => null))) {
+      await sendAssistantText(from, SMS_WORDS.help, "jobflex-assistant-help");
+      return twiml();
+    }
     await sendText(company
       ? { organizationId: company.id, to: from, body: companyHelpText(company.name, company.phone), kind: "help" }
       : { organizationId: null, to: from, body: helpText(), kind: "jobflex-help" });
