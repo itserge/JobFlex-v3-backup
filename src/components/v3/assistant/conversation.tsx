@@ -25,6 +25,7 @@ import s from "./assistant.module.css";
 
 const EXAMPLES: Array<{ label: string; text: string; fill?: boolean }> = [
   { label: "What's on tomorrow?", text: "What's on tomorrow?" },
+  { label: "Build a 12 × 12 deck with a roof for …", text: "Build a 12 by 12 deck with a roof for ", fill: true },
   { label: "What needs my attention today?", text: "What needs my attention today?" },
   { label: "Which proposals aren't signed?", text: "Which proposals aren't signed yet?" },
   { label: "Send the … proposal", text: "Send the ", fill: true },
@@ -33,16 +34,23 @@ const EXAMPLES: Array<{ label: string; text: string; fill?: boolean }> = [
 ];
 
 const TOOL_LABEL: Record<string, string> = {
+  build_deck: "Deck estimate",
+  change_deck: "Deck estimate",
+  build_estimate: "Estimate",
+  change_estimate: "Estimate",
   send_proposal: "Send a proposal",
   schedule_job: "Schedule",
   text_crew: "Text the crew",
   payment_reminder: "Payment reminder",
 };
 
+/** The builds (lib/assistant/build): no undo window — queued means it is being priced. */
+const BUILDS = new Set(["build_deck", "change_deck", "build_estimate", "change_estimate"]);
+
 function stamp(a: FeedAction, waiting: boolean): { label: string; tone: "warn" | "ok" | "bad" | "quiet" | "info" } {
   const st: ActionStatus = a.status;
   if (st === "AWAITING") return waiting ? { label: "Needs you", tone: "warn" } : { label: "Expired", tone: "quiet" };
-  if (st === "QUEUED") return { label: "In 2 min", tone: "info" };
+  if (st === "QUEUED") return BUILDS.has(a.tool) ? { label: "Working", tone: "info" } : { label: "In 2 min", tone: "info" };
   if (st === "RUNNING") return { label: "Working", tone: "info" };
   if (st === "DONE") return { label: "Done", tone: "ok" };
   if (st === "FAILED") return { label: "Didn't go", tone: "bad" };
@@ -62,7 +70,7 @@ export function Conversation({
   autoFocus?: boolean;
   variant: "panel" | "page";
 }) {
-  const { feed, pending, busy, error, ask, answer } = state;
+  const { feed, pending, busy, building, error, ask, answer } = state;
   const [text, setText] = useState("");
   const [talk, setTalk] = useState(false);
   const [heard, setHeard] = useState("");
@@ -228,6 +236,13 @@ export function Conversation({
               Working on it…
             </p>
           </>
+        ) : building ? (
+          <p className={s.working} role="status">
+            <span className={s.workingMark} aria-hidden="true">
+              <AudioLines />
+            </span>
+            Pricing it…
+          </p>
         ) : null}
 
         {error ? (
@@ -292,7 +307,11 @@ export function Conversation({
 
 function Line({ m, waiting, busy, onAnswer }: { m: FeedMessage; waiting: boolean; busy: boolean; onAnswer: (id: string, yes: boolean) => Promise<void> }) {
   if (m.direction === "IN") return <p className={`${s.bubble} ${s.mine}`}>{m.body}</p>;
-  if (!m.action) return <p className={`${s.bubble} ${s.theirs}`}>{m.body}</p>;
+  if (!m.action) return (
+    <p className={`${s.bubble} ${s.theirs}`}>
+      <Words text={m.body} />
+    </p>
+  );
   const a = m.action;
   const st = stamp(a, waiting);
   return (
@@ -303,7 +322,9 @@ function Line({ m, waiting, busy, onAnswer }: { m: FeedMessage; waiting: boolean
           {st.label}
         </span>
       </div>
-      <p className={s.cardText}>{shownBody(m)}</p>
+      <p className={s.cardText}>
+        <Words text={shownBody(m)} />
+      </p>
       {waiting && a.status === "AWAITING" ? (
         <div className={s.cardActions}>
           <button type="button" className={s.doIt} disabled={busy} onClick={() => void onAnswer(a.id, true)}>
@@ -315,5 +336,24 @@ function Line({ m, waiting, busy, onAnswer }: { m: FeedMessage; waiting: boolean
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** A reply's words with its links tappable — a build's "Open it: https://…/dashboard/proposals/…", opened beside the
+ *  panel so the conversation stays where it is. */
+function Words({ text }: { text: string }) {
+  const parts = text.split(/(https?:\/\/[^\s]+)/g);
+  return (
+    <>
+      {parts.map((part, i) =>
+        /^https?:\/\//.test(part) ? (
+          <a key={i} className={s.link} href={part} target="_blank" rel="noopener noreferrer">
+            {part.includes("/dashboard/proposals/") ? "the proposal" : part.replace(/^https?:\/\//, "")}
+          </a>
+        ) : (
+          part
+        ),
+      )}
+    </>
   );
 }

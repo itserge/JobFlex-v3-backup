@@ -9,7 +9,8 @@ import { approve, callOff, handleTurn, readFeed } from "@/lib/assistant/engine";
 import type { AssistantFeed } from "@/lib/assistant/shared";
 import { db } from "@/lib/db";
 
-export type AskResult = { ok: true; reply: string; feed: AssistantFeed } | { ok: false; error: string };
+/** `running`: a build left to run after the reply (a minute's AI estimate) — the panel runs it next (/api/assistant/run). */
+export type AskResult = { ok: true; reply: string; feed: AssistantFeed; running?: string | null } | { ok: false; error: string };
 
 const askInput = z.object({ text: z.string().trim().min(1).max(1200) });
 const answerInput = z.object({ actionId: z.string().min(1).max(64), answer: z.enum(["yes", "no"]) });
@@ -19,7 +20,7 @@ export async function askAssistant(raw: unknown): Promise<AskResult> {
   if (!parsed.success) return { ok: false, error: "Say or type what you need." };
   const actor = await actorForSession();
   const turn = await handleTurn({ actor, text: parsed.data.text });
-  return { ok: true, reply: turn.reply, feed: await readFeed(actor) };
+  return { ok: true, reply: turn.reply, feed: await readFeed(actor), running: turn.running ?? null };
 }
 
 /** "Do it" / "Cancel" on a read-back in the panel. The answer is kept in the

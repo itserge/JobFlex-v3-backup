@@ -23,8 +23,10 @@ export default function AssistantPage() {
       <h2 id="what">1. What it is</h2>
       <p>
         The JobFlex Assistant is part of JobFlex, the software contractors use to run their business. A JobFlex subscriber asks it about their
-        day or tells it what to do — send a proposal, put a job on the calendar, text their crew, remind a client to pay — in the app, by text
-        message, or by phone. It reads every change back and does nothing until the subscriber answers YES.
+        day or tells it what to do — price a job, send a proposal, put a job on the calendar, text their crew, remind a client to pay — in the
+        app, by text message, or by phone. Pricing a job only makes a draft proposal in the subscriber&apos;s own account, with a link for them to
+        look at. Anything that reaches someone else — sending a proposal, a crew text, a payment reminder — and any change to the calendar is
+        read back first, and nothing happens until the subscriber answers YES.
       </p>
       <p>The Assistant texts only JobFlex subscribers who linked their own phone to it. It never texts their clients or anyone else, and it sends no marketing.</p>
 
@@ -45,7 +47,7 @@ export default function AssistantPage() {
       </ol>
       <blockquote>
         JobFlex Assistant: this phone is now linked to Dmitriy at Summit Ridge Roofing. Text me what you need — &ldquo;what&apos;s on
-        tomorrow?&rdquo;, &ldquo;send the Smith proposal&rdquo;. I read every change back first. Save me to your contacts: (link) Msg &amp; data
+        tomorrow?&rdquo;, &ldquo;build a 12 by 12 deck with a roof for Sarah&rdquo;, &ldquo;send the Smith proposal&rdquo;. I read every change back first. Save me to your contacts: (link) Msg &amp; data
         rates may apply. Reply HELP for help, STOP to stop.
       </blockquote>
       <p>A phone that never texted a code gets no texts, except one reply explaining how to link if it texts the number.</p>
@@ -54,6 +56,10 @@ export default function AssistantPage() {
       <p>Every text is an answer to something the subscriber asked, or the result of a change they approved. Examples:</p>
       <ul>
         <li>&ldquo;Fri, Nov 6: Johnson roof 8 AM to 12 PM (Mike Diaz); Lee fence 9 AM to 2 PM.&rdquo;</li>
+        <li>
+          &ldquo;Built &lsquo;12 ft × 12 ft covered deck&rsquo; for Sarah Lee: $16,068. Open it: (link) Send &lsquo;12 ft × 12 ft covered
+          deck&rsquo; ($16,068) to Sarah Lee at sarah@example.com. Reply YES to do it, or NO.&rdquo;
+        </li>
         <li>&ldquo;Send &lsquo;Smith roof replacement&rsquo; ($16,164) to John Smith at john@example.com. Reply YES to do it, or NO.&rdquo;</li>
         <li>&ldquo;OK — doing it in 2 minutes. Reply UNDO to stop it.&rdquo;</li>
         <li>&ldquo;Sent &lsquo;Smith roof replacement&rsquo; to John Smith. I&apos;ll tell you when they open it.&rdquo;</li>

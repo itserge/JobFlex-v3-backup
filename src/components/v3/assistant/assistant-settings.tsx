@@ -16,7 +16,7 @@ import { loadAssistantPhone, setAssistantOpen, setAssistantPhoneOn, startAssista
 import { openAssistant } from "./events";
 import s from "./assistant-settings.module.css";
 
-const EXAMPLES = ["What's on tomorrow?", "Who owes me money?", "Send the Smith roof proposal", "Put the Lee fence on Thursday with Mike", "Tell everybody: start at 7 tomorrow"];
+const EXAMPLES = ["What's on tomorrow?", "Build a 12 by 12 deck with a roof for Sarah", "Price a roof replacement for the Lee house, 2,200 sq ft", "Send the Smith roof proposal", "Put the Lee fence on Thursday with Mike", "Tell everybody: start at 7 tomorrow"];
 
 function since(iso: string | null): string {
   if (!iso) return "";

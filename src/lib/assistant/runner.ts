@@ -4,11 +4,33 @@ import "server-only";
 // window (lib/assistant/shared undoWindowMs) and is run here; the person hears
 // what really happened where they asked — a text for a text. Read-backs nobody
 // answered expire; a run that died half-way is marked failed, never retried (a
-// send must not go out twice).
+// send must not go out twice). A build left to run after its reply (slice 3, a
+// minute's AI estimate) is run the same way — by the turn that started it
+// (runAndReport), else here.
 import { db } from "@/lib/db";
 import { runAction } from "@/lib/assistant/engine";
 import { sendAssistantText } from "@/lib/assistant/sms";
 import { APPROVAL_TTL_MS, RUNNING_STALE_MS } from "@/lib/assistant/shared";
+
+/** Run one queued action and say what happened where it was asked: the conversation, and a text for a text.
+ *  False when another run already has it. `early`: a build run by the turn or the panel that started it, before
+ *  the minute job's grace is up. */
+export async function runAndReport(actionId: string, now = new Date(), opts: { early?: boolean } = {}): Promise<boolean> {
+  const a = await db.assistantAction.findUnique({ where: { id: actionId }, select: { organizationId: true, userId: true, channel: true } });
+  if (!a) return false;
+  const r = await runAction(actionId, now, opts);
+  if (r === null) return false;
+  // The card it belongs to: the send it offers (Do it / Cancel), else the build itself; an approved change already has its own.
+  const card = r.proposed?.id ?? (r.instant ? actionId : null);
+  await db.assistantMessage.create({ data: { organizationId: a.organizationId, userId: a.userId, channel: a.channel, direction: "OUT", body: r.say.slice(0, 4000), actionId: card } }).catch(() => null);
+  if (a.channel === "sms") {
+    const link = await db.assistantLink.findFirst({ where: { organizationId: a.organizationId, userId: a.userId, active: true, verifiedAt: { not: null } }, select: { phone: true } });
+    if (link) await sendAssistantText(link.phone, r.say, r.instant ? "jobflex-assistant-built" : "jobflex-assistant-done");
+  }
+  return true;
+}
+
+const AT_ONCE = 4;
 
 export async function runAssistantMinute(now = new Date()): Promise<{ ran: number; expired: number; stale: number }> {
   const expired = await db.assistantAction.updateMany({
@@ -23,18 +45,13 @@ export async function runAssistantMinute(now = new Date()): Promise<{ ran: numbe
     where: { status: "QUEUED", executeAfter: { lte: now } },
     orderBy: { executeAfter: "asc" },
     take: 20,
-    select: { id: true, organizationId: true, userId: true, channel: true },
+    select: { id: true },
   });
   let ran = 0;
-  for (const a of due) {
-    const say = await runAction(a.id, now);
-    if (say === null) continue; // another run has it
-    ran += 1;
-    await db.assistantMessage.create({ data: { organizationId: a.organizationId, userId: a.userId, channel: a.channel, direction: "OUT", body: say.slice(0, 4000) } }).catch(() => null);
-    if (a.channel === "sms") {
-      const link = await db.assistantLink.findFirst({ where: { organizationId: a.organizationId, userId: a.userId, active: true, verifiedAt: { not: null } }, select: { phone: true } });
-      if (link) await sendAssistantText(link.phone, say, "jobflex-assistant-done");
-    }
+  // A few at a time: an estimate is a minute's work, and twenty in a row would outlast the job.
+  for (let i = 0; i < due.length; i += AT_ONCE) {
+    const done = await Promise.all(due.slice(i, i + AT_ONCE).map((a) => runAndReport(a.id, now).catch(() => false)));
+    ran += done.filter(Boolean).length;
   }
   return { ran, expired: expired.count, stale: stale.count };
 }

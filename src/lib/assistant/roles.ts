@@ -2,7 +2,8 @@
 // (qa/tests/logic/assistant.check.ts). The same lines the dashboard's guards
 // draw (lib/orgContext): field workers have their crew portal, not this; SALES
 // and ESTIMATOR see and send their own proposals; the calendar's, the crew's
-// and the payments' actions are managers'; money is the Financials page's.
+// and the payments' actions are managers'; money is the Financials page's; pricing a
+// job is the estimators' and the managers' (requireEstimatorOrManager), never SALES.
 import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
 
 export type Capability =
@@ -14,7 +15,8 @@ export type Capability =
   | "crew.read"
   | "crew.text"
   | "money.read"
-  | "payments.remind";
+  | "payments.remind"
+  | "estimates.build"; // price a job into a draft proposal (requireEstimatorOrManager: never SALES)
 
 const LIMITED = new Set(["INSTALLER", "SALES", "ESTIMATOR"]);
 
@@ -42,6 +44,8 @@ export function roleAllows(role: string, need: Capability): boolean {
       return manager;
     case "money.read":
       return manager && mayOpen(role, "/dashboard/financials");
+    case "estimates.build":
+      return role !== "SALES";
   }
 }
 

@@ -9,10 +9,12 @@ import { after, NextResponse } from "next/server";
 import { appBaseUrl } from "@/lib/appUrl";
 import { verifyTwilioSignature } from "@/lib/sdk/twilioVoice";
 import { answerAssistantText, keepInbound } from "@/lib/assistant/sms";
+import { runAndReport } from "@/lib/assistant/runner";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// A build texted in (slice 3) is a minute's AI estimate, run after the answer: room for it.
+export const maxDuration = 300;
 
 const twiml = () => new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', { status: 200, headers: { "Content-Type": "text/xml" } });
 
@@ -29,6 +31,9 @@ export async function POST(req: Request) {
   const text = { from: (params.From ?? "").trim(), to: (params.To ?? "").trim(), body: (params.Body ?? "").trim(), sid: params.MessageSid || null };
   if (!text.from) return twiml();
   if (!(await keepInbound(text))) return twiml(); // Twilio sent this one already
-  after(() => answerAssistantText(text));
+  after(async () => {
+    const running = await answerAssistantText(text);
+    if (running) await runAndReport(running, new Date(), { early: true }).catch(() => false);
+  });
   return twiml();
 }

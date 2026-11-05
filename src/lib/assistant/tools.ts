@@ -1,8 +1,9 @@
 import "server-only";
 // WHAT THE ASSISTANT CAN DO (2026-11-04). Every tool is a thin call into code
 // the dashboard already runs — the CRM brief, the money rollups, the send
-// core, the calendar core, the crew texts, the payment reminder — so the
-// Assistant never computes a number or a price of its own.
+// core, the calendar core, the crew texts, the payment reminder, and (slice 3,
+// lib/assistant/build) the Deck Studio and Smart Proposal — so the Assistant
+// never computes a number or a price of its own.
 //   · A READ tool answers at once with data (the model words it).
 //   · A WRITE tool never acts when the model calls it: `plan` checks it, works
 //     out exactly what would happen and writes the read-back sentence; the
@@ -24,6 +25,7 @@ import { textWorker } from "@/lib/sms/send";
 import { sendPaymentReminder } from "@/lib/payments/reminders";
 import { fromMinor, resolveSchedule } from "@/lib/paymentSchedule";
 import { contractSchedule } from "@/lib/contractTotal";
+import { BUILDERS } from "@/lib/assistant/build";
 
 export interface ToolContext {
   actor: AssistantActor;
@@ -44,11 +46,17 @@ export interface ReadTool<A> extends ToolBase<A> {
 
 export type Plan<P> = { ok: true; payload: P; readback: string } | { ok: false; say: string };
 
+/** What a build offers next — send what it made — planned like any write and read back for a yes. */
+export type Offer = { tool: string; args: unknown };
+
 export interface WriteTool<A, P> extends ToolBase<A> {
   kind: "write";
+  /** A change that runs without a yes because nothing leaves JobFlex — a build makes a DRAFT (lib/assistant/build):
+   *  "now" in the turn, "background" after the reply (a minute's AI estimate). Absent: read back, then a yes. */
+  instant?: "now" | "background";
   payload: z.ZodType<P>;
   plan(ctx: ToolContext, args: A): Promise<Plan<P>>;
-  execute(ctx: ToolContext, payload: P): Promise<{ say: string; result?: unknown }>;
+  execute(ctx: ToolContext, payload: P): Promise<{ say: string; result?: unknown; offer?: Offer }>;
 }
 
 export type AnyTool = ReadTool<unknown> | WriteTool<unknown, unknown>;
@@ -473,7 +481,7 @@ const paymentReminder: WriteTool<{ proposalId: string; installmentId: string | n
 };
 
 /** Every tool, in the order the model is shown them. */
-export const TOOLS: readonly AnyTool[] = [today, schedule, find, openProposals, moneyTool, crew, sendProposal, scheduleJob, textCrew, paymentReminder] as unknown as AnyTool[];
+export const TOOLS: readonly AnyTool[] = [today, schedule, find, openProposals, moneyTool, crew, ...BUILDERS, sendProposal, scheduleJob, textCrew, paymentReminder] as unknown as AnyTool[];
 
 export function toolNamed(name: string): AnyTool | null {
   return TOOLS.find((t) => t.name === name) ?? null;

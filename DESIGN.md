@@ -311,7 +311,13 @@ monthly" is one 12px line (weight 600) under the price.
   conversation: the square turns rose while it listens and blue while it
   speaks, and a live line sits over the box — what is being heard, "Listening
   — just talk.", "Working on it…", "Speaking…" (rose-tinted, blueprint-tinted
-  while speaking). Settings → Assistant
+  while speaking). A build (2026-11-05: "build a 12 by 12 deck with a roof for
+  Sarah") answers "On it…" in a plain bubble, a "Pricing it…" working line holds
+  the place while it prices, and the result is the send card: the price, what
+  is in it, "Open it: the proposal" (an 600 underlined link in the card's own
+  ink, opened beside the panel), then the send read-back with Do it / Cancel.
+  The empty state's first example row after "What's on tomorrow?" is "Build a
+  12 × 12 deck with a roof for …". Settings → Assistant
   ([assistant-settings](src/components/v3/assistant/assistant-settings.module.css))
   is one card in SmartBook's treatment — stamp Linked emerald, Paused amber,
   Not linked / Texting soon muted — with ruled sections In the app, From your
