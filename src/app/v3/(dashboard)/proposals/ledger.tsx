@@ -77,10 +77,10 @@ export function ProposalsLedger({
       <nav className={`${styles.filters} ${styles.rv} ${styles.d3}`} aria-label="Filter by status">
         {FILTER_KEYS.map((key) => {
           const n = key === "ALL" ? totalCount : (counts.get(key) ?? 0);
-          const href =
-            key === "ALL"
-              ? (V3_PORTED_ROUTES.proposalsBlueprint as Route)
-              : (`${V3_PORTED_ROUTES.proposalsBlueprint}?status=${key}` as Route);
+          // One plain string, one Route at the end: two Routes joined in a conditional made TypeScript build a union
+          // past its 100,000-member limit (TS2590) once the app passed ~300 pages (2026-11-05).
+          const path: string = key === "ALL" ? V3_PORTED_ROUTES.proposalsBlueprint : `${V3_PORTED_ROUTES.proposalsBlueprint}?status=${key}`;
+          const href = path as Route;
           return (
             <Link
               key={key}

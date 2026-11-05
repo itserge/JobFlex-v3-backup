@@ -42,7 +42,8 @@ export function PortalFrame({ homeKey, house, tab, onePage = false, live = true,
       <Sprite />
       <header className={s.bar}>
         <div className={s.barIn}>
-          <Link className={s.brand} href={homeKey ? homeHref(homeKey) : "/"} aria-label="JobFlex Home">
+          {/* Through `string`: the two Routes joined in one conditional passed TypeScript's union limit (TS2590, 2026-11-05). */}
+          <Link className={s.brand} href={(homeKey ? (homeHref(homeKey) as string) : "/") as Route} aria-label="JobFlex Home">
             <ProductMark tone="paper" />
             <span className={s.brandText}>
               <span className={s.brandWord}>JobFlex</span>
