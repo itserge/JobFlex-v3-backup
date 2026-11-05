@@ -23,14 +23,16 @@ export async function askAssistant(raw: unknown): Promise<AskResult> {
 }
 
 /** "Do it" / "Cancel" on a read-back in the panel. The answer is kept in the
- *  conversation as if typed, so the log reads the same on every channel. */
+ *  conversation as if typed, so the log reads the same on every channel; the
+ *  read-back card itself carries the action (its stamp turns Done / Cancelled),
+ *  so these two lines are plain ones. */
 export async function answerAssistant(raw: unknown): Promise<AskResult> {
   const parsed = answerInput.safeParse(raw);
   if (!parsed.success) return { ok: false, error: "That answer couldn't be read." };
   const actor = await actorForSession();
   const { actionId, answer } = parsed.data;
   const keep = (direction: "IN" | "OUT", body: string) =>
-    db.assistantMessage.create({ data: { organizationId: actor.organizationId, userId: actor.userId, channel: actor.channel, direction, body, actionId } });
+    db.assistantMessage.create({ data: { organizationId: actor.organizationId, userId: actor.userId, channel: actor.channel, direction, body } });
   await keep("IN", answer === "yes" ? "Do it" : "Cancel");
   const reply = answer === "yes" ? await approve(actor, actionId) : (await callOff(actor, actionId)) ? "OK — I won't do it." : "That's no longer waiting.";
   await keep("OUT", reply);

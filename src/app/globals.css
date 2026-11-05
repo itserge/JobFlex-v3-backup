@@ -329,16 +329,20 @@ body {
    1024px the panel is over the page (and a sheet on a phone), so nothing
    moves. */
 @media (min-width: 1024px) {
-  html[data-smarthelp-open] body {
+  html[data-smarthelp-open] body,
+  html[data-assistant-open] body {
     padding-right: 380px;
   }
 }
 /* The Help corner (components/v3/support-widget: its plate, then the composer
    it opens) stands left of SmartHelp's panel while the panel is up, so it never
-   sits on the panel's ask box. */
+   sits on the panel's ask box. The Assistant's desk panel (components/v3/
+   assistant, 2026-11-04) takes the same edge and the same rule. */
 @media (min-width: 769px) {
   html[data-smarthelp-open] .jfsup,
-  html[data-smarthelp-open] .jfsup-fab.jfsup-fab {
+  html[data-smarthelp-open] .jfsup-fab.jfsup-fab,
+  html[data-assistant-open] .jfsup,
+  html[data-assistant-open] .jfsup-fab.jfsup-fab {
     right: calc(380px + 22px);
   }
 }

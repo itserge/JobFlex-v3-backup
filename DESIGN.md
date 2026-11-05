@@ -287,6 +287,27 @@ monthly" is one 12px line (weight 600) under the price.
   shadow, nothing dimmed. Folded (Show me below the desk, Open on a phone) it
   is a 44px ink "Back to SmartHelp" bar at the top middle of the screen — the
   corners are the menu and Help, the foot is the tab bar and create button.
+- The Assistant (2026-11-04, shown to the owner for approval;
+  [assistant](src/components/v3/assistant/assistant.module.css)). Its row sits
+  right under SmartHelp in every nav, and SmartHelp stays the one filled row:
+  white in a 1.5px ink frame, a blue square holding Lucide AudioLines in white,
+  ink 800 "Assistant", a square "NEW" tag framed in blue; no shadow, the hover a
+  light blueprint fill; the folded rail shows the square alone; hidden for the
+  field crew. The desk panel is SmartHelp's geometry (380px beside the page at
+  ≥1024, over it at 769–1023, the two never open together) with a `--paper`
+  head ruled in 2px ink. A phone has no sheet: the rows go to the page
+  `/mobile-assistant-v1` — the handheld chrome, a `--paper` head (36px blue
+  square, 22px 900 caps "Assistant"), the conversation filling the screen and
+  the box on its foot above the home indicator. The conversation is
+  SmartBook's square bubbles (the person's white in ink, the Assistant's
+  `--accent-soft` in accent). A proposed change is a card in a 2px ink frame:
+  a 12px caps label ("Send a proposal", "Schedule"), a square stamp — Needs you
+  amber, Done emerald, Didn't go rose, Cancelled / Expired muted — the
+  read-back in 15px, and while it waits "Do it" (the one blue button, caps) beside a
+  white "Cancel", both 44px. Nothing said yet: a 17px 900 caps line and
+  ink-framed 44px example rows. The box is white in 1.5px ink (16px text on a
+  phone), a white 44px mic square that turns rose while listening, and a blue
+  44px send square; this cycle's use under it in 11px mono.
 - SmartBook (owner, 2026-10-31;
   [smartbook](src/components/v3/smartbook/smartbook.module.css)). One framed
   card treatment for Settings → SmartBook and the calendar's "SmartBook
