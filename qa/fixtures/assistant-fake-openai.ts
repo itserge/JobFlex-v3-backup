@@ -146,6 +146,87 @@ function answer(body: { messages: Msg[] }) {
   if (/^\s*(change|make it|use)\b/.test(text) && lately) return call(lately[2] === "deck" ? "change_deck" : "change_estimate", { proposalId: lately[1], change: user.replace(/^\s*change( it)?[:,]?\s*/i, "") || user });
   if (/\bsend it\b/.test(text) && lately) return call("send_proposal", { proposalId: lately[1], email: /\S+@\S+\.\w+/.exec(user)?.[0] ?? null, clientName: null });
 
+  // Batches 1–2 (2026-11-05): people, visits, reminders, a crew text each, money.
+  const hourOf = (t: string): string | null => {
+    const h = /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/.exec(t);
+    return h ? `${String((+h[1] % 12) + (h[3] === "pm" ? 12 : 0)).padStart(2, "0")}:${h[2] ?? "00"}` : null;
+  };
+  const emailIn = /\S+@\S+\.\w+/.exec(user)?.[0] ?? null;
+  const phoneIn = /\b\d{3}[-. ]\d{3}[-. ]\d{4}\b/.exec(user)?.[0] ?? null;
+  const named = (after: RegExp) => after.exec(user)?.[1] ?? null;
+  if (/\b(add|new) (a |an )?(client|customer)\b/.test(text)) {
+    const name = named(/(?:client|customer):?\s+([A-Z][a-z]+(?: [A-Z][a-z]+)?)/) ?? "Someone";
+    const address = /,\s*([^,]*\b(?:St|Ave|Rd|Dr|Ln|Blvd)\b[^,]*)/.exec(user)?.[1]?.trim() ?? null;
+    return call("add_client", { name, phone: phoneIn, email: emailIn, address, city: null, state: null, zip: null, notes: null });
+  }
+  const chg = /\b(?:change|update) (\w+)'?s (phone|email|address) to (.+)$/i.exec(user);
+  if (chg) {
+    const f = done.get("find") as Found | undefined;
+    if (!f) return call("find", { query: chg[1], kind: "client" });
+    const c = f.clients?.[0];
+    if (!c) return reply("I couldn't find that client.");
+    const field = chg[2].toLowerCase();
+    const v = chg[3].trim().replace(/[.]$/, "");
+    return call("update_client", { clientId: c.id, name: null, phone: field === "phone" ? v : null, email: field === "email" ? v : null, address: field === "address" ? v : null, city: null, state: null, zip: null, notes: null });
+  }
+  if (/\b(add|new) (a )?lead\b/.test(text)) {
+    const name = named(/lead:?\s+([A-Z][a-z]+(?: [A-Z][a-z]+)?)/) ?? "Someone";
+    const wants = /\bwants? (?:a |an )?([^,.]+)/i.exec(user)?.[1]?.trim() ?? null;
+    return call("add_lead", { name, phone: phoneIn, email: emailIn, address: null, projectType: wants, description: null, source: /\breferral\b/i.test(user) ? "referral" : null });
+  }
+  if (/\bbook (a |an )?(visit|appointment)\b/.test(text)) {
+    const f = done.get("find") as Found | undefined;
+    const who = named(/\bwith ([A-Z][a-z]+(?: [A-Z][a-z]+)?)/) ?? subject(user);
+    if (!f) return call("find", { query: who || user, kind: "any" });
+    const c = f.clients?.[0];
+    const l = c ? null : f.leads?.[0];
+    if (!c && !l) return reply("I couldn't find that person.");
+    return call("book_visit", { title: /\bmeasure\b/i.test(user) ? "Measure" : null, clientId: c?.id ?? null, leadId: l?.id ?? null, date: dayFrom(text, today), start: hourOf(text) ?? "10:00", end: null, workerIds: null, notes: null });
+  }
+  if (/\b(move|cancel) (the |my )?(visit|appointment)\b/.test(text)) {
+    const f = done.get("find") as (Found & { visits?: Array<{ id: string; title: string; with: string | null }> }) | undefined;
+    const who = named(/\bwith ([A-Z][a-z]+(?: [A-Z][a-z]+)?)/) ?? subject(user);
+    if (!f) return call("find", { query: who || user, kind: "visit" });
+    const v = f.visits?.[0];
+    if (!v) return reply("I couldn't find that visit.");
+    if (/\bcancel\b/.test(text)) return call("cancel_visit", { visitId: v.id });
+    return call("move_visit", { visitId: v.id, date: dayFrom(text, today), start: hourOf(text), end: null });
+  }
+  if (/\bremind me\b/.test(text)) {
+    const what = /\bto (.+?)[.!]?$/i.exec(user)?.[1] ?? user;
+    return call("remind_me", { what, date: dayFrom(text, today), time: hourOf(text) ?? "15:00" });
+  }
+  if (/\breminders?\b/.test(text) && /\b(what|which|list|have|cancel)\b/.test(text)) {
+    const r = done.get("reminders") as { reminders: Array<{ id: string; what: string; when: string | null }> } | undefined;
+    if (!r) return call("reminders", {});
+    if (/\bcancel\b/.test(text)) {
+      if (done.get("cancel_reminder")) return reply("Cancelled that reminder.");
+      if (!r.reminders.length) return reply("You have no reminders set.");
+      return call("cancel_reminder", { reminderId: r.reminders[0].id });
+    }
+    return reply(r.reminders.length ? r.reminders.map((x) => `${x.when}: ${x.what}`).join("; ") : "You have no reminders set.");
+  }
+  const each = /\btell (\w+) (.+?) and (\w+) (.+)$/i.exec(user);
+  if (each && !/\b(everybody|everyone)\b/i.test(user)) {
+    const c = done.get("crew") as Crew | undefined;
+    if (!c) return call("crew", {});
+    const pick = (n: string) => c.workers.find((w) => w.name.toLowerCase().startsWith(n.toLowerCase()));
+    const a = pick(each[1]);
+    const b = pick(each[3]);
+    if (!a || !b) return reply("I couldn't find those crew members.");
+    return call("text_crew_each", { items: [{ workerId: a.id, message: each[2].trim() }, { workerId: b.id, message: each[4].trim().replace(/[.]$/, "") }] });
+  }
+  if (/\b(invoice|financing)\b/.test(text)) {
+    const f = done.get("find") as Found | undefined;
+    // The real model asks for the name alone; the words around it are not in any title.
+    const who = user.replace(/\b(invoice|send|the|financing|link|a|an|for|to|please)\b/gi, " ").replace(/\s+/g, " ").trim();
+    if (!f) return call("find", { query: who || user, kind: "proposal" });
+    const p = f.proposals?.[0];
+    if (!p) return reply("I couldn't find that proposal.");
+    if (/\bfinancing\b/.test(text)) return call("financing_link", { proposalId: p.id, via: "auto" });
+    return call("send_invoice", { proposalId: p.id, installmentId: null, method: /\bbank\b/.test(text) ? "bank" : /\bcard\b/.test(text) ? "card" : "any" });
+  }
+
   if (/\bsend\b/.test(text)) {
     const f = done.get("find") as Found | undefined;
     if (!f) return call("find", { query: subject(user) || user, kind: "proposal" });

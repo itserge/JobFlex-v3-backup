@@ -11,6 +11,7 @@ import {
   dayOf,
   dayRange,
   money,
+  needsPin,
   quickReply,
   smsPlain,
   spanWords,
@@ -25,7 +26,8 @@ import { ownProposalsOnly, roleAllows, type Capability } from "../../../src/lib/
 import { searchWords } from "../../../src/lib/assistant/find";
 import { codeIn, phoneWords } from "../../../src/lib/assistant/phone";
 import { SMS_WORDS, isCarrierStart, isCarrierStop } from "../../../src/lib/assistant/sms";
-import { forSpeech } from "../../../src/components/v3/assistant/use-assistant";
+import { forSpeech, shownBody } from "../../../src/components/v3/assistant/use-assistant";
+import { hashPin, pinMatches, weakPin } from "../../../src/lib/assistant/pin";
 
 let bad = 0;
 function check(name: string, ok: boolean, extra?: unknown) {
@@ -96,7 +98,7 @@ function check(name: string, ok: boolean, extra?: unknown) {
 
 // ── who may ask for what ────────────────────────────────────────────────────
 {
-  const all: Capability[] = ["today", "proposals.read", "proposals.send", "schedule.read", "schedule.write", "crew.read", "crew.text", "money.read", "payments.remind", "estimates.build"];
+  const all: Capability[] = ["today", "proposals.read", "proposals.send", "schedule.read", "schedule.write", "crew.read", "crew.text", "money.read", "payments.remind", "estimates.build", "clients.write", "leads.write", "visits.write", "reminders", "invoices.send", "financing.send"];
   for (const role of ["OWNER", "ADMIN", "MANAGER"]) check(`roles: ${role} may do everything`, all.every((c) => roleAllows(role, c)), all.filter((c) => !roleAllows(role, c)));
   check("roles: a field worker is refused everything (the crew portal is theirs)", all.every((c) => !roleAllows("INSTALLER", c)));
   check("roles: SALES sends proposals", roleAllows("SALES", "proposals.send"));
@@ -135,6 +137,31 @@ function check(name: string, ok: boolean, extra?: unknown) {
   const facts = 'Built \u201c12 ft \u00d7 12 ft covered deck\u201d \u2014 12 ft \u00d7 12 ft covered deck \u00b7 144 sq ft \u00b7 Capped composite \u2014 mid line\u2026';
   check("texts: a build's reply is plain GSM (one \u00d7 or \u2014 would make every segment 70 characters)", smsPlain(facts) === 'Built "12 ft x 12 ft covered deck" - 12 ft x 12 ft covered deck, 144 sq ft, Capped composite - mid line...' && !/[^\x00-\x7F£¥èéùìòÇØøÅåÆæßÉÄÖÑÜ§¿äöñüà]/.test(smsPlain(facts)), smsPlain(facts));
   check("speech: a build's link is never read out", forSpeech(built) === 'Built "12 ft × 12 ft covered deck" for Sarah: $16,068. The link is on your screen.', forSpeech(built));
+}
+
+// ── batches 1–2 (2026-11-05): the PIN for money, and who may add people, book visits, set reminders ──
+{
+  const yp = quickReply("yes 1234");
+  check("quick: 'yes 1234' is a yes with a PIN", yp?.kind === "yes" && yp.pin === "1234" && !yp.bare, yp);
+  const bare = quickReply("1234");
+  check("quick: four digits alone are a bare PIN (the engine takes them only when a read-back waits for one)", bare?.kind === "yes" && bare.pin === "1234" && bare.bare === true, bare);
+  const comma = quickReply("YES, 2580");
+  check("quick: 'YES, 2580' too", comma?.kind === "yes" && comma.pin === "2580");
+  check("quick: five digits are not a PIN", quickReply("12345") === null);
+  check("prompt: a money read-back asks for the PIN by text", confirmPrompt("sms", true) === "Reply YES and your PIN (like YES 1234), or NO.");
+  check("prompt: and on the card in the app", confirmPrompt("app", true) === "Enter your PIN and tap Do it, or Cancel.");
+  check("pin: invoices and financing links need it; a crew text and a proposal don't", needsPin("send_invoice") && needsPin("financing_link") && !needsPin("text_crew") && !needsPin("send_proposal"));
+  const h = hashPin("2580");
+  check("pin: hashed, never stored plain", h.startsWith("scrypt$") && !h.includes("2580"));
+  check("pin: the right PIN matches, a wrong or short one doesn't", pinMatches("2580", h) && !pinMatches("2581", h) && !pinMatches("258", h));
+  check("pin: two hashes of one PIN differ (a salt each)", hashPin("2580") !== h);
+  check("pin: 0000, 1234 and 9876 are too easy; 2580 and 1357 are fine", weakPin("0000") && weakPin("1234") && weakPin("9876") && !weakPin("2580") && !weakPin("1357"));
+  check("roles: SALES adds clients and books visits, never invoices", roleAllows("SALES", "clients.write") && roleAllows("SALES", "visits.write") && !roleAllows("SALES", "invoices.send") && !roleAllows("SALES", "financing.send"));
+  check("roles: ESTIMATOR never adds clients or leads, nor books visits (requireSalesOrManager)", !roleAllows("ESTIMATOR", "clients.write") && !roleAllows("ESTIMATOR", "leads.write") && !roleAllows("ESTIMATOR", "visits.write"));
+  check("roles: anyone with the Operator sets reminders; the field crew has no Operator", roleAllows("SALES", "reminders") && roleAllows("ESTIMATOR", "reminders") && !roleAllows("INSTALLER", "reminders"));
+  check("speech: the PIN prompt points at the screen", forSpeech("Invoice X $1. Enter your PIN and tap Do it, or Cancel.") === "Invoice X $1. Enter your PIN on the screen, then tap Do it.");
+  const line = { id: "m", direction: "OUT" as const, body: "Invoice X. Reply YES and your PIN (like YES 1234), or NO.", createdAt: "", action: { id: "a", tool: "send_invoice", status: "AWAITING" as const, readback: "", result: null, createdAt: "" } };
+  check("shown: the PIN prompt line is the card's, not the bubble's", shownBody(line) === "Invoice X.", shownBody(line));
 }
 
 console.log(bad ? `\n${bad} FAILED` : "\nall ok");

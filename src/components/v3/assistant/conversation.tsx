@@ -19,7 +19,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { ArrowUp, AudioLines, Mic, Square } from "lucide-react";
 import { useDeckSpeech } from "@/components/v3/deck-voice/use-deck-speech";
-import type { ActionStatus, FeedAction, FeedMessage } from "@/lib/assistant/shared";
+import { PIN_TOOLS, SCHEDULED_TOOLS, type ActionStatus, type FeedAction, type FeedMessage } from "@/lib/assistant/shared";
 import { forSpeech, shownBody, type AssistantState } from "./use-assistant";
 import s from "./assistant.module.css";
 
@@ -31,6 +31,7 @@ const EXAMPLES: Array<{ label: string; text: string; fill?: boolean }> = [
   { label: "Send the … proposal", text: "Send the ", fill: true },
   { label: "Put … on Thursday with …", text: "Put the ", fill: true },
   { label: "Tell the crew: …", text: "Tell everybody: ", fill: true },
+  { label: "Remind me at 3 to …", text: "Remind me at 3 to ", fill: true },
 ];
 
 const TOOL_LABEL: Record<string, string> = {
@@ -41,7 +42,17 @@ const TOOL_LABEL: Record<string, string> = {
   send_proposal: "Send a proposal",
   schedule_job: "Schedule",
   text_crew: "Text the crew",
+  text_crew_each: "Text the crew",
   payment_reminder: "Payment reminder",
+  add_client: "Add a client",
+  update_client: "Update a client",
+  add_lead: "Add a lead",
+  book_visit: "Book a visit",
+  move_visit: "Move a visit",
+  cancel_visit: "Cancel a visit",
+  remind_me: "Reminder",
+  send_invoice: "Invoice",
+  financing_link: "Financing link",
 };
 
 /** The builds (lib/assistant/build): no undo window — queued means it is being priced. */
@@ -50,7 +61,7 @@ const BUILDS = new Set(["build_deck", "change_deck", "build_estimate", "change_e
 function stamp(a: FeedAction, waiting: boolean): { label: string; tone: "warn" | "ok" | "bad" | "quiet" | "info" } {
   const st: ActionStatus = a.status;
   if (st === "AWAITING") return waiting ? { label: "Needs you", tone: "warn" } : { label: "Expired", tone: "quiet" };
-  if (st === "QUEUED") return BUILDS.has(a.tool) ? { label: "Working", tone: "info" } : { label: "In 2 min", tone: "info" };
+  if (st === "QUEUED") return BUILDS.has(a.tool) ? { label: "Working", tone: "info" } : SCHEDULED_TOOLS.includes(a.tool) ? { label: "Set", tone: "info" } : { label: "In 2 min", tone: "info" };
   if (st === "RUNNING") return { label: "Working", tone: "info" };
   if (st === "DONE") return { label: "Done", tone: "ok" };
   if (st === "FAILED") return { label: "Didn't go", tone: "bad" };
@@ -170,8 +181,8 @@ export function Conversation({
     if (reply === null && words === undefined) setText(t);
   };
 
-  const onAnswer = async (actionId: string, yes: boolean) => {
-    const reply = await answer(actionId, yes);
+  const onAnswer = async (actionId: string, yes: boolean, pin?: string) => {
+    const reply = await answer(actionId, yes, pin);
     if (talkRef.current && reply) sayRef.current(forSpeech(reply));
   };
 
@@ -305,7 +316,9 @@ export function Conversation({
   );
 }
 
-function Line({ m, waiting, busy, onAnswer }: { m: FeedMessage; waiting: boolean; busy: boolean; onAnswer: (id: string, yes: boolean) => Promise<void> }) {
+function Line({ m, waiting, busy, onAnswer }: { m: FeedMessage; waiting: boolean; busy: boolean; onAnswer: (id: string, yes: boolean, pin?: string) => Promise<void> }) {
+  // A money card (shared PIN_TOOLS) takes the four digits beside Do it; they go to the server once and are never shown.
+  const [pin, setPin] = useState("");
   if (m.direction === "IN") return <p className={`${s.bubble} ${s.mine}`}>{m.body}</p>;
   if (!m.action) return (
     <p className={`${s.bubble} ${s.theirs}`}>
@@ -326,8 +339,28 @@ function Line({ m, waiting, busy, onAnswer }: { m: FeedMessage; waiting: boolean
         <Words text={shownBody(m)} />
       </p>
       {waiting && a.status === "AWAITING" ? (
-        <div className={s.cardActions}>
-          <button type="button" className={s.doIt} disabled={busy} onClick={() => void onAnswer(a.id, true)}>
+        <div className={`${s.cardActions} ${PIN_TOOLS.includes(a.tool) ? s.withPin : ""}`}>
+          {PIN_TOOLS.includes(a.tool) ? (
+            <input
+              className={s.pin}
+              type="password"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={4}
+              autoComplete="off"
+              placeholder="PIN"
+              aria-label="Your 4-digit PIN"
+              value={pin}
+              disabled={busy}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+            />
+          ) : null}
+          <button
+            type="button"
+            className={s.doIt}
+            disabled={busy || (PIN_TOOLS.includes(a.tool) && pin.length !== 4)}
+            onClick={() => void onAnswer(a.id, true, PIN_TOOLS.includes(a.tool) ? pin : undefined)}
+          >
             Do it
           </button>
           <button type="button" className={s.cancel} disabled={busy} onClick={() => void onAnswer(a.id, false)}>

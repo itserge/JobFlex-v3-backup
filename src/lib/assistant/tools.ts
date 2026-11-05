@@ -15,7 +15,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { type AssistantActor, type Capability, proposalScope } from "@/lib/assistant/actor";
 import { andList, dayRange, dayWords, money, spanWords, timeOf, wallInstant, dayOf } from "@/lib/assistant/shared";
-import { crewOf, findClients, findJobs, findLeads, findProposals } from "@/lib/assistant/find";
+import { crewOf, findClients, findJobs, findLeads, findProposals, findVisits } from "@/lib/assistant/find";
 import { readCrmBrief } from "@/lib/crm/briefServer";
 import { getFinancialsRollup, getMonthlyRollup } from "@/actions/financials";
 import { sendProposalAs } from "@/lib/proposals/sendCore";
@@ -26,6 +26,10 @@ import { sendPaymentReminder } from "@/lib/payments/reminders";
 import { fromMinor, resolveSchedule } from "@/lib/paymentSchedule";
 import { contractSchedule } from "@/lib/contractTotal";
 import { BUILDERS } from "@/lib/assistant/build";
+import { PEOPLE_TOOLS } from "@/lib/assistant/people";
+import { VISIT_TOOLS } from "@/lib/assistant/visits";
+import { REMIND_TOOLS } from "@/lib/assistant/remind";
+import { MONEY_TOOLS } from "@/lib/assistant/money";
 
 export interface ToolContext {
   actor: AssistantActor;
@@ -44,7 +48,8 @@ export interface ReadTool<A> extends ToolBase<A> {
   run(ctx: ToolContext, args: A): Promise<unknown>;
 }
 
-export type Plan<P> = { ok: true; payload: P; readback: string } | { ok: false; say: string };
+/** `runAt`: a `scheduled` tool's own time (a reminder) — the action is queued for then, with no yes. */
+export type Plan<P> = { ok: true; payload: P; readback: string; runAt?: Date } | { ok: false; say: string };
 
 /** What a build offers next — send what it made — planned like any write and read back for a yes. */
 export type Offer = { tool: string; args: unknown };
@@ -54,6 +59,9 @@ export interface WriteTool<A, P> extends ToolBase<A> {
   /** A change that runs without a yes because nothing leaves JobFlex — a build makes a DRAFT (lib/assistant/build):
    *  "now" in the turn, "background" after the reply (a minute's AI estimate). Absent: read back, then a yes. */
   instant?: "now" | "background";
+  /** A change that reaches nobody but the person and runs at its own time (plan's `runAt`): a reminder to oneself
+   *  (lib/assistant/remind). Queued without a yes; the minute job runs it when it is due. */
+  scheduled?: true;
   payload: z.ZodType<P>;
   plan(ctx: ToolContext, args: A): Promise<Plan<P>>;
   execute(ctx: ToolContext, payload: P): Promise<{ say: string; result?: unknown; offer?: Offer }>;
@@ -100,7 +108,7 @@ const schedule: ReadTool<{ from: string; to: string | null }> = {
   name: "schedule",
   need: "schedule.read",
   description:
-    "The calendar between two days on the company's clock (inclusive; at most 14 days): job entries with their client and crew, and visits/appointments. Use for: what's on tomorrow, what's Thursday look like, is Mike busy Friday.",
+    "The calendar between two days on the company's clock (inclusive; at most 14 days): job entries with their client and crew, and visits/appointments (with visitId for move_visit / cancel_visit). Use for: what's on tomorrow, what's Thursday look like, is Mike busy Friday.",
   params: z.object({ from: DAY.describe("first day, YYYY-MM-DD"), to: DAY.nullable().describe("last day, YYYY-MM-DD; null = the same day") }),
   async run({ actor }, args) {
     const tz = actor.timezone;
@@ -118,42 +126,44 @@ const schedule: ReadTool<{ from: string; to: string | null }> = {
       }),
       db.appointment.findMany({
         where: { organizationId: actor.organizationId, startsAt: { lt: to }, endsAt: { gt: from }, status: { notIn: ["CANCELED", "NO_SHOW"] } },
-        select: { title: true, startsAt: true, endsAt: true, status: true },
+        select: { id: true, title: true, startsAt: true, endsAt: true, status: true, client: { select: { name: true } }, lead: { select: { name: true } }, assignments: { select: { worker: { select: { displayName: true } } } } },
         orderBy: { startsAt: "asc" },
         take: 60,
       }),
     ]);
     const rows = [
-      ...events.map((e) => ({ at: e.startsAt, item: { kind: "job", when: spanWords(e.startsAt, e.endsAt, tz), title: e.title, client: e.job?.client?.name ?? null, crew: e.job?.assignments.map((x) => x.worker.displayName) ?? [], jobId: e.job?.id ?? null } })),
-      ...visits.map((v) => ({ at: v.startsAt, item: { kind: "visit", when: spanWords(v.startsAt, v.endsAt, tz), title: v.title, client: null, crew: [] as string[], jobId: null } })),
+      ...events.map((e) => ({ at: e.startsAt, item: { kind: "job", when: spanWords(e.startsAt, e.endsAt, tz), title: e.title, client: e.job?.client?.name ?? null, crew: e.job?.assignments.map((x) => x.worker.displayName) ?? [], jobId: e.job?.id ?? null, visitId: null as string | null } })),
+      ...visits.map((v) => ({ at: v.startsAt, item: { kind: "visit", when: spanWords(v.startsAt, v.endsAt, tz), title: v.title, client: v.client?.name ?? v.lead?.name ?? null, crew: v.assignments.map((x) => x.worker.displayName), jobId: null, visitId: v.id as string | null } })),
     ].sort((x, y) => x.at.getTime() - y.at.getTime());
     return { from: dayWords(from, tz), to: dayWords(new Date(to.getTime() - 1), tz), items: rows.map((r) => r.item) };
   },
 };
 
-const find: ReadTool<{ query: string; kind: "any" | "proposal" | "client" | "job" | "lead" | "worker" }> = {
+const find: ReadTool<{ query: string; kind: "any" | "proposal" | "client" | "job" | "lead" | "worker" | "visit" }> = {
   kind: "read",
   name: "find",
   need: "proposals.read",
   description:
-    "Find proposals, clients, jobs, leads or crew members by name, title or address. Returns ids to use in other tools. Use before any change that names a client, a proposal, a job or a worker.",
+    "Find proposals, clients, jobs, leads, visits (appointments) or crew members by name, title or address. Returns ids to use in other tools. Use before any change that names a client, a proposal, a job, a visit or a worker.",
   params: z.object({
     query: z.string().min(2).max(80).describe("the words to look for, e.g. 'Smith roof' or 'Mike'"),
-    kind: z.enum(["any", "proposal", "client", "job", "lead", "worker"]),
+    kind: z.enum(["any", "proposal", "client", "job", "lead", "worker", "visit"]),
   }),
-  async run({ actor }, args) {
+  async run({ actor, now }, args) {
     const org = actor.organizationId;
     const tz = actor.timezone;
     const want = (k: string) => args.kind === "any" || args.kind === k;
-    const [proposals, clients, jobs, leads, crew] = await Promise.all([
+    const [proposals, clients, jobs, leads, crew, visits] = await Promise.all([
       want("proposal") ? findProposals(org, args.query, proposalScope(actor)) : Promise.resolve([]),
       want("client") ? findClients(org, args.query) : Promise.resolve([]),
       want("job") ? findJobs(org, args.query) : Promise.resolve([]),
       want("lead") ? findLeads(org, args.query) : Promise.resolve([]),
       want("worker") ? crewOf(org) : Promise.resolve([]),
+      want("visit") ? findVisits(org, args.query, now) : Promise.resolve([]),
     ]);
     const q = args.query.toLowerCase();
     return {
+      visits: visits.map((v) => ({ id: v.id, title: v.title, with: v.client?.name ?? v.lead?.name ?? null, when: spanWords(v.startsAt, v.endsAt, tz), crew: v.assignments.map((a) => a.worker.displayName) })),
       proposals: proposals.map((p) => ({ id: p.id, title: p.title, client: p.client?.name ?? null, clientEmail: p.client?.email ?? null, status: p.status, total: money(p.total, p.currency), address: p.address, created: dayWords(p.createdAt, tz), sent: p.sentAt ? dayWords(p.sentAt, tz) : null, opened: opened(p.viewCount, p.viewedAt, tz) })),
       clients: clients.map((c) => ({ id: c.id, name: c.name, email: c.email, phone: c.phone, address: [c.address, c.city].filter(Boolean).join(", ") || null })),
       jobs: jobs.map((j) => ({ id: j.id, title: j.title, client: j.client?.name ?? null, status: j.status, scheduled: j.events[0] ? spanWords(j.events[0].startsAt, j.events[0].endsAt, tz) : null, crew: j.assignments.map((a) => a.worker.displayName), proposalId: j.proposalId })),
@@ -387,6 +397,20 @@ function addHours(hhmm: string, h: number): string {
   return `${String(Math.min(23, a + h)).padStart(2, "0")}:${String(b).padStart(2, "0")}`;
 }
 
+/** What became of one crew text, in words the person can act on: sent (or held for the morning), or why not. */
+function textOutcome(r: Awaited<ReturnType<typeof textWorker>>): { sent: boolean; why: string | null } {
+  if (!r) return { sent: false, why: "they have no phone or crew texts on" };
+  if (r.ok && (r.status === "SENT" || r.status === "HELD")) return { sent: true, why: null };
+  if (r.ok && r.status === "SKIPPED") {
+    if (r.why === "no-number") return { sent: false, why: "your company has no texting number yet (Settings → Texting)" };
+    if (r.why === "not-configured") return { sent: false, why: "texting isn't set up here" };
+    if (r.why === "test-environment") return { sent: false, why: "texting is in test mode on this server" };
+    return { sent: false, why: `texting is off (${r.why})` };
+  }
+  if (!r.ok) return { sent: false, why: r.reason === "cap" ? "today's text limit was reached" : r.reason === "opted-out" ? "they replied STOP" : null };
+  return { sent: false, why: null };
+}
+
 const textCrew: WriteTool<{ workerIds: string[] | null; message: string }, { workerIds: string[]; body: string }> = {
   kind: "write",
   name: "text_crew",
@@ -418,12 +442,11 @@ const textCrew: WriteTool<{ workerIds: string[] | null; message: string }, { wor
     let why: string | null = null;
     for (const w of workers) {
       const r = await textWorker(w, payload.body, "assistant-crew");
-      if (r && r.ok && (r.status === "SENT" || r.status === "HELD")) sent += 1;
+      const o = textOutcome(r);
+      if (o.sent) sent += 1;
       else {
         missed.push(w.displayName);
-        if (r && r.ok && r.status === "SKIPPED" && r.why === "no-number") why = "your company has no texting number yet (Settings → Texting)";
-        else if (r && r.ok && r.status === "SKIPPED" && r.why === "not-configured") why = "texting isn't set up here";
-        else if (r && !r.ok) why = r.reason === "cap" ? "today's text limit was reached" : r.reason === "opted-out" ? "they replied STOP" : why;
+        why = o.why ?? why;
       }
     }
     const head = sent ? `Texted ${sent === workers.length ? andList(workers.map((w) => w.displayName)) : `${sent} of ${workers.length}`}.` : "No text went out.";
@@ -480,8 +503,83 @@ const paymentReminder: WriteTool<{ proposalId: string; installmentId: string | n
   },
 };
 
+/** Different words to different people in one go (batch 1, 2026-11-05): "tell Mike to start at the Lee house and Ana
+ *  to pick up the shingles" — one read-back naming each, one yes. */
+const textCrewEach: WriteTool<{ items: { workerId: string; message: string }[] }, { items: { workerId: string; body: string }[] }> = {
+  kind: "write",
+  name: "text_crew_each",
+  need: "crew.text",
+  description:
+    "Text several crew members DIFFERENT messages in one go (ids from crew or find). Use when each person gets their own instruction; for one message to everyone use text_crew. Write each message the way the person said it.",
+  params: z.object({ items: z.array(z.object({ workerId: ID, message: z.string().min(1).max(480) })).min(1).max(20) }),
+  payload: z.object({ items: z.array(z.object({ workerId: ID, body: z.string().min(1).max(560) })).min(1).max(20) }),
+  async plan({ actor }, args) {
+    const all = await crewOf(actor.organizationId);
+    const byId = new Map(all.map((w) => [w.id, w]));
+    const first = actor.userName.split(/\s+/)[0] || actor.orgName;
+    const items: { workerId: string; body: string }[] = [];
+    const lines: string[] = [];
+    const off: string[] = [];
+    for (const it of args.items) {
+      const w = byId.get(it.workerId);
+      if (!w) return { ok: false, say: "One of those people isn't on your crew." };
+      if (!(w.phone && w.smsOptIn)) {
+        off.push(w.displayName);
+        continue;
+      }
+      const body = `${first}: ${it.message.trim()}`;
+      items.push({ workerId: w.id, body });
+      lines.push(`${w.displayName} — "${body}"`);
+    }
+    if (!items.length) return { ok: false, say: `${andList(off)} ${off.length > 1 ? "don't" : "doesn't"} have crew texts on. Turn them on in Workers → their card.` };
+    const offLine = off.length ? ` ${andList(off)} ${off.length > 1 ? "have" : "has"} texts off and won't get one.` : "";
+    return { ok: true, payload: { items }, readback: `Text each: ${lines.join("; ")}.${offLine}` };
+  },
+  async execute({ actor }, payload) {
+    const workers = await db.workerProfile.findMany({
+      where: { organizationId: actor.organizationId, id: { in: payload.items.map((i) => i.workerId) } },
+      select: { id: true, displayName: true, phone: true, smsOptIn: true, organizationId: true, user: { select: { notificationPrefsJson: true } } },
+    });
+    const byId = new Map(workers.map((w) => [w.id, w]));
+    let sent = 0;
+    const missed: string[] = [];
+    const names: string[] = [];
+    let why: string | null = null;
+    for (const it of payload.items) {
+      const w = byId.get(it.workerId);
+      if (!w) continue;
+      names.push(w.displayName);
+      const o = textOutcome(await textWorker(w, it.body, "assistant-crew"));
+      if (o.sent) sent += 1;
+      else {
+        missed.push(w.displayName);
+        why = o.why ?? why;
+      }
+    }
+    const head = sent ? `Texted ${sent === names.length ? andList(names) : `${sent} of ${names.length}`}.` : "No text went out.";
+    return { say: `${head}${missed.length ? ` Not sent to ${andList(missed)}${why ? `: ${why}` : ""}.` : ""}`, result: { sent, missed } };
+  },
+};
+
 /** Every tool, in the order the model is shown them. */
-export const TOOLS: readonly AnyTool[] = [today, schedule, find, openProposals, moneyTool, crew, ...BUILDERS, sendProposal, scheduleJob, textCrew, paymentReminder] as unknown as AnyTool[];
+export const TOOLS: readonly AnyTool[] = [
+  today,
+  schedule,
+  find,
+  openProposals,
+  moneyTool,
+  crew,
+  ...BUILDERS,
+  sendProposal,
+  scheduleJob,
+  textCrew,
+  textCrewEach,
+  paymentReminder,
+  ...PEOPLE_TOOLS,
+  ...VISIT_TOOLS,
+  ...REMIND_TOOLS,
+  ...MONEY_TOOLS,
+] as unknown as AnyTool[];
 
 export function toolNamed(name: string): AnyTool | null {
   return TOOLS.find((t) => t.name === name) ?? null;

@@ -16,7 +16,15 @@ export type Capability =
   | "crew.text"
   | "money.read"
   | "payments.remind"
-  | "estimates.build"; // price a job into a draft proposal (requireEstimatorOrManager: never SALES)
+  | "estimates.build" // price a job into a draft proposal (requireEstimatorOrManager: never SALES)
+  // Batches 1–2 (2026-11-05): the Clients, Leads and calendar pages' writes (requireSalesOrManager: never ESTIMATOR),
+  // a reminder to oneself (anyone with the Operator), and money — invoices and financing links — managers only.
+  | "clients.write"
+  | "leads.write"
+  | "visits.write"
+  | "reminders"
+  | "invoices.send"
+  | "financing.send";
 
 const LIMITED = new Set(["INSTALLER", "SALES", "ESTIMATOR"]);
 
@@ -46,6 +54,17 @@ export function roleAllows(role: string, need: Capability): boolean {
       return manager && mayOpen(role, "/dashboard/financials");
     case "estimates.build":
       return role !== "SALES";
+    case "clients.write":
+      return role !== "ESTIMATOR";
+    case "leads.write":
+      return role !== "ESTIMATOR" && mayOpen(role, "/dashboard/leads");
+    case "visits.write":
+      return role !== "ESTIMATOR" && mayOpen(role, "/dashboard/calendar");
+    case "reminders":
+      return true;
+    case "invoices.send":
+    case "financing.send":
+      return manager;
   }
 }
 

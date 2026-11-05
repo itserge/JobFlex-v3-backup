@@ -12,7 +12,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AudioLines, Copy, MessageSquareText, Phone } from "lucide-react";
-import { loadAssistantPhone, setAssistantOpen, setAssistantPhoneOn, startAssistantLink, unlinkAssistantPhone, type AssistantPhoneView } from "@/actions/assistant";
+import { clearAssistantPin, loadAssistantPhone, setAssistantOpen, setAssistantPhoneOn, setAssistantPin, startAssistantLink, unlinkAssistantPhone, type AssistantPhoneView } from "@/actions/assistant";
 import { openAssistant } from "./events";
 import s from "./assistant-settings.module.css";
 
@@ -29,6 +29,9 @@ export function AssistantSettings({ mobile = false }: { mobile?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // The PIN for money (2026-11-05): typed once here, hashed on the server, never shown again.
+  const [pinDraft, setPinDraft] = useState("");
+  const [pinOpen, setPinOpen] = useState(false);
   const wasLinked = useRef<string | null>(null);
 
   const load = useCallback(() => {
@@ -145,6 +148,81 @@ export function AssistantSettings({ mobile = false }: { mobile?: boolean }) {
                 Open the AI Operator
               </button>
             ) : null}
+          </div>
+        ) : null}
+
+        {!view.closed ? (
+          <div className={s.section}>
+            <h4 className={s.h}>PIN for money</h4>
+            <p className={s.text}>
+              Invoices and financing links ask for a 4-digit PIN as well as your yes — on the card in the app, as &ldquo;YES 1234&rdquo; by text.{" "}
+              {view.pin.set ? "Your PIN is set." : "No PIN yet, so those two wait until you set one."}
+            </p>
+            {pinOpen || !view.pin.set ? (
+              <form
+                className={s.pinForm}
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void run(async () => {
+                    const r = await setAssistantPin({ pin: pinDraft });
+                    if (!r.ok) {
+                      setError(r.error);
+                      return;
+                    }
+                    setView(r.view);
+                    setPinDraft("");
+                    setPinOpen(false);
+                  });
+                }}
+              >
+                <input
+                  className={s.pinField}
+                  type="password"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={4}
+                  autoComplete="new-password"
+                  aria-label="New 4-digit PIN"
+                  placeholder="••••"
+                  value={pinDraft}
+                  disabled={busy}
+                  onChange={(e) => setPinDraft(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                />
+                <button type="submit" className={s.primary} disabled={busy || pinDraft.length !== 4}>
+                  {view.pin.set ? "Save new PIN" : "Save PIN"}
+                </button>
+                {view.pin.set ? (
+                  <button
+                    type="button"
+                    className={s.quiet}
+                    disabled={busy}
+                    onClick={() => {
+                      setPinOpen(false);
+                      setPinDraft("");
+                    }}
+                  >
+                    Keep the old one
+                  </button>
+                ) : null}
+              </form>
+            ) : (
+              <div className={s.actions}>
+                <button type="button" className={s.secondary} disabled={busy} onClick={() => setPinOpen(true)}>
+                  Change PIN
+                </button>
+                <button
+                  type="button"
+                  className={s.quiet}
+                  disabled={busy}
+                  onClick={() => {
+                    if (!window.confirm("Remove your PIN? Invoices and financing links by voice or text stop until you set a new one.")) return;
+                    void run(async () => setView(await clearAssistantPin()));
+                  }}
+                >
+                  Remove PIN
+                </button>
+              </div>
+            )}
           </div>
         ) : null}
 

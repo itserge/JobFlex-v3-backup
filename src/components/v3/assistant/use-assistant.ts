@@ -22,8 +22,8 @@ export type AssistantState = {
   load: () => void;
   /** Sends a request; the reply's words, or null when it didn't go through. */
   ask: (text: string) => Promise<string | null>;
-  /** Do it / Cancel on a read-back; the reply's words, or null. */
-  answer: (actionId: string, yes: boolean) => Promise<string | null>;
+  /** Do it / Cancel on a read-back; the reply's words, or null. `pin`: the four digits a money card asks for. */
+  answer: (actionId: string, yes: boolean, pin?: string) => Promise<string | null>;
 };
 
 const FAILED = "That didn't go through. Check your connection and try again.";
@@ -92,13 +92,13 @@ export function useAssistant(): AssistantState {
     }
   }, [busy]);
 
-  const answer = useCallback(async (actionId: string, yes: boolean) => {
+  const answer = useCallback(async (actionId: string, yes: boolean, pin?: string) => {
     if (busy) return null;
     setBusy(true);
     setPending(yes ? "Do it" : "Cancel");
     setError(null);
     try {
-      const r = await answerAssistant({ actionId, answer: yes ? "yes" : "no" });
+      const r = await answerAssistant({ actionId, answer: yes ? "yes" : "no", ...(pin ? { pin } : {}) });
       if (r.ok) setFeed(r.feed);
       else setError(r.error);
       return r.ok ? r.reply : null;
@@ -117,6 +117,7 @@ export function useAssistant(): AssistantState {
 /** A reply as it is read out: the read-back's tap prompt becomes a spoken one, a dash range "to". */
 export function forSpeech(text: string): string {
   return text
+    .replace(/Enter your PIN and tap Do it, or Cancel\.?/g, "Enter your PIN on the screen, then tap Do it.")
     .replace(/Tap Do it to go ahead, or Cancel\.?/g, "Say yes to do it, or no.")
     // A link is for the eyes: it is on the screen, never read out letter by letter.
     .replace(/Open it:\s*https?:\/\/\S+/g, "The link is on your screen.")
@@ -130,5 +131,5 @@ export function forSpeech(text: string): string {
 /** Messages with the read-back's own prompt line taken off (the card has its buttons). */
 export function shownBody(m: FeedMessage): string {
   if (!m.action) return m.body;
-  return m.body.replace(/\s*(Tap Do it to go ahead, or Cancel\.|Reply YES to do it, or NO\.)\s*$/, "");
+  return m.body.replace(/\s*(Tap Do it to go ahead, or Cancel\.|Enter your PIN and tap Do it, or Cancel\.|Reply YES to do it, or NO\.|Reply YES and your PIN \(like YES 1234\), or NO\.)\s*$/, "");
 }

@@ -24,7 +24,9 @@ export function undoWindowMs(channel: AssistantChannel): number {
 }
 
 export type QuickReply =
-  | { kind: "yes" }
+  /** `pin`: four digits with the yes ("YES 1234", 2026-11-05); `bare`: the digits alone, which are a PIN only when a
+   *  read-back waits for one — otherwise "2200" answers a question about square feet and is the model's. */
+  | { kind: "yes"; pin?: string; bare?: boolean }
   | { kind: "no" }
   | { kind: "undo" }
   | { kind: "stop" }
@@ -47,6 +49,8 @@ export function quickReply(raw: string): QuickReply | null {
     .replace(/\s+/g, " ")
     .trim();
   if (!t || t.length > 24 || (t.includes("?") && t !== "?")) return null;
+  const yp = /^(?:(y|yes|yeah|yep|yup|ok|okay|do it|send it|approve|confirm)\s+)?(?:pin\s*)?(\d{4})$/.exec(t);
+  if (yp) return { kind: "yes", pin: yp[2], bare: !yp[1] };
   if (YES.test(t)) return { kind: "yes" };
   if (NO.test(t)) return { kind: "no" };
   if (/^(undo|stop it|wait|hold on|don'?t send)$/.test(t)) return { kind: "undo" };
@@ -154,9 +158,19 @@ export function andList(names: string[]): string {
 }
 
 /** What a read-back ends with, by channel. */
-export function confirmPrompt(channel: AssistantChannel): string {
+export function confirmPrompt(channel: AssistantChannel, pin = false): string {
+  if (pin) return channel === "app" ? "Enter your PIN and tap Do it, or Cancel." : "Reply YES and your PIN (like YES 1234), or NO.";
   return channel === "app" ? "Tap Do it to go ahead, or Cancel." : "Reply YES to do it, or NO.";
 }
+
+/** The changes that move money (2026-11-05): read back and waiting for the yes AND the person's PIN (lib/assistant/pin). */
+export const PIN_TOOLS: readonly string[] = ["send_invoice", "financing_link"];
+export function needsPin(tool: string): boolean {
+  return PIN_TOOLS.includes(tool);
+}
+
+/** The changes that run at their own time with no yes (a reminder to oneself): queued means set, not working. */
+export const SCHEDULED_TOOLS: readonly string[] = ["remind_me"];
 
 // ── what the panel reads ─────────────────────────────────────────────────────
 

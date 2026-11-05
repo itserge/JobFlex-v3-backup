@@ -13,7 +13,7 @@ import { db } from "@/lib/db";
 export type AskResult = { ok: true; reply: string; feed: AssistantFeed; running?: string | null } | { ok: false; error: string };
 
 const askInput = z.object({ text: z.string().trim().min(1).max(1200) });
-const answerInput = z.object({ actionId: z.string().min(1).max(64), answer: z.enum(["yes", "no"]) });
+const answerInput = z.object({ actionId: z.string().min(1).max(64), answer: z.enum(["yes", "no"]), pin: z.string().regex(/^\d{4}$/).optional() });
 
 export async function askAssistant(raw: unknown): Promise<AskResult> {
   const parsed = askInput.safeParse(raw);
@@ -31,11 +31,12 @@ export async function answerAssistant(raw: unknown): Promise<AskResult> {
   const parsed = answerInput.safeParse(raw);
   if (!parsed.success) return { ok: false, error: "That answer couldn't be read." };
   const actor = await actorForSession();
-  const { actionId, answer } = parsed.data;
+  const { actionId, answer, pin } = parsed.data;
   const keep = (direction: "IN" | "OUT", body: string) =>
     db.assistantMessage.create({ data: { organizationId: actor.organizationId, userId: actor.userId, channel: actor.channel, direction, body } });
-  await keep("IN", answer === "yes" ? "Do it" : "Cancel");
-  const reply = answer === "yes" ? await approve(actor, actionId) : (await callOff(actor, actionId)) ? "OK — I won't do it." : "That's no longer waiting.";
+  // The PIN itself is never kept in the conversation.
+  await keep("IN", answer === "yes" ? (pin ? "Do it (with PIN)" : "Do it") : "Cancel");
+  const reply = answer === "yes" ? await approve(actor, actionId, new Date(), pin ?? null) : (await callOff(actor, actionId)) ? "OK — I won't do it." : "That's no longer waiting.";
   await keep("OUT", reply);
   return { ok: true, reply, feed: await readFeed(actor) };
 }
@@ -58,6 +59,8 @@ export interface AssistantPhoneView {
   usage: { used: number; limit: number | null };
   /** Platform admins only: whether the Assistant is open to every account yet (lib/assistant/open). */
   preview: { openToAll: boolean } | null;
+  /** The 4-digit PIN that money (invoices, financing links) asks for with the yes (lib/assistant/pin): set or not. */
+  pin: { set: boolean };
 }
 
 /** Should this person see the Assistant's rows: it is open to them, and their role has it. Never throws. */
@@ -92,6 +95,7 @@ export async function loadAssistantPhone(): Promise<AssistantPhoneView> {
   const { assistantOpenToAll } = await import("@/lib/assistant/open");
   const admin = await db.user.findUnique({ where: { id: actor.userId }, select: { isPlatformAdmin: true } });
   const preview = admin?.isPlatformAdmin ? { openToAll: await assistantOpenToAll() } : null;
+  const { hasPin } = await import("@/lib/assistant/pin");
   return {
     closed,
     number,
@@ -100,7 +104,27 @@ export async function loadAssistantPhone(): Promise<AssistantPhoneView> {
     contactUrl: number ? "/api/assistant/contact" : null,
     usage: feed?.usage ?? { used: 0, limit: null },
     preview,
+    pin: { set: closed ? false : await hasPin(actor.organizationId, actor.userId) },
   };
+}
+
+/** Set (or change) the 4-digit PIN that money actions ask for with the yes (2026-11-05). */
+export async function setAssistantPin(raw: unknown): Promise<{ ok: true; view: AssistantPhoneView } | { ok: false; error: string }> {
+  const parsed = z.object({ pin: z.string().trim() }).safeParse(raw);
+  const pin = parsed.success ? parsed.data.pin : "";
+  const { PIN_RE, weakPin, setPin } = await import("@/lib/assistant/pin");
+  if (!PIN_RE.test(pin)) return { ok: false, error: "A PIN is four digits." };
+  if (weakPin(pin)) return { ok: false, error: "Too easy to guess — not one digit four times, and not a run like 1234." };
+  const actor = await actorForSession();
+  await setPin(actor.organizationId, actor.userId, pin);
+  return { ok: true, view: await loadAssistantPhone() };
+}
+
+export async function clearAssistantPin(): Promise<AssistantPhoneView> {
+  const actor = await actorForSession();
+  const { clearPin } = await import("@/lib/assistant/pin");
+  await clearPin(actor.organizationId, actor.userId);
+  return loadAssistantPhone();
 }
 
 /** A fresh six-digit code to text from the phone being linked. */

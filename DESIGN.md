@@ -326,7 +326,16 @@ monthly" is one 12px line (weight 600) under the price.
   say. The link code is SmartBook's copy box: 30px 900 tabular digits beside a
   caps Copy cell; on a phone "Text the code from this phone" is a full-width
   blue button that opens Messages with the code typed; the consent words sit
-  under it in 12.5px with Terms, Privacy and How it works (/assistant).
+  under it in 12.5px with Terms, Privacy and How it works (/assistant). Batches 1–2 (2026-11-05): a money card (an
+  invoice, a financing link) carries a PIN box beside Do it — 96px wide in the
+  card's 1.5px ink frame, 18px 800 tabular digits masked, the "PIN" placeholder
+  in faint ink — and Do it stays disabled until four digits are typed; the card
+  labels are "Add a client", "Update a client", "Add a lead", "Book a visit",
+  "Move a visit", "Cancel a visit", "Reminder", "Invoice", "Financing link", and
+  a reminder's queued stamp reads "Set" (blueprint) until it lands as Done.
+  Settings → AI Operator gains a "PIN for money" section: a 120px white field of
+  four masked 20px 900 digits, Save PIN as the one blue button, "Change PIN" /
+  "Remove PIN" once set; 1234-style runs and one digit four times are refused.
 - SmartBook (owner, 2026-10-31;
   [smartbook](src/components/v3/smartbook/smartbook.module.css)). One framed
   card treatment for Settings → SmartBook and the calendar's "SmartBook
