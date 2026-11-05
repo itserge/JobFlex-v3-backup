@@ -12,7 +12,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AudioLines, Copy, MessageSquareText, Phone } from "lucide-react";
-import { loadAssistantPhone, setAssistantPhoneOn, startAssistantLink, unlinkAssistantPhone, type AssistantPhoneView } from "@/actions/assistant";
+import { loadAssistantPhone, setAssistantOpen, setAssistantPhoneOn, startAssistantLink, unlinkAssistantPhone, type AssistantPhoneView } from "@/actions/assistant";
 import { openAssistant } from "./events";
 import s from "./assistant-settings.module.css";
 
@@ -112,6 +112,29 @@ export function AssistantSettings({ mobile = false }: { mobile?: boolean }) {
         </p>
 
         {view.closed ? <p className={s.note}>{view.closed}</p> : null}
+
+        {view.preview ? (
+          <div className={s.section}>
+            <h4 className={s.h}>Who has it (platform admins only)</h4>
+            <p className={s.text}>
+              {view.preview.openToAll
+                ? "Open to every account: every office and sales member sees the Assistant."
+                : "Only platform admins can see and use the Assistant right now. Try it, then open it to everyone."}
+            </p>
+            <button
+              type="button"
+              className={view.preview.openToAll ? s.secondary : s.primary}
+              disabled={busy}
+              onClick={() => {
+                const opening = !view.preview!.openToAll;
+                if (opening && !window.confirm("Every JobFlex account will see the Assistant. Open it now?")) return;
+                void run(async () => setView(await setAssistantOpen(opening)));
+              }}
+            >
+              {view.preview.openToAll ? "Back to platform admins only" : "Open the Assistant to every account"}
+            </button>
+          </div>
+        ) : null}
 
         {!view.closed ? (
           <div className={s.section}>

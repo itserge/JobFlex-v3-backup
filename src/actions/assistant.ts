@@ -55,6 +55,29 @@ export interface AssistantPhoneView {
   link: { phone: string; phoneWords: string; active: boolean; linkedAt: string | null } | null;
   contactUrl: string | null;
   usage: { used: number; limit: number | null };
+  /** Platform admins only: whether the Assistant is open to every account yet (lib/assistant/open). */
+  preview: { openToAll: boolean } | null;
+}
+
+/** Should this person see the Assistant's rows: it is open to them, and their role has it. Never throws. */
+export async function assistantVisible(): Promise<boolean> {
+  try {
+    const actor = await actorForSession();
+    const { refusal } = await import("@/lib/assistant/actor");
+    return (await refusal(actor, "today", false)) === null;
+  } catch {
+    return false;
+  }
+}
+
+/** Open the Assistant to every account (true), or back to platform admins only (false). */
+export async function setAssistantOpen(raw: unknown): Promise<AssistantPhoneView> {
+  const on = z.boolean().parse(raw);
+  const { requirePlatformAdmin } = await import("@/lib/orgContext");
+  await requirePlatformAdmin();
+  const { setAssistantOpenToAll } = await import("@/lib/assistant/open");
+  await setAssistantOpenToAll(on);
+  return loadAssistantPhone();
 }
 
 export async function loadAssistantPhone(): Promise<AssistantPhoneView> {
@@ -65,6 +88,9 @@ export async function loadAssistantPhone(): Promise<AssistantPhoneView> {
   const number = assistantNumber();
   const link = closed ? null : await linkOf(actor.organizationId, actor.userId);
   const feed = closed ? null : await readFeed(actor);
+  const { assistantOpenToAll } = await import("@/lib/assistant/open");
+  const admin = await db.user.findUnique({ where: { id: actor.userId }, select: { isPlatformAdmin: true } });
+  const preview = admin?.isPlatformAdmin ? { openToAll: await assistantOpenToAll() } : null;
   return {
     closed,
     number,
@@ -72,6 +98,7 @@ export async function loadAssistantPhone(): Promise<AssistantPhoneView> {
     link: link ? { ...link, phoneWords: phoneWords(link.phone) } : null,
     contactUrl: number ? "/api/assistant/contact" : null,
     usage: feed?.usage ?? { used: 0, limit: null },
+    preview,
   };
 }
 

@@ -10,6 +10,7 @@ import { requireOrg } from "@/lib/orgContext";
 import { accessRole, hasFullAccess } from "@/lib/fullAccess";
 import { isPageLocked } from "@/lib/customPageAccess";
 import { isTrialWriteLocked } from "@/lib/trialState";
+import { assistantOpenFor } from "@/lib/assistant/open";
 import type { AssistantChannel } from "@/lib/assistant/shared";
 import { ownProposalsOnly, roleAllows, type Capability } from "@/lib/assistant/roles";
 
@@ -69,8 +70,17 @@ const PAGE_OF: Partial<Record<Capability, "calendar" | "workers">> = {
   "crew.text": "workers",
 };
 
+/** Who has the Assistant yet (lib/assistant/open), asked once per actor. */
+const openFor = new WeakMap<AssistantActor, Promise<boolean>>();
+
 /** Why this person may not do it, in their words — or null when they may. */
 export async function refusal(actor: AssistantActor, need: Capability, writes: boolean): Promise<string | null> {
+  let open = openFor.get(actor);
+  if (!open) {
+    open = assistantOpenFor(actor.userId);
+    openFor.set(actor, open);
+  }
+  if (!(await open)) return "The JobFlex Assistant is coming soon to your account.";
   if (!roleAllows(actor.role, need)) {
     return actor.role === "INSTALLER"
       ? "The Assistant is for the office. Your jobs and schedule are in your crew app."

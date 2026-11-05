@@ -17,6 +17,7 @@ import { redirect } from "next/navigation";
 import type { Metadata, Viewport } from "next";
 import { NoOrgError, UnauthorizedError, requireOrg } from "@/lib/orgContext";
 import { MobileAssistant } from "@/components/v3/assistant/mobile-assistant";
+import { assistantOpenFor } from "@/lib/assistant/open";
 
 export const dynamic = "force-dynamic";
 
@@ -36,8 +37,9 @@ export const viewport: Viewport = {
 };
 
 export default async function MobileAssistantV1Page() {
+  let userId: string;
   try {
-    await requireOrg();
+    userId = (await requireOrg()).user.id;
   } catch (err) {
     if (err instanceof UnauthorizedError) {
       redirect(`/auth/login?next=${encodeURIComponent("/mobile-assistant-v1")}`);
@@ -45,5 +47,7 @@ export default async function MobileAssistantV1Page() {
     if (err instanceof NoOrgError) redirect("/dashboard?error=forbidden");
     throw err;
   }
+  // Platform admins only until the owner opens it (lib/assistant/open).
+  if (!(await assistantOpenFor(userId))) redirect("/mobile-v2");
   return <MobileAssistant />;
 }

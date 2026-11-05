@@ -1462,7 +1462,7 @@ export function MobileSettings({
               // arrangement the option sheet uses.
               hidden={!railOpen}
             >
-              {RAIL_ITEMS.filter((item) => item.key !== "website" || data.website?.visible).map((item) => (
+              {RAIL_ITEMS.filter((item) => (item.key !== "website" || data.website?.visible) && (item.key !== "assistant" || data.assistant?.visible)).map((item) => (
                 <button
                   key={item.key}
                   className={item.key === active ? "mst-swOpt is-on" : "mst-swOpt"}
@@ -1512,9 +1512,11 @@ export function MobileSettings({
               <SmartBookSettingsForm mobile onOpen={(where) => (where === "meta" ? navigate("integrations", "meta") : navigate("notifications"))} />
             </div>
             {/* The JobFlex Assistant (2026-11-04): the desk pane's own card, a phone's width. */}
-            <div className={active === "assistant" ? "mst-pane is-on" : "mst-pane"} id="assistant">
-              <AssistantSettings mobile />
-            </div>
+            {data.assistant?.visible ? (
+              <div className={active === "assistant" ? "mst-pane is-on" : "mst-pane"} id="assistant">
+                <AssistantSettings mobile />
+              </div>
+            ) : null}
           </div>
 
           {/* Log out — the last thing on the page, in every section. Same

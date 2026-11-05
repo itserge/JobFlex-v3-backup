@@ -1564,6 +1564,8 @@ export interface SettingsData {
   desk: DeskSettingsData;
   /** Website estimators: shown while the feature is open to every account, or to a platform admin in the preview. */
   website: { visible: boolean };
+  /** The JobFlex Assistant (2026-11-04): shown to those who have it — platform admins until the owner opens it, never the crew. */
+  assistant?: { visible: boolean };
 }
 
 /** Every pane takes exactly this. `navigate` jumps rails (and subtabs). */

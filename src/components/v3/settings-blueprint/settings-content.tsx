@@ -94,7 +94,7 @@ export function SettingsContent({
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const railItems = RAIL_ITEMS.filter((item) => item.key !== "website" || data.website?.visible);
+  const railItems = RAIL_ITEMS.filter((item) => (item.key !== "website" || data.website?.visible) && (item.key !== "assistant" || data.assistant?.visible));
   const activeLabel = RAIL_ITEMS.find((item) => item.key === active)?.label ?? PAGE_TITLE;
 
   return (
