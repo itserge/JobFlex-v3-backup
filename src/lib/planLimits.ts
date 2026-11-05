@@ -100,7 +100,8 @@ export type LimitKey =
   | "deskMinutes"
   | "reviewRequests"
   | "teamSeats"
-  | "managers";
+  | "managers"
+  | "assistantCommands";
 
 export interface LimitDef {
   key: LimitKey;
@@ -148,6 +149,11 @@ export const LIMIT_DEFS: readonly LimitDef[] = [
   // MANAGER invites; absent from a plan's limitsJson = unlimited, so nothing
   // changes for a plan until /admin/plans sets a number.
   { key: "managers", label: "Manager seats", scope: "absolute", hint: "MANAGER members + pending manager invites" },
+  // The JobFlex Assistant (owner, 2026-11-04: "in every plan, with a monthly
+  // limit"). A request the model reads counts; YES / NO / a reply digit does
+  // not. Each one is an OpenAI call JobFlex pays for, so — like the paid
+  // lookups — a plan without a number meters at its tier's default.
+  { key: "assistantCommands", label: "Assistant commands", scope: "monthly", hint: "Requests to the JobFlex Assistant per cycle (YES / NO answers don't count)" },
 ] as const;
 
 export const LIMIT_KEYS = LIMIT_DEFS.map((d) => d.key) as LimitKey[];
@@ -180,6 +186,7 @@ export const DEFAULT_FREE_LIMITS: PlanLimits = {
   deskMinutes: 0,
   reviewRequests: 3,
   teamSeats: 1,
+  assistantCommands: 20,
 };
 
 /**
@@ -188,14 +195,16 @@ export const DEFAULT_FREE_LIMITS: PlanLimits = {
  * meters at its tier's numbers below, and a plan made unlimited in
  * /admin/plans says so with -1. A slug not listed here (an admin-made plan)
  * keeps the old rule: absent = unlimited, the daily ceilings (lib/paidCaps)
- * still hold.
+ * still hold. The Assistant's commands (2026-11-04) follow the same rule:
+ * each is a model call JobFlex pays for. Its numbers are a first proposal for
+ * the owner to confirm on /admin/plans.
  */
-export const PAID_CALL_KEYS = ["roofMeasurements", "manualJReports"] as const satisfies readonly LimitKey[];
+export const PAID_CALL_KEYS = ["roofMeasurements", "manualJReports", "assistantCommands"] as const satisfies readonly LimitKey[];
 export const PAID_CALL_DEFAULTS: Record<string, Pick<PlanLimits, (typeof PAID_CALL_KEYS)[number]>> = {
-  free: { roofMeasurements: 3, manualJReports: 1 },
-  starter: { roofMeasurements: 15, manualJReports: 10 },
-  professional: { roofMeasurements: 40, manualJReports: 25 },
-  enterprise: { roofMeasurements: 100, manualJReports: 60 },
+  free: { roofMeasurements: 3, manualJReports: 1, assistantCommands: 20 },
+  starter: { roofMeasurements: 15, manualJReports: 10, assistantCommands: 300 },
+  professional: { roofMeasurements: 40, manualJReports: 25, assistantCommands: 1000 },
+  enterprise: { roofMeasurements: 100, manualJReports: 60, assistantCommands: 3000 },
 };
 const isPaidCallKey = (key: LimitKey): boolean => (PAID_CALL_KEYS as readonly LimitKey[]).includes(key);
 

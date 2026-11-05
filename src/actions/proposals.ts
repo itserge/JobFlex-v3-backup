@@ -22,10 +22,10 @@ import { IMAGE_DATA_URL, safeFilename } from "@/lib/safeHref";
 import { priceLinesForClient } from "@/lib/pricing/markup";
 import { parseProposalPhotos } from "@/components/v3/proposals-c/types";
 import { trackActivation, trackProposalCreated } from "@/lib/activation-events";
-import { logServerError } from "@/lib/server-events";
 import { applyMemberDiscount } from "@/lib/servicePlanBook";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
-import { findClientForLead } from "@/lib/leadClient";
+import { sendProposalAs, sendToInput } from "@/lib/proposals/sendCore";
+import { snapshotProposal } from "@/lib/proposals/snapshot";
 
 const lineItemSchema = z.object({
   name: z.string().min(1),
@@ -467,143 +467,10 @@ export async function saveProposal(raw: unknown) {
   return { id: created.id, publicId: created.publicId };
 }
 
-/** Who a send goes to, typed at the send (owner, 2026-10-13). Both optional: a
- *  send with neither mails the client record's address, as it always did. */
-const sendToInput = z
-  .object({
-    email: z.string().trim().max(200).optional(),
-    name: z.string().trim().max(120).optional(),
-  })
-  .optional();
-
-/**
- * THE ADDRESS TYPED AT THE SEND BECOMES THE CLIENT'S (owner, 2026-10-13: a roof
- * proposal had the email typed in, and Send said "no email on the client record"
- * with the box locked). The proposal email reads the CLIENT RECORD, so the typed
- * address is written there first:
- *   · a client on the proposal → its email is set (or corrected) to this one;
- *   · no client ("Unassigned") → the client the shop already has under this email,
- *     or a new one by the typed name — and the proposal is filed under it.
- * Returns the address the send now goes to.
- */
-async function settleRecipient(
-  ctx: { organizationId: string; userId: string },
-  p: { id: string; title: string; address: string | null; client: { id: string; name: string; email: string | null; deletedAt: Date | null } | null },
-  to: { email: string; name: string },
-): Promise<{ clientId: string; name: string }> {
-  const email = to.email.trim();
-  if (!z.string().email().safeParse(email).success) {
-    throw new Error("That email address doesn't look right — check it and send again.");
-  }
-  if (p.client && !p.client.deletedAt) {
-    if ((p.client.email ?? "").trim().toLowerCase() !== email.toLowerCase()) {
-      await db.client.update({ where: { id: p.client.id }, data: { email } });
-      await logActivity({
-        organizationId: ctx.organizationId,
-        actorId: ctx.userId,
-        kind: TRAIL_KINDS.CLIENT,
-        summary: `Set ${p.client.name}'s email to ${email} (sending "${p.title}")`,
-        clientId: p.client.id,
-        meta: { field: "email", from: "proposal-send" },
-      });
-    }
-    return { clientId: p.client.id, name: p.client.name };
-  }
-  const known = await findClientForLead(ctx.organizationId, { email, phone: null });
-  let client: { id: string; name: string };
-  if (known) {
-    client = { id: known.id, name: known.name };
-  } else {
-    const name = to.name.trim();
-    if (!name) throw new Error("Add the client's name — this proposal has no client yet.");
-    await enforcePlanLimit(ctx.organizationId, "clients");
-    client = await db.client.create({
-      data: { organizationId: ctx.organizationId, name, email, address: p.address?.trim() || null },
-      select: { id: true, name: true },
-    });
-    await logActivity({
-      organizationId: ctx.organizationId,
-      actorId: ctx.userId,
-      kind: TRAIL_KINDS.CLIENT,
-      summary: `Added client ${client.name} (${email}) while sending "${p.title}"`,
-      clientId: client.id,
-      meta: { from: "proposal-send" },
-    });
-  }
-  await db.proposal.update({ where: { id: p.id }, data: { clientId: client.id } });
-  return { clientId: client.id, name: client.name };
-}
-
 export async function sendProposal(id: string, rawTo?: unknown) {
   const { organizationId, user, proposalScope } = await requireProposalStaff();
-  const to = sendToInput.parse(rawTo);
-  let p = await db.proposal.findFirst({
-    where: { id, organizationId, ...proposalScope },
-    include: { client: true },
-  });
-  if (!p) throw new Error("Not found");
-  if (to?.email?.trim()) {
-    await settleRecipient({ organizationId, userId: user.id }, p, { email: to.email, name: to.name ?? "" });
-    p = await db.proposal.findFirst({ where: { id, organizationId }, include: { client: true } });
-    if (!p) throw new Error("Not found");
-  }
-
-  // Send the client email FIRST — only record the proposal as SENT if it
-  // actually went out (with the transport retry from emailRetry.ts). If the
-  // provider fails after retries, notifyProposalSent throws: we surface a clear
-  // error to the contractor and never write a false "Sent" status/activity.
-  // Note: when email is not configured, or the client has no email on file,
-  // notifyProposalSent returns { skipped } instead of throwing, so dev/no-email
-  // setups still mark the proposal SENT exactly as before.
-  try {
-    const { notifyProposalSent } = await import("@/lib/notify");
-    await notifyProposalSent({ proposalId: id });
-  } catch (err) {
-    // Not marking SENT. The contractor gets the friendly line; the cause goes to the log.
-    logServerError("proposals.sendProposal:email", err, { kind: "action", organizationId });
-    throw new Error(
-      "Couldn't send the proposal email. Please check the client's email address and try again.",
-    );
-  }
-
-  // A send again never undoes what the client did (2026-10-23): one they have opened stays VIEWED, and a signed
-  // contract keeps its status — the menu's Send to client used to turn an accepted proposal back into SENT.
-  const signed = p.status === "ACCEPTED" || p.status === "COMPLETED" || p.status === "PAID";
-  const keep = signed || p.status === "VIEWED";
-  await db.proposal.update({
-    where: { id },
-    data: keep ? { sentAt: new Date() } : { status: "SENT", sentAt: new Date() },
-  });
-  await snapshotProposal(id, "sent");
-  // A re-send of an already sent proposal is not a second activation.
-  if (!p.sentAt) trackActivation("proposal_sent", organizationId);
-  await db.activityEvent.create({
-    data: {
-      organizationId,
-      actorId: user.id,
-      proposalId: id,
-      clientId: p.clientId,
-      kind: "SENT",
-      summary: `Sent "${p.title}" to ${p.client?.name ?? p.client?.email ?? "client"}`,
-    },
-  });
-
-  // Follow-up scheduling stays best-effort — it must never undo a confirmed send. A signed contract sent
-  // again is a copy for the client's records, not an offer to chase.
-  if (!signed) {
-    try {
-      const { scheduleFollowUpsFor } = await import("@/lib/followUps/engine");
-      await scheduleFollowUpsFor(id, "SENT");
-    } catch (err) {
-      console.warn("[sendProposal] schedule failed:", err);
-    }
-  }
-
-  revalidatePath("/dashboard/proposals");
-  revalidatePath(`/dashboard/proposals/${id}`);
-  if (p.clientId) revalidatePath(`/dashboard/clients/${p.clientId}`);
-  // Where it went, so the screen can say it: null = marked sent, nothing mailed.
-  return { ok: true, to: p.client?.email ?? null, clientId: p.clientId, client: p.client?.name ?? null };
+  // The send itself lives in lib/proposals/sendCore (2026-11-04), shared with the JobFlex Assistant.
+  return sendProposalAs({ organizationId, userId: user.id, proposalScope }, id, sendToInput.parse(rawTo));
 }
 
 export type StatusResult =
@@ -699,38 +566,7 @@ export async function updateProposalStatus(id: string, status: ProposalStatus): 
 }
 
 // ── Pricing snapshots ──────────────────────────────────────
-
-type SnapshotReason = "manual" | "sent" | "accepted" | "edited";
-
-async function snapshotProposal(proposalId: string, reason: SnapshotReason) {
-  const p = await db.proposal.findUnique({
-    where: { id: proposalId },
-    include: { lineItems: { orderBy: { position: "asc" } } },
-  });
-  if (!p) return;
-  await db.pricingSnapshot.create({
-    data: {
-      proposalId: p.id,
-      organizationId: p.organizationId,
-      reason,
-      subtotal: p.subtotal,
-      discountTotal: p.discountTotal,
-      taxRate: p.taxRate,
-      taxTotal: p.taxTotal,
-      total: p.total,
-      currency: p.currency,
-      lineItemsJson: JSON.stringify(
-        p.lineItems.map((l) => ({
-          name: l.name,
-          quantity: l.quantity,
-          unitPrice: l.unitPrice,
-          total: l.total,
-          measurementType: l.measurementType,
-        })),
-      ),
-    },
-  });
-}
+// The writer is lib/proposals/snapshot (shared with the send core).
 
 export async function saveSnapshotManual(proposalId: string) {
   const { organizationId, proposalScope } = await requireProposalStaff();

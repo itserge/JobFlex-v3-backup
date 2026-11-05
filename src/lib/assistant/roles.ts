@@ -1,0 +1,51 @@
+// WHAT EACH ROLE MAY ASK THE ASSISTANT (2026-11-04) — pure, so the checks pin it
+// (qa/tests/logic/assistant.check.ts). The same lines the dashboard's guards
+// draw (lib/orgContext): field workers have their crew portal, not this; SALES
+// and ESTIMATOR see and send their own proposals; the calendar's, the crew's
+// and the payments' actions are managers'; money is the Financials page's.
+import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
+
+export type Capability =
+  | "today" // the CRM brief: every office and pipeline role (it scopes itself)
+  | "proposals.read"
+  | "proposals.send"
+  | "schedule.read"
+  | "schedule.write"
+  | "crew.read"
+  | "crew.text"
+  | "money.read"
+  | "payments.remind";
+
+const LIMITED = new Set(["INSTALLER", "SALES", "ESTIMATOR"]);
+
+/** May this role open one of these pages (lib/roleRoutes)? Full office roles have no gate. */
+function mayOpen(role: string, route: string): boolean {
+  const gate = ROLE_ROUTE_GATES[role];
+  return !gate || isPathAllowed(gate, route);
+}
+
+export function roleAllows(role: string, need: Capability): boolean {
+  if (role === "INSTALLER") return false;
+  const manager = !LIMITED.has(role);
+  switch (need) {
+    case "today":
+    case "proposals.read":
+    case "proposals.send":
+      return true;
+    case "schedule.read":
+      return mayOpen(role, "/dashboard/calendar");
+    case "crew.read":
+      return manager || mayOpen(role, "/dashboard/workers");
+    case "schedule.write":
+    case "crew.text":
+    case "payments.remind":
+      return manager;
+    case "money.read":
+      return manager && mayOpen(role, "/dashboard/financials");
+  }
+}
+
+/** SALES and ESTIMATOR see and send only their own proposals (requireProposalStaff). */
+export function ownProposalsOnly(role: string): boolean {
+  return role === "SALES" || role === "ESTIMATOR";
+}
