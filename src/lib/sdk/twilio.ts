@@ -77,7 +77,17 @@ export async function twilioClient(settings?: TwilioSettings | null) {
   return twilio(s.accountSid, s.authToken);
 }
 
-export async function sendSMS(to: string, body: string, opts: { statusCallback?: string; from?: string | null } = {}) {
+export async function sendSMS(
+  to: string,
+  body: string,
+  opts: {
+    statusCallback?: string;
+    from?: string | null;
+    /** The bare From, never the Messaging Service (2026-11-04: the JobFlex Assistant's number stands outside the
+     *  service — the service would send its inbound texts to /api/twilio/sms and share STOP across its pool). */
+    bare?: boolean;
+  } = {},
+) {
   const s = await twilioSettings();
   if (!s) {
     // Never log the body: SMS bodies carry worker magic links and quote links,
@@ -100,7 +110,7 @@ export async function sendSMS(to: string, body: string, opts: { statusCallback?:
   // (it was added to the service's pool when bought); without a service it is
   // the bare From.
   const msg = await client.messages.create({
-    ...(s.messagingServiceSid ? { messagingServiceSid: s.messagingServiceSid, from: opts.from } : { from: opts.from }),
+    ...(s.messagingServiceSid && !opts.bare ? { messagingServiceSid: s.messagingServiceSid, from: opts.from } : { from: opts.from }),
     to,
     body,
     ...(opts.statusCallback ? { statusCallback: opts.statusCallback } : {}),

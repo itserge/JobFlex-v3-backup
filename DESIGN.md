@@ -311,7 +311,16 @@ monthly" is one 12px line (weight 600) under the price.
   conversation: the square turns rose while it listens and blue while it
   speaks, and a live line sits over the box — what is being heard, "Listening
   — just talk.", "Working on it…", "Speaking…" (rose-tinted, blueprint-tinted
-  while speaking).
+  while speaking). Settings → Assistant
+  ([assistant-settings](src/components/v3/assistant/assistant-settings.module.css))
+  is one card in SmartBook's treatment — stamp Linked emerald, Paused amber,
+  Not linked / Texting soon muted — with ruled sections In the app, From your
+  phone (the linked phone as a 52px ink-framed row; Save to my contacts the
+  blue button, Pause texts white, Unlink an underlined text button), Things to
+  say. The link code is SmartBook's copy box: 30px 900 tabular digits beside a
+  caps Copy cell; on a phone "Text the code from this phone" is a full-width
+  blue button that opens Messages with the code typed; the consent words sit
+  under it in 12.5px with Terms, Privacy and How it works (/assistant).
 - SmartBook (owner, 2026-10-31;
   [smartbook](src/components/v3/smartbook/smartbook.module.css)). One framed
   card treatment for Settings → SmartBook and the calendar's "SmartBook

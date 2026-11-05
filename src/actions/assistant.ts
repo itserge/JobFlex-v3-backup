@@ -43,3 +43,61 @@ export async function loadAssistantFeed(): Promise<AssistantFeed> {
   const actor = await actorForSession();
   return readFeed(actor);
 }
+
+// ── Settings → Assistant: the phone that texts it (2026-11-04) ───────────────
+
+export interface AssistantPhoneView {
+  /** Why this person has no Assistant (the field crew), or null. */
+  closed: string | null;
+  /** The Assistant's number, E.164 and as it reads; null until it is set up. */
+  number: string | null;
+  numberWords: string | null;
+  link: { phone: string; phoneWords: string; active: boolean; linkedAt: string | null } | null;
+  contactUrl: string | null;
+  usage: { used: number; limit: number | null };
+}
+
+export async function loadAssistantPhone(): Promise<AssistantPhoneView> {
+  const actor = await actorForSession();
+  const { refusal } = await import("@/lib/assistant/actor");
+  const { assistantNumber, linkOf, phoneWords } = await import("@/lib/assistant/phone");
+  const closed = await refusal(actor, "today", false);
+  const number = assistantNumber();
+  const link = closed ? null : await linkOf(actor.organizationId, actor.userId);
+  const feed = closed ? null : await readFeed(actor);
+  return {
+    closed,
+    number,
+    numberWords: number ? phoneWords(number) : null,
+    link: link ? { ...link, phoneWords: phoneWords(link.phone) } : null,
+    contactUrl: number ? "/api/assistant/contact" : null,
+    usage: feed?.usage ?? { used: 0, limit: null },
+  };
+}
+
+/** A fresh six-digit code to text from the phone being linked. */
+export async function startAssistantLink(): Promise<{ ok: true; code: string; expiresAt: string } | { ok: false; error: string }> {
+  const actor = await actorForSession();
+  const { refusal } = await import("@/lib/assistant/actor");
+  const { assistantNumber, startLink } = await import("@/lib/assistant/phone");
+  const closed = await refusal(actor, "today", false);
+  if (closed) return { ok: false, error: closed };
+  if (!assistantNumber()) return { ok: false, error: "Texting the Assistant isn't set up yet." };
+  return startLink(actor.organizationId, actor.userId);
+}
+
+/** Pause (false) or turn back on (true) texting from the linked phone. */
+export async function setAssistantPhoneOn(raw: unknown): Promise<AssistantPhoneView> {
+  const on = z.boolean().parse(raw);
+  const actor = await actorForSession();
+  const { setMyPhoneActive } = await import("@/lib/assistant/phone");
+  await setMyPhoneActive(actor.organizationId, actor.userId, on);
+  return loadAssistantPhone();
+}
+
+export async function unlinkAssistantPhone(): Promise<AssistantPhoneView> {
+  const actor = await actorForSession();
+  const { unlinkMine } = await import("@/lib/assistant/phone");
+  await unlinkMine(actor.organizationId, actor.userId);
+  return loadAssistantPhone();
+}

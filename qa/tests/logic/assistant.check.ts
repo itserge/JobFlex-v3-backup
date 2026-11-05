@@ -22,6 +22,9 @@ import {
 } from "../../../src/lib/assistant/shared";
 import { ownProposalsOnly, roleAllows, type Capability } from "../../../src/lib/assistant/roles";
 import { searchWords } from "../../../src/lib/assistant/find";
+import { codeIn, phoneWords } from "../../../src/lib/assistant/phone";
+import { SMS_WORDS, isCarrierStart, isCarrierStop } from "../../../src/lib/assistant/sms";
+import { forSpeech } from "../../../src/components/v3/assistant/use-assistant";
 
 let bad = 0;
 function check(name: string, ok: boolean, extra?: unknown) {
@@ -99,6 +102,31 @@ function check(name: string, ok: boolean, extra?: unknown) {
   check("roles: SALES never schedules, texts the crew, reads money or sends reminders", !roleAllows("SALES", "schedule.write") && !roleAllows("SALES", "crew.text") && !roleAllows("SALES", "money.read") && !roleAllows("SALES", "payments.remind"));
   check("roles: ESTIMATOR sends proposals but never schedules or texts the crew", roleAllows("ESTIMATOR", "proposals.send") && !roleAllows("ESTIMATOR", "schedule.write") && !roleAllows("ESTIMATOR", "crew.text"));
   check("roles: SALES and ESTIMATOR see only their own proposals", ownProposalsOnly("SALES") && ownProposalsOnly("ESTIMATOR") && !ownProposalsOnly("OWNER") && !ownProposalsOnly("MANAGER"));
+}
+
+
+// ── by text ─────────────────────────────────────────────────────────────────
+{
+  check("code: six digits alone", codeIn("482913") === "482913" && codeIn(" 482913 ") === "482913" && codeIn("LINK 482913") === "482913");
+  check("code: not a code", codeIn("48291") === null && codeIn("4829133") === null && codeIn("call 482913 now") === null && codeIn("$16,164") === null);
+  for (const w of ["STOP", "stop", "Cancel", "END", "quit", "UNSUBSCRIBE", "stopall", "STOP."]) check(`carrier stop: "${w}"`, isCarrierStop(w));
+  for (const w of ["stop sending the Lee proposal", "cancel the Lee job", "no", "don't stop"]) check(`carrier stop: not "${w}"`, !isCarrierStop(w));
+  check("carrier start: START / UNSTOP / YES alone", isCarrierStart("START") && isCarrierStart("unstop") && isCarrierStart("yes"));
+  check("carrier start: not a sentence", !isCarrierStart("yes send it") && !isCarrierStart("start the Lee job"));
+  check("phone words", phoneWords("+18665551234") === "(866) 555-1234" && phoneWords("+15555550101") === "(555) 555-0101");
+  const linked = SMS_WORDS.linked("Dmitriy", "Summit Ridge Roofing", "https://www.jobflex.app/api/assistant/contact");
+  check("linked text: names the person, the company, STOP, HELP and rates", /Dmitriy at Summit Ridge Roofing/.test(linked) && /STOP/.test(linked) && /HELP/.test(linked) && /Msg & data rates/.test(linked), linked);
+  check("linked text: under three segments' worth (459 chars)", linked.length <= 459, linked.length);
+  check("help text: STOP, YES / NO and where to write", /STOP/.test(SMS_WORDS.help) && /YES/.test(SMS_WORDS.help) && /NO/.test(SMS_WORDS.help) && /support@jobflex\.app/.test(SMS_WORDS.help));
+  check("no text tells anyone to reply CANCEL (a carrier stop word)", Object.values(SMS_WORDS).every((w) => typeof w !== "string" || !/reply cancel/i.test(w)));
+  check("not-linked text: how to link, and STOP", /Settings → Assistant/.test(SMS_WORDS.notLinked) && /STOP/.test(SMS_WORDS.notLinked));
+}
+
+// ── read out loud ───────────────────────────────────────────────────────────
+{
+  check("speech: the tap prompt becomes a spoken one", forSpeech('Send "X" ($16,164) to John. Tap Do it to go ahead, or Cancel.') === 'Send "X" ($16,164) to John. Say yes to do it, or no.');
+  check("speech: a time range is read with 'to'", forSpeech("Fri, Nov 6, 9:00 AM–2:00 PM") === "Fri, Nov 6, 9:00 AM to 2:00 PM", forSpeech("Fri, Nov 6, 9:00 AM–2:00 PM"));
+  check("speech: a dash becomes a pause", forSpeech("Done — on Friday") === "Done, on Friday");
 }
 
 console.log(bad ? `\n${bad} FAILED` : "\nall ok");

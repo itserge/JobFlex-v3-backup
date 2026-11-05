@@ -160,6 +160,7 @@ import { isRefusal } from "@/lib/actionResult";
 import { CompanyPricingForm } from "@/components/v3/company-pricing/company-pricing-form";
 import { WebEstimatorForm } from "@/components/v3/web-estimator/web-estimator-form";
 import { SmartBookSettingsForm } from "@/components/v3/smartbook/smartbook-settings";
+import { AssistantSettings } from "@/components/v3/assistant/assistant-settings";
 
 /* ══════════════════════════ small shared bits ══════════════════════════ */
 
@@ -1265,6 +1266,7 @@ const RAIL_ICON: Record<RailKey, IconName> = {
   estimating: "i-hardhat",
   website: "i-globe",
   smartbook: "i-cal",
+  assistant: "i-phone",
 };
 
 export function MobileSettings({
@@ -1508,6 +1510,10 @@ export function MobileSettings({
             {/* SmartBook (2026-10-31): the desk pane's own form, a phone's width. */}
             <div className={active === "smartbook" ? "mst-pane is-on" : "mst-pane"} id="smartbook">
               <SmartBookSettingsForm mobile onOpen={(where) => (where === "meta" ? navigate("integrations", "meta") : navigate("notifications"))} />
+            </div>
+            {/* The JobFlex Assistant (2026-11-04): the desk pane's own card, a phone's width. */}
+            <div className={active === "assistant" ? "mst-pane is-on" : "mst-pane"} id="assistant">
+              <AssistantSettings mobile />
             </div>
           </div>
 
