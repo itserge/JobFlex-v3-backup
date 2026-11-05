@@ -26,6 +26,7 @@ import { cn } from "@/lib/cn";
 import { MobileDrawer } from "@/components/ui/MobileDrawer";
 import { openSupportComposer } from "@/components/v3/support-widget/support-widget";
 import { SmartHelpRow } from "@/components/v3/smarthelp/smarthelp-row";
+import { AssistantRow } from "@/components/v3/assistant/assistant-row";
 import { NavBadge } from "./NavBadge";
 
 type TabKey = "dashboard" | "proposals" | "schedule" | "jobs" | "leads" | "clients" | "smart" | "more";
@@ -282,6 +283,8 @@ export function MobileTabBar({
           {/* SmartHelp (components/v3/smarthelp), above Help: like Help, opened on the next frame after the drawer
               closes, with focus handed back to the More tab. */}
           <SmartHelpRow variant="more" onBeforeOpen={() => setMoreOpen(false)} opener={() => moreTabRef.current} />
+          {/* The Assistant (components/v3/assistant, 2026-11-04): its own page on a phone. */}
+          <AssistantRow variant="more" onBeforeOpen={() => setMoreOpen(false)} />
           {/* Help — this group's handheld launcher for the support composer
               the layout mounts. It is a row in the drawer, not a corner
               button: below 768 the bottom-right of every page in this group is

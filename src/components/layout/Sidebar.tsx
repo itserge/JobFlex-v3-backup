@@ -34,6 +34,7 @@ import { cn } from "@/lib/cn";
 import { NavBadge } from "./NavBadge";
 import { NavLimitCounter } from "./NavLimitCounter";
 import { SmartHelpRow } from "@/components/v3/smarthelp/smarthelp-row";
+import { AssistantRow } from "@/components/v3/assistant/assistant-row";
 
 interface NavItem {
   href: string;
@@ -248,6 +249,8 @@ export function Sidebar({
       <nav className="flex-1 overflow-y-auto px-3 pb-5 pt-4 space-y-5">
         {/* SmartHelp (components/v3/smarthelp): the first row, above the groups. */}
         <SmartHelpRow variant="desk" />
+        {/* The Assistant (components/v3/assistant, 2026-11-04), under SmartHelp. */}
+        <AssistantRow variant="desk" />
         {navGroups.map((g) => (
           <div key={g.title} className="space-y-1">
             <div className="quiet-caps px-3 mb-1.5">{g.title}</div>

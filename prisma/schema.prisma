@@ -167,6 +167,10 @@ model Organization {
   trialExtensionRequests TrialExtensionRequest[]
   // Every declined plan charge, for /admin/revenue/failed-payments (2026-10-21).
   paymentFailures      PaymentFailure[]
+  // The JobFlex Assistant's phones, turns and proposed changes (2026-11-04).
+  assistantLinks       AssistantLink[]
+  assistantMessages    AssistantMessage[]
+  assistantActions     AssistantAction[]
   signupPromo          PromoCode?            @relation("OrgSignupPromo", fields: [signupPromoCodeId], references: [id], onDelete: SetNull)
 
   @@index([slug])
@@ -366,6 +370,11 @@ model User {
   cancellationFeedback   CancellationFeedback[]
   trialExtensionRequests TrialExtensionRequest[] @relation("TrialExtensionRequester")
   trialExtensionsDecided TrialExtensionRequest[] @relation("TrialExtensionDecider")
+
+  // The JobFlex Assistant (2026-11-04) — back-relations only.
+  assistantLinks    AssistantLink[]
+  assistantMessages AssistantMessage[]
+  assistantActions  AssistantAction[]
 }
 
 model Account {
@@ -3342,4 +3351,83 @@ model TextRule {
   updatedAt      DateTime @updatedAt
 
   @@index([organizationId, trigger])
+}
+
+// ── THE JOBFLEX ASSISTANT (2026-11-04, lib/assistant) ───────────────────────
+// A contractor runs JobFlex by talking or texting to it: the app's panel now,
+// the "JobFlex Assistant" number next. Questions are answered at once; a
+// change is proposed, read back in words the code builds, and waits for YES.
+
+/// A phone allowed to text or call the Assistant number as this person in
+/// this company. Proved by a code the person texts FROM that phone — never by
+/// User.smsPhone, which a manager can type for someone else. `active` false =
+/// paused (STOP to the Assistant pauses this row only, never SmsOptOut).
+model AssistantLink {
+  id             String    @id @default(cuid())
+  userId         String
+  organizationId String
+  phone          String    @unique // E.164
+  verifiedAt     DateTime?
+  pinHash        String? // the 4-digit PIN for money actions, hashed
+  active         Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([organizationId])
+}
+
+/// One turn, in or out: the conversation the model reads back, the log, and
+/// the monthly `assistantCommands` meter (`countsAsCommand` = a turn the model
+/// read; YES / NO / a digit never count). `externalId` = Twilio's MessageSid,
+/// so a retried webhook is one turn.
+model AssistantMessage {
+  id              String   @id @default(cuid())
+  organizationId  String
+  userId          String
+  channel         String // app | sms | voice
+  direction       String // IN | OUT
+  body            String
+  externalId      String?  @unique
+  countsAsCommand Boolean  @default(false)
+  actionId        String?
+  createdAt       DateTime @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([userId, createdAt])
+}
+
+/// A change the Assistant proposed. AWAITING (read back, waiting for YES) →
+/// QUEUED (approved; runs at `executeAfter`, the undo window) → RUNNING (claimed
+/// by one worker) → DONE | FAILED. NO or UNDO → CANCELED; no answer → EXPIRED.
+/// `readback` is the sentence the person approved, built by code from
+/// `argsJson`; `resultJson` is what actually happened.
+model AssistantAction {
+  id             String    @id @default(cuid())
+  organizationId String
+  userId         String
+  channel        String
+  tool           String
+  argsJson       String
+  readback       String
+  status         String    @default("AWAITING")
+  resultJson     String?
+  error          String?
+  executeAfter   DateTime?
+  approvedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@index([userId, status])
+  @@index([status, executeAfter])
 }

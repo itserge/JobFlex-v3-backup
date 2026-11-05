@@ -136,7 +136,8 @@ export type RailKey =
   | 'desk'
   | 'estimating'
   | 'website'
-  | 'smartbook';
+  | 'smartbook'
+  | 'assistant';
 
 export interface RailItem {
   readonly key: RailKey;
@@ -158,6 +159,8 @@ export const RAIL_ITEMS: readonly RailItem[] = [
   // SmartBook (2026-10-31): new leads — Facebook, the website estimators, Lead Center, the AI desk — get open times
   // from the calendar by text and email and book themselves; a time they name comes to the company to confirm.
   { key: 'smartbook', label: 'SmartBook', icon: 'i-cal', isNew: true, sub: 'New leads get open times from your calendar by text and email and book themselves. A time they name comes to you first.' },
+  // The JobFlex Assistant (2026-11-04): the phone that texts it — linked by a code texted from that phone.
+  { key: 'assistant', label: 'Assistant', icon: 'i-phone', isNew: true, sub: 'Run JobFlex by talking or texting — link the phone you will text it from.' },
   // Texting left Settings on 2026-10-16 for its own page, /dashboard/texting (sidebar → Automation, under AI desk);
   // ?pane=texting and ?tab=texting redirect there (app/dashboard/settings/page.tsx).
   // Estimating (2026-10-16): the company's own estimating method — labor by the crew-hour or person-hour, its markup,
@@ -1561,6 +1564,8 @@ export interface SettingsData {
   desk: DeskSettingsData;
   /** Website estimators: shown while the feature is open to every account, or to a platform admin in the preview. */
   website: { visible: boolean };
+  /** The JobFlex Assistant (2026-11-04): shown to those who have it — platform admins until the owner opens it, never the crew. */
+  assistant?: { visible: boolean };
 }
 
 /** Every pane takes exactly this. `navigate` jumps rails (and subtabs). */

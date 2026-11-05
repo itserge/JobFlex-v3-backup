@@ -1,0 +1,351 @@
+/* SETTINGS → ASSISTANT (2026-11-04). SmartBook's card treatment (DESIGN.md): a
+   white sheet in a 2px ink frame, a --paper head with the blue mark, an 18px 900
+   caps title (16px on a phone) and a square status stamp; sections ruled in 1px
+   ink with 14px 850 caps headings; text to copy in a 2px ink box with a caps Copy
+   cell; warnings amber with a 4px left bar. Mounted inside the Settings shells,
+   so the root carries data-nest and every rule has two classes. */
+
+.card.card {
+  margin: 0;
+  padding: 0;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: var(--sheet, #fff);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+.card .loading {
+  margin: 0;
+  padding: 20px 24px;
+  color: var(--ink-muted);
+  font-size: 14px;
+}
+.card .head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  padding: 14px 20px;
+  border-bottom: 2px solid var(--ink);
+  background: var(--paper);
+}
+.card .mark {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: #fff;
+}
+.card .mark svg {
+  width: 18px;
+  height: 18px;
+}
+.card .title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+}
+.card .stamp {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 2px 7px;
+  border: 1.5px solid var(--ink-muted);
+  color: var(--ink-muted);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  line-height: 15px;
+  text-transform: uppercase;
+}
+.card .stamp[data-tone="ok"] {
+  border-color: var(--emerald);
+  color: color-mix(in srgb, var(--emerald) 75%, var(--ink));
+  background: color-mix(in srgb, var(--emerald) 12%, #fff);
+}
+.card .stamp[data-tone="warn"] {
+  border-color: var(--amber);
+  color: color-mix(in srgb, var(--amber) 70%, var(--ink));
+  background: color-mix(in srgb, var(--amber) 14%, #fff);
+}
+
+.card .body {
+  margin: 0;
+  padding: 4px 24px 22px;
+}
+.card .lead {
+  margin: 16px 0 0;
+  font-size: 15px;
+  line-height: 1.5;
+}
+.card .section {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0 0;
+  padding: 16px 0 0;
+  border-top: 1px solid var(--ink);
+}
+.card .h {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.card .text {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.card .text b {
+  color: var(--ink);
+}
+.card .note {
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 4px solid var(--amber);
+  background: color-mix(in srgb, var(--amber) 10%, #fff);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.card .row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: #fff;
+}
+.card .rowIcon {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+}
+.card .rowIcon svg {
+  width: 16px;
+  height: 16px;
+}
+.card .rowText {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+.card .rowMain {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+}
+.card .rowSub {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+}
+
+.card .steps {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0 0 0 20px;
+  font-size: 14px;
+  line-height: 1.45;
+  /* The shells' base styles take list markers off every list; these steps keep their numbers. */
+  list-style: decimal;
+}
+.card .code {
+  display: flex;
+  align-items: stretch;
+  max-width: 360px;
+  margin: 0;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: #fff;
+}
+.card .codeDigits {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 10px 16px;
+  font-size: 30px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.18em;
+}
+.card .copy {
+  appearance: none;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 14px;
+  border: 0;
+  border-left: 2px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.card .copy svg {
+  width: 15px;
+  height: 15px;
+}
+.card .waiting {
+  margin: 0;
+  color: var(--accent-ink);
+  font-size: 13.5px;
+  font-weight: 700;
+}
+.card .consent {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.card .consent a {
+  color: var(--accent-ink);
+}
+
+.card .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 2px 0 0;
+}
+.card .primary,
+.card .secondary,
+.card .quiet {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 16px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  font-family: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 140ms var(--ease-out);
+  justify-self: start;
+}
+.card .primary {
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.card .primary:hover {
+  background: var(--accent-ink);
+}
+.card .primary svg {
+  width: 17px;
+  height: 17px;
+}
+.card .secondary {
+  background: #fff;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+.card .secondary:hover {
+  background: var(--accent-soft);
+}
+.card .quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: underline;
+}
+.card .primary:disabled,
+.card .secondary:disabled,
+.card .quiet:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+.card .primary:focus-visible,
+.card .secondary:focus-visible,
+.card .quiet:focus-visible,
+.card .copy:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.card .examples {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+}
+.card .usage {
+  margin: 4px 0 0;
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.card .error {
+  margin: 16px 0 0;
+  padding: 8px 10px;
+  border-left: 4px solid var(--rose);
+  background: color-mix(in srgb, var(--rose) 8%, #fff);
+  font-size: 13.5px;
+}
+
+/* A phone: 16px title, 20px padding, every action full width. */
+.mobile.card .title {
+  font-size: 16px;
+}
+.mobile.card .head {
+  padding: 12px 16px;
+}
+.mobile.card .body {
+  padding: 2px 16px 18px;
+}
+.mobile.card .actions {
+  display: grid;
+}
+.mobile.card .primary,
+.mobile.card .secondary {
+  width: 100%;
+  justify-self: stretch;
+}
+.mobile.card .code {
+  max-width: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card .primary,
+  .card .secondary,
+  .card .quiet {
+    transition: none;
+  }
+}

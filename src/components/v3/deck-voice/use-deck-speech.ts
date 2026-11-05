@@ -72,6 +72,10 @@ export interface SpeechHandlers {
   onError: (message: string) => void;
   /** The client's deck link: the natural voice is asked for with its token (the studio's own session otherwise). */
   token?: string | null;
+  /** Where the natural voice and the server's ears are (2026-11-04: the JobFlex Assistant talks too, through its own
+   *  routes, api/assistant/*). Deck Studio's own by default. */
+  speakUrl?: string;
+  transcribeUrl?: string;
 }
 
 export function useDeckSpeech(handlers: SpeechHandlers) {
@@ -197,7 +201,7 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
       try {
         const form = new FormData();
         form.append("audio", new Blob(chunks, { type: recorder.mimeType || "audio/webm" }));
-        const res = await fetch("/api/deck/voice/transcribe", { method: "POST", body: form });
+        const res = await fetch(h.current.transcribeUrl ?? "/api/deck/voice/transcribe", { method: "POST", body: form });
         const body = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
         if (!res.ok) h.current.onError(body.error ?? "Couldn't write that down.");
         else if (body.text) h.current.onFinal([body.text]);
@@ -318,7 +322,7 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
         synth.speak(u);
       };
       if (!natural.current) return browserVoice();
-      void fetch("/api/deck/voice/speak", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, token: h.current.token ?? null }) })
+      void fetch(h.current.speakUrl ?? "/api/deck/voice/speak", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, token: h.current.token ?? null }) })
         .then(async (res) => {
           if (!res.ok) {
             // Not set up, not allowed here: the browser's voice for the rest of the visit.

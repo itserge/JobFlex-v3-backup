@@ -302,7 +302,19 @@ export async function loadSettingsData(ctx: SettingsOrgContext, opts: { billingL
     },
     desk: await loadDeskSettings(organizationId, role),
     website: { visible: await websiteVisible() },
+    assistant: { visible: await assistantSettingsVisible(organizationId, user.id, role) },
   };
+}
+
+/** Settings → Assistant (2026-11-04): those who have the Assistant (lib/assistant/open, never the field crew). */
+async function assistantSettingsVisible(organizationId: string, userId: string, role: string): Promise<boolean> {
+  try {
+    const { actorFor, refusal } = await import("@/lib/assistant/actor");
+    const actor = await actorFor(organizationId, userId, "app");
+    return actor ? (await refusal({ ...actor, role }, "today", false)) === null : false;
+  } catch {
+    return false;
+  }
 }
 
 /** "(206) 555-0100" for a stored E.164 number. */

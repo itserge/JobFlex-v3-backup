@@ -84,6 +84,7 @@ import { NotificationBell } from "@/components/v3/blueprint-shell/notification-b
 import { Who } from "@/components/v3/who/who";
 import { TourChip } from "@/components/v3/onboarding-tour/tour-chip";
 import { SmartHelpRow } from "@/components/v3/smarthelp/smarthelp-row";
+import { AssistantRow } from "@/components/v3/assistant/assistant-row";
 import { TourShowMe } from "@/components/v3/onboarding-tour/tour-show-me";
 
 const prefersReducedMotion = () =>
@@ -1439,6 +1440,8 @@ function DashboardView({ data, notice, sample }: { data: DashboardData; notice?:
         <TourChip onPick={() => setNavOpen(false)} />
         {/* SmartHelp (components/v3/smarthelp): the drawer closes, then the sheet comes up. */}
         <SmartHelpRow variant="drawer" onBeforeOpen={() => setNavOpen(false)} />
+        {/* The Assistant (components/v3/assistant, 2026-11-04): its own page on a phone. */}
+        <AssistantRow variant="drawer" onBeforeOpen={() => setNavOpen(false)} />
         <nav className={styles.sbScroll} ref={navScrollRef}>
           <div className={styles.sbIndicator} ref={indicatorRef} />
           {navSections.map((sec) => (

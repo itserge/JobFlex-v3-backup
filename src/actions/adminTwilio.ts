@@ -92,3 +92,22 @@ export async function clearTwilioSettings(): Promise<AdminTwilioResult> {
   revalidatePath("/admin/integrations");
   return { ok: true, note: "Cleared. Texting falls back to the server's environment, if it has Twilio keys." };
 }
+
+// ── the JobFlex Assistant's number (owner, 2026-11-04: "set that variable in admin, instead of Vercel") ──
+
+/** Save the number contractors text and call the Assistant on; empty clears it (back to the server's env). */
+export async function saveAssistantNumber(raw: unknown): Promise<AdminTwilioResult> {
+  await requirePlatformAdmin();
+  const typed = z.string().trim().max(32).parse(raw ?? "");
+  const { setAssistantNumber } = await import("@/lib/assistant/phone");
+  if (!typed) {
+    await setAssistantNumber(null);
+    revalidatePath(PAGE);
+    return { ok: true, note: "Cleared. The Assistant answers in the app only, unless the server has TWILIO_ASSISTANT_FROM." };
+  }
+  const e164 = toE164(typed);
+  if (!e164) return { ok: false, error: "The number must be a US or Canadian number, like +18668975760." };
+  await setAssistantNumber(e164);
+  revalidatePath(PAGE);
+  return { ok: true, note: `Saved. Texts to ${e164} from a linked phone now go to the Assistant (within a minute on every server).` };
+}

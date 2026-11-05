@@ -14,4 +14,5 @@ export const LEGAL_UPDATED = {
   security: { iso: "2026-11-01", label: "November 1, 2026" },
   rampGuide: { iso: "2026-11-01", label: "November 1, 2026" },
   rampSupport: { iso: "2026-11-01", label: "November 1, 2026" },
+  assistant: { iso: "2026-11-04", label: "November 4, 2026" },
 } as const;

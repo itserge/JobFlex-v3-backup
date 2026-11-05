@@ -66,6 +66,9 @@ const DESKTOP_TWIN: Record<string, string> = {
   // and the other limited roles exactly as their desktop twins are.
   "/mobile-settings-v1": "/dashboard/settings",
   "/mobile-upgrade-v1": "/dashboard/upgrade",
+  // The JobFlex Assistant (2026-11-04): the office's and the pipeline's, never
+  // the crew's — gated on the page every one of those roles holds.
+  "/mobile-assistant-v1": "/dashboard/proposals",
 };
 
 function desktopTwin(pathname: string): string | null {

@@ -425,6 +425,13 @@ async function countUsage(
       ]);
       return members + pending;
     }
+    case "assistantCommands":
+      // Requests the Assistant's model read this cycle (lib/assistant/engine). A YES,
+      // a NO or a reply digit is answered without the model and is not a command.
+      // A database without the table yet counts none instead of failing every check.
+      return strict
+        ? db.assistantMessage.count({ where: { organizationId, countsAsCommand: true, createdAt: since } })
+        : db.assistantMessage.count({ where: { organizationId, countsAsCommand: true, createdAt: since } }).catch(() => 0);
     default: {
       // Exhaustiveness guard: a new LimitKey without a counter is a bug.
       const _never: never = resource;

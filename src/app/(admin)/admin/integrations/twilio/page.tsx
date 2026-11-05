@@ -15,6 +15,7 @@ import { appBaseUrl } from "@/lib/appUrl";
 import { canStoreIntegrations, getTwilioIntegration, twilioIntegrationMeta } from "@/lib/platformIntegrations";
 import { twilioSettings } from "@/lib/sdk/twilio";
 import { AdminTwilioContent, type TwilioPageData } from "@/components/v3/admin-integrations/twilio-setup";
+import { assistantNumberSources } from "@/lib/assistant/phone";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,7 @@ export const metadata: Metadata = {
 
 export default async function AdminTwilioPage() {
   await requirePlatformAdmin();
-  const [stored, meta, live, base] = await Promise.all([getTwilioIntegration().catch(() => null), twilioIntegrationMeta().catch(() => null), twilioSettings(), process.env.TWILIO_APP_URL ?? appBaseUrl()]);
+  const [stored, meta, live, base, assistant] = await Promise.all([getTwilioIntegration().catch(() => null), twilioIntegrationMeta().catch(() => null), twilioSettings(), process.env.TWILIO_APP_URL ?? appBaseUrl(), assistantNumberSources().catch(() => ({ stored: null, env: null }))]);
   const now = new Date();
   const monthStart = new Date(now.getTime());
   monthStart.setUTCDate(1);
@@ -50,6 +51,7 @@ export default async function AdminTwilioPage() {
     webhooks: { inbound: `${base}/api/twilio/sms`, status: `${base}/api/twilio/sms/status`, voice: `${base}/api/twilio/voice` },
     counts: { today, month, failed, optOuts, ownNumbers },
     recent: recent.map((r) => ({ id: r.id, to: `…${r.to.slice(-4)}`, kind: r.kind ?? "", status: r.status, error: r.error, at: r.createdAt.toISOString(), org: r.organizationId ? r.organizationId.slice(-6) : "platform" })),
+    assistant,
   };
   return <AdminTwilioContent data={data} />;
 }
