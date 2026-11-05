@@ -15,7 +15,6 @@ import { PLAN_TIERS, type Plan } from "@/lib/entitlements";
 import { parsePlanLimits } from "@/lib/planLimits";
 import { planDisplayName, type PlanDTO } from "@/lib/planCatalog";
 import { CUSTOM_PLAN_TIER } from "@/lib/customPlan";
-import { DECK_ROW } from "@/lib/planRowUsage";
 
 /** Canonical parser for the PricingPlan.features JSON column. */
 export function parseFeatures(raw: string | null | undefined): string[] {
@@ -69,6 +68,9 @@ export async function getPlanCatalog(opts?: { includeInactive?: boolean }): Prom
   });
   return opts?.includeInactive ? rows.map(toPlanDTO) : rows.map(toPlanDTO).map(withoutDeckRows);
 }
+
+/** A row naming Deck Studio / the Deck estimator — no plan's resource (lib/editions). */
+const DECK_ROW = /\bdeck (estimator|studio)\b/i;
 
 /** NO DECK LINE ON A PLAN (owner-locked 2026-10-20, CLAUDE.md): Deck Studio is the trial's, then the $79/mo add-on —
  *  no plan carries it, so a feature row naming it (one typed in /admin/plans) is never shown on a plan card. The

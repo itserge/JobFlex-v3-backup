@@ -33,7 +33,7 @@ export interface SignupPlan {
   yearlyPriceCents: number | null;
   trialDays: number;
   features: string[];
-  /** The plan's caps (lib/planLimits) — the uses the cards print before each row (lib/planRowUsage). */
+  /** The plan's caps (lib/planLimits). The cards print no cap before a row (owner, 2026-11-04) — the tool alone. */
   limits: PlanLimits;
   highlight: boolean;
 }

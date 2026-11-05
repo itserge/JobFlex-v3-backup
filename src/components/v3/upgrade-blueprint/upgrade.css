@@ -744,9 +744,6 @@
    its words wrap rather than run off the card's edge. */
 .jf-upgrade .jf-up-ft { flex: 1 1 auto; min-width: 8ch; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
 .jf-upgrade .jf-up-fn { flex: 1 1 auto; min-width: 8ch; overflow-wrap: normal; word-break: keep-all; hyphens: none; }
-/* THE USES (owner, 2026-10-21): the plan's cap before the thing it caps, in blueprint blue — "20/mo · Roof estimator". */
-.jf-upgrade .jf-up-use { flex: none; color: var(--accent, #1854a0); font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.jf-upgrade .jf-up-use::after { content: " ·"; color: var(--muted-light, #8a8a8a); font-weight: 600; }
 .jf-upgrade .jf-up-ft > .jf-up-spot-tag { flex: none; max-width: 100%; margin-left: 0; white-space: normal; text-wrap: balance; }
 @keyframes upSpotIn { 0% { background-color: rgba(24, 84, 160, 0.3); } 100% { background-color: rgba(24, 84, 160, 0.09); } }
 @media (prefers-reduced-motion: reduce) { .jf-upgrade .jf-up-f.spot { animation: none; } }

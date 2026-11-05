@@ -591,9 +591,6 @@ body:has(.jf-mobile-upgrade.mu-shell) .jf-blueprint > .jfsup {
 }
 .jf-mobile-upgrade .mu-f:last-child { border-bottom: none; }
 .jf-mobile-upgrade .mu-f span { min-width: 0; overflow-wrap: anywhere; }
-/* THE USES (owner, 2026-10-21): the plan's cap before the thing it caps, in blueprint blue — "20/mo · Roof estimator". */
-.jf-mobile-upgrade .mu-use { color: var(--accent, #1854a0); font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.jf-mobile-upgrade .mu-use::after { content: " · "; color: var(--muted-light, #8a8a8a); font-weight: 600; }
 .jf-mobile-upgrade .mu-f.is-no { color: var(--muted-faint); font-weight: 500; }
 .jf-mobile-upgrade .mu-fic {
   display: block;

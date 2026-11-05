@@ -225,8 +225,8 @@ export function PricingPlans({
                           under the name when the line cannot hold both, and the name
                           never breaks inside a word. */}
                       <span className="lp-pw-ft">
-                        {/* No cap before the name here (owner, 2026-10-28): the landing and /pricing print the
-                            tool alone; the uses (lib/planRowUsage) stay on signup, upgrade and billing. */}
+                        {/* No cap before the name (owner, 2026-10-28; on every plan card since 2026-11-04):
+                            the tool alone. */}
                         <span className="lp-pw-fn">{f}</span>
                         {lit ? <span className="lp-pw-spot-tag">{on ? SPOTLIGHT_TAG : SPOTLIGHT_MISSING}</span> : null}
                       </span>

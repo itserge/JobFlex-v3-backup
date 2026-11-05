@@ -1833,9 +1833,6 @@
    words wrap rather than run off the card's edge. */
 .bp :global(.pw-ft) { flex: 1 1 auto; min-width: 8ch; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
 .bp :global(.pw-fn) { flex: 1 1 auto; min-width: 8ch; overflow-wrap: normal; word-break: keep-all; hyphens: none; }
-/* THE USES (owner, 2026-10-21): the plan's cap before the thing it caps, in blueprint blue — "20/mo · Roof estimator". */
-.bp :global(.pw-use) { flex: none; color: var(--blueprint, #1854a0); font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.bp :global(.pw-use::after) { content: " ·"; color: var(--muted-light, #8a8a8a); font-weight: 600; }
 .bp :global(.pw-ft > .pw-spot-tag) { flex: none; max-width: 100%; margin-left: 0; white-space: normal; text-wrap: balance; }
 @keyframes pwSpotIn { 0% { background-color: rgba(24, 84, 160, 0.3); } 100% { background-color: rgba(24, 84, 160, 0.09); } }
 @media (prefers-reduced-motion: reduce) { .bp :global(.pw-f--spot) { animation: none; } }
