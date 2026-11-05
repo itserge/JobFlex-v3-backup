@@ -49,6 +49,8 @@ export async function POST(req: Request) {
   const body = (params.Body ?? "").trim();
   const sid = params.MessageSid || null;
   if (!from) return twiml();
+  // The JobFlex Assistant's number, while it shares JobFlex's own (lib/assistant/phone; set in admin).
+  const assistantLine = await assistantNumber().catch(() => null);
 
   // SmartBook's, on the company's own number. Ahead of STOP for "cancel my visit" (only the bare carrier word opts
   // out), ahead of START so a "yes" is an answer — and lifts an opt-out, as START would. HELP goes on below.
@@ -66,12 +68,12 @@ export async function POST(req: Request) {
     await db.smsOptOut.upsert({ where: { phone: from }, create: { phone: from, body: clip(body, 60) }, update: { stoppedAt: new Date(), body: clip(body, 60) } });
     await db.smsMessage.create({ data: { direction: "IN", to, from, body, kind: "stop", status: "RECEIVED", sid } }).catch(() => null);
     // STOP to the number the JobFlex Assistant shares (lib/assistant/sms claimsSharedText) pauses its link too.
-    if (to && to === assistantNumber()) await setPhoneActive(from, false).catch(() => false);
+    if (to && to === assistantLine) await setPhoneActive(from, false).catch(() => false);
     return twiml();
   }
   // The JobFlex Assistant on this number (2026-11-04, while it shares JobFlex's own): a link code, or a linked phone's
   // request — answered after the response. JobFlex's team answering a task text goes on below (claimsSharedText).
-  if (to && to === assistantNumber()) {
+  if (to && to === assistantLine) {
     const text = { from, to, body, sid };
     if (await claimsSharedText(text).catch(() => false)) {
       if (await keepInbound(text)) after(() => answerAssistantText(text));
@@ -111,7 +113,7 @@ export async function POST(req: Request) {
     await db.smsOptOut.deleteMany({ where: { phone: from } });
     await db.smsMessage.create({ data: { direction: "IN", to, from, body, kind: "start", status: "RECEIVED", sid } }).catch(() => null);
     // START on the number the Assistant shares turns its link back on.
-    if (to && to === assistantNumber()) await setPhoneActive(from, true).catch(() => false);
+    if (to && to === assistantLine) await setPhoneActive(from, true).catch(() => false);
     return twiml();
   }
   if (isHelpWord(body)) {
@@ -119,7 +121,7 @@ export async function POST(req: Request) {
     // number the company answers, from that number (2026-10-02).
     const company = to ? await db.organization.findFirst({ where: { smsFromNumber: to }, select: { id: true, name: true, phone: true } }) : null;
     // A phone linked to the JobFlex Assistant, on the number it shares: the Assistant's own HELP.
-    if (!company && to && to === assistantNumber() && (await linkForPhone(from).catch(() => null))) {
+    if (!company && to && to === assistantLine && (await linkForPhone(from).catch(() => null))) {
       await sendAssistantText(from, SMS_WORDS.help, "jobflex-assistant-help");
       return twiml();
     }

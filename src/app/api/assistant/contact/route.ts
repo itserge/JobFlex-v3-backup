@@ -32,7 +32,7 @@ function fold(line: string): string {
 }
 
 export async function GET() {
-  const number = assistantNumber();
+  const number = await assistantNumber();
   if (!number) return NextResponse.json({ error: "The JobFlex Assistant's number isn't set up yet." }, { status: 404 });
   const base = await appBaseUrl();
   const pic = await logo(base);

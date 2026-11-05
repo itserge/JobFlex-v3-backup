@@ -8,7 +8,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Route } from "next";
-import { checkTwilioCredentials, clearTwilioSettings, saveTwilioSettings, sendAdminTestText, type AdminTwilioResult } from "@/actions/adminTwilio";
+import { checkTwilioCredentials, clearTwilioSettings, saveAssistantNumber, saveTwilioSettings, sendAdminTestText, type AdminTwilioResult } from "@/actions/adminTwilio";
 import { ago } from "@/components/v3/admin-overview/admin-ui";
 import { useAdminMotion } from "@/components/v3/admin-overview/admin-motion";
 import s from "@/components/v3/admin-overview/admin-shared.module.css";
@@ -23,6 +23,8 @@ export type TwilioPageData = {
   webhooks: { inbound: string; status: string; voice: string };
   counts: { today: number; month: number; failed: number; optOuts: number; ownNumbers: number };
   recent: { id: string; to: string; kind: string; status: string; error: string | null; at: string; org: string }[];
+  /** The JobFlex Assistant's number (2026-11-04): saved here, else the server's env. */
+  assistant?: { stored: string | null; env: string | null };
 };
 
 const BACK = "/admin/integrations" as Route;
@@ -36,6 +38,8 @@ export function AdminTwilioContent({ data }: { data: TwilioPageData }) {
   const [fromNumber, setFromNumber] = useState(data.stored?.fromNumber ?? "");
   const [enabled, setEnabled] = useState(data.stored?.enabled ?? true);
   const [testTo, setTestTo] = useState("");
+  const [assistantFrom, setAssistantFrom] = useState(data.assistant?.stored ?? "");
+  const [assistantNote, setAssistantNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [pending, start] = useTransition();
   const now = new Date().toISOString();
@@ -49,6 +53,19 @@ export function AdminTwilioContent({ data }: { data: TwilioPageData }) {
         if (r.ok) router.refresh();
       } catch (e) {
         setNote({ ok: false, text: e instanceof Error ? e.message : String(e) });
+      }
+    });
+
+  // The Assistant's card says its own result under its own buttons.
+  const runAssistant = (fn: () => Promise<AdminTwilioResult>) =>
+    start(async () => {
+      setAssistantNote(null);
+      try {
+        const r = await fn();
+        setAssistantNote(r.ok ? { ok: true, text: r.note } : { ok: false, text: r.error });
+        if (r.ok) router.refresh();
+      } catch (e) {
+        setAssistantNote({ ok: false, text: e instanceof Error ? e.message : String(e) });
       }
     });
 
@@ -126,6 +143,60 @@ export function AdminTwilioContent({ data }: { data: TwilioPageData }) {
         {note ? (
           <p className={note.ok ? i.modeNote : i.modeErr} role={note.ok ? "status" : "alert"}>
             {note.text}
+          </p>
+        ) : null}
+      </div>
+
+      {/* ── the JobFlex Assistant's number (2026-11-04) ── */}
+      <div className="card">
+        <div className="card-head">
+          <div className="card-titles">
+            <div className="card-title">JobFlex Assistant number</div>
+            <div className="card-sub">
+              The number contractors text to run JobFlex (Settings → Assistant links their phone). While testing it can be JobFlex&apos;s own number: its
+              texts already come in through the Messaging Service, and the Assistant takes only linked phones and link codes. Only platform admins have
+              the Assistant until it is opened to every account (Settings → Assistant).
+            </div>
+          </div>
+          {data.assistant?.stored || data.assistant?.env ? (
+            <span className="chip ok">On · {data.assistant?.stored ?? data.assistant?.env}</span>
+          ) : (
+            <span className={`chip ${s.chipMuted}`}>Off</span>
+          )}
+        </div>
+        <hr className="card-rule" />
+        <div className={i.form}>
+          <label className={i.field}>
+            <span>Assistant number{data.assistant?.env && !data.assistant?.stored ? ` — the server's env has ${data.assistant.env}` : ""}</span>
+            <input value={assistantFrom} onChange={(e) => setAssistantFrom(e.target.value)} placeholder="+18668975760" spellCheck={false} autoComplete="off" name="assistant-number" />
+          </label>
+        </div>
+        <div className={i.actions}>
+          <button type="button" className="btn btn-primary" disabled={pending} onClick={() => runAssistant(() => saveAssistantNumber(assistantFrom))}>
+            {pending ? "Working…" : "Save"}
+          </button>
+          {data.running?.fromNumber && assistantFrom !== data.running.fromNumber ? (
+            <button type="button" className="btn btn-ghost" disabled={pending} onClick={() => setAssistantFrom(data.running?.fromNumber ?? "")}>
+              Use JobFlex&apos;s number ({data.running.fromNumber})
+            </button>
+          ) : null}
+          {data.assistant?.stored ? (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={pending}
+              onClick={() => {
+                setAssistantFrom("");
+                runAssistant(() => saveAssistantNumber(""));
+              }}
+            >
+              Clear
+            </button>
+          ) : null}
+        </div>
+        {assistantNote ? (
+          <p className={assistantNote.ok ? i.modeNote : i.modeErr} role={assistantNote.ok ? "status" : "alert"}>
+            {assistantNote.text}
           </p>
         ) : null}
       </div>

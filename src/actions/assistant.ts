@@ -85,7 +85,7 @@ export async function loadAssistantPhone(): Promise<AssistantPhoneView> {
   const { refusal } = await import("@/lib/assistant/actor");
   const { assistantNumber, linkOf, phoneWords } = await import("@/lib/assistant/phone");
   const closed = await refusal(actor, "today", false);
-  const number = assistantNumber();
+  const number = await assistantNumber();
   const link = closed ? null : await linkOf(actor.organizationId, actor.userId);
   const feed = closed ? null : await readFeed(actor);
   const { assistantOpenToAll } = await import("@/lib/assistant/open");
@@ -109,7 +109,7 @@ export async function startAssistantLink(): Promise<{ ok: true; code: string; ex
   const { assistantNumber, startLink } = await import("@/lib/assistant/phone");
   const closed = await refusal(actor, "today", false);
   if (closed) return { ok: false, error: closed };
-  if (!assistantNumber()) return { ok: false, error: "Texting the Assistant isn't set up yet." };
+  if (!(await assistantNumber())) return { ok: false, error: "Texting the Assistant isn't set up yet." };
   return startLink(actor.organizationId, actor.userId);
 }
 

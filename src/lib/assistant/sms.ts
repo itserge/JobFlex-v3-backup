@@ -61,7 +61,7 @@ export const SMS_WORDS = {
 export async function sendAssistantText(toRaw: string, body: string, kind = "jobflex-assistant"): Promise<boolean> {
   const to = toE164(toRaw);
   if (!to) return false;
-  const from = assistantNumber();
+  const from = await assistantNumber();
   const text = body.trim().slice(0, 1200);
   if (!text) return false;
   const skipped = (error: string) =>
@@ -121,7 +121,7 @@ export async function keepInbound(m: InboundText): Promise<boolean> {
  * is the Assistant's.
  */
 export async function claimsSharedText(m: InboundText, now = new Date()): Promise<boolean> {
-  const number = assistantNumber();
+  const number = await assistantNumber();
   if (!number || toE164(m.to) !== number) return false;
   const body = m.body.trim();
   if (!body || isCarrierStop(body) || /^\s*(start|unstop)\s*[.!]*\s*$/i.test(body) || isHelp(body)) return false;

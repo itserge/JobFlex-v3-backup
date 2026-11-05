@@ -21,9 +21,34 @@ export const LINK_TTL_MS = 15 * 60_000;
 const CODE_KEY = (code: string) => `assistant:link:${code}`;
 const USER_CODE_KEY = (orgId: string, userId: string) => `assistant:linkfor:${orgId}:${userId}`;
 
-/** The Assistant's number (Vercel → TWILIO_ASSISTANT_FROM), E.164, or null when it isn't set up yet. */
-export function assistantNumber(): string | null {
-  return toE164(process.env.TWILIO_ASSISTANT_FROM ?? null);
+/** THE NUMBER ITSELF (owner, 2026-11-04: "set that variable in admin, instead of
+ *  Vercel"): /admin/integrations/twilio → JobFlex Assistant number, kept in
+ *  SyncState `assistant:number` (a phone number, nothing secret). The server's
+ *  TWILIO_ASSISTANT_FROM stays the fallback. Read at most once a minute per server. */
+const NUMBER_KEY = "assistant:number";
+const NUMBER_TTL_MS = 60_000;
+let numberCache: { at: number; value: string | null } | null = null;
+
+/** The Assistant's number, E.164, or null when it isn't set up yet. */
+export async function assistantNumber(): Promise<string | null> {
+  if (numberCache && Date.now() - numberCache.at < NUMBER_TTL_MS) return numberCache.value;
+  const row = await db.syncState.findUnique({ where: { key: NUMBER_KEY }, select: { cursor: true } }).catch(() => null);
+  const value = toE164(row?.cursor ?? null) ?? toE164(process.env.TWILIO_ASSISTANT_FROM ?? null);
+  numberCache = { at: Date.now(), value };
+  return value;
+}
+
+/** What admin saved, and what the server's env says — for the admin card. */
+export async function assistantNumberSources(): Promise<{ stored: string | null; env: string | null }> {
+  const row = await db.syncState.findUnique({ where: { key: NUMBER_KEY }, select: { cursor: true } }).catch(() => null);
+  return { stored: toE164(row?.cursor ?? null), env: toE164(process.env.TWILIO_ASSISTANT_FROM ?? null) };
+}
+
+/** Save the number from admin (null clears it, back to the env's). */
+export async function setAssistantNumber(e164: string | null): Promise<void> {
+  if (e164) await db.syncState.upsert({ where: { key: NUMBER_KEY }, create: { key: NUMBER_KEY, cursor: e164 }, update: { cursor: e164 } });
+  else await db.syncState.deleteMany({ where: { key: NUMBER_KEY } });
+  numberCache = null;
 }
 
 /** "+18665551234" → "(866) 555-1234" */
