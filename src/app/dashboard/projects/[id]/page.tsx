@@ -23,7 +23,8 @@
 
 import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
-import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
+import { isOwnerOrManager, requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
+import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
 import { loadProjectDetail } from "@/components/v3/project-detail-blueprint/project-detail-load";
 // The page renders the VIEWPORT SWITCH rather than the desktop content
 // directly: above 768px it is ProjectDetailContent, unchanged, and at or below
@@ -47,9 +48,11 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   // The blueprint layout deliberately swallows an auth failure so the PAGE can
   // decide; the classic tree let requireOrg throw into its own boundary.
   let organizationId: string;
+  let role: string;
   try {
     const ctx = await requireOrg();
     organizationId = ctx.organizationId;
+    role = ctx.role;
   } catch (err) {
     if (err instanceof UnauthorizedError) {
       redirect(`/auth/login?next=${encodeURIComponent(`/dashboard/projects/${id}`)}`);
@@ -61,5 +64,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const props = await loadProjectDetail(id, organizationId);
   if (!props) notFound();
 
-  return <ProjectDetailViewportSwitch {...props} />;
+  // What this role may open from the page — an estimator runs projects but has no client record or job page
+  // (lib/roleRoutes), so those read as plain text for them (2026-11-04).
+  const gate = ROLE_ROUTE_GATES[role];
+  const opens = (path: string) => !gate || isPathAllowed(gate, path);
+  return <ProjectDetailViewportSwitch {...props} canManage={isOwnerOrManager(role)} opens={{ client: opens("/dashboard/client-detail"), jobs: opens("/dashboard/jobs") }} />;
 }

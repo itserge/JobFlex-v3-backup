@@ -1,0 +1,110 @@
+/* THE ASSISTANT · THE SIDEBAR ROW (2026-11-04). Under SmartHelp in the shells'
+   sidebars and drawers, so its root carries data-nest and every rule here has
+   two classes — the shell's margin/padding reset ties a single class and wins
+   on prod. SmartHelp is the one filled row: this one is white in an ink frame. */
+
+.wrap.wrap {
+  display: block;
+  margin: 0 0 12px;
+  padding: 0;
+}
+.wrap.blueprint {
+  margin: 0 12px 10px;
+}
+.wrap.drawer {
+  margin: 0 14px 10px;
+}
+.wrap.more {
+  margin: 0 0 8px;
+}
+
+.wrap .row {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 6px 10px 6px 7px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: #fff;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 140ms var(--ease-out);
+}
+.wrap .row:hover {
+  background: var(--accent-soft);
+}
+.wrap .row:active {
+  background: color-mix(in srgb, var(--accent) 18%, #fff);
+}
+.wrap .row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.wrap .mark {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: #fff;
+}
+.wrap .mark svg {
+  width: 16px;
+  height: 16px;
+}
+.wrap .name {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wrap .tag {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 1px 5px;
+  border: 1.5px solid var(--accent);
+  border-radius: 0;
+  color: var(--accent-ink);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 14px;
+}
+
+/* The desk sidebar folded to its icon rail: the blue square alone. */
+:global([data-sb="fold"]) .wrap.blueprint {
+  margin: 0 auto 10px;
+  width: max-content;
+}
+:global([data-sb="fold"]) .wrap .row {
+  width: 44px;
+  padding: 0;
+  justify-content: center;
+}
+:global([data-sb="fold"]) .wrap .name,
+:global([data-sb="fold"]) .wrap .tag {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wrap .row {
+    transition: none;
+  }
+}

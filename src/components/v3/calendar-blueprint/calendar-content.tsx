@@ -35,7 +35,7 @@ import "./calendar-global.css";
  *   Omitted only by the standalone mock route, which has no session to read
  *   from and falls back to the donor fixture.
  */
-export function CalendarContent({ seed }: { seed?: CalendarSeed }) {
+export function CalendarContent({ seed, standalone = false }: { seed?: CalendarSeed; standalone?: boolean }) {
   // The seed reaches `init` through a ref, NOT through the callback's deps.
   // `useBlueprintContent` re-runs whenever `init` changes identity, and a re-run
   // tears the page down and replays the whole reveal cascade — so the init has
@@ -65,19 +65,59 @@ export function CalendarContent({ seed }: { seed?: CalendarSeed }) {
       initCalendarContent(content, {
         seed: seedRef.current,
         navigate: (href) => routerRef.current.push(href as Route),
+        standalone,
       }),
-    [],
+    [standalone],
   );
   useBlueprintContent(init);
 
   return (
     <>
-      <div className="page-head">
-        <div>
-          <div className="kicker">Delivery</div>
-          <h1 className="page-title">Calendar</h1>
+      {standalone ? (
+        // THE CALENDAR IN ITS OWN WINDOW (owner, 2026-11-04: "a button to open it to a separate URL, so contractors can
+        // keep the calendar on one page and the rest on another"). The marker below is what calendar-global.css keys
+        // off to put the sidebar and the topbar away — a rule, not an effect, so the window never paints the shell
+        // first. The way back opens the app in the window it already has, or a new tab.
+        <div className="cal-window-head" data-cal-window>
+          <span className="cal-window-mark">
+            <b>JobFlex</b> · Calendar
+          </span>
+          <span className="cal-window-note">Updates by itself every two minutes</span>
+          <a className="btn btn-ghost" href="/dashboard" target="jobflex-app">
+            Open the app
+          </a>
         </div>
-      </div>
+      ) : (
+        <div className="page-head">
+          <div>
+            <div className="kicker">Delivery</div>
+            <h1 className="page-title">Calendar</h1>
+          </div>
+          <div className="page-actions">
+            <a
+              className="btn btn-ghost cal-popout"
+              href="/dashboard/calendar?view=standalone"
+              target="jobflex-calendar"
+              rel="noopener"
+              title="Keep the calendar open in its own window"
+              onClick={(e) => {
+                // A window of its own, sized for a second screen; a browser that refuses one gets the tab the link opens.
+                const w = window.open("/dashboard/calendar?view=standalone", "jobflex-calendar", "popup,width=1440,height=900");
+                if (w) {
+                  e.preventDefault();
+                  w.focus();
+                }
+              }}
+              data-cal-popout
+            >
+              <svg className="ic">
+                <use href="#i-arrow" />
+              </svg>
+              Open in new window
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* SMARTBOOK REQUESTS (2026-10-31): customers waiting on the company for a time they named — drawn only when
           one waits, for the office and the sales reps (the card loads itself). A Yes that books asks the grid to read
@@ -172,6 +212,10 @@ export function CalendarContent({ seed }: { seed?: CalendarSeed }) {
           Clear <span id="clearN">0</span>
         </button>
       </div>
+
+      {/* LANES + PROJECTS (2026-11-04): All · Projects · Appointments · Installs, and a chip per project on the
+          calendar in its own colour — drawn by calendar-behavior renderLanes. */}
+      <div className="cal-lanes" id="calLanes"></div>
 
       {/* CALENDAR + TRAY */}
       <div className="cal-wrap" id="calWrap">

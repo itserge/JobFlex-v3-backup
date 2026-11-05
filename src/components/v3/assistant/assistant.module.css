@@ -1,0 +1,541 @@
+/* THE ASSISTANT · THE CONVERSATION AND THE DESK PANEL (2026-11-04). Mounted in
+   every shell (beside SmartHelp in SupportWidget) and on its own handheld page,
+   so each root carries data-nest and every rule here has two classes — the
+   shells' margin/padding reset ties a single class and wins on prod.
+   Blueprint: white, square corners, ink frames, one blue action. The
+   conversation is SmartBook's square bubbles; a proposed change is a framed card
+   with a status stamp. Nothing blurred, no gradient, no pill. */
+
+/* ── The conversation ─────────────────────────────────────────────────── */
+.root.root {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  background: #fff;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  line-height: 1.4;
+}
+.root .log {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.root .loading {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+
+.root .bubble {
+  max-width: 86%;
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: var(--r-sm);
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.root .mine {
+  align-self: flex-end;
+  background: #fff;
+  border: 1.5px solid var(--ink);
+}
+.root .theirs {
+  align-self: flex-start;
+  background: var(--accent-soft);
+  border: 1.5px solid var(--accent);
+}
+
+/* A change the Assistant proposed: what it will do, then the answer. */
+.root .card {
+  align-self: stretch;
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 14px 14px;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: #fff;
+}
+.root .cardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+}
+.root .cardLabel {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.root .stamp {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 2px 6px;
+  border: 1.5px solid var(--ink-muted);
+  border-radius: 0;
+  color: var(--ink-muted);
+  background: #fff;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  line-height: 14px;
+  text-transform: uppercase;
+}
+.root .stamp[data-tone="warn"] {
+  border-color: var(--amber);
+  color: color-mix(in srgb, var(--amber) 70%, var(--ink));
+  background: color-mix(in srgb, var(--amber) 14%, #fff);
+}
+.root .stamp[data-tone="ok"] {
+  border-color: var(--emerald);
+  color: color-mix(in srgb, var(--emerald) 75%, var(--ink));
+  background: color-mix(in srgb, var(--emerald) 12%, #fff);
+}
+.root .stamp[data-tone="bad"] {
+  border-color: var(--rose);
+  color: color-mix(in srgb, var(--rose) 80%, var(--ink));
+  background: color-mix(in srgb, var(--rose) 10%, #fff);
+}
+.root .stamp[data-tone="info"] {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+}
+.root .cardText {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.root .cardActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 2px 0 0;
+}
+.root .doIt,
+.root .cancel {
+  appearance: none;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color 140ms var(--ease-out);
+}
+.root .doIt {
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.root .doIt:hover:not(:disabled) {
+  background: var(--accent-ink);
+}
+.root .cancel {
+  background: #fff;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+.root .cancel:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+.root .doIt:disabled,
+.root .cancel:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+.root .doIt:focus-visible,
+.root .cancel:focus-visible,
+.root .example:focus-visible,
+.root .mic:focus-visible,
+.root .send:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.root .working {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+.root .workingMark {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: #fff;
+}
+.root .workingMark svg {
+  width: 13px;
+  height: 13px;
+}
+.root .error {
+  margin: 0;
+  padding: 8px 10px;
+  border-left: 4px solid var(--rose);
+  background: color-mix(in srgb, var(--rose) 8%, #fff);
+  color: color-mix(in srgb, var(--rose) 80%, var(--ink));
+  font-size: 13.5px;
+}
+
+/* Nothing said yet: what it is for, and a few things to try. */
+.root .intro {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 2px 0 0;
+}
+.root .introTitle {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 900;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+}
+.root .introSub {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.root .examples {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.root .example {
+  appearance: none;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: #fff;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 140ms var(--ease-out);
+}
+.root .example:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+/* ── The box ──────────────────────────────────────────────────────────── */
+.root .composer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border-top: 2px solid var(--ink);
+  background: var(--paper);
+}
+.root .box {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  max-height: 132px;
+  margin: 0;
+  padding: 11px 12px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: #fff;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1.35;
+  resize: none;
+}
+.root .box:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+}
+.root .box::placeholder {
+  color: var(--ink-muted);
+}
+.root .mic,
+.root .send {
+  appearance: none;
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background-color 140ms var(--ease-out);
+}
+.root .mic svg,
+.root .send svg {
+  width: 19px;
+  height: 19px;
+}
+.root .mic {
+  background: #fff;
+  color: var(--ink);
+}
+.root .mic:hover {
+  background: var(--accent-soft);
+}
+.root .micOn,
+.root .micOn:hover {
+  background: var(--rose);
+  border-color: var(--ink);
+  color: #fff;
+}
+/* Talk mode while the Assistant is reading its answer out. */
+.root .micSpeaking,
+.root .micSpeaking:hover {
+  background: var(--accent);
+  border-color: var(--ink);
+  color: #fff;
+}
+/* Talk mode's live line over the box: what is being heard, or what it is doing. */
+.root .heard {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 8px 12px;
+  border-top: 2px solid var(--ink);
+  background: color-mix(in srgb, var(--rose) 8%, #fff);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.root .heard[data-speaking] {
+  background: var(--accent-soft);
+}
+.root .heard + .composer {
+  border-top-width: 1px;
+}
+.root .send {
+  background: var(--accent);
+  color: #fff;
+}
+.root .send:hover:not(:disabled) {
+  background: var(--accent-ink);
+}
+.root .send:disabled {
+  background: #fff;
+  border-color: var(--ink-line);
+  color: var(--ink-muted);
+  cursor: not-allowed;
+}
+.root .micError,
+.root .usage {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0 12px 8px;
+  background: var(--paper);
+}
+.root .micError {
+  color: color-mix(in srgb, var(--rose) 80%, var(--ink));
+  font-size: 12.5px;
+}
+.root .usage {
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+.root .srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* On a phone: 16px text (iOS zooms on less) and the home indicator's room. */
+.onPage .box {
+  font-size: 16px;
+}
+.onPage .composer {
+  padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+}
+.onPage .log {
+  padding: 16px clamp(12px, 4vw, 20px);
+}
+
+/* ── The desk panel ───────────────────────────────────────────────────── */
+.host .panel {
+  position: fixed;
+  z-index: 58;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  width: 380px;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  border-left: 2px solid var(--ink);
+  background: #fff;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  outline: none;
+}
+/* 769–1023: over the page, so it says where it ends. */
+.host .mid {
+  box-shadow: -4px 0 0 var(--ink);
+}
+.host .head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 8px 10px 14px;
+  border-bottom: 2px solid var(--ink);
+  background: var(--paper);
+}
+.host .mark {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: #fff;
+}
+.host .mark svg {
+  width: 16px;
+  height: 16px;
+}
+.host .headText {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+  margin: 0;
+}
+.host .headName {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.host .headSub {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+.host .tag {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 1px 5px;
+  border: 1.5px solid var(--accent);
+  color: var(--accent-ink);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 14px;
+}
+.host .close {
+  appearance: none;
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin: -6px 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+.host .close:hover {
+  background: var(--accent-soft);
+}
+.host .close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.host .close svg {
+  width: 20px;
+  height: 20px;
+}
+.host .body {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .root .workingMark {
+    animation: assistantPulse 1.2s var(--ease-soft, ease-in-out) infinite;
+  }
+  .root .micOn {
+    animation: assistantPulse 1.2s var(--ease-soft, ease-in-out) infinite;
+  }
+}
+@keyframes assistantPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .root .doIt,
+  .root .cancel,
+  .root .example,
+  .root .mic,
+  .root .send {
+    transition: none;
+  }
+}

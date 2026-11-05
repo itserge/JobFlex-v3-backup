@@ -270,6 +270,12 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
               owner's request. Status is still set and read on the Overview
               card's own picker, which is the control that owns it. */}
           <div className="mjd-head">
+            {/* A project's job leads back to its project (2026-11-04). */}
+            {record.project && (
+              <Link className="mjd-proj" href={`/dashboard/projects/${record.project.id}` as Route} data-job-project>
+                ← Project · {record.project.name}
+              </Link>
+            )}
             <h1 className="mjd-title">{record.title}</h1>
             <div className="mjd-dates">{record.dates}</div>
           </div>

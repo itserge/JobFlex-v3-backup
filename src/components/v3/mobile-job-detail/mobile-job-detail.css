@@ -298,6 +298,16 @@ body:has(.jf-mobile-job-detail)::before { content: none; }
      the only thing that guarantees the page body never scrolls sideways. */
   overflow-wrap: anywhere;
 }
+/* Back to the job's project (2026-11-04): a full-height tap target above the title. */
+.jf-mobile-job-detail .mjd-proj {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--blueprint);
+  text-decoration: none;
+}
 .jf-mobile-job-detail .mjd-dates {
   margin-top: 10px;
   font-family: var(--font-mono);

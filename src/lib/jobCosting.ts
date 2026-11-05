@@ -12,11 +12,19 @@
 //   planned    = the estimate's own cost side: every line's quantity times
 //                its material and labor COST, the figures the markup was
 //                applied to. The client price is never read as a cost.
+//                BUT the builder's material / labor columns split the PRICE
+//                (unitPrice = material + labor), so a priced proposal's lines
+//                carry no cost at all (owner walk, 2026-11-04: the job "made"
+//                its sales tax). The job page passes `plannedCost` instead —
+//                a project job's share of the project's cost budget, else 0 —
+//                and the lines only divide it into material and labor.
+//   revenue    = the contract before sales tax: the tax is the state's, so
+//                the profit is worked from this, never from `contract`.
 //   crew       = what the workers on the job are paid (JobAssignment.pay).
 //   expenses   = the receipts booked against the job (JobExpense).
 //   cost       = crew + expenses once anything is booked; until then the
 //                planned cost stands in, marked as planned.
-//   profit     = contract − cost.
+//   profit     = revenue − cost.
 //
 // Pure: no database, no server imports, so the job page, the Financials
 // page and the QA all agree on one arithmetic.
@@ -31,10 +39,15 @@ export type CostingLine = {
 export type JobCostingInput = {
   /** The client's contract: the proposal total with approved change orders. */
   contract: number;
+  /** The same before sales tax — what the profit is worked from. Defaults to `contract`. */
+  revenue?: number;
   /** Payments received against it. */
   collected: number;
   /** The proposal's line items, for the planned cost. */
   lines: readonly CostingLine[];
+  /** The planned cost from elsewhere (a project job: its share of the project's cost budget). Overrides the lines'
+   *  own figures, which then only split it into material and labor. */
+  plannedCost?: number;
   /** Every worker's pay on this job. */
   crewPay: readonly number[];
   /** Expenses booked against the job — the APPROVED and REIMBURSED ones (lib/expenseTotals). */
@@ -47,6 +60,10 @@ export type JobCostingInput = {
 
 export type JobMoney = {
   contract: number;
+  /** The contract before sales tax. */
+  revenue: number;
+  /** contract − revenue: collected for the state, never profit. */
+  salesTax: number;
   collected: number;
   /** Still to collect on the contract, never negative. */
   outstanding: number;
@@ -61,8 +78,10 @@ export type JobMoney = {
   cost: number;
   /** True while the cost is the estimate's, because nothing is booked yet. */
   costIsPlanned: boolean;
+  /** False while nothing is booked and there is no plan: the profit is not known yet. */
+  costKnown: boolean;
   profit: number;
-  /** profit ÷ contract, 0 when there is no contract. */
+  /** profit ÷ revenue, 0 when there is no contract. */
   marginPct: number;
   /** What the estimate said the job would make. */
   plannedProfit: number;
@@ -76,9 +95,18 @@ const sum = (xs: readonly number[]) => xs.reduce((a, x) => a + (Number.isFinite(
 
 export function jobMoney(input: JobCostingInput): JobMoney {
   const contract = money(Math.max(0, input.contract));
+  const revenue = money(Math.min(contract, Math.max(0, input.revenue ?? contract)));
   const collected = money(Math.max(0, input.collected));
-  const material = money(sum(input.lines.map((l) => Math.max(0, l.quantity) * Math.max(0, l.materialCost))));
-  const labor = money(sum(input.lines.map((l) => Math.max(0, l.quantity) * Math.max(0, l.laborCost))));
+  const lineMaterial = sum(input.lines.map((l) => Math.max(0, l.quantity) * Math.max(0, l.materialCost)));
+  const lineLabor = sum(input.lines.map((l) => Math.max(0, l.quantity) * Math.max(0, l.laborCost)));
+  let material = money(lineMaterial);
+  let labor = money(lineLabor);
+  if (input.plannedCost !== undefined) {
+    const plan = money(Math.max(0, input.plannedCost));
+    const both = lineMaterial + lineLabor;
+    material = money(both > 0 ? (plan * lineMaterial) / both : plan);
+    labor = money(plan - material);
+  }
   const plannedTotal = money(material + labor);
   const crew = money(sum(input.crewPay.map((p) => Math.max(0, p))));
   const expenses = money(sum(input.expenses.map((e) => Math.max(0, e))));
@@ -87,10 +115,12 @@ export function jobMoney(input: JobCostingInput): JobMoney {
   const booked = money(crew + expenses + stock);
   const costIsPlanned = booked <= 0 && plannedTotal > 0;
   const cost = costIsPlanned ? plannedTotal : booked;
-  const profit = money(contract - cost);
-  const plannedProfit = money(contract - plannedTotal);
+  const profit = money(revenue - cost);
+  const plannedProfit = money(revenue - plannedTotal);
   return {
     contract,
+    revenue,
+    salesTax: money(contract - revenue),
     collected,
     outstanding: money(Math.max(0, contract - collected)),
     planned: { material, labor, total: plannedTotal },
@@ -100,10 +130,11 @@ export function jobMoney(input: JobCostingInput): JobMoney {
     stock,
     cost,
     costIsPlanned,
+    costKnown: booked > 0 || plannedTotal > 0,
     profit,
-    marginPct: contract > 0 ? Math.round((profit / contract) * 1000) / 10 : 0,
+    marginPct: revenue > 0 ? Math.round((profit / revenue) * 1000) / 10 : 0,
     plannedProfit,
-    plannedMarginPct: contract > 0 ? Math.round((plannedProfit / contract) * 1000) / 10 : 0,
+    plannedMarginPct: revenue > 0 ? Math.round((plannedProfit / revenue) * 1000) / 10 : 0,
     costVariance: money(booked - plannedTotal),
   };
 }

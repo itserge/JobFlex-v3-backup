@@ -149,9 +149,17 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
       {/* PAGE HEAD */}
       <div className={cx("page-head")}>
         <div>
+          {/* A project's job leads back to its project (2026-11-04). */}
+          {record.project && (
+            <Link className={cx("jd-proj")} href={`/dashboard/projects/${record.project.id}` as Route} data-job-project>
+              ← Project · {record.project.name}
+            </Link>
+          )}
           <div className={cx("kicker", "jd-kick")}>
             Job status ·{" "}
-            <span className={cx("jd-st", ST[a.status].cls)}>{ST[a.status].l}</span>
+            {/* "Scheduled" is where an accepted job starts; with no dates yet the
+                head said "Scheduled" over "Unscheduled". It says what it waits for. */}
+            <span className={cx("jd-st", ST[a.status].cls)}>{a.status === "sch" && record.undated ? "Needs dates" : ST[a.status].l}</span>
           </div>
           <h1 className={cx("page-title")}>{record.title}</h1>
           <div className={cx("jd-dates")}>{record.dates}</div>
@@ -791,22 +799,27 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
             <div className={cx("jd-h")}>
               <h2 className={cx("jd-t")}>What this job makes</h2>
               <span className={cx("jd-s")}>
-                {record.money.costIsPlanned ? "costed from the estimate — nothing booked yet" : "contract against what it has cost"}
+                {record.money.costIsPlanned
+                  ? "costed from its share of the project budget — nothing booked yet"
+                  : record.money.costKnown
+                    ? "contract before tax against what it has cost"
+                    : "nothing booked yet — crew pay, receipts and stock show here"}
               </span>
             </div>
-            {/* The job's own money (lib/jobCosting): the contract with its
-                approved change orders, what the client has paid, and the cost
-                — the crew's pay plus the receipts, or the estimate's own cost
-                side until one is booked. */}
+            {/* The job's own money (lib/jobCosting): the contract before tax
+                with its approved change orders, what the client has paid, and
+                the cost — the crew's pay plus the receipts, or a project job's
+                share of the project budget until one is booked. */}
             <div className={cx("jd-row")}>
               <div>
-                <div className={cx("jd-row-n")}>Contract</div>
+                <div className={cx("jd-row-n")}>Contract · before tax</div>
                 <div className={cx("jd-row-m")}>
+                  {record.money.salesTax > 0 ? `+${fmt(record.money.salesTax)} sales tax, not profit · ` : ""}
                   {fmt(record.money.collected)} collected · {fmt(record.money.outstanding)} to come
                 </div>
               </div>
               <div className={cx("jd-row-act")}>
-                <b>{fmt(record.money.contract)}</b>
+                <b>{fmt(record.money.revenue)}</b>
               </div>
             </div>
             <div className={cx("jd-row")}>
@@ -817,7 +830,8 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
                   {record.money.crewUnpaid > 0 ? ` (${fmt(record.money.crewUnpaid)} unpaid)` : ""} · receipts {fmt(record.money.expenses)}
                   {record.money.expensesPending > 0 ? ` (${fmt(record.money.expensesPending)} on review, not counted)` : ""}
                   {record.money.stock > 0 ? ` · from the warehouse ${fmt(record.money.stock)}` : ""}
-                  {record.money.stockUnpriced.length > 0 ? ` (no price on ${record.money.stockUnpriced.join(", ")} — counted at $0)` : ""} · estimate said {fmt(record.money.plannedCost)}
+                  {record.money.stockUnpriced.length > 0 ? ` (no price on ${record.money.stockUnpriced.join(", ")} — counted at $0)` : ""}
+                  {record.money.planFrom === "project" ? ` · project budget share ${fmt(record.money.plannedCost)}` : ""}
                 </div>
               </div>
               <div className={cx("jd-row-act")}>
@@ -828,12 +842,26 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
               <div>
                 <div className={cx("jd-row-n")}>Profit</div>
                 <div className={cx("jd-row-m")}>
-                  {record.money.marginPct}% margin · estimate said {fmt(record.money.plannedProfit)}
-                  {record.money.costVariance > 0 ? ` · ${fmt(record.money.costVariance)} over the estimate` : record.money.costVariance < 0 ? ` · ${fmt(-record.money.costVariance)} under the estimate` : ""}
+                  {!record.money.costKnown ? (
+                    "known once a cost is booked"
+                  ) : (
+                    <>
+                      {record.money.marginPct}% margin
+                      {record.money.planFrom === "project" && !record.money.costIsPlanned
+                        ? ` · plan said ${fmt(record.money.plannedProfit)}${
+                            record.money.costVariance > 0
+                              ? ` · ${fmt(record.money.costVariance)} over the plan`
+                              : record.money.costVariance < 0
+                                ? ` · ${fmt(-record.money.costVariance)} under the plan`
+                                : ""
+                          }`
+                        : ""}
+                    </>
+                  )}
                 </div>
               </div>
               <div className={cx("jd-row-act")}>
-                <b>{fmt(record.money.profit)}</b>
+                <b>{record.money.costKnown ? fmt(record.money.profit) : "—"}</b>
               </div>
             </div>
           </section>

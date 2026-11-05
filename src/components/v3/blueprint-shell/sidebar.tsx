@@ -27,6 +27,7 @@ import { SignOutButton } from "./sign-out";
 import { foldShortcutLabel } from "./sidebar-fold";
 import { TourChip } from "@/components/v3/onboarding-tour/tour-chip";
 import { SmartHelpRow } from "@/components/v3/smarthelp/smarthelp-row";
+import { AssistantRow } from "@/components/v3/assistant/assistant-row";
 
 export { NAV_SECTIONS };
 
@@ -303,6 +304,8 @@ export function Sidebar({
         {/* SmartHelp (components/v3/smarthelp): the first row, above the sections. Its own button, not an
             `.sb-link` — shell-behavior.ts treats those as nav links (indicator, drawer close, hover plate). */}
         <SmartHelpRow variant="blueprint" />
+        {/* The Assistant (components/v3/assistant, 2026-11-04): under SmartHelp, white — SmartHelp stays the one filled row. */}
+        <AssistantRow variant="blueprint" />
         {/* Section labels and estimator trees share the scroll container.
             The indicator accounts for positioned wrappers inside each tree. */}
         {sections.map((section) => {

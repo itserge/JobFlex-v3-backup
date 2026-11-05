@@ -4,5 +4,7 @@ export type RevenueReport = {
   asOf: string; currency: string; live: boolean; mrr: number; arr: number; collected: number; gross: number; refunds: number;
   projectedMrr: number; projectedCollected: number; eligibleTrials: number; excludedTrials: number; overdue: number;
   points: RevenuePoint[]; customers: RevenueCustomer[]; warnings: string[];
+  /** The page shows a saved read while a new one runs behind it (lib/revenueSaved). */
+  updating?: boolean;
 };
 export const revenueDate = (seconds: number) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(seconds * 1000));

@@ -298,3 +298,21 @@ export function overheadTotals(
 
   return { fixed, variable, total, net, left, pct, covered: net >= total, empty: total <= 0 };
 }
+
+/** One project on the overview's Projects card (2026-11-04) — lib/projectMoney's figures, before sales tax. */
+export type FinancialsProject = {
+  id: string;
+  name: string;
+  clientName: string | null;
+  status: string;
+  contract: number;
+  pipeline: number;
+  spent: number;
+  budget: number;
+  margin: number | null;
+  marginPct: number | null;
+  marginState: "none" | "short" | "projected" | "sold";
+  uncovered: number;
+  collected: number;
+  owed: number;
+};

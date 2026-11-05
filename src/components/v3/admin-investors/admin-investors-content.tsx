@@ -23,11 +23,11 @@ const todayLocal = () => {
 };
 const when = (iso: string) => new Date(iso).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
 
-export function AdminInvestorsContent({ initial, origin, audience, pitch, adjust = false }: { initial: InvestorReport; origin: string; /** Who opened the link and their offers (2026-10-13), drawn by the page. */ audience?: ReactNode; /** The pitch deck's own words (2026-10-25), drawn by the page under the controls. */ pitch?: ReactNode; /** ?adjust=1 — the hand controls (budget, booked days, start/launch day, horizon), otherwise out of sight (owner, 2026-10-25: "remove this"). */ adjust?: boolean }) {
+export function AdminInvestorsContent({ initial, origin, audience, pitch, adjust = false, readersByLink = {} }: { initial: InvestorReport; origin: string; /** How many readers came through each link, by its making time (2026-11-04). */ readersByLink?: Record<string, number>; /** Who opened the link and their offers (2026-10-13), drawn by the page. */ audience?: ReactNode; /** The pitch deck's own words (2026-10-25), drawn by the page under the controls. */ pitch?: ReactNode; /** ?adjust=1 — the hand controls (budget, booked days, start/launch day, horizon), otherwise out of sight (owner, 2026-10-25: "remove this"). */ adjust?: boolean }) {
   const [report, setReport] = useState(initial);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
   const f = report.figures;
   const a = report.settings;
 
@@ -60,13 +60,15 @@ export function AdminInvestorsContent({ initial, origin, audience, pitch, adjust
       setPending(false);
     }
   };
-  const link = a.linkToken ? `${origin}/investors/${a.linkToken}` : null;
-  const copy = async () => {
-    if (!link) return;
+  // The live links, newest first (several since 2026-11-04); the newest one also feeds the PDF and the film's tabs.
+  const live = a.links.filter((l) => l.enabled);
+  const closedCount = a.links.length - live.length;
+  const [closing, setClosing] = useState<string | null>(null);
+  const copy = async (url: string, token: string) => {
     try {
-      await navigator.clipboard.writeText(link);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      await navigator.clipboard.writeText(url);
+      setCopied(token);
+      setTimeout(() => setCopied(null), 1500);
     } catch {
       setError("Copy did not work here — select the link and copy it.");
     }
@@ -210,22 +212,44 @@ export function AdminInvestorsContent({ initial, origin, audience, pitch, adjust
       </div>
       </details>}
 
-      {/* The shared link. */}
-      <section className={s.panel} aria-label="Shared link">
+      {/* The shared links (several since 2026-11-04 — owner: "create two or three … send it to people"): each one keeps
+          working until it is closed on its own; a new link closes none. */}
+      <section className={s.panel} aria-label="Shared links" data-investor-links>
         <h2 className={s.panelTitle}>Share with investors</h2>
-        <p className={s.hint}>A live page with these figures and no admin controls, and the same as a PDF. Anyone with the link can open it; make a new link to cut off the old one.</p>
-        {link ? (
-          <div className={s.linkRow} data-link-enabled={a.linkEnabled}>
-            <code className={s.link}>{link}</code>
-            <button type="button" className="btn btn-ghost" onClick={() => void copy()} disabled={!a.linkEnabled}><Copy size={14} aria-hidden="true" />{copied ? "Copied" : "Copy"}</button>
-            <a className="btn btn-ghost" href={link} target="_blank" rel="noreferrer" aria-disabled={!a.linkEnabled}><ExternalLink size={14} aria-hidden="true" />Open</a>
+        <p className={s.hint}>Live pages with these figures and no admin controls, and the same as a PDF. Make as many links as you like — each keeps working until you close it, and everyone who opens one still waits for your approval.</p>
+        {live.length ? (
+          <div className={s.linkList}>
+            {live.map((l, i) => {
+              const url = `${origin}/investors/${l.token}`;
+              const people = readersByLink[l.madeAt] ?? 0;
+              return (
+                <div key={l.token} className={s.linkRow} data-link-row>
+                  <div className={s.linkName}>
+                    <b>Link {live.length - i}</b> · made {l.madeAt ? when(l.madeAt) : "earlier"} · {people === 0 ? "nobody yet" : `${people} ${people === 1 ? "person" : "people"}`}
+                  </div>
+                  <code className={s.link}>{url}</code>
+                  <button type="button" className="btn btn-ghost" onClick={() => void copy(url, l.token)}><Copy size={14} aria-hidden="true" />{copied === l.token ? "Copied" : "Copy"}</button>
+                  <a className="btn btn-ghost" href={url} target="_blank" rel="noreferrer"><ExternalLink size={14} aria-hidden="true" />Open</a>
+                  <button type="button" className="btn btn-ghost" disabled={pending || closing === l.token} onClick={() => setClosing(l.token)} aria-label={`Close link ${live.length - i}`} data-link-close>Close</button>
+                  {closing === l.token ? (
+                    <div className={s.linkSure} data-link-sure>
+                      <p className={s.hint}>Close link {live.length - i}? Whoever has it will see &ldquo;This link is not active&rdquo;. The other links keep working.</p>
+                      <button type="button" className="btn btn-danger" disabled={pending} onClick={() => void run(() => investorLinkAction({ token: l.token, enabled: false })).then(() => setClosing(null))} data-link-close-yes>Close it</button>
+                      <button type="button" className="btn btn-ghost" disabled={pending} onClick={() => setClosing(null)}>Keep it</button>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
-        ) : null}
+        ) : (
+          <p className={s.hint}>No link is live.</p>
+        )}
         <div className={s.linkActs}>
-          {link && <button type="button" className="btn btn-ghost" disabled={pending} onClick={() => void run(() => investorLinkAction({ enabled: !a.linkEnabled }))}>{a.linkEnabled ? "Switch the link off" : "Switch the link on"}</button>}
-          <button type="button" className={link ? "btn btn-ghost" : "btn btn-primary"} disabled={pending} onClick={() => void run(() => investorLinkAction({ rotate: true }))}><LinkIcon size={14} aria-hidden="true" />{link ? "Make a new link" : "Make the link"}</button>
+          <button type="button" className={live.length ? "btn btn-ghost" : "btn btn-primary"} disabled={pending} onClick={() => void run(() => investorLinkAction({ add: true }))} data-link-add><LinkIcon size={14} aria-hidden="true" />{live.length ? "Make another link" : "Make a link"}</button>
           <button type="button" className={s.iconBtn} aria-label="Read the figures again" disabled={pending} onClick={() => void run(async () => ({ ok: true as const, report: await getInvestorReport() }))}><RefreshCw size={14} className={pending ? s.spin : ""} aria-hidden="true" /></button>
         </div>
+        {closedCount ? <p className={s.hint}>{closedCount} closed {closedCount === 1 ? "link shows" : "links show"} &ldquo;This link is not active&rdquo;.</p> : null}
       </section>
 
       {pitch}
@@ -240,8 +264,8 @@ export function AdminInvestorsContent({ initial, origin, audience, pitch, adjust
           <h1 className="page-title">Investors</h1>
         </div>
         <div className={shared.headSide}>
-          {link && a.linkEnabled ? <span className="chip ok">Link live</span> : <span className={`chip ${shared.chipMuted}`}>Link off</span>}
-          {link && a.linkEnabled && (
+          {live.length ? <span className="chip ok">{live.length === 1 ? "1 link live" : `${live.length} links live`}</span> : <span className={`chip ${shared.chipMuted}`}>No link live</span>}
+          {a.linkToken && (
             <a className="btn btn-ghost" href={`/api/investors/${a.linkToken}/pdf`} target="_blank" rel="noreferrer">
               <FileDown size={15} aria-hidden="true" />
               PDF

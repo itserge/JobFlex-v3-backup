@@ -47,19 +47,30 @@ import {
   type PdAvailProposal,
   type PdBudget,
   type PdJob,
+  type PdOpens,
+  type PdPayments,
   type PdProject,
+  type PdWorker,
   type PdProposal,
   attachableFirst,
   badgeMod,
   bucketOf,
+  changeOrderDoor,
+  jobLabel,
   labelOf,
+  needsDates,
   monthKey,
   proposalLabel,
   proposalMeta,
   proposalTone,
   shortDate,
+  withLocalDays,
 } from "./project-detail-data";
 import s from "./project-detail.module.css";
+import { PROJECT_STATUS, ProjectEditDialog } from "./project-edit-dialog";
+import { ProjectPaymentsCard } from "@/components/v3/project-links/project-payments-card";
+import { ProjectCombine } from "@/components/v3/project-links/project-combine";
+import { ProjectCrewSheet } from "@/components/v3/project-links/project-crew-sheet";
 import { LooseProposalsStrip } from "@/components/v3/project-links/loose-proposals-strip";
 import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
 import { ProjectBudgetCard } from "@/components/v3/project-links/project-budget-card";
@@ -105,12 +116,16 @@ const DAY_MS = 86400000;
 const moneyShort = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 
 export function ProjectDetailContent({
-  project,
+  project: projectIn,
   jobs,
   proposals = [],
   availableProposals,
   looseProposals = [],
   budget,
+  canManage = false,
+  opens = { client: true, jobs: true },
+  payments = [],
+  roster = [],
 }: {
   project: PdProject;
   jobs: PdJob[];
@@ -118,7 +133,20 @@ export function ProjectDetailContent({
   availableProposals: PdAvailProposal[];
   looseProposals?: Array<{ id: string; title: string; total: number }>;
   budget?: PdBudget;
+  canManage?: boolean;
+  opens?: PdOpens;
+  payments?: PdPayments;
+  roster?: PdWorker[];
 }) {
+  // The project's dates are days, not moments (withLocalDays).
+  const project = useMemo(() => withLocalDays(projectIn), [projectIn]);
+  const [editOpen, setEditOpen] = useState(false);
+  // The job whose Schedule & crew sheet is open (2026-11-04).
+  const [crewFor, setCrewFor] = useState<PdJob | null>(null);
+  // A fresh dialog per open: what was typed and not saved does not come back.
+  const [editKey, setEditKey] = useState(0);
+  const closeEdit = useCallback(() => setEditOpen(false), []);
+  const statusLbl = PROJECT_STATUS.find(([v]) => v === projectIn.status)?.[1] ?? null;
   const router = useRouter();
   const search = useSearchParams();
   const [, startTransition] = useTransition();
@@ -228,7 +256,9 @@ export function ProjectDetailContent({
   // ================= KPI =================
   // Donor: JOBS.length / st === 'sch' / st === 'prog', and a fixed "$86,500".
   const kJobs = shownJobs.length;
-  const kSch = shownJobs.filter((j) => j.status === "SCHEDULED").length;
+  // Scheduled = on the calendar; an accepted job with no dates yet is counted apart.
+  const kSch = shownJobs.filter((j) => j.status === "SCHEDULED" && !!j.startsAt).length;
+  const kUndated = shownJobs.filter(needsDates).length;
   const kProg = shownJobs.filter((j) => j.status === "IN_PROGRESS").length;
 
   return (
@@ -242,15 +272,41 @@ export function ProjectDetailContent({
             {project.client ? (
               <>
                 {" · "}
-                <Link className={cx("pd-client-link")} href={`/dashboard/client-detail?client=${project.client.id}` as Route}>
-                  {project.client.name}
-                </Link>
+                {opens.client ? (
+                  <Link className={cx("pd-client-link")} href={`/dashboard/client-detail?client=${project.client.id}` as Route}>
+                    {project.client.name}
+                  </Link>
+                ) : (
+                  project.client.name
+                )}
               </>
             ) : null}
           </div>
           <h1 className={cx("page-title")}>{project.name}</h1>
+          {statusLbl && projectIn.status !== "ACTIVE" ? (
+            <span
+              className={cx("pd-status", projectIn.status === "COMPLETED" && "pd-status--done", projectIn.status === "ARCHIVED" && "pd-status--archived")}
+              data-project-status={projectIn.status}
+            >
+              {statusLbl}
+            </span>
+          ) : null}
         </div>
         <div className={cx("page-actions")}>
+          <button
+            className={cx("btn", "btn-ghost")}
+            type="button"
+            onClick={() => {
+              setEditKey((k) => k + 1);
+              setEditOpen(true);
+            }}
+            data-project-edit-open
+          >
+            <svg className={cx("ic")}>
+              <use href="#i-pen" />
+            </svg>
+            Edit project
+          </button>
           <button className={cx("btn", "btn-primary")} type="button" onClick={() => newProposalIn(project)}>
             <svg className={cx("ic")}>
               <use href="#i-plus" />
@@ -269,20 +325,23 @@ export function ProjectDetailContent({
         <div className={cx("kpi")}>
           <div className={cx("kpi-lbl")}>Scheduled</div>
           <div className={cx("kpi-val")}>{kSch}</div>
+          {kUndated > 0 && <div className={cx("kpi-sub")}>{kUndated} need{kUndated === 1 ? "s" : ""} dates</div>}
         </div>
         <div className={cx("kpi")}>
           <div className={cx("kpi-lbl")}>In progress</div>
           <div className={cx("kpi-val")}>{kProg}</div>
         </div>
         <div className={cx("kpi")}>
-          <div className={cx("kpi-lbl")}>Budget</div>
+          <div className={cx("kpi-lbl")}>Cost budget</div>
           <div className={cx("kpi-val")}>{money(project.budget)}</div>
         </div>
       </div>
 
       <LooseProposalsStrip projectId={project.id} client={project.client} loose={looseProposals} />
-      <ProposalsCard proposals={proposals} project={project} onAttach={openAttach} />
+      <ProposalsCard proposals={proposals} project={project} onAttach={openAttach} canManage={canManage} />
+      <ProjectCombine projectId={project.id} projectName={project.name} proposals={proposals} />
       {budget ? <ProjectBudgetCard projectId={project.id} budget={budget} /> : null}
+      <ProjectPaymentsCard payments={payments} canManage={canManage} />
 
       {/* ВИДЫ + ATTACH */}
       <div className={cx("pd-bar")}>
@@ -316,6 +375,9 @@ export function ProjectDetailContent({
           Attach proposal
         </button>
       </div>
+
+      <ProjectEditDialog key={editKey} project={projectIn} open={editOpen} onClose={closeEdit} />
+      <ProjectCrewSheet key={crewFor?.id ?? "none"} job={crewFor} roster={roster} onClose={() => setCrewFor(null)} />
 
       {/* ATTACH DIALOG — was an inline expanding panel under the tab bar
           (owner, 2026-08-15). It wears `mdl pmdl`, the house dialog frame the
@@ -380,7 +442,7 @@ export function ProjectDetailContent({
 
       <div>
         {view === "list" ? (
-          <ListView jobs={shownJobs} listF={listF} onFilter={setListF} />
+          <ListView jobs={shownJobs} listF={listF} onFilter={setListF} openJobs={opens.jobs} onCrew={canManage ? setCrewFor : null} />
         ) : view === "calendar" ? (
           <CalView project={project} jobs={shownJobs} calF={calF} onFilter={setCalF} />
         ) : (
@@ -402,10 +464,12 @@ function ProposalsCard({
   proposals,
   project,
   onAttach,
+  canManage,
 }: {
   proposals: PdProposal[];
   project: PdProject;
   onAttach: () => void;
+  canManage: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -442,7 +506,8 @@ function ProposalsCard({
         <span className={cx("pd-props-sum")}>
           {won.length ? (
             <>
-              Sold <b>{moneyShort(sold)}</b>
+              {/* What the client pays, tax in — the Budget card's contract is the same before tax. */}
+              Sold <b>{moneyShort(sold)}</b> with tax
             </>
           ) : null}
           {won.length && open.length ? " · " : null}
@@ -477,17 +542,21 @@ function ProposalsCard({
                 </div>
               </div>
               <span className={cx("pd-b", "pd-b--" + proposalTone(p.status))}>{proposalLabel(p.status)}</span>
-              <button
-                className={cx("pd-prop-co")}
-                type="button"
-                onClick={() => setCoFor(p.id)}
-                aria-label={`Change orders for ${p.title}`}
-              >
-                <svg className={cx("ic")}>
-                  <use href="#i-plus" />
-                </svg>
-                {p.co.count ? `Change orders · ${p.co.count}` : "Change order"}
-              </button>
+              {changeOrderDoor(p, canManage) ? (
+                <button
+                  className={cx("pd-prop-co")}
+                  type="button"
+                  onClick={() => setCoFor(p.id)}
+                  aria-label={`Change orders for ${p.title}`}
+                >
+                  <svg className={cx("ic")}>
+                    <use href="#i-plus" />
+                  </svg>
+                  {p.co.count ? `Change orders · ${p.co.count}` : "Change order"}
+                </button>
+              ) : (
+                <span className={cx("pd-prop-co-gap")} aria-hidden="true" />
+              )}
               <span className={cx("pd-prop-amt")}>
                 {moneyShort(p.contract)}
                 {Math.round(p.contract) !== Math.round(p.total) ? <i>was {moneyShort(p.total)}</i> : null}
@@ -524,14 +593,31 @@ function ProposalsCard({
 
 /* ================= ВИДЫ ================= */
 
+/** A job row: a link to the job, or a plain row for a role that cannot open it. */
+function RowLink({ className, href, children }: { className: string; href: string | null; children: React.ReactNode }) {
+  return href ? (
+    <Link className={className} href={href as Route} data-pd-job>
+      {children}
+    </Link>
+  ) : (
+    <div className={className}>{children}</div>
+  );
+}
+
 function ListView({
   jobs,
   listF,
   onFilter,
+  openJobs,
+  onCrew,
 }: {
   jobs: PdJob[];
   listF: ListFilter;
   onFilter: (f: ListFilter) => void;
+  /** False for a role with no job page: the rows stay plain. */
+  openJobs: boolean;
+  /** Opens Schedule & crew for a job — owners and managers; null hides the button. */
+  onCrew: ((j: PdJob) => void) | null;
 }) {
   const counts: Record<ListFilter, number> = {
     all: jobs.length,
@@ -569,7 +655,8 @@ function ListView({
       </div>
       {vis.length ? (
         vis.map((j) => (
-          <div className={cx("pd-row")} key={j.id}>
+          <div className={cx("pd-row", "pd-row--job")} key={j.id}>
+          <RowLink className={cx("pd-row-main", openJobs && "pd-row--link")} href={openJobs ? `/dashboard/jobs/${j.id}` : null}>
             <div>
               <div className={cx("pd-row-n")}>{j.title}</div>
               <div className={cx("pd-row-m")}>
@@ -585,8 +672,15 @@ function ListView({
                     : ` · ${moneyShort(j.contract.current)}`
                   : ""}
               </div>
+              {j.crew?.length ? <div className={cx("pd-row-crew")}>Crew · {j.crew.map((c) => c.name).join(", ")}</div> : null}
             </div>
-            <span className={cx("pd-b", "pd-b--" + badgeMod(j.status))}>{labelOf(j.status)}</span>
+            <span className={cx("pd-b", "pd-b--" + badgeMod(j.status))}>{jobLabel(j)}</span>
+          </RowLink>
+          {onCrew ? (
+            <button className={cx("btn", "btn-ghost", "pd-crew-btn")} type="button" onClick={() => onCrew(j)} data-pd-crew={j.title}>
+              {j.startsAt || j.crew?.length ? "Schedule & crew" : "Schedule"}
+            </button>
+          ) : null}
           </div>
         ))
       ) : (

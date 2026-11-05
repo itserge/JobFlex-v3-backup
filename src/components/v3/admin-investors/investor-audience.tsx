@@ -15,13 +15,15 @@ import s from "./investor-audience.module.css";
 const when = (iso: string) => new Date(iso).toLocaleString("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 const STATUS_WORD = { pending: "Waiting", approved: "Let in", declined: "Declined" } as const;
 
-export function InvestorAudience({ visitors: allVisitors, offers: allOffers, linkMadeAt, approveReaders = true, review }: { visitors: InvestorVisitor[]; offers: InvestorOffer[]; linkMadeAt: string | null; approveReaders?: boolean; review?: string }) {
+/** `liveLinks` — the making times of the links that are live (several since 2026-11-04); a reader on any of them is current. */
+export function InvestorAudience({ visitors: allVisitors, offers: allOffers, liveLinks, approveReaders = true, review }: { visitors: InvestorVisitor[]; offers: InvestorOffer[]; liveLinks: string[]; approveReaders?: boolean; review?: string }) {
   // The admins' own walk-throughs and test offers (2026-10-14) are not readers or offers.
   const visitors = readersOf(allVisitors);
   const offers = offersOf(allOffers);
   const tests = allVisitors.length - visitors.length + (allOffers.length - offers.length);
-  const current = visitors.filter((v) => v.linkMadeAt === linkMadeAt);
-  const earlier = visitors.filter((v) => v.linkMadeAt !== linkMadeAt);
+  const onLive = (v: InvestorVisitor) => v.linkMadeAt !== null && liveLinks.includes(v.linkMadeAt);
+  const current = visitors.filter(onLive);
+  const earlier = visitors.filter((v) => !onLive(v));
   const waiting = pendingOf(current);
   const letIn = current.filter((v) => statusOf(v) === "approved").length;
   const investors = current.filter((v) => INVESTING_KINDS.has(v.kind)).length;
@@ -121,7 +123,7 @@ export function InvestorAudience({ visitors: allVisitors, offers: allOffers, lin
             <tbody>
               {[...current, ...earlier].slice(0, 100).map((v) => {
                 const st = statusOf(v);
-                const live = v.linkMadeAt === linkMadeAt;
+                const live = onLive(v);
                 return (
                   <tr key={v.id} className={live ? "" : s.old} data-reader={v.email} data-reader-status={st}>
                     <td>
@@ -145,7 +147,7 @@ export function InvestorAudience({ visitors: allVisitors, offers: allOffers, lin
               })}
             </tbody>
           </table>
-          {earlier.length ? <p className={s.hint}>Greyed rows read an earlier link — a new link asks everyone again.</p> : null}
+          {earlier.length ? <p className={s.hint}>Greyed rows came through a link that is closed now — sent one of the live links, they open it with the same email.</p> : null}
         </div>
       ) : (
         <p className={s.empty}>Nobody has opened the link yet.</p>

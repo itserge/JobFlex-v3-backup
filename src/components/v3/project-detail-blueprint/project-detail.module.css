@@ -128,6 +128,11 @@
   color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
+:global(.jf-blueprint .content) .kpi-sub {
+  margin-top: 8px;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  letter-spacing: .04em; color: var(--warning);
+}
 
 /* ============================================================
    CARDS
@@ -282,6 +287,14 @@
 :global(.jf-blueprint .content) .pd-row { display: flex; align-items: center; justify-content: space-between; gap: 14px;
   padding: 13px 0; border-bottom: 1px dashed rgba(10,10,10,.16); }
 :global(.jf-blueprint .content) .pd-row:last-child { border-bottom: none; }
+/* A job row: the link (title, dates, crew, badge) and, for the office, Schedule & crew beside it (2026-11-04). */
+:global(.jf-blueprint .content) .pd-row--job { gap: 12px; }
+:global(.jf-blueprint .content) .pd-row-main { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+:global(.jf-blueprint .content) .pd-row-crew { margin-top: 3px; font-size: 11.5px; font-weight: 700; color: var(--blueprint); }
+:global(.jf-blueprint .content) .pd-crew-btn { flex-shrink: 0; min-height: 34px; padding: 0 12px; font-size: 10.5px; }
+/* A job row opens the job (2026-11-04). */
+:global(.jf-blueprint .content) .pd-row--link { color: inherit; text-decoration: none; }
+:global(.jf-blueprint .content) .pd-row--link:hover .pd-row-n { text-decoration: underline; }
 :global(.jf-blueprint .content) .pd-row-n { font-size: 13.5px; font-weight: 800; }
 :global(.jf-blueprint .content) .pd-row-m { margin-top: 3px; font-family: var(--font-mono); font-size: 11px;
   font-weight: 600; letter-spacing: .04em; color: var(--muted);
@@ -391,3 +404,29 @@
 :global(.jf-blueprint .content) .pd-prop-co { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); cursor: pointer; white-space: nowrap; }
 :global(.jf-blueprint .content) .pd-prop-co:hover { background: var(--ink); color: var(--paper); }
 :global(.jf-blueprint .content) .pd-prop-co .ic { width: 12px; height: 12px; }
+
+/* ============================================================
+   EDIT PROJECT (2026-11-04) — the house `.pmdl` frame, a little wider for the
+   two date fields side by side; the status is the page's own segmented row.
+   ============================================================ */
+/* Through `.pmdl .mdl-box`, which sets the house width at a higher weight. */
+:global(.jf-blueprint .content .pmdl .mdl-box).pd-edit-box { width: min(520px, 100%); }
+:global(.jf-blueprint .content .pmdl) .pd-edit-box :global(.mdl-body) { max-height: min(560px, calc(var(--app-h, 100vh) - 180px)); }
+/* The date fields keep the shared picker's icon gutters (`.pmdl .mf-in` would pad them flat). */
+:global(.jf-blueprint .content .pmdl) .pd-edit-box :global(.mf-in.dpk-in) { padding-left: 32px; padding-right: 34px; }
+:global(.jf-blueprint .content) .pd-edit-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+:global(.jf-blueprint .content) textarea.pd-edit-scope { height: auto; min-height: 72px; padding-top: 8px; line-height: 1.5; resize: vertical; }
+:global(.jf-blueprint .content) .pd-edit-seg { display: flex; flex-wrap: wrap; border: 1.5px solid var(--ink); border-radius: var(--radius); }
+:global(.jf-blueprint .content) .pd-edit-opt { flex: 1 1 auto; min-height: 36px; padding: 0 12px; border: none;
+  border-right: 1.5px solid var(--ink); background: #fff; font-family: var(--font); font-size: 12px; font-weight: 800;
+  color: var(--ink); cursor: pointer; }
+:global(.jf-blueprint .content) .pd-edit-opt:last-child { border-right: none; }
+:global(.jf-blueprint .content) .pd-edit-opt.on { background: var(--ink); color: #fff; }
+/* The project's status beside the kicker — only when it is not plain Active. */
+:global(.jf-blueprint .content) .pd-status { display: inline-flex; padding: 2px 9px; border: 1.5px solid var(--warning);
+  border-radius: var(--radius); color: var(--warning); font-size: 10.5px; font-weight: 800; letter-spacing: .12em; }
+:global(.jf-blueprint .content) .pd-status--done { border-color: var(--success); color: var(--success); }
+:global(.jf-blueprint .content) .pd-status--archived { border-color: var(--muted); color: var(--muted); }
+@media (max-width: 560px) {
+  :global(.jf-blueprint .content) .pd-edit-row { grid-template-columns: 1fr; }
+}

@@ -38,7 +38,13 @@ export interface PdProject {
   budget: number;
   /** The client the project is for (2026-09-18), or null. */
   client?: PdClient | null;
+  /** Scope, and ACTIVE | ON_HOLD | COMPLETED | ARCHIVED — the Edit project dialog (2026-11-04). */
+  description?: string | null;
+  status?: string;
 }
+
+/** What the viewer's role may open from the project page (lib/roleRoutes) — an estimator has no client record or job page. */
+export type PdOpens = { client: boolean; jobs: boolean };
 
 export interface PdJob {
   id: string;
@@ -51,7 +57,41 @@ export interface PdJob {
   /** The contract behind the job: the proposal's original total, the approved
    *  change orders, and the current value. Null for a job with no proposal. */
   contract?: { original: number; changes: number; current: number } | null;
+  /** Who is on the job (JobAssignment), with their answer — the project's crew view (2026-11-04). */
+  crew?: Array<{ workerId: string; name: string; status: string }>;
 }
+
+/** A worker the office can put on a project's job (the Schedule & crew dialog). */
+export type PdWorker = { id: string; name: string; trade: string | null };
+
+/* PAYMENTS ON A PROJECT (owner, 2026-11-04: "in the projects get the payments as well, where you can send to the
+   client, like for deposits or for that job done, request a payment"). Each sold proposal's schedule, resolved by
+   lib/paymentSchedule exactly as the client's portal resolves it. A synthetic stage (the implicit "Full payment" or
+   the "Balance" row) has no row of its own: it is invoiced, reminded and marked paid as the remaining balance. */
+export type PdPayStage = {
+  id: string;
+  label: string;
+  amount: number;
+  status: "UNPAID" | "PENDING" | "PAID" | "WAIVED";
+  /** The earliest stage still owed — the one the client's link opens on. */
+  payable: boolean;
+  synthetic: boolean;
+  paidAt: string | null;
+  invoiceSentAt: string | null;
+  remindedAt: string | null;
+};
+export type PdPayments = Array<{
+  proposalId: string;
+  title: string;
+  status: string;
+  /** What the client is billed: the total with approved change orders, tax in. */
+  billed: number;
+  /** The proposal's own total — what a percent stage is a percent of (lib/contractTotal contractSchedule). */
+  base: number;
+  paid: number;
+  remaining: number;
+  stages: PdPayStage[];
+}>;
 
 export interface PdAvailJob {
   id: string;
@@ -96,7 +136,11 @@ export interface PdProposal {
  *  spending — logged on the project or on one of its jobs. */
 export interface PdBudget {
   summary: import("@/lib/projectBudget").BudgetSummary;
-  lines: Array<{ category: string; amount: number }>;
+  /** Paid by the client on the project's proposals, and what is billed and not paid yet (2026-11-04). */
+  collected: number;
+  owed: number;
+  /** Category lines (no label) and change orders' cost lines (labelled). */
+  lines: Array<{ id?: string; category: string; amount: number; label?: string | null }>;
   expenses: Array<{
     id: string;
     /** "project" rows can be deleted here; "job" rows are managed on the job. */
@@ -190,6 +234,23 @@ export function labelOf(status: string): string {
   return status.charAt(0) + status.slice(1).toLowerCase().replace(/_/g, " ");
 }
 
+/** A change order amends what was SOLD (2026-11-04): a draft or a sent proposal is edited in the builder instead.
+ *  Owners and managers only — actions/changeOrders is requireManager. A proposal that already carries change orders
+ *  keeps the door, so they can still be read. */
+export function changeOrderDoor(p: { status: string; co: { count: number } }, canManage: boolean): boolean {
+  return canManage && (["ACCEPTED", "COMPLETED", "PAID"].includes(p.status) || p.co.count > 0);
+}
+
+/** A "Scheduled" job with no start is waiting for its dates — an accepted proposal's job starts there (2026-11-04). */
+export function needsDates(j: { status: string; startsAt: Date | null }): boolean {
+  return j.status === "SCHEDULED" && !j.startsAt;
+}
+
+/** The row's badge text: labelOf, or "Needs dates" for a job nobody has put on the calendar yet. */
+export function jobLabel(j: { status: string; startsAt: Date | null }): string {
+  return needsDates(j) ? "Needs dates" : labelOf(j.status);
+}
+
 /** The donor's badge / bar modifier. A bucketless state borrows the neutral one. */
 export function badgeMod(status: string): PdBucket {
   return bucketOf(status) ?? "sch";
@@ -203,6 +264,19 @@ export function badgeMod(status: string): PdBucket {
  */
 export function shortDate(d: Date): string {
   return MO[d.getMonth()] + " " + d.getDate();
+}
+
+/**
+ * A project's own dates are DAYS — the form's date inputs, saved as UTC
+ * midnight. Read in local time west of Greenwich every one landed a day early
+ * (phone walk, 2026-11-04). This puts each on its own calendar day at local
+ * midnight, so the window, the Gantt and the labels all read the date that was
+ * typed, on the server and in the browser alike. Job dates are moments and
+ * stay as they are.
+ */
+export function withLocalDays<T extends { startsAt: Date | null; endsAt: Date | null }>(p: T): T {
+  const day = (d: Date | null) => (d ? new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) : null);
+  return { ...p, startsAt: day(p.startsAt), endsAt: day(p.endsAt) };
 }
 
 /** Midnight-anchored month key, so the agenda can group across a year boundary

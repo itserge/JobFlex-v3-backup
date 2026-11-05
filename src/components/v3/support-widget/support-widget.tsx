@@ -68,6 +68,7 @@ import { lockScroll } from "@/lib/scrollLock";
 // The categories, the message limit and SmartHelp's hand-off are the composer's pure half (./composer).
 import { BODY_MAX, CATEGORIES, composerOpening, composerTicket, type HandoffMark, type SupportPrefill } from "./composer";
 import { SmartHelpRoot } from "@/components/v3/smarthelp/smarthelp";
+import { AssistantRoot } from "@/components/v3/assistant/assistant-panel";
 import "./support-widget.css";
 
 export type { SupportPrefill } from "./composer";
@@ -961,11 +962,13 @@ export function SupportWidget({
   );
 
   // SmartHelp (components/v3/smarthelp) lives beside the composer, so it is wherever Help is — and in the same
-  // stacking context, under the composer that its "Ask a person" opens.
+  // stacking context, under the composer that its "Ask a person" opens. The Assistant's desk panel
+  // (components/v3/assistant, 2026-11-04) stands on the same right edge; opening one closes the other.
   return (
     <>
       {widget}
       <SmartHelpRoot />
+      <AssistantRoot />
     </>
   );
 }

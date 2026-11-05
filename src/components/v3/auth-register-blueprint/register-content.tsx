@@ -1263,11 +1263,13 @@ export function RegisterContent({
   // the dashboard the moment they sign in. Gated on `step` so the clock cannot
   // start before the account exists, and cleared on unmount so a person who
   // clicks the button first is not navigated a second time.
-  const doneHref = (signedIn ? "/dashboard" : "/auth/login?next=%2Fdashboard") as Route;
+  // A plain string here, a Route where it is used: a Route in the effect's dependency array made TypeScript build a
+  // union past its 100,000-member limit (TS2590) once the app passed ~300 pages (2026-11-05).
+  const doneHref: string = signedIn ? "/dashboard" : "/auth/login?next=%2Fdashboard";
   React.useEffect(() => {
     if (step !== 4 || payBusy) return;
     if (countdown <= 0) {
-      router.push(doneHref);
+      router.push(doneHref as Route);
       return;
     }
     const t = window.setTimeout(() => setCountdown((n) => n - 1), 1000);
@@ -2056,7 +2058,7 @@ export function RegisterContent({
                   </p>
                 ) : null}
                 <div className="btn-pair">
-                  <Link className="btn" href={doneHref}>
+                  <Link className="btn" href={doneHref as Route}>
                     {signedIn ? "Open your dashboard" : "Sign in to your dashboard"}
                   </Link>
                 </div>

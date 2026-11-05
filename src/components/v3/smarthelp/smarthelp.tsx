@@ -69,6 +69,7 @@ import { lockScroll } from "@/lib/scrollLock";
 import { HANDHELD, useIsHandheld } from "@/components/v3/responsive-shell/use-handheld";
 import { openSupportComposer, type SupportPrefill } from "@/components/v3/support-widget/support-widget";
 import { OPEN_EVENT, type OpenDetail } from "./events";
+import { OPEN_EVENT as ASSISTANT_OPEN_EVENT } from "@/components/v3/assistant/events";
 import { MISS_EVENT, SmartHelpSpotlight, showMe, showMeAfterLoad } from "./spotlight";
 import styles from "./smarthelp.module.css";
 
@@ -320,6 +321,16 @@ export function SmartHelpRoot() {
     };
     document.addEventListener(OPEN_EVENT, onOpen);
     return () => document.removeEventListener(OPEN_EVENT, onOpen);
+  }, []);
+
+  // The Assistant's desk panel (components/v3/assistant) shares the right edge: it opening closes this one.
+  useEffect(() => {
+    const onAssistant = () => {
+      setOpen(false);
+      setFolded(false);
+    };
+    document.addEventListener(ASSISTANT_OPEN_EVENT, onAssistant);
+    return () => document.removeEventListener(ASSISTANT_OPEN_EVENT, onAssistant);
   }, []);
 
   // Show me couldn't find its element on the page.

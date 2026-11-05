@@ -1830,3 +1830,46 @@
 .erow.isDesk .etimeD { color: #0f766e; }
 .stDesk { border-color: #0f766e; border-style: dashed; background: #fff; color: #0f766e; }
 .dotDesk { background: transparent; box-shadow: inset 0 0 0 1.5px #0f766e; }
+
+/* ============================================================
+   LANES + PROJECTS (owner, 2026-11-04) — under the find bar: what the grid
+   shows, and a chip per project on the calendar in its colour (globals.css
+   --proj-*). The colour sits in a swatch beside the name; text stays ink, and
+   the name is what tells projects apart past the first three colours.
+   ============================================================ */
+.proj[data-tone="0"], .erow[data-tone="0"] { --proj: var(--proj-0); }
+.proj[data-tone="1"], .erow[data-tone="1"] { --proj: var(--proj-1); }
+.proj[data-tone="2"], .erow[data-tone="2"] { --proj: var(--proj-2); }
+.proj[data-tone="3"], .erow[data-tone="3"] { --proj: var(--proj-3); }
+.proj[data-tone="4"], .erow[data-tone="4"] { --proj: var(--proj-4); }
+.proj[data-tone="5"], .erow[data-tone="5"] { --proj: var(--proj-5); }
+
+.lanes { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.laneSw { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: var(--border-thin); border-radius: var(--radius); overflow: hidden; background: #fff; }
+.laneBtn {
+  min-height: 44px; padding: 0 4px;
+  border-right: var(--border-thin);
+  font-size: 11px; font-weight: 800; letter-spacing: 0.04em; color: var(--ink); background: #fff;
+}
+.laneBtn:last-child { border-right: none; }
+.laneBtn.on { background: var(--ink); color: #fff; }
+/* One swipeable row, never wrapping into a wall of chips. */
+.projs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+.projs::-webkit-scrollbar { display: none; }
+.proj {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px;
+  min-height: 44px; max-width: 78vw; padding: 0 14px;
+  border: var(--border-thin); border-radius: var(--radius); background: #fff;
+  font-size: 13px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.proj i { flex: 0 0 auto; width: 12px; height: 12px; border: 1px solid var(--ink); background: var(--proj); }
+.proj.on { background: var(--ink); color: #fff; box-shadow: 2px 2px 0 var(--proj); }
+.proj.on i { border-color: #fff; }
+
+/* A project's job in the list: a light wash of its colour, its name leading row 2. */
+.erow.isProj { background: color-mix(in srgb, var(--proj) 9%, #fff); }
+.eproj {
+  display: inline-flex; align-items: center; gap: 6px; margin-right: 8px; vertical-align: 1px;
+  font-family: var(--font-sans); font-size: 12px; font-weight: 800; letter-spacing: 0; text-transform: none; color: var(--ink);
+}
+.eproj i { width: 9px; height: 9px; border: 1px solid var(--ink); background: var(--proj); }

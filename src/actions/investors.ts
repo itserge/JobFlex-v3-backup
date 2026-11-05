@@ -3,7 +3,7 @@
 // reading itself is lib/investors (shared with the public link and the PDF);
 // these are the hand-typed ad budget, the start day and the link.
 import { requirePlatformAdmin } from "@/lib/orgContext";
-import { addAdSpend, deleteAdSpend, investorReport, PLATFORMS, readInvestorSettings, rotateInvestorLink, saveInvestorSettings, type InvestorReport, type InvestorSettings, type SpendPlatform } from "@/lib/investors";
+import { addAdSpend, addInvestorLink, deleteAdSpend, investorReport, PLATFORMS, readInvestorSettings, saveInvestorSettings, setInvestorLinkEnabled, type InvestorReport, type InvestorSettings, type SpendPlatform } from "@/lib/investors";
 import { saveInvestorPitch, type InvestorPitch } from "@/lib/investorPitch";
 
 type Result = { ok: true; report: InvestorReport } | { ok: false; error: string };
@@ -85,16 +85,12 @@ export async function pullMetaSpendAction(): Promise<Result> {
   return fresh();
 }
 
-/** Make a shared link (a new one each time; the old one stops), or switch the current one on or off. */
+/** One more shared link (every other link stays live — owner, 2026-11-04), or one link closed or opened again. */
 export async function investorLinkAction(input: Record<string, unknown> = {}): Promise<Result> {
   await requirePlatformAdmin();
   try {
-    if (input.rotate === true) await rotateInvestorLink();
-    else if (typeof input.enabled === "boolean") {
-      const s = await readInvestorSettings();
-      if (!s.linkToken && input.enabled) await rotateInvestorLink();
-      else await saveInvestorSettings({ linkEnabled: input.enabled });
-    }
+    if (input.add === true) await addInvestorLink();
+    else if (typeof input.token === "string" && typeof input.enabled === "boolean") await setInvestorLinkEnabled(input.token, input.enabled);
   } catch {
     return { ok: false, error: "The link could not be changed. Try again." };
   }
@@ -112,8 +108,10 @@ export async function decideInvestorReaderAction(input: Record<string, unknown> 
   const settings = await readInvestorSettings();
   const reader = (await readInvestorVisitors()).find((v) => v.id === id);
   if (!reader) return { ok: false, error: "That request is no longer on the list." };
-  // The email's open link is made on the link they asked on — only while that link is still the live one.
-  const token = settings.linkEnabled && settings.linkToken && reader.linkMadeAt === settings.linkMadeAt ? settings.linkToken : null;
+  // The email's open link is made on the link they asked on while it is live; closed since, on the newest live link
+  // (the yes is the person's, not the link's — 2026-11-04); with no link live, no email.
+  const live = settings.links.filter((l) => l.enabled);
+  const token = (live.find((l) => l.madeAt === reader.linkMadeAt) ?? live[0])?.token ?? null;
   const who = ("name" in me && me.name) || ("email" in me && me.email) || "an admin";
   const done = await decideVisitor(id, decision, token, String(who));
   return done ? { ok: true } : { ok: false, error: "That request is no longer on the list." };

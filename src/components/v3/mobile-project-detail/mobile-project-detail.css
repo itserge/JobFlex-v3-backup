@@ -922,6 +922,15 @@ body:has(.jf-mobile-project-detail)::before { content: none; }
   border-bottom: 1px dashed var(--dash);
 }
 .jf-mobile-project-detail .mpd-row:last-child { border-bottom: none; }
+/* A job row with the office's Schedule & crew under it (2026-11-04): the rule sits under the pair. */
+.jf-mobile-project-detail .mpd-jobrow { border-bottom: 1px dashed var(--dash); padding-bottom: 12px; }
+.jf-mobile-project-detail .mpd-jobrow:last-child { border-bottom: none; }
+.jf-mobile-project-detail .mpd-jobrow .mpd-row { border-bottom: none; padding-bottom: 8px; }
+.jf-mobile-project-detail .mpd-row-crew { margin-top: 4px; font-size: 12px; font-weight: 700; color: var(--blueprint); }
+/* Outlined, not the page's blue: one per job row, so the list does not read as a column of calls to action. */
+.jf-mobile-project-detail .mpd-btn.mpd-crew-btn { width: 100%; justify-content: center; min-height: 44px; background: #fff; color: var(--ink); box-shadow: none; }
+/* A job row opens the job (2026-11-04). */
+.jf-mobile-project-detail .mpd-row--link { color: inherit; text-decoration: none; min-height: 44px; }
 .jf-mobile-project-detail .mpd-row-txt { min-width: 0; }
 .jf-mobile-project-detail .mpd-row-n {
   font-size: 13.5px;

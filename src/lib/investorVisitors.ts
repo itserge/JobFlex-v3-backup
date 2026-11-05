@@ -14,10 +14,19 @@ import "server-only";
 // review their info, who they are, and approve it, and they will get it"). A new reader is kept as a request
 // (status "pending"): the admins are emailed and texted ("Investor link requests" on the /admin/tasks team sheet), the
 // reader's page waits and opens on its own the moment an admin approves; the approval email carries a personal open
-// link (signed with the link's token, so a new link ends it too) for any other device. The same email typed again in
-// another browser is not let in on the strength of the address — that address is sent an open link instead. An admin
-// is never kept waiting (kept so on 2026-11-02, said so on the door); the switch "Approve each reader" (lib/investors
-// approveReaders) turns all of it off.
+// link (signed with the link's token, so a new link ends it too) for any other device. An admin is never kept waiting
+// (kept so on 2026-11-02, said so on the door); the switch "Approve each reader" (lib/investors approveReaders) turns
+// all of it off.
+//
+// ONCE WE SAY YES, IT STAYS OPEN (owner, 2026-11-03: "once it's approved by us, he can open it from the phone, from
+// email, as long as it's the same link"): an investor sent the link lost the figures hours later on another device. No
+// clock on the pass or on the open link — the browser keeps the pass as long as it keeps any cookie — and the email let
+// in, typed at the door of the same link in a new browser, opens the figures there and then. What still closes it: a
+// decline (read on every page) or closing the link they hold (the token is in every signature).
+//
+// SEVERAL LINKS (owner, 2026-11-04: "create two or three … send it to people … they fill it up and it says link is not
+// active"): a new link no longer ends the others — each is closed on its own (lib/investors links). A reader is filed
+// under the link they came through; the email they were let in with opens any live link's door.
 import { createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
 import { db } from "@/lib/db";
@@ -31,7 +40,8 @@ import { fireAdminAlert } from "@/lib/adminAlerts";
 const VISITORS_KEY = "investorVisitors";
 const OFFERS_KEY = "investorOffers";
 export const INVESTOR_PASS_COOKIE = "jf_inv";
-const PASS_DAYS = 180;
+/** The longest a browser keeps a cookie (Chrome stops at 400 days); the server itself never turns a pass away for age. */
+const PASS_DAYS = 400;
 const VISIT_GAP_MS = 30 * 60_000;
 
 export interface InvestorVisitor extends InvestorVisitorView {
@@ -84,20 +94,21 @@ function passFor(id: string, token: string): { value: string; maxAge: number } {
   return { value: `${id}.${exp}.${sign(id, exp, token)}`, maxAge: PASS_DAYS * 86_400 };
 }
 // ── the open link an approval sends (any device) ──
-const OPEN_DAYS = 30;
+// The number in a pass or an open key was its closing day; since 2026-11-03 it is only signed, never compared with
+// today, so the keys already sent (30 days) and the passes already kept (180 days) open as long as the link lives.
 function openSig(id: string, exp: number, token: string): string {
   return createHmac("sha256", secret()).update(`open:${id}.${exp}.${token}`).digest("base64url");
 }
 export function openKeyFor(id: string, token: string): string {
-  const exp = Date.now() + OPEN_DAYS * 86_400_000;
-  return `${id}.${exp}.${openSig(id, exp, token)}`;
+  const at = Date.now();
+  return `${id}.${at}.${openSig(id, at, token)}`;
 }
-/** The visitor an open link names, or null (forged, expired, another link's). */
+/** The visitor an open link names, or null (forged, another link's). */
 export function verifyOpenKey(raw: string | null | undefined, token: string): string | null {
   if (!raw) return null;
   const [id, expS, sig] = raw.split(".");
   const exp = Number(expS);
-  if (!id || !sig || !Number.isFinite(exp) || exp < Date.now()) return null;
+  if (!id || !sig || !Number.isFinite(exp)) return null;
   const want = Buffer.from(openSig(id, exp, token));
   const got = Buffer.from(sig);
   return want.length === got.length && timingSafeEqual(want, got) ? id : null;
@@ -117,12 +128,12 @@ export async function openWithKey(token: string, key: string | null): Promise<"o
   return "open";
 }
 
-/** The visitor id the cookie carries for this link, or null (none, forged, expired, another link's). */
+/** The visitor id the cookie carries for this link, or null (none, forged, another link's). */
 export function verifyPass(raw: string | undefined | null, token: string): string | null {
   if (!raw) return null;
   const [id, expS, sig] = raw.split(".");
   const exp = Number(expS);
-  if (!id || !sig || !Number.isFinite(exp) || exp < Date.now()) return null;
+  if (!id || !sig || !Number.isFinite(exp)) return null;
   const want = Buffer.from(sign(id, exp, token));
   const got = Buffer.from(sig);
   return want.length === got.length && timingSafeEqual(want, got) ? id : null;
@@ -169,9 +180,8 @@ async function tellAdmins(subject: string, headline: string, rows: Array<{ label
   }
 }
 
-/** What the reader's door does next: the figures; a wait for our yes; an open link sent to the address they typed
- *  (it was let in before — elsewhere); or the polite no. */
-export type IntroOutcome = "open" | "pending" | "check-email" | "declined";
+/** What the reader's door does next: the figures; a wait for our yes; or the polite no. */
+export type IntroOutcome = "open" | "pending" | "declined";
 
 const short = (t: string, n = 40) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
 
@@ -182,19 +192,17 @@ export async function introduceVisitor(token: string, linkMadeAt: string | null,
   const review = opts.approveReaders !== false && !opts.admin;
   const list = await readInvestorVisitors();
   const now = new Date().toISOString();
-  // The same person on the same link (same email) is one reader who came back, not two — but an admin's walk-through and
-  // a reader are never the same entry (2026-11-02): the email an admin tried the door with, typed in a browser no admin
-  // is signed in to, is somebody's request and waits like one; an admin trying it never turns a reader into a test.
-  const same = list.findIndex((v) => v.email === input.email && v.linkMadeAt === linkMadeAt && Boolean(v.admin) === Boolean(opts.admin));
+  // The same person (same email) is one reader who came back, not two — on any of the live links since 2026-11-04 (the
+  // owner sends several; a yes is the person's, not the link's) — but an admin's walk-through and a reader are never the
+  // same entry (2026-11-02): the email an admin tried the door with, typed in a browser no admin is signed in to, is
+  // somebody's request and waits like one; an admin trying it never turns a reader into a test.
+  const same = list.findIndex((v) => v.email === input.email && Boolean(v.admin) === Boolean(opts.admin));
   if (same >= 0) {
     const was = list[same];
     const st = statusOf(was);
-    // Let in before, but this browser holds no pass: the address is not proof — the address gets an open link.
-    if (review && st === "approved" && !was.admin) {
-      await sendOpenEmail(was, token, "again").catch(() => {});
-      return { visitor: was, outcome: "check-email" };
-    }
-    const visitor: InvestorVisitor = { ...was, name: input.name, company: input.company, kind: input.kind, phone: input.phone ?? was.phone, visits: was.visits + 1, lastSeen: now, admin: opts.admin || was.admin || undefined, ...(opts.admin || !review ? { status: st === "declined" && !opts.admin ? "declined" : "approved" } : {}) };
+    // Let in before: this browser opens too — the phone after the laptop (owner, 2026-11-03), another of our links. A
+    // request still waiting waits here as well, and a no stays a no. The entry moves to the link they came through now.
+    const visitor: InvestorVisitor = { ...was, linkMadeAt, name: input.name, company: input.company, kind: input.kind, phone: input.phone ?? was.phone, visits: was.visits + 1, lastSeen: now, admin: opts.admin || was.admin || undefined, ...(opts.admin || !review ? { status: st === "declined" && !opts.admin ? "declined" : "approved" } : {}) };
     list.splice(same, 1);
     await writeList(VISITORS_KEY, [visitor, ...list], 1000);
     await setPass(visitor.id, token);
@@ -248,18 +256,20 @@ async function tellAdminsOpened(visitor: InvestorVisitor, again: boolean): Promi
 }
 
 /** The reader's email: they are in, with their own open link (good on any device until the link is replaced). */
-async function sendOpenEmail(v: InvestorVisitor, token: string, why: "approved" | "again"): Promise<void> {
+async function sendOpenEmail(v: InvestorVisitor, token: string): Promise<void> {
   const base = (await appBaseUrl()).replace(/\/$/, "");
   const href = `${base}/api/investors/${token}/open?k=${encodeURIComponent(openKeyFor(v.id, token))}`;
   const first = v.name.split(/\s+/)[0] || v.name;
   const { subject, html } = renderEmail({
-    subject: why === "approved" ? "Your access to the JobFlex investor figures" : "Open the JobFlex investor figures on this device",
+    subject: "Your access to the JobFlex investor figures",
     lockup: { kind: "platform" },
     kicker: { text: "Investors", tone: "ok" },
-    headline: why === "approved" ? `You're in, ${first}` : `Here is your link, ${first}`,
-    prose: why === "approved"
-      ? ["Thanks for introducing yourself. The live JobFlex figures — ad spend, trials, paying accounts and payback — are open to you now.", "The button opens them on any device; if the page you asked from is still open, it has opened already."]
-      : ["Someone asked to open the JobFlex investor figures with this address in a new browser. If that was you, the button opens them there.", "If it wasn't you, ignore this email — nothing opens without it."],
+    headline: `You're in, ${first}`,
+    prose: [
+      "Thanks for introducing yourself. The live JobFlex figures — ad spend, trials, paying accounts and payback — are open to you now.",
+      "The button opens them on any device, any time; if the page you asked from is still open, it has opened already.",
+      `The link we shared opens them too: on a new phone or computer, type ${v.email} at its door and the figures open.`,
+    ],
     cta: { label: "Open the figures", href },
     footer: { name: "JobFlex" },
   });
@@ -277,7 +287,7 @@ export async function decideVisitor(id: string, decision: "approve" | "decline",
   list[i] = next;
   await writeList(VISITORS_KEY, list, 1000);
   // Their email goes out only when the yes is news and the link they asked on is still the live one.
-  if (decision === "approve" && statusOf(was) !== "approved" && token) await sendOpenEmail(next, token, "approved").catch((err) => console.error("[investors] open email failed:", err instanceof Error ? err.message : err));
+  if (decision === "approve" && statusOf(was) !== "approved" && token) await sendOpenEmail(next, token).catch((err) => console.error("[investors] open email failed:", err instanceof Error ? err.message : err));
   return next;
 }
 

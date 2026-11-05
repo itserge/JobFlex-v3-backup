@@ -481,6 +481,7 @@
 .sbScroll [data-tone="teal"] { --tone: var(--tool-hvac); }
 .sbScroll [data-tone="cedar"] { --tone: var(--tool-deck); }
 .sbScroll [data-tone="olive"] { --tone: var(--tool-design); }
+.sbScroll [data-tone="gold"] { --tone: var(--tool-project); }
 .sbScroll .sbLink.sbTool {
   display: grid; grid-template-columns: var(--nav-tool-size) minmax(0, 1fr) auto; align-items: center;
   column-gap: var(--nav-tool-gap); padding: 7px var(--nav-tool-inset); border-radius: var(--radius);

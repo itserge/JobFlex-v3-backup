@@ -64,6 +64,7 @@ import "@/components/v3/estimators-blueprint/estimators-global.css";
 import { MobileSprite } from "./sprite";
 import { TourChip } from "@/components/v3/onboarding-tour/tour-chip";
 import { SmartHelpRow } from "@/components/v3/smarthelp/smarthelp-row";
+import { AssistantRow } from "@/components/v3/assistant/assistant-row";
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -453,6 +454,8 @@ export function MobileNav() {
         <TourChip onPick={() => setOpen(false)} />
         {/* SmartHelp (components/v3/smarthelp): the drawer closes, then the sheet comes up. */}
         <SmartHelpRow variant="drawer" onBeforeOpen={() => setOpen(false)} opener={() => menuBtnRef.current} />
+        {/* The Assistant (components/v3/assistant, 2026-11-04): its own page on a phone. */}
+        <AssistantRow variant="drawer" onBeforeOpen={() => setOpen(false)} />
         <nav className={styles.sbScroll} ref={navScrollRef}>
           <div className={styles.sbIndicator} ref={indicatorRef} />
           {sections.map((sec) => (

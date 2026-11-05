@@ -22,7 +22,15 @@ import type { Project, ProjectClientChoice } from "./projects-data";
  *   component. The behavior module takes it as its starting state and then
  *   keeps itself in step with the database through `createProject`.
  */
-export function ProjectsContent({ projects, clients = [] }: { projects: Project[]; clients?: ProjectClientChoice[] }) {
+export function ProjectsContent({
+  projects,
+  clients = [],
+  canAddClient = false,
+}: {
+  projects: Project[];
+  clients?: ProjectClientChoice[];
+  canAddClient?: boolean;
+}) {
   // The rows reach `init` through a ref, NOT through the callback's deps.
   // `useBlueprintContent` re-runs whenever `init` changes identity, and a
   // re-run tears the page down and replays the whole reveal cascade — so the
@@ -168,6 +176,9 @@ export function ProjectsContent({ projects, clients = [] }: { projects: Project[
               <label className="fld-lbl" htmlFor="pjfClient">Client</label>
               <select className="pinput" id="pjfClient" name="clientId" defaultValue="">
                 <option value="">No client</option>
+                {/* A remodel often starts with someone not in the app yet
+                    (2026-11-04): the client is made with the project. */}
+                {canAddClient && <option value="__new">+ New client…</option>}
                 {clients.map((c) => (
                   <option key={c.id} value={c.id} data-street={c.street}>
                     {c.name}
@@ -176,6 +187,19 @@ export function ProjectsContent({ projects, clients = [] }: { projects: Project[
                 ))}
               </select>
             </div>
+            <div className="mdl-row is-hidden" id="pjfNewClient">
+              <div className="fld" data-fld="client">
+                <label className="fld-lbl" htmlFor="pjfClientName">
+                  Client name<span className="req">*</span>
+                </label>
+                <input className="pinput" id="pjfClientName" type="text" placeholder="Megan & Tom Bennett" autoComplete="off" />
+                <span className="fld-err">Enter the client&apos;s name</span>
+              </div>
+              <div className="fld">
+                <label className="fld-lbl" htmlFor="pjfClientPhone">Phone</label>
+                <input className="pinput" id="pjfClientPhone" type="tel" inputMode="tel" placeholder="(206) 555-0142" autoComplete="off" />
+              </div>
+            </div>
 
             <div className="fld">
               <label className="fld-lbl" htmlFor="pjfDesc">Scope</label>
@@ -183,7 +207,7 @@ export function ProjectsContent({ projects, clients = [] }: { projects: Project[
                 className="pinput"
                 id="pjfDesc"
                 name="description"
-                placeholder="Cedar privacy fencing for eight lots, shared materials drop."
+                placeholder="Kitchen, two baths and new flooring through the main floor."
               ></textarea>
             </div>
 
@@ -221,7 +245,7 @@ export function ProjectsContent({ projects, clients = [] }: { projects: Project[
             </div>
 
             <div className="fld">
-              <label className="fld-lbl" htmlFor="pjfBudget">Budget</label>
+              <label className="fld-lbl" htmlFor="pjfBudget">Cost budget</label>
               <input
                 className="pinput"
                 id="pjfBudget"
@@ -230,7 +254,12 @@ export function ProjectsContent({ projects, clients = [] }: { projects: Project[
                 inputMode="numeric"
                 placeholder="74,300"
                 autoComplete="off"
+                aria-describedby="pjfBudgetHint"
               />
+              {/* It was read as the price (owner walk, 2026-11-04). */}
+              <span className="fld-hint" id="pjfBudgetHint">
+                What the work should cost you — materials, labor, subs. Not the client&apos;s price: that comes from the proposals.
+              </span>
             </div>
           </form>
 

@@ -16,7 +16,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireEstimatorOrManager, requireRouteAccess } from "@/lib/orgContext";
+import { isSalesRole, requireEstimatorOrManager, requireOrg, requireRouteAccess } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
 
@@ -47,8 +47,15 @@ export type ClientProjectOptions = {
   suggestedName: string;
 };
 
+/** A sales rep opens Clients but not Projects (lib/roleRoutes): the sheet says who runs projects instead of failing.
+ *  Returned, not thrown — a production build hides a thrown message behind a generic one (2026-11-04). */
+export type ClientProjectRefusal = { refused: string };
+
 /** Everything the "Add to project" sheet shows, in one read. */
-export async function clientProjectOptions(clientId: string): Promise<ClientProjectOptions> {
+export async function clientProjectOptions(clientId: string): Promise<ClientProjectOptions | ClientProjectRefusal> {
+  if (isSalesRole((await requireOrg()).role)) {
+    return { refused: "Projects are run by the owner and managers. Ask one of them to put this client in a project." };
+  }
   const { organizationId } = await requireEstimatorOrManager();
   await requireRouteAccess("/dashboard/clients", "/dashboard/client-detail");
   const client = await db.client.findFirst({

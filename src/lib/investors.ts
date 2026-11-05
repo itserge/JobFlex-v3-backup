@@ -7,7 +7,7 @@ import "server-only";
 //                    Meta's API token arrives (then a cron writes the same
 //                    rows with source "meta" and the hand entries stay);
 //   investorSettings the start day, the daily budget, how far the chart looks,
-//                    and the shared link's token and switch — no share of
+//                    and the shared links (each its token and switch) — no share of
 //                    trials that pay: that is measured (2026-10-24);
 //
 // The accounts come from the same rows the signups list reads (since the ad
@@ -28,6 +28,7 @@ import { readSubscriptionPayments } from "@/lib/investorPayments";
 import { readSubscribersData, type SubscribersData } from "@/lib/subscribersRead";
 import { computeMetrics } from "@/components/v3/admin-subscribers/billing-metrics";
 import type { RecurringInput } from "@/lib/investorRecurring";
+import { readInvestorUsage, type InvestorUsage } from "@/lib/investorUsage";
 
 export const AD_SPEND_KEY = "adSpend";
 export const INVESTOR_SETTINGS_KEY = "investorSettings";
@@ -57,15 +58,31 @@ export interface InvestorSettings extends ModelSettings {
   sinceDate: string | null;
   /** The day JobFlex launched (owner, 2026-10-24: "add the days count after JobFlex launched"); null = the start day. */
   launchDate: string | null;
+  /** The shared links (owner, 2026-11-04: "create two or three … send them to people"): each stays live until it is
+   *  closed on its own; "Make a new link" adds one and closes none. Newest first; closed ones are kept so the readers
+   *  who came through them can still be told apart. */
+  links: InvestorLink[];
+  /** The newest live link — read from `links`, never set (the page head, the PDF, the film's tabs). */
   linkToken: string | null;
+  /** Any link live. */
   linkEnabled: boolean;
-  /** When the link was last made. */
+  /** The newest live link's making time. */
   linkMadeAt: string | null;
   /** Each reader waits for an admin's yes before the figures open (owner, 2026-10-20). On unless switched off. */
   approveReaders: boolean;
 }
 
-export const DEFAULT_SETTINGS: InvestorSettings = { horizonDays: 180, trialDays: 7, dailyBudgetCents: null, budgetFrom: null, sinceDate: null, launchDate: null, linkToken: null, linkEnabled: false, linkMadeAt: null, approveReaders: true };
+export interface InvestorLink {
+  token: string;
+  /** When it was made — the readers who came through it carry this (lib/investorVisitors linkMadeAt). */
+  madeAt: string;
+  enabled: boolean;
+}
+
+export const DEFAULT_SETTINGS: InvestorSettings = { horizonDays: 180, trialDays: 7, dailyBudgetCents: null, budgetFrom: null, sinceDate: null, launchDate: null, links: [], linkToken: null, linkEnabled: false, linkMadeAt: null, approveReaders: true };
+/** Kept links, live and closed together; past it the oldest closed ones go first. */
+const MAX_LINKS = 40;
+const TOKEN = /^[A-Za-z0-9_-]{16,64}$/;
 const MAX_ENTRIES = 3000;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -207,11 +224,29 @@ export function cleanSettings(raw: unknown): InvestorSettings {
     budgetFrom: typeof r.budgetFrom === "string" && DATE.test(r.budgetFrom) && r.budgetFrom >= "2025-01-01" ? r.budgetFrom : null,
     sinceDate: typeof r.sinceDate === "string" && DATE.test(r.sinceDate) && r.sinceDate >= "2025-01-01" ? r.sinceDate : null,
     launchDate: typeof r.launchDate === "string" && DATE.test(r.launchDate) && r.launchDate >= "2020-01-01" ? r.launchDate : null,
-    linkToken: typeof r.linkToken === "string" && /^[A-Za-z0-9_-]{16,64}$/.test(r.linkToken) ? r.linkToken : null,
-    linkEnabled: r.linkEnabled === true,
-    linkMadeAt: typeof r.linkMadeAt === "string" ? r.linkMadeAt : null,
+    ...linkFields(r),
     approveReaders: r.approveReaders !== false,
   };
+}
+
+/** The links as stored, or — before 2026-11-04 — the one link the settings held, as the first of the list; the
+ *  newest live link read back into linkToken / linkEnabled / linkMadeAt. */
+function linkFields(r: Record<string, unknown>): Pick<InvestorSettings, "links" | "linkToken" | "linkEnabled" | "linkMadeAt"> {
+  const seen = new Set<string>();
+  const links: InvestorLink[] = [];
+  const stored = Array.isArray(r.links)
+    ? (r.links as unknown[])
+    : typeof r.linkToken === "string"
+      ? [{ token: r.linkToken, madeAt: typeof r.linkMadeAt === "string" ? r.linkMadeAt : "", enabled: r.linkEnabled === true }]
+      : [];
+  for (const raw of stored) {
+    const l = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+    if (typeof l.token !== "string" || !TOKEN.test(l.token) || seen.has(l.token)) continue;
+    seen.add(l.token);
+    links.push({ token: l.token, madeAt: typeof l.madeAt === "string" ? l.madeAt : "", enabled: l.enabled === true });
+  }
+  const live = links.find((l) => l.enabled) ?? null;
+  return { links, linkToken: live?.token ?? null, linkEnabled: !!live, linkMadeAt: live ? live.madeAt || null : null };
 }
 
 export async function readInvestorSettings(): Promise<InvestorSettings> {
@@ -224,15 +259,35 @@ export async function saveInvestorSettings(patch: Partial<InvestorSettings>): Pr
   return next;
 }
 
-/** A new shared link (the old one stops working), switched on. */
-export async function rotateInvestorLink(): Promise<InvestorSettings> {
-  return saveInvestorSettings({ linkToken: randomBytes(18).toString("base64url"), linkEnabled: true, linkMadeAt: new Date().toISOString() });
+/** One more shared link, live — every other link stays as it is. */
+export async function addInvestorLink(): Promise<InvestorSettings> {
+  const s = await readInvestorSettings();
+  const made: InvestorLink = { token: randomBytes(18).toString("base64url"), madeAt: new Date().toISOString(), enabled: true };
+  let links = [made, ...s.links];
+  // Over the cap, the oldest closed links go; live ones are never dropped for room.
+  while (links.length > MAX_LINKS) {
+    const i = links.map((l) => l.enabled).lastIndexOf(false);
+    if (i < 0) break;
+    links = links.filter((_, j) => j !== i);
+  }
+  return saveInvestorSettings({ links });
 }
 
-/** True when `token` is the live shared link. */
-export async function investorLinkOpen(token: string): Promise<boolean> {
+/** One link closed (or opened again); the others are untouched. */
+export async function setInvestorLinkEnabled(token: string, enabled: boolean): Promise<InvestorSettings> {
   const s = await readInvestorSettings();
-  return !!s.linkToken && s.linkEnabled && token === s.linkToken;
+  return saveInvestorSettings({ links: s.links.map((l) => (l.token === token ? { ...l, enabled } : l)) });
+}
+
+/** The live link `token` names, or null (unknown, or closed). */
+export async function investorLinkFor(token: string): Promise<InvestorLink | null> {
+  if (!TOKEN.test(token)) return null;
+  return (await readInvestorSettings()).links.find((l) => l.enabled && l.token === token) ?? null;
+}
+
+/** True when `token` is one of the live shared links. */
+export async function investorLinkOpen(token: string): Promise<boolean> {
+  return (await investorLinkFor(token)) !== null;
 }
 
 /* ── the report ───────────────────────────────────────────────────────── */
@@ -273,6 +328,9 @@ export interface InvestorReport {
   /** DAYS SINCE LAUNCH (2026-10-24): the day JobFlex launched (the setting, else the start day) and which day today
    *  is — the launch day is day 1. */
   launch: { date: string; day: number; set: boolean };
+  /** PEOPLE USING JOBFLEX (owner, 2026-11-04): members at work, their companies, estimates made and proposals sent
+   *  over 24 hours, 7 and 30 days, 3 months and a year (lib/investorUsage). null = not read. */
+  usage: InvestorUsage | null;
   /** When this was read. */
   at: string;
 }
@@ -281,7 +339,8 @@ export interface InvestorReport {
  *  anywhere"): the page's own figures only — not the booked-spend list or Meta's per-day and per-campaign figures,
  *  which carry the no-card days' money and would ride along in the page's data. */
 export function forReaders(r: InvestorReport): InvestorReport {
-  return { ...r, spend: { ...r.spend, entries: [] }, insights: null };
+  // The links stay with us (2026-11-04): a reader of one link never receives the others.
+  return { ...r, spend: { ...r.spend, entries: [] }, insights: null, settings: { ...r.settings, links: [], linkToken: null, linkMadeAt: null } };
 }
 
 /** Midnight of `date` in `tz`, as a timestamp (the day's offset read from Intl). */
@@ -326,6 +385,11 @@ export async function investorReport({ refreshMeta = false }: { refreshMeta?: bo
       console.warn("[investors] Meta refresh skipped:", err instanceof Error ? err.message : err);
     }
   }
+  // Who uses the app is read beside the money; a failed read leaves the page without it, never without the figures.
+  const usageRead = readInvestorUsage().catch((err) => {
+    console.warn("[investors] usage read failed:", err instanceof Error ? err.message : err);
+    return null;
+  });
   const [entries, settings, hidden, metaStatus, insights] = await Promise.all([readAdSpend(), readInvestorSettings(), statsHiddenIds(), readMetaStatus(), readMetaInsights()]);
   const today = todayIn(TRAFFIC_TZ);
   // Every day on this page is a day on the page's clock (the ad spend's days are): a signup at 6 PM in Seattle is that day's.
@@ -591,5 +655,5 @@ export async function investorReport({ refreshMeta = false }: { refreshMeta?: bo
       churn: { left: due.filter((x) => (billedNow.get(x.r.orgId) ?? 0) === 0).length, due: due.length, firstRenewal: renewals[0] ?? null },
     };
   }
-  return { figures, settings, startDay: since, spend: { entries, byPlatform }, visitorsKnown: visitors !== null, payingUnpriced, before, firstAdDay, meta: { configured: metaAdsConfigured(), ...metaStatus }, periods, insights, dailyRows, collected, recurring, financed, launch: launchDay(settings.launchDate ?? since, today, settings.launchDate !== null), at: new Date().toISOString() };
+  return { figures, settings, startDay: since, spend: { entries, byPlatform }, visitorsKnown: visitors !== null, payingUnpriced, before, firstAdDay, meta: { configured: metaAdsConfigured(), ...metaStatus }, periods, insights, dailyRows, collected, recurring, financed, launch: launchDay(settings.launchDate ?? since, today, settings.launchDate !== null), usage: await usageRead, at: new Date().toISOString() };
 }

@@ -1,0 +1,149 @@
+/* ============================================================================
+   THE ASSISTANT · HANDHELD — /mobile-assistant-v1 (component: ./mobile-assistant.tsx)
+   ============================================================================
+
+   PLAIN STYLESHEET, NOT A CSS MODULE — as the other handheld pages (see
+   mobile-texting.css): every selector starts with the one literal root class
+   `.jf-mobile-assistant`, element prefix `mas-`. The conversation inside is the
+   desk panel's (assistant.module.css, its own data-nest root). The only rules
+   that reach outside are the two host neutralizers, `:has()`-gated so they undo
+   themselves on unmount. Light mode only, fluid from 320px to 768px.
+   ========================================================================= */
+
+.jf-mobile-assistant {
+  /* the shared MobileNav's token contract (mobile-nav.module.css) */
+  --sheet: var(--paper-deep);
+  --blueprint: var(--accent);
+  --blueprint-dark: var(--accent-ink);
+  --blue: var(--accent);
+  --blue-dark: var(--accent-ink);
+  --sky: color-mix(in srgb, var(--accent) 55%, var(--paper-deep));
+  --muted: var(--ink-muted);
+  --muted-light: var(--ink-faint);
+  --muted-faint: var(--ink-faint);
+  --success: var(--emerald);
+  --warning: var(--amber);
+  --danger: var(--rose);
+  --font: var(--font-sans);
+  --border: 2px solid var(--ink);
+  --border-thin: 1.5px solid var(--ink);
+  --radius: var(--r-sm);
+  --topbar-h: 64px;
+  --tbar-gap: clamp(6px, 1.8vw, 11px);
+  --sidebar-w: min(84vw, 288px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --pad-x: clamp(12px, 4vw, 20px);
+
+  /* pinned by its edges and sized 100% (docs/design/mobile.md), never vh/dvh */
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-rows: var(--topbar-h) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-sans);
+  background: var(--paper);
+  color: var(--ink);
+  line-height: normal;
+}
+
+/* Scoped reset at (0,0,0): beats the UA defaults, loses to every author rule,
+   and steps around the shared nav and the nested conversation. */
+:where(.jf-mobile-assistant, .jf-mobile-assistant *):not(:where([data-mnav], [data-mnav] *, [data-nest], [data-nest] *)) {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+.jf-mobile-assistant [hidden] {
+  display: none !important;
+}
+
+/* HOST NEUTRALIZERS — globals.css paints a drafting grid on <body> and a grain
+   overlay on body::before; this page paints its own surfaces. */
+body:has(.jf-mobile-assistant) {
+  background-image: none;
+}
+body:has(.jf-mobile-assistant)::before {
+  content: none;
+}
+
+.jf-mobile-assistant .mas-main {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  background: #fff;
+  border-left: 2px solid var(--ink);
+  border-right: 2px solid var(--ink);
+}
+.jf-mobile-assistant .mas-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px var(--pad-x);
+  border-bottom: 2px solid var(--ink);
+  background: var(--paper);
+}
+.jf-mobile-assistant .mas-mark {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: #fff;
+}
+.jf-mobile-assistant .mas-mark svg {
+  width: 20px;
+  height: 20px;
+}
+.jf-mobile-assistant .mas-headText {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.jf-mobile-assistant .mas-title {
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+}
+.jf-mobile-assistant .mas-sub {
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+.jf-mobile-assistant .mas-tag {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border: 1.5px solid var(--accent);
+  color: var(--accent-ink);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 14px;
+}
+.jf-mobile-assistant .mas-body {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.jf-mobile-assistant .mas-body > * {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* A phone held sideways, or a small tablet: the sheet keeps its frame. */
+@media (max-width: 720px) {
+  .jf-mobile-assistant .mas-main {
+    border-left: 0;
+    border-right: 0;
+  }
+}

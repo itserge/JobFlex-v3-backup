@@ -109,6 +109,7 @@ const LIMIT_GROUPS: Array<{ title: string; keys: LimitKey[] }> = [
   { title: "Projects & schedules", keys: ["projects", "calendarCards", "calendarEvents"] },
   { title: "Jobs & crew", keys: ["jobs", "workers", "teamSeats", "managers"] },
   { title: "Comms", keys: ["conversationsStarted", "messagesSent", "aiPhoneCalls", "reviewRequests"] },
+  { title: "Assistant", keys: ["assistantCommands"] },
 ];
 const DEF_BY_KEY = new Map(LIMIT_DEFS.map((d) => [d.key, d]));
 

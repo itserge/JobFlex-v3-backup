@@ -18,7 +18,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { addProjectExpense, deleteProjectExpense, setProjectBudget } from "@/actions/projectBudget";
+import { addChangeOrderCost, addProjectExpense, deleteProjectExpense, removeBudgetLine, setProjectBudget } from "@/actions/projectBudget";
 import { BUDGET_CATEGORIES, CATEGORY_LABEL, WARN_AT, type BudgetCategory, type BudgetTone } from "@/lib/projectBudget";
 import type { PdBudget } from "@/components/v3/project-detail-blueprint/project-detail-data";
 import s from "./project-budget-card.module.css";
@@ -46,20 +46,33 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
   const sum = budget.summary;
 
   // ── budget editor ──
+  // Category lines only — a change order's cost line (labelled) is listed apart and never retyped. A one-figure budget
+  // opens as that figure (2026-11-04: it opened blank, and saving it blank set the budget to $0).
+  const extras = useMemo(() => budget.lines.filter((l) => l.label), [budget.lines]);
+  const extrasTotal = extras.reduce((n, l) => n + l.amount, 0);
   const initialDraft = useMemo(() => {
     const d: Record<BudgetCategory, string> = { MATERIALS: "", LABOR: "", SUBCONTRACTORS: "", PERMITS: "", EQUIPMENT: "", OTHER: "" };
-    for (const l of budget.lines) if (l.category in d) d[l.category as BudgetCategory] = String(Math.round(l.amount));
+    for (const l of budget.lines) if (!l.label && l.category in d) d[l.category as BudgetCategory] = String(Math.round(l.amount * 100) / 100);
     return d;
   }, [budget.lines]);
   const [draft, setDraft] = useState(initialDraft);
-  const draftTotal = BUDGET_CATEGORIES.reduce((n, c) => n + parseMoney(draft[c]), 0);
+  const [split, setSplit] = useState(!sum.unsplit && budget.lines.some((l) => !l.label));
+  const baseFigure = Math.max(0, sum.budget - extrasTotal);
+  const [oneFigure, setOneFigure] = useState(baseFigure > 0 ? String(Math.round(baseFigure * 100) / 100) : "");
+  const draftTotal = (split ? BUDGET_CATEGORIES.reduce((n, c) => n + parseMoney(draft[c]), 0) : parseMoney(oneFigure)) + extrasTotal;
+  // An approved change order's cost, typed in: prefilled at the project's planned cost share.
+  const [coCost, setCoCost] = useState<Record<string, { amount: string; category: BudgetCategory }>>({});
 
   // ── expense form ──
   const [exp, setExp] = useState({ category: "MATERIALS" as BudgetCategory, amount: "", vendor: "", note: "", date: today() });
 
   const open = (p: Panel) => {
     setError(null);
-    if (p === "budget") setDraft(initialDraft);
+    if (p === "budget") {
+      setDraft(initialDraft);
+      setSplit(!sum.unsplit && budget.lines.some((l) => !l.label));
+      setOneFigure(baseFigure > 0 ? String(Math.round(baseFigure * 100) / 100) : "");
+    }
     if (p === "expense") setExp({ category: "MATERIALS", amount: "", vendor: "", note: "", date: today() });
     setPanel((cur) => (cur === p ? null : p));
   };
@@ -69,10 +82,14 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
   };
 
   async function saveBudget() {
+    const base = draftTotal - extrasTotal;
+    if (base <= 0 && sum.budget - extrasTotal > 0 && !window.confirm("Remove this project's cost budget? Nothing will be tracked against it.")) return;
     setBusy(true);
     setError(null);
     try {
-      await setProjectBudget({ projectId, lines: BUDGET_CATEGORIES.map((c) => ({ category: c, amount: parseMoney(draft[c]) })) });
+      await setProjectBudget(
+        split ? { projectId, lines: BUDGET_CATEGORIES.map((c) => ({ category: c, amount: parseMoney(draft[c]) })) } : { projectId, total: parseMoney(oneFigure) },
+      );
       done();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't save the budget.");
@@ -96,6 +113,35 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
       setError(err instanceof Error ? err.message : "Couldn't log the expense.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function saveChangeCost(changeOrderId: string, fallback: number) {
+    const v = coCost[changeOrderId] ?? { amount: String(Math.round(fallback)), category: "OTHER" as BudgetCategory };
+    const amount = parseMoney(v.amount);
+    if (!(amount > 0)) {
+      setError("Enter what the change costs you.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await addChangeOrderCost({ projectId, changeOrderId, category: v.category, amount });
+      startTransition(() => router.refresh());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't add it to the budget.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeExtra(lineId: string) {
+    if (!window.confirm("Take this change order's cost out of the budget?")) return;
+    try {
+      await removeBudgetLine({ projectId, lineId });
+      startTransition(() => router.refresh());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't take it out.");
     }
   }
 
@@ -146,32 +192,64 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
         {panel === "budget" ? (
           <div className={s.panel}>
             <div className={s.panelHint}>
-              What this project should cost, by category. Spending on the project and on its jobs is tracked against it.
-              {sum.unsplit ? ` It is ${whole(sum.budget)} as one figure now — split it to track each category.` : ""}
+              What this project should <b>cost you</b> — materials, labor, subs, permits. The price comes from the proposals you
+              sell; the margin is the difference. Spending on the project and on its jobs (receipts, crew pay, stock) is tracked
+              against it.
             </div>
-            <div className={s.grid}>
-              {BUDGET_CATEGORIES.map((c) => (
-                <label key={c} className={s.fld}>
-                  <span className={s.lbl}>{CATEGORY_LABEL[c]}</span>
+            {split ? (
+              <div className={s.grid}>
+                {BUDGET_CATEGORIES.map((c) => (
+                  <label key={c} className={s.fld}>
+                    <span className={s.lbl}>{CATEGORY_LABEL[c]}</span>
+                    <span className={s.moneyIn}>
+                      <span aria-hidden="true">$</span>
+                      <input
+                        inputMode="decimal"
+                        value={draft[c]}
+                        placeholder="0"
+                        onChange={(e) => setDraft((d) => ({ ...d, [c]: e.target.value.replace(/[^\d.,]/g, "") }))}
+                      />
+                    </span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <div className={s.grid}>
+                <label className={s.fld}>
+                  <span className={s.lbl}>Total cost budget</span>
                   <span className={s.moneyIn}>
                     <span aria-hidden="true">$</span>
-                    <input
-                      inputMode="decimal"
-                      value={draft[c]}
-                      placeholder="0"
-                      onChange={(e) => setDraft((d) => ({ ...d, [c]: e.target.value.replace(/[^\d.,]/g, "") }))}
-                    />
+                    <input inputMode="decimal" autoFocus value={oneFigure} placeholder="0" onChange={(e) => setOneFigure(e.target.value.replace(/[^\d.,]/g, ""))} />
                   </span>
                 </label>
-              ))}
-            </div>
+              </div>
+            )}
+            <button type="button" className={s.linkBtn} onClick={() => setSplit((v) => !v)} data-budget-mode>
+              {split ? "Use one figure instead" : "Split it by category — materials, labor, subs…"}
+            </button>
+            {extras.length ? (
+              <ul className={s.extras} aria-label="Change orders in the budget">
+                {extras.map((l) => (
+                  <li key={l.id ?? l.label}>
+                    <span>{l.label}</span>
+                    <span>{CATEGORY_LABEL[l.category as BudgetCategory] ?? l.category}</span>
+                    <b>{whole(l.amount)}</b>
+                    {l.id ? (
+                      <button type="button" className={s.expX} aria-label={`Take ${l.label} out of the budget`} onClick={() => void removeExtra(l.id!)}>
+                        ×
+                      </button>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
             <div className={s.panelFoot}>
               <span className={s.total}>
                 Budgeted cost <b>{whole(draftTotal)}</b>
-                {sum.contract > 0 ? (
+                {sum.contract + sum.pipeline > 0 ? (
                   <>
                     {" "}
-                    · margin at this budget <b className={sum.contract - draftTotal < 0 ? s.overText : ""}>{whole(sum.contract - draftTotal)}</b>
+                    · margin at this budget <b className={sum.contract + sum.pipeline - draftTotal < 0 ? s.overText : ""}>{whole(sum.contract + sum.pipeline - draftTotal)}</b>
                   </>
                 ) : null}
               </span>
@@ -273,9 +351,16 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
             {/* 1 — the four numbers */}
             <div className={s.nums}>
               <div className={s.num}>
-                <span className={s.numL}>Contract</span>
+                <span className={s.numL}>Contract · before tax</span>
                 <span className={s.numV}>{sum.contract > 0 ? whole(sum.contract) : "—"}</span>
-                <span className={s.numS}>{sum.contract > 0 ? "sold, with approved changes" : sum.pipeline > 0 ? `${whole(sum.pipeline)} proposed` : "nothing sold yet"}</span>
+                <span className={s.numS}>
+                  {sum.contract > 0
+                    ? sum.salesTax > 0
+                      ? `sold, with approved changes · +${whole(sum.salesTax)} sales tax, not profit`
+                      : "sold, with approved changes"
+                    : "nothing sold yet"}
+                  {sum.pipeline > 0 ? ` · ${whole(sum.pipeline)} open` : ""}
+                </span>
               </div>
               <div className={s.num}>
                 <span className={s.numL}>Budgeted cost</span>
@@ -289,13 +374,19 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
                   {sum.budget > 0 ? (sum.remaining >= 0 ? `${whole(sum.remaining)} left` : `${whole(-sum.remaining)} over`) : "no budget to track"}
                 </span>
               </div>
-              <div className={s.num}>
+              <div className={s.num} data-margin-state={sum.marginState}>
                 <span className={s.numL}>Projected margin</span>
-                <span className={`${s.numV} ${sum.margin != null && sum.margin < 0 ? s.overText : sum.margin != null ? s.okText : ""}`}>
-                  {sum.margin != null ? whole(sum.margin) : "—"}
+                {/* While the proposals cover less than the cost budget it is not a loss yet — it is what is left to price
+                    (owner walk 2026-11-04: the kitchen alone read −74% against the whole remodel's cost). */}
+                <span className={`${s.numV} ${sum.marginState === "short" ? s.warnText : sum.margin != null && sum.margin < 0 ? s.overText : sum.margin != null ? s.okText : ""}`}>
+                  {sum.marginState === "short" ? `${whole(sum.uncovered)} to price` : sum.margin != null ? whole(sum.margin) : "—"}
                 </span>
                 <span className={s.numS}>
-                  {sum.margin != null ? `${pctText(sum.marginPct)} of contract · cost ${whole(sum.projectedCost)}` : "once a proposal is sold"}
+                  {sum.marginState === "none"
+                    ? "once a proposal is in"
+                    : sum.marginState === "short"
+                      ? `proposals cover ${whole(sum.contract + sum.pipeline)} of ${whole(sum.projectedCost)} cost — if that's everything, it loses ${whole(sum.uncovered)}`
+                      : `${pctText(sum.marginPct)} · cost ${whole(sum.projectedCost)}${sum.marginState === "projected" ? " · if the open proposals sell" : ""}`}
                 </span>
               </div>
             </div>
@@ -306,6 +397,55 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
                 <i className={toneCls(sum.tone)} style={{ width: `${Math.min(100, (sum.pct ?? 0) * 100)}%` }} />
                 <b style={{ left: `${WARN_AT * 100}%` }} />
               </div>
+            ) : null}
+
+            {/* what the client has paid and still owes (2026-11-04) */}
+            {sum.contract > 0 ? (
+              <div className={s.paid} data-project-paid>
+                <span>
+                  Client paid <b>{whole(budget.collected)}</b> of {whole(sum.billed)}
+                </span>
+                <span className={budget.owed > 0 ? s.warnText : s.okText}>{budget.owed > 0 ? `${whole(budget.owed)} still owed` : "paid in full"}</span>
+              </div>
+            ) : null}
+
+            {/* approved change orders whose cost is not in the budget yet */}
+            {sum.uncosted.length ? (
+              <ul className={s.cos} aria-label="Change orders to cost">
+                {sum.uncosted.map((c) => {
+                  const est = c.amount * (sum.costShare ?? 1);
+                  const v = coCost[c.id] ?? { amount: String(Math.round(est)), category: "OTHER" as BudgetCategory };
+                  return (
+                    <li key={c.id} data-co-uncosted>
+                      <span className={s.coText}>
+                        <b>{c.label}</b> adds {whole(c.amount)} of work. Its cost isn&apos;t in the budget — counted at{" "}
+                        {sum.costShare != null ? `${Math.round(sum.costShare * 100)}%, the project's planned cost share` : "its full price"} ({whole(est)}) until you add it.
+                      </span>
+                      <span className={s.coForm}>
+                        <span className={s.moneyIn}>
+                          <span aria-hidden="true">$</span>
+                          <input
+                            inputMode="decimal"
+                            aria-label={`What ${c.label} costs you`}
+                            value={v.amount}
+                            onChange={(e) => setCoCost((m) => ({ ...m, [c.id]: { ...v, amount: e.target.value.replace(/[^\d.,]/g, "") } }))}
+                          />
+                        </span>
+                        <select aria-label="Category" value={v.category} onChange={(e) => setCoCost((m) => ({ ...m, [c.id]: { ...v, category: e.target.value as BudgetCategory } }))}>
+                          {BUDGET_CATEGORIES.map((k) => (
+                            <option key={k} value={k}>
+                              {CATEGORY_LABEL[k]}
+                            </option>
+                          ))}
+                        </select>
+                        <button type="button" className={s.btn} disabled={busy} onClick={() => void saveChangeCost(c.id, est)} data-co-add-cost>
+                          Add its cost
+                        </button>
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
             ) : null}
 
             {/* 2 — what needs attention */}
@@ -344,7 +484,7 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
             {/* 4 — the spending */}
             <div className={s.secL}>
               Spending
-              <span>{budget.expenses.length ? `${budget.expenses.length}${budget.expenses.length >= 60 ? "+" : ""} entries` : "nothing logged yet"}</span>
+              <span>{budget.expenses.length ? `${budget.expenses.length}${budget.expenses.length >= 60 ? "+" : ""} ${budget.expenses.length === 1 ? "entry" : "entries"}` : "nothing logged yet"}</span>
             </div>
             {budget.expenses.length ? (
               <ul className={s.exps}>

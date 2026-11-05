@@ -35,6 +35,26 @@ export function contractTotal(proposalTotal: number, cos: readonly ContractCo[])
   return fromMinor(contractTotalMinor(proposalTotal, cos));
 }
 
+/** An approved change order's pre-tax side, for contractRevenue. */
+export interface RevenueCo extends ContractCo {
+  amount: number | null;
+}
+
+/**
+ * The same contract BEFORE SALES TAX (owner, 2026-11-04: the tax is the
+ * state's, never profit) — the proposal's total less its tax, plus each
+ * approved change order's pre-tax `amount`. The legacy rule above holds: an
+ * order with no `total` was folded into the proposal's total and adds nothing.
+ */
+export function contractRevenue(proposalTotal: number, taxTotal: number | null | undefined, cos: readonly RevenueCo[]): number {
+  let n = Math.max(0, toMinor(proposalTotal) - toMinor(taxTotal ?? 0));
+  for (const c of cos) {
+    if (c.status !== "APPROVED" || c.total == null || !Number.isFinite(c.total)) continue;
+    n += toMinor(c.amount ?? 0);
+  }
+  return fromMinor(Math.max(0, n));
+}
+
 /**
  * The two totals resolveSchedule needs: the contract value the client owes,
  * and the ORIGINAL proposal total that percent stages are percentages of.

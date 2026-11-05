@@ -48,7 +48,10 @@ import type {
   PdBudget,
   PdJob,
   PdLooseProposal,
+  PdOpens,
+  PdPayments,
   PdProject,
+  PdWorker,
   PdProposal,
 } from "@/components/v3/project-detail-blueprint/project-detail-data";
 
@@ -93,6 +96,12 @@ export function ProjectDetailViewportSwitch(props: {
   availableProposals: PdAvailProposal[];
   looseProposals: PdLooseProposal[];
   budget: PdBudget;
+  /** Owner or manager — change orders are theirs (actions/changeOrders requireManager). */
+  canManage?: boolean;
+  /** The pages this role may open from here (lib/roleRoutes). */
+  opens?: PdOpens;
+  payments?: PdPayments;
+  roster?: PdWorker[];
 }) {
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   // The handheld half is a lazy chunk, so it inherits the deploy-skew failure

@@ -47,7 +47,7 @@ export type NavItem = {
   preview?: boolean;
 };
 /** The tool colours (globals.css `--tool-*`, mapped by `[data-tone]`). One per tool. */
-export type ToolTone = "violet" | "blue" | "spruce" | "berry" | "teal" | "cedar" | "navy" | "olive";
+export type ToolTone = "violet" | "blue" | "spruce" | "berry" | "teal" | "cedar" | "navy" | "olive" | "gold";
 /** `short`: the name the desk sidebar's tool row prints when the full one would
  *  not fit beside its "Soon" tag and subpage button (2026-10-16: "Deck"; none since 2026-10-22). */
 export type NavTool = { tone: ToolTone; short?: string };
@@ -66,9 +66,15 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Proposals", icon: "i-file", href: "/dashboard/proposals" },
       { label: "Clients", icon: "i-users", href: "/dashboard/clients" },
       { label: "Leads", icon: "i-target", href: "/dashboard/leads" },
-      { label: "Projects", icon: "i-folder", href: "/dashboard/projects" },
       { label: "CRM", icon: "i-crm", href: "/dashboard/crm" },
     ],
+  },
+  {
+    // REMODELING (owner, 2026-11-04: "get the projects in our sidebar presented and highlighted, so contractors
+    // understand it's for remodelers — a separate system where you run a big project with lots of estimates").
+    // Projects leaves Work for a bay of its own, drawn like the estimating tools: one hub, its own colour.
+    label: "Remodeling",
+    items: [{ label: "Projects", icon: "i-folder", href: "/dashboard/projects", tool: { tone: "gold" } }],
   },
   {
     // THE TOOLS GET THEIR OWN SECTION (owner, 2026-10-12): they were the first
@@ -300,7 +306,8 @@ const ROLE_NAV: Record<string, RoleNavPlan> = {
   ],
   // Estimators: proposals plus the estimating engines.
   ESTIMATOR: [
-    { label: "Estimating", hrefs: ["/dashboard/proposals", "/dashboard/projects"] },
+    { label: "Estimating", hrefs: ["/dashboard/proposals"] },
+    { label: "Remodeling", hrefs: ["/dashboard/projects"] },
     {
       label: "Automation",
       // Roof and Fence are listed because the production sidebar lists them for

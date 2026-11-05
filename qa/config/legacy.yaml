@@ -101,6 +101,7 @@ scripts:
   - { file: ai-desk-route.check.ts, suite: logic, kind: check, status: live }
   - { file: ai-desk-step4.check.ts, suite: logic, kind: check, status: live }
   - { file: ai-desk-step5.check.ts, suite: logic, kind: check, status: live }
+  - { file: assistant.check.ts, suite: logic, kind: check, status: live, note: "the JobFlex Assistant's pure core: short replies, the approval states, the undo window, company-clock dates, role rules" }
   - { file: changeOrders.check.ts, suite: logic, kind: check, status: live }
   - { file: crew-days.check.ts, suite: logic, kind: check, status: live, note: "could text through Twilio if its keys were set — the runner preloads the recording twilio stand-in (_no-sms.js)" }
   - { file: crew-onsite.check.ts, suite: logic, kind: check, status: live }
