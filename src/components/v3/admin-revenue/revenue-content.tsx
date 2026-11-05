@@ -1,12 +1,13 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useMemo, useState, useSyncExternalStore, useTransition } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ArrowUpRight, RefreshCw, Search } from "lucide-react";
 import { revenueDate, type RevenueReport } from "@/lib/revenue-contract";
+import { refreshRevenue } from "@/actions/revenue";
 import s from "./revenue.module.css";
 
 const Mobile = dynamic(() => import("./revenue-mobile"), { ssr: false });
@@ -24,6 +25,12 @@ const futureKeys = { mrr: "forecastMrr", arr: "forecastArr", collected: "forecas
 export function RevenueView({ data, mobile = false }: { data: RevenueReport; mobile?: boolean }) {
   const router = useRouter();
   const [refreshing, startRefresh] = useTransition();
+  // A new Stripe read runs behind these figures (lib/revenueSaved): look again every fifteen seconds until it lands.
+  useEffect(() => {
+    if (!data.updating) return;
+    const t = setInterval(() => router.refresh(), 15_000);
+    return () => clearInterval(t);
+  }, [data.updating, router]);
   const [metric, setMetric] = useState<Metric>("mrr"), [tab, setTab] = useState("overview"), [range, setRange] = useState(90), [query, setQuery] = useState(""), [filter, setFilter] = useState("all");
   const [page, setPage] = useState(0);
   const money = (cents: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: data.currency, maximumFractionDigits: 2 }).format(cents / 100);
@@ -34,7 +41,7 @@ export function RevenueView({ data, mobile = false }: { data: RevenueReport; mob
   const shown = users.slice(page * 20, page * 20 + 20);
   const predicted = metric === "mrr" ? data.projectedMrr : metric === "arr" ? data.projectedMrr * 12 : data.projectedCollected;
   return <main className={`${s.root} ${mobile ? s.mobile : ""}`}>
-    <header className={s.header}><div><p className={s.eyebrow}>Platform / Financials</p><h1>Revenue</h1><p className={s.subtle}>Subscription money, in one place.</p></div><div className={s.sync}><span className={s.stamp}>{data.live ? "Live Stripe" : "Test data"}</span><button className={s.button} disabled={refreshing} onClick={() => startRefresh(() => router.refresh())} aria-label="Refresh revenue"><RefreshCw size={16} />{refreshing ? "Reading…" : "Refresh"}</button><small>Read {new Date(data.asOf).toLocaleString("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} PT</small></div></header>
+    <header className={s.header}><div><p className={s.eyebrow}>Platform / Financials</p><h1>Revenue</h1><p className={s.subtle}>Subscription money, in one place.</p></div><div className={s.sync}><span className={s.stamp}>{data.live ? "Live Stripe" : "Test data"}</span><button className={s.button} disabled={refreshing || data.updating} onClick={() => startRefresh(async () => { await refreshRevenue(); router.refresh(); })} aria-label="Refresh revenue"><RefreshCw size={16} />{refreshing || data.updating ? "Reading…" : "Refresh"}</button><small>Read {new Date(data.asOf).toLocaleString("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} PT</small></div></header>
     <div className={s.metrics}>
       {(["mrr", "arr", "collected"] as const).map(key => <button key={key} className={`${s.metric} ${metric === key ? s.selected : ""}`} onClick={() => { setMetric(key); setTab("overview"); }} aria-pressed={metric === key}><span>{labels[key]}</span><strong>{money(data[key])}</strong><small>{key === "mrr" ? "Active monthly revenue" : key === "arr" ? "MRR × 12 · not cash" : "Lifetime · after refunds / disputes"}</small></button>)}
     </div>

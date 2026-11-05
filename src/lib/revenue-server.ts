@@ -1,7 +1,7 @@
 import "server-only";
 import type Stripe from "stripe";
 import { requirePlatformAdmin } from "@/lib/orgContext";
-import { getSubscribersData } from "@/actions/subscribers";
+import { readSubscribersData } from "@/lib/subscribersRead";
 import { getStripe } from "@/lib/sdk/stripe";
 import { invoiceSubscriptionId } from "@/lib/stripeCompat";
 import { CARD_EXPAND } from "@/lib/paymentCard";
@@ -10,6 +10,14 @@ import { revenueDate, type RevenueCustomer, type RevenuePoint, type RevenueRepor
 
 const idOf = (v: string | { id: string } | null | undefined) => typeof v === "string" ? v : v?.id ?? null;
 const CAP = 10000;
+/** Each Stripe request gives up after this long (Stripe's own default is 80 s, retried twice — one slow call could
+ *  outlast the page). The read runs behind a saved copy (lib/revenueSaved), so a slow one only delays the next figures. */
+const REQ = { timeout: 30_000 } as const;
+/** How long each part of the read took, in the server log: a slow read says which part was slow. */
+async function timed<T>(name: string, work: Promise<T>): Promise<T> {
+  const t = Date.now();
+  try { return await work; } finally { console.info(`[revenue] ${name} ${Date.now() - t}ms`); }
+}
 async function collect<T>(list: AsyncIterable<T>): Promise<T[]> {
   const result: T[] = [];
   for await (const item of list) {
@@ -31,15 +39,22 @@ async function pool<T, R>(items: T[], fn: (item: T) => Promise<R>): Promise<R[]>
  * invoice coverage. Today's MRR uses the same facts/rule as Subscribers. */
 export async function getRevenueReport(): Promise<RevenueReport> {
   await requirePlatformAdmin();
+  return readRevenueReport();
+}
+
+/** The read itself, unguarded: the page checks the platform admin first, then this runs — inline or after the
+ *  response (lib/revenueSaved), where the request's cookies are gone. */
+export async function readRevenueReport(): Promise<RevenueReport> {
+  const started = Date.now();
   const stripe = getStripe();
   const [billing, subscriptions, invoices, payments, charges, refunds, disputes] = await Promise.all([
-    getSubscribersData(),
-    collect(stripe.subscriptions.list({ status: "all", limit: 100, expand: [...CARD_EXPAND, "data.default_source"] })),
-    collect(stripe.invoices.list({ limit: 100 })),
-    collect(stripe.invoicePayments.list({ limit: 100 })),
-    collect(stripe.charges.list({ limit: 100 })),
-    collect(stripe.refunds.list({ limit: 100 })),
-    collect(stripe.disputes.list({ limit: 100 })),
+    timed("subscribers", readSubscribersData()),
+    timed("subscriptions", collect(stripe.subscriptions.list({ status: "all", limit: 100, expand: [...CARD_EXPAND, "data.default_source"] }, REQ))),
+    timed("invoices", collect(stripe.invoices.list({ limit: 100 }, REQ))),
+    timed("invoice payments", collect(stripe.invoicePayments.list({ limit: 100 }, REQ))),
+    timed("charges", collect(stripe.charges.list({ limit: 100 }, REQ))),
+    timed("refunds", collect(stripe.refunds.list({ limit: 100 }, REQ))),
+    timed("disputes", collect(stripe.disputes.list({ limit: 100 }, REQ))),
   ]);
   if (!billing.stripeLive || billing.truncated) throw new Error("A complete Stripe subscription read is required.");
   const now = Math.floor(Date.now() / 1000), today = revenueDate(now), currency = billing.metrics.currency;
@@ -93,12 +108,12 @@ export async function getRevenueReport(): Promise<RevenueReport> {
   for (const inv of invoiceById.values()) if (inv.currency === currency && inv.status === "open" && inv.amount_remaining > 0 && (inv.attempted || (inv.due_date && inv.due_date < now))) {
     overdue += inv.amount_remaining; const row = customerBook.get(idOf(inv.customer)!); if (row) row.overdue += inv.amount_remaining;
   }
-  const historic = await pool([...invoiceById.values()].filter(i => i.status === "paid" && i.currency === currency), async i => {
-    const lines = i.lines.has_more ? await collect(stripe.invoices.listLineItems(i.id, { limit: 100 })) : i.lines.data;
+  const historic = await timed("invoice lines", pool([...invoiceById.values()].filter(i => i.status === "paid" && i.currency === currency), async i => {
+    const lines = i.lines.has_more ? await collect(stripe.invoices.listLineItems(i.id, { limit: 100 }, REQ)) : i.lines.data;
     return { i, lines };
-  });
+  }));
   const priceIds = new Set(historic.flatMap(({ lines }) => lines.map(l => l.pricing?.price_details?.price).filter((p): p is string => typeof p === "string")));
-  const priceBook = new Map((await pool([...priceIds], id => stripe.prices.retrieve(id))).map(p => [p.id, p]));
+  const priceBook = new Map((await timed("prices", pool([...priceIds], id => stripe.prices.retrieve(id, {}, REQ)))).map(p => [p.id, p]));
   const coverage: { start: number; end: number; amount: number }[] = [];
   for (const { i, lines } of historic) for (const line of lines) {
     const detail = line.parent?.subscription_item_details;
@@ -114,7 +129,7 @@ export async function getRevenueReport(): Promise<RevenueReport> {
   const horizon = now + 30 * 86400;
   type Future = { at: number; mrrDelta: number; cash: number };
   const future: Future[] = []; let eligibleTrials = 0, excludedTrials = 0;
-  await pool(subscriptions, async s => {
+  await timed("upcoming invoices", pool(subscriptions, async s => {
     const f = facts.get(s.id); const row = customerBook.get(idOf(s.customer)!)!;
     const trial = s.status === "trialing";
     const stop = s.cancel_at || (s.cancel_at_period_end ? Math.min(...s.items.data.map(i => i.current_period_end)) : null);
@@ -131,7 +146,7 @@ export async function getRevenueReport(): Promise<RevenueReport> {
     const eligible = f && f.currency === currency && !f.paused && !f.comped && hasMethod && s.collection_method === "charge_automatically" && (s.status === "active" || trial) && date && (!stop || stop > date);
     if (!eligible) { if (trial) excludedTrials++; return; }
     try {
-      const p = await stripe.invoices.createPreview({ subscription: s.id });
+      const p = await stripe.invoices.createPreview({ subscription: s.id }, REQ);
       if (p.currency !== currency) { if (trial) excludedTrials++; return; }
       const at = Math.max(date, p.next_payment_attempt || date);
       if (trial) {
@@ -146,7 +161,7 @@ export async function getRevenueReport(): Promise<RevenueReport> {
       if (trial) excludedTrials++;
       warnings.add("Some upcoming invoices could not be previewed and are excluded from the forecast.");
     }
-  });
+  }));
   const metrics = computeMetrics(billing.rows, currency), mrr = metrics.mrrCents;
   if (metrics.mrrUnpriced || metrics.mrrPartlyPriced || metrics.mrrRestrictedDiscount) warnings.add("Some recurring prices or restricted discounts are incomplete; MRR is a floor. See Subscribers.");
   const collected = movements.reduce((a, m) => a + m.amount, 0);
@@ -168,5 +183,6 @@ export async function getRevenueReport(): Promise<RevenueReport> {
     day = new Date(Date.parse(day + "T12:00:00Z") + 86400000).toISOString().slice(0, 10);
   }
   const last = points.at(-1)!;
+  console.info(`[revenue] read ${Date.now() - started}ms — ${subscriptions.length} subscriptions, ${invoices.length} invoices, ${charges.length} charges, ${points.length} days`);
   return { asOf: new Date(now * 1000).toISOString(), currency, live: subscriptions[0]?.livemode ?? !process.env.STRIPE_SECRET_KEY_TEST, mrr, arr: mrr * 12, gross, refunds: refunded, collected, projectedMrr: last.forecastMrr ?? mrr, projectedCollected: last.forecastCollected ?? collected, eligibleTrials, excludedTrials, overdue, points, customers: [...customerBook.values()].sort((a, b) => b.collected - a.collected), warnings: [...warnings] };
 }

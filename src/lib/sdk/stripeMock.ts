@@ -12,7 +12,9 @@
 // WHAT IT KNOWS. The subset the subscription paths use — subscriptions
 // retrieve / update / cancel / list, invoices list / createPreview, customers,
 // prices, accounts; and the refunds and disputes lists the investor page reads
-// (lib/investorPayments), from rows a harness writes. Anything else throws loudly ("not implemented"), which is
+// (lib/investorPayments), from rows a harness writes; the charges and invoice
+// payments lists Admin → Revenue reads (empty unless a harness writes them).
+// The lists page as the real client's do: awaited, one page; `for await`, every row. Anything else throws loudly ("not implemented"), which is
 // the point: a path that reaches Stripe unexpectedly fails the rehearsal
 // instead of quietly doing nothing.
 //
@@ -163,6 +165,8 @@ export interface MockStore {
   checkouts: Record<string, MockCheckoutSession>;
   refunds?: MockMoneyBack[];
   disputes?: MockMoneyBack[];
+  charges?: Array<{ id: string; created: number } & Record<string, unknown>>;
+  invoicePayments?: Array<{ id: string; created: number } & Record<string, unknown>>;
 }
 
 export class MockStripeError extends Error {
@@ -297,7 +301,8 @@ function expandCustomer(store: MockStore, sub: MockSubscription, expand: string[
   const wants = (expand ?? []).some((e) => e === "customer" || e === "data.customer");
   if (!wants) return { ...sub };
   const c = store.customers[sub.customer];
-  return { ...sub, customer: c ? { ...c, object: "customer" } : sub.customer };
+  // A real customer always carries its invoice settings (Admin → Revenue reads the default method there).
+  return { ...sub, customer: c ? { invoice_settings: { default_payment_method: null }, ...c, object: "customer" } : sub.customer };
 }
 
 type Params = Record<string, unknown>;
@@ -716,8 +721,40 @@ export function mockStripeClient(file: string): Stripe {
   });
   const refunds = moneyBack("refunds");
   const disputes = moneyBack("disputes");
+  // Admin → Revenue's charges and invoice payments, as a harness wrote them (none by default), newest first.
+  const written = (what: "charges" | "invoicePayments", object: string) => ({
+    async list(params?: Params) {
+      const s = load();
+      record(s, `${what}.list`, [params]);
+      save(s);
+      let rows = (s[what] ?? []).slice().sort((a, b) => b.created - a.created);
+      const after = params?.starting_after as string | undefined;
+      if (after) rows = rows.slice(rows.findIndex((r) => r.id === after) + 1);
+      const limit = Number(params?.limit ?? 10);
+      return { object: "list", data: rows.slice(0, limit).map((r) => ({ ...r, object })), has_more: rows.length > limit, url: `/v1/${what === "charges" ? "charges" : "invoice_payments"}` };
+    },
+  });
+  const charges = written("charges", "charge");
+  const invoicePayments = written("invoicePayments", "invoice_payment");
 
-  const implemented: Record<string, unknown> = { subscriptions, invoices, customers, prices, accounts, paymentIntents, checkout, refunds, disputes };
+  // Awaited, a list is one page; iterated with `for await`, every row, page after page — as the real client's.
+  type Page = { data: Array<{ id: string }>; has_more: boolean };
+  const paged = <P extends Page>(list: (params?: Params) => Promise<P>) => (params?: Params) => {
+    const first = list(params);
+    return Object.assign(first, {
+      async *[Symbol.asyncIterator]() {
+        let page: Page = await first;
+        for (;;) {
+          yield* page.data;
+          if (!page.has_more || !page.data.length) return;
+          page = await list({ ...params, starting_after: page.data[page.data.length - 1].id });
+        }
+      },
+    });
+  };
+  for (const r of [subscriptions, invoices, refunds, disputes, charges, invoicePayments] as Array<{ list: (params?: Params) => Promise<Page> }>) r.list = paged(r.list);
+
+  const implemented: Record<string, unknown> = { subscriptions, invoices, customers, prices, accounts, paymentIntents, checkout, refunds, disputes, charges, invoicePayments };
 
   const guard = (path: string, target: unknown): unknown =>
     new Proxy(target as object, {
