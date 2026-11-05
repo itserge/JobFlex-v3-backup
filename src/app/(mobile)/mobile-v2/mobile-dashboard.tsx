@@ -1435,11 +1435,11 @@ function DashboardView({ data, notice, sample }: { data: DashboardData; notice?:
           </button>
         </div>
 
-        {/* The first-estimate tour, paused or under way (components/v3/onboarding-tour) — at the head of
-            the drawer, where the trial ribbon's dock never covers it. */}
-        <TourChip onPick={() => setNavOpen(false)} />
         {/* SmartHelp (components/v3/smarthelp): the drawer closes, then the sheet comes up. */}
         <SmartHelpRow variant="drawer" onBeforeOpen={() => setNavOpen(false)} />
+        {/* The first-estimate tour, paused or under way (components/v3/onboarding-tour) — right under
+            SmartHelp, as in the desk sidebar (owner, 2026-11-05); the trial ribbon's dock never covers it. */}
+        <TourChip variant="drawer" onPick={() => setNavOpen(false)} />
         {/* The Assistant (components/v3/assistant, 2026-11-04): its own page on a phone. */}
         <AssistantRow variant="drawer" onBeforeOpen={() => setNavOpen(false)} />
         <nav className={styles.sbScroll} ref={navScrollRef}>

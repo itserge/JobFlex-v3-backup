@@ -304,6 +304,9 @@ export function Sidebar({
         {/* SmartHelp (components/v3/smarthelp): the first row, above the sections. Its own button, not an
             `.sb-link` — shell-behavior.ts treats those as nav links (indicator, drawer close, hover plate). */}
         <SmartHelpRow variant="blueprint" />
+        {/* The first-estimate tour, paused or under way (components/v3/onboarding-tour) — right under
+            SmartHelp (owner, 2026-11-05), scrolling with the nav. Not an `.sb-link` either. */}
+        <TourChip variant="blueprint" />
         {/* The Assistant (components/v3/assistant, 2026-11-04): under SmartHelp, white — SmartHelp stays the one filled row. */}
         <AssistantRow variant="blueprint" />
         {/* Section labels and estimator trees share the scroll container.
@@ -337,9 +340,6 @@ export function Sidebar({
           );
         })}
       </nav>
-
-      {/* The first-estimate tour, paused or under way (components/v3/onboarding-tour). */}
-      <TourChip />
 
       {/* The account block was a dead <button> showing the hardcoded literals
           "Ivan" / "Owner" — the donor's demo identity, displayed to every user

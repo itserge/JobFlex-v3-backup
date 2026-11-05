@@ -449,11 +449,11 @@ export function MobileNav() {
           </button>
         </div>
 
-        {/* The first-estimate tour, paused or under way (components/v3/onboarding-tour) — at the head of
-            the drawer, where the trial ribbon's dock never covers it. */}
-        <TourChip onPick={() => setOpen(false)} />
         {/* SmartHelp (components/v3/smarthelp): the drawer closes, then the sheet comes up. */}
         <SmartHelpRow variant="drawer" onBeforeOpen={() => setOpen(false)} opener={() => menuBtnRef.current} />
+        {/* The first-estimate tour, paused or under way (components/v3/onboarding-tour) — right under
+            SmartHelp, as in the desk sidebar (owner, 2026-11-05); the trial ribbon's dock never covers it. */}
+        <TourChip variant="drawer" onPick={() => setOpen(false)} />
         {/* The Assistant (components/v3/assistant, 2026-11-04): its own page on a phone. */}
         <AssistantRow variant="drawer" onBeforeOpen={() => setOpen(false)} />
         <nav className={styles.sbScroll} ref={navScrollRef}>
