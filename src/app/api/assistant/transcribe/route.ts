@@ -1,0 +1,65 @@
+// TALKING TO THE ASSISTANT — what was said, written down, where the browser cannot
+// (2026-11-04). Chrome, Edge and Safari hear speech themselves (the Web Speech
+// API); Firefox and some in-app browsers do not. There the Assistant's Talk mode
+// records a few seconds and posts them here; Whisper writes them down, biased
+// toward a contractor's words, as Deck Studio's route does
+// (api/deck/voice/transcribe). A route handler, not a server action, because the
+// audio is a file upload. It carries its own auth — the middleware does not match /api.
+import { NextResponse } from "next/server";
+import { toFile } from "openai";
+import { actorForSession, refusal } from "@/lib/assistant/actor";
+import { getOpenAI, isOpenAIEnabled } from "@/lib/sdk/openai";
+import { rateLimitShared, HOUR } from "@/lib/rateLimit";
+import { takeTrialCap } from "@/lib/trialMeter";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 30;
+
+/** A sentence or two of speech is far below this; anything larger is not a request. */
+const MAX_BYTES = 2 * 1024 * 1024;
+/** Biases the decoder toward the words it will hear. Not a transcript — Whisper takes it as style. */
+const PROMPT = "JobFlex words: proposal, estimate, schedule, crew, invoice, payment reminder, roof, fence, deck, HVAC, gutters, tomorrow, Thursday, send it, yes, no.";
+
+export async function POST(req: Request) {
+  let organizationId: string;
+  try {
+    const actor = await actorForSession();
+    const closed = await refusal(actor, "today", false);
+    if (closed) return NextResponse.json({ error: closed }, { status: 403 });
+    organizationId = actor.organizationId;
+  } catch {
+    return NextResponse.json({ error: "Not signed in." }, { status: 403 });
+  }
+  if (!isOpenAIEnabled()) return NextResponse.json({ error: "Speech needs the AI set up on this server." }, { status: 503 });
+  const limit = await rateLimitShared(`assistant-hear:${organizationId}`, 200, HOUR);
+  if (!limit.ok) return NextResponse.json({ error: "Too much talking for one hour — type it instead." }, { status: 429 });
+  let form: FormData;
+  try {
+    form = await req.formData();
+  } catch {
+    return NextResponse.json({ error: "Expected the recording." }, { status: 400 });
+  }
+  const audio = form.get("audio");
+  if (!(audio instanceof Blob) || audio.size === 0) return NextResponse.json({ error: "Nothing was recorded." }, { status: 400 });
+  if (audio.size > MAX_BYTES) return NextResponse.json({ error: "That recording is too long — say one thing at a time." }, { status: 413 });
+  const trial = await takeTrialCap(organizationId, "aiCalls");
+  if (!trial.ok) return NextResponse.json({ error: "The trial's AI allowance is used up — type it instead." }, { status: 402 });
+  try {
+    const type = audio.type || "audio/webm";
+    const ext = /ogg/.test(type) ? "ogg" : /mp4|m4a|aac/.test(type) ? "m4a" : /wav/.test(type) ? "wav" : "webm";
+    const file = await toFile(Buffer.from(await audio.arrayBuffer()), `voice.${ext}`, { type });
+    const res = await getOpenAI().audio.transcriptions.create({ file, model: "whisper-1", prompt: PROMPT });
+    const text = (res.text ?? "").trim();
+    // On silence Whisper says its prompt back: six words in a row of it is the prompt, not speech.
+    const words = (s: string) => s.toLowerCase().replace(/[^a-z0-9/\s]/g, " ").split(/\s+/).filter(Boolean);
+    const p = words(PROMPT).join(" ");
+    const w = words(text);
+    const echo = w.length >= 6 && w.some((_, i) => i + 6 <= w.length && p.includes(w.slice(i, i + 6).join(" ")));
+    if (!text || echo) return NextResponse.json({ text: "" });
+    return NextResponse.json({ text: text.slice(0, 600) });
+  } catch (err) {
+    if (typeof (err as { status?: unknown })?.status === "number") await trial.refund();
+    return NextResponse.json({ error: "Couldn't write that down — try again, or type it." }, { status: 502 });
+  }
+}

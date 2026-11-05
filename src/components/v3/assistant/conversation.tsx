@@ -4,14 +4,23 @@
 // person's white in ink, the Assistant's `--accent-soft` in accent. A change the
 // Assistant proposes is a framed card: what it will do, in the words the code
 // built, a status stamp, and Do it (the one blue action) / Cancel while it waits.
-// The box at the foot takes typing or the microphone (useDictation — the
-// browser's own speech recognition; nothing is sent until Send).
+//
+// TWO WAYS TO ASK (owner, 2026-11-04: "control my business from my phone just
+// talking or texting … and it's gonna do it and talk to me back"):
+//   · type in the box → the answer is written;
+//   · Talk (the microphone) → a spoken conversation, hands-free: it listens, sends
+//     each finished sentence, reads the answer out in the shop's AI desk voice
+//     (api/assistant/speak; the browser's own voice when that can't answer) and
+//     listens again — "yes" to a read-back does it. The ears and the voice are
+//     Deck Studio's (deck-voice/use-deck-speech): the browser's speech recognition
+//     where it has one, a short recording written down by the server where not
+//     (api/assistant/transcribe). The microphone pauses while it talks.
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { ArrowUp, AudioLines, Mic, Square } from "lucide-react";
-import { useDictation } from "@/hooks/useDictation";
+import { useDeckSpeech } from "@/components/v3/deck-voice/use-deck-speech";
 import type { ActionStatus, FeedAction, FeedMessage } from "@/lib/assistant/shared";
-import { shownBody, type AssistantState } from "./use-assistant";
+import { forSpeech, shownBody, type AssistantState } from "./use-assistant";
 import s from "./assistant.module.css";
 
 const EXAMPLES: Array<{ label: string; text: string; fill?: boolean }> = [
@@ -55,10 +64,60 @@ export function Conversation({
 }) {
   const { feed, pending, busy, error, ask, answer } = state;
   const [text, setText] = useState("");
+  const [talk, setTalk] = useState(false);
+  const [heard, setHeard] = useState("");
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLTextAreaElement>(null);
   const boxId = useId();
-  const dictation = useDictation(text, setText);
+  const busyRef = useRef(busy);
+  const talkRef = useRef(false);
+  const sayRef = useRef<(words: string) => void>(() => {});
+
+  useEffect(() => {
+    busyRef.current = busy;
+  }, [busy]);
+
+  /** One spoken turn: what was said goes out, the answer is read back (and it listens on). */
+  const talkTurn = async (said: string) => {
+    const reply = await ask(said);
+    if (talkRef.current) sayRef.current(forSpeech(reply ?? "That didn't go through. Try again."));
+  };
+
+  const speech = useDeckSpeech({
+    onFinal: (alternatives) => {
+      const said = alternatives[0]?.trim();
+      // A sentence heard while the last one is still being answered waits for nothing: it is dropped.
+      if (!said || busyRef.current) return;
+      setHeard("");
+      void talkTurn(said);
+    },
+    onInterim: (words) => setHeard(words),
+    onError: (message) => {
+      setVoiceError(message);
+      endTalk();
+    },
+    speakUrl: "/api/assistant/speak",
+    transcribeUrl: "/api/assistant/transcribe",
+  });
+  useEffect(() => {
+    sayRef.current = speech.say;
+  });
+
+  function startTalk() {
+    setVoiceError(null);
+    setHeard("");
+    talkRef.current = true;
+    setTalk(true);
+    speech.start(true);
+  }
+  function endTalk() {
+    talkRef.current = false;
+    setTalk(false);
+    setHeard("");
+    speech.stop();
+    speech.hush();
+  }
 
   // A new prefill goes into the box (adjusted while rendering, not in an effect).
   const [seenPrefill, setSeenPrefill] = useState<string | null | undefined>(undefined);
@@ -98,10 +157,14 @@ export function Conversation({
   const send = async (words?: string) => {
     const t = (words ?? text).trim();
     if (!t || busy) return;
-    if (dictation.listening) dictation.stop();
     if (words === undefined) setText("");
-    const ok = await ask(t);
-    if (!ok && words === undefined) setText(t);
+    const reply = await ask(t);
+    if (reply === null && words === undefined) setText(t);
+  };
+
+  const onAnswer = async (actionId: string, yes: boolean) => {
+    const reply = await answer(actionId, yes);
+    if (talkRef.current && reply) sayRef.current(forSpeech(reply));
   };
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -114,6 +177,9 @@ export function Conversation({
   const messages = feed?.messages ?? [];
   const waitingId = feed?.awaiting?.id ?? null;
   const empty = feed !== null && messages.length === 0 && !pending;
+  const canTalk = speech.mode !== "none";
+  const listening = speech.mic === "listening" || speech.mic === "recording";
+  const talkLine = speech.speaking ? "Speaking…" : busy ? "Working on it…" : speech.mic === "sending" ? "Writing that down…" : heard || (listening ? "Listening — just talk." : "Starting the microphone…");
 
   return (
     <div className={`${s.root} ${variant === "page" ? s.onPage : s.inPanel}`} data-nest="">
@@ -123,7 +189,9 @@ export function Conversation({
         {empty ? (
           <div className={s.intro}>
             <p className={s.introTitle}>Tell JobFlex what to do.</p>
-            <p className={s.introSub}>Ask about your day, or tell it to send, schedule, text or remind. Every change is read back to you before it happens.</p>
+            <p className={s.introSub}>
+              Type it, or tap the microphone and just talk — it answers out loud. Every change is read back to you before it happens.
+            </p>
             <ul className={s.examples}>
               {EXAMPLES.map((ex) => (
                 <li key={ex.label}>
@@ -147,7 +215,7 @@ export function Conversation({
         ) : null}
 
         {messages.map((m) => (
-          <Line key={m.id} m={m} waiting={m.action?.id === waitingId} busy={busy} onAnswer={answer} />
+          <Line key={m.id} m={m} waiting={m.action?.id === waitingId} busy={busy} onAnswer={onAnswer} />
         ))}
 
         {pending ? (
@@ -169,6 +237,11 @@ export function Conversation({
         ) : null}
       </div>
 
+      {talk ? (
+        <p className={s.heard} data-speaking={speech.speaking ? "" : undefined} role="status">
+          {talkLine}
+        </p>
+      ) : null}
       <form
         className={s.composer}
         onSubmit={(e) => {
@@ -185,29 +258,29 @@ export function Conversation({
           className={s.box}
           rows={1}
           value={text}
-          placeholder={dictation.listening ? "Listening — speak now" : "Ask or tell JobFlex…"}
+          placeholder={talk ? "Or type here…" : "Ask or tell JobFlex…"}
           maxLength={1200}
           enterKeyHint="send"
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKey}
         />
-        {dictation.supported ? (
+        {canTalk ? (
           <button
             type="button"
-            className={`${s.mic} ${dictation.listening ? s.micOn : ""}`}
-            aria-pressed={dictation.listening}
-            aria-label={dictation.listening ? "Stop listening" : "Speak instead of typing"}
-            title={dictation.listening ? "Stop listening" : "Speak"}
-            onClick={dictation.toggle}
+            className={`${s.mic} ${talk ? (speech.speaking ? s.micSpeaking : s.micOn) : ""}`}
+            aria-pressed={talk}
+            aria-label={talk ? "Stop talking" : "Talk to the Assistant — it answers out loud"}
+            title={talk ? "Stop talking" : "Talk"}
+            onClick={() => (talk ? endTalk() : startTalk())}
           >
-            {dictation.listening ? <Square /> : <Mic />}
+            {talk ? speech.speaking ? <AudioLines /> : <Square /> : <Mic />}
           </button>
         ) : null}
         <button type="submit" className={s.send} disabled={busy || !text.trim()} aria-label="Send">
           <ArrowUp />
         </button>
       </form>
-      {dictation.error ? <p className={s.micError}>{dictation.error}</p> : null}
+      {voiceError ? <p className={s.micError}>{voiceError}</p> : null}
       {feed?.usage.limit ? (
         <p className={s.usage}>
           {feed.usage.used} of {feed.usage.limit} requests this month

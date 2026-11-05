@@ -324,6 +324,32 @@
   border-color: var(--ink);
   color: #fff;
 }
+/* Talk mode while the Assistant is reading its answer out. */
+.root .micSpeaking,
+.root .micSpeaking:hover {
+  background: var(--accent);
+  border-color: var(--ink);
+  color: #fff;
+}
+/* Talk mode's live line over the box: what is being heard, or what it is doing. */
+.root .heard {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 8px 12px;
+  border-top: 2px solid var(--ink);
+  background: color-mix(in srgb, var(--rose) 8%, #fff);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.root .heard[data-speaking] {
+  background: var(--accent-soft);
+}
+.root .heard + .composer {
+  border-top-width: 1px;
+}
 .root .send {
   background: var(--accent);
   color: #fff;

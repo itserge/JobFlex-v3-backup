@@ -16,8 +16,10 @@ export type AssistantState = {
   busy: boolean;
   error: string | null;
   load: () => void;
-  ask: (text: string) => Promise<boolean>;
-  answer: (actionId: string, yes: boolean) => Promise<void>;
+  /** Sends a request; the reply's words, or null when it didn't go through. */
+  ask: (text: string) => Promise<string | null>;
+  /** Do it / Cancel on a read-back; the reply's words, or null. */
+  answer: (actionId: string, yes: boolean) => Promise<string | null>;
 };
 
 const FAILED = "That didn't go through. Check your connection and try again.";
@@ -45,7 +47,7 @@ export function useAssistant(): AssistantState {
 
   const ask = useCallback(async (text: string) => {
     const t = text.trim();
-    if (!t || busy) return false;
+    if (!t || busy) return null;
     setBusy(true);
     setPending(t);
     setError(null);
@@ -53,10 +55,10 @@ export function useAssistant(): AssistantState {
       const r = await askAssistant({ text: t });
       if (r.ok) setFeed(r.feed);
       else setError(r.error);
-      return r.ok;
+      return r.ok ? r.reply : null;
     } catch {
       setError(FAILED);
-      return false;
+      return null;
     } finally {
       setPending(null);
       setBusy(false);
@@ -64,7 +66,7 @@ export function useAssistant(): AssistantState {
   }, [busy]);
 
   const answer = useCallback(async (actionId: string, yes: boolean) => {
-    if (busy) return;
+    if (busy) return null;
     setBusy(true);
     setPending(yes ? "Do it" : "Cancel");
     setError(null);
@@ -72,8 +74,10 @@ export function useAssistant(): AssistantState {
       const r = await answerAssistant({ actionId, answer: yes ? "yes" : "no" });
       if (r.ok) setFeed(r.feed);
       else setError(r.error);
+      return r.ok ? r.reply : null;
     } catch {
       setError(FAILED);
+      return null;
     } finally {
       setPending(null);
       setBusy(false);
@@ -81,6 +85,16 @@ export function useAssistant(): AssistantState {
   }, [busy]);
 
   return { feed, pending, busy, error, load, ask, answer };
+}
+
+/** A reply as it is read out: the read-back's tap prompt becomes a spoken one, a dash range "to". */
+export function forSpeech(text: string): string {
+  return text
+    .replace(/Tap Do it to go ahead, or Cancel\.?/g, "Say yes to do it, or no.")
+    .replace(/\s*–\s*/g, " to ")
+    .replace(/\s*—\s*/g, ", ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** Messages with the read-back's own prompt line taken off (the card has its buttons). */

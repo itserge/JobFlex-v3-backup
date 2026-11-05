@@ -306,8 +306,12 @@ monthly" is one 12px line (weight 600) under the price.
   read-back in 15px, and while it waits "Do it" (the one blue button, caps) beside a
   white "Cancel", both 44px. Nothing said yet: a 17px 900 caps line and
   ink-framed 44px example rows. The box is white in 1.5px ink (16px text on a
-  phone), a white 44px mic square that turns rose while listening, and a blue
-  44px send square; this cycle's use under it in 11px mono.
+  phone), a white 44px Talk square (the microphone) and a blue 44px send
+  square; this cycle's use under it in 11px mono. Talk is a spoken
+  conversation: the square turns rose while it listens and blue while it
+  speaks, and a live line sits over the box — what is being heard, "Listening
+  — just talk.", "Working on it…", "Speaking…" (rose-tinted, blueprint-tinted
+  while speaking).
 - SmartBook (owner, 2026-10-31;
   [smartbook](src/components/v3/smartbook/smartbook.module.css)). One framed
   card treatment for Settings → SmartBook and the calendar's "SmartBook
