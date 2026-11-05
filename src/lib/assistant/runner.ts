@@ -10,6 +10,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { runAction } from "@/lib/assistant/engine";
 import { sendAssistantText } from "@/lib/assistant/sms";
+import { runBriefings } from "@/lib/assistant/briefing";
 import { APPROVAL_TTL_MS, RUNNING_STALE_MS } from "@/lib/assistant/shared";
 
 /** Run one queued action and say what happened where it was asked: the conversation, and a text for a text.
@@ -32,7 +33,7 @@ export async function runAndReport(actionId: string, now = new Date(), opts: { e
 
 const AT_ONCE = 4;
 
-export async function runAssistantMinute(now = new Date()): Promise<{ ran: number; expired: number; stale: number }> {
+export async function runAssistantMinute(now = new Date()): Promise<{ ran: number; expired: number; stale: number; briefed: number }> {
   const expired = await db.assistantAction.updateMany({
     where: { status: "AWAITING", createdAt: { lt: new Date(now.getTime() - APPROVAL_TTL_MS) } },
     data: { status: "EXPIRED" },
@@ -53,5 +54,10 @@ export async function runAssistantMinute(now = new Date()): Promise<{ ran: numbe
     const done = await Promise.all(due.slice(i, i + AT_ONCE).map((a) => runAndReport(a.id, now).catch(() => false)));
     ran += done.filter(Boolean).length;
   }
-  return { ran, expired: expired.count, stale: stale.count };
+  // The morning briefing (2026-11-05): whoever's time has come on their company's clock.
+  const briefed = await runBriefings(now).catch((err) => {
+    console.warn(`[assistant-brief] ${err instanceof Error ? err.message : String(err)}`);
+    return 0;
+  });
+  return { ran, expired: expired.count, stale: stale.count, briefed };
 }

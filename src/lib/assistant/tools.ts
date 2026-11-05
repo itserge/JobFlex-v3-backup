@@ -561,6 +561,56 @@ const textCrewEach: WriteTool<{ items: { workerId: string; message: string }[] }
   },
 };
 
+/** The CRM's own overdue list (lib/crm/brief money.overdue), one row per proposal, largest first — the morning briefing
+ *  and remind_overdue read it. The Today list shows five rows; `more` counts the rest. */
+export async function overduePayments(actor: AssistantActor): Promise<{ proposalId: string; who: string; amount: number; late: string; more: number }[]> {
+  const b = await readCrmBrief({ organizationId: actor.organizationId, userId: actor.userId, role: actor.role });
+  const check = b.today.checks.find((c) => c.key === "money.overdue" && !c.done);
+  const seen = new Set<string>();
+  const out: { proposalId: string; who: string; amount: number; late: string; more: number }[] = [];
+  for (const it of check?.items ?? []) {
+    const id = /\/dashboard\/proposals\/([^/?#]+)/.exec(it.href ?? "")?.[1];
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push({ proposalId: id, who: it.label.split(" · ")[0], amount: it.amount ?? 0, late: it.sub.split(" · ")[0], more: check?.more ?? 0 });
+  }
+  return out;
+}
+
+/** Every overdue payment reminded in one go (batch 3, 2026-11-05): the morning briefing offers it, and "remind everyone
+ *  who's overdue" asks for it. One reminder per proposal, the next stage due, through the same send as payment_reminder. */
+const remindOverdue: WriteTool<Record<string, never>, { proposalIds: string[]; names: string[] }> = {
+  kind: "write",
+  name: "remind_overdue",
+  need: "payments.remind",
+  description: "Send a payment reminder to EVERY client with an overdue payment, in one go (one yes). For one client use payment_reminder.",
+  params: z.object({}).strict() as unknown as z.ZodType<Record<string, never>>,
+  payload: z.object({ proposalIds: z.array(ID).max(40), names: z.array(z.string()).max(40) }),
+  async plan({ actor }) {
+    const due = await overduePayments(actor);
+    if (!due.length) return { ok: false, say: "Nothing is overdue right now." };
+    const more = due[0].more > 0 ? ` (+${due[0].more} more on the Today list)` : "";
+    return {
+      ok: true,
+      payload: { proposalIds: due.map((d) => d.proposalId), names: due.map((d) => d.who) },
+      readback: `Send payment reminders to ${andList(due.map((d) => `${d.who} (${money(d.amount)}, ${d.late})`))}${more}.`,
+    };
+  },
+  async execute({ actor }, p) {
+    const went: string[] = [];
+    const not: string[] = [];
+    for (let i = 0; i < p.proposalIds.length; i++) {
+      const r = await sendPaymentReminder({ proposalId: p.proposalIds[i], installmentId: null, source: "manual", organizationId: actor.organizationId, actorId: actor.userId }).catch(() => null);
+      const ok = Boolean(r && !r.skipped && (r.email === "sent" || r.sms === "sent"));
+      (ok ? went : not).push(p.names[i] ?? "a client");
+    }
+    return {
+      say: `${went.length ? `Reminders sent to ${andList(went)}.` : "No reminder went out."}${not.length ? ` Not sent to ${andList(not)} — no email or phone on file, or the send failed.` : ""}`,
+      result: { went, not },
+    };
+  },
+};
+
 /** Every tool, in the order the model is shown them. */
 export const TOOLS: readonly AnyTool[] = [
   today,
@@ -575,6 +625,7 @@ export const TOOLS: readonly AnyTool[] = [
   textCrew,
   textCrewEach,
   paymentReminder,
+  remindOverdue,
   ...PEOPLE_TOOLS,
   ...VISIT_TOOLS,
   ...REMIND_TOOLS,

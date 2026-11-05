@@ -335,7 +335,9 @@ monthly" is one 12px line (weight 600) under the price.
   a reminder's queued stamp reads "Set" (blueprint) until it lands as Done.
   Settings → AI Operator gains a "PIN for money" section: a 120px white field of
   four masked 20px 900 digits, Save PIN as the one blue button, "Change PIN" /
-  "Remove PIN" once set; 1234-style runs and one digit four times are refused.
+  "Remove PIN" once set; 1234-style runs and one digit four times are refused. Batch 3: a "Morning briefing and alerts" section of
+  ruled rows — the words left, the time select (44px, 1.5px ink) and the one
+  button right; "Turn on" is the blue button, "Turn off" the white one.
 - SmartBook (owner, 2026-10-31;
   [smartbook](src/components/v3/smartbook/smartbook.module.css)). One framed
   card treatment for Settings → SmartBook and the calendar's "SmartBook

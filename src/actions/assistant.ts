@@ -7,6 +7,7 @@ import { z } from "zod";
 import { actorForSession } from "@/lib/assistant/actor";
 import { approve, callOff, handleTurn, readFeed } from "@/lib/assistant/engine";
 import type { AssistantFeed } from "@/lib/assistant/shared";
+import type { AssistantPrefs } from "@/lib/assistant/prefs";
 import { db } from "@/lib/db";
 
 /** `running`: a build left to run after the reply (a minute's AI estimate) — the panel runs it next (/api/assistant/run). */
@@ -61,6 +62,8 @@ export interface AssistantPhoneView {
   preview: { openToAll: boolean } | null;
   /** The 4-digit PIN that money (invoices, financing links) asks for with the yes (lib/assistant/pin): set or not. */
   pin: { set: boolean };
+  /** The morning briefing and the alerts this person turned on (lib/assistant/prefs). */
+  prefs: AssistantPrefs;
 }
 
 /** Should this person see the Assistant's rows: it is open to them, and their role has it. Never throws. */
@@ -96,6 +99,7 @@ export async function loadAssistantPhone(): Promise<AssistantPhoneView> {
   const admin = await db.user.findUnique({ where: { id: actor.userId }, select: { isPlatformAdmin: true } });
   const preview = admin?.isPlatformAdmin ? { openToAll: await assistantOpenToAll() } : null;
   const { hasPin } = await import("@/lib/assistant/pin");
+  const { readPrefs, DEFAULT_PREFS } = await import("@/lib/assistant/prefs");
   return {
     closed,
     number,
@@ -105,7 +109,32 @@ export async function loadAssistantPhone(): Promise<AssistantPhoneView> {
     usage: feed?.usage ?? { used: 0, limit: null },
     preview,
     pin: { set: closed ? false : await hasPin(actor.organizationId, actor.userId) },
+    prefs: closed ? DEFAULT_PREFS : await readPrefs(actor.organizationId, actor.userId),
   };
+}
+
+/** The morning briefing and the alerts: the person's own switches (2026-11-05). Turning the briefing on after its time
+ *  has passed today starts it tomorrow. */
+export async function setAssistantPrefs(raw: unknown): Promise<AssistantPhoneView> {
+  const { BRIEFING_TIMES, dayOf, timeOf } = await import("@/lib/assistant/shared");
+  const input = z
+    .object({
+      briefing: z.object({ on: z.boolean(), time: z.string().refine((t) => BRIEFING_TIMES.includes(t), "Pick a time from the list.") }),
+      alerts: z.object({ proposalOpened: z.boolean(), newLead: z.boolean() }),
+    })
+    .parse(raw);
+  const actor = await actorForSession();
+  const { readPrefs, writePrefs } = await import("@/lib/assistant/prefs");
+  const before = await readPrefs(actor.organizationId, actor.userId);
+  await writePrefs(actor.organizationId, actor.userId, input);
+  if (input.briefing.on && (!before.briefing.on || before.briefing.time !== input.briefing.time)) {
+    const now = new Date();
+    if (timeOf(now, actor.timezone) >= input.briefing.time) {
+      const { markBriefed } = await import("@/lib/assistant/briefing");
+      await markBriefed(actor.organizationId, actor.userId, dayOf(now, actor.timezone));
+    }
+  }
+  return loadAssistantPhone();
 }
 
 /** Set (or change) the 4-digit PIN that money actions ask for with the yes (2026-11-05). */

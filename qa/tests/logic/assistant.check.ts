@@ -10,9 +10,12 @@ import {
   confirmPrompt,
   dayOf,
   dayRange,
+  briefingDue,
+  clock12,
   money,
   needsPin,
   quickReply,
+  quietHours,
   smsPlain,
   spanWords,
   stillAwaiting,
@@ -162,6 +165,19 @@ function check(name: string, ok: boolean, extra?: unknown) {
   check("speech: the PIN prompt points at the screen", forSpeech("Invoice X $1. Enter your PIN and tap Do it, or Cancel.") === "Invoice X $1. Enter your PIN on the screen, then tap Do it.");
   const line = { id: "m", direction: "OUT" as const, body: "Invoice X. Reply YES and your PIN (like YES 1234), or NO.", createdAt: "", action: { id: "a", tool: "send_invoice", status: "AWAITING" as const, readback: "", result: null, createdAt: "" } };
   check("shown: the PIN prompt line is the card's, not the bubble's", shownBody(line) === "Invoice X.", shownBody(line));
+}
+
+// ── batch 3 (2026-11-05): the morning briefing's clock and the alerts' quiet hours, on the company's clock ──
+{
+  const tz = "America/New_York";
+  const at = (iso: string) => new Date(iso);
+  check("briefing: due once the time has passed and it hasn't gone today", briefingDue("06:30", at("2026-11-06T11:31:00Z"), tz, null));
+  check("briefing: not before its time", !briefingDue("06:30", at("2026-11-06T11:29:00Z"), tz, null));
+  check("briefing: not twice in a day", !briefingDue("06:30", at("2026-11-06T13:00:00Z"), tz, "2026-11-06"));
+  check("briefing: again the next day", briefingDue("06:30", at("2026-11-07T11:30:00Z"), tz, "2026-11-06"));
+  check("briefing: a bad time never fires", !briefingDue("6:30", at("2026-11-06T12:00:00Z"), tz, null));
+  check("quiet: 10 PM and 6:59 AM are quiet; noon and 7 AM are not", quietHours(at("2026-11-06T03:00:00Z"), tz) && quietHours(at("2026-11-06T11:59:00Z"), tz) && !quietHours(at("2026-11-06T17:00:00Z"), tz) && !quietHours(at("2026-11-06T12:00:00Z"), tz));
+  check("clock: 06:30 reads 6:30 AM, 12:00 noon 12:00 PM, 00:00 12:00 AM", clock12("06:30") === "6:30 AM" && clock12("12:00") === "12:00 PM" && clock12("00:00") === "12:00 AM");
 }
 
 console.log(bad ? `\n${bad} FAILED` : "\nall ok");

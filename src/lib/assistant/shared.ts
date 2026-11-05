@@ -172,6 +172,31 @@ export function needsPin(tool: string): boolean {
 /** The changes that run at their own time with no yes (a reminder to oneself): queued means set, not working. */
 export const SCHEDULED_TOOLS: readonly string[] = ["remind_me"];
 
+// ── the morning briefing and the alerts (2026-11-05) ────────────────────────
+
+/** The times Settings offers for the briefing, on the company's clock. */
+export const BRIEFING_TIMES: readonly string[] = ["05:00", "05:30", "06:00", "06:30", "07:00", "07:30", "08:00", "08:30", "09:00"];
+
+/** "06:30" → "6:30 AM". */
+export function clock12(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return hhmm;
+  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
+}
+
+/** Due once the company clock has passed its time today and it hasn't gone today (`sentDay`, YYYY-MM-DD). */
+export function briefingDue(time: string, now: Date, tz: string, sentDay: string | null): boolean {
+  if (!/^\d{2}:\d{2}$/.test(time)) return false;
+  if (sentDay === dayOf(now, tz)) return false;
+  return timeOf(now, tz) >= time;
+}
+
+/** No alert texts late at night: 9 PM to 7 AM on the company's clock (the line still lands in the Operator). */
+export function quietHours(now: Date, tz: string): boolean {
+  const h = Number(timeOf(now, tz).slice(0, 2));
+  return h >= 21 || h < 7;
+}
+
 // ── what the panel reads ─────────────────────────────────────────────────────
 
 export interface FeedAction {

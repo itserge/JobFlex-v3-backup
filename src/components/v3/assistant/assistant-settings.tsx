@@ -12,7 +12,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AudioLines, Copy, MessageSquareText, Phone } from "lucide-react";
-import { clearAssistantPin, loadAssistantPhone, setAssistantOpen, setAssistantPhoneOn, setAssistantPin, startAssistantLink, unlinkAssistantPhone, type AssistantPhoneView } from "@/actions/assistant";
+import { clearAssistantPin, loadAssistantPhone, setAssistantOpen, setAssistantPhoneOn, setAssistantPin, setAssistantPrefs, startAssistantLink, unlinkAssistantPhone, type AssistantPhoneView } from "@/actions/assistant";
+import type { AssistantPrefs } from "@/lib/assistant/prefs";
+import { BRIEFING_TIMES, clock12 } from "@/lib/assistant/shared";
 import { openAssistant } from "./events";
 import s from "./assistant-settings.module.css";
 
@@ -82,6 +84,10 @@ export function AssistantSettings({ mobile = false }: { mobile?: boolean }) {
       if (!r.ok) setError(r.error);
       else setCode({ code: r.code, expiresAt: r.expiresAt });
     });
+
+  const savePrefs = (next: AssistantPrefs) => run(async () => setView(await setAssistantPrefs(next)));
+  // A stored time off the list (an older value) reads and saves as the default, so a switch never fails on it.
+  const briefTime = view && BRIEFING_TIMES.includes(view.prefs.briefing.time) ? view.prefs.briefing.time : "06:30";
 
   if (!view) {
     return (
@@ -223,6 +229,79 @@ export function AssistantSettings({ mobile = false }: { mobile?: boolean }) {
                 </button>
               </div>
             )}
+          </div>
+        ) : null}
+
+        {!view.closed ? (
+          <div className={s.section}>
+            <h4 className={s.h}>Morning briefing and alerts</h4>
+            <p className={s.text}>
+              Texts to your linked phone, and a line in the AI Operator. No texts between 9 PM and 7 AM.
+              {!view.link?.active ? " Link your phone above to get them by text." : ""}
+            </p>
+            <ul className={s.prefs}>
+              <li>
+                <div className={s.prefText}>
+                  <p className={s.rowMain}>Morning briefing</p>
+                  <p className={s.rowSub}>Today&apos;s jobs and visits, proposals waiting, money owed and overdue, leads to call back. Mondays add the last 30 days&apos; money.</p>
+                </div>
+                <div className={s.prefCtl}>
+                  <select
+                    className={s.time}
+                    aria-label="Briefing time"
+                    value={briefTime}
+                    disabled={busy}
+                    onChange={(e) => savePrefs({ ...view.prefs, briefing: { on: view.prefs.briefing.on, time: e.target.value } })}
+                  >
+                    {BRIEFING_TIMES.map((t) => (
+                      <option key={t} value={t}>
+                        {clock12(t)}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className={view.prefs.briefing.on ? s.secondary : s.primary}
+                    disabled={busy}
+                    onClick={() => savePrefs({ ...view.prefs, briefing: { on: !view.prefs.briefing.on, time: briefTime } })}
+                  >
+                    {view.prefs.briefing.on ? "Turn off" : "Turn on"}
+                  </button>
+                </div>
+              </li>
+              <li>
+                <div className={s.prefText}>
+                  <p className={s.rowMain}>When a client opens a proposal</p>
+                  <p className={s.rowSub}>Their first look only.</p>
+                </div>
+                <div className={s.prefCtl}>
+                  <button
+                    type="button"
+                    className={view.prefs.alerts.proposalOpened ? s.secondary : s.primary}
+                    disabled={busy}
+                    onClick={() => savePrefs({ ...view.prefs, briefing: { on: view.prefs.briefing.on, time: briefTime }, alerts: { ...view.prefs.alerts, proposalOpened: !view.prefs.alerts.proposalOpened } })}
+                  >
+                    {view.prefs.alerts.proposalOpened ? "Turn off" : "Turn on"}
+                  </button>
+                </div>
+              </li>
+              <li>
+                <div className={s.prefText}>
+                  <p className={s.rowMain}>When a new lead comes in</p>
+                  <p className={s.rowSub}>From the website, Lead Center, a call or an ad. Not one you typed in.</p>
+                </div>
+                <div className={s.prefCtl}>
+                  <button
+                    type="button"
+                    className={view.prefs.alerts.newLead ? s.secondary : s.primary}
+                    disabled={busy}
+                    onClick={() => savePrefs({ ...view.prefs, briefing: { on: view.prefs.briefing.on, time: briefTime }, alerts: { ...view.prefs.alerts, newLead: !view.prefs.alerts.newLead } })}
+                  >
+                    {view.prefs.alerts.newLead ? "Turn off" : "Turn on"}
+                  </button>
+                </div>
+              </li>
+            </ul>
           </div>
         ) : null}
 

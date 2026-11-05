@@ -216,6 +216,7 @@ function answer(body: { messages: Msg[] }) {
     if (!a || !b) return reply("I couldn't find those crew members.");
     return call("text_crew_each", { items: [{ workerId: a.id, message: each[2].trim() }, { workerId: b.id, message: each[4].trim().replace(/[.]$/, "") }] });
   }
+  if (/\boverdue\b/.test(text) && /\b(everyone|everybody|all)\b/.test(text)) return call("remind_overdue", {});
   if (/\b(invoice|financing)\b/.test(text)) {
     const f = done.get("find") as Found | undefined;
     // The real model asks for the name alone; the words around it are not in any title.
