@@ -9,6 +9,8 @@ import { WorkerInviteContent } from "@/components/v3/worker-invite-blueprint/wor
 import { JobResponseCard } from "./job-response";
 import { TodayActions } from "./today-actions";
 import { jobProgressInfo } from "@/lib/jobProgress";
+import { crewHome } from "@/lib/crewField/server";
+import { hoursWords } from "@/lib/crewField/shared";
 import { longDate, shortDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { ChevronRight } from "lucide-react";
@@ -108,6 +110,14 @@ export default async function WorkerDashboard({
         !sameDay(a.job.startsAt, now)),
   );
 
+  // The crew's own day (the crew build, 2026-11-05): the stage's tasks on today's jobs, who else is on them,
+  // the week's hours.
+  const home = await crewHome(
+    worker.organizationId,
+    worker.id,
+    today.map((a) => ({ jobId: a.job.id, assignmentId: a.id, title: a.job.title })),
+  );
+
   // The portal's header and column, moved here from the layout (stage C): the
   // job page is the blueprint job page now and brings its own bar.
   return (
@@ -161,6 +171,7 @@ export default async function WorkerDashboard({
                   key={a.id}
                   a={a}
                   token={token}
+                  mates={home.withMe[a.job.id] ?? []}
                   actions={
                     a.status !== "PENDING" && a.job.status !== "CANCELED" ? (
                       <TodayActions token={token} jobId={a.job.id} status={a.job.status} progress={await jobProgressInfo(worker.organizationId, a.job.id)} />
@@ -171,6 +182,56 @@ export default async function WorkerDashboard({
             )}
           </div>
         )}
+      </section>
+
+      {home.tasks.length > 0 && (
+        <section className="mt-8" data-crew-tasks>
+          <div className="quiet-caps mb-3">My tasks today</div>
+          <div className="space-y-2.5">
+            {home.tasks.map((t) => (
+              <Link key={t.jobId} href={`/w/${token}/jobs/${t.assignmentId}` as Route} className="block paper-card p-4 transition-all hover:shadow-pop hover:-translate-y-0.5">
+                <div className="text-[12px] text-[color:var(--ink-muted)]">
+                  {t.jobTitle} · <b className="text-[color:var(--ink)]">{t.stage}</b>
+                </div>
+                {t.tasks.length ? (
+                  <ul className="mt-2 space-y-1.5">
+                    {t.tasks.map((x) => (
+                      <li key={x.id} className="flex items-start gap-2 text-[14px]">
+                        <span className="mt-[3px] inline-block h-4 w-4 shrink-0 rounded-[3px] border-[1.5px] border-[color:var(--ink)]" aria-hidden="true" />
+                        <span>
+                          {x.title}
+                          {x.photoNeeded ? <span className="quiet-caps ml-2 text-[color:var(--amber)]">photo</span> : null}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-1 text-[13px] text-[color:var(--ink-muted)]">Nothing left on this stage — tell the office it is done.</p>
+                )}
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className="mt-8" data-crew-week>
+        <div className="quiet-caps mb-3">My week</div>
+        <div className="paper-card flex flex-wrap gap-6 p-4">
+          <div>
+            <div className="font-display text-[26px] leading-none tabular">{hoursWords(home.week.hours)}</div>
+            <div className="mt-1 text-[12px] text-[color:var(--ink-muted)]">hours logged this week</div>
+          </div>
+          <div>
+            <div className="font-display text-[26px] leading-none tabular">{home.week.days}</div>
+            <div className="mt-1 text-[12px] text-[color:var(--ink-muted)]">{home.week.days === 1 ? "day on site" : "days on site"}</div>
+          </div>
+          {home.problemsOpen > 0 && (
+            <div>
+              <div className="font-display text-[26px] leading-none tabular text-[color:var(--rose)]">{home.problemsOpen}</div>
+              <div className="mt-1 text-[12px] text-[color:var(--ink-muted)]">{home.problemsOpen === 1 ? "problem you flagged, still open" : "problems you flagged, still open"}</div>
+            </div>
+          )}
+        </div>
       </section>
 
       <section className="mt-8">
@@ -214,6 +275,7 @@ function AssignmentCard({
   token,
   muted,
   actions,
+  mates,
 }: {
   a: {
     id: string;
@@ -229,6 +291,8 @@ function AssignmentCard({
   muted?: boolean;
   /** Today's one-tap Start / Back on site / Complete row (2026-09-27). */
   actions?: React.ReactNode;
+  /** Who else is on the job today (2026-11-05). */
+  mates?: string[];
 }) {
   const start = a.job.startsAt;
   const [mon, day] = start ? shortDate(start).split(" ") : ["—", ""];
@@ -257,6 +321,11 @@ function AssignmentCard({
         {start && (
           <div className="mt-0.5 text-[11px] tabular text-[color:var(--ink-faint)]">
             {longDate(start)}
+          </div>
+        )}
+        {mates && mates.length > 0 && (
+          <div className="mt-0.5 text-[12px] text-[color:var(--ink-muted)]" data-with-me>
+            With you: {mates.join(", ")}
           </div>
         )}
       </div>

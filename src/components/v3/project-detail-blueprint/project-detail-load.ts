@@ -11,7 +11,8 @@ import { categoryOf } from "@/lib/projectBudget";
 import { projectMoney } from "@/lib/projectMoney";
 import { stagesOf } from "@/lib/projectStages/server";
 import { buyingOf } from "@/lib/projectBuying/server";
-import type { PdAvailProposal, PdBudget, PdBuying, PdJob, PdLooseProposal, PdPayments, PdProject, PdProposal, PdStages, PdWorker } from "./project-detail-data";
+import { projectField } from "@/lib/crewField/server";
+import type { PdAvailProposal, PdBudget, PdBuying, PdField, PdJob, PdLooseProposal, PdPayments, PdProject, PdProposal, PdStages, PdWorker } from "./project-detail-data";
 
 export type ProjectDetailProps = {
   project: PdProject;
@@ -19,6 +20,8 @@ export type ProjectDetailProps = {
   stages: PdStages;
   /** The to-buy list and the orders (2026-11-05). */
   buying: PdBuying;
+  /** On site: problems, hours, the subs' bills (2026-11-05). */
+  field: PdField;
   jobs: PdJob[];
   proposals: PdProposal[];
   availableProposals: PdAvailProposal[];
@@ -122,7 +125,7 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
     at: e.spentAt.toISOString(),
   }));
   // The money — the same read as the Projects list and Financials (lib/projectMoney): before tax, crew and stock in.
-  const [moneyAll, stageRead, buying] = await Promise.all([projectMoney(organizationId, [project.id]), stagesOf(project.id), buyingOf(organizationId, project.id)]);
+  const [moneyAll, stageRead, buying, field] = await Promise.all([projectMoney(organizationId, [project.id]), stagesOf(project.id), buyingOf(organizationId, project.id), projectField(organizationId, project.id)]);
   const money = moneyAll.get(project.id)!;
   const budget: PdBudget = {
     summary: money,
@@ -136,6 +139,7 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
     budget,
     stages: { ...stageRead, draftedByAi: Boolean(project.stagesDraftedAt) },
     buying,
+    field,
     project: {
         id: project.id,
         name: project.name,

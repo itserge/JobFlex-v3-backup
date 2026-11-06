@@ -48,6 +48,8 @@ export type CrewDay = {
   /** Opened by the office moving the status, not by a crew press. */
   byOffice: boolean;
   note: string | null;
+  /** "48–61°F, rain" — noted by itself when the day opened (2026-11-05), or null. */
+  weather: string | null;
   files: CrewFile[];
 };
 

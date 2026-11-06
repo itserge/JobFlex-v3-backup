@@ -72,6 +72,7 @@ import { useRouter } from "next/navigation";
 import { JD_ASSIGN, ST, STATUS_BUTTONS, fmt, type JobDetailRecord, KEY_TO_STATUS } from "./job-detail-data";
 import { Who } from "@/components/v3/who/who";
 import { CrewActions, CrewDays, CrewPendingBanner, CrewReceipts } from "@/components/v3/crew-board/crew-board";
+import { CrewField } from "@/components/v3/crew-board/crew-field";
 
 /** Hashed module class, or the literal name when the module has none — which is
  *  how the fleet's global `rv` / `rv-in` / `pressed` pass through. */
@@ -190,6 +191,9 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
 
       {/* Days that passed without being closed — on top, whatever the tab. */}
       <CrewPendingBanner data={record.board} door={record.door} />
+
+      {/* On site (2026-11-05): the stage's tasks, deliveries due, problems from site, hours. */}
+      <CrewField data={record.field} jobId={record.id} door={record.door} office={!worker} canWork={record.board.canWork} />
 
       {/* ТАБЫ */}
       <div className={cx("jd-tabbar")}>

@@ -70,6 +70,7 @@ import {
   type PdOpens,
   type PdPayments,
   type PdBuying,
+  type PdField,
   type PdProject,
   type PdStages,
   type PdWorker,
@@ -96,6 +97,7 @@ import { ProjectCombine } from "@/components/v3/project-links/project-combine";
 import { ProjectCrewSheet } from "@/components/v3/project-links/project-crew-sheet";
 import { ProjectStagesCard } from "@/components/v3/project-links/project-stages-card";
 import { ProjectBuyingCard } from "@/components/v3/project-links/project-buying-card";
+import { ProjectFieldCard } from "@/components/v3/project-links/project-field-card";
 
 const DAY_MS = 86400000;
 
@@ -302,6 +304,7 @@ export function MobileProjectDetail({
   roster = [],
   stages = { stages: [], done: null, draftedByAi: false },
   buying,
+  field,
 }: {
   project: PdProject;
   jobs: PdJob[];
@@ -317,6 +320,8 @@ export function MobileProjectDetail({
   stages?: PdStages;
   /** The to-buy list and the orders (2026-11-05). */
   buying?: PdBuying;
+  /** On site: problems, hours, the subs' bills (2026-11-05). */
+  field?: PdField;
 }) {
   // The project's dates are days, not moments (withLocalDays).
   const project = useMemo(() => withLocalDays(projectIn), [projectIn]);
@@ -606,6 +611,11 @@ export function MobileProjectDetail({
           <div className="mpd-budget">
             <ProjectStagesCard projectId={project.id} stages={stages} canManage={canManage} />
           </div>
+          {field ? (
+            <div className="mpd-budget">
+              <ProjectFieldCard projectId={project.id} field={field} canManage={canManage} />
+            </div>
+          ) : null}
           <div className="mpd-loose">
             <LooseProposalsStrip projectId={project.id} client={project.client} loose={looseProposals} />
           </div>

@@ -21,6 +21,8 @@ export interface WorkDayRow extends WorkDayLike {
   note: string | null;
   source: string;
   mediaCount: number;
+  /** The weather the day it was opened, noted by itself (the crew build, 2026-11-05). */
+  weather: string | null;
 }
 
 export async function tzOf(organizationId: string): Promise<string> {
@@ -69,6 +71,7 @@ export async function listWorkDays(organizationId: string, jobId: string, now = 
     note: r.note,
     source: r.source,
     mediaCount: r._count.photos,
+    weather: r.weather,
   }));
 }
 
@@ -138,5 +141,5 @@ export async function workDayCount(organizationId: string, jobId: string, now = 
 
 async function rowOf(id: string): Promise<WorkDayRow> {
   const r = await db.workDay.findUniqueOrThrow({ where: { id }, include: { _count: { select: { photos: true } } } });
-  return { id: r.id, jobId: r.jobId, organizationId: r.organizationId, date: r.date, dayNumber: r.dayNumber, status: r.status, openedById: r.openedById, closedById: r.closedById, closedAt: r.closedAt, note: r.note, source: r.source, mediaCount: r._count.photos };
+  return { id: r.id, jobId: r.jobId, organizationId: r.organizationId, date: r.date, dayNumber: r.dayNumber, status: r.status, openedById: r.openedById, closedById: r.closedById, closedAt: r.closedAt, note: r.note, source: r.source, mediaCount: r._count.photos, weather: r.weather };
 }
