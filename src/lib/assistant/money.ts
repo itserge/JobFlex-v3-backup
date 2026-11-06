@@ -26,6 +26,30 @@ const invoiceTool: WriteTool<InvoiceArgs, InvoicePayload> = {
   kind: "write",
   name: "send_invoice",
   need: "invoices.send",
+  card: {
+    "label": "Invoice",
+    "purpose": "Invoice the client for a payment stage of a signed proposal.",
+    "when": "'Invoice Lee', 'bill the deposit': find the proposal first; ask which stage only when there are several. Asks the person for their PIN with the yes.",
+    "objects": [
+      "invoice",
+      "proposal",
+      "client"
+    ],
+    "effect": "money",
+    "group": "money",
+    "version": 1,
+    "since": "2026-11-05",
+    "samples": [
+      {
+        "say": "invoice Lee for the deposit",
+        "args": {
+          "proposalId": "p_1",
+          "installmentId": null,
+          "method": "any"
+        }
+      }
+    ]
+  },
   description:
     "Invoice the client for a payment stage of a signed proposal (email, and a text when the company texts clients). Find the proposal first. installmentId = a stage; null = the next one due. method: 'card' = the hosted card checkout, 'bank' = the company's transfer instructions, 'any' = the client picks — use 'any' unless they said. Asks the person for their PIN with the yes.",
   params: z.object({ proposalId: ID, installmentId: ID.nullable(), method: z.enum(["card", "bank", "any"]) }),
@@ -87,6 +111,29 @@ const financingLink: WriteTool<FinArgs, FinArgs & { client: string; title: strin
   kind: "write",
   name: "financing_link",
   need: "financing.send",
+  card: {
+    "label": "Financing link",
+    "purpose": "Send the client the monthly-payments (Wisetack) link for a sent proposal.",
+    "when": "'Send Smith the financing link', 'monthly payments for the roof': find the proposal first; it must have been sent. Asks the person for their PIN with the yes.",
+    "objects": [
+      "proposal",
+      "client",
+      "payment"
+    ],
+    "effect": "money",
+    "group": "money",
+    "version": 1,
+    "since": "2026-11-05",
+    "samples": [
+      {
+        "say": "send Smith the financing link",
+        "args": {
+          "proposalId": "p_1",
+          "via": "auto"
+        }
+      }
+    ]
+  },
   description:
     "Send the client the monthly-payments (Wisetack financing) link for a proposal — by text, by email, or 'auto' (text when they have a mobile, else email). Find the proposal first; it must have been sent. Asks the person for their PIN with the yes.",
   params: z.object({ proposalId: ID, via: z.enum(["auto", "text", "email"]) }),

@@ -17,6 +17,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:push": "prisma db push",
     "prisma:seed": "tsx prisma/seed.ts",
+    "assistant:catalog": "tsx --tsconfig tsconfig.json scripts/assistant-catalog.ts",
+    "assistant:check": "tsx --tsconfig tsconfig.json qa/tests/logic/assistant-registry.check.ts",
     "qa": "tsx qa/bin/qa.ts",
     "qa:smoke": "tsx qa/bin/qa.ts --suite smoke",
     "qa:build-run": "tsx qa/bin/build-run.ts",

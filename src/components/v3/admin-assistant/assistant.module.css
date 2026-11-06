@@ -1,0 +1,121 @@
+/* ============================================================
+   ADMIN · AI OPERATOR — /admin/assistant
+
+   The shell's .page-head / .card / .card-head / .card-rule / .chip and
+   the ledger table (.tbl, .tblBleed), the mix strip and the mono type
+   come from the dashboard module and admin-shared (imported, never
+   re-derived). What this page invents: a column header on the right
+   of a card head (as /admin/health does), the tool cell with its id
+   and last error under the label, the services list, and the width
+   of the few columns a ledger of tools needs.
+
+   Hashed classes scoped `:global(.jf-blueprint .content) .cls` ⇒
+   (0,3,0), above the dashboard module's resets. Tokens only.
+   ============================================================ */
+
+:global(.jf-blueprint .content) .colHead {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: right;
+}
+
+:global(.jf-blueprint .content) .note {
+  margin: 14px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+:global(.jf-blueprint .content) .warnings {
+  margin: 0;
+  padding: 0 0 0 18px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+:global(.jf-blueprint .content) .warnings li + li {
+  margin-top: 6px;
+}
+
+:global(.jf-blueprint .content) .services {
+  display: grid;
+  gap: 8px;
+}
+:global(.jf-blueprint .content) .service {
+  display: grid;
+  grid-template-columns: 128px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--hair-soft);
+}
+:global(.jf-blueprint .content) .service:last-child {
+  border-bottom: none;
+}
+:global(.jf-blueprint .content) .serviceName {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+:global(.jf-blueprint .content) .serviceNeed {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  text-align: right;
+}
+
+:global(.jf-blueprint .content) .tbl {
+  margin-top: 4px;
+}
+:global(.jf-blueprint .content) .cTool {
+  width: 30%;
+}
+:global(.jf-blueprint .content) .cNum {
+  width: 64px;
+  text-align: right;
+}
+:global(.jf-blueprint .content) .cSwitch {
+  width: 110px;
+  text-align: right;
+}
+:global(.jf-blueprint .content) .cell {
+  font-weight: 500;
+  color: var(--ink);
+}
+:global(.jf-blueprint .content) .toolLabel {
+  font-weight: 700;
+}
+:global(.jf-blueprint .content) .toolId {
+  font-size: 11px;
+  color: var(--muted);
+}
+:global(.jf-blueprint .content) .deps {
+  font-size: 11px;
+  color: var(--muted);
+}
+:global(.jf-blueprint .content) .lastError {
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--danger);
+  font-weight: 500;
+}
+:global(.jf-blueprint .content) .rowOff td {
+  color: var(--muted);
+}
+:global(.jf-blueprint .content) .switch {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+:global(.jf-blueprint .content) .bad {
+  color: var(--danger);
+}
+:global(.jf-blueprint .content) .warn {
+  color: var(--warn, var(--muted));
+}

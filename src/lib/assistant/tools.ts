@@ -46,11 +46,51 @@ export interface ToolContext {
   report?: (step: string) => Promise<void>;
 }
 
+// ── the capability registry's vocabulary (2026-11-06, lib/assistant/registry) ──
+// Every tool carries its own card: what it is for, when the model should reach for it, what it works on and what it
+// changes, its version, what outside service it needs, and what a person says to get it — the one place a feature is
+// described. The registry, the prompt's "what you can do", the phone's labels and the selection tests are all read
+// from these cards; adding a tool is adding one object here, nothing else to edit.
+
+/** The business objects a tool works on. */
+export type BusinessObject = "client" | "lead" | "proposal" | "estimate" | "job" | "visit" | "worker" | "invoice" | "payment" | "reminder" | "property" | "money" | "calendar" | "project";
+/** What a tool changes: nothing (a read), a record inside JobFlex, a draft estimate, the company's schedule, a message that leaves JobFlex, money. */
+export type ToolEffect = "read" | "record" | "draft" | "schedule" | "message" | "money";
+/** The prompt's sections, in the order they are shown. */
+export type ToolGroup = "lookups" | "people" | "visits" | "schedule" | "crew" | "proposals" | "money" | "reminders" | "estimates" | "projects";
+export const TOOL_GROUPS: readonly ToolGroup[] = ["lookups", "people", "visits", "schedule", "crew", "proposals", "money", "reminders", "estimates", "projects"];
+/** An outside service a tool cannot do without; with its key missing the tool is unavailable everywhere. */
+export type ToolDependency = "openai" | "twilio" | "maps" | "solar" | "parcels" | "eagleview";
+
+export interface ToolCard<A> {
+  /** The short name lists and cards show ("Roof estimate"). */
+  label: string;
+  /** One line for the registry: what it does for the business. */
+  purpose: string;
+  /** When the model should call it — its line in the prompt, written for the model. */
+  when: string;
+  objects: readonly BusinessObject[];
+  effect: ToolEffect;
+  group: ToolGroup;
+  /** Bumped when the arguments change shape; a change planned on an older version is read back again, never guessed. */
+  version: number;
+  /** YYYY-MM-DD it first shipped. */
+  since: string;
+  /** Set when it is on the way out: what was already planned still runs; the model no longer sees it. */
+  deprecated?: string;
+  deps?: readonly ToolDependency[];
+  /** A build's steps in order, as its trace names them (the sheet's trace, lib/assistant/progress). */
+  steps?: readonly string[];
+  /** What a person says, with the arguments the model should hand it — the selection tests' fixture and the schema check's sample. */
+  samples: ReadonlyArray<{ say: string; args: A }>;
+}
+
 interface ToolBase<A> {
   name: string;
   description: string;
   params: z.ZodType<A>;
   need: Capability;
+  card: ToolCard<A>;
 }
 
 export interface ReadTool<A> extends ToolBase<A> {
@@ -94,6 +134,32 @@ const today: ReadTool<Record<string, never>> = {
   kind: "read",
   name: "today",
   need: "today",
+  card: {
+    "label": "Today",
+    "purpose": "What needs attention today, from the CRM's Today list.",
+    "when": "'What's on today', 'what should I do', 'who owes me money', 'any new leads', 'how are we doing': today — every number on it is the CRM's own.",
+    "objects": [
+      "calendar",
+      "payment",
+      "proposal",
+      "lead",
+      "job"
+    ],
+    "effect": "read",
+    "group": "lookups",
+    "version": 1,
+    "since": "2026-11-04",
+    "samples": [
+      {
+        "say": "what needs attention today?",
+        "args": {}
+      },
+      {
+        "say": "who owes us money?",
+        "args": {}
+      }
+    ]
+  },
   description:
     "What needs attention today — the CRM's Today list: overdue and due payments, money owed, proposals waiting or being read, new leads, visits and jobs today, who is on site. Use for: what's on today, what should I do, who owes me money, any new leads, how are we doing today.",
   params: z.object({}).strict() as unknown as z.ZodType<Record<string, never>>,
@@ -117,6 +183,37 @@ const schedule: ReadTool<{ from: string; to: string | null }> = {
   kind: "read",
   name: "schedule",
   need: "schedule.read",
+  card: {
+    "label": "Schedule",
+    "purpose": "The calendar between two days: jobs with their crew, and visits.",
+    "when": "'What's on tomorrow', 'what's Thursday look like', 'is Mike busy Friday': schedule(from, to) on the company's clock, at most 14 days; it gives the visit ids move_visit and cancel_visit need.",
+    "objects": [
+      "calendar",
+      "job",
+      "visit",
+      "worker"
+    ],
+    "effect": "read",
+    "group": "lookups",
+    "version": 1,
+    "since": "2026-11-04",
+    "samples": [
+      {
+        "say": "what's on tomorrow?",
+        "args": {
+          "from": "2026-11-07",
+          "to": null
+        }
+      },
+      {
+        "say": "what does next week look like?",
+        "args": {
+          "from": "2026-11-09",
+          "to": "2026-11-13"
+        }
+      }
+    ]
+  },
   description:
     "The calendar between two days on the company's clock (inclusive; at most 14 days): job entries with their client and crew, and visits/appointments (with visitId for move_visit / cancel_visit). Use for: what's on tomorrow, what's Thursday look like, is Mike busy Friday.",
   params: z.object({ from: DAY.describe("first day, YYYY-MM-DD"), to: DAY.nullable().describe("last day, YYYY-MM-DD; null = the same day") }),
@@ -153,6 +250,39 @@ const find: ReadTool<{ query: string; kind: "any" | "proposal" | "client" | "job
   kind: "read",
   name: "find",
   need: "proposals.read",
+  card: {
+    "label": "Find",
+    "purpose": "A client, lead, proposal, job, visit or crew member by name, title or address — the ids every change needs.",
+    "when": "Before any change that names a person, a client, a proposal, a job, a visit or a worker: find its id here. Several matches: list them numbered with one short detail each and ask which one.",
+    "objects": [
+      "client",
+      "lead",
+      "proposal",
+      "job",
+      "visit",
+      "worker"
+    ],
+    "effect": "read",
+    "group": "lookups",
+    "version": 1,
+    "since": "2026-11-04",
+    "samples": [
+      {
+        "say": "find the Smith roof proposal",
+        "args": {
+          "query": "Smith roof",
+          "kind": "proposal"
+        }
+      },
+      {
+        "say": "do we have a client named Lee?",
+        "args": {
+          "query": "Lee",
+          "kind": "client"
+        }
+      }
+    ]
+  },
   description:
     "Find proposals, clients, jobs, leads, visits (appointments), projects or crew members by name, title, number or address. Returns ids to use in other tools. Use before any change that names a client, a proposal, a job, a visit, a project or a worker.",
   params: z.object({
@@ -189,6 +319,25 @@ const openProposals: ReadTool<Record<string, never>> = {
   kind: "read",
   name: "open_proposals",
   need: "proposals.read",
+  card: {
+    "label": "Unsigned proposals",
+    "purpose": "Proposals sent but not signed, with whether the client opened them.",
+    "when": "'Which proposals aren't signed', 'who should I follow up with', 'did Smith open it': open_proposals.",
+    "objects": [
+      "proposal",
+      "client"
+    ],
+    "effect": "read",
+    "group": "lookups",
+    "version": 1,
+    "since": "2026-11-04",
+    "samples": [
+      {
+        "say": "which proposals aren't signed yet?",
+        "args": {}
+      }
+    ]
+  },
   description: "Proposals sent but not signed yet, oldest first, with whether and when the client opened them. Use for: which proposals aren't signed, who should I follow up with, did Smith open it.",
   params: z.object({}).strict() as unknown as z.ZodType<Record<string, never>>,
   async run({ actor }) {
@@ -207,6 +356,27 @@ const moneyTool: ReadTool<{ period: "this_month" | "last_month" | "last_30_days"
   kind: "read",
   name: "money",
   need: "money.read",
+  card: {
+    "label": "Money",
+    "purpose": "Collected, expenses and profit for a month or the last 30 days, with the open pipeline and invoices.",
+    "when": "'How much did we make', 'what's our profit', 'are we better than last month': money(period).",
+    "objects": [
+      "money",
+      "invoice"
+    ],
+    "effect": "read",
+    "group": "lookups",
+    "version": 1,
+    "since": "2026-11-04",
+    "samples": [
+      {
+        "say": "how much did we make last month?",
+        "args": {
+          "period": "last_month"
+        }
+      }
+    ]
+  },
   description:
     "Money collected, expenses and profit for this calendar month, last month, or the last 30 days (with open pipeline and invoices). Use for: how much did we make, what's our profit, are we doing better than last month.",
   params: z.object({ period: z.enum(["this_month", "last_month", "last_30_days"]) }),
@@ -244,6 +414,24 @@ const crew: ReadTool<Record<string, never>> = {
   kind: "read",
   name: "crew",
   need: "crew.read",
+  card: {
+    "label": "Crew",
+    "purpose": "Everyone on the crew, with whether crew texts reach them.",
+    "when": "To resolve 'Mike' or 'the roofing guys' before scheduling or texting: crew.",
+    "objects": [
+      "worker"
+    ],
+    "effect": "read",
+    "group": "lookups",
+    "version": 1,
+    "since": "2026-11-04",
+    "samples": [
+      {
+        "say": "who's on the crew?",
+        "args": {}
+      }
+    ]
+  },
   description: "Everyone on the crew with their id and whether crew texts reach them. Use to resolve names like 'Mike' or 'the roofing guys' before scheduling or texting.",
   params: z.object({}).strict() as unknown as z.ZodType<Record<string, never>>,
   async run({ actor }) {
@@ -267,6 +455,37 @@ const sendProposal: WriteTool<{ proposalId: string; email: string | null; client
   kind: "write",
   name: "send_proposal",
   need: "proposals.send",
+  card: {
+    "label": "Send a proposal",
+    "purpose": "Email (and text) a proposal to its client.",
+    "when": "'Send the Smith proposal', 'send it' (the newest one built): find the proposal first; pass an email only when they gave one, a client name only when the proposal has no client.",
+    "objects": [
+      "proposal",
+      "client"
+    ],
+    "effect": "message",
+    "group": "proposals",
+    "version": 1,
+    "since": "2026-11-04",
+    "samples": [
+      {
+        "say": "send the Smith proposal",
+        "args": {
+          "proposalId": "p_1",
+          "email": null,
+          "clientName": null
+        }
+      },
+      {
+        "say": "send it to sarah@example.com",
+        "args": {
+          "proposalId": "p_1",
+          "email": "sarah@example.com",
+          "clientName": null
+        }
+      }
+    ]
+  },
   description:
     "Send a proposal to the client by email (and text, when the company texts clients). Find the proposal first. Pass an email only when the person gave one; pass a client name only when the proposal has no client.",
   params: z.object({ proposalId: ID, email: z.string().max(200).nullable(), clientName: z.string().max(120).nullable() }),
@@ -314,6 +533,36 @@ const scheduleJob: WriteTool<ScheduleArgs, SchedulePayload> = {
   kind: "write",
   name: "schedule_job",
   need: "schedule.write",
+  card: {
+    "label": "Schedule",
+    "purpose": "Put a job on the calendar or move it, and add crew.",
+    "when": "'Put the Lee fence on Thursday with Mike', 'move the Smith job to Monday': the job id from find (or a signed proposal's id when it has no job yet), crew ids from crew. A job is the crew's work; an appointment with a client or a lead is book_visit.",
+    "objects": [
+      "job",
+      "calendar",
+      "worker",
+      "proposal"
+    ],
+    "effect": "schedule",
+    "group": "schedule",
+    "version": 1,
+    "since": "2026-11-04",
+    "samples": [
+      {
+        "say": "put the Lee fence on Thursday with Mike's crew",
+        "args": {
+          "jobId": "job_1",
+          "proposalId": null,
+          "date": "2026-11-12",
+          "start": null,
+          "end": null,
+          "workerIds": [
+            "w_1"
+          ]
+        }
+      }
+    ]
+  },
   description:
     "Put a job on the calendar or move it, and optionally add crew. Give the job id (from find), or the id of a signed proposal that has no job yet. Date and times are on the company's clock; leave start/end null to keep the job's current hours (or 9:00–14:00 for a new entry).",
   params: z.object({
@@ -427,6 +676,27 @@ const textCrew: WriteTool<{ workerIds: string[] | null; message: string }, { wor
   kind: "write",
   name: "text_crew",
   need: "crew.text",
+  card: {
+    "label": "Text the crew",
+    "purpose": "Text one or more crew members from the company's number.",
+    "when": "'Tell everybody …', 'text Mike …': one message to one or many (workerIds null = everyone with texts on); write it the way the person said it.",
+    "objects": [
+      "worker"
+    ],
+    "effect": "message",
+    "group": "crew",
+    "version": 1,
+    "since": "2026-11-04",
+    "samples": [
+      {
+        "say": "tell everybody we start at 7 tomorrow",
+        "args": {
+          "workerIds": null,
+          "message": "We start at 7 tomorrow."
+        }
+      }
+    ]
+  },
   description:
     "Text one or more crew members from the company's number. workerIds = the people (ids from crew or find); null = everyone on the crew with texts on. Write the message the way the person said it, short and clear.",
   params: z.object({ workerIds: z.array(ID).max(60).nullable(), message: z.string().min(1).max(480) }),
@@ -471,6 +741,29 @@ const paymentReminder: WriteTool<{ proposalId: string; installmentId: string | n
   kind: "write",
   name: "payment_reminder",
   need: "payments.remind",
+  card: {
+    "label": "Payment reminder",
+    "purpose": "Remind a client to pay what they owe on a signed proposal.",
+    "when": "'Remind Johnson to pay', 'ask Lee for the balance': find the proposal first; a stage id only when one was named. A reminder to oneself is remind_me.",
+    "objects": [
+      "client",
+      "payment",
+      "proposal"
+    ],
+    "effect": "message",
+    "group": "money",
+    "version": 1,
+    "since": "2026-11-04",
+    "samples": [
+      {
+        "say": "ask Johnson for the remaining payment",
+        "args": {
+          "proposalId": "p_1",
+          "installmentId": null
+        }
+      }
+    ]
+  },
   description: "Send the client a payment reminder (email, and a text when the company texts clients) for what they owe on a signed proposal. installmentId = a specific payment stage, or null for the next one due.",
   params: z.object({ proposalId: ID, installmentId: ID.nullable() }),
   payload: z.object({ proposalId: ID, installmentId: ID.nullable() }),
@@ -521,6 +814,35 @@ const textCrewEach: WriteTool<{ items: { workerId: string; message: string }[] }
   kind: "write",
   name: "text_crew_each",
   need: "crew.text",
+  card: {
+    "label": "Text the crew",
+    "purpose": "Different messages to different crew members in one go.",
+    "when": "'Tell Mike to bring the ladder and Jose to pick up the shingles': text_crew_each — one yes for all of them.",
+    "objects": [
+      "worker"
+    ],
+    "effect": "message",
+    "group": "crew",
+    "version": 1,
+    "since": "2026-11-05",
+    "samples": [
+      {
+        "say": "tell Mike to bring the ladder and Jose to pick up the shingles",
+        "args": {
+          "items": [
+            {
+              "workerId": "w_1",
+              "message": "Bring the ladder."
+            },
+            {
+              "workerId": "w_2",
+              "message": "Pick up the shingles."
+            }
+          ]
+        }
+      }
+    ]
+  },
   description:
     "Text several crew members DIFFERENT messages in one go (ids from crew or find). Use when each person gets their own instruction; for one message to everyone use text_crew. Write each message the way the person said it.",
   params: z.object({ items: z.array(z.object({ workerId: ID, message: z.string().min(1).max(480) })).min(1).max(20) }),
@@ -595,6 +917,25 @@ const remindOverdue: WriteTool<Record<string, never>, { proposalIds: string[]; n
   kind: "write",
   name: "remind_overdue",
   need: "payments.remind",
+  card: {
+    "label": "Payment reminders",
+    "purpose": "A payment reminder to every client with an overdue payment, in one go.",
+    "when": "'Remind everyone who hasn't paid', 'send reminders to everyone overdue': remind_overdue (one yes). For one client: payment_reminder.",
+    "objects": [
+      "client",
+      "payment"
+    ],
+    "effect": "message",
+    "group": "money",
+    "version": 1,
+    "since": "2026-11-05",
+    "samples": [
+      {
+        "say": "send payment reminders to everyone overdue",
+        "args": {}
+      }
+    ]
+  },
   description: "Send a payment reminder to EVERY client with an overdue payment, in one go (one yes). For one client use payment_reminder.",
   params: z.object({}).strict() as unknown as z.ZodType<Record<string, never>>,
   payload: z.object({ proposalIds: z.array(ID).max(40), names: z.array(z.string()).max(40) }),

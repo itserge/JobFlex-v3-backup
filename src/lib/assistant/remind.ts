@@ -28,6 +28,28 @@ const remindMe: WriteTool<{ what: string; date: string; time: string }, { what: 
   name: REMIND_TOOL,
   need: "reminders",
   scheduled: true,
+  card: {
+    "label": "Reminder",
+    "purpose": "A reminder to the person themselves, at a time — texted to their linked phone and shown in the Operator.",
+    "when": "'Remind me tomorrow at 9 to call the inspector': remind_me, for the person themselves (a client's payment is payment_reminder). It needs no yes.",
+    "objects": [
+      "reminder"
+    ],
+    "effect": "record",
+    "group": "reminders",
+    "version": 1,
+    "since": "2026-11-05",
+    "samples": [
+      {
+        "say": "remind me tomorrow at 9 to call the inspector",
+        "args": {
+          "what": "call the inspector",
+          "date": "2026-11-07",
+          "time": "09:00"
+        }
+      }
+    ]
+  },
   description:
     "Set a reminder for the person themselves (never for a client or the crew): what, and when on the company's clock. Use for: remind me at 3 to call John, remind me tomorrow morning about the permit. A client's payment is payment_reminder.",
   params: z.object({ what: z.string().min(2).max(300).describe("what to remind them of, in their words"), date: DAY, time: TIME }),
@@ -56,6 +78,24 @@ const reminders: ReadTool<Record<string, never>> = {
   kind: "read",
   name: "reminders",
   need: "reminders",
+  card: {
+    "label": "Reminders",
+    "purpose": "The person's own reminders still to come.",
+    "when": "'What reminders do I have': reminders; and before cancel_reminder, for the id.",
+    "objects": [
+      "reminder"
+    ],
+    "effect": "read",
+    "group": "lookups",
+    "version": 1,
+    "since": "2026-11-05",
+    "samples": [
+      {
+        "say": "what reminders do I have?",
+        "args": {}
+      }
+    ]
+  },
   description: "The person's own reminders still to come, with ids. Use for: what reminders do I have; before cancel_reminder.",
   params: z.object({}).strict() as unknown as z.ZodType<Record<string, never>>,
   async run({ actor }) {
@@ -85,6 +125,26 @@ const cancelReminder: ReadTool<{ reminderId: string }> = {
   kind: "read",
   name: "cancel_reminder",
   need: "reminders",
+  card: {
+    "label": "Cancel a reminder",
+    "purpose": "Call off one of the person's own reminders.",
+    "when": "'Cancel the reminder about the inspector': reminders first for its id, then cancel_reminder. Nothing to confirm.",
+    "objects": [
+      "reminder"
+    ],
+    "effect": "read",
+    "group": "reminders",
+    "version": 1,
+    "since": "2026-11-05",
+    "samples": [
+      {
+        "say": "cancel my reminder about the inspector",
+        "args": {
+          "reminderId": "rem_1"
+        }
+      }
+    ]
+  },
   description: "Call off one of the person's own reminders (the id from reminders). Nothing to confirm.",
   params: z.object({ reminderId: ID }),
   async run({ actor }, a) {

@@ -91,6 +91,26 @@ const lawnSite: ReadTool<{ address: string }> = {
   kind: "read",
   name: "lawn_site",
   need: "estimates.build",
+  card: {
+    "label": "Yard",
+    "purpose": "The lawn, beds and trees at an address, measured on the aerial photo.",
+    "when": "An address for lawn care with no lawn size said: lawn_site first; say back the lawn and beds, ask what to price.",
+    "objects": [
+      "property"
+    ],
+    "effect": "read",
+    "group": "estimates",
+    "version": 1,
+    "since": "2026-11-05",
+    "samples": [
+      {
+        "say": "the yard at 14 Oak St, Tacoma WA",
+        "args": {
+          "address": "14 Oak St, Tacoma WA"
+        }
+      }
+    ]
+  },
   description:
     "Read a property for lawn care from the address: the lot from the county, the lawn, beds and trees measured on the aerial photo, front and back. Say back what it found, then ask what to price. Use before build_lawn when the person gives an address and no lawn size; the yard is remembered for an hour.",
   params: z.object({ address: z.string().min(6).max(200).describe("the full street address, with city and state") }),
@@ -151,6 +171,50 @@ const buildLawn: WriteTool<LawnArgs, LawnArgs & { address: string }> = {
   instant: "now",
   name: "build_lawn",
   need: "estimates.build",
+  card: {
+    "label": "Lawn estimate",
+    "purpose": "Price a season of lawn care with the company's lawn rates, as a DRAFT.",
+    "when": "Lawn care: build_lawn from the yard read with lawn_site, the aerial photo at the address, or the lawn's square feet when said (then no photo is read); pass the services they name, else null for the usual season; mowing weekly or every other week. To change it: build_lawn again with replaces.",
+    "objects": [
+      "estimate",
+      "proposal",
+      "property",
+      "client",
+      "lead"
+    ],
+    "effect": "draft",
+    "group": "estimates",
+    "version": 1,
+    "since": "2026-11-05",
+    "steps": [
+      "Yard",
+      "Priced",
+      "Saved"
+    ],
+    "samples": [
+      {
+        "say": "price lawn care at 14 Oak St, Tacoma WA, the lawn is about 8,000 square feet, weekly mowing, fertilizer and fall cleanup",
+        "args": {
+          "address": "14 Oak St, Tacoma WA",
+          "lawnSqft": 8000,
+          "bedSqft": null,
+          "clientId": null,
+          "leadId": null,
+          "frequency": "weekly",
+          "services": [
+            "mow",
+            "fert",
+            "fallCleanup"
+          ],
+          "fertRounds": null,
+          "mulchDepthIn": null,
+          "stories": null,
+          "snowPushes": null,
+          "replaces": null
+        }
+      }
+    ]
+  },
   description:
     "Price a season of lawn care for a property with the company's lawn rates — mowing weekly or every other week, fertilizer, aeration, overseeding, the spring and fall cleanups, mulch, shrubs, hedges, sprinklers, gutters, snow — from the yard read with lawn_site, the aerial photo at the address, or the lawn's square feet when they say it; saved as a DRAFT proposal (nothing goes to the client). Pass `replaces` to change one built earlier.",
   params: lawnArgs,

@@ -19,7 +19,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { ArrowUp, AudioLines, Mic, Square } from "lucide-react";
 import { useDeckSpeech } from "@/components/v3/deck-voice/use-deck-speech";
-import { PIN_TOOLS, SCHEDULED_TOOLS, type ActionStatus, type FeedAction, type FeedMessage } from "@/lib/assistant/shared";
+import { isBuild, PIN_TOOLS, SCHEDULED_TOOLS, TOOL_LABEL, type ActionStatus, type FeedAction, type FeedMessage } from "@/lib/assistant/shared";
 import { forSpeech, shownBody, type AssistantState } from "./use-assistant";
 import s from "./assistant.module.css";
 
@@ -34,38 +34,15 @@ const EXAMPLES: Array<{ label: string; text: string; fill?: boolean }> = [
   { label: "Remind me at 3 to …", text: "Remind me at 3 to ", fill: true },
 ];
 
-const TOOL_LABEL: Record<string, string> = {
-  build_deck: "Deck estimate",
-  change_deck: "Deck estimate",
-  build_estimate: "Estimate",
-  build_fence: "Fence estimate",
-  build_roof: "Roof estimate",
-  build_hvac: "HVAC estimate",
-  build_lawn: "Lawn estimate",
-  change_estimate: "Estimate",
-  send_proposal: "Send a proposal",
-  schedule_job: "Schedule",
-  text_crew: "Text the crew",
-  text_crew_each: "Text the crew",
-  payment_reminder: "Payment reminder",
-  add_client: "Add a client",
-  update_client: "Update a client",
-  add_lead: "Add a lead",
-  book_visit: "Book a visit",
-  move_visit: "Move a visit",
-  cancel_visit: "Cancel a visit",
-  remind_me: "Reminder",
-  send_invoice: "Invoice",
-  financing_link: "Financing link",
-};
+
 
 /** The builds (lib/assistant/build): no undo window — queued means it is being priced. */
-const BUILDS = new Set(["build_deck", "change_deck", "build_estimate", "change_estimate", "build_fence", "build_roof", "build_hvac", "build_lawn"]);
+
 
 function stamp(a: FeedAction, waiting: boolean): { label: string; tone: "warn" | "ok" | "bad" | "quiet" | "info" } {
   const st: ActionStatus = a.status;
   if (st === "AWAITING") return waiting ? { label: "Needs you", tone: "warn" } : { label: "Expired", tone: "quiet" };
-  if (st === "QUEUED") return BUILDS.has(a.tool) ? { label: "Working", tone: "info" } : SCHEDULED_TOOLS.includes(a.tool) ? { label: "Set", tone: "info" } : { label: "In 2 min", tone: "info" };
+  if (st === "QUEUED") return isBuild(a.tool) ? { label: "Working", tone: "info" } : SCHEDULED_TOOLS.includes(a.tool) ? { label: "Set", tone: "info" } : { label: "In 2 min", tone: "info" };
   if (st === "RUNNING") return { label: "Working", tone: "info" };
   if (st === "DONE") return { label: "Done", tone: "ok" };
   if (st === "FAILED") return { label: "Didn't go", tone: "bad" };

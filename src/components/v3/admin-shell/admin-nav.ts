@@ -78,6 +78,8 @@ export const ADMIN_NAV_SECTIONS: NavSection[] = [
       // the badge is the open tasks given to whoever is signed in.
       { label: "Tasks", icon: "i-board", href: "/admin/tasks" },
       { label: "Health", icon: "i-check", href: "/admin/health" },
+      // Added 2026-11-06: the AI Operator's capability registry — every tool's state, use and failures, the kill switch.
+      { label: "AI Operator", icon: "i-msg", href: "/admin/assistant" },
       { label: "Integrations", icon: "i-link", href: "/admin/integrations" },
       // Texting is the one integration set up for every contractor at once
       // (2026-09-24) — a door of its own beside Integrations.

@@ -40,6 +40,37 @@ const bookVisit: WriteTool<BookArgs, BookPayload> = {
   kind: "write",
   name: "book_visit",
   need: "visits.write",
+  card: {
+    "label": "Book a visit",
+    "purpose": "An appointment with a client or a lead: an estimate visit, a measure, a walkthrough.",
+    "when": "'Book a visit with Smith Tuesday at 10': find the client or lead first; date and times on the company's clock, end null = one hour; workerIds = who goes.",
+    "objects": [
+      "visit",
+      "client",
+      "lead",
+      "worker",
+      "calendar"
+    ],
+    "effect": "schedule",
+    "group": "visits",
+    "version": 1,
+    "since": "2026-11-05",
+    "samples": [
+      {
+        "say": "book an estimate visit with Smith Tuesday at 10",
+        "args": {
+          "title": "Estimate visit",
+          "clientId": "c_1",
+          "leadId": null,
+          "date": "2026-11-10",
+          "start": "10:00",
+          "end": null,
+          "workerIds": null,
+          "notes": null
+        }
+      }
+    ]
+  },
   description:
     "Book a visit (an appointment) with a client or a lead: an estimate visit, a measure, a walkthrough. Find the client or lead first. Date and times on the company's clock; end null = one hour. workerIds = who goes (ids from crew or find); null = nobody assigned yet.",
   params: z.object({
@@ -103,6 +134,30 @@ const moveVisit: WriteTool<MoveArgs, MovePayload> = {
   kind: "write",
   name: "move_visit",
   need: "visits.write",
+  card: {
+    "label": "Move a visit",
+    "purpose": "A visit to another day or time.",
+    "when": "'Move the Smith visit to Thursday 2 pm': the visit id from find (kind visit) or schedule; start null = the same time of day.",
+    "objects": [
+      "visit",
+      "calendar"
+    ],
+    "effect": "schedule",
+    "group": "visits",
+    "version": 1,
+    "since": "2026-11-05",
+    "samples": [
+      {
+        "say": "move the Smith visit to Thursday at 2",
+        "args": {
+          "visitId": "v_1",
+          "date": "2026-11-12",
+          "start": "14:00",
+          "end": null
+        }
+      }
+    ]
+  },
   description: "Move a visit (an appointment) to another day or time. The visit id comes from find (kind visit) or schedule. start null = the same time of day; end null = the same length.",
   params: z.object({ visitId: ID, date: DAY, start: TIME.nullable(), end: TIME.nullable() }),
   payload: z.object({ visitId: ID, startsAt: z.string(), endsAt: z.string(), title: z.string(), who: z.string().nullable() }),
@@ -136,6 +191,27 @@ const cancelVisit: WriteTool<{ visitId: string }, { visitId: string; title: stri
   kind: "write",
   name: "cancel_visit",
   need: "visits.write",
+  card: {
+    "label": "Cancel a visit",
+    "purpose": "Call off a visit.",
+    "when": "'Cancel the visit with Smith': the visit id from find (kind visit) or schedule.",
+    "objects": [
+      "visit",
+      "calendar"
+    ],
+    "effect": "schedule",
+    "group": "visits",
+    "version": 1,
+    "since": "2026-11-05",
+    "samples": [
+      {
+        "say": "cancel the visit with Smith",
+        "args": {
+          "visitId": "v_1"
+        }
+      }
+    ]
+  },
   description: "Cancel a visit (an appointment). The visit id comes from find (kind visit) or schedule.",
   params: z.object({ visitId: ID }),
   payload: z.object({ visitId: ID, title: z.string(), who: z.string().nullable() }),

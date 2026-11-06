@@ -50,6 +50,29 @@ const projectStatus: ReadTool<{ query: string | null; projectId: string | null }
   kind: "read",
   name: "project_status",
   need: "projects.read",
+  card: {
+    "label": "Project status",
+    "purpose": "Where a project stands: % done, the stage it is on, what is late, the money, its jobs and crew.",
+    "when": "'What's happening with Smith's deck', 'how far along is the kitchen', 'is anything late', 'how much does Smith still owe on the project': project_status with the project id (find, kind project) or words from its name, client or number.",
+    "objects": [
+      "job",
+      "client",
+      "money"
+    ],
+    "effect": "read",
+    "group": "projects",
+    "version": 1,
+    "since": "2026-11-05",
+    "samples": [
+      {
+        "say": "how far along is the Smith kitchen?",
+        "args": {
+          "query": "Smith kitchen",
+          "projectId": null
+        }
+      }
+    ]
+  },
   description:
     "Where a project stands: its number, % done, the stage it is on, every stage with its days, tasks and what is late, the money (contract, spent, margin, owed), its jobs and crew. Give the project id (from find, kind project) or words from its name, its client or its number. Use for: what's happening with Smith's deck, how far along is the kitchen, is anything late, how much does Smith still owe, what's next on the project.",
   params: z.object({ query: z.string().max(80).nullable().describe("words from the project's name, client or number; null when projectId is given"), projectId: ID.nullable() }),
@@ -110,6 +133,28 @@ const setStage: WriteTool<StageArgs, StagePayload> = {
   kind: "write",
   name: "set_stage",
   need: "projects.write",
+  card: {
+    "label": "Project stage",
+    "purpose": "Mark a project's stage done, started or reopened.",
+    "when": "'Footings are done', 'start the decking', 'reopen the tile': set_stage with the project id (find or project_status) and the stage as said.",
+    "objects": [
+      "job"
+    ],
+    "effect": "record",
+    "group": "projects",
+    "version": 1,
+    "since": "2026-11-05",
+    "samples": [
+      {
+        "say": "the footings on the Smith deck are done",
+        "args": {
+          "projectId": "proj_1",
+          "stage": "footings",
+          "status": "DONE"
+        }
+      }
+    ]
+  },
   description:
     "Mark a stage of a project DONE, started (ACTIVE) or reopened (PLANNED). Give the project id (from find or project_status) and the stage as the person said it ('footings', 'framing', 'decking'). Use for: footings are done, mark framing finished, start the decking, reopen the tile.",
   params: z.object({ projectId: ID, stage: z.string().min(2).max(80), status: z.enum(["DONE", "ACTIVE", "PLANNED"]) }),
@@ -148,6 +193,28 @@ const tickTask: WriteTool<TaskArgs, TaskPayload> = {
   kind: "write",
   name: "tick_task",
   need: "projects.write",
+  card: {
+    "label": "Project task",
+    "purpose": "Tick or untick one task on a project; the last task ticked marks its stage done.",
+    "when": "'Log that the joists are set', 'the permit is pulled', 'cabinets are ordered': tick_task with the project id and the task in their words.",
+    "objects": [
+      "job"
+    ],
+    "effect": "record",
+    "group": "projects",
+    "version": 1,
+    "since": "2026-11-05",
+    "samples": [
+      {
+        "say": "log that the permit is pulled on the Smith deck",
+        "args": {
+          "projectId": "proj_1",
+          "task": "pull the permit",
+          "done": true
+        }
+      }
+    ]
+  },
   description:
     "Tick (or untick) one task on a project, by its words ('joists', 'pull the permit', 'order cabinets'). Give the project id. Ticking the last task of a stage marks the stage done. Use for: log that the joists are set, the permit is pulled, cabinets are ordered.",
   params: z.object({ projectId: ID, task: z.string().min(2).max(120), done: z.boolean() }),
