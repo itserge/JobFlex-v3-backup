@@ -14,6 +14,9 @@ import {
   clock12,
   factsOf,
   stepIndex,
+  mergeWorkItems,
+  workItemsFrom,
+  worksetPrompt,
   money,
   needsPin,
   quickReply,
@@ -251,6 +254,22 @@ function check(name: string, ok: boolean, extra?: unknown) {
   const l = factsOf("build_lawn", { address: "14 Oak St", lawnSqft: 8000, frequency: "weekly", services: ["mow", "fert", "fallCleanup"] });
   check("facts: a lawn card says the lawn, the mowing and the season", l.map((x) => x.k).join(",") === "Where,Lawn,Mowing,Season" && l[1].v === "8,000 sq ft · as said" && l[3].v === "mowing, fertilizer, fall cleanup", l);
   check("trace: the roof's, HVAC's and the lawn's steps", stepIndex("build_roof", "Rate book") === 1 && stepIndex("build_hvac", "Load") === 1 && stepIndex("build_lawn", "Saved") === 2);
+}
+
+// ── the records in this conversation (2026-11-06, spec §4) ──────────────────
+{
+  const at = "2026-11-06T10:00:00.000Z";
+  const found = workItemsFrom({ proposals: [{ id: "p1", title: "Lee fence", client: "Lee" }], clients: [{ id: "c1", name: "Lee" }], jobs: [], leads: [], workers: [{ id: "w1", name: "Mike" }], visits: [] }, at);
+  check("records: find's lists become the records, with their names", found.map((i) => `${i.kind}:${i.id}:${i.label}`).join(",") === "proposal:p1:Lee fence,client:c1:Lee,worker:w1:Mike", found);
+  const planned = workItemsFrom({ jobId: "j1", proposalId: null, date: "2026-11-12", start: null, end: null, workerIds: ["w1", "w2"] }, at);
+  check("records: a change's arguments name the job and the crew, unnamed", planned.map((i) => `${i.kind}:${i.id}`).join(",") === "job:j1,worker:w1,worker:w2" && planned.every((i) => i.label === ""), planned);
+  check("records: a build's result names its proposal", workItemsFrom({ proposalId: "p9", trade: "roof" }, at)[0]?.kind === "proposal");
+  check("records: nothing in a plain result", workItemsFrom({ heading: "Today", checks: [{ title: "Overdue", items: [{ label: "Lee" }] }] }, at).length === 0);
+  const merged = mergeWorkItems([{ kind: "client", id: "c1", label: "Lee", at }, { kind: "job", id: "j1", label: "Lee fence job", at }], [{ kind: "client", id: "c1", label: "", at: "2026-11-06T11:00:00.000Z" }, { kind: "visit", id: "v1", label: "Measure", at: "2026-11-06T11:00:00.000Z" }]);
+  check("records: merged newest first, each once, a name kept when the new sighting had none", merged.map((i) => `${i.kind}:${i.label}`).join(",") === "client:Lee,visit:Measure,job:Lee fence job", merged);
+  const prompt = worksetPrompt(merged);
+  check("records: the prompt lists them with their ids and says what 'him' and 'it' mean", /RECORDS IN THIS CONVERSATION/.test(prompt) && /- client "Lee" · clientId=c1/.test(prompt) && /- visit "Measure" · visitId=v1/.test(prompt) && /"him"/.test(prompt), prompt);
+  check("records: an unnamed id stays out of the prompt; none at all is nothing", !worksetPrompt([{ kind: "job", id: "j2", label: "", at }]) && worksetPrompt([]) === "");
 }
 
 console.log(bad ? `\n${bad} FAILED` : "\nall ok");

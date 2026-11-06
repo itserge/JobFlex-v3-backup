@@ -80,6 +80,8 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
   );
 
   const speech = useDeckSpeech({
+    // The phone's own language (spec §2): a Russian phone is heard in Russian; the replies already follow the person.
+    lang: typeof navigator !== "undefined" && navigator.language ? navigator.language : "en-US",
     onFinal: (alternatives) => {
       const said = alternatives[0]?.trim();
       if (!said) return;

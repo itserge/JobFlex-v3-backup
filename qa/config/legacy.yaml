@@ -103,6 +103,7 @@ scripts:
   - { file: ai-desk-step5.check.ts, suite: logic, kind: check, status: live }
   - { file: assistant.check.ts, suite: logic, kind: check, status: live, note: "the JobFlex Assistant's pure core: short replies, the approval states, the undo window, company-clock dates, role rules" }
   - { file: assistant-registry.check.ts, suite: logic, kind: check, status: live, note: "the AI Operator's capability registry: every tool's card, strict arguments, a parsing sample, a known permission; the client catalog in step with the cards" }
+  - { file: assistant-selection.live.ts, suite: logic, kind: check, status: live, note: "the model's choice of tool for every card's samples — opt-in (ASSISTANT_SELECTION_LIVE=1 + a real key), otherwise it says so and passes" }
   - { file: changeOrders.check.ts, suite: logic, kind: check, status: live }
   - { file: crew-days.check.ts, suite: logic, kind: check, status: live, note: "could text through Twilio if its keys were set — the runner preloads the recording twilio stand-in (_no-sms.js)" }
   - { file: crew-onsite.check.ts, suite: logic, kind: check, status: live }

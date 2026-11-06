@@ -158,6 +158,55 @@ function answer(body: { messages: Msg[] }) {
     return call("build_lawn", { address: addrOf(user), lawnSqft: sqftOf(text), bedSqft: beds ? Number(beds[1].replace(/,/g, "")) : null, clientId: null, leadId: null, frequency: /every other week|bi.?weekly|every two weeks/.test(text) ? "biweekly" : /weekly|every week/.test(text) ? "weekly" : null, services: services.length ? services : null, fertRounds: null, mulchDepthIn: null, stories: storeysOf(text), snowPushes: null, replaces: isChange ? builtTrade("lawn") : null });
   }
 
+  // Spec §11 (2026-11-06): several changes in one sentence — "put X on Thursday with Mike and tell Mike to bring the
+  // ladder". The engine answers a planned change with { planned: true } and asks for the next; the second step is the
+  // crew text; with both planned, a short sentence ends the turn.
+  const hourOf = (t: string): string | null => {
+    const h = /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/.exec(t);
+    return h ? `${String((+h[1] % 12) + (h[3] === "pm" ? 12 : 0)).padStart(2, "0")}:${h[2] ?? "00"}` : null;
+  };
+  const planned = (name: string) => Boolean((done.get(name) as { planned?: boolean } | undefined)?.planned);
+  if (planned("schedule_job") || planned("book_visit")) {
+    if (planned("text_crew")) return reply("Both are planned — say yes and I'll do them in order.");
+    const next = /\band (?:tell|text) (\w+) (?:to )?(.+)$/i.exec(user);
+    if (next) {
+      const c = done.get("crew") as Crew | undefined;
+      if (!c) return call("crew", {});
+      const w = c.workers.find((x) => x.name.toLowerCase().startsWith(next[1].toLowerCase()));
+      return call("text_crew", { workerIds: w ? [w.id] : null, message: next[2].trim().replace(/[.]$/, "") });
+    }
+    return reply("Planned — say yes to do it.");
+  }
+  // Spec §12 (2026-11-06): the business questions — job profit and spending — answered from the tools' figures.
+  if (/\b(losing money|making money|job profit|open jobs doing)\b/.test(text)) {
+    const r = done.get("jobs_money") as { which: string; jobs: Array<{ title: string; profit: string; cost: string }>; note: string } | undefined;
+    const which = /losing/.test(text) ? "losing" : /open/.test(text) ? "open" : "best";
+    if (!r) return call("jobs_money", { which });
+    return reply(r.jobs.length ? r.jobs.map((j) => `${j.title}: profit ${j.profit} (cost ${j.cost})`).join("; ") : r.note);
+  }
+  if (/\bspen[dt]\b|\bspending\b/.test(text)) {
+    const r = done.get("spending") as { period: string; total: string; byCategory: Array<{ category: string; amount: string }>; receipts: number } | undefined;
+    const cat = /\bon ([a-z]+)/.exec(text)?.[1] ?? null;
+    const period = /last month/.test(text) ? "last_month" : /this month/.test(text) ? "this_month" : "last_30_days";
+    if (!r) return call("spending", { period, category: cat && !/^(what|the|it)$/.test(cat) ? cat : null });
+    return reply(r.receipts ? `${r.period}: ${r.total} — ${r.byCategory.map((c) => `${c.category} ${c.amount}`).join(", ")}.` : `Nothing booked ${r.period.startsWith("the") ? "in " : "for "}${r.period}.`);
+  }
+
+  // "Do we have a client named Lee?" → find(client) → the names (the records then remember them).
+  const named1 = /\b(?:do we have|is there|find) (?:a |the )?(?:client|customer)(?: named| called)? ([A-Z][a-z]+(?: [A-Z][a-z]+)?)/i.exec(user);
+  if (named1) {
+    const f = done.get("find") as Found | undefined;
+    if (!f) return call("find", { query: named1[1], kind: "client" });
+    const cs = f.clients ?? [];
+    return reply(cs.length ? `Yes: ${cs.map((c) => c.name).join(", ")}.` : `No client named ${named1[1]}.`);
+  }
+  // Spec §4 (2026-11-06): "him" / "her" / "it" — the records the prompt lists for this conversation, their ids as given.
+  const recorded = (kind: string) => new RegExp(`- ${kind} "([^"]+)" · \\w+Id=(\\S+)`).exec(system);
+  if (/\b(with|for) (him|her)\b/.test(text) && /\b(book|schedule) (a |an )?(visit|appointment)\b/.test(text)) {
+    const c = recorded("client") ?? recorded("lead");
+    if (c) return call("book_visit", { title: /\bmeasure\b/i.test(user) ? "Measure" : null, clientId: recorded("client") ? c[2] : null, leadId: recorded("client") ? null : c[2], date: dayFrom(text, today), start: hourOf(text) ?? "10:00", end: null, workerIds: null, notes: null });
+  }
+
   // Slice 3: build, change, send what was built (the newest in the system prompt's "built lately" list).
   const lately = /proposalId=(\S+) · "[^"]*" · (deck|estimate)/.exec(system);
   if (/\b(build|price|estimate|quote)\b/.test(text) && !/^\s*(change|make it|use)\b/.test(text)) {
@@ -179,10 +228,6 @@ function answer(body: { messages: Msg[] }) {
   if (/\bsend it\b/.test(text) && lately) return call("send_proposal", { proposalId: lately[1], email: /\S+@\S+\.\w+/.exec(user)?.[0] ?? null, clientName: null });
 
   // Batches 1–2 (2026-11-05): people, visits, reminders, a crew text each, money.
-  const hourOf = (t: string): string | null => {
-    const h = /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/.exec(t);
-    return h ? `${String((+h[1] % 12) + (h[3] === "pm" ? 12 : 0)).padStart(2, "0")}:${h[2] ?? "00"}` : null;
-  };
   const emailIn = /\S+@\S+\.\w+/.exec(user)?.[0] ?? null;
   const phoneIn = /\b\d{3}[-. ]\d{3}[-. ]\d{4}\b/.exec(user)?.[0] ?? null;
   const named = (after: RegExp) => after.exec(user)?.[1] ?? null;
@@ -285,7 +330,8 @@ function answer(body: { messages: Msg[] }) {
 
   if (/\b(put|move|schedule)\b/.test(text)) {
     const f = done.get("find") as Found | undefined;
-    if (!f) return call("find", { query: subject(user) || user, kind: "any" });
+    const head = user.split(/\band (?:tell|text)\b/i)[0];
+    if (!f) return call("find", { query: subject(head) || head, kind: "any" });
     const c = done.get("crew") as Crew | undefined;
     const withName = /\bwith (\w+)/i.exec(user)?.[1];
     if (withName && !c) return call("crew", {});

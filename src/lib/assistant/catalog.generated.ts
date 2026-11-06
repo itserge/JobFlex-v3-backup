@@ -58,6 +58,28 @@ export const CATALOG: Catalog = {
     "scheduled": false,
     "version": 1
   },
+  "jobs_money": {
+    "label": "Job profit",
+    "group": "lookups",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "spending": {
+    "label": "Spending",
+    "group": "lookups",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
   "crew": {
     "label": "Crew",
     "group": "lookups",

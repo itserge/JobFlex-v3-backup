@@ -85,6 +85,8 @@ export function Conversation({
   };
 
   const speech = useDeckSpeech({
+    // The phone's own language (spec §2): a Russian phone is heard in Russian; the replies already follow the person.
+    lang: typeof navigator !== "undefined" && navigator.language ? navigator.language : "en-US",
     onFinal: (alternatives) => {
       const said = alternatives[0]?.trim();
       // A sentence heard while the last one is still being answered waits for nothing: it is dropped.

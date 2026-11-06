@@ -37,7 +37,8 @@ export async function answerAssistant(raw: unknown): Promise<AskResult> {
     db.assistantMessage.create({ data: { organizationId: actor.organizationId, userId: actor.userId, channel: actor.channel, direction, body } });
   // The PIN itself is never kept in the conversation.
   await keep("IN", answer === "yes" ? (pin ? "Do it (with PIN)" : "Do it") : "Cancel");
-  const reply = answer === "yes" ? await approve(actor, actionId, new Date(), pin ?? null) : (await callOff(actor, actionId)) ? "OK — I won't do it." : "That's no longer waiting.";
+  const stopped = answer === "yes" ? 0 : await callOff(actor, actionId);
+  const reply = answer === "yes" ? await approve(actor, actionId, new Date(), pin ?? null) : stopped > 1 ? "OK — I won't do any of it." : stopped ? "OK — I won't do it." : "That's no longer waiting.";
   await keep("OUT", reply);
   return { ok: true, reply, feed: await readFeed(actor) };
 }

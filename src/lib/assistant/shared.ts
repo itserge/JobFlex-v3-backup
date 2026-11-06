@@ -354,6 +354,89 @@ export function factsOf(tool: string, args: unknown): Fact[] {
   return out;
 }
 
+// ── the records in this conversation (2026-11-06, spec §4) ───────────────────
+// What "him", "it", "that job" mean: the clients, leads, proposals, jobs, visits and crew the last turns touched —
+// read off the tools' own results (find's lists, a build's proposal, a booked visit) and kept an hour or three under
+// the person (lib/assistant/workset). The prompt lists them with their ids, so the model passes the right id without
+// finding again. Pure here: the reading of a result and the prompt's lines; the keeping is the server's.
+
+export type WorkKind = "client" | "lead" | "proposal" | "job" | "visit" | "worker" | "project";
+export interface WorkItem {
+  kind: WorkKind;
+  id: string;
+  /** The name or title; "" when only the id was seen (the server fills it when it lists them). */
+  label: string;
+  /** ISO time it was last touched. */
+  at: string;
+}
+
+const LIST_KIND: Record<string, WorkKind> = { clients: "client", leads: "lead", proposals: "proposal", jobs: "job", visits: "visit", workers: "worker", projects: "project" };
+const ID_KIND: Record<string, WorkKind> = { clientId: "client", leadId: "lead", proposalId: "proposal", jobId: "job", visitId: "visit", workerId: "worker", projectId: "project" };
+
+/** The records a tool's result (or a change's arguments or result) names, newest first by position. */
+export function workItemsFrom(data: unknown, at: string): WorkItem[] {
+  const out: WorkItem[] = [];
+  const seen = new Set<string>();
+  const push = (kind: WorkKind, id: unknown, label: unknown) => {
+    if (typeof id !== "string" || !id || id.length > 64) return;
+    const key = `${kind}:${id}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ kind, id, label: typeof label === "string" ? label.trim().slice(0, 80) : "", at });
+  };
+  const walk = (v: unknown, depth: number) => {
+    if (!v || typeof v !== "object" || depth > 3) return;
+    if (Array.isArray(v)) {
+      for (const x of v.slice(0, 20)) walk(x, depth + 1);
+      return;
+    }
+    const o = v as Record<string, unknown>;
+    for (const [k, val] of Object.entries(o)) {
+      const listKind = LIST_KIND[k];
+      if (listKind && Array.isArray(val)) {
+        for (const row of val.slice(0, 10)) {
+          const r = row as Record<string, unknown>;
+          if (r && typeof r === "object") push(listKind, r.id, r.name ?? r.title ?? r.label);
+        }
+        continue;
+      }
+      const idKind = ID_KIND[k];
+      if (idKind) push(idKind, val, o.name ?? o.title ?? o.clientName ?? "");
+      else if (k === "workerIds" && Array.isArray(val)) for (const id of val.slice(0, 12)) push("worker", id, "");
+      else if (val && typeof val === "object") walk(val, depth + 1);
+    }
+  };
+  walk(data, 0);
+  return out;
+}
+
+/** The newest first, each record once, at most `keep`. */
+export function mergeWorkItems(older: readonly WorkItem[], newer: readonly WorkItem[], keep = 12): WorkItem[] {
+  const out: WorkItem[] = [];
+  const seen = new Set<string>();
+  for (const it of [...newer, ...older]) {
+    const key = `${it.kind}:${it.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(it.label || !older.find((o) => o.kind === it.kind && o.id === it.id && o.label) ? it : { ...it, label: older.find((o) => o.kind === it.kind && o.id === it.id)!.label });
+    if (out.length >= keep) break;
+  }
+  return out;
+}
+
+const KIND_WORD: Record<WorkKind, string> = { client: "client", lead: "lead", proposal: "proposal", job: "job", visit: "visit", worker: "crew member", project: "project" };
+const KIND_ID: Record<WorkKind, string> = { client: "clientId", lead: "leadId", proposal: "proposalId", job: "jobId", visit: "visitId", worker: "workerId", project: "projectId" };
+
+/** The prompt's lines for the records in this conversation, newest first; "" when there are none. */
+export function worksetPrompt(items: readonly WorkItem[]): string {
+  const rows = items.filter((it) => it.label).slice(0, 12);
+  if (!rows.length) return "";
+  return [
+    'RECORDS IN THIS CONVERSATION (newest first) — "him", "her", "it", "that one", "the same" mean these unless they say otherwise; use the id as given, no need to find again:',
+    ...rows.map((it) => `- ${KIND_WORD[it.kind]} "${it.label}" · ${KIND_ID[it.kind]}=${it.id}`),
+  ].join("\n");
+}
+
 export interface FeedMessage {
   id: string;
   direction: "IN" | "OUT";
