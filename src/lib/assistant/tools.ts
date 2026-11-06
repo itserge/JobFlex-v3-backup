@@ -53,12 +53,12 @@ export interface ToolContext {
 // from these cards; adding a tool is adding one object here, nothing else to edit.
 
 /** The business objects a tool works on. */
-export type BusinessObject = "client" | "lead" | "proposal" | "estimate" | "job" | "visit" | "worker" | "invoice" | "payment" | "reminder" | "property" | "money" | "calendar";
+export type BusinessObject = "client" | "lead" | "proposal" | "estimate" | "job" | "visit" | "worker" | "invoice" | "payment" | "reminder" | "property" | "money" | "calendar" | "project";
 /** What a tool changes: nothing (a read), a record inside JobFlex, a draft estimate, the company's schedule, a message that leaves JobFlex, money. */
 export type ToolEffect = "read" | "record" | "draft" | "schedule" | "message" | "money";
 /** The prompt's sections, in the order they are shown. */
-export type ToolGroup = "lookups" | "people" | "visits" | "schedule" | "crew" | "proposals" | "money" | "reminders" | "estimates";
-export const TOOL_GROUPS: readonly ToolGroup[] = ["lookups", "people", "visits", "schedule", "crew", "proposals", "money", "reminders", "estimates"];
+export type ToolGroup = "lookups" | "people" | "visits" | "schedule" | "crew" | "proposals" | "money" | "reminders" | "estimates" | "projects";
+export const TOOL_GROUPS: readonly ToolGroup[] = ["lookups", "people", "visits", "schedule", "crew", "proposals", "money", "reminders", "estimates", "projects"];
 /** An outside service a tool cannot do without; with its key missing the tool is unavailable everywhere. */
 export type ToolDependency = "openai" | "twilio" | "maps" | "solar" | "parcels" | "eagleview";
 

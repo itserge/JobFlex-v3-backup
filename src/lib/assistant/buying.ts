@@ -19,6 +19,34 @@ const whereIs: ReadTool<{ projectId: string; query: string | null }> = {
   kind: "read",
   name: "where_is",
   need: "projects.read",
+  card: {
+    "label": "Where's the order",
+    "purpose": "What a project has to buy and where each order stands — to buy, ordered, in; the carrier and tracking.",
+    "when": "'Where's the railing kit', 'what still has to be bought for the Smith deck', 'is the lumber in': where_is with the project id (find, kind project), words for one line or null for the whole list.",
+    "objects": [
+      "project"
+    ],
+    "effect": "read",
+    "group": "projects",
+    "version": 1,
+    "since": "2026-11-06",
+    "samples": [
+      {
+        "say": "where's the railing kit for the Smith deck?",
+        "args": {
+          "projectId": "proj_1",
+          "query": "railing kit"
+        }
+      },
+      {
+        "say": "what still has to be bought for the Smith deck?",
+        "args": {
+          "projectId": "proj_1",
+          "query": null
+        }
+      }
+    ]
+  },
   description:
     "What a project has to buy and where each order stands. With words ('railing kit', 'joists') it answers for those lines: to buy / ordered / in, and each order's status, who it came from, when it is expected, the carrier and tracking. Without words: the to-buy list by stage, what is on the way, what came in short. Use for: where's the railing kit, did the lumber come, what still needs ordering for the kitchen.",
   params: z.object({ projectId: ID, query: z.string().max(80).nullable() }),
@@ -73,6 +101,30 @@ const orderMaterials: WriteTool<OrderArgs, OrderPayload> = {
   kind: "write",
   name: "order_materials",
   need: "projects.write",
+  card: {
+    "label": "Order materials",
+    "purpose": "Order what a project still has to buy — from a supplier, through the person's own buy link, or from the company's stock.",
+    "when": "'Order the framing for the Smith deck from ABC Supply', 'I'll buy the cabinets myself', 'take the deck boards from stock': order_materials with the project id, the stage or null for everything, how (supplier / me / stock) and the supplier's name when said.",
+    "objects": [
+      "project",
+      "money"
+    ],
+    "effect": "message",
+    "group": "projects",
+    "version": 1,
+    "since": "2026-11-06",
+    "samples": [
+      {
+        "say": "order the framing for the Smith deck from ABC Supply",
+        "args": {
+          "projectId": "proj_1",
+          "stage": "framing",
+          "how": "supplier",
+          "supplierName": "ABC Supply"
+        }
+      }
+    ]
+  },
   description:
     "Order what a project still has to buy — for one stage ('framing', 'the kitchen cabinets' stage) or the whole list — one way: 'supplier' (the purchase order is emailed to a supplier the company has; give supplierName when they say which), 'me' (the person themselves gets the buy link), or 'stock' (taken from the company's own stock). Give the project id (find, kind project). Use for: order the framing materials, order everything for the deck from ABC Lumber, I'll buy the tile myself.",
   params: z.object({ projectId: ID, stage: z.string().max(80).nullable(), how: z.enum(["supplier", "me", "stock"]), supplierName: z.string().max(80).nullable() }),

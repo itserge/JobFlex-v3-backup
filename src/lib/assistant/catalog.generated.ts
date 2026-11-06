@@ -402,5 +402,93 @@ export const CATALOG: Catalog = {
     "pin": true,
     "scheduled": false,
     "version": 1
+  },
+  "project_status": {
+    "label": "Project status",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "set_stage": {
+    "label": "Project stage",
+    "group": "projects",
+    "effect": "record",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "tick_task": {
+    "label": "Project task",
+    "group": "projects",
+    "effect": "record",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "where_is": {
+    "label": "Where's the order",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "order_materials": {
+    "label": "Order materials",
+    "group": "projects",
+    "effect": "message",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "who_is_on_site": {
+    "label": "On site today",
+    "group": "crew",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "site_problems": {
+    "label": "Site problems",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "resolve_problem": {
+    "label": "Resolve a problem",
+    "group": "projects",
+    "effect": "record",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
   }
 };

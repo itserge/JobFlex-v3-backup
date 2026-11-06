@@ -16,6 +16,29 @@ const whoIsOnSite: ReadTool<{ projectId: string | null; jobId: string | null }> 
   kind: "read",
   name: "who_is_on_site",
   need: "crew.read",
+  card: {
+    "label": "On site today",
+    "purpose": "Who is on site today — the jobs with a day open, the crew on them, the hours, the weather.",
+    "when": "'Who's at Smith's today', 'is anyone on the deck job', 'how many hours did Mike put in': who_is_on_site with the project or job id when one is named, else nulls for everyone.",
+    "objects": [
+      "job",
+      "worker",
+      "project"
+    ],
+    "effect": "read",
+    "group": "crew",
+    "version": 1,
+    "since": "2026-11-06",
+    "samples": [
+      {
+        "say": "who's working today?",
+        "args": {
+          "projectId": null,
+          "jobId": null
+        }
+      }
+    ]
+  },
   description:
     "Who is on site today: every job with a day open today (or the one project's / job's), the crew on it, who opened the day, the hours typed so far, the weather noted. Use for: who's at Smith's today, who's working, is anyone on the deck job, how many hours did Mike put in.",
   params: z.object({ projectId: ID.nullable(), jobId: ID.nullable() }),
@@ -54,6 +77,27 @@ const siteProblems: ReadTool<{ projectId: string | null }> = {
   kind: "read",
   name: "site_problems",
   need: "projects.read",
+  card: {
+    "label": "Site problems",
+    "purpose": "Problems flagged from site that are still open — what, where, who flagged it, whether the work stopped.",
+    "when": "'Any problems on site', 'what's wrong at Smith's', 'is anything blocking the crew': site_problems with the project id when one is named, else null.",
+    "objects": [
+      "project",
+      "job"
+    ],
+    "effect": "read",
+    "group": "projects",
+    "version": 1,
+    "since": "2026-11-06",
+    "samples": [
+      {
+        "say": "any problems on site?",
+        "args": {
+          "projectId": null
+        }
+      }
+    ]
+  },
   description: "Problems flagged from site that are still open (the whole company, or one project): what, on which job, who flagged it, when, whether the work stopped. Use for: any problems on site, what's wrong at Smith's, is anything blocking the crew.",
   params: z.object({ projectId: ID.nullable() }),
   async run({ actor }, args) {
@@ -76,6 +120,28 @@ const resolveProblem: WriteTool<{ flagId: string; resolution: string | null }, {
   kind: "write",
   name: "resolve_problem",
   need: "projects.write",
+  card: {
+    "label": "Resolve a problem",
+    "purpose": "Mark a problem flagged from site resolved, with a word on what was done.",
+    "when": "'The subfloor is sorted', 'mark that resolved', 'we fixed the power': resolve_problem with the flag id from site_problems and what was done.",
+    "objects": [
+      "project",
+      "job"
+    ],
+    "effect": "record",
+    "group": "projects",
+    "version": 1,
+    "since": "2026-11-06",
+    "samples": [
+      {
+        "say": "mark the subfloor problem resolved, we replaced the sheet",
+        "args": {
+          "flagId": "flag_1",
+          "resolution": "replaced the sheet"
+        }
+      }
+    ]
+  },
   description: "Mark a problem flagged from site resolved, with a word on what was done (the id from site_problems). Use for: the subfloor is sorted, mark that resolved, we fixed the power.",
   params: z.object({ flagId: ID, resolution: z.string().max(300).nullable() }),
   payload: z.object({ flagId: ID, resolution: z.string().max(300).nullable(), words: z.string() }),

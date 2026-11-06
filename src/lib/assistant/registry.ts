@@ -214,6 +214,7 @@ const GROUP_HEAD: Record<ToolGroup, string> = {
   money: "MONEY",
   reminders: "REMINDERS",
   estimates: "ESTIMATES",
+  projects: "PROJECTS",
 };
 
 /** What holds across a group's tools — the rules a single tool's line can't carry. Per group, never per tool. */
@@ -227,6 +228,7 @@ const GROUP_GUIDE: Partial<Record<ToolGroup, readonly string[]>> = {
     "A build needs the size. A deck: width and depth. Other jobs: the quantities that set the price and the main material. If that is missing, ask ONE short question for all of it — the estimator fills in the rest. When they name a client or a lead, find them first and pass the id; if nobody matches, build without one.",
     "Don't repeat a build's price, lines or link — the person already has them.",
   ],
+  projects: ["A project is a remodel run as stages (Footings, Framing, Decking…) with tasks inside each; find it by its name, client or number (find, kind project)."],
 };
 
 /** The prompt's "what you can do": each live tool's own line under its group, in the groups' order. */

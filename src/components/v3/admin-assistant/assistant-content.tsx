@@ -35,6 +35,7 @@ const GROUP_WORDS: Record<ToolHealth["group"], string> = {
   money: "Money",
   reminders: "Reminders",
   estimates: "Estimates",
+  projects: "Projects",
 };
 
 function stamp(iso: string | null): string {
