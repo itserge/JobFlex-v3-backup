@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { actorForSession } from "@/lib/assistant/actor";
 import { approve, callOff, handleTurn, readFeed } from "@/lib/assistant/engine";
-import type { AssistantFeed, FeedAction } from "@/lib/assistant/shared";
+import { SPEECH_LANGS, type AssistantFeed, type FeedAction, type SpeechLang } from "@/lib/assistant/shared";
 import type { AssistantPrefs } from "@/lib/assistant/prefs";
 import { db } from "@/lib/db";
 
@@ -129,12 +129,14 @@ export async function setAssistantPrefs(raw: unknown): Promise<AssistantPhoneVie
     .object({
       briefing: z.object({ on: z.boolean(), time: z.string().refine((t) => BRIEFING_TIMES.includes(t), "Pick a time from the list.") }),
       alerts: z.object({ proposalOpened: z.boolean(), newLead: z.boolean() }),
+      // The language they speak to it in (2026-11-06); a page that doesn't know the setting yet keeps what was set.
+      lang: z.enum(SPEECH_LANGS.map((l) => l.code) as [SpeechLang, ...SpeechLang[]]).optional(),
     })
     .parse(raw);
   const actor = await actorForSession();
   const { readPrefs, writePrefs } = await import("@/lib/assistant/prefs");
   const before = await readPrefs(actor.organizationId, actor.userId);
-  await writePrefs(actor.organizationId, actor.userId, input);
+  await writePrefs(actor.organizationId, actor.userId, { ...input, lang: input.lang ?? before.lang });
   if (input.briefing.on && (!before.briefing.on || before.briefing.time !== input.briefing.time)) {
     const now = new Date();
     if (timeOf(now, actor.timezone) >= input.briefing.time) {

@@ -47,7 +47,7 @@ type Drawing = DeckDrawingData | FenceDrawingData | RoofDrawingData;
 const STAMP: Record<Tone, string> = { warn: "yel", ok: "mnt", bad: "red", quiet: "dim", info: "wht" };
 
 export const OperatorSheet = forwardRef<OperatorHandle, Props>(function OperatorSheet({ state, variant, start = null, onClose }, ref) {
-  const { feed, pending, busy, building, landed, error, tasks, muted, setMuted, load, loadTasks, ask, answer } = state;
+  const { feed, pending, busy, building, landed, error, tasks, muted, setMuted, lang, load, loadTasks, ask, answer } = state;
   const [tab, setTab] = useState<"talk" | "tasks">("talk");
   const [hands, setHands] = useState(false);
   const [heard, setHeard] = useState("");
@@ -80,8 +80,9 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
   );
 
   const speech = useDeckSpeech({
-    // The phone's own language (spec §2): a Russian phone is heard in Russian; the replies already follow the person.
-    lang: typeof navigator !== "undefined" && navigator.language ? navigator.language : "en-US",
+    // The language they speak to it in (Settings → AI Operator; English unless they picked another) — never the
+    // phone's own: a Russian phone heard English addresses as Russian (2026-11-06).
+    lang,
     onFinal: (alternatives) => {
       const said = alternatives[0]?.trim();
       if (!said) return;

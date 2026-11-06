@@ -25,8 +25,9 @@ import { recentBuilds } from "@/lib/assistant/build";
 import { capabilityPrompt, modelTools, toolOff } from "@/lib/assistant/registry";
 import { chainOf, clearChain, noteWorkset, recallWorkset, setChain } from "@/lib/assistant/workset";
 import { checkPin } from "@/lib/assistant/pin";
+import { readPrefs } from "@/lib/assistant/prefs";
 import { reportProgress } from "@/lib/assistant/progress";
-import { APPROVAL_TTL_MS, type ActionStatus, type AssistantFeed, BUILD_STEPS, type Fact, type FeedAction, RUNNING_STALE_MS, confirmPrompt, dayOf, factsOf, needsPin, nowWords, quickReply, stillAwaiting, undoWindowMs, workItemsFrom, worksetPrompt } from "@/lib/assistant/shared";
+import { APPROVAL_TTL_MS, type ActionStatus, type AssistantFeed, BUILD_STEPS, DEFAULT_SPEECH_LANG, type Fact, type FeedAction, RUNNING_STALE_MS, confirmPrompt, dayOf, factsOf, needsPin, nowWords, quickReply, stillAwaiting, undoWindowMs, workItemsFrom, worksetPrompt } from "@/lib/assistant/shared";
 
 const MAX_ROUNDS = 4;
 const HISTORY = 12;
@@ -530,9 +531,11 @@ export async function readFeed(actor: AssistantActor, now = new Date()): Promise
   const actions = ids.length ? await db.assistantAction.findMany({ where: { id: { in: ids }, organizationId: actor.organizationId } }) : [];
   const byId = new Map(actions.map((a) => [a.id, feedAction(a)]));
   const status = await checkPlanLimit(actor.organizationId, "assistantCommands", 1, { actorId: actor.userId }).catch(() => null);
+  const prefs = await readPrefs(actor.organizationId, actor.userId).catch(() => null);
   return {
     messages: rows.reverse().map((r) => ({ id: r.id, direction: r.direction === "IN" ? "IN" : "OUT", body: r.body, createdAt: r.createdAt.toISOString(), action: r.actionId ? byId.get(r.actionId) ?? null : null })),
     awaiting: awaiting ? feedAction(awaiting) : null,
     usage: { used: status?.used ?? 0, limit: status && !isUnlimited(status.limit) ? status.limit : null },
+    lang: prefs?.lang ?? DEFAULT_SPEECH_LANG,
   };
 }

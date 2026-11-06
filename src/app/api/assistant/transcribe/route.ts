@@ -43,19 +43,23 @@ export async function POST(req: Request) {
   const audio = form.get("audio");
   if (!(audio instanceof Blob) || audio.size === 0) return NextResponse.json({ error: "Nothing was recorded." }, { status: 400 });
   if (audio.size > MAX_BYTES) return NextResponse.json({ error: "That recording is too long — say one thing at a time." }, { status: 413 });
+  // The language they speak to it in (2026-11-06; the page sends the setting's first two letters): Whisper is told,
+  // and the English word list is left out for any other, where it would only mislead it.
+  const said = form.get("language");
+  const language = typeof said === "string" && /^[a-z]{2}$/.test(said) ? said : "en";
   const trial = await takeTrialCap(organizationId, "aiCalls");
   if (!trial.ok) return NextResponse.json({ error: "The trial's AI allowance is used up — type it instead." }, { status: 402 });
   try {
     const type = audio.type || "audio/webm";
     const ext = /ogg/.test(type) ? "ogg" : /mp4|m4a|aac/.test(type) ? "m4a" : /wav/.test(type) ? "wav" : "webm";
     const file = await toFile(Buffer.from(await audio.arrayBuffer()), `voice.${ext}`, { type });
-    const res = await getOpenAI().audio.transcriptions.create({ file, model: "whisper-1", prompt: PROMPT });
+    const res = await getOpenAI().audio.transcriptions.create({ file, model: "whisper-1", language, ...(language === "en" ? { prompt: PROMPT } : {}) });
     const text = (res.text ?? "").trim();
     // On silence Whisper says its prompt back: six words in a row of it is the prompt, not speech.
     const words = (s: string) => s.toLowerCase().replace(/[^a-z0-9/\s]/g, " ").split(/\s+/).filter(Boolean);
     const p = words(PROMPT).join(" ");
     const w = words(text);
-    const echo = w.length >= 6 && w.some((_, i) => i + 6 <= w.length && p.includes(w.slice(i, i + 6).join(" ")));
+    const echo = language === "en" && w.length >= 6 && w.some((_, i) => i + 6 <= w.length && p.includes(w.slice(i, i + 6).join(" ")));
     if (!text || echo) return NextResponse.json({ text: "" });
     return NextResponse.json({ text: text.slice(0, 600) });
   } catch (err) {

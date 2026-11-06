@@ -445,12 +445,32 @@ export interface FeedMessage {
   action: FeedAction | null;
 }
 
+/** The languages the Operator can be spoken to in (2026-11-06). The browser's recogniser needs one named before it
+ *  listens, so it is a setting (Settings → AI Operator), English unless the person picks another — never the phone's
+ *  own language: the owner's Russian phone heard English addresses as Russian. The codes are what the Web Speech API
+ *  takes; Whisper gets the first two letters. */
+export const SPEECH_LANGS = [
+  { code: "en-US", label: "English" },
+  { code: "es-US", label: "Español" },
+  { code: "ru-RU", label: "Русский" },
+  { code: "uk-UA", label: "Українська" },
+  { code: "pt-BR", label: "Português" },
+  { code: "vi-VN", label: "Tiếng Việt" },
+  { code: "zh-CN", label: "中文" },
+  { code: "ko-KR", label: "한국어" },
+] as const;
+export type SpeechLang = (typeof SPEECH_LANGS)[number]["code"];
+export const DEFAULT_SPEECH_LANG: SpeechLang = "en-US";
+export const isSpeechLang = (v: unknown): v is SpeechLang => typeof v === "string" && SPEECH_LANGS.some((l) => l.code === v);
+
 export interface AssistantFeed {
   messages: FeedMessage[];
   /** The read-back waiting for an answer, if any (also inside `messages`). */
   awaiting: FeedAction | null;
   /** This cycle's commands: used / the plan's number (null = unlimited). */
   usage: { used: number; limit: number | null };
+  /** The language the person speaks to it in (Settings → AI Operator): what the ears listen for. */
+  lang: SpeechLang;
 }
 
 /** A text message in the plain GSM alphabet (2026-11-05): one ×, — or curly quote turns a whole text into UCS-2,
