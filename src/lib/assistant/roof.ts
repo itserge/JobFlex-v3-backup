@@ -9,6 +9,12 @@ import "server-only";
 // roof — no Google coverage, or no key — the house's size and floors stand in, as the homeowner's range falls
 // back, and the Operator asks for them. The card shows the aerial photo with the pin (api/assistant/photo) —
 // never a drawn outline (the owner's rule).
+//
+// THE MEASUREMENT IS THE ROOF PAGE'S (owner, 2026-11-06: "on production roof uses EagleView"): the provider the
+// Measure button uses — EagleView's Instant order through lib/roofInstantMeasure (the order ledger, the daily
+// ceiling, the plan's month, the witnesses, the row the page opens again), Google's aerial model only where the
+// server is set to it or EagleView is off (lib/roofMeasurementProvider), and Google behind an EagleView answer that
+// holds no roof, as the page falls back. An order can take minutes, so the build runs after the reply.
 import { z } from "zod";
 import type { WriteTool } from "@/lib/assistant/tools";
 import type { AssistantActor } from "@/lib/assistant/actor";
@@ -18,10 +24,14 @@ import { isPageLocked } from "@/lib/customPageAccess";
 import { stateFromAddress } from "@/lib/pricing/salesTax";
 import { splitAddress } from "@/lib/hvac/coolcalc";
 import { isSolarEnabled } from "@/lib/solar";
+import { isEagleViewEnabled } from "@/lib/eagleview";
+import { roofMeasurementProvider } from "@/lib/roofMeasurementProvider";
+import { instantMeasure } from "@/lib/roofInstantMeasure";
 import { housePin, solarMeasure } from "@/lib/roofSolarMeasure";
+import { measurementWords, roofFactsFromMeasurement } from "@/lib/roofPackage/measurementFacts";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
 import { takeTrialCap, trialPointKey } from "@/lib/trialMeter";
-import { roofFactsFromSize, roofFactsFromSolar, type RoofAnswers } from "@/lib/publicEstimate/roof";
+import { EXISTING, roofFactsFromSize, roofFactsFromSolar, type RoofAnswers } from "@/lib/publicEstimate/roof";
 import { imageryWords, roofBook } from "@/lib/webEstimatorTrades";
 import { isFlatRoof } from "@/lib/roofPackage/flatRule";
 import { buildRoofPackage, defaultSpec, withSystem, type PkgLine, type RoofFacts } from "@/lib/roofPackage/takeoff";
@@ -59,6 +69,11 @@ const roofArgs = z.object({
   replaces: ID.nullable().describe("the proposalId of a roof built earlier that this one changes, else null"),
 });
 
+/** The provider the roof page's Measure button uses on this server. */
+const eagleView = () => roofMeasurementProvider() !== "google" && isEagleViewEnabled();
+/** Whether any aerial read is possible here. */
+const fromTheAir = () => eagleView() || isSolarEnabled();
+
 async function roofGate(actor: AssistantActor): Promise<string | null> {
   if (await isPageLocked(actor.organizationId, "roof-estimator")) return "The roof estimator isn't in your plan yet (Settings → Billing). I can price it with Smart Proposal instead — say 'price it'.";
   return null;
@@ -79,7 +94,8 @@ function pinWords(error: string, address: string, pin: { how: "parcel" | "struct
 
 const buildRoof: WriteTool<RoofArgs, RoofArgs & { address: string }> = {
   kind: "write",
-  instant: "now",
+  // After the reply: an EagleView order can take minutes (the page's own budget), and the texted or spoken result lands then.
+  instant: "background",
   name: "build_roof",
   need: "estimates.build",
   description:
@@ -89,7 +105,7 @@ const buildRoof: WriteTool<RoofArgs, RoofArgs & { address: string }> = {
   async plan({ actor }, said) {
     const gate = await roofGate(actor);
     if (gate) return { ok: false, say: gate };
-    const caps = await buildCaps(actor, ["estimatorUses"]);
+    const caps = await buildCaps(actor, eagleView() ? ["estimatorUses", "roofMeasurements"] : ["estimatorUses"]);
     if (caps) return { ok: false, say: caps };
     // A change keeps what the earlier build was asked — the address, the house — under what is said now.
     const a = overPrior(said.replaces ? await priorBuild<RoofArgs>(actor, said.replaces, "build_roof") : null, said);
@@ -97,13 +113,14 @@ const buildRoof: WriteTool<RoofArgs, RoofArgs & { address: string }> = {
     if (!w.ok) return w;
     const address = a.address?.trim() || w.who.address;
     if (!address) return { ok: false, say: "Which house? Give me the address." };
-    if (!isSolarEnabled() && !a.homeSqft) return { ok: false, say: `I can't measure roofs from the air here. ${SIZE_ASK}` };
+    if (!fromTheAir() && !a.homeSqft) return { ok: false, say: `I can't measure roofs from the air here. ${SIZE_ASK}` };
     if (a.replaces) {
       const miss = await replaceable(actor, a.replaces, "roof");
       if (miss) return { ok: false, say: miss };
     }
-    const how = isSolarEnabled() ? `measuring the roof at ${address} from the air` : `sizing the roof at ${address} from a ${a.homeSqft!.toLocaleString("en-US")} sq ft house`;
-    return { ok: true, payload: { ...a, address }, readback: `On it — ${how} and pricing ${a.material ?? "architectural shingles"} with your roof book${w.who.name ? ` for ${w.who.name}` : ""}.` };
+    const how = eagleView() ? `measuring the roof at ${address} from the air (EagleView)` : isSolarEnabled() ? `measuring the roof at ${address} from the air` : `sizing the roof at ${address} from a ${a.homeSqft!.toLocaleString("en-US")} sq ft house`;
+    const back = actor.channel === "sms" ? "I'll text you" : actor.channel === "voice" ? "I'll tell you" : "You'll see";
+    return { ok: true, payload: { ...a, address }, readback: `On it — ${how} and pricing ${a.material ?? "architectural shingles"} with your roof book${w.who.name ? ` for ${w.who.name}` : ""}. ${back} the price and the link when it's ready${eagleView() ? " — a minute or two" : ""}.` };
   },
   async execute({ actor, report }, p) {
     const org = actor.organizationId;
@@ -124,14 +141,37 @@ const buildRoof: WriteTool<RoofArgs, RoofArgs & { address: string }> = {
     let facts: RoofFacts | null = null;
     let measurementId: string | null = null;
     let read = "";
-    if (isSolarEnabled()) {
+    const existingSaid = EXISTING.find((e) => e.id === answers.existing)?.material ?? null;
+    // Google behind an EagleView answer that holds no roof — the page's own fallback; nothing else switches provider.
+    let googleToo = false;
+    if (eagleView()) {
+      const m = await instantMeasure({ address: parts.address || p.address, city: parts.city, state: parts.state, zip: parts.zip }, org, actor.userId);
+      if (m.ok) {
+        facts = roofFactsFromMeasurement(m.measurement, { state, storeys: answers.storeys, existingSaid });
+        if (facts) {
+          measurementId = m.measurement.id;
+          read = measurementWords(m.measurement, Boolean(m.reusedInstant));
+        } else if (!p.homeSqft) throw new Error(`The aerial measurement of ${p.address} came back without a roof I can price. ${SIZE_ASK}`);
+        else read = "sized from the house (the aerial measurement held no roof to price)";
+      } else if (m.noRoof && isSolarEnabled()) {
+        googleToo = true;
+      } else {
+        const why = m.stillProcessing ? `The aerial measurement of ${p.address} is still being prepared — ask me again in a few minutes.` : m.error;
+        if (!p.homeSqft) throw new Error(`${why} ${SIZE_ASK}`);
+        read = `sized from the house (the aerial measurement didn't come: ${why.replace(/\.$/, "")})`;
+      }
+    }
+    if (!facts && !read && (googleToo || (!eagleView() && isSolarEnabled()))) {
       // The pin on the house first (lib/roofSolarMeasure housePin): a geocoded address lands on the street or the
       // drive, and Solar refuses a pin off the roof. The lot lookup it may make rides on the roof's own allowance.
       await enforceRateLimit(`parcels:${org}`, 30, HOUR, "property lookups");
       const pin = await housePin(p.address);
       if (!pin) throw new Error(`I couldn't place ${p.address} on the map. Check the address, or ${SIZE_ASK.charAt(0).toLowerCase()}${SIZE_ASK.slice(1)}`);
-      const trial = await takeTrialCap(org, "roofMeasurements", { dedupe: trialPointKey(pin.lat, pin.lng) });
-      if (!trial.ok) throw new Error(trial.failure.error);
+      // The roof's own allowance, once by the pin — already spent by the EagleView order when Google reads behind it.
+      if (!googleToo) {
+        const trial = await takeTrialCap(org, "roofMeasurements", { dedupe: trialPointKey(pin.lat, pin.lng) });
+        if (!trial.ok) throw new Error(trial.failure.error);
+      }
       const m = await solarMeasure({ address: parts.address || p.address, city: parts.city || pin.place?.city || "", state: parts.state || pin.place?.state || "", zip: parts.zip || pin.place?.zip || "", lat: pin.lat, lng: pin.lng }, org, actor.userId, "covered");
       const solar = m.ok ? m.measurement.provenance.solar : null;
       if (m.ok && solar) {
@@ -146,7 +186,7 @@ const buildRoof: WriteTool<RoofArgs, RoofArgs & { address: string }> = {
       }
     }
     if (!facts) {
-      if (!p.homeSqft) throw new Error(`I can't measure roofs from the air here. ${SIZE_ASK}`);
+      if (!p.homeSqft) throw new Error(`${read ? "" : "I can't measure roofs from the air here. "}${SIZE_ASK}`);
       facts = roofFactsFromSize(p.homeSqft, answers, state);
       read = read || `sized from a ${p.homeSqft.toLocaleString("en-US")} sq ft, ${answers.storeys}-story house at a 6/12 pitch`;
     }
