@@ -348,10 +348,13 @@ monthly" is one 12px line (weight 600) under the price.
   Red is the person (the REC stamp, the rule beside their words as they speak,
   the dial while it listens); white is the Operator's work; yellow is "needs
   you"; green is done. The dial is the one round thing: a canvas ring of 56 bars
-  around a 64px button — lively red while it listens, a white sweep while it
-  works, a yellow pulse while it waits, green when a build lands, a faint breath
-  at rest — with 44px square hints either side (Type / Hands-free; Cancel / Send
-  while it listens; Change / Send while it waits). A card: a 10.5px caps label,
+  around a 64px button — lively red while it is held, lively mint while it
+  listens live (2026-11-06: hold to talk, let go to send; a tap turns live on, a
+  conversation that listens again after every reply until a tap, "stop" or
+  End), a white sweep while it works, a yellow pulse while it waits, green when
+  a build lands, a faint breath at rest — with 44px square hints either side
+  (Type / Live; Cancel / Send while held; End / Live while live; Change / Send
+  while it waits). A card: a 10.5px caps label,
   the square stamp, the facts as a ruled two-column sheet (58px mono keys), the
   build's trace as four mono steps with a 3px top rule (green done, white now),
   the deck's own plan drawn on in the Deck Studio's build order (0.6px white

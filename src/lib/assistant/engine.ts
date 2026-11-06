@@ -39,6 +39,8 @@ export interface TurnInput {
   text: string;
   /** Twilio's MessageSid on the phone paths: a retried webhook is the same turn. */
   externalId?: string | null;
+  /** Said aloud in the app and read back aloud (2026-11-06): the reply is kept to a sentence. */
+  spoken?: boolean;
 }
 
 export interface TurnResult {
@@ -53,7 +55,7 @@ export interface TurnResult {
 // ── the system prompt ───────────────────────────────────────────────────────
 
 /** The prompt for a turn: the rules, then what the tools shown this turn can do (lib/assistant/registry), then the moment. */
-export function systemPrompt(actor: AssistantActor, now: Date, waiting: string | null, built: string[] = [], tools: readonly AnyTool[] = TOOLS, records = ""): string {
+export function systemPrompt(actor: AssistantActor, now: Date, waiting: string | null, built: string[] = [], tools: readonly AnyTool[] = TOOLS, records = "", spoken = false): string {
   const short = actor.channel === "sms" ? "one or two text messages, under 300 characters" : "a few short lines";
   return [
     `You are the JobFlex AI Operator for ${actor.orgName}, a contracting business. You help ${actor.userName} (role ${actor.role}) run the business by talking or texting.`,
@@ -70,7 +72,9 @@ export function systemPrompt(actor: AssistantActor, now: Date, waiting: string |
     "- Several things in one request ('put it on Monday, add Mike, and tell the crew'): plan each change in turn, one tool call after another — each is read back and ONE yes does them all, in order. Don't stop after the first.",
     capabilityPrompt(tools),
     "- If they ask for something none of your tools does, say plainly that you can't do that yet, and what you can do. Never answer a different question instead.",
-    `- Answer in the person's language. Be brief: ${short}. Plain sentences, a short list at most, no headings, no tables.`,
+    spoken
+      ? "- SPOKEN: this is a live conversation and your reply is read aloud. Answer in the person's language, in one short sentence — two at most, under 30 words. Lead with the answer or the read-back. No greeting, no list of what you can do, never 'let me know'. If you did not understand, or something essential is missing, ask one short question instead."
+      : `- Answer in the person's language. Be brief: ${short}. Plain sentences, a short list at most, no headings, no tables.`,
     waiting ? `WAITING FOR THEIR ANSWER: "${waiting}". If they now say yes in other words, tell them to tap Do it (in the app) or reply YES.` : "",
     built.length ? `ESTIMATES BUILT LATELY (newest first):\n${built.map((b, i) => `${i + 1}. ${b}`).join("\n")}` : "",
     records,
@@ -386,7 +390,7 @@ export async function handleTurn(input: TurnInput): Promise<TurnResult> {
   // The tools this turn: the registry's live ones — not retired, not switched off, their services configured.
   const live = await modelTools();
   const messages: ChatCompletionMessageParam[] = [
-    { role: "system", content: systemPrompt(actor, now, awaiting?.readback ?? null, built, live, records) },
+    { role: "system", content: systemPrompt(actor, now, awaiting?.readback ?? null, built, live, records, input.spoken === true) },
     ...history.reverse().map((m): ChatCompletionMessageParam => (m.direction === "IN" ? { role: "user", content: m.body } : { role: "assistant", content: m.body })),
     { role: "user", content: text },
   ];

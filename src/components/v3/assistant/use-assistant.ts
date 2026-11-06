@@ -32,8 +32,9 @@ export type AssistantState = {
   lang: SpeechLang;
   load: () => void;
   loadTasks: () => void;
-  /** Sends a request; the reply's words, or null when it didn't go through. A build's first words come back at once. */
-  ask: (text: string) => Promise<string | null>;
+  /** Sends a request; the reply's words, or null when it didn't go through. A build's first words come back at once.
+   *  `spoken`: it was said aloud and the reply is read aloud — the Operator answers in a sentence. */
+  ask: (text: string, opts?: { spoken?: boolean }) => Promise<string | null>;
   /** Do it / Cancel on a read-back; the reply's words, or null. `pin`: the four digits a money card asks for. */
   answer: (actionId: string, yes: boolean, pin?: string) => Promise<string | null>;
 };
@@ -170,14 +171,14 @@ export function useAssistant(): AssistantState {
   }, [takeFeed]);
 
   const ask = useCallback(
-    async (text: string) => {
+    async (text: string, opts?: { spoken?: boolean }) => {
       const t = text.trim();
       if (!t || busy) return null;
       setBusy(true);
       setPending(t);
       setError(null);
       try {
-        const r = await askAssistant({ text: t });
+        const r = await askAssistant({ text: t, ...(opts?.spoken ? { spoken: true } : {}) });
         if (!r.ok) {
           setError(r.error);
           return null;
