@@ -360,7 +360,7 @@ export function factsOf(tool: string, args: unknown): Fact[] {
 // the person (lib/assistant/workset). The prompt lists them with their ids, so the model passes the right id without
 // finding again. Pure here: the reading of a result and the prompt's lines; the keeping is the server's.
 
-export type WorkKind = "client" | "lead" | "proposal" | "job" | "visit" | "worker";
+export type WorkKind = "client" | "lead" | "proposal" | "job" | "visit" | "worker" | "project";
 export interface WorkItem {
   kind: WorkKind;
   id: string;
@@ -370,8 +370,8 @@ export interface WorkItem {
   at: string;
 }
 
-const LIST_KIND: Record<string, WorkKind> = { clients: "client", leads: "lead", proposals: "proposal", jobs: "job", visits: "visit", workers: "worker" };
-const ID_KIND: Record<string, WorkKind> = { clientId: "client", leadId: "lead", proposalId: "proposal", jobId: "job", visitId: "visit", workerId: "worker" };
+const LIST_KIND: Record<string, WorkKind> = { clients: "client", leads: "lead", proposals: "proposal", jobs: "job", visits: "visit", workers: "worker", projects: "project" };
+const ID_KIND: Record<string, WorkKind> = { clientId: "client", leadId: "lead", proposalId: "proposal", jobId: "job", visitId: "visit", workerId: "worker", projectId: "project" };
 
 /** The records a tool's result (or a change's arguments or result) names, newest first by position. */
 export function workItemsFrom(data: unknown, at: string): WorkItem[] {
@@ -424,8 +424,8 @@ export function mergeWorkItems(older: readonly WorkItem[], newer: readonly WorkI
   return out;
 }
 
-const KIND_WORD: Record<WorkKind, string> = { client: "client", lead: "lead", proposal: "proposal", job: "job", visit: "visit", worker: "crew member" };
-const KIND_ID: Record<WorkKind, string> = { client: "clientId", lead: "leadId", proposal: "proposalId", job: "jobId", visit: "visitId", worker: "workerId" };
+const KIND_WORD: Record<WorkKind, string> = { client: "client", lead: "lead", proposal: "proposal", job: "job", visit: "visit", worker: "crew member", project: "project" };
+const KIND_ID: Record<WorkKind, string> = { client: "clientId", lead: "leadId", proposal: "proposalId", job: "jobId", visit: "visitId", worker: "workerId", project: "projectId" };
 
 /** The prompt's lines for the records in this conversation, newest first; "" when there are none. */
 export function worksetPrompt(items: readonly WorkItem[]): string {

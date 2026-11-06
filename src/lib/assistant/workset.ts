@@ -44,13 +44,14 @@ export async function recallWorkset(actor: AssistantActor): Promise<WorkItem[]> 
   const unnamed = (kind: WorkItem["kind"]) => items.filter((it) => it.kind === kind && !it.label).map((it) => it.id);
   const name = new Map<string, string>();
   try {
-    const [clients, leads, proposals, jobs, visits, workers] = await Promise.all([
+    const [clients, leads, proposals, jobs, visits, workers, projects] = await Promise.all([
       unnamed("client").length ? db.client.findMany({ where: { id: { in: unnamed("client") }, organizationId: org }, select: { id: true, name: true } }) : [],
       unnamed("lead").length ? db.lead.findMany({ where: { id: { in: unnamed("lead") }, organizationId: org }, select: { id: true, name: true } }) : [],
       unnamed("proposal").length ? db.proposal.findMany({ where: { id: { in: unnamed("proposal") }, organizationId: org }, select: { id: true, title: true } }) : [],
       unnamed("job").length ? db.job.findMany({ where: { id: { in: unnamed("job") }, organizationId: org }, select: { id: true, title: true } }) : [],
       unnamed("visit").length ? db.appointment.findMany({ where: { id: { in: unnamed("visit") }, organizationId: org }, select: { id: true, title: true } }) : [],
       unnamed("worker").length ? db.workerProfile.findMany({ where: { id: { in: unnamed("worker") }, organizationId: org }, select: { id: true, displayName: true } }) : [],
+      unnamed("project").length ? db.project.findMany({ where: { id: { in: unnamed("project") }, organizationId: org }, select: { id: true, name: true } }) : [],
     ]);
     for (const c of clients) name.set(`client:${c.id}`, c.name);
     for (const l of leads) name.set(`lead:${l.id}`, l.name);
@@ -58,6 +59,7 @@ export async function recallWorkset(actor: AssistantActor): Promise<WorkItem[]> 
     for (const j of jobs) name.set(`job:${j.id}`, j.title);
     for (const v of visits) name.set(`visit:${v.id}`, v.title);
     for (const w of workers) name.set(`worker:${w.id}`, w.displayName);
+    for (const pr of projects) name.set(`project:${pr.id}`, pr.name);
   } catch {
     /* unnamed ones stay out of the prompt */
   }
