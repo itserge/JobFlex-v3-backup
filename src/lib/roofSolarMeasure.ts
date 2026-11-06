@@ -17,6 +17,11 @@ import { toDTO, type StoredProvenance } from "@/lib/roofDiagram/dto";
 import type { MeasurementProvenance, MeasurementSource, RoofMeasurementDTO } from "@/lib/roofDiagram/types";
 import { takeTrialCap } from "@/lib/trialMeter";
 import type { LimitKey } from "@/lib/planLimits";
+import { geocodePlace } from "@/lib/maps";
+import { censusGeocode } from "@/lib/hvac/publicGeo";
+import { lookupParcelByPoint } from "@/lib/parcelLookup";
+import { readStructures } from "@/lib/lawn/aerial";
+import { boxAround, fromMerc } from "@/lib/lawn/geo";
 
 interface LatLng {
   lat: number;
@@ -167,4 +172,65 @@ export async function solarMeasure(input: EvOrderInput, organizationId: string, 
     console.warn("[roofMeasurement] solar estimate failed", { name: err instanceof Error ? err.name : "unknown" });
     return { ok: false, error: "The aerial estimate could not be completed or saved. Please try again." };
   }
+}
+
+// ── the pin on the house (2026-11-06) ───────────────────────────────────────
+//
+// By voice there is no map to drop a pin on, and a geocoded address often lands on the street or the driveway — on
+// a big lot, far from the roof (the owner's 12103 202nd St SE: Google's point was off the building, and Solar's
+// "does not closely match the pin" refused it). So the pin is moved onto the house before Solar is asked: the lot
+// the point is in (or the nearest), when its address carries the same house number, gives the assessor's footprints
+// and the largest is the house; else USA Structures' building with that house number within 300 m; else the point
+// as geocoded. Never the nearest building regardless of number — that is how a neighbour's roof gets measured.
+
+export type HousePin = { lat: number; lng: number; how: "parcel" | "structures" | "geocode"; place?: { county?: string; state?: string; city?: string; zip?: string } };
+
+const number = (address: string | null | undefined) => address?.trim().match(/^(\d+)/)?.[1] ?? null;
+const centre = (ring: Array<{ lat: number; lng: number }>) => ({ lat: ring.reduce((s, q) => s + q.lat, 0) / ring.length, lng: ring.reduce((s, q) => s + q.lng, 0) / ring.length });
+/** A ring's area in square metres, by the shoelace on a local flat projection — enough to pick the biggest. */
+function ringAreaM2(ring: Array<{ lat: number; lng: number }>): number {
+  if (ring.length < 3) return 0;
+  const lat0 = ring[0].lat;
+  const kx = 111_320 * Math.cos((lat0 * Math.PI) / 180);
+  const ky = 111_320;
+  let a = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const p = ring[i];
+    const q = ring[(i + 1) % ring.length];
+    a += p.lng * kx * q.lat * ky - q.lng * kx * p.lat * ky;
+  }
+  return Math.abs(a) / 2;
+}
+
+/** Where the roof is for an address said aloud. Null when the address can't be placed at all. */
+export async function housePin(address: string): Promise<HousePin | null> {
+  const g = (await geocodePlace(address).catch(() => null)) ?? (await censusGeocode(address).catch(() => null));
+  if (!g) return null;
+  const place = { county: g.county, state: g.state, city: g.city, zip: g.zip };
+  const asked = number(address);
+  // 1 · the lot, when the point's parcel (or the nearest) is the house's own by its number.
+  try {
+    const r = await lookupParcelByPoint(g.lat, g.lng, { withRecord: true, withNearest: true });
+    if (r.ok && asked && number(r.parcel.address) === asked) {
+      const rings = r.parcel.buildings.filter((b) => b.length >= 3).map((b) => b.map(([la, lo]) => ({ lat: la, lng: lo })));
+      const house = rings.sort((a, b) => ringAreaM2(b) - ringAreaM2(a))[0];
+      if (house && ringAreaM2(house) >= 40) return { ...centre(house), how: "parcel", place };
+    }
+  } catch {
+    /* no parcel provider here — the structures layer next */
+  }
+  // 2 · USA Structures' building with the same house number, within 300 m of the point.
+  if (asked) {
+    try {
+      const box = boxAround({ lat: g.lat, lng: g.lng }, 300);
+      const sw = fromMerc({ x: box[0], y: box[1] });
+      const ne = fromMerc({ x: box[2], y: box[3] });
+      const all = await readStructures({ west: sw.lng, south: sw.lat, east: ne.lng, north: ne.lat });
+      const mine = all.filter((st) => st.ring.length >= 3 && number(st.address) === asked).sort((a, b) => (b.sqft ?? ringAreaM2(b.ring) * 10.764) - (a.sqft ?? ringAreaM2(a.ring) * 10.764))[0];
+      if (mine) return { ...centre(mine.ring), how: "structures", place };
+    } catch {
+      /* the layer didn't answer */
+    }
+  }
+  return { lat: g.lat, lng: g.lng, how: "geocode", place };
 }

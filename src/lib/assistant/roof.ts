@@ -18,7 +18,9 @@ import { isPageLocked } from "@/lib/customPageAccess";
 import { stateFromAddress } from "@/lib/pricing/salesTax";
 import { splitAddress } from "@/lib/hvac/coolcalc";
 import { isSolarEnabled } from "@/lib/solar";
-import { solarMeasure } from "@/lib/roofSolarMeasure";
+import { housePin, solarMeasure } from "@/lib/roofSolarMeasure";
+import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
+import { takeTrialCap, trialPointKey } from "@/lib/trialMeter";
 import { roofFactsFromSize, roofFactsFromSolar, type RoofAnswers } from "@/lib/publicEstimate/roof";
 import { imageryWords, roofBook } from "@/lib/webEstimatorTrades";
 import { isFlatRoof } from "@/lib/roofPackage/flatRule";
@@ -63,6 +65,17 @@ async function roofGate(actor: AssistantActor): Promise<string | null> {
 }
 
 const SIZE_ASK = "Tell me the house's square feet and how many floors, and I'll price the roof from that.";
+
+/** Solar's refusals in the Operator's words: "place the pin on the roof" means nothing by voice. */
+function pinWords(error: string, address: string, pin: { how: "parcel" | "structures" | "geocode" }): string {
+  if (/match the pin|location is missing/i.test(error)) {
+    return pin.how === "geocode"
+      ? `Google's roof model didn't line up with the map point for ${address} — the point isn't on the house, and I couldn't find the house's outline on record to move it. On the Roof page you can drop the pin on the roof yourself.`
+      : `Google's roof model didn't line up with the house at ${address} even with the pin on its outline. On the Roof page you can drop the pin on the roof yourself.`;
+  }
+  if (/no high-resolution roof data|no coverage/i.test(error)) return `Google has no high-resolution roof imagery for ${address}.`;
+  return error;
+}
 
 const buildRoof: WriteTool<RoofArgs, RoofArgs & { address: string }> = {
   kind: "write",
@@ -112,7 +125,14 @@ const buildRoof: WriteTool<RoofArgs, RoofArgs & { address: string }> = {
     let measurementId: string | null = null;
     let read = "";
     if (isSolarEnabled()) {
-      const m = await solarMeasure({ address: parts.address || p.address, city: parts.city, state: parts.state, zip: parts.zip }, org, actor.userId, "take");
+      // The pin on the house first (lib/roofSolarMeasure housePin): a geocoded address lands on the street or the
+      // drive, and Solar refuses a pin off the roof. The lot lookup it may make rides on the roof's own allowance.
+      await enforceRateLimit(`parcels:${org}`, 30, HOUR, "property lookups");
+      const pin = await housePin(p.address);
+      if (!pin) throw new Error(`I couldn't place ${p.address} on the map. Check the address, or ${SIZE_ASK.charAt(0).toLowerCase()}${SIZE_ASK.slice(1)}`);
+      const trial = await takeTrialCap(org, "roofMeasurements", { dedupe: trialPointKey(pin.lat, pin.lng) });
+      if (!trial.ok) throw new Error(trial.failure.error);
+      const m = await solarMeasure({ address: parts.address || p.address, city: parts.city || pin.place?.city || "", state: parts.state || pin.place?.state || "", zip: parts.zip || pin.place?.zip || "", lat: pin.lat, lng: pin.lng }, org, actor.userId, "covered");
       const solar = m.ok ? m.measurement.provenance.solar : null;
       if (m.ok && solar) {
         facts = roofFactsFromSolar(solar, answers, state);
@@ -120,7 +140,7 @@ const buildRoof: WriteTool<RoofArgs, RoofArgs & { address: string }> = {
         const when = imageryWords(solar.imageryDate);
         read = `read from the air (Google imagery${when ? `, ${when}` : ""}): ${solar.pitchLabel} pitch, ${solar.segmentCount} roof planes`;
       } else {
-        const why = m.ok ? "Google's read of that roof wasn't usable." : m.error;
+        const why = m.ok ? "Google's read of that roof wasn't usable." : pinWords(m.error, p.address, pin);
         if (!p.homeSqft) throw new Error(`${why} ${SIZE_ASK}`);
         read = `sized from the house (the air couldn't read it: ${why.replace(/\.$/, "")})`;
       }
