@@ -51,6 +51,7 @@ import Link from "next/link";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { PortalBar } from "@/components/v3/mobile-shell/portal-bar";
 import { CrewActions, CrewDays, CrewPendingBanner, CrewReceipts } from "@/components/v3/crew-board/crew-board";
+import { CrewField } from "@/components/v3/crew-board/crew-field";
 import {
   JD_ASSIGN,
   ST,
@@ -288,6 +289,9 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
 
           {/* Days that passed without being closed — on top, whatever the tab. */}
           <CrewPendingBanner data={record.board} door={record.door} />
+
+          {/* On site (2026-11-05): the stage's tasks, deliveries due, problems from site, hours. */}
+          <CrewField data={record.field} jobId={record.id} door={record.door} office={!worker} canWork={record.board.canWork} />
 
           {/* ============ SECTIONS ============
               Every section in sight at 390, no sideways scroll (owner,

@@ -282,6 +282,15 @@ export const ProjectStatus = {
 } as const;
 export type ProjectStatus = (typeof ProjectStatus)[keyof typeof ProjectStatus];
 
+// A stage of a project (2026-11-05): PLANNED until someone starts it, ACTIVE
+// while the crew is on it, DONE when it is marked so (lib/projectStages).
+export const StageStatus = {
+  PLANNED: "PLANNED",
+  ACTIVE: "ACTIVE",
+  DONE: "DONE",
+} as const;
+export type StageStatus = (typeof StageStatus)[keyof typeof StageStatus];
+
 export const ApplicantStatus = {
   APPLIED: "APPLIED",
   INTERVIEWING: "INTERVIEWING",

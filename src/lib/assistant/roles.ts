@@ -26,6 +26,9 @@ export const CAPABILITIES = [
   "reminders",
   "invoices.send",
   "financing.send",
+  // The stages build (2026-11-05): projects are estimators' and managers' (requireEstimatorOrManager), never SALES'.
+  "projects.read",
+  "projects.write",
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
@@ -68,6 +71,10 @@ export function roleAllows(role: string, need: Capability): boolean {
     case "invoices.send":
     case "financing.send":
       return manager;
+    case "projects.read":
+      return mayOpen(role, "/dashboard/projects");
+    case "projects.write":
+      return role !== "SALES" && mayOpen(role, "/dashboard/projects");
   }
 }
 

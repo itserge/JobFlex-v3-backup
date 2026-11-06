@@ -509,6 +509,47 @@ panel reveals more of that stationary scene; scrolling must not resize the
 canvas, change its camera projection, or trigger a WebGL redraw. Real viewport
 resizes update the camera and drawing buffer together before rendering.
 
+Projects hub, stages (2026-11-05): the Stages card leads the project page on
+desk and handheld, above the proposals — a remodel is read by where it stands.
+One row per stage: a 24px round mark (empty · ▶ in progress on ink · ✓ done on
+emerald), the name as the fold button, a mono meta line (days, tasks, "3 days
+late" in rose), the actions right. Only the stage the project is on opens its
+tasks; the rest fold. Tasks are 32px lines (44px handheld) with an ink
+check; "photo" is a small amber mono tag, never a camera icon. The % done bar
+is the budget card's 10px bar. Templates and the AI draft are small outline
+buttons in the empty state, not a wizard; an AI draft shows an emerald note
+with Keep. The project's number ("#1042") sits in the kicker after
+"Projects" on desk and leads the handheld dateline; the list prints "65% ·
+Framing" where it printed the jobs closed, only once the project has stages.
+
+Projects hub, buying (2026-11-05): the Buying card sits under the proposals,
+the Deliveries card right after it. The to-buy list is grouped by stage under
+a mono caps rule that carries the stage's order-by day; each line is a tick
+box (only while something is left to buy), the name, a mono quantity and a
+small mono tag — To buy in accent, Ordered in amber, In in emerald, late in
+rose. Picked lines raise a sticky bar at the card's foot (ink frame, paper,
+the one primary button "Order these"). An order is one ink-framed block that
+folds: its head names the order, who it is from and its state tag; open, it
+shows the dates in mono, the lines, the tracking field and the actions as
+small outline buttons, "Delivered" the one primary. The buyer's page
+(/buy/<token>) is the review page's sibling: one 2px ink frame on graph
+paper, 52px tick rows, the ink Save button with the accent shadow.
+
+The crew in the field (2026-11-05): the On site block sits on the job page
+right under the crew's day buttons, in the crew board's own language — a
+white 2px-ink card, mono caps label, uppercase heavy title, 44px rows. A
+problem is an amber-framed row with the warning glyph; one that stopped the
+work is rose. Tasks are 22px ink checks on dashed rows; a ticked one strikes
+through. Deliveries are a row with the one primary "Delivered". Hours are a
+120px field with a small outline Save and a mono "32 h this week". "Flag a
+problem" is a full-width outline button, never red — the office's stamp is
+the red thing. On the project page the On site card uses the hub's row
+vocabulary: a problem row's round mark is a rose "!", the open ones lead;
+hours and the subs' bills are mono-quantity lines, "owed" in rose, "paid" in
+emerald. The crew's home prints "My tasks today" as paper cards with empty
+ink squares (no live ticking there — the job page ticks) and "My week" as
+three display figures.
+
 Read [implementation notes](docs/design/implementation.md) when editing an
 existing interactive surface, and [mobile notes](docs/design/mobile.md) for
 handheld work. These describe code hazards, not alternative visual themes.

@@ -626,6 +626,77 @@ export const GUIDES: Guide[] = [
     ],
   },
   {
+    id: "project-stages",
+    title: "Run a project by stages",
+    group: "how",
+    icon: "ListChecks",
+    steps: [
+      {
+        text: "Open Projects and open a project. The Stages card at the top shows the order of the work and how far along it is.",
+        open: "/dashboard/projects",
+      },
+      {
+        text: "With no stages yet, press a template for the trade — Deck, Roof, Fence, Kitchen remodel… — or Draft with AI, or Add a stage.",
+      },
+      {
+        text: "Press a stage’s name to open its tasks. Tick a task when it’s done; ticking the last one marks the stage done. Press Add a task for anything else.",
+      },
+      {
+        text: "Press Start when the crew begins a stage and Done when it’s finished. Edit sets its first and last day — past the last day it shows as late.",
+      },
+      {
+        text: "Back on Projects, press Automatic projects: with it on, a sold proposal makes its own project with the stages for its trade.",
+        open: "/dashboard/projects",
+      },
+    ],
+  },
+  {
+    id: "project-buying",
+    title: "Buy a project’s materials in parts",
+    group: "how",
+    icon: "ShoppingCart",
+    steps: [
+      {
+        text: "Open Projects and open a project. On the Buying card, press From the proposals — every material line sold on the project comes onto the to-buy list, grouped by stage with its order-by day.",
+        open: "/dashboard/projects",
+      },
+      {
+        text: "Tick the lines to buy now (or Select all on a stage) and press Order these.",
+      },
+      {
+        text: "Pick how: Supplier order emails the purchase order; Someone buys it sends a crew member or anyone a link to tick off and type what they paid; From our stock marks them in at once. Press Place the order.",
+      },
+      {
+        text: "On the Deliveries card, paste the tracking number when it ships and press Delivered when it lands. Anything short goes back on the list and you’re told.",
+      },
+      {
+        text: "Press Log the cost on a delivered order — it lands on the project’s budget as a Materials expense.",
+      },
+    ],
+  },
+  {
+    id: "crew-on-site",
+    title: "What the crew does on site",
+    group: "how",
+    icon: "HardHat",
+    steps: [
+      {
+        text: "Open Workers and make sure each crew member has an hourly rate — their hours become labor cost at that rate.",
+        open: "/dashboard/workers",
+      },
+      {
+        text: "The crew opens a job from their link or the app. Under On site they tick the stage’s tasks as they finish them, press Delivered on a delivery and untick anything that did not come, and type their hours.",
+      },
+      {
+        text: "Flag a problem sends you a text right away. Open the project: the On site card shows it in red until you press Resolved and say what was done.",
+        open: "/dashboard/projects",
+      },
+      {
+        text: "On the same card, Hours this week shows each crew member’s hours and labor cost, and + Sub bill records what a sub charged — mark it paid when you pay it.",
+      },
+    ],
+  },
+  {
     id: "crew",
     title: "Jobs and the calendar for your crew",
     group: "how",

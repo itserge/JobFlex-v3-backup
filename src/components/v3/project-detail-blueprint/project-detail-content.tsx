@@ -49,7 +49,10 @@ import {
   type PdJob,
   type PdOpens,
   type PdPayments,
+  type PdBuying,
+  type PdField,
   type PdProject,
+  type PdStages,
   type PdWorker,
   type PdProposal,
   attachableFirst,
@@ -74,6 +77,9 @@ import { ProjectCrewSheet } from "@/components/v3/project-links/project-crew-she
 import { LooseProposalsStrip } from "@/components/v3/project-links/loose-proposals-strip";
 import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
 import { ProjectBudgetCard } from "@/components/v3/project-links/project-budget-card";
+import { ProjectStagesCard } from "@/components/v3/project-links/project-stages-card";
+import { ProjectBuyingCard } from "@/components/v3/project-links/project-buying-card";
+import { ProjectFieldCard } from "@/components/v3/project-links/project-field-card";
 
 /** "New proposal" on a project opens the estimator picker filed under it, so
  *  any engine — Smart Proposal, roof, fence, HVAC, video or manual — can make
@@ -126,8 +132,17 @@ export function ProjectDetailContent({
   opens = { client: true, jobs: true },
   payments = [],
   roster = [],
+  stages = { stages: [], done: null, draftedByAi: false },
+  buying,
+  field,
 }: {
   project: PdProject;
+  /** The order of the work (2026-11-05). */
+  stages?: PdStages;
+  /** The to-buy list and the orders (2026-11-05). */
+  buying?: PdBuying;
+  /** On site: problems, hours, the subs' bills (2026-11-05). */
+  field?: PdField;
   jobs: PdJob[];
   proposals?: PdProposal[];
   availableProposals: PdAvailProposal[];
@@ -269,6 +284,7 @@ export function ProjectDetailContent({
         <div>
           <div className={cx("kicker")}>
             Projects
+            {project.number ? <span data-project-number>{` · #${project.number}`}</span> : null}
             {project.client ? (
               <>
                 {" · "}
@@ -337,9 +353,12 @@ export function ProjectDetailContent({
         </div>
       </div>
 
+      <ProjectStagesCard projectId={project.id} stages={stages} canManage={canManage} />
+      {field ? <ProjectFieldCard projectId={project.id} field={field} canManage={canManage} /> : null}
       <LooseProposalsStrip projectId={project.id} client={project.client} loose={looseProposals} />
       <ProposalsCard proposals={proposals} project={project} onAttach={openAttach} canManage={canManage} />
       <ProjectCombine projectId={project.id} projectName={project.name} proposals={proposals} />
+      {buying ? <ProjectBuyingCard projectId={project.id} buying={buying} stages={stages.stages} canManage={canManage} /> : null}
       {budget ? <ProjectBudgetCard projectId={project.id} budget={budget} /> : null}
       <ProjectPaymentsCard payments={payments} canManage={canManage} />
 

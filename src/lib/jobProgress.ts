@@ -113,6 +113,14 @@ export async function recordJobProgress(input: {
     const opened = await openWorkDay({ organizationId, jobId, actorUserId: actor.userId, source });
     workDayId = opened.day.id;
     day = opened.day.dayNumber;
+    // The weather on a new day on site, noted by itself after the press is answered (the crew build, 2026-11-05).
+    if (opened.created) {
+      const dayId = opened.day.id;
+      afterResponse(async () => {
+        const { noteWeather } = await import("@/lib/crewField/server");
+        await noteWeather(organizationId, dayId);
+      });
+    }
   }
 
   if (job.status !== nextStatus) await db.job.update({ where: { id: jobId }, data: { status: nextStatus } });

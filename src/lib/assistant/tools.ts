@@ -15,7 +15,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { type AssistantActor, type Capability, proposalScope } from "@/lib/assistant/actor";
 import { andList, dayRange, dayWords, money, spanWords, timeOf, wallInstant, dayOf } from "@/lib/assistant/shared";
-import { crewOf, findClients, findJobs, findLeads, findProposals, findVisits } from "@/lib/assistant/find";
+import { crewOf, findClients, findJobs, findLeads, findProjects, findProposals, findVisits } from "@/lib/assistant/find";
 import { readCrmBrief } from "@/lib/crm/briefServer";
 import { getFinancialsRollup, getMonthlyRollup } from "@/actions/financials";
 import { sendProposalAs } from "@/lib/proposals/sendCore";
@@ -34,6 +34,9 @@ import { FENCE_TOOLS } from "@/lib/assistant/fence";
 import { ROOF_TOOLS } from "@/lib/assistant/roof";
 import { HVAC_TOOLS } from "@/lib/assistant/hvac";
 import { LAWN_TOOLS } from "@/lib/assistant/lawn";
+import { PROJECT_TOOLS } from "@/lib/assistant/projects";
+import { BUYING_TOOLS } from "@/lib/assistant/buying";
+import { FIELD_TOOLS } from "@/lib/assistant/field";
 
 export interface ToolContext {
   actor: AssistantActor;
@@ -243,7 +246,7 @@ const schedule: ReadTool<{ from: string; to: string | null }> = {
   },
 };
 
-const find: ReadTool<{ query: string; kind: "any" | "proposal" | "client" | "job" | "lead" | "worker" | "visit" }> = {
+const find: ReadTool<{ query: string; kind: "any" | "proposal" | "client" | "job" | "lead" | "worker" | "visit" | "project" }> = {
   kind: "read",
   name: "find",
   need: "proposals.read",
@@ -281,25 +284,27 @@ const find: ReadTool<{ query: string; kind: "any" | "proposal" | "client" | "job
     ]
   },
   description:
-    "Find proposals, clients, jobs, leads, visits (appointments) or crew members by name, title or address. Returns ids to use in other tools. Use before any change that names a client, a proposal, a job, a visit or a worker.",
+    "Find proposals, clients, jobs, leads, visits (appointments), projects or crew members by name, title, number or address. Returns ids to use in other tools. Use before any change that names a client, a proposal, a job, a visit, a project or a worker.",
   params: z.object({
-    query: z.string().min(2).max(80).describe("the words to look for, e.g. 'Smith roof' or 'Mike'"),
-    kind: z.enum(["any", "proposal", "client", "job", "lead", "worker", "visit"]),
+    query: z.string().min(2).max(80).describe("the words to look for, e.g. 'Smith roof', 'Mike' or '#1042'"),
+    kind: z.enum(["any", "proposal", "client", "job", "lead", "worker", "visit", "project"]),
   }),
   async run({ actor, now }, args) {
     const org = actor.organizationId;
     const tz = actor.timezone;
     const want = (k: string) => args.kind === "any" || args.kind === k;
-    const [proposals, clients, jobs, leads, crew, visits] = await Promise.all([
+    const [proposals, clients, jobs, leads, crew, visits, projects] = await Promise.all([
       want("proposal") ? findProposals(org, args.query, proposalScope(actor)) : Promise.resolve([]),
       want("client") ? findClients(org, args.query) : Promise.resolve([]),
       want("job") ? findJobs(org, args.query) : Promise.resolve([]),
       want("lead") ? findLeads(org, args.query) : Promise.resolve([]),
       want("worker") ? crewOf(org) : Promise.resolve([]),
       want("visit") ? findVisits(org, args.query, now) : Promise.resolve([]),
+      want("project") ? findProjects(org, args.query) : Promise.resolve([]),
     ]);
     const q = args.query.toLowerCase();
     return {
+      projects: projects.map((p) => ({ id: p.id, number: p.number, name: p.name, client: p.client?.name ?? null, status: p.status })),
       visits: visits.map((v) => ({ id: v.id, title: v.title, with: v.client?.name ?? v.lead?.name ?? null, when: spanWords(v.startsAt, v.endsAt, tz), crew: v.assignments.map((a) => a.worker.displayName) })),
       proposals: proposals.map((p) => ({ id: p.id, title: p.title, client: p.client?.name ?? null, clientEmail: p.client?.email ?? null, status: p.status, total: money(p.total, p.currency), address: p.address, created: dayWords(p.createdAt, tz), sent: p.sentAt ? dayWords(p.sentAt, tz) : null, opened: opened(p.viewCount, p.viewedAt, tz) })),
       clients: clients.map((c) => ({ id: c.id, name: c.name, email: c.email, phone: c.phone, address: [c.address, c.city].filter(Boolean).join(", ") || null })),
@@ -982,6 +987,9 @@ export const TOOLS: readonly AnyTool[] = [
   ...VISIT_TOOLS,
   ...REMIND_TOOLS,
   ...MONEY_TOOLS,
+  ...PROJECT_TOOLS,
+  ...BUYING_TOOLS,
+  ...FIELD_TOOLS,
 ] as unknown as AnyTool[];
 
 export function toolNamed(name: string): AnyTool | null {

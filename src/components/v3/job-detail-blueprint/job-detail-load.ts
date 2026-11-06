@@ -35,6 +35,7 @@ import { inventoryLinkOf, linkedTradeOf } from "@/lib/inventoryPick";
 import { stockItemsOf } from "@/lib/inventoryPolicy";
 import { explodeLines } from "@/lib/inventoryBom";
 import { actorsOf } from "@/lib/activityLog";
+import { fieldOf } from "@/lib/crewField/server";
 import {
   STATUS_TO_KEY,
   type JdAssignState,
@@ -526,6 +527,7 @@ export async function loadJobDetail(
     door: { kind: "session" },
     chrome: "dashboard",
     portal: null,
+    field: await fieldOf(organizationId, job.id, { workerId: null, office: !isLimitedRole(role) }),
   };
 }
 
@@ -675,6 +677,7 @@ async function loadWorkerScoped(
     door: { kind: "session" },
     chrome: "dashboard",
     portal: null,
+    field: await fieldOf(organizationId, job.id, { workerId: wp.id, office: false }),
   };
 }
 
