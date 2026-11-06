@@ -13,7 +13,6 @@ import { draftStagesWithAi, markStage, markTask, projectForJob, stagesFromTempla
 import { PROJECT_TRADES_DEFAULT, parseProjectSettings, templateByKey, type ProjectSettings } from "@/lib/projectStages/shared";
 import { TRADE_TYPES, type TradeType } from "@/lib/tradeTypes";
 
-const ID = z.string().min(1).max(64);
 const DAY = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable();
 
 /** The project, when it is the caller's. */

@@ -7,7 +7,7 @@
 // and reopens them, and ticks the tasks. Every write is actions/projectStages (estimators and managers);
 // everyone else reads the card.
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   addStage,
@@ -43,9 +43,14 @@ type Editing = { id: string | null; name: string; startsAt: string; endsAt: stri
 export function ProjectStagesCard({ projectId, stages: initial, canManage }: { projectId: string; stages: PdStages; canManage: boolean }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
-  // The rows are the server's, laid over with each tick and status change until the refresh lands.
+  // The rows are the server's, laid over with each tick and status change until the refresh lands — then the
+  // fresh rows replace the overlay (state adjusted during render, as React's docs do it, not in an effect).
   const [stages, setStages] = useState<PdStage[]>(initial.stages);
-  useEffect(() => setStages(initial.stages), [initial.stages]);
+  const [seen, setSeen] = useState(initial.stages);
+  if (seen !== initial.stages) {
+    setSeen(initial.stages);
+    setStages(initial.stages);
+  }
   const now = currentStage(stages);
   // The stage the project is on opens with its tasks; the rest fold.
   const [open, setOpen] = useState<Set<string>>(() => new Set(now ? [now.id] : []));

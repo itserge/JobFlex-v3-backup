@@ -17,10 +17,10 @@ export function AutoProjectsSheet({ open, onClose }: { open: boolean; onClose: (
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // The settings are read when the sheet opens (the read's own callbacks set the state, not the effect).
   useEffect(() => {
     if (!open) return;
     let live = true;
-    setErr(null);
     readProjectSettings()
       .then((r) => live && setState({ auto: r.auto, trades: [...r.trades], allTrades: r.allTrades, defaults: r.defaults }))
       .catch((e) => live && setErr(e instanceof Error ? e.message : "Could not read the settings"));
@@ -87,7 +87,7 @@ export function AutoProjectsSheet({ open, onClose }: { open: boolean; onClose: (
             </button>
           </div>
           <p className="bps-hint bps-fld--wide">
-            The trade is the estimator that priced it (roof, fence, HVAC), else the proposal's own words (deck, kitchen, bath…), else your company's first trade.
+            The trade is the estimator that priced it (roof, fence, HVAC), else the proposal&apos;s own words (deck, kitchen, bath…), else your company&apos;s first trade.
           </p>
           {err ? <div className="bps-err bps-fld--wide">{err}</div> : null}
         </div>
