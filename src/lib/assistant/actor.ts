@@ -63,7 +63,8 @@ export function proposalScope(actor: AssistantActor): { ownerId?: string } {
   return ownProposalsOnly(actor.role) ? { ownerId: actor.userId } : {};
 }
 
-const PAGE_OF: Partial<Record<Capability, "calendar" | "workers">> = {
+/** The plan page a capability rides on (locked page = refused); the registry shows it. */
+export const PAGE_OF: Partial<Record<Capability, "calendar" | "workers">> = {
   "schedule.read": "calendar",
   "schedule.write": "calendar",
   "crew.read": "workers",

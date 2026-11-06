@@ -98,6 +98,58 @@ const buildRoof: WriteTool<RoofArgs, RoofArgs & { address: string }> = {
   instant: "background",
   name: "build_roof",
   need: "estimates.build",
+  card: {
+    "label": "Roof estimate",
+    "purpose": "Measure a roof from the air and price it with the company's roof catalog, as a DRAFT with its photo and plan.",
+    "when": "A roof from an ADDRESS: build_roof with the material they want, what is on it now, and the house's square feet and floors when said (the fallback when the air can't read the roof — ask for the size only when the build says so). To change it: build_roof again with replaces = its proposalId.",
+    "objects": [
+      "estimate",
+      "proposal",
+      "property",
+      "client",
+      "lead"
+    ],
+    "effect": "draft",
+    "group": "estimates",
+    "version": 1,
+    "since": "2026-11-05",
+    "steps": [
+      "Aerial read",
+      "Rate book",
+      "Priced",
+      "Saved"
+    ],
+    "samples": [
+      {
+        "say": "roof estimate at 14 Oak St, Tacoma WA, architectural shingles",
+        "args": {
+          "address": "14 Oak St, Tacoma WA",
+          "clientId": null,
+          "leadId": null,
+          "material": "architectural shingles",
+          "existing": null,
+          "storeys": null,
+          "homeSqft": null,
+          "tearOffLayers": null,
+          "replaces": null
+        }
+      },
+      {
+        "say": "make it standing seam metal",
+        "args": {
+          "address": null,
+          "clientId": null,
+          "leadId": null,
+          "material": "standing seam metal",
+          "existing": null,
+          "storeys": null,
+          "homeSqft": null,
+          "tearOffLayers": null,
+          "replaces": "p_1"
+        }
+      }
+    ]
+  },
   description:
     "Measure a roof from the air at an address (Google's aerial model of the roof) and price it with the company's roof catalog — the system they ask for, tear-off, underlayment, edges, vents — saved as a DRAFT proposal (nothing goes to the client). Pass the house's square feet and floors when they say them: where the air can't read the roof, the roof is sized from the house. Pass `replaces` to change a roof built earlier (another material, more layers).",
   params: roofArgs,

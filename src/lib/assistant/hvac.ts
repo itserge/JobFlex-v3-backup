@@ -88,6 +88,64 @@ const buildHvac: WriteTool<HvacArgs, HvacArgs & { address: string }> = {
   instant: "now",
   name: "build_hvac",
   need: "estimates.build",
+  card: {
+    "label": "HVAC estimate",
+    "purpose": "Size an HVAC job from the house and price Good, Better and Best with the company's catalog and rate card, as a DRAFT.",
+    "when": "HVAC from an ADDRESS: build_hvac with the job (a full system, the outdoor unit, a furnace, adding AC, a heat pump, a ductless zone, a water heater), the square feet, floors and year when said (it looks the house up otherwise), AC or heat pump when said, and the tier. 'The best one', 'make it good', '1, 2 or 3': build_hvac again with that tier and replaces = its proposalId.",
+    "objects": [
+      "estimate",
+      "proposal",
+      "property",
+      "client",
+      "lead"
+    ],
+    "effect": "draft",
+    "group": "estimates",
+    "version": 1,
+    "since": "2026-11-05",
+    "steps": [
+      "House",
+      "Load",
+      "Priced",
+      "Saved"
+    ],
+    "samples": [
+      {
+        "say": "price a new system for 14 Oak St, Tacoma WA, 2,000 square feet, two-story, built 1990",
+        "args": {
+          "address": "14 Oak St, Tacoma WA",
+          "clientId": null,
+          "leadId": null,
+          "job": "replace-system",
+          "sqft": 2000,
+          "storeys": 2,
+          "yearBuilt": 1990,
+          "existing": null,
+          "gas": null,
+          "outdoorKind": null,
+          "tier": null,
+          "replaces": null
+        }
+      },
+      {
+        "say": "make it the best one",
+        "args": {
+          "address": null,
+          "clientId": null,
+          "leadId": null,
+          "job": "replace-system",
+          "sqft": null,
+          "storeys": null,
+          "yearBuilt": null,
+          "existing": null,
+          "gas": null,
+          "outdoorKind": null,
+          "tier": "best",
+          "replaces": "p_1"
+        }
+      }
+    ]
+  },
   description:
     "Size and price an HVAC job at an address with the company's HVAC catalog and rate card: the load from the house (looked up from the county's record, or the square feet, floors and year they say), the unit that fits, Good / Better / Best priced as whole jobs, the tier they asked for saved as a DRAFT proposal (nothing goes to the client). Pass `replaces` to change one built earlier — another tier ('the best one'), another job.",
   params: hvacArgs,

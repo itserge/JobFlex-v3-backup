@@ -4,6 +4,7 @@
 // undo window, dates on the company's clock, money words, and what the panel
 // reads. No database, no model — safe on the client too.
 import { zonedInstant, zonedParts } from "@/lib/booking";
+import { CATALOG } from "@/lib/assistant/catalog.generated";
 
 export type AssistantChannel = "app" | "sms" | "voice";
 
@@ -163,14 +164,28 @@ export function confirmPrompt(channel: AssistantChannel, pin = false): string {
   return channel === "app" ? "Tap Do it to go ahead, or Cancel." : "Reply YES to do it, or NO.";
 }
 
+// What each tool is on a card — its label, whether it is a build, a money change (the PIN), a reminder set for later —
+// is read from the catalog the tools' own cards generate (lib/assistant/catalog.generated, 2026-11-06), never a
+// hand-kept list here.
+const TOOL_NAMES = Object.keys(CATALOG);
+
 /** The changes that move money (2026-11-05): read back and waiting for the yes AND the person's PIN (lib/assistant/pin). */
-export const PIN_TOOLS: readonly string[] = ["send_invoice", "financing_link"];
+export const PIN_TOOLS: readonly string[] = TOOL_NAMES.filter((n) => CATALOG[n].pin);
 export function needsPin(tool: string): boolean {
   return PIN_TOOLS.includes(tool);
 }
 
 /** The changes that run at their own time with no yes (a reminder to oneself): queued means set, not working. */
-export const SCHEDULED_TOOLS: readonly string[] = ["remind_me"];
+export const SCHEDULED_TOOLS: readonly string[] = TOOL_NAMES.filter((n) => CATALOG[n].scheduled);
+
+/** The builds (drafts made without a yes): queued means it is being priced; done means ready. */
+export const BUILD_TOOLS: readonly string[] = TOOL_NAMES.filter((n) => CATALOG[n].build);
+export function isBuild(tool: string): boolean {
+  return BUILD_TOOLS.includes(tool);
+}
+
+/** The short name a card or a list shows for a tool. */
+export const TOOL_LABEL: Record<string, string> = Object.fromEntries(TOOL_NAMES.map((n) => [n, CATALOG[n].label]));
 
 // ── the morning briefing and the alerts (2026-11-05) ────────────────────────
 
@@ -221,17 +236,8 @@ export interface Fact {
   v: string;
 }
 
-/** A build's steps in order, as the trace names them; a running build reports the one it is on. */
-export const BUILD_STEPS: Record<string, readonly string[]> = {
-  build_deck: ["Deck Studio", "Rate book", "Priced", "Saved"],
-  change_deck: ["Deck Studio", "Rate book", "Priced", "Saved"],
-  build_estimate: ["Smart Proposal", "Priced", "Saved"],
-  change_estimate: ["Smart Proposal", "Priced", "Saved"],
-  build_fence: ["Lot & house", "Layout", "Priced", "Saved"],
-  build_roof: ["Aerial read", "Rate book", "Priced", "Saved"],
-  build_hvac: ["House", "Load", "Priced", "Saved"],
-  build_lawn: ["Yard", "Priced", "Saved"],
-};
+/** A build's steps in order, as the trace names them (the tools' cards); a running build reports the one it is on. */
+export const BUILD_STEPS: Record<string, readonly string[]> = Object.fromEntries(TOOL_NAMES.filter((n) => CATALOG[n].steps).map((n) => [n, CATALOG[n].steps as readonly string[]]));
 
 /** Where a running build is: the index of its step, −1 before the first. */
 export function stepIndex(tool: string, progress: string | null): number {
@@ -338,7 +344,8 @@ export function factsOf(tool: string, args: unknown): Fact[] {
     const t = s(a.projectType);
     if (t) out.push({ k: "Job", v: t });
     const d = s(a.description) ?? "";
-    const change = /Change:\s*([^\n]+)\s*$/.exec(d)?.[1]?.trim() ?? null;
+    // A change: as the model asked it (`change`), or as the build's payload carries it ("Change: …" at the end of the brief).
+    const change = /Change:\s*([^\n]+)\s*$/.exec(d)?.[1]?.trim() ?? s(a.change);
     if (change) out.push({ k: "Change", v: change });
     else if (d) out.push({ k: "Details", v: d.length > 140 ? `${d.slice(0, 137)}…` : d });
     const addr = s(a.address);

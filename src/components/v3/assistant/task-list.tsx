@@ -8,45 +8,21 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import type { FeedAction } from "@/lib/assistant/shared";
-import { PIN_TOOLS, SCHEDULED_TOOLS } from "@/lib/assistant/shared";
+import { isBuild, PIN_TOOLS, SCHEDULED_TOOLS, TOOL_LABEL } from "@/lib/assistant/shared";
 import s from "./tasks.module.css";
 
-export const TOOL_LABEL: Record<string, string> = {
-  build_deck: "Deck estimate",
-  change_deck: "Deck estimate",
-  build_estimate: "Estimate",
-  build_fence: "Fence estimate",
-  build_roof: "Roof estimate",
-  build_hvac: "HVAC estimate",
-  build_lawn: "Lawn estimate",
-  change_estimate: "Estimate",
-  send_proposal: "Send a proposal",
-  schedule_job: "Schedule",
-  text_crew: "Text the crew",
-  text_crew_each: "Text the crew",
-  payment_reminder: "Payment reminder",
-  remind_overdue: "Payment reminders",
-  add_client: "Add a client",
-  update_client: "Update a client",
-  add_lead: "Add a lead",
-  book_visit: "Book a visit",
-  move_visit: "Move a visit",
-  cancel_visit: "Cancel a visit",
-  remind_me: "Reminder",
-  send_invoice: "Invoice",
-  financing_link: "Financing link",
-};
+export { TOOL_LABEL } from "@/lib/assistant/shared";
 
-const BUILDS = new Set(["build_deck", "change_deck", "build_estimate", "change_estimate", "build_fence", "build_roof", "build_hvac", "build_lawn"]);
+
 
 export type Tone = "warn" | "ok" | "bad" | "quiet" | "info";
 
 export function stampOf(a: FeedAction, waiting: boolean): { label: string; tone: Tone } {
   const st = a.status;
   if (st === "AWAITING") return waiting ? { label: "Needs you", tone: "warn" } : { label: "Expired", tone: "quiet" };
-  if (st === "QUEUED") return BUILDS.has(a.tool) ? { label: "Working", tone: "info" } : SCHEDULED_TOOLS.includes(a.tool) ? { label: "Set", tone: "info" } : { label: "In 2 min", tone: "info" };
+  if (st === "QUEUED") return isBuild(a.tool) ? { label: "Working", tone: "info" } : SCHEDULED_TOOLS.includes(a.tool) ? { label: "Set", tone: "info" } : { label: "In 2 min", tone: "info" };
   if (st === "RUNNING") return { label: "Working", tone: "info" };
-  if (st === "DONE") return { label: BUILDS.has(a.tool) ? "Ready" : "Done", tone: "ok" };
+  if (st === "DONE") return { label: isBuild(a.tool) ? "Ready" : "Done", tone: "ok" };
   if (st === "FAILED") return { label: "Didn't go", tone: "bad" };
   if (st === "CANCELED") return { label: "Cancelled", tone: "quiet" };
   return { label: "Expired", tone: "quiet" };

@@ -85,6 +85,29 @@ const fenceSite: ReadTool<{ address: string }> = {
   kind: "read",
   name: "fence_site",
   need: "estimates.build",
+  card: {
+    "label": "Fence site",
+    "purpose": "The lot lines, the house and the street side at an address, for a fence.",
+    "when": "An address for a fence: fence_site first; say back the lot and house sizes and the street side, then ask where the fence goes.",
+    "objects": [
+      "property"
+    ],
+    "effect": "read",
+    "group": "estimates",
+    "version": 1,
+    "since": "2026-11-05",
+    "deps": [
+      "maps"
+    ],
+    "samples": [
+      {
+        "say": "here's the address: 14 Oak St, Tacoma WA",
+        "args": {
+          "address": "14 Oak St, Tacoma WA"
+        }
+      }
+    ]
+  },
   description:
     "Look up a property for a fence: the lot lines, the house and which side faces the street, from the address. Say back the lot and house sizes and the street side, then ask where the fence goes. Use before build_fence when the person gives an address; the site is remembered for an hour.",
   params: z.object({ address: z.string().min(6).max(200).describe("the full street address, with city and state") }),
@@ -178,6 +201,53 @@ const buildFence: WriteTool<FenceArgs, FenceArgs & { siteAddress: string }> = {
   instant: "now",
   name: "build_fence",
   need: "estimates.build",
+  card: {
+    "label": "Fence estimate",
+    "purpose": "Lay out and price a fence on the lot from words — the rear run, the sides on the lot lines, the gates — as a DRAFT with its plan.",
+    "when": "After fence_site: build_fence with the layout in feet — the rear run so many feet out from the house or on the rear lot line, gates on the left or right side of the house or the rear, the type and height. To change a fence built lately: build_fence again with the whole layout and replaces = its proposalId.",
+    "objects": [
+      "estimate",
+      "proposal",
+      "property",
+      "client",
+      "lead"
+    ],
+    "effect": "draft",
+    "group": "estimates",
+    "version": 1,
+    "since": "2026-11-05",
+    "deps": [
+      "maps"
+    ],
+    "steps": [
+      "Lot & house",
+      "Layout",
+      "Priced",
+      "Saved"
+    ],
+    "samples": [
+      {
+        "say": "fence across the backyard 20 feet from the house, attach to the property lines, gate on the right side, 6 foot cedar",
+        "args": {
+          "address": null,
+          "clientId": null,
+          "leadId": null,
+          "rearOffsetFt": 20,
+          "rearOnLotLine": false,
+          "gates": [
+            {
+              "where": "right",
+              "widthFt": null
+            }
+          ],
+          "type": "cedar",
+          "heightFt": 6,
+          "removeExisting": false,
+          "replaces": null
+        }
+      }
+    ]
+  },
   description:
     "Lay out and price a fence on the property looked up with fence_site (or at an address): the rear run across the backyard so many feet out from the house (or on the rear lot line), the sides along the property lines from the house's back corners, gates on the left/right side of the house or the rear. Priced with the company's fence catalog and saved as a DRAFT proposal (nothing goes to the client). Needs the address first. Pass `replaces` to change a fence built earlier.",
   params: fenceArgs,

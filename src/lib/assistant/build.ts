@@ -43,7 +43,9 @@ import type { Offer, WriteTool } from "@/lib/assistant/tools";
 const ID = z.string().min(1).max(64);
 
 /** The tools that file a proposal of their own — the prompt's "lately" list and "change it" read them. */
-export const BUILD_TOOLS = ["build_deck", "change_deck", "build_estimate", "change_estimate", "build_fence", "build_roof", "build_hvac", "build_lawn"] as const;
+// The builds are the tools whose cards make a draft without a yes (lib/assistant/catalog.generated), never a list here.
+export { BUILD_TOOLS } from "@/lib/assistant/shared";
+import { BUILD_TOOLS } from "@/lib/assistant/shared";
 
 // ── shared ───────────────────────────────────────────────────────────────────
 
@@ -286,6 +288,45 @@ const buildDeck: WriteTool<DeckArgs, DeckArgs> = {
   instant: "now",
   name: "build_deck",
   need: "estimates.build",
+  card: {
+    "label": "Deck estimate",
+    "purpose": "Design and price a deck, a covered deck, a pergola or a gazebo with the Deck Studio, as a DRAFT proposal.",
+    "when": "A deck, a covered deck (a roof over it), a pergola or a gazebo: build_deck with the width and depth ('12 by 16' = 12 along the house, 16 out) and whatever else was said — boards, rail, stairs, height.",
+    "objects": [
+      "estimate",
+      "proposal",
+      "client",
+      "lead"
+    ],
+    "effect": "draft",
+    "group": "estimates",
+    "version": 1,
+    "since": "2026-11-04",
+    "steps": [
+      "Deck Studio",
+      "Rate book",
+      "Priced",
+      "Saved"
+    ],
+    "samples": [
+      {
+        "say": "build a 12 by 16 deck with a roof for Sarah",
+        "args": {
+          "clientId": "c_1",
+          "leadId": null,
+          "address": null,
+          "widthFt": 12,
+          "depthFt": 16,
+          "heightFt": null,
+          "cover": "roof",
+          "boards": null,
+          "rail": null,
+          "stairs": null,
+          "more": null
+        }
+      }
+    ]
+  },
   description:
     "Design and price a deck, a covered deck (a roof over it), a pergola or a gazebo with the Deck Studio, and save it as a DRAFT proposal (nothing goes to the client). Needs the size. Find the client or lead first when they name one. The person then gets the price, the link, and an offer to send it.",
   params: deckArgs,
@@ -348,6 +389,34 @@ const changeDeck: WriteTool<ChangeArgs, ChangeArgs> = {
   instant: "now",
   name: "change_deck",
   need: "estimates.build",
+  card: {
+    "label": "Deck estimate",
+    "purpose": "Change a deck estimate — the size, height, boards, railing, stairs, a roof — as a new DRAFT.",
+    "when": "'Make it 14 wide', 'use cedar', 'add a fan' on a deck built lately: change_deck with its proposalId and the change in their words.",
+    "objects": [
+      "estimate",
+      "proposal"
+    ],
+    "effect": "draft",
+    "group": "estimates",
+    "version": 1,
+    "since": "2026-11-04",
+    "steps": [
+      "Deck Studio",
+      "Rate book",
+      "Priced",
+      "Saved"
+    ],
+    "samples": [
+      {
+        "say": "make it 14 wide",
+        "args": {
+          "proposalId": "p_1",
+          "change": "make it 14 wide"
+        }
+      }
+    ]
+  },
   description:
     "Change a deck estimate (one made with build_deck or the Deck Studio): the size, the height, the boards, the railing, stairs, a roof, a fan… Saves the changed deck as a new DRAFT with the new price and link.",
   params: changeArgs,
@@ -461,6 +530,41 @@ const buildEstimate: WriteTool<BriefArgs, BriefArgs> = {
   instant: "background",
   name: "build_estimate",
   need: "estimates.build",
+  card: {
+    "label": "Estimate",
+    "purpose": "Price any job with Smart Proposal, at the company's own prices, as a DRAFT proposal.",
+    "when": "Every job without an estimator of its own — siding, windows, a kitchen or bath, painting, concrete, flooring, or a fence by lengths with no address: build_estimate with the quantities and the main material said. Takes about a minute.",
+    "objects": [
+      "estimate",
+      "proposal",
+      "client",
+      "lead"
+    ],
+    "effect": "draft",
+    "group": "estimates",
+    "version": 1,
+    "since": "2026-11-04",
+    "deps": [
+      "openai"
+    ],
+    "steps": [
+      "Smart Proposal",
+      "Priced",
+      "Saved"
+    ],
+    "samples": [
+      {
+        "say": "price interior painting for 1,800 square feet, two coats",
+        "args": {
+          "projectType": "Interior painting",
+          "description": "Interior painting, 1,800 square feet, two coats",
+          "clientId": null,
+          "leadId": null,
+          "address": null
+        }
+      }
+    ]
+  },
   description:
     "Price any job except a deck — a roof, a fence, HVAC, siding, windows, a kitchen or bath, painting, concrete, flooring, anything — with Smart Proposal (the company's own prices), and save it as a DRAFT proposal (nothing goes to the client). Takes about a minute. Find the client or lead first when they name one.",
   params: briefArgs,
@@ -496,6 +600,36 @@ const changeEstimate: WriteTool<ChangeArgs, ChangedBrief> = {
   instant: "background",
   name: "change_estimate",
   need: "estimates.build",
+  card: {
+    "label": "Estimate",
+    "purpose": "Change an estimate that isn't a deck — priced again as a new DRAFT.",
+    "when": "'Cheaper shingles', 'add the garage' on an estimate built lately: change_estimate with its proposalId.",
+    "objects": [
+      "estimate",
+      "proposal"
+    ],
+    "effect": "draft",
+    "group": "estimates",
+    "version": 1,
+    "since": "2026-11-04",
+    "deps": [
+      "openai"
+    ],
+    "steps": [
+      "Smart Proposal",
+      "Priced",
+      "Saved"
+    ],
+    "samples": [
+      {
+        "say": "use cheaper shingles",
+        "args": {
+          "proposalId": "p_1",
+          "change": "use cheaper shingles"
+        }
+      }
+    ]
+  },
   description:
     "Change an estimate that isn't a deck (a roof, a fence, a kitchen…): prices the job again with the change, as a new DRAFT with the new price and link. Takes about a minute.",
   params: changeArgs,

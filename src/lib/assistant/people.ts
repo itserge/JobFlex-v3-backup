@@ -46,6 +46,33 @@ const addClient: WriteTool<ClientArgs, ClientArgs> = {
   kind: "write",
   name: "add_client",
   need: "clients.write",
+  card: {
+    "label": "Add a client",
+    "purpose": "A new customer in JobFlex.",
+    "when": "'Add a client: John Lee, 206-555-0101': find first — never add a person twice; an existing client's new details are update_client.",
+    "objects": [
+      "client"
+    ],
+    "effect": "record",
+    "group": "people",
+    "version": 1,
+    "since": "2026-11-05",
+    "samples": [
+      {
+        "say": "add a client John Lee, phone 206-555-0101",
+        "args": {
+          "name": "John Lee",
+          "phone": "206-555-0101",
+          "email": null,
+          "address": null,
+          "city": null,
+          "state": null,
+          "zip": null,
+          "notes": null
+        }
+      }
+    ]
+  },
   description:
     "Add a new client (a customer) to JobFlex: the name, and any of phone, email, street address, city, state, zip, a note. Find first: when a client with that name already exists, don't add a second one — change them with update_client, or say so.",
   params: z.object({ name: NAME, phone: maybe(40), email: maybe(200), address: maybe(200), city: maybe(80), state: maybe(40), zip: maybe(20), notes: maybe(500) }),
@@ -88,6 +115,34 @@ const updateClient: WriteTool<UpdateArgs, { clientId: string; name: string; chan
   kind: "write",
   name: "update_client",
   need: "clients.write",
+  card: {
+    "label": "Update a client",
+    "purpose": "A client's new phone, email, address, name or note.",
+    "when": "'Change Lee's phone to …': find the client first; give only what changes.",
+    "objects": [
+      "client"
+    ],
+    "effect": "record",
+    "group": "people",
+    "version": 1,
+    "since": "2026-11-05",
+    "samples": [
+      {
+        "say": "change Lee's email to lee@example.com",
+        "args": {
+          "clientId": "c_1",
+          "name": null,
+          "phone": null,
+          "email": "lee@example.com",
+          "address": null,
+          "city": null,
+          "state": null,
+          "zip": null,
+          "notes": null
+        }
+      }
+    ]
+  },
   description: "Change a client's details — a new phone, email, address, name or a note. Give only what changes (null = leave as it is). Find the client first.",
   params: z.object({ clientId: ID, name: maybe(120), phone: maybe(40), email: maybe(200), address: maybe(200), city: maybe(80), state: maybe(40), zip: maybe(20), notes: maybe(500) }),
   payload: z.object({ clientId: ID, name: z.string(), changes: z.record(z.string(), z.string().nullable()) }),
@@ -142,6 +197,32 @@ const addLead: WriteTool<LeadArgs, LeadArgs> = {
   kind: "write",
   name: "add_lead",
   need: "leads.write",
+  card: {
+    "label": "Add a lead",
+    "purpose": "Someone who asked about work — not a client yet.",
+    "when": "'New lead: Maria, wants a fence, from a referral': add_lead with what they want and where they came from. Someone who is already a customer is add_client.",
+    "objects": [
+      "lead"
+    ],
+    "effect": "record",
+    "group": "people",
+    "version": 1,
+    "since": "2026-11-05",
+    "samples": [
+      {
+        "say": "add a lead: Maria Gomez, wants a fence, referral",
+        "args": {
+          "name": "Maria Gomez",
+          "phone": null,
+          "email": null,
+          "address": null,
+          "projectType": "Fence",
+          "description": null,
+          "source": "referral"
+        }
+      }
+    ]
+  },
   description:
     "Add a new lead (someone who asked about work; not a client yet): the name, and any of phone, email, address, what they want (projectType: 'Fence', 'Roof repair'…), details, and where they came from (source: 'referral', 'website', 'phone call', 'door knock'…; null = added by hand). Find first: when they are already a lead or a client, don't add a second one.",
   params: z.object({ name: NAME, phone: maybe(40), email: maybe(200), address: maybe(200), projectType: maybe(80), description: maybe(1000), source: maybe(40) }),

@@ -6,25 +6,28 @@
 // job is the estimators' and the managers' (requireEstimatorOrManager), never SALES.
 import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
 
-export type Capability =
-  | "today" // the CRM brief: every office and pipeline role (it scopes itself)
-  | "proposals.read"
-  | "proposals.send"
-  | "schedule.read"
-  | "schedule.write"
-  | "crew.read"
-  | "crew.text"
-  | "money.read"
-  | "payments.remind"
-  | "estimates.build" // price a job into a draft proposal (requireEstimatorOrManager: never SALES)
+/** Every capability a tool can ask for — a value, so the registry check can see that a tool's `need` is one of them. */
+export const CAPABILITIES = [
+  "today", // the CRM brief: every office and pipeline role (it scopes itself)
+  "proposals.read",
+  "proposals.send",
+  "schedule.read",
+  "schedule.write",
+  "crew.read",
+  "crew.text",
+  "money.read",
+  "payments.remind",
+  "estimates.build", // price a job into a draft proposal (requireEstimatorOrManager: never SALES)
   // Batches 1–2 (2026-11-05): the Clients, Leads and calendar pages' writes (requireSalesOrManager: never ESTIMATOR),
   // a reminder to oneself (anyone with the Operator), and money — invoices and financing links — managers only.
-  | "clients.write"
-  | "leads.write"
-  | "visits.write"
-  | "reminders"
-  | "invoices.send"
-  | "financing.send";
+  "clients.write",
+  "leads.write",
+  "visits.write",
+  "reminders",
+  "invoices.send",
+  "financing.send",
+] as const;
+export type Capability = (typeof CAPABILITIES)[number];
 
 const LIMITED = new Set(["INSTALLER", "SALES", "ESTIMATOR"]);
 
