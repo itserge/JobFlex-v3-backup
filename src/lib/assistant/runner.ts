@@ -24,7 +24,9 @@ export async function runAndReport(actionId: string, now = new Date(), opts: { e
   // The card it belongs to: the send it offers (Do it / Cancel), else the build itself; an approved change already has its own.
   const card = r.proposed?.id ?? (r.instant ? actionId : null);
   await db.assistantMessage.create({ data: { organizationId: a.organizationId, userId: a.userId, channel: a.channel, direction: "OUT", body: r.say.slice(0, 4000), actionId: card } }).catch(() => null);
-  if (a.channel === "sms") {
+  // A text for a text — and (2026-11-05) for a build asked in the app that nobody waited for: the minute job ran it,
+  // so the person closed JobFlex; the linked phone hears it is ready.
+  if (a.channel === "sms" || (a.channel === "app" && r.instant && !opts.early)) {
     const link = await db.assistantLink.findFirst({ where: { organizationId: a.organizationId, userId: a.userId, active: true, verifiedAt: { not: null } }, select: { phone: true } });
     if (link) await sendAssistantText(link.phone, r.say, r.instant ? "jobflex-assistant-built" : "jobflex-assistant-done");
   }

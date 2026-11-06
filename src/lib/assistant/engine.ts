@@ -23,11 +23,14 @@ import { actorFor, refusal, type AssistantActor } from "@/lib/assistant/actor";
 import { TOOLS, toolNamed, type AnyTool, type Offer, type ToolContext } from "@/lib/assistant/tools";
 import { recentBuilds } from "@/lib/assistant/build";
 import { checkPin } from "@/lib/assistant/pin";
+import { reportProgress } from "@/lib/assistant/progress";
 import {
   APPROVAL_TTL_MS,
+  BUILD_STEPS,
   RUNNING_STALE_MS,
   confirmPrompt,
   dayOf,
+  factsOf,
   needsPin,
   nowWords,
   quickReply,
@@ -35,6 +38,7 @@ import {
   undoWindowMs,
   type ActionStatus,
   type AssistantFeed,
+  type Fact,
   type FeedAction,
 } from "@/lib/assistant/shared";
 
@@ -125,17 +129,54 @@ async function keep(actor: AssistantActor, direction: "IN" | "OUT", body: string
   });
 }
 
-function feedAction(a: { id: string; tool: string; status: string; readback: string; resultJson: string | null; error: string | null; createdAt: Date }): FeedAction {
+function feedAction(a: { id: string; tool: string; status: string; readback: string; argsJson: string; resultJson: string | null; error: string | null; createdAt: Date }): FeedAction {
   let result: string | null = null;
+  let progress: string | null = null;
+  let link: string | null = null;
   if (a.resultJson) {
     try {
-      const v = JSON.parse(a.resultJson) as { say?: unknown };
+      const v = JSON.parse(a.resultJson) as { say?: unknown; progress?: unknown; result?: unknown };
       result = typeof v.say === "string" ? v.say : null;
+      progress = typeof v.progress === "string" ? v.progress : null;
+      const r = v.result as { proposalId?: unknown } | null | undefined;
+      if (r && typeof r === "object" && typeof r.proposalId === "string") link = `/dashboard/proposals/${r.proposalId}`;
     } catch {
       result = null;
     }
   }
-  return { id: a.id, tool: a.tool, status: a.status as ActionStatus, readback: a.readback, result: result ?? a.error, createdAt: a.createdAt.toISOString() };
+  // A build's link is in its own words ("Open it: https://…/dashboard/proposals/…").
+  if (!link && result) {
+    const m = /\/dashboard\/proposals\/([A-Za-z0-9_-]+)/.exec(result);
+    if (m) link = `/dashboard/proposals/${m[1]}`;
+  }
+  let facts: Fact[] = [];
+  try {
+    facts = factsOf(a.tool, JSON.parse(a.argsJson));
+  } catch {
+    facts = [];
+  }
+  return {
+    id: a.id,
+    tool: a.tool,
+    status: a.status as ActionStatus,
+    readback: a.readback,
+    result: result ?? a.error,
+    createdAt: a.createdAt.toISOString(),
+    facts,
+    progress: a.status === "RUNNING" ? progress : null,
+    link,
+  };
+}
+
+/** The person's own tasks, newest first — a week of them (the Tasks sheet, 2026-11-05). */
+export async function readTasks(actor: AssistantActor, now = new Date()): Promise<FeedAction[]> {
+  await openAwaiting(actor, now);
+  const rows = await db.assistantAction.findMany({
+    where: { organizationId: actor.organizationId, userId: actor.userId, createdAt: { gte: new Date(now.getTime() - 7 * 86_400_000) } },
+    orderBy: { createdAt: "desc" },
+    take: 60,
+  });
+  return rows.map(feedAction);
 }
 
 /** The read-back this person is being asked about, if one is still open. Older
@@ -237,7 +278,10 @@ export async function runAction(actionId: string, now = new Date(), opts: { earl
     return fail("What was approved couldn't be read back. Ask me again.");
   }
   try {
-    const out = await tool.execute({ actor, now }, payload);
+    // A build says where it is as it goes (the sheet's trace): its first step now, the rest from inside the tool.
+    const first = BUILD_STEPS[a.tool]?.[0];
+    if (first) await reportProgress(a.id, first);
+    const out = await tool.execute({ actor, now, actionId: a.id, report: (step) => reportProgress(a.id, step) }, payload);
     await db.assistantAction.update({ where: { id: a.id }, data: { status: "DONE", resultJson: JSON.stringify({ say: out.say, result: out.result ?? null }).slice(0, 20000) } });
     const proposed = out.offer ? await offer(actor, out.offer, now).catch(() => null) : null;
     return { say: proposed ? `${out.say}\n${proposed.readback} ${confirmPrompt(actor.channel, needsPin(proposed.tool))}` : out.say, proposed, instant };
@@ -377,7 +421,8 @@ export async function handleTurn(input: TurnInput): Promise<TurnResult> {
       if (result.queued) {
         // A build: a minute's estimate runs after the reply; a deck is drawn and priced now by text. In the app every
         // build runs after the reply, in the panel's own call with room for it (/api/assistant/run).
-        if (result.queued.mode === "background" || actor.channel === "app") return { ...(await say(result.queued.readback)), running: result.queued.id };
+        // "On it…" carries the build's own card (2026-11-05): the sheet shows what was understood and the trace while it runs.
+        if (result.queued.mode === "background" || actor.channel === "app") return { ...(await say(result.queued.readback, null, result.queued.id)), running: result.queued.id };
         const ran = await runAction(result.queued.id, now, { early: true });
         if (!ran) return say("It's already being done.");
         return say(ran.say, ran.proposed, result.queued.id);

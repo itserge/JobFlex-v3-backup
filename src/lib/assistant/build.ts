@@ -241,9 +241,11 @@ function withGuard(design: DeckDesign, env: DeckEnv): DeckDesign {
 }
 
 /** The designed deck → priced, its 3D frozen, filed as a draft. */
-async function fileDeck(actor: AssistantActor, design: DeckDesign, address: string | null, env: DeckEnv, filing: FilingContext | null): Promise<{ id: string; facts: string }> {
+async function fileDeck(actor: AssistantActor, design: DeckDesign, address: string | null, env: DeckEnv, filing: FilingContext | null, report?: (step: string) => Promise<void>): Promise<{ id: string; facts: string }> {
   const settled = settleDesign(design, { rates: env.rates, market: env.market }).design;
+  await report?.("Rate book");
   const pkg = priceDeck(settled, { rates: env.rates, market: env.market });
+  await report?.("Priced");
   const scene = deckScene(pkg.structure);
   const words = structureWords(settled);
   const parsed = deckConvertSchema.safeParse({
@@ -256,6 +258,7 @@ async function fileDeck(actor: AssistantActor, design: DeckDesign, address: stri
   });
   if (!parsed.success) throw new Error("The deck couldn't be priced as described. Try the size again, like '12 by 16'.");
   const id = await writeDeckProposal({ organizationId: actor.organizationId, userId: actor.userId, role: actor.role }, parsed.data, filing);
+  await report?.("Saved");
   return { id, facts: scene.facts };
 }
 
@@ -283,7 +286,7 @@ const buildDeck: WriteTool<DeckArgs, DeckArgs> = {
     const what = a.cover === "roof" ? "covered deck" : a.cover === "none" ? "deck" : a.cover;
     return { ok: true, payload: a, readback: `On it — drawing and pricing the ${num(a.widthFt)} × ${num(a.depthFt)} ft ${what}${w.who.name ? ` for ${w.who.name}` : ""} in your Deck Studio.` };
   },
-  async execute({ actor }, a) {
+  async execute({ actor, report }, a) {
     const w = await whoFor(actor, a.clientId, a.leadId);
     if (!w.ok) throw new Error(w.say);
     const org = await db.organization.findUnique({ where: { id: actor.organizationId }, select: { address: true } });
@@ -296,7 +299,7 @@ const buildDeck: WriteTool<DeckArgs, DeckArgs> = {
     const heard = listen(onSite, deckPhrases(a), env);
     const design = a.rail?.trim() ? heard.design : withGuard(heard.design, env);
     const filing = await filingFromIds(actor.organizationId, { clientId: a.clientId, leadId: a.leadId });
-    const made = await fileDeck(actor, design, address, env, filing);
+    const made = await fileDeck(actor, design, address, env, filing, report);
     const out = await builtWords(actor, made.id, { facts: made.facts, notes: heard.notes });
     return { ...out, result: { proposalId: made.id, trade: "deck" } };
   },
@@ -345,7 +348,7 @@ const changeDeck: WriteTool<ChangeArgs, ChangeArgs> = {
     if (!d.design) return { ok: false, say: `"${d.p.title}" wasn't made in the Deck Studio, so I can't change it as a deck. Say "change the estimate" instead.` };
     return { ok: true, payload: a, readback: `On it — changing "${d.p.title}": ${a.change.trim()}.` };
   },
-  async execute({ actor }, a) {
+  async execute({ actor, report }, a) {
     const d = await deckOf(actor, a.proposalId);
     if (!d?.design) throw new Error("Not found");
     const state = stateFromAddress(d.address ?? null);
@@ -353,7 +356,7 @@ const changeDeck: WriteTool<ChangeArgs, ChangeArgs> = {
     const heard = listen(d.design, [a.change], env);
     if (!heard.changed) return { say: heard.notes.join(" ") || heard.last || "I couldn't make that change. Say it another way, or open it in the Deck Studio." };
     const filing = await filingFromIds(actor.organizationId, { clientId: d.p.clientId, projectId: d.p.projectId });
-    const made = await fileDeck(actor, heard.design, d.address ?? null, env, filing);
+    const made = await fileDeck(actor, heard.design, d.address ?? null, env, filing, report);
     const archived = await archiveReplaced(actor, d.p.id);
     const out = await builtWords(actor, made.id, { facts: made.facts, notes: heard.notes, was: d.p.total, archived });
     return { ...out, result: { proposalId: made.id, trade: "deck", replaces: d.p.id } };
@@ -395,7 +398,7 @@ function onIt(actor: AssistantActor, what: string, who: string | null): string {
 }
 
 /** The brief → Smart Proposal's run → kept as the company's estimate → a draft proposal. */
-async function fileSmart(actor: AssistantActor, b: BriefArgs, filing: FilingContext | null): Promise<{ id: string; facts: string; notes: string[] }> {
+async function fileSmart(actor: AssistantActor, b: BriefArgs, filing: FilingContext | null, report?: (step: string) => Promise<void>): Promise<{ id: string; facts: string; notes: string[] }> {
   const org = actor.organizationId;
   try {
     await enforceRateLimit(`ai:${org}`, 60, HOUR, "AI runs");
@@ -408,6 +411,7 @@ async function fileSmart(actor: AssistantActor, b: BriefArgs, filing: FilingCont
   const w = await whoFor(actor, b.clientId, b.leadId);
   const location = b.address?.trim() || (w.ok ? w.who.address : null) || undefined;
   const run = await runSmartEstimate(org, { projectType: b.projectType, description: b.description, location }, null, trial.refund);
+  await report?.("Priced");
   if (!run.ok) throw new Error(run.error);
   if (run.disabled) throw new Error("Pricing needs the estimator's AI service, which isn't set up here.");
   // A suggestion counts in no total until it is added (Smart Proposal's own save), so it never reaches the proposal.
@@ -436,6 +440,7 @@ async function fileSmart(actor: AssistantActor, b: BriefArgs, filing: FilingCont
   const named = lines.slice(0, 3).map((l) => short(l.name));
   const more = lines.length - named.length;
   const facts = `${lines.length} line${lines.length === 1 ? "" : "s"}: ${named.join(", ")}${more > 0 ? ` and ${more} more` : ""}`;
+await report?.("Saved");
   return { id, facts, notes };
 }
 
@@ -455,9 +460,9 @@ const buildEstimate: WriteTool<BriefArgs, BriefArgs> = {
     if (!w.ok) return w;
     return { ok: true, payload: b, readback: onIt(actor, b.projectType, w.who.name) };
   },
-  async execute({ actor }, b) {
+  async execute({ actor, report }, b) {
     const filing = await filingFromIds(actor.organizationId, { clientId: b.clientId, leadId: b.leadId });
-    const made = await fileSmart(actor, b, filing);
+    const made = await fileSmart(actor, b, filing, report);
     const out = await builtWords(actor, made.id, { facts: made.facts, notes: made.notes });
     return { ...out, result: { proposalId: made.id, trade: "estimate" } };
   },
@@ -504,9 +509,9 @@ const changeEstimate: WriteTool<ChangeArgs, ChangedBrief> = {
     const payload: ChangedBrief = { ...brief, description: `${brief.description}\nChange: ${a.change.trim()}`.slice(0, 2000), replaces: p.id, was: p.total };
     return { ok: true, payload, readback: onIt(actor, `${p.title} with the change`, p.client?.name ?? null) };
   },
-  async execute({ actor }, b) {
+  async execute({ actor, report }, b) {
     const filing = await filingFromIds(actor.organizationId, { clientId: b.clientId, leadId: b.leadId });
-    const made = await fileSmart(actor, b, filing);
+    const made = await fileSmart(actor, b, filing, report);
     const archived = await archiveReplaced(actor, b.replaces);
     const out = await builtWords(actor, made.id, { facts: made.facts, notes: made.notes, was: b.was, archived });
     return { ...out, result: { proposalId: made.id, trade: "estimate", replaces: b.replaces } };

@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { actorForSession } from "@/lib/assistant/actor";
 import { approve, callOff, handleTurn, readFeed } from "@/lib/assistant/engine";
-import type { AssistantFeed } from "@/lib/assistant/shared";
+import type { AssistantFeed, FeedAction } from "@/lib/assistant/shared";
 import type { AssistantPrefs } from "@/lib/assistant/prefs";
 import { db } from "@/lib/db";
 
@@ -45,6 +45,13 @@ export async function answerAssistant(raw: unknown): Promise<AskResult> {
 export async function loadAssistantFeed(): Promise<AssistantFeed> {
   const actor = await actorForSession();
   return readFeed(actor);
+}
+
+/** The Tasks sheet (2026-11-05): the person's own changes of the last week, newest first. */
+export async function loadAssistantTasks(): Promise<FeedAction[]> {
+  const actor = await actorForSession();
+  const { readTasks } = await import("@/lib/assistant/engine");
+  return readTasks(actor);
 }
 
 // ── Settings → Assistant: the phone that texts it (2026-11-04) ───────────────

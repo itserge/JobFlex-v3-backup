@@ -81,7 +81,7 @@ export function Conversation({
   autoFocus?: boolean;
   variant: "panel" | "page";
 }) {
-  const { feed, pending, busy, building, error, ask, answer } = state;
+  const { feed, pending, busy, building, landed, error, ask, answer } = state;
   const [text, setText] = useState("");
   const [talk, setTalk] = useState(false);
   const [heard, setHeard] = useState("");
@@ -122,6 +122,10 @@ export function Conversation({
   useEffect(() => {
     sayRef.current = speech.say;
   });
+  // A build that ran after its "On it…" lands later: in a spoken conversation it is read out when it does.
+  useEffect(() => {
+    if (landed && talkRef.current) sayRef.current(forSpeech(landed.text));
+  }, [landed]);
 
   function startTalk() {
     setVoiceError(null);

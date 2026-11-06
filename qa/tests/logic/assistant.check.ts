@@ -12,6 +12,8 @@ import {
   dayRange,
   briefingDue,
   clock12,
+  factsOf,
+  stepIndex,
   money,
   needsPin,
   quickReply,
@@ -178,6 +180,19 @@ function check(name: string, ok: boolean, extra?: unknown) {
   check("briefing: a bad time never fires", !briefingDue("6:30", at("2026-11-06T12:00:00Z"), tz, null));
   check("quiet: 10 PM and 6:59 AM are quiet; noon and 7 AM are not", quietHours(at("2026-11-06T03:00:00Z"), tz) && quietHours(at("2026-11-06T11:59:00Z"), tz) && !quietHours(at("2026-11-06T17:00:00Z"), tz) && !quietHours(at("2026-11-06T12:00:00Z"), tz));
   check("clock: 06:30 reads 6:30 AM, 12:00 noon 12:00 PM, 00:00 12:00 AM", clock12("06:30") === "6:30 AM" && clock12("12:00") === "12:00 PM" && clock12("00:00") === "12:00 AM");
+}
+
+// ── batch 4 (2026-11-05): the sheet's facts and trace, and money as it is spoken ──
+{
+  const f = factsOf("build_deck", { widthFt: 20, depthFt: 16, heightFt: 3, cover: "roof", boards: "composite", rail: "aluminum", stairs: true, more: null });
+  check("facts: a deck's size, height (rail required over 30 in), cover, boards, rail, stairs", JSON.stringify(f) === JSON.stringify([{ k: "Deck", v: "20 × 16 ft · 320 sq ft" }, { k: "Height", v: "3 ft · rail required" }, { k: "Cover", v: "Roof" }, { k: "Boards", v: "composite" }, { k: "Rail", v: "aluminum" }, { k: "Stairs", v: "Yes" }]), f);
+  check("facts: a deck 2 ft up needs no rail line", factsOf("build_deck", { widthFt: 10, depthFt: 10, heightFt: 2, cover: "none", boards: null, rail: null, stairs: null, more: null }).some((x) => x.k === "Height" && x.v === "2 ft"));
+  const e = factsOf("change_estimate", { projectType: "Roof replacement", description: "2,200 sq ft, one layer\nChange: add gutters", clientId: null, leadId: null, address: null });
+  check("facts: a changed estimate shows the job and the change", JSON.stringify(e) === JSON.stringify([{ k: "Job", v: "Roof replacement" }, { k: "Change", v: "add gutters" }]), e);
+  check("facts: a crew text has none", factsOf("text_crew", { workerIds: [], body: "x" }).length === 0);
+  check("trace: a deck's steps", stepIndex("build_deck", "Priced") === 2 && stepIndex("build_deck", null) === -1 && stepIndex("build_estimate", "Saved") === 2 && stepIndex("send_proposal", "x") === -1);
+  check("speech: money in whole dollars with the tax folded in", forSpeech('Built "12 ft × 12 ft covered deck" for John Smith: $14,968.83 ($14,121.54 + $847.29 tax). Open it: https://x/dashboard/proposals/a') === 'Built "12 ft × 12 ft covered deck" for John Smith: $14,969 with tax. The link is on your screen.', forSpeech('Built "12 ft × 12 ft covered deck" for John Smith: $14,968.83 ($14,121.54 + $847.29 tax). Open it: https://x/dashboard/proposals/a'));
+  check("speech: a whole-dollar amount stays", forSpeech("Send it ($8,400) to Lee.") === "Send it ($8,400) to Lee.");
 }
 
 console.log(bad ? `\n${bad} FAILED` : "\nall ok");

@@ -206,6 +206,71 @@ export interface FeedAction {
   readback: string;
   result: string | null;
   createdAt: string;
+  /** What the Operator understood, from the stored arguments (factsOf) — the spec sheet on a phone (2026-11-05). */
+  facts: Fact[];
+  /** A running build's last step (BUILD_STEPS), else null. */
+  progress: string | null;
+  /** The record it made or sent, when there is one: a proposal's page. */
+  link: string | null;
+}
+
+// ── the sheet: what was understood, and how far a build is (2026-11-05, batch 4) ──
+
+export interface Fact {
+  k: string;
+  v: string;
+}
+
+/** A build's steps in order, as the trace names them; a running build reports the one it is on. */
+export const BUILD_STEPS: Record<string, readonly string[]> = {
+  build_deck: ["Deck Studio", "Rate book", "Priced", "Saved"],
+  change_deck: ["Deck Studio", "Rate book", "Priced", "Saved"],
+  build_estimate: ["Smart Proposal", "Priced", "Saved"],
+  change_estimate: ["Smart Proposal", "Priced", "Saved"],
+};
+
+/** Where a running build is: the index of its step, −1 before the first. */
+export function stepIndex(tool: string, progress: string | null): number {
+  const steps = BUILD_STEPS[tool];
+  if (!steps || !progress) return -1;
+  return steps.findIndex((s) => s.toLowerCase() === progress.toLowerCase());
+}
+
+/** What the Operator understood, from a change's stored arguments: the code's words, never the model's. */
+export function factsOf(tool: string, args: unknown): Fact[] {
+  const a = (args && typeof args === "object" ? args : {}) as Record<string, unknown>;
+  const s = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  const out: Fact[] = [];
+  if (tool === "build_deck") {
+    const w = n(a.widthFt);
+    const d = n(a.depthFt);
+    if (w && d) out.push({ k: "Deck", v: `${w} × ${d} ft · ${Math.round(w * d)} sq ft` });
+    const h = n(a.heightFt);
+    if (h) out.push({ k: "Height", v: `${h} ft${h * 12 > 30 ? " · rail required" : ""}` });
+    const cover = s(a.cover);
+    if (cover && cover !== "none") out.push({ k: "Cover", v: cover === "roof" ? "Roof" : cover === "pergola" ? "Pergola" : "Gazebo" });
+    const boards = s(a.boards);
+    if (boards) out.push({ k: "Boards", v: boards });
+    const rail = s(a.rail);
+    if (rail) out.push({ k: "Rail", v: rail });
+    if (a.stairs === true) out.push({ k: "Stairs", v: "Yes" });
+    const more = s(a.more);
+    if (more) out.push({ k: "Also", v: more });
+  } else if (tool === "change_deck") {
+    const c = s(a.change);
+    if (c) out.push({ k: "Change", v: c });
+  } else if (tool === "build_estimate" || tool === "change_estimate") {
+    const t = s(a.projectType);
+    if (t) out.push({ k: "Job", v: t });
+    const d = s(a.description) ?? "";
+    const change = /Change:\s*([^\n]+)\s*$/.exec(d)?.[1]?.trim() ?? null;
+    if (change) out.push({ k: "Change", v: change });
+    else if (d) out.push({ k: "Details", v: d.length > 140 ? `${d.slice(0, 137)}…` : d });
+    const addr = s(a.address);
+    if (addr) out.push({ k: "Where", v: addr });
+  }
+  return out;
 }
 
 export interface FeedMessage {

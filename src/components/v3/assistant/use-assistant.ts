@@ -4,37 +4,77 @@
 // so it is the same on every device: read when the surface opens, replaced by
 // what each answer brings back. While a request is out, the person's words show
 // at once (optimistically) with "Working on it…" under them. A build that takes
-// a minute (slice 3) answers "On it…" first, then runs (/api/assistant/run) with
-// "Pricing it…" showing, and the conversation is read again when it lands.
+// a while (slice 3) answers "On it…" first — that reply comes back at once, to be
+// spoken — then runs (/api/assistant/run) while the conversation is read every
+// few seconds (the sheet's trace moves), and lands as `landed` when it is done.
 
-import { useCallback, useRef, useState } from "react";
-import { answerAssistant, askAssistant, loadAssistantFeed } from "@/actions/assistant";
-import type { AssistantFeed, FeedMessage } from "@/lib/assistant/shared";
+import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+import { answerAssistant, askAssistant, loadAssistantFeed, loadAssistantTasks } from "@/actions/assistant";
+import type { AssistantFeed, FeedAction, FeedMessage } from "@/lib/assistant/shared";
 
 export type AssistantState = {
   feed: AssistantFeed | null;
   /** The person's words waiting for an answer (shown before the server has them). */
   pending: string | null;
   busy: boolean;
-  /** A build is running (a minute's estimate): its answer is on the way. */
+  /** A build is running (an estimate): its answer is on the way. */
   building: boolean;
+  /** The last build's words when it landed, for the voice (a new object each time). */
+  landed: { id: string; text: string } | null;
   error: string | null;
+  /** The Tasks sheet: the person's changes of the last week, newest first (null until read). */
+  tasks: FeedAction[] | null;
+  /** Spoken answers off (a loud site); remembered on this device. */
+  muted: boolean;
+  setMuted: (m: boolean) => void;
   load: () => void;
-  /** Sends a request; the reply's words, or null when it didn't go through. */
+  loadTasks: () => void;
+  /** Sends a request; the reply's words, or null when it didn't go through. A build's first words come back at once. */
   ask: (text: string) => Promise<string | null>;
   /** Do it / Cancel on a read-back; the reply's words, or null. `pin`: the four digits a money card asks for. */
   answer: (actionId: string, yes: boolean, pin?: string) => Promise<string | null>;
 };
 
 const FAILED = "That didn't go through. Check your connection and try again.";
+const MUTED_KEY = "jf-operator-muted";
+
+function readMuted(): boolean {
+  try {
+    return typeof window !== "undefined" && window.localStorage.getItem(MUTED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+const MUTED_EVENT = "jf-operator-muted";
+function subscribeMuted(onChange: () => void) {
+  window.addEventListener(MUTED_EVENT, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener(MUTED_EVENT, onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
 
 export function useAssistant(): AssistantState {
   const [feed, setFeed] = useState<AssistantFeed | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [building, setBuilding] = useState(false);
+  const [landed, setLanded] = useState<{ id: string; text: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tasks, setTasks] = useState<FeedAction[] | null>(null);
+  const muted = useSyncExternalStore(subscribeMuted, readMuted, () => false);
   const loading = useRef(false);
+  const runs = useRef(0);
+
+  const setMuted = useCallback((m: boolean) => {
+    try {
+      window.localStorage.setItem(MUTED_KEY, m ? "1" : "0");
+    } catch {
+      /* no storage here */
+    }
+    window.dispatchEvent(new Event(MUTED_EVENT));
+  }, []);
 
   const load = useCallback(() => {
     if (loading.current) return;
@@ -50,71 +90,101 @@ export function useAssistant(): AssistantState {
       });
   }, []);
 
-  const ask = useCallback(async (text: string) => {
-    const t = text.trim();
-    if (!t || busy) return null;
-    setBusy(true);
-    setPending(t);
-    setError(null);
-    try {
-      const r = await askAssistant({ text: t });
-      if (!r.ok) {
-        setError(r.error);
+  const loadTasks = useCallback(() => {
+    loadAssistantTasks()
+      .then(setTasks)
+      .catch(() => setError("Couldn't read your tasks just now."));
+  }, []);
+
+  /** A build left to run: run it, read the conversation every few seconds meanwhile, and say when it landed. */
+  const runBuild = useCallback(async (id: string, before: AssistantFeed) => {
+    const run = ++runs.current;
+    const newest = (f: AssistantFeed | null) => f?.messages[f.messages.length - 1]?.id ?? null;
+    const seen = newest(before);
+    setBuilding(true);
+    let done = false;
+    const call = fetch("/api/assistant/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) })
+      .then((x) => (x.ok ? (x.json() as Promise<{ ran?: boolean }>) : null))
+      .catch(() => null)
+      .finally(() => {
+        done = true;
+      });
+    // The trace moves while it runs; a build run elsewhere (the minute job) is seen the same way, a few minutes at most.
+    let after: AssistantFeed | null = null;
+    for (let i = 0; i < 70 && run === runs.current; i++) {
+      await new Promise((res) => setTimeout(res, 2500));
+      after = await loadAssistantFeed().catch(() => null);
+      if (after) setFeed(after);
+      if (newest(after) !== seen) break;
+      if (done) {
+        const r = await call;
+        if (r?.ran) {
+          after = await loadAssistantFeed().catch(() => after);
+          if (after) setFeed(after);
+          break;
+        }
+      }
+    }
+    if (run !== runs.current) return;
+    setBuilding(false);
+    const last = after?.messages[after.messages.length - 1];
+    if (last && last.direction === "OUT" && last.id !== seen) setLanded({ id: last.id, text: last.body });
+  }, []);
+
+  const ask = useCallback(
+    async (text: string) => {
+      const t = text.trim();
+      if (!t || busy) return null;
+      setBusy(true);
+      setPending(t);
+      setError(null);
+      try {
+        const r = await askAssistant({ text: t });
+        if (!r.ok) {
+          setError(r.error);
+          return null;
+        }
+        setFeed(r.feed);
+        if (r.running) void runBuild(r.running, r.feed);
+        return r.reply;
+      } catch {
+        setError(FAILED);
         return null;
+      } finally {
+        setPending(null);
+        setBusy(false);
       }
-      setFeed(r.feed);
-      if (!r.running) return r.reply;
-      // A build left to run: "On it…" is on screen; run it, then show what it made (the price, the link, the send).
-      setPending(null);
-      setBuilding(true);
-      const seen = r.feed.messages[r.feed.messages.length - 1]?.id ?? null;
-      const ran = await fetch("/api/assistant/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: r.running }) })
-        .then((x) => (x.ok ? (x.json() as Promise<{ ran?: boolean }>) : null))
-        .catch(() => null);
-      // Run elsewhere (the minute job got it first) or the call was cut off: watch for its answer, a few minutes at most.
-      let after = await loadAssistantFeed().catch(() => null);
-      const newest = (f: AssistantFeed | null) => f?.messages[f.messages.length - 1]?.id ?? null;
-      for (let i = 0; !ran?.ran && i < 45 && newest(after) === seen; i++) {
-        await new Promise((res) => setTimeout(res, 4000));
-        after = await loadAssistantFeed().catch(() => null);
+    },
+    [busy, runBuild],
+  );
+
+  const answer = useCallback(
+    async (actionId: string, yes: boolean, pin?: string) => {
+      if (busy) return null;
+      setBusy(true);
+      setPending(yes ? "Do it" : "Cancel");
+      setError(null);
+      try {
+        const r = await answerAssistant({ actionId, answer: yes ? "yes" : "no", ...(pin ? { pin } : {}) });
+        if (r.ok) setFeed(r.feed);
+        else setError(r.error);
+        return r.ok ? r.reply : null;
+      } catch {
+        setError(FAILED);
+        return null;
+      } finally {
+        setPending(null);
+        setBusy(false);
       }
-      if (!after) return r.reply;
-      setFeed(after);
-      const last = after.messages[after.messages.length - 1];
-      return last && last.direction === "OUT" ? last.body : r.reply;
-    } catch {
-      setError(FAILED);
-      return null;
-    } finally {
-      setPending(null);
-      setBuilding(false);
-      setBusy(false);
-    }
-  }, [busy]);
+    },
+    [busy],
+  );
 
-  const answer = useCallback(async (actionId: string, yes: boolean, pin?: string) => {
-    if (busy) return null;
-    setBusy(true);
-    setPending(yes ? "Do it" : "Cancel");
-    setError(null);
-    try {
-      const r = await answerAssistant({ actionId, answer: yes ? "yes" : "no", ...(pin ? { pin } : {}) });
-      if (r.ok) setFeed(r.feed);
-      else setError(r.error);
-      return r.ok ? r.reply : null;
-    } catch {
-      setError(FAILED);
-      return null;
-    } finally {
-      setPending(null);
-      setBusy(false);
-    }
-  }, [busy]);
-
-  return { feed, pending, busy, building, error, load, ask, answer };
+  return { feed, pending, busy, building, landed, error, tasks, muted, setMuted, load, loadTasks, ask, answer };
 }
 
-/** A reply as it is read out: the read-back's tap prompt becomes a spoken one, a dash range "to". */
+/** A reply as it is read out: the read-back's tap prompt becomes a spoken one, a dash range "to", money in whole
+ *  dollars with the tax folded in (2026-11-05: "$14,968.83 ($14,121.54 + $847.29 tax)" is said "$14,969 with tax"). */
 export function forSpeech(text: string): string {
   return text
     .replace(/Enter your PIN and tap Do it, or Cancel\.?/g, "Enter your PIN on the screen, then tap Do it.")
@@ -122,6 +192,8 @@ export function forSpeech(text: string): string {
     // A link is for the eyes: it is on the screen, never read out letter by letter.
     .replace(/Open it:\s*https?:\/\/\S+/g, "The link is on your screen.")
     .replace(/https?:\/\/\S+/g, "")
+    .replace(/\s*\(\$[\d,]+(?:\.\d{2})?\s*\+\s*\$[\d,]+(?:\.\d{2})?\s*tax\)/g, " with tax")
+    .replace(/\$(\d{1,3}(?:,\d{3})*|\d+)\.(\d{2})/g, (_m, whole: string, cents: string) => `$${Math.round(Number(whole.replace(/,/g, "")) + Number(cents) / 100).toLocaleString("en-US")}`)
     .replace(/\s*–\s*/g, " to ")
     .replace(/\s*—\s*/g, ", ")
     .replace(/\s+/g, " ")

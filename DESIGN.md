@@ -338,6 +338,28 @@ monthly" is one 12px line (weight 600) under the price.
   "Remove PIN" once set; 1234-style runs and one digit four times are refused. Batch 3: a "Morning briefing and alerts" section of
   ruled rows — the words left, the time select (44px, 1.5px ink) and the one
   button right; "Turn on" is the blue button, "Turn off" the white one.
+- The AI Operator on a phone, Rev 2 (owner, 2026-11-05 — THE ONE WRITTEN
+  EXCEPTION to the handheld's light paper;
+  [operator.css](src/components/v3/assistant/operator.css)). While the Operator
+  has the sheet — the page `/mobile-assistant-v1`, or the overlay the dial button
+  opens on any phone page — it is a blueprint: white lines on blueprint blue
+  (#0b2b5c, the head and foot #071c40), the drafting grid in faint white at 24px,
+  Inter and JetBrains Mono as everywhere. The paper comes back when it closes.
+  Red is the person (the REC stamp, the rule beside their words as they speak,
+  the dial while it listens); white is the Operator's work; yellow is "needs
+  you"; green is done. The dial is the one round thing: a canvas ring of 56 bars
+  around a 64px button — lively red while it listens, a white sweep while it
+  works, a yellow pulse while it waits, green when a build lands, a faint breath
+  at rest — with 44px square hints either side (Type / Hands-free; Cancel / Send
+  while it listens; Change / Send while it waits). A card: a 10.5px caps label,
+  the square stamp, the facts as a ruled two-column sheet (58px mono keys), the
+  build's trace as four mono steps with a 3px top rule (green done, white now),
+  the deck's own plan drawn on in the Deck Studio's build order (0.6px white
+  lines, a 7% white fill), the price in 30px 900, Do it (white, blueprint type)
+  / Cancel / the PIN box. The dial button on every phone page is the paper's own
+  54px blue square with a 4px ink shadow at 16px from the right, 84px up (clear
+  of a tab bar); held, it turns rose and sinks 2px. Nothing else on the phone is
+  dark.
 - SmartBook (owner, 2026-10-31;
   [smartbook](src/components/v3/smartbook/smartbook.module.css)). One framed
   card treatment for Settings → SmartBook and the calendar's "SmartBook

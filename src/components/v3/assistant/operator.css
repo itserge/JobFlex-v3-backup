@@ -1,0 +1,744 @@
+/* ============================================================================
+   THE OPERATOR SHEET · REV 2 (2026-11-05; component: ./operator-sheet.tsx)
+   ============================================================================
+
+   PLAIN STYLESHEET, NOT A CSS MODULE — as the handheld pages (mobile-assistant.css):
+   every selector starts with the literal root `.jf-operator`, element prefix `op-`.
+   THE ONE WRITTEN EXCEPTION to the handheld's light paper (DESIGN.md, owner
+   2026-11-05): while the AI Operator has the sheet it is a blueprint — white
+   lines on blueprint blue, the drafting grid in faint white — and the paper
+   comes back when it closes. Its own tokens, defined here; the Tasks list
+   (tasks.module.css) reads the --sheet-* ones. Fluid from 320px.
+   ========================================================================= */
+
+.jf-operator {
+  --op-bg: #0b2b5c;
+  --op-deep: #071c40;
+  --op-line: #ffffff;
+  --op-soft: rgba(255, 255, 255, 0.74);
+  --op-muted: rgba(255, 255, 255, 0.5);
+  --op-faint: rgba(255, 255, 255, 0.2);
+  --op-wash: rgba(255, 255, 255, 0.06);
+  --op-grid: rgba(255, 255, 255, 0.075);
+  --op-red: #ff6257;
+  --op-red-soft: rgba(255, 98, 87, 0.18);
+  --op-yellow: #ffd44f;
+  --op-yellow-soft: rgba(255, 212, 79, 0.16);
+  --op-mint: #80e4a9;
+  --op-mint-soft: rgba(128, 228, 169, 0.16);
+  /* the Tasks list's tokens (tasks.module.css) */
+  --sheet-bg: var(--op-wash);
+  --sheet-fg: var(--op-line);
+  --sheet-soft: var(--op-soft);
+  --sheet-muted: var(--op-muted);
+  --sheet-line: var(--op-faint);
+  --sheet-frame: var(--op-line);
+  --sheet-accent: var(--op-line);
+  --sheet-on-accent: var(--op-bg);
+  --sheet-warn: var(--op-yellow);
+  --sheet-ok: var(--op-mint);
+  --sheet-bad: var(--op-red);
+
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  color: var(--op-line);
+  background-color: var(--op-bg);
+  background-image: linear-gradient(var(--op-grid) 1px, transparent 1px), linear-gradient(90deg, var(--op-grid) 1px, transparent 1px);
+  background-size: 24px 24px;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.4;
+  color-scheme: dark;
+}
+.jf-operator.is-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  height: auto;
+  padding-top: env(safe-area-inset-top, 0px);
+}
+/* Scoped reset at (0,0,0): beats the UA defaults, loses to every author rule. */
+:where(.jf-operator, .jf-operator *) {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+.jf-operator [hidden] {
+  display: none !important;
+}
+.jf-operator svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: 0 0 auto;
+}
+.jf-operator svg.fill {
+  fill: currentColor;
+}
+.jf-operator button {
+  font-family: inherit;
+  cursor: pointer;
+}
+.jf-operator button:disabled {
+  cursor: default;
+}
+.jf-operator :focus-visible {
+  outline: 2px solid var(--op-yellow);
+  outline-offset: 2px;
+}
+
+/* the page: the handheld chrome's main cell holds the sheet whole */
+.jf-mobile-assistant .mas-main.op-host {
+  grid-template-rows: minmax(0, 1fr);
+  background: var(--op-bg);
+  border-color: #04122c;
+}
+
+/* ── head, ticker, tabs ── */
+.jf-operator .op-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--op-deep);
+  border-bottom: 1px solid var(--op-faint);
+}
+.jf-operator .op-mark {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  background: var(--op-line);
+  color: var(--op-bg);
+  border-radius: var(--r-sm);
+}
+.jf-operator .op-mark svg {
+  width: 19px;
+  height: 19px;
+}
+.jf-operator .op-headText {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+.jf-operator .op-headText b {
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+}
+.jf-operator .op-headText i {
+  font-size: 11px;
+  font-style: normal;
+  color: var(--op-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jf-operator .op-stp {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border: 1.5px solid currentColor;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 14px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--op-line);
+  background: var(--op-wash);
+}
+.jf-operator .op-stp.red {
+  color: var(--op-red);
+  background: var(--op-red-soft);
+}
+.jf-operator .op-stp.yel {
+  color: var(--op-yellow);
+  background: var(--op-yellow-soft);
+}
+.jf-operator .op-stp.mnt {
+  color: var(--op-mint);
+  background: var(--op-mint-soft);
+}
+.jf-operator .op-stp.dim {
+  color: var(--op-muted);
+  background: transparent;
+}
+.jf-operator .op-sq {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid var(--op-faint);
+  background: transparent;
+  color: var(--op-line);
+  border-radius: var(--r-sm);
+}
+.jf-operator .op-sq.off {
+  color: var(--op-muted);
+}
+.jf-operator .op-tk {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 22px;
+  padding: 0 12px;
+  font: 600 8.5px var(--font-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--op-muted);
+  border-bottom: 1px solid var(--op-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jf-operator .op-tk::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: currentColor;
+}
+.jf-operator .op-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 10px 12px 0;
+  border: 2px solid var(--op-line);
+  background: var(--op-wash);
+}
+.jf-operator .op-tabs button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--op-line);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.jf-operator .op-tabs button + button {
+  border-left: 1.5px solid var(--op-line);
+}
+.jf-operator .op-tabs button.on {
+  background: var(--op-line);
+  color: var(--op-bg);
+}
+.jf-operator .op-tabs em {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--r-sm);
+  background: var(--op-yellow);
+  color: var(--op-bg);
+  font: 800 10px/18px var(--font-sans);
+  font-style: normal;
+  letter-spacing: 0;
+}
+
+/* ── the main: lines, cards, the listening block ── */
+.jf-operator .op-main {
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  overscroll-behavior: contain;
+}
+.jf-operator .op-main.op-tasks {
+  display: block;
+}
+.jf-operator .op-dim {
+  color: var(--op-muted);
+  font-size: 13px;
+}
+.jf-operator .op-intro {
+  display: grid;
+  gap: 8px;
+  padding: 14px 12px;
+  border: 2px solid var(--op-line);
+  background: var(--op-wash);
+}
+.jf-operator .op-say {
+  font-size: 19px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+.jf-operator .op-lbl {
+  margin-top: 2px;
+  font: 700 8.5px var(--font-mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--op-muted);
+}
+.jf-operator .op-ex {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1.5px solid var(--op-line);
+  background: transparent;
+  color: var(--op-line);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+}
+.jf-operator .op-me {
+  align-self: flex-end;
+  max-width: 86%;
+  padding: 8px 10px;
+  border: 1.5px solid var(--op-line);
+  background: var(--op-wash);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.jf-operator .op-it {
+  align-self: flex-start;
+  max-width: 92%;
+  padding: 8px 10px;
+  border: 1.5px solid var(--op-faint);
+  background: var(--op-wash);
+  font-size: 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.jf-operator .op-working {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--op-soft);
+}
+.jf-operator .op-working svg {
+  width: 14px;
+  height: 14px;
+}
+.jf-operator .op-link {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.jf-operator .op-listen {
+  display: grid;
+  gap: 8px;
+  padding: 10px 0 2px;
+}
+.jf-operator .op-rec {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.jf-operator .op-clock {
+  font: 700 11px var(--font-mono);
+  letter-spacing: 0.08em;
+}
+.jf-operator .op-tx {
+  min-height: 60px;
+  padding-left: 10px;
+  border-left: 3px solid var(--op-red);
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.25;
+  text-wrap: pretty;
+}
+.jf-operator .op-tx::after {
+  content: "";
+  display: inline-block;
+  width: 3px;
+  height: 0.9em;
+  margin-left: 3px;
+  vertical-align: -2px;
+  background: var(--op-red);
+  animation: op-blink 1s steps(2) infinite;
+}
+@keyframes op-blink {
+  to {
+    opacity: 0;
+  }
+}
+.jf-operator .op-under {
+  font: 600 8.5px/1.6 var(--font-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--op-muted);
+}
+.jf-operator .op-error {
+  padding: 8px 10px;
+  border: 1.5px solid var(--op-red);
+  color: var(--op-red);
+  font-size: 13px;
+}
+
+/* cards */
+.jf-operator .op-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--op-line);
+  background: var(--op-wash);
+}
+.jf-operator .op-card[data-tone="warn"] {
+  border-color: var(--op-yellow);
+}
+.jf-operator .op-ch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.jf-operator .op-ch b {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.jf-operator .op-kv {
+  display: grid;
+  gap: 3px;
+}
+.jf-operator .op-kv > div {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 8px;
+  padding: 4px 0 4px 8px;
+  border-top: 1px solid var(--op-faint);
+  border-left: 2px solid var(--op-line);
+}
+.jf-operator .op-kv dt {
+  padding-top: 2px;
+  font: 700 8.5px var(--font-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--op-muted);
+}
+.jf-operator .op-kv dd {
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.jf-operator .op-steps {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+.jf-operator .op-steps li {
+  padding-top: 4px;
+  border-top: 3px solid var(--op-faint);
+  font: 700 7.5px var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--op-muted);
+}
+.jf-operator .op-steps li.done {
+  color: var(--op-mint);
+  border-color: var(--op-mint);
+}
+.jf-operator .op-steps li.now {
+  color: var(--op-line);
+  border-color: var(--op-line);
+}
+.jf-operator .op-note {
+  font-size: 11.5px;
+  color: var(--op-soft);
+}
+.jf-operator .op-big {
+  font-size: 30px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.jf-operator .op-text {
+  font-size: 13.5px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.jf-operator .op-draw {
+  position: relative;
+  padding: 16px 6px 6px;
+  border: 1px solid var(--op-faint);
+  background: rgba(255, 255, 255, 0.03);
+}
+.jf-operator .op-cap {
+  position: absolute;
+  left: 7px;
+  top: 5px;
+  font: 700 7.5px var(--font-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--op-muted);
+}
+.jf-operator .op-deck {
+  display: block;
+  width: 100%;
+  height: 150px;
+}
+.jf-operator .op-deck path {
+  fill: rgba(255, 255, 255, 0.07);
+  stroke: var(--op-line);
+  stroke-width: 0.6px;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.jf-operator .op-acts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.jf-operator .op-acts.withPin {
+  grid-template-columns: 88px 1fr 1fr;
+}
+.jf-operator .op-b,
+.jf-operator .op-pin {
+  min-height: 44px;
+  padding: 0 8px;
+  border: 1.5px solid var(--op-line);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--op-line);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.jf-operator .op-b.pri {
+  background: var(--op-line);
+  color: var(--op-bg);
+}
+.jf-operator .op-b:disabled {
+  opacity: 0.45;
+}
+.jf-operator .op-pin {
+  font-size: 18px;
+  letter-spacing: 0.3em;
+  text-align: center;
+  text-transform: none;
+}
+.jf-operator .op-pin::placeholder {
+  color: var(--op-muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+.jf-operator .op-open {
+  justify-self: start;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--op-line);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* the typed line */
+.jf-operator .op-type {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px 0;
+}
+.jf-operator .op-box {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--op-line);
+  border-radius: var(--r-sm);
+  background: var(--op-wash);
+  color: var(--op-line);
+  font: 16px/1.3 var(--font-sans);
+  resize: none;
+}
+.jf-operator .op-box::placeholder {
+  color: var(--op-muted);
+}
+.jf-operator .op-sendBtn {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid var(--op-line);
+  background: var(--op-line);
+  color: var(--op-bg);
+  border-radius: var(--r-sm);
+}
+.jf-operator .op-sendBtn:disabled {
+  opacity: 0.45;
+}
+
+/* ── the foot: hints and the dial ── */
+.jf-operator .op-foot {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: end;
+  padding: 6px 14px calc(10px + env(safe-area-inset-bottom, 0px));
+  background: var(--op-deep);
+  border-top: 1px solid var(--op-faint);
+}
+.jf-operator .op-hint {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  width: 64px;
+  margin: 0 auto;
+  border: 0;
+  background: transparent;
+  color: var(--op-muted);
+  font: 700 8px var(--font-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.jf-operator .op-hint i {
+  font-style: normal;
+}
+.jf-operator .op-hintSq {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid var(--op-faint);
+  color: var(--op-soft);
+  border-radius: var(--r-sm);
+}
+.jf-operator .op-hint.on .op-hintSq {
+  background: var(--op-line);
+  color: var(--op-bg);
+  border-color: var(--op-line);
+}
+.jf-operator .op-hint.red .op-hintSq {
+  border-color: var(--op-red);
+  color: var(--op-red);
+}
+.jf-operator .op-dialWrap {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+}
+.jf-operator .op-dial {
+  position: relative;
+  width: 112px;
+  height: 112px;
+}
+.jf-operator .op-dial canvas {
+  position: absolute;
+  inset: 0;
+}
+.jf-operator .op-core {
+  position: absolute;
+  inset: 24px;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--op-line);
+  color: var(--op-bg);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background-color 0.25s, color 0.25s, transform 0.15s;
+}
+.jf-operator .op-core:active {
+  transform: scale(0.96);
+}
+.jf-operator .op-core svg {
+  width: 26px;
+  height: 26px;
+}
+.jf-operator .op-core.listen {
+  background: var(--op-red);
+  color: #fff;
+}
+.jf-operator .op-core.work {
+  background: transparent;
+  color: var(--op-line);
+  box-shadow: inset 0 0 0 2px var(--op-line);
+}
+.jf-operator .op-core.need {
+  background: var(--op-yellow);
+  color: var(--op-bg);
+}
+.jf-operator .op-core.done {
+  background: var(--op-mint);
+  color: var(--op-bg);
+}
+.jf-operator .op-core:disabled {
+  opacity: 0.4;
+}
+.jf-operator .op-coreLbl {
+  font: 700 8px var(--font-mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--op-muted);
+  white-space: nowrap;
+}
+
+/* ── the dial button on every phone page (./operator-fab) ── */
+.jf-opfab {
+  position: fixed;
+  right: 16px;
+  bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+  z-index: 25;
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 4px 4px 0 var(--ink);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: pointer;
+}
+.jf-opfab svg {
+  width: 23px;
+  height: 23px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.jf-opfab.held {
+  background: #a83232;
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.jf-opfab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+@media (min-width: 769px) {
+  .jf-opfab {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .jf-operator .op-tx::after {
+    animation: none;
+  }
+  .jf-operator .op-core {
+    transition: none;
+  }
+}

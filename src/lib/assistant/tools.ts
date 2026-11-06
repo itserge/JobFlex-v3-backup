@@ -34,6 +34,9 @@ import { MONEY_TOOLS } from "@/lib/assistant/money";
 export interface ToolContext {
   actor: AssistantActor;
   now: Date;
+  /** The running change's id, and a way to say where a build is (shared BUILD_STEPS) — set by the executor only. */
+  actionId?: string;
+  report?: (step: string) => Promise<void>;
 }
 
 interface ToolBase<A> {
