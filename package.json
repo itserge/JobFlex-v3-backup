@@ -6,6 +6,7 @@
     "dev": "prisma generate && node --max-old-space-size=8192 node_modules/next/dist/bin/next dev",
     "dev:pg": "node scripts/dev-postgres.js",
     "build": "prisma generate && next build",
+    "build:vercel": "node scripts/prisma-production-schema.js && prisma generate --schema=prisma/schema.production.prisma && next typegen && NODE_OPTIONS=--max-old-space-size=6144 tsc --noEmit -p tsconfig.json --incremental false && tsx --tsconfig tsconfig.json qa/tests/logic/assistant-registry.check.ts && JOBFLEX_TYPECHECKED=1 next build",
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
     "lint:changed": "node scripts/lint-changed.mjs",

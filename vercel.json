@@ -1,129 +1,36 @@
 {
-  "buildCommand": "node scripts/prisma-production-schema.js && prisma generate --schema=prisma/schema.production.prisma && next typegen && NODE_OPTIONS=--max-old-space-size=6144 tsc --noEmit -p tsconfig.json --incremental false && tsx --tsconfig tsconfig.json qa/tests/logic/assistant-registry.check.ts && JOBFLEX_TYPECHECKED=1 next build",
+  "buildCommand": "npm run build:vercel",
   "crons": [
-    {
-      "path": "/api/cron/follow-ups",
-      "schedule": "0 * * * *"
-    },
-    {
-      "path": "/api/cron/ramp-sync",
-      "schedule": "20 * * * *"
-    },
-    {
-      "path": "/api/cron/lead-offers",
-      "schedule": "*/15 * * * *"
-    },
-    {
-      "path": "/api/cron/clear-commissions",
-      "schedule": "0 6 * * *"
-    },
-    {
-      "path": "/api/cron/reconcile-stripe",
-      "schedule": "0 */6 * * *"
-    },
-    {
-      "path": "/api/cron/process-approved-payouts",
-      "schedule": "30 6 * * *"
-    },
-    {
-      "path": "/api/cron/daily-cleanup",
-      "schedule": "0 5 * * *"
-    },
-    {
-      "path": "/api/cron/stock-check",
-      "schedule": "30 13 * * *"
-    },
-    {
-      "path": "/api/cron/payments-reconcile",
-      "schedule": "*/30 * * * *"
-    },
-    {
-      "path": "/api/cron/square-refresh",
-      "schedule": "0 4 * * *"
-    },
-    {
-      "path": "/api/cron/purge-deleted-orgs",
-      "schedule": "15 5 * * *"
-    },
-    {
-      "path": "/api/cron/payment-reminders",
-      "schedule": "0 15 * * *"
-    },
-    {
-      "path": "/api/cron/review-reminders",
-      "schedule": "0 16 * * *"
-    },
-    {
-      "path": "/api/cron/integrations-health",
-      "schedule": "40 4 * * *"
-    },
-    {
-      "path": "/api/cron/sms-crew",
-      "schedule": "15 * * * *"
-    },
-    {
-      "path": "/api/cron/service-plans",
-      "schedule": "0 14 * * *"
-    },
-    {
-      "path": "/api/cron/trials",
-      "schedule": "20 * * * *"
-    },
-    {
-      "path": "/api/cron/home-plans",
-      "schedule": "0 16 * * *"
-    },
-    {
-      "path": "/api/cron/traffic-digest",
-      "schedule": "0 15,16,17 * * *"
-    },
-    {
-      "path": "/api/cron/meta-ad-spend",
-      "schedule": "20 7 * * *"
-    },
-    {
-      "path": "/api/cron/meta-leads",
-      "schedule": "*/5 * * * *"
-    },
-    {
-      "path": "/api/cron/desk-lead-calls",
-      "schedule": "2-59/5 * * * *"
-    },
-    {
-      "path": "/api/cron/lead-setup-reminders",
-      "schedule": "0 16 * * *"
-    },
-    {
-      "path": "/api/cron/trial-winback",
-      "schedule": "30 15 * * *"
-    },
-    {
-      "path": "/api/cron/signup-watch",
-      "schedule": "*/15 * * * *"
-    },
-    {
-      "path": "/api/cron/support-ai",
-      "schedule": "*/10 * * * *"
-    },
-    {
-      "path": "/api/cron/support-mail",
-      "schedule": "*/2 * * * *"
-    },
-    {
-      "path": "/api/cron/smartbook",
-      "schedule": "*/2 * * * *"
-    },
-    {
-      "path": "/api/cron/traffic-surge",
-      "schedule": "*/5 * * * *"
-    },
-    {
-      "path": "/api/cron/outreach",
-      "schedule": "5 * * * *"
-    },
-    {
-      "path": "/api/cron/assistant",
-      "schedule": "* * * * *"
-    }
+    { "path": "/api/cron/follow-ups", "schedule": "0 * * * *" },
+    { "path": "/api/cron/ramp-sync", "schedule": "20 * * * *" },
+    { "path": "/api/cron/lead-offers", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/clear-commissions", "schedule": "0 6 * * *" },
+    { "path": "/api/cron/reconcile-stripe", "schedule": "0 */6 * * *" },
+    { "path": "/api/cron/process-approved-payouts", "schedule": "30 6 * * *" },
+    { "path": "/api/cron/daily-cleanup", "schedule": "0 5 * * *" },
+    { "path": "/api/cron/stock-check", "schedule": "30 13 * * *" },
+    { "path": "/api/cron/payments-reconcile", "schedule": "*/30 * * * *" },
+    { "path": "/api/cron/square-refresh", "schedule": "0 4 * * *" },
+    { "path": "/api/cron/purge-deleted-orgs", "schedule": "15 5 * * *" },
+    { "path": "/api/cron/payment-reminders", "schedule": "0 15 * * *" },
+    { "path": "/api/cron/review-reminders", "schedule": "0 16 * * *" },
+    { "path": "/api/cron/integrations-health", "schedule": "40 4 * * *" },
+    { "path": "/api/cron/sms-crew", "schedule": "15 * * * *" },
+    { "path": "/api/cron/service-plans", "schedule": "0 14 * * *" },
+    { "path": "/api/cron/trials", "schedule": "20 * * * *" },
+    { "path": "/api/cron/home-plans", "schedule": "0 16 * * *" },
+    { "path": "/api/cron/traffic-digest", "schedule": "0 15,16,17 * * *" },
+    { "path": "/api/cron/meta-ad-spend", "schedule": "20 7 * * *" },
+    { "path": "/api/cron/meta-leads", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/desk-lead-calls", "schedule": "2-59/5 * * * *" },
+    { "path": "/api/cron/lead-setup-reminders", "schedule": "0 16 * * *" },
+    { "path": "/api/cron/trial-winback", "schedule": "30 15 * * *" },
+    { "path": "/api/cron/signup-watch", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/support-ai", "schedule": "*/10 * * * *" },
+    { "path": "/api/cron/support-mail", "schedule": "*/2 * * * *" },
+    { "path": "/api/cron/smartbook", "schedule": "*/2 * * * *" },
+    { "path": "/api/cron/traffic-surge", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/outreach", "schedule": "5 * * * *" },
+    { "path": "/api/cron/assistant", "schedule": "* * * * *" }
   ]
 }
