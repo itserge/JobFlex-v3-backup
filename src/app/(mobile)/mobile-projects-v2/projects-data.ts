@@ -11,7 +11,7 @@
 
 // One row shape for both editions (2026-09-20): the desktop ledger's, which
 // carries the sold / spent / open facts this list prints too.
-import type { Project } from "@/components/v3/projects-blueprint/projects-data";
+import { progressOf, type Project } from "@/components/v3/projects-blueprint/projects-data";
 export type { Project };
 
 /** The desktop statuses, verbatim and in the desktop's order. */
@@ -55,9 +55,9 @@ export function statusLabel(s: string): string {
   return s.toLowerCase().replace('_', ' ');
 }
 
-/** Whole percent of jobs closed out. Guarded: a new project has no jobs yet. */
+/** The stages' % done when the project has stages (2026-11-05), else the whole percent of jobs closed out. */
 export function progress(p: Project): number {
-  return p.jobCount > 0 ? Math.round((p.completedJobs / p.jobCount) * 100) : 0;
+  return progressOf(p);
 }
 
 export function matchesFilter(p: Project, key: FilterKey): boolean {
@@ -89,8 +89,9 @@ export function filterCount(list: Project[], key: FilterKey): number {
  */
 export function windowLabel(p: Project): string {
   const dates = p.startsAt && p.endsAt ? `${p.startsAt} → ${p.endsAt}` : 'No dates set';
-  const jobs = p.jobCount > 0 ? `${p.completedJobs}/${p.jobCount} done` : 'No jobs yet';
-  return `${dates} · ${jobs}`;
+  // With stages (2026-11-05) the tally is the project's own: "65% · Framing".
+  const jobs = p.done != null ? `${p.done}%${p.stageNow ? ` · ${p.stageNow}` : ''}` : p.jobCount > 0 ? `${p.completedJobs}/${p.jobCount} done` : 'No jobs yet';
+  return `${p.number ? `#${p.number} · ` : ''}${dates} · ${jobs}`;
 }
 
 /** The shape the two schedule fields hand to `createProject`. Anything else is

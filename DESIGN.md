@@ -509,6 +509,19 @@ panel reveals more of that stationary scene; scrolling must not resize the
 canvas, change its camera projection, or trigger a WebGL redraw. Real viewport
 resizes update the camera and drawing buffer together before rendering.
 
+Projects hub, stages (2026-11-05): the Stages card leads the project page on
+desk and handheld, above the proposals — a remodel is read by where it stands.
+One row per stage: a 24px round mark (empty · ▶ in progress on ink · ✓ done on
+emerald), the name as the fold button, a mono meta line (days, tasks, "3 days
+late" in rose), the actions right. Only the stage the project is on opens its
+tasks; the rest fold. Tasks are 32px lines (44px handheld) with an ink
+check; "photo" is a small amber mono tag, never a camera icon. The % done bar
+is the budget card's 10px bar. Templates and the AI draft are small outline
+buttons in the empty state, not a wizard; an AI draft shows an emerald note
+with Keep. The project's number ("#1042") sits in the kicker after
+"Projects" on desk and leads the handheld dateline; the list prints "65% ·
+Framing" where it printed the jobs closed, only once the project has stages.
+
 Read [implementation notes](docs/design/implementation.md) when editing an
 existing interactive surface, and [mobile notes](docs/design/mobile.md) for
 handheld work. These describe code hazards, not alternative visual themes.

@@ -70,6 +70,7 @@ import {
   type PdOpens,
   type PdPayments,
   type PdProject,
+  type PdStages,
   type PdWorker,
   type PdProposal,
   attachableFirst,
@@ -92,6 +93,7 @@ import { ProjectBudgetCard } from "@/components/v3/project-links/project-budget-
 import { ProjectPaymentsCard } from "@/components/v3/project-links/project-payments-card";
 import { ProjectCombine } from "@/components/v3/project-links/project-combine";
 import { ProjectCrewSheet } from "@/components/v3/project-links/project-crew-sheet";
+import { ProjectStagesCard } from "@/components/v3/project-links/project-stages-card";
 
 const DAY_MS = 86400000;
 
@@ -296,6 +298,7 @@ export function MobileProjectDetail({
   opens = { client: true, jobs: true },
   payments = [],
   roster = [],
+  stages = { stages: [], done: null, draftedByAi: false },
 }: {
   project: PdProject;
   jobs: PdJob[];
@@ -307,6 +310,8 @@ export function MobileProjectDetail({
   opens?: PdOpens;
   payments?: PdPayments;
   roster?: PdWorker[];
+  /** The order of the work (2026-11-05). */
+  stages?: PdStages;
 }) {
   // The project's dates are days, not moments (withLocalDays).
   const project = useMemo(() => withLocalDays(projectIn), [projectIn]);
@@ -552,6 +557,7 @@ export function MobileProjectDetail({
             ) : null}
             <h1 className="mpd-title">{project.name}</h1>
             <div className="mpd-dateline">
+              {project.number ? <span data-project-number>{`#${project.number} · `}</span> : null}
               {hasWindow ? (
                 <>
                   Project window ·{" "}
@@ -591,6 +597,10 @@ export function MobileProjectDetail({
             </div>
           </div>
 
+          {/* ============ STAGES (2026-11-05) ============ */}
+          <div className="mpd-budget">
+            <ProjectStagesCard projectId={project.id} stages={stages} canManage={canManage} />
+          </div>
           <div className="mpd-loose">
             <LooseProposalsStrip projectId={project.id} client={project.client} loose={looseProposals} />
           </div>

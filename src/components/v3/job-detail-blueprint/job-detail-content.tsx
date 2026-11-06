@@ -67,6 +67,7 @@ import { useJobDetailMotion } from "./job-detail-motion";
 import { useJobDetailActions } from "./use-job-detail-actions";
 import { onSiteLine } from "@/lib/jobProgressShared";
 import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
+import { makeProjectFromJob } from "@/actions/projectStages";
 import { useRouter } from "next/navigation";
 import { JD_ASSIGN, ST, STATUS_BUTTONS, fmt, type JobDetailRecord, KEY_TO_STATUS } from "./job-detail-data";
 import { Who } from "@/components/v3/who/who";
@@ -104,6 +105,8 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
   const [tab, setTab] = useState<TabKey>("overview");
   const [rosterOpen, setRosterOpen] = useState(false);
   const [coOpen, setCoOpen] = useState(false);
+  // "Make it a project" (2026-11-05): busy, or why it was refused.
+  const [making, setMaking] = useState<string | null>(null);
   const router = useRouter();
 
   const a = useJobDetailActions(
@@ -149,12 +152,27 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
       {/* PAGE HEAD */}
       <div className={cx("page-head")}>
         <div>
-          {/* A project's job leads back to its project (2026-11-04). */}
-          {record.project && (
+          {/* A project's job leads back to its project (2026-11-04); any other office job can become one (2026-11-05). */}
+          {record.project ? (
             <Link className={cx("jd-proj")} href={`/dashboard/projects/${record.project.id}` as Route} data-job-project>
               ← Project · {record.project.name}
             </Link>
-          )}
+          ) : !worker ? (
+            <button
+              type="button"
+              className={cx("jd-proj", "jd-proj--make")}
+              data-job-make-project
+              disabled={making === "busy"}
+              onClick={() => {
+                setMaking("busy");
+                makeProjectFromJob(record.id)
+                  .then((r) => router.push(`/dashboard/projects/${r.id}` as Route))
+                  .catch((e) => setMaking(e instanceof Error ? e.message : "Could not make the project"));
+              }}
+            >
+              {making === "busy" ? "Making the project…" : making ? making : "Make it a project →"}
+            </button>
+          ) : null}
           <div className={cx("kicker", "jd-kick")}>
             Job status ·{" "}
             {/* "Scheduled" is where an accepted job starts; with no dates yet the

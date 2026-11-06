@@ -626,6 +626,31 @@ export const GUIDES: Guide[] = [
     ],
   },
   {
+    id: "project-stages",
+    title: "Run a project by stages",
+    group: "how",
+    icon: "ListChecks",
+    steps: [
+      {
+        text: "Open Projects and open a project. The Stages card at the top shows the order of the work and how far along it is.",
+        open: "/dashboard/projects",
+      },
+      {
+        text: "With no stages yet, press a template for the trade — Deck, Roof, Fence, Kitchen remodel… — or Draft with AI, or Add a stage.",
+      },
+      {
+        text: "Press a stage’s name to open its tasks. Tick a task when it’s done; ticking the last one marks the stage done. Press Add a task for anything else.",
+      },
+      {
+        text: "Press Start when the crew begins a stage and Done when it’s finished. Edit sets its first and last day — past the last day it shows as late.",
+      },
+      {
+        text: "Back on Projects, press Automatic projects: with it on, a sold proposal makes its own project with the stages for its trade.",
+        open: "/dashboard/projects",
+      },
+    ],
+  },
+  {
     id: "crew",
     title: "Jobs and the calendar for your crew",
     group: "how",

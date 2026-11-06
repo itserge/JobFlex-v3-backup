@@ -99,6 +99,26 @@ export async function findJobs(organizationId: string, q: string) {
   );
 }
 
+/** Projects where every word hits the name or the client's name — or the number ("1042", "#1042") hits exactly (2026-11-05). */
+export async function findProjects(organizationId: string, q: string) {
+  const select = { id: true, name: true, number: true, status: true, client: { select: { name: true } }, updatedAt: true };
+  const num = /^#?(\d{3,6})$/.exec(q.trim());
+  if (num) {
+    const byNumber = await db.project.findMany({ where: { organizationId, number: Number(num[1]) }, select, take: 1 });
+    if (byNumber.length) return byNumber;
+  }
+  const words = searchWords(q);
+  if (!words.length) return [];
+  return tolerant((has) =>
+    db.project.findMany({
+      where: { organizationId, status: { not: "ARCHIVED" }, AND: words.map((w) => ({ OR: [{ name: has(w) }, { client: { name: has(w) } }] })) },
+      select,
+      orderBy: { updatedAt: "desc" },
+      take: TAKE,
+    }),
+  );
+}
+
 export async function findLeads(organizationId: string, q: string) {
   const t = q.trim().slice(0, 80);
   if (t.length < 2) return [];

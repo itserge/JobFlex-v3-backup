@@ -529,6 +529,9 @@ export async function updateProposalStatus(id: string, status: ProposalStatus): 
   // COMPLETED back to ACCEPTED is not an approval.
   if (status === "ACCEPTED" && (p.status === "DRAFT" || p.status === "SENT" || p.status === "VIEWED" || p.status === "DECLINED")) {
     trackActivation("proposal_approved", organizationId, { via: "office" });
+    // Automatic projects (2026-11-05): the office's "mark accepted" sells it too. Never throws.
+    const { projectForSoldProposal } = await import("@/lib/projectStages/server");
+    await projectForSoldProposal(id, user.id);
   }
   // Work is done → the client gets their review link (once per proposal,
   // whichever door completed it — see lib/reviews/requestForProposal.ts).

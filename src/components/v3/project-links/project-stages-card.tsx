@@ -1,0 +1,385 @@
+"use client";
+
+// STAGES OF A PROJECT (the stages build, 2026-11-05). One card for the desktop and the handheld project page: the
+// order of the work as stages — Footings, Framing, Decking and railings — each with its tasks, its days and its
+// state, and what they add up to (% done, lib/projectStages/shared percentDone). A new project gets its stages
+// from a trade template or the AI's draft (lib/projectStages/server); this card adds, edits, starts, finishes
+// and reopens them, and ticks the tasks. Every write is actions/projectStages (estimators and managers);
+// everyone else reads the card.
+
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import {
+  addStage,
+  addStagesFromTemplate,
+  addTask,
+  deleteStage,
+  deleteTask,
+  draftStages,
+  keepDraftedStages,
+  moveStage,
+  setStageStatus,
+  setTaskDone,
+  updateStage,
+} from "@/actions/projectStages";
+import { BlueprintSheet } from "@/components/ui/BlueprintSheet";
+import type { PdStages, PdStage } from "@/components/v3/project-detail-blueprint/project-detail-data";
+import { STAGE_TEMPLATES, currentStage, lateStages, lateWords, percentDone, stageStatusOf } from "@/lib/projectStages/shared";
+import s from "./project-hub.module.css";
+
+/** "Nov 3" from a stage's day (UTC midnight, like the project's own days). */
+const day = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+const isoDay = (iso: string | null) => (iso ? iso.slice(0, 10) : "");
+
+function dates(st: PdStage): string | null {
+  if (st.startsAt && st.endsAt) return `${day(st.startsAt)} – ${day(st.endsAt)}`;
+  if (st.startsAt) return `from ${day(st.startsAt)}`;
+  if (st.endsAt) return `by ${day(st.endsAt)}`;
+  return null;
+}
+
+type Editing = { id: string | null; name: string; startsAt: string; endsAt: string };
+
+export function ProjectStagesCard({ projectId, stages: initial, canManage }: { projectId: string; stages: PdStages; canManage: boolean }) {
+  const router = useRouter();
+  const [, startTransition] = useTransition();
+  // The rows are the server's, laid over with each tick and status change until the refresh lands — then the
+  // fresh rows replace the overlay (state adjusted during render, as React's docs do it, not in an effect).
+  const [stages, setStages] = useState<PdStage[]>(initial.stages);
+  const [seen, setSeen] = useState(initial.stages);
+  if (seen !== initial.stages) {
+    setSeen(initial.stages);
+    setStages(initial.stages);
+  }
+  const now = currentStage(stages);
+  // The stage the project is on opens with its tasks; the rest fold.
+  const [open, setOpen] = useState<Set<string>>(() => new Set(now ? [now.id] : []));
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Editing | null>(null);
+  const [editErr, setEditErr] = useState<string | null>(null);
+  const [newTask, setNewTask] = useState<Record<string, string>>({});
+
+  const done = percentDone(stages);
+  const late = new Map(lateStages(stages, new Date()).map((x) => [x.stage.id, x.days]));
+  const refresh = () => startTransition(() => router.refresh());
+
+  async function run(key: string, fn: () => Promise<void>) {
+    setBusy(key);
+    setErr(null);
+    try {
+      await fn();
+      refresh();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "That didn't go through — try again.");
+      setStages(initial.stages);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const toggle = (id: string) =>
+    setOpen((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  function tick(st: PdStage, task: PdStage["tasks"][number], value: boolean) {
+    setStages((cur) =>
+      cur.map((x) => {
+        if (x.id !== st.id) return x;
+        const tasks = x.tasks.map((t) => (t.id === task.id ? { ...t, done: value } : t));
+        const allDone = tasks.length > 0 && tasks.every((t) => t.done);
+        const status = value && allDone ? "DONE" : !value && x.status === "DONE" ? "ACTIVE" : value && x.status === "PLANNED" ? "ACTIVE" : x.status;
+        return { ...x, tasks, status };
+      }),
+    );
+    void run(`task:${task.id}`, () => setTaskDone(task.id, value));
+  }
+
+  function setStatus(st: PdStage, status: "PLANNED" | "ACTIVE" | "DONE") {
+    setStages((cur) => cur.map((x) => (x.id === st.id ? { ...x, status, tasks: status === "DONE" ? x.tasks.map((t) => ({ ...t, done: true })) : x.tasks } : x)));
+    if (status === "ACTIVE") setOpen((cur) => new Set(cur).add(st.id));
+    void run(`status:${st.id}`, () => setStageStatus(st.id, status));
+  }
+
+  async function submitTask(st: PdStage) {
+    const title = (newTask[st.id] ?? "").trim();
+    if (!title) return;
+    setNewTask((cur) => ({ ...cur, [st.id]: "" }));
+    await run(`addtask:${st.id}`, async () => {
+      await addTask(st.id, { title });
+    });
+  }
+
+  function openEdit(st: PdStage | null) {
+    setEditErr(null);
+    setEditing(st ? { id: st.id, name: st.name, startsAt: isoDay(st.startsAt), endsAt: isoDay(st.endsAt) } : { id: null, name: "", startsAt: "", endsAt: "" });
+    setAdding(false);
+  }
+
+  async function saveEdit() {
+    if (!editing) return;
+    if (!editing.name.trim()) return setEditErr("Name the stage");
+    if (editing.startsAt && editing.endsAt && editing.endsAt < editing.startsAt) return setEditErr("The stage ends before it starts");
+    const data = { name: editing.name.trim(), startsAt: editing.startsAt || null, endsAt: editing.endsAt || null };
+    const id = editing.id;
+    setEditing(null);
+    await run(`edit:${id ?? "new"}`, async () => {
+      if (id) await updateStage(id, data);
+      else await addStage(projectId, data);
+    });
+  }
+
+  const templates = (
+    <div className={s.chips}>
+      {STAGE_TEMPLATES.map((t) => (
+        <button
+          key={t.key}
+          type="button"
+          className={s.btnSm}
+          disabled={busy !== null}
+          data-stage-template={t.key}
+          onClick={() => {
+            setAdding(false);
+            void run(`tpl:${t.key}`, async () => {
+              await addStagesFromTemplate(projectId, t.key);
+            });
+          }}
+        >
+          {t.label}
+        </button>
+      ))}
+      <button
+        type="button"
+        className={s.btnSm}
+        disabled={busy !== null}
+        data-stage-draft
+        onClick={() => {
+          setAdding(false);
+          void run("draft", async () => {
+            const r = await draftStages(projectId);
+            if ("error" in r) throw new Error(r.error);
+          });
+        }}
+      >
+        {busy === "draft" ? "Drafting…" : "Draft with AI"}
+      </button>
+      <button type="button" className={s.btnSm} disabled={busy !== null} onClick={() => openEdit(null)} data-stage-new>
+        Add a stage
+      </button>
+    </div>
+  );
+
+  return (
+    <div className={s.w}>
+      <section className={s.card} aria-label="Stages" data-project-stages data-project-done={done ?? ""}>
+        <div className={s.head}>
+          <h3 className={s.title}>Stages</h3>
+          <span className={s.headSub}>
+            {done != null ? (
+              <>
+                <b>{done}%</b> done{now ? ` · ${now.name}` : " · all stages done"}
+              </>
+            ) : (
+              "The order of the work, step by step"
+            )}
+          </span>
+          {canManage && stages.length ? (
+            <div className={s.acts}>
+              <button type="button" className={s.btnSm} onClick={() => setAdding(true)} data-stages-add>
+                + Stages
+              </button>
+            </div>
+          ) : null}
+        </div>
+        {done != null ? (
+          <div className={s.bar} aria-hidden="true">
+            <i style={{ width: `${done}%` }} />
+          </div>
+        ) : null}
+
+        {initial.draftedByAi ? (
+          <div className={s.note} data-stages-drafted>
+            The AI drafted these stages from what was sold. Keep them, or change any of them.{" "}
+            {canManage ? (
+              <button type="button" className={s.btnSm} disabled={busy !== null} data-stages-keep onClick={() => void run("keep", () => keepDraftedStages(projectId))}>
+                Keep them
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+
+        {stages.length ? (
+          <div className={s.stageList}>
+            {stages.map((st) => {
+              const status = stageStatusOf(st.status);
+              const isOpen = open.has(st.id);
+              const ticked = st.tasks.filter((t) => t.done).length;
+              const lateDays = late.get(st.id);
+              const when = dates(st);
+              return (
+                <div key={st.id} className={`${s.row} ${status === "DONE" ? s.isDone : ""} ${status === "ACTIVE" ? s.isActive : ""}`} data-stage-row data-stage-status={status}>
+                  <span className={s.mark} aria-hidden="true">
+                    {status === "DONE" ? "✓" : status === "ACTIVE" ? "▶" : ""}
+                  </span>
+                  <button type="button" className={s.name} onClick={() => toggle(st.id)} aria-expanded={isOpen} data-stage-name>
+                    {st.name}
+                  </button>
+                  <div className={s.meta}>
+                    {when ? <span>{when}</span> : null}
+                    {st.tasks.length ? <span>{`${ticked} of ${st.tasks.length} task${st.tasks.length === 1 ? "" : "s"}`}</span> : null}
+                    {lateDays ? <span className={s.lateTag}>{lateWords(lateDays)}</span> : null}
+                    {!when && !st.tasks.length ? <span>{status === "DONE" ? "done" : status === "ACTIVE" ? "in progress" : "planned"}</span> : null}
+                  </div>
+                  {canManage ? (
+                    <div className={s.rowActs}>
+                      {status === "DONE" ? (
+                        <button type="button" className={s.btnSm} disabled={busy !== null} onClick={() => setStatus(st, "ACTIVE")} data-stage-reopen>
+                          Reopen
+                        </button>
+                      ) : (
+                        <>
+                          {status === "PLANNED" ? (
+                            <button type="button" className={s.btnSm} disabled={busy !== null} onClick={() => setStatus(st, "ACTIVE")} data-stage-start>
+                              Start
+                            </button>
+                          ) : null}
+                          <button type="button" className={s.btnSm} disabled={busy !== null} onClick={() => setStatus(st, "DONE")} data-stage-done>
+                            Done
+                          </button>
+                        </>
+                      )}
+                      <button type="button" className={s.btnSm} disabled={busy !== null} onClick={() => openEdit(st)} aria-label={`Edit ${st.name}`} data-stage-edit>
+                        Edit
+                      </button>
+                    </div>
+                  ) : null}
+                  {isOpen ? (
+                    <div className={s.tasks} data-stage-tasks>
+                      {st.tasks.map((t) => (
+                        <label key={t.id} className={s.task} data-task>
+                          <input type="checkbox" checked={t.done} disabled={!canManage || busy !== null} onChange={(e) => tick(st, t, e.target.checked)} />
+                          <span className={t.done ? s.taskDone : ""}>{t.title}</span>
+                          {t.photoNeeded ? <span className={s.photo}>photo</span> : null}
+                          {canManage ? (
+                            <button
+                              type="button"
+                              className={s.taskX}
+                              aria-label={`Remove ${t.title}`}
+                              disabled={busy !== null}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                setStages((cur) => cur.map((x) => (x.id === st.id ? { ...x, tasks: x.tasks.filter((y) => y.id !== t.id) } : x)));
+                                void run(`deltask:${t.id}`, () => deleteTask(t.id));
+                              }}
+                            >
+                              ×
+                            </button>
+                          ) : null}
+                        </label>
+                      ))}
+                      {canManage ? (
+                        <form
+                          className={s.taskAdd}
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            void submitTask(st);
+                          }}
+                        >
+                          <input value={newTask[st.id] ?? ""} onChange={(e) => setNewTask((cur) => ({ ...cur, [st.id]: e.target.value }))} placeholder="Add a task" maxLength={200} aria-label={`New task in ${st.name}`} data-task-new />
+                          <button type="submit" className={s.btnSm} disabled={busy !== null || !(newTask[st.id] ?? "").trim()}>
+                            Add
+                          </button>
+                        </form>
+                      ) : null}
+                      {!st.tasks.length && !canManage ? <span className={s.headSub}>No tasks</span> : null}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className={s.empty} data-stages-empty>
+            No stages yet. {canManage ? "Start from a template for the trade, let the AI draft them from what was sold, or add them by hand." : "The office adds them."}
+            {canManage ? templates : null}
+          </div>
+        )}
+        {err ? <div className={s.err}>{err}</div> : null}
+      </section>
+
+      {/* ADD STAGES — a template's stages go after the ones the project has. */}
+      <BlueprintSheet open={adding} onClose={() => setAdding(false)} title="Add stages" description="A template's stages go after the ones you have. Drag nothing — use Edit on a stage to move it.">
+        <div className="bps-form">
+          <div className="bps-fld bps-fld--wide">
+            <span className="bps-lbl">From a template</span>
+            {templates}
+          </div>
+        </div>
+      </BlueprintSheet>
+
+      {/* ONE STAGE — its name and days; move it or take it off the project. */}
+      <BlueprintSheet
+        open={editing !== null}
+        onClose={() => setEditing(null)}
+        title={editing?.id ? "Edit stage" : "New stage"}
+        footer={
+          <>
+            <button type="button" className="bps-btn bps-btn--ghost" onClick={() => setEditing(null)}>
+              Cancel
+            </button>
+            <button type="button" className="bps-btn bps-btn--primary" onClick={() => void saveEdit()} data-stage-save>
+              {editing?.id ? "Save" : "Add stage"}
+            </button>
+          </>
+        }
+      >
+        {editing ? (
+          <div className="bps-form">
+            <label className="bps-fld bps-fld--wide">
+              <span className="bps-lbl">Stage</span>
+              <input className="bps-in" value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} maxLength={120} placeholder="Framing" autoFocus data-stage-name-input />
+            </label>
+            <label className="bps-fld">
+              <span className="bps-lbl">First day</span>
+              <input className="bps-in" type="date" value={editing.startsAt} onChange={(e) => setEditing({ ...editing, startsAt: e.target.value })} />
+            </label>
+            <label className="bps-fld">
+              <span className="bps-lbl">Last day</span>
+              <input className="bps-in" type="date" value={editing.endsAt} min={editing.startsAt || undefined} onChange={(e) => setEditing({ ...editing, endsAt: e.target.value })} />
+            </label>
+            {editing.id ? (
+              <div className={`bps-fld bps-fld--wide ${s.chips}`}>
+                <button type="button" className="bps-btn bps-btn--ghost" onClick={() => void run(`up:${editing.id}`, () => moveStage(editing.id!, "up")).then(() => setEditing(null))}>
+                  Move up
+                </button>
+                <button type="button" className="bps-btn bps-btn--ghost" onClick={() => void run(`down:${editing.id}`, () => moveStage(editing.id!, "down")).then(() => setEditing(null))}>
+                  Move down
+                </button>
+                <button
+                  type="button"
+                  className="bps-btn bps-btn--ghost"
+                  data-stage-delete
+                  onClick={() => {
+                    const id = editing.id!;
+                    setEditing(null);
+                    setStages((cur) => cur.filter((x) => x.id !== id));
+                    void run(`del:${id}`, () => deleteStage(id));
+                  }}
+                >
+                  Remove stage
+                </button>
+              </div>
+            ) : null}
+            <p className="bps-hint bps-fld--wide">Days are the plan; a stage past its last day and not done shows as late on the project and in the list.</p>
+            {editErr ? <div className="bps-err bps-fld--wide">{editErr}</div> : null}
+          </div>
+        ) : null}
+      </BlueprintSheet>
+    </div>
+  );
+}

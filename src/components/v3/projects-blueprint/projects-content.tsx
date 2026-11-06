@@ -12,8 +12,9 @@
 // Returning a fragment keeps these blocks as DIRECT children of `.content`,
 // which the donor's reveal cascade (`.content > *`) depends on.
 
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
+import { AutoProjectsSheet } from "@/components/v3/project-links/auto-projects-sheet";
 import { initProjectsContent } from "./projects-behavior";
 import type { Project, ProjectClientChoice } from "./projects-data";
 
@@ -46,16 +47,22 @@ export function ProjectsContent({
     [],
   );
   useBlueprintContent(init);
+  // The Automatic projects switch (2026-11-05) — a sheet, portalled, so the fragment's children stay as they are.
+  const [autoOpen, setAutoOpen] = useState(false);
 
   return (
     <>
+      <AutoProjectsSheet open={autoOpen} onClose={() => setAutoOpen(false)} />
       {/* PAGE HEAD */}
       <div className="page-head">
         <div>
-          <div className="kicker">Delivery</div>
+          <div className="kicker">Remodeling</div>
           <h1 className="page-title">Projects</h1>
         </div>
         <div className="page-actions">
+          <button className="btn btn-ghost" type="button" onClick={() => setAutoOpen(true)} data-auto-projects>
+            Automatic projects
+          </button>
           <button className="btn btn-primary" id="newProjectBtn">
             <svg className="ic">
               <use href="#i-plus" />
