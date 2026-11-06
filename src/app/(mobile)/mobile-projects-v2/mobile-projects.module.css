@@ -1052,4 +1052,7 @@
 .pjFlag_late { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
 .pjFlag_nostages { border-color: var(--hair); color: var(--muted); }
 .pjFlag_drafted { border-color: var(--sky); color: var(--blueprint); background: rgba(74, 158, 255, 0.13); }
+.pjFlag_order-by { border-color: var(--warning); color: var(--warning-dark); background: var(--warning-soft); }
+.pjFlag_late-delivery { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+.pjFlag_problem { border-color: var(--danger); color: #fff; background: var(--danger); }
 .pjTrack { grid-row: 5; }

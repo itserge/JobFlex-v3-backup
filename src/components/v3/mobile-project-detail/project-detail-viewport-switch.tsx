@@ -46,6 +46,8 @@ import { ChunkRecoveryBoundary } from "@/components/v3/shared/chunk-recovery-bou
 import type {
   PdAvailProposal,
   PdBudget,
+  PdBuying,
+  PdField,
   PdJob,
   PdLooseProposal,
   PdOpens,
@@ -105,6 +107,10 @@ export function ProjectDetailViewportSwitch(props: {
   roster?: PdWorker[];
   /** The order of the work (2026-11-05). */
   stages?: PdStages;
+  /** The to-buy list and the orders (2026-11-05). */
+  buying?: PdBuying;
+  /** On site: problems, hours, the subs' bills (2026-11-05). */
+  field?: PdField;
 }) {
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   // The handheld half is a lazy chunk, so it inherits the deploy-skew failure

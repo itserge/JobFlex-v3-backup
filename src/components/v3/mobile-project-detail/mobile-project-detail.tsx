@@ -69,6 +69,8 @@ import {
   type PdJob,
   type PdOpens,
   type PdPayments,
+  type PdBuying,
+  type PdField,
   type PdProject,
   type PdStages,
   type PdWorker,
@@ -94,6 +96,8 @@ import { ProjectPaymentsCard } from "@/components/v3/project-links/project-payme
 import { ProjectCombine } from "@/components/v3/project-links/project-combine";
 import { ProjectCrewSheet } from "@/components/v3/project-links/project-crew-sheet";
 import { ProjectStagesCard } from "@/components/v3/project-links/project-stages-card";
+import { ProjectBuyingCard } from "@/components/v3/project-links/project-buying-card";
+import { ProjectFieldCard } from "@/components/v3/project-links/project-field-card";
 
 const DAY_MS = 86400000;
 
@@ -299,6 +303,8 @@ export function MobileProjectDetail({
   payments = [],
   roster = [],
   stages = { stages: [], done: null, draftedByAi: false },
+  buying,
+  field,
 }: {
   project: PdProject;
   jobs: PdJob[];
@@ -312,6 +318,10 @@ export function MobileProjectDetail({
   roster?: PdWorker[];
   /** The order of the work (2026-11-05). */
   stages?: PdStages;
+  /** The to-buy list and the orders (2026-11-05). */
+  buying?: PdBuying;
+  /** On site: problems, hours, the subs' bills (2026-11-05). */
+  field?: PdField;
 }) {
   // The project's dates are days, not moments (withLocalDays).
   const project = useMemo(() => withLocalDays(projectIn), [projectIn]);
@@ -601,6 +611,11 @@ export function MobileProjectDetail({
           <div className="mpd-budget">
             <ProjectStagesCard projectId={project.id} stages={stages} canManage={canManage} />
           </div>
+          {field ? (
+            <div className="mpd-budget">
+              <ProjectFieldCard projectId={project.id} field={field} canManage={canManage} />
+            </div>
+          ) : null}
           <div className="mpd-loose">
             <LooseProposalsStrip projectId={project.id} client={project.client} loose={looseProposals} />
           </div>
@@ -660,6 +675,13 @@ export function MobileProjectDetail({
           <div className="mpd-budget">
             <ProjectCombine projectId={project.id} projectName={project.name} proposals={proposals} />
           </div>
+
+          {/* ============ BUYING AND DELIVERIES (2026-11-05) ============ */}
+          {buying ? (
+            <div className="mpd-budget">
+              <ProjectBuyingCard projectId={project.id} buying={buying} stages={stages.stages} canManage={canManage} />
+            </div>
+          ) : null}
 
           {/* ============ BUDGET (2026-09-18) ============ */}
           {budget ? (

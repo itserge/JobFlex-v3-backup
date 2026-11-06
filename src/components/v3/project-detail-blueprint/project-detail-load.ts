@@ -10,12 +10,18 @@ import { BALANCE_STAGE_ID, BALANCE_STAGE_LABEL, fromMinor, resolveSchedule } fro
 import { categoryOf } from "@/lib/projectBudget";
 import { projectMoney } from "@/lib/projectMoney";
 import { stagesOf } from "@/lib/projectStages/server";
-import type { PdAvailProposal, PdBudget, PdJob, PdLooseProposal, PdPayments, PdProject, PdProposal, PdStages, PdWorker } from "./project-detail-data";
+import { buyingOf } from "@/lib/projectBuying/server";
+import { projectField } from "@/lib/crewField/server";
+import type { PdAvailProposal, PdBudget, PdBuying, PdField, PdJob, PdLooseProposal, PdPayments, PdProject, PdProposal, PdStages, PdWorker } from "./project-detail-data";
 
 export type ProjectDetailProps = {
   project: PdProject;
   /** The order of the work and its tasks (2026-11-05). */
   stages: PdStages;
+  /** The to-buy list and the orders (2026-11-05). */
+  buying: PdBuying;
+  /** On site: problems, hours, the subs' bills (2026-11-05). */
+  field: PdField;
   jobs: PdJob[];
   proposals: PdProposal[];
   availableProposals: PdAvailProposal[];
@@ -119,7 +125,7 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
     at: e.spentAt.toISOString(),
   }));
   // The money — the same read as the Projects list and Financials (lib/projectMoney): before tax, crew and stock in.
-  const [moneyAll, stageRead] = await Promise.all([projectMoney(organizationId, [project.id]), stagesOf(project.id)]);
+  const [moneyAll, stageRead, buying, field] = await Promise.all([projectMoney(organizationId, [project.id]), stagesOf(project.id), buyingOf(organizationId, project.id), projectField(organizationId, project.id)]);
   const money = moneyAll.get(project.id)!;
   const budget: PdBudget = {
     summary: money,
@@ -132,6 +138,8 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
   return {
     budget,
     stages: { ...stageRead, draftedByAi: Boolean(project.stagesDraftedAt) },
+    buying,
+    field,
     project: {
         id: project.id,
         name: project.name,
