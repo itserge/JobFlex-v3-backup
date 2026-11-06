@@ -37,6 +37,7 @@ import { LAWN_TOOLS } from "@/lib/assistant/lawn";
 import { PROJECT_TOOLS } from "@/lib/assistant/projects";
 import { BUYING_TOOLS } from "@/lib/assistant/buying";
 import { FIELD_TOOLS } from "@/lib/assistant/field";
+import { BUSINESS_TOOLS } from "@/lib/assistant/business";
 
 export interface ToolContext {
   actor: AssistantActor;
@@ -971,6 +972,7 @@ export const TOOLS: readonly AnyTool[] = [
   find,
   openProposals,
   moneyTool,
+  ...BUSINESS_TOOLS,
   crew,
   ...BUILDERS,
   ...FENCE_TOOLS,
