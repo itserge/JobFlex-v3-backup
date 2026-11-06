@@ -89,24 +89,48 @@ export async function keepDraftedStages(projectId: string): Promise<void> {
 
 const stageInput = z.object({ name: z.string().trim().min(1).max(120), startsAt: DAY.optional(), endsAt: DAY.optional(), weight: z.number().min(0).max(1000).optional() });
 
+/** One stage at the end of the project, with its tasks when given. A hand-added stage weighs what the others weigh
+ *  on average (a template's shares are fractions), so it neither dominates nor vanishes from % done. */
+async function createStage(projectId: string, data: z.infer<typeof stageInput>, tasks: string[] = []): Promise<{ id: string }> {
+  if (data.startsAt && data.endsAt && data.endsAt < data.startsAt) throw new Error("The stage ends before it starts");
+  const [top, avg] = await Promise.all([
+    db.projectStage.aggregate({ where: { projectId }, _max: { position: true } }),
+    db.projectStage.aggregate({ where: { projectId }, _avg: { weight: true } }),
+  ]);
+  const s = await db.projectStage.create({
+    data: {
+      projectId,
+      name: data.name,
+      position: (top._max.position ?? -1) + 1,
+      startsAt: dayOf(data.startsAt),
+      endsAt: dayOf(data.endsAt),
+      weight: data.weight ?? avg._avg.weight ?? 1,
+      tasks: { create: tasks.map((title, position) => ({ projectId, title, position })) },
+    },
+    select: { id: true },
+  });
+  await keptByEdit(projectId);
+  touched(projectId);
+  return { id: s.id };
+}
+
 export async function addStage(projectId: string, raw: unknown): Promise<{ id: string }> {
   const { organizationId } = await requireEstimatorOrManager();
   const p = await projectOf(organizationId, projectId);
-  const data = stageInput.parse(raw);
-  if (data.startsAt && data.endsAt && data.endsAt < data.startsAt) throw new Error("The stage ends before it starts");
-  // A hand-added stage weighs what the others weigh on average (a template's shares are fractions), so it
-  // neither dominates nor vanishes from % done.
-  const [top, avg] = await Promise.all([
-    db.projectStage.aggregate({ where: { projectId: p.id }, _max: { position: true } }),
-    db.projectStage.aggregate({ where: { projectId: p.id }, _avg: { weight: true } }),
-  ]);
-  const s = await db.projectStage.create({
-    data: { projectId: p.id, name: data.name, position: (top._max.position ?? -1) + 1, startsAt: dayOf(data.startsAt), endsAt: dayOf(data.endsAt), weight: data.weight ?? avg._avg.weight ?? 1 },
-    select: { id: true },
-  });
-  await keptByEdit(p.id);
-  touched(p.id);
-  return { id: s.id };
+  return createStage(p.id, stageInput.parse(raw));
+}
+
+const stageWithTasksInput = stageInput.extend({ tasks: z.array(z.string().trim().min(1).max(200)).max(40).optional() });
+
+/** "+ Stage" (2026-11-06): the stage and its tasks in one go — one line per task, typed or taken from the suggestions. */
+export async function addStageWithTasks(projectId: string, raw: unknown): Promise<{ id: string; tasks: number }> {
+  const { organizationId } = await requireEstimatorOrManager();
+  const p = await projectOf(organizationId, projectId);
+  const { tasks = [], ...data } = stageWithTasksInput.parse(raw);
+  const seen = new Set<string>();
+  const clean = tasks.filter((t) => !seen.has(t.toLowerCase()) && seen.add(t.toLowerCase()));
+  const s = await createStage(p.id, data, clean);
+  return { id: s.id, tasks: clean.length };
 }
 
 export async function updateStage(stageId: string, raw: unknown): Promise<void> {

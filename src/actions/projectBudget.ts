@@ -23,10 +23,14 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { BUDGET_CATEGORIES, changeLineLabel } from "@/lib/projectBudget";
+import { BUDGET_CATEGORIES, changeLineLabel, isBudgetCategory, normalizeKind } from "@/lib/projectBudget";
+import { suggestBudget, type BudgetSuggestion } from "@/lib/projectBudgetSuggest";
 
 const money = z.number().finite().min(0).max(100_000_000);
-const category = z.enum(BUDGET_CATEGORIES);
+/** One of the six, or a kind of the project's own ("Tile", "Dumpster") — 2026-11-06. */
+const category = z.string().trim().min(1).max(40).transform(normalizeKind);
+/** A change order's cost line stays on the six. */
+const sixOnly = z.enum(BUDGET_CATEGORIES);
 
 async function projectInOrg(projectId: string, organizationId: string) {
   const p = await db.project.findFirst({ where: { id: projectId, organizationId }, select: { id: true } });
@@ -41,8 +45,8 @@ function refresh(projectId: string) {
 
 const budgetInput = z.object({
   projectId: z.string().min(1),
-  /** By category… */
-  lines: z.array(z.object({ category, amount: money })).max(BUDGET_CATEGORIES.length).optional(),
+  /** By category — the six and the project's own kinds… */
+  lines: z.array(z.object({ category, amount: money })).max(BUDGET_CATEGORIES.length + 20).optional(),
   /** …or one figure, not split (2026-11-04: the editor opened blank on a one-figure budget and saving it wiped it). */
   total: money.optional(),
 });
@@ -61,16 +65,16 @@ export async function setProjectBudget(raw: unknown): Promise<{ budget: number }
   const data = budgetInput.parse(raw);
   const projectId = await projectInOrg(data.projectId, organizationId);
   const seen = new Set<string>();
-  const lines = (data.lines ?? []).filter((l) => l.amount > 0 && !seen.has(l.category) && seen.add(l.category));
+  const lines = (data.lines ?? []).filter((l) => l.amount > 0 && !seen.has(l.category.toLowerCase()) && seen.add(l.category.toLowerCase()));
   const base = data.lines ? lines.reduce((n, l) => n + l.amount, 0) : (data.total ?? 0);
   const budget = r2(base + (await extrasOf(projectId)));
 
   await db.$transaction([
     // Only the category lines: a change order's cost line stays (it carries a label).
     db.projectBudgetLine.deleteMany({ where: { projectId, label: null } }),
-    ...lines.map((l) =>
+    ...lines.map((l, i) =>
       db.projectBudgetLine.create({
-        data: { projectId, category: l.category, amount: r2(l.amount), position: BUDGET_CATEGORIES.indexOf(l.category) },
+        data: { projectId, category: l.category, amount: r2(l.amount), position: isBudgetCategory(l.category) ? BUDGET_CATEGORIES.indexOf(l.category) : 10 + i },
       }),
     ),
     db.project.update({ where: { id: projectId }, data: { budget } }),
@@ -79,7 +83,13 @@ export async function setProjectBudget(raw: unknown): Promise<{ budget: number }
   return { budget };
 }
 
-const coCostInput = z.object({ projectId: z.string().min(1), changeOrderId: z.string().min(1), category, amount: money.refine((n) => n > 0, "Enter what it costs you") });
+const coCostInput = z.object({ projectId: z.string().min(1), changeOrderId: z.string().min(1), category: sixOnly, amount: money.refine((n) => n > 0, "Enter what it costs you") });
+
+/** The budget read from the estimate, or a rule of thumb for the trade — nothing saved until the card's Save. */
+export async function suggestProjectBudget(projectId: string): Promise<BudgetSuggestion> {
+  const { organizationId } = await requireEstimatorOrManager();
+  return suggestBudget(organizationId, projectId);
+}
 
 /** An approved change order's cost into the budget, as its own line under the order's label. */
 export async function addChangeOrderCost(raw: unknown): Promise<{ budget: number }> {

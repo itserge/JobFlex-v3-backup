@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import type { ReadTool, WriteTool } from "@/lib/assistant/tools";
 import { findProjects } from "@/lib/assistant/find";
 import { dayWords, money, spanWords } from "@/lib/assistant/shared";
+import { categoryLabel } from "@/lib/projectBudget";
 import { projectMoney } from "@/lib/projectMoney";
 import { markStage, markTask, stagesOf, type StageRow } from "@/lib/projectStages/server";
 import { currentStage, lateStages, lateWords, percentDone, projectNo } from "@/lib/projectStages/shared";
@@ -114,7 +115,7 @@ const projectStatus: ReadTool<{ query: string | null; projectId: string | null }
         tasksLeft: s.tasks.filter((t) => !t.done).slice(0, 6).map((t) => t.title),
       })),
       money: m
-        ? { contract: money(m.contract), spent: money(m.spent), margin: m.margin != null ? money(m.margin) : null, marginState: m.marginState, owed: money(m.owed), collected: money(m.collected), overBudget: m.overCategories }
+        ? { contract: money(m.contract), spent: money(m.spent), margin: m.margin != null ? money(m.margin) : null, marginState: m.marginState, owed: money(m.owed), collected: money(m.collected), overBudget: m.overCategories.map(categoryLabel) }
         : null,
       jobs: jobs.map((j) => ({
         title: j.title,

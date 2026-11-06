@@ -12,14 +12,19 @@
 // Setting the budget and logging a cost open in place, above the numbers they
 // change; every write refreshes the page's data.
 //
+// 2026-11-06 (owner: "make option to add more kind of budgets … make it smart"): under the six, the project's own
+// kinds — Tile, Cabinets, Dumpster — each tracked like the six (an expense logged under that name counts against
+// it); and "Fill it in for me" reads the budget off the sold estimate's costs, or a rule of thumb for the trade,
+// plainly labelled (lib/projectBudgetSuggest).
+//
 // Styles live in the module under `.w.w` so they outrank the desktop page's
 // blanket `.content *` / `.content button` resets, and read only the global
 // tokens so the handheld page (which has no blueprint module) draws the same.
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { addChangeOrderCost, addProjectExpense, deleteProjectExpense, removeBudgetLine, setProjectBudget } from "@/actions/projectBudget";
-import { BUDGET_CATEGORIES, CATEGORY_LABEL, WARN_AT, type BudgetCategory, type BudgetTone } from "@/lib/projectBudget";
+import { addChangeOrderCost, addProjectExpense, deleteProjectExpense, removeBudgetLine, setProjectBudget, suggestProjectBudget } from "@/actions/projectBudget";
+import { BUDGET_CATEGORIES, CATEGORY_LABEL, WARN_AT, categoryLabel, customKinds, isBudgetCategory, type BudgetCategory, type BudgetTone } from "@/lib/projectBudget";
 import type { PdBudget } from "@/components/v3/project-detail-blueprint/project-detail-data";
 import s from "./project-budget-card.module.css";
 
@@ -34,8 +39,10 @@ const parseMoney = (v: string) => {
   const n = Number(v.replace(/[^\d.]/g, ""));
   return Number.isFinite(n) ? n : 0;
 };
+const moneyText = (n: number) => (n > 0 ? String(Math.round(n * 100) / 100) : "");
 
 type Panel = null | "budget" | "expense";
+type Kind = { name: string; amount: string };
 
 export function ProjectBudgetCard({ projectId, budget }: { projectId: string; budget: PdBudget }) {
   const router = useRouter();
@@ -52,24 +59,32 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
   const extrasTotal = extras.reduce((n, l) => n + l.amount, 0);
   const initialDraft = useMemo(() => {
     const d: Record<BudgetCategory, string> = { MATERIALS: "", LABOR: "", SUBCONTRACTORS: "", PERMITS: "", EQUIPMENT: "", OTHER: "" };
-    for (const l of budget.lines) if (!l.label && l.category in d) d[l.category as BudgetCategory] = String(Math.round(l.amount * 100) / 100);
+    for (const l of budget.lines) if (!l.label && isBudgetCategory(l.category)) d[l.category] = moneyText(l.amount);
     return d;
   }, [budget.lines]);
+  // The project's own kinds, as lines under their names.
+  const kindNames = useMemo(() => customKinds(budget.lines), [budget.lines]);
+  const initialKinds = useMemo<Kind[]>(() => kindNames.map((name) => ({ name, amount: moneyText(budget.lines.find((l) => !l.label && l.category === name)?.amount ?? 0) })), [budget.lines, kindNames]);
   const [draft, setDraft] = useState(initialDraft);
+  const [kinds, setKinds] = useState<Kind[]>(initialKinds);
   const [split, setSplit] = useState(!sum.unsplit && budget.lines.some((l) => !l.label));
   const baseFigure = Math.max(0, sum.budget - extrasTotal);
   const [oneFigure, setOneFigure] = useState(baseFigure > 0 ? String(Math.round(baseFigure * 100) / 100) : "");
-  const draftTotal = (split ? BUDGET_CATEGORIES.reduce((n, c) => n + parseMoney(draft[c]), 0) : parseMoney(oneFigure)) + extrasTotal;
+  const [suggestion, setSuggestion] = useState<{ words: string; rule: boolean } | null>(null);
+  const kindsTotal = kinds.reduce((n, k) => n + (k.name.trim() ? parseMoney(k.amount) : 0), 0);
+  const draftTotal = (split ? BUDGET_CATEGORIES.reduce((n, c) => n + parseMoney(draft[c]), 0) + kindsTotal : parseMoney(oneFigure)) + extrasTotal;
   // An approved change order's cost, typed in: prefilled at the project's planned cost share.
   const [coCost, setCoCost] = useState<Record<string, { amount: string; category: BudgetCategory }>>({});
 
   // ── expense form ──
-  const [exp, setExp] = useState({ category: "MATERIALS" as BudgetCategory, amount: "", vendor: "", note: "", date: today() });
+  const [exp, setExp] = useState({ category: "MATERIALS" as string, amount: "", vendor: "", note: "", date: today() });
 
   const open = (p: Panel) => {
     setError(null);
     if (p === "budget") {
       setDraft(initialDraft);
+      setKinds(initialKinds);
+      setSuggestion(null);
       setSplit(!sum.unsplit && budget.lines.some((l) => !l.label));
       setOneFigure(baseFigure > 0 ? String(Math.round(baseFigure * 100) / 100) : "");
     }
@@ -84,15 +99,48 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
   async function saveBudget() {
     const base = draftTotal - extrasTotal;
     if (base <= 0 && sum.budget - extrasTotal > 0 && !window.confirm("Remove this project's cost budget? Nothing will be tracked against it.")) return;
+    const named = kinds.filter((k) => k.name.trim());
+    if (split && named.some((k) => BUDGET_CATEGORIES.some((c) => CATEGORY_LABEL[c].toLowerCase() === k.name.trim().toLowerCase()))) {
+      setError("That kind is one of the six above — type its figure there.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       await setProjectBudget(
-        split ? { projectId, lines: BUDGET_CATEGORIES.map((c) => ({ category: c, amount: parseMoney(draft[c]) })) } : { projectId, total: parseMoney(oneFigure) },
+        split
+          ? { projectId, lines: [...BUDGET_CATEGORIES.map((c) => ({ category: c, amount: parseMoney(draft[c]) })), ...named.map((k) => ({ category: k.name.trim(), amount: parseMoney(k.amount) }))] }
+          : { projectId, total: parseMoney(oneFigure) },
       );
       done();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't save the budget.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** The budget read off the estimate, or a rule of thumb for the trade — into the fields, not saved. */
+  async function fillIn() {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await suggestProjectBudget(projectId);
+      if (r.source === "none") {
+        setSuggestion(null);
+        setError(r.words);
+        return;
+      }
+      setSplit(true);
+      setDraft((d) => {
+        const next = { ...d };
+        for (const c of BUDGET_CATEGORIES) next[c] = "";
+        for (const l of r.lines) if (isBudgetCategory(l.category)) next[l.category] = moneyText(l.amount);
+        return next;
+      });
+      setSuggestion({ words: r.words, rule: r.source === "rule" });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't read the estimate.");
     } finally {
       setBusy(false);
     }
@@ -167,6 +215,7 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
         : { tone: "warn" as const, text: `${r.label} is at ${pctText(r.pct)} of budget — ${whole(r.remaining)} left` },
     );
   const empty = sum.budget <= 0 && sum.spent <= 0;
+  const expenseKinds: string[] = [...BUDGET_CATEGORIES, ...kindNames];
 
   return (
     <div className={s.w}>
@@ -190,49 +239,89 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
 
         {/* ── the editors open here, above what they change ── */}
         {panel === "budget" ? (
-          <div className={s.panel}>
+          <div className={s.panel} data-budget-panel>
             <div className={s.panelHint}>
-              What this project should <b>cost you</b> — materials, labor, subs, permits. The price comes from the proposals you
-              sell; the margin is the difference. Spending on the project and on its jobs (receipts, crew pay, stock) is tracked
-              against it.
+              What this project should <b>cost you</b> — materials, labor, subs, permits, and any kind of your own. The price comes from the proposals
+              you sell; the margin is the difference. Spending on the project and on its jobs (receipts, crew pay, stock) is tracked against it.
             </div>
             {split ? (
-              <div className={s.grid}>
-                {BUDGET_CATEGORIES.map((c) => (
-                  <label key={c} className={s.fld}>
-                    <span className={s.lbl}>{CATEGORY_LABEL[c]}</span>
+              <>
+                <div className={s.grid}>
+                  {BUDGET_CATEGORIES.map((c) => (
+                    <label key={c} className={s.fld}>
+                      <span className={s.lbl}>{CATEGORY_LABEL[c]}</span>
+                      <span className={s.moneyIn}>
+                        <span aria-hidden="true">$</span>
+                        <input
+                          inputMode="decimal"
+                          value={draft[c]}
+                          placeholder="0"
+                          onChange={(e) => setDraft((d) => ({ ...d, [c]: e.target.value.replace(/[^\d.,]/g, "") }))}
+                        />
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                {kinds.length ? (
+                  <div className={s.kinds} data-budget-kinds>
+                    {kinds.map((k, i) => (
+                      <div key={i} className={s.kind} data-budget-kind>
+                        <input value={k.name} maxLength={40} placeholder="Tile, cabinets, dumpster…" aria-label="Kind of cost" onChange={(e) => setKinds((cur) => cur.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} data-kind-name />
+                        <span className={s.moneyIn}>
+                          <span aria-hidden="true">$</span>
+                          <input inputMode="decimal" value={k.amount} placeholder="0" aria-label={`${k.name || "This kind"} budget`} onChange={(e) => setKinds((cur) => cur.map((x, j) => (j === i ? { ...x, amount: e.target.value.replace(/[^\d.,]/g, "") } : x)))} data-kind-amount />
+                        </span>
+                        <button type="button" className={s.expX} aria-label={`Take ${k.name || "this kind"} out`} onClick={() => setKinds((cur) => cur.filter((_, j) => j !== i))}>
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                <div className={s.kindActs}>
+                  <button type="button" className={s.linkBtn} onClick={() => setKinds((cur) => [...cur, { name: "", amount: "" }])} data-budget-add-kind>
+                    + Another kind of cost
+                  </button>
+                  <button type="button" className={s.linkBtn} onClick={() => setSplit(false)} data-budget-mode>
+                    Use one figure instead
+                  </button>
+                  <button type="button" className={s.btn} disabled={busy} onClick={() => void fillIn()} data-budget-fill>
+                    {busy ? "Reading…" : "Fill it in for me"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className={s.grid}>
+                  <label className={s.fld}>
+                    <span className={s.lbl}>Total cost budget</span>
                     <span className={s.moneyIn}>
                       <span aria-hidden="true">$</span>
-                      <input
-                        inputMode="decimal"
-                        value={draft[c]}
-                        placeholder="0"
-                        onChange={(e) => setDraft((d) => ({ ...d, [c]: e.target.value.replace(/[^\d.,]/g, "") }))}
-                      />
+                      <input inputMode="decimal" autoFocus value={oneFigure} placeholder="0" onChange={(e) => setOneFigure(e.target.value.replace(/[^\d.,]/g, ""))} />
                     </span>
                   </label>
-                ))}
-              </div>
-            ) : (
-              <div className={s.grid}>
-                <label className={s.fld}>
-                  <span className={s.lbl}>Total cost budget</span>
-                  <span className={s.moneyIn}>
-                    <span aria-hidden="true">$</span>
-                    <input inputMode="decimal" autoFocus value={oneFigure} placeholder="0" onChange={(e) => setOneFigure(e.target.value.replace(/[^\d.,]/g, ""))} />
-                  </span>
-                </label>
-              </div>
+                </div>
+                <div className={s.kindActs}>
+                  <button type="button" className={s.linkBtn} onClick={() => setSplit(true)} data-budget-mode>
+                    Split it by kind — materials, labor, subs…
+                  </button>
+                  <button type="button" className={s.btn} disabled={busy} onClick={() => void fillIn()} data-budget-fill>
+                    {busy ? "Reading…" : "Fill it in for me"}
+                  </button>
+                </div>
+              </>
             )}
-            <button type="button" className={s.linkBtn} onClick={() => setSplit((v) => !v)} data-budget-mode>
-              {split ? "Use one figure instead" : "Split it by category — materials, labor, subs…"}
-            </button>
+            {suggestion ? (
+              <div className={`${s.suggest} ${suggestion.rule ? s.rule : ""}`} data-budget-suggested>
+                {suggestion.words}
+              </div>
+            ) : null}
             {extras.length ? (
               <ul className={s.extras} aria-label="Change orders in the budget">
                 {extras.map((l) => (
                   <li key={l.id ?? l.label}>
                     <span>{l.label}</span>
-                    <span>{CATEGORY_LABEL[l.category as BudgetCategory] ?? l.category}</span>
+                    <span>{categoryLabel(l.category)}</span>
                     <b>{whole(l.amount)}</b>
                     {l.id ? (
                       <button type="button" className={s.expX} aria-label={`Take ${l.label} out of the budget`} onClick={() => void removeExtra(l.id!)}>
@@ -256,7 +345,7 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
               <button type="button" className={s.btn} onClick={() => setPanel(null)} disabled={busy}>
                 Cancel
               </button>
-              <button type="button" className={s.btnPrimary} onClick={() => void saveBudget()} disabled={busy}>
+              <button type="button" className={s.btnPrimary} onClick={() => void saveBudget()} disabled={busy} data-budget-save>
                 {busy ? "Saving…" : "Save budget"}
               </button>
             </div>
@@ -267,11 +356,11 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
           <div className={s.panel}>
             <div className={s.grid}>
               <label className={s.fld}>
-                <span className={s.lbl}>Category</span>
-                <select value={exp.category} onChange={(e) => setExp((x) => ({ ...x, category: e.target.value as BudgetCategory }))}>
-                  {BUDGET_CATEGORIES.map((c) => (
+                <span className={s.lbl}>Kind</span>
+                <select value={exp.category} onChange={(e) => setExp((x) => ({ ...x, category: e.target.value }))}>
+                  {expenseKinds.map((c) => (
                     <option key={c} value={c}>
-                      {CATEGORY_LABEL[c]}
+                      {categoryLabel(c)}
                     </option>
                   ))}
                 </select>
@@ -313,10 +402,10 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
                   const b = row?.budget ?? 0;
                   return b > 0 ? (
                     <>
-                      {CATEGORY_LABEL[exp.category]} after this: <b className={after > b ? s.overText : after >= b * WARN_AT ? s.warnText : ""}>{whole(after)}</b> of {whole(b)}
+                      {categoryLabel(exp.category)} after this: <b className={after > b ? s.overText : after >= b * WARN_AT ? s.warnText : ""}>{whole(after)}</b> of {whole(b)}
                     </>
                   ) : (
-                    <>{CATEGORY_LABEL[exp.category]} has no budget set</>
+                    <>{categoryLabel(exp.category)} has no budget set</>
                   );
                 })()}
               </span>
@@ -337,9 +426,9 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
 
         {empty && panel === null ? (
           <div className={s.empty}>
-            <b>No budget yet.</b> Set what this project should cost by category — materials, labor, subs, permits,
-            equipment — and every cost logged here or on its jobs is tracked against it, with a warning at 80% and when a
-            category runs over.
+            <b>No budget yet.</b> Set what this project should cost by kind — materials, labor, subs, permits,
+            equipment, or any of your own — or let it be filled in from the estimate. Every cost logged here or on its jobs is tracked against it, with a warning at 80% and when a
+            kind runs over.
             <button type="button" className={s.btnPrimary} onClick={() => open("budget")}>
               Set budget
             </button>
@@ -365,7 +454,7 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
               <div className={s.num}>
                 <span className={s.numL}>Budgeted cost</span>
                 <span className={s.numV}>{sum.budget > 0 ? whole(sum.budget) : "—"}</span>
-                <span className={s.numS}>{sum.unsplit ? "one figure — not split" : `${sum.rows.filter((r) => r.budget > 0).length} categories`}</span>
+                <span className={s.numS}>{sum.unsplit ? "one figure — not split" : `${sum.rows.filter((r) => r.budget > 0).length} kinds`}</span>
               </div>
               <div className={s.num}>
                 <span className={s.numL}>Spent</span>
@@ -461,9 +550,9 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
 
             {/* 3 — by category */}
             {sum.rows.length ? (
-              <div className={s.rows} role="table" aria-label="Budget by category">
+              <div className={s.rows} role="table" aria-label="Budget by kind">
                 {sum.rows.map((r) => (
-                  <div key={r.category} className={s.row} role="row">
+                  <div key={r.category} className={s.row} role="row" data-budget-row={r.category}>
                     <span className={s.rowL} role="cell">
                       {r.label}
                     </span>
@@ -492,11 +581,9 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
                   <li key={e.source + e.id} className={s.exp}>
                     <span className={s.expDate}>{dateText(e.at)}</span>
                     <span className={s.expMain}>
-                      <span className={s.expT}>
-                        {e.source === "project" ? e.vendor || CATEGORY_LABEL[e.category as BudgetCategory] || e.category : e.jobTitle}
-                      </span>
+                      <span className={s.expT}>{e.source === "project" ? e.vendor || categoryLabel(e.category) : e.jobTitle}</span>
                       <span className={s.expS}>
-                        {CATEGORY_LABEL[e.category as BudgetCategory] ?? e.category}
+                        {categoryLabel(e.category)}
                         {e.source === "job" ? " · logged on the job" : ""}
                         {e.note ? ` · ${e.note}` : ""}
                       </span>
