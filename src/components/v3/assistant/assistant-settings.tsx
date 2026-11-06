@@ -14,7 +14,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AudioLines, Copy, MessageSquareText, Phone } from "lucide-react";
 import { clearAssistantPin, loadAssistantPhone, setAssistantOpen, setAssistantPhoneOn, setAssistantPin, setAssistantPrefs, startAssistantLink, unlinkAssistantPhone, type AssistantPhoneView } from "@/actions/assistant";
 import type { AssistantPrefs } from "@/lib/assistant/prefs";
-import { BRIEFING_TIMES, clock12 } from "@/lib/assistant/shared";
+import { BRIEFING_TIMES, SPEECH_LANGS, clock12, type SpeechLang } from "@/lib/assistant/shared";
 import { openAssistant } from "./events";
 import s from "./assistant-settings.module.css";
 
@@ -229,6 +229,36 @@ export function AssistantSettings({ mobile = false }: { mobile?: boolean }) {
                 </button>
               </div>
             )}
+          </div>
+        ) : null}
+
+        {!view.closed ? (
+          <div className={s.section}>
+            <h4 className={s.h}>Talking to it</h4>
+            <p className={s.text}>The language you speak to the AI Operator in. It listens for this one — English unless you pick another — and answers in the language you use.</p>
+            <ul className={s.prefs}>
+              <li>
+                <div className={s.prefText}>
+                  <p className={s.rowMain}>You speak</p>
+                  <p className={s.rowSub}>Addresses and names are heard best in the language they are said in.</p>
+                </div>
+                <div className={s.prefCtl}>
+                  <select
+                    className={s.lang}
+                    aria-label="Language you speak to the AI Operator"
+                    value={view.prefs.lang}
+                    disabled={busy}
+                    onChange={(e) => savePrefs({ ...view.prefs, briefing: { on: view.prefs.briefing.on, time: briefTime }, lang: e.target.value as SpeechLang })}
+                  >
+                    {SPEECH_LANGS.map((l) => (
+                      <option key={l.code} value={l.code}>
+                        {l.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </li>
+            </ul>
           </div>
         ) : null}
 

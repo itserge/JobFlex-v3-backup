@@ -62,7 +62,7 @@ export function Conversation({
   autoFocus?: boolean;
   variant: "panel" | "page";
 }) {
-  const { feed, pending, busy, building, landed, error, ask, answer } = state;
+  const { feed, pending, busy, building, landed, error, lang, ask, answer } = state;
   const [text, setText] = useState("");
   const [talk, setTalk] = useState(false);
   const [heard, setHeard] = useState("");
@@ -85,8 +85,8 @@ export function Conversation({
   };
 
   const speech = useDeckSpeech({
-    // The phone's own language (spec §2): a Russian phone is heard in Russian; the replies already follow the person.
-    lang: typeof navigator !== "undefined" && navigator.language ? navigator.language : "en-US",
+    // The language they speak to it in (Settings → AI Operator; English unless they picked another).
+    lang,
     onFinal: (alternatives) => {
       const said = alternatives[0]?.trim();
       // A sentence heard while the last one is still being answered waits for nothing: it is dropped.

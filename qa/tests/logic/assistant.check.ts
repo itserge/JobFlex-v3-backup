@@ -28,6 +28,8 @@ import {
   undoWindowMs,
   wallInstant,
   APPROVAL_TTL_MS,
+  SPEECH_LANGS,
+  isSpeechLang,
   type ActionStatus,
 } from "../../../src/lib/assistant/shared";
 import { ownProposalsOnly, roleAllows, type Capability } from "../../../src/lib/assistant/roles";
@@ -36,6 +38,7 @@ import { codeIn, phoneWords } from "../../../src/lib/assistant/phone";
 import { SMS_WORDS, isCarrierStart, isCarrierStop } from "../../../src/lib/assistant/sms";
 import { forSpeech, shownBody } from "../../../src/components/v3/assistant/use-assistant";
 import { hashPin, pinMatches, weakPin } from "../../../src/lib/assistant/pin";
+import { DEFAULT_PREFS, parsePrefs } from "../../../src/lib/assistant/prefs";
 import { layoutFence, orient, pickHouse, siteWords, type FenceSite } from "../../../src/lib/fence/voiceLayout";
 import { roofExistingFor, roofFamilyFor, roofSystemFor, yardFromSaid, HVAC_TIER_ID, LAWN_USUAL } from "../../../src/lib/assistant/estimatorWords";
 import { BUILTIN_LISTS } from "../../../src/lib/roofPackage/catalog";
@@ -270,6 +273,15 @@ function check(name: string, ok: boolean, extra?: unknown) {
   const prompt = worksetPrompt(merged);
   check("records: the prompt lists them with their ids and says what 'him' and 'it' mean", /RECORDS IN THIS CONVERSATION/.test(prompt) && /- client "Lee" · clientId=c1/.test(prompt) && /- visit "Measure" · visitId=v1/.test(prompt) && /"him"/.test(prompt), prompt);
   check("records: an unnamed id stays out of the prompt; none at all is nothing", !worksetPrompt([{ kind: "job", id: "j2", label: "", at }]) && worksetPrompt([]) === "");
+}
+
+// ── The language they speak to it in (2026-11-06): English unless set; never the phone's own ──
+{
+  check("speech language: nothing set means English", parsePrefs(null).lang === "en-US" && DEFAULT_PREFS.lang === "en-US");
+  check("speech language: a set one is kept", parsePrefs(JSON.stringify({ lang: "ru-RU" })).lang === "ru-RU");
+  check("speech language: an odd one falls back to English", parsePrefs(JSON.stringify({ lang: "xx" })).lang === "en-US" && parsePrefs(JSON.stringify({ lang: 7 })).lang === "en-US");
+  check("speech language: the older switches still parse without it", parsePrefs(JSON.stringify({ briefing: { on: true, time: "07:00" }, alerts: { newLead: true } })).briefing.time === "07:00");
+  check("speech language: every code is the Web Speech API's form and unique", SPEECH_LANGS.every((l) => /^[a-z]{2}-[A-Z]{2}$/.test(l.code) && isSpeechLang(l.code)) && new Set(SPEECH_LANGS.map((l) => l.code)).size === SPEECH_LANGS.length && !isSpeechLang("en"));
 }
 
 console.log(bad ? `\n${bad} FAILED` : "\nall ok");

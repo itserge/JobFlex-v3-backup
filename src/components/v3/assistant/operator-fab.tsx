@@ -14,6 +14,7 @@ import { Mic } from "lucide-react";
 import { useNavRole } from "@/components/v3/blueprint-shell/nav-role";
 import { useAssistantVisible } from "./assistant-row";
 import { MOBILE_HREF } from "./events";
+import { unlockVoice } from "@/components/v3/deck-voice/use-deck-speech";
 import { OperatorSheet, type OperatorHandle } from "./operator-sheet";
 import { useAssistant } from "./use-assistant";
 import "./operator.css";
@@ -36,6 +37,8 @@ export function OperatorFab() {
 
   const onDown = (e: ReactPointerEvent<HTMLButtonElement>) => {
     e.preventDefault();
+    // The finger is down: the one gesture iPhone Safari lets the reply's sound start from (the sheet opens later).
+    unlockVoice();
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {

@@ -8,6 +8,12 @@
 // server to be written down (api/deck/voice/transcribe). The studio's replies are read out in a natural voice — the
 // shop's AI desk voice, made by the server (api/deck/voice/speak, 2026-10-21), the browser's own voice when that cannot
 // answer — and while it talks the microphone pauses, so it never hears itself.
+//
+// ON A PHONE (2026-11-06): iPhone Safari plays sound only from an element the person's own tap or hold started, and
+// the replies arrive later, from the server, outside any gesture — so the first tap or hold plays a moment of silence
+// through the one element every reply then plays through (unlockVoice, called by start() and by the dial buttons);
+// the browser's own voice is woken the same way. The ears listen for the language the person set (the Operator's
+// Settings), English unless they picked another.
 
 import * as React from "react";
 
@@ -45,6 +51,59 @@ const srCtor = (): SRCtor | null => {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 };
 
+/** The one element every reply plays through (see the head of the file). */
+let player: HTMLAudioElement | null = null;
+let silence: string | null = null;
+
+/** 60 ms of silence as a WAV, made here rather than carried as a data URL. */
+function silentClip(): string {
+  if (silence) return silence;
+  const n = 480;
+  const b = new ArrayBuffer(44 + n * 2);
+  const v = new DataView(b);
+  const str = (o: number, s: string) => {
+    for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i));
+  };
+  str(0, "RIFF");
+  v.setUint32(4, 36 + n * 2, true);
+  str(8, "WAVE");
+  str(12, "fmt ");
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true);
+  v.setUint32(24, 8000, true);
+  v.setUint32(28, 16000, true);
+  v.setUint16(32, 2, true);
+  v.setUint16(34, 16, true);
+  str(36, "data");
+  v.setUint32(40, n * 2, true);
+  silence = URL.createObjectURL(new Blob([b], { type: "audio/wav" }));
+  return silence;
+}
+
+/** Call from the person's own tap or hold (a pointer or click handler): afterwards a reply that arrives later may
+ *  play. Harmless anywhere else, and while a reply is playing it leaves it alone. */
+export function unlockVoice(): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (!player) {
+      player = new Audio();
+      player.preload = "auto";
+      (player as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
+    }
+    if (!player.paused && !player.ended) return;
+    player.src = silentClip();
+    void player.play().catch(() => undefined);
+    if ("speechSynthesis" in window && !window.speechSynthesis.speaking) {
+      const u = new SpeechSynthesisUtterance(" ");
+      u.volume = 0;
+      window.speechSynthesis.speak(u);
+    }
+  } catch {
+    /* no audio here */
+  }
+}
+
 export type HearMode = "native" | "record" | "none";
 export type MicState = "off" | "listening" | "recording" | "sending";
 
@@ -65,7 +124,8 @@ function pickVoice(): SpeechSynthesisVoice | null {
 }
 
 export interface SpeechHandlers {
-  /** The language the ears listen in (BCP 47); the Deck Studio leaves it English, the Operator passes the phone's own. */
+  /** The language the ears listen in (BCP 47); the Deck Studio leaves it English, the Operator passes the person's
+   *  setting. The server's ears (record mode) get its first two letters. */
   lang?: string;
   /** A finished sentence: the recogniser's hearings of it, the likeliest first. */
   onFinal: (alternatives: string[]) => void;
@@ -109,7 +169,7 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
       /* already stopped */
     }
     const r = new Ctor();
-    // The Operator passes the phone's own language (spec §2: Russian, mixed speech); the Deck Studio stays English.
+    // The Operator passes the language the person set (Settings → AI Operator); the Deck Studio stays English.
     r.lang = handlers.lang ?? "en-US";
     r.continuous = hands.current;
     r.interimResults = true;
@@ -168,6 +228,17 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
     }
   }, [handlers.lang]);
 
+  // The language changed while it listens (the setting arrives with the conversation, after the first start on a
+  // device that never had it): listen again in the right one.
+  const firstLang = React.useRef(true);
+  React.useEffect(() => {
+    if (firstLang.current) {
+      firstLang.current = false;
+      return;
+    }
+    if (wanted.current && mode === "native" && !talking.current) startNative();
+  }, [handlers.lang, mode, startNative]);
+
   const stopRecording = React.useCallback((send: boolean) => {
     const m = media.current;
     if (!m) return;
@@ -204,6 +275,7 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
       try {
         const form = new FormData();
         form.append("audio", new Blob(chunks, { type: recorder.mimeType || "audio/webm" }));
+        form.append("language", (h.current.lang ?? "en-US").slice(0, 2).toLowerCase());
         const res = await fetch(h.current.transcribeUrl ?? "/api/deck/voice/transcribe", { method: "POST", body: form });
         const body = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
         if (!res.ok) h.current.onError(body.error ?? "Couldn't write that down.");
@@ -259,6 +331,7 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
   /** Start listening; hands-free keeps listening, sentence after sentence. */
   const start = React.useCallback(
     (handsFree: boolean) => {
+      unlockVoice();
       wanted.current = true;
       hands.current = handsFree;
       restarts.current = [];
@@ -337,7 +410,9 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
         .then((blob) => {
           if (run !== sayRun.current) return;
           const url = URL.createObjectURL(blob);
-          const a = new Audio(url);
+          // The unlocked element when there is one (a phone), else a fresh one.
+          const a = player ?? new Audio();
+          player = a;
           audio.current = a;
           const end = () => {
             URL.revokeObjectURL(url);
@@ -349,6 +424,7 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
             URL.revokeObjectURL(url);
             browserVoice();
           };
+          a.src = url;
           void a.play().catch(() => {
             URL.revokeObjectURL(url);
             browserVoice();

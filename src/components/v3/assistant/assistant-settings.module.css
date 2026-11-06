@@ -414,7 +414,8 @@
   align-items: center;
   gap: 8px;
 }
-.card .time {
+.card .time,
+.card .lang {
   height: 44px;
   padding: 0 10px;
   border: 1.5px solid var(--ink);
@@ -424,4 +425,8 @@
   font-family: inherit;
   font-size: 14px;
   font-weight: 600;
+}
+/* The language they speak to it in (2026-11-06): room for the longest name. */
+.card .lang {
+  min-width: 150px;
 }
