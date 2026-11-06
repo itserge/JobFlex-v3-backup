@@ -41,7 +41,7 @@ function uploadDoor(door: CrewDoor): UploadDoor {
 }
 
 /** Requests through either door, with the page re-read after a write. */
-function useCrewCalls(door: CrewDoor) {
+export function useCrewCalls(door: CrewDoor) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [busy, setBusy] = useState<string | null>(null);
@@ -82,7 +82,7 @@ function useCrewCalls(door: CrewDoor) {
 }
 
 /** An error line, in words, dismissible. */
-function ErrorLine({ text, onClose }: { text: string | null; onClose: () => void }) {
+export function ErrorLine({ text, onClose }: { text: string | null; onClose: () => void }) {
   if (!text) return null;
   return (
     <div className={cx("err")} role="alert">
@@ -97,7 +97,7 @@ function ErrorLine({ text, onClose }: { text: string | null; onClose: () => void
 
 // ── the sheet ──────────────────────────────────────────────────────────────
 
-function Sheet({ open, title, kicker, onClose, children, footer }: { open: boolean; title: string; kicker?: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode }) {
+export function Sheet({ open, title, kicker, onClose, children, footer }: { open: boolean; title: string; kicker?: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode }) {
   const labelId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   // The latest onClose, read at the moment of use. It is NOT an effect
@@ -304,6 +304,8 @@ function CloseDaySheet({ data, door, day, open, onClose }: { data: CrewBoardData
   const { call, busy, error, setError } = useCrewCalls(door);
   const up = useUploads(data.jobId, door);
   const [note, setNote] = useState(day?.note ?? "");
+  // The hours the crew member put in that day (the crew build, 2026-11-05) — saved with the close, Labor on the job.
+  const [hours, setHours] = useState("");
   const [added, setAdded] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const existing = day?.files.length ?? 0;
@@ -338,6 +340,11 @@ function CloseDaySheet({ data, door, day, open, onClose }: { data: CrewBoardData
                 setError("Write a note or add at least one photo or video of the day before closing it.");
                 return;
               }
+              // The hours first, so a close that fails leaves them typed; the office's close types nobody's hours.
+              if (!data.office && Number(hours) > 0) {
+                const saved = await call("close", `/api/crew/${data.jobId}/hours`, "POST", { hours: Number(hours), date: day.date });
+                if (!saved) return;
+              }
               const ok = await call("close", `/api/crew/${data.jobId}/day`, "POST", { action: "close", note, date: day.date });
               if (ok) close();
             }}
@@ -348,6 +355,12 @@ function CloseDaySheet({ data, door, day, open, onClose }: { data: CrewBoardData
       }
     >
       <p className={cx("hint")}>A note, or at least one photo or video of the day — one of the two is needed. The day closes for the whole crew.</p>
+      {!data.office && (
+        <label className={cx("field")}>
+          <span className={cx("fieldLabel")}>Your hours today</span>
+          <input className={cx("input")} inputMode="decimal" value={hours} onChange={(e) => setHours(e.target.value)} placeholder="8" data-close-hours />
+        </label>
+      )}
       <label className={cx("field")}>
         <span className={cx("fieldLabel")}>What got done</span>
         <textarea className={cx("input", "area")} rows={4} value={note} maxLength={2000} onChange={(e) => setNote(e.target.value)} placeholder="Posts set on the north run, concrete cured, gate hardware tomorrow." />
@@ -541,6 +554,7 @@ export function CrewDays({ data, door }: { data: CrewBoardData; door: CrewDoor }
           <p className={cx("line")} data-today-line>
             {line}
           </p>
+          {t?.weather && <div className={cx("mono")} data-today-weather>{t.weather}</div>}
           {t?.note && <p className={cx("note")}>{t.note}</p>}
           {(canStart || canBack || openToday) && (
             <div className={cx("acts")}>

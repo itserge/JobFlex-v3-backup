@@ -535,6 +535,21 @@ small outline buttons, "Delivered" the one primary. The buyer's page
 (/buy/<token>) is the review page's sibling: one 2px ink frame on graph
 paper, 52px tick rows, the ink Save button with the accent shadow.
 
+The crew in the field (2026-11-05): the On site block sits on the job page
+right under the crew's day buttons, in the crew board's own language — a
+white 2px-ink card, mono caps label, uppercase heavy title, 44px rows. A
+problem is an amber-framed row with the warning glyph; one that stopped the
+work is rose. Tasks are 22px ink checks on dashed rows; a ticked one strikes
+through. Deliveries are a row with the one primary "Delivered". Hours are a
+120px field with a small outline Save and a mono "32 h this week". "Flag a
+problem" is a full-width outline button, never red — the office's stamp is
+the red thing. On the project page the On site card uses the hub's row
+vocabulary: a problem row's round mark is a rose "!", the open ones lead;
+hours and the subs' bills are mono-quantity lines, "owed" in rose, "paid" in
+emerald. The crew's home prints "My tasks today" as paper cards with empty
+ink squares (no live ticking there — the job page ticks) and "My week" as
+three display figures.
+
 Read [implementation notes](docs/design/implementation.md) when editing an
 existing interactive surface, and [mobile notes](docs/design/mobile.md) for
 handheld work. These describe code hazards, not alternative visual themes.

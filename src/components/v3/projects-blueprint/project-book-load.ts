@@ -11,6 +11,7 @@ import { projectMoney } from "@/lib/projectMoney";
 import { CATEGORY_LABEL } from "@/lib/projectBudget";
 import { currentStage, percentDone, stageFlags } from "@/lib/projectStages/shared";
 import { buyingFlags } from "@/lib/projectBuying/shared";
+import { problemFlags } from "@/lib/crewField/shared";
 import type { Project } from "./projects-data";
 
 /** "Jul 08" in UTC — project dates are stored as UTC midnight (the action
@@ -50,6 +51,8 @@ export async function loadProjectBook(organizationId: string): Promise<Project[]
       // Buying (2026-11-05): materials not ordered by their stage's order-by day, deliveries past their day.
       materials: { select: { quantity: true, orderedQty: true, receivedQty: true, stage: { select: { name: true, startsAt: true } } } },
       orders: { where: { status: { in: ["ORDERED", "SHIPPED"] } }, select: { number: true, how: true, status: true, expectedAt: true, buyerName: true, supplier: { select: { name: true } } } },
+      // Problems flagged from site (2026-11-05): the project reads red until the office resolves them.
+      flags: { where: { status: "OPEN" }, select: { note: true, blocking: true, status: true, job: { select: { title: true } } } },
     },
   });
   const money = await projectMoney(organizationId, projects.map((p) => p.id));
@@ -88,6 +91,7 @@ export async function loadProjectBook(organizationId: string): Promise<Project[]
       stageNow: now?.name ?? null,
       stageCount: stages.length,
       attention: [
+        ...problemFlags(p.flags.map((f) => ({ note: f.note, blocking: f.blocking, status: f.status, jobTitle: f.job.title }))),
         ...stageFlags({ stages, sold: r2(m?.contract ?? 0), status: p.status, draftedByAi: Boolean(p.stagesDraftedAt) }, today),
         ...(p.status === "COMPLETED" || p.status === "ARCHIVED"
           ? []

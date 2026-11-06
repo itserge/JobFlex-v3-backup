@@ -675,6 +675,28 @@ export const GUIDES: Guide[] = [
     ],
   },
   {
+    id: "crew-on-site",
+    title: "What the crew does on site",
+    group: "how",
+    icon: "HardHat",
+    steps: [
+      {
+        text: "Open Workers and make sure each crew member has an hourly rate — their hours become labor cost at that rate.",
+        open: "/dashboard/workers",
+      },
+      {
+        text: "The crew opens a job from their link or the app. Under On site they tick the stage’s tasks as they finish them, press Delivered on a delivery and untick anything that did not come, and type their hours.",
+      },
+      {
+        text: "Flag a problem sends you a text right away. Open the project: the On site card shows it in red until you press Resolved and say what was done.",
+        open: "/dashboard/projects",
+      },
+      {
+        text: "On the same card, Hours this week shows each crew member’s hours and labor cost, and + Sub bill records what a sub charged — mark it paid when you pay it.",
+      },
+    ],
+  },
+  {
     id: "crew",
     title: "Jobs and the calendar for your crew",
     group: "how",

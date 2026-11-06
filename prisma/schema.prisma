@@ -1191,6 +1191,8 @@ model Job {
   conversation   Conversation?
   changeOrders   ChangeOrder[]
   reviewRequests ReviewRequest[]
+  crewHours      CrewHours[]
+  flags          JobFlag[]
 
   @@index([organizationId, status])
   @@index([projectId])
@@ -1245,6 +1247,7 @@ model WorkerProfile {
   organization           Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   assignments            JobAssignment[]
   appointmentAssignments AppointmentAssignment[]
+  hours                  CrewHours[]
 
   @@index([organizationId])
   @@index([lastSeenAt])
@@ -1293,6 +1296,9 @@ model WorkDay {
   note           String?
   // worker | office — who opened it.
   source         String    @default("worker")
+  // The weather the day it was opened, noted by itself from the job's address ("48–61°F, light rain") — the
+  // crew build, 2026-11-05 (lib/weather). Null when nothing could be read.
+  weather        String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -2323,6 +2329,7 @@ model Project {
   tasks        ProjectTask[]
   materials    ProjectMaterial[]
   orders       ProjectOrder[]
+  flags        JobFlag[]
 
   @@unique([organizationId, number])
   @@index([organizationId])
@@ -2481,6 +2488,60 @@ model ProjectOrderLine {
   @@index([materialId])
 }
 
+// HOURS A CREW MEMBER WORKED on a job on a day (the crew build, 2026-11-05) — typed when they close the day (or by
+// the office). `rate` is the worker's hourly rate the day it was typed, so a later raise never re-prices old days;
+// hours × rate is Labor on the job and the project (lib/jobCost). One row per worker, job and day.
+model CrewHours {
+  id             String   @id @default(cuid())
+  organizationId String
+  jobId          String
+  workerId       String
+  workDayId      String?
+  // "2026-11-06" in the company's timezone, like WorkDay.date.
+  date           String
+  hours          Float
+  rate           Float?
+  note           String?
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  job    Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  worker WorkerProfile @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, workerId, date])
+  @@index([organizationId, date])
+  @@index([workerId, date])
+}
+
+// A PROBLEM FLAGGED FROM THE FIELD (the crew build, 2026-11-05) — "the subfloor is rotten", "no power on site":
+// a note, whether the crew can keep working, and the job it is on (and its project). The office is texted at
+// once; the project reads red until the office resolves it with a word on what was done.
+model JobFlag {
+  id             String    @id @default(cuid())
+  organizationId String
+  jobId          String
+  projectId      String?
+  workerId       String?
+  raisedById     String?
+  note           String
+  blocking       Boolean   @default(false)
+  // OPEN | RESOLVED
+  status         String    @default("OPEN")
+  resolution     String?
+  resolvedAt     DateTime?
+  resolvedById   String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  job     Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status])
+  @@index([jobId])
+  @@index([projectId])
+}
+
 // A project's cost budget, one line per category (MATERIALS, LABOR,
 // SUBCONTRACTORS, PERMITS, EQUIPMENT, OTHER) or a named line under one.
 // Project.budget stays the total the list pages read; the budget actions keep
@@ -2511,6 +2572,8 @@ model ProjectExpense {
   vendor      String?
   note        String?
   spentAt     DateTime @default(now())
+  // A sub's bill (category SUBCONTRACTORS, the crew build 2026-11-05): when it was paid; null = still owed to them.
+  paidAt      DateTime?
   createdById String?
   createdAt   DateTime @default(now())
 
