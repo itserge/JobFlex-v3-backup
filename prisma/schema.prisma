@@ -2321,6 +2321,8 @@ model Project {
   expenses     ProjectExpense[]
   stages       ProjectStage[]
   tasks        ProjectTask[]
+  materials    ProjectMaterial[]
+  orders       ProjectOrder[]
 
   @@unique([organizationId, number])
   @@index([organizationId])
@@ -2347,8 +2349,10 @@ model ProjectStage {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  project Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  tasks   ProjectTask[]
+  project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks     ProjectTask[]
+  materials ProjectMaterial[]
+  orders    ProjectOrder[]
 
   @@index([projectId, position])
 }
@@ -2372,6 +2376,109 @@ model ProjectTask {
 
   @@index([stageId, position])
   @@index([projectId])
+}
+
+// WHAT A PROJECT HAS TO BUY (the buying build, 2026-11-05) — one line per material the project needs: from a sold
+// proposal's lines (lineItemId), an approved change order (changeOrderId), the Deck Studio takeoff, or typed by
+// hand. Bought in parts: `orderedQty` is what orders cover, `receivedQty` what arrived (lib/projectBuying).
+model ProjectMaterial {
+  id             String    @id @default(cuid())
+  organizationId String
+  projectId      String
+  // The stage it is needed for — the order-by date comes from the stage's first day.
+  stageId        String?
+  proposalId     String?
+  lineItemId     String?
+  changeOrderId  String?
+  name           String
+  quantity       Float     @default(1)
+  unit           String    @default("each")
+  // What it should cost, each (the estimate's material cost when it has one).
+  unitCost       Float?
+  // PROPOSAL | CHANGE_ORDER | TAKEOFF | HAND
+  source         String    @default("HAND")
+  store          String?
+  productUrl     String?
+  orderedQty     Float     @default(0)
+  receivedQty    Float     @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  project Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  stage   ProjectStage?     @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  lines   ProjectOrderLine[]
+
+  @@index([projectId])
+  @@index([stageId])
+}
+
+// AN ORDER ON A PROJECT — part of the to-buy list bought one way: a SUPPLIER (the purchase order is emailed),
+// a BUYER (anyone, by a link, no login — the crew, the office, a helper), or STOCK (from the warehouse, in at
+// once). It is the delivery too: ORDERED → SHIPPED → DELIVERED, or PARTIAL when something was missing (those
+// lines go back on the list), or CANCELED. `number` counts per project (#1042 · order 3).
+model ProjectOrder {
+  id             String    @id @default(cuid())
+  organizationId String
+  projectId      String
+  number         Int       @default(1)
+  how            String    @default("SUPPLIER")
+  status         String    @default("ORDERED")
+  stageId        String?
+  supplierId     String?
+  buyerName      String?
+  buyerEmail     String?
+  buyerPhone     String?
+  // The crew member asked to buy it, when the buyer is one (their crew texts carry the link).
+  buyerWorkerId  String?
+  publicToken    String    @unique @default(cuid())
+  // The day it must be ordered by (the stage's first day less the lead time), and when it is expected.
+  orderBy        DateTime?
+  expectedAt     DateTime?
+  orderedAt      DateTime?
+  shippedAt      DateTime?
+  deliveredAt    DateTime?
+  carrier        String?
+  trackingNumber String?
+  note           String?
+  // What it was quoted at, and what was paid (the buyer's figure, or the invoice); the expense logged for it.
+  quotedTotal    Float?
+  paidTotal      Float?
+  expenseId      String?
+  // The buyer's own note from the link, and when they last touched it.
+  buyerNote      String?
+  buyerSeenAt    DateTime?
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  project  Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  stage    ProjectStage?      @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  supplier Supplier?          @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  lines    ProjectOrderLine[]
+
+  @@index([projectId])
+  @@index([organizationId, status])
+  @@index([organizationId, expectedAt])
+}
+
+// ONE LINE OF AN ORDER: so much of one material. OPEN until it is bought or arrives; BOUGHT (the buyer ticked it);
+// RECEIVED (in full); MISSING (short or damaged — the shortfall goes back on the to-buy list).
+model ProjectOrderLine {
+  id          String   @id @default(cuid())
+  orderId     String
+  materialId  String
+  quantity    Float
+  receivedQty Float    @default(0)
+  status      String   @default("OPEN")
+  note        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  order    ProjectOrder    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  material ProjectMaterial @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([materialId])
 }
 
 // A project's cost budget, one line per category (MATERIALS, LABOR,
@@ -3033,10 +3140,14 @@ model Supplier {
   phone          String?
   website        String?
   notes          String?
+  // How many days this supplier takes to deliver — a project's order-by date is the stage's first day less this
+  // (the buying build, 2026-11-05); null reads as 3.
+  leadDays       Int?
   createdAt      DateTime @default(now())
 
   organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   items        InventoryItem[]
+  orders       ProjectOrder[]
 
   @@index([organizationId])
 }

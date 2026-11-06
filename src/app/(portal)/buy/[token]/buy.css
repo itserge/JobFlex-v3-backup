@@ -1,0 +1,61 @@
+/* THE BUYER'S PAGE (/buy/[token]) — plain stylesheet, every selector under the literal root `.jf-buy`, the
+   sibling of /review/[token]'s review.css: one 2px ink frame on graph paper, mono annotations, 52px tap rows.
+   Handheld first (a crew member at the yard); a desk gets the same column centred at 640px. Tokens from
+   globals.css. */
+
+.jf-buy {
+  --by-frame: 2px solid var(--ink);
+  --by-hair: 1.5px solid var(--ink-line);
+  --by-tap: 52px;
+  min-height: 100dvh;
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(var(--ink-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--ink-line) 1px, transparent 1px);
+  background-size: 24px 24px;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  padding: calc(20px + var(--safe-top, 0px)) 16px calc(32px + var(--safe-bottom, 0px));
+}
+.jf-buy * { box-sizing: border-box; }
+.jf-buy :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.jf-buy .by-card { max-width: 640px; margin: 0 auto; background: var(--paper); border: var(--by-frame); padding: 20px 18px 22px; }
+@media (min-width: 640px) {
+  .jf-buy { padding: 40px 24px 48px; }
+  .jf-buy .by-card { padding: 28px 28px 30px; }
+}
+
+.jf-buy .by-kicker, .jf-buy .by-lab, .jf-buy .by-count, .jf-buy .by-foot, .jf-buy .by-line-qty, .jf-buy .by-line-sub {
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; line-height: 1.4; color: var(--ink-muted);
+}
+.jf-buy .by-head { padding-bottom: 16px; border-bottom: var(--by-frame); }
+.jf-buy .by-kicker { margin: 0; overflow-wrap: anywhere; }
+.jf-buy .by-title { margin: 8px 0 6px; font-size: 26px; line-height: 1.1; font-weight: 900; letter-spacing: -0.02em; }
+.jf-buy .by-sub { margin: 0; font-size: 14px; line-height: 1.5; }
+.jf-buy .by-note { margin: 10px 0 0; padding: 10px 12px; border-left: 3px solid var(--ink); background: rgba(10, 10, 10, 0.04); font-size: 14px; line-height: 1.5; }
+
+.jf-buy .by-lines { margin-top: 6px; }
+.jf-buy .by-line { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: var(--by-tap); padding: 8px 0; border-bottom: var(--by-hair); cursor: pointer; }
+.jf-buy .by-line input { width: 24px; height: 24px; margin: 0; accent-color: var(--ink); }
+.jf-buy .by-line-name { font-size: 15px; font-weight: 700; line-height: 1.3; min-width: 0; overflow-wrap: anywhere; }
+.jf-buy .by-line.is-on .by-line-name { color: var(--ink-muted); text-decoration: line-through; text-decoration-thickness: 1px; }
+.jf-buy .by-line-sub { display: block; margin-top: 2px; text-transform: none; letter-spacing: 0.04em; }
+.jf-buy .by-line-sub a { color: var(--accent); }
+.jf-buy .by-line-qty { color: var(--ink); white-space: nowrap; font-size: 12px; }
+.jf-buy .by-count { margin: 12px 0 0; color: var(--ink); }
+
+.jf-buy .by-field { display: block; margin-top: 16px; }
+.jf-buy .by-lab { display: block; margin-bottom: 6px; }
+.jf-buy .by-field input, .jf-buy .by-field textarea {
+  width: 100%; min-height: 48px; border: var(--by-frame); background: #fff; color: var(--ink); font: inherit; font-size: 16px; padding: 10px 12px; border-radius: 0;
+}
+.jf-buy .by-field textarea { resize: vertical; line-height: 1.45; }
+.jf-buy .by-err { margin: 12px 0 0; padding: 9px 12px; border-left: 3px solid var(--rose); background: rgba(168, 50, 50, 0.07); color: var(--rose); font-size: 14px; }
+.jf-buy .by-btn {
+  display: block; width: 100%; min-height: 52px; margin-top: 18px; border: var(--by-frame); background: var(--ink); color: var(--paper);
+  font: inherit; font-size: 13px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; box-shadow: 3px 3px 0 var(--accent);
+}
+.jf-buy .by-btn:disabled { opacity: 0.6; cursor: default; }
+.jf-buy .by-foot, .jf-buy .by-closed { margin: 14px 0 0; text-transform: none; letter-spacing: 0.02em; font-size: 12px; line-height: 1.5; }
+.jf-buy .by-closed { font-family: var(--font-sans); font-size: 14px; color: var(--ink); padding: 12px; border: 1.5px dashed var(--ink-line); }

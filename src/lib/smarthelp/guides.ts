@@ -651,6 +651,30 @@ export const GUIDES: Guide[] = [
     ],
   },
   {
+    id: "project-buying",
+    title: "Buy a project’s materials in parts",
+    group: "how",
+    icon: "ShoppingCart",
+    steps: [
+      {
+        text: "Open Projects and open a project. On the Buying card, press From the proposals — every material line sold on the project comes onto the to-buy list, grouped by stage with its order-by day.",
+        open: "/dashboard/projects",
+      },
+      {
+        text: "Tick the lines to buy now (or Select all on a stage) and press Order these.",
+      },
+      {
+        text: "Pick how: Supplier order emails the purchase order; Someone buys it sends a crew member or anyone a link to tick off and type what they paid; From our stock marks them in at once. Press Place the order.",
+      },
+      {
+        text: "On the Deliveries card, paste the tracking number when it ships and press Delivered when it lands. Anything short goes back on the list and you’re told.",
+      },
+      {
+        text: "Press Log the cost on a delivered order — it lands on the project’s budget as a Materials expense.",
+      },
+    ],
+  },
+  {
     id: "crew",
     title: "Jobs and the calendar for your crew",
     group: "how",

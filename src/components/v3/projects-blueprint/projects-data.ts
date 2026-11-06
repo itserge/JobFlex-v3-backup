@@ -53,12 +53,13 @@ export type Project = {
   /** The stage the project is on ("Framing"), or null. */
   stageNow?: string | null;
   stageCount?: number;
-  /** What the stages flag: a late stage, no stages on sold work, an AI draft to keep. */
-  attention?: Array<{ kind: "late" | "nostages" | "drafted"; text: string }>;
+  /** What the stages and the buying flag: a late stage, no stages on sold work, an AI draft to keep, materials
+   *  not ordered by their day, a delivery past its day. */
+  attention?: Array<{ kind: "late" | "nostages" | "drafted" | "order-by" | "late-delivery"; text: string }>;
 };
 
 /** What a row is flagged for, most urgent first. */
-export type ProjectFlag = { kind: "over" | "warn" | "loss" | "waiting" | "unbudgeted" | "late" | "nostages" | "drafted"; text: string };
+export type ProjectFlag = { kind: "over" | "warn" | "loss" | "waiting" | "unbudgeted" | "late" | "nostages" | "drafted" | "order-by" | "late-delivery"; text: string };
 
 /** The row's progress, 0–100: the stages' % done when it has stages, else the jobs closed out. */
 export function progressOf(p: Project): number {
@@ -93,10 +94,10 @@ export function projectFlags(p: Project): ProjectFlag[] {
   if (p.marginState === "sold" && p.margin != null && p.margin < 0 && p.status !== "COMPLETED") flags.push({ kind: "loss", text: `Losing ${moneyShort(-p.margin)}` });
   else if (p.budget <= 0 && (sold > 0 || spent > 0) && p.status !== "COMPLETED") flags.push({ kind: "unbudgeted", text: "No budget set" });
   if ((p.openCount ?? 0) > 0 && p.status !== "COMPLETED") flags.push({ kind: "waiting", text: `${p.openCount} waiting on client` });
-  // A late stage leads (2026-11-05); the rest of the stages' flags follow the money's.
-  const late = (p.attention ?? []).filter((f) => f.kind === "late");
-  const rest = (p.attention ?? []).filter((f) => f.kind !== "late");
-  return [...late, ...flags, ...rest];
+  // A late stage, a late delivery and materials not ordered lead (2026-11-05); the rest follow the money's.
+  const urgent = (p.attention ?? []).filter((f) => f.kind === "late" || f.kind === "late-delivery" || f.kind === "order-by");
+  const rest = (p.attention ?? []).filter((f) => !urgent.includes(f));
+  return [...urgent, ...flags, ...rest];
 }
 
 /** A client the New Project dialog can file the project for. */

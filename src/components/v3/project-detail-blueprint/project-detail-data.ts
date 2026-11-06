@@ -67,6 +67,11 @@ export type PdStages = {
   draftedByAi: boolean;
 };
 
+/* BUYING AND DELIVERIES (2026-11-05): the to-buy list and the orders, as lib/projectBuying/server buyingOf reads them. */
+export type PdBuying = import("@/lib/projectBuying/server").BuyingRead;
+export type PdMaterial = import("@/lib/projectBuying/server").BuyingMaterial;
+export type PdOrder = import("@/lib/projectBuying/server").BuyingOrder;
+
 /** What the viewer's role may open from the project page (lib/roleRoutes) — an estimator has no client record or job page. */
 export type PdOpens = { client: boolean; jobs: boolean };
 

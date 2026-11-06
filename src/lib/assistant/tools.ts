@@ -35,6 +35,7 @@ import { ROOF_TOOLS } from "@/lib/assistant/roof";
 import { HVAC_TOOLS } from "@/lib/assistant/hvac";
 import { LAWN_TOOLS } from "@/lib/assistant/lawn";
 import { PROJECT_TOOLS } from "@/lib/assistant/projects";
+import { BUYING_TOOLS } from "@/lib/assistant/buying";
 
 export interface ToolContext {
   actor: AssistantActor;
@@ -645,6 +646,7 @@ export const TOOLS: readonly AnyTool[] = [
   ...REMIND_TOOLS,
   ...MONEY_TOOLS,
   ...PROJECT_TOOLS,
+  ...BUYING_TOOLS,
 ] as unknown as AnyTool[];
 
 export function toolNamed(name: string): AnyTool | null {

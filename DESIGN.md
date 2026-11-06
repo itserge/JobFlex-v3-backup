@@ -522,6 +522,19 @@ with Keep. The project's number ("#1042") sits in the kicker after
 "Projects" on desk and leads the handheld dateline; the list prints "65% ·
 Framing" where it printed the jobs closed, only once the project has stages.
 
+Projects hub, buying (2026-11-05): the Buying card sits under the proposals,
+the Deliveries card right after it. The to-buy list is grouped by stage under
+a mono caps rule that carries the stage's order-by day; each line is a tick
+box (only while something is left to buy), the name, a mono quantity and a
+small mono tag — To buy in accent, Ordered in amber, In in emerald, late in
+rose. Picked lines raise a sticky bar at the card's foot (ink frame, paper,
+the one primary button "Order these"). An order is one ink-framed block that
+folds: its head names the order, who it is from and its state tag; open, it
+shows the dates in mono, the lines, the tracking field and the actions as
+small outline buttons, "Delivered" the one primary. The buyer's page
+(/buy/<token>) is the review page's sibling: one 2px ink frame on graph
+paper, 52px tick rows, the ink Save button with the accent shadow.
+
 Read [implementation notes](docs/design/implementation.md) when editing an
 existing interactive surface, and [mobile notes](docs/design/mobile.md) for
 handheld work. These describe code hazards, not alternative visual themes.
