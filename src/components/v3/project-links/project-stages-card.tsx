@@ -4,13 +4,16 @@
 // order of the work as stages — Footings, Framing, Decking and railings — each with its tasks, its days and its
 // state, and what they add up to (% done, lib/projectStages/shared percentDone). A new project gets its stages
 // from a trade template or the AI's draft (lib/projectStages/server); this card adds, edits, starts, finishes
-// and reopens them, and ticks the tasks. Every write is actions/projectStages (estimators and managers);
-// everyone else reads the card.
+// and reopens them, and ticks the tasks. "+ Stage" (owner, 2026-11-06: "simplify to add new stage and it would
+// add it, and then under this stage you can add more tasks") is one sheet: the name, its days, its tasks one per
+// line — with the tasks the templates know for a stage of that name offered as you type — and, for a whole set at
+// once, the templates and the AI draft on the same sheet. Every write is actions/projectStages (estimators and
+// managers); everyone else reads the card.
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
-  addStage,
+  addStageWithTasks,
   addStagesFromTemplate,
   addTask,
   deleteStage,
@@ -24,7 +27,7 @@ import {
 } from "@/actions/projectStages";
 import { BlueprintSheet } from "@/components/ui/BlueprintSheet";
 import type { PdStages, PdStage } from "@/components/v3/project-detail-blueprint/project-detail-data";
-import { STAGE_TEMPLATES, currentStage, lateStages, lateWords, percentDone, stageStatusOf } from "@/lib/projectStages/shared";
+import { STAGE_TEMPLATES, currentStage, lateStages, lateWords, percentDone, stageStatusOf, suggestTasks } from "@/lib/projectStages/shared";
 import s from "./project-hub.module.css";
 
 /** "Nov 3" from a stage's day (UTC midnight, like the project's own days). */
@@ -38,7 +41,9 @@ function dates(st: PdStage): string | null {
   return null;
 }
 
-type Editing = { id: string | null; name: string; startsAt: string; endsAt: string };
+type Editing = { id: string | null; name: string; startsAt: string; endsAt: string; tasks: string };
+
+const taskLines = (text: string) => text.split("\n").map((x) => x.replace(/^\s*[-•*]\s*/, "").trim()).filter(Boolean);
 
 export function ProjectStagesCard({ projectId, stages: initial, canManage }: { projectId: string; stages: PdStages; canManage: boolean }) {
   const router = useRouter();
@@ -56,7 +61,6 @@ export function ProjectStagesCard({ projectId, stages: initial, canManage }: { p
   const [open, setOpen] = useState<Set<string>>(() => new Set(now ? [now.id] : []));
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [editErr, setEditErr] = useState<string | null>(null);
   const [newTask, setNewTask] = useState<Record<string, string>>({});
@@ -117,8 +121,7 @@ export function ProjectStagesCard({ projectId, stages: initial, canManage }: { p
 
   function openEdit(st: PdStage | null) {
     setEditErr(null);
-    setEditing(st ? { id: st.id, name: st.name, startsAt: isoDay(st.startsAt), endsAt: isoDay(st.endsAt) } : { id: null, name: "", startsAt: "", endsAt: "" });
-    setAdding(false);
+    setEditing(st ? { id: st.id, name: st.name, startsAt: isoDay(st.startsAt), endsAt: isoDay(st.endsAt), tasks: "" } : { id: null, name: "", startsAt: "", endsAt: "", tasks: "" });
   }
 
   async function saveEdit() {
@@ -127,52 +130,59 @@ export function ProjectStagesCard({ projectId, stages: initial, canManage }: { p
     if (editing.startsAt && editing.endsAt && editing.endsAt < editing.startsAt) return setEditErr("The stage ends before it starts");
     const data = { name: editing.name.trim(), startsAt: editing.startsAt || null, endsAt: editing.endsAt || null };
     const id = editing.id;
+    const tasks = taskLines(editing.tasks);
     setEditing(null);
     await run(`edit:${id ?? "new"}`, async () => {
       if (id) await updateStage(id, data);
-      else await addStage(projectId, data);
+      else await addStageWithTasks(projectId, { ...data, tasks });
     });
   }
 
-  const templates = (
-    <div className={s.chips}>
-      {STAGE_TEMPLATES.map((t) => (
+  // The suggested tasks for the name typed — the ones not already on the list.
+  const suggested = editing && !editing.id ? suggestTasks(editing.name).filter((t) => !taskLines(editing.tasks).some((x) => x.toLowerCase() === t.toLowerCase())) : [];
+  const addLine = (t: string) => setEditing((cur) => (cur ? { ...cur, tasks: cur.tasks.trim() ? `${cur.tasks.replace(/\s+$/, "")}\n${t}` : t } : cur));
+
+  /** The whole-set buttons: a trade's template or the AI's draft. Inside a sheet they wear the sheet's own buttons
+   *  (the sheet is portalled out of the card, where `.btnSm` is styled). */
+  function templates(inSheet: boolean) {
+    const cls = inSheet ? "bps-btn bps-btn--ghost" : s.btnSm;
+    return (
+      <div className={s.chips}>
+        {STAGE_TEMPLATES.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            className={cls}
+            disabled={busy !== null}
+            data-stage-template={t.key}
+            onClick={() => {
+              setEditing(null);
+              void run(`tpl:${t.key}`, async () => {
+                await addStagesFromTemplate(projectId, t.key);
+              });
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
         <button
-          key={t.key}
           type="button"
-          className={s.btnSm}
+          className={cls}
           disabled={busy !== null}
-          data-stage-template={t.key}
+          data-stage-draft
           onClick={() => {
-            setAdding(false);
-            void run(`tpl:${t.key}`, async () => {
-              await addStagesFromTemplate(projectId, t.key);
+            setEditing(null);
+            void run("draft", async () => {
+              const r = await draftStages(projectId);
+              if ("error" in r) throw new Error(r.error);
             });
           }}
         >
-          {t.label}
+          {busy === "draft" ? "Drafting…" : "Draft with AI"}
         </button>
-      ))}
-      <button
-        type="button"
-        className={s.btnSm}
-        disabled={busy !== null}
-        data-stage-draft
-        onClick={() => {
-          setAdding(false);
-          void run("draft", async () => {
-            const r = await draftStages(projectId);
-            if ("error" in r) throw new Error(r.error);
-          });
-        }}
-      >
-        {busy === "draft" ? "Drafting…" : "Draft with AI"}
-      </button>
-      <button type="button" className={s.btnSm} disabled={busy !== null} onClick={() => openEdit(null)} data-stage-new>
-        Add a stage
-      </button>
-    </div>
-  );
+      </div>
+    );
+  }
 
   return (
     <div className={s.w}>
@@ -190,8 +200,8 @@ export function ProjectStagesCard({ projectId, stages: initial, canManage }: { p
           </span>
           {canManage && stages.length ? (
             <div className={s.acts}>
-              <button type="button" className={s.btnSm} onClick={() => setAdding(true)} data-stages-add>
-                + Stages
+              <button type="button" className={s.btnSm} disabled={busy !== null} onClick={() => openEdit(null)} data-stage-new>
+                + Stage
               </button>
             </div>
           ) : null}
@@ -305,35 +315,36 @@ export function ProjectStagesCard({ projectId, stages: initial, canManage }: { p
           </div>
         ) : (
           <div className={s.empty} data-stages-empty>
-            No stages yet. {canManage ? "Start from a template for the trade, let the AI draft them from what was sold, or add them by hand." : "The office adds them."}
-            {canManage ? templates : null}
+            No stages yet. {canManage ? "Start from a template for the trade, let the AI draft them from what was sold, or add them one at a time." : "The office adds them."}
+            {canManage ? (
+              <>
+                {templates(false)}
+                <div className={s.chips}>
+                  <button type="button" className={s.btnSm} disabled={busy !== null} onClick={() => openEdit(null)} data-stage-new>
+                    + Stage
+                  </button>
+                </div>
+              </>
+            ) : null}
           </div>
         )}
         {err ? <div className={s.err}>{err}</div> : null}
       </section>
 
-      {/* ADD STAGES — a template's stages go after the ones the project has. */}
-      <BlueprintSheet open={adding} onClose={() => setAdding(false)} title="Add stages" description="A template's stages go after the ones you have. Drag nothing — use Edit on a stage to move it.">
-        <div className="bps-form">
-          <div className="bps-fld bps-fld--wide">
-            <span className="bps-lbl">From a template</span>
-            {templates}
-          </div>
-        </div>
-      </BlueprintSheet>
-
-      {/* ONE STAGE — its name and days; move it or take it off the project. */}
+      {/* ONE STAGE — new: its name, days and tasks (the templates' tasks offered as you type), or a whole set;
+          existing: its name and days; move it or take it off the project. */}
       <BlueprintSheet
         open={editing !== null}
         onClose={() => setEditing(null)}
         title={editing?.id ? "Edit stage" : "New stage"}
+        description={editing?.id ? undefined : "The stage goes after the ones you have. Its tasks are what the crew ticks off on site."}
         footer={
           <>
             <button type="button" className="bps-btn bps-btn--ghost" onClick={() => setEditing(null)}>
               Cancel
             </button>
             <button type="button" className="bps-btn bps-btn--primary" onClick={() => void saveEdit()} data-stage-save>
-              {editing?.id ? "Save" : "Add stage"}
+              {editing?.id ? "Save" : taskLines(editing?.tasks ?? "").length ? `Add stage · ${taskLines(editing?.tasks ?? "").length} task${taskLines(editing?.tasks ?? "").length === 1 ? "" : "s"}` : "Add stage"}
             </button>
           </>
         }
@@ -342,7 +353,7 @@ export function ProjectStagesCard({ projectId, stages: initial, canManage }: { p
           <div className="bps-form">
             <label className="bps-fld bps-fld--wide">
               <span className="bps-lbl">Stage</span>
-              <input className="bps-in" value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} maxLength={120} placeholder="Framing" autoFocus data-stage-name-input />
+              <input className="bps-in" value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} maxLength={120} placeholder="Drywall and paint" autoFocus data-stage-name-input />
             </label>
             <label className="bps-fld">
               <span className="bps-lbl">First day</span>
@@ -352,7 +363,35 @@ export function ProjectStagesCard({ projectId, stages: initial, canManage }: { p
               <span className="bps-lbl">Last day</span>
               <input className="bps-in" type="date" value={editing.endsAt} min={editing.startsAt || undefined} onChange={(e) => setEditing({ ...editing, endsAt: e.target.value })} />
             </label>
-            {editing.id ? (
+            {!editing.id ? (
+              <>
+                <label className="bps-fld bps-fld--wide">
+                  <span className="bps-lbl">Tasks — one per line</span>
+                  <textarea className="bps-in" rows={4} value={editing.tasks} onChange={(e) => setEditing({ ...editing, tasks: e.target.value })} placeholder={"Hang the drywall\nTape and mud\nPrime and paint"} data-stage-tasks-input />
+                </label>
+                {suggested.length ? (
+                  <div className="bps-fld bps-fld--wide" data-stage-suggested>
+                    <span className="bps-lbl">Usual for a stage like this — tap to add</span>
+                    <div className={s.chips} style={{ marginTop: 6 }}>
+                      {suggested.map((t) => (
+                        <button key={t} type="button" className="bps-btn bps-btn--ghost" onClick={() => addLine(t)} data-stage-suggest>
+                          + {t}
+                        </button>
+                      ))}
+                      {suggested.length > 1 ? (
+                        <button type="button" className="bps-btn bps-btn--ghost" onClick={() => suggested.forEach(addLine)} data-stage-suggest-all>
+                          Add all
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+                <div className="bps-fld bps-fld--wide" data-stage-sets>
+                  <span className="bps-lbl">Or a whole set of stages at once</span>
+                  {templates(true)}
+                </div>
+              </>
+            ) : (
               <div className={`bps-fld bps-fld--wide ${s.chips}`}>
                 <button type="button" className="bps-btn bps-btn--ghost" onClick={() => void run(`up:${editing.id}`, () => moveStage(editing.id!, "up")).then(() => setEditing(null))}>
                   Move up
@@ -374,7 +413,7 @@ export function ProjectStagesCard({ projectId, stages: initial, canManage }: { p
                   Remove stage
                 </button>
               </div>
-            ) : null}
+            )}
             <p className="bps-hint bps-fld--wide">Days are the plan; a stage past its last day and not done shows as late on the project and in the list.</p>
             {editErr ? <div className="bps-err bps-fld--wide">{editErr}</div> : null}
           </div>

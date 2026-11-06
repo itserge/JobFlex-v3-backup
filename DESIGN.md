@@ -572,6 +572,24 @@ after photo is in; the "Done + photo" button carries a 14px camera glyph.
 Nothing on either card is red except lateness, a failed inspection and
 money still owed.
 
+Projects hub, "+ Stage" and the budget's own kinds (owner, 2026-11-06,
+from the live site: "simplify to add new stage … under this stage add
+tasks … more kinds of budgets … make smart"). The Stages card's head
+button is one action, "+ Stage", and its sheet is the whole story: name,
+days, a tasks textarea, and the tasks the templates know for that name as
+ghost chips to tap — the sheet's own `bps-btn bps-btn--ghost`, never the
+card's `.btnSm`, which the portal leaves unstyled (the "Add stages" sheet
+had shipped that way: bare text where buttons should be). The whole-set
+buttons (templates, Draft with AI) sit under a mono-caps "Or a whole set of
+stages at once" on the same sheet; the empty state keeps them on the card.
+The Budget editor's six money fields stay; the project's own kinds are
+rows under them — a name field, a $ field, a × — behind a text link
+"+ Another kind of cost", so the six keep the eye and the kinds read as
+additions. "Fill it in for me" is an outline button on the same line; its
+answer is a note under the fields in the hub's note voice — emerald when
+read from the estimate, amber for a rule of thumb — so the office always
+knows which it got.
+
 Read [implementation notes](docs/design/implementation.md) when editing an
 existing interactive surface, and [mobile notes](docs/design/mobile.md) for
 handheld work. These describe code hazards, not alternative visual themes.

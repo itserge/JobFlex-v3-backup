@@ -197,6 +197,46 @@ export function templateByKey(key: string | null | undefined): StageTemplate | n
   return STAGE_TEMPLATES.find((x) => x.key === key) ?? null;
 }
 
+const STAGE_STOP = new Set(["and", "the", "with", "for", "stage", "work", "phase"]);
+const stageWords = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((w) => w.length > 2 && !STAGE_STOP.has(w));
+
+/** Tasks for a stage named by hand (2026-11-06), read off the templates: the template stages whose name — or
+ *  whose tasks — share a word with it: "Drywall" finds "Drywall and paint", "Insulation" finds the stage with the
+ *  insulation task. The closest first, up to eight tasks, no repeats. Empty when nothing matches; the office types
+ *  its own. */
+export function suggestTasks(name: string): string[] {
+  const words = stageWords(name);
+  if (!words.length) return [];
+  const scored: Array<{ score: number; tasks: TemplateTask[] }> = [];
+  const overlap = (theirs: string[], weight: number) => {
+    let score = 0;
+    for (const w of words) for (const t of theirs) if (t === w) score += 3 * weight; else if (t.startsWith(w) || w.startsWith(t)) score += weight;
+    return score;
+  };
+  for (const tpl of STAGE_TEMPLATES) {
+    for (const st of tpl.stages) {
+      const score = overlap(stageWords(st.name), 2) + st.tasks.reduce((n, t) => n + overlap(stageWords(t.title), 1), 0);
+      if (score > 0) scored.push({ score, tasks: st.tasks });
+    }
+  }
+  scored.sort((a, b) => b.score - a.score);
+  const out: string[] = [];
+  const seen = new Set<string>();
+  // Only the close matches: a stage scoring under half the best is a stray word, not the same work.
+  const floor = (scored[0]?.score ?? 0) / 2;
+  for (const s of scored.filter((x) => x.score >= floor)) {
+    for (const t of s.tasks) {
+      // "Final photos of the deck" and "… of the roof" are one suggestion.
+      const key = t.title.toLowerCase().replace(/ of the .*$/, "");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(t.title);
+      if (out.length >= 8) return out;
+    }
+  }
+  return out;
+}
+
 /* WHAT TRADE A PROPOSAL IS — the words that say so, scored, not matched first-come: a roof's scope says "replace
    damaged decking", so "deck" alone would have called it a deck (seen on the stand, 2026-11-05). Every word's hits
    are counted, the title's twice, and the trade with the most wins; ties go to the earlier row. */

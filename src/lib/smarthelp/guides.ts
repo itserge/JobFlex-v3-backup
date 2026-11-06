@@ -636,7 +636,7 @@ export const GUIDES: Guide[] = [
         open: "/dashboard/projects",
       },
       {
-        text: "With no stages yet, press a template for the trade — Deck, Roof, Fence, Kitchen remodel… — or Draft with AI, or Add a stage.",
+        text: "Press + Stage: name it, give it days if you know them, and type its tasks one per line — the usual tasks for a stage of that name are offered to tap. With no stages yet, a template for the trade (Deck, Roof, Kitchen remodel…) or Draft with AI adds a whole set.",
       },
       {
         text: "Press a stage’s name to open its tasks. Tick a task when it’s done; ticking the last one marks the stage done. Press Add a task for anything else.",

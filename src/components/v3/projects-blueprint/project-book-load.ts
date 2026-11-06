@@ -8,7 +8,7 @@
 
 import { db } from "@/lib/db";
 import { projectMoney } from "@/lib/projectMoney";
-import { CATEGORY_LABEL } from "@/lib/projectBudget";
+import { categoryLabel } from "@/lib/projectBudget";
 import { currentStage, percentDone, stageFlags } from "@/lib/projectStages/shared";
 import { buyingFlags } from "@/lib/projectBuying/shared";
 import { problemFlags } from "@/lib/crewField/shared";
@@ -90,7 +90,7 @@ export async function loadProjectBook(organizationId: string): Promise<Project[]
       spent: r2(m?.spent ?? 0),
       margin: m?.margin ?? null,
       marginState: m?.marginState ?? "none",
-      overCategories: (m?.overCategories ?? []).map((c) => CATEGORY_LABEL[c]),
+      overCategories: (m?.overCategories ?? []).map(categoryLabel),
       owed: m?.owed ?? 0,
       updatedAgo: ago(last),
       number: p.number,
