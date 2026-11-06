@@ -550,6 +550,28 @@ emerald. The crew's home prints "My tasks today" as paper cards with empty
 ink squares (no live ticking there — the job page ticks) and "My week" as
 three display figures.
 
+Projects hub, the timeline and the finish line (2026-11-06): the Timeline
+card sits under Stages and is a chart in the hub's voice, not a Gantt
+widget — a 1.5px ink frame, week columns on a paper header strip in mono
+caps, one 36px row per stage with the name in a 150px ink-ruled column and
+the bar on the track: planned is white with an ink line, in progress is
+solid ink, done is emerald, late keeps its fill and takes a rose rule. The
+marks ride the bar's edges — ▼ a delivery on the top edge, ◆ an inspection
+on the bottom — in the buying card's amber / emerald / rose, with a white
+halo so they read on ink. The crew's days are a paper strip of translucent
+accent ticks; today is a 2px rose rule with "TODAY" in 9px mono. The chart
+scrolls sideways on a phone rather than squeezing (min 520px). "shift" is a
+mono-caps text button under the stage's name, red-worded with how late it
+is; the sheet reads the plan back as a plain list before the one primary
+button. The Finish line card is the stages card's row grammar turned into
+seven steps: the round mark (emerald ✓ done, ink ▶ next, empty to do), the
+label, a mono detail line, and ONE button on the right — the next step's is
+an outline button, a done step's undo is a text link. Punch items fold under
+the first step as checkbox lines with a 40px ink-framed thumbnail once the
+after photo is in; the "Done + photo" button carries a 14px camera glyph.
+Nothing on either card is red except lateness, a failed inspection and
+money still owed.
+
 Read [implementation notes](docs/design/implementation.md) when editing an
 existing interactive surface, and [mobile notes](docs/design/mobile.md) for
 handheld work. These describe code hazards, not alternative visual themes.

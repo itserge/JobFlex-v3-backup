@@ -71,6 +71,8 @@ import {
   type PdPayments,
   type PdBuying,
   type PdField,
+  type PdFinish,
+  type PdTimeline,
   type PdProject,
   type PdStages,
   type PdWorker,
@@ -98,6 +100,8 @@ import { ProjectCrewSheet } from "@/components/v3/project-links/project-crew-she
 import { ProjectStagesCard } from "@/components/v3/project-links/project-stages-card";
 import { ProjectBuyingCard } from "@/components/v3/project-links/project-buying-card";
 import { ProjectFieldCard } from "@/components/v3/project-links/project-field-card";
+import { ProjectTimelineCard } from "@/components/v3/project-links/project-timeline-card";
+import { ProjectFinishCard } from "@/components/v3/project-links/project-finish-card";
 
 const DAY_MS = 86400000;
 
@@ -305,6 +309,8 @@ export function MobileProjectDetail({
   stages = { stages: [], done: null, draftedByAi: false },
   buying,
   field,
+  timeline,
+  finish,
 }: {
   project: PdProject;
   jobs: PdJob[];
@@ -322,6 +328,10 @@ export function MobileProjectDetail({
   buying?: PdBuying;
   /** On site: problems, hours, the subs' bills (2026-11-05). */
   field?: PdField;
+  /** The stages across the weeks (2026-11-06). */
+  timeline?: PdTimeline;
+  /** The punch list and the finish line (2026-11-06). */
+  finish?: PdFinish;
 }) {
   // The project's dates are days, not moments (withLocalDays).
   const project = useMemo(() => withLocalDays(projectIn), [projectIn]);
@@ -611,9 +621,19 @@ export function MobileProjectDetail({
           <div className="mpd-budget">
             <ProjectStagesCard projectId={project.id} stages={stages} canManage={canManage} />
           </div>
+          {timeline ? (
+            <div className="mpd-budget">
+              <ProjectTimelineCard projectId={project.id} timeline={timeline} canManage={canManage} />
+            </div>
+          ) : null}
           {field ? (
             <div className="mpd-budget">
               <ProjectFieldCard projectId={project.id} field={field} canManage={canManage} />
+            </div>
+          ) : null}
+          {finish ? (
+            <div className="mpd-budget">
+              <ProjectFinishCard projectId={project.id} finish={finish} jobs={jobs.map((j) => ({ id: j.id, title: j.title }))} payments={payments} canManage={canManage} />
             </div>
           ) : null}
           <div className="mpd-loose">

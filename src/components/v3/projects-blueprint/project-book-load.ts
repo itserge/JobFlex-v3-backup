@@ -12,6 +12,8 @@ import { CATEGORY_LABEL } from "@/lib/projectBudget";
 import { currentStage, percentDone, stageFlags } from "@/lib/projectStages/shared";
 import { buyingFlags } from "@/lib/projectBuying/shared";
 import { problemFlags } from "@/lib/crewField/shared";
+import { inspectionFlags, isoDay } from "@/lib/projectTimeline/shared";
+import { finishFlags } from "@/lib/projectFinish/shared";
 import type { Project } from "./projects-data";
 
 /** "Jul 08" in UTC — project dates are stored as UTC midnight (the action
@@ -53,10 +55,15 @@ export async function loadProjectBook(organizationId: string): Promise<Project[]
       orders: { where: { status: { in: ["ORDERED", "SHIPPED"] } }, select: { number: true, how: true, status: true, expectedAt: true, buyerName: true, supplier: { select: { name: true } } } },
       // Problems flagged from site (2026-11-05): the project reads red until the office resolves them.
       flags: { where: { status: "OPEN" }, select: { note: true, blocking: true, status: true, job: { select: { title: true } } } },
+      // The timeline and the finish line (2026-11-06): an inspection coming up, failed or passed by; punch items
+      // open; the finish-line steps left once the work is over.
+      inspections: { select: { id: true, name: true, date: true, result: true, resultAt: true, readyNote: true, isFinal: true } },
+      punchItems: { select: { doneAt: true, photoId: true } },
     },
   });
   const money = await projectMoney(organizationId, projects.map((p) => p.id));
   const today = new Date();
+  const todayKey = today.toISOString().slice(0, 10);
   return projects.map((p) => {
     const m = money.get(p.id);
     const openOnes = p.proposals.filter((x) => OPEN.has(x.status));
@@ -92,7 +99,26 @@ export async function loadProjectBook(organizationId: string): Promise<Project[]
       stageCount: stages.length,
       attention: [
         ...problemFlags(p.flags.map((f) => ({ note: f.note, blocking: f.blocking, status: f.status, jobTitle: f.job.title }))),
+        ...(p.status === "COMPLETED" || p.status === "ARCHIVED" ? [] : inspectionFlags(p.inspections.map((i) => ({ name: i.name, date: isoDay(i.date), result: i.result })), todayKey)),
         ...stageFlags({ stages, sold: r2(m?.contract ?? 0), status: p.status, draftedByAi: Boolean(p.stagesDraftedAt) }, today),
+        ...finishFlags({
+          status: p.status,
+          stageCount: stages.length,
+          stagesDone: stages.every((s) => s.status === "DONE"),
+          jobsOpen: p.jobs.filter((j) => j.status !== "COMPLETED" && j.status !== "CANCELED").length,
+          punch: { open: p.punchItems.filter((x) => !x.doneAt).length, total: p.punchItems.length, withPhoto: p.punchItems.filter((x) => x.photoId).length },
+          finalInspection: (() => {
+            const fi = p.inspections.find((i) => i.isFinal);
+            return fi ? { id: fi.id, name: fi.name, date: isoDay(fi.date), result: fi.result, resultAt: fi.resultAt ? fi.resultAt.toISOString() : null, readyNote: fi.readyNote } : null;
+          })(),
+          signedOffAt: p.signedOffAt ? p.signedOffAt.toISOString() : null,
+          signedOffBy: p.signedOffBy,
+          payment: { proposals: p.proposals.filter((x) => ["ACCEPTED", "COMPLETED", "PAID"].includes(x.status)).length, billed: (m?.collected ?? 0) + (m?.owed ?? 0), paid: m?.collected ?? 0, owed: m?.owed ?? 0 },
+          review: null,
+          clientEmail: null,
+          warrantyUntil: p.warrantyUntil ? p.warrantyUntil.toISOString() : null,
+          finishedAt: p.finishedAt ? p.finishedAt.toISOString() : null,
+        }),
         ...(p.status === "COMPLETED" || p.status === "ARCHIVED"
           ? []
           : buyingFlags(
