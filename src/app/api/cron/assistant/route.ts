@@ -7,7 +7,8 @@ import { runAssistantMinute } from "@/lib/assistant/runner";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// 300 (2026-11-05): a build left to the minute job is a minute's AI estimate, a few run side by side.
+export const maxDuration = 300;
 
 export async function GET(req: Request) {
   if (!isCronAuthorized(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

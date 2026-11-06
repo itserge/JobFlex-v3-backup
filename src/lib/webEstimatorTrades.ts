@@ -170,8 +170,8 @@ async function pinFor(a: WebAddress): Promise<{ lat: number; lng: number; county
 
 // ROOF — Google's aerial model of the roof → the shop's package for the family the homeowner picked
 
-interface RoofBook { lists: CatalogLists; brandRates: Record<string, BrandRate> | null; brands: Record<string, string | null> | null; lowSlope: string | null }
-async function roofBook(organizationId: string): Promise<RoofBook> {
+export interface RoofBook { lists: CatalogLists; brandRates: Record<string, BrandRate> | null; brands: Record<string, string | null> | null; lowSlope: string | null }
+export async function roofBook(organizationId: string): Promise<RoofBook> {
   const none: RoofBook = { lists: BUILTIN_LISTS, brandRates: null, brands: null, lowSlope: null };
   try {
     const row = await db.roofCatalog.findUnique({ where: { organizationId } });
@@ -273,7 +273,7 @@ export function imageryWords(d: unknown): string | null {
 
 // HVAC — the homeowner's answers → a Manual J-style load → the shop's tiers, the chosen one priced
 
-async function hvacBook(organizationId: string): Promise<{ card: HvacRateCard; catalog: CatalogItem[] }> {
+export async function hvacBook(organizationId: string): Promise<{ card: HvacRateCard; catalog: CatalogItem[] }> {
   let catalog: CatalogItem[] = US_CATALOG, card: HvacRateCard = DEFAULT_RATE_CARD;
   try {
     const rows = await db.hvacCatalogItem.findMany({ where: { organizationId } });

@@ -357,4 +357,7 @@ export type JobDetailRecord = {
   chrome: "dashboard" | "portal";
   /** The portal's own bar: whose portal, which company, where "All jobs" is. */
   portal: { workerName: string; orgName: string | null; backHref: string } | null;
+  /** On site (the crew build, 2026-11-05): the project's tasks for this stage, the deliveries due, the problems
+   *  flagged, the reader's hours today and the weather — lib/crewField fieldOf. */
+  field: import("@/lib/crewField/server").FieldData;
 };

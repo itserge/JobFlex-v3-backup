@@ -65,6 +65,7 @@ import { MobileSprite } from "./sprite";
 import { TourChip } from "@/components/v3/onboarding-tour/tour-chip";
 import { SmartHelpRow } from "@/components/v3/smarthelp/smarthelp-row";
 import { AssistantRow } from "@/components/v3/assistant/assistant-row";
+import { OperatorFab } from "@/components/v3/assistant/operator-fab";
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -338,6 +339,8 @@ export function MobileNav() {
           `accountName` is empty on the standalone /mobile-*-v2 review URLs,
           which have no session and no NavRoleProvider. */}
       <SupportWidget signedIn={signedIn} />
+      {/* The AI Operator's dial button (components/v3/assistant/operator-fab, 2026-11-05): on every phone page. */}
+      <OperatorFab />
 
       <header className={styles.tbar} onClick={press} data-mnav="">
         <button

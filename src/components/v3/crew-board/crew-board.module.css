@@ -76,6 +76,30 @@
 :is(.root, .layer):is(.root, .layer) .pendList li > div { display: grid; gap: 2px; min-width: 0; }
 :is(.root, .layer):is(.root, .layer) .pendList b { font-size: 14px; font-weight: 800; }
 
+/* ── on site (the crew build, 2026-11-05): problems, the stage's tasks, deliveries due, hours ── */
+:is(.root, .layer):is(.root, .layer) .fieldList { display: grid; gap: 2px; margin-top: 6px; }
+:is(.root, .layer):is(.root, .layer) .taskRow { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px 0; border-bottom: 1px dashed var(--ink-line); font-size: 14px; cursor: pointer; }
+:is(.root, .layer):is(.root, .layer) .taskRow:last-child { border-bottom: 0; }
+:is(.root, .layer):is(.root, .layer) .taskRow input { width: 22px; height: 22px; margin: 0; accent-color: var(--ink); flex: 0 0 auto; }
+:is(.root, .layer):is(.root, .layer) .taskRow > span:first-of-type { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+:is(.root, .layer):is(.root, .layer) .taskRow svg { color: var(--emerald); }
+:is(.root, .layer):is(.root, .layer) .taskDone > span:first-of-type { color: var(--ink-muted); text-decoration: line-through; }
+:is(.root, .layer):is(.root, .layer) .taskMissing > span:first-of-type { color: var(--rose); }
+:is(.root, .layer):is(.root, .layer) .problem { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1.5px solid var(--amber); border-radius: var(--r-sm); background: color-mix(in srgb, var(--amber) 8%, #fff); }
+:is(.root, .layer):is(.root, .layer) .problem > svg { width: 20px; height: 20px; color: var(--amber); margin-top: 2px; }
+:is(.root, .layer):is(.root, .layer) .problem > div { display: grid; gap: 2px; flex: 1; min-width: 0; }
+:is(.root, .layer):is(.root, .layer) .problem b { font-size: 12px; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; }
+:is(.root, .layer):is(.root, .layer) .problem > div > span { font-size: 14px; overflow-wrap: anywhere; }
+:is(.root, .layer):is(.root, .layer) .problemStop { border-color: var(--rose); background: color-mix(in srgb, var(--rose) 7%, #fff); }
+:is(.root, .layer):is(.root, .layer) .problemStop > svg { color: var(--rose); }
+:is(.root, .layer):is(.root, .layer) .deliveryRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 8px 0; border-bottom: 1px dashed var(--ink-line); }
+:is(.root, .layer):is(.root, .layer) .deliveryRow:last-child { border-bottom: 0; }
+:is(.root, .layer):is(.root, .layer) .deliveryRow > div { display: grid; gap: 2px; min-width: 0; }
+:is(.root, .layer):is(.root, .layer) .deliveryRow b { font-size: 14px; font-weight: 800; }
+:is(.root, .layer):is(.root, .layer) .hoursRow { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+:is(.root, .layer):is(.root, .layer) .hoursRow .field { flex: 0 0 120px; }
+:is(.root, .layer):is(.root, .layer) .hoursRow .btn { margin-bottom: 1px; }
+
 /* ── days and files ── */
 :is(.root, .layer):is(.root, .layer) .days { display: grid; }
 :is(.root, .layer):is(.root, .layer) .day { padding: 16px var(--pad) 18px; display: grid; gap: 12px; }

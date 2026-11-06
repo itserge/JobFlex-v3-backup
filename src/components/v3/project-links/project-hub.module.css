@@ -62,8 +62,70 @@
 .w.w .strip b { font-weight: 800; }
 .w.w .strip .btnPrimary { margin-left: auto; }
 
+/* THE STAGES CARD (2026-11-05): one row per stage — the mark, the name, its days and tasks, the actions — and the
+   tasks folded under the open one. */
+.w.w .stageList { margin-top: 14px; border: 1.5px solid var(--ink); }
+.w.w .row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; grid-auto-rows: auto; align-items: center; gap: 4px 10px; padding: 9px 12px; border-bottom: 1px dashed var(--ink-line); }
+.w.w .row:last-child { border-bottom: none; }
+.w.w .row.isActive { background: var(--paper); }
+.w.w .mark { grid-row: 1; width: 24px; height: 24px; border: 1.5px solid var(--ink); border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 900; background: #fff; color: var(--ink); }
+.w.w .row.isDone .mark { background: var(--emerald); border-color: var(--emerald); color: #fff; }
+.w.w .row.isActive .mark { background: var(--ink); color: var(--paper); font-size: 9px; }
+.w.w .name { grid-row: 1; grid-column: 2; font: inherit; font-size: 13.5px; font-weight: 800; text-align: left; background: none; border: 0; padding: 0; cursor: pointer; color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+.w.w .row.isDone .name { color: var(--ink-muted); text-decoration: line-through; text-decoration-thickness: 1px; }
+.w.w .meta { grid-column: 2; font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--ink-muted); display: flex; gap: 10px; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
+.w.w .meta:empty { display: none; }
+.w.w .lateTag { color: var(--rose); }
+.w.w .rowActs { grid-column: 3; grid-row: 1 / span 2; display: flex; gap: 6px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+.w.w .tasks { grid-column: 2 / -1; display: grid; gap: 2px; padding: 6px 0 2px; }
+.w.w .task { display: flex; align-items: center; gap: 8px; min-height: 32px; font-size: 13px; cursor: pointer; }
+.w.w .task input { width: 18px; height: 18px; accent-color: var(--ink); flex: 0 0 auto; margin: 0; }
+.w.w .taskDone { color: var(--ink-muted); text-decoration: line-through; }
+.w.w .photo { font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--amber); border: 1px solid currentColor; border-radius: 3px; padding: 1px 5px; }
+.w.w .taskX { margin-left: auto; background: none; border: 0; color: var(--ink-muted); font-size: 18px; line-height: 1; cursor: pointer; padding: 0 6px; min-height: 28px; }
+.w.w .taskX:hover { color: var(--rose); }
+.w.w .taskAdd { display: flex; gap: 8px; margin-top: 4px; }
+.w.w .taskAdd input { flex: 1; min-width: 0; min-height: 36px; border: 1.5px solid var(--ink); border-radius: var(--radius); padding: 0 10px; font: inherit; font-size: 13px; background: #fff; color: var(--ink); }
+.w.w .chips, .chips.chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+
+/* THE BUYING AND DELIVERIES CARDS (2026-11-05): the list by stage, the picked lines' bar, one order folded. */
+.w.w .group { margin-top: 14px; }
+.w.w .groupHead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 0; border-bottom: 1.5px solid var(--ink); font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-muted); }
+.w.w .groupHead > span:first-child { color: var(--ink); }
+.w.w .line { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto auto; align-items: center; gap: 2px 10px; padding: 8px 2px; border-bottom: 1px dashed var(--ink-line); }
+.w.w .line:last-child { border-bottom: none; }
+.w.w .line input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--ink); margin: 0; }
+.w.w .lineName { font-size: 13px; font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+.w.w .lineName a { color: inherit; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+.w.w .lineSub { grid-column: 2 / -1; font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-muted); }
+.w.w .lineSub:empty { display: none; }
+.w.w .lineBtn { font: inherit; background: none; border: 0; padding: 0 4px; color: var(--ink); text-decoration: underline; cursor: pointer; }
+.w.w .qty { font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.w.w .tag { font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; border: 1px solid currentColor; border-radius: 3px; padding: 1px 6px; white-space: nowrap; color: var(--ink-muted); }
+.w.w .tagBuy { color: var(--accent); }
+.w.w .tagOrdered { color: var(--amber); }
+.w.w .tagIn { color: var(--emerald); }
+.w.w .tagLate { color: var(--rose); }
+.w.w .selBar { position: sticky; bottom: 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; padding: 10px 12px; border: 1.5px solid var(--ink); background: var(--paper); box-shadow: 2px 2px 0 var(--ink); font-size: 13px; }
+.w.w .order { margin-top: 12px; border: 1.5px solid var(--ink); }
+.w.w .orderHead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; background: var(--paper); cursor: pointer; }
+.w.w .order .orderHead + .orderBody { border-top: 1.5px solid var(--ink); }
+.w.w .orderBody { padding: 10px 12px 12px; display: grid; gap: 8px; }
+.w.w .orderMeta { font-family: var(--font-mono); font-size: 11px; color: var(--ink-muted); display: flex; gap: 10px; flex-wrap: wrap; }
+.w.w .track { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.w.w .track input { flex: 1; min-width: 160px; min-height: 34px; border: 1.5px solid var(--ink); border-radius: var(--radius); padding: 0 10px; font: inherit; font-size: 13px; background: #fff; color: var(--ink); }
+.w.w .link { font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; min-width: 0; }
+
 @media (max-width: 768px) {
   .w.w .card { padding: 16px 14px 14px; }
+  .w.w .row { grid-template-columns: 24px minmax(0, 1fr); padding: 10px 10px; }
+  .w.w .rowActs { grid-column: 1 / -1; grid-row: auto; justify-content: flex-start; }
+  .w.w .tasks { grid-column: 1 / -1; }
+  .w.w .task { min-height: 44px; }
+  .w.w .line { grid-template-columns: 24px minmax(0, 1fr) auto; }
+  .w.w .line .tag { grid-column: 2 / -1; justify-self: start; }
+  .w.w .line input[type="checkbox"] { width: 22px; height: 22px; }
+  .w.w .selBar .btnPrimary { min-height: 44px; }
   .w.w .acts { margin-left: 0; width: 100%; }
   .w.w .acts .btnPrimary { flex: 1; min-height: 44px; }
   .w.w .stage { grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; }

@@ -19,30 +19,30 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { ArrowUp, AudioLines, Mic, Square } from "lucide-react";
 import { useDeckSpeech } from "@/components/v3/deck-voice/use-deck-speech";
-import type { ActionStatus, FeedAction, FeedMessage } from "@/lib/assistant/shared";
+import { isBuild, PIN_TOOLS, SCHEDULED_TOOLS, TOOL_LABEL, type ActionStatus, type FeedAction, type FeedMessage } from "@/lib/assistant/shared";
 import { forSpeech, shownBody, type AssistantState } from "./use-assistant";
 import s from "./assistant.module.css";
 
 const EXAMPLES: Array<{ label: string; text: string; fill?: boolean }> = [
   { label: "What's on tomorrow?", text: "What's on tomorrow?" },
+  { label: "Build a 12 × 12 deck with a roof for …", text: "Build a 12 by 12 deck with a roof for ", fill: true },
   { label: "What needs my attention today?", text: "What needs my attention today?" },
   { label: "Which proposals aren't signed?", text: "Which proposals aren't signed yet?" },
   { label: "Send the … proposal", text: "Send the ", fill: true },
   { label: "Put … on Thursday with …", text: "Put the ", fill: true },
   { label: "Tell the crew: …", text: "Tell everybody: ", fill: true },
+  { label: "Remind me at 3 to …", text: "Remind me at 3 to ", fill: true },
 ];
 
-const TOOL_LABEL: Record<string, string> = {
-  send_proposal: "Send a proposal",
-  schedule_job: "Schedule",
-  text_crew: "Text the crew",
-  payment_reminder: "Payment reminder",
-};
+
+
+/** The builds (lib/assistant/build): no undo window — queued means it is being priced. */
+
 
 function stamp(a: FeedAction, waiting: boolean): { label: string; tone: "warn" | "ok" | "bad" | "quiet" | "info" } {
   const st: ActionStatus = a.status;
   if (st === "AWAITING") return waiting ? { label: "Needs you", tone: "warn" } : { label: "Expired", tone: "quiet" };
-  if (st === "QUEUED") return { label: "In 2 min", tone: "info" };
+  if (st === "QUEUED") return isBuild(a.tool) ? { label: "Working", tone: "info" } : SCHEDULED_TOOLS.includes(a.tool) ? { label: "Set", tone: "info" } : { label: "In 2 min", tone: "info" };
   if (st === "RUNNING") return { label: "Working", tone: "info" };
   if (st === "DONE") return { label: "Done", tone: "ok" };
   if (st === "FAILED") return { label: "Didn't go", tone: "bad" };
@@ -62,7 +62,7 @@ export function Conversation({
   autoFocus?: boolean;
   variant: "panel" | "page";
 }) {
-  const { feed, pending, busy, error, ask, answer } = state;
+  const { feed, pending, busy, building, landed, error, ask, answer } = state;
   const [text, setText] = useState("");
   const [talk, setTalk] = useState(false);
   const [heard, setHeard] = useState("");
@@ -85,6 +85,8 @@ export function Conversation({
   };
 
   const speech = useDeckSpeech({
+    // The phone's own language (spec §2): a Russian phone is heard in Russian; the replies already follow the person.
+    lang: typeof navigator !== "undefined" && navigator.language ? navigator.language : "en-US",
     onFinal: (alternatives) => {
       const said = alternatives[0]?.trim();
       // A sentence heard while the last one is still being answered waits for nothing: it is dropped.
@@ -103,6 +105,10 @@ export function Conversation({
   useEffect(() => {
     sayRef.current = speech.say;
   });
+  // A build that ran after its "On it…" lands later: in a spoken conversation it is read out when it does.
+  useEffect(() => {
+    if (landed && talkRef.current) sayRef.current(forSpeech(landed.text));
+  }, [landed]);
 
   function startTalk() {
     setVoiceError(null);
@@ -162,8 +168,8 @@ export function Conversation({
     if (reply === null && words === undefined) setText(t);
   };
 
-  const onAnswer = async (actionId: string, yes: boolean) => {
-    const reply = await answer(actionId, yes);
+  const onAnswer = async (actionId: string, yes: boolean, pin?: string) => {
+    const reply = await answer(actionId, yes, pin);
     if (talkRef.current && reply) sayRef.current(forSpeech(reply));
   };
 
@@ -228,6 +234,13 @@ export function Conversation({
               Working on it…
             </p>
           </>
+        ) : building ? (
+          <p className={s.working} role="status">
+            <span className={s.workingMark} aria-hidden="true">
+              <AudioLines />
+            </span>
+            Pricing it…
+          </p>
         ) : null}
 
         {error ? (
@@ -250,7 +263,7 @@ export function Conversation({
         }}
       >
         <label className={s.srOnly} htmlFor={boxId}>
-          Ask or tell the Assistant
+          Ask or tell the AI Operator
         </label>
         <textarea
           id={boxId}
@@ -269,7 +282,7 @@ export function Conversation({
             type="button"
             className={`${s.mic} ${talk ? (speech.speaking ? s.micSpeaking : s.micOn) : ""}`}
             aria-pressed={talk}
-            aria-label={talk ? "Stop talking" : "Talk to the Assistant — it answers out loud"}
+            aria-label={talk ? "Stop talking" : "Talk to the AI Operator — it answers out loud"}
             title={talk ? "Stop talking" : "Talk"}
             onClick={() => (talk ? endTalk() : startTalk())}
           >
@@ -290,9 +303,15 @@ export function Conversation({
   );
 }
 
-function Line({ m, waiting, busy, onAnswer }: { m: FeedMessage; waiting: boolean; busy: boolean; onAnswer: (id: string, yes: boolean) => Promise<void> }) {
+function Line({ m, waiting, busy, onAnswer }: { m: FeedMessage; waiting: boolean; busy: boolean; onAnswer: (id: string, yes: boolean, pin?: string) => Promise<void> }) {
+  // A money card (shared PIN_TOOLS) takes the four digits beside Do it; they go to the server once and are never shown.
+  const [pin, setPin] = useState("");
   if (m.direction === "IN") return <p className={`${s.bubble} ${s.mine}`}>{m.body}</p>;
-  if (!m.action) return <p className={`${s.bubble} ${s.theirs}`}>{m.body}</p>;
+  if (!m.action) return (
+    <p className={`${s.bubble} ${s.theirs}`}>
+      <Words text={m.body} />
+    </p>
+  );
   const a = m.action;
   const st = stamp(a, waiting);
   return (
@@ -303,10 +322,32 @@ function Line({ m, waiting, busy, onAnswer }: { m: FeedMessage; waiting: boolean
           {st.label}
         </span>
       </div>
-      <p className={s.cardText}>{shownBody(m)}</p>
+      <p className={s.cardText}>
+        <Words text={shownBody(m)} />
+      </p>
       {waiting && a.status === "AWAITING" ? (
-        <div className={s.cardActions}>
-          <button type="button" className={s.doIt} disabled={busy} onClick={() => void onAnswer(a.id, true)}>
+        <div className={`${s.cardActions} ${PIN_TOOLS.includes(a.tool) ? s.withPin : ""}`}>
+          {PIN_TOOLS.includes(a.tool) ? (
+            <input
+              className={s.pin}
+              type="password"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={4}
+              autoComplete="off"
+              placeholder="PIN"
+              aria-label="Your 4-digit PIN"
+              value={pin}
+              disabled={busy}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+            />
+          ) : null}
+          <button
+            type="button"
+            className={s.doIt}
+            disabled={busy || (PIN_TOOLS.includes(a.tool) && pin.length !== 4)}
+            onClick={() => void onAnswer(a.id, true, PIN_TOOLS.includes(a.tool) ? pin : undefined)}
+          >
             Do it
           </button>
           <button type="button" className={s.cancel} disabled={busy} onClick={() => void onAnswer(a.id, false)}>
@@ -315,5 +356,24 @@ function Line({ m, waiting, busy, onAnswer }: { m: FeedMessage; waiting: boolean
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** A reply's words with its links tappable — a build's "Open it: https://…/dashboard/proposals/…", opened beside the
+ *  panel so the conversation stays where it is. */
+function Words({ text }: { text: string }) {
+  const parts = text.split(/(https?:\/\/[^\s]+)/g);
+  return (
+    <>
+      {parts.map((part, i) =>
+        /^https?:\/\//.test(part) ? (
+          <a key={i} className={s.link} href={part} target="_blank" rel="noopener noreferrer">
+            {part.includes("/dashboard/proposals/") ? "the proposal" : part.replace(/^https?:\/\//, "")}
+          </a>
+        ) : (
+          part
+        ),
+      )}
+    </>
   );
 }

@@ -1,5 +1,5 @@
 {
-  "buildCommand": "node scripts/prisma-production-schema.js && prisma generate --schema=prisma/schema.production.prisma && next typegen && NODE_OPTIONS=--max-old-space-size=6144 tsc --noEmit -p tsconfig.json --incremental false && JOBFLEX_TYPECHECKED=1 next build",
+  "buildCommand": "npm run build:vercel",
   "crons": [
     { "path": "/api/cron/follow-ups", "schedule": "0 * * * *" },
     { "path": "/api/cron/ramp-sync", "schedule": "20 * * * *" },

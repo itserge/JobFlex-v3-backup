@@ -65,6 +65,15 @@ export async function readFilingContext(organizationId: string): Promise<FilingC
   const clientId = typeof parsed.clientId === "string" && parsed.clientId ? parsed.clientId : null;
   const projectId = typeof parsed.projectId === "string" && parsed.projectId ? parsed.projectId : null;
   const leadId = typeof parsed.leadId === "string" && parsed.leadId ? parsed.leadId : null;
+  return filingFromIds(organizationId, { clientId, projectId, leadId });
+}
+
+/** A filing from ids the caller found itself — the JobFlex Assistant's client or lead, looked up by name
+ *  (lib/assistant/build) — checked against the organization the same way; null when none of them holds. */
+export async function filingFromIds(organizationId: string, ids: { clientId?: string | null; projectId?: string | null; leadId?: string | null }): Promise<FilingContext | null> {
+  const clientId = ids.clientId || null;
+  const projectId = ids.projectId || null;
+  const leadId = ids.leadId || null;
   if (!clientId && !projectId && !leadId) return null;
 
   const [client, project, lead] = await Promise.all([

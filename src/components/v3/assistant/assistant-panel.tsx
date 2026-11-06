@@ -19,6 +19,7 @@ import { useIsHandheld } from "@/components/v3/responsive-shell/use-handheld";
 import { OPEN_EVENT as SMARTHELP_OPEN } from "@/components/v3/smarthelp/events";
 import { MOBILE_HREF, OPEN_EVENT, type OpenDetail } from "./events";
 import { Conversation } from "./conversation";
+import { TaskList } from "./task-list";
 import { useAssistant } from "./use-assistant";
 import s from "./assistant.module.css";
 
@@ -45,6 +46,8 @@ export function AssistantRoot() {
   const { load } = state;
   const [open, setOpen] = useState(false);
   const [prefill, setPrefill] = useState<string | null>(null);
+  // Tasks (2026-11-05): the week's changes in place of the conversation, while the button is on.
+  const [showTasks, setShowTasks] = useState(false);
   const openerRef = useRef<HTMLElement | null>(null);
   const showing = open && !phone;
 
@@ -75,6 +78,10 @@ export function AssistantRoot() {
   useEffect(() => {
     if (showing) load();
   }, [showing, load]);
+  const { loadTasks } = state;
+  useEffect(() => {
+    if (showing && showTasks) loadTasks();
+  }, [showing, showTasks, loadTasks]);
 
   // The page moves over for the desk panel (globals.css), only while it is drawn.
   useEffect(() => {
@@ -114,20 +121,34 @@ export function AssistantRoot() {
           </span>
           <div className={s.headText}>
             <h2 className={s.headName} id={titleId}>
-              Assistant
+              AI Operator
             </h2>
             <p className={s.headSub}>Ask, or tell JobFlex what to do.</p>
           </div>
-          <span className={s.tag} aria-hidden="true">
-            NEW
-          </span>
-          <button type="button" className={s.close} aria-label="Close the Assistant" onClick={close}>
+          <button type="button" className={`${s.tasksBtn} ${showTasks ? s.tasksOn : ""}`} aria-pressed={showTasks} onClick={() => setShowTasks((v) => !v)}>
+            Tasks
+          </button>
+          <button type="button" className={s.close} aria-label="Close the AI Operator" onClick={close}>
             <X />
           </button>
         </header>
-        <div className={s.body}>
-          <Conversation state={state} prefill={prefill} autoFocus variant="panel" />
-        </div>
+        {showTasks ? (
+          <div className={`${s.body} ${s.tasksBody}`}>
+            <TaskList
+              tasks={state.tasks}
+              waitingId={state.feed?.awaiting?.id ?? null}
+              busy={state.busy}
+              onAnswer={async (id, yes, pin) => {
+                await state.answer(id, yes, pin);
+                state.loadTasks();
+              }}
+            />
+          </div>
+        ) : (
+          <div className={s.body}>
+            <Conversation state={state} prefill={prefill} autoFocus variant="panel" />
+          </div>
+        )}
       </aside>
     </div>
   );

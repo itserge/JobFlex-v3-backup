@@ -126,6 +126,7 @@ export async function loadCrewBoard(organizationId: string, jobId: string, reade
         closedAt: d.closedAt ? fmt(d.closedAt, tz, closedSameDay ? { hour: "numeric", minute: "2-digit" } : { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : null,
         byOffice: d.source === "office",
         note: d.note,
+        weather: d.weather,
         files: byDay.get(d.id) ?? [],
       } satisfies CrewDay;
     })

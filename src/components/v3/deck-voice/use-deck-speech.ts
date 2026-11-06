@@ -65,6 +65,8 @@ function pickVoice(): SpeechSynthesisVoice | null {
 }
 
 export interface SpeechHandlers {
+  /** The language the ears listen in (BCP 47); the Deck Studio leaves it English, the Operator passes the phone's own. */
+  lang?: string;
   /** A finished sentence: the recogniser's hearings of it, the likeliest first. */
   onFinal: (alternatives: string[]) => void;
   /** The words so far of the sentence being said. */
@@ -107,7 +109,8 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
       /* already stopped */
     }
     const r = new Ctor();
-    r.lang = "en-US";
+    // The Operator passes the phone's own language (spec §2: Russian, mixed speech); the Deck Studio stays English.
+    r.lang = handlers.lang ?? "en-US";
     r.continuous = hands.current;
     r.interimResults = true;
     r.maxAlternatives = 3;
@@ -163,7 +166,7 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
     } catch {
       setMic("off");
     }
-  }, []);
+  }, [handlers.lang]);
 
   const stopRecording = React.useCallback((send: boolean) => {
     const m = media.current;

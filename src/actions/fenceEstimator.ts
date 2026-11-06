@@ -1,30 +1,22 @@
 "use server";
-import { revalidatePath } from "next/cache";
-import { randomUUID } from "node:crypto";
 import { NoOrgError, UnauthorizedError, requireEstimatorOrManager } from "@/lib/orgContext";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 
 const estimateTotal = (d: { materials: Array<{ quantity: number; unitPrice: number }>; labor: Array<{ quantity: number; unitPrice: number }> }) =>
   Math.round([...d.materials, ...d.labor].reduce((a, l) => a + l.quantity * l.unitPrice, 0));
 const money = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-import { db } from "@/lib/db";
-import { recordInventoryLink } from "@/lib/inventoryPick";
-import { clearFilingContext, filedClientId, leadProposalText, readFilingContext } from "@/lib/filingContext";
-import { sellUnitPrice } from "@/lib/pricing/markup";
-import { uploadBlob, isBlobEnabled } from "@/lib/sdk/blob";
+import { clearFilingContext, readFilingContext } from "@/lib/filingContext";
 import { getOpenAI, isOpenAIEnabled, samplingOptions, resolveOpenAIModel } from "@/lib/sdk/openai";
 import { estimateSchema, type GeneratedEstimate } from "@/lib/estimatorSchema";
-import { ProposalStatus } from "@/lib/prismaEnums";
 import { checkPlanLimit } from "@/lib/limitsEngine";
-import { fenceConvertSchema, firstIssue, PREVIEW_MAX_CHARS, type FenceConvertInput } from "@/lib/fence/convertSchema";
-import { FENCE_PLAN_EVENT } from "@/lib/fence/planSvg";
+import { fenceConvertSchema, firstIssue } from "@/lib/fence/convertSchema";
 import { logServerError } from "@/lib/server-events";
 import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
-import { stateFromAddress, stateTaxRate } from "@/lib/pricing/salesTax";
-import { applyMemberDiscount } from "@/lib/servicePlanBook";
 import { takeTrialCap } from "@/lib/trialMeter";
 import { requirePage } from "@/lib/customPageAccess";
+// The proposal itself is written in lib/fence/proposalWrite (2026-11-05), shared with the AI Operator.
+import { writeFenceProposal } from "@/lib/fence/proposalWrite";
 
 const STUB: GeneratedEstimate = {
   title: "Cedar privacy fence estimate · AI disabled",
@@ -157,183 +149,13 @@ export async function convertFenceEstimateToProposal(raw: unknown): Promise<Fenc
   const parsed = fenceConvertSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, code: "INVALID", error: firstIssue(parsed.error) };
   try {
-    return { ok: true, id: await writeProposal(organizationId, user.id, role, parsed.data) };
+    const filing = await readFilingContext(organizationId);
+    const id = await writeFenceProposal({ organizationId, userId: user.id, role }, parsed.data, filing);
+    if (filing) await clearFilingContext();
+    return { ok: true, id };
   } catch (err) {
     // The cause goes to the log and to PostHog (server_error, scope fence-convert); the page gets one plain line.
     logServerError("fence-convert", err, { kind: "action", organizationId });
     return { ok: false, code: "FAILED", error: "The proposal could not be saved. Try again in a moment; if it keeps failing, tell support the time it happened." };
-  }
-}
-
-async function writeProposal(organizationId: string, userId: string, role: string, data: FenceConvertInput): Promise<string> {
-  const user = { id: userId };
-
-  // Never trust a client id from the browser — it must belong to this org.
-  const named = data.clientId
-    ? (
-        await db.client.findFirst({
-          where: { id: data.clientId, organizationId },
-          select: { id: true },
-        })
-      )?.id ?? null
-    : null;
-  // Started from a project or a client's page, the picker recorded where this
-  // estimate files (lib/filingContext); an explicit client still wins. Started
-  // from a lead, the filing carries the lead: its client, and its scope as the
-  // proposal's overview beside the fence scope written here.
-  const filing = await readFilingContext(organizationId);
-  const clientId = named ?? (await filedClientId(organizationId, role, filing));
-  const projectId = filing?.projectId ?? null;
-  const text = leadProposalText(filing?.lead ?? null, data.scope ?? "");
-
-  // NO markup on top (owner, 2026-10-01): the fence rates are installed
-  // prices with the profit inside — "a typed rate is what you charge" — so the
-  // proposal is the ticket, to the cent, whatever markup the company keeps
-  // for its hand-built proposals. It used to treat the ticket as cost and add
-  // that markup: the client got a bigger number than the page showed, and at
-  // the default 0% the builder graded the job a red "MARGIN 0.0%". The roof
-  // and HVAC converts already price this way.
-  const org = await db.organization.findUnique({
-    where: { id: organizationId },
-    select: { defaultTaxRate: true },
-  });
-  const markupRates = { materialMarkupPct: 0, laborMarkupPct: 0 };
-
-  // A split line (the package engine): the unit price is the two halves; the
-  // halves stay so "Show to client → breakdown" can print them.
-  const split = (data.lines ?? []).map((l) => {
-    const sell = sellUnitPrice({ unitPrice: l.materialCost + l.laborCost, materialCost: l.materialCost, laborCost: l.laborCost }, markupRates);
-    return {
-      name: l.name,
-      description: l.description,
-      measurementType: unitToType(l.unit),
-      quantity: l.quantity,
-      unitPrice: sell,
-      materialCost: l.materialCost,
-      laborCost: l.laborCost,
-      total: l.quantity * sell,
-    };
-  });
-  const lines = [
-    ...split,
-    ...data.materials.map((l) => ({
-      name: l.name,
-      measurementType: unitToType(l.unit),
-      quantity: l.quantity,
-      unitPrice: sellUnitPrice({ unitPrice: l.unitPrice, materialCost: l.unitPrice, laborCost: 0 }, markupRates),
-      materialCost: l.unitPrice,
-      laborCost: 0,
-      total:
-        l.quantity *
-        sellUnitPrice({ unitPrice: l.unitPrice, materialCost: l.unitPrice, laborCost: 0 }, markupRates),
-    })),
-    ...data.labor.map((l) => ({
-      name: l.name,
-      measurementType: unitToType(l.unit),
-      quantity: l.quantity,
-      unitPrice: sellUnitPrice({ unitPrice: l.unitPrice, materialCost: 0, laborCost: l.unitPrice }, markupRates),
-      materialCost: 0,
-      laborCost: l.unitPrice,
-      total:
-        l.quantity *
-        sellUnitPrice({ unitPrice: l.unitPrice, materialCost: 0, laborCost: l.unitPrice }, markupRates),
-    })),
-  ];
-
-  const subtotal = lines.reduce((a, l) => a + l.total, 0);
-  // Tax sits on top of the marked-up subtotal (sell price), applied once: the
-  // job's state rate from the address, the way the roof and HVAC converts
-  // write it, else the org default. taxRate is a FRACTION (0.08 = 8%).
-  const address = data.address?.trim() || null;
-  const taxRate = stateTaxRate(stateFromAddress(address)) ?? org?.defaultTaxRate ?? 0;
-  const taxTotal = subtotal * taxRate;
-
-  // Best-effort: persist the 3D snapshot to Blob so it can ride along in the
-  // proposal/PDF. Never blocks proposal creation if Blob is off or upload fails.
-  let beforePhotos: string | undefined;
-  try {
-    const m = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/.exec(data.previewDataUrl ?? "");
-    // Anything oversized is dropped, not refused: the proposal never waits on its picture.
-    if (m && (data.previewDataUrl?.length ?? 0) <= PREVIEW_MAX_CHARS && isBlobEnabled()) {
-      const ext = m[1] === "jpeg" ? "jpg" : m[1];
-      const { url } = await uploadBlob(`fence-preview/${randomUUID()}.${ext}`, Buffer.from(m[2], "base64"));
-      beforePhotos = JSON.stringify([url]);
-    }
-  } catch {
-    /* preview is optional */
-  }
-
-  const proposal = await db.proposal.create({
-    data: {
-      // The trade board lists it and its materials count against the fence stock (2026-09-20).
-      trade: "fence",
-      publicId: randomUUID(),
-      organizationId,
-      ownerId: user.id,
-      clientId,
-      projectId,
-      ...(beforePhotos ? { beforePhotos } : {}),
-      title: data.title,
-      // Scope only — assumptions stay on the estimate, never baked into the
-      // proposal's scope (keeps the preview / calendar / job detail clean).
-      scopeOfWork: text.scopeOfWork,
-      description: text.overview,
-      address,
-      status: ProposalStatus.DRAFT,
-      subtotal,
-      taxRate,
-      taxTotal,
-      total: subtotal + taxTotal,
-      materialMarkupPct: markupRates.materialMarkupPct,
-      laborMarkupPct: markupRates.laborMarkupPct,
-      validUntil: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14),
-      lineItems: {
-        create: lines.map((l, i) => ({ ...l, position: i })),
-      },
-      installments: {
-        create: [
-          { label: "Deposit", amount: 30, isPercent: true, position: 0 },
-          { label: "Completion", amount: 70, isPercent: true, position: 1 },
-        ],
-      },
-    },
-  });
-  // A member client (2026-09-22): the plan's discount rides on the new proposal (lib/servicePlanBook).
-  await applyMemberDiscount(proposal.id).catch(() => {});
-  // The connect-or-not choice, when one was made (lib/inventoryPick; null = the company's default).
-  await recordInventoryLink(organizationId, proposal.id, data.inventoryLinked, user.id);
-  // The traced layout rides with the proposal (2026-09-23): an activity
-  // event the client's page draws from. Best effort — the proposal never
-  // fails for its picture.
-  if (data.plan) {
-    try {
-      const gates = data.plan.gates.length;
-      await db.activityEvent.create({
-        data: { organizationId, actorId: user.id, proposalId: proposal.id, kind: FENCE_PLAN_EVENT, summary: `Fence layout drawn for the proposal — ${Math.round(data.plan.totalLf)} ft${gates ? `, ${gates} ${gates === 1 ? "gate" : "gates"}` : ""}`, meta: JSON.stringify(data.plan) },
-      });
-    } catch {
-      /* the layout is optional */
-    }
-  }
-
-  if (filing) await clearFilingContext();
-  if (projectId) revalidatePath(`/dashboard/projects/${projectId}`);
-  revalidatePath("/dashboard/proposals");
-  return proposal.id;
-}
-
-function unitToType(unit: string | undefined): string {
-  switch (unit) {
-    case "sqft":
-      return "SQFT";
-    case "ln ft":
-    case "linear ft":
-      return "LINEAR_FT";
-    case "hour":
-      return "HOUR";
-    case "lot":
-      return "LUMP_SUM";
-    default:
-      return "UNIT";
   }
 }

@@ -45,10 +45,27 @@ export type Project = {
   inProgressJobs?: number;
   /** "2h ago" — when anything on the project last moved. */
   updatedAgo?: string;
+  // ── The stages (2026-11-05). ──
+  /** "#1042", or null on a project not numbered yet. */
+  number?: number | null;
+  /** % done from the stages (lib/projectStages percentDone), or null with none — the jobs-closed count then. */
+  done?: number | null;
+  /** The stage the project is on ("Framing"), or null. */
+  stageNow?: string | null;
+  stageCount?: number;
+  /** What the stages and the buying flag: a late stage, no stages on sold work, an AI draft to keep, materials
+   *  not ordered by their day, a delivery past its day. */
+  attention?: Array<{ kind: "late" | "nostages" | "drafted" | "order-by" | "late-delivery" | "problem"; text: string }>;
 };
 
 /** What a row is flagged for, most urgent first. */
-export type ProjectFlag = { kind: "over" | "warn" | "loss" | "waiting" | "unbudgeted"; text: string };
+export type ProjectFlag = { kind: "over" | "warn" | "loss" | "waiting" | "unbudgeted" | "late" | "nostages" | "drafted" | "order-by" | "late-delivery" | "problem"; text: string };
+
+/** The row's progress, 0–100: the stages' % done when it has stages, else the jobs closed out. */
+export function progressOf(p: Project): number {
+  if (p.done != null) return p.done;
+  return p.jobCount > 0 ? Math.round((p.completedJobs / p.jobCount) * 100) : 0;
+}
 
 /** "$3,860" — whole dollars. */
 export function money(n: number): string {
@@ -77,7 +94,10 @@ export function projectFlags(p: Project): ProjectFlag[] {
   if (p.marginState === "sold" && p.margin != null && p.margin < 0 && p.status !== "COMPLETED") flags.push({ kind: "loss", text: `Losing ${moneyShort(-p.margin)}` });
   else if (p.budget <= 0 && (sold > 0 || spent > 0) && p.status !== "COMPLETED") flags.push({ kind: "unbudgeted", text: "No budget set" });
   if ((p.openCount ?? 0) > 0 && p.status !== "COMPLETED") flags.push({ kind: "waiting", text: `${p.openCount} waiting on client` });
-  return flags;
+  // A late stage, a late delivery and materials not ordered lead (2026-11-05); the rest follow the money's.
+  const urgent = (p.attention ?? []).filter((f) => f.kind === "problem" || f.kind === "late" || f.kind === "late-delivery" || f.kind === "order-by");
+  const rest = (p.attention ?? []).filter((f) => !urgent.includes(f));
+  return [...urgent, ...flags, ...rest];
 }
 
 /** A client the New Project dialog can file the project for. */

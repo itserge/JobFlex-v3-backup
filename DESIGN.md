@@ -287,17 +287,17 @@ monthly" is one 12px line (weight 600) under the price.
   shadow, nothing dimmed. Folded (Show me below the desk, Open on a phone) it
   is a 44px ink "Back to SmartHelp" bar at the top middle of the screen — the
   corners are the menu and Help, the foot is the tab bar and create button.
-- The Assistant (2026-11-04, shown to the owner for approval;
+- The AI Operator — called the Assistant until the owner renamed it on 2026-11-05 (2026-11-04, shown to the owner for approval;
   [assistant](src/components/v3/assistant/assistant.module.css)). Its row sits
   right under SmartHelp in every nav, and SmartHelp stays the one filled row:
   white in a 1.5px ink frame, a blue square holding Lucide AudioLines in white,
-  ink 800 "Assistant", a square "NEW" tag framed in blue; no shadow, the hover a
+  ink 800 "AI Operator", a square "NEW" tag framed in blue; no shadow, the hover a
   light blueprint fill; the folded rail shows the square alone; hidden for the
   field crew. The desk panel is SmartHelp's geometry (380px beside the page at
   ≥1024, over it at 769–1023, the two never open together) with a `--paper`
   head ruled in 2px ink. A phone has no sheet: the rows go to the page
   `/mobile-assistant-v1` — the handheld chrome, a `--paper` head (36px blue
-  square, 22px 900 caps "Assistant"), the conversation filling the screen and
+  square, 22px 900 caps "AI Operator"), the conversation filling the screen and
   the box on its foot above the home indicator. The conversation is
   SmartBook's square bubbles (the person's white in ink, the Assistant's
   `--accent-soft` in accent). A proposed change is a card in a 2px ink frame:
@@ -311,7 +311,13 @@ monthly" is one 12px line (weight 600) under the price.
   conversation: the square turns rose while it listens and blue while it
   speaks, and a live line sits over the box — what is being heard, "Listening
   — just talk.", "Working on it…", "Speaking…" (rose-tinted, blueprint-tinted
-  while speaking). Settings → Assistant
+  while speaking). A build (2026-11-05: "build a 12 by 12 deck with a roof for
+  Sarah") answers "On it…" in a plain bubble, a "Pricing it…" working line holds
+  the place while it prices, and the result is the send card: the price, what
+  is in it, "Open it: the proposal" (an 600 underlined link in the card's own
+  ink, opened beside the panel), then the send read-back with Do it / Cancel.
+  The empty state's first example row after "What's on tomorrow?" is "Build a
+  12 × 12 deck with a roof for …". Settings → AI Operator
   ([assistant-settings](src/components/v3/assistant/assistant-settings.module.css))
   is one card in SmartBook's treatment — stamp Linked emerald, Paused amber,
   Not linked / Texting soon muted — with ruled sections In the app, From your
@@ -320,7 +326,46 @@ monthly" is one 12px line (weight 600) under the price.
   say. The link code is SmartBook's copy box: 30px 900 tabular digits beside a
   caps Copy cell; on a phone "Text the code from this phone" is a full-width
   blue button that opens Messages with the code typed; the consent words sit
-  under it in 12.5px with Terms, Privacy and How it works (/assistant).
+  under it in 12.5px with Terms, Privacy and How it works (/assistant). Batches 1–2 (2026-11-05): a money card (an
+  invoice, a financing link) carries a PIN box beside Do it — 96px wide in the
+  card's 1.5px ink frame, 18px 800 tabular digits masked, the "PIN" placeholder
+  in faint ink — and Do it stays disabled until four digits are typed; the card
+  labels are "Add a client", "Update a client", "Add a lead", "Book a visit",
+  "Move a visit", "Cancel a visit", "Reminder", "Invoice", "Financing link", and
+  a reminder's queued stamp reads "Set" (blueprint) until it lands as Done.
+  Settings → AI Operator gains a "PIN for money" section: a 120px white field of
+  four masked 20px 900 digits, Save PIN as the one blue button, "Change PIN" /
+  "Remove PIN" once set; 1234-style runs and one digit four times are refused. Batch 3: a "Morning briefing and alerts" section of
+  ruled rows — the words left, the time select (44px, 1.5px ink) and the one
+  button right; "Turn on" is the blue button, "Turn off" the white one.
+- The AI Operator on a phone, Rev 2 (owner, 2026-11-05 — THE ONE WRITTEN
+  EXCEPTION to the handheld's light paper;
+  [operator.css](src/components/v3/assistant/operator.css)). While the Operator
+  has the sheet — the page `/mobile-assistant-v1`, or the overlay the dial button
+  opens on any phone page — it is a blueprint: white lines on blueprint blue
+  (#0b2b5c, the head and foot #071c40), the drafting grid in faint white at 24px,
+  Inter and JetBrains Mono as everywhere. The paper comes back when it closes.
+  Red is the person (the REC stamp, the rule beside their words as they speak,
+  the dial while it listens); white is the Operator's work; yellow is "needs
+  you"; green is done. The dial is the one round thing: a canvas ring of 56 bars
+  around a 64px button — lively red while it listens, a white sweep while it
+  works, a yellow pulse while it waits, green when a build lands, a faint breath
+  at rest — with 44px square hints either side (Type / Hands-free; Cancel / Send
+  while it listens; Change / Send while it waits). A card: a 10.5px caps label,
+  the square stamp, the facts as a ruled two-column sheet (58px mono keys), the
+  build's trace as four mono steps with a 3px top rule (green done, white now),
+  the deck's own plan drawn on in the Deck Studio's build order (0.6px white
+  lines, a 7% white fill), the price in 30px 900, Do it (white, blueprint type)
+  / Cancel / the PIN box. The dial button on every phone page is the paper's own
+  54px blue square with a 4px ink shadow at 16px from the right, 84px up (clear
+  of a tab bar); held, it turns rose and sinks 2px. Nothing else on the phone is
+  dark. A fence built from an address (2026-11-05) draws its lot on the card
+  the same way: the lot lines dashed in muted white, the house a 12% white
+  block, the fence the 2px white line, each gate a 4px yellow dash, north up.
+  A roof built from an address (2026-11-05) shows the aerial photo instead —
+  the satellite centred on the measurement's pin, saturation eased to 85% on the
+  blueprint, the pin a 12px red dot ringed in white — never a drawn outline (the
+  owner's rule); HVAC and lawn cards carry their facts and the words only.
 - SmartBook (owner, 2026-10-31;
   [smartbook](src/components/v3/smartbook/smartbook.module.css)). One framed
   card treatment for Settings → SmartBook and the calendar's "SmartBook
@@ -463,6 +508,47 @@ its fully expanded height, anchored to the bottom of the preview. The growing
 panel reveals more of that stationary scene; scrolling must not resize the
 canvas, change its camera projection, or trigger a WebGL redraw. Real viewport
 resizes update the camera and drawing buffer together before rendering.
+
+Projects hub, stages (2026-11-05): the Stages card leads the project page on
+desk and handheld, above the proposals — a remodel is read by where it stands.
+One row per stage: a 24px round mark (empty · ▶ in progress on ink · ✓ done on
+emerald), the name as the fold button, a mono meta line (days, tasks, "3 days
+late" in rose), the actions right. Only the stage the project is on opens its
+tasks; the rest fold. Tasks are 32px lines (44px handheld) with an ink
+check; "photo" is a small amber mono tag, never a camera icon. The % done bar
+is the budget card's 10px bar. Templates and the AI draft are small outline
+buttons in the empty state, not a wizard; an AI draft shows an emerald note
+with Keep. The project's number ("#1042") sits in the kicker after
+"Projects" on desk and leads the handheld dateline; the list prints "65% ·
+Framing" where it printed the jobs closed, only once the project has stages.
+
+Projects hub, buying (2026-11-05): the Buying card sits under the proposals,
+the Deliveries card right after it. The to-buy list is grouped by stage under
+a mono caps rule that carries the stage's order-by day; each line is a tick
+box (only while something is left to buy), the name, a mono quantity and a
+small mono tag — To buy in accent, Ordered in amber, In in emerald, late in
+rose. Picked lines raise a sticky bar at the card's foot (ink frame, paper,
+the one primary button "Order these"). An order is one ink-framed block that
+folds: its head names the order, who it is from and its state tag; open, it
+shows the dates in mono, the lines, the tracking field and the actions as
+small outline buttons, "Delivered" the one primary. The buyer's page
+(/buy/<token>) is the review page's sibling: one 2px ink frame on graph
+paper, 52px tick rows, the ink Save button with the accent shadow.
+
+The crew in the field (2026-11-05): the On site block sits on the job page
+right under the crew's day buttons, in the crew board's own language — a
+white 2px-ink card, mono caps label, uppercase heavy title, 44px rows. A
+problem is an amber-framed row with the warning glyph; one that stopped the
+work is rose. Tasks are 22px ink checks on dashed rows; a ticked one strikes
+through. Deliveries are a row with the one primary "Delivered". Hours are a
+120px field with a small outline Save and a mono "32 h this week". "Flag a
+problem" is a full-width outline button, never red — the office's stamp is
+the red thing. On the project page the On site card uses the hub's row
+vocabulary: a problem row's round mark is a rose "!", the open ones lead;
+hours and the subs' bills are mono-quantity lines, "owed" in rose, "paid" in
+emerald. The crew's home prints "My tasks today" as paper cards with empty
+ink squares (no live ticking there — the job page ticks) and "My week" as
+three display figures.
 
 Read [implementation notes](docs/design/implementation.md) when editing an
 existing interactive surface, and [mobile notes](docs/design/mobile.md) for

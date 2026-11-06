@@ -5,7 +5,9 @@
 // the day it is spent (lib/expenseTotals, actions/financials); a job's cost
 // counts what the job CONSUMED:
 //
-//   crew     — the pay on its assignments (all of it, paid or not);
+//   crew     — the pay on its assignments (all of it, paid or not), plus the
+//              hours the crew typed at the rate of the day (CrewHours, the crew
+//              build 2026-11-05 — lib/crewField hoursCostByJob);
 //   receipts — its approved receipts (APPROVED + REIMBURSED; a receipt on
 //              review stands apart and is never added);
 //   stock    — what was issued to it from the warehouse: PICKED and USED
@@ -20,6 +22,7 @@
 
 import { db } from "@/lib/db";
 import { cents, countsInTotals, isPending } from "@/lib/expenseTotals";
+import { hoursCostByJob } from "@/lib/crewField/server";
 
 export type StockLine = {
   itemId: string;
@@ -61,13 +64,15 @@ export function movementPrice(unitCost: number | null | undefined, lastCost: num
 /** The job costs of the given jobs of one company (every job with any cost when `jobIds` is omitted). */
 export async function jobCosts(organizationId: string, jobIds?: string[]): Promise<Map<string, JobCost>> {
   const scope = jobIds ? { id: { in: jobIds } } : {};
-  const [assignments, expenses, moves] = await Promise.all([
+  const [assignments, expenses, moves, hours] = await Promise.all([
     db.jobAssignment.findMany({ where: { job: { organizationId, ...scope } }, select: { jobId: true, pay: true } }),
     db.jobExpense.findMany({ where: { job: { organizationId, ...scope } }, select: { jobId: true, amount: true, status: true } }),
     db.inventoryMovement.findMany({
       where: { kind: { in: [...ISSUED, "RETURNED"] }, item: { organizationId }, ...(jobIds ? { jobId: { in: jobIds } } : { jobId: { not: null } }) },
       select: { jobId: true, itemId: true, kind: true, quantity: true, unitCost: true, item: { select: { name: true, unit: true, lastCost: true } } },
     }),
+    // The hours the crew typed, at the rate of the day (the crew build, 2026-11-05).
+    hoursCostByJob(organizationId, jobIds),
   ]);
 
   const out = new Map<string, JobCost>();
@@ -79,6 +84,7 @@ export async function jobCosts(organizationId: string, jobIds?: string[]): Promi
   for (const id of jobIds ?? []) get(id);
 
   for (const a of assignments) get(a.jobId).crew += Math.max(0, a.pay ?? 0);
+  for (const [jobId, cost] of hours) get(jobId).crew += cost;
   for (const e of expenses) {
     if (!e.jobId) continue;
     const c = get(e.jobId);

@@ -28,7 +28,7 @@ async function tolerant<T>(run: (has: Has) => Promise<T>): Promise<T> {
 
 /** The words worth searching: "the Smith roof proposal" → ["Smith", "roof"]. */
 export function searchWords(q: string): string[] {
-  const stop = new Set(["the", "a", "an", "for", "of", "to", "my", "our", "his", "her", "their", "job", "proposal", "estimate", "client", "customer", "project", "from", "yesterday", "today", "at", "on", "and"]);
+  const stop = new Set(["the", "a", "an", "for", "of", "to", "my", "our", "his", "her", "their", "job", "proposal", "estimate", "client", "customer", "project", "from", "yesterday", "today", "at", "on", "and", "with", "visit", "appointment", "meeting"]);
   return q
     .split(/[\s,.;:!?'"()]+/)
     .map((w) => w.trim())
@@ -99,6 +99,26 @@ export async function findJobs(organizationId: string, q: string) {
   );
 }
 
+/** Projects where every word hits the name or the client's name — or the number ("1042", "#1042") hits exactly (2026-11-05). */
+export async function findProjects(organizationId: string, q: string) {
+  const select = { id: true, name: true, number: true, status: true, client: { select: { name: true } }, updatedAt: true };
+  const num = /^#?(\d{3,6})$/.exec(q.trim());
+  if (num) {
+    const byNumber = await db.project.findMany({ where: { organizationId, number: Number(num[1]) }, select, take: 1 });
+    if (byNumber.length) return byNumber;
+  }
+  const words = searchWords(q);
+  if (!words.length) return [];
+  return tolerant((has) =>
+    db.project.findMany({
+      where: { organizationId, status: { not: "ARCHIVED" }, AND: words.map((w) => ({ OR: [{ name: has(w) }, { client: { name: has(w) } }] })) },
+      select,
+      orderBy: { updatedAt: "desc" },
+      take: TAKE,
+    }),
+  );
+}
+
 export async function findLeads(organizationId: string, q: string) {
   const t = q.trim().slice(0, 80);
   if (t.length < 2) return [];
@@ -107,6 +127,34 @@ export async function findLeads(organizationId: string, q: string) {
       where: { organizationId, OR: [{ name: has(t) }, { email: has(t) }, { phone: has(t) }, { address: has(t) }] },
       select: { id: true, name: true, status: true, source: true, address: true, createdAt: true },
       orderBy: { createdAt: "desc" },
+      take: TAKE,
+    }),
+  );
+}
+
+/** Visits (appointments) still scheduled, a month back to four ahead, where every word hits the title, the client's or
+ *  the lead's name (2026-11-05: "move my visit with Lee to 4"). */
+export async function findVisits(organizationId: string, q: string, now = new Date()) {
+  const words = searchWords(q);
+  if (!words.length) return [];
+  return tolerant((has) =>
+    db.appointment.findMany({
+      where: {
+        organizationId,
+        status: "SCHEDULED",
+        startsAt: { gte: new Date(now.getTime() - 30 * 86_400_000), lte: new Date(now.getTime() + 120 * 86_400_000) },
+        AND: words.map((w) => ({ OR: [{ title: has(w) }, { client: { name: has(w) } }, { lead: { name: has(w) } }] })),
+      },
+      select: {
+        id: true,
+        title: true,
+        startsAt: true,
+        endsAt: true,
+        client: { select: { name: true } },
+        lead: { select: { name: true } },
+        assignments: { select: { worker: { select: { displayName: true } } } },
+      },
+      orderBy: { startsAt: "asc" },
       take: TAKE,
     }),
   );

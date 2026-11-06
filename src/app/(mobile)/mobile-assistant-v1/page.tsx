@@ -22,8 +22,8 @@ import { assistantOpenFor } from "@/lib/assistant/open";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Assistant · JobFlex Mobile",
-  description: "The JobFlex Assistant — ask about your day, or tell it to send, schedule, text or remind.",
+  title: "AI Operator · JobFlex Mobile",
+  description: "The JobFlex AI Operator — ask about your day, or tell it to price a job, send, schedule or text.",
 };
 
 export const viewport: Viewport = {

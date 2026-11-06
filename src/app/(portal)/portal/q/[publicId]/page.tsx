@@ -30,6 +30,7 @@
 import type { Metadata } from "next";
 import { fireTextRules, proposalContext } from "@/lib/sms/rulesEngine";
 import { afterResponse } from "@/lib/server-events";
+import { alertProposalOpened } from "@/lib/assistant/alerts";
 import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -183,6 +184,8 @@ export default async function PublicProposalPortal({
     // The company's own texts on the first opening (2026-09-29).
     const openedId = proposal.id;
     afterResponse(() => fireTextRules("proposal.viewed", proposalContext(openedId)));
+    // The AI Operator tells the people who asked (2026-11-05, lib/assistant/alerts): the first look only, as this block is.
+    afterResponse(() => alertProposalOpened(openedId).then(() => undefined));
     if (proposal.status === "SENT") afterResponse(async () => { await (await import("@/lib/followUps/engine")).scheduleFollowUpsFor(openedId, "VIEWED"); }); // the "Viewed" follow-up rules (lib/followUps/defaults)
   }
 

@@ -41,7 +41,39 @@ export interface PdProject {
   /** Scope, and ACTIVE | ON_HOLD | COMPLETED | ARCHIVED — the Edit project dialog (2026-11-04). */
   description?: string | null;
   status?: string;
+  /** The project's own number, "#1042" (2026-11-05); null on one not numbered yet. */
+  number?: number | null;
 }
+
+/* STAGES OF A PROJECT (2026-11-05): the order of the work and its tasks, as the Stages card reads them
+   (lib/projectStages/server stagesOf). Days are ISO (UTC midnight, like the project's own). */
+export type PdStage = {
+  id: string;
+  name: string;
+  position: number;
+  /** PLANNED | ACTIVE | DONE. */
+  status: string;
+  startsAt: string | null;
+  endsAt: string | null;
+  doneAt: string | null;
+  weight: number;
+  tasks: Array<{ id: string; title: string; position: number; photoNeeded: boolean; done: boolean; doneAt: string | null }>;
+};
+export type PdStages = {
+  stages: PdStage[];
+  /** 0–100, or null with no stages. */
+  done: number | null;
+  /** The AI drafted them and nobody has kept or edited them yet. */
+  draftedByAi: boolean;
+};
+
+/* BUYING AND DELIVERIES (2026-11-05): the to-buy list and the orders, as lib/projectBuying/server buyingOf reads them. */
+export type PdBuying = import("@/lib/projectBuying/server").BuyingRead;
+export type PdMaterial = import("@/lib/projectBuying/server").BuyingMaterial;
+export type PdOrder = import("@/lib/projectBuying/server").BuyingOrder;
+
+/* ON SITE (the crew build, 2026-11-05): the problems flagged, the hours this week, the subs' bills — lib/crewField projectField. */
+export type PdField = import("@/lib/crewField/server").ProjectFieldRead;
 
 /** What the viewer's role may open from the project page (lib/roleRoutes) — an estimator has no client record or job page. */
 export type PdOpens = { client: boolean; jobs: boolean };
