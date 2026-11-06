@@ -51,6 +51,7 @@ import type {
   PdOpens,
   PdPayments,
   PdProject,
+  PdStages,
   PdWorker,
   PdProposal,
 } from "@/components/v3/project-detail-blueprint/project-detail-data";
@@ -102,6 +103,8 @@ export function ProjectDetailViewportSwitch(props: {
   opens?: PdOpens;
   payments?: PdPayments;
   roster?: PdWorker[];
+  /** The order of the work (2026-11-05). */
+  stages?: PdStages;
 }) {
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   // The handheld half is a lazy chunk, so it inherits the deploy-skew failure

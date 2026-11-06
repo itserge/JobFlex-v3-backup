@@ -1048,4 +1048,8 @@
 .pjFlag_warn { border-color: var(--warning); color: var(--warning-dark); background: var(--warning-soft); }
 .pjFlag_waiting { border-color: var(--sky); color: var(--blueprint); background: rgba(74, 158, 255, 0.13); }
 .pjFlag_unbudgeted { border-color: var(--hair); color: var(--muted); }
+/* the stages' flags (2026-11-05) */
+.pjFlag_late { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+.pjFlag_nostages { border-color: var(--hair); color: var(--muted); }
+.pjFlag_drafted { border-color: var(--sky); color: var(--blueprint); background: rgba(74, 158, 255, 0.13); }
 .pjTrack { grid-row: 5; }

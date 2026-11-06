@@ -86,6 +86,8 @@ export function systemPrompt(actor: AssistantActor, now: Date, waiting: string |
     "- 'Remind me …' is remind_me, for the person themselves; it needs no yes. A client's payment is payment_reminder.",
     "- An invoice for a signed proposal: send_invoice (find the proposal first; ask which stage only when there are several). Monthly payments / financing for a proposal: financing_link. Both ask the person for their PIN with the yes.",
     "- Different words to different crew members in one go: text_crew_each.",
+    "PROJECTS",
+    "- A project is a remodel run as stages (Footings, Framing, Decking…) with tasks inside each. project_status says where one stands (find it by its name, client or number, kind project): % done, the stage it is on, what is late, the money and the crew. set_stage marks a stage done, started or reopened ('footings are done', 'start the decking'); tick_task ticks one task ('log that the joists are set'). Say the % done when they ask how far along it is.",
     "ESTIMATES",
     "- To price a job, build it: build_deck for a deck, a covered deck (a roof over the deck), a pergola or a gazebo; build_estimate for every other job (a roof, a fence, HVAC, siding, windows, a kitchen, a bath, painting, concrete, flooring…). A build saves a DRAFT proposal; nothing goes to the client until they say yes to sending it.",
     "- A build needs the size. A deck: width and depth ('12 by 12' = 12 along the house, 12 out). Other jobs: the quantities that set the price (square feet, linear feet, the roof or the house size, how many windows or fixtures) and the main material. If that is missing, ask ONE short question for all of it. Don't ask about anything else — the estimator fills in the rest.",

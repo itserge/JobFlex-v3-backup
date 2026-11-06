@@ -17,7 +17,7 @@ import { closeMdl, openMdl, MDL_EXIT_MS } from "@/components/v3/blueprint-shell/
 import { staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import { initDatePopovers } from "@/components/v3/shared/date-popover";
 import { STATUSES, type Project } from "./projects-data";
-import { money, moneyShort, projectFlags } from "./projects-data";
+import { money, moneyShort, progressOf, projectFlags } from "./projects-data";
 
 export type ProjectsContentOptions = {
   /** The org's real project book, read server-side in
@@ -131,7 +131,8 @@ export function initProjectsContent(
     return s.toLowerCase().replace("_", " ");
   }
   function progress(p: Project) {
-    return p.jobCount > 0 ? Math.round((p.completedJobs / p.jobCount) * 100) : 0;
+    // The stages' % done when the project has stages (2026-11-05), else the jobs closed out.
+    return progressOf(p);
   }
   function rmOk() {
     return !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -228,12 +229,16 @@ export function initProjectsContent(
       "</div></td>" +
       // jobs
       '<td><div class="pj-jobs">' +
-      (p.jobCount > 0
-        ? '<b class="' + (done ? "done" : "") + '">' + p.completedJobs + " of " + p.jobCount + "</b><span>" +
-          // "0 of 3 scheduled" read as none of them on the calendar; the count is the jobs DONE (2026-11-04).
-          ((p.inProgressJobs ?? 0) > 0 && !done ? "done · " + (p.inProgressJobs ?? 0) + " in progress" : "done") + "</span>" +
+      // With stages (2026-11-05) the cell is the project's own progress: % done and the stage it is on.
+      (p.done != null
+        ? '<b class="' + (done ? "done" : "") + '">' + p.done + '%</b><span title="' + esc(done ? "all stages done" : p.stageNow ? "done · on " + p.stageNow : "done") + '">' + esc(done ? "done" : (p.stageNow ?? "done")) + "</span>" +
           '<div class="pjc-track pj-track"><div class="pjc-fill' + (done ? " done" : "") + '" data-w="' + pct + '"></div></div>'
-        : '<b class="pj-zero">—</b><span>no jobs yet</span>') +
+        : p.jobCount > 0
+          ? '<b class="' + (done ? "done" : "") + '">' + p.completedJobs + " of " + p.jobCount + "</b><span>" +
+            // "0 of 3 scheduled" read as none of them on the calendar; the count is the jobs DONE (2026-11-04).
+            ((p.inProgressJobs ?? 0) > 0 && !done ? "done · " + (p.inProgressJobs ?? 0) + " in progress" : "done") + "</span>" +
+            '<div class="pjc-track pj-track"><div class="pjc-fill' + (done ? " done" : "") + '" data-w="' + pct + '"></div></div>'
+          : '<b class="pj-zero">—</b><span>no jobs yet</span>') +
       "</div></td>" +
       // window
       '<td class="pjc-window"><span class="pt-mono">' + (p.startsAt ? esc(p.startsAt) + (p.endsAt ? " → " + esc(p.endsAt) : "") : "—") + "</span></td>" +

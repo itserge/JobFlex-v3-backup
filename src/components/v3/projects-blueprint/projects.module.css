@@ -1483,6 +1483,10 @@
 .bp :global(.content .pj-flag--warn) { border-color: var(--warning); color: var(--warning-dark); background: var(--warning-soft); }
 .bp :global(.content .pj-flag--waiting) { border-color: var(--sky); color: var(--blueprint); background: rgba(74, 158, 255, 0.13); }
 .bp :global(.content .pj-flag--unbudgeted) { border-color: var(--hair); color: var(--muted); }
+/* the stages' flags (2026-11-05): a late stage reads as an overrun does; no stages / an AI draft to keep are quiet */
+.bp :global(.content .pj-flag--late) { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+.bp :global(.content .pj-flag--nostages) { border-color: var(--hair); color: var(--muted); }
+.bp :global(.content .pj-flag--drafted) { border-color: var(--sky); color: var(--blueprint); background: rgba(74, 158, 255, 0.13); }
 
 /* budget and jobs cells: a figure, a word, and a track under both */
 .bp :global(.content .pj-budget), .bp :global(.content .pj-jobs) { min-width: 150px; }

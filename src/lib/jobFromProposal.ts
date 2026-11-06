@@ -10,6 +10,7 @@
 // calling this (the dashboard actions in src/actions/jobs.ts do).
 import { db } from "@/lib/db";
 import { JobStatus } from "@/lib/prismaEnums";
+import { projectForSoldProposal } from "@/lib/projectStages/server";
 
 export async function createJobFromProposalInternal(proposalId: string) {
   const proposal = await db.proposal.findUnique({ where: { id: proposalId } });
@@ -17,7 +18,11 @@ export async function createJobFromProposalInternal(proposalId: string) {
   const { organizationId } = proposal;
 
   const existing = await db.job.findFirst({ where: { organizationId, proposalId } });
-  if (existing) return { id: existing.id, created: false as const };
+  if (existing) {
+    // The sale may still want its project (Automatic projects, 2026-11-05) — idempotent, never throws.
+    await projectForSoldProposal(proposal.id);
+    return { id: existing.id, created: false as const };
+  }
 
   // NO DATE, and no calendar event.
   //
@@ -47,6 +52,10 @@ export async function createJobFromProposalInternal(proposalId: string) {
       scopeOfWork: proposal.scopeOfWork ?? null,
     },
   });
+
+  // AUTOMATIC PROJECTS (owner's plan, 2026-11-05): a sold proposal in a trade the company runs as projects
+  // (deck, roof, remodel…) gets a project with its stages, and this job is filed there. Never throws.
+  await projectForSoldProposal(proposal.id);
 
   return { id: job.id, created: true as const };
 }

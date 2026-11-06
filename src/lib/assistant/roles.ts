@@ -24,7 +24,10 @@ export type Capability =
   | "visits.write"
   | "reminders"
   | "invoices.send"
-  | "financing.send";
+  | "financing.send"
+  // The stages build (2026-11-05): projects are estimators' and managers' (requireEstimatorOrManager), never SALES'.
+  | "projects.read"
+  | "projects.write";
 
 const LIMITED = new Set(["INSTALLER", "SALES", "ESTIMATOR"]);
 
@@ -65,6 +68,10 @@ export function roleAllows(role: string, need: Capability): boolean {
     case "invoices.send":
     case "financing.send":
       return manager;
+    case "projects.read":
+      return mayOpen(role, "/dashboard/projects");
+    case "projects.write":
+      return role !== "SALES" && mayOpen(role, "/dashboard/projects");
   }
 }
 

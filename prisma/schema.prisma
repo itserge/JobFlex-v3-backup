@@ -58,6 +58,7 @@ model Organization {
   gmailTokensJson       String? // OAuth secrets      {accessToken,refreshToken,expiryDate,email} — set by the Gmail connect callback
   metaSettingsJson      String? // settings/meta      {connected,autoCreate,autoText,defaultPage,formCategory}
   proposalSettingsJson  String? // settings/proposals {validityDays,markups{...},schedule[],terms,requireSig,autoFollowUp}
+  projectSettingsJson   String? // Projects → Automatic projects (2026-11-05) {auto,trades[]} — lib/projectStages/shared parseProjectSettings
   // Lead Center matching profile — canonical TRADE_TYPES multi-select (JSON string[],
   // closed vocabulary from src/lib/tradeTypes.ts; distinct from the free-text Specialty
   // model which steers AI estimator prompts). lat/lng geocoded from `address` at
@@ -2303,6 +2304,12 @@ model Project {
   // the project … keep all his proposals under the same project"). Optional:
   // projects made before this, and multi-client builds, carry none.
   clientId       String?
+  // The project's own number, counted per company from 1001 ("#1042") — the stages build (2026-11-05).
+  // Null on a project made before then until the one-time numbering (prisma/sql/prod-2026-11-05-project-stages.sql).
+  number         Int?
+  // Set when the AI drafted the stages from the proposal lines and nobody has kept or edited them yet; the
+  // card shows "Drafted by AI" with Keep until then (lib/projectStages).
+  stagesDraftedAt DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -2312,9 +2319,59 @@ model Project {
   proposals    Proposal[]
   budgetLines  ProjectBudgetLine[]
   expenses     ProjectExpense[]
+  stages       ProjectStage[]
+  tasks        ProjectTask[]
 
+  @@unique([organizationId, number])
   @@index([organizationId])
   @@index([clientId])
+}
+
+// A STAGE OF A PROJECT (the stages build, 2026-11-05) — "Footings", "Framing", "Decking and railings": the
+// remodel's order of work, from a trade template (lib/projectStages/templates) or drafted by the AI from the
+// proposal lines. % done = the done stages' weight over all stages' weight (an active stage counts its ticked
+// tasks' share), so framing counts more than cleanup. Dates are DAYS (UTC midnight, like Project.startsAt).
+// Status: PLANNED | ACTIVE | DONE (lib/prismaEnums StageStatus).
+model ProjectStage {
+  id        String    @id @default(cuid())
+  projectId String
+  name      String
+  position  Int       @default(0)
+  status    String    @default("PLANNED")
+  startsAt  DateTime?
+  endsAt    DateTime?
+  doneAt    DateTime?
+  doneById  String?
+  // The stage's share of the work (its cost share from the template; 1 for a hand-added stage).
+  weight    Float     @default(1)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  project Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks   ProjectTask[]
+
+  @@index([projectId, position])
+}
+
+// A TASK INSIDE A STAGE — "Set joists, east side", ticked on the desk or the crew's phone. `photoNeeded`: the
+// task wants a photo when it is ticked (the crew's phone asks for it in part 3). Done = doneAt set.
+model ProjectTask {
+  id          String    @id @default(cuid())
+  projectId   String
+  stageId     String
+  title       String
+  position    Int       @default(0)
+  photoNeeded Boolean   @default(false)
+  doneAt      DateTime?
+  doneById    String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  stage   ProjectStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+
+  @@index([stageId, position])
+  @@index([projectId])
 }
 
 // A project's cost budget, one line per category (MATERIALS, LABOR,

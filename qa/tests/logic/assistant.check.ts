@@ -107,7 +107,7 @@ function check(name: string, ok: boolean, extra?: unknown) {
 
 // ── who may ask for what ────────────────────────────────────────────────────
 {
-  const all: Capability[] = ["today", "proposals.read", "proposals.send", "schedule.read", "schedule.write", "crew.read", "crew.text", "money.read", "payments.remind", "estimates.build", "clients.write", "leads.write", "visits.write", "reminders", "invoices.send", "financing.send"];
+  const all: Capability[] = ["today", "proposals.read", "proposals.send", "schedule.read", "schedule.write", "crew.read", "crew.text", "money.read", "payments.remind", "estimates.build", "clients.write", "leads.write", "visits.write", "reminders", "invoices.send", "financing.send", "projects.read", "projects.write"];
   for (const role of ["OWNER", "ADMIN", "MANAGER"]) check(`roles: ${role} may do everything`, all.every((c) => roleAllows(role, c)), all.filter((c) => !roleAllows(role, c)));
   check("roles: a field worker is refused everything (the crew portal is theirs)", all.every((c) => !roleAllows("INSTALLER", c)));
   check("roles: SALES sends proposals", roleAllows("SALES", "proposals.send"));
@@ -117,6 +117,9 @@ function check(name: string, ok: boolean, extra?: unknown) {
   check("roles: ESTIMATOR builds estimates", roleAllows("ESTIMATOR", "estimates.build"));
   check("roles: SALES never builds an estimate (it sends what an estimator priced)", !roleAllows("SALES", "estimates.build"));
   check("roles: SALES and ESTIMATOR see only their own proposals", ownProposalsOnly("SALES") && ownProposalsOnly("ESTIMATOR") && !ownProposalsOnly("OWNER") && !ownProposalsOnly("MANAGER"));
+  // The stages build (2026-11-05): projects are estimators' and managers' (requireEstimatorOrManager), never SALES'.
+  check("roles: ESTIMATOR runs projects (stages, tasks)", roleAllows("ESTIMATOR", "projects.read") && roleAllows("ESTIMATOR", "projects.write"));
+  check("roles: SALES never changes a project", !roleAllows("SALES", "projects.write"));
 }
 
 

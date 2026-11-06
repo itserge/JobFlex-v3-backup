@@ -9,6 +9,7 @@ import { enforcePlanLimit } from "@/lib/limitsEngine";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { loadProjectBook } from "@/components/v3/projects-blueprint/project-book-load";
 import type { Project } from "@/components/v3/projects-blueprint/projects-data";
+import { numbered } from "@/lib/projectStages/server";
 
 const projectInput = z.object({
   name: z.string().min(1),
@@ -65,18 +66,22 @@ export async function createProject(raw: unknown) {
   await enforcePlanLimit(organizationId, "projects");
   const data = projectInput.parse(raw);
   const clientId = await clientInOrg(organizationId, data.clientId);
-  const p = await db.project.create({
-    data: {
-      organizationId,
-      clientId,
-      name: data.name,
-      description: data.description ?? null,
-      status: data.status,
-      startsAt: data.startsAt ?? null,
-      endsAt: data.endsAt ?? null,
-      budget: data.budget,
-    },
-  });
+  // Numbered per company from 1001 (2026-11-05).
+  const p = await numbered(organizationId, (number) =>
+    db.project.create({
+      data: {
+        organizationId,
+        clientId,
+        number,
+        name: data.name,
+        description: data.description ?? null,
+        status: data.status,
+        startsAt: data.startsAt ?? null,
+        endsAt: data.endsAt ?? null,
+        budget: data.budget,
+      },
+    }),
+  );
   revalidatePath("/dashboard/projects");
   await logActivity({
     organizationId,

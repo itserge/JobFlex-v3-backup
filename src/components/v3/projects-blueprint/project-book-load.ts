@@ -9,6 +9,7 @@
 import { db } from "@/lib/db";
 import { projectMoney } from "@/lib/projectMoney";
 import { CATEGORY_LABEL } from "@/lib/projectBudget";
+import { currentStage, percentDone, stageFlags } from "@/lib/projectStages/shared";
 import type { Project } from "./projects-data";
 
 /** "Jul 08" in UTC — project dates are stored as UTC midnight (the action
@@ -43,12 +44,17 @@ export async function loadProjectBook(organizationId: string): Promise<Project[]
         select: { status: true, total: true, updatedAt: true, changeOrders: { where: { status: "APPROVED" }, select: { status: true, total: true } } },
       },
       expenses: { select: { amount: true, createdAt: true } },
+      // The stages (2026-11-05): % done, the stage it is on, and what is late.
+      stages: { orderBy: { position: "asc" }, select: { name: true, status: true, weight: true, endsAt: true, tasks: { select: { doneAt: true } } } },
     },
   });
   const money = await projectMoney(organizationId, projects.map((p) => p.id));
+  const today = new Date();
   return projects.map((p) => {
     const m = money.get(p.id);
     const openOnes = p.proposals.filter((x) => OPEN.has(x.status));
+    const stages = p.stages.map((s) => ({ name: s.name, status: s.status, weight: s.weight, endsAt: s.endsAt, tasks: s.tasks.map((t) => ({ done: Boolean(t.doneAt) })) }));
+    const now = currentStage(stages);
     // "Updated" is the newest thing on the project, not just the row itself.
     const last = [p.updatedAt, ...p.jobs.map((j) => j.updatedAt), ...p.proposals.map((x) => x.updatedAt), ...p.expenses.map((e) => e.createdAt)].reduce((a, b) => (b > a ? b : a));
     return {
@@ -73,6 +79,11 @@ export async function loadProjectBook(organizationId: string): Promise<Project[]
       overCategories: (m?.overCategories ?? []).map((c) => CATEGORY_LABEL[c]),
       owed: m?.owed ?? 0,
       updatedAgo: ago(last),
+      number: p.number,
+      done: percentDone(stages),
+      stageNow: now?.name ?? null,
+      stageCount: stages.length,
+      attention: stageFlags({ stages, sold: r2(m?.contract ?? 0), status: p.status, draftedByAi: Boolean(p.stagesDraftedAt) }, today),
     };
   });
 }
