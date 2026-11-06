@@ -38,6 +38,10 @@ const TOOL_LABEL: Record<string, string> = {
   build_deck: "Deck estimate",
   change_deck: "Deck estimate",
   build_estimate: "Estimate",
+  build_fence: "Fence estimate",
+  build_roof: "Roof estimate",
+  build_hvac: "HVAC estimate",
+  build_lawn: "Lawn estimate",
   change_estimate: "Estimate",
   send_proposal: "Send a proposal",
   schedule_job: "Schedule",
@@ -56,7 +60,7 @@ const TOOL_LABEL: Record<string, string> = {
 };
 
 /** The builds (lib/assistant/build): no undo window — queued means it is being priced. */
-const BUILDS = new Set(["build_deck", "change_deck", "build_estimate", "change_estimate"]);
+const BUILDS = new Set(["build_deck", "change_deck", "build_estimate", "change_estimate", "build_fence", "build_roof", "build_hvac", "build_lawn"]);
 
 function stamp(a: FeedAction, waiting: boolean): { label: string; tone: "warn" | "ok" | "bad" | "quiet" | "info" } {
   const st: ActionStatus = a.status;

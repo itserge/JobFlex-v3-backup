@@ -771,3 +771,30 @@
   stroke: var(--op-yellow);
   stroke-width: 4px;
 }
+
+/* a roof from the air (2026-11-05): the satellite photo under the drafting cap, a touch desaturated to sit on the
+   blueprint, the pin a red dot ringed in white at the centre — never an outline */
+.jf-operator .op-roof {
+  padding-bottom: 0;
+}
+.jf-operator .op-roof[data-state="loading"] {
+  display: none;
+}
+.jf-operator .op-roof img {
+  display: block;
+  width: 100%;
+  height: 170px;
+  object-fit: cover;
+  filter: saturate(0.85) contrast(1.05);
+}
+.jf-operator .op-roof .op-pin {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 5px);
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: var(--op-red);
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(0, 0, 0, 0.35);
+}

@@ -362,6 +362,10 @@ monthly" is one 12px line (weight 600) under the price.
   dark. A fence built from an address (2026-11-05) draws its lot on the card
   the same way: the lot lines dashed in muted white, the house a 12% white
   block, the fence the 2px white line, each gate a 4px yellow dash, north up.
+  A roof built from an address (2026-11-05) shows the aerial photo instead —
+  the satellite centred on the measurement's pin, saturation eased to 85% on the
+  blueprint, the pin a 12px red dot ringed in white — never a drawn outline (the
+  owner's rule); HVAC and lawn cards carry their facts and the words only.
 - SmartBook (owner, 2026-10-31;
   [smartbook](src/components/v3/smartbook/smartbook.module.css)). One framed
   card treatment for Settings → SmartBook and the calendar's "SmartBook

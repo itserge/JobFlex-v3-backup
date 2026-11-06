@@ -40,7 +40,9 @@ type Props = {
 
 type DeckDrawingData = { kind?: "deck"; viewBox: string; faces: { d: string; rank: number }[] };
 type FenceDrawingData = { kind: "fence"; lots: { x: number; y: number }[][]; houses: { ring: { x: number; y: number }[]; subject: boolean }[]; fence: { x: number; y: number; gap?: boolean }[]; gates: { x: number; y: number; widthFt: number }[] };
-type Drawing = DeckDrawingData | FenceDrawingData;
+/** A roof (2026-11-05): the aerial photo centred on the pin — never a drawn outline (the owner's rule). */
+type RoofDrawingData = { kind: "roof"; photo: string | null; squares: number | null; pitch: string | null };
+type Drawing = DeckDrawingData | FenceDrawingData | RoofDrawingData;
 
 const STAMP: Record<Tone, string> = { warn: "yel", ok: "mnt", bad: "red", quiet: "dim", info: "wht" };
 
@@ -504,7 +506,7 @@ function Card({ a, body, waiting, busy, onAnswer, drawing }: { a: FeedAction; bo
         </ol>
       ) : null}
       {steps && running ? <p className="op-note">You can close JobFlex. It keeps going, and your linked phone gets a text when it&apos;s ready.</p> : null}
-      {drawing ? drawing.kind === "fence" ? <FenceDrawing d={drawing} /> : <DeckDrawing d={drawing} /> : null}
+      {drawing ? drawing.kind === "fence" ? <FenceDrawing d={drawing} /> : drawing.kind === "roof" ? <RoofPhoto d={drawing} /> : <DeckDrawing d={drawing} /> : null}
       {built && price ? <p className="op-big">{price}</p> : null}
       <p className="op-text">
         <Words text={body} />
@@ -600,6 +602,23 @@ function FenceDrawing({ d }: { d: FenceDrawingData }) {
           <path key={`g${i}`} className="gate" d={`M ${(g.x - minX - g.widthFt / 2).toFixed(1)} ${Y(g.y)} l ${g.widthFt.toFixed(1)} 0`} data-rank={3} />
         ))}
       </svg>
+    </div>
+  );
+}
+
+/** The roof from the air: the satellite photo centred on the measurement's pin (api/assistant/photo), the pin a red
+ *  dot at the centre, the squares and pitch in the caption. No photo (no key here, no pin): nothing is shown. */
+function RoofPhoto({ d }: { d: RoofDrawingData }) {
+  // The frame and the pin show once the photo is there; a photo that can't be had (no key, no coverage) shows nothing.
+  const [got, setGot] = useState<"loading" | "ok" | "bad">("loading");
+  if (!d.photo || got === "bad") return null;
+  const cap = ["Roof · aerial", d.squares ? `${d.squares} sq` : "", d.pitch ? `${d.pitch} pitch` : ""].filter(Boolean).join(" · ");
+  return (
+    <div className="op-draw op-roof" data-state={got}>
+      <span className="op-cap">{cap}</span>
+      {/* eslint-disable-next-line @next/next/no-img-element -- a same-origin PNG streamed by the photo route, not an optimisable asset */}
+      <img src={d.photo} alt="The roof from the air, the pin on it" onLoad={() => setGot("ok")} onError={() => setGot("bad")} />
+      <span className="op-pin" aria-hidden="true" />
     </div>
   );
 }

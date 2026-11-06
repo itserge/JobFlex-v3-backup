@@ -1,4 +1,5 @@
-// GET /api/assistant/drawing/<proposalId> (2026-11-05, batch 4) — the deck's own plan as lines, for the phone's
+// GET /api/assistant/drawing/<proposalId> (2026-11-05, batch 4) — the deck's own plan as lines (a fence's lot, a
+// roof's aerial photo), for the phone's
 // sheet to draw in the real build order: the DECK_PLAN the Deck Studio filed with the proposal (lib/deck/convertSchema),
 // through the studio's isometric projection (lib/deck/iso) with the shading left out. One company's own proposals
 // only, as the Proposals page scopes them. It carries its own auth — the middleware does not match /api.
@@ -9,6 +10,7 @@ import { DECK_PLAN_EVENT } from "@/lib/deck/convertSchema";
 import { isoDrawing } from "@/lib/deck/iso";
 import type { DeckScene } from "@/lib/deck/scene";
 import { FENCE_PLAN_EVENT, parseFencePlan } from "@/lib/fence/planSvg";
+import { readRoofPlan, ROOF_PLAN_EVENT } from "@/lib/roofPackage/proposalEdit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,6 +45,23 @@ export async function GET(_req: Request, ctx: { params: Promise<{ proposalId: st
       }
     } catch {
       /* not a fence plan after all */
+    }
+  }
+  // A roof (2026-11-05): never an outline — the aerial photo with the pin (api/assistant/photo), when the proposal
+  // has a measurement to centre it on or an address Google can place; the squares and pitch for the caption.
+  const roof = await db.activityEvent.findFirst({ where: { proposalId: p.id, kind: ROOF_PLAN_EVENT }, orderBy: { createdAt: "desc" }, select: { meta: true } });
+  if (roof?.meta) {
+    try {
+      const plan = readRoofPlan(JSON.parse(roof.meta));
+      if (plan) {
+        const m = plan.measurementId ? await db.roofMeasurement.findFirst({ where: { id: plan.measurementId, organizationId: actor.organizationId }, select: { squares: true, predominantPitch: true, lat: true, lng: true } }) : null;
+        const squares = m?.squares ?? plan.manual?.squares ?? null;
+        const pitch = m?.predominantPitch ?? plan.manual?.pitchLabel ?? plan.pitchEntered ?? null;
+        const photo = (m && m.lat != null && m.lng != null) || plan.address || plan.manual?.address ? `/api/assistant/photo/${p.id}` : null;
+        return NextResponse.json({ kind: "roof", photo, squares: squares ? Math.round(squares) : null, pitch }, { headers: { "Cache-Control": "private, max-age=300" } });
+      }
+    } catch {
+      /* not a roof plan after all */
     }
   }
   const ev = await db.activityEvent.findFirst({ where: { proposalId: p.id, kind: DECK_PLAN_EVENT }, orderBy: { createdAt: "desc" }, select: { meta: true } });

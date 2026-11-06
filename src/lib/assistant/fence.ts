@@ -7,17 +7,16 @@ import "server-only";
 // catalog (lib/fence/pricing — installed rates, the profit inside, as the fence
 // page prices), filed as a DRAFT proposal with its plan for the client's page
 // and the Operator's sheet (lib/fence/proposalWrite), then offered for sending.
-// The site is kept for an hour under the person, so the layout can follow the
-// address in a later sentence. Left and right are as you face the house from
+// The site is kept for an hour under the person (lib/assistant/estimatorShared, with the rest the estimators
+// share), so the layout can follow the address in a later sentence. Left and right are as you face the house from
 // the street; the Operator says which side it took for the front.
 import { z } from "zod";
 import { db } from "@/lib/db";
 import type { ReadTool, WriteTool } from "@/lib/assistant/tools";
 import type { AssistantActor } from "@/lib/assistant/actor";
-import { proposalScope } from "@/lib/assistant/actor";
-import { andList, money } from "@/lib/assistant/shared";
+import { andList } from "@/lib/assistant/shared";
+import { archiveReplaced, buildCaps, landed, rememberSite, rememberedSite, replaceable, whoFor } from "@/lib/assistant/estimatorShared";
 import { isPageLocked } from "@/lib/customPageAccess";
-import { checkPlanLimit } from "@/lib/limitsEngine";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
 import { takeTrialCap, trialPointKey } from "@/lib/trialMeter";
 import { geocode } from "@/lib/maps";
@@ -32,11 +31,8 @@ import { typedRuns } from "@/lib/fence/layout";
 import { fenceConvertSchema } from "@/lib/fence/convertSchema";
 import { writeFenceProposal } from "@/lib/fence/proposalWrite";
 import { filingFromIds } from "@/lib/filingContext";
-import { appBaseUrl } from "@/lib/appUrl";
 
 const ID = z.string().min(1).max(64);
-const SITE_TTL_MS = 60 * 60_000;
-const siteKey = (organizationId: string, userId: string) => `assistant:fencesite:${organizationId}:${userId}`;
 
 // ── the site ────────────────────────────────────────────────────────────────
 
@@ -85,23 +81,6 @@ export async function lookupSite(actor: AssistantActor, address: string): Promis
   return { ok: true, site: { address, origin, lot, house, neighbors, right: axes.right, back: axes.back, street: fronts[0]?.streetName ?? null, frontKnown: Boolean(front) } };
 }
 
-async function rememberSite(actor: AssistantActor, site: FenceSite): Promise<void> {
-  const key = siteKey(actor.organizationId, actor.userId);
-  const cursor = JSON.stringify({ at: Date.now(), site });
-  await db.syncState.upsert({ where: { key }, create: { key, cursor }, update: { cursor } }).catch(() => null);
-}
-
-async function rememberedSite(actor: AssistantActor): Promise<FenceSite | null> {
-  const row = await db.syncState.findUnique({ where: { key: siteKey(actor.organizationId, actor.userId) }, select: { cursor: true } }).catch(() => null);
-  if (!row?.cursor) return null;
-  try {
-    const v = JSON.parse(row.cursor) as { at?: number; site?: FenceSite };
-    return v.site && typeof v.at === "number" && Date.now() - v.at < SITE_TTL_MS ? v.site : null;
-  } catch {
-    return null;
-  }
-}
-
 const fenceSite: ReadTool<{ address: string }> = {
   kind: "read",
   name: "fence_site",
@@ -114,7 +93,7 @@ const fenceSite: ReadTool<{ address: string }> = {
     if (gate) return { notAllowed: gate };
     const r = await lookupSite(actor, a.address);
     if (!r.ok) return { notDone: r.say };
-    await rememberSite(actor, r.site);
+    await rememberSite(actor, "fence", r.site);
     const w = siteWords(r.site);
     return {
       address: r.site.address,
@@ -194,18 +173,6 @@ async function catalogOf(organizationId: string): Promise<{ rates: ReturnType<ty
   }
 }
 
-async function whoFor(actor: AssistantActor, clientId: string | null, leadId: string | null): Promise<{ ok: true; name: string | null; email: string | null } | { ok: false; say: string }> {
-  if (clientId) {
-    const c = await db.client.findFirst({ where: { id: clientId, organizationId: actor.organizationId, deletedAt: null }, select: { name: true, email: true } });
-    return c ? { ok: true, name: c.name, email: c.email } : { ok: false, say: "I couldn't find that client." };
-  }
-  if (leadId) {
-    const l = await db.lead.findFirst({ where: { id: leadId, organizationId: actor.organizationId }, select: { name: true, email: true } });
-    return l ? { ok: true, name: l.name, email: l.email } : { ok: false, say: "I couldn't find that lead." };
-  }
-  return { ok: true, name: null, email: null };
-}
-
 const buildFence: WriteTool<FenceArgs, FenceArgs & { siteAddress: string }> = {
   kind: "write",
   instant: "now",
@@ -218,23 +185,21 @@ const buildFence: WriteTool<FenceArgs, FenceArgs & { siteAddress: string }> = {
   async plan({ actor }, a) {
     const gate = await fenceGate(actor);
     if (gate) return { ok: false, say: gate };
-    const quota = await checkPlanLimit(actor.organizationId, "proposalsCreated", 1, { actorId: actor.userId });
-    if (!quota.allowed) return { ok: false, say: "Your plan's proposal limit is reached. A bigger plan raises it (Settings → Billing)." };
-    const uses = await checkPlanLimit(actor.organizationId, "estimatorUses", 1, { actorId: actor.userId });
-    if (!uses.allowed) return { ok: false, say: "Your plan's estimator limit is reached for this cycle (Settings → Billing)." };
-    let site = await rememberedSite(actor);
+    const caps = await buildCaps(actor, ["estimatorUses"]);
+    if (caps) return { ok: false, say: caps };
+    let site = await rememberedSite<FenceSite>(actor, "fence");
     if (a.address && (!site || site.address.toLowerCase() !== a.address.toLowerCase())) {
       const r = await lookupSite(actor, a.address);
       if (!r.ok) return { ok: false, say: r.say };
       site = r.site;
-      await rememberSite(actor, site);
+      await rememberSite(actor, "fence", site);
     }
     if (!site) return { ok: false, say: "Which property? Give me the address first." };
     const who = await whoFor(actor, a.clientId, a.leadId);
     if (!who.ok) return who;
     if (a.replaces) {
-      const old = await db.proposal.findFirst({ where: { id: a.replaces, organizationId: actor.organizationId, ...proposalScope(actor) }, select: { id: true } });
-      if (!old) return { ok: false, say: "I couldn't find the fence estimate to change." };
+      const miss = await replaceable(actor, a.replaces, "fence");
+      if (miss) return { ok: false, say: miss };
     }
     const heightFt = a.heightFt ?? 6;
     const rearWords = a.rearOnLotLine ? "on the rear lot line" : `${a.rearOffsetFt ?? 20} ft out from the back of the house`;
@@ -242,12 +207,12 @@ const buildFence: WriteTool<FenceArgs, FenceArgs & { siteAddress: string }> = {
     return {
       ok: true,
       payload: { ...a, siteAddress: site.address },
-      readback: `On it — laying out the fence at ${site.address}: across the back ${rearWords}, along both lot lines to the house, ${gateWords}. Pricing ${heightFt}' ${a.type ?? "cedar privacy"} with your fence rates${who.name ? ` for ${who.name}` : ""}.`,
+      readback: `On it — laying out the fence at ${site.address}: across the back ${rearWords}, along both lot lines to the house, ${gateWords}. Pricing ${heightFt}' ${a.type ?? "cedar privacy"} with your fence rates${who.who.name ? ` for ${who.who.name}` : ""}.`,
     };
   },
   async execute({ actor, report }, p) {
     const org = actor.organizationId;
-    let site = await rememberedSite(actor);
+    let site = await rememberedSite<FenceSite>(actor, "fence");
     if (!site || site.address.toLowerCase() !== p.siteAddress.toLowerCase()) {
       const r = await lookupSite(actor, p.siteAddress);
       if (!r.ok) throw new Error(r.say);
@@ -278,7 +243,7 @@ const buildFence: WriteTool<FenceArgs, FenceArgs & { siteAddress: string }> = {
       "Ground taken as level; a site visit confirms the lines, the grade and the utilities.",
     ];
     const who = await whoFor(actor, p.clientId, p.leadId);
-    const name = who.ok ? who.name : null;
+    const name = who.ok ? who.who.name : null;
     const title = `${heightFt}' ${pkg.resolved.label} fence — ${Math.round(pkg.netFenceLf)} ft${name ? ` for ${name}` : ""}`.slice(0, 200);
     const data = fenceConvertSchema.parse({
       title,
@@ -304,24 +269,10 @@ const buildFence: WriteTool<FenceArgs, FenceArgs & { siteAddress: string }> = {
     const filing = await filingFromIds(org, { clientId: p.clientId, leadId: p.leadId });
     const id = await writeFenceProposal({ organizationId: org, userId: actor.userId, role: actor.role }, data, filing);
     await report?.("Saved");
-    if (p.replaces) await archiveReplaced(actor, p.replaces);
-    const proposal = await db.proposal.findUnique({ where: { id }, select: { total: true, subtotal: true, taxTotal: true, currency: true, client: { select: { name: true, email: true } } } });
-    const total = proposal?.total ?? pkg.subtotal;
+    const archived = p.replaces ? await archiveReplaced(actor, p.replaces) : false;
     const facts = `${Math.round(pkg.netFenceLf)} ft of ${heightFt}' ${pkg.resolved.label.toLowerCase()} · ${laid.words.join(" · ")}`;
-    const link = `${await appBaseUrl()}/dashboard/proposals/${id}`;
-    const say = `Built "${title}"${proposal?.client ? ` for ${proposal.client.name}` : ""}: ${money(total, proposal?.currency)} (${money(proposal?.subtotal ?? pkg.subtotal, proposal?.currency)} + ${money(proposal?.taxTotal ?? 0, proposal?.currency)} tax). ${facts}.${p.replaces ? " The earlier draft is archived." : ""} Open it: ${link}`;
-    const client = proposal?.client;
-    if (client?.email) return { say, result: { proposalId: id }, offer: { tool: "send_proposal", args: { proposalId: id, email: null, clientName: null } } };
-    const first = client?.name?.split(/\s+/)[0];
-    return { say: `${say} ${first ? `Tell me ${first}'s email and I'll send it.` : "Who's it for? Tell me their name and email and I'll send it."}`, result: { proposalId: id } };
+    return landed(actor, id, { facts, archived });
   },
 };
-
-/** The draft a change replaces goes to the archive — only one the Operator made, and only while it is a draft. */
-async function archiveReplaced(actor: AssistantActor, proposalId: string): Promise<void> {
-  const mine = await db.assistantAction.findFirst({ where: { organizationId: actor.organizationId, userId: actor.userId, status: "DONE", resultJson: { contains: proposalId } }, select: { id: true } });
-  if (!mine) return;
-  await db.proposal.updateMany({ where: { id: proposalId, organizationId: actor.organizationId, status: "DRAFT", sentAt: null }, data: { status: "ARCHIVED" } }).catch(() => null);
-}
 
 export const FENCE_TOOLS = [fenceSite, buildFence];

@@ -17,6 +17,8 @@
 //   "build|price|estimate <anything else> [for <name>]" → find(any) → build_estimate
 //   "change …" / "make it …" / "use …"            → change_deck | change_estimate on the newest built (the system prompt's list)
 //   "send it"                                      → send_proposal on the newest built
+//   "roof … at <address> [<n> sq ft, two-story, <material>]" → build_roof; "hvac|furnace|heat pump … at <address> <n> sq ft" → build_hvac
+//   "the yard at <address>" → lawn_site; "price … mowing|fertilizer … at <address> | <n> sq ft" → build_lawn (2026-11-05)
 //   Smart Proposal's own run (response_format json_object, no tools): a small estimate in the old draft shape.
 //   Speech (POST /v1/audio/speech, the Talk mode's voice): 0.3 s of silence as an MP3, so a page plays it and goes on.
 //   NODE_PATH="" npx --no-install tsx qa/fixtures/assistant-fake-openai.ts     (FAKE_OPENAI_PORT, default 4601)
@@ -124,6 +126,36 @@ function answer(body: { messages: Msg[] }) {
     if (o?.notAllowed) return reply(o.notAllowed);
     if (o?.notDone) return reply(o.notDone);
     if (o?.error) return reply(`That didn't work: ${o.error}`);
+  }
+
+  // The estimators by voice (2026-11-05): a roof, HVAC or lawn care at an address — before the generic build rule,
+  // which would price them with Smart Proposal. The address: "at 14 Oak St, Tacoma WA" / "address: …".
+  // "14 Oak St, Tacoma WA" — up to the end, a sentence's end, or the next ", 2,400 …" / ", the lawn …" clause.
+  const addrOf = (t: string) => /\b(?:address is|address:|here'?s the address:?|the property is|the yard at|the house at|at|for|of)\s+(\d+\s+[A-Za-z][A-Za-z0-9 .]*?(?:,\s*[A-Za-z][A-Za-z .]*?)?(?:,?\s+[A-Z]{2}\b)?)(?=\s*(?:,\s*(?:\d|the\b|and\b|with\b|a\b|about\b)|\.\s|$))/i.exec(t)?.[1]?.trim() ?? null;
+  const sqftOf = (t: string) => { const m = /([\d,]{3,7})\s*(?:sq\.?\s*ft|square f(?:ee|oo)t|sqft)/i.exec(t); return m ? Number(m[1].replace(/,/g, "")) : null; };
+  const storeysOf = (t: string) => { const m = /\b(one|two|three|1|2|3)[- ](?:stor(?:e)?y|stories|floors?)\b/i.exec(t); return m ? ({ one: 1, two: 2, three: 3 } as Record<string, number>)[m[1].toLowerCase()] ?? Number(m[1]) : null; };
+  const builtTrade = (trade: string) => new RegExp(`proposalId=(\\S+) · "[^"]*" · ${trade} \\(change it`).exec(system)?.[1] ?? null;
+  const isChange = /^\s*(change|make it|make|use|the (best|good|better) one|go with)\b/.test(text);
+  const ROOF_WORDS = /\b(standing.?seam|metal panel|metal|3.?tab|three.?tab|impact|designer|concrete tile|clay tile|tile|cedar shake|shake|synthetic slate|slate|tpo|epdm|membrane|architectural(?: shingles?)?|shingles?)\b/i;
+  // A change names the trade by its "built lately" line, not by a trade word: "make it standing seam" after a roof,
+  // "the best one" after HVAC, "every other week" after a lawn.
+  if (((/\broof\b/.test(text) && addrOf(user)) || (isChange && builtTrade("roof") && ROOF_WORDS.test(user))) && !/\b(deck|pergola)\b/.test(text)) {
+    const material = ROOF_WORDS.exec(user)?.[1] ?? null;
+    const layers = /\b(two|2|three|3) layers?\b/i.exec(text);
+    return call("build_roof", { address: addrOf(user), clientId: null, leadId: null, material, existing: /\bnow\b.*\b(metal|tile|shake)\b/.exec(text)?.[1] ?? null, storeys: storeysOf(text), homeSqft: sqftOf(text), tearOffLayers: layers ? ({ two: 2, three: 3 } as Record<string, number>)[layers[1]] ?? Number(layers[1]) : null, replaces: isChange ? builtTrade("roof") : null });
+  }
+  if ((/\b(hvac|furnace|heat pump|air condition|a\/?c unit|new ac\b|mini.?split|ductless|water heater|new system)\b/.test(text) && addrOf(user)) || (isChange && builtTrade("HVAC") && /\b(best|good|better|premium|value|cheapest|heat pump|furnace|system|unit|1|2|3)\b/.test(text))) {
+    const job = /water heater/.test(text) ? "water-heater" : /mini.?split|ductless/.test(text) ? "ductless" : /furnace only|just the furnace|new furnace/.test(text) ? "replace-furnace" : /add (ac|cooling|air)/.test(text) ? "add-ac" : /convert|heat pump conversion/.test(text) ? "heat-pump-conversion" : /outdoor unit|condenser only|just the (ac|condenser)/.test(text) ? "replace-outdoor" : "replace-system";
+    const tier = /\b(best|premium)\b/.test(text) ? "best" : /\b(good|cheapest|value)\b/.test(text) ? "good" : /\bbetter\b/.test(text) ? "better" : null;
+    const year = /\bbuilt (?:in )?(19\d\d|20\d\d)\b/.exec(text);
+    return call("build_hvac", { address: addrOf(user), clientId: null, leadId: null, job, sqft: sqftOf(text), storeys: storeysOf(text), yearBuilt: year ? Number(year[1]) : null, existing: null, gas: /\bno gas\b|all.?electric/.test(text) ? false : null, outdoorKind: /heat pump/.test(text) && !/conversion/.test(text) ? "heat-pump" : null, tier, replaces: isChange ? builtTrade("HVAC") : null });
+  }
+  if ((/\b(lawn|mow|mowing|yard|landscap)\w*\b/.test(text) && (addrOf(user) || sqftOf(text))) || (isChange && builtTrade("lawn") && /\b(week|mow|fertiliz|aerat|cleanup|mulch|snow|gutter|shrub|hedge)\w*\b/.test(text))) {
+    // "the yard at …" alone reads it; "price …" prices it.
+    if (!/\b(price|estimate|quote|mow|mowing|fertiliz|aerat|cleanup|mulch)\w*\b/.test(text) && addrOf(user)) return call("lawn_site", { address: addrOf(user) });
+    const services = ([["mow", /\bmow/], ["fert", /fertiliz/], ["aerate", /aerat/], ["overseed", /overseed/], ["dethatch", /dethatch/], ["springCleanup", /spring clean/], ["fallCleanup", /fall (leaf )?clean/], ["mulch", /mulch/], ["bedWeeding", /bed weed/], ["shrubs", /shrub/], ["hedges", /hedge/], ["irrigationStart", /sprinkler start|start.?up/], ["irrigationBlowout", /blowout|winteriz/], ["gutters", /gutter/], ["snow", /snow/]] as const).filter(([, re]) => re.test(text)).map(([id]) => id);
+    const beds = /([\d,]{2,6})\s*(?:sq\.?\s*ft|square feet)\s*(?:of )?beds?/i.exec(user);
+    return call("build_lawn", { address: addrOf(user), lawnSqft: sqftOf(text), bedSqft: beds ? Number(beds[1].replace(/,/g, "")) : null, clientId: null, leadId: null, frequency: /every other week|bi.?weekly|every two weeks/.test(text) ? "biweekly" : /weekly|every week/.test(text) ? "weekly" : null, services: services.length ? services : null, fertRounds: null, mulchDepthIn: null, stories: storeysOf(text), snowPushes: null, replaces: isChange ? builtTrade("lawn") : null });
   }
 
   // Slice 3: build, change, send what was built (the newest in the system prompt's "built lately" list).

@@ -228,6 +228,9 @@ export const BUILD_STEPS: Record<string, readonly string[]> = {
   build_estimate: ["Smart Proposal", "Priced", "Saved"],
   change_estimate: ["Smart Proposal", "Priced", "Saved"],
   build_fence: ["Lot & house", "Layout", "Priced", "Saved"],
+  build_roof: ["Aerial read", "Rate book", "Priced", "Saved"],
+  build_hvac: ["House", "Load", "Priced", "Saved"],
+  build_lawn: ["Yard", "Priced", "Saved"],
 };
 
 /** Where a running build is: the index of its step, −1 before the first. */
@@ -236,6 +239,33 @@ export function stepIndex(tool: string, progress: string | null): number {
   if (!steps || !progress) return -1;
   return steps.findIndex((s) => s.toLowerCase() === progress.toLowerCase());
 }
+
+const HVAC_JOB_FACT: Record<string, string> = {
+  "replace-system": "Full system",
+  "replace-outdoor": "Outdoor unit",
+  "replace-furnace": "Furnace",
+  "add-ac": "Add cooling",
+  "heat-pump-conversion": "Heat pump",
+  ductless: "Ductless zone",
+  "water-heater": "Water heater",
+};
+const LAWN_FACT: Record<string, string> = {
+  mow: "mowing",
+  fert: "fertilizer",
+  aerate: "aeration",
+  overseed: "overseeding",
+  dethatch: "dethatching",
+  springCleanup: "spring cleanup",
+  fallCleanup: "fall cleanup",
+  mulch: "mulch",
+  bedWeeding: "bed weeding",
+  shrubs: "shrubs",
+  hedges: "hedges",
+  irrigationStart: "sprinkler start-up",
+  irrigationBlowout: "sprinkler blowout",
+  gutters: "gutters",
+  snow: "snow",
+};
 
 /** What the Operator understood, from a change's stored arguments: the code's words, never the model's. */
 export function factsOf(tool: string, args: unknown): Fact[] {
@@ -272,6 +302,38 @@ export function factsOf(tool: string, args: unknown): Fact[] {
     const h = n(a.heightFt) ?? 6;
     out.push({ k: "Fence", v: `${h} ft ${s(a.type) ?? "cedar privacy"}` });
     if (a.removeExisting === true) out.push({ k: "Also", v: "Take out the old fence" });
+  } else if (tool === "build_roof") {
+    const where = s(a.address);
+    if (where) out.push({ k: "Where", v: where });
+    out.push({ k: "Roof", v: s(a.material) ?? "Architectural shingles" });
+    const existing = s(a.existing);
+    if (existing) out.push({ k: "Now", v: existing });
+    const sq = n(a.homeSqft);
+    const st = n(a.storeys);
+    out.push({ k: "House", v: sq ? `${Math.round(sq).toLocaleString("en-US")} sq ft${st ? ` · ${st} floor${st === 1 ? "" : "s"}` : ""}` : "Measured from the air" });
+    const layers = n(a.tearOffLayers);
+    if (layers != null) out.push({ k: "Tear-off", v: layers === 0 ? "None · roof over" : `${layers} layer${layers === 1 ? "" : "s"}` });
+  } else if (tool === "build_hvac") {
+    const where = s(a.address);
+    if (where) out.push({ k: "Where", v: where });
+    const sq = n(a.sqft);
+    const st = n(a.storeys);
+    const yr = n(a.yearBuilt);
+    out.push({ k: "House", v: sq ? [`${Math.round(sq).toLocaleString("en-US")} sq ft`, st ? `${st} floor${st === 1 ? "" : "s"}` : "", yr ? `built ${yr}` : ""].filter(Boolean).join(" · ") : "From the county record" });
+    const job = s(a.job);
+    if (job) out.push({ k: "Job", v: HVAC_JOB_FACT[job] ?? job });
+    const kind = s(a.outdoorKind);
+    if (kind) out.push({ k: "Outdoor", v: kind === "heat-pump" ? "Heat pump" : "Air conditioner" });
+    const tier = s(a.tier);
+    out.push({ k: "Tier", v: tier ? tier[0].toUpperCase() + tier.slice(1) : "Better" });
+  } else if (tool === "build_lawn") {
+    const where = s(a.address);
+    if (where) out.push({ k: "Where", v: where });
+    const lawn = n(a.lawnSqft);
+    out.push({ k: "Lawn", v: lawn ? `${Math.round(lawn).toLocaleString("en-US")} sq ft · as said` : "From the aerial photo" });
+    out.push({ k: "Mowing", v: a.frequency === "biweekly" ? "Every other week" : "Weekly" });
+    const services = Array.isArray(a.services) ? (a.services as unknown[]).filter((x): x is string => typeof x === "string") : [];
+    out.push({ k: "Season", v: services.length ? services.map((x) => LAWN_FACT[x] ?? x).join(", ") : "The usual set" });
   } else if (tool === "build_estimate" || tool === "change_estimate") {
     const t = s(a.projectType);
     if (t) out.push({ k: "Job", v: t });

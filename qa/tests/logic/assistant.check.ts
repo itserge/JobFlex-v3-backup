@@ -34,6 +34,9 @@ import { SMS_WORDS, isCarrierStart, isCarrierStop } from "../../../src/lib/assis
 import { forSpeech, shownBody } from "../../../src/components/v3/assistant/use-assistant";
 import { hashPin, pinMatches, weakPin } from "../../../src/lib/assistant/pin";
 import { layoutFence, orient, pickHouse, siteWords, type FenceSite } from "../../../src/lib/fence/voiceLayout";
+import { roofExistingFor, roofFamilyFor, roofSystemFor, yardFromSaid, HVAC_TIER_ID, LAWN_USUAL } from "../../../src/lib/assistant/estimatorWords";
+import { BUILTIN_LISTS } from "../../../src/lib/roofPackage/catalog";
+import { priceYard, DEFAULT_LAWN_SETTINGS, DEFAULT_OPTIONS } from "../../../src/lib/lawn/pricing";
 
 let bad = 0;
 function check(name: string, ok: boolean, extra?: unknown) {
@@ -221,6 +224,30 @@ function check(name: string, ok: boolean, extra?: unknown) {
   const f = factsOf("build_fence", { siteAddress: "14 Oak St", rearOffsetFt: 20, rearOnLotLine: false, gates: [{ where: "right", widthFt: null }], type: "cedar", heightFt: null, removeExisting: false });
   check("facts: a fence card says where, the rear, the sides, the gates and the fence", f.map((x) => x.k).join(",") === "Where,Rear,Sides,Gates,Fence" && f[1].v === "20 ft out from the house" && f[3].v === "4 ft on the right" && f[4].v === "6 ft cedar", f);
   check("trace: a fence's steps", stepIndex("build_fence", "Layout") === 1 && stepIndex("build_fence", "Saved") === 3);
+}
+
+// ── the roof, HVAC and the lawn from words (2026-11-05) ──────────────────────
+{
+  check("roof words: 'standing seam metal' is the metal family's standing-seam system", roofFamilyFor("standing seam metal") === "metal" && roofSystemFor("standing seam metal", "metal", BUILTIN_LISTS)?.id === "standing_seam");
+  check("roof words: '3-tab shingles' is the asphalt three-tab", roofSystemFor("3-tab shingles", "asphalt", BUILTIN_LISTS)?.id === "three_tab");
+  check("roof words: nothing said is architectural shingles", roofFamilyFor(null) === "asphalt" && roofSystemFor(null, "asphalt", BUILTIN_LISTS)?.id === "architectural");
+  check("roof words: a flat roof takes a membrane whatever was asked", roofSystemFor("architectural shingles", "low-slope", BUILTIN_LISTS)?.id === "tpo");
+  check("roof words: 'clay tile' / 'cedar shake' / 'impact resistant'", roofSystemFor("clay tile", "tile", BUILTIN_LISTS)?.id === "clay_tile" && roofSystemFor("cedar shake", "shake", BUILTIN_LISTS)?.id === "cedar_shake" && roofSystemFor("impact resistant", "asphalt", BUILTIN_LISTS)?.id === "impact_resistant");
+  check("roof words: what's on it now", roofExistingFor(null) === "asphalt" && roofExistingFor("metal roof") === "metal" && roofExistingFor("tile") === "tile" && roofExistingFor("something") === "unsure");
+  check("hvac words: good / better / best are the catalog's value / mid / premium", HVAC_TIER_ID.good === "value" && HVAC_TIER_ID.better === "mid" && HVAC_TIER_ID.best === "premium");
+  const yard = yardFromSaid(8000, null);
+  check("lawn said: 8,000 sq ft of lawn becomes a yard in the usual shares, a twelfth in beds, level", yard.lawnSqft === 8000 && yard.lawnByZone.front + yard.lawnByZone.back + yard.lawnByZone.side === 8000 && yard.bedSqft === 667 && yard.slope.flat === 1, yard);
+  const q = priceYard({ measures: yard, settings: DEFAULT_LAWN_SETTINGS, options: DEFAULT_OPTIONS, locationFactor: 1, state: "WA", ownRate: false });
+  const mow = q.services.find((x) => x.id === "mow");
+  check("lawn said: the pricer takes it — a weekly mow priced above the minimum stop, the usual season on offer", Boolean(mow) && (mow?.unitPrice ?? 0) >= DEFAULT_LAWN_SETTINGS.minimumStop && LAWN_USUAL.every((id) => id === "mow" || id === "snow" || id === "shrubs" || id === "hedges" || id === "irrigationStart" || id === "irrigationBlowout" || q.services.some((x) => x.id === id)), q.services.map((x) => `${x.id} ${x.unitPrice}`));
+  const r = factsOf("build_roof", { address: "14 Oak St, Tacoma, WA", material: "standing seam metal", existing: null, storeys: 2, homeSqft: 2400, tearOffLayers: 2, replaces: null });
+  check("facts: a roof card says where, the roof, the house and the tear-off", r.map((x) => x.k).join(",") === "Where,Roof,House,Tear-off" && r[2].v === "2,400 sq ft · 2 floors" && r[3].v === "2 layers", r);
+  check("facts: a roof measured from the air says so", factsOf("build_roof", { address: "x", material: null, homeSqft: null })[2].v === "Measured from the air");
+  const h = factsOf("build_hvac", { address: "14 Oak St", job: "replace-system", sqft: 2000, storeys: 2, yearBuilt: 1990, outdoorKind: "heat-pump", tier: null });
+  check("facts: an HVAC card says the house, the job, the outdoor unit and the tier", h.map((x) => x.k).join(",") === "Where,House,Job,Outdoor,Tier" && h[1].v === "2,000 sq ft · 2 floors · built 1990" && h[2].v === "Full system" && h[4].v === "Better", h);
+  const l = factsOf("build_lawn", { address: "14 Oak St", lawnSqft: 8000, frequency: "weekly", services: ["mow", "fert", "fallCleanup"] });
+  check("facts: a lawn card says the lawn, the mowing and the season", l.map((x) => x.k).join(",") === "Where,Lawn,Mowing,Season" && l[1].v === "8,000 sq ft · as said" && l[3].v === "mowing, fertilizer, fall cleanup", l);
+  check("trace: the roof's, HVAC's and the lawn's steps", stepIndex("build_roof", "Rate book") === 1 && stepIndex("build_hvac", "Load") === 1 && stepIndex("build_lawn", "Saved") === 2);
 }
 
 console.log(bad ? `\n${bad} FAILED` : "\nall ok");

@@ -43,7 +43,7 @@ import type { Offer, WriteTool } from "@/lib/assistant/tools";
 const ID = z.string().min(1).max(64);
 
 /** The tools that file a proposal of their own — the prompt's "lately" list and "change it" read them. */
-export const BUILD_TOOLS = ["build_deck", "change_deck", "build_estimate", "change_estimate", "build_fence"] as const;
+export const BUILD_TOOLS = ["build_deck", "change_deck", "build_estimate", "change_estimate", "build_fence", "build_roof", "build_hvac", "build_lawn"] as const;
 
 // ── shared ───────────────────────────────────────────────────────────────────
 
@@ -127,6 +127,18 @@ async function builtByAssistant(actor: AssistantActor, proposalId: string): Prom
   return hit ? { tool: hit.tool, argsJson: hit.argsJson } : null;
 }
 
+/** How the prompt names a built estimate's trade, and what changes it (the estimators by voice, 2026-11-05). */
+function tradeWords(trade: string | null): string {
+  switch (trade) {
+    case "deck": return "deck (change it with change_deck)";
+    case "fence": return "fence (change it with build_fence again, replaces = this proposalId)";
+    case "roof": return "roof (change it with build_roof again, replaces = this proposalId)";
+    case "hvac": return "HVAC (change it with build_hvac again, replaces = this proposalId)";
+    case "lawn": return "lawn (change it with build_lawn again, replaces = this proposalId)";
+    default: return "estimate (change it with change_estimate)";
+  }
+}
+
 /** The estimates this person built lately, newest first — what "send it" and "change it" mean (the prompt shows it). */
 export async function recentBuilds(actor: AssistantActor, now: Date): Promise<string[]> {
   const rows = await db.assistantAction.findMany({
@@ -154,7 +166,7 @@ export async function recentBuilds(actor: AssistantActor, now: Date): Promise<st
   return ids
     .map((id) => byId.get(id))
     .filter((p): p is NonNullable<typeof p> => Boolean(p) && p!.status !== "ARCHIVED")
-    .map((p) => `proposalId=${p.id} · "${p.title}" · ${p.trade === "deck" ? "deck (change it with change_deck)" : p.trade === "fence" ? "fence (change it with build_fence again, replaces = this proposalId)" : "estimate (change it with change_estimate)"} · ${p.client ? `for ${p.client.name}${p.client.email ? "" : " (no email on file)"}` : "no client yet"} · ${money(p.total, p.currency)} · ${p.status} · built ${dayWords(p.createdAt, actor.timezone)}`);
+    .map((p) => `proposalId=${p.id} · "${p.title}" · ${tradeWords(p.trade)} · ${p.client ? `for ${p.client.name}${p.client.email ? "" : " (no email on file)"}` : "no client yet"} · ${money(p.total, p.currency)} · ${p.status} · built ${dayWords(p.createdAt, actor.timezone)}`);
 }
 
 // ── the deck ─────────────────────────────────────────────────────────────────
