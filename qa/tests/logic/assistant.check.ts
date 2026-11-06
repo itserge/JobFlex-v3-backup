@@ -33,6 +33,7 @@ import { codeIn, phoneWords } from "../../../src/lib/assistant/phone";
 import { SMS_WORDS, isCarrierStart, isCarrierStop } from "../../../src/lib/assistant/sms";
 import { forSpeech, shownBody } from "../../../src/components/v3/assistant/use-assistant";
 import { hashPin, pinMatches, weakPin } from "../../../src/lib/assistant/pin";
+import { layoutFence, orient, pickHouse, siteWords, type FenceSite } from "../../../src/lib/fence/voiceLayout";
 
 let bad = 0;
 function check(name: string, ok: boolean, extra?: unknown) {
@@ -193,6 +194,33 @@ function check(name: string, ok: boolean, extra?: unknown) {
   check("trace: a deck's steps", stepIndex("build_deck", "Priced") === 2 && stepIndex("build_deck", null) === -1 && stepIndex("build_estimate", "Saved") === 2 && stepIndex("send_proposal", "x") === -1);
   check("speech: money in whole dollars with the tax folded in", forSpeech('Built "12 ft × 12 ft covered deck" for John Smith: $14,968.83 ($14,121.54 + $847.29 tax). Open it: https://x/dashboard/proposals/a') === 'Built "12 ft × 12 ft covered deck" for John Smith: $14,969 with tax. The link is on your screen.', forSpeech('Built "12 ft × 12 ft covered deck" for John Smith: $14,968.83 ($14,121.54 + $847.29 tax). Open it: https://x/dashboard/proposals/a'));
   check("speech: a whole-dollar amount stays", forSpeech("Send it ($8,400) to Lee.") === "Send it ($8,400) to Lee.");
+}
+
+// ── the fence from words (2026-11-05): a 60 × 120 lot, the street on the south, a 32 × 44 house 30 ft back ──
+{
+  const lot = [{ x: 0, y: 0 }, { x: 60, y: 0 }, { x: 60, y: 120 }, { x: 0, y: 120 }];
+  const house = [{ x: 14, y: 30 }, { x: 46, y: 30 }, { x: 46, y: 74 }, { x: 14, y: 74 }];
+  const axes = orient(lot, { a: { x: 0, y: 0 }, b: { x: 60, y: 0 } });
+  check("fence: facing the house from a street on the south, back is north and right is east", Math.abs(axes.back.y - 1) < 1e-9 && Math.abs(axes.right.x - 1) < 1e-9, axes);
+  check("fence: the house is the building the pin is in", pickHouse([house, [{ x: 70, y: 30 }, { x: 90, y: 30 }, { x: 90, y: 60 }, { x: 70, y: 60 }]], { x: 30, y: 50 }) === house);
+  const site: FenceSite = { address: "14 Oak St", origin: { lat: 47.25, lng: -122.44 }, lot, house, neighbors: [], right: axes.right, back: axes.back, street: "Oak St", frontKnown: true };
+  const w = siteWords(site);
+  check("fence: the site in words", w.lot === "60 × 120 ft" && w.house === "32 × 44 ft" && w.backyardFt === 46, w);
+  const laid = layoutFence(site, { rear: { offsetFt: 20, onLotLine: false }, gates: [{ where: "right", widthFt: null }] });
+  check("fence: a rear run 20 ft out, the sides on the lot lines: 14 + 20 + 60 + 20 + 14 = 128 ft, 4 corners", !("error" in laid) && laid.totalLf === 128 && laid.corners === 4, laid);
+  if (!("error" in laid)) {
+    check("fence: the line runs from the house's left rear corner around to its right rear corner", JSON.stringify(laid.points) === JSON.stringify([{ x: 14, y: 74 }, { x: 0, y: 74 }, { x: 0, y: 94 }, { x: 60, y: 94 }, { x: 60, y: 74 }, { x: 46, y: 74 }]), laid.points);
+    check("fence: the gate sits on the right return, by the house, 4 ft", laid.gates.length === 1 && laid.gates[0].segmentIndex === 4 && laid.gates[0].widthFt === 4 && laid.gates[0].x === 53 && laid.gates[0].y === 74, laid.gates);
+    check("fence: the words say where each piece is", laid.words[0] === "rear run 60 ft, 20 ft out from the back of the house" && /left side 34 ft and right side 34 ft/.test(laid.words[1]) && /4-ft gate, right side by the house/.test(laid.words[2]), laid.words);
+  }
+  const onLine = layoutFence(site, { rear: { offsetFt: null, onLotLine: true }, gates: [] });
+  check("fence: on the rear lot line the rear run sits 46 ft out (the lot's end)", !("error" in onLine) && onLine.points[2].y === 120 && onLine.totalLf === 180, onLine);
+  const tooFar = layoutFence(site, { rear: { offsetFt: 300, onLotLine: false }, gates: [] });
+  check("fence: a rear run past the lot line is held at the lot line", !("error" in tooFar) && tooFar.points[2].y === 120);
+  check("fence: no house, no layout — it asks for lengths", "error" in layoutFence({ ...site, house: null }, { rear: { offsetFt: 20, onLotLine: false }, gates: [] }));
+  const f = factsOf("build_fence", { siteAddress: "14 Oak St", rearOffsetFt: 20, rearOnLotLine: false, gates: [{ where: "right", widthFt: null }], type: "cedar", heightFt: null, removeExisting: false });
+  check("facts: a fence card says where, the rear, the sides, the gates and the fence", f.map((x) => x.k).join(",") === "Where,Rear,Sides,Gates,Fence" && f[1].v === "20 ft out from the house" && f[3].v === "4 ft on the right" && f[4].v === "6 ft cedar", f);
+  check("trace: a fence's steps", stepIndex("build_fence", "Layout") === 1 && stepIndex("build_fence", "Saved") === 3);
 }
 
 console.log(bad ? `\n${bad} FAILED` : "\nall ok");

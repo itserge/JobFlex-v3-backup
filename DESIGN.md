@@ -359,7 +359,9 @@ monthly" is one 12px line (weight 600) under the price.
   / Cancel / the PIN box. The dial button on every phone page is the paper's own
   54px blue square with a 4px ink shadow at 16px from the right, 84px up (clear
   of a tab bar); held, it turns rose and sinks 2px. Nothing else on the phone is
-  dark.
+  dark. A fence built from an address (2026-11-05) draws its lot on the card
+  the same way: the lot lines dashed in muted white, the house a 12% white
+  block, the fence the 2px white line, each gate a 4px yellow dash, north up.
 - SmartBook (owner, 2026-10-31;
   [smartbook](src/components/v3/smartbook/smartbook.module.css)). One framed
   card treatment for Settings → SmartBook and the calendar's "SmartBook

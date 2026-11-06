@@ -216,6 +216,19 @@ function answer(body: { messages: Msg[] }) {
     if (!a || !b) return reply("I couldn't find those crew members.");
     return call("text_crew_each", { items: [{ workerId: a.id, message: each[2].trim() }, { workerId: b.id, message: each[4].trim().replace(/[.]$/, "") }] });
   }
+  // The fence from an address (2026-11-05): the site, then the layout in words.
+  const addr = /\b(?:address is|address:|here'?s the address:?|the property is|at)\s+(\d+\s+[A-Za-z0-9 .]+?(?:,\s*[A-Za-z .]+)*(?:\s+[A-Z]{2})?)\s*$/i.exec(user);
+  if (addr && !/\bfence\b/.test(text)) return call("fence_site", { address: addr[1].trim() });
+  // A fence said outright, or a change to the fence built lately ("move the gate to the left").
+  const fenceLately = /· fence \(change it/.test(system);
+  if ((/\bfence\b/.test(text) || fenceLately) && /\b(backyard|back yard|from the house|lot line|property line|gate)\b/.test(text)) {
+    const off = /(\d+)\s*(?:ft|feet|foot)?\s*(?:out |back |away )?from the (?:back of the )?house/.exec(text);
+    const gates = [...text.matchAll(/gate (?:on|to|at) the (left|right|rear|back)/g)].map((m) => ({ where: (m[1] === "back" ? "rear" : m[1]) as "left" | "right" | "rear", widthFt: null }));
+    const height = /(\d)\s*(?:ft|feet|foot)\b(?!\s*(?:from|out))/.exec(text);
+    const fenceType = /\b(cedar|vinyl|chain link|aluminum|composite|picket|privacy|board on board|shadowbox|horizontal|pine|pressure treated)\b/.exec(text)?.[1] ?? null;
+    const replaces = /^\s*(change|move|make|put)\b/.test(text) ? (/proposalId=(\S+) · "[^"]*" · fence/.exec(system)?.[1] ?? null) : null;
+    return call("build_fence", { address: null, clientId: null, leadId: null, rearOffsetFt: off ? +off[1] : 20, rearOnLotLine: /rear (?:lot|property) line|back (?:lot|property) line|to the (?:lot|property) line at the back/.test(text), gates, type: fenceType, heightFt: height ? +height[1] : null, removeExisting: /\b(remove|tear out|take out) the old\b/.test(text), replaces });
+  }
   if (/\boverdue\b/.test(text) && /\b(everyone|everybody|all)\b/.test(text)) return call("remind_overdue", {});
   if (/\b(invoice|financing)\b/.test(text)) {
     const f = done.get("find") as Found | undefined;

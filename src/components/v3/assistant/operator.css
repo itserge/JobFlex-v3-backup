@@ -742,3 +742,32 @@
     transition: none;
   }
 }
+
+/* the fence on its lot (2026-11-05): lot lines dashed and faint, the house a washed block, the fence the bright line,
+   a gate a short heavy dash */
+.jf-operator .op-fence path.lot {
+  fill: none;
+  stroke: var(--op-muted);
+  stroke-width: 0.8px;
+  stroke-dasharray: 3 2;
+}
+.jf-operator .op-fence path.house {
+  fill: rgba(255, 255, 255, 0.12);
+  stroke: var(--op-soft);
+  stroke-width: 0.8px;
+}
+.jf-operator .op-fence path.neighbor {
+  fill: rgba(255, 255, 255, 0.04);
+  stroke: var(--op-faint);
+  stroke-width: 0.6px;
+}
+.jf-operator .op-fence path.run {
+  fill: none;
+  stroke: var(--op-line);
+  stroke-width: 2px;
+}
+.jf-operator .op-fence path.gate {
+  fill: none;
+  stroke: var(--op-yellow);
+  stroke-width: 4px;
+}

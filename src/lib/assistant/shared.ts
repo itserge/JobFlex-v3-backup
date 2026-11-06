@@ -227,6 +227,7 @@ export const BUILD_STEPS: Record<string, readonly string[]> = {
   change_deck: ["Deck Studio", "Rate book", "Priced", "Saved"],
   build_estimate: ["Smart Proposal", "Priced", "Saved"],
   change_estimate: ["Smart Proposal", "Priced", "Saved"],
+  build_fence: ["Lot & house", "Layout", "Priced", "Saved"],
 };
 
 /** Where a running build is: the index of its step, −1 before the first. */
@@ -260,6 +261,17 @@ export function factsOf(tool: string, args: unknown): Fact[] {
   } else if (tool === "change_deck") {
     const c = s(a.change);
     if (c) out.push({ k: "Change", v: c });
+  } else if (tool === "build_fence") {
+    const where = s(a.siteAddress) ?? s(a.address);
+    if (where) out.push({ k: "Where", v: where });
+    const off = n(a.rearOffsetFt);
+    out.push({ k: "Rear", v: a.rearOnLotLine === true ? "On the rear lot line" : `${off ?? 20} ft out from the house` });
+    out.push({ k: "Sides", v: "Along the lot lines to the house" });
+    const gates = Array.isArray(a.gates) ? (a.gates as Array<{ where?: unknown; widthFt?: unknown }>) : [];
+    out.push({ k: "Gates", v: gates.length ? gates.map((g) => `${typeof g.widthFt === "number" ? g.widthFt : 4} ft on the ${typeof g.where === "string" ? g.where : "right"}`).join(", ") : "None" });
+    const h = n(a.heightFt) ?? 6;
+    out.push({ k: "Fence", v: `${h} ft ${s(a.type) ?? "cedar privacy"}` });
+    if (a.removeExisting === true) out.push({ k: "Also", v: "Take out the old fence" });
   } else if (tool === "build_estimate" || tool === "change_estimate") {
     const t = s(a.projectType);
     if (t) out.push({ k: "Job", v: t });

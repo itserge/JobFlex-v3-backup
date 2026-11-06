@@ -38,7 +38,9 @@ type Props = {
   onClose?: () => void;
 };
 
-type Drawing = { viewBox: string; faces: { d: string; rank: number }[] };
+type DeckDrawingData = { kind?: "deck"; viewBox: string; faces: { d: string; rank: number }[] };
+type FenceDrawingData = { kind: "fence"; lots: { x: number; y: number }[][]; houses: { ring: { x: number; y: number }[]; subject: boolean }[]; fence: { x: number; y: number; gap?: boolean }[]; gates: { x: number; y: number; widthFt: number }[] };
+type Drawing = DeckDrawingData | FenceDrawingData;
 
 const STAMP: Record<Tone, string> = { warn: "yel", ok: "mnt", bad: "red", quiet: "dim", info: "wht" };
 
@@ -502,7 +504,7 @@ function Card({ a, body, waiting, busy, onAnswer, drawing }: { a: FeedAction; bo
         </ol>
       ) : null}
       {steps && running ? <p className="op-note">You can close JobFlex. It keeps going, and your linked phone gets a text when it&apos;s ready.</p> : null}
-      {drawing ? <DeckDrawing d={drawing} /> : null}
+      {drawing ? drawing.kind === "fence" ? <FenceDrawing d={drawing} /> : <DeckDrawing d={drawing} /> : null}
       {built && price ? <p className="op-big">{price}</p> : null}
       <p className="op-text">
         <Words text={body} />
@@ -529,9 +531,8 @@ function Card({ a, body, waiting, busy, onAnswer, drawing }: { a: FeedAction; bo
   );
 }
 
-/** The deck's own plan, its lines drawn on in the real build order (the ranks the Deck Studio builds in). */
-function DeckDrawing({ d }: { d: Drawing }) {
-  const ref = useRef<SVGSVGElement>(null);
+/** Draw the paths on in rank order, each line from nothing to its length (none under reduced motion). */
+function useDrawOn(ref: React.RefObject<SVGSVGElement | null>, key: unknown) {
   useEffect(() => {
     const svg = ref.current;
     if (!svg) return;
@@ -550,13 +551,53 @@ function DeckDrawing({ d }: { d: Drawing }) {
       p.style.transition = still ? "none" : `stroke-dashoffset 420ms linear ${Math.max(0, r) * 320}ms`;
       p.style.strokeDashoffset = "0";
     }
-  }, [d]);
+  }, [ref, key]);
+}
+
+/** The deck's own plan, its lines drawn on in the real build order (the ranks the Deck Studio builds in). */
+function DeckDrawing({ d }: { d: DeckDrawingData }) {
+  const ref = useRef<SVGSVGElement>(null);
+  useDrawOn(ref, d);
   return (
     <div className="op-draw">
       <span className="op-cap">Deck Studio · plan</span>
       <svg ref={ref} viewBox={d.viewBox} className="op-deck" role="img" aria-label="The deck's drawing">
         {d.faces.map((f, i) => (
           <path key={i} d={f.d} data-rank={f.rank} />
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+/** The fence on its lot (feet, north up): the lot lines, the house, then the fence and its gates, drawn on in that
+ *  order — the fence estimator's own plan (lib/fence/planSvg's data), in the sheet's lines. */
+function FenceDrawing({ d }: { d: FenceDrawingData }) {
+  const ref = useRef<SVGSVGElement>(null);
+  useDrawOn(ref, d);
+  const all = [...d.lots.flat(), ...d.houses.flatMap((h) => h.ring), ...d.fence];
+  if (!all.length) return null;
+  const minX = Math.min(...all.map((p) => p.x)) - 8;
+  const maxX = Math.max(...all.map((p) => p.x)) + 8;
+  const minY = Math.min(...all.map((p) => p.y)) - 8;
+  const maxY = Math.max(...all.map((p) => p.y)) + 8;
+  const X = (x: number) => (x - minX).toFixed(1);
+  const Y = (y: number) => (maxY - y).toFixed(1);
+  const ring = (pts: { x: number; y: number }[]) => `M ${pts.map((p) => `${X(p.x)} ${Y(p.y)}`).join(" L ")} Z`;
+  const line = (pts: { x: number; y: number; gap?: boolean }[]) => pts.map((p, i) => `${i === 0 || p.gap ? "M" : "L"} ${X(p.x)} ${Y(p.y)}`).join(" ");
+  return (
+    <div className="op-draw">
+      <span className="op-cap">Fence · plan</span>
+      <svg ref={ref} viewBox={`0 0 ${(maxX - minX).toFixed(1)} ${(maxY - minY).toFixed(1)}`} className="op-deck op-fence" role="img" aria-label="The fence on its lot">
+        {d.lots.map((lot, i) => (
+          <path key={`l${i}`} className="lot" d={ring(lot)} data-rank={0} />
+        ))}
+        {d.houses.map((h, i) => (
+          <path key={`h${i}`} className={h.subject ? "house" : "neighbor"} d={ring(h.ring)} data-rank={1} />
+        ))}
+        <path className="run" d={line(d.fence)} data-rank={2} />
+        {d.gates.map((g, i) => (
+          <path key={`g${i}`} className="gate" d={`M ${(g.x - minX - g.widthFt / 2).toFixed(1)} ${Y(g.y)} l ${g.widthFt.toFixed(1)} 0`} data-rank={3} />
         ))}
       </svg>
     </div>

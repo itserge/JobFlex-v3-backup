@@ -30,6 +30,7 @@ import { PEOPLE_TOOLS } from "@/lib/assistant/people";
 import { VISIT_TOOLS } from "@/lib/assistant/visits";
 import { REMIND_TOOLS } from "@/lib/assistant/remind";
 import { MONEY_TOOLS } from "@/lib/assistant/money";
+import { FENCE_TOOLS } from "@/lib/assistant/fence";
 
 export interface ToolContext {
   actor: AssistantActor;
@@ -623,6 +624,7 @@ export const TOOLS: readonly AnyTool[] = [
   moneyTool,
   crew,
   ...BUILDERS,
+  ...FENCE_TOOLS,
   sendProposal,
   scheduleJob,
   textCrew,
