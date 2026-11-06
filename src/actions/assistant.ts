@@ -13,14 +13,14 @@ import { db } from "@/lib/db";
 /** `running`: a build left to run after the reply (a minute's AI estimate) — the panel runs it next (/api/assistant/run). */
 export type AskResult = { ok: true; reply: string; feed: AssistantFeed; running?: string | null } | { ok: false; error: string };
 
-const askInput = z.object({ text: z.string().trim().min(1).max(1200) });
+const askInput = z.object({ text: z.string().trim().min(1).max(1200), spoken: z.boolean().optional() });
 const answerInput = z.object({ actionId: z.string().min(1).max(64), answer: z.enum(["yes", "no"]), pin: z.string().regex(/^\d{4}$/).optional() });
 
 export async function askAssistant(raw: unknown): Promise<AskResult> {
   const parsed = askInput.safeParse(raw);
   if (!parsed.success) return { ok: false, error: "Say or type what you need." };
   const actor = await actorForSession();
-  const turn = await handleTurn({ actor, text: parsed.data.text });
+  const turn = await handleTurn({ actor, text: parsed.data.text, spoken: parsed.data.spoken });
   return { ok: true, reply: turn.reply, feed: await readFeed(actor), running: turn.running ?? null };
 }
 

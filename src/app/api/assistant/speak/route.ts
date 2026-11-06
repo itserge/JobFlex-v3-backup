@@ -5,6 +5,9 @@
 // are (api/deck/voice/speak). Any failure answers an error and the page reads
 // the reply in the browser's own voice instead. It carries its own auth — the
 // middleware does not match /api.
+// A GET (2026-11-06, ?t=the words) streams the audio as it is made, so the page's
+// one audio element starts playing after the first moments; the POST answers the
+// whole file, for the panels that fetch it.
 import { NextResponse } from "next/server";
 import { actorForSession, refusal } from "@/lib/assistant/actor";
 import { readDeskSettings } from "@/lib/aiDesk/numbers";
@@ -31,6 +34,12 @@ function cut(text: string): string {
   return end > 200 ? head.slice(0, end + 1) : head;
 }
 
+export async function GET(req: Request) {
+  const text = cut(new URL(req.url).searchParams.get("t") ?? "");
+  if (!text) return NextResponse.json({ error: "Nothing to say." }, { status: 400 });
+  return speak(text, true);
+}
+
 export async function POST(req: Request) {
   let body: { text?: unknown };
   try {
@@ -40,6 +49,10 @@ export async function POST(req: Request) {
   }
   const text = typeof body.text === "string" ? cut(body.text) : "";
   if (!text) return NextResponse.json({ error: "Nothing to say." }, { status: 400 });
+  return speak(text, false);
+}
+
+async function speak(text: string, stream: boolean): Promise<Response> {
   let organizationId: string;
   try {
     const actor = await actorForSession();
@@ -56,6 +69,10 @@ export async function POST(req: Request) {
   const voice = desk?.voice && (VOICES as readonly string[]).includes(desk.voice) ? desk.voice : "marin";
   try {
     const res = await getOpenAI().audio.speech.create({ model: "gpt-4o-mini-tts", voice, input: text, response_format: "mp3", instructions: HOW });
+    if (stream && res.body) {
+      void notePaidCall("openai", "tts-assistant", { orgId: organizationId }).catch(() => null);
+      return new Response(res.body, { status: 200, headers: { "Content-Type": "audio/mpeg", "Cache-Control": "no-store" } });
+    }
     const audio = Buffer.from(await res.arrayBuffer());
     if (!audio.length) return NextResponse.json({ error: "No audio came back." }, { status: 502 });
     void notePaidCall("openai", "tts-assistant", { orgId: organizationId }).catch(() => null);

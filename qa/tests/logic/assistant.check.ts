@@ -39,6 +39,8 @@ import { SMS_WORDS, isCarrierStart, isCarrierStop } from "../../../src/lib/assis
 import { forSpeech, shownBody } from "../../../src/components/v3/assistant/use-assistant";
 import { hashPin, pinMatches, weakPin } from "../../../src/lib/assistant/pin";
 import { DEFAULT_PREFS, parsePrefs } from "../../../src/lib/assistant/prefs";
+import { systemPrompt } from "../../../src/lib/assistant/engine";
+import type { AssistantActor } from "../../../src/lib/assistant/actor";
 import { layoutFence, orient, pickHouse, siteWords, type FenceSite } from "../../../src/lib/fence/voiceLayout";
 import { roofExistingFor, roofFamilyFor, roofSystemFor, yardFromSaid, HVAC_TIER_ID, LAWN_USUAL } from "../../../src/lib/assistant/estimatorWords";
 import { BUILTIN_LISTS } from "../../../src/lib/roofPackage/catalog";
@@ -282,6 +284,17 @@ function check(name: string, ok: boolean, extra?: unknown) {
   check("speech language: an odd one falls back to English", parsePrefs(JSON.stringify({ lang: "xx" })).lang === "en-US" && parsePrefs(JSON.stringify({ lang: 7 })).lang === "en-US");
   check("speech language: the older switches still parse without it", parsePrefs(JSON.stringify({ briefing: { on: true, time: "07:00" }, alerts: { newLead: true } })).briefing.time === "07:00");
   check("speech language: every code is the Web Speech API's form and unique", SPEECH_LANGS.every((l) => /^[a-z]{2}-[A-Z]{2}$/.test(l.code) && isSpeechLang(l.code)) && new Set(SPEECH_LANGS.map((l) => l.code)).size === SPEECH_LANGS.length && !isSpeechLang("en"));
+}
+
+// ── A spoken turn (2026-11-06): the reply is read aloud, so the prompt asks for a sentence ──
+{
+  const actor = { organizationId: "o1", userId: "u1", role: "OWNER", channel: "app", orgName: "QA Co", userName: "Quinn", timezone: "America/Los_Angeles" } as unknown as AssistantActor;
+  const now = new Date("2026-11-06T18:00:00Z");
+  const spoken = systemPrompt(actor, now, null, [], [], "", true);
+  const typed = systemPrompt(actor, now, null, [], [], "", false);
+  check("spoken: the prompt asks for one short sentence, read aloud, and one question when it didn't understand", /SPOKEN: this is a live conversation/.test(spoken) && /one short sentence/.test(spoken) && /ask one short question/.test(spoken) && /never 'let me know'/.test(spoken));
+  check("spoken: a typed turn keeps the usual brevity line", !/SPOKEN:/.test(typed) && /Be brief: a few short lines/.test(typed));
+  check("spoken: the hard rules stay (numbers only from tools, changes wait for the yes)", /Never guess a number/.test(spoken) && /the person confirms first/.test(spoken));
 }
 
 console.log(bad ? `\n${bad} FAILED` : "\nall ok");

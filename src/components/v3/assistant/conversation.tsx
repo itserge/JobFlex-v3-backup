@@ -80,7 +80,7 @@ export function Conversation({
 
   /** One spoken turn: what was said goes out, the answer is read back (and it listens on). */
   const talkTurn = async (said: string) => {
-    const reply = await ask(said);
+    const reply = await ask(said, { spoken: true });
     if (talkRef.current) sayRef.current(forSpeech(reply ?? "That didn't go through. Try again."));
   };
 
@@ -101,6 +101,7 @@ export function Conversation({
     },
     speakUrl: "/api/assistant/speak",
     transcribeUrl: "/api/assistant/transcribe",
+    streamSpeech: true,
   });
   useEffect(() => {
     sayRef.current = speech.say;
@@ -115,7 +116,7 @@ export function Conversation({
     setHeard("");
     talkRef.current = true;
     setTalk(true);
-    speech.start(true);
+    speech.start("live");
   }
   function endTalk() {
     talkRef.current = false;

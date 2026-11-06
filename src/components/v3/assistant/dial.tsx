@@ -1,14 +1,14 @@
 "use client";
 // THE DIAL (2026-11-05, batch 4, Rev 2): the one round thing on the sheet — a ring of bars around the talk button.
-// Red and lively while it listens, a white sweep while it works, a yellow pulse when it needs the person's yes,
-// green once it is done, a faint breath at rest. Drawn on a canvas every frame (none under reduced motion).
+// Red and lively while it is held, mint and lively while it listens live (2026-11-06), a white sweep while it
+// works, a yellow pulse when it needs the person's yes, green once it is done, a faint breath at rest. Drawn on a canvas every frame (none under reduced motion).
 // It is decoration for the state, not a level meter: the browser's recogniser gives no sound level.
 
 import { useEffect, useRef } from "react";
 
-export type DialMode = "idle" | "listen" | "work" | "need" | "done";
+export type DialMode = "idle" | "listen" | "live" | "work" | "need" | "done";
 
-const COL: Record<DialMode, string> = { idle: "#ffffff", listen: "#ff6257", work: "#ffffff", need: "#ffd44f", done: "#80e4a9" };
+const COL: Record<DialMode, string> = { idle: "#ffffff", listen: "#ff6257", live: "#80e4a9", work: "#ffffff", need: "#ffd44f", done: "#80e4a9" };
 
 export function Dial({ mode, size = 112 }: { mode: DialMode; size?: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -38,7 +38,7 @@ export function Dial({ mode, size = 112 }: { mode: DialMode; size?: number }) {
         const a = (i / N) * Math.PI * 2 - Math.PI / 2;
         let len: number;
         let alpha: number;
-        if (m === "listen") {
+        if (m === "listen" || m === "live") {
           const n = still ? Math.abs(Math.sin(i * 1.3)) : Math.abs(Math.sin(i * 2.1 + t * 0.011)) * Math.abs(Math.cos(i * 0.7 - t * 0.007));
           len = 4 + 13 * n;
           alpha = 0.95;

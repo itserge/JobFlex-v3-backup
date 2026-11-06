@@ -667,6 +667,10 @@
   background: var(--op-red);
   color: #fff;
 }
+.jf-operator .op-core.live {
+  background: var(--op-mint);
+  color: var(--op-bg);
+}
 .jf-operator .op-core.work {
   background: transparent;
   color: var(--op-line);
