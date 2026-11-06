@@ -23,10 +23,10 @@ export default function AssistantPage() {
       <h2 id="what">1. What it is</h2>
       <p>
         The JobFlex AI Operator is part of JobFlex, the software contractors use to run their business. A JobFlex subscriber asks it about their
-        day or tells it what to do — price a job, send a proposal, put a job on the calendar, text their crew, remind a client to pay — in the
+        day or tells it what to do — price a job, send a proposal, add a client, book a visit, put a job on the calendar, text their crew, invoice a client, remind a client to pay, set a reminder — in the
         app, by text message, or by phone. Pricing a job only makes a draft proposal in the subscriber&apos;s own account, with a link for them to
         look at. Anything that reaches someone else — sending a proposal, a crew text, a payment reminder — and any change to the calendar is
-        read back first, and nothing happens until the subscriber answers YES.
+        read back first, and nothing happens until the subscriber answers YES. An invoice or a financing link also asks for the subscriber&apos;s own 4-digit PIN with the YES.
       </p>
       <p>The AI Operator texts only JobFlex subscribers who linked their own phone to it. It never texts their clients or anyone else, and it sends no marketing.</p>
 
@@ -62,6 +62,8 @@ export default function AssistantPage() {
         </li>
         <li>&ldquo;Send &lsquo;Smith roof replacement&rsquo; ($16,164) to John Smith at john@example.com. Reply YES to do it, or NO.&rdquo;</li>
         <li>&ldquo;OK — doing it in 2 minutes. Reply UNDO to stop it.&rdquo;</li>
+        <li>&ldquo;Invoice Sarah Lee $8,400 for the payment on &lsquo;Lee fence&rsquo; — by card or bank, their choice, by email. Reply YES and your PIN (like YES 1234), or NO.&rdquo;</li>
+        <li>&ldquo;OK — I&apos;ll remind you Fri, Nov 6 at 9:00 AM: call the inspector.&rdquo;</li>
         <li>&ldquo;Sent &lsquo;Smith roof replacement&rsquo; to John Smith. Ask me any time whether they&apos;ve opened it.&rdquo;</li>
       </ul>
       <p>

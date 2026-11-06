@@ -24,7 +24,9 @@ export function undoWindowMs(channel: AssistantChannel): number {
 }
 
 export type QuickReply =
-  | { kind: "yes" }
+  /** `pin`: four digits with the yes ("YES 1234", 2026-11-05); `bare`: the digits alone, which are a PIN only when a
+   *  read-back waits for one — otherwise "2200" answers a question about square feet and is the model's. */
+  | { kind: "yes"; pin?: string; bare?: boolean }
   | { kind: "no" }
   | { kind: "undo" }
   | { kind: "stop" }
@@ -47,6 +49,8 @@ export function quickReply(raw: string): QuickReply | null {
     .replace(/\s+/g, " ")
     .trim();
   if (!t || t.length > 24 || (t.includes("?") && t !== "?")) return null;
+  const yp = /^(?:(y|yes|yeah|yep|yup|ok|okay|do it|send it|approve|confirm)\s+)?(?:pin\s*)?(\d{4})$/.exec(t);
+  if (yp) return { kind: "yes", pin: yp[2], bare: !yp[1] };
   if (YES.test(t)) return { kind: "yes" };
   if (NO.test(t)) return { kind: "no" };
   if (/^(undo|stop it|wait|hold on|don'?t send)$/.test(t)) return { kind: "undo" };
@@ -154,8 +158,43 @@ export function andList(names: string[]): string {
 }
 
 /** What a read-back ends with, by channel. */
-export function confirmPrompt(channel: AssistantChannel): string {
+export function confirmPrompt(channel: AssistantChannel, pin = false): string {
+  if (pin) return channel === "app" ? "Enter your PIN and tap Do it, or Cancel." : "Reply YES and your PIN (like YES 1234), or NO.";
   return channel === "app" ? "Tap Do it to go ahead, or Cancel." : "Reply YES to do it, or NO.";
+}
+
+/** The changes that move money (2026-11-05): read back and waiting for the yes AND the person's PIN (lib/assistant/pin). */
+export const PIN_TOOLS: readonly string[] = ["send_invoice", "financing_link"];
+export function needsPin(tool: string): boolean {
+  return PIN_TOOLS.includes(tool);
+}
+
+/** The changes that run at their own time with no yes (a reminder to oneself): queued means set, not working. */
+export const SCHEDULED_TOOLS: readonly string[] = ["remind_me"];
+
+// ── the morning briefing and the alerts (2026-11-05) ────────────────────────
+
+/** The times Settings offers for the briefing, on the company's clock. */
+export const BRIEFING_TIMES: readonly string[] = ["05:00", "05:30", "06:00", "06:30", "07:00", "07:30", "08:00", "08:30", "09:00"];
+
+/** "06:30" → "6:30 AM". */
+export function clock12(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return hhmm;
+  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
+}
+
+/** Due once the company clock has passed its time today and it hasn't gone today (`sentDay`, YYYY-MM-DD). */
+export function briefingDue(time: string, now: Date, tz: string, sentDay: string | null): boolean {
+  if (!/^\d{2}:\d{2}$/.test(time)) return false;
+  if (sentDay === dayOf(now, tz)) return false;
+  return timeOf(now, tz) >= time;
+}
+
+/** No alert texts late at night: 9 PM to 7 AM on the company's clock (the line still lands in the Operator). */
+export function quietHours(now: Date, tz: string): boolean {
+  const h = Number(timeOf(now, tz).slice(0, 2));
+  return h >= 21 || h < 7;
 }
 
 // ── what the panel reads ─────────────────────────────────────────────────────
@@ -167,6 +206,145 @@ export interface FeedAction {
   readback: string;
   result: string | null;
   createdAt: string;
+  /** What the Operator understood, from the stored arguments (factsOf) — the spec sheet on a phone (2026-11-05). */
+  facts: Fact[];
+  /** A running build's last step (BUILD_STEPS), else null. */
+  progress: string | null;
+  /** The record it made or sent, when there is one: a proposal's page. */
+  link: string | null;
+}
+
+// ── the sheet: what was understood, and how far a build is (2026-11-05, batch 4) ──
+
+export interface Fact {
+  k: string;
+  v: string;
+}
+
+/** A build's steps in order, as the trace names them; a running build reports the one it is on. */
+export const BUILD_STEPS: Record<string, readonly string[]> = {
+  build_deck: ["Deck Studio", "Rate book", "Priced", "Saved"],
+  change_deck: ["Deck Studio", "Rate book", "Priced", "Saved"],
+  build_estimate: ["Smart Proposal", "Priced", "Saved"],
+  change_estimate: ["Smart Proposal", "Priced", "Saved"],
+  build_fence: ["Lot & house", "Layout", "Priced", "Saved"],
+  build_roof: ["Aerial read", "Rate book", "Priced", "Saved"],
+  build_hvac: ["House", "Load", "Priced", "Saved"],
+  build_lawn: ["Yard", "Priced", "Saved"],
+};
+
+/** Where a running build is: the index of its step, −1 before the first. */
+export function stepIndex(tool: string, progress: string | null): number {
+  const steps = BUILD_STEPS[tool];
+  if (!steps || !progress) return -1;
+  return steps.findIndex((s) => s.toLowerCase() === progress.toLowerCase());
+}
+
+const HVAC_JOB_FACT: Record<string, string> = {
+  "replace-system": "Full system",
+  "replace-outdoor": "Outdoor unit",
+  "replace-furnace": "Furnace",
+  "add-ac": "Add cooling",
+  "heat-pump-conversion": "Heat pump",
+  ductless: "Ductless zone",
+  "water-heater": "Water heater",
+};
+const LAWN_FACT: Record<string, string> = {
+  mow: "mowing",
+  fert: "fertilizer",
+  aerate: "aeration",
+  overseed: "overseeding",
+  dethatch: "dethatching",
+  springCleanup: "spring cleanup",
+  fallCleanup: "fall cleanup",
+  mulch: "mulch",
+  bedWeeding: "bed weeding",
+  shrubs: "shrubs",
+  hedges: "hedges",
+  irrigationStart: "sprinkler start-up",
+  irrigationBlowout: "sprinkler blowout",
+  gutters: "gutters",
+  snow: "snow",
+};
+
+/** What the Operator understood, from a change's stored arguments: the code's words, never the model's. */
+export function factsOf(tool: string, args: unknown): Fact[] {
+  const a = (args && typeof args === "object" ? args : {}) as Record<string, unknown>;
+  const s = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  const out: Fact[] = [];
+  if (tool === "build_deck") {
+    const w = n(a.widthFt);
+    const d = n(a.depthFt);
+    if (w && d) out.push({ k: "Deck", v: `${w} × ${d} ft · ${Math.round(w * d)} sq ft` });
+    const h = n(a.heightFt);
+    if (h) out.push({ k: "Height", v: `${h} ft${h * 12 > 30 ? " · rail required" : ""}` });
+    const cover = s(a.cover);
+    if (cover && cover !== "none") out.push({ k: "Cover", v: cover === "roof" ? "Roof" : cover === "pergola" ? "Pergola" : "Gazebo" });
+    const boards = s(a.boards);
+    if (boards) out.push({ k: "Boards", v: boards });
+    const rail = s(a.rail);
+    if (rail) out.push({ k: "Rail", v: rail });
+    if (a.stairs === true) out.push({ k: "Stairs", v: "Yes" });
+    const more = s(a.more);
+    if (more) out.push({ k: "Also", v: more });
+  } else if (tool === "change_deck") {
+    const c = s(a.change);
+    if (c) out.push({ k: "Change", v: c });
+  } else if (tool === "build_fence") {
+    const where = s(a.siteAddress) ?? s(a.address);
+    if (where) out.push({ k: "Where", v: where });
+    const off = n(a.rearOffsetFt);
+    out.push({ k: "Rear", v: a.rearOnLotLine === true ? "On the rear lot line" : `${off ?? 20} ft out from the house` });
+    out.push({ k: "Sides", v: "Along the lot lines to the house" });
+    const gates = Array.isArray(a.gates) ? (a.gates as Array<{ where?: unknown; widthFt?: unknown }>) : [];
+    out.push({ k: "Gates", v: gates.length ? gates.map((g) => `${typeof g.widthFt === "number" ? g.widthFt : 4} ft on the ${typeof g.where === "string" ? g.where : "right"}`).join(", ") : "None" });
+    const h = n(a.heightFt) ?? 6;
+    out.push({ k: "Fence", v: `${h} ft ${s(a.type) ?? "cedar privacy"}` });
+    if (a.removeExisting === true) out.push({ k: "Also", v: "Take out the old fence" });
+  } else if (tool === "build_roof") {
+    const where = s(a.address);
+    if (where) out.push({ k: "Where", v: where });
+    out.push({ k: "Roof", v: s(a.material) ?? "Architectural shingles" });
+    const existing = s(a.existing);
+    if (existing) out.push({ k: "Now", v: existing });
+    const sq = n(a.homeSqft);
+    const st = n(a.storeys);
+    out.push({ k: "House", v: sq ? `${Math.round(sq).toLocaleString("en-US")} sq ft${st ? ` · ${st} floor${st === 1 ? "" : "s"}` : ""}` : "Measured from the air" });
+    const layers = n(a.tearOffLayers);
+    if (layers != null) out.push({ k: "Tear-off", v: layers === 0 ? "None · roof over" : `${layers} layer${layers === 1 ? "" : "s"}` });
+  } else if (tool === "build_hvac") {
+    const where = s(a.address);
+    if (where) out.push({ k: "Where", v: where });
+    const sq = n(a.sqft);
+    const st = n(a.storeys);
+    const yr = n(a.yearBuilt);
+    out.push({ k: "House", v: sq ? [`${Math.round(sq).toLocaleString("en-US")} sq ft`, st ? `${st} floor${st === 1 ? "" : "s"}` : "", yr ? `built ${yr}` : ""].filter(Boolean).join(" · ") : "From the county record" });
+    const job = s(a.job);
+    if (job) out.push({ k: "Job", v: HVAC_JOB_FACT[job] ?? job });
+    const kind = s(a.outdoorKind);
+    if (kind) out.push({ k: "Outdoor", v: kind === "heat-pump" ? "Heat pump" : "Air conditioner" });
+    const tier = s(a.tier);
+    out.push({ k: "Tier", v: tier ? tier[0].toUpperCase() + tier.slice(1) : "Better" });
+  } else if (tool === "build_lawn") {
+    const where = s(a.address);
+    if (where) out.push({ k: "Where", v: where });
+    const lawn = n(a.lawnSqft);
+    out.push({ k: "Lawn", v: lawn ? `${Math.round(lawn).toLocaleString("en-US")} sq ft · as said` : "From the aerial photo" });
+    out.push({ k: "Mowing", v: a.frequency === "biweekly" ? "Every other week" : "Weekly" });
+    const services = Array.isArray(a.services) ? (a.services as unknown[]).filter((x): x is string => typeof x === "string") : [];
+    out.push({ k: "Season", v: services.length ? services.map((x) => LAWN_FACT[x] ?? x).join(", ") : "The usual set" });
+  } else if (tool === "build_estimate" || tool === "change_estimate") {
+    const t = s(a.projectType);
+    if (t) out.push({ k: "Job", v: t });
+    const d = s(a.description) ?? "";
+    const change = /Change:\s*([^\n]+)\s*$/.exec(d)?.[1]?.trim() ?? null;
+    if (change) out.push({ k: "Change", v: change });
+    else if (d) out.push({ k: "Details", v: d.length > 140 ? `${d.slice(0, 137)}…` : d });
+    const addr = s(a.address);
+    if (addr) out.push({ k: "Where", v: addr });
+  }
+  return out;
 }
 
 export interface FeedMessage {

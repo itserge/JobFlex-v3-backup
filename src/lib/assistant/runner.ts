@@ -10,6 +10,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { runAction } from "@/lib/assistant/engine";
 import { sendAssistantText } from "@/lib/assistant/sms";
+import { runBriefings } from "@/lib/assistant/briefing";
 import { APPROVAL_TTL_MS, RUNNING_STALE_MS } from "@/lib/assistant/shared";
 
 /** Run one queued action and say what happened where it was asked: the conversation, and a text for a text.
@@ -23,7 +24,9 @@ export async function runAndReport(actionId: string, now = new Date(), opts: { e
   // The card it belongs to: the send it offers (Do it / Cancel), else the build itself; an approved change already has its own.
   const card = r.proposed?.id ?? (r.instant ? actionId : null);
   await db.assistantMessage.create({ data: { organizationId: a.organizationId, userId: a.userId, channel: a.channel, direction: "OUT", body: r.say.slice(0, 4000), actionId: card } }).catch(() => null);
-  if (a.channel === "sms") {
+  // A text for a text — and (2026-11-05) for a build asked in the app that nobody waited for: the minute job ran it,
+  // so the person closed JobFlex; the linked phone hears it is ready.
+  if (a.channel === "sms" || (a.channel === "app" && r.instant && !opts.early)) {
     const link = await db.assistantLink.findFirst({ where: { organizationId: a.organizationId, userId: a.userId, active: true, verifiedAt: { not: null } }, select: { phone: true } });
     if (link) await sendAssistantText(link.phone, r.say, r.instant ? "jobflex-assistant-built" : "jobflex-assistant-done");
   }
@@ -32,7 +35,7 @@ export async function runAndReport(actionId: string, now = new Date(), opts: { e
 
 const AT_ONCE = 4;
 
-export async function runAssistantMinute(now = new Date()): Promise<{ ran: number; expired: number; stale: number }> {
+export async function runAssistantMinute(now = new Date()): Promise<{ ran: number; expired: number; stale: number; briefed: number }> {
   const expired = await db.assistantAction.updateMany({
     where: { status: "AWAITING", createdAt: { lt: new Date(now.getTime() - APPROVAL_TTL_MS) } },
     data: { status: "EXPIRED" },
@@ -53,5 +56,10 @@ export async function runAssistantMinute(now = new Date()): Promise<{ ran: numbe
     const done = await Promise.all(due.slice(i, i + AT_ONCE).map((a) => runAndReport(a.id, now).catch(() => false)));
     ran += done.filter(Boolean).length;
   }
-  return { ran, expired: expired.count, stale: stale.count };
+  // The morning briefing (2026-11-05): whoever's time has come on their company's clock.
+  const briefed = await runBriefings(now).catch((err) => {
+    console.warn(`[assistant-brief] ${err instanceof Error ? err.message : String(err)}`);
+    return 0;
+  });
+  return { ran, expired: expired.count, stale: stale.count, briefed };
 }

@@ -349,6 +349,8 @@ export async function notifyLeadCreated(leadId: string) {
       { roles: ["OWNER"], alsoUserIds: [lead.assignedToId] },
     );
     await fireTextRules("lead.created", leadContext(lead.id));
+    // The AI Operator's own line to the people who asked for it (2026-11-05, lib/assistant/alerts); never one typed in by hand.
+    await import("@/lib/assistant/alerts").then((m) => m.alertNewLead(lead.id)).catch(() => undefined);
     await sendToMembersByPref(
       lead.organizationId,
       "lead-assigned",

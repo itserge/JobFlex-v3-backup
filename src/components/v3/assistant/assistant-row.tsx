@@ -23,7 +23,7 @@ type Variant = "desk" | "blueprint" | "drawer" | "more";
 /** One question per page load, shared by every row on the page. */
 let asked: Promise<boolean> | null = null;
 
-function useVisible(): boolean {
+export function useAssistantVisible(): boolean {
   const [visible, setVisible] = useState(false);
   useEffect(() => {
     let live = true;
@@ -40,7 +40,7 @@ function useVisible(): boolean {
 
 export function AssistantRow({ variant, onBeforeOpen, role }: { variant: Variant; onBeforeOpen?: () => void; role?: string | null }) {
   const navRole = useNavRole();
-  const visible = useVisible();
+  const visible = useAssistantVisible();
   if (!visible || (role ?? navRole) === "INSTALLER") return null;
   const inner = (
     <>

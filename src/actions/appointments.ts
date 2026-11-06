@@ -1,7 +1,9 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireSalesOrManager, isSalesRole, UnauthorizedError } from "@/lib/orgContext";
+import { requireSalesOrManager, isSalesRole } from "@/lib/orgContext";
+// The org checks, the sales rep's slice, staffing and its mail live in lib/appointments/core (2026-11-05), shared with the AI Operator.
+import { assertLinksInOrg, assertSalesCanTouchAppointment, filterWorkerIdsForRole, notifyNewlyStaffed, syncAssignments, when } from "@/lib/appointments/core";
 import { db } from "@/lib/db";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
 import { afterResponse } from "@/lib/server-events";
@@ -10,9 +12,6 @@ import { crewOfAppointment, textAppointmentMoved, textCrewCancelled } from "@/li
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { requirePage } from "@/lib/customPageAccess";
 import { markLeadContacted } from "@/lib/leads/contacted";
-
-const when = (d: Date) =>
-  d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 const baseInput = z.object({
   id: z.string().optional(),
@@ -36,110 +35,6 @@ const input = baseInput.refine(oneLink, {
 
 function toDate(v: string | Date): Date {
   return v instanceof Date ? v : new Date(v);
-}
-
-// The linked lead/client/proposal must belong to the caller's org — the ids
-// arrive from the client and would otherwise let a crafted request attach
-// another tenant's records.
-async function assertLinksInOrg(
-  organizationId: string,
-  d: { leadId?: string | null; clientId?: string | null; proposalId?: string | null },
-) {
-  if (d.leadId) {
-    const lead = await db.lead.findUnique({ where: { id: d.leadId } });
-    if (!lead || lead.organizationId !== organizationId) throw new Error("Lead not found");
-  }
-  if (d.clientId) {
-    const client = await db.client.findUnique({ where: { id: d.clientId } });
-    if (!client || client.organizationId !== organizationId) throw new Error("Client not found");
-  }
-  if (d.proposalId) {
-    const proposal = await db.proposal.findUnique({ where: { id: d.proposalId } });
-    if (!proposal || proposal.organizationId !== organizationId)
-      throw new Error("Proposal not found");
-  }
-}
-
-// Sales reps operate on their own slice of the calendar: appointments they
-// created or are staffed on (mirrors the sales calendar query). Managers touch
-// anything in the org. Returns the caller's WorkerProfile id (if any) so
-// staffing writes can be limited to self-assignment.
-async function salesWorkerId(userId: string): Promise<string | null> {
-  const wp = await db.workerProfile.findUnique({
-    where: { userId },
-    select: { id: true },
-  });
-  return wp?.id ?? null;
-}
-
-async function assertSalesCanTouchAppointment(appointmentId: string, userId: string) {
-  const apt = await db.appointment.findUnique({
-    where: { id: appointmentId },
-    select: { createdById: true, assignments: { select: { workerId: true } } },
-  });
-  if (!apt) throw new Error("Not found");
-  if (apt.createdById === userId) return;
-  const wid = await salesWorkerId(userId);
-  if (!wid || !apt.assignments.some((a) => a.workerId === wid)) {
-    throw new UnauthorizedError("You can only change appointments you created or are staffed on");
-  }
-}
-
-// Sales reps may only staff themselves; silently drop any other ids a crafted
-// request smuggles in. Managers pass the list through untouched.
-async function filterWorkerIdsForRole(
-  role: string,
-  userId: string,
-  workerIds: string[] | undefined,
-): Promise<string[] | undefined> {
-  if (!workerIds || !isSalesRole(role)) return workerIds;
-  const wid = await salesWorkerId(userId);
-  return wid ? workerIds.filter((id) => id === wid) : [];
-}
-
-// Replace the appointment's staff list. Worker ids are org-checked for the same
-// reason as the entity links above.
-async function syncAssignments(
-  organizationId: string,
-  appointmentId: string,
-  workerIds: string[],
-): Promise<{ added: string[] }> {
-  const valid = await db.workerProfile.findMany({
-    where: { id: { in: workerIds }, organizationId },
-    select: { id: true },
-  });
-  const validIds = valid.map((w) => w.id);
-  // Who is on it ALREADY, so the caller can mail only the people this save
-  // actually adds — re-saving an appointment must not re-notify the crew that
-  // was already on it.
-  const before = await db.appointmentAssignment.findMany({
-    where: { appointmentId },
-    select: { workerId: true },
-  });
-  const had = new Set(before.map((a) => a.workerId));
-  await db.appointmentAssignment.deleteMany({
-    where: { appointmentId, workerId: { notIn: validIds } },
-  });
-  for (const workerId of validIds) {
-    await db.appointmentAssignment.upsert({
-      where: { appointmentId_workerId: { appointmentId, workerId } },
-      update: {},
-      create: { appointmentId, workerId },
-    });
-  }
-  return { added: validIds.filter((id) => !had.has(id)) };
-}
-
-/** Mail the people this save just put on the appointment. Best-effort: a mail
- *  failure must never roll back a booking that is already in the calendar. */
-async function notifyNewlyStaffed(appointmentId: string, added: string[]) {
-  if (!added.length) return;
-  try {
-    const { notifyAppointmentAssigned } = await import("@/lib/notify");
-    await notifyAppointmentAssigned(appointmentId, added);
-  } catch (err) {
-    console.warn("[appointments] assignment notify failed:", err);
-  }
 }
 
 export async function createAppointment(raw: unknown) {

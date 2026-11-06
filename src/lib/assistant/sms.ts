@@ -50,7 +50,7 @@ export const SMS_WORDS = {
   notLinked: "JobFlex AI Operator: this phone isn't linked to a JobFlex account. To link it, open JobFlex → Settings → AI Operator and text the code shown there. Reply STOP to stop.",
   paused: "JobFlex AI Operator is paused for this phone. Reply START to turn it back on.",
   started: "JobFlex AI Operator is back on for this phone. Text me what you need.",
-  help: "JobFlex AI Operator: text me what you need in JobFlex — estimates (\"build a 12 by 12 deck with a roof\"), your schedule, proposals, crew texts, payment reminders. I read every change back; reply YES to do it or NO to skip it. Msg & data rates may apply. Reply STOP to stop. Help: support@jobflex.app",
+  help: "JobFlex AI Operator: text me what you need in JobFlex — estimates (\"build a 12 by 12 deck with a roof\"), your schedule, proposals, clients and visits, crew texts, invoices, reminders (\"remind me at 3 to call John\"). I read every change back; reply YES to do it or NO to skip it. Msg & data rates may apply. Reply STOP to stop. Help: support@jobflex.app",
   gone: "JobFlex AI Operator: this phone's link has ended — you're no longer on that company's team in JobFlex.",
   slow: "JobFlex AI Operator: that's a lot of texts for one hour — give me a few minutes.",
 } as const;
