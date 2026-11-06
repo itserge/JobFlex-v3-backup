@@ -9,6 +9,7 @@ import "server-only";
 // (runAndReport), else here.
 import { db } from "@/lib/db";
 import { runAction } from "@/lib/assistant/engine";
+import { recordReadiness } from "@/lib/assistant/health";
 import { sendAssistantText } from "@/lib/assistant/sms";
 import { runBriefings } from "@/lib/assistant/briefing";
 import { APPROVAL_TTL_MS, RUNNING_STALE_MS } from "@/lib/assistant/shared";
@@ -35,7 +36,7 @@ export async function runAndReport(actionId: string, now = new Date(), opts: { e
 
 const AT_ONCE = 4;
 
-export async function runAssistantMinute(now = new Date()): Promise<{ ran: number; expired: number; stale: number; briefed: number }> {
+export async function runAssistantMinute(now = new Date()): Promise<{ ran: number; expired: number; stale: number; briefed: number; readiness: number }> {
   const expired = await db.assistantAction.updateMany({
     where: { status: "AWAITING", createdAt: { lt: new Date(now.getTime() - APPROVAL_TTL_MS) } },
     data: { status: "EXPIRED" },
@@ -61,5 +62,14 @@ export async function runAssistantMinute(now = new Date()): Promise<{ ran: numbe
     console.warn(`[assistant-brief] ${err instanceof Error ? err.message : String(err)}`);
     return 0;
   });
-  return { ran, expired: expired.count, stale: stale.count, briefed };
+  // Once an hour (2026-11-06): the registry's readiness recorded — each tool's state, the day's failures, the services
+  // it leans on — for the admin console's "last check", with every warning in the error log (lib/assistant/health).
+  let readiness = 0;
+  if (now.getUTCMinutes() === 7) {
+    readiness = await recordReadiness(now).then((r) => r.warnings).catch((err) => {
+      console.warn(`[assistant-readiness] ${err instanceof Error ? err.message : String(err)}`);
+      return 0;
+    });
+  }
+  return { ran, expired: expired.count, stale: stale.count, briefed, readiness };
 }
