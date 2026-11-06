@@ -697,6 +697,30 @@ export const GUIDES: Guide[] = [
     ],
   },
   {
+    id: "project-finish",
+    title: "Keep a project on time and finish it",
+    group: "how",
+    icon: "Flag",
+    steps: [
+      {
+        text: "Open Projects and open a project. The Timeline card draws each stage across the weeks, with deliveries (▼) and inspections (◆) on it and today drawn through. Stages with no days yet: press Lay out the days.",
+        open: "/dashboard/projects",
+      },
+      {
+        text: "When a stage slips, press shift on it: say how many work days, read what moves — the stages after it, the crew’s calendar days, the pending inspections — and press Shift.",
+      },
+      {
+        text: "Press + Inspection for each one the job needs: the day, the stage, and what to have ready for the inspector. Tick This is the final inspection on the last one. Press Passed or Failed when the inspector has been.",
+      },
+      {
+        text: "On Schedule & crew, a crew member already booked that day shows “busy” under their name before you save — schedule anyway, or pick someone else.",
+      },
+      {
+        text: "The Finish line card walks the end of the job in order: punch list (the crew ticks items from the job with an after photo), final inspection, client sign-off, final payment, review, warranty, and Mark finished → Archive. Each step has its one button.",
+      },
+    ],
+  },
+  {
     id: "crew",
     title: "Jobs and the calendar for your crew",
     group: "how",

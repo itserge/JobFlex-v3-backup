@@ -18,7 +18,7 @@ const ID = z.string().min(1).max(64);
 const dayOnly = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }) : null);
 
 /** The project the person named: by id, else by words — several matches come back for the model to ask about. */
-async function projectNamed(organizationId: string, args: { projectId: string | null; query: string | null }) {
+export async function projectNamed(organizationId: string, args: { projectId: string | null; query: string | null }) {
   const select = { id: true, number: true, name: true, status: true, client: { select: { name: true } }, stagesDraftedAt: true };
   if (args.projectId) {
     const p = await db.project.findFirst({ where: { id: args.projectId, organizationId }, select });
@@ -33,7 +33,7 @@ async function projectNamed(organizationId: string, args: { projectId: string | 
 }
 
 /** The stage the person named: "footings", "the framing", "decking and railings". The best word overlap wins. */
-function stageNamed(stages: StageRow[], words: string): StageRow | null {
+export function stageNamed(stages: StageRow[], words: string): StageRow | null {
   const q = words.toLowerCase().replace(/[^a-z0-9 ]/g, " ");
   const terms = q.split(/\s+/).filter((w) => w.length > 2 && !["the", "stage", "and", "done", "mark", "start", "finished", "finish"].includes(w));
   let best: { stage: StageRow; score: number } | null = null;

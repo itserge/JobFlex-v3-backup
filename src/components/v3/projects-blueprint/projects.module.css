@@ -1490,6 +1490,11 @@
 .bp :global(.content .pj-flag--order-by) { border-color: var(--warning); color: var(--warning-dark); background: var(--warning-soft); }
 .bp :global(.content .pj-flag--late-delivery) { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
 .bp :global(.content .pj-flag--problem) { border-color: var(--danger); color: #fff; background: var(--danger); }
+/* the timeline's and the finish line's flags (2026-11-06): an inspection due reads as a warning; punch items open
+   and the finish line's next step are quiet */
+.bp :global(.content .pj-flag--inspection) { border-color: var(--warning); color: var(--warning-dark); background: var(--warning-soft); }
+.bp :global(.content .pj-flag--punch) { border-color: var(--hair); color: var(--muted); }
+.bp :global(.content .pj-flag--finish) { border-color: var(--sky); color: var(--blueprint); background: rgba(74, 158, 255, 0.13); }
 
 /* budget and jobs cells: a figure, a word, and a track under both */
 .bp :global(.content .pj-budget), .bp :global(.content .pj-jobs) { min-width: 150px; }

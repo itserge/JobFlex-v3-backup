@@ -75,6 +75,12 @@ export type PdOrder = import("@/lib/projectBuying/server").BuyingOrder;
 /* ON SITE (the crew build, 2026-11-05): the problems flagged, the hours this week, the subs' bills — lib/crewField projectField. */
 export type PdField = import("@/lib/crewField/server").ProjectFieldRead;
 
+/* THE TIMELINE AND THE FINISH LINE (2026-11-06): the stages across the weeks with the deliveries and inspections
+   on them (lib/projectTimeline/server timelineOf), and the seven steps to the end of the project with the punch
+   list (lib/projectFinish/server finishOf). */
+export type PdTimeline = import("@/lib/projectTimeline/server").TimelineRead;
+export type PdFinish = import("@/lib/projectFinish/server").FinishFull;
+
 /** What the viewer's role may open from the project page (lib/roleRoutes) — an estimator has no client record or job page. */
 export type PdOpens = { client: boolean; jobs: boolean };
 
