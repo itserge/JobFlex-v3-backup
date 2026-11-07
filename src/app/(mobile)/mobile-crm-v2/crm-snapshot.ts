@@ -12,6 +12,8 @@
 // nothing here writes. Writes go through the existing actions in
 // src/actions/followUps.ts and src/actions/leads.ts.
 
+import { emailLogoSrc } from "@/lib/orgLogo";
+import { SITE_URL } from "@/lib/siteUrl";
 import { UnauthorizedError, requireOrg, roleMayOpen } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { longDate, relative } from "@/lib/format";
@@ -221,7 +223,8 @@ export async function getCrmSnapshot(): Promise<CrmSnapshotResult> {
       org: {
         name: org?.name ?? "Your company",
         phone: org?.phone ?? null,
-        logoUrl: org?.logoUrl ?? null,
+        // The mail preview draws the logo as the mail links it (lib/orgLogo emailLogoSrc), not the stored data URL.
+        logoUrl: emailLogoSrc(org?.logoUrl, organizationId, SITE_URL),
       },
       smsEnabled: await isTwilioEnabled(),
       renderedAt: now.getTime(),

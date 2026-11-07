@@ -11,13 +11,20 @@ export const TONE_COLOR: Record<Tone, string> = {
   bad: "#a83232",
 };
 
+/** An org's logo is linked, never printed into the mail: the stored value is a data URL of up to 1 MB, and a mail that
+ *  carries it is clipped by Gmail at 102 KB ("[Message clipped]", 2026-11-05) — Gmail shows no data-URL picture
+ *  anyway. With `orgId` the renderer links /api/org-logo/<orgId>; without it the lockup draws the letter mark. */
 export type Lockup =
-  | { kind: "org"; name: string; logoUrl?: string | null }
+  | { kind: "org"; name: string; logoUrl?: string | null; orgId?: string | null }
   | { kind: "platform" };
 
 export type BoxRow =
   | { type: "item"; name: string; amount: string }
-  | { type: "field"; label: string; value: string }
+  /** `href` makes the value a link (tel:, sms:, mailto:, https:) — a lead's phone and email, tapped from the mail. */
+  | { type: "field"; label: string; value: string; href?: string }
+  /** A form question and its answer, stacked — the question as asked, the answer under it (a Facebook lead form's
+   *  "Where are you looking to upgrade?" → "Garage / home interior", 2026-11-05). Peers of each other. */
+  | { type: "answer"; question: string; answer: string }
   | { type: "rate"; label: string; rate: string; amount: string }
   | { type: "anchor"; label: string; value: string }
   | { type: "cond"; label: string; chip: string; tone?: Tone }

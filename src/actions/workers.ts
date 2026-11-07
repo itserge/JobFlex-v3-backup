@@ -233,7 +233,7 @@ async function inviteWorker(raw: unknown) {
     const article = /^[aeiou]/i.test(roleName) ? "an" : "a";
     const { subject, html } = renderEmail(
       buildWorkerInvite({
-        org: { name: orgName, logoUrl: org?.logoUrl, phone: org?.phone },
+        org: { id: organizationId, name: orgName, logoUrl: org?.logoUrl, phone: org?.phone },
         workerName: data.name,
         inviterName: inviter.name ?? null,
         roleLabel: `${article} ${roleName}`,

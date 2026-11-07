@@ -22,13 +22,15 @@ export function isBareUrlParagraph(p: string): boolean {
 }
 
 export interface OrgBrand {
+  /** The organization's id: the mail links its logo by it (doc.ts Lockup). Without it the letter mark is drawn. */
+  id?: string | null;
   name: string;
   logoUrl?: string | null;
   phone?: string | null;
 }
 
 function orgLockup(org: OrgBrand): Lockup {
-  return { kind: "org", name: org.name, logoUrl: org.logoUrl ?? null };
+  return { kind: "org", name: org.name, logoUrl: org.logoUrl ?? null, orgId: org.id ?? null };
 }
 
 function orgFooter(org: OrgBrand, ref?: string) {

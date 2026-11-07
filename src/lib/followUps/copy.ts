@@ -101,6 +101,8 @@ export function parseDispatch(stored: string | null | undefined): {
 export interface FollowUpContext {
   orgName: string;
   orgLogoUrl?: string | null;
+  /** Links the logo in the mail (lib/email/doc Lockup). */
+  orgId?: string | null;
   orgPhone?: string | null;
   clientName: string;
   /** Proposal title — the headline of the original quote. */
@@ -261,7 +263,7 @@ export function followUpEmailDoc(trigger: string, ctx: FollowUpContext): EmailDo
 
   return {
     subject: v.subject(ctx),
-    lockup: { kind: "org", name: ctx.orgName, logoUrl: ctx.orgLogoUrl ?? null },
+    lockup: { kind: "org", name: ctx.orgName, logoUrl: ctx.orgLogoUrl ?? null, orgId: ctx.orgId ?? null },
     kicker: { text: v.kicker, tone: v.tone },
     headline: v.headline,
     prose: v.prose(ctx),
