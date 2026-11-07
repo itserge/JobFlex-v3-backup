@@ -1193,6 +1193,7 @@ model Job {
   reviewRequests ReviewRequest[]
   crewHours      CrewHours[]
   flags          JobFlag[]
+  punchItems     PunchItem[]
 
   @@index([organizationId, status])
   @@index([projectId])
@@ -1328,9 +1329,13 @@ model JobPhoto {
   bytes        Int?
   // Set when the crew edits the caption after upload ("edited" mark).
   editedAt     DateTime?
+  // Chosen for the client's project page (the client build, 2026-11-06): the office picks which photos the
+  // homeowner sees; null = theirs alone.
+  sharedAt     DateTime?
 
-  job     Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  workDay WorkDay? @relation(fields: [workDayId], references: [id], onDelete: SetNull)
+  job       Job        @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  workDay   WorkDay?   @relation(fields: [workDayId], references: [id], onDelete: SetNull)
+  punchItem PunchItem?
 
   @@index([workDayId])
 }
@@ -2316,6 +2321,18 @@ model Project {
   // Set when the AI drafted the stages from the proposal lines and nobody has kept or edited them yet; the
   // card shows "Drafted by AI" with Keep until then (lib/projectStages).
   stagesDraftedAt DateTime?
+  // THE FINISH LINE (the timeline build, 2026-11-06): the client's sign-off (who, when), the warranty's last day,
+  // and the day the office called the project finished (status COMPLETED). Each a step on the project's Finish
+  // line card; the review ask and the final payment are read from the proposals (lib/projectFinish).
+  signedOffAt    DateTime?
+  signedOffBy    String?
+  warrantyUntil  DateTime?
+  finishedAt     DateTime?
+  // THE CLIENT'S PAGE (the client build, 2026-11-06): the homeowner's link key (/p/<token>, made the first time the
+  // office shares the project), when it was first shared, and when the last update went to them (lib/projectClient).
+  publicToken    String?   @unique
+  sharedAt       DateTime?
+  updateSentAt   DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -2330,6 +2347,9 @@ model Project {
   materials    ProjectMaterial[]
   orders       ProjectOrder[]
   flags        JobFlag[]
+  inspections  ProjectInspection[]
+  punchItems   PunchItem[]
+  files        ProjectFile[]
 
   @@unique([organizationId, number])
   @@index([organizationId])
@@ -2356,10 +2376,11 @@ model ProjectStage {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  tasks     ProjectTask[]
-  materials ProjectMaterial[]
-  orders    ProjectOrder[]
+  project     Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks       ProjectTask[]
+  materials   ProjectMaterial[]
+  orders      ProjectOrder[]
+  inspections ProjectInspection[]
 
   @@index([projectId, position])
 }
@@ -2383,6 +2404,83 @@ model ProjectTask {
 
   @@index([stageId, position])
   @@index([projectId])
+}
+
+// AN INSPECTION ON A PROJECT (the timeline build, 2026-11-06) — "Rough-in inspection, Tue Nov 12, have ready: the
+// permit card, the ladder". On a stage when it belongs to one (drawn on that stage's bar), dated as a DAY (UTC
+// midnight), with what to have ready for the inspector. Result: PENDING | PASSED | FAILED, with a note. `isFinal`
+// marks the final inspection — the first step of the project's finish line (lib/projectFinish).
+model ProjectInspection {
+  id             String    @id @default(cuid())
+  organizationId String
+  projectId      String
+  stageId        String?
+  name           String
+  date           DateTime?
+  readyNote      String?
+  isFinal        Boolean   @default(false)
+  result         String    @default("PENDING")
+  resultNote     String?
+  resultAt       DateTime?
+  resultById     String?
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  project Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  stage   ProjectStage? @relation(fields: [stageId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, date])
+  @@index([organizationId, date])
+}
+
+// A PUNCH-LIST ITEM (the timeline build, 2026-11-06) — "Touch up the paint by the pantry door": the small things
+// left at the end, ticked off by the office or by the crew from the job's board, each with an "after" photo when
+// one is taken (the JobPhoto, kind AFTER, on the job the item was done from). Done = doneAt set.
+model PunchItem {
+  id             String    @id @default(cuid())
+  organizationId String
+  projectId      String
+  jobId          String?
+  note           String
+  position       Int       @default(0)
+  doneAt         DateTime?
+  doneById       String?
+  photoId        String?   @unique
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  project Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  job     Job?      @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  photo   JobPhoto? @relation(fields: [photoId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, position])
+  @@index([jobId])
+}
+
+// A FILE ON A PROJECT (the client build, 2026-11-06) — the contract, the permit, the plans, the warranty, an
+// invoice: uploaded into the private store (lib/media/privateStore, read through a signed link) or a link to
+// where it lives (Google Drive, the county's permit portal). `kind`: CONTRACT | PERMIT | PLAN | WARRANTY |
+// INVOICE | OTHER. `clientVisible` puts it on the homeowner's page; the crew sees every file, read-only.
+model ProjectFile {
+  id             String   @id @default(cuid())
+  organizationId String
+  projectId      String
+  name           String
+  kind           String   @default("OTHER")
+  url            String
+  contentType    String?
+  bytes          Int?
+  isLink         Boolean  @default(false)
+  clientVisible  Boolean  @default(false)
+  uploadedById   String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
 }
 
 // WHAT A PROJECT HAS TO BUY (the buying build, 2026-11-05) — one line per material the project needs: from a sold

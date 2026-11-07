@@ -5,9 +5,11 @@
 // what else is running, the conversation as lines and cards — a card shows what
 // was understood (the facts), the build's trace at its real pace, the deck's own
 // plan drawn on when it lands, Do it / Cancel (and the PIN) while it waits — and
-// the dial at the foot: hold it and talk, let go to send, slide off to cancel;
-// tap for one sentence; Hands-free keeps listening. "Stop" or "wait" while it
-// talks hushes it; "change that" calls off the read-back. The same state as the
+// the dial at the foot (2026-11-06): hold it and talk — everything said while
+// the finger is down goes as one request when it lifts; slide off to cancel; a
+// tap turns LIVE on — a conversation: it listens, answers in a sentence, and
+// listens again, until a tap, "stop", or End. A touch on the dial cuts a reply
+// short; "wait" too; "change that" calls off the read-back. The same state as the
 // desk panel (use-assistant) and the same ears and voice (deck-voice).
 // As a page (/mobile-assistant-v1) it carries Talk and Tasks; as an overlay
 // (the dial button on every phone page, ./operator-fab) it opens listening.
@@ -47,9 +49,8 @@ type Drawing = DeckDrawingData | FenceDrawingData | RoofDrawingData;
 const STAMP: Record<Tone, string> = { warn: "yel", ok: "mnt", bad: "red", quiet: "dim", info: "wht" };
 
 export const OperatorSheet = forwardRef<OperatorHandle, Props>(function OperatorSheet({ state, variant, start = null, onClose }, ref) {
-  const { feed, pending, busy, building, landed, error, tasks, muted, setMuted, load, loadTasks, ask, answer } = state;
+  const { feed, pending, busy, building, landed, error, tasks, muted, setMuted, lang, load, loadTasks, ask, answer } = state;
   const [tab, setTab] = useState<"talk" | "tasks">("talk");
-  const [hands, setHands] = useState(false);
   const [heard, setHeard] = useState("");
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [typing, setTyping] = useState(false);
@@ -69,19 +70,21 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
   const coreRef = useRef<HTMLButtonElement>(null);
   const speakRef = useRef<(t: string) => void>(() => {});
   const hushRef = useRef<() => void>(() => {});
+  const endLiveRef = useRef<() => void>(() => {});
   const speakingRef = useRef(false);
 
   const talkTurn = useCallback(
     async (said: string) => {
-      const reply = await ask(said);
+      const reply = await ask(said, { spoken: true });
       if (reply && !mutedRef.current) speakRef.current(forSpeech(reply));
     },
     [ask],
   );
 
   const speech = useDeckSpeech({
-    // The phone's own language (spec §2): a Russian phone is heard in Russian; the replies already follow the person.
-    lang: typeof navigator !== "undefined" && navigator.language ? navigator.language : "en-US",
+    // The language they speak to it in (Settings → AI Operator; English unless they picked another) — never the
+    // phone's own: a Russian phone heard English addresses as Russian (2026-11-06).
+    lang,
     onFinal: (alternatives) => {
       const said = alternatives[0]?.trim();
       if (!said) return;
@@ -89,7 +92,13 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
         drop.current = false;
         return;
       }
-      if (/^(stop|wait|hold on|quiet|enough)\b/i.test(said)) {
+      // "Stop" ends a live conversation (and cuts a reply short); "wait" only cuts the reply short.
+      if (/^(stop|that's all|that is all|bye|goodbye)\b/i.test(said)) {
+        hushRef.current();
+        endLiveRef.current();
+        return;
+      }
+      if (/^(wait|hold on|quiet|enough)\b/i.test(said)) {
         hushRef.current();
         return;
       }
@@ -108,13 +117,25 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
       setHeard(words);
       if (speakingRef.current && /\b(stop|wait)\b/i.test(words)) hushRef.current();
     },
-    onError: (message) => {
-      setVoiceError(message);
-      setHands(false);
-    },
+    onNothing: () => setVoiceError("Didn't catch that — hold the dial and talk, let go to send."),
+    onError: (message) => setVoiceError(message),
     speakUrl: "/api/assistant/speak",
     transcribeUrl: "/api/assistant/transcribe",
+    // The route answers a GET as the audio is made: the reply sounds after its first moments.
+    streamSpeech: true,
   });
+  const listening = speech.mic === "listening" || speech.mic === "recording";
+  const canTalk = speech.mode !== "none";
+  /** A live conversation is on (listening, thinking or speaking, until it is ended). */
+  const live = speech.hearing === "live";
+  const startLive = () => {
+    setVoiceError(null);
+    speech.start("live");
+  };
+  const endLive = () => {
+    speech.stop();
+    speech.hush();
+  };
   // What the ears' handlers read, kept current after every render (never during one).
   useEffect(() => {
     busyRef.current = busy;
@@ -122,10 +143,9 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
     feedRef.current = feed;
     speakRef.current = speech.say;
     hushRef.current = speech.hush;
+    endLiveRef.current = endLive;
     speakingRef.current = speech.speaking;
   });
-  const listening = speech.mic === "listening" || speech.mic === "recording";
-  const canTalk = speech.mode !== "none";
 
   // The conversation, read as the sheet opens; listening at once when asked to.
   const startRef = useRef(start);
@@ -138,7 +158,7 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
       setIsHolding(true);
       drop.current = false;
     }
-    const t = setTimeout(() => speech.start(false), 150);
+    const t = setTimeout(() => speech.start(how === "hold" ? "hold" : "live"), 150);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -155,9 +175,8 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
       cancel() {
         holding.current = false;
         setIsHolding(false);
-        drop.current = true;
         setHeard("");
-        speech.stop();
+        speech.cancel();
         speech.hush();
       },
     }),
@@ -229,12 +248,12 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
   };
   const onAnswer = async (id: string, yes: boolean, pin?: string) => {
     const reply = await answer(id, yes, pin);
-    if (reply && !mutedRef.current && (hands || listening)) speakRef.current(forSpeech(reply));
+    if (reply && !mutedRef.current && (live || listening)) speakRef.current(forSpeech(reply));
     if (tab === "tasks") loadTasks();
   };
 
-  // The dial: hold to talk (let go to send, slide off to cancel); a tap listens for one sentence; a tap while it
-  // listens sends; hands-free keeps listening.
+  // The dial (2026-11-06): hold it and talk — let go to send, slide off to cancel; a tap turns live on (a conversation:
+  // it listens, answers, and listens again until a tap, "stop", or End). A touch on the dial cuts a reply short.
   const onCoreDown = (e: ReactPointerEvent<HTMLButtonElement>) => {
     e.preventDefault();
     try {
@@ -244,16 +263,14 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
     }
     if (!canTalk) return;
     setVoiceError(null);
-    if (listening) {
-      speech.stop();
-      return;
-    }
     if (speech.speaking) speech.hush();
     downAt.current = { x: e.clientX, y: e.clientY, t: Date.now() };
+    // Live: a touch ends it when the finger lifts.
+    if (live) return;
     holding.current = true;
     setIsHolding(true);
     drop.current = false;
-    speech.start(false);
+    speech.start("hold");
   };
   const onCoreMove = (e: ReactPointerEvent<HTMLButtonElement>) => {
     const d = downAt.current;
@@ -262,46 +279,53 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
       holding.current = false;
       setIsHolding(false);
       downAt.current = null;
-      drop.current = true;
       setHeard("");
-      speech.stop();
+      speech.cancel();
     }
   };
   const onCoreUp = () => {
     const d = downAt.current;
     downAt.current = null;
+    if (live) {
+      if (d) endLive();
+      return;
+    }
     if (!holding.current) return;
     holding.current = false;
     setIsHolding(false);
-    // A short press is a tap: it keeps listening for the sentence; a hold ends when the finger lifts.
-    if (d && Date.now() - d.t >= 350) speech.stop();
-  };
-  const toggleHands = () => {
-    if (hands) {
-      setHands(false);
-      speech.stop();
-      speech.hush();
-    } else {
-      setVoiceError(null);
-      setHands(true);
-      speech.start(true);
-    }
+    if (d && Date.now() - d.t < 350) {
+      // A tap, not a hold: live on.
+      speech.cancel();
+      startLive();
+    } else speech.stop();
   };
   const cancelListening = () => {
-    drop.current = true;
     holding.current = false;
     setIsHolding(false);
     setHeard("");
-    speech.stop();
-    if (hands) setHands(false);
+    speech.cancel();
   };
 
   const awaiting = feed?.awaiting ?? null;
-  const dial: DialMode = listening ? "listen" : busy || building ? "work" : awaiting ? "need" : doneFlash ? "done" : "idle";
-  const stamp = listening ? { t: "Listening", c: "red" } : busy || building ? { t: "Working", c: "wht" } : awaiting ? { t: "Needs you", c: "yel" } : doneFlash ? { t: "Ready", c: "mnt" } : { t: "Ready", c: "dim" };
+  const dial: DialMode = listening ? (live ? "live" : "listen") : busy || building ? "work" : awaiting ? "need" : doneFlash ? "done" : live ? "live" : "idle";
+  const stamp = speech.speaking
+    ? { t: "Speaking", c: "wht" }
+    : listening
+      ? live
+        ? { t: "Live", c: "mnt" }
+        : { t: "Talking", c: "red" }
+      : busy || building
+        ? { t: "Working", c: "wht" }
+        : awaiting
+          ? { t: "Needs you", c: "yel" }
+          : doneFlash
+            ? { t: "Ready", c: "mnt" }
+            : live
+              ? { t: "Live", c: "mnt" }
+              : { t: "Ready", c: "dim" };
   const others = messages.map((m) => m.action).filter((a): a is FeedAction => Boolean(a && (a.status === "QUEUED" || a.status === "RUNNING")));
   const ticker = others.length ? `Background · ${others.map((a) => `${TOOL_LABEL[a.tool] ?? "Change"} · ${a.status === "RUNNING" ? (a.progress ?? "working") : "queued"}`).join(" · ")}` : "Background · nothing else running";
-  const coreLabel = listening ? "Listening" : dial === "work" ? "Working" : dial === "need" ? "Say yes" : dial === "done" ? "Ready" : "Hold to talk";
+  const coreLabel = isHolding ? "Talking" : live ? "Live" : dial === "work" ? "Working" : dial === "need" ? "Say yes" : dial === "done" ? "Ready" : "Hold to talk";
   const needsCount = awaiting ? 1 : 0;
   const clock = `00:${String(Math.min(secs, 59)).padStart(2, "0")}`;
 
@@ -313,7 +337,7 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
         </span>
         <div className="op-headText">
           <b>AI Operator</b>
-          <i>{listening ? "Let go to send" : hands ? "Hands-free · say 'stop' to end" : dial === "need" ? "Say yes, or tap Do it" : "Hold to talk · tap for one sentence"}</i>
+          <i>{isHolding ? "Let go to send" : live ? "Live · tap the dial to end" : dial === "need" ? "Say yes, or tap Do it" : "Hold to talk · tap for live"}</i>
         </div>
         <span className={`op-stp ${stamp.c}`}>{stamp.t}</span>
         <button type="button" className={`op-sq ${muted ? "off" : ""}`} aria-pressed={muted} aria-label={muted ? "Spoken answers off — turn on" : "Spoken answers on — turn off"} onClick={() => setMuted(!muted)}>
@@ -373,7 +397,7 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
                 <span className="op-clock">{clock}</span>
               </div>
               <p className="op-tx">{heard || "Listening — just talk."}</p>
-              <p className="op-under">{isHolding ? "Let go to send · slide off to cancel" : hands ? "Say 'stop' when you're done" : "It sends when you pause"}</p>
+              <p className="op-under">{isHolding ? "Let go to send · slide off to cancel" : live ? "Say 'stop' or tap the dial to end" : "It sends when you pause"}</p>
             </div>
           ) : null}
           {error ? (
@@ -405,8 +429,10 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
       ) : null}
 
       <div className="op-foot">
-        {listening ? (
+        {isHolding ? (
           <Hint icon={<X />} label="Cancel" onClick={cancelListening} />
+        ) : live ? (
+          <Hint icon={<X />} label="End" onClick={endLive} />
         ) : dial === "work" ? (
           <Hint icon={<Keyboard />} label="Type" onClick={() => setTyping((t) => !t)} pressed={typing} />
         ) : dial === "need" ? (
@@ -421,26 +447,28 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
               ref={coreRef}
               type="button"
               className={`op-core ${dial}`}
-              aria-label={listening ? "Send what I said" : dial === "need" ? "Hold to talk — or say yes" : "Hold to talk"}
+              aria-label={isHolding ? "Let go to send" : live ? "End the live conversation" : dial === "need" ? "Hold to talk — or say yes" : "Hold to talk, tap for live"}
               disabled={!canTalk}
               onPointerDown={onCoreDown}
               onPointerMove={onCoreMove}
               onPointerUp={onCoreUp}
               onPointerCancel={onCoreUp}
             >
-              {listening ? <Square className="fill" /> : dial === "work" ? <AudioLines /> : <Mic />}
+              {isHolding ? <Square className="fill" /> : live ? <Headphones /> : dial === "work" ? <AudioLines /> : <Mic />}
             </button>
           </div>
           <span className="op-coreLbl">{canTalk ? coreLabel : "No microphone here"}</span>
         </div>
-        {listening ? (
+        {isHolding ? (
           <Hint icon={<Square className="fill" />} label="Send" tone="red" onClick={() => speech.stop()} />
+        ) : live ? (
+          <Hint icon={<Headphones />} label="Live" pressed onClick={endLive} />
         ) : dial === "work" ? (
           <Hint icon={<X />} label="Stop" onClick={() => speech.hush()} />
         ) : dial === "need" && awaiting && !PIN_TOOLS.includes(awaiting.tool) ? (
           <Hint icon={<Send />} label="Send" onClick={() => void onAnswer(awaiting.id, true)} />
         ) : (
-          <Hint icon={<Headphones />} label="Hands-free" pressed={hands} onClick={toggleHands} />
+          <Hint icon={<Headphones />} label="Live" onClick={startLive} />
         )}
       </div>
     </section>

@@ -48,6 +48,43 @@ export function isBudgetCategory(v: string): v is BudgetCategory {
   return (BUDGET_CATEGORIES as readonly string[]).includes(v);
 }
 
+// MORE KINDS OF BUDGET (owner, 2026-11-06: "make option to add more kind of budgets"). A budget line whose category
+// is not one of the six is its own kind — "Tile", "Cabinets", "Dumpster" — tracked like the six: expenses logged on
+// the project under that name count against it. The six keep their keys; a custom kind's key is its name as typed.
+
+/** The six's label, or a custom kind's own name. */
+export function categoryLabel(c: string): string {
+  return isBudgetCategory(c) ? CATEGORY_LABEL[c] : c;
+}
+
+/** A kind typed by hand onto a key: the six when it names one ("materials", "Permits & fees", "subs"), else its own
+ *  name, tidied — one space between words, 40 characters at most. */
+export function normalizeKind(raw: string): string {
+  const name = raw.trim().replace(/\s+/g, " ").slice(0, 40);
+  const up = name.toUpperCase();
+  if (isBudgetCategory(up)) return up;
+  const low = name.toLowerCase();
+  for (const c of BUDGET_CATEGORIES) if (CATEGORY_LABEL[c].toLowerCase() === low) return c;
+  if (/^(subs?|subcontractors?)$/.test(low)) return "SUBCONTRACTORS";
+  if (/^(permits?|fees)$/.test(low)) return "PERMITS";
+  if (/^(equipment|rentals?)$/.test(low)) return "EQUIPMENT";
+  return name;
+}
+
+/** The custom kinds a project's budget lines carry, in order; the first spelling of a name wins. */
+export function customKinds(lines: ReadonlyArray<{ category: string; label?: string | null }>): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const l of lines) {
+    if (l.label || isBudgetCategory(l.category)) continue;
+    const key = l.category.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(l.category.trim());
+  }
+  return out;
+}
+
 /** A job expense's free-text category ("Materials", "lumber", "Dumpster") onto the six. */
 export function categoryOf(raw: string | null | undefined): BudgetCategory {
   const s = (raw ?? "").toLowerCase();
@@ -79,7 +116,8 @@ export const changeLineLabel = (number: number | null | undefined, title: string
 export type MarginState = "none" | "short" | "projected" | "sold";
 
 export type CategoryRow = {
-  category: BudgetCategory;
+  /** One of the six, or a custom kind's name. */
+  category: string;
   label: string;
   budget: number;
   spent: number;
@@ -121,8 +159,8 @@ export type BudgetSummary = {
   marginState: MarginState;
   /** projected cost − (contract + pipeline) while the proposals do not cover the cost, else 0. */
   uncovered: number;
-  /** Categories over their budget, for the card's warning and the list's "Needs a look". */
-  overCategories: BudgetCategory[];
+  /** Categories over their budget (keys — categoryLabel prints them), for the card's warning and the list's "Needs a look". */
+  overCategories: string[];
   rows: CategoryRow[];
 };
 
@@ -148,16 +186,26 @@ export function summarizeBudget(input: {
   /** Approved change orders whose cost has no budget line yet. */
   uncosted?: UncostedChange[];
 }): BudgetSummary {
-  const budgetBy = new Map<BudgetCategory, number>();
+  // The keys: the six, and each custom kind under its own name (a change order's labelled line counts under its
+  // category). A spend names a custom kind exactly (any case) or falls onto the six by its words.
+  const kinds = customKinds(input.lines);
+  const kindKey = new Map(kinds.map((k) => [k.toLowerCase(), k]));
+  const keyOf = (raw: string): string => {
+    const custom = kindKey.get(raw.trim().toLowerCase());
+    if (custom) return custom;
+    return categoryOf(raw);
+  };
+  const budgetBy = new Map<string, number>();
   for (const l of input.lines) {
-    const c = isBudgetCategory(l.category) ? l.category : "OTHER";
+    const c = isBudgetCategory(l.category) ? l.category : (kindKey.get(l.category.trim().toLowerCase()) ?? "OTHER");
     budgetBy.set(c, (budgetBy.get(c) ?? 0) + Math.max(0, l.amount || 0));
   }
-  const spentBy = new Map<BudgetCategory, number>();
+  const spentBy = new Map<string, number>();
   for (const s of input.spends) {
-    const c = categoryOf(s.category);
+    const c = keyOf(s.category);
     spentBy.set(c, (spentBy.get(c) ?? 0) + Math.max(0, s.amount || 0));
   }
+  const keys: string[] = [...BUDGET_CATEGORIES, ...kinds];
 
   const linesTotal = [...budgetBy.values()].reduce((a, b) => a + b, 0);
   // A change order's cost line (labelled) is an addition, not a split: a project still on its one figure stays unsplit,
@@ -168,17 +216,17 @@ export function summarizeBudget(input: {
   const budget = unsplit ? input.projectBudget : linesTotal;
   const spent = [...spentBy.values()].reduce((a, b) => a + b, 0);
 
-  const rows: CategoryRow[] = BUDGET_CATEGORIES.map((c) => {
-    const b = budgetBy.get(c) ?? 0;
-    const s = spentBy.get(c) ?? 0;
-    return { category: c, label: CATEGORY_LABEL[c], budget: r2(b), spent: r2(s), remaining: r2(b - s), pct: b > 0 ? s / b : null, tone: toneOf(s, b) };
-  }).filter((r) => r.budget > 0 || r.spent > 0);
+  const rows: CategoryRow[] = keys
+    .map((c) => {
+      const b = budgetBy.get(c) ?? 0;
+      const s = spentBy.get(c) ?? 0;
+      return { category: c, label: categoryLabel(c), budget: r2(b), spent: r2(s), remaining: r2(b - s), pct: b > 0 ? s / b : null, tone: toneOf(s, b) };
+    })
+    .filter((r) => r.budget > 0 || r.spent > 0);
 
   // An unsplit budget has no categories to hold an overrun against: the
   // projection is the larger of the whole budget and the whole spend.
-  const projectedCost = unsplit
-    ? Math.max(budget, spent)
-    : BUDGET_CATEGORIES.reduce((n, c) => n + Math.max(budgetBy.get(c) ?? 0, spentBy.get(c) ?? 0), 0);
+  const projectedCost = unsplit ? Math.max(budget, spent) : keys.reduce((n, c) => n + Math.max(budgetBy.get(c) ?? 0, spentBy.get(c) ?? 0), 0);
 
   const sold = input.proposals.filter((p) => SOLD.has(p.status));
   const contract = sold.reduce((n, p) => n + Math.max(0, p.revenue || 0), 0);

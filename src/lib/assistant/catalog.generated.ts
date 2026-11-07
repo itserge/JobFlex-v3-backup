@@ -512,5 +512,104 @@ export const CATALOG: Catalog = {
     "pin": false,
     "scheduled": false,
     "version": 1
+  },
+  "move_stage": {
+    "label": "Move a stage",
+    "group": "projects",
+    "effect": "schedule",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "shift_rest": {
+    "label": "Shift the rest",
+    "group": "projects",
+    "effect": "schedule",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "add_inspection": {
+    "label": "Book an inspection",
+    "group": "projects",
+    "effect": "schedule",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "inspection_result": {
+    "label": "Inspection result",
+    "group": "projects",
+    "effect": "record",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "add_punch_items": {
+    "label": "Punch list",
+    "group": "projects",
+    "effect": "record",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "finish_line": {
+    "label": "Finish line",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "finish_step": {
+    "label": "Finish-line step",
+    "group": "projects",
+    "effect": "record",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "send_project_update": {
+    "label": "Project update to the client",
+    "group": "projects",
+    "effect": "message",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "project_files": {
+    "label": "Project files",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
   }
 };

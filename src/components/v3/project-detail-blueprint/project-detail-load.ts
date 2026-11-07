@@ -12,7 +12,10 @@ import { projectMoney } from "@/lib/projectMoney";
 import { stagesOf } from "@/lib/projectStages/server";
 import { buyingOf } from "@/lib/projectBuying/server";
 import { projectField } from "@/lib/crewField/server";
-import type { PdAvailProposal, PdBudget, PdBuying, PdField, PdJob, PdLooseProposal, PdPayments, PdProject, PdProposal, PdStages, PdWorker } from "./project-detail-data";
+import { timelineOf } from "@/lib/projectTimeline/server";
+import { finishOf } from "@/lib/projectFinish/server";
+import { shareOf } from "@/lib/projectClient/server";
+import type { PdAvailProposal, PdBudget, PdBuying, PdField, PdFinish, PdJob, PdLooseProposal, PdPayments, PdProject, PdProposal, PdShare, PdStages, PdTimeline, PdWorker } from "./project-detail-data";
 
 export type ProjectDetailProps = {
   project: PdProject;
@@ -22,6 +25,12 @@ export type ProjectDetailProps = {
   buying: PdBuying;
   /** On site: problems, hours, the subs' bills (2026-11-05). */
   field: PdField;
+  /** The stages across the weeks, deliveries and inspections on them (2026-11-06). */
+  timeline: PdTimeline;
+  /** The punch list and the seven steps to the end (2026-11-06). */
+  finish: PdFinish;
+  /** The client's page and the files (2026-11-06). */
+  share: PdShare;
   jobs: PdJob[];
   proposals: PdProposal[];
   availableProposals: PdAvailProposal[];
@@ -125,7 +134,15 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
     at: e.spentAt.toISOString(),
   }));
   // The money — the same read as the Projects list and Financials (lib/projectMoney): before tax, crew and stock in.
-  const [moneyAll, stageRead, buying, field] = await Promise.all([projectMoney(organizationId, [project.id]), stagesOf(project.id), buyingOf(organizationId, project.id), projectField(organizationId, project.id)]);
+  const [moneyAll, stageRead, buying, field, timeline, finish, share] = await Promise.all([
+    projectMoney(organizationId, [project.id]),
+    stagesOf(project.id),
+    buyingOf(organizationId, project.id),
+    projectField(organizationId, project.id),
+    timelineOf(organizationId, project.id),
+    finishOf(organizationId, project.id),
+    shareOf(organizationId, project.id),
+  ]);
   const money = moneyAll.get(project.id)!;
   const budget: PdBudget = {
     summary: money,
@@ -140,6 +157,9 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
     stages: { ...stageRead, draftedByAi: Boolean(project.stagesDraftedAt) },
     buying,
     field,
+    timeline,
+    finish,
+    share,
     project: {
         id: project.id,
         name: project.name,

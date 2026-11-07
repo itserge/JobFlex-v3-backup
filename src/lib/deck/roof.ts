@@ -204,7 +204,7 @@ export interface RoofPost {
   maxHeightIn: number;
   corner: boolean;
   /** How it meets the floor. */
-  bearing: "deck" | "slab" | "ground";
+  bearing: DeckDesign["floor"];
   footing: Footing | null;
   /** Longer than stock: spliced at the deck. */
   spliced: boolean;
@@ -687,7 +687,7 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
   const n = ring.length;
   const c = centroid(ring);
   const wall = r.attach === "wall" && !regular;
-  const floorIn = design.floor === "deck" ? design.heightIn : design.floor === "slab" ? SLAB_TOP_IN : design.footing.aboveGradeIn;
+  const floorIn = design.floor === "deck" ? design.heightIn : design.floor === "slab" || design.floor === "existing" ? SLAB_TOP_IN : design.footing.aboveGradeIn;
   const headerBottomIn = floorIn + r.eaveHeightIn;
 
   // Rafters: the size that spans, at the spacing asked.
@@ -1073,7 +1073,7 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
     if (trussWhy === "asked" && !trussFits) trussesBeyond = true;
     // A ridge BEAM ends on king posts: when one would bring down more than a footing table reads, and a tie across the
     // roof would be longer than stock, the gable is trussed instead — nothing heavy on one post.
-    const footingLimitLb = design.floor === "slab" ? Infinity : POST_TABLE_MAX_AREA * (design.loadPsf + 10);
+    const footingLimitLb = design.floor === "slab" || design.floor === "existing" ? Infinity : POST_TABLE_MAX_AREA * (design.loadPsf + 10);
     if (!trusses && r.ridge === "auto" && kind === "gable" && trussFits && acrossRidge > STOCK_MAX_IN && faceSpecs[0]) {
       const kingLoadLb = totalPsf * (faceSpecs[0].runIn / 12) * (ridgeSpanIn / (gableCross + 1) / 12) * 0.5;
       if (kingLoadLb > footingLimitLb) trusses = { ...trussPlan(acrossRidge, "post"), ridgeSpanIn: Math.round(ridgeSpanIn), kingLoadLb: Math.round(kingLoadLb) };
@@ -1517,7 +1517,7 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
     return loads;
   };
   // A footing reads up to POST_TABLE_MAX_AREA of deck at the deck's load: past that, more posts on that post's headers.
-  if (design.floor !== "slab") {
+  if (design.floor !== "slab" && design.floor !== "existing") {
     const limitLb = POST_TABLE_MAX_AREA * (design.loadPsf + 10);
     for (let round = 0; round < 8; round++) {
       const pts = [...cornerPosts, ...extraPosts];
@@ -1604,8 +1604,9 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
     const maxHeightIn = postMaxHeightIn(40, group, r.post, Math.min(160, tributarySqFt));
     if (r.eaveHeightIn > maxHeightIn) postBeyond = true;
     // The post's foot: a footing's top over the ground right there (a slab is level).
-    const zg = design.floor === "slab" ? 0 : groundAt(p.x, p.y);
-    const postBottomIn = design.floor === "deck" ? (deck ? deck.footingTopIn : 0) + zg : design.floor === "slab" ? SLAB_TOP_IN : design.footing.aboveGradeIn + zg;
+    const onSlab = design.floor === "slab" || design.floor === "existing";
+    const zg = onSlab ? 0 : groundAt(p.x, p.y);
+    const postBottomIn = design.floor === "deck" ? (deck ? deck.footingTopIn : 0) + zg : onSlab ? SLAB_TOP_IN : design.footing.aboveGradeIn + zg;
     const heightIn = topIn - postBottomIn;
     const spliced = heightIn > STOCK_MAX_IN;
     if (spliced) postSpliced = true;
@@ -2388,11 +2389,12 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
     }
   }
 
-  // A slab under a gazebo or a pergola.
+  // A slab under a gazebo or a pergola: drawn whether it is new or already there; priced (`slab`) only when it is new
+  // (owner, 2026-11-06: "if there is an existing pad, don't calculate that").
   let slab: RoofFrame["slab"] = null;
-  if (design.floor === "slab") {
+  if (design.floor === "slab" || design.floor === "existing") {
     const sqFt = ((x1 - x0 + 2 * SLAB_APRON_IN) * (y1 - y0 + 2 * SLAB_APRON_IN)) / 144;
-    slab = { sqFt: Math.round(sqFt), cuYd: Math.round(((sqFt * (SLAB_THICK_IN / 12)) / 27) * 1.1 * 10) / 10 };
+    if (design.floor === "slab") slab = { sqFt: Math.round(sqFt), cuYd: Math.round(((sqFt * (SLAB_THICK_IN / 12)) / 27) * 1.1 * 10) / 10 };
     planes.push({ kind: "slab", ring: [x0 - SLAB_APRON_IN, y0 - SLAB_APRON_IN, SLAB_TOP_IN, x1 + SLAB_APRON_IN, y0 - SLAB_APRON_IN, SLAB_TOP_IN, x1 + SLAB_APRON_IN, y1 + SLAB_APRON_IN, SLAB_TOP_IN, x0 - SLAB_APRON_IN, y1 + SLAB_APRON_IN, SLAB_TOP_IN] });
   }
 
@@ -2411,7 +2413,7 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
     rafterHangers: pergola ? 0 : (ridge?.kind === "beam" ? commons : 0) + (ledger ? commons + flies : 0) + jacks + hipCount,
     postBases: posts.length,
     postCaps: posts.length,
-    slabAnchors: design.floor === "slab" ? posts.length * 2 : 0,
+    slabAnchors: design.floor === "slab" || design.floor === "existing" ? posts.length * 2 : 0,
     braces,
     ledgerScrews: ledger?.fasteners ?? 0,
     ringPlate: (kind === "pyramid" || kind === "double-tier") && regular ? (tier2 ? 2 : 1) : 0,

@@ -10,7 +10,7 @@
 
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { answerAssistant, askAssistant, loadAssistantFeed, loadAssistantTasks } from "@/actions/assistant";
-import type { AssistantFeed, FeedAction, FeedMessage } from "@/lib/assistant/shared";
+import { DEFAULT_SPEECH_LANG, isSpeechLang, type AssistantFeed, type FeedAction, type FeedMessage, type SpeechLang } from "@/lib/assistant/shared";
 
 export type AssistantState = {
   feed: AssistantFeed | null;
@@ -27,10 +27,14 @@ export type AssistantState = {
   /** Spoken answers off (a loud site); remembered on this device. */
   muted: boolean;
   setMuted: (m: boolean) => void;
+  /** The language they speak to it in (Settings → AI Operator), remembered on this device so the ears have it before
+   *  the conversation loads; every feed that arrives refreshes it. */
+  lang: SpeechLang;
   load: () => void;
   loadTasks: () => void;
-  /** Sends a request; the reply's words, or null when it didn't go through. A build's first words come back at once. */
-  ask: (text: string) => Promise<string | null>;
+  /** Sends a request; the reply's words, or null when it didn't go through. A build's first words come back at once.
+   *  `spoken`: it was said aloud and the reply is read aloud — the Operator answers in a sentence. */
+  ask: (text: string, opts?: { spoken?: boolean }) => Promise<string | null>;
   /** Do it / Cancel on a read-back; the reply's words, or null. `pin`: the four digits a money card asks for. */
   answer: (actionId: string, yes: boolean, pin?: string) => Promise<string | null>;
 };
@@ -55,6 +59,34 @@ function subscribeMuted(onChange: () => void) {
   };
 }
 
+const LANG_KEY = "jf-operator-lang";
+const LANG_EVENT = "jf-operator-lang";
+function readLang(): SpeechLang {
+  try {
+    const v = typeof window !== "undefined" ? window.localStorage.getItem(LANG_KEY) : null;
+    return isSpeechLang(v) ? v : DEFAULT_SPEECH_LANG;
+  } catch {
+    return DEFAULT_SPEECH_LANG;
+  }
+}
+function subscribeLang(onChange: () => void) {
+  window.addEventListener(LANG_EVENT, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener(LANG_EVENT, onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+function rememberLang(lang: SpeechLang) {
+  if (readLang() === lang) return;
+  try {
+    window.localStorage.setItem(LANG_KEY, lang);
+  } catch {
+    /* no storage here */
+  }
+  window.dispatchEvent(new Event(LANG_EVENT));
+}
+
 export function useAssistant(): AssistantState {
   const [feed, setFeed] = useState<AssistantFeed | null>(null);
   const [pending, setPending] = useState<string | null>(null);
@@ -64,6 +96,7 @@ export function useAssistant(): AssistantState {
   const [error, setError] = useState<string | null>(null);
   const [tasks, setTasks] = useState<FeedAction[] | null>(null);
   const muted = useSyncExternalStore(subscribeMuted, readMuted, () => false);
+  const lang = useSyncExternalStore(subscribeLang, readLang, () => DEFAULT_SPEECH_LANG);
   const loading = useRef(false);
   const runs = useRef(0);
 
@@ -76,19 +109,25 @@ export function useAssistant(): AssistantState {
     window.dispatchEvent(new Event(MUTED_EVENT));
   }, []);
 
+  /** A conversation that arrived: shown, and its language setting kept on the device. */
+  const takeFeed = useCallback((f: AssistantFeed) => {
+    setFeed(f);
+    rememberLang(f.lang);
+  }, []);
+
   const load = useCallback(() => {
     if (loading.current) return;
     loading.current = true;
     loadAssistantFeed()
       .then((f) => {
-        setFeed(f);
+        takeFeed(f);
         setError(null);
       })
       .catch(() => setError("The AI Operator couldn't load just now. Close it and open it again."))
       .finally(() => {
         loading.current = false;
       });
-  }, []);
+  }, [takeFeed]);
 
   const loadTasks = useCallback(() => {
     loadAssistantTasks()
@@ -114,13 +153,13 @@ export function useAssistant(): AssistantState {
     for (let i = 0; i < 70 && run === runs.current; i++) {
       await new Promise((res) => setTimeout(res, 2500));
       after = await loadAssistantFeed().catch(() => null);
-      if (after) setFeed(after);
+      if (after) takeFeed(after);
       if (newest(after) !== seen) break;
       if (done) {
         const r = await call;
         if (r?.ran) {
           after = await loadAssistantFeed().catch(() => after);
-          if (after) setFeed(after);
+          if (after) takeFeed(after);
           break;
         }
       }
@@ -129,22 +168,22 @@ export function useAssistant(): AssistantState {
     setBuilding(false);
     const last = after?.messages[after.messages.length - 1];
     if (last && last.direction === "OUT" && last.id !== seen) setLanded({ id: last.id, text: last.body });
-  }, []);
+  }, [takeFeed]);
 
   const ask = useCallback(
-    async (text: string) => {
+    async (text: string, opts?: { spoken?: boolean }) => {
       const t = text.trim();
       if (!t || busy) return null;
       setBusy(true);
       setPending(t);
       setError(null);
       try {
-        const r = await askAssistant({ text: t });
+        const r = await askAssistant({ text: t, ...(opts?.spoken ? { spoken: true } : {}) });
         if (!r.ok) {
           setError(r.error);
           return null;
         }
-        setFeed(r.feed);
+        takeFeed(r.feed);
         if (r.running) void runBuild(r.running, r.feed);
         return r.reply;
       } catch {
@@ -155,7 +194,7 @@ export function useAssistant(): AssistantState {
         setBusy(false);
       }
     },
-    [busy, runBuild],
+    [busy, runBuild, takeFeed],
   );
 
   const answer = useCallback(
@@ -166,7 +205,7 @@ export function useAssistant(): AssistantState {
       setError(null);
       try {
         const r = await answerAssistant({ actionId, answer: yes ? "yes" : "no", ...(pin ? { pin } : {}) });
-        if (r.ok) setFeed(r.feed);
+        if (r.ok) takeFeed(r.feed);
         else setError(r.error);
         return r.ok ? r.reply : null;
       } catch {
@@ -177,10 +216,10 @@ export function useAssistant(): AssistantState {
         setBusy(false);
       }
     },
-    [busy],
+    [busy, takeFeed],
   );
 
-  return { feed, pending, busy, building, landed, error, tasks, muted, setMuted, load, loadTasks, ask, answer };
+  return { feed, pending, busy, building, landed, error, tasks, muted, setMuted, lang, load, loadTasks, ask, answer };
 }
 
 /** A reply as it is read out: the read-back's tap prompt becomes a spoken one, a dash range "to", money in whole

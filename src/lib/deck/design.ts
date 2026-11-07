@@ -109,10 +109,14 @@ export type Structure = "deck" | "covered-deck" | "gazebo" | "pergola";
 export const STRUCTURES: readonly Structure[] = ["deck", "covered-deck", "gazebo", "pergola"];
 export const STRUCTURE_LABEL: Record<Structure, string> = { deck: "Deck", "covered-deck": "Covered deck", gazebo: "Gazebo", pergola: "Pergola" };
 
-/** What a gazebo or a pergola stands on. A deck and a covered deck always stand on the deck. */
-export type Floor = "deck" | "slab" | "ground";
-export const FLOORS: readonly Floor[] = ["deck", "slab", "ground"];
-export const FLOOR_LABEL: Record<Floor, string> = { deck: "On a deck", slab: "On a concrete slab", ground: "On footings in the ground" };
+/** What a gazebo or a pergola stands on. A deck and a covered deck always stand on the deck. "slab" is a NEW slab,
+ *  poured and priced; "existing" is a slab or patio already there (owner, 2026-11-06: no concrete in that price) —
+ *  on either, the posts sit on anchored bases. */
+export type Floor = "deck" | "slab" | "existing" | "ground";
+export const FLOORS: readonly Floor[] = ["deck", "slab", "existing", "ground"];
+export const FLOOR_LABEL: Record<Floor, string> = { deck: "On a deck", slab: "On a new concrete slab", existing: "On an existing slab or patio", ground: "On footings in the ground" };
+/** Standing on concrete, new or already there. */
+export const onConcrete = (f: Floor): boolean => f === "slab" || f === "existing";
 
 export type RoofKind = "shed" | "gable" | "hip" | "pyramid" | "double-tier" | "gambrel" | "dutch-gable" | "pergola";
 export const ROOF_KINDS: readonly RoofKind[] = ["shed", "gable", "hip", "pyramid", "double-tier", "gambrel", "dutch-gable", "pergola"];

@@ -505,6 +505,7 @@ function roofChecks(roof: RoofFrame, design: DeckDesign, frame: DeckFrame | null
       });
     });
     if (roof.floor === "slab") add({ id: "roof-post-slab", level: "info", part: "Roof posts", text: `Posts on stand-off bases, two wedge anchors each, into a 4-in. slab; the slab is a foot wider than the posts all round. Where the frost line is deep, the building office may want footings under the slab's corners.`, rule: RULE.footingDepth });
+    if (roof.floor === "existing") add({ id: "roof-post-existing", level: "info", part: "Roof posts", text: `Posts on stand-off bases, two wedge anchors each, into the existing slab — no concrete in this price. The slab must be sound, at least 4 in. thick, and reach a foot past every post; a cracked or thin patio wants footings cut through it instead.`, rule: RULE.footingDepth });
     if (roof.floor === "ground") {
       const fts = roof.posts.map((p) => p.footing).filter((f): f is NonNullable<typeof f> => !!f);
       const pads = fts.map((f) => f.padIn);

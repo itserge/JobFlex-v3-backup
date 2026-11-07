@@ -412,7 +412,7 @@ export function runCommand(d0: DeckDesign, cmd: DeckCommand, env: RunEnv = {}): 
     case "floor": {
       if (d.structure !== "gazebo" && d.structure !== "pergola") return no("A deck and a covered deck always stand on the deck. A gazebo or a pergola can stand on a slab or the ground.");
       const next = patchDesign(d, { floor: cmd.to }, settle);
-      return out(next, [cmd.to === "slab" ? "On a concrete slab." : cmd.to === "ground" ? "On footings in the ground." : "On a deck."], { flash: [{ label: "It stands" }], light: { label: "It stands" }, view: { reset: true } });
+      return out(next, [cmd.to === "slab" ? "On a new concrete slab — it goes in the price." : cmd.to === "existing" ? "On the existing slab — no concrete in the price; the posts sit on anchored bases." : cmd.to === "ground" ? "On footings in the ground." : "On a deck."], { flash: [{ label: "It stands" }], light: { label: "It stands" }, view: { reset: true } });
     }
     case "roof":
       return runRoof(d, cmd.set, env, settle, out, no);

@@ -4,11 +4,14 @@
 // in this project. And put it on a schedule"). One sheet from a job row on the project page, desktop and handheld:
 // the job's first and last day, the hours each day, the work week, and who is on it. Each work day goes on the calendar
 // as its own visit (actions/projectHub scheduleProjectJob) — the calendar draws a visit on its own day, so a two-week
-// remodel shows on every day it is worked — then each new worker is asked as the job page does.
+// remodel shows on every day it is worked — then each new worker is asked as the job page does. Double-booking
+// (the timeline build, 2026-11-06): as the days and the crew change, the sheet asks who is already somewhere else
+// on those days (actions/projectTimeline crewAlreadyBooked) and says so under their name before the save.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { scheduleProjectJob } from "@/actions/projectHub";
+import { crewAlreadyBooked } from "@/actions/projectTimeline";
 import { BlueprintSheet } from "@/components/ui/BlueprintSheet";
 import type { PdJob, PdWorker } from "@/components/v3/project-detail-blueprint/project-detail-data";
 import s from "./project-hub.module.css";
@@ -73,6 +76,26 @@ export function ProjectCrewSheet({ job, roster, onClose }: { job: PdJob | null; 
 
   const days = workDays(sd, ed, st || "08:00", et || "16:00", week);
 
+  // Who is already booked on these days — asked a beat after the last change, kept by the question it answers.
+  const crewKey = [...crew].sort().join(",");
+  const askKey = job && crew.size && days.length ? `${job.id}|${sd}|${ed}|${st}|${et}|${week}|${crewKey}` : "";
+  const [booked, setBooked] = useState<{ key: string; byWorker: Record<string, string[]>; words: string[] } | null>(null);
+  useEffect(() => {
+    if (!askKey || !job) return;
+    const t = setTimeout(() => {
+      crewAlreadyBooked({ jobId: job.id, days: workDays(sd, ed, st || "08:00", et || "16:00", week), workerIds: crewKey.split(",") })
+        .then((r) => {
+          const byWorker: Record<string, string[]> = {};
+          for (const row of r.rows) (byWorker[row.workerId] ??= []).push(row.day);
+          setBooked({ key: askKey, byWorker, words: r.words });
+        })
+        .catch(() => {});
+    }, 300);
+    return () => clearTimeout(t);
+  }, [askKey, job, sd, ed, st, et, week, crewKey]);
+  const busyNow = booked && booked.key === askKey ? booked : null;
+  const dayShort = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+
   async function save() {
     if (!job) return;
     if (ed < sd) return setErr("The job ends before it starts");
@@ -116,7 +139,7 @@ export function ProjectCrewSheet({ job, roster, onClose }: { job: PdJob | null; 
             Cancel
           </button>
           <button type="button" className="bps-btn bps-btn--primary" onClick={save} disabled={busy} data-crew-save>
-            {busy ? "Saving…" : crew.size ? `Schedule · ${crew.size} on the crew` : "Schedule"}
+            {busy ? "Saving…" : busyNow?.words.length ? "Schedule anyway" : crew.size ? `Schedule · ${crew.size} on the crew` : "Schedule"}
           </button>
         </>
       }
@@ -178,7 +201,15 @@ export function ProjectCrewSheet({ job, roster, onClose }: { job: PdJob | null; 
                     }
                   />
                   <span className={s.pickName}>{w.name}</span>
-                  <span className={s.pickMeta}>{[w.trade, ANSWER[answers.get(w.id) ?? ""]].filter(Boolean).join(" · ")}</span>
+                  <span className={s.pickMeta}>
+                    {[w.trade, ANSWER[answers.get(w.id) ?? ""]].filter(Boolean).join(" · ")}
+                    {busyNow?.byWorker[w.id]?.length ? (
+                      <span style={{ display: "block", color: "var(--amber)" }} data-crew-busy>
+                        busy {busyNow.byWorker[w.id].slice(0, 3).map(dayShort).join(", ")}
+                        {busyNow.byWorker[w.id].length > 3 ? ` +${busyNow.byWorker[w.id].length - 3}` : ""}
+                      </span>
+                    ) : null}
+                  </span>
                 </label>
               ))}
             </div>
@@ -186,6 +217,11 @@ export function ProjectCrewSheet({ job, roster, onClose }: { job: PdJob | null; 
             <p className="bps-note">No crew on the team yet — add them on the Workers page.</p>
           )}
         </div>
+        {busyNow?.words.length ? (
+          <div className="bps-note bps-fld--wide" data-crew-busy-note>
+            Already booked: {busyNow.words.join("; ")}. Schedule anyway, or pick someone else.
+          </div>
+        ) : null}
         <p className="bps-hint bps-fld--wide">Each new crew member is sent the job (email, and a text if they have texts on) and answers yes or no. The job goes on the calendar.</p>
         {err ? <div className="bps-err bps-fld--wide">{err}</div> : null}
       </div>

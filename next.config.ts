@@ -102,6 +102,17 @@ const nextConfig: NextConfig = {
     // Next ships a fix; cold starts are a few seconds slower, nothing else
     // changes. Re-enable by deleting this line (the default is true).
     turbopackFileSystemCacheForDev: false,
+    // BUILD MEMORY (2026-11-06). Vercel's standard build box has 8 GB and 4
+    // vCPUs; Next forks (vCPUs - 1) workers to collect page data and prerender,
+    // each loading the server bundle (~0.6 GB). Measured cold on this app: the
+    // build process alone peaks at ~8.3 GB and the whole build at ~9.1 GB, so
+    // the standard box is killed during "Collecting page data" (SIGKILL, OOM)
+    // whenever the restored build cache can't carry most of the compile. The
+    // fix is the bigger box (Vercel → Project → Settings → Build and Deployment
+    // → Build Machine); this keeps the worker count at 3 there too (8 vCPUs
+    // would fork 7), so the page-data phase never adds more than ~2 GB on top
+    // of the compile.
+    cpus: 3,
     // "Jest worker encountered 2 child process exceptions, exceeding retry
     // limit" — the dev server's static-paths worker, not app code.
     //

@@ -636,7 +636,7 @@ export const GUIDES: Guide[] = [
         open: "/dashboard/projects",
       },
       {
-        text: "With no stages yet, press a template for the trade — Deck, Roof, Fence, Kitchen remodel… — or Draft with AI, or Add a stage.",
+        text: "Press + Stage: name it, give it days if you know them, and type its tasks one per line — the usual tasks for a stage of that name are offered to tap. With no stages yet, a template for the trade (Deck, Roof, Kitchen remodel…) or Draft with AI adds a whole set.",
       },
       {
         text: "Press a stage’s name to open its tasks. Tick a task when it’s done; ticking the last one marks the stage done. Press Add a task for anything else.",
@@ -693,6 +693,54 @@ export const GUIDES: Guide[] = [
       },
       {
         text: "On the same card, Hours this week shows each crew member’s hours and labor cost, and + Sub bill records what a sub charged — mark it paid when you pay it.",
+      },
+    ],
+  },
+  {
+    id: "project-finish",
+    title: "Keep a project on time and finish it",
+    group: "how",
+    icon: "Flag",
+    steps: [
+      {
+        text: "Open Projects and open a project. The Timeline card draws each stage across the weeks, with deliveries (▼) and inspections (◆) on it and today drawn through. Stages with no days yet: press Lay out the days.",
+        open: "/dashboard/projects",
+      },
+      {
+        text: "When a stage slips, press shift on it: say how many work days, read what moves — the stages after it, the crew’s calendar days, the pending inspections — and press Shift.",
+      },
+      {
+        text: "Press + Inspection for each one the job needs: the day, the stage, and what to have ready for the inspector. Tick This is the final inspection on the last one. Press Passed or Failed when the inspector has been.",
+      },
+      {
+        text: "On Schedule & crew, a crew member already booked that day shows “busy” under their name before you save — schedule anyway, or pick someone else.",
+      },
+      {
+        text: "The Finish line card walks the end of the job in order: punch list (the crew ticks items from the job with an after photo), final inspection, client sign-off, final payment, review, warranty, and Mark finished → Archive. Each step has its one button.",
+      },
+    ],
+  },
+  {
+    id: "project-client",
+    title: "Give the homeowner their project page",
+    group: "how",
+    icon: "Send",
+    steps: [
+      {
+        text: "Open Projects and open a project. On the Client’s page card, press Make the link — one link, no sign-in, that shows the homeowner where the project stands: the stages ticked, the next days on site, photos, documents and the next payment with a Pay button.",
+        open: "/dashboard/projects",
+      },
+      {
+        text: "Press Choose photos and tick the ones they should see — the good ones. Nothing shows until you tick it.",
+      },
+      {
+        text: "Press + File for the signed contract, the permit, the plans: a photo or PDF, or a link to where it lives. Tick The client sees it for the ones they should have; the crew sees every file on the job.",
+      },
+      {
+        text: "Press Send the update: add a word of your own and it goes by email (and by text when you text your clients) with the link. Send it again whenever something moves — the page is always current.",
+      },
+      {
+        text: "Ask the Operator: “Send the Bennetts the kitchen update — tile goes in this week” or “Show me the permit for the Smith kitchen.”",
       },
     ],
   },

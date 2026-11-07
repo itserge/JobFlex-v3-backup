@@ -811,7 +811,10 @@ function readRoof(c: string, ctx: ParseContext): Read {
   else if (structure === "deck" && kindSaid && /\b(?:covered|cover|porch|patio cover)\b/.test(c) && /\b(?:gable|hip|shed|lean[- ]?to|flat|a[- ]?frame|single[- ]?slope)\b/.test(c) && !/\b(?:dutch|gambrel|barn|pagoda|tier|pyramid)\b/.test(c)) structure = "covered-deck";
   if (structure !== d.structure) cmds.push({ do: "structure", to: structure });
   if (structure === "gazebo" || structure === "pergola") {
-    const floor = /\bon (?:a |the )?(?:concrete )?slab\b|\bon concrete\b|\bon (?:a |the )?(?:existing )?patio\b|\bover (?:a |the )?patio\b/.test(c) ? "slab" : /\bon the (?:ground|grass|lawn|dirt)\b|\bin the (?:grass|lawn|yard)\b|\bon footings\b|\bin the ground\b/.test(c) ? "ground" : /\bon (?:a |the )?deck\b/.test(c) ? "deck" : null;
+    // Concrete already there ("the existing patio", "over the patio", "on the slab") is not poured again; "a slab",
+    // "a new slab", "pour a slab" is (owner, 2026-11-06).
+    const existing = (/\b(?:existing|old|current)\b/.test(c) && /\b(?:slab|patio|concrete|pad)\b/.test(c)) || /\bon (?:the |my |our )?patio\b|\bover (?:a |the |my )?patio\b|\bon the (?:slab|concrete|pad)\b/.test(c);
+    const floor = existing ? "existing" : /\bon (?:a |the )?(?:new )?(?:concrete )?slab\b|\bon concrete\b|\bpour (?:a |the )?(?:new )?slab\b|\bnew slab\b/.test(c) ? "slab" : /\bon the (?:ground|grass|lawn|dirt)\b|\bin the (?:grass|lawn|yard)\b|\bon footings\b|\bin the ground\b/.test(c) ? "ground" : /\bon (?:a |the )?deck\b/.test(c) ? "deck" : null;
     if (floor && floor !== d.floor) cmds.push({ do: "floor", to: floor });
   }
   const set: RoofSet = {};

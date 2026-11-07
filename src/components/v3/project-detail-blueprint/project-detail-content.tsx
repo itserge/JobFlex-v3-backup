@@ -51,6 +51,9 @@ import {
   type PdPayments,
   type PdBuying,
   type PdField,
+  type PdFinish,
+  type PdShare,
+  type PdTimeline,
   type PdProject,
   type PdStages,
   type PdWorker,
@@ -80,6 +83,9 @@ import { ProjectBudgetCard } from "@/components/v3/project-links/project-budget-
 import { ProjectStagesCard } from "@/components/v3/project-links/project-stages-card";
 import { ProjectBuyingCard } from "@/components/v3/project-links/project-buying-card";
 import { ProjectFieldCard } from "@/components/v3/project-links/project-field-card";
+import { ProjectTimelineCard } from "@/components/v3/project-links/project-timeline-card";
+import { ProjectFinishCard } from "@/components/v3/project-links/project-finish-card";
+import { ProjectClientCard } from "@/components/v3/project-links/project-client-card";
 
 /** "New proposal" on a project opens the estimator picker filed under it, so
  *  any engine — Smart Proposal, roof, fence, HVAC, video or manual — can make
@@ -135,6 +141,9 @@ export function ProjectDetailContent({
   stages = { stages: [], done: null, draftedByAi: false },
   buying,
   field,
+  timeline,
+  finish,
+  share,
 }: {
   project: PdProject;
   /** The order of the work (2026-11-05). */
@@ -143,6 +152,12 @@ export function ProjectDetailContent({
   buying?: PdBuying;
   /** On site: problems, hours, the subs' bills (2026-11-05). */
   field?: PdField;
+  /** The stages across the weeks (2026-11-06). */
+  timeline?: PdTimeline;
+  /** The punch list and the finish line (2026-11-06). */
+  finish?: PdFinish;
+  /** The client's page and the files (2026-11-06). */
+  share?: PdShare;
   jobs: PdJob[];
   proposals?: PdProposal[];
   availableProposals: PdAvailProposal[];
@@ -354,7 +369,10 @@ export function ProjectDetailContent({
       </div>
 
       <ProjectStagesCard projectId={project.id} stages={stages} canManage={canManage} />
+      {timeline ? <ProjectTimelineCard projectId={project.id} timeline={timeline} canManage={canManage} /> : null}
+      {share ? <ProjectClientCard projectId={project.id} share={share} canManage={canManage} /> : null}
       {field ? <ProjectFieldCard projectId={project.id} field={field} canManage={canManage} /> : null}
+      {finish ? <ProjectFinishCard projectId={project.id} finish={finish} jobs={jobs.map((j) => ({ id: j.id, title: j.title }))} payments={payments} canManage={canManage} /> : null}
       <LooseProposalsStrip projectId={project.id} client={project.client} loose={looseProposals} />
       <ProposalsCard proposals={proposals} project={project} onAttach={openAttach} canManage={canManage} />
       <ProjectCombine projectId={project.id} projectName={project.name} proposals={proposals} />

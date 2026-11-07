@@ -348,10 +348,13 @@ monthly" is one 12px line (weight 600) under the price.
   Red is the person (the REC stamp, the rule beside their words as they speak,
   the dial while it listens); white is the Operator's work; yellow is "needs
   you"; green is done. The dial is the one round thing: a canvas ring of 56 bars
-  around a 64px button — lively red while it listens, a white sweep while it
-  works, a yellow pulse while it waits, green when a build lands, a faint breath
-  at rest — with 44px square hints either side (Type / Hands-free; Cancel / Send
-  while it listens; Change / Send while it waits). A card: a 10.5px caps label,
+  around a 64px button — lively red while it is held, lively mint while it
+  listens live (2026-11-06: hold to talk, let go to send; a tap turns live on, a
+  conversation that listens again after every reply until a tap, "stop" or
+  End), a white sweep while it works, a yellow pulse while it waits, green when
+  a build lands, a faint breath at rest — with 44px square hints either side
+  (Type / Live; Cancel / Send while held; End / Live while live; Change / Send
+  while it waits). A card: a 10.5px caps label,
   the square stamp, the facts as a ruled two-column sheet (58px mono keys), the
   build's trace as four mono steps with a 3px top rule (green done, white now),
   the deck's own plan drawn on in the Deck Studio's build order (0.6px white
@@ -549,6 +552,80 @@ hours and the subs' bills are mono-quantity lines, "owed" in rose, "paid" in
 emerald. The crew's home prints "My tasks today" as paper cards with empty
 ink squares (no live ticking there — the job page ticks) and "My week" as
 three display figures.
+
+Projects hub, the timeline and the finish line (2026-11-06): the Timeline
+card sits under Stages and is a chart in the hub's voice, not a Gantt
+widget — a 1.5px ink frame, week columns on a paper header strip in mono
+caps, one 36px row per stage with the name in a 150px ink-ruled column and
+the bar on the track: planned is white with an ink line, in progress is
+solid ink, done is emerald, late keeps its fill and takes a rose rule. The
+marks ride the bar's edges — ▼ a delivery on the top edge, ◆ an inspection
+on the bottom — in the buying card's amber / emerald / rose, with a white
+halo so they read on ink. The crew's days are a paper strip of translucent
+accent ticks; today is a 2px rose rule with "TODAY" in 9px mono. The chart
+scrolls sideways on a phone rather than squeezing (min 520px). "shift" is a
+mono-caps text button under the stage's name, red-worded with how late it
+is; the sheet reads the plan back as a plain list before the one primary
+button. The Finish line card is the stages card's row grammar turned into
+seven steps: the round mark (emerald ✓ done, ink ▶ next, empty to do), the
+label, a mono detail line, and ONE button on the right — the next step's is
+an outline button, a done step's undo is a text link. Punch items fold under
+the first step as checkbox lines with a 40px ink-framed thumbnail once the
+after photo is in; the "Done + photo" button carries a 14px camera glyph.
+Nothing on either card is red except lateness, a failed inspection and
+money still owed.
+
+Projects hub, "+ Stage" and the budget's own kinds (owner, 2026-11-06,
+from the live site: "simplify to add new stage … under this stage add
+tasks … more kinds of budgets … make smart"). The Stages card's head
+button is one action, "+ Stage", and its sheet is the whole story: name,
+days, a tasks textarea, and the tasks the templates know for that name as
+ghost chips to tap — the sheet's own `bps-btn bps-btn--ghost`, never the
+card's `.btnSm`, which the portal leaves unstyled (the "Add stages" sheet
+had shipped that way: bare text where buttons should be). The whole-set
+buttons (templates, Draft with AI) sit under a mono-caps "Or a whole set of
+stages at once" on the same sheet; the empty state keeps them on the card.
+The Budget editor's six money fields stay; the project's own kinds are
+rows under them — a name field, a $ field, a × — behind a text link
+"+ Another kind of cost", so the six keep the eye and the kinds read as
+additions. "Fill it in for me" is an outline button on the same line; its
+answer is a note under the fields in the hub's note voice — emerald when
+read from the estimate, amber for a rule of thumb — so the office always
+knows which it got.
+
+The homeowner's project page, /p/[token] (the client build, 2026-11-06),
+is the buyer's page's sibling: `.jf-client`, one 2px ink frame on graph
+paper, a 680px column, the company's name in mono caps above the project
+in display weight and a one-line greeting in plain words ("Hi Dana — 40%
+done · on Drywall and paint"). The stages are a list of round marks —
+emerald ✓, ink ▶, empty — with a mono state word at the right, under a
+12px emerald progress bar and a display-weight percent. Photos are a
+square grid with ink hairlines; documents and the next days are plain
+rows; each sold proposal is a framed block with "Next: Deposit · $X" and
+the one black Pay button with the blueprint shadow. Nothing on the page is
+red or amber: a homeowner reads where things stand, never a warning. The
+office's Client's page card uses the hub's row grammar: a mono link field
+with Copy / Open, files as lines with a "client sees it" tag that flips
+when pressed, and the photo picker as a portalled grid of square thumbs
+dimmed until ticked, the ticked ones outlined in accent.
+
+Deck Studio, the slab and the hardware (owner, 2026-11-06, from the live
+pergola: "more realistic concrete slab … hangers, bolts … better quality").
+The slab is a body, not a sheet: 4 in. of concrete with sides the light
+catches and a shadow it casts, a warm-grey broom-finished texture with the
+aggregate as specks and soft blotches (a 6-ft repeat so the tile never
+reads), and saw-cut control joints as dark grooves about every 10 ft each
+way. An existing slab is a shade darker, blotchier, with a hairline crack —
+the eye should tell new from old before the words do. The hardware is drawn
+as the real part, never a block: a hanger is a seat, two flanges and the
+plate on the ledger; a post base is a plate, a strap up two faces and the
+anchors' nuts; bolt heads, nuts and screws are six-sided. Every piece sits
+a hair off the faces around it, never in their plane (the z-fight check
+says where). Galvanized steel gets more of the sky's reflection than wood
+(`envMapIntensity` 1.6) so it reads as metal. The "It stands" answers grew
+a fourth — "On an existing slab or patio", sub-labelled "no concrete in the
+price" — with the new-slab answer sub-labelled "poured and priced", so the
+price difference is visible at the choice, not discovered in the package.
 
 Read [implementation notes](docs/design/implementation.md) when editing an
 existing interactive surface, and [mobile notes](docs/design/mobile.md) for

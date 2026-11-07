@@ -461,17 +461,30 @@ export function deckScene(s: DeckStructure): DeckScene {
     const joistDepth = f.joistTopIn - f.joistBottomIn;
     const hangerTag = hwTag("joist hanger", `LUS-type ${f.joistSize}`, `Galvanized face-mount hanger, ${joistDepth > 9 ? "ten" : "eight"} 10d nails into the ledger or beam, 10d×1½ into the joist. Hangers at least 60% of the joist's depth (AWC DCA 6).`);
     const tieTag = hwTag("hurricane tie", "H2.5A", "Galvanized tie, joist to beam, five 8d nails each leg — keeps the joists from lifting or rolling (IRC R507.6.2).");
+    // A hanger as the real thing (owner, 2026-11-06: "hangers, bolts … better quality"): a seat under the joist, a flange
+    // up each side of it, and the plate nailed to the ledger or beam behind — four thin boxes, not one block. `back` is
+    // which way the ledger or beam lies from the hanger's centre.
+    // Every face a hair off the joist's own faces (0.03 in.), never in their plane — two faces in one plane flicker.
+    // An outside joist's outer flange would sit where the fascia is; the fascia hides it, so it is not drawn.
+    const hanger = (x: number, y: number, back: 1 | -1, flanges: { left: boolean; right: boolean }) => {
+      const h = joistDepth * 0.75;
+      box("hardware", x, y, f.joistBottomIn - 0.09, 1.9, 1.8, 0.12, hangerTag);
+      if (flanges.left) box("hardware", x - 0.85, y, f.joistBottomIn + h / 2, 0.14, 1.8, h, hangerTag);
+      if (flanges.right) box("hardware", x + 0.85, y, f.joistBottomIn + h / 2, 0.14, 1.8, h, hangerTag);
+      box("hardware", x, y - back * 0.85, f.joistBottomIn + h / 2, 3.6, 0.12, h, hangerTag);
+    };
     for (const j of f.joists) {
       if (j.sister) continue;
       const zf = f.zones.find((z) => z.zone.id === j.zoneId);
       if (!zf) continue;
-      if (zf.back === "ledger") box("hardware", j.x + ox, zf.zone.y0 + oy + 1.5 + 0.9, f.joistBottomIn + joistDepth * 0.5, 2.4, 1.8, joistDepth * 0.75, hangerTag);
+      const flanges = { left: j.x - 0.76 > zf.zone.x0 + 0.05, right: j.x + 0.76 < zf.zone.x1 - 0.05 };
+      if (zf.back === "ledger") hanger(j.x + ox, zf.zone.y0 + oy + 1.5 + 0.9, 1, flanges);
       for (const by of zf.beamYs) {
         const b = f.beams.find((bb) => Math.abs(bb.lineY - by) < 0.6 && bb.zoneIds.includes(j.zoneId));
         if (!b) continue;
         if (b.style === "flush") {
-          box("hardware", j.x + ox, b.y + oy - b.spec.thickIn / 2 - 0.9, f.joistBottomIn + joistDepth * 0.5, 2.4, 1.8, joistDepth * 0.75, hangerTag);
-          if (b.role === "middle") box("hardware", j.x + ox, b.y + oy + b.spec.thickIn / 2 + 0.9, f.joistBottomIn + joistDepth * 0.5, 2.4, 1.8, joistDepth * 0.75, hangerTag);
+          hanger(j.x + ox, b.y + oy - b.spec.thickIn / 2 - 0.9, -1, flanges);
+          if (b.role === "middle") hanger(j.x + ox, b.y + oy + b.spec.thickIn / 2 + 0.9, 1, flanges);
         } else box("hardware", j.x + ox + 1.2, b.y + oy, f.joistBottomIn - 0.1, 1.2, 2.5, 3, tieTag);
       }
     }
@@ -484,9 +497,19 @@ export function deckScene(s: DeckStructure): DeckScene {
     }
     const baseTag = hwTag("post base", `ABU-type ${f.design.framing.post}`, "Galvanized stand-off base on a ½-in. anchor bolt set in the footing; it holds the post 1 in. off the concrete so its end stays dry.");
     const capTag = hwTag("post cap", `BC/PC-type ${f.design.framing.post}`, "Galvanized cap, post to beam, nailed both ways; a three-ply beam needs the wide cap (AWC DCA 6).");
+    const boltTag = hwTag("anchor bolt", "½-in.", "½-in. anchor bolt set in the wet concrete, nut and washer over the base plate.");
     for (const p of f.posts) {
       const bottom = p.footing.groundIn + p.footing.topIn;
-      box("hardware", p.x + ox, p.y + oy, bottom + 0.6, 7, 7, 1.2, baseTag);
+      // The base as the real thing: the plate on the concrete, a strap up two faces of the post, the anchor's nut beside
+      // it — each a hair off the faces around it, never in their plane (two faces in one plane flicker).
+      box("hardware", p.x + ox, p.y + oy, bottom + 0.22, 7, 7, 0.4, baseTag);
+      // The straps stop short of the beam: a ground-hugging deck's post is only inches tall.
+      const strapH = Math.min(6, p.heightIn - 1);
+      if (strapH >= 1.5) {
+        box("hardware", p.x + ox - 2.95, p.y + oy, bottom + 0.2 + strapH / 2, 0.14, 6.2, strapH, baseTag);
+        box("hardware", p.x + ox + 2.95, p.y + oy, bottom + 0.2 + strapH / 2, 0.14, 6.2, strapH, baseTag);
+      }
+      box("hardware", p.x + ox, p.y + oy - 3.1, bottom + 0.99, 0.9, 0.9, 1.1, boltTag);
       if (!p.roof && p.heightIn >= 1) box("hardware", p.x + ox, p.y + oy, bottom + p.heightIn - 0.5, 6.5, 6.5, 2.2, capTag);
     }
     if (f.posts.length) {
@@ -724,7 +747,21 @@ export function deckScene(s: DeckStructure): DeckScene {
       }
       box(ROOF_MEMBER_LAYER[m.role], m.cx, m.cy, m.cz, m.sx - slim, m.sy - less - slim, m.sz, tag, 0, m.yaw, m.tilt, m.mA ?? 0, m.mB ?? 0);
     }
-    for (const p of roof.planes) poly(ROOF_PLANE_LAYER[p.kind], p.ring, tagFor(p.kind, p.kind === "roofing" ? ROOFING_LABEL[r.roofing] : p.kind === "sheathing" ? "½-in. sheathing" : p.kind === "ceiling" ? "ceiling boards" : p.kind === "soffit" ? "vented soffit" : p.kind === "slab" ? "4-in. concrete" : p.kind === "screen" ? "screen" : p.kind === "louver" ? "louver blade" : "wall panel", 0, p.kind === "roofing" ? `${ROOFING_LABEL[r.roofing]} over synthetic underlayment, drip edge at the eaves and rakes.` : p.kind === "sheathing" ? "½-in. sheathing, H-clips between the rafters, 8d nails at 6 in. edges / 12 in. field." : p.kind === "ceiling" ? "Ceiling boards nailed to the undersides of the rafters." : p.kind === "soffit" ? "Vented soffit panels in J-channel under the eaves." : p.kind === "slab" ? "4-in. slab on a gravel base with wire mesh." : p.kind === "screen" ? "Fiberglass screen in a spline-framed panel." : p.kind === "louver" ? "Aluminum louver blade on a pivot bar; the set turns together." : p.kind === "wall" ? "Framed panel between the posts." : p.kind));
+    const existingSlab = roof.floor === "existing";
+    for (const p of roof.planes) poly(ROOF_PLANE_LAYER[p.kind], p.ring, tagFor(p.kind, p.kind === "roofing" ? ROOFING_LABEL[r.roofing] : p.kind === "sheathing" ? "½-in. sheathing" : p.kind === "ceiling" ? "ceiling boards" : p.kind === "soffit" ? "vented soffit" : p.kind === "slab" ? (existingSlab ? "existing concrete" : "4-in. concrete") : p.kind === "screen" ? "screen" : p.kind === "louver" ? "louver blade" : "wall panel", 0, p.kind === "roofing" ? `${ROOFING_LABEL[r.roofing]} over synthetic underlayment, drip edge at the eaves and rakes.` : p.kind === "sheathing" ? "½-in. sheathing, H-clips between the rafters, 8d nails at 6 in. edges / 12 in. field." : p.kind === "ceiling" ? "Ceiling boards nailed to the undersides of the rafters." : p.kind === "soffit" ? "Vented soffit panels in J-channel under the eaves." : p.kind === "slab" ? (existingSlab ? "The slab or patio already there: the posts sit on bases anchored into it. No concrete in the price." : "4-in. slab on a gravel base with wire mesh.") : p.kind === "screen" ? "Fiberglass screen in a spline-framed panel." : p.kind === "louver" ? "Aluminum louver blade on a pivot bar; the set turns together." : p.kind === "wall" ? "Framed panel between the posts." : p.kind));
+    // THE SLAB'S JOINTS (2026-11-06): saw-cut control joints about every 10 ft each way, so a slab cracks along a line
+    // and not across the middle. Thin dark boxes on the slab's layer; the 3D paints them as grooves.
+    for (const p of roof.planes) {
+      if (p.kind !== "slab" || p.ring.length !== 12) continue;
+      const [x0, y0, z, , , , x1, y1] = p.ring;
+      const w = x1 - x0;
+      const d = y1 - y0;
+      const jt = tagFor("control joint", "saw cut", 0, existingSlab ? "A joint in the existing slab." : "Saw-cut control joint, a quarter of the slab's thickness deep, cut the day after the pour so the slab cracks along it and not across the middle.");
+      const nx = Math.max(0, Math.ceil(w / 120) - 1);
+      const ny = Math.max(0, Math.ceil(d / 120) - 1);
+      for (let i = 1; i <= nx; i++) box("slab", x0 + (w * i) / (nx + 1), (y0 + y1) / 2, z + 0.03, 0.3, d, 0.1, jt);
+      for (let i = 1; i <= ny; i++) box("slab", (x0 + x1) / 2, y0 + (d * i) / (ny + 1), z + 0.03, w, 0.3, 0.1, jt);
+    }
     // Hardware: hurricane ties at every rafter over the header, caps on the posts, hangers at the ridge beam, step flashing on the house.
     const hTie = tagFor("hurricane tie", "H2.5A", 0, "Galvanized tie, rafter to header, five 8d nails each leg — against wind uplift (IRC R802.11).");
     for (const m of roof.members.filter((mm) => mm.role === "rafter" || mm.role === "jack")) {
@@ -740,6 +777,31 @@ export function deckScene(s: DeckStructure): DeckScene {
     }
     const rcap = tagFor("post cap", `${r.post} cap`, 0, "Galvanized post cap, header to post, nailed both ways.");
     for (const p of roof.posts) box("hardware", p.x, p.y, p.topIn - 0.6, 6, 6, 2, rcap);
+    // THE FEET (owner, 2026-11-06: "hangers, bolts and other things — better quality"): a galvanized stand-off base under
+    // every post that stands on concrete or its own footing — the plate, a strap up two faces, the anchors' nuts — so the
+    // 3D shows what the price carries. A post through a deck has its base at the deck's footing (drawn with the frame).
+    if (roof.floor !== "deck") {
+      const onSlab = roof.floor === "slab" || roof.floor === "existing";
+      const baseTag = tagFor("post base", `ABU-type ${r.post}`, 0, onSlab ? "Galvanized stand-off base on two ½-in. wedge anchors into the slab; it holds the post 1 in. off the concrete so its end stays dry." : "Galvanized stand-off base on a ½-in. anchor bolt set in the footing; it holds the post 1 in. off the concrete so its end stays dry.");
+      const anchorTag = tagFor(onSlab ? "wedge anchor" : "anchor bolt", "½-in.", 0, onSlab ? "½-in. wedge anchor, 4 in. into the slab, nut and washer over the base plate." : "½-in. anchor bolt set in the wet concrete, nut and washer over the base plate.");
+      for (const p of roof.posts) {
+        const m = roof.members.find((mm) => mm.role === "roof-post" && Math.abs(mm.cx - p.x) < 0.5 && Math.abs(mm.cy - p.y) < 0.5);
+        const pw = m?.sx ?? 5.5;
+        const pd = m?.sy ?? 5.5;
+        const z0 = p.bottomIn;
+        // Each piece a hair off the post's and the slab's faces, never in their plane (two faces in one plane flicker).
+        box("hardware", p.x, p.y, z0 + 0.22, pw + 2, pd + 2, 0.4, baseTag);
+        const strapH = Math.min(6, p.heightIn - 1);
+        if (strapH >= 1.5) {
+          box("hardware", p.x - (pw / 2 + 0.1), p.y, z0 + 0.2 + strapH / 2, 0.14, pd + 0.6, strapH, baseTag);
+          box("hardware", p.x + (pw / 2 + 0.1), p.y, z0 + 0.2 + strapH / 2, 0.14, pd + 0.6, strapH, baseTag);
+        }
+        box("hardware", p.x, p.y - (pd / 2 + 0.6), z0 + 0.99, 0.9, 0.9, 1.1, anchorTag);
+        if (onSlab) box("hardware", p.x, p.y + (pd / 2 + 0.6), z0 + 0.99, 0.9, 0.9, 1.1, anchorTag);
+      }
+      const p0 = roof.posts[0];
+      if (p0) callout(p0.x, p0.y, p0.bottomIn + 3, "connection", onSlab ? "Post on the slab" : "Post on its footing", onSlab ? `${r.post} post in a galvanized stand-off base, two ½-in. wedge anchors into the ${roof.floor === "existing" ? "existing" : "new 4-in."} slab; the base keeps the post's end 1 in. off the concrete.` : `${r.post} post in a galvanized stand-off base on a ½-in. anchor bolt set in its poured footing${p0.footing ? ` (${p0.footing.padIn} in. across, ${p0.footing.depthIn} in. deep)` : ""}.`);
+    }
     if (roof.ledger) {
       const led = roof.members.find((m) => m.role === "roof-ledger");
       if (led) {

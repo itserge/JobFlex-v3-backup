@@ -2,17 +2,21 @@ import "server-only";
 // WHAT THE AI OPERATOR SENDS WITHOUT BEING ASKED (2026-11-05, batch 3): each
 // person's own switches — the morning briefing and its time, the alert when a
 // client opens a proposal, the alert when a new lead comes in. Off until they
-// turn them on in Settings → AI Operator. Kept as JSON in SyncState under the
+// turn them on in Settings → AI Operator. Since 2026-11-06 also the language they
+// speak to it in (English unless they pick another). Kept as JSON in SyncState under the
 // person, like the PIN (lib/assistant/pin): no schema change, and it works for
 // someone who never linked a phone (they get it in the app only).
 import { db } from "@/lib/db";
+import { DEFAULT_SPEECH_LANG, isSpeechLang, type SpeechLang } from "@/lib/assistant/shared";
 
 export interface AssistantPrefs {
   briefing: { on: boolean; time: string };
   alerts: { proposalOpened: boolean; newLead: boolean };
+  /** The language they speak to the Operator in: the ears listen for it. */
+  lang: SpeechLang;
 }
 
-export const DEFAULT_PREFS: AssistantPrefs = { briefing: { on: false, time: "06:30" }, alerts: { proposalOpened: false, newLead: false } };
+export const DEFAULT_PREFS: AssistantPrefs = { briefing: { on: false, time: "06:30" }, alerts: { proposalOpened: false, newLead: false }, lang: DEFAULT_SPEECH_LANG };
 
 const PREFIX = "assistant:prefs:";
 const keyOf = (organizationId: string, userId: string) => `${PREFIX}${organizationId}:${userId}`;
@@ -22,11 +26,12 @@ const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 export function parsePrefs(raw: string | null | undefined): AssistantPrefs {
   if (!raw) return DEFAULT_PREFS;
   try {
-    const v = JSON.parse(raw) as Partial<{ briefing: Partial<AssistantPrefs["briefing"]>; alerts: Partial<AssistantPrefs["alerts"]> }>;
+    const v = JSON.parse(raw) as Partial<{ briefing: Partial<AssistantPrefs["briefing"]>; alerts: Partial<AssistantPrefs["alerts"]>; lang: unknown }>;
     const time = typeof v.briefing?.time === "string" && TIME_RE.test(v.briefing.time) ? v.briefing.time : DEFAULT_PREFS.briefing.time;
     return {
       briefing: { on: v.briefing?.on === true, time },
       alerts: { proposalOpened: v.alerts?.proposalOpened === true, newLead: v.alerts?.newLead === true },
+      lang: isSpeechLang(v.lang) ? v.lang : DEFAULT_SPEECH_LANG,
     };
   } catch {
     return DEFAULT_PREFS;

@@ -159,7 +159,7 @@ export function answer(q: Question, about: string, pkg: DeckPackage, checks: rea
       return { say: `${sizeWords(d)} — ${area} sq ft${lowerArea ? `, plus ${lowerArea} on the lower level` : ""}. ${ftWords(d.shape.widthFt)} along the house, ${ftWords(d.shape.depthFt)} out from it.`, light: { label: "Along the house", step: "step-shape" } };
     }
     case "height": {
-      if (!hasDeck(d)) return { say: `It stands ${d.floor === "slab" ? "on a slab" : "on the ground"}; the headers are ${inWords(d.roof.eaveHeightIn)} up.` };
+      if (!hasDeck(d)) return { say: `It stands ${d.floor === "slab" ? "on a new slab" : d.floor === "existing" ? "on the existing slab" : "on the ground"}; the headers are ${inWords(d.roof.eaveHeightIn)} up.` };
       const flight = s.stairs.find((x) => x.kind === "flight" && x.level === "upper");
       return { say: `${inWords(d.heightIn)} above the ground${d.heightIn >= 24 ? ` (${d.heightIn} in.)` : ""}${flight ? ` — ${plural(flight.risers, "step")} down` : ""}.${d.heightIn > 30 ? " Over 30 in., so it needs a guard on the open sides." : ""}`, light: { label: "Deck height" } };
     }

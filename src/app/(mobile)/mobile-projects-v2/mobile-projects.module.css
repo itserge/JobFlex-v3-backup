@@ -1055,4 +1055,8 @@
 .pjFlag_order-by { border-color: var(--warning); color: var(--warning-dark); background: var(--warning-soft); }
 .pjFlag_late-delivery { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
 .pjFlag_problem { border-color: var(--danger); color: #fff; background: var(--danger); }
+/* the timeline's and the finish line's flags (2026-11-06) */
+.pjFlag_inspection { border-color: var(--warning); color: var(--warning-dark); background: var(--warning-soft); }
+.pjFlag_punch { border-color: var(--hair); color: var(--muted); }
+.pjFlag_finish { border-color: var(--sky); color: var(--blueprint); background: rgba(74, 158, 255, 0.13); }
 .pjTrack { grid-row: 5; }

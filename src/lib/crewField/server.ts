@@ -22,6 +22,8 @@ import { geocode, weatherLine } from "@/lib/weather";
 import { markTask } from "@/lib/projectStages/server";
 import { currentStage } from "@/lib/projectStages/shared";
 import { qtyWords } from "@/lib/projectBuying/shared";
+import { punchForJob } from "@/lib/projectFinish/server";
+import { filesForCrew } from "@/lib/projectClient/server";
 import { flagWords, hoursCost, tidyHours, weekOf } from "./shared";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -131,6 +133,10 @@ export type FieldData = {
   stages: FieldStage[];
   orders: FieldOrder[];
   problems: FieldProblem[];
+  /** The project's punch list, the items for this job or for no job in particular (the timeline build, 2026-11-06). */
+  punch: Array<{ id: string; note: string; done: boolean }>;
+  /** The project's files — the permit, the plans — read-only (the client build, 2026-11-06). */
+  files: Array<{ id: string; name: string; kindLabel: string; href: string }>;
   /** The reader's own hours typed today, or null. */
   hoursToday: number | null;
   /** Hours on this job this week, everyone (the office's view; the crew sees their own). */
@@ -147,7 +153,7 @@ export async function fieldOf(organizationId: string, jobId: string, reader: { w
   const job = await db.job.findFirst({ where: { id: jobId, organizationId }, select: { id: true, projectId: true, project: { select: { id: true, name: true } } } });
   if (!job) throw new Error("Job not found");
   const { from, to } = weekOf(today);
-  const [stages, orders, flags, mine, weekRows, day] = await Promise.all([
+  const [stages, orders, flags, mine, weekRows, day, punch, files] = await Promise.all([
     job.projectId
       ? db.projectStage.findMany({ where: { projectId: job.projectId, status: { not: "DONE" } }, orderBy: { position: "asc" }, select: { id: true, name: true, status: true, tasks: { orderBy: { position: "asc" }, select: { id: true, title: true, doneAt: true, photoNeeded: true } } } })
       : Promise.resolve([]),
@@ -158,6 +164,8 @@ export async function fieldOf(organizationId: string, jobId: string, reader: { w
     reader.workerId ? db.crewHours.findUnique({ where: { jobId_workerId_date: { jobId: job.id, workerId: reader.workerId, date: today } }, select: { hours: true } }) : Promise.resolve(null),
     db.crewHours.findMany({ where: { jobId: job.id, date: { gte: from, lte: to }, ...(reader.office ? {} : { workerId: reader.workerId ?? "__none__" }) }, select: { hours: true } }),
     db.workDay.findUnique({ where: { jobId_date: { jobId: job.id, date: today } }, select: { weather: true } }),
+    job.projectId ? punchForJob(job.projectId, job.id) : Promise.resolve([]),
+    job.projectId ? filesForCrew(job.projectId) : Promise.resolve([]),
   ]);
   const users = flags.length ? await db.user.findMany({ where: { id: { in: flags.map((f) => f.raisedById).filter(Boolean) as string[] } }, select: { id: true, name: true } }) : [];
   const nameOf = new Map(users.map((u) => [u.id, u.name]));
@@ -176,6 +184,8 @@ export async function fieldOf(organizationId: string, jobId: string, reader: { w
       lines: o.lines.map((l) => ({ id: l.id, name: l.material.name, qty: qtyWords(l.quantity, l.material.unit) })),
     })),
     problems: flags.map((f) => ({ id: f.id, note: f.note, blocking: f.blocking, by: f.raisedById ? (nameOf.get(f.raisedById) ?? null) : null, when: when(f.createdAt), status: f.status, resolution: f.resolution })),
+    punch,
+    files,
     hoursToday: mine?.hours ?? null,
     weekHours: r2(weekRows.reduce((n, r) => n + r.hours, 0)),
     weatherToday: day?.weather ?? null,
