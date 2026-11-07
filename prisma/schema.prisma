@@ -1329,6 +1329,9 @@ model JobPhoto {
   bytes        Int?
   // Set when the crew edits the caption after upload ("edited" mark).
   editedAt     DateTime?
+  // Chosen for the client's project page (the client build, 2026-11-06): the office picks which photos the
+  // homeowner sees; null = theirs alone.
+  sharedAt     DateTime?
 
   job       Job        @relation(fields: [jobId], references: [id], onDelete: Cascade)
   workDay   WorkDay?   @relation(fields: [workDayId], references: [id], onDelete: SetNull)
@@ -2325,6 +2328,11 @@ model Project {
   signedOffBy    String?
   warrantyUntil  DateTime?
   finishedAt     DateTime?
+  // THE CLIENT'S PAGE (the client build, 2026-11-06): the homeowner's link key (/p/<token>, made the first time the
+  // office shares the project), when it was first shared, and when the last update went to them (lib/projectClient).
+  publicToken    String?   @unique
+  sharedAt       DateTime?
+  updateSentAt   DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -2341,6 +2349,7 @@ model Project {
   flags        JobFlag[]
   inspections  ProjectInspection[]
   punchItems   PunchItem[]
+  files        ProjectFile[]
 
   @@unique([organizationId, number])
   @@index([organizationId])
@@ -2448,6 +2457,30 @@ model PunchItem {
 
   @@index([projectId, position])
   @@index([jobId])
+}
+
+// A FILE ON A PROJECT (the client build, 2026-11-06) — the contract, the permit, the plans, the warranty, an
+// invoice: uploaded into the private store (lib/media/privateStore, read through a signed link) or a link to
+// where it lives (Google Drive, the county's permit portal). `kind`: CONTRACT | PERMIT | PLAN | WARRANTY |
+// INVOICE | OTHER. `clientVisible` puts it on the homeowner's page; the crew sees every file, read-only.
+model ProjectFile {
+  id             String   @id @default(cuid())
+  organizationId String
+  projectId      String
+  name           String
+  kind           String   @default("OTHER")
+  url            String
+  contentType    String?
+  bytes          Int?
+  isLink         Boolean  @default(false)
+  clientVisible  Boolean  @default(false)
+  uploadedById   String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
 }
 
 // WHAT A PROJECT HAS TO BUY (the buying build, 2026-11-05) — one line per material the project needs: from a sold

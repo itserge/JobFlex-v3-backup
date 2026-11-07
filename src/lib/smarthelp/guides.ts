@@ -721,6 +721,30 @@ export const GUIDES: Guide[] = [
     ],
   },
   {
+    id: "project-client",
+    title: "Give the homeowner their project page",
+    group: "how",
+    icon: "Send",
+    steps: [
+      {
+        text: "Open Projects and open a project. On the Client’s page card, press Make the link — one link, no sign-in, that shows the homeowner where the project stands: the stages ticked, the next days on site, photos, documents and the next payment with a Pay button.",
+        open: "/dashboard/projects",
+      },
+      {
+        text: "Press Choose photos and tick the ones they should see — the good ones. Nothing shows until you tick it.",
+      },
+      {
+        text: "Press + File for the signed contract, the permit, the plans: a photo or PDF, or a link to where it lives. Tick The client sees it for the ones they should have; the crew sees every file on the job.",
+      },
+      {
+        text: "Press Send the update: add a word of your own and it goes by email (and by text when you text your clients) with the link. Send it again whenever something moves — the page is always current.",
+      },
+      {
+        text: "Ask the Operator: “Send the Bennetts the kitchen update — tile goes in this week” or “Show me the permit for the Smith kitchen.”",
+      },
+    ],
+  },
+  {
     id: "crew",
     title: "Jobs and the calendar for your crew",
     group: "how",

@@ -1,0 +1,78 @@
+/* THE HOMEOWNER'S PROJECT PAGE (/p/[token]) — plain stylesheet, every selector under the literal root `.jf-client`,
+   the sibling of /buy/[token]'s buy.css: one 2px ink frame on graph paper, mono annotations, generous rows. A phone
+   first (the homeowner reads it from a text); a desk gets the same column centred at 680px. Tokens from globals.css.
+   Nothing here is red: a homeowner's page carries no warnings, only where things stand. */
+
+.jf-client {
+  --cl-frame: 2px solid var(--ink);
+  --cl-hair: 1.5px solid var(--ink-line);
+  min-height: 100dvh;
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(var(--ink-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--ink-line) 1px, transparent 1px);
+  background-size: 24px 24px;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  padding: calc(20px + var(--safe-top, 0px)) 16px calc(32px + var(--safe-bottom, 0px));
+}
+.jf-client * { box-sizing: border-box; }
+.jf-client :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.jf-client a { color: var(--ink); }
+
+.jf-client .cl-card { max-width: 680px; margin: 0 auto; background: var(--paper); border: var(--cl-frame); padding: 20px 18px 22px; }
+@media (min-width: 640px) {
+  .jf-client { padding: 40px 24px 48px; }
+  .jf-client .cl-card { padding: 28px 28px 30px; }
+}
+
+.jf-client .cl-kicker, .jf-client .cl-lab, .jf-client .cl-stageState, .jf-client .cl-foot {
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; line-height: 1.4; color: var(--ink-muted);
+}
+.jf-client .cl-head { padding-bottom: 16px; border-bottom: var(--cl-frame); }
+.jf-client .cl-logo { display: block; max-height: 40px; max-width: 180px; margin-bottom: 10px; }
+.jf-client .cl-kicker { margin: 0; overflow-wrap: anywhere; }
+.jf-client .cl-title { margin: 8px 0 6px; font-size: 26px; line-height: 1.1; font-weight: 900; letter-spacing: -0.02em; }
+.jf-client .cl-sub { margin: 0; font-size: 15px; line-height: 1.5; }
+
+.jf-client .cl-sec { padding: 16px 0 0; }
+.jf-client .cl-sec + .cl-sec { margin-top: 16px; border-top: var(--cl-hair); }
+.jf-client .cl-lab { margin: 0 0 8px; }
+
+.jf-client .cl-barRow { display: flex; align-items: center; gap: 12px; }
+.jf-client .cl-bar { flex: 1; position: relative; height: 12px; border: var(--cl-frame); background: #fff; }
+.jf-client .cl-bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--emerald); }
+.jf-client .cl-pct { font-size: 22px; font-weight: 900; font-variant-numeric: tabular-nums; min-width: 52px; text-align: right; }
+.jf-client .cl-stages { list-style: none; margin: 12px 0 0; padding: 0; }
+.jf-client .cl-stage { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 40px; padding: 6px 0; border-bottom: var(--cl-hair); }
+.jf-client .cl-stage:last-child { border-bottom: none; }
+.jf-client .cl-mark { width: 22px; height: 22px; border: 1.5px solid var(--ink); border-radius: 50%; display: grid; place-items: center; font-size: 10px; font-weight: 900; background: #fff; }
+.jf-client .cl-stage.is-done .cl-mark { background: var(--emerald); border-color: var(--emerald); color: #fff; }
+.jf-client .cl-stage.is-now .cl-mark { background: var(--ink); color: var(--paper); font-size: 8px; }
+.jf-client .cl-stageName { font-size: 15px; font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+.jf-client .cl-stage.is-done .cl-stageName { color: var(--ink-muted); }
+.jf-client .cl-stage.is-next .cl-stageName { color: var(--ink-muted); font-weight: 600; }
+.jf-client .cl-stageState { white-space: nowrap; }
+.jf-client .cl-stage.is-now .cl-stageState { color: var(--ink); }
+
+.jf-client .cl-list { list-style: none; margin: 0; padding: 0; }
+.jf-client .cl-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; min-height: 40px; padding: 8px 0; border-bottom: var(--cl-hair); font-size: 15px; line-height: 1.4; }
+.jf-client .cl-row:last-child { border-bottom: none; }
+.jf-client .cl-row b { font-weight: 800; }
+.jf-client .cl-row > span:last-child { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-muted); white-space: nowrap; }
+.jf-client .cl-row a { font-weight: 700; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; overflow-wrap: anywhere; }
+
+.jf-client .cl-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.jf-client .cl-photo { display: block; aspect-ratio: 1; border: 1.5px solid var(--ink); background: #fff; overflow: hidden; }
+.jf-client .cl-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.jf-client .cl-pay { margin-top: 6px; border: 1.5px solid var(--ink); padding: 4px 12px 12px; }
+.jf-client .cl-pay + .cl-pay { margin-top: 10px; }
+.jf-client .cl-payNext { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 8px; font-size: 15px; }
+.jf-client .cl-btn {
+  display: inline-block; min-height: 48px; line-height: 48px; padding: 0 20px; border: var(--cl-frame); background: var(--ink); color: var(--paper);
+  font-size: 13px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; text-decoration: none; box-shadow: 3px 3px 0 var(--accent); white-space: nowrap;
+}
+.jf-client .cl-note { margin: 8px 0 0; padding: 10px 12px; border-left: 3px solid var(--ink); background: rgba(10, 10, 10, 0.04); font-size: 14px; line-height: 1.5; }
+.jf-client .cl-foot { margin: 20px 0 0; padding-top: 14px; border-top: var(--cl-frame); text-transform: none; letter-spacing: 0.02em; font-size: 12.5px; line-height: 1.6; }
+.jf-client .cl-foot a { color: var(--ink); font-weight: 700; }

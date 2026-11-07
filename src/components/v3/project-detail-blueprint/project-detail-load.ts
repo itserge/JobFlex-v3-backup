@@ -14,7 +14,8 @@ import { buyingOf } from "@/lib/projectBuying/server";
 import { projectField } from "@/lib/crewField/server";
 import { timelineOf } from "@/lib/projectTimeline/server";
 import { finishOf } from "@/lib/projectFinish/server";
-import type { PdAvailProposal, PdBudget, PdBuying, PdField, PdFinish, PdJob, PdLooseProposal, PdPayments, PdProject, PdProposal, PdStages, PdTimeline, PdWorker } from "./project-detail-data";
+import { shareOf } from "@/lib/projectClient/server";
+import type { PdAvailProposal, PdBudget, PdBuying, PdField, PdFinish, PdJob, PdLooseProposal, PdPayments, PdProject, PdProposal, PdShare, PdStages, PdTimeline, PdWorker } from "./project-detail-data";
 
 export type ProjectDetailProps = {
   project: PdProject;
@@ -28,6 +29,8 @@ export type ProjectDetailProps = {
   timeline: PdTimeline;
   /** The punch list and the seven steps to the end (2026-11-06). */
   finish: PdFinish;
+  /** The client's page and the files (2026-11-06). */
+  share: PdShare;
   jobs: PdJob[];
   proposals: PdProposal[];
   availableProposals: PdAvailProposal[];
@@ -131,13 +134,14 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
     at: e.spentAt.toISOString(),
   }));
   // The money — the same read as the Projects list and Financials (lib/projectMoney): before tax, crew and stock in.
-  const [moneyAll, stageRead, buying, field, timeline, finish] = await Promise.all([
+  const [moneyAll, stageRead, buying, field, timeline, finish, share] = await Promise.all([
     projectMoney(organizationId, [project.id]),
     stagesOf(project.id),
     buyingOf(organizationId, project.id),
     projectField(organizationId, project.id),
     timelineOf(organizationId, project.id),
     finishOf(organizationId, project.id),
+    shareOf(organizationId, project.id),
   ]);
   const money = moneyAll.get(project.id)!;
   const budget: PdBudget = {
@@ -155,6 +159,7 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
     field,
     timeline,
     finish,
+    share,
     project: {
         id: project.id,
         name: project.name,
