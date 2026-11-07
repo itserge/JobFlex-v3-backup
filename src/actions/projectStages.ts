@@ -9,15 +9,15 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
-import { draftStagesWithAi, markStage, markTask, projectForJob, stagesFromTemplate } from "@/lib/projectStages/server";
-import { PROJECT_TRADES_DEFAULT, parseProjectSettings, templateByKey, type ProjectSettings } from "@/lib/projectStages/shared";
+import { addTemplate, draftStagesWithAi, markStage, markTask, projectForJob, stagesFromTemplate } from "@/lib/projectStages/server";
+import { PROJECT_TRADES_DEFAULT, parseProjectSettings, type ProjectSettings } from "@/lib/projectStages/shared";
 import { TRADE_TYPES, type TradeType } from "@/lib/tradeTypes";
 
 const DAY = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable();
 
 /** The project, when it is the caller's. */
 async function projectOf(organizationId: string, projectId: string) {
-  const p = await db.project.findFirst({ where: { id: projectId, organizationId }, select: { id: true, name: true, clientId: true, stagesDraftedAt: true } });
+  const p = await db.project.findFirst({ where: { id: projectId, organizationId }, select: { id: true, name: true, clientId: true, stagesDraftedAt: true, kind: true, answersJson: true } });
   if (!p) throw new Error("Project not found");
   return p;
 }
@@ -47,9 +47,7 @@ const dayOf = (s: string | null | undefined) => (s ? new Date(`${s}T00:00:00.000
 export async function addStagesFromTemplate(projectId: string, key: string): Promise<{ added: number }> {
   const { organizationId, user } = await requireEstimatorOrManager();
   const p = await projectOf(organizationId, projectId);
-  const tpl = templateByKey(key);
-  if (!tpl) throw new Error("No such template");
-  const added = await stagesFromTemplate(p.id, tpl.stages);
+  const { added, template: tpl } = await addTemplate(p, key);
   await keptByEdit(p.id);
   await logActivity({ organizationId, actorId: user.id, kind: TRAIL_KINDS.PROJECT, summary: `Added the ${tpl.label} stages to ${p.name}`, clientId: p.clientId, meta: { projectId: p.id, template: key } });
   touched(p.id);

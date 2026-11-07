@@ -27,7 +27,8 @@ import {
 } from "@/actions/projectStages";
 import { BlueprintSheet } from "@/components/ui/BlueprintSheet";
 import type { PdStages, PdStage } from "@/components/v3/project-detail-blueprint/project-detail-data";
-import { STAGE_TEMPLATES, currentStage, lateStages, lateWords, percentDone, stageStatusOf, suggestTasks } from "@/lib/projectStages/shared";
+import { currentStage, lateStages, lateWords, percentDone, stageStatusOf, suggestTasks, templatesFor } from "@/lib/projectStages/shared";
+import type { ProjectKind } from "@/lib/projectKind";
 import s from "./project-hub.module.css";
 
 /** "Nov 3" from a stage's day (UTC midnight, like the project's own days). */
@@ -45,7 +46,7 @@ type Editing = { id: string | null; name: string; startsAt: string; endsAt: stri
 
 const taskLines = (text: string) => text.split("\n").map((x) => x.replace(/^\s*[-•*]\s*/, "").trim()).filter(Boolean);
 
-export function ProjectStagesCard({ projectId, stages: initial, canManage }: { projectId: string; stages: PdStages; canManage: boolean }) {
+export function ProjectStagesCard({ projectId, stages: initial, canManage, kind = "REMODEL" }: { projectId: string; stages: PdStages; canManage: boolean; kind?: ProjectKind }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   // The rows are the server's, laid over with each tick and status change until the refresh lands — then the
@@ -148,7 +149,7 @@ export function ProjectStagesCard({ projectId, stages: initial, canManage }: { p
     const cls = inSheet ? "bps-btn bps-btn--ghost" : s.btnSm;
     return (
       <div className={s.chips}>
-        {STAGE_TEMPLATES.map((t) => (
+        {templatesFor(kind).map((t) => (
           <button
             key={t.key}
             type="button"

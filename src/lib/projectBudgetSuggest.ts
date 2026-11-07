@@ -12,7 +12,8 @@ import "server-only";
 
 import { db } from "@/lib/db";
 import { projectMoney } from "@/lib/projectMoney";
-import { proposalTrade } from "@/lib/projectStages/shared";
+import { proposalTrade, templateByKey } from "@/lib/projectStages/shared";
+import { parseAnswers } from "@/lib/projectKind";
 import { parseTradeTypes } from "@/lib/tradeTypes";
 
 export type BudgetSuggestion = {
@@ -49,11 +50,20 @@ const DEFAULT_RULE: Rule = { cost: 0.65, split: { MATERIALS: 0.45, LABOR: 0.35, 
 const dollars = (n: number) => Math.round(n);
 const money = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 
+/** The lines plus a Contingency line (a kind of its own, lib/projectBudget customKinds) at the template's share of their sum. */
+function withContingency(lines: Array<{ category: string; amount: number }>, rate: number): Array<{ category: string; amount: number }> {
+  const sum = lines.reduce((n, l) => n + l.amount, 0);
+  if (sum <= 0 || rate <= 0) return lines;
+  return [...lines, { category: "Contingency", amount: dollars(sum * rate) }];
+}
+
 export async function suggestBudget(organizationId: string, projectId: string): Promise<BudgetSuggestion> {
   const p = await db.project.findFirst({
     where: { id: projectId, organizationId },
     select: {
       id: true,
+      kind: true,
+      answersJson: true,
       proposals: {
         where: { status: { not: "ARCHIVED" } },
         orderBy: { total: "desc" },
@@ -65,6 +75,8 @@ export async function suggestBudget(organizationId: string, projectId: string): 
   });
   if (!p) throw new Error("Project not found");
   const orgTrades = parseTradeTypes(p.organization.tradeTypesJson);
+  // The contingency line (the remodel presets, 2026-11-07): the template's rate, else a tenth.
+  const rate = templateByKey(parseAnswers(p.answersJson).template)?.contingency ?? 0.1;
   const sold = p.proposals.filter((x) => SOLD.has(x.status));
   const pool = sold.length ? sold : p.proposals.filter((x) => OPEN.has(x.status));
   const lead = pool[0];
@@ -119,7 +131,7 @@ export async function suggestBudget(organizationId: string, projectId: string): 
     return {
       source: "estimate",
       trade,
-      lines,
+      lines: withContingency(lines, rate),
       words: `Read from the ${names} estimate: materials and labor as costed on each line${extras.length ? `, with the ${extras.join(", ")} lines at their price` : ""} — ${money(total)}, ${Math.round((total / priced) * 100)}% of the ${money(priced)} ${sold.length ? "contract" : "price"}.`,
     };
   }
@@ -133,7 +145,7 @@ export async function suggestBudget(organizationId: string, projectId: string): 
   return {
     source: "rule",
     trade,
-    lines,
+    lines: withContingency(lines, rate),
     words: `A rule of thumb for ${trade ? `a ${trade.toLowerCase()} job` : "this kind of job"} — about ${Math.round(rule.cost * 100)}% of the ${money(priced)} ${sold.length ? "contract" : "price"} as cost, split the usual way. The estimate has no costs on its lines to read, so change any figure to what you know.`,
   };
 }

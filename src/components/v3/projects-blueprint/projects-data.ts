@@ -17,6 +17,8 @@ export type Project = {
   name: string;
   description: string | null;
   status: string;
+  /** REMODEL or NEW_BUILD (2026-11-07). */
+  kind?: string;
   startsAt: string | null;
   endsAt: string | null;
   budget: number;

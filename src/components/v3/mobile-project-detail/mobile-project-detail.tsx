@@ -54,6 +54,7 @@ import { setProposalProject } from "@/actions/projectLinks";
 import Link from "next/link";
 import type { Route } from "next";
 import { money } from "@/lib/format";
+import { KIND_TAG, kindOf } from "@/lib/projectKind";
 import { lockScroll } from "@/lib/scrollLock";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
@@ -583,6 +584,7 @@ export function MobileProjectDetail({
             <h1 className="mpd-title">{project.name}</h1>
             <div className="mpd-dateline">
               {project.number ? <span data-project-number>{`#${project.number} · `}</span> : null}
+              <span data-project-kind={kindOf(project.kind)}>{`${KIND_TAG[kindOf(project.kind)]} · `}</span>
               {hasWindow ? (
                 <>
                   Project window ·{" "}
@@ -624,7 +626,7 @@ export function MobileProjectDetail({
 
           {/* ============ STAGES (2026-11-05) ============ */}
           <div className="mpd-budget">
-            <ProjectStagesCard projectId={project.id} stages={stages} canManage={canManage} />
+            <ProjectStagesCard projectId={project.id} stages={stages} canManage={canManage} kind={kindOf(project.kind)} />
           </div>
           {timeline ? (
             <div className="mpd-budget">
