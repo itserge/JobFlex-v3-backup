@@ -88,10 +88,10 @@ export function ProjectBuyingCard({ projectId, buying, stages, canManage }: { pr
 
   // ── the list, by stage ──
   const groups = useMemo(() => {
-    const by = new Map<string, { key: string; name: string; start: string | null; lines: PdMaterial[] }>();
+    const by = new Map<string, { key: string; name: string; start: string | null; done: boolean; lines: PdMaterial[] }>();
     for (const m of buying.materials) {
       const key = m.stageId ?? "none";
-      if (!by.has(key)) by.set(key, { key, name: m.stageName ?? "No stage yet", start: m.stageStart, lines: [] });
+      if (!by.has(key)) by.set(key, { key, name: m.stageName ?? "No stage yet", start: m.stageStart, done: Boolean(m.stageDone), lines: [] });
       by.get(key)!.lines.push(m);
     }
     return [...by.values()];
@@ -273,7 +273,8 @@ export function ProjectBuyingCard({ projectId, buying, stages, canManage }: { pr
                 <div className={s.groupHead}>
                   <span>{g.name}</span>
                   {g.start ? <span>· starts {dayWords(g.start)}</span> : null}
-                  {by && buyable.length ? <span className={isoDay(by)! < isoDay(today)! ? s.tagLate : ""}>· order by {dueWords(by, today)}</span> : null}
+                  {/* A done stage has no order-by day left to miss (2026-11-06: a finished rough-in read "order by 43 days ago" in red). */}
+                  {g.done ? <span>· stage done</span> : by && buyable.length ? <span className={isoDay(by)! < isoDay(today)! ? s.tagLate : ""}>· order by {dueWords(by, today)}</span> : null}
                   {canManage && buyable.length ? (
                     <button type="button" className={s.btnSm} style={{ marginLeft: "auto" }} onClick={() => setPicked((cur) => {
                       const next = new Set(cur);
@@ -443,6 +444,10 @@ export function ProjectBuyingCard({ projectId, buying, stages, canManage }: { pr
                               onClick={() => {
                                 const v = window.prompt("What did it cost, all in?", o.paidTotal != null ? String(o.paidTotal) : o.quotedTotal != null ? String(o.quotedTotal) : "");
                                 if (v == null) return;
+                                if (!(num(v) > 0)) {
+                                  setNote("Type what it cost — nothing was logged.");
+                                  return;
+                                }
                                 void run(`cost:${o.id}`, async () => {
                                   await logProjectOrderExpense(o.id, num(v));
                                   return `${exact(num(v))} logged as a Materials expense on the project.`;

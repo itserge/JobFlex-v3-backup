@@ -304,14 +304,15 @@ export function scheduleCoverage(
     else openIdx.push(i);
   });
 
-  const pctIdx = openIdx.filter((i) => stages[i].isPercent);
-  if (pctIdx.length) {
+  // Split over every percent stage but the waived, so an open stage keeps the cents it showed (as resolveSchedule).
+  const pctIdx = stages.map((s, i) => i).filter((i) => stages[i].isPercent && normStatus(stages[i].status) !== "WAIVED");
+  if (pctIdx.some((i) => openIdx.includes(i))) {
     const alloc = allocatePercentMinor(
       pctIdx.map((i) => (Number.isFinite(stages[i].amount) ? stages[i].amount : 0)),
       pctBaseMinor,
     );
     pctIdx.forEach((i, n) => {
-      minors[i] = alloc[n];
+      if (openIdx.includes(i)) minors[i] = alloc[n];
     });
   }
   for (const i of openIdx) {
@@ -410,11 +411,15 @@ export function resolveSchedule(input: {
 
   // ── unpaid percent stages: largest-remainder over the current total ───
   const unpaid = stages.filter((s) => s.status === "UNPAID" || s.status === "PENDING");
-  const pctStages = unpaid.filter((s) => s.isPercent);
-  if (pctStages.length) {
-    const alloc = allocatePercentMinor(pctStages.map((s) => s.pct ?? 0), pctBaseMinor);
-    pctStages.forEach((s, i) => {
-      s.amountMinor = alloc[i];
+  // Split over every percent stage, the paid ones too, so each keeps the cents it showed when the schedule was made
+  // (2026-11-06: 30/40/30 of $36,242.25 read $10,872.68 / $14,496.90 / $10,872.67; once the deposit was paid the last
+  // two were re-split alone, completion became $10,872.68 and the cent came off a $1,250 change order: $1,249.99).
+  // Only the unpaid ones take their share; a paid stage stays frozen at what it collected.
+  const pctAll = stages.filter((s) => s.isPercent && s.status !== "WAIVED");
+  if (pctAll.some((s) => s.status === "UNPAID" || s.status === "PENDING")) {
+    const alloc = allocatePercentMinor(pctAll.map((s) => s.pct ?? 0), pctBaseMinor);
+    pctAll.forEach((s, i) => {
+      if (s.status === "UNPAID" || s.status === "PENDING") s.amountMinor = alloc[i];
     });
   }
   for (const s of unpaid) {

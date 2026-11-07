@@ -35,7 +35,13 @@ export function CrewField({ data, jobId, door, office, canWork }: { data: FieldD
   const photoRef = useRef<HTMLInputElement>(null);
 
   const open = data.problems.filter((p) => p.status === "OPEN");
-  const stages = data.stages.filter((s) => s.current || s.tasks.some((t) => !t.done)).slice(0, 2);
+  // The day's stage, then the one after it (2026-11-06: an earlier stage the office never closed — "Order cabinets"
+  // — showed above it as "Next"). With no stage marked current, the first two with work left.
+  const at = data.stages.findIndex((s) => s.current);
+  const stages =
+    at < 0
+      ? data.stages.filter((s) => s.tasks.some((t) => !t.done)).slice(0, 2)
+      : [data.stages[at], ...data.stages.slice(at + 1).filter((s) => s.tasks.some((t) => !t.done)).slice(0, 1)];
   const punch = data.punch ?? [];
   const files = data.files ?? [];
   const nothing = !open.length && !stages.length && !data.orders.length && !punch.length && !files.length && !canWork;

@@ -20,7 +20,7 @@ import { textOfficeNow } from "@/lib/sms/send";
 import { localDayKey } from "@/lib/jobProgressShared";
 import { geocode, weatherLine } from "@/lib/weather";
 import { markTask } from "@/lib/projectStages/server";
-import { currentStage } from "@/lib/projectStages/shared";
+import { stageForDay } from "@/lib/projectStages/shared";
 import { qtyWords } from "@/lib/projectBuying/shared";
 import { punchForJob } from "@/lib/projectFinish/server";
 import { filesForCrew } from "@/lib/projectClient/server";
@@ -155,7 +155,7 @@ export async function fieldOf(organizationId: string, jobId: string, reader: { w
   const { from, to } = weekOf(today);
   const [stages, orders, flags, mine, weekRows, day, punch, files] = await Promise.all([
     job.projectId
-      ? db.projectStage.findMany({ where: { projectId: job.projectId, status: { not: "DONE" } }, orderBy: { position: "asc" }, select: { id: true, name: true, status: true, tasks: { orderBy: { position: "asc" }, select: { id: true, title: true, doneAt: true, photoNeeded: true } } } })
+      ? db.projectStage.findMany({ where: { projectId: job.projectId, status: { not: "DONE" } }, orderBy: { position: "asc" }, select: { id: true, name: true, status: true, startsAt: true, endsAt: true, tasks: { orderBy: { position: "asc" }, select: { id: true, title: true, doneAt: true, photoNeeded: true } } } })
       : Promise.resolve([]),
     job.projectId
       ? db.projectOrder.findMany({ where: { projectId: job.projectId, status: { in: ["ORDERED", "SHIPPED"] } }, orderBy: { number: "asc" }, select: { id: true, number: true, how: true, status: true, expectedAt: true, buyerName: true, supplier: { select: { name: true } }, lines: { select: { id: true, quantity: true, material: { select: { name: true, unit: true } } } } } })
@@ -170,7 +170,7 @@ export async function fieldOf(organizationId: string, jobId: string, reader: { w
   const users = flags.length ? await db.user.findMany({ where: { id: { in: flags.map((f) => f.raisedById).filter(Boolean) as string[] } }, select: { id: true, name: true } }) : [];
   const nameOf = new Map(users.map((u) => [u.id, u.name]));
   const stageRows = stages.map((s) => ({ id: s.id, name: s.name, status: s.status, current: false, tasks: s.tasks.map((t) => ({ id: t.id, title: t.title, done: Boolean(t.doneAt), photoNeeded: t.photoNeeded })) }));
-  const now = currentStage(stageRows.map((s) => ({ ...s, weight: 1, tasks: s.tasks })));
+  const now = stageForDay(stages.map((s, i) => ({ ...stageRows[i], startsAt: s.startsAt, endsAt: s.endsAt, weight: 1 })), today);
   for (const s of stageRows) s.current = now?.id === s.id;
   return {
     project: job.project,
@@ -226,14 +226,14 @@ export async function crewHome(organizationId: string, workerId: string, todayJo
   ]);
   const projectIds = [...new Set(jobs.map((j) => j.projectId).filter(Boolean) as string[])];
   const stages = projectIds.length
-    ? await db.projectStage.findMany({ where: { projectId: { in: projectIds }, status: { not: "DONE" } }, orderBy: { position: "asc" }, select: { id: true, projectId: true, name: true, status: true, tasks: { orderBy: { position: "asc" }, select: { id: true, title: true, doneAt: true, photoNeeded: true } } } })
+    ? await db.projectStage.findMany({ where: { projectId: { in: projectIds }, status: { not: "DONE" } }, orderBy: { position: "asc" }, select: { id: true, projectId: true, name: true, status: true, startsAt: true, endsAt: true, tasks: { orderBy: { position: "asc" }, select: { id: true, title: true, doneAt: true, photoNeeded: true } } } })
     : [];
   const tasks: CrewHome["tasks"] = [];
   for (const j of todayJobIds) {
     const projectId = jobs.find((x) => x.id === j.jobId)?.projectId;
     if (!projectId) continue;
-    const mine = stages.filter((s) => s.projectId === projectId).map((s) => ({ id: s.id, name: s.name, status: s.status, weight: 1, tasks: s.tasks.map((t) => ({ id: t.id, title: t.title, done: Boolean(t.doneAt), photoNeeded: t.photoNeeded })) }));
-    const now = currentStage(mine);
+    const mine = stages.filter((s) => s.projectId === projectId).map((s) => ({ id: s.id, name: s.name, status: s.status, startsAt: s.startsAt, endsAt: s.endsAt, weight: 1, tasks: s.tasks.map((t) => ({ id: t.id, title: t.title, done: Boolean(t.doneAt), photoNeeded: t.photoNeeded })) }));
+    const now = stageForDay(mine, today);
     if (!now) continue;
     tasks.push({ jobId: j.jobId, assignmentId: j.assignmentId, jobTitle: j.title, stage: now.name, tasks: now.tasks.filter((t) => !t.done).slice(0, 8) });
   }

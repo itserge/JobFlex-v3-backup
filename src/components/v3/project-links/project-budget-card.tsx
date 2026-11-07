@@ -96,6 +96,20 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
     startTransition(() => router.refresh());
   };
 
+  // One figure → categories: the figure goes under Other until it is moved (2026-11-06: the split opened at six $0
+  // boxes, "Budgeted cost $0", and saving it would have dropped the budget). Categories → one figure: their sum,
+  // the shop's own kinds included.
+  function splitOrJoin() {
+    if (!split && BUDGET_CATEGORIES.every((c) => !parseMoney(draft[c])) && parseMoney(oneFigure) > 0) {
+      setDraft((d) => ({ ...d, OTHER: oneFigure }));
+    }
+    if (split) {
+      const total = BUDGET_CATEGORIES.reduce((n, c) => n + parseMoney(draft[c]), 0) + kinds.reduce((n, k) => n + parseMoney(k.amount), 0);
+      if (total > 0) setOneFigure(String(Math.round(total * 100) / 100));
+    }
+    setSplit((v) => !v);
+  }
+
   async function saveBudget() {
     const base = draftTotal - extrasTotal;
     if (base <= 0 && sum.budget - extrasTotal > 0 && !window.confirm("Remove this project's cost budget? Nothing will be tracked against it.")) return;
@@ -282,7 +296,7 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
                   <button type="button" className={s.linkBtn} onClick={() => setKinds((cur) => [...cur, { name: "", amount: "" }])} data-budget-add-kind>
                     + Another kind of cost
                   </button>
-                  <button type="button" className={s.linkBtn} onClick={() => setSplit(false)} data-budget-mode>
+                  <button type="button" className={s.linkBtn} onClick={splitOrJoin} data-budget-mode>
                     Use one figure instead
                   </button>
                   <button type="button" className={s.btn} disabled={busy} onClick={() => void fillIn()} data-budget-fill>
@@ -302,7 +316,7 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
                   </label>
                 </div>
                 <div className={s.kindActs}>
-                  <button type="button" className={s.linkBtn} onClick={() => setSplit(true)} data-budget-mode>
+                  <button type="button" className={s.linkBtn} onClick={splitOrJoin} data-budget-mode>
                     Split it by kind — materials, labor, subs…
                   </button>
                   <button type="button" className={s.btn} disabled={busy} onClick={() => void fillIn()} data-budget-fill>

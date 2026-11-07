@@ -51,8 +51,8 @@ export async function loadProjectBook(organizationId: string): Promise<Project[]
       // The stages (2026-11-05): % done, the stage it is on, and what is late.
       stages: { orderBy: { position: "asc" }, select: { name: true, status: true, weight: true, endsAt: true, tasks: { select: { doneAt: true } } } },
       // Buying (2026-11-05): materials not ordered by their stage's order-by day, deliveries past their day.
-      materials: { select: { quantity: true, orderedQty: true, receivedQty: true, stage: { select: { name: true, startsAt: true } } } },
-      orders: { where: { status: { in: ["ORDERED", "SHIPPED"] } }, select: { number: true, how: true, status: true, expectedAt: true, buyerName: true, supplier: { select: { name: true } } } },
+      materials: { select: { quantity: true, orderedQty: true, receivedQty: true, stage: { select: { name: true, startsAt: true, status: true } } } },
+      orders: { where: { status: { in: ["ORDERED", "SHIPPED"] } }, select: { number: true, how: true, status: true, expectedAt: true, buyerName: true, supplier: { select: { name: true } }, stage: { select: { status: true } } } },
       // Problems flagged from site (2026-11-05): the project reads red until the office resolves them.
       flags: { where: { status: "OPEN" }, select: { note: true, blocking: true, status: true, job: { select: { title: true } } } },
       // The timeline and the finish line (2026-11-06): an inspection coming up, failed or passed by; punch items
@@ -123,8 +123,8 @@ export async function loadProjectBook(organizationId: string): Promise<Project[]
           ? []
           : buyingFlags(
               {
-                materials: p.materials.map((x) => ({ quantity: x.quantity, orderedQty: x.orderedQty, receivedQty: x.receivedQty, stageName: x.stage?.name ?? null, stageStart: x.stage?.startsAt ?? null })),
-                orders: p.orders.map((o) => ({ status: o.status, expectedAt: o.expectedAt, label: `Order ${o.number} (${o.how === "SUPPLIER" ? (o.supplier?.name ?? "supplier") : o.how === "BUYER" ? (o.buyerName ?? "buyer") : "stock"})` })),
+                materials: p.materials.map((x) => ({ quantity: x.quantity, orderedQty: x.orderedQty, receivedQty: x.receivedQty, stageName: x.stage?.name ?? null, stageStart: x.stage?.startsAt ?? null, stageDone: x.stage?.status === "DONE" })),
+                orders: p.orders.map((o) => ({ status: o.status, expectedAt: o.expectedAt, stageDone: o.stage?.status === "DONE", label: `Order ${o.number} (${o.how === "SUPPLIER" ? (o.supplier?.name ?? "supplier") : o.how === "BUYER" ? (o.buyerName ?? "buyer") : "stock"})` })),
               },
               today,
             )),

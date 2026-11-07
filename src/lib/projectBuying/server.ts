@@ -23,7 +23,8 @@ import { sendToMembersByPref } from "@/lib/notificationPrefs";
 import type { EmailDoc } from "@/lib/email/doc";
 import { textOffice, textWorker } from "@/lib/sms/send";
 import { parseCoLines } from "@/lib/changeOrders/parse";
-import { carrierOf, DEFAULT_LEAD_DAYS, isMaterialLine, orderByDate, orderLabel, qtyWords, stageForLine, toBuyQty, unitOf, type OrderHow } from "./shared";
+import { carrierOf, DEFAULT_LEAD_DAYS, isMaterialLine, orderByDate, orderCoversTask, orderLabel, qtyWords, stageForLine, toBuyQty, unitOf, type OrderHow } from "./shared";
+import { markTask } from "@/lib/projectStages/server";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const SOLD = ["ACCEPTED", "COMPLETED", "PAID"];
@@ -255,6 +256,11 @@ export async function placeOrder(organizationId: string, actorId: string | null,
     clientId: project.clientId,
     meta: { projectId: project.id, orderId: order.id, how: input.how },
   });
+  // The stages' "Order …" tasks this order covers are done now ("Order cabinets" when the cabinets went out).
+  const open = await db.projectTask.findMany({ where: { projectId: project.id, doneAt: null, title: { startsWith: "Order" } }, select: { id: true, title: true } }).catch(() => []);
+  for (const t of open) {
+    if (orderCoversTask(t.title, materials.map((m) => m.name))) await markTask(organizationId, t.id, true, actorId).catch(() => null);
+  }
   return { id: order.id, number: order.number, link, email, text, lines: order.lines.length };
 }
 
@@ -526,6 +532,8 @@ export type BuyingMaterial = {
   stageName: string | null;
   /** The stage's first day, ISO, for the order-by words. */
   stageStart: string | null;
+  /** The stage is done: its lines no longer have an order-by day to miss. */
+  stageDone: boolean;
 };
 
 export type BuyingOrder = {
@@ -572,7 +580,7 @@ const iso = (d: Date | null) => (d ? d.toISOString() : null);
 
 export async function buyingOf(organizationId: string, projectId: string): Promise<BuyingRead> {
   const [materials, orders, suppliers, crew, project, base] = await Promise.all([
-    db.projectMaterial.findMany({ where: { projectId }, orderBy: [{ stage: { position: "asc" } }, { createdAt: "asc" }], include: { stage: { select: { name: true, startsAt: true } } } }),
+    db.projectMaterial.findMany({ where: { projectId }, orderBy: [{ stage: { position: "asc" } }, { createdAt: "asc" }], include: { stage: { select: { name: true, startsAt: true, status: true } } } }),
     db.projectOrder.findMany({ where: { projectId }, orderBy: { number: "desc" }, include: { supplier: { select: { id: true, name: true, email: true } }, stage: { select: { name: true } }, lines: { orderBy: { createdAt: "asc" }, include: { material: { select: { name: true, unit: true } } } } } }),
     db.supplier.findMany({ where: { organizationId }, orderBy: { name: "asc" }, select: { id: true, name: true, email: true, leadDays: true } }),
     db.workerProfile.findMany({ where: { organizationId, inviteStatus: { not: "DECLINED" } }, orderBy: { displayName: "asc" }, select: { id: true, displayName: true, phone: true, smsOptIn: true, user: { select: { email: true } } } }),
@@ -596,6 +604,7 @@ export async function buyingOf(organizationId: string, projectId: string): Promi
       stageId: m.stageId,
       stageName: m.stage?.name ?? null,
       stageStart: iso(m.stage?.startsAt ?? null),
+      stageDone: m.stage?.status === "DONE",
     })),
     orders: orders.map((o) => ({
       id: o.id,

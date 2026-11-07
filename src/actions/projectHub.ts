@@ -139,6 +139,15 @@ const scheduleInput = z.object({
 /** The note on a calendar visit this sheet laid out — how the next save knows which visits are its own to replace. */
 const PLAN_NOTE = "Project schedule";
 
+/** A project's empty start and end, as days (UTC midnight of the company's own day — how Edit project stores them). */
+async function fillProjectWindow(organizationId: string, projectId: string, first: Date, last: Date): Promise<void> {
+  const p = await db.project.findFirst({ where: { id: projectId, organizationId }, select: { startsAt: true, endsAt: true, organization: { select: { timezone: true } } } });
+  if (!p || (p.startsAt && p.endsAt)) return;
+  const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: p.organization.timezone || "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" });
+  const dayOf = (d: Date) => new Date(`${fmt.format(d)}T00:00:00.000Z`);
+  await db.project.update({ where: { id: projectId }, data: { ...(p.startsAt ? {} : { startsAt: dayOf(first) }), ...(p.endsAt ? {} : { endsAt: dayOf(last) }) } });
+}
+
 /** A project job's work days and crew in one step. */
 export async function scheduleProjectJob(raw: unknown): Promise<{ added: number; removed: number; kept: string[]; days: number; others: number }> {
   const { organizationId, user } = await requireManager();
@@ -197,6 +206,9 @@ export async function scheduleProjectJob(raw: unknown): Promise<{ added: number;
     });
     afterResponse(() => textJobScheduled(job.id, startsAt, endsAt, user.id));
   }
+  // The project's window, when it has none yet, from the first and last work day (2026-11-06: an automatic project
+  // read "—" under Window on the Projects list until someone typed its dates into Edit project).
+  if (job.projectId) await fillProjectWindow(organizationId, job.projectId, startsAt, endsAt).catch(() => null);
 
   const want = new Set(data.workerIds);
   const have = new Set(job.assignments.map((a) => a.workerId));

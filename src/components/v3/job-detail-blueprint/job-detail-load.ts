@@ -179,6 +179,12 @@ function eventMeta(startsAt: Date, endsAt: Date, notes: string | null): string |
  * Also hands back who touched each photo / expense, when a row named one
  * (`meta.photoId` / `meta.expenseId`), so the lists can stamp "by <mark>".
  */
+/** Activity the crew's job page never shows: money, and the office's mail to the client. */
+const CREW_HIDDEN_KINDS = [
+  "EXPENSE", "PAY", "PAID", "EMAIL", "PAYMENT_RECEIVED", "PAYMENT_REFUNDED", "PAYMENT_MARKED", "PAYMENT_UNMARKED",
+  "PAYMENT_ALERT", "PAYMENT_CONNECTED", "PAYMENT_DISCONNECTED", "FINANCING_LOAN", "FINANCING_LEAD", "FINANCING_ACCOUNT",
+];
+
 async function trailFor(
   organizationId: string,
   jobId: string,
@@ -193,7 +199,10 @@ async function trailFor(
         where: {
           organizationId,
           OR: [{ meta: { contains: `"jobId":"${jobId}"` } }, ...(proposalId ? [{ proposalId }] : [])],
-          ...(opts.noMoney ? { kind: { notIn: ["EXPENSE", "PAY"] } } : {}),
+          // The crew's copy carries no money (2026-11-06: the crew's job page listed "$10,872.68 received" and the
+          // invoice mail — only EXPENSE and PAY were held back): no payment, invoice-mail or financing row, and no
+          // row whose sentence names a dollar figure.
+          ...(opts.noMoney ? { kind: { notIn: CREW_HIDDEN_KINDS }, NOT: { summary: { contains: "$" } } } : {}),
         },
         orderBy: { createdAt: "desc" },
         take: 40,

@@ -16,6 +16,7 @@ import { Prisma } from "@prisma/client";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { getOpenAI, isOpenAIEnabled, resolveOpenAIModel, samplingOptions } from "@/lib/sdk/openai";
 import { parseTradeTypes } from "@/lib/tradeTypes";
+import { BUDGET_CATEGORIES } from "@/lib/projectBudget";
 import { makesProject, parseProjectSettings, percentDone, proposalTrade, templateFor, type StageTemplate, type TemplateStage } from "./shared";
 
 const FIRST_NUMBER = 1001;
@@ -235,6 +236,17 @@ async function makeProject(p: SoldProposal, ctx: { actorId: string | null; orgTr
       select: { id: true, number: true },
     }),
   );
+  // The budget in the two halves the proposal was priced in (2026-11-06): the Budget card opens on Materials and
+  // Labor, and splitting it further starts from them instead of six empty boxes.
+  if (budget > 0) {
+    const halves = [
+      { category: "MATERIALS" as const, amount: p.lineItems.reduce((n, l) => n + Math.max(0, l.materialCost), 0) },
+      { category: "LABOR" as const, amount: p.lineItems.reduce((n, l) => n + Math.max(0, l.laborCost), 0) },
+    ].filter((h) => h.amount > 0);
+    if (halves.length) {
+      await db.projectBudgetLine.createMany({ data: halves.map((h) => ({ projectId: project.id, category: h.category, amount: Math.round(h.amount * 100) / 100, position: BUDGET_CATEGORIES.indexOf(h.category) })) });
+    }
+  }
   // The proposal and its job (when the accept already made one) are filed under it.
   await db.proposal.update({ where: { id: p.id }, data: { projectId: project.id } });
   await db.job.updateMany({ where: { proposalId: p.id, organizationId: p.organizationId, projectId: null }, data: { projectId: project.id } });
@@ -305,6 +317,26 @@ export async function markTask(organizationId: string, taskId: string, done: boo
   }
   await db.project.updateMany({ where: { id: t.projectId, stagesDraftedAt: { not: null } }, data: { stagesDraftedAt: null } });
   return { projectId: t.projectId, projectName: t.project.name, title: t.title, stageDone };
+}
+
+/**
+ * "Collect the final payment" ticks itself when the money is in (2026-11-06): once a proposal is paid in full and no
+ * other sold proposal on its project still owes, the project's open final-payment tasks are done. Called after every
+ * settled payment (lib/payments/settle); never throws into it.
+ */
+export async function tickFinalPayment(proposalId: string): Promise<number> {
+  try {
+    const p = await db.proposal.findUnique({ where: { id: proposalId }, select: { projectId: true, organizationId: true } });
+    if (!p?.projectId) return 0;
+    const owing = await db.proposal.count({ where: { projectId: p.projectId, status: { in: ["ACCEPTED", "COMPLETED"] } } });
+    if (owing > 0) return 0;
+    const tasks = await db.projectTask.findMany({ where: { projectId: p.projectId, doneAt: null, title: { startsWith: "Collect the final payment" } }, select: { id: true } });
+    for (const t of tasks) await markTask(p.organizationId, t.id, true, null);
+    return tasks.length;
+  } catch (err) {
+    console.warn(`[projectStages] final payment tick for ${proposalId} failed: ${err instanceof Error ? err.message : String(err)}`);
+    return 0;
+  }
 }
 
 // ── the read ─────────────────────────────────────────────────────────────────

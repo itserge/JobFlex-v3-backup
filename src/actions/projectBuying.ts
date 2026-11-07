@@ -175,7 +175,8 @@ export async function cancelProjectOrder(orderId: string): Promise<void> {
 export async function logProjectOrderExpense(orderId: string, amount: number): Promise<{ expenseId: string }> {
   const { organizationId, user } = await requireEstimatorOrManager();
   const projectId = await orderProject(organizationId, orderId);
-  const amt = z.number().min(0).max(100_000_000).parse(amount);
+  // A blank or zero answer is no cost, not a $0 expense on the project (2026-11-06).
+  const amt = z.number().gt(0, "Type what it cost").max(100_000_000).parse(amount);
   const r = await logOrderExpense(organizationId, orderId, amt, user.id);
   touched(projectId);
   return r;

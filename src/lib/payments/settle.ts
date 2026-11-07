@@ -432,6 +432,8 @@ export async function settleInstallmentPayment(input: SettleInput): Promise<Sett
       }).catch(() => {});
     }
     if (result.proposalPaid) {
+      // Its project's "Collect the final payment" task, when nothing on the project still owes.
+      await import("@/lib/projectStages/server").then((m) => m.tickFinalPayment(result._proposalId)).catch(() => undefined);
       try {
         const { scheduleFollowUpsFor } = await import("@/lib/followUps/engine");
         await scheduleFollowUpsFor(result._proposalId, ProposalStatus.PAID);

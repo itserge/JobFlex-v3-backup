@@ -89,6 +89,26 @@ check("legacy approved change order is not double-counted", legacy.totalMinor ==
   check("converting against the contract would over-schedule", wrong.state === "over", wrong);
 }
 
+// 2026-11-06: a 30/40/30 schedule on $36,242.25, the deposit paid at its shown $10,872.68, then a $1,250 change
+// order. Completion keeps its shown $10,872.67 and the change order is $1,250.00 — not $1,249.99.
+{
+  const r = resolveSchedule({
+    total: 37492.25,
+    pctBase: 36242.25,
+    installments: [
+      { id: "d", label: "Deposit", amount: 30, isPercent: true, position: 0, status: "PAID", paidAmount: 10872.68 },
+      { id: "m", label: "Cabinets set", amount: 40, isPercent: true, position: 1, status: "UNPAID" },
+      { id: "c", label: "On completion", amount: 30, isPercent: true, position: 2, status: "UNPAID" },
+      { id: "co", label: "Change order #1", amount: 1250, isPercent: false, position: 3, status: "UNPAID" },
+    ],
+  });
+  const by = Object.fromEntries(r.stages.map((s) => [s.id, s.amountMinor]));
+  check("a paid deposit leaves the middle stage at $14,496.90", by.m === 1449690, by);
+  check("…completion at its shown $10,872.67", by.c === 1087267, by);
+  check("…the change order at $1,250.00", by.co === 125000, by);
+  check("…and the schedule covers the contract exactly", r.balanceMinor === 0 && r.paidMinor + r.scheduledUnpaidMinor === r.totalMinor, r);
+}
+
 if (failed) {
   console.log(`\n${failed} check(s) failed`);
   process.exit(1);
