@@ -30,7 +30,14 @@ import {
   deleteAdminUser,
   previewAdminUserDeletion,
   syncSubscriptionsFromStripe,
+  searchAdminUsersByPhone,
 } from "@/actions/adminUsers";
+import {
+  formatPhoneMatch,
+  phoneQueryDigits,
+  PHONE_WHOSE_LABEL,
+  type AdminPhoneMatch,
+} from "@/lib/adminPhoneSearch";
 import type { AdminDeletionPreview, AdminUsersData, SubscriptionSummary } from "@/actions/adminUsers";
 import type { PlanGrant, SyncingMark } from "@/lib/planGrant";
 import { STRIPE_SCAN_CEILING_LABEL } from "@/components/v3/admin-subscribers/billing-metrics";
@@ -178,6 +185,46 @@ export function AdminUsersContent({
     }
   }, [router, syncing]);
 
+  // PHONE SEARCH (2026-11-06): a query that reads as a phone number is also
+  // asked of the server (actions/adminUsers searchAdminUsersByPhone — phones
+  // are not on the rows), and the rows it names join the text matches. The
+  // answer is kept with the digits it was for; one for an older query is dropped.
+  const phoneDigits = useMemo(() => phoneQueryDigits(query), [query]);
+  const [phoneHits, setPhoneHits] = useState<{ digits: string; matches: AdminPhoneMatch[] } | null>(null);
+  const phoneAsked = useRef<string | null>(null);
+  useEffect(() => {
+    phoneAsked.current = phoneDigits;
+    if (!phoneDigits) return;
+    const t = window.setTimeout(() => {
+      searchAdminUsersByPhone(phoneDigits)
+        .then((r) => {
+          if (r.digits && r.digits === phoneAsked.current) setPhoneHits({ digits: r.digits, matches: r.matches });
+        })
+        .catch(() => {
+          if (phoneAsked.current === phoneDigits) setPhoneHits({ digits: phoneDigits, matches: [] });
+        });
+    }, 200);
+    return () => window.clearTimeout(t);
+  }, [phoneDigits]);
+  const phoneMatches = phoneDigits && phoneHits?.digits === phoneDigits ? phoneHits.matches : null;
+  const phonePending = Boolean(phoneDigits) && !phoneMatches;
+
+  // Why a row is on a phone search: the account's own number first, then its
+  // company's (the owner's, a member's, the company line, the texting number).
+  const phoneMatchFor = useCallback(
+    (u: AdminUserDTO): AdminPhoneMatch | null => {
+      if (!phoneMatches) return null;
+      return (
+        phoneMatches.find((m) => m.userId === u.id && (m.orgId === u.orgId || m.orgId === null)) ??
+        phoneMatches.find((m) => m.userId === u.id) ??
+        phoneMatches.find((m) => m.orgId !== null && m.orgId === u.orgId && m.whose === "owner") ??
+        phoneMatches.find((m) => m.orgId !== null && m.orgId === u.orgId) ??
+        null
+      );
+    },
+    [phoneMatches],
+  );
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const pool = internalOnly ? users.filter((u) => u.orgInternal) : users;
@@ -188,11 +235,12 @@ export function AdminUsersContent({
             (u.name ?? "").toLowerCase().includes(q) ||
             u.email.toLowerCase().includes(q) ||
             (u.orgName ?? "").toLowerCase().includes(q) ||
-            u.plan.toLowerCase().includes(q),
+            u.plan.toLowerCase().includes(q) ||
+            phoneMatchFor(u) !== null,
         );
     // The signed-in admin first, so "where am I?" is always answerable.
     return [...matched].sort((a, b) => (b.id === meId ? 1 : 0) - (a.id === meId ? 1 : 0));
-  }, [users, query, meId, internalOnly]);
+  }, [users, query, meId, internalOnly, phoneMatchFor]);
 
   const openRow = useCallback(
     (u: AdminUserDTO) => {
@@ -247,7 +295,7 @@ export function AdminUsersContent({
             <Search className={cx("ic")} aria-hidden="true" />
             <input
               type="search"
-              placeholder="Name, email, org or plan…"
+              placeholder="Name, email, company or phone"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               aria-label="Search users"
@@ -331,7 +379,7 @@ export function AdminUsersContent({
       <section className={cx("card", "tbl-card")}>
         {filtered.length === 0 ? (
           <div className={cx("tbl-empty")}>
-            {users.length === 0 ? "No accounts." : "No matches."}
+            {users.length === 0 ? "No accounts." : phonePending ? "Searching phones…" : "No matches."}
           </div>
         ) : (
           <div className={cx("tbl-wrap")}>
@@ -375,6 +423,17 @@ export function AdminUsersContent({
                       <div className={cx("t-sub")} title={u.email}>
                         {u.email}
                       </div>
+                      {(() => {
+                        const m = phoneMatchFor(u);
+                        if (!m) return null;
+                        const other = m.who && m.userId !== u.id ? ` · ${m.who}` : "";
+                        return (
+                          <div className={cx("au-phone-hit")}>
+                            matched phone <b>{formatPhoneMatch(m.phone)}</b> · {PHONE_WHOSE_LABEL[m.whose]}
+                            {other}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td data-l="Org">
                       {u.orgName ? (
