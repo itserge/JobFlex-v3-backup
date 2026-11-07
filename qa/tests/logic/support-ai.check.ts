@@ -115,10 +115,10 @@ check("the ticket as the model reads it: ref, words, facts, the thread, errors, 
 check("the system message is the rules then the handbook", supportSystemPrompt().startsWith(SUPPORT_AI_RULES) && supportSystemPrompt().includes("HANDBOOK"));
 // SmartHelp moved the NEVER topics into PERSON_ONLY_TOPICS and interpolated them back (2026-10-29): the rules must read
 // byte for byte as at origin/main 646ab9eb — length + sha256 taken before that edit. A deliberate change to the rules
-// updates this pin.
+// updates this pin. Updated 2026-11-03: the cancellation steps go word for word from the handbook's block (6809 → 7016).
 check(
-  "the rules read exactly as before PERSON_ONLY_TOPICS was moved out",
-  SUPPORT_AI_RULES.length === 6809 && createHash("sha256").update(SUPPORT_AI_RULES, "utf8").digest("hex") === "0014eadd6ebcbfc8bcd117c130a30e3c455e8843b87f0fd89743661ff61e135a",
+  "the rules read exactly as pinned (PERSON_ONLY_TOPICS moved out; cancellation steps word for word)",
+  SUPPORT_AI_RULES.length === 7016 && createHash("sha256").update(SUPPORT_AI_RULES, "utf8").digest("hex") === "51d15b4affefd618d25efdae71ba54a69897ec843d45d696834b3af8793f68be",
 );
 
 // ── The answer in the Help window ───────────────────────────────────────────
@@ -165,6 +165,10 @@ check(
     SUPPORT_AI_RULES.indexOf("The [offer] card, first") < SUPPORT_AI_RULES.indexOf("The [note] card") &&
     SUPPORT_AI_RULES.indexOf("The [note] card") < SUPPORT_AI_RULES.indexOf("If you'd still like to cancel") &&
     SUPPORT_AI_RULES.indexOf("If you'd still like to cancel") < SUPPORT_AI_RULES.indexOf("One short honest question"),
+);
+check(
+  "a cancellation's steps go word for word from the handbook's block, never shortened (2026-11-03)",
+  /"steps to send the customer" — all five, word for word/.test(SUPPORT_AI_RULES) && /Never shorten the steps/.test(SUPPORT_AI_RULES),
 );
 check("the bug report's bullets sit under BUGS again, not under CANCELLATIONS", SUPPORT_AI_RULES.indexOf('Fill "bug" for the team') > SUPPORT_AI_RULES.indexOf("BUGS —") && SUPPORT_AI_RULES.indexOf('Fill "bug" for the team') < SUPPORT_AI_RULES.indexOf("CANCELLATIONS —"));
 check("the rules on a bug: double-check with the team, fix as soon as we can; a doubted figure is a bug and asks for the exact case", /double-check it with our team/.test(SUPPORT_AI_RULES) && /SOMETHING LOOKS WRONG/.test(SUPPORT_AI_RULES) && /exact address, proposal or screen/.test(SUPPORT_AI_RULES) && /Never say it's fixed, never give a date/.test(SUPPORT_AI_RULES));
