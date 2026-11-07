@@ -133,7 +133,7 @@ const RULES: Rule[] = [
     run: (c) => {
       const r = c.s.roof;
       if (!r) return null;
-      const on = c.d.floor === "deck" ? "on the deck" : c.d.floor === "slab" ? "on a slab" : "on its own footings";
+      const on = c.d.floor === "deck" ? "on the deck" : c.d.floor === "slab" ? "on a new slab" : c.d.floor === "existing" ? "on the existing slab" : "on its own footings";
       return light(c, { boxIdx: [...partsOf(c.sc, ["roof-post"]), ...partsOf(c.sc, ["header"], /roof ledger/)], polyIdx: facesOf(c.sc, ["slab"]), footings: c.d.floor === "ground" }, `It stands ${on}${c.d.roof.attach === "wall" ? ", hung on the house" : ""} · ${plural(r.posts.length, "post")}`);
     },
   },
