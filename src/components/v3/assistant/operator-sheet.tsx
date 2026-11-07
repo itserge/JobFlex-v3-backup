@@ -78,6 +78,8 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
   const resumeRef = useRef<() => void>(() => {});
   const endLiveRef = useRef<() => void>(() => {});
   const speakingRef = useRef(false);
+  /** A live conversation is on (read by talkTurn, which outlives a render). */
+  const liveRef = useRef(false);
   const talkTurnRef = useRef<(said: string) => Promise<void>>(async () => {});
 
   /** What was said while a request was out goes now (after a spoken turn, a typed one, or a Do it). */
@@ -90,12 +92,15 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
     return true;
   }, []);
 
-  /** One spoken request: the answer is said (live listens again after it); one said meanwhile goes right after. */
+  /** One spoken request: the answer is said (live listens again after it); one said meanwhile goes right after — and
+   *  in a live conversation this answer, already overtaken by what they said next, then stays on the screen and is
+   *  not read out (2026-11-07, the owner: "it doesn't let me finish and starts asking its questions"). Two holds
+   *  are two questions asked on purpose: both answers are said. */
   const talkTurn = useCallback(
     async (said: string) => {
       const reply = await ask(said, { spoken: true });
       const more = queued.current !== null;
-      if (reply && !mutedRef.current) speakRef.current(forSpeech(reply));
+      if (reply && !mutedRef.current && !(more && liveRef.current)) speakRef.current(forSpeech(reply));
       else if (!more) resumeRef.current();
       sendQueued();
     },
@@ -152,8 +157,8 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
     appleServerEars: true,
   });
   const listening = speech.mic === "listening" || speech.mic === "recording";
-  /** The server's ears are writing down what was just said. */
-  const writing = speech.mic === "sending";
+  /** The server's ears are writing down what was just said (live: while the microphone stays on). */
+  const writing = speech.mic === "sending" || speech.writing;
   const canTalk = speech.mode !== "none";
   /** A live conversation is on (listening, thinking or speaking, until it is ended). */
   const live = speech.hearing === "live";
@@ -175,6 +180,7 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
     resumeRef.current = speech.resume;
     endLiveRef.current = endLive;
     speakingRef.current = speech.speaking;
+    liveRef.current = live;
     talkTurnRef.current = talkTurn;
   });
 
@@ -343,19 +349,21 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
   const dial: DialMode = listening ? (live ? "live" : "listen") : busy || building ? "work" : awaiting ? "need" : doneFlash ? "done" : live ? "live" : "idle";
   const stamp = speech.speaking
     ? { t: "Speaking", c: "wht" }
-    : listening
-      ? live
-        ? { t: "Live", c: "mnt" }
-        : { t: "Talking", c: "red" }
-      : busy || building
-        ? { t: "Working", c: "wht" }
-        : awaiting
-          ? { t: "Needs you", c: "yel" }
-          : doneFlash
-            ? { t: "Ready", c: "mnt" }
-            : live
-              ? { t: "Live", c: "mnt" }
-              : { t: "Ready", c: "dim" };
+    : live && (busy || building)
+      ? { t: "Working", c: "wht" }
+      : listening
+        ? live
+          ? { t: "Live", c: "mnt" }
+          : { t: "Talking", c: "red" }
+        : busy || building
+          ? { t: "Working", c: "wht" }
+          : awaiting
+            ? { t: "Needs you", c: "yel" }
+            : doneFlash
+              ? { t: "Ready", c: "mnt" }
+              : live
+                ? { t: "Live", c: "mnt" }
+                : { t: "Ready", c: "dim" };
   const others = messages.map((m) => m.action).filter((a): a is FeedAction => Boolean(a && (a.status === "QUEUED" || a.status === "RUNNING")));
   const ticker = others.length ? `Background · ${others.map((a) => `${TOOL_LABEL[a.tool] ?? "Change"} · ${a.status === "RUNNING" ? (a.progress ?? "working") : "queued"}`).join(" · ")}` : "Background · nothing else running";
   const coreLabel = isHolding ? "Talking" : live ? "Live" : dial === "work" ? "Working" : dial === "need" ? "Say yes" : dial === "done" ? "Ready" : "Hold to talk";
@@ -418,7 +426,7 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
             <Line key={m.id} m={m} waiting={m.action?.id === awaiting?.id} busy={busy} onAnswer={onAnswer} drawing={drawingFor(m, drawings)} />
           ))}
           {pending ? <p className="op-me">{pending}</p> : null}
-          {pending || (busy && !listening) ? (
+          {pending || (busy && (!listening || live)) ? (
             <p className="op-it op-working">
               <AudioLines /> Working on it…
             </p>
@@ -436,7 +444,7 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
                 <span className="op-clock">{clock}</span>
               </div>
               <p className="op-tx">{heard || (writing ? "Writing that down…" : speech.voiced ? "Hearing you…" : "Listening — just talk.")}</p>
-              <p className="op-under">{isHolding ? "Let go to send · slide off to cancel" : live ? "Pause to send · say 'stop' or tap the dial to end" : "It sends when you pause"}</p>
+              <p className="op-under">{isHolding ? "Let go to send · slide off to cancel" : live ? "Take your time — it answers when you're done · tap the dial to end" : "It sends when you pause"}</p>
             </div>
           ) : null}
           {error ? (

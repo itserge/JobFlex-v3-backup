@@ -44,6 +44,16 @@
 // server to be written down — the same way Firefox has always been heard. The meter's context is woken by the first
 // touch (unlockVoice); a long silence is never sent (the take starts over), and while a reply plays the microphone is
 // off, so the reply is loud and never heard back.
+//
+// LISTENING TILL THEY'RE DONE (2026-11-07, the owner's iPhone test of the above: "it keeps asking me questions and
+// doesn't let me finish — it should listen till I'm done, do what I said, and ask after"). A pause to think ended the
+// take and handed half a sentence on ("Create me a proposal from…", "to…"), and the Operator answered the half. So
+// live, on the server's ears, the microphone stays on between the pieces: each piece is written down while the next
+// is still being listened to, the pieces are joined, and the request goes only when they've stopped — nothing more
+// said while the last piece was being written down and a moment after — and, when the words stop mid-sentence
+// ("…from", "…to", "…for the"), only after a longer wait for the rest. A reply that comes back while they're still
+// talking stays on the screen and is not read out over them. The native ears wait longer too, and the same way for
+// an unfinished sentence.
 
 import * as React from "react";
 
@@ -191,8 +201,26 @@ export type HearHow = "once" | "free" | "hold" | "live";
 
 /** Live: a sentence is handed on this long after its last finished piece — or after the last change in the guess,
  *  where the recogniser finishes nothing until it is stopped (iPhone Safari). */
-const LIVE_PAUSE_MS = 700;
-const LIVE_GUESS_PAUSE_MS = 1000;
+const LIVE_PAUSE_MS = 1200;
+const LIVE_GUESS_PAUSE_MS = 1500;
+/** Live: words that stop mid-sentence wait this long for the rest before they go anyway; and on the server's ears
+ *  finished-sounding words go this long after they come back with nothing more said. */
+const UNFINISHED_WAIT_MS = 5000;
+const HANDON_GRACE_MS = 600;
+
+/** Words a sentence doesn't end on: "Create me a proposal from…", "I need to", "for the" — the rest is coming. */
+const DANGLING = new Set(
+  "to from for with and or but the a an of at in on by about into onto than as my our your his her their its me is are was were that this these those so then because if uh um umm like need want create make build price get also plus".split(" "),
+);
+/** The words stop mid-sentence: they end on "…" or a comma, or on a word like "from", "to", "the" — not a question. */
+export function soundsUnfinished(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (/(\.\.\.|…|,|-|—|–)$/.test(t)) return true;
+  if (/\?$/.test(t)) return false;
+  const last = (t.replace(/[.!]+$/, "").split(/\s+/).pop() ?? "").toLowerCase().replace(/[^a-z']/g, "");
+  return DANGLING.has(last);
+}
 /** Hold: the finger lifted — the last words arrive with the end; without an end, what was heard goes after this
  *  (at once when words were already heard, a little longer when nothing was yet). */
 const HEARD_GRACE_MS = 300;
@@ -202,7 +230,7 @@ const START_WATCH_MS = 1800;
 /** Record mode: a take ends this long after the speech in it stops (live sooner), and at this length in any case —
  *  held, only when the finger lifts (or at the long limit). Speech is this much voice in a take, not a click. */
 const QUIET_MS = 1300;
-const LIVE_QUIET_MS = 900;
+const LIVE_QUIET_MS = 1200;
 const VOICE_MS = 200;
 const TAKE_MAX_MS = 25_000;
 const HOLD_RECORD_MAX_MS = 45_000;
@@ -267,8 +295,10 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
   const mode = React.useSyncExternalStore(noop, handlers.appleServerEars ? modeServerOnApple : modeNow, () => "none" as HearMode);
   const [mic, setMic] = React.useState<MicState>("off");
   const [speaking, setSpeaking] = React.useState(false);
-  /** Record mode: the meter hears a voice in the take being recorded. */
+  /** Record mode: the meter hears a voice in the take being recorded; and words are being written down while the
+   *  microphone stays on (live). */
   const [voiced, setVoiced] = React.useState(false);
+  const [writing, setWriting] = React.useState(false);
   /** How it is listening right now (off when it isn't). */
   const [hearing, setHearing] = React.useState<HearHow | "off">("off");
   const h = React.useRef(handlers);
@@ -297,6 +327,13 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
   /** Record mode: the microphone, the take on it, the meter's nodes and its timer; and a microphone being opened. */
   const media = React.useRef<{ stream: MediaStream; take: Take | null; nodes: AudioNode[]; watch: number } | null>(null);
   const opening = React.useRef(false);
+  /** Live: words heard and written down, not handed on yet; pieces still being written down; when the last piece
+   *  came back; since when the words have stopped mid-sentence (0: they haven't); the wait before they go. */
+  const livePending = React.useRef("");
+  const inFlight = React.useRef(0);
+  const landedAt = React.useRef(0);
+  const unfinishedAt = React.useRef(0);
+  const decideTimer = React.useRef(0);
   /** The natural voice playing, the answer it belongs to (a newer one drops a late one), and whether it works here. */
   const audio = React.useRef<HTMLAudioElement | null>(null);
   const sayRun = React.useRef(0);
@@ -307,6 +344,9 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
     want.current = null;
     flushOnEnd.current = null;
     thinking.current = false;
+    livePending.current = "";
+    unfinishedAt.current = 0;
+    window.clearTimeout(decideTimer.current);
     window.clearTimeout(graceTimer.current);
     window.clearTimeout(restartTimer.current);
     window.clearTimeout(startWatch.current);
@@ -328,8 +368,21 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
 
   /** Live: the sentence goes — and this session with it (its guess would hand the same words on again); the ears
    *  rest until the reply has been said, then a fresh session listens (say → resume). */
+  const handOnLiveRef = React.useRef<() => void>(() => {});
   const handOnLive = React.useCallback(() => {
     if (want.current !== "live") return;
+    // Words that stop mid-sentence wait for the rest (new words start the pause over), then go anyway.
+    const said = [...finals.current, interim.current].join(" ").trim();
+    if (soundsUnfinished(said)) {
+      if (!unfinishedAt.current) unfinishedAt.current = Date.now();
+      const left = UNFINISHED_WAIT_MS - (Date.now() - unfinishedAt.current);
+      if (left > 0) {
+        window.clearTimeout(flushTimer.current);
+        flushTimer.current = window.setTimeout(() => handOnLiveRef.current(), left);
+        return;
+      }
+    }
+    unfinishedAt.current = 0;
     const r = rec.current;
     thinking.current = true;
     window.clearTimeout(restartTimer.current);
@@ -345,6 +398,9 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
     setMic("off");
     flush(true);
   }, [flush]);
+  React.useEffect(() => {
+    handOnLiveRef.current = handOnLive;
+  }, [handOnLive]);
 
   /** The listener as of the last render, for the restart timer (a session that ended starts the next one). */
   const startNativeRef = React.useRef<() => void>(() => {});
@@ -392,6 +448,7 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
         // Live: a sentence is handed on after a short pause with nothing new — its pieces joined; a guess that
         // never becomes final (iPhone Safari) after a little longer.
         if (w === "live" && (finals.current.length || interim.current) && !flushOnEnd.current) {
+          unfinishedAt.current = 0;
           window.clearTimeout(flushTimer.current);
           flushTimer.current = window.setTimeout(handOnLive, interim.current ? LIVE_GUESS_PAUSE_MS : LIVE_PAUSE_MS);
         }
@@ -494,25 +551,81 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
   /** Record mode: what was recorded goes to the server to be written down, and on from there — handed on, or, when
    *  nothing worth sending was in it, live and free listen again. */
   const startRecordingRef = React.useRef<(() => Promise<void>) | null>(null);
+  /** The server writes a take down: its words, or nothing (and whether that was a failure, already said). */
+  const writeDown = React.useCallback(async (blob: Blob): Promise<{ text: string; failed: boolean }> => {
+    try {
+      const form = new FormData();
+      form.append("audio", blob, `voice.${/mp4|m4a|aac/.test(blob.type) ? "m4a" : /ogg/.test(blob.type) ? "ogg" : "webm"}`);
+      form.append("language", (h.current.lang ?? "en-US").slice(0, 2).toLowerCase());
+      const res = await fetch(h.current.transcribeUrl ?? "/api/deck/voice/transcribe", { method: "POST", body: form });
+      const body = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
+      if (!res.ok) {
+        h.current.onError(body.error ?? "Couldn't write that down.");
+        return { text: "", failed: true };
+      }
+      return { text: (body.text ?? "").trim(), failed: false };
+    } catch {
+      h.current.onError("Couldn't reach the server to write that down.");
+      return { text: "", failed: true };
+    }
+  }, []);
+
+  /** Live on the server's ears: the request goes only when they're done — no piece still being written down, no
+   *  voice in the take being recorded now, and a moment of quiet since the last piece came back (a longer one when
+   *  the words stop mid-sentence). Asked again as each piece comes back and every moment in between. */
+  const decideLiveRef = React.useRef<() => void>(() => {});
+  const decideLive = React.useCallback(() => {
+    window.clearTimeout(decideTimer.current);
+    if (want.current !== "live") return;
+    const said = livePending.current.trim();
+    if (!said) return;
+    // More words on the way, or they're talking right now: that piece, when it comes back, asks again.
+    if (inFlight.current > 0 || media.current?.take?.spoke) {
+      unfinishedAt.current = 0;
+      return;
+    }
+    const unfinished = soundsUnfinished(said);
+    if (unfinished && !unfinishedAt.current) unfinishedAt.current = Date.now();
+    const waited = Date.now() - (unfinished ? unfinishedAt.current : landedAt.current);
+    const need = unfinished ? UNFINISHED_WAIT_MS : HANDON_GRACE_MS;
+    if (waited < need) {
+      decideTimer.current = window.setTimeout(() => decideLiveRef.current(), Math.min(need - waited, 200));
+      return;
+    }
+    livePending.current = "";
+    unfinishedAt.current = 0;
+    thinking.current = true;
+    h.current.onInterim("");
+    h.current.onFinal([said]);
+  }, []);
+  React.useEffect(() => {
+    decideLiveRef.current = decideLive;
+  }, [decideLive]);
+
+  /** Live: a piece of what they said, written down while the microphone stays on; joined to the pieces before it. */
+  const hearLive = React.useCallback(
+    async (blob: Blob) => {
+      inFlight.current++;
+      setWriting(true);
+      const { text } = await writeDown(blob);
+      inFlight.current = Math.max(0, inFlight.current - 1);
+      if (!inFlight.current) setWriting(false);
+      if (want.current !== "live") return;
+      if (text) {
+        livePending.current = `${livePending.current} ${text}`.replace(/\s+/g, " ").trim();
+        landedAt.current = Date.now();
+        // What's been heard so far shows while they finish ("Create me a proposal from…").
+        h.current.onInterim(livePending.current);
+      }
+      decideLive();
+    },
+    [writeDown, decideLive],
+  );
+
   const transcribe = React.useCallback(
     async (blob: Blob, how: HearHow) => {
       setMic("sending");
-      let text = "";
-      let failed = false;
-      try {
-        const form = new FormData();
-        form.append("audio", blob, `voice.${/mp4|m4a|aac/.test(blob.type) ? "m4a" : /ogg/.test(blob.type) ? "ogg" : "webm"}`);
-        form.append("language", (h.current.lang ?? "en-US").slice(0, 2).toLowerCase());
-        const res = await fetch(h.current.transcribeUrl ?? "/api/deck/voice/transcribe", { method: "POST", body: form });
-        const body = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
-        if (!res.ok) {
-          failed = true;
-          h.current.onError(body.error ?? "Couldn't write that down.");
-        } else text = (body.text ?? "").trim();
-      } catch {
-        failed = true;
-        h.current.onError("Couldn't reach the server to write that down.");
-      }
+      const { text, failed } = await writeDown(blob);
       setMic((m) => (m === "sending" ? "off" : m));
       const w = want.current;
       if (text) {
@@ -525,7 +638,7 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
       if (how === "hold" && !failed) h.current.onNothing?.();
       if ((w === "live" || w === "free") && !talking.current && !thinking.current && !media.current) void startRecordingRef.current?.();
     },
-    [],
+    [writeDown],
   );
 
   /** Record mode: the microphone off — the take on it sent to be written down, or thrown away. */
@@ -638,11 +751,27 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
           if (how === "hold") h.current.onNothing?.();
           return;
         }
-        void transcribe(new Blob(t.chunks, { type: recorder.mimeType || type || "audio/mp4" }), how);
+        const blob = new Blob(t.chunks, { type: recorder.mimeType || type || "audio/mp4" });
+        if (how === "live") void hearLive(blob);
+        else void transcribe(blob, how);
       };
       m.take = t;
       setVoiced(false);
       recorder.start();
+    };
+
+    /** Live: this piece is over (a pause after speech) — it is written down while the next take already listens. */
+    const endTake = () => {
+      const t = m.take;
+      if (!t) return;
+      m.take = null;
+      t.send = true;
+      try {
+        t.recorder.stop();
+      } catch {
+        /* stopped */
+      }
+      begin();
     };
 
     begin();
@@ -678,10 +807,13 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
         if (!t.spoke && t.voiceMs >= VOICE_MS) {
           t.spoke = true;
           setVoiced(true);
+          // They went on talking: words that stopped mid-sentence aren't waiting on their own any more.
+          unfinishedAt.current = 0;
         }
         if (how === "hold") return;
         if (t.spoke && (t.quietMs >= (how === "live" ? LIVE_QUIET_MS : QUIET_MS) || age > TAKE_MAX_MS)) {
-          stopRecording(true);
+          if (how === "live") endTake();
+          else stopRecording(true);
           return;
         }
         // Nothing said in a long while: the take starts over (a long silence is never sent) — a single sentence's
@@ -694,9 +826,12 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
         }
         return;
       }
-      if (how !== "hold" && age > BLIND_TAKE_MS) stopRecording(true);
+      if (how !== "hold" && age > BLIND_TAKE_MS) {
+        if (how === "live") endTake();
+        else stopRecording(true);
+      }
     }, WATCH_MS);
-  }, [stopRecording, off, transcribe]);
+  }, [stopRecording, off, transcribe, hearLive]);
   React.useEffect(() => {
     startRecordingRef.current = startRecording;
   }, [startRecording]);
@@ -715,6 +850,9 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
       retried.current = false;
       finals.current = [];
       interim.current = "";
+      livePending.current = "";
+      unfinishedAt.current = 0;
+      window.clearTimeout(decideTimer.current);
       quickEnds.current = 0;
       setHearing(w);
       if (mode === "native") startNative();
@@ -780,6 +918,7 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
     window.clearTimeout(flushTimer.current);
     finals.current = [];
     interim.current = "";
+    setWriting(false);
     off();
     try {
       rec.current?.abort();
@@ -805,6 +944,13 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
   const say = React.useCallback(
     (text: string) => {
       if (typeof window === "undefined" || !text.trim()) return;
+      // Live on the server's ears, and they're still talking — or have said more since, still being written down or
+      // waiting to go: the reply stays on the screen, not read out over them; the ears stay on (the next request
+      // goes when they're done).
+      if (mode === "record" && want.current === "live" && (media.current?.take?.spoke || inFlight.current > 0 || livePending.current)) {
+        thinking.current = false;
+        return;
+      }
       const run = ++sayRun.current;
       if ("speechSynthesis" in window) window.speechSynthesis.cancel();
       if (audio.current) {
@@ -925,7 +1071,7 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
     if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.getVoices();
     const runs = sayRun;
     const playing = audio;
-    const timers = [flushTimer, graceTimer, restartTimer];
+    const timers = [flushTimer, graceTimer, restartTimer, decideTimer];
     return () => {
       want.current = null;
       for (const t of timers) window.clearTimeout(t.current);
@@ -941,5 +1087,5 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
     };
   }, [stopRecording]);
 
-  return { mode, mic, speaking, hearing, voiced, start, stop, cancel, say, hush, resume };
+  return { mode, mic, speaking, hearing, voiced, writing, start, stop, cancel, say, hush, resume };
 }
