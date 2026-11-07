@@ -16,7 +16,17 @@ function orgLockup(org: OrgBrand): Lockup {
 }
 
 function orgFooter(org: OrgBrand) {
-  return { name: org.name, contact: org.phone ?? undefined };
+  return { name: org.name, contact: footerPhone(org.phone) };
+}
+
+/** The company's phone as people write it — "(425) 312-3385", not the "4253123385" a settings field may hold
+ *  (2026-11-07, the owner's new-lead mail); anything that isn't a US number stays as typed. */
+function footerPhone(phone: string | null | undefined): string | undefined {
+  const raw = phone?.trim();
+  if (!raw) return undefined;
+  const d = raw.replace(/\D/g, "");
+  const ten = d.length === 11 && d.startsWith("1") ? d.slice(1) : d.length === 10 ? d : null;
+  return ten ? `(${ten.slice(0, 3)}) ${ten.slice(3, 6)}-${ten.slice(6)}` : raw;
 }
 
 function shortDate(d: Date): string {

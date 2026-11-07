@@ -35,6 +35,15 @@
 // session that never says it started (after the first one did) is started once more; a stopped one that never says
 // it ended is aborted, not left running under the next one. When the finger lifts on words already heard they are
 // handed on at once — no waiting a second and a half for a recogniser that may never say it ended.
+//
+// ON AN IPHONE, THE SERVER'S EARS (2026-11-07, the owner's third phone test, after the fix above: the first question
+// went through, then "Listening — just talk." sat there and nothing more ever reached the server). iPhone Safari's own
+// recogniser says it started after the page has played a reply, and then hears nothing. So where the caller asks for it
+// (`appleServerEars`, the AI Operator), an iPhone or iPad records instead: the microphone is opened for each turn, a
+// level meter on it notices speech and then the pause after it (live; held, the lift), and that take goes to the
+// server to be written down — the same way Firefox has always been heard. The meter's context is woken by the first
+// touch (unlockVoice); a long silence is never sent (the take starts over), and while a reply plays the microphone is
+// off, so the reply is loud and never heard back.
 
 import * as React from "react";
 
@@ -71,6 +80,30 @@ const srCtor = (): SRCtor | null => {
   const w = window as unknown as { SpeechRecognition?: SRCtor; webkitSpeechRecognition?: SRCtor };
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 };
+
+/** An iPhone or iPad — every browser there is Safari underneath (an iPad says it is a Mac, with a touch screen). */
+function isAppleMobile(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+const canRecord = () => typeof MediaRecorder !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
+
+/** The level meter's audio context: one for the page, woken by a touch (an iPhone starts it only from one). */
+let earsCtx: AudioContext | null = null;
+function earsContext(): AudioContext | null {
+  if (typeof window === "undefined") return null;
+  try {
+    if (!earsCtx || earsCtx.state === "closed") {
+      const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!Ctor) return null;
+      earsCtx = new Ctor();
+    }
+    return earsCtx;
+  } catch {
+    return null;
+  }
+}
 
 /** The one element every reply plays through (see the head of the file), and whether a touch has unlocked it. */
 let player: HTMLAudioElement | null = null;
@@ -110,6 +143,8 @@ function silentClip(): string {
  *  anywhere else, and while a reply is playing it leaves it alone. */
 export function unlockVoice(): void {
   if (typeof window === "undefined" || unlocked) return;
+  // The server's ears' level meter (an iPhone): its context can start only from a touch, so it starts now.
+  if (isAppleMobile()) void earsContext()?.resume().catch(() => undefined);
   try {
     if (!player) {
       player = new Audio();
@@ -164,17 +199,33 @@ const HEARD_GRACE_MS = 300;
 const END_GRACE_MS = 1200;
 /** A session that has not said it started by now (after one did on this page) is started once more. */
 const START_WATCH_MS = 1800;
-/** Record mode: stop on this much quiet after speech, or at this length — hold records until the finger lifts. */
+/** Record mode: a take ends this long after the speech in it stops (live sooner), and at this length in any case —
+ *  held, only when the finger lifts (or at the long limit). Speech is this much voice in a take, not a click. */
 const QUIET_MS = 1300;
-const RECORD_MAX_MS = 12_000;
+const LIVE_QUIET_MS = 900;
+const VOICE_MS = 200;
+const TAKE_MAX_MS = 25_000;
 const HOLD_RECORD_MAX_MS = 45_000;
+/** A take with no speech in it this long starts over (nothing is sent); where no level can be read, takes are this
+ *  long and all of them go (the server sends back nothing for silence). */
+const IDLE_TAKE_MS = 15_000;
+const BLIND_TAKE_MS = 6_000;
+/** The level meter reads every this many ms; a meter that reads exactly nothing this long is not working. */
+const WATCH_MS = 50;
+const DEAD_METER_MS = 1500;
 
 const noop = () => () => {};
 const modeNow = (): HearMode => {
   if (typeof window === "undefined") return "none";
   if (srCtor()) return "native";
-  if (typeof MediaRecorder !== "undefined" && !!navigator.mediaDevices?.getUserMedia) return "record";
+  if (canRecord()) return "record";
   return "none";
+};
+/** The same, except that an iPhone or iPad records and lets the server write it down (see the head of the file). */
+const modeServerOnApple = (): HearMode => {
+  if (typeof window === "undefined") return "none";
+  if (isAppleMobile() && canRecord()) return "record";
+  return modeNow();
 };
 
 /** The voice to answer in: a natural US English one where the browser has it. */
@@ -204,12 +255,20 @@ export interface SpeechHandlers {
   transcribeUrl?: string;
   /** The voice route answers a GET with the audio as it is made (the Operator's): play it as it streams. */
   streamSpeech?: boolean;
+  /** On an iPhone or iPad, record and let the server write it down instead of Safari's own recogniser (see the head
+   *  of the file). The AI Operator asks for it; the Deck Studio doesn't. */
+  appleServerEars?: boolean;
 }
 
+/** Record mode: one recording, from the moment the meter says go to the pause after the speech in it. */
+type Take = { recorder: MediaRecorder; chunks: Blob[]; send: boolean; spoke: boolean; voiceMs: number; quietMs: number; at: number };
+
 export function useDeckSpeech(handlers: SpeechHandlers) {
-  const mode = React.useSyncExternalStore(noop, modeNow, () => "none" as HearMode);
+  const mode = React.useSyncExternalStore(noop, handlers.appleServerEars ? modeServerOnApple : modeNow, () => "none" as HearMode);
   const [mic, setMic] = React.useState<MicState>("off");
   const [speaking, setSpeaking] = React.useState(false);
+  /** Record mode: the meter hears a voice in the take being recorded. */
+  const [voiced, setVoiced] = React.useState(false);
   /** How it is listening right now (off when it isn't). */
   const [hearing, setHearing] = React.useState<HearHow | "off">("off");
   const h = React.useRef(handlers);
@@ -235,7 +294,9 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
   const retried = React.useRef(false);
   /** Live: a sentence was handed on — the ears rest until the reply has been said (or resume()). */
   const thinking = React.useRef(false);
-  const media = React.useRef<{ stream: MediaStream; recorder: MediaRecorder; ctx: AudioContext | null; raf: number } | null>(null);
+  /** Record mode: the microphone, the take on it, the meter's nodes and its timer; and a microphone being opened. */
+  const media = React.useRef<{ stream: MediaStream; take: Take | null; nodes: AudioNode[]; watch: number } | null>(null);
+  const opening = React.useRef(false);
   /** The natural voice playing, the answer it belongs to (a newer one drops a late one), and whether it works here. */
   const audio = React.useRef<HTMLAudioElement | null>(null);
   const sayRun = React.useRef(0);
@@ -430,95 +491,212 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
     if (want.current && mode === "native" && !talking.current) startNative();
   }, [handlers.lang, mode, startNative]);
 
+  /** Record mode: what was recorded goes to the server to be written down, and on from there — handed on, or, when
+   *  nothing worth sending was in it, live and free listen again. */
+  const startRecordingRef = React.useRef<(() => Promise<void>) | null>(null);
+  const transcribe = React.useCallback(
+    async (blob: Blob, how: HearHow) => {
+      setMic("sending");
+      let text = "";
+      let failed = false;
+      try {
+        const form = new FormData();
+        form.append("audio", blob, `voice.${/mp4|m4a|aac/.test(blob.type) ? "m4a" : /ogg/.test(blob.type) ? "ogg" : "webm"}`);
+        form.append("language", (h.current.lang ?? "en-US").slice(0, 2).toLowerCase());
+        const res = await fetch(h.current.transcribeUrl ?? "/api/deck/voice/transcribe", { method: "POST", body: form });
+        const body = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
+        if (!res.ok) {
+          failed = true;
+          h.current.onError(body.error ?? "Couldn't write that down.");
+        } else text = (body.text ?? "").trim();
+      } catch {
+        failed = true;
+        h.current.onError("Couldn't reach the server to write that down.");
+      }
+      setMic((m) => (m === "sending" ? "off" : m));
+      const w = want.current;
+      if (text) {
+        // Live rests until the reply has been said (say → resume), as the native ears do.
+        if (w === "live") thinking.current = true;
+        h.current.onFinal([text]);
+        if (w === "free" && !talking.current && !media.current) void startRecordingRef.current?.();
+        return;
+      }
+      if (how === "hold" && !failed) h.current.onNothing?.();
+      if ((w === "live" || w === "free") && !talking.current && !thinking.current && !media.current) void startRecordingRef.current?.();
+    },
+    [],
+  );
+
+  /** Record mode: the microphone off — the take on it sent to be written down, or thrown away. */
   const stopRecording = React.useCallback((send: boolean) => {
     const m = media.current;
     if (!m) return;
-    cancelAnimationFrame(m.raf);
-    if (!send) m.recorder.ondataavailable = null;
-    if (m.recorder.state !== "inactive") m.recorder.stop();
-    m.stream.getTracks().forEach((t) => t.stop());
-    void m.ctx?.close().catch(() => undefined);
     media.current = null;
+    window.clearInterval(m.watch);
+    setVoiced(false);
+    for (const n of m.nodes) {
+      try {
+        n.disconnect();
+      } catch {
+        /* not connected */
+      }
+    }
+    const close = () => m.stream.getTracks().forEach((t) => t.stop());
+    const t = m.take;
+    if (t && t.recorder.state !== "inactive") {
+      t.send = send;
+      // The microphone goes once the recorder has its last piece (and in a moment regardless).
+      t.recorder.addEventListener("stop", close, { once: true });
+      window.setTimeout(close, 1500);
+      try {
+        t.recorder.stop();
+      } catch {
+        close();
+      }
+    } else close();
   }, []);
 
   const startRecording = React.useCallback(async () => {
+    if (!want.current || media.current || opening.current) return;
+    opening.current = true;
     let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     } catch {
+      opening.current = false;
       off();
       h.current.onError("The microphone is blocked — allow it in the browser, then tap the mic again.");
       return;
     }
-    const type = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"].find((t) => MediaRecorder.isTypeSupported?.(t)) ?? "";
-    const recorder = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
-    const chunks: Blob[] = [];
-    recorder.ondataavailable = (e) => {
-      if (e.data.size) chunks.push(e.data);
+    // The level meter: speech, and the pause after it. Its context runs only after a touch woke it (unlockVoice) or
+    // while the microphone is on; where it can't, takes are timed instead.
+    const nodes: AudioNode[] = [];
+    let analyser: AnalyserNode | null = null;
+    const ctx = earsContext();
+    if (ctx) {
+      try {
+        if (ctx.state !== "running") await Promise.race([ctx.resume(), new Promise((r) => window.setTimeout(r, 400))]);
+        if (ctx.state === "running") {
+          const src = ctx.createMediaStreamSource(stream);
+          analyser = ctx.createAnalyser();
+          analyser.fftSize = 1024;
+          // Through a silent gain to the output: Safari reads a meter only when it leads somewhere.
+          const mute = ctx.createGain();
+          mute.gain.value = 0;
+          src.connect(analyser);
+          analyser.connect(mute);
+          mute.connect(ctx.destination);
+          nodes.push(src, analyser, mute);
+        }
+      } catch {
+        analyser = null;
+      }
+    }
+    opening.current = false;
+    // How it listens is read now: it may have changed while the microphone was coming on (a tap on the dial starts a
+    // hold and turns it into live a moment later — on a phone, before the microphone is on). Ended, a reply begun,
+    // or the sentence already handed on meanwhile: let it go.
+    const how = want.current;
+    if (!how || talking.current || (how === "live" && thinking.current) || media.current) {
+      for (const n of nodes) n.disconnect();
+      stream.getTracks().forEach((tr) => tr.stop());
+      return;
+    }
+    const type = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"].find((x) => MediaRecorder.isTypeSupported?.(x)) ?? "";
+    const m: { stream: MediaStream; take: Take | null; nodes: AudioNode[]; watch: number } = { stream, take: null, nodes, watch: 0 };
+    media.current = m;
+
+    // The meter's state: the last three seconds of levels, and whether it reads anything at all.
+    const buf = analyser ? new Float32Array(analyser.fftSize) : null;
+    const levels: number[] = [];
+    let blind = !analyser;
+    let deadMs = 0;
+    let everSound = false;
+    let last = performance.now();
+
+    /** A new take on the open microphone (the one before it, if any, thrown away). */
+    const begin = () => {
+      const old = m.take;
+      if (old && old.recorder.state !== "inactive") {
+        old.send = false;
+        try {
+          old.recorder.stop();
+        } catch {
+          /* stopped */
+        }
+      }
+      const recorder = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
+      const t: Take = { recorder, chunks: [], send: false, spoke: false, voiceMs: 0, quietMs: 0, at: performance.now() };
+      recorder.ondataavailable = (e) => {
+        if (e.data.size) t.chunks.push(e.data);
+      };
+      recorder.onstop = () => {
+        if (!t.send) return;
+        // The meter heard nothing: nothing is sent (a lift on silence says so).
+        if ((analyser && !blind && !t.spoke) || !t.chunks.length) {
+          if (how === "hold") h.current.onNothing?.();
+          return;
+        }
+        void transcribe(new Blob(t.chunks, { type: recorder.mimeType || type || "audio/mp4" }), how);
+      };
+      m.take = t;
+      setVoiced(false);
+      recorder.start();
     };
-    const held = want.current === "hold";
-    recorder.onstop = async () => {
-      if (!chunks.length) {
-        setMic("off");
-        if (held) h.current.onNothing?.();
+
+    begin();
+    setMic("recording");
+    m.watch = window.setInterval(() => {
+      if (media.current !== m || !m.take) return;
+      const t = m.take;
+      const now = performance.now();
+      const dt = now - last;
+      last = now;
+      const age = now - t.at;
+      if (how === "hold" && age > HOLD_RECORD_MAX_MS) {
+        stopRecording(true);
         return;
       }
-      setMic("sending");
-      try {
-        const form = new FormData();
-        form.append("audio", new Blob(chunks, { type: recorder.mimeType || "audio/webm" }));
-        form.append("language", (h.current.lang ?? "en-US").slice(0, 2).toLowerCase());
-        const res = await fetch(h.current.transcribeUrl ?? "/api/deck/voice/transcribe", { method: "POST", body: form });
-        const body = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
-        if (!res.ok) h.current.onError(body.error ?? "Couldn't write that down.");
-        else if (body.text) h.current.onFinal([body.text]);
-        else if (held) h.current.onNothing?.();
-      } catch {
-        h.current.onError("Couldn't reach the server to write that down.");
-      } finally {
-        setMic("off");
-        const w = want.current;
-        if (w && w !== "once" && w !== "hold" && !talking.current) void startRecordingRef.current?.();
-      }
-    };
-    // Stop on a pause: quiet after speech, or at the limit — held, only at the (long) limit.
-    let ctx: AudioContext | null = null;
-    let raf = 0;
-    try {
-      ctx = new AudioContext();
-      const src = ctx.createMediaStreamSource(stream);
-      const an = ctx.createAnalyser();
-      an.fftSize = 1024;
-      src.connect(an);
-      const buf = new Float32Array(an.fftSize);
-      const t0 = performance.now();
-      let spoke = false;
-      let quietSince = 0;
-      const tick = () => {
-        an.getFloatTimeDomainData(buf);
-        const rms = Math.sqrt(buf.reduce((a, v) => a + v * v, 0) / buf.length);
-        const now = performance.now();
-        if (rms > 0.03) {
-          spoke = true;
-          quietSince = 0;
-        } else if (spoke && !quietSince) quietSince = now;
-        const limit = held ? HOLD_RECORD_MAX_MS : RECORD_MAX_MS;
-        if ((!held && spoke && quietSince && now - quietSince > QUIET_MS) || now - t0 > limit) {
+      if (!blind && analyser && buf) {
+        analyser.getFloatTimeDomainData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+        const rms = Math.sqrt(sum / buf.length);
+        // A meter that reads exactly nothing is not connected to the microphone: timed takes from here on.
+        if (rms > 0) everSound = true;
+        else if (!everSound && (deadMs += dt) > DEAD_METER_MS) blind = true;
+        // The room's own level: a low point of the last three seconds; speech is well above it.
+        levels.push(rms);
+        if (levels.length > 60) levels.shift();
+        const floor = levels.length < 8 ? 0.004 : [...levels].sort((a, b) => a - b)[Math.floor(levels.length * 0.15)];
+        const threshold = Math.min(0.07, Math.max(0.012, floor * 3));
+        if (rms > threshold) {
+          t.voiceMs += dt;
+          t.quietMs = 0;
+        } else t.quietMs += dt;
+        if (!t.spoke && t.voiceMs >= VOICE_MS) {
+          t.spoke = true;
+          setVoiced(true);
+        }
+        if (how === "hold") return;
+        if (t.spoke && (t.quietMs >= (how === "live" ? LIVE_QUIET_MS : QUIET_MS) || age > TAKE_MAX_MS)) {
           stopRecording(true);
           return;
         }
-        raf = requestAnimationFrame(tick);
-        if (media.current) media.current.raf = raf;
-      };
-      raf = requestAnimationFrame(tick);
-    } catch {
-      ctx = null;
-    }
-    media.current = { stream, recorder, ctx, raf };
-    recorder.start();
-    setMic("recording");
-  }, [stopRecording, off]);
-  const startRecordingRef = React.useRef<(() => Promise<void>) | null>(null);
+        // Nothing said in a long while: the take starts over (a long silence is never sent) — a single sentence's
+        // listening (once) gives up instead.
+        if (!t.spoke && age > IDLE_TAKE_MS) {
+          if (how === "once") {
+            stopRecording(false);
+            off();
+          } else begin();
+        }
+        return;
+      }
+      if (how !== "hold" && age > BLIND_TAKE_MS) stopRecording(true);
+    }, WATCH_MS);
+  }, [stopRecording, off, transcribe]);
   React.useEffect(() => {
     startRecordingRef.current = startRecording;
   }, [startRecording]);
@@ -540,9 +718,13 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
       quickEnds.current = 0;
       setHearing(w);
       if (mode === "native") startNative();
-      else if (mode === "record") void startRecording();
+      else if (mode === "record") {
+        // A take still open (another way of listening) is thrown away; this one opens its own.
+        stopRecording(false);
+        void startRecording();
+      }
     },
-    [mode, startNative, startRecording],
+    [mode, startNative, startRecording, stopRecording],
   );
 
   /** Stop listening. Held: the finger lifted — what was heard is handed on as one request. Live: ended — a finished
@@ -587,6 +769,8 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
     } catch {
       /* already stopped */
     }
+    // Held, and the microphone never came on (a quick lift, or the question whether it may): say so.
+    if (mode === "record" && w === "hold" && !media.current) h.current.onNothing?.();
     stopRecording(true);
     setMic((m) => (m === "sending" ? m : "off"));
   }, [mode, stopRecording, flush, off]);
@@ -757,5 +941,5 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
     };
   }, [stopRecording]);
 
-  return { mode, mic, speaking, hearing, start, stop, cancel, say, hush, resume };
+  return { mode, mic, speaking, hearing, voiced, start, stop, cancel, say, hush, resume };
 }
