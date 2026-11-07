@@ -15,7 +15,7 @@ import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/reso
 import { zodFunction } from "openai/helpers/zod";
 import type { z } from "zod";
 import { db } from "@/lib/db";
-import { getOpenAI, isOpenAIEnabled, resolveOpenAIModel, samplingOptions } from "@/lib/sdk/openai";
+import { getOpenAI, isOpenAIEnabled, isReasoningModelName, resolveOpenAIModel, samplingOptions } from "@/lib/sdk/openai";
 import { noteRequestOrg } from "@/lib/trialMeter";
 import { checkPlanLimit } from "@/lib/limitsEngine";
 import { isUnlimited } from "@/lib/planLimits";
@@ -337,19 +337,26 @@ export async function handleTurn(input: TurnInput): Promise<TurnResult> {
     }
   }
 
+  // How long a turn takes, in the log (2026-11-07, the owner: "it's so slow"): the whole turn, and the model's part.
+  const t0 = Date.now();
+  let modelMs = 0;
+  let rounds = 0;
+  /** The request counted toward the plan's limit — written while the model reads, finished before the reply is kept. */
+  let marked: Promise<unknown> = Promise.resolve();
+
   /** The reply, kept with the card it belongs to: the read-back waiting for a yes, else the build it reports. */
   const say = async (reply: string, proposed: FeedAction | null = null, cardId: string | null = null): Promise<TurnResult> => {
+    await marked;
     await keep(actor, "OUT", reply, { actionId: proposed?.id ?? cardId });
+    if (rounds) console.info(`[assistant] turn ${Date.now() - t0} ms · model ${modelMs} ms in ${rounds} round${rounds === 1 ? "" : "s"}${input.spoken ? " · spoken" : ""}`);
     return { reply, proposed };
   };
 
   let quick = quickReply(text);
-  const inbound = await keep(actor, "IN", text, { externalId: input.externalId ?? null });
-
-  const closed = await refusal(actor, "today", false);
+  // Read together, not one after another (2026-11-07: every one was a round trip to the database before the model).
+  const [inbound, closed, awaiting] = await Promise.all([keep(actor, "IN", text, { externalId: input.externalId ?? null }), refusal(actor, "today", false), openAwaiting(actor, now)]);
   if (closed) return say(closed);
 
-  const awaiting = await openAwaiting(actor, now);
   // Four digits alone are a PIN only when a read-back waits for one; otherwise they answer the model ("2200 sq ft").
   if (quick?.kind === "yes" && quick.bare && !(awaiting && needsPin(awaiting.tool))) quick = null;
   if (quick?.kind === "help") return say(HELP);
@@ -369,26 +376,29 @@ export async function handleTurn(input: TurnInput): Promise<TurnResult> {
   if (quick?.kind === "yes" && !awaiting && !/\bsend\b/i.test(text)) return say("There's nothing waiting for a yes right now. What do you need?");
 
   // ── the model's turn ──
-  const limit = await checkPlanLimit(actor.organizationId, "assistantCommands", 1, { actorId: actor.userId });
+  // The limit, and everything the model is given, read together.
+  const [limit, history, built, workset, live, resolved] = await Promise.all([
+    checkPlanLimit(actor.organizationId, "assistantCommands", 1, { actorId: actor.userId }),
+    db.assistantMessage.findMany({
+      where: { organizationId: actor.organizationId, userId: actor.userId, id: { not: inbound.id } },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: HISTORY,
+      select: { direction: true, body: true },
+    }),
+    recentBuilds(actor, now).catch(() => [] as string[]),
+    // The records the last turns touched (lib/assistant/workset): what "him", "it", "that job" mean.
+    recallWorkset(actor).catch(() => []),
+    // The tools this turn: the registry's live ones — not retired, not switched off, their services configured.
+    modelTools(),
+    isOpenAIEnabled() ? resolveOpenAIModel().catch(() => null) : Promise.resolve(null),
+  ]);
   if (!limit.allowed) {
     return say(`You've used this month's ${limit.limit ?? ""} AI Operator requests. A bigger plan raises the number (Settings → Billing).`.replace("  ", " "));
   }
   if (!isOpenAIEnabled()) return say("The AI Operator isn't switched on here yet (no AI key on this server).");
   // A digit answering the model's "1 or 2?" is part of the last request, not a new one.
-  await db.assistantMessage.update({ where: { id: inbound.id }, data: { countsAsCommand: quick?.kind !== "digit" } });
-  await noteRequestOrg(actor.organizationId).catch(() => undefined);
-
-  const history = await db.assistantMessage.findMany({
-    where: { organizationId: actor.organizationId, userId: actor.userId, id: { not: inbound.id } },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: HISTORY,
-    select: { direction: true, body: true },
-  });
-  const built = await recentBuilds(actor, now).catch(() => [] as string[]);
-  // The records the last turns touched (lib/assistant/workset): what "him", "it", "that job" mean.
-  const records = worksetPrompt(await recallWorkset(actor).catch(() => []));
-  // The tools this turn: the registry's live ones — not retired, not switched off, their services configured.
-  const live = await modelTools();
+  marked = Promise.all([db.assistantMessage.update({ where: { id: inbound.id }, data: { countsAsCommand: quick?.kind !== "digit" } }), noteRequestOrg(actor.organizationId).catch(() => undefined)]);
+  const records = worksetPrompt(workset);
   const messages: ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt(actor, now, awaiting?.readback ?? null, built, live, records, input.spoken === true) },
     ...history.reverse().map((m): ChatCompletionMessageParam => (m.direction === "IN" ? { role: "user", content: m.body } : { role: "assistant", content: m.body })),
@@ -397,13 +407,15 @@ export async function handleTurn(input: TurnInput): Promise<TurnResult> {
 
   const ctx: ToolContext = { actor, now };
   let client;
-  let model: string;
   try {
     client = getOpenAI();
-    model = await resolveOpenAIModel();
   } catch {
     return say("The AI Operator couldn't start just now. Try again in a minute.");
   }
+  if (!resolved) return say("The AI Operator couldn't start just now. Try again in a minute.");
+  const model = resolved;
+  // A model that thinks before it answers (gpt-5, the o-series) thinks briefly here: a person is waiting, often out loud.
+  const effort = isReasoningModelName(model) ? { reasoning_effort: "low" as const } : {};
 
   /** The read-backs this turn planned, in order. */
   const chain: FeedAction[] = [];
@@ -425,14 +437,18 @@ export async function handleTurn(input: TurnInput): Promise<TurnResult> {
   for (let round = 0; round < MAX_ROUNDS; round++) {
     let message;
     try {
+      const m0 = Date.now();
       const completion = await client.chat.completions.create({
         model,
         ...(await samplingOptions(0.2)),
+        ...effort,
         messages,
         tools: openAiToolsFor(live),
         tool_choice: "auto",
         parallel_tool_calls: false,
       });
+      modelMs += Date.now() - m0;
+      rounds++;
       message = completion.choices[0]?.message;
     } catch (err) {
       console.warn(`[assistant] model call failed: ${err instanceof Error ? err.message : String(err)}`);

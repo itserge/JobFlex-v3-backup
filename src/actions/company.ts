@@ -10,6 +10,7 @@ import { toActivityEntries } from "@/components/v3/company-blueprint/company-dat
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { isPageLocked, requirePage } from "@/lib/customPageAccess";
 import { clearOrgNameUnset } from "@/lib/orgName";
+import { timezoneFixFor } from "@/lib/usTimezone";
 
 const brandingInput = z.object({
   name: z.string().min(1).optional(),
@@ -29,14 +30,17 @@ export async function updateBranding(raw: unknown) {
   // Keep the Lead Center pin in sync — branding is the other surface that can
   // edit the org address (see updateLeadProfile for the same policy).
   const current =
-    data.address !== undefined || data.name !== undefined
+    data.address !== undefined || data.name !== undefined || data.phone !== undefined
       ? await db.organization.findUnique({
           where: { id: organizationId },
-          select: { address: true, lat: true, lng: true, name: true },
+          select: { address: true, lat: true, lng: true, name: true, phone: true, timezone: true },
         })
       : null;
   const addressChanged =
     data.address !== undefined && (data.address ?? "") !== (current?.address ?? "");
+  // The time zone follows the address (or the phone's area code) while nobody has chosen one — a company still on
+  // the default zone reads its reminders and its calendar in the wrong hours (2026-11-07, lib/usTimezone).
+  const timezone = current ? timezoneFixFor(current.timezone, { address: data.address !== undefined ? data.address : current.address, phone: data.phone !== undefined ? data.phone : current.phone }) : null;
 
   await db.organization.update({
     where: { id: organizationId },
@@ -45,6 +49,7 @@ export async function updateBranding(raw: unknown) {
       ...(data.phone !== undefined && { phone: data.phone }),
       ...(data.billingEmail !== undefined && { billingEmail: data.billingEmail }),
       ...(data.address !== undefined && { address: data.address }),
+      ...(timezone && { timezone }),
       ...(data.website !== undefined && { website: data.website }),
       ...(data.primaryColor !== undefined && { primaryColor: data.primaryColor }),
       ...(data.logoUrl !== undefined && { logoUrl: data.logoUrl }),

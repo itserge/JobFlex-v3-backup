@@ -17,6 +17,12 @@ import { readGrantsAndMarks, type PlanGrant, type SyncingMark } from "@/lib/plan
 import { accountDeletionPlan, removeUserRow, retireOrganization } from "@/lib/accountDeletion";
 import { refused, type ActionResult } from "@/lib/actionResult";
 import { planLine } from "@/lib/deckAddon";
+import {
+  phoneEndsWith,
+  phoneNarrowing,
+  phoneQueryDigits,
+  type AdminPhoneMatch,
+} from "@/lib/adminPhoneSearch";
 
 export interface AdminUserRow {
   id: string;
@@ -343,6 +349,91 @@ export async function getAdminUsersData(): Promise<AdminUsersData> {
       truncated: billing.truncated,
     },
   };
+}
+
+// ─── PHONE SEARCH (2026-11-06) ──────────────────────────────────────────────
+// The Users & subscriptions search field, when what is typed reads as a phone
+// number (lib/adminPhoneSearch decides). Searched where phones are kept: the
+// person's own (User.phone, the verified texting mobile User.smsPhone), the
+// company's (Organization.phone, its claimed Twilio number smsFromNumber, the
+// extra office lines in NotificationPhone).
+//
+// No column holds the number as digits, so the database narrows on the last
+// four digits — never split by formatting — and the suffix rule decides on the
+// handful of rows that come back. No index: `contains` is a scan, which on
+// these tables is a few milliseconds (counts in the 2026-11-06 report).
+
+export interface AdminPhoneSearchResult {
+  /** The digits searched for — the page drops an answer for an older query. */
+  digits: string | null;
+  matches: AdminPhoneMatch[];
+}
+
+const PHONE_SEARCH_CAP = 200;
+
+export async function searchAdminUsersByPhone(query: string): Promise<AdminPhoneSearchResult> {
+  await requirePlatformAdmin();
+  const digits = phoneQueryDigits(z.string().max(64).parse(query));
+  if (!digits) return { digits: null, matches: [] };
+  const tail = phoneNarrowing(digits);
+
+  const [users, orgs, lines] = await Promise.all([
+    db.user.findMany({
+      where: { OR: [{ phone: { contains: tail } }, { smsPhone: { contains: tail } }] },
+      take: PHONE_SEARCH_CAP,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        smsPhone: true,
+        memberships: { select: { role: true, organizationId: true } },
+      },
+    }),
+    db.organization.findMany({
+      where: { OR: [{ phone: { contains: tail } }, { smsFromNumber: { contains: tail } }] },
+      take: PHONE_SEARCH_CAP,
+      select: { id: true, phone: true, smsFromNumber: true },
+    }),
+    db.notificationPhone.findMany({
+      where: { phone: { contains: tail } },
+      take: PHONE_SEARCH_CAP,
+      select: { organizationId: true, name: true, phone: true },
+    }),
+  ]);
+
+  const matches: AdminPhoneMatch[] = [];
+  for (const u of users) {
+    // One number per person is enough to say why the row is here.
+    const phone = [u.phone, u.smsPhone].find((p) => phoneEndsWith(p, digits));
+    if (!phone) continue;
+    const who = u.name ?? u.email;
+    if (u.memberships.length === 0) {
+      matches.push({ phone, whose: "account", userId: u.id, orgId: null, who });
+      continue;
+    }
+    for (const m of u.memberships) {
+      matches.push({
+        phone,
+        whose: m.role === "OWNER" ? "owner" : "member",
+        userId: u.id,
+        orgId: m.organizationId,
+        who,
+      });
+    }
+  }
+  for (const o of orgs) {
+    if (phoneEndsWith(o.phone, digits)) {
+      matches.push({ phone: o.phone!, whose: "company", userId: null, orgId: o.id, who: null });
+    } else if (phoneEndsWith(o.smsFromNumber, digits)) {
+      matches.push({ phone: o.smsFromNumber!, whose: "twilio", userId: null, orgId: o.id, who: null });
+    }
+  }
+  for (const l of lines) {
+    if (!phoneEndsWith(l.phone, digits)) continue;
+    matches.push({ phone: l.phone, whose: "office", userId: null, orgId: l.organizationId, who: l.name });
+  }
+  return { digits, matches };
 }
 
 // The subscription itself is edited by actions/adminSubscription (two modes:

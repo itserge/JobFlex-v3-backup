@@ -62,7 +62,7 @@ export function Conversation({
   autoFocus?: boolean;
   variant: "panel" | "page";
 }) {
-  const { feed, pending, busy, building, landed, error, lang, ask, answer } = state;
+  const { feed, pending, busy, isBusy, building, landed, error, lang, ask, answer } = state;
   const [text, setText] = useState("");
   const [talk, setTalk] = useState(false);
   const [heard, setHeard] = useState("");
@@ -70,18 +70,18 @@ export function Conversation({
   const logRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLTextAreaElement>(null);
   const boxId = useId();
-  const busyRef = useRef(busy);
   const talkRef = useRef(false);
   const sayRef = useRef<(words: string) => void>(() => {});
-
-  useEffect(() => {
-    busyRef.current = busy;
-  }, [busy]);
+  /** Said while the last one was still being answered: it goes right after (2026-11-07 — never dropped). */
+  const queued = useRef<string | null>(null);
 
   /** One spoken turn: what was said goes out, the answer is read back (and it listens on). */
   const talkTurn = async (said: string) => {
     const reply = await ask(said, { spoken: true });
+    const then = queued.current;
+    queued.current = null;
     if (talkRef.current) sayRef.current(forSpeech(reply ?? "That didn't go through. Try again."));
+    if (then) void talkTurn(then);
   };
 
   const speech = useDeckSpeech({
@@ -89,9 +89,12 @@ export function Conversation({
     lang,
     onFinal: (alternatives) => {
       const said = alternatives[0]?.trim();
-      // A sentence heard while the last one is still being answered waits for nothing: it is dropped.
-      if (!said || busyRef.current) return;
+      if (!said) return;
       setHeard("");
+      if (isBusy()) {
+        queued.current = said;
+        return;
+      }
       void talkTurn(said);
     },
     onInterim: (words) => setHeard(words),
@@ -122,7 +125,8 @@ export function Conversation({
     talkRef.current = false;
     setTalk(false);
     setHeard("");
-    speech.stop();
+    // The ears off first, then the voice (so cutting the reply short doesn't start them again).
+    speech.cancel();
     speech.hush();
   }
 
@@ -167,12 +171,22 @@ export function Conversation({
     if (words === undefined) setText("");
     const reply = await ask(t);
     if (reply === null && words === undefined) setText(t);
+    sendQueued();
   };
 
   const onAnswer = async (actionId: string, yes: boolean, pin?: string) => {
     const reply = await answer(actionId, yes, pin);
     if (talkRef.current && reply) sayRef.current(forSpeech(reply));
+    sendQueued();
   };
+
+  /** What was said while a typed request or a Do it was out goes now. */
+  function sendQueued() {
+    const then = queued.current;
+    if (!then) return;
+    queued.current = null;
+    void talkTurn(then);
+  }
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {

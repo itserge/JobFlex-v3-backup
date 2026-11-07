@@ -108,6 +108,10 @@
    the state the Sync button exists to close. */
 :global(.jf-blueprint .content) .au-plan-src { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-light); }
 :global(.jf-blueprint .content) .au-dash { font-family: var(--font-mono); font-size: 12px; color: var(--muted-faint); }
+/* A phone search's reason under the account (2026-11-06): which number found
+   the row and whose it is. The number in blueprint, the words muted. */
+:global(.jf-blueprint .content) .au-phone-hit { margin-top: 4px; font-size: 12px; line-height: 1.4; color: var(--muted); overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .au-phone-hit b { font-weight: 700; color: var(--blueprint); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* Delete row: what the button opens (or why it is shut) beside it. */
 :global(.jf-blueprint .content) .au-del-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; }

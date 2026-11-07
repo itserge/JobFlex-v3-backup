@@ -14,6 +14,7 @@ import { requireOwner } from "@/lib/orgContext";
 import { isPlaceholderOrgName } from "@/lib/orgSetup";
 import { trackActivation } from "@/lib/activation-events";
 import { DISPOSABLE_EMAIL_MESSAGE, isDisposableEmail } from "@/lib/disposableEmail";
+import { timezoneFor } from "@/lib/usTimezone";
 
 // Public, unauthenticated auth actions: self-serve registration and the
 // forgot/reset-password flow. These run BEFORE the caller has a session, so they
@@ -103,6 +104,8 @@ export async function registerAccount(raw: unknown): Promise<{ ok: true }> {
           billingEmail: data.email,
           address: data.companyAddress || null,
           phone: data.companyPhone || null,
+          // The zone the address or the phone says (lib/usTimezone, 2026-11-07); the default otherwise.
+          timezone: timezoneFor({ address: data.companyAddress, phone: data.companyPhone }) ?? undefined,
           tradeTypesJson: JSON.stringify(data.tradeTypes ?? []),
           // Only meaningful alongside the "Other" chip; ignored otherwise so a
           // label cannot outlive the selection that justified it.

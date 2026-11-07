@@ -53,19 +53,22 @@ export async function POST(req: Request) {
 }
 
 async function speak(text: string, stream: boolean): Promise<Response> {
-  let organizationId: string;
+  let actor: Awaited<ReturnType<typeof actorForSession>>;
   try {
-    const actor = await actorForSession();
-    const closed = await refusal(actor, "today", false);
-    if (closed) return NextResponse.json({ error: closed }, { status: 403 });
-    organizationId = actor.organizationId;
+    actor = await actorForSession();
   } catch {
     return NextResponse.json({ error: "Not signed in." }, { status: 403 });
   }
   if (!isOpenAIEnabled()) return NextResponse.json({ error: "The voice needs the AI set up on this server." }, { status: 503 });
-  const limit = await rateLimitShared(`assistant-speak:${organizationId}`, 200, HOUR);
+  const organizationId = actor.organizationId;
+  // The checks and the shop's voice read together, not one after another (2026-11-07): the reply sounds sooner.
+  const [closed, limit, desk] = await Promise.all([
+    refusal(actor, "today", false).catch(() => "Not signed in."),
+    rateLimitShared(`assistant-speak:${organizationId}`, 200, HOUR),
+    readDeskSettings(organizationId).catch(() => null),
+  ]);
+  if (closed) return NextResponse.json({ error: closed }, { status: 403 });
   if (!limit.ok) return NextResponse.json({ error: "Too much talking for one hour." }, { status: 429 });
-  const desk = await readDeskSettings(organizationId).catch(() => null);
   const voice = desk?.voice && (VOICES as readonly string[]).includes(desk.voice) ? desk.voice : "marin";
   try {
     const res = await getOpenAI().audio.speech.create({ model: "gpt-4o-mini-tts", voice, input: text, response_format: "mp3", instructions: HOW });
