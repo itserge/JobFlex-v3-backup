@@ -13,6 +13,9 @@
 // desk panel (use-assistant) and the same ears and voice (deck-voice).
 // As a page (/mobile-assistant-v1) it carries Talk and Tasks; as an overlay
 // (the dial button on every phone page, ./operator-fab) it opens listening.
+// Said while the last request is still being answered (2026-11-07, the owner:
+// "when I wanna talk to him again, he don't respond"): it is never dropped —
+// it shows as next and goes the moment the answer is in.
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import Link from "next/link";
@@ -49,7 +52,7 @@ type Drawing = DeckDrawingData | FenceDrawingData | RoofDrawingData;
 const STAMP: Record<Tone, string> = { warn: "yel", ok: "mnt", bad: "red", quiet: "dim", info: "wht" };
 
 export const OperatorSheet = forwardRef<OperatorHandle, Props>(function OperatorSheet({ state, variant, start = null, onClose }, ref) {
-  const { feed, pending, busy, building, landed, error, tasks, muted, setMuted, lang, load, loadTasks, ask, answer } = state;
+  const { feed, pending, busy, isBusy, building, landed, error, tasks, muted, setMuted, lang, load, loadTasks, ask, answer } = state;
   const [tab, setTab] = useState<"talk" | "tasks">("talk");
   const [heard, setHeard] = useState("");
   const [voiceError, setVoiceError] = useState<string | null>(null);
@@ -59,10 +62,12 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
   const [secs, setSecs] = useState(0);
   const [drawings, setDrawings] = useState<Record<string, Drawing | null>>({});
   const [isHolding, setIsHolding] = useState(false);
+  /** Said while the last request was still being answered: it goes next. */
+  const [next, setNext] = useState<string | null>(null);
+  const queued = useRef<string | null>(null);
   const holding = useRef(false);
   const drop = useRef(false);
   const downAt = useRef<{ x: number; y: number; t: number } | null>(null);
-  const busyRef = useRef(busy);
   const mutedRef = useRef(muted);
   const feedRef = useRef(feed);
   const logRef = useRef<HTMLDivElement>(null);
@@ -70,15 +75,31 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
   const coreRef = useRef<HTMLButtonElement>(null);
   const speakRef = useRef<(t: string) => void>(() => {});
   const hushRef = useRef<() => void>(() => {});
+  const resumeRef = useRef<() => void>(() => {});
   const endLiveRef = useRef<() => void>(() => {});
   const speakingRef = useRef(false);
+  const talkTurnRef = useRef<(said: string) => Promise<void>>(async () => {});
 
+  /** What was said while a request was out goes now (after a spoken turn, a typed one, or a Do it). */
+  const sendQueued = useCallback(() => {
+    const then = queued.current;
+    if (!then) return false;
+    queued.current = null;
+    setNext(null);
+    void talkTurnRef.current(then);
+    return true;
+  }, []);
+
+  /** One spoken request: the answer is said (live listens again after it); one said meanwhile goes right after. */
   const talkTurn = useCallback(
     async (said: string) => {
       const reply = await ask(said, { spoken: true });
+      const more = queued.current !== null;
       if (reply && !mutedRef.current) speakRef.current(forSpeech(reply));
+      else if (!more) resumeRef.current();
+      sendQueued();
     },
-    [ask],
+    [ask, sendQueued],
   );
 
   const speech = useDeckSpeech({
@@ -94,7 +115,6 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
       }
       // "Stop" ends a live conversation (and cuts a reply short); "wait" only cuts the reply short.
       if (/^(stop|that's all|that is all|bye|goodbye)\b/i.test(said)) {
-        hushRef.current();
         endLiveRef.current();
         return;
       }
@@ -108,9 +128,13 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
         if (w) void answer(w.id, false);
         return;
       }
-      // A sentence heard while the last one is still being answered waits for nothing: it is dropped.
-      if (busyRef.current) return;
       setHeard("");
+      // Heard while the last one is still being answered: it goes next (the newest, if they said more than one).
+      if (isBusy()) {
+        queued.current = said;
+        setNext(said);
+        return;
+      }
       void talkTurn(said);
     },
     onInterim: (words) => {
@@ -132,19 +156,21 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
     setVoiceError(null);
     speech.start("live");
   };
+  // Ended: the ears off first, then the voice (so cutting the reply short doesn't start them again).
   const endLive = () => {
-    speech.stop();
+    speech.cancel();
     speech.hush();
   };
   // What the ears' handlers read, kept current after every render (never during one).
   useEffect(() => {
-    busyRef.current = busy;
     mutedRef.current = muted;
     feedRef.current = feed;
     speakRef.current = speech.say;
     hushRef.current = speech.hush;
+    resumeRef.current = speech.resume;
     endLiveRef.current = endLive;
     speakingRef.current = speech.speaking;
+    talkTurnRef.current = talkTurn;
   });
 
   // The conversation, read as the sheet opens; listening at once when asked to.
@@ -245,11 +271,13 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
     if (words === undefined) setText("");
     const reply = await ask(t);
     if (reply === null && words === undefined) setText(t);
+    sendQueued();
   };
   const onAnswer = async (id: string, yes: boolean, pin?: string) => {
     const reply = await answer(id, yes, pin);
     if (reply && !mutedRef.current && (live || listening)) speakRef.current(forSpeech(reply));
     if (tab === "tasks") loadTasks();
+    sendQueued();
   };
 
   // The dial (2026-11-06): hold it and talk — let go to send, slide off to cancel; a tap turns live on (a conversation:
@@ -389,6 +417,12 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
             <p className="op-it op-working">
               <AudioLines /> Working on it…
             </p>
+          ) : null}
+          {next ? (
+            <>
+              <p className="op-me">{next}</p>
+              <p className="op-dim">Next — as soon as this answer is in.</p>
+            </>
           ) : null}
           {listening || heard ? (
             <div className="op-listen">

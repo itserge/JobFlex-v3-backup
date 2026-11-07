@@ -17,6 +17,9 @@ export type AssistantState = {
   /** The person's words waiting for an answer (shown before the server has them). */
   pending: string | null;
   busy: boolean;
+  /** Whether a request or an answer is out right now — read at the moment, not as of the last render (the ears hear
+   *  between renders: a sentence heard then is queued, never sent into a refusal and lost). */
+  isBusy: () => boolean;
   /** A build is running (an estimate): its answer is on the way. */
   building: boolean;
   /** The last build's words when it landed, for the voice (a new object each time). */
@@ -99,6 +102,8 @@ export function useAssistant(): AssistantState {
   const lang = useSyncExternalStore(subscribeLang, readLang, () => DEFAULT_SPEECH_LANG);
   const loading = useRef(false);
   const runs = useRef(0);
+  const out = useRef(false);
+  const isBusy = useCallback(() => out.current, []);
 
   const setMuted = useCallback((m: boolean) => {
     try {
@@ -173,7 +178,8 @@ export function useAssistant(): AssistantState {
   const ask = useCallback(
     async (text: string, opts?: { spoken?: boolean }) => {
       const t = text.trim();
-      if (!t || busy) return null;
+      if (!t || out.current) return null;
+      out.current = true;
       setBusy(true);
       setPending(t);
       setError(null);
@@ -190,16 +196,18 @@ export function useAssistant(): AssistantState {
         setError(FAILED);
         return null;
       } finally {
+        out.current = false;
         setPending(null);
         setBusy(false);
       }
     },
-    [busy, runBuild, takeFeed],
+    [runBuild, takeFeed],
   );
 
   const answer = useCallback(
     async (actionId: string, yes: boolean, pin?: string) => {
-      if (busy) return null;
+      if (out.current) return null;
+      out.current = true;
       setBusy(true);
       setPending(yes ? "Do it" : "Cancel");
       setError(null);
@@ -212,14 +220,15 @@ export function useAssistant(): AssistantState {
         setError(FAILED);
         return null;
       } finally {
+        out.current = false;
         setPending(null);
         setBusy(false);
       }
     },
-    [busy, takeFeed],
+    [takeFeed],
   );
 
-  return { feed, pending, busy, building, landed, error, tasks, muted, setMuted, lang, load, loadTasks, ask, answer };
+  return { feed, pending, busy, isBusy, building, landed, error, tasks, muted, setMuted, lang, load, loadTasks, ask, answer };
 }
 
 /** A reply as it is read out: the read-back's tap prompt becomes a spoken one, a dash range "to", money in whole

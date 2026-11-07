@@ -25,6 +25,16 @@
 // the browser's own voice is woken the same way. The ears listen for the language the person set (the Operator's
 // Settings), English unless they picked another. A reply can stream (the Operator's route answers a GET as the audio
 // is made): the element starts playing after the first moments instead of after the whole sentence is made.
+//
+// TURN AFTER TURN (2026-11-07, the owner: "he answers me back, and then when I wanna talk to him again, he don't
+// respond and he don't listen"). iPhone Safari writes a continuous session's words down as one growing guess and
+// makes them final only when the session is stopped — so live hands on a sentence after a pause in the guess too,
+// and then listens again only after the reply (a fresh session: the old one would hand the same words on twice).
+// The element is unlocked ONCE: playing the moment of silence again at every touch started sound at the instant the
+// microphone was starting, and the second turn's ears never came on. A reply's sound is let go of when it ends. A
+// session that never says it started (after the first one did) is started once more; a stopped one that never says
+// it ended is aborted, not left running under the next one. When the finger lifts on words already heard they are
+// handed on at once — no waiting a second and a half for a recogniser that may never say it ended.
 
 import * as React from "react";
 
@@ -62,9 +72,12 @@ const srCtor = (): SRCtor | null => {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 };
 
-/** The one element every reply plays through (see the head of the file). */
+/** The one element every reply plays through (see the head of the file), and whether a touch has unlocked it. */
 let player: HTMLAudioElement | null = null;
+let unlocked = false;
 let silence: string | null = null;
+/** A session has started on this page: the microphone is allowed, so one that never starts is stuck, not asking. */
+let everStarted = false;
 
 /** 60 ms of silence as a WAV, made here rather than carried as a data URL. */
 function silentClip(): string {
@@ -93,9 +106,10 @@ function silentClip(): string {
 }
 
 /** Call from the person's own tap or hold (a pointer or click handler): afterwards a reply that arrives later may
- *  play. Harmless anywhere else, and while a reply is playing it leaves it alone. */
+ *  play. Once is enough — after that it does nothing, so no sound starts while the microphone is starting. Harmless
+ *  anywhere else, and while a reply is playing it leaves it alone. */
 export function unlockVoice(): void {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined" || unlocked) return;
   try {
     if (!player) {
       player = new Audio();
@@ -103,8 +117,15 @@ export function unlockVoice(): void {
       (player as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
     }
     if (!player.paused && !player.ended) return;
+    player.onended = null;
+    player.onerror = null;
     player.src = silentClip();
-    void player.play().catch(() => undefined);
+    void player
+      .play()
+      .then(() => {
+        unlocked = true;
+      })
+      .catch(() => undefined);
     if ("speechSynthesis" in window && !window.speechSynthesis.speaking) {
       const u = new SpeechSynthesisUtterance(" ");
       u.volume = 0;
@@ -115,15 +136,34 @@ export function unlockVoice(): void {
   }
 }
 
+/** A reply's sound is over (or cut short): its handlers go and the element lets go of the audio. */
+function letGo(a: HTMLAudioElement) {
+  a.onended = null;
+  a.onerror = null;
+  try {
+    a.pause();
+    a.removeAttribute("src");
+    a.load();
+  } catch {
+    /* nothing loaded */
+  }
+}
+
 export type HearMode = "native" | "record" | "none";
 export type MicState = "off" | "listening" | "recording" | "sending";
 /** How it listens (see the head of the file); `true` is free, `false` is once, as the Deck Studio has always said it. */
 export type HearHow = "once" | "free" | "hold" | "live";
 
-/** Live: a sentence is handed on this long after its last piece. */
+/** Live: a sentence is handed on this long after its last finished piece — or after the last change in the guess,
+ *  where the recogniser finishes nothing until it is stopped (iPhone Safari). */
 const LIVE_PAUSE_MS = 700;
-/** Hold: the finger lifted but the recogniser never said it ended — hand on what was heard anyway. */
-const END_GRACE_MS = 1500;
+const LIVE_GUESS_PAUSE_MS = 1000;
+/** Hold: the finger lifted — the last words arrive with the end; without an end, what was heard goes after this
+ *  (at once when words were already heard, a little longer when nothing was yet). */
+const HEARD_GRACE_MS = 300;
+const END_GRACE_MS = 1200;
+/** A session that has not said it started by now (after one did on this page) is started once more. */
+const START_WATCH_MS = 1800;
 /** Record mode: stop on this much quiet after speech, or at this length — hold records until the finger lifts. */
 const QUIET_MS = 1300;
 const RECORD_MAX_MS = 12_000;
@@ -190,6 +230,11 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
   const startedAt = React.useRef(0);
   const quickEnds = React.useRef(0);
   const restartTimer = React.useRef(0);
+  /** A session that never says it started: watched, and started once more. */
+  const startWatch = React.useRef(0);
+  const retried = React.useRef(false);
+  /** Live: a sentence was handed on — the ears rest until the reply has been said (or resume()). */
+  const thinking = React.useRef(false);
   const media = React.useRef<{ stream: MediaStream; recorder: MediaRecorder; ctx: AudioContext | null; raf: number } | null>(null);
   /** The natural voice playing, the answer it belongs to (a newer one drops a late one), and whether it works here. */
   const audio = React.useRef<HTMLAudioElement | null>(null);
@@ -200,8 +245,10 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
   const off = React.useCallback(() => {
     want.current = null;
     flushOnEnd.current = null;
+    thinking.current = false;
     window.clearTimeout(graceTimer.current);
     window.clearTimeout(restartTimer.current);
+    window.clearTimeout(startWatch.current);
     setHearing("off");
     setMic("off");
   }, []);
@@ -218,6 +265,26 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
     else if (want.current === "hold" || flushOnEnd.current) h.current.onNothing?.();
   }, []);
 
+  /** Live: the sentence goes — and this session with it (its guess would hand the same words on again); the ears
+   *  rest until the reply has been said, then a fresh session listens (say → resume). */
+  const handOnLive = React.useCallback(() => {
+    if (want.current !== "live") return;
+    const r = rec.current;
+    thinking.current = true;
+    window.clearTimeout(restartTimer.current);
+    window.clearTimeout(startWatch.current);
+    if (r) {
+      r.onend = null;
+      try {
+        r.abort();
+      } catch {
+        /* already stopped */
+      }
+    }
+    setMic("off");
+    flush(true);
+  }, [flush]);
+
   /** The listener as of the last render, for the restart timer (a session that ended starts the next one). */
   const startNativeRef = React.useRef<() => void>(() => {});
   const startNative = React.useCallback(() => {
@@ -228,6 +295,7 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
     } catch {
       /* already stopped */
     }
+    thinking.current = false;
     const r = new Ctor();
     // The Operator passes the language the person set (Settings → AI Operator); the Deck Studio stays English.
     r.lang = handlers.lang ?? "en-US";
@@ -235,7 +303,14 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
     r.interimResults = true;
     r.maxAlternatives = 3;
     startedAt.current = Date.now();
-    r.onstart = () => setMic("listening");
+    let began = false;
+    r.onstart = () => {
+      began = true;
+      everStarted = true;
+      retried.current = false;
+      window.clearTimeout(startWatch.current);
+      setMic("listening");
+    };
     r.onresult = (e) => {
       const w = want.current;
       const gathering = w === "hold" || w === "live";
@@ -253,10 +328,11 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
       interim.current = inter.trim();
       if (gathering) {
         h.current.onInterim([...finals.current, interim.current].join(" ").trim());
-        // Live: a sentence is handed on after a short pause with nothing new — its pieces joined.
-        if (w === "live" && finals.current.length && !flushOnEnd.current) {
+        // Live: a sentence is handed on after a short pause with nothing new — its pieces joined; a guess that
+        // never becomes final (iPhone Safari) after a little longer.
+        if (w === "live" && (finals.current.length || interim.current) && !flushOnEnd.current) {
           window.clearTimeout(flushTimer.current);
-          flushTimer.current = window.setTimeout(() => flush(true), LIVE_PAUSE_MS);
+          flushTimer.current = window.setTimeout(handOnLive, interim.current ? LIVE_GUESS_PAUSE_MS : LIVE_PAUSE_MS);
         }
       } else h.current.onInterim(interim.current);
     };
@@ -282,6 +358,12 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
         off();
         flush(keep);
         return;
+      }
+      if (thinking.current) return;
+      // A session that ended on its own: its last guess is kept as said (the next session starts a new guess).
+      if ((w === "hold" || w === "live") && interim.current) {
+        finals.current.push(interim.current);
+        interim.current = "";
       }
       if (w && w !== "once" && !talking.current) {
         // It keeps listening: at once, or after a little wait when it keeps ending the moment it starts.
@@ -309,7 +391,30 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
     } catch {
       setMic("off");
     }
-  }, [handlers.lang, flush, off]);
+    // The microphone was allowed before on this page, so a session that stays silent about starting is stuck (the
+    // second turn on an iPhone): once more, then say so instead of seeming to listen.
+    window.clearTimeout(startWatch.current);
+    if (everStarted) {
+      startWatch.current = window.setTimeout(() => {
+        if (began || rec.current !== r || !want.current || talking.current || thinking.current) return;
+        if (!retried.current) {
+          retried.current = true;
+          startNativeRef.current();
+          return;
+        }
+        retried.current = false;
+        r.onend = null;
+        try {
+          r.abort();
+        } catch {
+          /* never started */
+        }
+        off();
+        h.current.onInterim("");
+        h.current.onError("The microphone didn't come on — tap the dial and talk again.");
+      }, START_WATCH_MS);
+    }
+  }, [handlers.lang, flush, off, handOnLive]);
   React.useEffect(() => {
     startNativeRef.current = startNative;
   }, [startNative]);
@@ -428,6 +533,8 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
       window.clearTimeout(flushTimer.current);
       want.current = w;
       flushOnEnd.current = null;
+      thinking.current = false;
+      retried.current = false;
       finals.current = [];
       interim.current = "";
       quickEnds.current = 0;
@@ -454,15 +561,22 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
         flush(keep);
         return;
       }
-      // iPhone Safari sometimes never says it ended after a stop: hand on what was heard anyway.
+      // iPhone Safari sometimes never says it ended after a stop: hand on what was heard anyway — at once when words
+      // were already heard — and abort that session, so it is not still running when the next turn starts.
+      const heardSome = finals.current.length > 0 || interim.current.trim() !== "";
       window.clearTimeout(graceTimer.current);
       graceTimer.current = window.setTimeout(() => {
         if (!flushOnEnd.current || rec.current !== r) return;
         const keep = flushOnEnd.current === "all";
         r.onend = null;
+        try {
+          r.abort();
+        } catch {
+          /* already ended */
+        }
         off();
         flush(keep);
-      }, END_GRACE_MS);
+      }, heardSome ? HEARD_GRACE_MS : END_GRACE_MS);
       return;
     }
     want.current = null;
@@ -492,6 +606,16 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
     h.current.onInterim("");
   }, [stopRecording, off]);
 
+  /** Listen again after a reply (free and live): a fresh session, unless a reply is being said. The Operator calls it
+   *  when a turn ends with nothing to say (muted, or it didn't go through). */
+  const resume = React.useCallback(() => {
+    const w = want.current;
+    if (talking.current || !w || w === "once" || w === "hold") return;
+    thinking.current = false;
+    if (mode === "native") startNative();
+    else if (mode === "record" && !media.current) void startRecording();
+  }, [mode, startNative, startRecording]);
+
   /** Read a reply out — the natural voice, else the browser's; the microphone pauses for it and comes back after
    *  (free and live). */
   const say = React.useCallback(
@@ -500,13 +624,14 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
       const run = ++sayRun.current;
       if ("speechSynthesis" in window) window.speechSynthesis.cancel();
       if (audio.current) {
-        audio.current.pause();
+        letGo(audio.current);
         audio.current = null;
       }
       const listening = want.current !== null;
       talking.current = true;
       setSpeaking(true);
       window.clearTimeout(restartTimer.current);
+      window.clearTimeout(startWatch.current);
       if (listening && mode === "native") {
         try {
           rec.current?.abort();
@@ -522,10 +647,8 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
         talking.current = false;
         setSpeaking(false);
         const w = want.current;
-        if (w && w !== "once" && w !== "hold") {
-          if (mode === "native") startNative();
-          else if (mode === "record") void startRecording();
-        } else if (w && mode === "native") setMic("off");
+        if (w && w !== "once" && w !== "hold") resume();
+        else if (w && mode === "native") setMic("off");
       };
       const browserVoice = () => {
         if (run !== sayRun.current) return;
@@ -550,11 +673,14 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
         a.onended = () => {
           if (audio.current === a) audio.current = null;
           streamFails.current = 0;
+          letGo(a);
           done();
         };
         a.onerror = () => {
           // Twice in a row (not set up, not allowed here): the browser's voice for the rest of the visit.
           if (++streamFails.current >= 2) natural.current = false;
+          if (audio.current === a) audio.current = null;
+          letGo(a);
           browserVoice();
         };
         a.src = `${h.current.speakUrl}?t=${encodeURIComponent(text)}&n=${run}`;
@@ -577,6 +703,7 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
           const end = () => {
             URL.revokeObjectURL(url);
             if (audio.current === a) audio.current = null;
+            letGo(a);
             done();
           };
           a.onended = end;
@@ -592,26 +719,22 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
         })
         .catch(() => browserVoice());
     },
-    [mode, startNative, startRecording, stopRecording],
+    [mode, stopRecording, resume],
   );
 
-  /** Stop talking (a reply cut short); live listens again after it. */
+  /** Stop talking (a reply cut short); live listens again after it — and after a sentence it only rested for ("wait"). */
   const hush = React.useCallback(() => {
     sayRun.current++;
     if (audio.current) {
-      audio.current.pause();
+      letGo(audio.current);
       audio.current = null;
     }
     if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
     const wasTalking = talking.current;
     talking.current = false;
     setSpeaking(false);
-    const w = want.current;
-    if (wasTalking && w && w !== "once" && w !== "hold") {
-      if (mode === "native") startNative();
-      else if (mode === "record") void startRecording();
-    }
-  }, [mode, startNative, startRecording]);
+    if (wasTalking || thinking.current) resume();
+  }, [resume]);
 
   // Voices load late in Chrome; asking once wakes them. Everything stops when the panel goes.
   React.useEffect(() => {
@@ -634,5 +757,5 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
     };
   }, [stopRecording]);
 
-  return { mode, mic, speaking, hearing, start, stop, cancel, say, hush };
+  return { mode, mic, speaking, hearing, start, stop, cancel, say, hush, resume };
 }
