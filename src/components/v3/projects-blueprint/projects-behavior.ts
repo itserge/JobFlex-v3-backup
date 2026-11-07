@@ -401,6 +401,9 @@ export function initProjectsContent(
     let draftOccupied = false;
     // A new build's start questions (part 4): the picks by question, as the buttons' values; unsaid = the usual.
     let draftBuild: Record<string, string> = {};
+    // Who it is for and how the money is made (part 5): a new build for a client with one margin unless said.
+    let draftForWhom = "CLIENT";
+    let draftMode = "PROJECT_MARGIN";
     let restoreFocus: HTMLElement | null = null;
     let saving = false;
 
@@ -490,8 +493,25 @@ export function initProjectsContent(
         b.classList.toggle("on", on);
         b.setAttribute("aria-pressed", on ? "true" : "false");
       });
-      // The lot's questions are a new build's.
+      // The lot's questions and the money are a new build's.
       $("#pjfBuildFld")?.classList.toggle("is-hidden", draftKind !== "NEW_BUILD");
+      $("#pjfMoneyFld")?.classList.toggle("is-hidden", draftKind !== "NEW_BUILD");
+      $$("#pjfForWhom .fseg-btn").forEach((b) => {
+        const on = b.dataset.v === draftForWhom;
+        b.classList.toggle("on", on);
+        b.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+      const whoHint = $("#pjfForWhomHint");
+      if (whoHint) whoHint.textContent = draftForWhom === "SELF" ? "A spec house, your own home, a flip: one budget from the land to the keys, no margin." : "The client has a budget; you earn a margin or a fee on the work.";
+      $("#pjfModeFld")?.classList.toggle("is-hidden", draftForWhom !== "CLIENT");
+      $("#pjfSaleFld")?.classList.toggle("is-hidden", draftForWhom !== "SELF");
+      $$("#pjfMode .fseg-btn").forEach((b) => {
+        const on = b.dataset.v === draftMode;
+        b.classList.toggle("on", on);
+        b.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+      const marginLbl = $("#pjfMarginLbl");
+      if (marginLbl) marginLbl.textContent = draftMode === "COST_PLUS" ? "Fee, percent of cost" : "Margin, percent of cost";
       $$("#pjfBuild [data-build]").forEach((g) => {
         const key = g.dataset.build ?? "";
         const v = draftBuild[key] ?? g.dataset.default ?? "";
@@ -528,6 +548,8 @@ export function initProjectsContent(
       draftKind = "REMODEL";
       draftOccupied = false;
       draftBuild = {};
+      draftForWhom = "CLIENT";
+      draftMode = "PROJECT_MARGIN";
       paintKind();
       paintStatus();
       markErr(false);
@@ -599,6 +621,16 @@ export function initProjectsContent(
         draftOccupied = occSeg.dataset.v === "yes";
         paintKind();
       }
+      const whoSeg = t.closest<HTMLElement>("#pjfForWhom .fseg-btn");
+      if (whoSeg) {
+        draftForWhom = whoSeg.dataset.v === "SELF" ? "SELF" : "CLIENT";
+        paintKind();
+      }
+      const modeSeg = t.closest<HTMLElement>("#pjfMode .fseg-btn");
+      if (modeSeg) {
+        draftMode = modeSeg.dataset.v || "PROJECT_MARGIN";
+        paintKind();
+      }
       const buildSeg = t.closest<HTMLElement>("#pjfBuild .fseg-btn");
       const buildGroup = buildSeg?.closest<HTMLElement>("[data-build]");
       if (buildSeg && buildGroup?.dataset.build) {
@@ -659,6 +691,12 @@ export function initProjectsContent(
       const occupied = draftKind === "REMODEL" && draftOccupied;
       // The lot's answers: the picks, the usual for the rest (lib/projectPhases reads them).
       const build = draftKind === "NEW_BUILD" ? buildAnswersFromStrings(Object.fromEntries($$("#pjfBuild [data-build]").map((g) => [g.dataset.build ?? "", draftBuild[g.dataset.build ?? ""] ?? g.dataset.default ?? ""]))) : undefined;
+      // Who it is for and the money (part 5): a new build says; a remodel stays a client build with no mode (the Edit dialog changes it).
+      const numOf = (v: string | undefined) => {
+        const n = Number((v ?? "").replace(/[^\d.]/g, ""));
+        return (v ?? "").trim() && Number.isFinite(n) ? n : null;
+      };
+      const money = draftKind === "NEW_BUILD" ? { forWhom: draftForWhom, moneyMode: draftForWhom === "SELF" ? "NONE" : draftMode, marginPct: draftForWhom === "CLIENT" ? numOf(inp("#pjfMargin")?.value) : null, salePrice: draftForWhom === "SELF" ? numOf(inp("#pjfSale")?.value) : null } : {};
       const budget = Math.round(
         Number((inp("#pjfBudget")?.value || "").replace(/[^\d.]/g, "")) || 0,
       );
@@ -699,6 +737,7 @@ export function initProjectsContent(
           kind,
           occupied,
           build,
+          ...money,
         });
         projectsData.unshift({
           id: res.id,

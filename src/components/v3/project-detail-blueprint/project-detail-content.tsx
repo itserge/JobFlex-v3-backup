@@ -50,7 +50,7 @@ import {
   type PdJob,
   type PdOpens,
   type PdPayments,
-  type PdBuying, PdSubs, PdSelections, PdPhases, PdLot,
+  type PdBuying, PdSubs, PdSelections, PdPhases, PdLot, PdMoneyPlan,
   type PdField,
   type PdFinish,
   type PdShare,
@@ -87,6 +87,7 @@ import { ProjectSubsCard } from "@/components/v3/project-links/project-subs-card
 import { ProjectSelectionsCard } from "@/components/v3/project-links/project-selections-card";
 import { ProjectPhasesStrip } from "@/components/v3/project-links/project-phases-strip";
 import { ProjectLotCard } from "@/components/v3/project-links/project-lot-card";
+import { ProjectMoneyCard } from "@/components/v3/project-links/project-money-card";
 import type { BuildAnswers } from "@/lib/projectPhases/shared";
 import { ProjectFieldCard } from "@/components/v3/project-links/project-field-card";
 import { ProjectTimelineCard } from "@/components/v3/project-links/project-timeline-card";
@@ -153,6 +154,7 @@ export function ProjectDetailContent({
   lotAddress = null,
   build = null,
   buildWords = null,
+  moneyPlan,
   field,
   timeline,
   finish,
@@ -172,6 +174,8 @@ export function ProjectDetailContent({
   lotAddress?: string | null;
   build?: BuildAnswers | null;
   buildWords?: string | null;
+  /** Who it is for and the money (part 5). */
+  moneyPlan?: PdMoneyPlan;
   /** On site: problems, hours, the subs' bills (2026-11-05). */
   field?: PdField;
   /** The stages across the weeks (2026-11-06). */
@@ -404,6 +408,7 @@ export function ProjectDetailContent({
       {selections ? <ProjectSelectionsCard projectId={project.id} selections={selections} stages={stages.stages} canManage={canManage} /> : null}
       {buying ? <ProjectBuyingCard projectId={project.id} buying={buying} stages={stages.stages} canManage={canManage} /> : null}
       {subs ? <ProjectSubsCard projectId={project.id} subs={subs} stages={stages.stages} canManage={canManage} /> : null}
+      {moneyPlan ? <ProjectMoneyCard projectId={project.id} money={moneyPlan} canManage={canManage} /> : null}
       {budget ? <ProjectBudgetCard projectId={project.id} budget={budget} /> : null}
       <ProjectPaymentsCard payments={payments} canManage={canManage} />
 

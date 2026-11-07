@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { listProjectClients, updateProject } from "@/actions/projects";
 import { KIND_HINT, KIND_LABEL, PROJECT_KINDS, kindOf, type ProjectKind } from "@/lib/projectKind";
+import { FOR_WHOM, FOR_WHOM_HINT, FOR_WHOM_LABEL, MONEY_MODES, MONEY_MODE_HINT, MONEY_MODE_LABEL, parseMoneySettings, type ForWhom, type MoneyMode } from "@/lib/projectMoneyPlan/shared";
 import { closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
 import { initDatePopovers } from "@/components/v3/shared/date-popover";
 import s from "./project-detail.module.css";
@@ -47,6 +48,17 @@ export type EditableProject = {
   kind?: string;
   occupied?: boolean;
   kindLocked?: boolean;
+  /** Who it is for and how the money is made (part 5, lib/projectMoneyPlan). */
+  forWhom?: string;
+  moneyMode?: string;
+  marginPct?: number | null;
+  feeAmount?: number | null;
+  salePrice?: number | null;
+};
+
+const numOf = (v: string): number | null => {
+  const n = Number(v.replace(/[^\d.]/g, ""));
+  return v.trim() && Number.isFinite(n) ? n : null;
 };
 
 export function ProjectEditDialog({ project, open, onClose }: { project: EditableProject; open: boolean; onClose: () => void }) {
@@ -56,6 +68,9 @@ export function ProjectEditDialog({ project, open, onClose }: { project: Editabl
   const [status, setStatus] = useState(project.status ?? "ACTIVE");
   const [kind, setKind] = useState<ProjectKind>(kindOf(project.kind));
   const [occupied, setOccupied] = useState(project.occupied === true);
+  const money0 = parseMoneySettings(project);
+  const [forWhom, setForWhom] = useState<ForWhom>(money0.forWhom);
+  const [moneyMode, setMoneyMode] = useState<MoneyMode>(money0.forWhom === "CLIENT" && money0.moneyMode === "NONE" ? "NONE" : money0.moneyMode);
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -126,6 +141,11 @@ export function ProjectEditDialog({ project, open, onClose }: { project: Editabl
         clientId: String(f.get("clientId") ?? "") || null,
         ...(project.kindLocked ? {} : { kind }),
         occupied: kind === "REMODEL" ? occupied : false,
+        forWhom,
+        moneyMode: forWhom === "SELF" ? "NONE" : moneyMode,
+        marginPct: numOf(String(f.get("marginPct") ?? "")),
+        feeAmount: numOf(String(f.get("feeAmount") ?? "")),
+        salePrice: numOf(String(f.get("salePrice") ?? "")),
       });
       onClose();
       router.refresh();
@@ -209,6 +229,52 @@ export function ProjectEditDialog({ project, open, onClose }: { project: Editabl
                 </div>
               </div>
             ) : null}
+            {/* WHO IT IS FOR, AND THE MONEY (part 5): for a client with a margin or a fee, or for yourself. */}
+            <div className={cx("mf")} data-edit-money>
+              <span className={cx("mf-lbl")}>Who is it for</span>
+              <div className={cx("pd-edit-seg")} role="group" aria-label="Who the project is for">
+                {FOR_WHOM.map((w) => (
+                  <button key={w} type="button" className={cx("pd-edit-opt", forWhom === w && "on")} aria-pressed={forWhom === w} data-for-whom={w} onClick={() => { setForWhom(w); if (w === "CLIENT" && moneyMode === "NONE") setMoneyMode("PROJECT_MARGIN"); }}>
+                    {FOR_WHOM_LABEL[w]}
+                  </button>
+                ))}
+              </div>
+              <div className={cx("mf-note")}>{FOR_WHOM_HINT[forWhom]}</div>
+            </div>
+            {forWhom === "CLIENT" ? (
+              <>
+                <div className={cx("mf")}>
+                  <span className={cx("mf-lbl")}>How you earn</span>
+                  <div className={cx("pd-edit-seg")} role="group" aria-label="How the money is made">
+                    {MONEY_MODES.map((m) => (
+                      <button key={m} type="button" className={cx("pd-edit-opt", moneyMode === m && "on")} aria-pressed={moneyMode === m} data-money-mode={m} onClick={() => setMoneyMode(m)}>
+                        {MONEY_MODE_LABEL[m]}
+                      </button>
+                    ))}
+                  </div>
+                  <div className={cx("mf-note")}>{MONEY_MODE_HINT[moneyMode]}</div>
+                </div>
+                {moneyMode !== "NONE" ? (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    <div className={cx("mf")}>
+                      <label className={cx("mf-lbl")} htmlFor="pdEditMargin">{moneyMode === "COST_PLUS" ? "Fee, % of cost" : "Margin, % of cost"}</label>
+                      <input className={cx("mf-in")} id="pdEditMargin" name="marginPct" defaultValue={project.marginPct != null ? String(project.marginPct) : ""} placeholder="18" inputMode="decimal" autoComplete="off" />
+                    </div>
+                    {moneyMode === "COST_PLUS" ? (
+                      <div className={cx("mf")}>
+                        <label className={cx("mf-lbl")} htmlFor="pdEditFee">Or a fixed fee ($)</label>
+                        <input className={cx("mf-in")} id="pdEditFee" name="feeAmount" defaultValue={project.feeAmount != null ? String(project.feeAmount) : ""} placeholder="45000" inputMode="decimal" autoComplete="off" />
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <div className={cx("mf")}>
+                <label className={cx("mf-lbl")} htmlFor="pdEditSale">Sale price ($, optional)</label>
+                <input className={cx("mf-in")} id="pdEditSale" name="salePrice" defaultValue={project.salePrice != null ? String(project.salePrice) : ""} placeholder="780000" inputMode="decimal" autoComplete="off" />
+              </div>
+            )}
             <div className={cx("mf")}>
               <span className={cx("mf-lbl")}>Status</span>
               <div className={cx("pd-edit-seg")} role="group" aria-label="Project status">

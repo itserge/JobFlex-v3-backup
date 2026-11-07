@@ -192,6 +192,40 @@ export function ProjectsContent({
             {/* A NEW BUILD'S START QUESTIONS (2026-11-07, part 4, lib/projectPhases): sewer or septic, water or a well,
                 the foundation, the stories, a garage, a shop, a lender, power, gas, fiber — the phases are shaped from
                 them. The usual answer is on; painted and read in projects-behavior like the kind segment. */}
+            {/* WHO IT IS FOR, AND THE MONEY (2026-11-07, part 5, lib/projectMoneyPlan): a new build for a client — with a
+                margin or a fee — or for yourself, a cost tracker with a sale price. Painted and read in projects-behavior. */}
+            <div className="fld is-hidden" id="pjfMoneyFld">
+              <span className="fld-lbl">Who is it for</span>
+              <div className="fseg" id="pjfForWhom" role="group" aria-label="Who the project is for">
+                <button className="fseg-btn on" type="button" data-v="CLIENT" aria-pressed="true">
+                  For a client
+                </button>
+                <button className="fseg-btn" type="button" data-v="SELF" aria-pressed="false">
+                  For myself
+                </button>
+              </div>
+              <span className="fld-hint" id="pjfForWhomHint">The client has a budget; you earn a margin or a fee on the work.</span>
+              <div id="pjfModeFld">
+                <span className="fseg-q-ask" style={{ display: "block", marginTop: 8 }}>How you earn</span>
+                <div className="fseg fseg--sm" id="pjfMode" role="group" aria-label="How the money is made">
+                  <button className="fseg-btn on" type="button" data-v="PROJECT_MARGIN" aria-pressed="true">
+                    One margin on the whole project
+                  </button>
+                  <button className="fseg-btn" type="button" data-v="JOB_MARGIN" aria-pressed="false">
+                    A margin per job
+                  </button>
+                  <button className="fseg-btn" type="button" data-v="COST_PLUS" aria-pressed="false">
+                    Cost-plus
+                  </button>
+                </div>
+                <label className="fseg-q-ask" htmlFor="pjfMargin" style={{ display: "block", marginTop: 8 }} id="pjfMarginLbl">Margin, percent of cost</label>
+                <input className="pinput" id="pjfMargin" name="marginPct" type="text" inputMode="decimal" placeholder="18" autoComplete="off" style={{ maxWidth: 140 }} />
+              </div>
+              <div id="pjfSaleFld" className="is-hidden">
+                <label className="fseg-q-ask" htmlFor="pjfSale" style={{ display: "block", marginTop: 8 }}>Sale price ($, optional)</label>
+                <input className="pinput" id="pjfSale" name="salePrice" type="text" inputMode="numeric" placeholder="780,000" autoComplete="off" style={{ maxWidth: 200 }} />
+              </div>
+            </div>
             <div className="fld is-hidden" id="pjfBuildFld">
               <span className="fld-lbl">About the lot and the house</span>
               <div className="fseg-grid" id="pjfBuild">

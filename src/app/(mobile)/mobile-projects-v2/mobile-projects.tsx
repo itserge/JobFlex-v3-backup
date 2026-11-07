@@ -510,6 +510,11 @@ export function MobileProjects() {
   const [draftOccupied, setDraftOccupied] = useState(false);
   // A new build's start questions (part 4, lib/projectPhases): the picks by question; unsaid = the usual.
   const [draftBuild, setDraftBuild] = useState<Record<string, string>>({});
+  // Who it is for and how the money is made (part 5): a new build for a client with one margin unless said.
+  const [draftForWhom, setDraftForWhom] = useState<"CLIENT" | "SELF">("CLIENT");
+  const [draftMode, setDraftMode] = useState<"PROJECT_MARGIN" | "JOB_MARGIN" | "COST_PLUS">("PROJECT_MARGIN");
+  const [draftMargin, setDraftMargin] = useState("");
+  const [draftSale, setDraftSale] = useState("");
   const [nameErr, setNameErr] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveErr, setSaveErr] = useState<string | null>(null);
@@ -859,6 +864,10 @@ export function MobileProjects() {
     setDraftKind("REMODEL");
     setDraftOccupied(false);
     setDraftBuild({});
+    setDraftForWhom("CLIENT");
+    setDraftMode("PROJECT_MARGIN");
+    setDraftMargin("");
+    setDraftSale("");
     setNameErr(false);
     setSaveErr(null);
     setPickerFor(null);
@@ -911,6 +920,14 @@ export function MobileProjects() {
         kind: draftKind,
         occupied: draftKind === "REMODEL" && draftOccupied,
         build: draftKind === "NEW_BUILD" ? buildAnswersFromStrings(Object.fromEntries(BUILD_QUESTIONS.map((q) => [q.key, draftBuild[q.key] ?? String(BUILD_DEFAULTS[q.key])]))) : undefined,
+        ...(draftKind === "NEW_BUILD"
+          ? {
+              forWhom: draftForWhom,
+              moneyMode: draftForWhom === "SELF" ? "NONE" : draftMode,
+              marginPct: draftForWhom === "CLIENT" && draftMargin.trim() ? Number(draftMargin.replace(/[^\d.]/g, "")) || null : null,
+              salePrice: draftForWhom === "SELF" && draftSale.trim() ? Number(draftSale.replace(/[^\d.]/g, "")) || null : null,
+            }
+          : {}),
         startsAt: ISO_DATE.test(form.starts) ? form.starts : null,
         endsAt: ISO_DATE.test(form.ends) ? form.ends : null,
         budget: Math.round(Number(form.budget.replace(/[^\d.]/g, "")) || 0),
@@ -1262,6 +1279,38 @@ export function MobileProjects() {
             </div>
             <span className={styles.fldHint}>{draftKind === "REMODEL" ? "The house stands: a kitchen, a bath, an addition, a whole house." : "A lot, then a house: land, permits, foundation to the keys."}</span>
           </div>
+          {draftKind === "NEW_BUILD" ? (
+            <div className={styles.fld} data-money-seg>
+              <span className={styles.fldLbl}>Who is it for</span>
+              <div className={styles.fseg} role="group" aria-label="Who the project is for">
+                {(["CLIENT", "SELF"] as const).map((w) => (
+                  <button key={w} className={`${styles.fsegBtn} ${draftForWhom === w ? styles.on : ""}`} type="button" data-v={w} aria-pressed={draftForWhom === w} onClick={() => setDraftForWhom(w)}>
+                    {w === "CLIENT" ? "For a client" : "For myself"}
+                  </button>
+                ))}
+              </div>
+              <span className={styles.fldHint}>{draftForWhom === "SELF" ? "A spec house, your own home, a flip: one budget from the land to the keys, no margin." : "The client has a budget; you earn a margin or a fee on the work."}</span>
+              {draftForWhom === "CLIENT" ? (
+                <div style={{ marginTop: 8 }}>
+                  <span className={styles.fldHint} style={{ marginTop: 0 }}>How you earn</span>
+                  <div className={styles.fseg} role="group" aria-label="How the money is made">
+                    {(["PROJECT_MARGIN", "JOB_MARGIN", "COST_PLUS"] as const).map((m) => (
+                      <button key={m} className={`${styles.fsegBtn} ${draftMode === m ? styles.on : ""}`} type="button" data-v={m} aria-pressed={draftMode === m} onClick={() => setDraftMode(m)}>
+                        {m === "PROJECT_MARGIN" ? "One margin" : m === "JOB_MARGIN" ? "Per job" : "Cost-plus"}
+                      </button>
+                    ))}
+                  </div>
+                  <label className={styles.fldHint} htmlFor="mpMargin" style={{ display: "block", marginTop: 8 }}>{draftMode === "COST_PLUS" ? "Fee, percent of cost" : "Margin, percent of cost"}</label>
+                  <input className={styles.pinput} id="mpMargin" type="text" inputMode="decimal" placeholder="18" autoComplete="off" value={draftMargin} onChange={(e) => setDraftMargin(e.target.value)} style={{ maxWidth: 140 }} />
+                </div>
+              ) : (
+                <div style={{ marginTop: 8 }}>
+                  <label className={styles.fldHint} htmlFor="mpSale" style={{ display: "block", marginTop: 0 }}>Sale price ($, optional)</label>
+                  <input className={styles.pinput} id="mpSale" type="text" inputMode="numeric" placeholder="780,000" autoComplete="off" value={draftSale} onChange={(e) => setDraftSale(e.target.value)} style={{ maxWidth: 200 }} />
+                </div>
+              )}
+            </div>
+          ) : null}
           {draftKind === "NEW_BUILD" ? (
             <div className={styles.fld} data-build-seg>
               <span className={styles.fldLbl}>About the lot and the house</span>
