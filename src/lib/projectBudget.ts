@@ -52,6 +52,10 @@ export function isBudgetCategory(v: string): v is BudgetCategory {
 // is not one of the six is its own kind — "Tile", "Cabinets", "Dumpster" — tracked like the six: expenses logged on
 // the project under that name count against it. The six keep their keys; a custom kind's key is its name as typed.
 
+/** How many kinds of its own a project's budget holds — a lender's budget brought in runs to 40 lines and more
+ *  (2026-11-07, lib/projectBudgetImport). */
+export const MAX_KINDS = 60;
+
 /** The six's label, or a custom kind's own name. */
 export function categoryLabel(c: string): string {
   return isBudgetCategory(c) ? CATEGORY_LABEL[c] : c;

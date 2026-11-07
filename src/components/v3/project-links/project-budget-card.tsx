@@ -17,6 +17,11 @@
 // it); and "Fill it in for me" reads the budget off the sold estimate's costs, or a rule of thumb for the trade,
 // plainly labelled (lib/projectBudgetSuggest).
 //
+// 2026-11-07 (owner: "someone has already preliminary budget like in a text message or in a notes or in a file, or
+// it's was from the bank … make preset budgets … for each possible job"): the editor opens three ways to start —
+// paste or upload the budget the office already has (budget-import), a preset for the job or one of the shop's other
+// budgets (budget-presets), or the estimate's own costs. All three only fill the fields; Save budget saves.
+//
 // Styles live in the module under `.w.w` so they outrank the desktop page's
 // blanket `.content *` / `.content button` resets, and read only the global
 // tokens so the handheld page (which has no blueprint module) draws the same.
@@ -24,7 +29,9 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { addChangeOrderCost, addProjectExpense, deleteProjectExpense, removeBudgetLine, setProjectBudget, suggestProjectBudget } from "@/actions/projectBudget";
-import { BUDGET_CATEGORIES, CATEGORY_LABEL, WARN_AT, categoryLabel, customKinds, isBudgetCategory, type BudgetCategory, type BudgetTone } from "@/lib/projectBudget";
+import { BUDGET_CATEGORIES, CATEGORY_LABEL, MAX_KINDS, WARN_AT, categoryLabel, customKinds, isBudgetCategory, type BudgetCategory, type BudgetTone } from "@/lib/projectBudget";
+import { BudgetImport } from "./budget-import";
+import { BudgetPresets } from "./budget-presets";
 import type { PdBudget } from "@/components/v3/project-detail-blueprint/project-detail-data";
 import s from "./project-budget-card.module.css";
 
@@ -42,6 +49,8 @@ const parseMoney = (v: string) => {
 const moneyText = (n: number) => (n > 0 ? String(Math.round(n * 100) / 100) : "");
 
 type Panel = null | "budget" | "expense";
+/** Where the budget editor starts from, when not from its own fields. */
+type Source = null | "import" | "preset";
 type Kind = { name: string; amount: string };
 
 export function ProjectBudgetCard({ projectId, budget }: { projectId: string; budget: PdBudget }) {
@@ -71,6 +80,7 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
   const baseFigure = Math.max(0, sum.budget - extrasTotal);
   const [oneFigure, setOneFigure] = useState(baseFigure > 0 ? String(Math.round(baseFigure * 100) / 100) : "");
   const [suggestion, setSuggestion] = useState<{ words: string; rule: boolean } | null>(null);
+  const [source, setSource] = useState<Source>(null);
   const kindsTotal = kinds.reduce((n, k) => n + (k.name.trim() ? parseMoney(k.amount) : 0), 0);
   const draftTotal = (split ? BUDGET_CATEGORIES.reduce((n, c) => n + parseMoney(draft[c]), 0) + kindsTotal : parseMoney(oneFigure)) + extrasTotal;
   // An approved change order's cost, typed in: prefilled at the project's planned cost share.
@@ -79,17 +89,18 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
   // ── expense form ──
   const [exp, setExp] = useState({ category: "MATERIALS" as string, amount: "", vendor: "", note: "", date: today() });
 
-  const open = (p: Panel) => {
+  const open = (p: Panel, from: Source = null) => {
     setError(null);
     if (p === "budget") {
       setDraft(initialDraft);
       setKinds(initialKinds);
       setSuggestion(null);
+      setSource(from);
       setSplit(!sum.unsplit && budget.lines.some((l) => !l.label));
       setOneFigure(baseFigure > 0 ? String(Math.round(baseFigure * 100) / 100) : "");
     }
     if (p === "expense") setExp({ category: "MATERIALS", amount: "", vendor: "", note: "", date: today() });
-    setPanel((cur) => (cur === p ? null : p));
+    setPanel((cur) => (cur === p && !from ? null : p));
   };
   const done = () => {
     setPanel(null);
@@ -108,6 +119,32 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
       if (total > 0) setOneFigure(String(Math.round(total * 100) / 100));
     }
     setSplit((v) => !v);
+  }
+
+  /** Rows into the fields — the six's under the six, every other kind as a line of its own. "replace" clears the fields
+   *  first, "add" adds to what is there (the same kind's figures summed), "fill" replaces the six and sets the kinds it
+   *  names, keeping the shop's other kinds (the estimate's read). Nothing is saved. */
+  function applyRows(rows: ReadonlyArray<{ kind: string; amount: number }>, mode: "replace" | "add" | "fill") {
+    const keep = mode === "add";
+    const six: Record<BudgetCategory, string> = { MATERIALS: "", LABOR: "", SUBCONTRACTORS: "", PERMITS: "", EQUIPMENT: "", OTHER: "" };
+    if (keep) for (const c of BUDGET_CATEGORIES) six[c] = split ? draft[c] : "";
+    // "Add" to a one-figure budget: the figure stays, under Other, as the split does.
+    if (keep && !split && parseMoney(oneFigure) > 0) six.OTHER = oneFigure;
+    const own: Kind[] = mode === "replace" ? [] : kinds.filter((k) => k.name.trim()).map((k) => ({ ...k }));
+    for (const r of rows) {
+      if (!(r.amount > 0)) continue;
+      if (isBudgetCategory(r.kind)) {
+        six[r.kind] = moneyText(parseMoney(six[r.kind]) + r.amount);
+        continue;
+      }
+      const at = own.findIndex((k) => k.name.trim().toLowerCase() === r.kind.trim().toLowerCase());
+      if (at >= 0) own[at] = { ...own[at], amount: moneyText((mode === "add" ? parseMoney(own[at].amount) : 0) + r.amount) };
+      else if (own.length < MAX_KINDS) own.push({ name: r.kind.trim().slice(0, 40), amount: moneyText(r.amount) });
+      else six.OTHER = moneyText(parseMoney(six.OTHER) + r.amount);
+    }
+    setDraft(six);
+    setKinds(own);
+    setSplit(true);
   }
 
   async function saveBudget() {
@@ -145,13 +182,8 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
         setError(r.words);
         return;
       }
-      setSplit(true);
-      setDraft((d) => {
-        const next = { ...d };
-        for (const c of BUDGET_CATEGORIES) next[c] = "";
-        for (const l of r.lines) if (isBudgetCategory(l.category)) next[l.category] = moneyText(l.amount);
-        return next;
-      });
+      // The six from the estimate, and its Contingency line as a kind of its own (it was dropped here before 2026-11-07).
+      applyRows(r.lines.map((l) => ({ kind: l.category, amount: l.amount })), "fill");
       setSuggestion({ words: r.words, rule: r.source === "rule" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't read the estimate.");
@@ -258,7 +290,48 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
               What this project should <b>cost you</b> — materials, labor, subs, permits, and any kind of your own. The price comes from the proposals
               you sell; the margin is the difference. Spending on the project and on its jobs (receipts, crew pay, stock) is tracked against it.
             </div>
-            {split ? (
+            {source === null ? (
+              <div className={s.sources} data-budget-sources>
+                <button type="button" className={s.source} onClick={() => setSource("import")} data-budget-source="import">
+                  <b>Paste or upload a budget</b>
+                  <span>A text, your notes, a spreadsheet, the bank&apos;s budget — made into lines</span>
+                </button>
+                <button type="button" className={s.source} onClick={() => setSource("preset")} data-budget-source="preset">
+                  <b>Start from a preset</b>
+                  <span>The usual lines for the job, or one of your other projects&apos; budgets</span>
+                </button>
+                <button type="button" className={s.source} disabled={busy} onClick={() => void fillIn()} data-budget-fill>
+                  <b>{busy ? "Reading…" : "Fill it in for me"}</b>
+                  <span>From the estimate&apos;s own costs, or a rule of thumb for the trade</span>
+                </button>
+              </div>
+            ) : source === "import" ? (
+              <BudgetImport
+                projectId={projectId}
+                hasFigures={draftTotal - extrasTotal > 0}
+                onClose={() => setSource(null)}
+                onUse={(rows, mode, words) => {
+                  applyRows(rows, mode);
+                  setSuggestion({ words, rule: false });
+                  setSource(null);
+                }}
+              />
+            ) : (
+              <BudgetPresets
+                projectId={projectId}
+                budgetNow={Math.max(0, draftTotal - extrasTotal)}
+                priced={sum.contract > 0 ? sum.contract : sum.pipeline}
+                pricedWord={sum.contract > 0 ? "contract" : "price"}
+                hasFigures={draftTotal - extrasTotal > 0}
+                onClose={() => setSource(null)}
+                onUse={(rows, mode, words) => {
+                  applyRows(rows, mode);
+                  setSuggestion({ words, rule: true });
+                  setSource(null);
+                }}
+              />
+            )}
+            {source !== null ? null : split ? (
               <>
                 <div className={s.grid}>
                   {BUDGET_CATEGORIES.map((c) => (
@@ -299,9 +372,6 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
                   <button type="button" className={s.linkBtn} onClick={splitOrJoin} data-budget-mode>
                     Use one figure instead
                   </button>
-                  <button type="button" className={s.btn} disabled={busy} onClick={() => void fillIn()} data-budget-fill>
-                    {busy ? "Reading…" : "Fill it in for me"}
-                  </button>
                 </div>
               </>
             ) : (
@@ -319,18 +389,15 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
                   <button type="button" className={s.linkBtn} onClick={splitOrJoin} data-budget-mode>
                     Split it by kind — materials, labor, subs…
                   </button>
-                  <button type="button" className={s.btn} disabled={busy} onClick={() => void fillIn()} data-budget-fill>
-                    {busy ? "Reading…" : "Fill it in for me"}
-                  </button>
                 </div>
               </>
             )}
-            {suggestion ? (
+            {suggestion && source === null ? (
               <div className={`${s.suggest} ${suggestion.rule ? s.rule : ""}`} data-budget-suggested>
                 {suggestion.words}
               </div>
             ) : null}
-            {extras.length ? (
+            {extras.length && source === null ? (
               <ul className={s.extras} aria-label="Change orders in the budget">
                 {extras.map((l) => (
                   <li key={l.id ?? l.label}>
@@ -346,7 +413,7 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
                 ))}
               </ul>
             ) : null}
-            <div className={s.panelFoot}>
+            <div className={s.panelFoot} hidden={source !== null}>
               <span className={s.total}>
                 Budgeted cost <b>{whole(draftTotal)}</b>
                 {sum.contract + sum.pipeline > 0 ? (
@@ -440,12 +507,22 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
 
         {empty && panel === null ? (
           <div className={s.empty}>
-            <b>No budget yet.</b> Set what this project should cost by kind — materials, labor, subs, permits,
-            equipment, or any of your own — or let it be filled in from the estimate. Every cost logged here or on its jobs is tracked against it, with a warning at 80% and when a
-            kind runs over.
-            <button type="button" className={s.btnPrimary} onClick={() => open("budget")}>
-              Set budget
-            </button>
+            <span>
+              <b>No budget yet.</b> Set what this project should cost by kind — materials, labor, subs, permits,
+              equipment, or any of your own. Already have one — a text, notes, a spreadsheet, the bank&apos;s? Paste or upload it. Every cost logged here or on its
+              jobs is tracked against it, with a warning at 80% and when a kind runs over.
+            </span>
+            <span className={s.emptyActs}>
+              <button type="button" className={s.btnPrimary} onClick={() => open("budget")}>
+                Set budget
+              </button>
+              <button type="button" className={s.btn} onClick={() => open("budget", "import")} data-empty-import>
+                Paste or upload
+              </button>
+              <button type="button" className={s.btn} onClick={() => open("budget", "preset")} data-empty-preset>
+                Use a preset
+              </button>
+            </span>
           </div>
         ) : null}
 
