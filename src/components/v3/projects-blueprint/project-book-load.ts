@@ -7,6 +7,7 @@
 // on the project plus its jobs' receipts, crew pay and stock.
 
 import { db } from "@/lib/db";
+import { quoteFlags } from "@/lib/projectSubs/shared";
 import { projectMoney } from "@/lib/projectMoney";
 import { categoryLabel } from "@/lib/projectBudget";
 import { currentStage, percentDone, stageFlags } from "@/lib/projectStages/shared";
@@ -50,6 +51,8 @@ export async function loadProjectBook(organizationId: string): Promise<Project[]
       expenses: { select: { amount: true, createdAt: true } },
       // The stages (2026-11-05): % done, the stage it is on, and what is late.
       stages: { orderBy: { position: "asc" }, select: { name: true, status: true, weight: true, endsAt: true, tasks: { select: { doneAt: true } } } },
+      // The quotes still moving (2026-11-07): overdue, in, invoiced — the list's flags (lib/projectSubs/shared quoteFlags).
+      subQuotes: { where: { status: { in: ["ASKED", "QUOTED", "INVOICED"] } }, select: { id: true, status: true, amount: true, dueBy: true, stageId: true, contractor: { select: { name: true } } } },
       // Buying (2026-11-05): materials not ordered by their stage's order-by day, deliveries past their day.
       materials: { select: { quantity: true, orderedQty: true, receivedQty: true, stage: { select: { name: true, startsAt: true } } } },
       orders: { where: { status: { in: ["ORDERED", "SHIPPED"] } }, select: { number: true, how: true, status: true, expectedAt: true, buyerName: true, supplier: { select: { name: true } } } },
@@ -99,6 +102,7 @@ export async function loadProjectBook(organizationId: string): Promise<Project[]
       stageCount: stages.length,
       attention: [
         ...problemFlags(p.flags.map((f) => ({ note: f.note, blocking: f.blocking, status: f.status, jobTitle: f.job.title }))),
+        ...(p.status === "COMPLETED" || p.status === "ARCHIVED" ? [] : quoteFlags(p.subQuotes.map((q) => ({ id: q.id, status: q.status, amount: q.amount, dueBy: isoDay(q.dueBy), stageId: q.stageId, contractorName: q.contractor.name })), todayKey)),
         ...(p.status === "COMPLETED" || p.status === "ARCHIVED" ? [] : inspectionFlags(p.inspections.map((i) => ({ name: i.name, date: isoDay(i.date), result: i.result })), todayKey)),
         ...stageFlags({ stages, sold: r2(m?.contract ?? 0), status: p.status, draftedByAi: Boolean(p.stagesDraftedAt) }, today),
         ...finishFlags({

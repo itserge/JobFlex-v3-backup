@@ -208,3 +208,10 @@
   .w.w .btnSm { min-height: 44px; padding: 0 14px; }
   .w.w .strip .btnPrimary { margin-left: 0; width: 100%; min-height: 44px; }
 }
+
+/* CONTRACTORS (2026-11-07): the quotes by stage and the ask sheet's form, on the hub's own rules. */
+.form { display: grid; gap: 10px; }
+.field { display: grid; gap: 4px; }
+.lab { font: 700 10px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.input { min-height: 40px; padding: 8px 10px; border: 1.5px solid var(--ink); border-radius: var(--r-sm); background: #fff; color: var(--ink); font: inherit; font-size: 14px; }
+.checks { display: grid; gap: 6px; }

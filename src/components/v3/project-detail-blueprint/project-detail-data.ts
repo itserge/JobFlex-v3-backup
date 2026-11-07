@@ -84,6 +84,10 @@ export type PdFinish = import("@/lib/projectFinish/server").FinishFull;
 /* THE CLIENT'S PAGE AND FILES (2026-11-06): the homeowner's link, the photos chosen, the files (lib/projectClient/server shareOf). */
 export type PdShare = import("@/lib/projectClient/server").ShareRead;
 
+/* CONTRACTORS: QUOTES AND INVOICES (2026-11-07): the company's contractors and the project's quotes, compared against the
+   stage's share of the Subcontractors budget (lib/projectSubs/server subsOf). */
+export type PdSubs = import("@/lib/projectSubs/server").SubsRead;
+
 /** What the viewer's role may open from the project page (lib/roleRoutes) — an estimator has no client record or job page. */
 export type PdOpens = { client: boolean; jobs: boolean };
 
