@@ -52,7 +52,7 @@ import { Hero } from "./hero";
 import { Intro } from "./intro";
 import { firstPersonCta } from "./cta-copy";
 import { LandingVariantEffects } from "./landing-variant-effects";
-import { spotlightFor, type SpotlightTool } from "@/lib/planSpotlight";
+import { parseSpotlightTool, spotlightFor, spotlightNarrows, type SpotlightTool } from "@/lib/planSpotlight";
 
 /* CRO stage 1 (2026-09-09): everything under the intro is code-split. The
    sections still render on the server (the HTML is byte-for-byte what it
@@ -112,11 +112,19 @@ export interface LandingEProps {
   /** The ad's opening line for the headline: a key of the trade's own table
    *  (LANDING_HOOKS), resolved by the entry point. Absent: the trade's hero. */
   hook?: string;
+  /** The 30-day SPOTLIGHT_COOKIE (lib/planSpotlight): an earlier ad visit's tool, for the plan cards only. */
+  rememberedTool?: string;
+  /** The ad visit's session cookie (SPOTLIGHT_VISIT_COOKIE): the other trades stay hidden while it lives. */
+  visitTool?: string;
 }
 
-export async function LandingE({ variant, explicitVariant = false, utm = {}, fbclid, hook, tool }: LandingEProps) {
-  // What the plan cards mark for this visitor: the ad's tool, else the trade's own estimator (lib/planSpotlight).
-  const spotlight = spotlightFor({ tool, industry: variant });
+export async function LandingE({ variant, explicitVariant = false, utm = {}, fbclid, hook, tool, rememberedTool, visitTool }: LandingEProps) {
+  // What the plan cards mark for this visitor: the ad's tool, else the trade's own estimator — from this URL, else
+  // the 30-day memory of an earlier ad visit (lib/planSpotlight). The hero reads the URL only.
+  const spotlightUrl = spotlightFor({ tool, industry: variant });
+  const spotlight = spotlightUrl ?? parseSpotlightTool(rememberedTool) ?? null;
+  // The other trade estimators hide only during the ad visit: this URL, or the visit's session cookie (owner, 2026-11-07).
+  const narrow = spotlightNarrows(spotlight, spotlightUrl, visitTool);
   // The trade's hero — with the ad's two lines in place of its own when the
   // link carried a `?hook=` the trade knows.
   const base = withHook(variantContent(variant), hookContent(variant, hook));
@@ -211,7 +219,7 @@ export async function LandingE({ variant, explicitVariant = false, utm = {}, fbc
     integrations: <div className="lp-cv lp-cv--integrations"><Integrations registerHref={register} /></div>,
     stats: <div className="lp-cv lp-cv--stats"><StatsSection rows={g?.stats} /></div>,
     built: <div className="lp-cv lp-cv--built"><BuiltSection jobs={g?.jobs} phoneJobs={g?.phoneJobs} /></div>,
-    pricing: <div className="lp-cv lp-cv--pricing"><LandingPricing plans={plans} registerHref={register} cta={low} customOffered={customPlanOffered()} spotlight={spotlight} /></div>,
+    pricing: <div className="lp-cv lp-cv--pricing"><LandingPricing plans={plans} registerHref={register} cta={low} customOffered={customPlanOffered()} spotlight={spotlight} narrow={narrow} fromUrl={spotlightUrl} /></div>,
     faq: <div className="lp-cv lp-cv--faq"><LandingFaq variant={variant} registerHref={register} cta={faqCta} requiresCard={requiresCard} /></div>,
     final: <CtaFooter registerHref={register} cta={low} />,
   };
@@ -234,7 +242,7 @@ export async function LandingE({ variant, explicitVariant = false, utm = {}, fbc
       <SectionTracker industry={variant} />
       {/* When the first screen really showed on this visitor's phone (2026-10-04). */}
       <LandingTiming industry={variant} />
-      <LandingVariantEffects industry={variant} remember={explicitVariant} utm={utm} hook={hook} tool={tool ?? null} />
+      <LandingVariantEffects industry={variant} remember={explicitVariant} utm={utm} hook={hook} tool={spotlightUrl} />
       {/* Google One Tap (pass A): only when NEXT_PUBLIC_GOOGLE_CLIENT_ID is set;
           loads after the page is idle, so it never competes with the hero. */}
       <GoogleOneTap />

@@ -23,10 +23,16 @@ export function LandingPricing({
   registerHref = REGISTER,
   customOffered = false,
   spotlight = null,
+  narrow = false,
+  fromUrl = null,
 }: {
   plans: PlanDTO[];
   /** The tool the visitor came for (lib/planSpotlight): pinned and marked on every card. */
   spotlight?: SpotlightTool | null;
+  /** Hide the other trade estimators — only during the ad visit (lib/planSpotlight spotlightNarrows). */
+  narrow?: boolean;
+  /** The spotlight this page's URL carried, remembered for the browser session. */
+  fromUrl?: SpotlightTool | null;
   /** CUSTOM_PLAN_ENABLED (lib/customPlanFlag), read on the server per request:
    *  "Build your plan" under the cards while the custom plan is on sale. */
   customOffered?: boolean;
@@ -46,7 +52,7 @@ export function LandingPricing({
         </Reveal>
 
         <Reveal delay={120} className="mt-9 sm:mt-11">
-          <PricingPlans plans={sellable} registerHref={registerHref} tone="ink" spotlight={spotlight} />
+          <PricingPlans plans={sellable} registerHref={registerHref} tone="ink" spotlight={spotlight} narrow={narrow} fromUrl={fromUrl} />
         </Reveal>
 
         {/* The Deck Studio add-on (owner, 2026-10-26): on any plan, in the trial. */}

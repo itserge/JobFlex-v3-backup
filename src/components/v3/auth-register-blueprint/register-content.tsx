@@ -62,7 +62,7 @@ import { PasswordlessStep } from "./passwordless-step";
 import { autoPlanFor, type AutoPlanOffer } from "@/lib/signupAutoPlan";
 import { rememberOtpDraft, rememberSignupMode, type SignupMode } from "@/lib/signupMode";
 import { forgetOtpDraft, otpPendingState } from "@/actions/signupOtp";
-import { SPOTLIGHT, SPOTLIGHT_MISSING, SPOTLIGHT_TAG, spotlightInPlan, spotlightLine, spotlightRow, visibleRows, withSpotlightFirst, type SpotlightTool } from "@/lib/planSpotlight";
+import { SPOTLIGHT, SPOTLIGHT_MISSING, SPOTLIGHT_TAG, spotlightInPlan, planCardRows, rememberSpotlightVisit, spotlightBanner, type SpotlightTool } from "@/lib/planSpotlight";
 import type { OtpRestore } from "@/lib/signupOtp";
 import {
   applySignupPromo,
@@ -188,6 +188,8 @@ export function RegisterContent({
   google: googlePrefill = null,
   industry = null,
   spotlight = null,
+  spotlightNarrow = false,
+  spotlightUrl = null,
   edition = null,
   utm = null,
   inAppBrowser: inAppInitial = null,
@@ -253,6 +255,11 @@ export function RegisterContent({
      feature line is pinned first and marked on every plan card, so a roofer
      off the roofing ad sees the Roof estimator without reading the list. */
   spotlight?: SpotlightTool | null;
+  /* NARROWING ONLY DURING THE AD VISIT (lib/planSpotlight spotlightNarrows, owner 2026-11-07): the other trade
+     estimators hide while this URL or the visit's session cookie says roof / hvac / fence. */
+  spotlightNarrow?: boolean;
+  /* The spotlight this page's own URL carried — remembered for the browser session. */
+  spotlightUrl?: SpotlightTool | null;
   /* THE DOOR THE VISITOR CAME IN BY (2026-10-11, lib/editions): `?edition=deck`
      from the Deck Studio landing. Its plan is pre-selected and drawn first on
      the plan step; the trade chip comes with `industry`. */
@@ -580,7 +587,7 @@ export function RegisterContent({
   /* Every feature any plan lists, in the order the catalog gives them, and
      de-duplicated case-insensitively ("Everything in Starter" is a plan's own
      roll-up line and is dropped — it describes the column, not a feature). */
-  const featureRows = React.useMemo(() => {
+  const featureCard = React.useMemo(() => {
     const seen = new Set<string>();
     const rows: string[] = [];
     for (const p of plans) {
@@ -591,12 +598,15 @@ export function RegisterContent({
         rows.push(f.trim());
       }
     }
-    /* A roofer, fencer or HVAC visitor sees only their own estimator among the trade rows (lib/planSpotlight
-       visibleRows, owner 2026-11-07). */
-    return withSpotlightFirst(visibleRows(rows, spotlight), spotlight);
-  }, [plans, spotlight]);
-  /* The row the spotlight marks — null when no plan lists the tool. */
-  const spotRow = React.useMemo(() => spotlightRow(featureRows, spotlight), [featureRows, spotlight]);
+    /* The spotlighted tool's row, always drawn and pinned, marked by its gate; during the ad visit a roofer, fencer
+       or HVAC visitor sees only their own estimator among the trade rows (lib/planSpotlight planCardRows, owner
+       2026-11-07). */
+    return planCardRows(rows, spotlight, spotlightNarrow);
+  }, [plans, spotlight, spotlightNarrow]);
+  const featureRows = featureCard.rows;
+  /* The row the spotlight marks — null for no spotlight or an add-on tool. */
+  const spotRow = featureCard.spot;
+  React.useEffect(() => rememberSpotlightVisit(spotlightUrl), [spotlightUrl]);
 
   /* WHAT EACH PLAN ACTUALLY INCLUDES. The catalog writes the inheritance as a
      line of prose — "Everything in Starter" — so a naive per-plan lookup marked
@@ -2181,7 +2191,7 @@ export function RegisterContent({
             {spotlight ? (
               <p className="pw-spot" data-plan-spotlight={spotlight} data-plan-spotlight-row={spotRow ?? ""}>
                 <span className="pw-spot-k">{SPOTLIGHT[spotlight].label}</span>
-                {spotlightLine(spotlight, spotRow !== null)}
+                {spotlightBanner(spotlight, plans)}
               </p>
             ) : null}
             <div className="pw-head">

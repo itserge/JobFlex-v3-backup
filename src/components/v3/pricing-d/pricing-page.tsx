@@ -35,11 +35,17 @@ export function PricingPage({
   plans,
   customOffered = false,
   spotlight = null,
+  narrow = false,
+  spotlightUrl = null,
 }: {
   /** CUSTOM_PLAN_ENABLED (lib/customPlanFlag): false hides "Build your plan". */
   customOffered?: boolean;
   /** The tool the visitor came for (lib/planSpotlight), marked on every card. */
   spotlight?: SpotlightTool | null;
+  /** Hide the other trade estimators — only during the ad visit (lib/planSpotlight spotlightNarrows). */
+  narrow?: boolean;
+  /** The spotlight this page's URL carried, remembered for the browser session. */
+  spotlightUrl?: SpotlightTool | null;
   plans: PlanDTO[];
 }) {
   // A $0 tier is what happens when somebody skips, not something to sell here.
@@ -73,7 +79,7 @@ export function PricingPage({
               {sellable.length > 0 ? (
                 <>
                   <Reveal className="pr-plans">
-                    <PricingPlans plans={sellable} registerHref={REGISTER} spotlight={spotlight} />
+                    <PricingPlans plans={sellable} registerHref={REGISTER} spotlight={spotlight} narrow={narrow} fromUrl={spotlightUrl} />
                   </Reveal>
                   {/* The Deck Studio add-on (owner, 2026-10-26): on any plan, in the trial. */}
                   <div className="mt-10 sm:mt-12">

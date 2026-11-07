@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import { Role, LeadStatus, ProposalStatus, MeasurementType } from "../src/lib/prismaEnums";
 import bcrypt from "bcryptjs";
 import { randomUUID } from "node:crypto";
+import { PLAN_FEATURES } from "./plan-features";
 
 const prisma = new PrismaClient();
 
@@ -764,17 +765,8 @@ async function main() {
       order: 1,
       highlight: false,
       active: true,
-      features: [
-        "Proposal management",
-        "Client management",
-        "Free leads",
-        "CRM",
-        "Calendar",
-        "Workers management",
-        "Financials",
-        "Messages",
-        "1 user",
-      ],
+      // Production's lines (prisma/plan-features.ts; an old dev.db: prisma/seed-plan-features.ts).
+      features: PLAN_FEATURES.starter,
       limits: { workers: 1, roofMeasurements: 15, manualJReports: 10 },
     },
     {
@@ -787,13 +779,7 @@ async function main() {
       order: 2,
       highlight: true,
       active: true,
-      features: [
-        "Everything in Starter",
-        "Smart proposal generation",
-        "Roof estimator",
-        "Fence estimator",
-        "Up to 3 users",
-      ],
+      features: PLAN_FEATURES.professional,
       limits: { workers: 3, roofMeasurements: 40, manualJReports: 25 },
     },
     {
@@ -806,13 +792,7 @@ async function main() {
       order: 3,
       highlight: false,
       active: true,
-      features: [
-        "Everything in Professional",
-        "Video estimator",
-        "AI phone answering",
-        "Custom branding & domain",
-        "Unlimited users",
-      ],
+      features: PLAN_FEATURES.enterprise,
       // Absent limits = unlimited, except the paid lookups (lib/planLimits PAID_CALL_DEFAULTS).
       limits: { roofMeasurements: 100, manualJReports: 60 } as Record<string, number> | null,
     },

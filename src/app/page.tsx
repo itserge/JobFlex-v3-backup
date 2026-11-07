@@ -16,12 +16,13 @@
 // trade on /auth/register. An unknown value is the default page too.
 
 import type { Metadata, Viewport } from "next";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { detectInAppBrowser } from "@/lib/inAppBrowser";
 import { LandingE } from "@/components/v3/landing-e/landing-e-page";
 import { readLandingVariant } from "@/components/v3/landing-e/landing-variant-server";
+import { SPOTLIGHT_COOKIE, SPOTLIGHT_VISIT_COOKIE } from "@/lib/planSpotlight";
 
 export const dynamic = "force-dynamic";
 
@@ -78,5 +79,9 @@ export default async function HomePage({
      webview — has to be left out by the server, not taken away by the script
      seconds later (lib/inAppBrowser, as /auth/register does). */
   const inAppBrowser = detectInAppBrowser((await headers()).get("user-agent"));
-  return <LandingE {...landing} inAppBrowser={inAppBrowser} />;
+  /* The plan cards only (lib/planSpotlight, owner 2026-11-07): the tool an earlier ad visit marked keeps its pinned
+     row for 30 days, and the visit's session cookie keeps the other trades hidden until the browser closes. The hero
+     never reads a cookie — no parameter is always the default page. */
+  const jar = await cookies();
+  return <LandingE {...landing} inAppBrowser={inAppBrowser} rememberedTool={jar.get(SPOTLIGHT_COOKIE)?.value} visitTool={jar.get(SPOTLIGHT_VISIT_COOKIE)?.value} />;
 }

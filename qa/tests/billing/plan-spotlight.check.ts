@@ -1,7 +1,7 @@
 // The tool the visitor came for (lib/planSpotlight, 2026-10-14): which tool a
 // link or a trade means, which feature line it marks, and how the rows reorder.
 //   npx --no-install tsx --tsconfig tsconfig.json qa/tests/billing/plan-spotlight.check.ts
-import { SPOTLIGHT, SPOTLIGHT_TOOLS, parseSpotlightTool, spotlightFor, spotlightFromTrade, spotlightLine, showsTool, spotlightRow, visibleRows, withSpotlightFirst } from "../../../src/lib/planSpotlight";
+import { SPOTLIGHT, SPOTLIGHT_TOOLS, parseSpotlightTool, spotlightFor, spotlightFromTrade, spotlightLine, planCardRows, showsTool, spotlightBanner, spotlightInPlan, spotlightNarrows, spotlightRow, visibleRows, withSpotlightFirst } from "../../../src/lib/planSpotlight";
 
 let bad = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -46,7 +46,29 @@ check("hvac: only the HVAC estimator", spotlightFor({ industry: "hvac" }) === "h
 check("deck does not narrow: every row and the add-on line", visibleRows(catalog, "deck").join("|") === catalog.join("|") && showsTool("deck", "deck") && showsTool("roof", "deck"));
 check("no spotlight (direct visitor): every row and the add-on line", visibleRows(catalog, null).join("|") === catalog.join("|") && showsTool("deck", null) && showsTool("fence", undefined));
 check("smart / blueprint / aidesk do not narrow", (["smart", "blueprint", "aidesk"] as const).every((t) => visibleRows(catalog, t).join("|") === catalog.join("|") && showsTool("deck", t)));
-check("a catalog without the spotlighted line: the other trades still go, nothing pinned (the card says 'Not in this plan' as before)", visibleRows(["CRM", "Roof estimator", "Deck Studio"], "fence").join("|") === "CRM" && spotlightRow(visibleRows(["CRM", "Roof estimator"], "fence"), "fence") === null);
+check("a catalog without the spotlighted line: the other trades still go", visibleRows(["CRM", "Roof estimator", "Deck Studio"], "fence").join("|") === "CRM");
+
+console.log("── the spotlighted row is always there, marked by the gate (owner, 2026-11-07)");
+const card = (rows: string[], tool: Parameters<typeof planCardRows>[1], narrow: boolean) => planCardRows(rows, tool, narrow);
+const syn = card(["CRM", "Roof estimator", "Messages"], "fence", true);
+check("no Fence line in the catalog: a 'Fence estimator' row is drawn first under SPOTLIGHT's label", syn.spot === "Fence estimator" && syn.rows.join("|") === "Fence estimator|CRM|Messages");
+const own = card(catalog, "roof", true);
+check("the catalog's own line is the one pinned when the SPOTLIGHT map finds it; never a second copy", own.spot === "Roof estimator" && own.rows.filter((r) => /roof/i.test(r)).length === 1 && own.rows[0] === "Roof estimator");
+check("the mark is the gate's: every catalog plan carries it, a Custom plan only with its page", spotlightInPlan("fence", { slug: "starter" }) && !spotlightInPlan("fence", { slug: "custom", customPages: ["roof-estimator"] }) && spotlightInPlan("fence", { slug: "custom", customPages: ["fence-estimator"] }));
+check("Deck Studio has no plan row (its add-on line is the card's own); no spotlight: no row added", card(catalog, "deck", false).spot === null && card(catalog, "deck", false).rows.join("|") === catalog.join("|") && card(catalog, null, false).rows.join("|") === catalog.join("|"));
+const P = [{ slug: "starter", name: "Starter" }, { slug: "professional", name: "Professional" }, { slug: "enterprise", name: "Advanced" }];
+check("banner: every plan carries it → 'it's in every plan'; no 'ask us' any more", spotlightBanner("fence", P) === "You came for the Fence estimator — it's in every plan." && !/ask us/.test(spotlightBanner("roof", [])));
+check("banner: some plans carry it → names them", spotlightBanner("hvac", [...P, { slug: "custom", name: "Custom", customPages: [] }]) === "You came for the HVAC estimator — it's in Starter, Professional and Advanced." && spotlightBanner("roof", [{ slug: "custom", name: "Custom", customPages: [] }, { slug: "starter", name: "Starter" }]) === "You came for the Roof estimator — it's in Starter.");
+check("banner: Deck Studio keeps its add-on words", /^You came for Deck Studio — the trial includes it, then it's \$79/.test(spotlightBanner("deck", P)));
+
+console.log("── narrowing only during the ad visit (owner, 2026-11-07)");
+check("the URL carries roof / hvac / fence → narrows", spotlightNarrows("fence", "fence", undefined) && spotlightNarrows("roof", "roof", null) && spotlightNarrows("hvac", spotlightFor({ industry: "hvac" }), undefined));
+check("no URL, the visit's session cookie names the tool → narrows", spotlightNarrows("fence", null, "fence"));
+check("no URL, no session cookie (a new browser session), only the 30-day cookie → every row, the spotlight still pinned", !spotlightNarrows("fence", null, undefined) && (() => { const c = card(catalog, "fence", false); return c.rows[0] === "Fence estimator" && c.spot === "Fence estimator" && c.rows.length === catalog.length && c.rows.includes("Roof estimator") && c.rows.includes("HVAC estimator"); })());
+check("a session cookie for another tool does not narrow this one; nonsense in it is nothing", !spotlightNarrows("fence", null, "roof") && !spotlightNarrows("fence", null, "<x>"));
+check("deck / smart / blueprint / aidesk / none never narrow, URL or cookie", (["deck", "smart", "blueprint", "aidesk"] as const).every((t) => !spotlightNarrows(t, t, t)) && !spotlightNarrows(null, null, "fence"));
+const narrowed = card(catalog, "fence", spotlightNarrows("fence", "fence", undefined));
+check("/?industry=fence: Fence pinned, no Roof/HVAC/Deck rows, the rest stay", narrowed.rows.join("|") === ["Fence estimator", ...others].join("|"));
 
 console.log(bad ? `\n${bad} FAILED` : "\nall good");
 process.exit(bad ? 1 : 0);

@@ -115,6 +115,54 @@ export function visibleRows(rows: readonly string[], spotlight: SpotlightTool | 
   return rows.filter((r) => own.test(r) || !TRADE_TOOLS.some((t) => t !== spotlight && SPOTLIGHT[t].match.test(r)));
 }
 
+/* NARROWING ONLY DURING THE AD VISIT (owner, 2026-11-07). The 30-day SPOTLIGHT_COOKIE keeps the pinned row and the
+   banner; hiding the other trades happens only while the visit that carried the ad lasts: the page's own URL says
+   roof / hvac / fence (`?industry=` or `?tool=`), or this SESSION cookie (no max-age — it dies with the browser),
+   written by such a visit, names the same tool. A plain visit in a new browser session shows every row again. */
+export const SPOTLIGHT_VISIT_COOKIE = "jf_tool_visit";
+
+/** Does the list narrow? `fromUrl` is the spotlight the page's own URL carried (spotlightFor on the query only). */
+export function spotlightNarrows(spotlight: SpotlightTool | null | undefined, fromUrl: SpotlightTool | null | undefined, visitCookie: string | null | undefined): boolean {
+  if (!spotlight || !NARROWING.has(spotlight)) return false;
+  return fromUrl === spotlight || parseSpotlightTool(visitCookie) === spotlight;
+}
+
+/** In the browser: remember the ad visit for this browser session (only a narrowing tool is written). */
+export function rememberSpotlightVisit(fromUrl: SpotlightTool | null | undefined): void {
+  if (!fromUrl || !NARROWING.has(fromUrl) || typeof document === "undefined") return;
+  try {
+    document.cookie = `${SPOTLIGHT_VISIT_COOKIE}=${fromUrl}; path=/; samesite=lax`;
+  } catch {
+    /* cookies blocked — the next page simply shows every row */
+  }
+}
+
+/**
+ * THE ROWS A PUBLIC PLAN CARD DRAWS (owner, 2026-11-07: "the spotlighted row is always there"). The other trades are
+ * hidden while `narrow` holds; the spotlighted tool's row is pinned first — the catalog's own line when the SPOTLIGHT
+ * map finds one, else a row under the tool's canonical label — and its mark comes from the gate (spotlightInPlan),
+ * never from the text. An add-on tool (Deck Studio) has no plan row: its add-on line is the cards' own.
+ */
+export function planCardRows(rows: readonly string[], spotlight: SpotlightTool | null | undefined, narrow: boolean): { rows: string[]; spot: string | null } {
+  const shown = visibleRows(rows, narrow ? spotlight : null);
+  if (!spotlight || isAddOnTool(spotlight)) return { rows: shown, spot: null };
+  const spot = spotlightRow(shown, spotlight) ?? SPOTLIGHT[spotlight].label;
+  return { rows: [spot, ...shown.filter((r) => r !== spot)], spot };
+}
+
+const andList = (names: readonly string[]) => (names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`);
+
+/** The banner over the public cards: which of these plans carry the tool, by the gate. */
+export function spotlightBanner(tool: SpotlightTool, plans: readonly { slug: string; name: string; customPages?: readonly string[] | null }[]): string {
+  const def = SPOTLIGHT[tool];
+  const addOn = ADD_ON[tool];
+  if (addOn) return `You came for ${def.the} — ${addOn}.`;
+  const carry = plans.filter((p) => spotlightInPlan(tool, p));
+  if (carry.length === plans.length) return `You came for ${def.the} — it's in every plan.`;
+  if (!carry.length) return `You came for ${def.the} — it isn't in these plans.`;
+  return `You came for ${def.the} — it's in ${andList(carry.map((p) => p.name))}.`;
+}
+
 /** Tools sold as an add-on to any plan, never by a plan: the Deck Studio (owner-locked 2026-10-20 — the free trial
  *  holds it, then $79/month on any plan; lib/deckAddon). */
 const ADD_ON: Partial<Record<SpotlightTool, string>> = { deck: `the trial includes it, then it's ${deckAddonPriceWords("MONTH")} on any plan` };
@@ -123,7 +171,7 @@ export function isAddOnTool(tool: SpotlightTool): boolean {
   return ADD_ON[tool] !== undefined;
 }
 
-/** The line over the cards. */
+/** The line over the in-app cards (Subscription, Upgrade); the public cards say spotlightBanner. */
 export function spotlightLine(tool: SpotlightTool, listed: boolean): string {
   const def = SPOTLIGHT[tool];
   const addOn = ADD_ON[tool];
