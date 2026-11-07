@@ -79,6 +79,16 @@ check("Deck Studio from a photo", cut.includes("Deck Studio") && cut.includes("B
 check("the Deck Studio add-on's price as the code has it", cut.includes("$79/mo"));
 check("the AI desk setup's own page", cut.includes("AI desk setup"));
 check("cancelling goes through Manage subscription", cut.includes("Manage subscription"));
+// 2026-11-03: a reply said "Follow the steps to confirm" — the customer couldn't find the small Continue to cancel link
+const cancelSteps = cut.slice(cut.indexOf("The steps to send the customer"), cut.indexOf("### Failed payment"));
+check(
+  "cancelling: the five steps a customer is sent, every screen named — where Settings is, Continue to cancel, the reason",
+  cancelSteps.includes("gear icon next to your name") && cancelSteps.includes("tap Settings in the bar at the bottom") &&
+    cancelSteps.includes("**Manage subscription**") && cancelSteps.includes("click **Cancel subscription**") &&
+    cancelSteps.includes("**Continue to cancel**") && cancelSteps.includes("Why are you cancelling?") && /\n5\. /.test(cancelSteps),
+  cancelSteps.slice(0, 120),
+);
+check("cancelling is not on the Subscription page — said so", cut.includes("Cancelling is NOT on the **Subscription** page"));
 check("HVAC sizing is Manual J-style", cut.includes("Manual J-style"));
 
 process.exit(bad ? 1 : 0);

@@ -1400,6 +1400,9 @@
 /* segmented status picker — the page's own filter-chip vocabulary, so the
    status a project starts in is picked from the same shapes it is filtered by */
 .bp :global(.content .fseg) { display: flex; flex-wrap: wrap; gap: 6px; }
+/* The kind's pictogram on its segment and the one-line hint under it (New project, 2026-11-07). */
+.bp :global(.content .fseg-ico) { width: 16px; height: 16px; flex-shrink: 0; }
+.bp :global(.content .fld-hint) { display: block; margin-top: 6px; font-size: 12px; line-height: 1.4; color: var(--muted); }
 .bp :global(.content .fseg-btn) {
   display: inline-flex; align-items: center; gap: 7px;
   min-height: 32px; padding: 0 11px;
@@ -1488,6 +1491,9 @@
 .bp :global(.content .pj-flag--nostages) { border-color: var(--hair); color: var(--muted); }
 .bp :global(.content .pj-flag--drafted) { border-color: var(--sky); color: var(--blueprint); background: rgba(74, 158, 255, 0.13); }
 .bp :global(.content .pj-flag--order-by) { border-color: var(--warning); color: var(--warning-dark); background: var(--warning-soft); }
+/* contractors' quotes (2026-11-07): overdue reads as a warning, a quote or an invoice in as something to open */
+.bp :global(.content .pj-flag--quote-overdue) { border-color: var(--warning); color: var(--warning-dark); background: var(--warning-soft); }
+.bp :global(.content .pj-flag--quote-in), .bp :global(.content .pj-flag--invoice-in) { border-color: var(--blueprint); color: var(--blueprint); background: var(--blueprint-tint, transparent); }
 .bp :global(.content .pj-flag--late-delivery) { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
 .bp :global(.content .pj-flag--problem) { border-color: var(--danger); color: #fff; background: var(--danger); }
 /* the timeline's and the finish line's flags (2026-11-06): an inspection due reads as a warning; punch items open

@@ -43,7 +43,7 @@ export async function notifyExpenseSubmitted(expenseId: string): Promise<void> {
   const appUrl = await appBaseUrl();
   await sendToMembersByPref(orgId, "expense-submitted", {
     subject: `Receipt to review — ${job.title}`,
-    lockup: { kind: "org", name: job.organization.name, logoUrl: job.organization.logoUrl },
+    lockup: { kind: "org", name: job.organization.name, logoUrl: job.organization.logoUrl, orgId },
     kicker: { text: "Waiting for review", tone: "warn" },
     headline: `${who} sent a receipt`,
     prose: [`It does not count in any total until you approve it.`],

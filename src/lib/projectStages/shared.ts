@@ -8,6 +8,7 @@
 // one definition. The database half is ./server.ts.
 
 import { TRADE_TYPES, type TradeType } from "@/lib/tradeTypes";
+import type { ProjectKind } from "@/lib/projectKind";
 
 export type StageStatus = "PLANNED" | "ACTIVE" | "DONE";
 
@@ -104,7 +105,9 @@ export function lateWords(days: number): string {
 
 export type TemplateTask = { title: string; photoNeeded?: boolean };
 export type TemplateStage = { name: string; share: number; tasks: TemplateTask[] };
-export type StageTemplate = { key: string; label: string; stages: TemplateStage[] };
+/** `kind`: the projects it is offered to (lib/projectKind). `contingency`: the budget's contingency line as a share of the
+ *  cost budget when the budget is filled in for them (lib/projectBudgetSuggest). */
+export type StageTemplate = { key: string; label: string; kind: ProjectKind; contingency?: number; stages: TemplateStage[] };
 
 const t = (title: string, photoNeeded = false): TemplateTask => ({ title, photoNeeded });
 const FINAL_TASKS = (what: string): TemplateTask[] => [t("Walk-through with the client"), t(`Final photos of the ${what}`, true), t("Collect the final payment")];
@@ -114,6 +117,7 @@ export const STAGE_TEMPLATES: readonly StageTemplate[] = [
   {
     key: "deck",
     label: "Deck",
+    kind: "REMODEL",
     stages: [
       { name: "Materials ordered", share: 0.1, tasks: [t("Confirm the design and the footprint with the client"), t("Pull the permit"), t("Order lumber and hardware"), t("Order decking and railing")] },
       { name: "Footings", share: 0.15, tasks: [t("Lay out and mark the footings"), t("Dig and pour the footings", true), t("Inspection: footings")] },
@@ -125,6 +129,7 @@ export const STAGE_TEMPLATES: readonly StageTemplate[] = [
   {
     key: "roof",
     label: "Roof",
+    kind: "REMODEL",
     stages: [
       { name: "Materials ordered", share: 0.15, tasks: [t("Pull the permit"), t("Order shingles, underlayment and flashing"), t("Dumpster delivered")] },
       { name: "Tear-off", share: 0.2, tasks: [t("Tear off the old roof"), t("Check the decking", true), t("Replace bad decking")] },
@@ -136,6 +141,7 @@ export const STAGE_TEMPLATES: readonly StageTemplate[] = [
   {
     key: "fence",
     label: "Fence",
+    kind: "REMODEL",
     stages: [
       { name: "Materials ordered", share: 0.15, tasks: [t("Confirm the fence line with the client"), t("Call 811 — utilities marked"), t("Order posts, panels and hardware")] },
       { name: "Posts", share: 0.35, tasks: [t("Lay out the line"), t("Dig and set the posts", true), t("Let the concrete cure")] },
@@ -146,6 +152,7 @@ export const STAGE_TEMPLATES: readonly StageTemplate[] = [
   {
     key: "kitchen",
     label: "Kitchen remodel",
+    kind: "REMODEL",
     stages: [
       { name: "Selections and materials", share: 0.15, tasks: [t("Final selections with the client"), t("Pull the permits"), t("Order cabinets"), t("Order countertops")] },
       { name: "Demolition", share: 0.1, tasks: [t("Protect the floors and doorways"), t("Tear out cabinets and counters", true), t("Haul away")] },
@@ -159,6 +166,7 @@ export const STAGE_TEMPLATES: readonly StageTemplate[] = [
   {
     key: "bath",
     label: "Bathroom remodel",
+    kind: "REMODEL",
     stages: [
       { name: "Selections and materials", share: 0.15, tasks: [t("Final selections with the client"), t("Pull the permits"), t("Order the tile, the vanity and the fixtures")] },
       { name: "Demolition", share: 0.1, tasks: [t("Protect the floors and doorways"), t("Tear out the old bath", true), t("Haul away")] },
@@ -171,6 +179,7 @@ export const STAGE_TEMPLATES: readonly StageTemplate[] = [
   {
     key: "floors",
     label: "Floors (epoxy, wood, tile)",
+    kind: "REMODEL",
     stages: [
       { name: "Prep", share: 0.3, tasks: [t("Clear the space"), t("Grind, sand or level the floor", true), t("Repair cracks and joints")] },
       { name: "Install", share: 0.5, tasks: [t("Base coat or underlayment"), t("Finish coat or the floor itself", true)] },
@@ -180,6 +189,7 @@ export const STAGE_TEMPLATES: readonly StageTemplate[] = [
   {
     key: "hvac",
     label: "HVAC",
+    kind: "REMODEL",
     stages: [
       { name: "Equipment ordered", share: 0.3, tasks: [t("Pull the permit"), t("Order the equipment"), t("Equipment delivered")] },
       { name: "Install", share: 0.5, tasks: [t("Remove the old equipment"), t("Set the new equipment", true), t("Line set, electrical and ducts")] },
@@ -189,6 +199,7 @@ export const STAGE_TEMPLATES: readonly StageTemplate[] = [
   {
     key: "siding",
     label: "Siding",
+    kind: "REMODEL",
     stages: [
       { name: "Materials ordered", share: 0.15, tasks: [t("Confirm colors and profile with the client"), t("Order siding, trim and house wrap")] },
       { name: "Tear-off and wrap", share: 0.25, tasks: [t("Remove the old siding"), t("Check the sheathing", true), t("House wrap and flashing")] },
@@ -199,6 +210,7 @@ export const STAGE_TEMPLATES: readonly StageTemplate[] = [
   {
     key: "remodel",
     label: "General remodel",
+    kind: "REMODEL",
     stages: [
       { name: "Plans and permits", share: 0.1, tasks: [t("Final plans with the client"), t("Pull the permits"), t("Order long-lead materials")] },
       { name: "Demolition", share: 0.1, tasks: [t("Protect the rest of the house"), t("Demolition", true), t("Haul away")] },
@@ -208,7 +220,126 @@ export const STAGE_TEMPLATES: readonly StageTemplate[] = [
       { name: "Final", share: 0.15, tasks: [t("Punch list"), t("Final inspection"), ...FINAL_TASKS("work")] },
     ],
   },
+  // The remodel presets (2026-11-07, the plan "Projects: Remodel and New construction", part 1).
+  {
+    key: "addition",
+    label: "Addition",
+    kind: "REMODEL",
+    contingency: 0.1,
+    stages: [
+      { name: "Plans and permits", share: 0.08, tasks: [t("Final plans with the client"), t("Pull the permits"), t("Call 811 — utilities marked"), t("Order trusses, windows and doors")] },
+      { name: "Site and footings", share: 0.12, tasks: [t("Lay out the addition and mark the footings"), t("Excavate"), t("Dig and pour the footings", true), t("Inspection: footings")] },
+      { name: "Foundation", share: 0.1, tasks: [t("Stem walls or slab", true), t("Inspection: foundation"), t("Backfill and grade")] },
+      { name: "Framing and tie-in", share: 0.2, tasks: [t("Floor, walls and roof framing"), t("Open the house and tie in", true), t("Inspection: framing")] },
+      { name: "Dry-in", share: 0.1, tasks: [t("Roofing"), t("Windows and doors"), t("House wrap and siding")] },
+      { name: "Rough-ins", share: 0.12, tasks: [t("Plumbing, electrical and HVAC rough-in"), t("Inspection: rough-in")] },
+      { name: "Insulation and drywall", share: 0.1, tasks: [t("Insulation"), t("Inspection: insulation"), t("Drywall, tape and prime")] },
+      { name: "Finishes", share: 0.12, tasks: [t("Floors"), t("Trim, doors and paint"), t("Fixtures and trim-out")] },
+      { name: "Final", share: 0.06, tasks: [t("Punch list"), t("Final inspection"), ...FINAL_TASKS("addition")] },
+    ],
+  },
+  {
+    key: "basement",
+    label: "Basement finish",
+    kind: "REMODEL",
+    contingency: 0.1,
+    stages: [
+      { name: "Plans and permits", share: 0.08, tasks: [t("Final plans with the client"), t("Pull the permits"), t("Check for moisture and the egress window", true)] },
+      { name: "Framing", share: 0.17, tasks: [t("Egress window if the bedroom needs one"), t("Frame the walls and soffits", true)] },
+      { name: "Rough-ins", share: 0.2, tasks: [t("Plumbing, electrical and HVAC rough-in"), t("Inspection: rough-in")] },
+      { name: "Insulation and drywall", share: 0.2, tasks: [t("Insulation"), t("Inspection: insulation"), t("Drywall, tape and prime")] },
+      { name: "Floors and finishes", share: 0.25, tasks: [t("Floors"), t("Trim, doors and paint"), t("Bath fixtures and trim-out")] },
+      { name: "Final", share: 0.1, tasks: [t("Punch list"), t("Final inspection"), ...FINAL_TASKS("basement")] },
+    ],
+  },
+  {
+    key: "wholehouse",
+    label: "Whole-house remodel",
+    kind: "REMODEL",
+    contingency: 0.15,
+    stages: [
+      { name: "Plans and permits", share: 0.08, tasks: [t("Final plans and selections with the client"), t("Pull the permits"), t("Agree the client's move-out and move-in days"), t("Order cabinets, windows and the long-lead materials")] },
+      { name: "Demolition", share: 0.08, tasks: [t("Protect what stays"), t("Demolition", true), t("Haul away")] },
+      { name: "Structural", share: 0.12, tasks: [t("Beams, headers and new openings", true), t("Inspection: framing")] },
+      { name: "Rough-ins", share: 0.17, tasks: [t("Plumbing, electrical and HVAC rough-in"), t("Inspection: rough-in")] },
+      { name: "Insulation and drywall", share: 0.12, tasks: [t("Insulation"), t("Inspection: insulation"), t("Drywall, tape and prime")] },
+      { name: "Finishes by room", share: 0.33, tasks: [t("Floors through the house"), t("Kitchen: cabinets, counters and backsplash"), t("Baths: tile, vanities and fixtures"), t("Trim, doors and paint"), t("Lights, plumbing and electrical trim-out")] },
+      { name: "Final", share: 0.1, tasks: [t("Punch list"), t("Final inspection"), ...FINAL_TASKS("house")] },
+    ],
+  },
+  {
+    key: "adu",
+    label: "Garage conversion or ADU",
+    kind: "REMODEL",
+    contingency: 0.1,
+    stages: [
+      { name: "Plans and permits", share: 0.1, tasks: [t("Final plans with the client"), t("Pull the permits — a separate address and meter when the county asks"), t("Order windows, doors and the long-lead materials")] },
+      { name: "Slab and framing", share: 0.2, tasks: [t("Infill or cut the slab", true), t("Frame the walls and ceiling"), t("Inspection: framing")] },
+      { name: "Rough-ins", share: 0.2, tasks: [t("Plumbing, electrical and HVAC rough-in"), t("Inspection: rough-in")] },
+      { name: "Insulation and drywall", share: 0.15, tasks: [t("Insulation"), t("Inspection: insulation"), t("Drywall, tape and prime")] },
+      { name: "Finishes", share: 0.25, tasks: [t("Floors"), t("Kitchen and bath"), t("Trim, doors and paint"), t("Fixtures and trim-out")] },
+      { name: "Final", share: 0.1, tasks: [t("Punch list"), t("Final inspection"), ...FINAL_TASKS("unit")] },
+    ],
+  },
+  {
+    key: "windows",
+    label: "Windows and doors",
+    kind: "REMODEL",
+    contingency: 0.05,
+    stages: [
+      { name: "Measure and order", share: 0.3, tasks: [t("Measure every opening", true), t("Confirm styles and colors with the client"), t("Order the windows and doors — six to eight weeks out")] },
+      { name: "Install", share: 0.5, tasks: [t("Pull the old units"), t("Set, flash and foam the new ones", true)] },
+      { name: "Trim and final", share: 0.2, tasks: [t("Interior and exterior trim"), t("Caulk and touch-up"), ...FINAL_TASKS("windows")] },
+    ],
+  },
+  {
+    key: "painting",
+    label: "Painting",
+    kind: "REMODEL",
+    contingency: 0.05,
+    stages: [
+      { name: "Prep", share: 0.35, tasks: [t("Confirm colors with the client"), t("Move and cover the furniture"), t("Wash, scrape, patch and sand", true), t("Mask and protect")] },
+      { name: "Prime", share: 0.15, tasks: [t("Prime the patches and the bare wood")] },
+      { name: "Finish coats", share: 0.4, tasks: [t("First coat"), t("Second coat", true)] },
+      { name: "Final", share: 0.1, tasks: [t("Touch-up walk with the client"), t("Pull the masking and clean up"), ...FINAL_TASKS("paint")] },
+    ],
+  },
+  {
+    key: "service",
+    label: "Service upgrade",
+    kind: "REMODEL",
+    contingency: 0.05,
+    stages: [
+      { name: "Permit and order", share: 0.3, tasks: [t("Pull the permit"), t("Order the equipment — a panel, a water heater, a furnace"), t("Book the utility's shut-off when the panel changes")] },
+      { name: "Install", share: 0.5, tasks: [t("Remove the old equipment"), t("Set and connect the new", true)] },
+      { name: "Inspection and final", share: 0.2, tasks: [t("Inspection"), t("The utility's release"), ...FINAL_TASKS("work")] },
+    ],
+  },
+  // New construction (part 1 carries the custom home as plain stages; part 3 groups them into phases with gates).
+  {
+    key: "home",
+    label: "Custom home",
+    kind: "NEW_BUILD",
+    contingency: 0.1,
+    stages: [
+      { name: "Land and feasibility", share: 0.02, tasks: [t("Parcel record: number, zoning, setbacks, acreage"), t("Flood zone, wetlands and slopes checked"), t("Access, covenants and the utilities at the street"), t("Rough budget and the go-ahead in writing")] },
+      { name: "Design and engineering", share: 0.05, tasks: [t("Boundary and topo survey"), t("Soils report when the county or the lender asks"), t("Septic design and perc test, or the sewer tap"), t("Well, or the water availability letter"), t("House plans, structural and truss engineering, energy-code worksheet")] },
+      { name: "Permits and fees", share: 0.05, tasks: [t("Building permit"), t("Grading and clearing permit"), t("Septic or sewer, well or water permits"), t("Driveway approach and the utility applications — power first, it takes longest"), t("Impact and mitigation fees paid; address assigned")] },
+      { name: "Site work", share: 0.08, tasks: [t("Call 811 — utilities located"), t("Clearing and grubbing"), t("Erosion control and the construction entrance", true), t("Rough grading and the driveway base"), t("Temporary power, water and toilet; utility trenches")] },
+      { name: "Foundation", share: 0.1, tasks: [t("Layout and excavation"), t("Footings poured", true), t("Inspection: footings"), t("Walls or slab, with the under-slab plumbing"), t("Inspection: foundation"), t("Waterproofing, drain tile and backfill")] },
+      { name: "Framing and dry-in", share: 0.2, tasks: [t("Floor system"), t("Walls and trusses", true), t("Sheathing, windows and doors"), t("Roofing and house wrap"), t("Inspection: framing")] },
+      { name: "Rough-ins", share: 0.14, tasks: [t("Plumbing rough-in"), t("Electrical rough-in and the service"), t("HVAC rough-in"), t("Low voltage and fire blocking"), t("Inspection: rough-ins")] },
+      { name: "Insulation and drywall", share: 0.08, tasks: [t("Insulation"), t("Inspection: insulation"), t("Drywall, tape and prime", true), t("Siding and exterior trim")] },
+      { name: "Finishes", share: 0.25, tasks: [t("Cabinets, counters and tile"), t("Floors, trim, doors and paint"), t("Fixtures, lights and appliances"), t("Drainfield, driveway and final grade"), t("Punch list")] },
+      { name: "Final and keys", share: 0.03, tasks: [t("Final inspections"), t("Utility releases and the certificate of occupancy"), t("Walkthrough with the client", true), t("Sign-off, the final payment and the keys")] },
+    ],
+  },
 ];
+
+/** The templates a project of this kind is offered, in the picker's order. */
+export function templatesFor(kind: ProjectKind): readonly StageTemplate[] {
+  return STAGE_TEMPLATES.filter((x) => x.kind === kind);
+}
 
 export function templateByKey(key: string | null | undefined): StageTemplate | null {
   return STAGE_TEMPLATES.find((x) => x.key === key) ?? null;

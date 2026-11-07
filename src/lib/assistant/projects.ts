@@ -7,12 +7,16 @@ import "server-only";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import type { ReadTool, WriteTool } from "@/lib/assistant/tools";
-import { findProjects } from "@/lib/assistant/find";
+import { findClients, findProjects } from "@/lib/assistant/find";
 import { dayWords, money, spanWords } from "@/lib/assistant/shared";
 import { categoryLabel } from "@/lib/projectBudget";
 import { projectMoney } from "@/lib/projectMoney";
-import { markStage, markTask, stagesOf, type StageRow } from "@/lib/projectStages/server";
-import { currentStage, lateStages, lateWords, percentDone, projectNo } from "@/lib/projectStages/shared";
+import { addTemplate, markStage, markTask, stagesOf, type StageRow } from "@/lib/projectStages/server";
+import { currentStage, lateStages, lateWords, percentDone, projectNo, templatesFor, type StageTemplate } from "@/lib/projectStages/shared";
+import { KIND_LABEL, type ProjectKind } from "@/lib/projectKind";
+import { createProjectAs } from "@/lib/projectCore";
+import { enforcePlanLimit } from "@/lib/limitsEngine";
+import { appBaseUrl } from "@/lib/appUrl";
 
 const ID = z.string().min(1).max(64);
 
@@ -250,4 +254,97 @@ const tickTask: WriteTool<TaskArgs, TaskPayload> = {
   },
 };
 
-export const PROJECT_TOOLS = [projectStatus, setStage, tickTask] as const;
+// ── start a project (2026-11-07, the plan "Projects: Remodel and New construction", part 1) ───────────────────
+// "Start a kitchen remodel for the Bennetts", "start a new build for Sarah Lee": the project is made the way the
+// New project dialog makes it (lib/projectCore) and its stages come from the kind's template (addTemplate), after
+// the person's yes. The client is found by name here, so the model needs no find first.
+
+type StartArgs = { name: string; kind: ProjectKind; client: string | null; template: string | null; occupied: boolean | null };
+type StartPayload = { name: string; kind: ProjectKind; clientId: string | null; clientName: string | null; template: string | null; occupied: boolean };
+
+/** The template a word points at, within the kind: its key, its label, or a word of either; a new build's "house",
+ *  "home" or "build" is the custom home. Null when nothing matches. */
+export function templateNamed(kind: ProjectKind, word: string | null | undefined): StageTemplate | null {
+  const w = (word ?? "").toLowerCase().trim();
+  if (!w) return null;
+  const list = templatesFor(kind);
+  return (
+    list.find((x) => x.key === w) ??
+    list.find((x) => x.label.toLowerCase() === w) ??
+    list.find((x) => x.label.toLowerCase().includes(w) || w.includes(x.key)) ??
+    (kind === "NEW_BUILD" && /house|home|build|construction/.test(w) ? (list[0] ?? null) : null)
+  );
+}
+
+const startProject: WriteTool<StartArgs, StartPayload> = {
+  kind: "write",
+  name: "start_project",
+  need: "projects.write",
+  card: {
+    label: "Start a project",
+    purpose: "Make a project — a remodel or a new build — for a client, with its stages from a template.",
+    when: "'Start a kitchen remodel for the Bennetts', 'new project: Lee basement finish', 'start a new build for Sarah Lee': start_project(name, kind, client, template, occupied). kind is NEW_BUILD only when they say new construction, new build or a new house. template is the job's word (kitchen, bath, deck, roof, fence, floors, hvac, siding, remodel, addition, basement, whole house, adu, windows, painting, service; home for a new build) or null. occupied when they say the client lives there during the work. The client is found by name here — no find first.",
+    objects: ["project", "client"],
+    effect: "record",
+    group: "projects",
+    version: 1,
+    since: "2026-11-07",
+    samples: [
+      { say: "start a kitchen remodel for the Bennetts", args: { name: "Bennett kitchen remodel", kind: "REMODEL", client: "Bennett", template: "kitchen", occupied: null } },
+      { say: "start a new build for Sarah Lee, call it the Lee house", args: { name: "Lee house", kind: "NEW_BUILD", client: "Sarah Lee", template: "home", occupied: null } },
+    ],
+  },
+  description:
+    "Make a project for a client: a REMODEL (the house stands) or a NEW_BUILD (a lot, then a house). name = what to call it; client = the client's name as said, or null; template = the job's word (kitchen, bath, deck, roof, fence, floors, hvac, siding, remodel, addition, basement, wholehouse, adu, windows, painting, service; home for a new build) or null to add the stages later; occupied = true when they say the client lives there during the work. Read back for a yes; the answer links the project page.",
+  params: z.object({
+    name: z.string().min(2).max(120),
+    kind: z.enum(["REMODEL", "NEW_BUILD"]),
+    client: z.string().max(120).nullable(),
+    template: z.string().max(40).nullable(),
+    occupied: z.boolean().nullable(),
+  }),
+  payload: z.object({
+    name: z.string(),
+    kind: z.enum(["REMODEL", "NEW_BUILD"]),
+    clientId: z.string().nullable(),
+    clientName: z.string().nullable(),
+    template: z.string().nullable(),
+    occupied: z.boolean(),
+  }),
+  async plan({ actor }, a) {
+    try {
+      await enforcePlanLimit(actor.organizationId, "projects", 1, { actorId: actor.userId });
+    } catch (err) {
+      const m = err instanceof Error ? err.message : "";
+      return { ok: false, say: /limit/i.test(m) ? "Your plan's project limit is reached for this month — the Billing page has the plans." : m || "The project can't be started right now." };
+    }
+    let clientId: string | null = null;
+    let clientName: string | null = null;
+    const who = a.client?.trim() ?? "";
+    if (who) {
+      const found = await findClients(actor.organizationId, who);
+      if (!found.length) return { ok: false, say: `I don't see a client named ${who}. Add them first, or start the project without one.` };
+      if (found.length > 1) return { ok: false, say: `Several clients match ${who}: ${found.slice(0, 4).map((c) => c.name).join(", ")}. Which one?` };
+      clientId = found[0].id;
+      clientName = found[0].name;
+    }
+    const tpl = templateNamed(a.kind, a.template);
+    if (a.template && !tpl) return { ok: false, say: `There is no ${KIND_LABEL[a.kind].toLowerCase()} template called ${a.template}; the stages can be added on the project page.` };
+    const occupied = a.kind === "REMODEL" && a.occupied === true;
+    const name = a.name.trim();
+    const readback = `Start the ${KIND_LABEL[a.kind].toLowerCase()} project "${name}"${clientName ? ` for ${clientName}` : ""}${tpl ? `, with the ${tpl.label} stages (${tpl.stages.length})` : ", stages to be added"}${occupied ? " — the client lives there during the work" : ""}.`;
+    return { ok: true, payload: { name, kind: a.kind, clientId, clientName, template: tpl?.key ?? null, occupied }, readback };
+  },
+  async execute({ actor }, p) {
+    const made = await createProjectAs({ organizationId: actor.organizationId, actorId: actor.userId }, { name: p.name, clientId: p.clientId, kind: p.kind, occupied: p.occupied });
+    let stages = "";
+    if (p.template) {
+      const { added, template } = await addTemplate({ id: made.id, kind: p.kind, answersJson: p.occupied ? JSON.stringify({ occupied: true }) : null }, p.template);
+      stages = ` with the ${template.label} stages (${added})`;
+    }
+    const link = `${(await appBaseUrl()).replace(/\/$/, "")}/dashboard/projects/${made.id}`;
+    return { say: `Started ${projectNo(made.number)} ${made.name}${p.clientName ? ` for ${p.clientName}` : ""}${stages}. Open it: ${link}`, result: { projectId: made.id, number: made.number } };
+  },
+};
+
+export const PROJECT_TOOLS = [projectStatus, setStage, tickTask, startProject] as const;

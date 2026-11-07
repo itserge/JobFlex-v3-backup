@@ -44,7 +44,7 @@ async function emailClient(org: OrgRow, to: string | null | undefined, doc: Plan
   if (!to) return false;
   try {
     const name = org.name ?? "Your contractor";
-    const { subject, html } = renderEmail({ ...doc, lockup: { kind: "org", name, logoUrl: org.logoUrl }, footer: { name, contact: org.billingEmail ?? undefined } });
+    const { subject, html } = renderEmail({ ...doc, lockup: { kind: "org", name, logoUrl: org.logoUrl, orgId: org.id }, footer: { name, contact: org.billingEmail ?? undefined } });
     const r = await sendOrgEmail(org, { to, subject, html });
     return !!r && (r as { ok?: boolean }).ok !== false;
   } catch (err) {

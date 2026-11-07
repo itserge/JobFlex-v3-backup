@@ -12,7 +12,7 @@ const TITLE_MAX = 70;
 const PLATFORM_LOCKUP: Lockup = { kind: "platform" };
 
 function orgLockup(org: OrgBrand): Lockup {
-  return { kind: "org", name: org.name, logoUrl: org.logoUrl ?? null };
+  return { kind: "org", name: org.name, logoUrl: org.logoUrl ?? null, orgId: org.id ?? null };
 }
 
 function orgFooter(org: OrgBrand) {
@@ -110,31 +110,55 @@ export function buildCrewResponse(i: CrewResponseInput): EmailDoc {
 export interface NewLeadInput {
   org: OrgBrand;
   leadName: string;
+  /** As shown ("(360) 820-9643"); `phoneHref` makes it a tap to call. */
   phone: string | null;
-  /** The lead's email, on its own row when there is one. */
+  phoneHref?: string | null;
+  /** The lead's email, on its own row when there is one (a tap to write). */
   email?: string | null;
+  /** Street, city, state and ZIP as one line, when the lead gave any. */
+  address?: string | null;
   project: string | null;
+  /** Where it came from, in the leads list's words ("Facebook", "Website"). */
   source: string;
+  /** When it came in, in the company's own time ("Nov 5, 7:35 PM"). */
+  when?: string | null;
+  /** A lead form's questions and answers, in the form's order (a Facebook lead form, lib/meta/leadPresentation). */
+  answers?: Array<{ question: string; answer: string }>;
+  /** The lead's own words, when they wrote some (not a form's answers). */
   enquiry?: string | null;
+  /** This lead in JobFlex. */
   href: string;
 }
 
+/**
+ * NEW LEAD (2026-11-05, owner: "send it right-looking, with all the info — make it smart"). Before, Gmail clipped
+ * this mail at the logo (doc.ts Lockup), and under it sat the Facebook form's raw lines ("full_name: …,
+ * inbox_url: …") cut at 400 characters, with a button to the whole leads list. Now: tap to call or write, the
+ * address, every question the form asked with its answer, where and when it came in, and the button opens THIS lead.
+ */
 export function buildNewLead(i: NewLeadInput): EmailDoc {
-  const box: BoxRow[] = [
-    { type: "field", label: "Phone", value: i.phone ?? "—" },
-    ...(i.email ? [{ type: "field" as const, label: "Email", value: i.email }] : []),
-    { type: "field", label: "Project", value: i.project ?? "—" },
-    { type: "field", label: "Source", value: i.source },
-    { type: "cond", label: "Call within", chip: "1 hour", tone: "warn" },
-  ];
+  const first = i.leadName.trim().split(/\s+/)[0] || i.leadName;
+  const box: BoxRow[] = [];
+  if (i.phone) box.push({ type: "field", label: "Phone", value: i.phone, ...(i.phoneHref ? { href: i.phoneHref } : {}) });
+  if (i.email) box.push({ type: "field", label: "Email", value: i.email, href: `mailto:${i.email}` });
+  if (!i.phone && !i.email) box.push({ type: "field", label: "Phone", value: "—" });
+  if (i.address) box.push({ type: "answer", question: "Job address", answer: i.address });
+  if (i.project) box.push({ type: "field", label: "Project", value: truncate(i.project, TITLE_MAX) });
+  for (const a of i.answers ?? []) box.push({ type: "answer", question: truncate(a.question, 160), answer: truncate(a.answer, 400) });
+  box.push({ type: "field", label: "Source", value: i.source });
+  if (i.when) box.push({ type: "field", label: "Came in", value: i.when });
+  box.push({ type: "cond", label: "Call within", chip: "1 hour", tone: "warn" });
+  const reach = i.phone && i.phoneHref ? `Call or text ${first} at ${i.phone}` : i.email ? `Write to ${first} at ${i.email}` : null;
   return {
-    subject: `New lead — ${i.leadName}`,
+    subject: `New lead — ${i.leadName}${i.source ? ` · ${i.source}` : ""}`,
     lockup: orgLockup(i.org),
-    kicker: { text: "Lead" },
+    kicker: { text: i.source ? `New lead · ${i.source}` : "New lead" },
     headline: i.leadName,
+    // The first line is the inbox preview too (renderEmail preheader): who, how to reach them.
+    prose: reach ? [`${reach}.`] : undefined,
     box,
-    after: i.enquiry ? [`"${truncate(i.enquiry, 400)}"`] : undefined,
-    cta: { label: "Open lead", href: i.href },
+    after: i.enquiry ? [`"${truncate(i.enquiry, 600)}"`] : undefined,
+    cta: { label: "Open this lead", href: i.href },
     footer: orgFooter(i.org),
   };
 }

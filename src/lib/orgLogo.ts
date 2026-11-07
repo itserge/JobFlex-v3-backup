@@ -33,3 +33,14 @@ export function proposalLogoHref(publicId: string, logoUrl: string | null | unde
   if (!hasDrawableLogo(logoUrl)) return null;
   return `/api/public-quote/${encodeURIComponent(publicId)}/logo?v=${logoVersion(logoUrl.trim())}`;
 }
+
+/** The logo as an email may show it (2026-11-05): a link to /api/org-logo/<orgId> (a small PNG every mail client
+ *  draws) for a stored data URL, an https value as it is, or null — never the data URL itself, which made Gmail
+ *  clip every mail that carried it. `base` is the site the link points at (lib/siteUrl). */
+export function emailLogoSrc(logoUrl: string | null | undefined, orgId: string | null | undefined, base: string): string | null {
+  if (!hasDrawableLogo(logoUrl)) return null;
+  const v = logoUrl.trim();
+  if (/^https:\/\//i.test(v)) return v;
+  if (!orgId || !/^data:/i.test(v)) return null;
+  return `${base}/api/org-logo/${encodeURIComponent(orgId)}?v=${logoVersion(v)}`;
+}

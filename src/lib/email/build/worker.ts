@@ -9,7 +9,7 @@ import type { OrgBrand } from "./client";
 const TITLE_MAX = 70;
 
 function orgLockup(org: OrgBrand): Lockup {
-  return { kind: "org", name: org.name, logoUrl: org.logoUrl ?? null };
+  return { kind: "org", name: org.name, logoUrl: org.logoUrl ?? null, orgId: org.id ?? null };
 }
 
 function orgFooter(org: OrgBrand) {

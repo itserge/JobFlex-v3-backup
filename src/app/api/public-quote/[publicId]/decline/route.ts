@@ -86,7 +86,7 @@ export async function POST(
       proposal.organizationId,
       "proposal-declined",
       buildOwnerDeclined({
-        org: { name: proposal.organization.name, logoUrl: proposal.organization.logoUrl, phone: proposal.organization.phone },
+        org: { id: proposal.organizationId, name: proposal.organization.name, logoUrl: proposal.organization.logoUrl, phone: proposal.organization.phone },
         clientName: proposal.client?.name ?? "A client",
         title: proposal.title,
         note: safeNote,

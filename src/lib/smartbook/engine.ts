@@ -741,7 +741,7 @@ async function askCompany(ctx: Ctx, conv: Conversation, req: Pick<SmartRequest, 
   const facts: RequestFacts = { name: ctx.lead.name, source: leadSourceOf(ctx.lead.source).label, project: ctx.lead.projectType?.trim() || null, asked: req.label, calendar: await calendarWords(ctx, req), n: others ? n : null, phone: shown(conv.phone) };
   await toCompany(ctx, req.at ? tell.request(facts) : tell.requestOpen(facts));
   // And by email (owner: "let us know by text, email"): one button to the answer page.
-  const doc = buildSmartBookRequest({ org: { name: ctx.org.name ?? "Your company", logoUrl: ctx.org.logoUrl, phone: ctx.org.phone }, name: ctx.lead.name, asked: req.label, calendar: facts.calendar, source: facts.source, project: facts.project, phone: shown(conv.phone), words: words || null, href: `${await appBaseUrl()}/b/r/${token}` });
+  const doc = buildSmartBookRequest({ org: { id: ctx.org.id, name: ctx.org.name ?? "Your company", logoUrl: ctx.org.logoUrl, phone: ctx.org.phone }, name: ctx.lead.name, asked: req.label, calendar: facts.calendar, source: facts.source, project: facts.project, phone: shown(conv.phone), words: words || null, href: `${await appBaseUrl()}/b/r/${token}` });
   const mailed = ctx.test
     ? ctx.lead.email
       ? sendEmail({ to: ctx.lead.email, subject: `(Test) ${renderEmail(doc).subject}`, html: renderEmail(doc).html })

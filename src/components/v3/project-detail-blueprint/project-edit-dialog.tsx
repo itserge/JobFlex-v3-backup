@@ -12,6 +12,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { listProjectClients, updateProject } from "@/actions/projects";
+import { KIND_HINT, KIND_LABEL, PROJECT_KINDS, kindOf, type ProjectKind } from "@/lib/projectKind";
 import { closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
 import { initDatePopovers } from "@/components/v3/shared/date-popover";
 import s from "./project-detail.module.css";
@@ -42,6 +43,10 @@ export type EditableProject = {
   startsAt: Date | null;
   endsAt: Date | null;
   client?: { id: string; name: string } | null;
+  /** REMODEL or NEW_BUILD (2026-11-07); `occupied`: a remodel's client lives there; `kindLocked`: a stage is done. */
+  kind?: string;
+  occupied?: boolean;
+  kindLocked?: boolean;
 };
 
 export function ProjectEditDialog({ project, open, onClose }: { project: EditableProject; open: boolean; onClose: () => void }) {
@@ -49,6 +54,8 @@ export function ProjectEditDialog({ project, open, onClose }: { project: Editabl
   const ref = useRef<HTMLDivElement>(null);
   const [clients, setClients] = useState<Array<{ id: string; name: string; street: string }> | null>(null);
   const [status, setStatus] = useState(project.status ?? "ACTIVE");
+  const [kind, setKind] = useState<ProjectKind>(kindOf(project.kind));
+  const [occupied, setOccupied] = useState(project.occupied === true);
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -117,6 +124,8 @@ export function ProjectEditDialog({ project, open, onClose }: { project: Editabl
         startsAt: start || null,
         endsAt: end || null,
         clientId: String(f.get("clientId") ?? "") || null,
+        ...(project.kindLocked ? {} : { kind }),
+        occupied: kind === "REMODEL" ? occupied : false,
       });
       onClose();
       router.refresh();
@@ -174,6 +183,32 @@ export function ProjectEditDialog({ project, open, onClose }: { project: Editabl
                 <input className={cx("mf-in")} id="pdEditEnd" name="endsAt" defaultValue={isoDay(project.endsAt)} placeholder="YYYY-MM-DD" autoComplete="off" />
               </div>
             </div>
+            {/* THE KIND (2026-11-07): a remodel or a new build. It stays once a stage is done — the templates, and soon the
+                gates and the money, hang on it. A remodel asks whether the client lives there during the work. */}
+            <div className={cx("mf")}>
+              <span className={cx("mf-lbl")}>What kind of project</span>
+              <div className={cx("pd-edit-seg")} role="group" aria-label="Project kind">
+                {PROJECT_KINDS.map((k) => (
+                  <button key={k} type="button" className={cx("pd-edit-opt", kind === k && "on")} aria-pressed={kind === k} disabled={project.kindLocked && kind !== k} data-kind={k} onClick={() => setKind(k)}>
+                    {KIND_LABEL[k]}
+                  </button>
+                ))}
+              </div>
+              <div className={cx("mf-note")}>{project.kindLocked ? "The kind stays once a stage is done." : KIND_HINT[kind]}</div>
+            </div>
+            {kind === "REMODEL" ? (
+              <div className={cx("mf")}>
+                <span className={cx("mf-lbl")}>Does the client live there during the work?</span>
+                <div className={cx("pd-edit-seg")} role="group" aria-label="Lives there during the work">
+                  <button type="button" className={cx("pd-edit-opt", occupied && "on")} aria-pressed={occupied} data-occupied="yes" onClick={() => setOccupied(true)}>
+                    Yes
+                  </button>
+                  <button type="button" className={cx("pd-edit-opt", !occupied && "on")} aria-pressed={!occupied} data-occupied="no" onClick={() => setOccupied(false)}>
+                    No
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <div className={cx("mf")}>
               <span className={cx("mf-lbl")}>Status</span>
               <div className={cx("pd-edit-seg")} role="group" aria-label="Project status">

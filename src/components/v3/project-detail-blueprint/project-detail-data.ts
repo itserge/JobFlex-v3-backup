@@ -43,6 +43,11 @@ export interface PdProject {
   status?: string;
   /** The project's own number, "#1042" (2026-11-05); null on one not numbered yet. */
   number?: number | null;
+  /** REMODEL or NEW_BUILD (2026-11-07, lib/projectKind); `occupied`: a remodel's client lives there during the work;
+   *  `kindLocked`: a stage is done, so the kind stays. */
+  kind?: string;
+  occupied?: boolean;
+  kindLocked?: boolean;
 }
 
 /* STAGES OF A PROJECT (2026-11-05): the order of the work and its tasks, as the Stages card reads them
@@ -83,6 +88,10 @@ export type PdFinish = import("@/lib/projectFinish/server").FinishFull;
 
 /* THE CLIENT'S PAGE AND FILES (2026-11-06): the homeowner's link, the photos chosen, the files (lib/projectClient/server shareOf). */
 export type PdShare = import("@/lib/projectClient/server").ShareRead;
+
+/* CONTRACTORS: QUOTES AND INVOICES (2026-11-07): the company's contractors and the project's quotes, compared against the
+   stage's share of the Subcontractors budget (lib/projectSubs/server subsOf). */
+export type PdSubs = import("@/lib/projectSubs/server").SubsRead;
 
 /** What the viewer's role may open from the project page (lib/roleRoutes) — an estimator has no client record or job page. */
 export type PdOpens = { client: boolean; jobs: boolean };

@@ -165,6 +165,7 @@ export async function dispatchOne(id: string): Promise<boolean> {
     const ctx = {
       orgName: proposal.organization.name,
       orgLogoUrl: proposal.organization.logoUrl,
+      orgId: proposal.organizationId,
       orgPhone: proposal.organization.phone,
       clientName: proposal.client?.name ?? "there",
       title: proposal.title,

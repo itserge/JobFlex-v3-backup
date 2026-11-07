@@ -1,0 +1,35 @@
+/* THE CONTRACTOR'S PAGE (2026-11-07) — what the buyer's stylesheet (../../buy/[token]/buy.css, root .jf-buy) has
+   no word for: the scope as a plain ruled list (the buyer's lines carry a checkbox and a quantity; these carry
+   neither), and the quiet "Pass on it" link under the Send button. */
+.jf-buy .qt-scope {
+  margin: 18px 0 6px;
+  padding: 0;
+  list-style: none;
+}
+.jf-buy .qt-scope li {
+  padding: 9px 0;
+  border-bottom: 1px solid #e5e5e5;
+  font-size: 15px;
+  line-height: 1.35;
+}
+.jf-buy .qt-scope li.qt-head {
+  font-weight: 700;
+  font-size: 16px;
+  border-bottom-width: 2px;
+  border-bottom-color: #111;
+}
+.jf-buy .qt-scope li.qt-sub {
+  color: #666;
+  font-size: 13px;
+  padding-top: 0;
+  border-bottom: 0;
+}
+.jf-buy .qt-pass {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}

@@ -17,6 +17,9 @@ import { sendEmail, isEmailEnabled } from "@/lib/sdk/resend";
 import { noteGmailFallback, sendOrgEmail } from "@/lib/email/orgSend";
 import { isTwilioEnabled } from "@/lib/sdk/twilio";
 import { toE164 } from "@/lib/phone";
+import { prettyPhone } from "@/lib/aiDesk/shared";
+import { leadSourceOf } from "@/lib/leads/sources";
+import { metaLeadPresentation } from "@/lib/meta/leadPresentation";
 import { renderTemplate, type TemplateVars } from "@/lib/email/render";
 import { renderEmail } from "@/lib/email/renderEmail";
 import {
@@ -31,6 +34,7 @@ import {
   buildLeadOffer,
   buildLeadOfferReminder,
   buildNewLead,
+  type NewLeadInput,
   buildOwnerAccepted,
   buildOwnerPaymentReceived,
   buildPaymentIssue,
@@ -171,6 +175,7 @@ export async function notifyProposalSent({ proposalId }: NotifyProposalSentInput
     buildProposalSent({
       org: {
         name: proposal.organization.name,
+        id: proposal.organizationId,
         logoUrl: proposal.organization.logoUrl,
         phone: proposal.organization.phone,
       },
@@ -254,6 +259,7 @@ export async function notifyProposalAccepted({ proposalId }: { proposalId: strin
       buildProposalAccepted({
         org: {
           name: proposal.organization.name,
+          id: proposal.organizationId,
           logoUrl: proposal.organization.logoUrl,
           phone: proposal.organization.phone,
         },
@@ -283,6 +289,7 @@ export async function notifyProposalAccepted({ proposalId }: { proposalId: strin
     buildOwnerAccepted({
       org: {
         name: proposal.organization.name,
+        id: proposal.organizationId,
         logoUrl: proposal.organization.logoUrl,
         phone: proposal.organization.phone,
       },
@@ -330,11 +337,43 @@ async function ownerEmailFor(
   }
 }
 
+/** What the new-lead mail says about a lead (lib/email/build/operator buildNewLead): a Facebook form's answers as
+ *  questions and answers instead of its raw "key: value" lines, the phone as a tap to call, the source in the leads
+ *  list's words, and when it came in, in the company's time. */
+function newLeadFacts(
+  lead: { id: string; name: string; email: string | null; phone: string | null; address: string | null; city: string | null; state: string | null; zip: string | null; projectType: string | null; description: string | null; source: string | null; createdAt: Date },
+  timezone: string | null,
+): Omit<NewLeadInput, "org" | "href"> {
+  const e164 = toE164(lead.phone);
+  const form = metaLeadPresentation(lead);
+  const src = leadSourceOf(lead.source);
+  const address = [lead.address, lead.city, [lead.state, lead.zip].filter(Boolean).join(" ")].filter((x) => x && x.trim()).join(", ");
+  let when: string | null = null;
+  try {
+    when = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: timezone ?? "America/New_York" }).format(lead.createdAt);
+  } catch {
+    when = null;
+  }
+  return {
+    leadName: lead.name,
+    phone: e164 ? prettyPhone(e164) : lead.phone?.trim() || null,
+    phoneHref: e164 ? `tel:${e164}` : null,
+    email: lead.email?.trim() || null,
+    address: address || null,
+    project: lead.projectType?.trim() || null,
+    source: src.side === "jobflex" ? "JobFlex Lead Center" : src.label,
+    when,
+    // Answered questions only: an empty one is noise in a mail ("Not provided").
+    answers: form ? form.answers.filter((a) => a.value !== "Not provided").map((a) => ({ question: a.label, answer: a.value })) : [],
+    enquiry: form ? null : lead.description?.trim() || null,
+  };
+}
+
 export async function notifyLeadCreated(leadId: string) {
   const lead = await db.lead.findUnique({
     where: { id: leadId },
     include: {
-      organization: { select: { name: true, phone: true, billingEmail: true, logoUrl: true } },
+      organization: { select: { name: true, phone: true, billingEmail: true, logoUrl: true, timezone: true } },
     },
   });
   if (!lead || !lead.organization) return { skipped: true as const };
@@ -357,16 +396,12 @@ export async function notifyLeadCreated(leadId: string) {
       buildNewLead({
         org: {
           name: lead.organization.name,
+          id: lead.organizationId,
           logoUrl: lead.organization.logoUrl,
           phone: lead.organization.phone,
         },
-        leadName: lead.name,
-        phone: lead.phone ?? null,
-        email: lead.email ?? null,
-        project: lead.projectType ?? null,
-        source: lead.source ?? "Website",
-        enquiry: lead.description ?? null,
-        href: `${appUrl}/dashboard/leads`,
+        ...newLeadFacts(lead, lead.organization.timezone),
+        href: `${appUrl}/dashboard/leads/${lead.id}`,
       }),
       { roles: ["OWNER"] },
     );
@@ -420,6 +455,7 @@ export async function notifyAppointmentAssigned(appointmentId: string, workerIds
       buildAppointmentAssignment({
         org: {
           name: apt.organization.name,
+          id: apt.organizationId,
           logoUrl: apt.organization.logoUrl,
           phone: apt.organization.phone,
         },
@@ -477,7 +513,7 @@ export async function notifyAssignmentCreated(assignmentId: string) {
       .map((x) => x.worker.displayName);
     const { subject, html } = renderEmail(
       buildJobAssignment({
-        org: { name: org?.name ?? "Your team", logoUrl: org?.logoUrl, phone: org?.phone },
+        org: { id: a.job.organizationId, name: org?.name ?? "Your team", logoUrl: org?.logoUrl, phone: org?.phone },
         workerName: a.worker.displayName,
         title: a.job.title,
         startsAt: a.job.startsAt,
@@ -560,7 +596,7 @@ export async function notifyAssignmentResponded(
   const appUrl = await appBaseUrl();
   const { subject, html } = renderEmail(
     buildCrewResponse({
-      org: { name: org?.name ?? "Your team", logoUrl: org?.logoUrl, phone: org?.phone },
+      org: { id: organizationId, name: org?.name ?? "Your team", logoUrl: org?.logoUrl, phone: org?.phone },
       workerName: a.worker.displayName,
       title: a.job.title,
       response,
@@ -1419,7 +1455,7 @@ export async function notifyPaymentReceived({ paymentId }: { paymentId: string }
   if (wantsReceipts && payment.client?.email) {
     const { subject, html } = renderEmail(
       buildPaymentReceipt({
-        org: { name: org.name, logoUrl: org.logoUrl, phone: org.phone },
+        org: { id: payment.organizationId, name: org.name, logoUrl: org.logoUrl, phone: org.phone },
         clientName,
         title: proposal.title,
         stageLabel,
@@ -1443,7 +1479,7 @@ export async function notifyPaymentReceived({ paymentId }: { paymentId: string }
     payment.organizationId,
     "payment-received",
     buildOwnerPaymentReceived({
-      org: { name: org.name, logoUrl: org.logoUrl, phone: org.phone },
+      org: { id: payment.organizationId, name: org.name, logoUrl: org.logoUrl, phone: org.phone },
       clientName,
       title: proposal.title,
       stageLabel,
@@ -1490,7 +1526,7 @@ export async function notifyPaymentIssue(input: {
   const appUrl = await appBaseUrl();
   const { subject, html } = renderEmail(
     buildPaymentIssue({
-      org: { name: org.name, logoUrl: org.logoUrl, phone: org.phone },
+      org: { id: input.organizationId, name: org.name, logoUrl: org.logoUrl, phone: org.phone },
       title: input.title,
       detail: input.detail,
       amount: input.amount ?? null,

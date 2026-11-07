@@ -54,6 +54,7 @@ import { setProposalProject } from "@/actions/projectLinks";
 import Link from "next/link";
 import type { Route } from "next";
 import { money } from "@/lib/format";
+import { KIND_TAG, kindOf } from "@/lib/projectKind";
 import { lockScroll } from "@/lib/scrollLock";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
@@ -69,7 +70,7 @@ import {
   type PdJob,
   type PdOpens,
   type PdPayments,
-  type PdBuying,
+  type PdBuying, PdSubs,
   type PdField,
   type PdFinish,
   type PdShare,
@@ -100,6 +101,7 @@ import { ProjectCombine } from "@/components/v3/project-links/project-combine";
 import { ProjectCrewSheet } from "@/components/v3/project-links/project-crew-sheet";
 import { ProjectStagesCard } from "@/components/v3/project-links/project-stages-card";
 import { ProjectBuyingCard } from "@/components/v3/project-links/project-buying-card";
+import { ProjectSubsCard } from "@/components/v3/project-links/project-subs-card";
 import { ProjectFieldCard } from "@/components/v3/project-links/project-field-card";
 import { ProjectTimelineCard } from "@/components/v3/project-links/project-timeline-card";
 import { ProjectFinishCard } from "@/components/v3/project-links/project-finish-card";
@@ -310,6 +312,7 @@ export function MobileProjectDetail({
   roster = [],
   stages = { stages: [], done: null, draftedByAi: false },
   buying,
+  subs,
   field,
   timeline,
   finish,
@@ -329,6 +332,7 @@ export function MobileProjectDetail({
   stages?: PdStages;
   /** The to-buy list and the orders (2026-11-05). */
   buying?: PdBuying;
+  subs?: PdSubs;
   /** On site: problems, hours, the subs' bills (2026-11-05). */
   field?: PdField;
   /** The stages across the weeks (2026-11-06). */
@@ -583,6 +587,7 @@ export function MobileProjectDetail({
             <h1 className="mpd-title">{project.name}</h1>
             <div className="mpd-dateline">
               {project.number ? <span data-project-number>{`#${project.number} · `}</span> : null}
+              <span data-project-kind={kindOf(project.kind)}>{`${KIND_TAG[kindOf(project.kind)]} · `}</span>
               {hasWindow ? (
                 <>
                   Project window ·{" "}
@@ -624,7 +629,7 @@ export function MobileProjectDetail({
 
           {/* ============ STAGES (2026-11-05) ============ */}
           <div className="mpd-budget">
-            <ProjectStagesCard projectId={project.id} stages={stages} canManage={canManage} />
+            <ProjectStagesCard projectId={project.id} stages={stages} canManage={canManage} kind={kindOf(project.kind)} />
           </div>
           {timeline ? (
             <div className="mpd-budget">
@@ -710,6 +715,11 @@ export function MobileProjectDetail({
           {buying ? (
             <div className="mpd-budget">
               <ProjectBuyingCard projectId={project.id} buying={buying} stages={stages.stages} canManage={canManage} />
+            </div>
+          ) : null}
+          {subs ? (
+            <div className="mpd-budget">
+              <ProjectSubsCard projectId={project.id} subs={subs} stages={stages.stages} canManage={canManage} />
             </div>
           ) : null}
 

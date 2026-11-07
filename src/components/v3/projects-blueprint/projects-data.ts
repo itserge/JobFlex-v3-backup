@@ -17,6 +17,8 @@ export type Project = {
   name: string;
   description: string | null;
   status: string;
+  /** REMODEL or NEW_BUILD (2026-11-07). */
+  kind?: string;
   startsAt: string | null;
   endsAt: string | null;
   budget: number;
@@ -56,11 +58,11 @@ export type Project = {
   /** What the stages and the buying flag: a late stage, no stages on sold work, an AI draft to keep, materials
    *  not ordered by their day, a delivery past its day; an inspection due, punch items open, the finish line's
    *  next step (2026-11-06). */
-  attention?: Array<{ kind: "late" | "nostages" | "drafted" | "order-by" | "late-delivery" | "problem" | "inspection" | "punch" | "finish"; text: string }>;
+  attention?: Array<{ kind: "late" | "nostages" | "drafted" | "order-by" | "late-delivery" | "problem" | "inspection" | "punch" | "finish" | "quote-overdue" | "quote-in" | "invoice-in"; text: string }>;
 };
 
 /** What a row is flagged for, most urgent first. */
-export type ProjectFlag = { kind: "over" | "warn" | "loss" | "waiting" | "unbudgeted" | "late" | "nostages" | "drafted" | "order-by" | "late-delivery" | "problem" | "inspection" | "punch" | "finish"; text: string };
+export type ProjectFlag = { kind: "over" | "warn" | "loss" | "waiting" | "unbudgeted" | "late" | "nostages" | "drafted" | "order-by" | "late-delivery" | "problem" | "inspection" | "punch" | "finish" | "quote-overdue" | "quote-in" | "invoice-in"; text: string };
 
 /** The row's progress, 0–100: the stages' % done when it has stages, else the jobs closed out. */
 export function progressOf(p: Project): number {

@@ -15,6 +15,8 @@
 // The writes go through src/actions/followUps.ts from the behavior module, so
 // both editions describe — and mutate — the same records.
 
+import { emailLogoSrc } from "@/lib/orgLogo";
+import { SITE_URL } from "@/lib/siteUrl";
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
@@ -239,7 +241,8 @@ export default async function CrmPage() {
     org: {
       name: org?.name ?? "Your company",
       phone: org?.phone ?? null,
-      logoUrl: org?.logoUrl ?? null,
+      // The mail preview draws the logo as the mail links it (lib/orgLogo emailLogoSrc), not the stored data URL.
+        logoUrl: emailLogoSrc(org?.logoUrl, organizationId, SITE_URL),
     },
     smsEnabled: await isTwilioEnabled(),
     renderedAt: now.getTime(),

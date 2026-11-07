@@ -80,6 +80,50 @@ export const CATALOG: Catalog = {
     "scheduled": false,
     "version": 1
   },
+  "ask_quotes": {
+    "label": "Ask for quotes",
+    "group": "projects",
+    "effect": "message",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "quotes": {
+    "label": "Quotes",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "contractors": {
+    "label": "Contractors",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "award_quote": {
+    "label": "Award a quote",
+    "group": "projects",
+    "effect": "message",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
   "crew": {
     "label": "Crew",
     "group": "lookups",
@@ -449,6 +493,17 @@ export const CATALOG: Catalog = {
   },
   "tick_task": {
     "label": "Project task",
+    "group": "projects",
+    "effect": "record",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "start_project": {
+    "label": "Start a project",
     "group": "projects",
     "effect": "record",
     "kind": "write",

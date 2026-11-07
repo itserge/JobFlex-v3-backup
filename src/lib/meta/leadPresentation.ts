@@ -28,6 +28,8 @@ export function metaLeadPresentation(lead: Contact & { id: string; source: strin
   for (const field of fields) {
     if (mapped[field.key] && !field.value.includes("\n")) continue;
     if (field.key === "inbox_url") {
+      // Meta sends it empty when the person never messaged the Page: no link, and no "Inbox url: Not provided" row.
+      if (!field.value.trim()) continue;
       try {
         const url = new URL(field.value);
         if (url.protocol === "https:" && (url.hostname === "facebook.com" || url.hostname.endsWith(".facebook.com")) && !url.username && !url.password) {

@@ -65,7 +65,7 @@ export async function sendChangeOrderToClient(coId: string): Promise<SendReport>
     try {
       const { subject, html } = renderEmail(
         buildChangeOrder({
-          org: { name: co.organization.name, logoUrl: co.organization.logoUrl, phone: co.organization.phone },
+          org: { id: co.organizationId, name: co.organization.name, logoUrl: co.organization.logoUrl, phone: co.organization.phone },
           clientName: client.name,
           contextTitle,
           coTitle: co.title,
@@ -144,7 +144,7 @@ export async function notifyOfficeChangeOrderAnswered(coId: string, approved: bo
     co.organizationId,
     "change-order",
     buildOwnerChangeOrderAnswered({
-      org: { name: co.organization.name, logoUrl: co.organization.logoUrl, phone: co.organization.phone },
+      org: { id: co.organizationId, name: co.organization.name, logoUrl: co.organization.logoUrl, phone: co.organization.phone },
       clientName: client?.name ?? "Your client",
       contextTitle: co.proposal?.title ?? co.job?.title ?? "the job",
       coTitle: co.title,
