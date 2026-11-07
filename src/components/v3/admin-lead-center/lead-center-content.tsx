@@ -137,6 +137,8 @@ export interface PlatformLeadDTO {
    *  it, then CLAIMED / whatever their pipeline moved it to. Null when the lead
    *  has not been matched. */
   shopLeadStatus: string | null;
+  /** The follow-up reminders JobFlex sent the shop on this lead (lib/leadFollowUps): how many, the last one. */
+  nudges: { count: number; lastAt: string | null; stage: string | null } | null;
   createdAt: string;
   ranking: RankEntry[];
   /** The hand-send list in the cascade's order: every shop taking platform
@@ -1868,9 +1870,13 @@ function whereItStands(l: PlatformLeadDTO): string {
     case "MATCHED": {
       const shop = l.matchedOrgName ?? "a shop";
       const when = l.matchedAt ? ` on ${shortDate(l.matchedAt)}` : "";
-      return l.shopLeadStatus === "ROUTED"
-        ? `Sent to ${shop}${when} — waiting for them to accept it.`
-        : `${shop} accepted it${when}.`;
+      if (l.shopLeadStatus === "ROUTED") return `Sent to ${shop}${when} — waiting for them to accept it.`;
+      // The follow-up reminders the shop was sent (2026-11-07): a day in with no contact, three days with no
+      // proposal, a week. None once the shop quoted or won.
+      const n = l.nudges?.count ?? 0;
+      const stageWords = l.nudges?.stage === "contact" ? "to call the homeowner" : l.nudges?.stage === "final" ? "the last one — a week with no proposal" : "to send the proposal";
+      const nudged = n ? ` Reminded ${n === 1 ? "once" : n === 2 ? "twice" : `${n} times`} ${stageWords}${l.nudges?.lastAt ? `, last on ${shortDate(l.nudges.lastAt)}` : ""}; no proposal sent yet.` : "";
+      return `${shop} accepted it${when}.${nudged}`;
     }
     case "OFFERED":
       if (l.activeOffer?.manual) {

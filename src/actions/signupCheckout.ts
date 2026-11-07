@@ -71,6 +71,7 @@ import { buildTrialConfirm } from "@/lib/email/build/trial";
 import { pendingSignupAlive } from "@/lib/pendingSignup";
 import { markUnclaimed } from "@/lib/accountClaim";
 import { autoPlanWelcomeKey } from "@/lib/autoPlanWelcome";
+import { timezoneFor } from "@/lib/usTimezone";
 
 const pendingSchema = z.object({
   analytics: trafficIdentitySchema.optional().catch(undefined),
@@ -789,6 +790,8 @@ async function createAccountFromPending(
           billingEmail: rec.email,
           address: rec.companyAddress || null,
           phone: rec.companyPhone || null,
+          // The zone the address or the phone says (lib/usTimezone, 2026-11-07); the default otherwise.
+          timezone: timezoneFor({ address: rec.companyAddress, phone: rec.companyPhone }) ?? undefined,
           tradeTypesJson: JSON.stringify(rec.tradeTypes ?? []),
           otherTrade:
             rec.otherTrade && rec.tradeTypes?.includes("Other") ? rec.otherTrade : null,

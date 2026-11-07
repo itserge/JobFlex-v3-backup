@@ -19,6 +19,7 @@ import { seoCity } from "@/lib/seo/cities";
 import { PRICE_PLAN_TAG, PRICED_TRADES, estimateShort, parsePlanEstimate, parsePlanSite, type PricedTrade } from "@/lib/leadCenter/estimate";
 import { readLeadEstimates } from "@/lib/leadCenter/estimateStore";
 import { autoPriceOn, exclusivesOf } from "@/lib/leadCenter/autoPrice";
+import { leadNudgesFor } from "@/lib/leadFollowUps";
 import { houseOrgId } from "@/lib/publicEstimate/store";
 import {
   AdminLeadCenterContent,
@@ -195,6 +196,8 @@ export default async function AdminLeadCenterPage() {
     });
     for (const r of rows) shopLeadStatus.set(r.id, r.status);
   }
+  // The follow-up reminders sent to the shops on these leads (lib/leadFollowUps, 2026-11-07).
+  const nudges = await leadNudgesFor(matchedLeadIds);
 
   const leads: PlatformLeadDTO[] = platformLeads.map((p) => {
     let ranking: RankEntry[] = [];
@@ -250,6 +253,7 @@ export default async function AdminLeadCenterPage() {
       // legacy ROUTED match has no accepted offer and reads the admin stamp.
       manuallyAssigned: accepted ? isManualOffer(accepted) : p.assignedByAdminId != null,
       shopLeadStatus: p.matchedLeadId ? (shopLeadStatus.get(p.matchedLeadId) ?? null) : null,
+      nudges: p.matchedLeadId ? (nudges.get(p.matchedLeadId) ?? null) : null,
       createdAt: p.createdAt.toISOString(),
       ranking,
       shopOrder,
