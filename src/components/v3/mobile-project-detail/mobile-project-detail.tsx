@@ -72,6 +72,7 @@ import {
   type PdBuying,
   type PdField,
   type PdFinish,
+  type PdShare,
   type PdTimeline,
   type PdProject,
   type PdStages,
@@ -102,6 +103,7 @@ import { ProjectBuyingCard } from "@/components/v3/project-links/project-buying-
 import { ProjectFieldCard } from "@/components/v3/project-links/project-field-card";
 import { ProjectTimelineCard } from "@/components/v3/project-links/project-timeline-card";
 import { ProjectFinishCard } from "@/components/v3/project-links/project-finish-card";
+import { ProjectClientCard } from "@/components/v3/project-links/project-client-card";
 
 const DAY_MS = 86400000;
 
@@ -311,6 +313,7 @@ export function MobileProjectDetail({
   field,
   timeline,
   finish,
+  share,
 }: {
   project: PdProject;
   jobs: PdJob[];
@@ -332,6 +335,8 @@ export function MobileProjectDetail({
   timeline?: PdTimeline;
   /** The punch list and the finish line (2026-11-06). */
   finish?: PdFinish;
+  /** The client's page and the files (2026-11-06). */
+  share?: PdShare;
 }) {
   // The project's dates are days, not moments (withLocalDays).
   const project = useMemo(() => withLocalDays(projectIn), [projectIn]);
@@ -624,6 +629,11 @@ export function MobileProjectDetail({
           {timeline ? (
             <div className="mpd-budget">
               <ProjectTimelineCard projectId={project.id} timeline={timeline} canManage={canManage} />
+            </div>
+          ) : null}
+          {share ? (
+            <div className="mpd-budget">
+              <ProjectClientCard projectId={project.id} share={share} canManage={canManage} />
             </div>
           ) : null}
           {field ? (

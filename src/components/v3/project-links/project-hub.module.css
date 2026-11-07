@@ -150,6 +150,17 @@
 .w.w .tlKey { display: inline-block; width: 18px; height: 10px; border: 1.5px solid var(--ink); border-radius: 2px; background: #fff; box-sizing: border-box; }
 .w.w .planList { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.55; display: grid; gap: 4px; }
 
+/* THE CLIENT'S PAGE CARD (2026-11-06): the link row, and — inside the portalled sheet, so doubled selectors like
+   `.check.check` — the photo grid the office ticks. */
+.w.w .linkRow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+.w.w .linkRow input { flex: 1; min-width: 200px; min-height: 36px; border: 1.5px solid var(--ink); border-radius: var(--radius); padding: 0 10px; font-family: var(--font-mono); font-size: 12px; background: #fff; color: var(--ink); }
+.photoGrid.photoGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.photoPick.photoPick { position: relative; display: block; aspect-ratio: 1; border: 1.5px solid var(--ink, #0a0a0a); background: #fff; overflow: hidden; cursor: pointer; }
+.photoPick.photoPick img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photoPick.photoPick input { position: absolute; top: 6px; left: 6px; width: 22px; height: 22px; margin: 0; accent-color: var(--accent, #2b55a8); z-index: 1; }
+.photoPick.photoPick.isOn { outline: 3px solid var(--accent, #2b55a8); outline-offset: -3px; }
+.photoPick.photoPick:not(.isOn) img { opacity: 0.6; }
+
 /* THE FINISH LINE CARD (2026-11-06): seven steps as rows — the mark, the label, the detail, the one button — with
    the punch items folded under the first. */
 .w.w .steps { margin-top: 14px; border: 1.5px solid var(--ink); }

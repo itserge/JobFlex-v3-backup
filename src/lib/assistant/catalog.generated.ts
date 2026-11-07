@@ -589,5 +589,27 @@ export const CATALOG: Catalog = {
     "pin": false,
     "scheduled": false,
     "version": 1
+  },
+  "send_project_update": {
+    "label": "Project update to the client",
+    "group": "projects",
+    "effect": "message",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "project_files": {
+    "label": "Project files",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
   }
 };

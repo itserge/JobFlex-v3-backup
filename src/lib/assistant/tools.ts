@@ -38,6 +38,7 @@ import { PROJECT_TOOLS } from "@/lib/assistant/projects";
 import { BUYING_TOOLS } from "@/lib/assistant/buying";
 import { FIELD_TOOLS } from "@/lib/assistant/field";
 import { TIMELINE_TOOLS } from "@/lib/assistant/timeline";
+import { CLIENT_TOOLS } from "@/lib/assistant/client";
 import { BUSINESS_TOOLS } from "@/lib/assistant/business";
 
 export interface ToolContext {
@@ -994,6 +995,7 @@ export const TOOLS: readonly AnyTool[] = [
   ...BUYING_TOOLS,
   ...FIELD_TOOLS,
   ...TIMELINE_TOOLS,
+  ...CLIENT_TOOLS,
 ] as unknown as AnyTool[];
 
 export function toolNamed(name: string): AnyTool | null {

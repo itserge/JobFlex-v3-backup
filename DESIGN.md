@@ -593,6 +593,22 @@ answer is a note under the fields in the hub's note voice — emerald when
 read from the estimate, amber for a rule of thumb — so the office always
 knows which it got.
 
+The homeowner's project page, /p/[token] (the client build, 2026-11-06),
+is the buyer's page's sibling: `.jf-client`, one 2px ink frame on graph
+paper, a 680px column, the company's name in mono caps above the project
+in display weight and a one-line greeting in plain words ("Hi Dana — 40%
+done · on Drywall and paint"). The stages are a list of round marks —
+emerald ✓, ink ▶, empty — with a mono state word at the right, under a
+12px emerald progress bar and a display-weight percent. Photos are a
+square grid with ink hairlines; documents and the next days are plain
+rows; each sold proposal is a framed block with "Next: Deposit · $X" and
+the one black Pay button with the blueprint shadow. Nothing on the page is
+red or amber: a homeowner reads where things stand, never a warning. The
+office's Client's page card uses the hub's row grammar: a mono link field
+with Copy / Open, files as lines with a "client sees it" tag that flips
+when pressed, and the photo picker as a portalled grid of square thumbs
+dimmed until ticked, the ticked ones outlined in accent.
+
 Read [implementation notes](docs/design/implementation.md) when editing an
 existing interactive surface, and [mobile notes](docs/design/mobile.md) for
 handheld work. These describe code hazards, not alternative visual themes.

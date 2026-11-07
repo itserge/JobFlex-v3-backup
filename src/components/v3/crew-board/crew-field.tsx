@@ -37,7 +37,8 @@ export function CrewField({ data, jobId, door, office, canWork }: { data: FieldD
   const open = data.problems.filter((p) => p.status === "OPEN");
   const stages = data.stages.filter((s) => s.current || s.tasks.some((t) => !t.done)).slice(0, 2);
   const punch = data.punch ?? [];
-  const nothing = !open.length && !stages.length && !data.orders.length && !punch.length && !canWork;
+  const files = data.files ?? [];
+  const nothing = !open.length && !stages.length && !data.orders.length && !punch.length && !files.length && !canWork;
   if (nothing) return null;
 
   const isDone = (id: string, done: boolean) => (id in ticked ? ticked[id] : done);
@@ -186,6 +187,22 @@ export function CrewField({ data, jobId, door, office, canWork }: { data: FieldD
                   else setPhotoFor(null);
                 }}
               />
+            </div>
+          ) : null}
+
+          {files.length ? (
+            <div data-field-files>
+              <span className={cx("label")}>Documents</span>
+              <div className={cx("fieldList")}>
+                {files.map((f) => (
+                  <a key={f.id} className={cx("deliveryRow")} href={f.href} target="_blank" rel="noreferrer" data-field-file>
+                    <div>
+                      <b>{f.name}</b>
+                      <span className={cx("mono")}>{f.kindLabel}</span>
+                    </div>
+                  </a>
+                ))}
+              </div>
             </div>
           ) : null}
 
