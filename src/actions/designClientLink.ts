@@ -241,7 +241,7 @@ export async function approveRoomClientDesign(token: string, input: { name: stri
     const owner = maker?.email ? null : await db.membership.findFirst({ where: { organizationId: l.orgId, role: "OWNER" }, orderBy: { createdAt: "asc" }, select: { user: { select: { email: true } } } }).catch(() => null);
     const to = maker?.email ?? owner?.user.email ?? org?.billingEmail;
     if (org && to) {
-      const doc = approvedEmailDoc({ org: { name: org.name, logoUrl: org.logoUrl ?? null, phone: org.phone ?? null }, name, roomName: l.roomName, total, chosen, note, href: `${(await appBaseUrl()).replace(/\/$/, "")}${href}` });
+      const doc = approvedEmailDoc({ org: { id: l.orgId, name: org.name, logoUrl: org.logoUrl ?? null, phone: org.phone ?? null }, name, roomName: l.roomName, total, chosen, note, href: `${(await appBaseUrl()).replace(/\/$/, "")}${href}` });
       const { subject, html, text } = renderEmail(doc);
       await sendEmail({ to, subject, html, text });
     }

@@ -145,7 +145,7 @@ export async function sendVisitReport(appointmentId: string, organizationId: str
       const orgName = org.name ?? "Your contractor";
       const doc: EmailDoc = {
         subject: `Your visit report from ${orgName}`,
-        lockup: { kind: "org", name: orgName, logoUrl: org.logoUrl },
+        lockup: { kind: "org", name: orgName, logoUrl: org.logoUrl, orgId: organizationId },
         kicker: { text: "Visit report", tone: findings.some((f) => f.severity === "urgent") ? "bad" : findings.some((f) => f.severity === "fix") ? "warn" : "ok" },
         headline: a.title,
         prose: [`Hi ${name.split(" ")[0]}, here is what we found on ${a.startsAt.toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: org.timezone || "America/New_York" })}.`, a.report.summary ?? ""].filter(Boolean),

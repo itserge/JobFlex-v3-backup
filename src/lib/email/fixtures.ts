@@ -385,15 +385,22 @@ export const FIXTURES: { id: string; label: string; note?: string; doc: EmailDoc
   {
     id: "b-new-lead",
     label: "12 · buildNewLead()",
-    note: "Headline is the lead's name. Enquiry text quoted in `after`.",
+    note: "Headline is the lead's name. Phone and email are taps; a Facebook form's questions and answers are stacked rows; the button opens this lead.",
     doc: buildNewLead({
       org: BRAND,
       leadName: "Priya Anand",
       phone: "(503) 555-0177",
-      project: "Kitchen remodel",
-      source: "Website",
-      enquiry: "Looking to redo our kitchen this fall — cabinets, counters, and a new layout for the island.",
-      href: "https://example.com/dashboard/leads",
+      phoneHref: "tel:+15035550177",
+      email: "priya.anand@example.com",
+      address: "4120 SE Hawthorne Blvd, Portland, OR 97214",
+      project: null,
+      source: "Facebook",
+      when: "Nov 5, 7:35 PM",
+      answers: [
+        { question: "Where are you looking to upgrade?", answer: "Garage / home interior" },
+        { question: "How big is the space?", answer: "Two-car garage" },
+      ],
+      href: "https://example.com/dashboard/leads/demo",
     }),
   },
   {

@@ -119,7 +119,7 @@ export async function sendInvoice(input: { proposalId: string; installmentId: st
     try {
       const { subject, html } = renderEmail(
         buildInvoice({
-          org: { name: org.name, logoUrl: org.logoUrl, phone: org.phone },
+          org: { id: proposal.organizationId, name: org.name, logoUrl: org.logoUrl, phone: org.phone },
           clientName: proposal.client.name,
           title: proposal.title,
           label,

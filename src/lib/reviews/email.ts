@@ -23,6 +23,7 @@ export async function sendReviewRequestEmail(reviewRequestId: string, kind: Revi
     where: { id: reviewRequestId },
     select: {
       publicToken: true,
+      organizationId: true,
       client: { select: { name: true, email: true } },
       proposal: { select: { title: true } },
       job: { select: { title: true } },
@@ -45,7 +46,7 @@ export async function sendReviewRequestEmail(reviewRequestId: string, kind: Revi
   const org = rr.organization;
   const appUrl = await appBaseUrl();
   const input = {
-    org: { name: org.name, logoUrl: org.logoUrl, phone: org.phone },
+    org: { id: rr.organizationId, name: org.name, logoUrl: org.logoUrl, phone: org.phone },
     clientName: rr.client?.name?.trim() || "there",
     jobTitle: rr.proposal?.title?.trim() || rr.job?.title?.trim() || "work",
     href: `${appUrl}/review/${rr.publicToken}`,

@@ -34,7 +34,7 @@ async function sendInviteEmail(
     const orgName = org?.name ?? "JobFlex";
     const { subject, html } = renderEmail(
       buildTeamInvite({
-        org: { name: orgName, logoUrl: org?.logoUrl, phone: org?.phone },
+        org: { id: organizationId, name: orgName, logoUrl: org?.logoUrl, phone: org?.phone },
         inviterName: inviterLabel,
         roleLabel: role.toLowerCase(),
         href: `${appUrl}/auth/invite/${rawToken}`,

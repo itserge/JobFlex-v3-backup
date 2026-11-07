@@ -460,7 +460,7 @@ async function emailTheMaker(
   const to = maker?.email ?? owner?.user.email ?? org.billingEmail;
   if (!to) return;
   const doc = returnedEmailDoc({
-    org: { name: org.name, logoUrl: org.logoUrl ?? null, phone: org.phone ?? null },
+    org: { id: link.orgId, name: org.name, logoUrl: org.logoUrl ?? null, phone: org.phone ?? null },
     name: i.name,
     phone: i.phone,
     note: i.note,

@@ -137,7 +137,7 @@ export async function emailCustomer(org: OrgRow, to: string | null | undefined, 
   if (!to) return false;
   try {
     const name = org.name ?? "Your contractor";
-    const { subject, html } = renderEmail({ ...doc, lockup: { kind: "org", name, logoUrl: org.logoUrl }, footer: { name, contact: org.phone ?? org.billingEmail ?? undefined } });
+    const { subject, html } = renderEmail({ ...doc, lockup: { kind: "org", name, logoUrl: org.logoUrl, orgId: org.id }, footer: { name, contact: org.phone ?? org.billingEmail ?? undefined } });
     const r = await sendOrgEmail(org, { to, subject, html });
     return !!r && (r as { ok?: boolean }).ok !== false;
   } catch (err) {
@@ -278,7 +278,7 @@ export async function createBooking(org: OrgRow, input: NewBooking, now = new Da
         org.id,
         "booking-online",
         buildBookedOnline({
-          org: { name: org.name ?? "Your company", logoUrl: org.logoUrl, phone: org.phone },
+          org: { id: org.id, name: org.name ?? "Your company", logoUrl: org.logoUrl, phone: org.phone },
           name: input.name,
           service: service.label,
           when,

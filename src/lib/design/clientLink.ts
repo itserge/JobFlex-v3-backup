@@ -341,7 +341,7 @@ export function chosenWords(options: readonly ClientOption[], picks: Picks): str
 export const money = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
 
 /** The email to whoever made the link when the client approves. */
-export function approvedEmailDoc(i: { org: { name: string; logoUrl: string | null; phone: string | null }; name: string; roomName: string; total: number | null; chosen: string[]; note: string; href: string }): EmailDoc {
+export function approvedEmailDoc(i: { org: { id?: string | null; name: string; logoUrl: string | null; phone: string | null }; name: string; roomName: string; total: number | null; chosen: string[]; note: string; href: string }): EmailDoc {
   const box: BoxRow[] = [
     { type: "field", label: "Client", value: i.name },
     { type: "field", label: "Room", value: i.roomName },
@@ -353,7 +353,7 @@ export function approvedEmailDoc(i: { org: { name: string; logoUrl: string | nul
   ];
   return {
     subject: `${i.name} approved the ${i.roomName.toLowerCase()} design`,
-    lockup: { kind: "org", name: i.org.name, logoUrl: i.org.logoUrl },
+    lockup: { kind: "org", name: i.org.name, logoUrl: i.org.logoUrl, orgId: i.org.id ?? null },
     kicker: { text: "Design approved", tone: "ok" },
     headline: `${i.name} approved the ${i.roomName.toLowerCase()} design`,
     prose: i.note ? [`“${i.note}”`] : undefined,

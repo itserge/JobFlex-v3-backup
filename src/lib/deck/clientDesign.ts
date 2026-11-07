@@ -418,7 +418,7 @@ export function changesFrom(base: DeckDesign, next: DeckDesign): string[] {
 
 /** The email to the member who made the link when the design comes back. */
 export function returnedEmailDoc(i: {
-  org: { name: string; logoUrl: string | null; phone: string | null };
+  org: { id?: string | null; name: string; logoUrl: string | null; phone: string | null };
   name: string;
   phone: string | null;
   note: string;
@@ -439,7 +439,7 @@ export function returnedEmailDoc(i: {
   ];
   return {
     subject: `${i.name} ${i.again ? "sent their deck design again" : "sent back their deck design"}`,
-    lockup: { kind: "org", name: i.org.name, logoUrl: i.org.logoUrl },
+    lockup: { kind: "org", name: i.org.name, logoUrl: i.org.logoUrl, orgId: i.org.id ?? null },
     kicker: { text: "Deck design", tone: "ok" },
     headline: `${i.name} ${i.again ? "changed their deck design" : "designed their deck"}`,
     prose: i.note ? [`“${i.note}”`] : undefined,

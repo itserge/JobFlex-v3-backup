@@ -130,7 +130,7 @@ export async function sendGmailTestEmail() {
   });
   if (!org) throw new Error("Organization not found.");
   const { subject, html } = renderEmail(
-    buildTestEmail({ org: { name: org.name, logoUrl: org.logoUrl, phone: org.phone } }),
+    buildTestEmail({ org: { id: organizationId, name: org.name, logoUrl: org.logoUrl, phone: org.phone } }),
   );
   const res = await sendOrgEmail(org, { to, subject, html });
   return { ok: true, via: res.via, to };

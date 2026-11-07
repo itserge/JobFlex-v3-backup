@@ -4,6 +4,8 @@
 // properties; keep them in sync with globals.css by hand.
 import { type BoxRow, type EmailDoc, type Lockup, TONE_COLOR } from "./doc";
 import { fitAnchor, fitHeadline, fitOrgName } from "./fit";
+import { emailLogoSrc } from "@/lib/orgLogo";
+import { SITE_URL } from "@/lib/siteUrl";
 
 const C = {
   canvas: "#ebe8e1",
@@ -58,7 +60,7 @@ function esc(s: string): string {
 }
 
 /**
- * Only http(s), mailto and tel schemes render as live links; everything else
+ * Only http(s), mailto, tel and sms schemes render as live links; everything else
  * — javascript:, data:, vbscript:, and scheme spoofs hidden behind leading
  * whitespace, control characters, or mixed case — collapses to a dead "#".
  * Relative URLs (no scheme at all, e.g. /portal/q/abc) pass through
@@ -80,7 +82,8 @@ function safeHref(url: string): string {
   const clean = stripped.trim();
   const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(clean)?.[1]?.toLowerCase();
   if (!scheme) return url; // no scheme → relative URL, leave as authored
-  return scheme === "http" || scheme === "https" || scheme === "mailto" || scheme === "tel"
+  // sms: — a new lead's "Text them" (2026-11-05); it opens the phone's own messages app and nothing else.
+  return scheme === "http" || scheme === "https" || scheme === "mailto" || scheme === "tel" || scheme === "sms"
     ? url
     : "#";
 }
@@ -129,12 +132,22 @@ function rowHtml(row: BoxRow): string {
         `<div class="item" style="font-size:15.5px;font-weight:700;font-variant-numeric:tabular-nums;color:${C.ink};font-family:${SANS};">${esc(row.amount)}</div>`,
         14,
       );
-    case "field":
+    case "field": {
+      const value = row.href
+        ? `<a href="${esc(safeHref(row.href))}" style="color:${C.ink};text-decoration:underline;text-underline-offset:3px;">${esc(row.value)}</a>`
+        : esc(row.value);
       return twoCol(
         `<div style="font-family:${MONO};font-size:11px;letter-spacing:.10em;text-transform:uppercase;color:${C.inkMuted};font-weight:700;padding-top:2px;">${esc(row.label)}</div>`,
-        `<div class="item" style="font-size:15.5px;font-weight:700;color:${C.ink};font-family:${SANS};">${esc(row.value)}</div>`,
+        `<div class="item" style="font-size:15.5px;font-weight:700;color:${C.ink};font-family:${SANS};">${value}</div>`,
         13,
       );
+    }
+    case "answer":
+      // Stacked, not two columns: a question is a sentence and its answer can be one too.
+      return `<tr><td class="rowpad" style="padding:13px ${PAD_M}px;">
+  <div style="font-family:${SANS};font-size:14px;line-height:1.45;color:${C.inkMuted};">${esc(row.question)}</div>
+  <div class="item" style="margin-top:3px;font-family:${SANS};font-size:15.5px;line-height:1.4;font-weight:700;color:${C.ink};">${esc(row.answer).replace(/\n/g, "<br>")}</div>
+</td></tr>`;
     case "rate":
       // The rate sits at LABEL size, not annotation size — "Tax 5%" is one
       // label in two faces, not a label with a footnote (principle 08).
@@ -190,7 +203,8 @@ function boxHtml(rows: BoxRow[]): string {
 function lockupHtml(lockup: Lockup): string {
   const name = lockup.kind === "org" ? lockup.name : "JobFlex";
   const s = fitOrgName(name);
-  const logo = lockup.kind === "org" ? lockup.logoUrl : null;
+  // Linked, never the stored data URL (doc.ts Lockup): that one mail-sized picture is what made Gmail clip the mail.
+  const logo = lockup.kind === "org" ? emailLogoSrc(lockup.logoUrl, lockup.orgId, SITE_URL) : null;
   const markBg = lockup.kind === "platform" ? C.accent : C.ink;
   const mark = logo
     ? `<img src="${esc(logo)}" width="38" height="38" alt="" style="display:block;width:38px;height:38px;border-radius:2px;object-fit:cover;">`
@@ -260,6 +274,7 @@ function plainText(doc: EmailDoc): string {
     else if (r.type === "rate") lines.push(`${r.label} ${r.rate}  ${r.amount}`);
     else if (r.type === "anchor") lines.push(`${r.label.toUpperCase()}  ${r.value}`);
     else if (r.type === "choice") lines.push(`${r.label} — ${r.action}: ${r.href}`);
+    else if (r.type === "answer") lines.push(r.question, `  ${r.answer}`);
     else lines.push(`${r.label}: ${r.chip}`);
   }
   if (doc.box?.length) lines.push("");
