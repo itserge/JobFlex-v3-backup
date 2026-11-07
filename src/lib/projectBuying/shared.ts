@@ -106,17 +106,25 @@ export function qtyWords(qty: number, unit: string): string {
 
 // ── what counts as a material on a proposal ──────────────────────────────────
 
-/** Words that mark a line as work, not goods. */
-const WORK = /\b(labor|labour|install(ation|ed|ing)?|removal|remove|demo(lition)?|haul|dump(ster)?|disposal|permit|fee|tax|deposit|design|engineering|inspection|cleanup|clean-up|service call|trip charge|delivery)\b/i;
+/** Words that mark a line as a charge or a service, never goods — singular or plural ("Permits and inspections"). */
+const FEE = /\b(permit|fee|tax(es)?|deposit|design|engineering|inspection|service call|trip charge|delivery|deliveries|dump(ster)?|disposal)s?\b/i;
+/** Words that mark a line as work. */
+const WORK = /\b(labor|labour|install(ation|ed|ing|s)?|removal|remove|demo(lition)?|haul(ing)?|cleanup|clean-up)\b/i;
 
-/** A line the project has to buy: goods, with a quantity. A line priced only as labor is work. */
+/**
+ * A line the project has to buy: goods, with a quantity. A line priced only as labor is work, and so is a charge
+ * (permits, fees). A line in work words is still goods when most of its price is material: a remodeler writes
+ * "Shaker cabinets, supplied and installed" — $9,800 of cabinets and $2,900 of labor — and the cabinets have to be
+ * ordered (seen on the stand, 2026-11-06: the cabinets and the counters never reached the list).
+ */
 export function isMaterialLine(l: { name: string; quantity: number; materialCost?: number | null; laborCost?: number | null; productUrl?: string | null }): boolean {
   if (!(l.quantity > 0)) return false;
-  if (WORK.test(l.name)) return false;
+  if (FEE.test(l.name)) return false;
   if (l.productUrl) return true;
   const mat = l.materialCost ?? 0;
   const lab = l.laborCost ?? 0;
   if (mat <= 0 && lab > 0) return false;
+  if (WORK.test(l.name)) return mat > 0 && mat >= lab;
   return true;
 }
 
@@ -142,12 +150,14 @@ export type BuyingFlag = { kind: "order-by" | "late-delivery"; text: string };
 
 /**
  * What the buying flags on a project: materials for a stage that should have been ordered by now (the order-by day
- * passed, or the stage starts within the lead time) and deliveries past their expected day.
+ * passed, or the stage starts within the lead time) and deliveries past their expected day. A stage marked done
+ * flags neither (2026-11-06: a finished kitchen still read "Rough-in's materials not ordered — 31 days past" and
+ * "Order 2 11 days late" — the work is in; whatever was bought for it was bought).
  */
 export function buyingFlags(
   input: {
-    materials: Array<MaterialLike & { stageName: string | null; stageStart: Date | string | null }>;
-    orders: Array<{ status: string; expectedAt: Date | string | null; label: string }>;
+    materials: Array<MaterialLike & { stageName: string | null; stageStart: Date | string | null; stageDone?: boolean }>;
+    orders: Array<{ status: string; expectedAt: Date | string | null; label: string; stageDone?: boolean }>;
   },
   today: Date,
   leadDays = DEFAULT_LEAD_DAYS,
@@ -155,7 +165,7 @@ export function buyingFlags(
   const out: BuyingFlag[] = [];
   const stages = new Map<string, number>();
   for (const m of input.materials) {
-    if (toBuyQty(m) <= 0 || !m.stageStart) continue;
+    if (toBuyQty(m) <= 0 || !m.stageStart || m.stageDone) continue;
     const by = orderByDate(m.stageStart, leadDays);
     const n = daysUntil(by, today);
     if (n == null || n > 0) continue;
@@ -164,7 +174,7 @@ export function buyingFlags(
   }
   for (const [stage, n] of stages) out.push({ kind: "order-by", text: n === 0 ? `Order ${stage}'s materials today` : `${stage}'s materials not ordered — ${-n} day${-n === 1 ? "" : "s"} past the order-by day` });
   for (const o of input.orders) {
-    if (o.status === "DELIVERED" || o.status === "PARTIAL" || o.status === "CANCELED") continue;
+    if (o.status === "DELIVERED" || o.status === "PARTIAL" || o.status === "CANCELED" || o.stageDone) continue;
     const n = daysUntil(o.expectedAt, today);
     if (n == null || n >= 0) continue;
     out.push({ kind: "late-delivery", text: `${o.label} ${-n} day${-n === 1 ? "" : "s"} late` });
@@ -216,6 +226,27 @@ export function stageForLine<T extends { id: string; name: string }>(name: strin
     if (score > 0 && (!best || score > best.score)) best = { stage: st, score };
   }
   return best?.stage ?? null;
+}
+
+const TASK_STOP = new Set(["the", "and", "a", "an", "of", "for", "all", "new", "any", "with", "from"]);
+const stemOf = (w: string) => w.toLowerCase().replace(/(ings|ing|es|s)$/, "");
+
+/**
+ * Does an order cover an "Order …" task (2026-11-06)? The stages' templates say "Order cabinets", "Order
+ * countertops", "Order shingles, underlayment and flashing"; when the order's lines name EVERY thing the task names,
+ * the task is done — the cabinets ordered from Buying tick "Order cabinets". A task naming more than the order holds
+ * ("Order the tile, the vanity and the fixtures" when only the tile went) stays open.
+ */
+export function orderCoversTask(taskTitle: string, lineNames: readonly string[]): boolean {
+  const m = /^order\s+(.+)$/i.exec(taskTitle.trim());
+  if (!m) return false;
+  const things = m[1].split(/[^a-z0-9-]+/i).map((w) => w.trim()).filter((w) => w.length > 2 && !TASK_STOP.has(w.toLowerCase()));
+  if (!things.length) return false;
+  const lines = lineNames.map((n) => n.toLowerCase());
+  return things.every((w) => {
+    const st = stemOf(w);
+    return st.length > 2 && lines.some((l) => l.includes(st));
+  });
 }
 
 /** The order's one-line name: "Order 3 · ABC Lumber · 12 lines". */

@@ -11,6 +11,7 @@ import { TodayActions } from "./today-actions";
 import { jobProgressInfo } from "@/lib/jobProgress";
 import { crewHome } from "@/lib/crewField/server";
 import { hoursWords } from "@/lib/crewField/shared";
+import { localDayKey } from "@/lib/jobProgressShared";
 import { longDate, shortDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { ChevronRight } from "lucide-react";
@@ -24,7 +25,7 @@ export default async function WorkerDashboard({
   const worker = await db.workerProfile.findUnique({
     where: { token },
     include: {
-      organization: { select: { name: true } },
+      organization: { select: { name: true, timezone: true } },
       user: { select: { id: true, email: true, hashedPassword: true } },
       assignments: {
         include: {
@@ -36,6 +37,8 @@ export default async function WorkerDashboard({
               startsAt: true,
               endsAt: true,
               client: { select: { name: true, address: true } },
+              // The job's calendar days (Schedule & crew writes one visit per work day) — what makes it today's job.
+              events: { select: { startsAt: true }, orderBy: { startsAt: "asc" }, take: 200 },
             },
           },
         },
@@ -82,32 +85,33 @@ export default async function WorkerDashboard({
   }
 
   const now = new Date();
+  // A job is on a day when it has a calendar visit that day, in the company's time zone; a job with no visits, when
+  // the day falls inside its span (2026-11-06: a kitchen remodel scheduled Nov 13 – Dec 16 read "Nothing on your plate
+  // today" from its second day and sat under Completed / past — only its first day counted as today).
+  const tz = worker.organization?.timezone || "America/New_York";
+  const todayKey = localDayKey(now, tz);
+  const dayKeys = (job: { startsAt: Date | null; endsAt: Date | null; events: Array<{ startsAt: Date }> }): string[] => {
+    if (job.events.length) return job.events.map((e) => localDayKey(e.startsAt, tz));
+    if (!job.startsAt) return [];
+    const a = localDayKey(job.startsAt, tz), b = localDayKey(job.endsAt ?? job.startsAt, tz);
+    return todayKey >= a && todayKey <= b ? [todayKey] : [a];
+  };
+  const isToday = (job: Parameters<typeof dayKeys>[0]) => dayKeys(job).includes(todayKey);
+  const isAhead = (job: Parameters<typeof dayKeys>[0]) => !isToday(job) && dayKeys(job).some((k) => k > todayKey);
   // Jobs the office is waiting on — surfaced first, above the schedule.
   const needsResponse = worker.assignments.filter(
     (a) => a.status === "PENDING" && a.job.status !== "CANCELED",
   );
   const today = worker.assignments.filter(
-    (a) =>
-      a.status !== "PENDING" &&
-      a.status !== "DECLINED" &&
-      a.job.startsAt &&
-      sameDay(a.job.startsAt, now),
+    (a) => a.status !== "PENDING" && a.status !== "DECLINED" && a.status !== "COMPLETED" && isToday(a.job),
   );
   const upcoming = worker.assignments.filter(
-    (a) =>
-      a.status !== "PENDING" &&
-      a.status !== "DECLINED" &&
-      a.job.startsAt &&
-      a.job.startsAt > now &&
-      !sameDay(a.job.startsAt, now),
+    (a) => a.status !== "PENDING" && a.status !== "DECLINED" && a.status !== "COMPLETED" && isAhead(a.job),
   );
   const past = worker.assignments.filter(
     (a) =>
       a.status === "COMPLETED" ||
-      (a.status !== "PENDING" &&
-        a.job.startsAt &&
-        a.job.startsAt < now &&
-        !sameDay(a.job.startsAt, now)),
+      (a.status !== "PENDING" && a.status !== "DECLINED" && a.job.startsAt && !isToday(a.job) && !isAhead(a.job)),
   );
 
   // The crew's own day (the crew build, 2026-11-05): the stage's tasks on today's jobs, who else is on them,
@@ -171,6 +175,7 @@ export default async function WorkerDashboard({
                   key={a.id}
                   a={a}
                   token={token}
+                  on={now}
                   mates={home.withMe[a.job.id] ?? []}
                   actions={
                     a.status !== "PENDING" && a.job.status !== "CANCELED" ? (
@@ -262,18 +267,11 @@ export default async function WorkerDashboard({
   );
 }
 
-function sameDay(a: Date, b: Date) {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
-
 function AssignmentCard({
   a,
   token,
   muted,
+  on,
   actions,
   mates,
 }: {
@@ -289,12 +287,14 @@ function AssignmentCard({
   };
   token: string;
   muted?: boolean;
+  /** The day the card stands for — today's card shows today on a job that runs for weeks, not its first day. */
+  on?: Date;
   /** Today's one-tap Start / Back on site / Complete row (2026-09-27). */
   actions?: React.ReactNode;
   /** Who else is on the job today (2026-11-05). */
   mates?: string[];
 }) {
-  const start = a.job.startsAt;
+  const start = on ?? a.job.startsAt;
   const [mon, day] = start ? shortDate(start).split(" ") : ["—", ""];
   return (
     <Link

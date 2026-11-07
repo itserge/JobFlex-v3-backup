@@ -57,6 +57,23 @@ export function currentStage<T extends StageLike>(stages: readonly T[]): T | nul
   return stages.find((s) => s.status === "ACTIVE") ?? stages.find((s) => s.status !== "DONE") ?? null;
 }
 
+const dayKeyOf = (d: Date | string | null | undefined): string | null => (d ? (typeof d === "string" ? d : d.toISOString()).slice(0, 10) : null);
+
+/**
+ * The stage a crew works on a given day ("2026-11-16", the company's day): the first unfinished one whose dates
+ * cover it, else the current one (2026-11-06: on demolition day the crew's phone listed "Order cabinets" — the
+ * first stage was never marked done, and the stage on the calendar is what the crew is there for).
+ */
+export function stageForDay<T extends StageLike>(stages: readonly T[], day: string): T | null {
+  const on = stages.find((s) => {
+    if (s.status === "DONE") return false;
+    const a = dayKeyOf(s.startsAt);
+    const b = dayKeyOf(s.endsAt) ?? a;
+    return Boolean(a && b && a <= day && day <= b);
+  });
+  return on ?? currentStage(stages);
+}
+
 const DAY_MS = 86_400_000;
 
 /** A stage's day, read as a calendar day in UTC (stored as UTC midnight, like Project.startsAt). */
