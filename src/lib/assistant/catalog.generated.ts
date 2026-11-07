@@ -458,6 +458,17 @@ export const CATALOG: Catalog = {
     "scheduled": false,
     "version": 1
   },
+  "start_project": {
+    "label": "Start a project",
+    "group": "projects",
+    "effect": "record",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
   "where_is": {
     "label": "Where's the order",
     "group": "projects",

@@ -16,7 +16,8 @@ import { Prisma } from "@prisma/client";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { getOpenAI, isOpenAIEnabled, resolveOpenAIModel, samplingOptions } from "@/lib/sdk/openai";
 import { parseTradeTypes } from "@/lib/tradeTypes";
-import { makesProject, parseProjectSettings, percentDone, proposalTrade, templateFor, type StageTemplate, type TemplateStage } from "./shared";
+import { makesProject, parseProjectSettings, percentDone, proposalTrade, templateByKey, templateFor, type StageTemplate, type TemplateStage } from "./shared";
+import { KIND_LABEL, kindOf, livingInPlaceTasks, onSiteStageIndex, parseAnswers, serializeAnswers } from "@/lib/projectKind";
 
 const FIRST_NUMBER = 1001;
 
@@ -63,6 +64,25 @@ export async function stagesFromTemplate(projectId: string, stages: readonly Tem
     }
   }
   return stages.length;
+}
+
+/** A template's stages onto a project (2026-11-07): refused across kinds (a kitchen onto a new build); an occupied
+ *  remodel's first on-site stage gets the living-in-place tasks it lacks; the template is remembered on the project
+ *  (answersJson) for the budget's contingency rate. */
+export async function addTemplate(project: { id: string; kind: string; answersJson: string | null }, key: string): Promise<{ added: number; template: StageTemplate }> {
+  const tpl = templateByKey(key);
+  if (!tpl) throw new Error("No such template");
+  const kind = kindOf(project.kind);
+  if (tpl.kind !== kind) throw new Error(`${tpl.label} is a ${KIND_LABEL[tpl.kind].toLowerCase()} template; this project is a ${KIND_LABEL[kind].toLowerCase()}.`);
+  const answers = parseAnswers(project.answersJson);
+  let stages: readonly TemplateStage[] = tpl.stages;
+  if (kind === "REMODEL" && answers.occupied) {
+    const i = onSiteStageIndex(tpl.stages.map((s) => s.name));
+    stages = tpl.stages.map((st, k) => (k === i ? { ...st, tasks: [...livingInPlaceTasks(st.tasks.map((x) => x.title)).map((title) => ({ title })), ...st.tasks] } : st));
+  }
+  const added = await stagesFromTemplate(project.id, stages);
+  await db.project.update({ where: { id: project.id }, data: { answersJson: serializeAnswers({ ...answers, template: tpl.key }) } });
+  return { added, template: tpl };
 }
 
 // ── the AI draft ─────────────────────────────────────────────────────────────
@@ -133,6 +153,8 @@ export async function draftStagesWithAi(input: { name: string; scope: string | n
     return {
       key: "ai",
       label: "Drafted by AI",
+      // The draft reads a sold proposal's lines: remodel work.
+      kind: "REMODEL",
       stages: parsed.data.stages.map((s) => ({ name: s.name, share: total > 0 ? s.share / total : 1, tasks: s.tasks.map((x) => ({ title: x.title, photoNeeded: Boolean(x.photoNeeded) })) })),
     };
   } catch (err) {

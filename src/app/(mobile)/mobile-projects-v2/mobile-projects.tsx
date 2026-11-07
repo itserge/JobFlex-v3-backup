@@ -504,6 +504,9 @@ export function MobileProjects() {
   const [clientErr, setClientErr] = useState(false);
   const nameAutoRef = useRef(false);
   const [draftStatus, setDraftStatus] = useState<string>(STATUSES[0]);
+  // The kind and the remodel's question (2026-11-07, lib/projectKind).
+  const [draftKind, setDraftKind] = useState<"REMODEL" | "NEW_BUILD">("REMODEL");
+  const [draftOccupied, setDraftOccupied] = useState(false);
   const [nameErr, setNameErr] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveErr, setSaveErr] = useState<string | null>(null);
@@ -850,6 +853,8 @@ export function MobileProjects() {
     nameAutoRef.current = false;
     if (!clientChoices) void listProjectClients().then(setClientChoices).catch(() => setClientChoices([]));
     setDraftStatus(STATUSES[0]);
+    setDraftKind("REMODEL");
+    setDraftOccupied(false);
     setNameErr(false);
     setSaveErr(null);
     setPickerFor(null);
@@ -899,6 +904,8 @@ export function MobileProjects() {
         name,
         description: form.scope.trim() || null,
         status: draftStatus,
+        kind: draftKind,
+        occupied: draftKind === "REMODEL" && draftOccupied,
         startsAt: ISO_DATE.test(form.starts) ? form.starts : null,
         endsAt: ISO_DATE.test(form.ends) ? form.ends : null,
         budget: Math.round(Number(form.budget.replace(/[^\d.]/g, "")) || 0),
@@ -1113,6 +1120,7 @@ export function MobileProjects() {
                       <span className={`${styles.pjstatus} ${STATUS_CLASS[p.status] ?? ""}`}>
                         {statusLabel(p.status)}
                       </span>
+                      {p.kind === "NEW_BUILD" ? <span className={styles.pjKind}>New build</span> : null}
                       <span className={styles.pjFigs}>
                         <span className={`${styles.pjPct} ${done ? styles.isDone : ""}`}>{p.jobCount ? `${p.completedJobs}/${p.jobCount} jobs` : "no jobs"}</span>
                         <span className={`${styles.pjMoney} ${(p.sold ?? 0) > 0 ? "" : styles.isZero}`}>
@@ -1234,6 +1242,32 @@ export function MobileProjects() {
           {saveErr ? (
             <div className={styles.bookErr} role="alert">
               {saveErr}
+            </div>
+          ) : null}
+
+          {/* THE KIND (2026-11-07): a remodel or a new build; a remodel asks whether the client lives there. */}
+          <div className={styles.fld}>
+            <span className={styles.fldLbl}>What kind of project</span>
+            <div className={styles.fseg} role="group" aria-label="Project kind" data-kind-seg>
+              {(["REMODEL", "NEW_BUILD"] as const).map((k) => (
+                <button key={k} className={`${styles.fsegBtn} ${draftKind === k ? styles.on : ""}`} type="button" data-v={k} aria-pressed={draftKind === k} onClick={() => setDraftKind(k)}>
+                  {k === "REMODEL" ? "Remodel" : "New construction"}
+                </button>
+              ))}
+            </div>
+            <span className={styles.fldHint}>{draftKind === "REMODEL" ? "The house stands: a kitchen, a bath, an addition, a whole house." : "A lot, then a house: land, permits, foundation to the keys."}</span>
+          </div>
+          {draftKind === "REMODEL" ? (
+            <div className={styles.fld}>
+              <span className={styles.fldLbl}>Does the client live there during the work?</span>
+              <div className={styles.fseg} role="group" aria-label="Lives there during the work" data-occupied-seg>
+                <button className={`${styles.fsegBtn} ${draftOccupied ? styles.on : ""}`} type="button" data-v="yes" aria-pressed={draftOccupied} onClick={() => setDraftOccupied(true)}>
+                  Yes
+                </button>
+                <button className={`${styles.fsegBtn} ${!draftOccupied ? styles.on : ""}`} type="button" data-v="no" aria-pressed={!draftOccupied} onClick={() => setDraftOccupied(false)}>
+                  No
+                </button>
+              </div>
             </div>
           ) : null}
 

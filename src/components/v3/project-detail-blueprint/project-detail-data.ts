@@ -43,6 +43,11 @@ export interface PdProject {
   status?: string;
   /** The project's own number, "#1042" (2026-11-05); null on one not numbered yet. */
   number?: number | null;
+  /** REMODEL or NEW_BUILD (2026-11-07, lib/projectKind); `occupied`: a remodel's client lives there during the work;
+   *  `kindLocked`: a stage is done, so the kind stays. */
+  kind?: string;
+  occupied?: boolean;
+  kindLocked?: boolean;
 }
 
 /* STAGES OF A PROJECT (2026-11-05): the order of the work and its tasks, as the Stages card reads them

@@ -209,8 +209,11 @@ export function initProjectsContent(
       "</td>" +
       // status + flags
       '<td><span class="pstatus pjs--' + esc(p.status.toLowerCase()) + '">' + esc(statusLabel(p.status)) + "</span>" +
-      (flags.length
-        ? '<div class="pj-flags">' + flags.map((f) => '<span class="pj-flag pj-flag--' + f.kind + '" title="' + esc(f.text) + '">' + esc(f.text) + "</span>").join("") + "</div>"
+      (flags.length || p.kind === "NEW_BUILD"
+        ? '<div class="pj-flags">' +
+          (p.kind === "NEW_BUILD" ? '<span class="pj-flag pj-flag--kind" title="New construction">New build</span>' : "") +
+          flags.map((f) => '<span class="pj-flag pj-flag--' + f.kind + '" title="' + esc(f.text) + '">' + esc(f.text) + "</span>").join("") +
+          "</div>"
         : "") +
       "</td>" +
       // sold
@@ -392,6 +395,9 @@ export function initProjectsContent(
     const inp = (sel: string) => root.querySelector<HTMLInputElement>(sel);
     const descEl = root.querySelector<HTMLTextAreaElement>("#pjfDesc");
     let draftStatus = STATUSES[0];
+    // The kind and the remodel's question (2026-11-07), painted like the status segment.
+    let draftKind = "REMODEL";
+    let draftOccupied = false;
     let restoreFocus: HTMLElement | null = null;
     let saving = false;
 
@@ -462,6 +468,27 @@ export function initProjectsContent(
       });
     }
 
+    const KIND_HINT: Record<string, string> = {
+      REMODEL: "The house stands: a kitchen, a bath, an addition, a whole house.",
+      NEW_BUILD: "A lot, then a house: land, permits, foundation to the keys.",
+    };
+    function paintKind() {
+      $$("#pjfKind .fseg-btn").forEach((b) => {
+        const on = b.dataset.v === draftKind;
+        b.classList.toggle("on", on);
+        b.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+      const hint = $("#pjfKindHint");
+      if (hint) hint.textContent = KIND_HINT[draftKind] ?? "";
+      // The question is a remodel's.
+      $("#pjfOccupiedFld")?.classList.toggle("is-hidden", draftKind !== "REMODEL");
+      $$("#pjfOccupied .fseg-btn").forEach((b) => {
+        const on = (b.dataset.v === "yes") === draftOccupied;
+        b.classList.toggle("on", on);
+        b.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+    }
+
     function openDlg() {
       restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       openMdl(pjDlg!);
@@ -484,6 +511,9 @@ export function initProjectsContent(
       paintNewClient();
       nameAuto = false;
       draftStatus = STATUSES[0];
+      draftKind = "REMODEL";
+      draftOccupied = false;
+      paintKind();
       paintStatus();
       markErr(false);
       setDlgErr(null);
@@ -544,6 +574,16 @@ export function initProjectsContent(
         draftStatus = seg.dataset.v || STATUSES[0];
         paintStatus();
       }
+      const kindSeg = t.closest<HTMLElement>("#pjfKind .fseg-btn");
+      if (kindSeg) {
+        draftKind = kindSeg.dataset.v === "NEW_BUILD" ? "NEW_BUILD" : "REMODEL";
+        paintKind();
+      }
+      const occSeg = t.closest<HTMLElement>("#pjfOccupied .fseg-btn");
+      if (occSeg) {
+        draftOccupied = occSeg.dataset.v === "yes";
+        paintKind();
+      }
     });
 
     on(document, "keydown", (e) => {
@@ -594,6 +634,8 @@ export function initProjectsContent(
       const endRaw = (inp("#pjfEnd")?.value || "").trim();
       const description = (descEl?.value || "").trim() || null;
       const status = draftStatus;
+      const kind = draftKind;
+      const occupied = draftKind === "REMODEL" && draftOccupied;
       const budget = Math.round(
         Number((inp("#pjfBudget")?.value || "").replace(/[^\d.]/g, "")) || 0,
       );
@@ -631,9 +673,12 @@ export function initProjectsContent(
           endsAt: ISO_DATE.test(endRaw) ? endRaw : null,
           budget,
           clientId,
+          kind,
+          occupied,
         });
         projectsData.unshift({
           id: res.id,
+          kind,
           name,
           description,
           status,

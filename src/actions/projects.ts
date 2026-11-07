@@ -9,10 +9,14 @@ import { enforcePlanLimit } from "@/lib/limitsEngine";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { loadProjectBook } from "@/components/v3/projects-blueprint/project-book-load";
 import type { Project } from "@/components/v3/projects-blueprint/projects-data";
-import { numbered } from "@/lib/projectStages/server";
+import { createProjectAs } from "@/lib/projectCore";
+import { PROJECT_KINDS, parseAnswers, serializeAnswers } from "@/lib/projectKind";
 
 const projectInput = z.object({
   name: z.string().min(1),
+  // Remodel or New construction (2026-11-07, lib/projectKind); `occupied`: a remodel's client lives there during the work.
+  kind: z.enum(PROJECT_KINDS).default("REMODEL"),
+  occupied: z.boolean().optional(),
   description: z.string().optional().nullable(),
   status: z.enum(["ACTIVE", "ON_HOLD", "COMPLETED", "ARCHIVED"]).default("ACTIVE"),
   startsAt: z.coerce.date().optional().nullable(),
@@ -63,34 +67,11 @@ export async function listProjectClients(): Promise<Array<{ id: string; name: st
 
 export async function createProject(raw: unknown) {
   const { organizationId, user } = await requireEstimatorOrManager();
-  await enforcePlanLimit(organizationId, "projects");
+  await enforcePlanLimit(organizationId, "projects", 1, { actorId: user.id });
   const data = projectInput.parse(raw);
   const clientId = await clientInOrg(organizationId, data.clientId);
-  // Numbered per company from 1001 (2026-11-05).
-  const p = await numbered(organizationId, (number) =>
-    db.project.create({
-      data: {
-        organizationId,
-        clientId,
-        number,
-        name: data.name,
-        description: data.description ?? null,
-        status: data.status,
-        startsAt: data.startsAt ?? null,
-        endsAt: data.endsAt ?? null,
-        budget: data.budget,
-      },
-    }),
-  );
+  const p = await createProjectAs({ organizationId, actorId: user.id }, { ...data, clientId });
   revalidatePath("/dashboard/projects");
-  await logActivity({
-    organizationId,
-    actorId: user.id,
-    kind: TRAIL_KINDS.PROJECT,
-    summary: `Created project ${p.name}`,
-    clientId,
-    meta: { projectId: p.id, budget: data.budget },
-  });
   return { id: p.id };
 }
 
@@ -102,9 +83,17 @@ export async function updateProject(raw: unknown) {
   const existing = await db.project.findUnique({ where: { id: data.id } });
   if (!existing || existing.organizationId !== organizationId) throw new Error("Not found");
   const { id, ...rest } = data;
+  // The kind can change until a stage is done: the templates, and soon the gates and the money, hang on it.
+  if (rest.kind !== undefined && rest.kind !== existing.kind) {
+    const done = await db.projectStage.count({ where: { projectId: id, status: "DONE" } });
+    if (done) throw new Error("The kind can't change once a stage is done.");
+  }
+  const answers = rest.occupied !== undefined ? serializeAnswers({ ...parseAnswers(existing.answersJson), occupied: rest.occupied }) : undefined;
   await db.project.update({
     where: { id },
     data: {
+      ...(rest.kind !== undefined && { kind: rest.kind }),
+      ...(answers !== undefined && { answersJson: answers }),
       ...(rest.name !== undefined && { name: rest.name }),
       ...(rest.description !== undefined && { description: rest.description }),
       ...(rest.status !== undefined && { status: rest.status }),

@@ -10,6 +10,7 @@ import { BALANCE_STAGE_ID, BALANCE_STAGE_LABEL, fromMinor, resolveSchedule } fro
 import { categoryOf } from "@/lib/projectBudget";
 import { projectMoney } from "@/lib/projectMoney";
 import { stagesOf } from "@/lib/projectStages/server";
+import { parseAnswers } from "@/lib/projectKind";
 import { buyingOf } from "@/lib/projectBuying/server";
 import { projectField } from "@/lib/crewField/server";
 import { timelineOf } from "@/lib/projectTimeline/server";
@@ -170,6 +171,9 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
         description: project.description,
         status: project.status,
         number: project.number,
+        kind: project.kind,
+        occupied: parseAnswers(project.answersJson).occupied === true,
+        kindLocked: (await db.projectStage.count({ where: { projectId: project.id, status: "DONE" } })) > 0,
     },
     proposals: project.proposals.map((p) => {
         const approved = p.changeOrders.filter((c) => c.status === "APPROVED");
