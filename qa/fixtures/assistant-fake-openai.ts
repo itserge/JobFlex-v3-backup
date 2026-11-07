@@ -21,8 +21,11 @@
 //   "the yard at <address>" → lawn_site; "price … mowing|fertilizer … at <address> | <n> sq ft" → build_lawn (2026-11-05)
 //   Smart Proposal's own run (response_format json_object, no tools): a small estimate in the old draft shape.
 //   Speech (POST /v1/audio/speech, the Talk mode's voice): 0.3 s of silence as an MP3, so a page plays it and goes on.
+//   The Budget card's read (response_format json_schema "budget_read", 2026-11-07): words → the rules' own rows
+//   (lib/projectBudgetImport), with a figure changed when the words say "fakecheck"; a picture → a lender's page.
 //   NODE_PATH="" npx --no-install tsx qa/fixtures/assistant-fake-openai.ts     (FAKE_OPENAI_PORT, default 4601)
 import http from "node:http";
+import { readBudgetText } from "../../src/lib/projectBudgetImport";
 
 const PORT = Number(process.env.FAKE_OPENAI_PORT || 4601);
 /** 0.3 s of silence, 24 kHz mono MP3 (ffmpeg anullsrc). */
@@ -442,6 +445,37 @@ function answer(body: { messages: Msg[] }) {
   return reply("I can help with your schedule, proposals, crew texts, payment reminders and money. What do you need?");
 }
 
+/** What the model would read off a budget: a picture is a lender's page; words are read by the rules, with one figure
+ *  off when they say "fakecheck" (so the card's "not in it as written" shows). */
+function fakeBudgetRead(messages: Msg[]) {
+  const user = messages.find((m) => m.role === "user") as unknown as { content: string | Array<{ type: string; text?: string }> } | undefined;
+  const parts = typeof user?.content === "string" ? [{ type: "text", text: user.content }] : (user?.content ?? []);
+  if (parts.some((p) => p.type === "image_url")) {
+    return {
+      rows: [
+        { name: "Plans & engineering", amount: 4800, include: true, note: "" },
+        { name: "Permits & impact fees", amount: 9250, include: true, note: "" },
+        { name: "Site prep & excavation", amount: 14000, include: true, note: "" },
+        { name: "Foundation", amount: 38500, include: true, note: "" },
+        { name: "Framing", amount: 72000, include: true, note: "" },
+        { name: "Roofing", amount: 16400, include: true, note: "" },
+        { name: "Plumbing", amount: 21000, include: true, note: "" },
+        { name: "Electrical", amount: 19000, include: true, note: "" },
+        { name: "Builder's fee", amount: 19495, include: false, note: "The builder's fee — your margin, not a cost." },
+      ],
+      statedTotal: 214445,
+      about: "A lender's construction budget, 9 lines.",
+    };
+  }
+  const words = parts.map((p) => p.text ?? "").join("\n").replace(/^The budget, as it came:\s*/, "");
+  const read = readBudgetText(words);
+  return {
+    rows: read.rows.map((r, i) => ({ name: r.name, amount: /fakecheck/i.test(words) && i === 0 ? r.amount + 111 : r.amount, include: r.include, note: r.note ?? "" })),
+    statedTotal: read.statedTotal,
+    about: `A budget, ${read.rows.length} lines.`,
+  };
+}
+
 http
   .createServer((req, res) => {
     let raw = "";
@@ -455,7 +489,12 @@ http
       res.setHeader("content-type", "application/json");
       if (req.url?.includes("/chat/completions")) {
         try {
-          const body = JSON.parse(raw || "{}") as { messages?: Msg[]; tools?: unknown[]; response_format?: { type?: string } };
+          const body = JSON.parse(raw || "{}") as { messages?: Msg[]; tools?: unknown[]; response_format?: { type?: string; json_schema?: { name?: string } } };
+          // The Budget card's read: a lender's page for a picture, the rules' rows for words.
+          if (body.response_format?.type === "json_schema" && body.response_format.json_schema?.name === "budget_read") {
+            res.end(JSON.stringify(reply(JSON.stringify(fakeBudgetRead(body.messages ?? [])))));
+            return;
+          }
           // Smart Proposal's run: JSON out, no tools — the estimate itself.
           if (body.response_format?.type === "json_object" && !body.tools?.length) {
             const prompt = (body.messages ?? []).map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? ""))).join("\n");

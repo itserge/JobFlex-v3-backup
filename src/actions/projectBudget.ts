@@ -10,6 +10,10 @@
 //                        line (2026-11-04) — the card stops counting it at the
 //                        project's cost share once it is in.
 //   removeBudgetLine     takes such a line back out.
+//   readProjectBudget    a budget the office already has — pasted, a file, a photo — read into rows
+//                        (2026-11-07, lib/projectBudgetRead); nothing saved, the card fills its fields.
+//   budgetStartPoints    the preset a project is offered first, and the shop's other budgets to start
+//                        from (lib/projectBudgetPresets).
 //   addProjectExpense    a cost logged straight to the project.
 //   deleteProjectExpense takes one back out.
 //
@@ -23,8 +27,17 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { BUDGET_CATEGORIES, changeLineLabel, isBudgetCategory, normalizeKind } from "@/lib/projectBudget";
+import { BUDGET_CATEGORIES, MAX_KINDS, changeLineLabel, isBudgetCategory, normalizeKind } from "@/lib/projectBudget";
 import { suggestBudget, type BudgetSuggestion } from "@/lib/projectBudgetSuggest";
+import type { BudgetRead } from "@/lib/projectBudgetImport";
+import { readBudget } from "@/lib/projectBudgetRead";
+import { presetByKey, presetForTrade } from "@/lib/projectBudgetPresets";
+import { OfficeFileError, docxText, xlsxText } from "@/lib/officeText";
+import { isOpenAIEnabled } from "@/lib/sdk/openai";
+import { rateLimitShared } from "@/lib/rateLimit";
+import { parseAnswers } from "@/lib/projectKind";
+import { proposalTrade } from "@/lib/projectStages/shared";
+import { parseTradeTypes } from "@/lib/tradeTypes";
 
 const money = z.number().finite().min(0).max(100_000_000);
 /** One of the six, or a kind of the project's own ("Tile", "Dumpster") — 2026-11-06. */
@@ -46,7 +59,7 @@ function refresh(projectId: string) {
 const budgetInput = z.object({
   projectId: z.string().min(1),
   /** By category — the six and the project's own kinds… */
-  lines: z.array(z.object({ category, amount: money })).max(BUDGET_CATEGORIES.length + 20).optional(),
+  lines: z.array(z.object({ category, amount: money })).max(BUDGET_CATEGORIES.length + MAX_KINDS).optional(),
   /** …or one figure, not split (2026-11-04: the editor opened blank on a one-figure budget and saving it wiped it). */
   total: money.optional(),
 });
@@ -89,6 +102,78 @@ const coCostInput = z.object({ projectId: z.string().min(1), changeOrderId: z.st
 export async function suggestProjectBudget(projectId: string): Promise<BudgetSuggestion> {
   const { organizationId } = await requireEstimatorOrManager();
   return suggestBudget(organizationId, projectId);
+}
+
+/** A budget's words, a file, or up to four pictures (a photo, a scanned PDF's pages) — read into rows. FormData:
+ *  projectId, from (what the card calls it), text, file (.xlsx / .docx / .csv / .txt), image × 4 (JPEG). */
+export async function readProjectBudget(form: FormData): Promise<BudgetRead> {
+  const { organizationId } = await requireEstimatorOrManager();
+  await projectInOrg(String(form.get("projectId") ?? ""), organizationId);
+  const from = String(form.get("from") ?? "").trim().slice(0, 80) || "what you pasted";
+  let text = String(form.get("text") ?? "").slice(0, 60_000);
+  const file = form.get("file");
+  if (file instanceof File && file.size > 0) {
+    if (file.size > 8 * 1024 * 1024) return { rows: [], statedTotal: null, source: "none", words: "That file is over 8 MB. Save the budget page alone, or paste its words." };
+    const name = file.name.toLowerCase();
+    const buf = Buffer.from(await file.arrayBuffer());
+    try {
+      if (/\.(xlsx|xlsm)$/.test(name)) text = xlsxText(buf);
+      else if (/\.docx$/.test(name)) text = docxText(buf);
+      else if (/\.(csv|tsv|txt|text|md)$/.test(name)) text = buf.toString("utf8");
+      else if (/\.(xls|doc)$/.test(name)) return { rows: [], statedTotal: null, source: "none", words: "That's the old Excel or Word format. Save it as .xlsx or .docx (or CSV), or paste the budget's words." };
+      else if (/\.(numbers|pages)$/.test(name)) return { rows: [], statedTotal: null, source: "none", words: "Export it from Numbers or Pages as Excel, CSV or PDF first — or paste the budget's words." };
+      else return { rows: [], statedTotal: null, source: "none", words: "JobFlex reads CSV, Excel, Word, PDF and photos. Paste the budget's words for anything else." };
+    } catch (err) {
+      return { rows: [], statedTotal: null, source: "none", words: err instanceof OfficeFileError ? err.message : "Couldn't open that file. Paste the budget's words instead." };
+    }
+  }
+  const images: string[] = [];
+  for (const img of form.getAll("image").slice(0, 4)) {
+    if (!(img instanceof File) || img.size === 0 || img.size > 4 * 1024 * 1024 || !/^image\/(jpeg|png|webp)$/.test(img.type)) continue;
+    images.push(`data:${img.type};base64,${Buffer.from(await img.arrayBuffer()).toString("base64")}`);
+  }
+  if (!text.trim() && !images.length) return { rows: [], statedTotal: null, source: "none", words: "Paste the budget, or pick a file or a photo." };
+  // The model reads for every shop, 40 reads an hour; past that the rules still read words.
+  const useModel = isOpenAIEnabled() && (await rateLimitShared(`budget-read:${organizationId}`, 40, 60 * 60 * 1000)).ok;
+  return readBudget({ text, images, from }, { useModel });
+}
+
+export type BudgetStart = {
+  /** The preset the project is offered first: its template's, its trade's, a new build's. */
+  suggested: string | null;
+  /** The shop's other projects with a budget split by kind, newest first — each one a preset of its own. */
+  projects: Array<{ id: string; name: string; total: number; lines: Array<{ category: string; amount: number }> }>;
+};
+
+/** Where a budget can start from: the preset the project points at, and the shop's other budgets. */
+export async function budgetStartPoints(projectId: string): Promise<BudgetStart> {
+  const { organizationId } = await requireEstimatorOrManager();
+  const p = await db.project.findFirst({
+    where: { id: projectId, organizationId },
+    select: {
+      id: true,
+      kind: true,
+      answersJson: true,
+      proposals: { where: { status: { not: "ARCHIVED" } }, orderBy: { total: "desc" }, take: 1, select: { title: true, trade: true, scopeOfWork: true } },
+      organization: { select: { tradeTypesJson: true } },
+    },
+  });
+  if (!p) throw new Error("Project not found");
+  const template = parseAnswers(p.answersJson).template;
+  const lead = p.proposals[0];
+  const trade = lead ? proposalTrade({ estimator: lead.trade, title: lead.title, scope: lead.scopeOfWork, orgTrades: parseTradeTypes(p.organization.tradeTypesJson) }) : null;
+  const suggested = presetByKey(template)?.key ?? (p.kind === "NEW_BUILD" ? "home" : presetForTrade(trade));
+  const others = await db.project.findMany({
+    where: { organizationId, id: { not: p.id }, status: { not: "ARCHIVED" }, budgetLines: { some: { label: null, amount: { gt: 0 } } } },
+    orderBy: { updatedAt: "desc" },
+    take: 20,
+    select: { id: true, name: true, budgetLines: { where: { label: null, amount: { gt: 0 } }, orderBy: { position: "asc" }, select: { category: true, amount: true } } },
+  });
+  const projects = others
+    .filter((o) => o.budgetLines.length >= 2)
+    .slice(0, 12)
+    .map((o) => ({ id: o.id, name: o.name, total: r2(o.budgetLines.reduce((n, l) => n + l.amount, 0)), lines: o.budgetLines.map((l) => ({ category: l.category, amount: r2(l.amount) })) }));
+  return { suggested, projects };
 }
 
 /** An approved change order's cost into the budget, as its own line under the order's label. */
