@@ -30,6 +30,16 @@ type AskDraft = {
   adding: { name: string; trade: string; phone: string; email: string } | null;
 };
 
+/** The invoice link's words: the file's name when the URL ends in one ("ridge-1041.pdf"), else "open it". */
+function invoiceFileName(url: string): string {
+  try {
+    const last = decodeURIComponent(new URL(url).pathname.split("/").pop() ?? "");
+    return last && last.length <= 48 && /\.[a-z0-9]{2,5}$/i.test(last) ? last : "open it";
+  } catch {
+    return "open it";
+  }
+}
+
 export function ProjectSubsCard({ projectId, subs, stages, canManage }: { projectId: string; subs: PdSubs; stages: PdStage[]; canManage: boolean }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -188,8 +198,9 @@ export function ProjectSubsCard({ projectId, subs, stages, canManage }: { projec
                     {q.note ? <div style={{ fontSize: 13 }}>{q.note}</div> : null}
                     {q.invoiceUrl ? (
                       <div style={{ fontSize: 13 }}>
-                        <a href={q.invoiceUrl} target="_blank" rel="noreferrer">
-                          the invoice
+                        Invoice:{" "}
+                        <a className={s.link} href={q.invoiceUrl} target="_blank" rel="noreferrer" style={{ textDecoration: "underline" }}>
+                          {invoiceFileName(q.invoiceUrl)}
                         </a>
                       </div>
                     ) : null}

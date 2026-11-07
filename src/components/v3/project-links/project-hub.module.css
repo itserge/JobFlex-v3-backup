@@ -215,3 +215,6 @@
 .lab { font: 700 10px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
 .input { min-height: 40px; padding: 8px 10px; border: 1.5px solid var(--ink); border-radius: var(--r-sm); background: #fff; color: var(--ink); font: inherit; font-size: 14px; }
 .checks { display: grid; gap: 6px; }
+/* the contractors' check list: the box and the name on one line, a gap between (the .check.check rule above sizes the box) */
+.check { display: flex; font-size: 14px; cursor: pointer; min-width: 0; }
+.check input { margin: 0; }
