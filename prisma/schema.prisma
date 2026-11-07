@@ -2316,6 +2316,12 @@ model Project {
   // the project … keep all his proposals under the same project"). Optional:
   // projects made before this, and multi-client builds, carry none.
   clientId       String?
+  // REMODEL (every project made before 2026-11-07) or NEW_BUILD — the plan "Projects: Remodel and New construction"
+  // (lib/projectKind): the templates, the questions at the start and, as the plan ships, the gates and the money.
+  kind           String    @default("REMODEL")
+  // The questions asked when the project is made, as JSON (lib/projectKind parseAnswers): the client lives there
+  // during a remodel; the template the stages came from.
+  answersJson    String?
   // The project's own number, counted per company from 1001 ("#1042") — the stages build (2026-11-05).
   // Null on a project made before then until the one-time numbering (prisma/sql/prod-2026-11-05-project-stages.sql).
   number         Int?

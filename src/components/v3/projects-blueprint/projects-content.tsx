@@ -160,6 +160,35 @@ export function ProjectsContent({
                 permission refusal both carry text written for the user. */}
             <div className="mdl-err is-hidden" id="pjNewErr" role="alert"></div>
 
+            {/* THE KIND (2026-11-07, the plan "Projects: Remodel and New construction"): a remodel — the house stands —
+                or a new build — a lot, then a house. The stages' templates, the question that follows and, as the
+                plan ships, the gates and the money read it. Wired in projects-behavior like the status segment. */}
+            <div className="fld">
+              <span className="fld-lbl">What kind of project</span>
+              <div className="fseg" id="pjfKind" role="group" aria-label="Project kind">
+                <button className="fseg-btn on" type="button" data-v="REMODEL" aria-pressed="true">
+                  <svg className="fseg-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8.5 8 3l6 5.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /><path d="M4 7.5V14h8V7.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /><path d="M6.5 14v-3.5h3V14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /></svg>
+                  Remodel
+                </button>
+                <button className="fseg-btn" type="button" data-v="NEW_BUILD" aria-pressed="false">
+                  <svg className="fseg-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8.5 8 3l6 5.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /><path d="M4 7.5V14h8V7.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /><path d="M6 8.2V14M8 7v7M10 8.2V14" fill="none" stroke="currentColor" strokeWidth="1" /></svg>
+                  New construction
+                </button>
+              </div>
+              <span className="fld-hint" id="pjfKindHint">The house stands: a kitchen, a bath, an addition, a whole house.</span>
+            </div>
+            <div className="fld" id="pjfOccupiedFld">
+              <span className="fld-lbl">Does the client live there during the work?</span>
+              <div className="fseg" id="pjfOccupied" role="group" aria-label="Lives there during the work">
+                <button className="fseg-btn" type="button" data-v="yes" aria-pressed="false">
+                  Yes
+                </button>
+                <button className="fseg-btn on" type="button" data-v="no" aria-pressed="true">
+                  No
+                </button>
+              </div>
+            </div>
+
             <div className="fld" data-fld="name">
               <label className="fld-lbl" htmlFor="pjfName">
                 Project name<span className="req">*</span>

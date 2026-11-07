@@ -512,6 +512,17 @@ panel reveals more of that stationary scene; scrolling must not resize the
 canvas, change its camera projection, or trigger a WebGL redraw. Real viewport
 resizes update the camera and drawing buffer together before rendering.
 
+Remodel or New construction (2026-11-07, the plan "Projects: Remodel and New
+construction", part 1): New project opens with a two-way segment above the
+name — Remodel (a house with a door) and New construction (a house frame,
+three studs), 16px pictograms on the page's own `.fseg` buttons, a one-line
+hint under it in 12px muted, and for a remodel a second Yes / No segment,
+"Does the client live there during the work?". The page head's kicker says
+the kind after the number ("Projects · #1042 · New build · Megan Bennett");
+a New build row carries a "New build" flag chip beside its status. Edit
+project shows the same segment and locks it once a stage is done. The Stages
+card offers the kind's templates only. Nothing else on the page changes with
+the kind until the later parts (gates, the money) ship.
 Contractors: quotes and invoices (2026-11-07, the plan "Projects: Remodel and
 New construction", part 2): a Contractors card on the project page, after
 Buying, on the hub's own rules — the quotes grouped by stage under a ruled

@@ -232,6 +232,18 @@ function answer(body: { messages: Msg[] }) {
     return call("award_quote", { projectId: pid, contractor: awardQ[3].trim(), stage: awardQ[1] });
   }
   if (done.has("award_quote")) return reply("Planned — say yes to award it.");
+  // "Start a kitchen remodel for Sarah Lee, she lives there" → start_project (2026-11-07): the kind from the words,
+  // the template from the job's word, the client's name as said; the engine reads it back and a yes makes it.
+  const started = /\bstart (?:a |an )?(?:new )?(?:(kitchen|bath|bathroom|deck|roof|fence|addition|basement|whole[- ]house|adu|garage|windows?|painting|service|floors?|hvac|siding) )?(remodel|new build|new construction|new house|build|house|project)\b(?:.*?\bfor ([A-Z][a-z]+(?: [A-Z][a-z]+)?))?/i.exec(user);
+  if (started && !done.has("start_project")) {
+    const job = (started[1] ?? "").toLowerCase();
+    const kind = /new build|new construction|new house|^(build|house)$/.test(started[2].toLowerCase()) ? "NEW_BUILD" : "REMODEL";
+    const template = kind === "NEW_BUILD" ? "home" : job === "bathroom" ? "bath" : job === "whole house" || job === "whole-house" ? "wholehouse" : job === "garage" ? "adu" : job === "window" ? "windows" : job === "floor" ? "floors" : job || null;
+    const client = started[3] ?? null;
+    const name = client ? `${client.split(" ").pop()} ${job || (kind === "NEW_BUILD" ? "house" : "remodel")}` : `${job || "new"} project`;
+    return call("start_project", { name, kind, client, template, occupied: /lives? there|living there|occupied/i.test(user) ? true : null });
+  }
+  if (done.has("start_project")) return reply("Planned — say yes and I'll start it.");
   // "Do we have a client named Lee?" → find(client) → the names (the records then remember them).
   const named1 = /\b(?:do we have|is there|find) (?:a |the )?(?:client|customer)(?: named| called)? ([A-Z][a-z]+(?: [A-Z][a-z]+)?)/i.exec(user);
   if (named1) {

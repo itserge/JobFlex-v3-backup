@@ -40,6 +40,7 @@ import Link from "next/link";
 import type { Route } from "next";
 import { closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
 import { money } from "@/lib/format";
+import { KIND_TAG, kindOf } from "@/lib/projectKind";
 import { useProjectDetailMotion } from "./project-detail-motion";
 import {
   MO,
@@ -303,6 +304,7 @@ export function ProjectDetailContent({
           <div className={cx("kicker")}>
             Projects
             {project.number ? <span data-project-number>{` · #${project.number}`}</span> : null}
+            <span data-project-kind={kindOf(project.kind)}>{` · ${KIND_TAG[kindOf(project.kind)]}`}</span>
             {project.client ? (
               <>
                 {" · "}
@@ -371,7 +373,7 @@ export function ProjectDetailContent({
         </div>
       </div>
 
-      <ProjectStagesCard projectId={project.id} stages={stages} canManage={canManage} />
+      <ProjectStagesCard projectId={project.id} stages={stages} canManage={canManage} kind={kindOf(project.kind)} />
       {timeline ? <ProjectTimelineCard projectId={project.id} timeline={timeline} canManage={canManage} /> : null}
       {share ? <ProjectClientCard projectId={project.id} share={share} canManage={canManage} /> : null}
       {field ? <ProjectFieldCard projectId={project.id} field={field} canManage={canManage} /> : null}

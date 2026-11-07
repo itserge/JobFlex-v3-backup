@@ -77,6 +77,7 @@ export async function loadProjectBook(organizationId: string): Promise<Project[]
     return {
       id: p.id,
       name: p.name,
+      kind: p.kind,
       description: p.description,
       status: p.status,
       startsAt: shortPlate(p.startsAt),

@@ -943,6 +943,9 @@
 .fsegBtn[data-v="ACTIVE"] .fsegDot { background: var(--blueprint); }
 .fsegBtn[data-v="ON_HOLD"] .fsegDot { background: var(--warning); }
 .fsegBtn[data-v="COMPLETED"] .fsegDot { background: var(--success); }
+/* The kind's one-line hint under its segment, and the New build tag on a row (2026-11-07). */
+.fldHint { display: block; margin-top: 6px; font: 500 12px/1.4 var(--font-sans, inherit); color: var(--muted); }
+.pjKind { margin-left: 6px; padding: 3px 6px; border: 1.5px solid var(--ink); font: 700 10px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); background: var(--blueprint-tint, transparent); }
 /* The submit pair sits in a beige foot OUTSIDE the scrolling body, so it is
    reachable without scrolling the form to its end. It reaches the form through
    the form= attribute. */
