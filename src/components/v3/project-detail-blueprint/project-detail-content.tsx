@@ -50,7 +50,7 @@ import {
   type PdJob,
   type PdOpens,
   type PdPayments,
-  type PdBuying, PdSubs,
+  type PdBuying, PdSubs, PdSelections,
   type PdField,
   type PdFinish,
   type PdShare,
@@ -84,6 +84,7 @@ import { ProjectBudgetCard } from "@/components/v3/project-links/project-budget-
 import { ProjectStagesCard } from "@/components/v3/project-links/project-stages-card";
 import { ProjectBuyingCard } from "@/components/v3/project-links/project-buying-card";
 import { ProjectSubsCard } from "@/components/v3/project-links/project-subs-card";
+import { ProjectSelectionsCard } from "@/components/v3/project-links/project-selections-card";
 import { ProjectFieldCard } from "@/components/v3/project-links/project-field-card";
 import { ProjectTimelineCard } from "@/components/v3/project-links/project-timeline-card";
 import { ProjectFinishCard } from "@/components/v3/project-links/project-finish-card";
@@ -143,6 +144,7 @@ export function ProjectDetailContent({
   stages = { stages: [], done: null, draftedByAi: false },
   buying,
   subs,
+  selections,
   field,
   timeline,
   finish,
@@ -154,6 +156,8 @@ export function ProjectDetailContent({
   /** The to-buy list and the orders (2026-11-05). */
   buying?: PdBuying;
   subs?: PdSubs;
+  /** What the client has to choose (2026-11-07). */
+  selections?: PdSelections;
   /** On site: problems, hours, the subs' bills (2026-11-05). */
   field?: PdField;
   /** The stages across the weeks (2026-11-06). */
@@ -381,6 +385,7 @@ export function ProjectDetailContent({
       <LooseProposalsStrip projectId={project.id} client={project.client} loose={looseProposals} />
       <ProposalsCard proposals={proposals} project={project} onAttach={openAttach} canManage={canManage} />
       <ProjectCombine projectId={project.id} projectName={project.name} proposals={proposals} />
+      {selections ? <ProjectSelectionsCard projectId={project.id} selections={selections} stages={stages.stages} canManage={canManage} /> : null}
       {buying ? <ProjectBuyingCard projectId={project.id} buying={buying} stages={stages.stages} canManage={canManage} /> : null}
       {subs ? <ProjectSubsCard projectId={project.id} subs={subs} stages={stages.stages} canManage={canManage} /> : null}
       {budget ? <ProjectBudgetCard projectId={project.id} budget={budget} /> : null}

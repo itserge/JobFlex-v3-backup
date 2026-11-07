@@ -1058,6 +1058,11 @@
 .pjFlag_order-by { border-color: var(--warning); color: var(--warning-dark); background: var(--warning-soft); }
 .pjFlag_late-delivery { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
 .pjFlag_problem { border-color: var(--danger); color: #fff; background: var(--danger); }
+/* contractors' quotes (2026-11-07) and selections (2026-11-07), as on the desk */
+.pjFlag_quote-overdue { border-color: var(--warning); color: var(--warning-dark); background: var(--warning-soft); }
+.pjFlag_quote-in, .pjFlag_invoice-in { border-color: var(--blueprint); color: var(--blueprint); background: var(--blueprint-tint, transparent); }
+.pjFlag_selection-late { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+.pjFlag_selection-due { border-color: var(--warning); color: var(--warning-dark); background: var(--warning-soft); }
 /* the timeline's and the finish line's flags (2026-11-06) */
 .pjFlag_inspection { border-color: var(--warning); color: var(--warning-dark); background: var(--warning-soft); }
 .pjFlag_punch { border-color: var(--hair); color: var(--muted); }

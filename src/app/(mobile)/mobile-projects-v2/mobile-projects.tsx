@@ -1140,7 +1140,7 @@ export function MobileProjects() {
                             : "No budget set"}
                       </span>
                       {projectFlags(p).map((f) => (
-                        <span key={f.kind} className={`${styles.pjFlag} ${styles["pjFlag_" + f.kind]}`}>
+                        <span key={`${f.kind}:${f.text}`} className={`${styles.pjFlag} ${styles["pjFlag_" + f.kind]}`}>
                           {f.text}
                         </span>
                       ))}

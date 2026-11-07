@@ -19,6 +19,9 @@
 //   "send it"                                      → send_proposal on the newest built
 //   "roof … at <address> [<n> sq ft, two-story, <material>]" → build_roof; "hvac|furnace|heat pump … at <address> <n> sq ft" → build_hvac
 //   "the yard at <address>" → lawn_site; "price … mowing|fertilizer … at <address> | <n> sq ft" → build_lawn (2026-11-05)
+//   "what's left to choose on <project>" → selections; "<they> picked <item> for <project> from <vendor> for $N" → choose_selection;
+//   "add a <name> selection to <project>[, due YYYY-MM-DD][, allowance $N]" → add_selection; "mark <stage> done on <project>" → set_stage;
+//   "<inspection> on <project> passed|failed" → inspection_result (2026-11-07, part 3)
 //   Smart Proposal's own run (response_format json_object, no tools): a small estimate in the old draft shape.
 //   Speech (POST /v1/audio/speech, the Talk mode's voice): 0.3 s of silence as an MP3, so a page plays it and goes on.
 //   NODE_PATH="" npx --no-install tsx qa/fixtures/assistant-fake-openai.ts     (FAKE_OPENAI_PORT, default 4601)
@@ -232,6 +235,63 @@ function answer(body: { messages: Msg[] }) {
     return call("award_quote", { projectId: pid, contractor: awardQ[3].trim(), stage: awardQ[1] });
   }
   if (done.has("award_quote")) return reply("Planned — say yes to award it.");
+  // Selections and gates (2026-11-07, part 3): "what's left to choose on the Bennett kitchen" → selections; "the Bennetts
+  // picked the shaker cabinets from Pacific Cabinet Supply for $8,400" → choose_selection; "add a tile selection to the
+  // Smith bath, due 2026-11-20, allowance $2,000" → add_selection; "mark the rough-in done on the Bennett kitchen" →
+  // set_stage (refused by the engine while its inspection holds); "the rough-in on the Bennett kitchen passed" →
+  // inspection_result. The project comes from a find, as the contractors' rules do.
+  const projectFound = (query: string) => {
+    const found = done.get("find") as Found | undefined;
+    return found?.projects?.[0]?.id ?? (query ? null : null);
+  };
+  const leftQ = /\b(?:what(?:'s| is) left to choose|selections? (?:left|open|late)|what did they (?:pick|choose))\b.*?\bon (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  if (leftQ) {
+    const r = done.get("selections") as { selections?: Array<{ name: string; words: string; chosen: string | null; price: string | null }>; note?: string } | undefined;
+    if (!r) {
+      const pid = projectFound(leftQ[1]);
+      if (!pid) return call("find", { query: leftQ[1].trim(), kind: "project" });
+      return call("selections", { projectId: pid, only: /late/i.test(user) ? "late" : /did they/i.test(user) ? "chosen" : "open" });
+    }
+    const xs = r.selections ?? [];
+    return reply(xs.length ? xs.map((x) => `${x.name}: ${x.chosen ? `${x.chosen}${x.price ? ` ${x.price}` : ""}` : x.words}`).join("; ") + "." : (r.note ?? "Nothing to choose."));
+  }
+  const pickedQ = /\b(?:picked|chose|went with) (?:the )?(.+?) (?:for|on) (?:the )?(.+?)(?:,| from | for \$|$)/i.exec(user);
+  if (pickedQ && !done.has("choose_selection")) {
+    const pid = projectFound(pickedQ[2]);
+    if (!pid) return call("find", { query: pickedQ[2].trim().replace(/\bkitchen|bath|deck|house\b/gi, "").trim() || pickedQ[2].trim(), kind: "project" });
+    const vendor = /\bfrom ([A-Z][\w&' ]+?)(?:,| for|$)/.exec(user)?.[1]?.trim() ?? null;
+    const price = /\$([\d,]+(?:\.\d+)?)/.exec(user);
+    const item = pickedQ[1].trim();
+    const sel = /\b(cabinet|counter|tile|floor|fixture|light|appliance|paint|window|door|trim|siding|roof|vanity|glass)\w*/i.exec(user)?.[0] ?? item;
+    return call("choose_selection", { projectId: pid, selection: sel, chosen: item, vendor, price: price ? Number(price[1].replace(/,/g, "")) : null });
+  }
+  if (done.has("choose_selection")) return reply("Planned — say yes to record it.");
+  const addSel = /\badd (?:a |an )?(.+?) selection to (?:the )?(.+?)(?:,|$)/i.exec(user);
+  if (addSel && !done.has("add_selection")) {
+    const pid = projectFound(addSel[2]);
+    if (!pid) return call("find", { query: addSel[2].trim(), kind: "project" });
+    const day = /\bdue (\d{4}-\d{2}-\d{2})/.exec(user)?.[1] ?? null;
+    const allowance = /allowance \$?([\d,]+)/i.exec(user);
+    const stage = /\bfor (?:the )?(\w[\w ]*?) stage\b/i.exec(user)?.[1] ?? null;
+    return call("add_selection", { projectId: pid, name: addSel[1].trim().replace(/^\w/, (c) => c.toUpperCase()), stage, dueBy: day, allowance: allowance ? Number(allowance[1].replace(/,/g, "")) : null });
+  }
+  if (done.has("add_selection")) return reply("Planned — say yes to add it.");
+  const stageDone = /\b(?:mark (?:the )?(.+?) (?:as )?done on (?:the )?(.+?)|(?:the )?(.+?) on (?:the )?(.+?) (?:is|are) done)\s*$/i.exec(user);
+  if (stageDone && !done.has("set_stage")) {
+    const stage = (stageDone[1] ?? stageDone[3]).trim();
+    const proj = (stageDone[2] ?? stageDone[4]).trim();
+    const pid = projectFound(proj);
+    if (!pid) return call("find", { query: proj, kind: "project" });
+    return call("set_stage", { projectId: pid, stage, status: "DONE" });
+  }
+  if (done.has("set_stage")) return reply("Planned — say yes to mark it.");
+  const inspQ = /\b(?:the )?(.+?) (?:inspection )?on (?:the )?(.+?) (passed|failed)\b/i.exec(user);
+  if (inspQ && !done.has("inspection_result")) {
+    const pid = projectFound(inspQ[2]);
+    if (!pid) return call("find", { query: inspQ[2].trim(), kind: "project" });
+    return call("inspection_result", { projectId: pid, inspection: inspQ[1].trim(), result: inspQ[3].toUpperCase() as "PASSED" | "FAILED", note: null });
+  }
+  if (done.has("inspection_result")) return reply("Planned — say yes to record it.");
   // "Start a kitchen remodel for Sarah Lee, she lives there" → start_project (2026-11-07): the kind from the words,
   // the template from the job's word, the client's name as said; the engine reads it back and a yes makes it.
   const started = /\bstart (?:a |an )?(?:new )?(?:(kitchen|bath|bathroom|deck|roof|fence|addition|basement|whole[- ]house|adu|garage|windows?|painting|service|floors?|hvac|siding) )?(remodel|new build|new construction|new house|build|house|project)\b(?:.*?\bfor ([A-Z][a-z]+(?: [A-Z][a-z]+)?))?/i.exec(user);

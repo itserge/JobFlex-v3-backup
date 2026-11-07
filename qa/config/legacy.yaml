@@ -106,6 +106,8 @@ scripts:
   - { file: assistant-selection.live.ts, suite: logic, kind: check, status: live, note: "the model's choice of tool for every card's samples — opt-in (ASSISTANT_SELECTION_LIVE=1 + a real key), otherwise it says so and passes" }
   - { file: project-kind.check.ts, suite: logic, kind: check, status: live, note: "Remodel or New construction: the kind, the questions at the start, the templates per kind with shares that sum to one, living in place, the Operator's template words" }
   - { file: project-subs.check.ts, suite: logic, kind: check, status: live, note: "contractors' quotes: the statuses, the scope a stage reads as, the reply-by rule, the comparison against the budget line, the overdue rule, the list's flags" }
+  - { file: project-selections.check.ts, suite: logic, kind: check, status: live, note: "selections and gates: the inspection kinds in the county's words, the gate rule and its words, the selections' due day from the stage, the states, the list's flags, the allowance off the materials, the templates' inspections and selections, the Operator's words" }
+  - { file: projects-flow.check.ts, suite: logic, kind: check, status: live, note: "the remodel flow walked from the sale to the archive (2026-11-06): buying's lines, the crew's stage, the final-payment tick, a finished stage's quiet" }
   - { file: changeOrders.check.ts, suite: logic, kind: check, status: live }
   - { file: crew-days.check.ts, suite: logic, kind: check, status: live, note: "could text through Twilio if its keys were set — the runner preloads the recording twilio stand-in (_no-sms.js)" }
   - { file: crew-onsite.check.ts, suite: logic, kind: check, status: live }

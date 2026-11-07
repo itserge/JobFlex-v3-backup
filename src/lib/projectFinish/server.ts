@@ -14,6 +14,7 @@ import { projectMoney } from "@/lib/projectMoney";
 import { ensureReviewRequestForProposal } from "@/lib/reviews/requestForProposal";
 import { createReviewRequestInternal } from "@/lib/reviewRequestInternal";
 import { isoDay } from "@/lib/projectTimeline/shared";
+import { inspectionKindOf, isInspectionKind } from "@/lib/projectGates";
 import type { FinishRead } from "./shared";
 
 const SOLD = ["ACCEPTED", "COMPLETED", "PAID"];
@@ -27,7 +28,11 @@ async function projectOf(organizationId: string, projectId: string) {
 
 // ── inspections ──────────────────────────────────────────────────────────────
 
-export type InspectionInput = { name: string; date?: string | null; readyNote?: string | null; stageId?: string | null; isFinal?: boolean };
+/** `kind` (lib/projectGates) is read off the name when not given; `gate` — the stage cannot be marked done until this
+ *  passes — defaults to on when the inspection sits on a stage (part 3, 2026-11-07). */
+export type InspectionInput = { name: string; date?: string | null; readyNote?: string | null; stageId?: string | null; isFinal?: boolean; kind?: string | null; gate?: boolean | null };
+
+const kindOf = (name: string, given: string | null | undefined) => (given && isInspectionKind(given) ? given : inspectionKindOf(name));
 
 export async function addInspection(organizationId: string, projectId: string, input: InspectionInput, actorId: string | null): Promise<{ id: string }> {
   const p = await projectOf(organizationId, projectId);
@@ -40,7 +45,7 @@ export async function addInspection(organizationId: string, projectId: string, i
   // One final inspection per project: a new one marked final takes the mark from the old.
   if (input.isFinal) await db.projectInspection.updateMany({ where: { projectId, isFinal: true }, data: { isFinal: false } });
   const row = await db.projectInspection.create({
-    data: { organizationId, projectId, name, date: dayOf(input.date), readyNote: input.readyNote?.trim() || null, stageId: input.stageId ?? null, isFinal: Boolean(input.isFinal), createdById: actorId },
+    data: { organizationId, projectId, name, date: dayOf(input.date), readyNote: input.readyNote?.trim() || null, stageId: input.stageId ?? null, isFinal: Boolean(input.isFinal), kind: kindOf(name, input.kind), gate: input.gate ?? Boolean(input.stageId), createdById: actorId },
     select: { id: true },
   });
   await logActivity({ organizationId, actorId, kind: TRAIL_KINDS.PROJECT, summary: `Added ${name}${input.date ? ` on ${input.date}` : ""} to ${p.name}`, clientId: p.clientId, meta: { projectId, inspectionId: row.id } });
@@ -63,14 +68,16 @@ export async function updateInspection(organizationId: string, inspectionId: str
       ...(patch.readyNote !== undefined ? { readyNote: patch.readyNote?.trim() || null } : {}),
       ...(patch.stageId !== undefined ? { stageId: patch.stageId } : {}),
       ...(patch.isFinal !== undefined ? { isFinal: patch.isFinal } : {}),
+      ...(patch.kind !== undefined || patch.name !== undefined ? { kind: kindOf(patch.name?.trim() || row.name, patch.kind) } : {}),
+      ...(patch.gate !== undefined && patch.gate !== null ? { gate: patch.gate } : patch.stageId === null ? { gate: false } : {}),
     },
   });
   await logActivity({ organizationId, actorId, kind: TRAIL_KINDS.PROJECT, summary: `Changed ${patch.name?.trim() || row.name} on ${row.project.name}`, clientId: row.project.clientId, meta: { projectId: row.projectId, inspectionId: row.id } });
 }
 
 /** The inspector's word: passed, failed (with what they said), or back to pending for a re-inspection. */
-export async function recordInspection(organizationId: string, inspectionId: string, result: "PASSED" | "FAILED" | "PENDING", note: string | null, actorId: string | null): Promise<{ projectId: string; name: string; isFinal: boolean }> {
-  const row = await db.projectInspection.findFirst({ where: { id: inspectionId, organizationId }, select: { id: true, projectId: true, name: true, isFinal: true, project: { select: { name: true, clientId: true } } } });
+export async function recordInspection(organizationId: string, inspectionId: string, result: "PASSED" | "FAILED" | "PENDING", note: string | null, actorId: string | null): Promise<{ projectId: string; name: string; isFinal: boolean; gate: boolean; stageName: string | null }> {
+  const row = await db.projectInspection.findFirst({ where: { id: inspectionId, organizationId }, select: { id: true, projectId: true, name: true, isFinal: true, gate: true, stage: { select: { name: true } }, project: { select: { name: true, clientId: true } } } });
   if (!row) throw new Error("Inspection not found");
   await db.projectInspection.update({
     where: { id: row.id },
@@ -84,7 +91,7 @@ export async function recordInspection(organizationId: string, inspectionId: str
     clientId: row.project.clientId,
     meta: { projectId: row.projectId, inspectionId: row.id, result },
   });
-  return { projectId: row.projectId, name: row.name, isFinal: row.isFinal };
+  return { projectId: row.projectId, name: row.name, isFinal: row.isFinal, gate: row.gate, stageName: row.stage?.name ?? null };
 }
 
 export async function deleteInspection(organizationId: string, inspectionId: string): Promise<{ projectId: string }> {

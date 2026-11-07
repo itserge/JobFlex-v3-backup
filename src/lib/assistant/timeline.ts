@@ -126,8 +126,8 @@ const shiftTheRest: WriteTool<ShiftArgs, ShiftPayload> = {
 
 // ── inspections ──────────────────────────────────────────────────────────────
 
-type InspArgs = { projectId: string; name: string; date: string | null; haveReady: string | null; stage: string | null; isFinal: boolean };
-type InspPayload = { projectId: string; name: string; date: string | null; haveReady: string | null; stageId: string | null; isFinal: boolean; words: string };
+type InspArgs = { projectId: string; name: string; date: string | null; haveReady: string | null; stage: string | null; isFinal: boolean; gate: boolean | null };
+type InspPayload = { projectId: string; name: string; date: string | null; haveReady: string | null; stageId: string | null; isFinal: boolean; gate: boolean; words: string };
 
 const addInspectionTool: WriteTool<InspArgs, InspPayload> = {
   kind: "write",
@@ -136,18 +136,18 @@ const addInspectionTool: WriteTool<InspArgs, InspPayload> = {
   card: {
     label: "Book an inspection",
     purpose: "Put an inspection on a project: its day, what to have ready, whether it is the final one.",
-    when: "'Rough-in inspection Tuesday', 'schedule the final inspection for the 20th', 'make the final inspection checklist': add_inspection with the project id, the name, the day as a date or null, and haveReady — when they ask for a checklist, WRITE it yourself for the trade (one line per item: permit card on site, access to the panel, smoke detectors in…). isFinal true for the final.",
+    when: "'Rough-in inspection Tuesday', 'schedule the final inspection for the 20th', 'make the final inspection checklist': add_inspection with the project id, the name, the day as a date or null, and haveReady — when they ask for a checklist, WRITE it yourself for the trade (one line per item: permit card on site, access to the panel, smoke detectors in…). isFinal true for the final. gate null = it holds its stage (the stage cannot be marked done until it passes) when a stage is named; false only when they say the stage need not wait for it.",
     objects: ["project"],
     effect: "schedule",
     group: "projects",
-    version: 1,
+    version: 2,
     since: "2026-11-06",
-    samples: [{ say: "schedule the final inspection on the Smith kitchen for the 20th and make the checklist", args: { projectId: "proj_1", name: "Final inspection", date: "2026-11-20", haveReady: "Permit card on site\nAccess to the electrical panel\nSmoke and CO detectors in and working\nGFCI outlets at the counters\nAnti-tip bracket on the range", stage: null, isFinal: true } }],
+    samples: [{ say: "schedule the final inspection on the Smith kitchen for the 20th and make the checklist", args: { projectId: "proj_1", name: "Final inspection", date: "2026-11-20", haveReady: "Permit card on site\nAccess to the electrical panel\nSmoke and CO detectors in and working\nGFCI outlets at the counters\nAnti-tip bracket on the range", stage: null, isFinal: true, gate: null } }],
   },
   description:
-    "Add an inspection to a project: the name (Rough-in, Framing, Final inspection), the day (YYYY-MM-DD or null), what to have ready for the inspector (write the list yourself when asked for a checklist — one item per line, for the trade), the stage it belongs to (or null) and isFinal for the final inspection. Use for: rough-in Tuesday, schedule the final inspection, create the final inspection checklist.",
-  params: z.object({ projectId: ID, name: z.string().min(2).max(120), date: DAY.nullable(), haveReady: z.string().max(1000).nullable(), stage: z.string().max(80).nullable(), isFinal: z.boolean() }),
-  payload: z.object({ projectId: ID, name: z.string(), date: DAY.nullable(), haveReady: z.string().nullable(), stageId: ID.nullable(), isFinal: z.boolean(), words: z.string() }),
+    "Add an inspection to a project: the name (Rough-in, Framing, Final inspection), the day (YYYY-MM-DD or null), what to have ready for the inspector (write the list yourself when asked for a checklist — one item per line, for the trade), the stage it belongs to (or null), isFinal for the final inspection, and gate (null = on when a stage is named: the stage cannot be marked done until this passes; false when the stage need not wait). Use for: rough-in Tuesday, schedule the final inspection, create the final inspection checklist.",
+  params: z.object({ projectId: ID, name: z.string().min(2).max(120), date: DAY.nullable(), haveReady: z.string().max(1000).nullable(), stage: z.string().max(80).nullable(), isFinal: z.boolean(), gate: z.boolean().nullable() }),
+  payload: z.object({ projectId: ID, name: z.string(), date: DAY.nullable(), haveReady: z.string().nullable(), stageId: ID.nullable(), isFinal: z.boolean(), gate: z.boolean(), words: z.string() }),
   async plan({ actor }, args) {
     const p = await projectById(actor.organizationId, args.projectId);
     if (!p) return { ok: false, say: "I couldn't find that project." };
@@ -162,12 +162,14 @@ const addInspectionTool: WriteTool<InspArgs, InspPayload> = {
       }
     }
     const items = (args.haveReady ?? "").split(/\n|;/).map((x) => x.trim()).filter(Boolean);
+    const gate = stageId ? args.gate !== false : false;
     const words = `Book "${args.name}" on ${p.name}${args.date ? ` for ${dayLabelLong(args.date)}` : ", no day yet"}${stageName ? `, on ${stageName}` : ""}${args.isFinal ? " — the final inspection" : ""}`;
     const ready = items.length ? ` Have ready: ${items.join("; ")}.` : "";
-    return { ok: true, payload: { projectId: p.id, name: args.name, date: args.date, haveReady: items.length ? items.join("\n") : null, stageId, isFinal: args.isFinal, words }, readback: `${words}?${ready}` };
+    const holds = gate && stageName ? ` ${stageName} cannot be marked done until it passes.` : "";
+    return { ok: true, payload: { projectId: p.id, name: args.name, date: args.date, haveReady: items.length ? items.join("\n") : null, stageId, isFinal: args.isFinal, gate, words }, readback: `${words}?${ready}${holds}` };
   },
   async execute({ actor }, payload) {
-    const r = await addInspection(actor.organizationId, payload.projectId, { name: payload.name, date: payload.date, readyNote: payload.haveReady, stageId: payload.stageId, isFinal: payload.isFinal }, actor.userId);
+    const r = await addInspection(actor.organizationId, payload.projectId, { name: payload.name, date: payload.date, readyNote: payload.haveReady, stageId: payload.stageId, isFinal: payload.isFinal, gate: payload.gate }, actor.userId);
     return { say: `Done — ${payload.words.replace(/^Book /, "booked ")}. It is on the timeline${payload.date ? " and the crew sees what to have ready on the job the day before" : ""}.`, result: r };
   },
 };
@@ -210,7 +212,8 @@ const inspectionResult: WriteTool<ResultArgs, ResultPayload> = {
   },
   async execute({ actor }, payload) {
     const r = await recordInspection(actor.organizationId, payload.inspectionId, payload.result, payload.note, actor.userId);
-    return { say: `Done — ${payload.words}.${payload.result === "FAILED" ? " Book the re-inspection when the fix is in (add_inspection or Re-inspect on the project)." : ""}`, result: r };
+    const gate = r.gate && r.stageName ? (payload.result === "PASSED" ? ` ${r.stageName} can be marked done now.` : ` ${r.stageName} stays open until the re-inspection passes.`) : "";
+    return { say: `Done — ${payload.words}.${gate}${payload.result === "FAILED" ? " Book the re-inspection when the fix is in (add_inspection or Re-inspect on the project)." : ""}`, result: r };
   },
 };
 
