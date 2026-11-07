@@ -2358,6 +2358,7 @@ model Project {
   punchItems   PunchItem[]
   files        ProjectFile[]
   subQuotes    ProjectSubQuote[]
+  selections   ProjectSelection[]
 
   @@unique([organizationId, number])
   @@index([organizationId])
@@ -2390,6 +2391,7 @@ model ProjectStage {
   orders      ProjectOrder[]
   inspections ProjectInspection[]
   subQuotes   ProjectSubQuote[]
+  selections  ProjectSelection[]
 
   @@index([projectId, position])
 }
@@ -2425,6 +2427,12 @@ model ProjectInspection {
   projectId      String
   stageId        String?
   name           String
+  // THE GATE (2026-11-07, the plan "Projects: Remodel and New construction", part 3): `kind` is the inspection's
+  // key in lib/projectGates (FRAMING, ROUGH_IN, FINAL…; the name is the county's words, editable), null on one typed
+  // free; `gate` holds the stage it is on — the stage cannot be marked done until this passes (the card, the crew's
+  // page and the Operator all refuse). Templates add their inspections as gates; the office can turn one off.
+  kind           String?
+  gate           Boolean   @default(false)
   date           DateTime?
   readyNote      String?
   isFinal        Boolean   @default(false)
@@ -2527,6 +2535,43 @@ model ProjectSubQuote {
   contractor Contractor    @relation(fields: [contractorId], references: [id], onDelete: Cascade)
   @@index([projectId, status])
   @@index([organizationId, status])
+}
+
+// SELECTIONS (2026-11-07, the plan "Projects: Remodel and New construction", part 3): what the client has to choose
+// — cabinets, counters, tile, fixtures, flooring, paint — each with the stage that needs it and a lead time, so its
+// due day reads from the stage's first day the way a material's order-by day does (lib/projectSelections); an
+// allowance (the money set aside), and once chosen what was picked, from whom and at what price. A choice not made by
+// its day flags the project the way a late order does. Templates seed the usual ones; the office adds its own.
+model ProjectSelection {
+  id             String    @id @default(cuid())
+  organizationId String
+  projectId      String
+  // The stage that needs the choice made (its first day less leadDays = the due day); null = the project as a whole.
+  stageId        String?
+  name           String
+  // Days before the stage starts that the choice must be in (the lead time to order and receive it).
+  leadDays       Int       @default(14)
+  // A due day set by hand wins over the one read from the stage.
+  dueBy          DateTime?
+  // The money set aside for it; null = not set (the card suggests the proposal's matching material lines).
+  allowance      Float?
+  // What was chosen, from whom, at what price — chosenAt set when the choice is in.
+  chosen         String?
+  vendor         String?
+  price          Float?
+  chosenAt       DateTime?
+  chosenById     String?
+  note           String?
+  position       Int       @default(0)
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  project Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  stage   ProjectStage? @relation(fields: [stageId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, position])
+  @@index([organizationId])
 }
 
 model ProjectFile {

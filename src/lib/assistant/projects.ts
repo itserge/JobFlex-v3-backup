@@ -11,7 +11,7 @@ import { findClients, findProjects } from "@/lib/assistant/find";
 import { dayWords, money, spanWords } from "@/lib/assistant/shared";
 import { categoryLabel } from "@/lib/projectBudget";
 import { projectMoney } from "@/lib/projectMoney";
-import { addTemplate, markStage, markTask, stagesOf, type StageRow } from "@/lib/projectStages/server";
+import { addTemplate, markStage, markTask, stageHeldBy, stagesOf, type StageRow } from "@/lib/projectStages/server";
 import { currentStage, lateStages, lateWords, percentDone, projectNo, templatesFor, type StageTemplate } from "@/lib/projectStages/shared";
 import { KIND_LABEL, type ProjectKind } from "@/lib/projectKind";
 import { createProjectAs } from "@/lib/projectCore";
@@ -172,6 +172,11 @@ const setStage: WriteTool<StageArgs, StagePayload> = {
     const st = stageNamed(read.stages, args.stage);
     if (!st) return { ok: false, say: `Which stage? ${p.name} has: ${read.stages.map((s) => s.name).join(", ")}.` };
     if (st.status === args.status) return { ok: false, say: `"${st.name}" is already ${args.status === "DONE" ? "done" : args.status === "ACTIVE" ? "in progress" : "planned"}.` };
+    // The gate (part 3, 2026-11-07): an inspection on the stage that has not passed holds it.
+    if (args.status === "DONE") {
+      const held = await stageHeldBy(st.id, st.name);
+      if (held) return { ok: false, say: `Not yet — ${held}` };
+    }
     const after = percentDone(read.stages.map((s) => (s.id === st.id ? { ...s, status: args.status, tasks: args.status === "DONE" ? s.tasks.map((t) => ({ ...t, done: true })) : s.tasks } : s)));
     const verb = args.status === "DONE" ? "Mark" : args.status === "ACTIVE" ? "Start" : "Reopen";
     const tail = args.status === "DONE" ? " done" : "";
@@ -243,14 +248,15 @@ const tickTask: WriteTool<TaskArgs, TaskPayload> = {
     const t = best.t;
     if (t.done === args.done) return { ok: false, say: `"${t.title}" is already ${args.done ? "ticked" : "open"}.` };
     const lastOne = args.done && t.stage.tasks.filter((x) => !x.done && x.id !== t.id).length === 0;
+    const held = lastOne ? await stageHeldBy(t.stage.id, t.stage.name) : null;
     const project = `${p.name}${p.number ? ` (#${p.number})` : ""}`;
     const words = `${args.done ? "Tick" : "Untick"} "${t.title}" (${t.stage.name}) on ${project}`;
-    return { ok: true, payload: { taskId: t.id, done: args.done, words }, readback: `${words}?${lastOne ? ` That's the last one — ${t.stage.name} gets marked done.` : ""}${t.photoNeeded && args.done ? " This task wants a photo; add it on the job page." : ""}` };
+    return { ok: true, payload: { taskId: t.id, done: args.done, words }, readback: `${words}?${lastOne ? (held ? ` That's the last task, but the stage stays open: ${held}` : ` That's the last one — ${t.stage.name} gets marked done.`) : ""}${t.photoNeeded && args.done ? " This task wants a photo; add it on the job page." : ""}` };
   },
   async execute({ actor }, payload) {
     const r = await markTask(actor.organizationId, payload.taskId, payload.done, actor.userId);
     const read = await stagesOf(r.projectId);
-    return { say: `Done — ${payload.words.replace(/^(Tick|Untick) /, (m) => m.toLowerCase())}. ${r.projectName} is ${read.done ?? 0}% done.`, result: r };
+    return { say: `Done — ${payload.words.replace(/^(Tick|Untick) /, (m) => m.toLowerCase())}. ${r.projectName} is ${read.done ?? 0}% done.${r.held ? ` ${r.held}` : ""}`, result: r };
   },
 };
 

@@ -63,6 +63,8 @@ export type PdStage = {
   doneAt: string | null;
   weight: number;
   tasks: Array<{ id: string; title: string; position: number; photoNeeded: boolean; done: boolean; doneAt: string | null }>;
+  /** The inspections that gate the stage (part 3, 2026-11-07): Done waits until each has PASSED. */
+  gates?: Array<{ id: string; name: string; result: string; date: string | null }>;
 };
 export type PdStages = {
   stages: PdStage[];
@@ -92,6 +94,10 @@ export type PdShare = import("@/lib/projectClient/server").ShareRead;
 /* CONTRACTORS: QUOTES AND INVOICES (2026-11-07): the company's contractors and the project's quotes, compared against the
    stage's share of the Subcontractors budget (lib/projectSubs/server subsOf). */
 export type PdSubs = import("@/lib/projectSubs/server").SubsRead;
+
+/* SELECTIONS (2026-11-07, part 3): what the client has to choose, each with the stage that needs it, its due day and
+   what was chosen (lib/projectSelections/server selectionsOf). */
+export type PdSelections = import("@/lib/projectSelections/server").SelectionsRead;
 
 /** What the viewer's role may open from the project page (lib/roleRoutes) — an estimator has no client record or job page. */
 export type PdOpens = { client: boolean; jobs: boolean };

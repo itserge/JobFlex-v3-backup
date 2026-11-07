@@ -538,6 +538,25 @@ page (buy.css, .jf-buy) with the scope as lines, a price box and a note, Send
 my price, "Pass on it" as a text link; after the award the same page asks for
 the invoice amount and a link. The Projects list flags "Quote overdue" (warning
 chip), "Quote in" and "Invoice in" (blueprint chips).
+Selections and gates (2026-11-07, the plan "Projects: Remodel and New
+construction", part 3): a Selections card before Buying, on the hub's own
+rules — the selections grouped by the stage that needs them under a ruled
+group head that says when the stage starts, each a line with the name, a
+state tag beside it (choose by Nov 12 (in 4 days) · plain; soon · amber;
+N days late · red; Chosen Nov 3 · green), a sub-line with the allowance (or
+the proposal's figure offered) or, once chosen, what · from whom · $ · "$400
+over the allowance", the small buttons (Chosen… in blueprint, Reopen, Edit),
+and the lead time in mono at the right. "Chosen…" and "Selection" are
+BlueprintSheets (the selection sheet opens on the usual names as chips). On
+the Stages card a gated stage shows "waits on Framing — booked Nov 12" in its
+mono meta line (red when the inspection failed) and its Done button waits,
+disabled, with the full sentence as its title; the Timeline card's
+inspection row carries a "holds <stage>" tag until it passes and its sheet a
+"Holds the stage until it passes" tick-box under the stage picker; the
+crew's job page says "Before this stage closes: …" under the stage's label.
+The Projects list flags "<name> not chosen — N days past its day" (danger
+chip) and "Choose the <name> by <day>" (warning chip); the handheld list now
+carries the quote and invoice chips too.
 
 Projects hub, stages (2026-11-05): the Stages card leads the project page on
 desk and handheld, above the proposals — a remodel is read by where it stands.

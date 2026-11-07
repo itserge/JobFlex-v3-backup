@@ -19,6 +19,7 @@ import { parseTradeTypes } from "@/lib/tradeTypes";
 import { BUDGET_CATEGORIES } from "@/lib/projectBudget";
 import { makesProject, parseProjectSettings, percentDone, proposalTrade, templateByKey, templateFor, type StageTemplate, type TemplateStage } from "./shared";
 import { KIND_LABEL, kindOf, livingInPlaceTasks, onSiteStageIndex, parseAnswers, serializeAnswers } from "@/lib/projectKind";
+import { INSPECTION_NAME, gateHolds, gateWords } from "@/lib/projectGates";
 
 const FIRST_NUMBER = 1001;
 
@@ -49,10 +50,17 @@ export async function numbered<T extends { id: string; number: number | null }>(
   return create(null);
 }
 
-/** A template's stages and tasks onto a project, after any stages it already has. */
+/** A template's stages and tasks onto a project, after any stages it already has. Since part 3 (2026-11-07) the
+ *  template's inspections land as gates on their stage, in the county's words (lib/projectGates; the first FINAL is
+ *  the project's final inspection when it has none yet), and its selections as rows with their lead time
+ *  (lib/projectSelections) — every door a template comes through (the card, the Operator, the automatic project). */
 export async function stagesFromTemplate(projectId: string, stages: readonly TemplateStage[], tx: Tx | typeof db = db): Promise<number> {
   const top = await tx.projectStage.aggregate({ where: { projectId }, _max: { position: true } });
   let position = (top._max.position ?? -1) + 1;
+  const extras = stages.some((st) => st.inspections?.length || st.selections?.length);
+  const org = extras ? await tx.project.findUnique({ where: { id: projectId }, select: { organizationId: true } }) : null;
+  let hasFinal = extras ? (await tx.projectInspection.count({ where: { projectId, isFinal: true } })) > 0 : true;
+  let selPos = extras ? ((await tx.projectSelection.aggregate({ where: { projectId }, _max: { position: true } }))._max.position ?? -1) + 1 : 0;
   for (const st of stages) {
     const row = await tx.projectStage.create({
       data: { projectId, name: st.name.slice(0, 120), position: position++, weight: st.share > 0 ? st.share : 1 },
@@ -63,8 +71,30 @@ export async function stagesFromTemplate(projectId: string, stages: readonly Tem
         data: st.tasks.map((task, i) => ({ projectId, stageId: row.id, title: task.title.slice(0, 200), position: i, photoNeeded: Boolean(task.photoNeeded) })),
       });
     }
+    if (org && st.inspections?.length) {
+      await tx.projectInspection.createMany({
+        data: st.inspections.map((i) => {
+          const isFinal = i.kind === "FINAL" && !hasFinal;
+          if (isFinal) hasFinal = true;
+          return { organizationId: org.organizationId, projectId, stageId: row.id, name: INSPECTION_NAME[i.kind], kind: i.kind, gate: i.gate !== false, isFinal };
+        }),
+      });
+    }
+    if (org && st.selections?.length) {
+      await tx.projectSelection.createMany({
+        data: st.selections.map((x) => ({ organizationId: org.organizationId, projectId, stageId: row.id, name: x.name.slice(0, 120), leadDays: Math.max(0, Math.round(x.leadDays)), position: selPos++ })),
+      });
+    }
   }
   return stages.length;
+}
+
+/** The gating inspections still holding a stage (lib/projectGates), as the sentence a refused Done gets — null when
+ *  nothing holds it. */
+export async function stageHeldBy(stageId: string, stageName: string): Promise<string | null> {
+  const rows = await db.projectInspection.findMany({ where: { stageId }, select: { name: true, result: true, date: true, gate: true } });
+  const holding = gateHolds(rows.map((r) => ({ ...r, date: r.date ? r.date.toISOString().slice(0, 10) : null })));
+  return holding.length ? gateWords(holding, stageName) : null;
 }
 
 /** A template's stages onto a project (2026-11-07): refused across kinds (a kitchen onto a new build); an occupied
@@ -304,6 +334,11 @@ async function makeProject(p: SoldProposal, ctx: { actorId: string | null; orgTr
 export async function markStage(organizationId: string, stageId: string, status: "PLANNED" | "ACTIVE" | "DONE", actorId: string | null): Promise<{ projectId: string; projectName: string; name: string; changed: boolean }> {
   const s = await db.projectStage.findFirst({ where: { id: stageId, project: { organizationId } }, select: { id: true, name: true, status: true, projectId: true, project: { select: { name: true, clientId: true } } } });
   if (!s) throw new Error("Stage not found");
+  // The gate (part 3, 2026-11-07): a stage with an inspection that has not passed cannot be marked done.
+  if (status === "DONE") {
+    const held = await stageHeldBy(s.id, s.name);
+    if (held) throw new Error(held);
+  }
   const now = new Date();
   await db.projectStage.update({ where: { id: s.id }, data: { status, doneAt: status === "DONE" ? now : null, doneById: status === "DONE" ? actorId : null } });
   if (status === "DONE") await db.projectTask.updateMany({ where: { stageId: s.id, doneAt: null }, data: { doneAt: now, doneById: actorId } });
@@ -321,24 +356,32 @@ export async function markStage(organizationId: string, stageId: string, status:
   return { projectId: s.projectId, projectName: s.project.name, name: s.name, changed: status !== s.status };
 }
 
-/** Tick or untick a task. The last tick of a stage marks it done; an untick on a done stage reopens it; the first tick starts a planned one. */
-export async function markTask(organizationId: string, taskId: string, done: boolean, actorId: string | null): Promise<{ projectId: string; projectName: string; title: string; stageDone: boolean }> {
-  const t = await db.projectTask.findFirst({ where: { id: taskId, project: { organizationId } }, select: { id: true, title: true, projectId: true, stageId: true, stage: { select: { status: true } }, project: { select: { name: true } } } });
+/** Tick or untick a task. The last tick of a stage marks it done — unless a gating inspection still holds the stage
+ *  (part 3): then it stays in progress and `held` says what must pass; an untick on a done stage reopens it; the
+ *  first tick starts a planned one. */
+export async function markTask(organizationId: string, taskId: string, done: boolean, actorId: string | null): Promise<{ projectId: string; projectName: string; title: string; stageDone: boolean; held: string | null }> {
+  const t = await db.projectTask.findFirst({ where: { id: taskId, project: { organizationId } }, select: { id: true, title: true, projectId: true, stageId: true, stage: { select: { status: true, name: true } }, project: { select: { name: true } } } });
   if (!t) throw new Error("Task not found");
   const now = new Date();
   await db.projectTask.update({ where: { id: t.id }, data: { doneAt: done ? now : null, doneById: done ? actorId : null } });
   const open = await db.projectTask.count({ where: { stageId: t.stageId, doneAt: null } });
   let stageDone = false;
+  let held: string | null = null;
   if (done && open === 0 && t.stage.status !== "DONE") {
-    await db.projectStage.update({ where: { id: t.stageId }, data: { status: "DONE", doneAt: now, doneById: actorId } });
-    stageDone = true;
+    held = await stageHeldBy(t.stageId, t.stage.name);
+    if (held) {
+      if (t.stage.status === "PLANNED") await db.projectStage.update({ where: { id: t.stageId }, data: { status: "ACTIVE" } });
+    } else {
+      await db.projectStage.update({ where: { id: t.stageId }, data: { status: "DONE", doneAt: now, doneById: actorId } });
+      stageDone = true;
+    }
   } else if (!done && t.stage.status === "DONE") {
     await db.projectStage.update({ where: { id: t.stageId }, data: { status: "ACTIVE", doneAt: null, doneById: null } });
   } else if (done && t.stage.status === "PLANNED") {
     await db.projectStage.update({ where: { id: t.stageId }, data: { status: "ACTIVE" } });
   }
   await db.project.updateMany({ where: { id: t.projectId, stagesDraftedAt: { not: null } }, data: { stagesDraftedAt: null } });
-  return { projectId: t.projectId, projectName: t.project.name, title: t.title, stageDone };
+  return { projectId: t.projectId, projectName: t.project.name, title: t.title, stageDone, held };
 }
 
 /**
@@ -374,15 +417,20 @@ export type StageRow = {
   doneAt: string | null;
   weight: number;
   tasks: Array<{ id: string; title: string; position: number; photoNeeded: boolean; done: boolean; doneAt: string | null }>;
+  /** The inspections that gate the stage (part 3): it cannot be marked done until each has PASSED. */
+  gates?: Array<{ id: string; name: string; result: string; date: string | null }>;
 };
 
 /** A project's stages with their tasks, in order, and what they add up to. */
 export async function stagesOf(projectId: string): Promise<{ stages: StageRow[]; done: number | null }> {
-  const rows = await db.projectStage.findMany({
-    where: { projectId },
-    orderBy: { position: "asc" },
-    include: { tasks: { orderBy: { position: "asc" }, select: { id: true, title: true, position: true, photoNeeded: true, doneAt: true } } },
-  });
+  const [rows, gates] = await Promise.all([
+    db.projectStage.findMany({
+      where: { projectId },
+      orderBy: { position: "asc" },
+      include: { tasks: { orderBy: { position: "asc" }, select: { id: true, title: true, position: true, photoNeeded: true, doneAt: true } } },
+    }),
+    db.projectInspection.findMany({ where: { projectId, gate: true, stageId: { not: null } }, orderBy: [{ date: "asc" }, { createdAt: "asc" }], select: { id: true, name: true, result: true, date: true, stageId: true } }),
+  ]);
   const stages: StageRow[] = rows.map((s) => ({
     id: s.id,
     name: s.name,
@@ -393,6 +441,7 @@ export async function stagesOf(projectId: string): Promise<{ stages: StageRow[];
     doneAt: s.doneAt ? s.doneAt.toISOString() : null,
     weight: s.weight,
     tasks: s.tasks.map((t) => ({ id: t.id, title: t.title, position: t.position, photoNeeded: t.photoNeeded, done: Boolean(t.doneAt), doneAt: t.doneAt ? t.doneAt.toISOString() : null })),
+    gates: gates.filter((g) => g.stageId === s.id).map((g) => ({ id: g.id, name: g.name, result: g.result, date: g.date ? g.date.toISOString().slice(0, 10) : null })),
   }));
   return { stages, done: percentDone(stages) };
 }

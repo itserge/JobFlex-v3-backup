@@ -1495,6 +1495,11 @@
 .bp :global(.content .pj-flag--quote-overdue) { border-color: var(--warning); color: var(--warning-dark); background: var(--warning-soft); }
 .bp :global(.content .pj-flag--quote-in), .bp :global(.content .pj-flag--invoice-in) { border-color: var(--blueprint); color: var(--blueprint); background: var(--blueprint-tint, transparent); }
 .bp :global(.content .pj-flag--late-delivery) { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+/* selections (2026-11-07): a choice past its day reads as a late order does; one due in the next days as a warning;
+   the New build chip (part 1) is quiet blueprint */
+.bp :global(.content .pj-flag--selection-late) { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+.bp :global(.content .pj-flag--selection-due) { border-color: var(--warning); color: var(--warning-dark); background: var(--warning-soft); }
+.bp :global(.content .pj-flag--kind) { border-color: var(--sky); color: var(--blueprint); background: rgba(74, 158, 255, 0.13); }
 .bp :global(.content .pj-flag--problem) { border-color: var(--danger); color: #fff; background: var(--danger); }
 /* the timeline's and the finish line's flags (2026-11-06): an inspection due reads as a warning; punch items open
    and the finish line's next step are quiet */

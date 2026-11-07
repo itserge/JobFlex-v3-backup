@@ -513,6 +513,39 @@ export const CATALOG: Catalog = {
     "scheduled": false,
     "version": 1
   },
+  "selections": {
+    "label": "Selections",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "choose_selection": {
+    "label": "Selection chosen",
+    "group": "projects",
+    "effect": "record",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "add_selection": {
+    "label": "Add a selection",
+    "group": "projects",
+    "effect": "record",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
   "where_is": {
     "label": "Where's the order",
     "group": "projects",
@@ -599,7 +632,7 @@ export const CATALOG: Catalog = {
     "steps": null,
     "pin": false,
     "scheduled": false,
-    "version": 1
+    "version": 2
   },
   "inspection_result": {
     "label": "Inspection result",

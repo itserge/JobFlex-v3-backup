@@ -40,6 +40,8 @@ const inspectionInput = z.object({
   readyNote: z.string().max(1000).nullable().optional(),
   stageId: z.string().min(1).nullable().optional(),
   isFinal: z.boolean().optional(),
+  kind: z.string().max(40).nullable().optional(),
+  gate: z.boolean().nullable().optional(),
 });
 
 export async function addProjectInspection(projectId: string, raw: unknown): Promise<{ id: string }> {
