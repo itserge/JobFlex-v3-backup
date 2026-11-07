@@ -23,6 +23,7 @@ import { getFinancialsRollup, getMonthlyRollup } from "@/actions/financials";
 import { contractSchedule } from "@/lib/contractTotal";
 import { fromMinor, resolveSchedule } from "@/lib/paymentSchedule";
 import { projectMoney } from "@/lib/projectMoney";
+import { drawTotals } from "@/lib/projectDraws/server";
 import type {
   ChangeOrder,
   Expense,
@@ -217,7 +218,7 @@ async function projectRows(organizationId: string): Promise<FinancialsProject[]>
     take: 30,
     select: { id: true, name: true, status: true, client: { select: { name: true } } },
   });
-  const money = await projectMoney(organizationId, rows.map((r) => r.id));
+  const [money, draws] = await Promise.all([projectMoney(organizationId, rows.map((r) => r.id)), drawTotals(organizationId, rows.map((r) => r.id))]);
   return rows.flatMap((r) => {
     const m = money.get(r.id);
     if (!m) return [];
@@ -237,6 +238,7 @@ async function projectRows(organizationId: string): Promise<FinancialsProject[]>
         uncovered: m.uncovered,
         collected: m.collected,
         owed: m.owed,
+        draws: draws.get(r.id) ?? null,
       },
     ];
   });

@@ -575,6 +575,19 @@ Timeline draws a side lane's stages under a mono caps label row ("Site lane");
 the shift sheet says "Everything that depends on it moves" when the stages
 carry dependencies. The Finish line's three new-build steps take the same row
 grammar as the seven, with a single Done button.
+Draws (2026-11-07, the plan "Projects: Remodel and New construction", part
+6): a lender's schedule is a `.prop` frame at the top of the Payments card on a
+new build with a lender — the ruled prop head "Draws — the lender's schedule"
+with the funded · requested · held figures in mono at the right, then one
+`.stage` row per draw in the proposals' own grid: "3. Dry-in" with the phase it
+follows under it in mono ("after Framing and dry-in" / "Foundation closed"),
+the dollars right-aligned, the state in mono coloured as the stages are (funded
+emerald, requested amber, ready to request accent), and the small buttons
+Request (grey with the reason as its title until the draw is ready), Mark
+funded, Edit, Undo, and "The bundle" to unfold the paragraph the lender got.
+The three sheets (lay out the draws, a draw, funded) are BlueprintSheets. The
+Financials Projects table gains a sixth column, Draws (funded, with requested
+or the count under it; "—" and "no lender" on a remodel).
 
 Projects hub, stages (2026-11-05): the Stages card leads the project page on
 desk and handheld, above the proposals — a remodel is read by where it stands.

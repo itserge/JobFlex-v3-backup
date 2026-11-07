@@ -315,4 +315,6 @@ export type FinancialsProject = {
   uncovered: number;
   collected: number;
   owed: number;
+  /** A new build's lender draws (part 6): what is funded and requested; null on a project with none. */
+  draws: { funded: number; requested: number; count: number } | null;
 };

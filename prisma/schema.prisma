@@ -2364,6 +2364,7 @@ model Project {
   subQuotes    ProjectSubQuote[]
   selections   ProjectSelection[]
   phases       ProjectPhase[]
+  draws        ProjectDraw[]
 
   @@unique([organizationId, number])
   @@index([organizationId])
@@ -2438,8 +2439,42 @@ model ProjectPhase {
 
   project Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
   stages  ProjectStage[]
+  draws   ProjectDraw[]
 
   @@index([projectId, position])
+}
+
+// DRAWS (2026-11-07, the plan "Projects: Remodel and New construction", part 6): a lender's draw on a new build —
+// its number and name, the phase whose close releases it (by key, and the row when it exists), its percent of the
+// loan and its dollars, PLANNED → REQUESTED → FUNDED with the days and what was funded, the retainage held back until
+// the final, and the bundle sent with the request (the inspections passed, the photos, % done, what was spent) as
+// JSON (lib/projectDraws). A remodel has none.
+model ProjectDraw {
+  id             String    @id @default(cuid())
+  organizationId String
+  projectId      String
+  phaseId        String?
+  afterPhase     String?
+  number         Int       @default(1)
+  name           String
+  pct            Float     @default(0)
+  amount         Float     @default(0)
+  // PLANNED | REQUESTED | FUNDED
+  status         String    @default("PLANNED")
+  retainagePct   Float     @default(10)
+  requestedAt    DateTime?
+  fundedAt       DateTime?
+  fundedAmount   Float?
+  snapshotJson   String?
+  note           String?
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  project Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  phase   ProjectPhase? @relation(fields: [phaseId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, number])
 }
 
 // A TASK INSIDE A STAGE — "Set joists, east side", ticked on the desk or the crew's phone. `photoNeeded`: the

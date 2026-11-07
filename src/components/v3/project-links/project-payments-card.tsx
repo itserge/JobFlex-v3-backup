@@ -16,7 +16,9 @@ import { addPaymentRequest } from "@/actions/proposals";
 import { notifyPaymentReminder, sendInstallmentInvoice } from "@/actions/notify";
 import { markInstallmentPaid, recordRemainingPayment } from "@/actions/installments";
 import { BlueprintSheet } from "@/components/ui/BlueprintSheet";
-import type { PdPayments, PdPayStage } from "@/components/v3/project-detail-blueprint/project-detail-data";
+import type { PdDraws, PdPayments, PdPayStage } from "@/components/v3/project-detail-blueprint/project-detail-data";
+import { fundProjectDraw, layoutProjectDraws, requestProjectDraw, resetProjectDraw, setProjectDraw } from "@/actions/projectDraws";
+import { drawWords } from "@/lib/projectDraws/shared";
 import s from "./project-hub.module.css";
 
 const exact = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: n % 1 === 0 ? 0 : 2, maximumFractionDigits: 2 });
@@ -55,12 +57,32 @@ const METHODS: Array<[string, string]> = [
 
 type Paying = { proposalId: string; title: string; stage: PdPayStage };
 
-export function ProjectPaymentsCard({ payments, canManage }: { payments: PdPayments; canManage: boolean }) {
+export function ProjectPaymentsCard({ payments, canManage, draws, projectId }: { payments: PdPayments; canManage: boolean; draws?: PdDraws | null; projectId?: string }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Draws (part 6, 2026-11-07): a lender's schedule on a new build, drawn on the Payments card beside the proposals.
+  const [drawLayout, setDrawLayout] = useState<string | null>(null);
+  const [drawEdit, setDrawEdit] = useState<{ id: string; number: number; name: string; amount: string; retainagePct: string } | null>(null);
+  const [funding, setFunding] = useState<{ id: string; number: number; name: string; amount: string } | null>(null);
+  const [openSnapshot, setOpenSnapshot] = useState<string | null>(null);
+  const showDraws = Boolean(draws && projectId && (draws.lender || draws.draws.length));
+  async function runDraw(key: string, fn: () => Promise<string | null | void>) {
+    setBusy(key);
+    setNote(null);
+    setError(null);
+    try {
+      const words = await fn();
+      if (typeof words === "string") setNote(words);
+      startTransition(() => router.refresh());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "That didn't go through.");
+    } finally {
+      setBusy(null);
+    }
+  }
 
   // Request a payment
   const [asking, setAsking] = useState(false);
@@ -227,6 +249,89 @@ export function ProjectPaymentsCard({ payments, canManage }: { payments: PdPayme
         {note ? <div className={s.note} role="status">{note}</div> : null}
         {error ? <div className={s.err} role="alert">{error}</div> : null}
 
+        {showDraws && draws && projectId ? (
+          <div className={s.prop} data-project-draws>
+            <div className={s.propHead}>
+              <span className={s.propName}>Draws — the lender&apos;s schedule</span>
+              <span className={s.propMeta} data-draws-head>
+                {draws.draws.length ? `${exact(draws.funded)} funded of ${exact(draws.total)}${draws.requested ? ` · ${exact(draws.requested)} requested` : ""}${draws.held ? ` · ${exact(draws.held)} held` : ""}` : draws.basis.from === "none" ? "nothing to draw on yet" : `drawn on the ${draws.basis.from === "contract" ? "contract" : "cost budget"}, ${exact(draws.basis.amount)}`}
+              </span>
+            </div>
+            {draws.draws.map((d) => {
+              const words = drawWords(d);
+              const tone = d.state === "FUNDED" ? s.paid : d.state === "REQUESTED" ? s.sent : d.ready ? s.next : "";
+              return (
+                <div key={d.id} className={`${s.stage} ${d.state === "FUNDED" ? s.isPaid : ""}`} data-draw data-draw-number={d.number} data-draw-state={d.state} data-draw-ready={d.ready ? "1" : "0"}>
+                  <span className={s.stageName}>
+                    {d.number}. {d.name}
+                    {d.phase ? <span className={s.stageState} style={{ display: "block" }}>{d.phase.closed ? `${d.phase.name} closed` : `after ${d.phase.name}`}</span> : null}
+                    {d.snapshot && openSnapshot === d.id ? (
+                      <span className={s.stageState} style={{ display: "block", whiteSpace: "normal" }} data-draw-snapshot>
+                        {d.snapshot.words}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className={s.stageAmt}>{exact(d.amount)}</span>
+                  <span className={`${s.stageState} ${tone}`} data-draw-words>
+                    {words.charAt(0).toUpperCase() + words.slice(1)}
+                    {d.state === "FUNDED" && d.fundedAmount != null && Math.round(d.fundedAmount) !== Math.round(d.payout.released) ? ` · ${exact(d.fundedAmount)} landed` : ""}
+                  </span>
+                  <span className={s.stageActs}>
+                    {d.snapshot ? (
+                      <button type="button" className={s.btnSm} onClick={() => setOpenSnapshot((cur) => (cur === d.id ? null : d.id))} data-draw-bundle>
+                        {openSnapshot === d.id ? "Hide" : "The bundle"}
+                      </button>
+                    ) : null}
+                    {canManage && d.state === "PLANNED" ? (
+                      <button type="button" className={s.btnSm} disabled={busy !== null || !d.ready} title={d.ready ? undefined : words} onClick={() => void runDraw(`req:${d.id}`, async () => `Draw ${d.number} requested. The lender gets: ${(await requestProjectDraw(projectId, d.id)).words}`)} data-draw-request>
+                        Request
+                      </button>
+                    ) : null}
+                    {canManage && d.state !== "FUNDED" ? (
+                      <button type="button" className={s.btnSm} disabled={busy !== null} onClick={() => setFunding({ id: d.id, number: d.number, name: d.name, amount: String(Math.round(d.payout.released)) })} data-draw-fund>
+                        Mark funded
+                      </button>
+                    ) : null}
+                    {canManage && d.state !== "FUNDED" ? (
+                      <button type="button" className={s.btnSm} disabled={busy !== null} onClick={() => setDrawEdit({ id: d.id, number: d.number, name: d.name, amount: String(Math.round(d.amount)), retainagePct: String(d.retainagePct) })} aria-label={`Edit draw ${d.number}`} data-draw-edit>
+                        Edit
+                      </button>
+                    ) : null}
+                    {canManage && d.state !== "PLANNED" ? (
+                      <button type="button" className={s.btnSm} disabled={busy !== null} onClick={() => void runDraw(`reset:${d.id}`, async () => { await resetProjectDraw(projectId, d.id); return `Draw ${d.number} is planned again.`; })} data-draw-reset>
+                        Undo
+                      </button>
+                    ) : null}
+                  </span>
+                </div>
+              );
+            })}
+            {!draws.draws.length ? (
+              <div className={s.stage} style={{ gridTemplateColumns: "minmax(0,1fr) auto" }}>
+                <span className={s.stageState} style={{ whiteSpace: "normal" }}>
+                  A lender pays in draws: the usual five — soft costs and the land after the permits, the foundation, the dry-in, the drywall, the final — each released when its phase is closed and its inspections have passed, with a retainage held back until the end.
+                </span>
+                <span className={s.stageActs}>
+                  {canManage ? (
+                    <button type="button" className={s.btnSm} disabled={busy !== null || draws.basis.from === "none"} onClick={() => setDrawLayout(draws.basis.amount ? String(Math.round(draws.basis.amount)) : "")} data-draws-layout>
+                      Lay out the draws
+                    </button>
+                  ) : null}
+                </span>
+              </div>
+            ) : canManage ? (
+              <div className={s.stage} style={{ gridTemplateColumns: "minmax(0,1fr) auto" }}>
+                <span className={s.stageState}>{draws.next ? `Next: draw ${draws.next.number}, ${draws.next.name} — ${drawWords(draws.next)}` : "Every draw is funded."}</span>
+                <span className={s.stageActs}>
+                  <button type="button" className={s.btnSm} disabled={busy !== null} onClick={() => setDrawLayout(String(Math.round(draws.total || draws.basis.amount)))} data-draws-layout>
+                    Lay them out again
+                  </button>
+                </span>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
         {payments.map((p) => (
           <div className={s.prop} key={p.proposalId}>
             <div className={s.propHead}>
@@ -384,6 +489,95 @@ export function ProjectPaymentsCard({ payments, canManage }: { payments: PdPayme
           {payErr ? <div className="bps-err bps-fld--wide">{payErr}</div> : null}
         </div>
       </BlueprintSheet>
+
+      {/* THE DRAWS — laid out on the loan's total; one draw's figures; what landed. */}
+      {projectId ? (
+        <>
+          <BlueprintSheet
+            open={drawLayout !== null}
+            onClose={() => setDrawLayout(null)}
+            title="Lay out the draws"
+            description="The usual five draws on this total — 10% soft costs and the land after the permits, 15% foundation, 30% dry-in, 25% drywall, 20% final — with a 10% retainage held back until the final. Edit any draw after."
+            footer={
+              <>
+                <button type="button" className="bps-btn bps-btn--ghost" onClick={() => setDrawLayout(null)}>
+                  Cancel
+                </button>
+                <button type="button" className="bps-btn bps-btn--primary" disabled={busy !== null || !drawLayout || !money(drawLayout)} onClick={() => { const total = money(drawLayout ?? ""); setDrawLayout(null); void runDraw("layout", async () => { const r = await layoutProjectDraws(projectId, { total }); return `${r.draws.length} draws laid out on ${exact(r.total)}: ${r.draws.map((d) => `${d.name} ${exact(d.amount)}`).join(", ")}.`; }); }} data-draws-layout-go>
+                  Lay them out
+                </button>
+              </>
+            }
+          >
+            {drawLayout !== null ? (
+              <div className="bps-form" data-draws-layout-sheet>
+                <label className="bps-fld bps-fld--wide">
+                  <span className="bps-lbl">The loan&apos;s total ($)</span>
+                  <input className="bps-in" inputMode="numeric" value={drawLayout} onChange={(e) => setDrawLayout(e.target.value)} placeholder="650000" autoFocus data-draws-layout-total />
+                </label>
+                <p className="bps-hint bps-fld--wide">Requested and funded draws stay as they are; the planned ones are replaced.</p>
+              </div>
+            ) : null}
+          </BlueprintSheet>
+          <BlueprintSheet
+            open={drawEdit !== null}
+            onClose={() => setDrawEdit(null)}
+            title={drawEdit ? `Draw ${drawEdit.number}` : "Draw"}
+            footer={
+              <>
+                <button type="button" className="bps-btn bps-btn--ghost" onClick={() => setDrawEdit(null)}>
+                  Cancel
+                </button>
+                <button type="button" className="bps-btn bps-btn--primary" disabled={busy !== null || !drawEdit || !drawEdit.name.trim()} onClick={() => { if (!drawEdit) return; const d = drawEdit; setDrawEdit(null); void runDraw(`edit:${d.id}`, async () => { await setProjectDraw(projectId, d.id, { name: d.name.trim(), amount: money(d.amount), retainagePct: Math.max(0, Math.min(50, money(d.retainagePct))) }); return null; }); }} data-draw-save>
+                  Save
+                </button>
+              </>
+            }
+          >
+            {drawEdit ? (
+              <div className="bps-form" data-draw-sheet>
+                <label className="bps-fld bps-fld--wide">
+                  <span className="bps-lbl">Name</span>
+                  <input className="bps-in" value={drawEdit.name} onChange={(e) => setDrawEdit({ ...drawEdit, name: e.target.value })} maxLength={80} data-draw-name />
+                </label>
+                <label className="bps-fld">
+                  <span className="bps-lbl">Amount ($)</span>
+                  <input className="bps-in" inputMode="numeric" value={drawEdit.amount} onChange={(e) => setDrawEdit({ ...drawEdit, amount: e.target.value })} data-draw-amount />
+                </label>
+                <label className="bps-fld">
+                  <span className="bps-lbl">Retainage held (%)</span>
+                  <input className="bps-in" inputMode="decimal" value={drawEdit.retainagePct} onChange={(e) => setDrawEdit({ ...drawEdit, retainagePct: e.target.value })} data-draw-retainage />
+                </label>
+              </div>
+            ) : null}
+          </BlueprintSheet>
+          <BlueprintSheet
+            open={funding !== null}
+            onClose={() => setFunding(null)}
+            title={funding ? `Draw ${funding.number}, ${funding.name} — funded` : "Funded"}
+            description="What the lender released — the draw less the retainage held back, unless the bank sent another figure."
+            footer={
+              <>
+                <button type="button" className="bps-btn bps-btn--ghost" onClick={() => setFunding(null)}>
+                  Cancel
+                </button>
+                <button type="button" className="bps-btn bps-btn--primary" disabled={busy !== null || !funding} onClick={() => { if (!funding) return; const d = funding; setFunding(null); void runDraw(`fund:${d.id}`, async () => { const r = await fundProjectDraw(projectId, d.id, money(d.amount) || null); return `Draw ${d.number} funded — ${exact(r.funded)}.`; }); }} data-draw-fund-save>
+                  Mark funded
+                </button>
+              </>
+            }
+          >
+            {funding ? (
+              <div className="bps-form" data-draw-fund-sheet>
+                <label className="bps-fld bps-fld--wide">
+                  <span className="bps-lbl">Amount that landed ($)</span>
+                  <input className="bps-in" inputMode="numeric" value={funding.amount} onChange={(e) => setFunding({ ...funding, amount: e.target.value })} autoFocus data-draw-fund-amount />
+                </label>
+              </div>
+            ) : null}
+          </BlueprintSheet>
+        </>
+      ) : null}
     </div>
   );
 }

@@ -24,6 +24,7 @@
 //   "<inspection> on <project> passed|failed" → inspection_result (2026-11-07, part 3)
 //   "start a new build for <Name>, call it <X> — septic, a well, a basement, two stories, the bank…" → start_project + the lot's answers;
 //   "what's the next gate on <project>" → next_gate (2026-11-07, part 4)
+//   "what's funded on <project>" → draws; "request draw three on <project>" → request_draw; "the bank funded draw two on <project>" → fund_draw (2026-11-07, part 6)
 //   Smart Proposal's own run (response_format json_object, no tools): a small estimate in the old draft shape.
 //   Speech (POST /v1/audio/speech, the Talk mode's voice): 0.3 s of silence as an MP3, so a page plays it and goes on.
 //   The Budget card's read (response_format json_schema "budget_read", 2026-11-07): words → the rules' own rows
@@ -323,6 +324,31 @@ function answer(body: { messages: Msg[] }) {
     return call("start_project", { name, kind, client, template, occupied: /lives? there|living there|occupied/i.test(user) ? true : null, ...lot });
   }
   if (done.has("start_project")) return reply("Planned — say yes and I'll start it.");
+  // Draws (part 6): "what's funded on X" → draws; "request draw three on X" → request_draw; "the bank funded draw two on X" → fund_draw.
+  const fundedQ = /\b(?:what(?:'s| is) funded|which draw is next|how much (?:has the bank|is) (?:released|held))\b.*?\bon (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  if (fundedQ) {
+    const r = done.get("draws") as { funded?: string; held?: string; next?: string; note?: string } | undefined;
+    if (!r) {
+      const pid = projectFound(fundedQ[1]);
+      if (!pid) return call("find", { query: fundedQ[1].trim(), kind: "project" });
+      return call("draws", { projectId: pid });
+    }
+    return reply(r.note ?? `${r.funded} funded${r.held && r.held !== "$0" ? `, ${r.held} held` : ""}. Next: ${r.next}`);
+  }
+  const reqDraw = /\brequest (?:the )?(?:draw )?(\w+)(?: draw)? on (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  if (reqDraw && !done.has("request_draw")) {
+    const pid = projectFound(reqDraw[2]);
+    if (!pid) return call("find", { query: reqDraw[2].trim(), kind: "project" });
+    return call("request_draw", { projectId: pid, draw: reqDraw[1] });
+  }
+  if (done.has("request_draw")) return reply("Planned — say yes to request it.");
+  const fundQ = /\b(?:the bank|the lender) funded (?:draw )?(\w+)(?:,? \$?([\d,]+))? on (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  if (fundQ && !done.has("fund_draw")) {
+    const pid = projectFound(fundQ[3]);
+    if (!pid) return call("find", { query: fundQ[3].trim(), kind: "project" });
+    return call("fund_draw", { projectId: pid, draw: fundQ[1], amount: fundQ[2] ? Number(fundQ[2].replace(/,/g, "")) : null });
+  }
+  if (done.has("fund_draw")) return reply("Planned — say yes to record it.");
   // "What's the next gate on the Drive house?" → next_gate (part 4).
   const gateQ = /\b(?:what(?:'s| is) the next gate|where are we|which phase)\b.*?\bon (?:the )?(.+?)(?:\?|$)/i.exec(user);
   if (gateQ) {
