@@ -511,7 +511,7 @@ export const CATALOG: Catalog = {
     "steps": null,
     "pin": false,
     "scheduled": false,
-    "version": 1
+    "version": 2
   },
   "selections": {
     "label": "Selections",
@@ -540,6 +540,17 @@ export const CATALOG: Catalog = {
     "group": "projects",
     "effect": "record",
     "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "next_gate": {
+    "label": "Next gate",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
     "build": false,
     "steps": null,
     "pin": false,

@@ -9,10 +9,25 @@
 //   6. Warranty         — the warranty's last day, set (12 months is the usual).
 //   7. Finished         — the project is COMPLETED, then archived off the list.
 //
-// finishSteps reads the state the server collected (FinishRead) into the seven steps, each done, next or still
+// finishSteps reads the state the server collected (FinishRead) into the steps (seven; ten on a new build, part 4:
+// the certificate of occupancy, the as-builts and manuals, the walkthrough, before the sign-off), each done, next or still
 // to do, with the words the card and the Operator show. The list's flags: punchFlags, finishFlags.
 
-export type FinishStepKey = "punch" | "inspection" | "signoff" | "payment" | "review" | "warranty" | "finish";
+export type FinishStepKey = "punch" | "inspection" | "co" | "handover" | "walkthrough" | "signoff" | "payment" | "review" | "warranty" | "finish";
+
+/** A new build's own steps (part 4, 2026-11-07), read off the Final stage's tasks: the certificate of occupancy with
+ *  the utility releases, the as-builts and manuals handed over, the walkthrough before the sign-off. Null when the
+ *  project has no such task. */
+export type BuildFacts = { co: { taskId: string; done: boolean } | null; handover: { taskId: string; done: boolean } | null; walkthrough: { taskId: string; done: boolean } | null };
+
+/** The new-build facts from a project's tasks, by their words. */
+export function buildFactsFrom(tasks: ReadonlyArray<{ id: string; title: string; done: boolean }>): BuildFacts {
+  const find = (re: RegExp) => {
+    const t = tasks.find((x) => re.test(x.title));
+    return t ? { taskId: t.id, done: t.done } : null;
+  };
+  return { co: find(/certificate of occupancy|\bC\.?O\.?\b/i), handover: find(/as-?builts|manuals/i), walkthrough: find(/walk-?through/i) };
+}
 
 export type FinishRead = {
   status: string;
@@ -30,6 +45,9 @@ export type FinishRead = {
   clientEmail: string | null;
   warrantyUntil: string | null;
   finishedAt: string | null;
+  /** REMODEL or NEW_BUILD (part 4): a new build has three more steps. Absent on older readers = a remodel. */
+  kind?: string;
+  build?: BuildFacts | null;
 };
 
 export type FinishStep = { key: FinishStepKey; label: string; state: "done" | "next" | "todo"; detail: string };
@@ -54,6 +72,14 @@ export function finishSteps(r: FinishRead): FinishStep[] {
     done: fi?.result === "PASSED",
     detail: !fi ? "Schedule it" : fi.result === "PASSED" ? `Passed ${dayLabel(fi.resultAt ?? fi.date)}` : fi.result === "FAILED" ? `Failed ${dayLabel(fi.resultAt ?? fi.date)} — schedule the re-inspection` : fi.date ? `${dayLabel(fi.date)}${fi.readyNote ? ` · have ready: ${fi.readyNote}` : ""}` : "No day set yet",
   });
+
+  // A new build (part 4): the certificate of occupancy, the handover, the walkthrough — before the client signs off.
+  if (r.kind === "NEW_BUILD") {
+    const b = r.build ?? { co: null, handover: null, walkthrough: null };
+    steps.push({ key: "co", label: "Certificate of occupancy", done: Boolean(b.co?.done), detail: b.co?.done ? "In hand, with the utility releases" : b.co ? "Utility releases, then the county's certificate" : "Add the task on the Final stage" });
+    steps.push({ key: "handover", label: "As-builts and manuals", done: Boolean(b.handover?.done), detail: b.handover?.done ? "Handed over" : b.handover ? "Plans as built, the manuals and the warranties, in one folder" : "Add the task on the Final stage" });
+    steps.push({ key: "walkthrough", label: "Walkthrough", done: Boolean(b.walkthrough?.done), detail: b.walkthrough?.done ? "Walked with the client" : b.walkthrough ? "Walk the house with the client, room by room, with a photo" : "Add the task on the Final stage" });
+  }
 
   steps.push({
     key: "signoff",

@@ -70,7 +70,7 @@ import {
   type PdJob,
   type PdOpens,
   type PdPayments,
-  type PdBuying, PdSubs, PdSelections,
+  type PdBuying, PdSubs, PdSelections, PdPhases, PdLot,
   type PdField,
   type PdFinish,
   type PdShare,
@@ -103,6 +103,9 @@ import { ProjectStagesCard } from "@/components/v3/project-links/project-stages-
 import { ProjectBuyingCard } from "@/components/v3/project-links/project-buying-card";
 import { ProjectSubsCard } from "@/components/v3/project-links/project-subs-card";
 import { ProjectSelectionsCard } from "@/components/v3/project-links/project-selections-card";
+import { ProjectPhasesStrip } from "@/components/v3/project-links/project-phases-strip";
+import { ProjectLotCard } from "@/components/v3/project-links/project-lot-card";
+import type { BuildAnswers } from "@/lib/projectPhases/shared";
 import { ProjectFieldCard } from "@/components/v3/project-links/project-field-card";
 import { ProjectTimelineCard } from "@/components/v3/project-links/project-timeline-card";
 import { ProjectFinishCard } from "@/components/v3/project-links/project-finish-card";
@@ -315,6 +318,11 @@ export function MobileProjectDetail({
   buying,
   subs,
   selections,
+  phases,
+  lot,
+  lotAddress = null,
+  build = null,
+  buildWords = null,
   field,
   timeline,
   finish,
@@ -337,6 +345,12 @@ export function MobileProjectDetail({
   subs?: PdSubs;
   /** What the client has to choose (2026-11-07). */
   selections?: PdSelections;
+  /** A new build (part 4): the phases, the lot, the client's address, the start questions and their words. */
+  phases?: PdPhases;
+  lot?: PdLot;
+  lotAddress?: string | null;
+  build?: BuildAnswers | null;
+  buildWords?: string | null;
   /** On site: problems, hours, the subs' bills (2026-11-05). */
   field?: PdField;
   /** The stages across the weeks (2026-11-06). */
@@ -630,6 +644,18 @@ export function MobileProjectDetail({
               </div>
             </div>
           </div>
+
+          {/* ============ A NEW BUILD: THE PHASES AND THE LOT (2026-11-07, part 4) ============ */}
+          {phases && phases.phases.length ? (
+            <div className="mpd-budget">
+              <ProjectPhasesStrip phases={phases} answers={buildWords} />
+            </div>
+          ) : null}
+          {kindOf(project.kind) === "NEW_BUILD" && lot && timeline ? (
+            <div className="mpd-budget">
+              <ProjectLotCard projectId={project.id} lot={lot} answers={build} clientAddress={lotAddress} today={timeline.today} canManage={canManage} />
+            </div>
+          ) : null}
 
           {/* ============ STAGES (2026-11-05) ============ */}
           <div className="mpd-budget">

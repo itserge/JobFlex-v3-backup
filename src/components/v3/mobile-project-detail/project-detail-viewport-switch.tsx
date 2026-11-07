@@ -111,6 +111,9 @@ export function ProjectDetailViewportSwitch(props: {
   buying?: PdBuying;
   /** On site: problems, hours, the subs' bills (2026-11-05). */
   field?: PdField;
+  /** The later cards' reads travel through the spread as well (the timeline, the finish line, the client's page, the
+   *  contractors, the selections, a new build's phases and lot — 2026-11); the two pages type them. */
+  [extra: string]: unknown;
 }) {
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   // The handheld half is a lazy chunk, so it inherits the deploy-skew failure

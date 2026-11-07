@@ -12,11 +12,28 @@ import type { Project } from "@/components/v3/projects-blueprint/projects-data";
 import { createProjectAs } from "@/lib/projectCore";
 import { PROJECT_KINDS, parseAnswers, serializeAnswers } from "@/lib/projectKind";
 
+/** A new build's start questions (part 4, lib/projectPhases), each optional — the defaults are the common lot. (Not
+ *  exported: a "use server" file may export only async functions.) */
+const buildAnswersInput = z.object({
+  sewer: z.enum(["SEWER", "SEPTIC"]).optional(),
+  water: z.enum(["WATER", "WELL"]).optional(),
+  foundation: z.enum(["SLAB", "CRAWL", "BASEMENT"]).optional(),
+  stories: z.union([z.literal(1), z.literal(2)]).optional(),
+  garage: z.boolean().optional(),
+  shop: z.boolean().optional(),
+  lender: z.boolean().optional(),
+  power: z.enum(["AT_LOT", "POLE"]).optional(),
+  gas: z.boolean().optional(),
+  fiber: z.boolean().optional(),
+});
+
 const projectInput = z.object({
   name: z.string().min(1),
   // Remodel or New construction (2026-11-07, lib/projectKind); `occupied`: a remodel's client lives there during the work.
   kind: z.enum(PROJECT_KINDS).default("REMODEL"),
   occupied: z.boolean().optional(),
+  // A new build's start questions (part 4): the phases are shaped from them.
+  build: buildAnswersInput.optional(),
   description: z.string().optional().nullable(),
   status: z.enum(["ACTIVE", "ON_HOLD", "COMPLETED", "ARCHIVED"]).default("ACTIVE"),
   startsAt: z.coerce.date().optional().nullable(),

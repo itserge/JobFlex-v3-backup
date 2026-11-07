@@ -269,7 +269,7 @@ const finishLine: ReadTool<{ projectId: string | null; query: string | null }> =
     since: "2026-11-06",
     samples: [{ say: "what's left to finish the Smith kitchen?", args: { projectId: null, query: "Smith kitchen" } }],
   },
-  description: "The seven steps to the end of a project, each done or not, with what is left: the punch list (its open items), the final inspection, the client's sign-off, the final payment (what is owed), the review, the warranty, finished and archived. Give the project id or words from its name. Use for: what's left to finish, is it closed out, did they sign off, what's on the punch list.",
+  description: "The steps to the end of a project (seven; a new build adds the certificate of occupancy, the as-builts and manuals, the walkthrough), each done or not, with what is left: the punch list (its open items), the final inspection, the client's sign-off, the final payment (what is owed), the review, the warranty, finished and archived. Give the project id or words from its name. Use for: what's left to finish, is it closed out, did they sign off, what's on the punch list.",
   params: z.object({ projectId: ID.nullable(), query: z.string().max(80).nullable() }),
   async run({ actor }, args) {
     const r = await projectNamed(actor.organizationId, args);

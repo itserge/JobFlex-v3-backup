@@ -1400,6 +1400,11 @@
 /* segmented status picker — the page's own filter-chip vocabulary, so the
    status a project starts in is picked from the same shapes it is filtered by */
 .bp :global(.content .fseg) { display: flex; flex-wrap: wrap; gap: 6px; }
+/* a new build's start questions (2026-11-07, part 4): two columns of small segments, each with its question over it */
+.bp :global(.content .fseg-grid) { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px 16px; margin-top: 6px; }
+.bp :global(.content .fseg-q) { display: grid; gap: 4px; min-width: 0; }
+.bp :global(.content .fseg-q-ask) { font-size: 11.5px; line-height: 1.3; color: var(--muted); }
+.bp :global(.content .fseg--sm .fseg-btn) { min-height: 30px; padding: 0 9px; font-size: 10px; }
 /* The kind's pictogram on its segment and the one-line hint under it (New project, 2026-11-07). */
 .bp :global(.content .fseg-ico) { width: 16px; height: 16px; flex-shrink: 0; }
 .bp :global(.content .fld-hint) { display: block; margin-top: 6px; font-size: 12px; line-height: 1.4; color: var(--muted); }

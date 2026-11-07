@@ -209,6 +209,22 @@
   .w.w .strip .btnPrimary { margin-left: 0; width: 100%; min-height: 44px; }
 }
 
+/* NEW CONSTRUCTION (2026-11-07, part 4): the phases strip, the lot card's facts, the Timeline's lane label. */
+.w.w .phases { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.w.w .phase { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 2px 8px; align-items: center; flex: 1 1 150px; min-width: 0; padding: 8px 10px; border: 1.5px solid var(--ink-line); border-radius: var(--radius); background: #fff; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.w.w .phase:hover { border-color: var(--ink); }
+.w.w .phaseOn { border-color: var(--ink); box-shadow: 2px 2px 0 var(--ink); background: var(--paper); }
+.w.w .phaseDone { color: var(--ink-muted); }
+.w.w .phaseMark { font-weight: 900; color: var(--emerald); }
+.w.w .phaseOn .phaseMark { color: var(--ink); }
+.w.w .phaseName { font-size: 13px; font-weight: 800; overflow-wrap: anywhere; }
+.w.w .phaseGate { grid-column: 2; font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-muted); overflow-wrap: anywhere; }
+.w.w .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 14px; margin-top: 12px; }
+.w.w .fact { display: grid; gap: 2px; min-width: 0; }
+.w.w .factLbl { font: 700 10px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-muted); }
+.w.w .factVal { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+.w.w .tlLane { font-style: normal; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-muted); }
+
 /* CONTRACTORS (2026-11-07): the quotes by stage and the ask sheet's form, on the hub's own rules. */
 .form { display: grid; gap: 10px; }
 .field { display: grid; gap: 4px; }

@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { numbered } from "@/lib/projectStages/server";
 import { serializeAnswers, type ProjectKind } from "@/lib/projectKind";
+import type { BuildAnswers } from "@/lib/projectPhases/shared";
 
 export type NewProject = {
   name: string;
@@ -21,11 +22,13 @@ export type NewProject = {
   kind: ProjectKind;
   /** A remodel's client lives there during the work. */
   occupied?: boolean;
+  /** A new build's start questions (lib/projectPhases); the phases are shaped from them. */
+  build?: BuildAnswers;
 };
 
 export async function createProjectAs(who: { organizationId: string; actorId: string | null }, data: NewProject): Promise<{ id: string; number: number | null; name: string }> {
   const { organizationId } = who;
-  const answersJson = serializeAnswers(data.kind === "REMODEL" && data.occupied ? { occupied: true } : {});
+  const answersJson = serializeAnswers(data.kind === "REMODEL" ? (data.occupied ? { occupied: true } : {}) : data.build && Object.keys(data.build).length ? { build: data.build } : {});
   // Numbered per company from 1001 (2026-11-05).
   const p = await numbered(organizationId, (number) =>
     db.project.create({

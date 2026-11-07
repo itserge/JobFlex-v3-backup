@@ -72,9 +72,9 @@ export async function planShift(organizationId: string, projectId: string, stage
   const tz = await tzOf(organizationId);
   const today = localDayKey(new Date(), tz);
   const [stages, jobs, inspections] = await Promise.all([
-    db.projectStage.findMany({ where: { projectId }, orderBy: { position: "asc" }, select: { id: true, name: true, position: true, status: true, startsAt: true, endsAt: true } }),
+    db.projectStage.findMany({ where: { projectId }, orderBy: { position: "asc" }, select: { id: true, name: true, position: true, status: true, startsAt: true, endsAt: true, afterId: true, lane: true } }),
     db.job.findMany({ where: { projectId, organizationId }, select: { id: true, title: true, status: true, startsAt: true, endsAt: true, events: { select: { id: true, startsAt: true, endsAt: true } } } }),
-    db.projectInspection.findMany({ where: { projectId }, select: { id: true, name: true, date: true, result: true } }),
+    db.projectInspection.findMany({ where: { projectId }, select: { id: true, name: true, date: true, result: true, stageId: true } }),
   ]);
   return shiftPlan({
     stages: stages.map((s) => ({ ...s, startsAt: isoDay(s.startsAt), endsAt: isoDay(s.endsAt) })),
@@ -121,7 +121,7 @@ export async function shiftRest(organizationId: string, projectId: string, stage
 export async function layoutStages(organizationId: string, projectId: string, from: string, opts: { workDays?: number | null; perWeight?: number | null }, actorId: string | null): Promise<Array<{ id: string; name: string; startsAt: string; endsAt: string }>> {
   const project = await db.project.findFirst({ where: { id: projectId, organizationId }, select: { name: true, clientId: true } });
   if (!project) throw new Error("Project not found");
-  const stages = await db.projectStage.findMany({ where: { projectId }, orderBy: { position: "asc" }, select: { id: true, name: true, position: true, status: true, startsAt: true, endsAt: true, weight: true } });
+  const stages = await db.projectStage.findMany({ where: { projectId }, orderBy: { position: "asc" }, select: { id: true, name: true, position: true, status: true, startsAt: true, endsAt: true, weight: true, afterId: true, lane: true } });
   const plan = layoutPlan(
     stages.map((s) => ({ ...s, startsAt: isoDay(s.startsAt), endsAt: isoDay(s.endsAt) })),
     from,

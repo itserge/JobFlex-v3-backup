@@ -145,16 +145,20 @@ export function shiftInstantWorkDays(d: Date, n: number, tz: string, week: Reado
 
 // ── "shift the rest" ─────────────────────────────────────────────────────────
 
-export type ShiftStage = { id: string; name: string; position: number; status: string; startsAt: string | null; endsAt: string | null };
+/** `afterId` (part 4, 2026-11-07): the stage this one cannot start before; when any stage on the project carries one,
+ *  a slip moves only what depends on the slipped stage, lane by lane, instead of everything after it. */
+export type ShiftStage = { id: string; name: string; position: number; status: string; startsAt: string | null; endsAt: string | null; afterId?: string | null; lane?: string | null };
 export type ShiftJob = { id: string; title: string; status: string; startsAt: Date | null; endsAt: Date | null; events: Array<{ id: string; startsAt: Date; endsAt: Date }> };
-export type ShiftInspection = { id: string; name: string; date: string | null; result: string };
+export type ShiftInspection = { id: string; name: string; date: string | null; result: string; stageId?: string | null };
 
 export type ShiftPlan = {
   /** The stage that slipped. */
   stage: { id: string; name: string; endsAt: string; newEndsAt: string };
   days: number;
-  /** Everything after the stage's last day moves — these stages, whole. */
+  /** Everything after the stage's last day moves — these stages, whole (with dependencies: only what depends on it). */
   stages: Array<{ id: string; name: string; startsAt: string | null; endsAt: string | null; newStartsAt: string | null; newEndsAt: string | null }>;
+  /** True when the project's stages carry dependencies and only the dependents moved (part 4). */
+  byDependency: boolean;
   /** The crew's visits from tomorrow on, past the stage's last day, and the span of each job they belong to. */
   jobs: Array<{ id: string; title: string; newStartsAt: Date | null; newEndsAt: Date | null; events: Array<{ id: string; startsAt: Date; endsAt: Date; newStartsAt: Date; newEndsAt: Date }> }>;
   inspections: Array<{ id: string; name: string; date: string; newDate: string }>;
@@ -175,9 +179,12 @@ export function shiftPlan(input: { stages: ShiftStage[]; jobs: ShiftJob[]; inspe
   if (!cutoff) return { error: `"${stage.name}" has no days yet — set its days first.` };
   const newEnd = addWorkDays(cutoff, days);
 
+  const movedIds = dependentsOf(input.stages, stage.id);
+  const byDependency = movedIds !== null;
   const stages = input.stages
-    .filter((s) => s.position > stage.position && (s.startsAt || s.endsAt))
+    .filter((s) => (byDependency ? movedIds.has(s.id) : s.position > stage.position) && (s.startsAt || s.endsAt))
     .map((s) => ({ id: s.id, name: s.name, startsAt: s.startsAt, endsAt: s.endsAt, newStartsAt: s.startsAt ? addWorkDays(s.startsAt, days) : null, newEndsAt: s.endsAt ? addWorkDays(s.endsAt, days) : null }));
+  const movedStageIds = new Set([stage.id, ...stages.map((s) => s.id)]);
 
   const jobs: ShiftPlan["jobs"] = [];
   for (const j of input.jobs) {
@@ -204,53 +211,95 @@ export function shiftPlan(input: { stages: ShiftStage[]; jobs: ShiftJob[]; inspe
     });
   }
 
+  // With dependencies, only the inspections on the stages that move (and the stage-less ones past the cutoff) move.
   const inspections = input.inspections
-    .filter((i) => i.result === "PENDING" && i.date && i.date > cutoff)
+    .filter((i) => i.result === "PENDING" && i.date && i.date > cutoff && (!byDependency || !i.stageId || movedStageIds.has(i.stageId)))
     .map((i) => ({ id: i.id, name: i.name, date: i.date!, newDate: addWorkDays(i.date!, days) }));
 
   const visits = jobs.reduce((n, j) => n + j.events.length, 0);
   const words = [
     `"${stage.name}" ends ${dayLabel(newEnd)} instead of ${dayLabel(cutoff)}.`,
-    stages.length ? `${stages.length} stage${stages.length === 1 ? "" : "s"} after it move${stages.length === 1 ? "s" : ""} ${workDaysWords(days)}: ${stages.map((s) => `${s.name} → ${[s.newStartsAt, s.newEndsAt].filter(Boolean).map(dayLabel).join("–")}`).join(", ")}.` : "No stage after it has days.",
+    stages.length ? `${stages.length} stage${stages.length === 1 ? "" : "s"} ${byDependency ? "that depend on it" : "after it"} move${stages.length === 1 ? "s" : ""} ${workDaysWords(days)}: ${stages.map((s) => `${s.name} → ${[s.newStartsAt, s.newEndsAt].filter(Boolean).map(dayLabel).join("–")}`).join(", ")}.` : byDependency ? "Nothing depends on it, so no other stage moves." : "No stage after it has days.",
     visits ? `${visits} crew day${visits === 1 ? "" : "s"} on the calendar move${visits === 1 ? "s" : ""} with them (${jobs.map((j) => j.title).join(", ")}).` : "No crew days on the calendar after it.",
     inspections.length ? `${inspections.length} inspection${inspections.length === 1 ? "" : "s"} move${inspections.length === 1 ? "s" : ""}: ${inspections.map((i) => `${i.name} → ${dayLabel(i.newDate)}`).join(", ")}.` : "",
     "Deliveries already ordered keep their dates.",
   ].filter(Boolean);
 
-  return { stage: { id: stage.id, name: stage.name, endsAt: cutoff, newEndsAt: newEnd }, days, stages, jobs, inspections, words };
+  return { stage: { id: stage.id, name: stage.name, endsAt: cutoff, newEndsAt: newEnd }, days, stages, byDependency, jobs, inspections, words };
+}
+
+/** The stages that depend on one, transitively (part 4): null when no stage on the project carries a dependency —
+ *  the old rule (everything after it) then applies. */
+export function dependentsOf(stages: ReadonlyArray<{ id: string; afterId?: string | null }>, stageId: string): Set<string> | null {
+  if (!stages.some((s) => s.afterId)) return null;
+  const out = new Set<string>();
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const s of stages) {
+      if (out.has(s.id) || !s.afterId) continue;
+      if (s.afterId === stageId || out.has(s.afterId)) {
+        out.add(s.id);
+        grew = true;
+      }
+    }
+  }
+  return out;
 }
 
 // ── "lay out the days" ───────────────────────────────────────────────────────
 
-export type LayoutStage = { id: string; name: string; position: number; status: string; startsAt: string | null; endsAt: string | null; weight: number };
+export type LayoutStage = { id: string; name: string; position: number; status: string; startsAt: string | null; endsAt: string | null; weight: number; afterId?: string | null; lane?: string | null };
 
 /**
  * Days for the stages that have none, back to back from `from` (a weekend start moves to the Monday): each stage
  * runs `perWeight` work days per unit of weight (at least one day), or the lot fits into `workDays` when that is
- * given. A stage that already has days is left alone and the next undated one starts the work day after it.
+ * given. A stage that already has days is left alone and the next undated one starts the work day after it. With
+ * dependencies and lanes (part 4): a stage starts the work day after the stage it waits for, else after the last
+ * stage in its own lane — so the site work runs beside the permits, and the shop beside the house.
  */
 export function layoutPlan(stages: LayoutStage[], from: string, opts: { perWeight?: number; workDays?: number } = {}): Array<{ id: string; name: string; startsAt: string; endsAt: string }> {
   const undated = stages.filter((s) => !s.startsAt && !s.endsAt && s.status !== "DONE");
   if (!undated.length) return [];
-  const weightAll = undated.reduce((n, s) => n + Math.max(0.1, s.weight), 0);
+  const chained = stages.some((s) => s.afterId);
+  // With dependencies the lot's length is the longest chain, not the sum — the lanes run beside each other.
+  const weightAll = chained ? Math.max(...lanesOf(undated).map((lane) => lane.reduce((n, s) => n + Math.max(0.1, s.weight), 0))) : undated.reduce((n, s) => n + Math.max(0.1, s.weight), 0);
   const per = opts.workDays && opts.workDays > 0 ? opts.workDays / weightAll : Math.max(0.5, opts.perWeight ?? 3);
   const out: Array<{ id: string; name: string; startsAt: string; endsAt: string }> = [];
-  let cursor = addWorkDays(from, 0);
+  const ends = new Map<string, string>();
+  const laneCursor = new Map<string, string>();
+  const start0 = addWorkDays(from, 0);
+  let cursor = start0;
   for (const s of [...stages].sort((a, b) => a.position - b.position)) {
+    const lane = s.lane ?? "";
     if (s.startsAt || s.endsAt) {
       const end = s.endsAt ?? s.startsAt!;
+      ends.set(s.id, end);
       if (end >= cursor) cursor = addWorkDays(end, 1);
+      if (end >= (laneCursor.get(lane) ?? start0)) laneCursor.set(lane, addWorkDays(end, 1));
       continue;
     }
     if (s.status === "DONE") continue;
     const len = Math.max(1, Math.round(Math.max(0.1, s.weight) * per));
-    const startsAt = cursor;
+    let startsAt: string;
+    if (chained) {
+      const afterEnd = s.afterId ? ends.get(s.afterId) : null;
+      startsAt = afterEnd ? addWorkDays(afterEnd, 1) : (laneCursor.get(lane) ?? start0);
+    } else startsAt = cursor;
     const endsAt = addWorkDays(startsAt, len - 1);
     out.push({ id: s.id, name: s.name, startsAt, endsAt });
+    ends.set(s.id, endsAt);
     cursor = addWorkDays(endsAt, 1);
+    laneCursor.set(lane, addWorkDays(endsAt, 1));
   }
   return out;
 }
+
+const lanesOf = <T extends { lane?: string | null }>(xs: readonly T[]): T[][] => {
+  const m = new Map<string, T[]>();
+  for (const x of xs) m.set(x.lane ?? "", [...(m.get(x.lane ?? "") ?? []), x]);
+  return [...m.values()];
+};
 
 // ── the chart ────────────────────────────────────────────────────────────────
 

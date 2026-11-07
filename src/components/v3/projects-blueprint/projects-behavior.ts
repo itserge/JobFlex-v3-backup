@@ -12,6 +12,7 @@
 //   shell controls.
 
 import { createClient } from "@/actions/clients";
+import { buildAnswersFromStrings } from "@/lib/projectPhases/shared";
 import { createProject } from "@/actions/projects";
 import { closeMdl, openMdl, MDL_EXIT_MS } from "@/components/v3/blueprint-shell/mdl-motion";
 import { staggerIn } from "@/components/v3/blueprint-shell/list-motion";
@@ -398,6 +399,8 @@ export function initProjectsContent(
     // The kind and the remodel's question (2026-11-07), painted like the status segment.
     let draftKind = "REMODEL";
     let draftOccupied = false;
+    // A new build's start questions (part 4): the picks by question, as the buttons' values; unsaid = the usual.
+    let draftBuild: Record<string, string> = {};
     let restoreFocus: HTMLElement | null = null;
     let saving = false;
 
@@ -487,6 +490,17 @@ export function initProjectsContent(
         b.classList.toggle("on", on);
         b.setAttribute("aria-pressed", on ? "true" : "false");
       });
+      // The lot's questions are a new build's.
+      $("#pjfBuildFld")?.classList.toggle("is-hidden", draftKind !== "NEW_BUILD");
+      $$("#pjfBuild [data-build]").forEach((g) => {
+        const key = g.dataset.build ?? "";
+        const v = draftBuild[key] ?? g.dataset.default ?? "";
+        g.querySelectorAll<HTMLElement>(".fseg-btn").forEach((b) => {
+          const on = b.dataset.v === v;
+          b.classList.toggle("on", on);
+          b.setAttribute("aria-pressed", on ? "true" : "false");
+        });
+      });
     }
 
     function openDlg() {
@@ -513,6 +527,7 @@ export function initProjectsContent(
       draftStatus = STATUSES[0];
       draftKind = "REMODEL";
       draftOccupied = false;
+      draftBuild = {};
       paintKind();
       paintStatus();
       markErr(false);
@@ -584,6 +599,12 @@ export function initProjectsContent(
         draftOccupied = occSeg.dataset.v === "yes";
         paintKind();
       }
+      const buildSeg = t.closest<HTMLElement>("#pjfBuild .fseg-btn");
+      const buildGroup = buildSeg?.closest<HTMLElement>("[data-build]");
+      if (buildSeg && buildGroup?.dataset.build) {
+        draftBuild[buildGroup.dataset.build] = buildSeg.dataset.v ?? "";
+        paintKind();
+      }
     });
 
     on(document, "keydown", (e) => {
@@ -636,6 +657,8 @@ export function initProjectsContent(
       const status = draftStatus;
       const kind = draftKind;
       const occupied = draftKind === "REMODEL" && draftOccupied;
+      // The lot's answers: the picks, the usual for the rest (lib/projectPhases reads them).
+      const build = draftKind === "NEW_BUILD" ? buildAnswersFromStrings(Object.fromEntries($$("#pjfBuild [data-build]").map((g) => [g.dataset.build ?? "", draftBuild[g.dataset.build ?? ""] ?? g.dataset.default ?? ""]))) : undefined;
       const budget = Math.round(
         Number((inp("#pjfBudget")?.value || "").replace(/[^\d.]/g, "")) || 0,
       );
@@ -675,6 +698,7 @@ export function initProjectsContent(
           clientId,
           kind,
           occupied,
+          build,
         });
         projectsData.unshift({
           id: res.id,

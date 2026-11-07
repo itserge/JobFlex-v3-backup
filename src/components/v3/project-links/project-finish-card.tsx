@@ -26,6 +26,7 @@ import {
   undoClientSignOff,
   updateProjectInspection,
 } from "@/actions/projectFinish";
+import { setTaskDone } from "@/actions/projectStages";
 import { BlueprintSheet } from "@/components/ui/BlueprintSheet";
 import type { PdFinish, PdPayments } from "@/components/v3/project-detail-blueprint/project-detail-data";
 import { uploadJobMedia } from "@/lib/media/uploadJobMedia";
@@ -104,6 +105,16 @@ export function ProjectFinishCard({ projectId, finish, jobs, payments = [], canM
   function action(step: FinishStep) {
     if (!canManage) return null;
     const fi = finish.finalInspection;
+    // A new build's steps (part 4) are the Final stage's tasks: Done ticks the task.
+    if (step.key === "co" || step.key === "handover" || step.key === "walkthrough") {
+      const fact = finish.build?.[step.key] ?? null;
+      if (!fact || fact.done) return null;
+      return (
+        <button type="button" className={s.btnSm} disabled={busy !== null} onClick={() => void run(`build:${step.key}`, () => setTaskDone(fact.taskId, true).then(() => undefined))} data-build-step-done>
+          Done
+        </button>
+      );
+    }
     switch (step.key) {
       case "punch":
         return (

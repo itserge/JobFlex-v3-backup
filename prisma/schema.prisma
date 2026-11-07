@@ -2335,6 +2335,10 @@ model Project {
   signedOffBy    String?
   warrantyUntil  DateTime?
   finishedAt     DateTime?
+  // THE LOT (2026-11-07, the plan "Projects: Remodel and New construction", part 4): a new build's parcel record
+  // (number, zoning, setbacks, acreage, flood zone), the utilities at the street and the permits with their numbers
+  // and expiry, as JSON (lib/projectPhases parseLot). Null on a remodel.
+  lotJson        String?
   // THE CLIENT'S PAGE (the client build, 2026-11-06): the homeowner's link key (/p/<token>, made the first time the
   // office shares the project), when it was first shared, and when the last update went to them (lib/projectClient).
   publicToken    String?   @unique
@@ -2359,6 +2363,7 @@ model Project {
   files        ProjectFile[]
   subQuotes    ProjectSubQuote[]
   selections   ProjectSelection[]
+  phases       ProjectPhase[]
 
   @@unique([organizationId, number])
   @@index([organizationId])
@@ -2382,16 +2387,57 @@ model ProjectStage {
   doneById  String?
   // The stage's share of the work (its cost share from the template; 1 for a hand-added stage).
   weight    Float     @default(1)
+  // NEW CONSTRUCTION (2026-11-07, part 4): the phase the stage belongs to, the lane it is drawn in on the Timeline
+  // (null = the house; "Site", "Shop" run beside it), and the stage it cannot start before — "Shift the rest" moves
+  // only what depends on the slipped stage (lib/projectTimeline shiftPlan). All null on a remodel's stages.
+  phaseId   String?
+  lane      String?
+  afterId   String?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
   project     Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  phase       ProjectPhase?       @relation(fields: [phaseId], references: [id], onDelete: SetNull)
+  after       ProjectStage?       @relation("StageAfter", fields: [afterId], references: [id], onDelete: SetNull)
+  dependents  ProjectStage[]      @relation("StageAfter")
   tasks       ProjectTask[]
   materials   ProjectMaterial[]
   orders      ProjectOrder[]
   inspections ProjectInspection[]
   subQuotes   ProjectSubQuote[]
   selections  ProjectSelection[]
+
+  @@index([projectId, position])
+  @@index([phaseId])
+}
+
+// THE PHASES OF A NEW BUILD (2026-11-07, the plan "Projects: Remodel and New construction", part 4): land →
+// design → permits → site work → foundation → framing and dry-in → rough-ins → insulation and drywall → finishes →
+// final and keys, plus a Shop lane when there is one (lib/projectPhases). Each groups its stages, carries its share
+// of the work and its gate (the county's inspections on its stages, the client's word or the lender's) and the lead
+// times it is known for; `budget` and `margin` are part 5's (the money). A remodel has none.
+model ProjectPhase {
+  id             String    @id @default(cuid())
+  organizationId String
+  projectId      String
+  // LAND | DESIGN | PERMITS | SITE | FOUNDATION | FRAME | ROUGH | DRYWALL | FINISHES | FINAL | SHOP
+  key            String
+  name           String
+  position       Int       @default(0)
+  share          Float     @default(0)
+  // INSPECTION | CLIENT | LENDER
+  gateKind       String    @default("CLIENT")
+  gateWords      String?
+  lane           String?
+  // The lead times, as JSON [{ what, days }].
+  leadsJson      String?
+  budget         Float?
+  margin         Float?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  project Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  stages  ProjectStage[]
 
   @@index([projectId, position])
 }

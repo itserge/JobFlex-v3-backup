@@ -56,6 +56,7 @@
 // patching a local array — the server stays the single source of truth.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BUILD_DEFAULTS, BUILD_QUESTIONS, buildAnswersFromStrings } from "@/lib/projectPhases/shared";
 import { useRouter } from "next/navigation";
 import styles from "./mobile-projects.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
@@ -507,6 +508,8 @@ export function MobileProjects() {
   // The kind and the remodel's question (2026-11-07, lib/projectKind).
   const [draftKind, setDraftKind] = useState<"REMODEL" | "NEW_BUILD">("REMODEL");
   const [draftOccupied, setDraftOccupied] = useState(false);
+  // A new build's start questions (part 4, lib/projectPhases): the picks by question; unsaid = the usual.
+  const [draftBuild, setDraftBuild] = useState<Record<string, string>>({});
   const [nameErr, setNameErr] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveErr, setSaveErr] = useState<string | null>(null);
@@ -855,6 +858,7 @@ export function MobileProjects() {
     setDraftStatus(STATUSES[0]);
     setDraftKind("REMODEL");
     setDraftOccupied(false);
+    setDraftBuild({});
     setNameErr(false);
     setSaveErr(null);
     setPickerFor(null);
@@ -906,6 +910,7 @@ export function MobileProjects() {
         status: draftStatus,
         kind: draftKind,
         occupied: draftKind === "REMODEL" && draftOccupied,
+        build: draftKind === "NEW_BUILD" ? buildAnswersFromStrings(Object.fromEntries(BUILD_QUESTIONS.map((q) => [q.key, draftBuild[q.key] ?? String(BUILD_DEFAULTS[q.key])]))) : undefined,
         startsAt: ISO_DATE.test(form.starts) ? form.starts : null,
         endsAt: ISO_DATE.test(form.ends) ? form.ends : null,
         budget: Math.round(Number(form.budget.replace(/[^\d.]/g, "")) || 0),
@@ -1257,6 +1262,27 @@ export function MobileProjects() {
             </div>
             <span className={styles.fldHint}>{draftKind === "REMODEL" ? "The house stands: a kitchen, a bath, an addition, a whole house." : "A lot, then a house: land, permits, foundation to the keys."}</span>
           </div>
+          {draftKind === "NEW_BUILD" ? (
+            <div className={styles.fld} data-build-seg>
+              <span className={styles.fldLbl}>About the lot and the house</span>
+              {BUILD_QUESTIONS.map((q) => (
+                <div key={q.key} data-build={q.key} style={{ marginTop: 8 }}>
+                  <span className={styles.fldHint} style={{ marginTop: 0 }}>{q.ask}</span>
+                  <div className={styles.fseg} role="group" aria-label={q.ask}>
+                    {q.choices.map((c) => {
+                      const v = String(c.v);
+                      const on = (draftBuild[q.key] ?? String(BUILD_DEFAULTS[q.key])) === v;
+                      return (
+                        <button key={v} className={`${styles.fsegBtn} ${on ? styles.on : ""}`} type="button" data-v={v} aria-pressed={on} onClick={() => setDraftBuild((cur) => ({ ...cur, [q.key]: v }))}>
+                          {c.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
           {draftKind === "REMODEL" ? (
             <div className={styles.fld}>
               <span className={styles.fldLbl}>Does the client live there during the work?</span>
