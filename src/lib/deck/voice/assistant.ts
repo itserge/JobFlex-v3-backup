@@ -118,7 +118,7 @@ function showPart(part: PartName, fixture: FixtureKind | undefined, pkg: DeckPac
     case "cupola":
       return { say: d.roof.cupola ? "The cupola at the peak." : "No cupola — say \"add a cupola\".", light: { label: "Cupola at the peak" }, fly: null, view: {} };
     case "slab":
-      return { say: d.floor === "slab" ? "The concrete slab." : "It doesn't stand on a slab.", light: { label: "It stands" }, fly: null, view: {} };
+      return { say: d.floor === "slab" ? "The new concrete slab — it is in the price." : d.floor === "existing" ? "The existing slab — not in the price." : "It doesn't stand on a slab.", light: { label: "It stands" }, fly: null, view: {} };
     case "lights": {
       const f = d.electrical.fixtures.find((x) => !fixture || x.kind === fixture);
       if (!f) return { say: fixture ? `No ${FIXTURE_SAY[fixture][1]} yet — say "add ${FIXTURE_SAY[fixture][1]}".` : "No lights yet — say \"add post cap lights\" or \"add string lights\".", light: null, fly: null, view: {} };

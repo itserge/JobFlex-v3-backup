@@ -621,6 +621,24 @@ with Copy / Open, files as lines with a "client sees it" tag that flips
 when pressed, and the photo picker as a portalled grid of square thumbs
 dimmed until ticked, the ticked ones outlined in accent.
 
+Deck Studio, the slab and the hardware (owner, 2026-11-06, from the live
+pergola: "more realistic concrete slab … hangers, bolts … better quality").
+The slab is a body, not a sheet: 4 in. of concrete with sides the light
+catches and a shadow it casts, a warm-grey broom-finished texture with the
+aggregate as specks and soft blotches (a 6-ft repeat so the tile never
+reads), and saw-cut control joints as dark grooves about every 10 ft each
+way. An existing slab is a shade darker, blotchier, with a hairline crack —
+the eye should tell new from old before the words do. The hardware is drawn
+as the real part, never a block: a hanger is a seat, two flanges and the
+plate on the ledger; a post base is a plate, a strap up two faces and the
+anchors' nuts; bolt heads, nuts and screws are six-sided. Every piece sits
+a hair off the faces around it, never in their plane (the z-fight check
+says where). Galvanized steel gets more of the sky's reflection than wood
+(`envMapIntensity` 1.6) so it reads as metal. The "It stands" answers grew
+a fourth — "On an existing slab or patio", sub-labelled "no concrete in the
+price" — with the new-slab answer sub-labelled "poured and priced", so the
+price difference is visible at the choice, not discovered in the package.
+
 Read [implementation notes](docs/design/implementation.md) when editing an
 existing interactive surface, and [mobile notes](docs/design/mobile.md) for
 handheld work. These describe code hazards, not alternative visual themes.

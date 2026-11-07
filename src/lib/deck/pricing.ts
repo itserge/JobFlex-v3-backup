@@ -297,7 +297,7 @@ export function priceStructure(s: DeckStructure, opts: DeckPriceOptions = {}): D
     {
       const n = roof.posts.length;
       const w = sum(work("labor.roofPost", n), work("labor.brace", roof.hardware.braces), roof.floor === "ground" ? work("labor.footing", n) : none);
-      const where = roof.floor === "deck" ? "from their own footings up through the deck" : roof.floor === "slab" ? "on bases anchored to the slab" : `on poured footings ${footingDepthIn(design.floor === "ground" ? { ...design, placement: roof.attach === "wall" ? "attached" : "detached" } : design)} in. deep`;
+      const where = roof.floor === "deck" ? "from their own footings up through the deck" : roof.floor === "slab" ? "on bases anchored to the slab" : roof.floor === "existing" ? "on bases wedge-anchored to the existing slab (no concrete in this price)" : `on poured footings ${footingDepthIn(design.floor === "ground" ? { ...design, placement: roof.attach === "wall" ? "attached" : "detached" } : design)} in. deep`;
       line({ id: "roof-posts", name: `${pergola ? "Pergola" : "Roof"} posts — ${plural(n, `${r.post} post`)}`, description: `${ftIn(r.eaveHeightIn)} to the headers, ${where}${roof.hardware.braces ? `; ${plural(roof.hardware.braces, "knee brace")}` : ""}`, quantity: n, unit: "ea", material: stepMaterial("roof-posts"), labor: w.amount, exampleMaterial: stepExample("roof-posts"), exampleLabor: w.example });
     }
 
@@ -447,7 +447,7 @@ export function deckScope(pkg: DeckPackage, where?: string | null): string[] {
     if (s.lower) out.push(`A lower level in front, ${design.lower.widthFt} × ${design.lower.depthFt} ft, ${ftIn(s.lower.dropIn)} down, framed the same way on its own posts.`);
     out.push(`${frame.decking.label} decking${takeoff.surface.pattern === "diagonal" ? ", laid on the diagonal" : takeoff.surface.pattern === "herringbone" ? ", laid in a herringbone" : ""}${takeoff.surface.border ? ` with a ${takeoff.surface.border === 2 ? "double " : ""}picture-frame border` : ""}, fastened with ${takeoff.surface.fastening === "hidden" ? "hidden fasteners" : "coated deck screws"}${takeoff.surface.fascia.on ? "; fascia boards on the open edges" : ""}.`);
   } else if (roof) {
-    out.push(`Build a ${structureWords(design)}${where ? ` at ${where}` : ""}, ${roof.floor === "slab" ? `on a new 4-in. concrete slab (${roof.slab?.sqFt ?? 0} sq ft)` : "on poured footings"}${roof.attach === "wall" ? ", against the house" : ""}.`);
+    out.push(`Build a ${structureWords(design)}${where ? ` at ${where}` : ""}, ${roof.floor === "slab" ? `on a new 4-in. concrete slab (${roof.slab?.sqFt ?? 0} sq ft)` : roof.floor === "existing" ? "on the existing concrete slab or patio (no concrete in this price; it must be sound and at least 4 in. thick)" : "on poured footings"}${roof.attach === "wall" ? ", against the house" : ""}.`);
   }
   if (roof) {
     const r = roof.roof;
