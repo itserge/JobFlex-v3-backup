@@ -50,7 +50,7 @@ import {
   type PdJob,
   type PdOpens,
   type PdPayments,
-  type PdBuying, PdSubs, PdSelections,
+  type PdBuying, PdSubs, PdSelections, PdPhases, PdLot,
   type PdField,
   type PdFinish,
   type PdShare,
@@ -85,6 +85,9 @@ import { ProjectStagesCard } from "@/components/v3/project-links/project-stages-
 import { ProjectBuyingCard } from "@/components/v3/project-links/project-buying-card";
 import { ProjectSubsCard } from "@/components/v3/project-links/project-subs-card";
 import { ProjectSelectionsCard } from "@/components/v3/project-links/project-selections-card";
+import { ProjectPhasesStrip } from "@/components/v3/project-links/project-phases-strip";
+import { ProjectLotCard } from "@/components/v3/project-links/project-lot-card";
+import type { BuildAnswers } from "@/lib/projectPhases/shared";
 import { ProjectFieldCard } from "@/components/v3/project-links/project-field-card";
 import { ProjectTimelineCard } from "@/components/v3/project-links/project-timeline-card";
 import { ProjectFinishCard } from "@/components/v3/project-links/project-finish-card";
@@ -145,6 +148,11 @@ export function ProjectDetailContent({
   buying,
   subs,
   selections,
+  phases,
+  lot,
+  lotAddress = null,
+  build = null,
+  buildWords = null,
   field,
   timeline,
   finish,
@@ -158,6 +166,12 @@ export function ProjectDetailContent({
   subs?: PdSubs;
   /** What the client has to choose (2026-11-07). */
   selections?: PdSelections;
+  /** A new build (part 4): the phases, the lot, the client's address, the start questions and their words. */
+  phases?: PdPhases;
+  lot?: PdLot;
+  lotAddress?: string | null;
+  build?: BuildAnswers | null;
+  buildWords?: string | null;
   /** On site: problems, hours, the subs' bills (2026-11-05). */
   field?: PdField;
   /** The stages across the weeks (2026-11-06). */
@@ -377,6 +391,8 @@ export function ProjectDetailContent({
         </div>
       </div>
 
+      {phases && phases.phases.length ? <ProjectPhasesStrip phases={phases} answers={buildWords} /> : null}
+      {kindOf(project.kind) === "NEW_BUILD" && lot && timeline ? <ProjectLotCard projectId={project.id} lot={lot} answers={build} clientAddress={lotAddress} today={timeline.today} canManage={canManage} /> : null}
       <ProjectStagesCard projectId={project.id} stages={stages} canManage={canManage} kind={kindOf(project.kind)} />
       {timeline ? <ProjectTimelineCard projectId={project.id} timeline={timeline} canManage={canManage} /> : null}
       {share ? <ProjectClientCard projectId={project.id} share={share} canManage={canManage} /> : null}

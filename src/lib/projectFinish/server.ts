@@ -15,7 +15,7 @@ import { ensureReviewRequestForProposal } from "@/lib/reviews/requestForProposal
 import { createReviewRequestInternal } from "@/lib/reviewRequestInternal";
 import { isoDay } from "@/lib/projectTimeline/shared";
 import { inspectionKindOf, isInspectionKind } from "@/lib/projectGates";
-import type { FinishRead } from "./shared";
+import { buildFactsFrom, type FinishRead } from "./shared";
 
 const SOLD = ["ACCEPTED", "COMPLETED", "PAID"];
 const dayOf = (s: string | null | undefined) => (s ? new Date(`${s.slice(0, 10)}T00:00:00.000Z`) : null);
@@ -195,8 +195,9 @@ export async function finishOf(organizationId: string, projectId: string): Promi
       signedOffBy: true,
       warrantyUntil: true,
       finishedAt: true,
+      kind: true,
       client: { select: { name: true, email: true } },
-      stages: { select: { status: true } },
+      stages: { select: { status: true, tasks: { select: { id: true, title: true, doneAt: true } } } },
       jobs: { select: { id: true, status: true } },
       proposals: { where: { status: { in: SOLD } }, select: { id: true } },
       inspections: { where: { isFinal: true }, take: 1, select: { id: true, name: true, date: true, result: true, resultAt: true, readyNote: true } },
@@ -228,6 +229,8 @@ export async function finishOf(organizationId: string, projectId: string): Promi
     clientEmail: p.client?.email?.trim() || null,
     warrantyUntil: p.warrantyUntil ? p.warrantyUntil.toISOString() : null,
     finishedAt: p.finishedAt ? p.finishedAt.toISOString() : null,
+    kind: p.kind,
+    build: p.kind === "NEW_BUILD" ? buildFactsFrom(p.stages.flatMap((s) => s.tasks.map((t) => ({ id: t.id, title: t.title, done: Boolean(t.doneAt) })))) : null,
     punchItems,
     clientName: p.client?.name ?? null,
     reviewHref: review ? `/review/${review.publicToken}` : null,

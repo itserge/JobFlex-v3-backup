@@ -557,6 +557,24 @@ crew's job page says "Before this stage closes: …" under the stage's label.
 The Projects list flags "<name> not chosen — N days past its day" (danger
 chip) and "Choose the <name> by <day>" (warning chip); the handheld list now
 carries the quote and invoice chips too.
+New construction (2026-11-07, the plan "Projects: Remodel and New
+construction", part 4): New project, with New construction picked, unfolds
+"About the lot and the house" — ten small segments in a two-column grid, each
+with its question in 11.5px muted over it and the usual answer on (the phone
+form stacks the same ten). On the project page two cards sit above Stages: a
+Phases strip — the phases as tiles that wrap, 18px mark column (✓ emerald when
+done, ▶ ink when current) beside the name in 13px/800 and the gate's words in
+mono under it, the current one outlined ink with the 2px offset shadow, a side
+lane's tile saying "Site lane ·" / "Shop lane ·" — and a Lot card: a facts grid
+(mono caps label over a 13.5px value: Parcel, Acres, Zoning, Setbacks, Flood
+zone, Address), a ruled Utilities group of the same facts, and a Permits group
+of lines with a status tag (expired · red, expires within a month · amber,
+issued · green). Its sheets are BlueprintSheets (the parcel typed, the lookup's
+address, the utilities, one permit with the usual names as chips). The
+Timeline draws a side lane's stages under a mono caps label row ("Site lane");
+the shift sheet says "Everything that depends on it moves" when the stages
+carry dependencies. The Finish line's three new-build steps take the same row
+grammar as the seven, with a single Done button.
 
 Projects hub, stages (2026-11-05): the Stages card leads the project page on
 desk and handheld, above the proposals — a remodel is read by where it stands.

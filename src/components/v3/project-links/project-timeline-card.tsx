@@ -104,6 +104,11 @@ export function ProjectTimelineCard({ projectId, timeline, canManage }: { projec
   }
 
   const lateOf = (st: PdTimeline["stages"][number]) => (st.status !== "DONE" && st.endsAt && iso(st.endsAt)! < today ? workDaysLate(iso(st.endsAt)!, today) : 0);
+  // Lanes (part 4): the house's stages first, then each side lane (Site, Shop) under its own label row.
+  const firstAt = (lane: string) => Math.min(...stages.filter((st) => (st.lane ?? "") === lane).map((st) => st.position));
+  const lanes = [...new Set(stages.map((st) => st.lane ?? ""))].sort((a, b) => (a === "" ? -1 : b === "" ? 1 : firstAt(a) - firstAt(b)));
+  const laneRows: Array<{ kind: "lane"; lane: string } | { kind: "stage"; st: PdTimeline["stages"][number] }> = lanes.flatMap((lane) => [...(lane ? [{ kind: "lane" as const, lane }] : []), ...stages.filter((st) => (st.lane ?? "") === lane).map((st) => ({ kind: "stage" as const, st }))]);
+  const chained = stages.some((st) => st.afterId);
   const stageName = (id: string | null) => stages.find((st) => st.id === id)?.name ?? null;
   const next = timeline.inspections.filter((i) => i.result === "PENDING" && i.date && i.date >= today).sort((a, b) => a.date!.localeCompare(b.date!))[0];
 
@@ -149,7 +154,18 @@ export function ProjectTimelineCard({ projectId, timeline, canManage }: { projec
                   ))}
                 </span>
               </div>
-              {stages.map((st) => {
+              {laneRows.map((row) => {
+                if (row.kind === "lane") {
+                  return (
+                    <div key={`lane:${row.lane}`} className={s.tlRow} data-timeline-lane={row.lane}>
+                      <span className={s.tlName}>
+                        <i className={s.tlLane}>{row.lane} lane</i>
+                      </span>
+                      <span className={s.tlTrack} aria-hidden="true" />
+                    </div>
+                  );
+                }
+                const st = row.st;
                 const bar = barOf(iso(st.startsAt), iso(st.endsAt), win);
                 const late = lateOf(st);
                 const marks = [
@@ -301,7 +317,7 @@ export function ProjectTimelineCard({ projectId, timeline, canManage }: { projec
         open={shift !== null}
         onClose={() => setShift(null)}
         title="Shift the rest"
-        description={shift ? `"${shift.name}" slipped. Everything after it moves by work days — Mon to Fri; a weekend day goes to the Monday.` : undefined}
+        description={shift ? `"${shift.name}" slipped. ${chained ? "Everything that depends on it moves" : "Everything after it moves"} by work days — Mon to Fri; a weekend day goes to the Monday.` : undefined}
         footer={
           <>
             <button type="button" className="bps-btn bps-btn--ghost" onClick={() => setShift(null)}>

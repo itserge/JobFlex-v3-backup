@@ -22,6 +22,8 @@
 //   "what's left to choose on <project>" → selections; "<they> picked <item> for <project> from <vendor> for $N" → choose_selection;
 //   "add a <name> selection to <project>[, due YYYY-MM-DD][, allowance $N]" → add_selection; "mark <stage> done on <project>" → set_stage;
 //   "<inspection> on <project> passed|failed" → inspection_result (2026-11-07, part 3)
+//   "start a new build for <Name>, call it <X> — septic, a well, a basement, two stories, the bank…" → start_project + the lot's answers;
+//   "what's the next gate on <project>" → next_gate (2026-11-07, part 4)
 //   Smart Proposal's own run (response_format json_object, no tools): a small estimate in the old draft shape.
 //   Speech (POST /v1/audio/speech, the Talk mode's voice): 0.3 s of silence as an MP3, so a page plays it and goes on.
 //   The Budget card's read (response_format json_schema "budget_read", 2026-11-07): words → the rules' own rows
@@ -303,10 +305,35 @@ function answer(body: { messages: Msg[] }) {
     const kind = /new build|new construction|new house|^(build|house)$/.test(started[2].toLowerCase()) ? "NEW_BUILD" : "REMODEL";
     const template = kind === "NEW_BUILD" ? "home" : job === "bathroom" ? "bath" : job === "whole house" || job === "whole-house" ? "wholehouse" : job === "garage" ? "adu" : job === "window" ? "windows" : job === "floor" ? "floors" : job || null;
     const client = started[3] ?? null;
-    const name = client ? `${client.split(" ").pop()} ${job || (kind === "NEW_BUILD" ? "house" : "remodel")}` : `${job || "new"} project`;
-    return call("start_project", { name, kind, client, template, occupied: /lives? there|living there|occupied/i.test(user) ? true : null });
+    const called = /\bcall it (?:the )?([A-Z][\w ]+?)(?:\s*[—-]|,|$)/.exec(user)?.[1]?.trim() ?? null;
+    const name = called ?? (client ? `${client.split(" ").pop()} ${job || (kind === "NEW_BUILD" ? "house" : "remodel")}` : `${job || "new"} project`);
+    // The lot's words (part 4): septic, a well, a basement/slab, two stories, a shop, a lender/the bank, power from the pole, all electric, fiber.
+    const lot = kind === "NEW_BUILD" ? {
+      sewer: /\bseptic\b/i.test(user) ? "SEPTIC" : /\bsewer\b/i.test(user) ? "SEWER" : null,
+      water: /\bwell\b/i.test(user) ? "WELL" : /city water|water at the street/i.test(user) ? "WATER" : null,
+      foundation: /\bbasement\b/i.test(user) ? "BASEMENT" : /\bslab\b/i.test(user) ? "SLAB" : /crawl/i.test(user) ? "CRAWL" : null,
+      stories: /two stor|2 stor|two-stor/i.test(user) ? 2 : /one stor|single stor|rambler/i.test(user) ? 1 : null,
+      garage: /no garage/i.test(user) ? false : /\bgarage\b/i.test(user) ? true : null,
+      shop: /\b(shop|barn|pole building)\b/i.test(user) ? true : null,
+      lender: /lender|the bank|financ|construction loan/i.test(user) ? true : /cash|no lender/i.test(user) ? false : null,
+      power: /from the pole|power at the pole/i.test(user) ? "POLE" : /power at the lot/i.test(user) ? "AT_LOT" : null,
+      gas: /all.?electric|no gas/i.test(user) ? false : /\bgas\b/i.test(user) ? true : null,
+      fiber: /\bfiber\b/i.test(user) ? true : null,
+    } : { sewer: null, water: null, foundation: null, stories: null, garage: null, shop: null, lender: null, power: null, gas: null, fiber: null };
+    return call("start_project", { name, kind, client, template, occupied: /lives? there|living there|occupied/i.test(user) ? true : null, ...lot });
   }
   if (done.has("start_project")) return reply("Planned — say yes and I'll start it.");
+  // "What's the next gate on the Drive house?" → next_gate (part 4).
+  const gateQ = /\b(?:what(?:'s| is) the next gate|where are we|which phase)\b.*?\bon (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  if (gateQ) {
+    const r = done.get("next_gate") as { current?: { phase: string; gate: string } | null; done?: number; total?: number; note?: string } | undefined;
+    if (!r) {
+      const pid = projectFound(gateQ[1]);
+      if (!pid) return call("find", { query: gateQ[1].trim(), kind: "project" });
+      return call("next_gate", { projectId: pid });
+    }
+    return reply(r.current ? `${r.current.phase} — gate: ${r.current.gate}. ${r.done} of ${r.total} phases done.` : (r.note ?? "Every phase is done."));
+  }
   // "Do we have a client named Lee?" → find(client) → the names (the records then remember them).
   const named1 = /\b(?:do we have|is there|find) (?:a |the )?(?:client|customer)(?: named| called)? ([A-Z][a-z]+(?: [A-Z][a-z]+)?)/i.exec(user);
   if (named1) {

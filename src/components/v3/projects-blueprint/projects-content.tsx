@@ -13,6 +13,7 @@
 // which the donor's reveal cascade (`.content > *`) depends on.
 
 import { useCallback, useRef, useState } from "react";
+import { BUILD_DEFAULTS, BUILD_QUESTIONS } from "@/lib/projectPhases/shared";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { AutoProjectsSheet } from "@/components/v3/project-links/auto-projects-sheet";
 import { initProjectsContent } from "./projects-behavior";
@@ -186,6 +187,26 @@ export function ProjectsContent({
                 <button className="fseg-btn on" type="button" data-v="no" aria-pressed="true">
                   No
                 </button>
+              </div>
+            </div>
+            {/* A NEW BUILD'S START QUESTIONS (2026-11-07, part 4, lib/projectPhases): sewer or septic, water or a well,
+                the foundation, the stories, a garage, a shop, a lender, power, gas, fiber — the phases are shaped from
+                them. The usual answer is on; painted and read in projects-behavior like the kind segment. */}
+            <div className="fld is-hidden" id="pjfBuildFld">
+              <span className="fld-lbl">About the lot and the house</span>
+              <div className="fseg-grid" id="pjfBuild">
+                {BUILD_QUESTIONS.map((q) => (
+                  <div className="fseg-q" key={q.key} data-build={q.key} data-default={String(BUILD_DEFAULTS[q.key])}>
+                    <span className="fseg-q-ask">{q.ask}</span>
+                    <div className="fseg fseg--sm" role="group" aria-label={q.ask}>
+                      {q.choices.map((c) => (
+                        <button key={String(c.v)} className={`fseg-btn${String(BUILD_DEFAULTS[q.key]) === String(c.v) ? " on" : ""}`} type="button" data-v={String(c.v)} aria-pressed={String(BUILD_DEFAULTS[q.key]) === String(c.v)}>
+                          {c.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 

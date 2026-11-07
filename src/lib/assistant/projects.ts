@@ -11,7 +11,9 @@ import { findClients, findProjects } from "@/lib/assistant/find";
 import { dayWords, money, spanWords } from "@/lib/assistant/shared";
 import { categoryLabel } from "@/lib/projectBudget";
 import { projectMoney } from "@/lib/projectMoney";
-import { addTemplate, markStage, markTask, stageHeldBy, stagesOf, type StageRow } from "@/lib/projectStages/server";
+import { markStage, markTask, stageHeldBy, stagesOf, type StageRow } from "@/lib/projectStages/server";
+import { addTemplateOrPhases } from "@/lib/projectPhases/server";
+import { answersWords, parseBuildAnswers, phasesFor, type BuildAnswers } from "@/lib/projectPhases/shared";
 import { currentStage, lateStages, lateWords, percentDone, projectNo, templatesFor, type StageTemplate } from "@/lib/projectStages/shared";
 import { KIND_LABEL, type ProjectKind } from "@/lib/projectKind";
 import { createProjectAs } from "@/lib/projectCore";
@@ -265,8 +267,22 @@ const tickTask: WriteTool<TaskArgs, TaskPayload> = {
 // New project dialog makes it (lib/projectCore) and its stages come from the kind's template (addTemplate), after
 // the person's yes. The client is found by name here, so the model needs no find first.
 
-type StartArgs = { name: string; kind: ProjectKind; client: string | null; template: string | null; occupied: boolean | null };
-type StartPayload = { name: string; kind: ProjectKind; clientId: string | null; clientName: string | null; template: string | null; occupied: boolean };
+type StartArgs = { name: string; kind: ProjectKind; client: string | null; template: string | null; occupied: boolean | null; sewer: "SEWER" | "SEPTIC" | null; water: "WATER" | "WELL" | null; foundation: "SLAB" | "CRAWL" | "BASEMENT" | null; stories: 1 | 2 | null; garage: boolean | null; shop: boolean | null; lender: boolean | null; power: "AT_LOT" | "POLE" | null; gas: boolean | null; fiber: boolean | null };
+type StartPayload = { name: string; kind: ProjectKind; clientId: string | null; clientName: string | null; template: string | null; occupied: boolean; build: BuildAnswers | null };
+
+const buildArgs = {
+  sewer: z.enum(["SEWER", "SEPTIC"]).nullable(),
+  water: z.enum(["WATER", "WELL"]).nullable(),
+  foundation: z.enum(["SLAB", "CRAWL", "BASEMENT"]).nullable(),
+  stories: z.union([z.literal(1), z.literal(2)]).nullable(),
+  garage: z.boolean().nullable(),
+  shop: z.boolean().nullable(),
+  lender: z.boolean().nullable(),
+  power: z.enum(["AT_LOT", "POLE"]).nullable(),
+  gas: z.boolean().nullable(),
+  fiber: z.boolean().nullable(),
+};
+const buildPayload = z.object({ sewer: z.enum(["SEWER", "SEPTIC"]).optional(), water: z.enum(["WATER", "WELL"]).optional(), foundation: z.enum(["SLAB", "CRAWL", "BASEMENT"]).optional(), stories: z.union([z.literal(1), z.literal(2)]).optional(), garage: z.boolean().optional(), shop: z.boolean().optional(), lender: z.boolean().optional(), power: z.enum(["AT_LOT", "POLE"]).optional(), gas: z.boolean().optional(), fiber: z.boolean().optional() });
 
 /** The template a word points at, within the kind: its key, its label, or a word of either; a new build's "house",
  *  "home" or "build" is the custom home. Null when nothing matches. */
@@ -288,26 +304,27 @@ const startProject: WriteTool<StartArgs, StartPayload> = {
   need: "projects.write",
   card: {
     label: "Start a project",
-    purpose: "Make a project — a remodel or a new build — for a client, with its stages from a template.",
-    when: "'Start a kitchen remodel for the Bennetts', 'new project: Lee basement finish', 'start a new build for Sarah Lee': start_project(name, kind, client, template, occupied). kind is NEW_BUILD only when they say new construction, new build or a new house. template is the job's word (kitchen, bath, deck, roof, fence, floors, hvac, siding, remodel, addition, basement, whole house, adu, windows, painting, service; home for a new build) or null. occupied when they say the client lives there during the work. The client is found by name here — no find first.",
+    purpose: "Make a project — a remodel with its stages from a template, or a new build with its phases from the lot to the keys shaped by the start questions.",
+    when: "'Start a kitchen remodel for the Bennetts', 'new project: Lee basement finish', 'start a new build for Sarah Lee on septic with a well and a basement': start_project(name, kind, client, template, occupied, + the lot's answers). kind is NEW_BUILD only when they say new construction, new build or a new house. template is the job's word (kitchen, bath, deck, roof, fence, floors, hvac, siding, remodel, addition, basement, whole house, adu, windows, painting, service; home for a new build) or null. occupied when they say the client lives there during the work. For a new build, the questions as said or null for each (sewer SEWER|SEPTIC, water WATER|WELL, foundation SLAB|CRAWL|BASEMENT, stories 1|2, garage, shop, lender, power AT_LOT|POLE, gas, fiber) — ASK about the lot one or two at a time when nothing was said, or go with the defaults when told to. The client is found by name here — no find first.",
     objects: ["project", "client"],
     effect: "record",
     group: "projects",
-    version: 1,
+    version: 2,
     since: "2026-11-07",
     samples: [
-      { say: "start a kitchen remodel for the Bennetts", args: { name: "Bennett kitchen remodel", kind: "REMODEL", client: "Bennett", template: "kitchen", occupied: null } },
-      { say: "start a new build for Sarah Lee, call it the Lee house", args: { name: "Lee house", kind: "NEW_BUILD", client: "Sarah Lee", template: "home", occupied: null } },
+      { say: "start a kitchen remodel for the Bennetts", args: { name: "Bennett kitchen remodel", kind: "REMODEL", client: "Bennett", template: "kitchen", occupied: null, sewer: null, water: null, foundation: null, stories: null, garage: null, shop: null, lender: null, power: null, gas: null, fiber: null } },
+      { say: "start a new build for Sarah Lee, call it the Lee house — septic, a well, a basement, two stories, the bank is financing it", args: { name: "Lee house", kind: "NEW_BUILD", client: "Sarah Lee", template: "home", occupied: null, sewer: "SEPTIC", water: "WELL", foundation: "BASEMENT", stories: 2, garage: null, shop: null, lender: true, power: null, gas: null, fiber: null } },
     ],
   },
   description:
-    "Make a project for a client: a REMODEL (the house stands) or a NEW_BUILD (a lot, then a house). name = what to call it; client = the client's name as said, or null; template = the job's word (kitchen, bath, deck, roof, fence, floors, hvac, siding, remodel, addition, basement, wholehouse, adu, windows, painting, service; home for a new build) or null to add the stages later; occupied = true when they say the client lives there during the work. Read back for a yes; the answer links the project page.",
+    "Make a project for a client: a REMODEL (the house stands) or a NEW_BUILD (a lot, then a house). name = what to call it; client = the client's name as said, or null; template = the job's word (kitchen, bath, deck, roof, fence, floors, hvac, siding, remodel, addition, basement, wholehouse, adu, windows, painting, service; home for a new build) or null to add the stages later; occupied = true when they say the client lives there during the work. A new build's phases (land → design → permits → site work → foundation → framing → rough-ins → drywall → finishes → keys) are shaped by the lot's answers: sewer, water, foundation, stories, garage, shop, lender, power, gas, fiber — each as said or null (the defaults: sewer and water at the street, a crawl space, one story, a garage, no shop, no lender, power at the lot, gas, no fiber; the read-back says them). Read back for a yes; the answer links the project page.",
   params: z.object({
     name: z.string().min(2).max(120),
     kind: z.enum(["REMODEL", "NEW_BUILD"]),
     client: z.string().max(120).nullable(),
     template: z.string().max(40).nullable(),
     occupied: z.boolean().nullable(),
+    ...buildArgs,
   }),
   payload: z.object({
     name: z.string(),
@@ -316,6 +333,7 @@ const startProject: WriteTool<StartArgs, StartPayload> = {
     clientName: z.string().nullable(),
     template: z.string().nullable(),
     occupied: z.boolean(),
+    build: buildPayload.nullable(),
   }),
   async plan({ actor }, a) {
     try {
@@ -338,15 +356,19 @@ const startProject: WriteTool<StartArgs, StartPayload> = {
     if (a.template && !tpl) return { ok: false, say: `There is no ${KIND_LABEL[a.kind].toLowerCase()} template called ${a.template}; the stages can be added on the project page.` };
     const occupied = a.kind === "REMODEL" && a.occupied === true;
     const name = a.name.trim();
-    const readback = `Start the ${KIND_LABEL[a.kind].toLowerCase()} project "${name}"${clientName ? ` for ${clientName}` : ""}${tpl ? `, with the ${tpl.label} stages (${tpl.stages.length})` : ", stages to be added"}${occupied ? " — the client lives there during the work" : ""}.`;
-    return { ok: true, payload: { name, kind: a.kind, clientId, clientName, template: tpl?.key ?? null, occupied }, readback };
+    // A new build's start questions (part 4): what was said; the defaults fill the rest and are read back.
+    const build: BuildAnswers | null = a.kind === "NEW_BUILD" ? parseBuildAnswers({ sewer: a.sewer ?? undefined, water: a.water ?? undefined, foundation: a.foundation ?? undefined, stories: a.stories ?? undefined, garage: a.garage ?? undefined, shop: a.shop ?? undefined, lender: a.lender ?? undefined, power: a.power ?? undefined, gas: a.gas ?? undefined, fiber: a.fiber ?? undefined }) : null;
+    const phasesWords = a.kind === "NEW_BUILD" && tpl ? ` — ${phasesFor(build).length} phases from the lot to the keys: ${answersWords(build)}` : "";
+    const readback = `Start the ${KIND_LABEL[a.kind].toLowerCase()} project "${name}"${clientName ? ` for ${clientName}` : ""}${tpl ? (a.kind === "NEW_BUILD" ? phasesWords : `, with the ${tpl.label} stages (${tpl.stages.length})`) : ", stages to be added"}${occupied ? " — the client lives there during the work" : ""}.${a.kind === "NEW_BUILD" && tpl && build && Object.keys(build).length < 10 ? " Say otherwise on anything not said; I went with the usual." : ""}`;
+    return { ok: true, payload: { name, kind: a.kind, clientId, clientName, template: tpl?.key ?? null, occupied, build }, readback };
   },
   async execute({ actor }, p) {
-    const made = await createProjectAs({ organizationId: actor.organizationId, actorId: actor.userId }, { name: p.name, clientId: p.clientId, kind: p.kind, occupied: p.occupied });
+    const made = await createProjectAs({ organizationId: actor.organizationId, actorId: actor.userId }, { name: p.name, clientId: p.clientId, kind: p.kind, occupied: p.occupied, build: p.build ?? undefined });
     let stages = "";
     if (p.template) {
-      const { added, template } = await addTemplate({ id: made.id, kind: p.kind, answersJson: p.occupied ? JSON.stringify({ occupied: true }) : null }, p.template);
-      stages = ` with the ${template.label} stages (${added})`;
+      const row = await db.project.findUnique({ where: { id: made.id }, select: { id: true, organizationId: true, kind: true, answersJson: true } });
+      const r = await addTemplateOrPhases(row ?? { id: made.id, organizationId: actor.organizationId, kind: p.kind, answersJson: null }, p.template);
+      stages = r.phases ? ` with its ${r.phases} phases and ${r.added} stages` : ` with the ${r.template.label} stages (${r.added})`;
     }
     const link = `${(await appBaseUrl()).replace(/\/$/, "")}/dashboard/projects/${made.id}`;
     return { say: `Started ${projectNo(made.number)} ${made.name}${p.clientName ? ` for ${p.clientName}` : ""}${stages}. Open it: ${link}`, result: { projectId: made.id, number: made.number } };

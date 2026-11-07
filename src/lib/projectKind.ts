@@ -5,6 +5,8 @@
 // finish line and the Operator's words. Pure: the dialogs, the cards, the actions, the Operator and the checks
 // read one definition.
 
+import { parseBuildAnswers, type BuildAnswers } from "@/lib/projectPhases/shared";
+
 export const PROJECT_KINDS = ["REMODEL", "NEW_BUILD"] as const;
 export type ProjectKind = (typeof PROJECT_KINDS)[number];
 
@@ -27,6 +29,9 @@ export type ProjectAnswers = {
   occupied?: boolean;
   /** The template the stages came from, remembered for the budget's contingency rate. */
   template?: string;
+  /** A new build's start questions (part 4, lib/projectPhases): sewer or septic, water or a well, the foundation,
+   *  the stories, a garage, a shop, a lender, power, gas, fiber — the phases are shaped from them. */
+  build?: BuildAnswers;
 };
 
 export function parseAnswers(json: string | null | undefined): ProjectAnswers {
@@ -37,6 +42,10 @@ export function parseAnswers(json: string | null | undefined): ProjectAnswers {
     const out: ProjectAnswers = {};
     if (typeof raw.occupied === "boolean") out.occupied = raw.occupied;
     if (typeof raw.template === "string" && raw.template) out.template = raw.template.slice(0, 40);
+    if (raw.build && typeof raw.build === "object") {
+      const b = parseBuildAnswers(raw.build);
+      if (Object.keys(b).length) out.build = b;
+    }
     return out;
   } catch {
     return {};

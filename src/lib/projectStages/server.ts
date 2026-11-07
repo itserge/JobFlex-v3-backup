@@ -50,33 +50,41 @@ export async function numbered<T extends { id: string; number: number | null }>(
   return create(null);
 }
 
-/** A template's stages and tasks onto a project, after any stages it already has. Since part 3 (2026-11-07) the
- *  template's inspections land as gates on their stage, in the county's words (lib/projectGates; the first FINAL is
- *  the project's final inspection when it has none yet), and its selections as rows with their lead time
- *  (lib/projectSelections) — every door a template comes through (the card, the Operator, the automatic project). */
-export async function stagesFromTemplate(projectId: string, stages: readonly TemplateStage[], tx: Tx | typeof db = db): Promise<number> {
+/** What a created stage is told about its place (part 4, 2026-11-07): the phase it belongs to, the lane it is drawn
+ *  in, and the stage it cannot start before (`prevId` is the stage created just before it in this call). */
+export type StageMeta = (index: number, prevId: string | null) => { phaseId?: string | null; lane?: string | null; afterId?: string | null };
+
+/** The stages of a template (or of a phase) onto a project, after any stages it already has, with their tasks; since
+ *  part 3 (2026-11-07) the template's inspections land as gates on their stage, in the county's words
+ *  (lib/projectGates; the first FINAL is the project's final inspection when it has none yet), and its selections as
+ *  rows with their lead time (lib/projectSelections). Returns the created stages' ids, in order. Every door a template
+ *  comes through (the card, the Operator, the automatic project, a new build's phases) ends here. */
+export async function createStageRows(projectId: string, stages: readonly TemplateStage[], tx: Tx | typeof db = db, meta?: StageMeta): Promise<string[]> {
   const top = await tx.projectStage.aggregate({ where: { projectId }, _max: { position: true } });
   let position = (top._max.position ?? -1) + 1;
   const extras = stages.some((st) => st.inspections?.length || st.selections?.length);
   const org = extras ? await tx.project.findUnique({ where: { id: projectId }, select: { organizationId: true } }) : null;
   let hasFinal = extras ? (await tx.projectInspection.count({ where: { projectId, isFinal: true } })) > 0 : true;
   let selPos = extras ? ((await tx.projectSelection.aggregate({ where: { projectId }, _max: { position: true } }))._max.position ?? -1) + 1 : 0;
-  for (const st of stages) {
+  const ids: string[] = [];
+  for (const [i, st] of stages.entries()) {
+    const m = meta ? meta(i, ids[ids.length - 1] ?? null) : {};
     const row = await tx.projectStage.create({
-      data: { projectId, name: st.name.slice(0, 120), position: position++, weight: st.share > 0 ? st.share : 1 },
+      data: { projectId, name: st.name.slice(0, 120), position: position++, weight: st.share > 0 ? st.share : 1, phaseId: m.phaseId ?? null, lane: m.lane ?? null, afterId: m.afterId ?? null },
       select: { id: true },
     });
+    ids.push(row.id);
     if (st.tasks.length) {
       await tx.projectTask.createMany({
-        data: st.tasks.map((task, i) => ({ projectId, stageId: row.id, title: task.title.slice(0, 200), position: i, photoNeeded: Boolean(task.photoNeeded) })),
+        data: st.tasks.map((task, k) => ({ projectId, stageId: row.id, title: task.title.slice(0, 200), position: k, photoNeeded: Boolean(task.photoNeeded) })),
       });
     }
     if (org && st.inspections?.length) {
       await tx.projectInspection.createMany({
-        data: st.inspections.map((i) => {
-          const isFinal = i.kind === "FINAL" && !hasFinal;
+        data: st.inspections.map((x) => {
+          const isFinal = x.kind === "FINAL" && !hasFinal;
           if (isFinal) hasFinal = true;
-          return { organizationId: org.organizationId, projectId, stageId: row.id, name: INSPECTION_NAME[i.kind], kind: i.kind, gate: i.gate !== false, isFinal };
+          return { organizationId: org.organizationId, projectId, stageId: row.id, name: INSPECTION_NAME[x.kind], kind: x.kind, gate: x.gate !== false, isFinal };
         }),
       });
     }
@@ -86,7 +94,12 @@ export async function stagesFromTemplate(projectId: string, stages: readonly Tem
       });
     }
   }
-  return stages.length;
+  return ids;
+}
+
+/** A template's stages onto a project (the count), see createStageRows. */
+export async function stagesFromTemplate(projectId: string, stages: readonly TemplateStage[], tx: Tx | typeof db = db): Promise<number> {
+  return (await createStageRows(projectId, stages, tx)).length;
 }
 
 /** The gating inspections still holding a stage (lib/projectGates), as the sentence a refused Done gets — null when
@@ -419,6 +432,10 @@ export type StageRow = {
   tasks: Array<{ id: string; title: string; position: number; photoNeeded: boolean; done: boolean; doneAt: string | null }>;
   /** The inspections that gate the stage (part 3): it cannot be marked done until each has PASSED. */
   gates?: Array<{ id: string; name: string; result: string; date: string | null }>;
+  /** A new build (part 4): the phase the stage belongs to, the lane it is drawn in, the stage it cannot start before. */
+  phaseId?: string | null;
+  lane?: string | null;
+  afterId?: string | null;
 };
 
 /** A project's stages with their tasks, in order, and what they add up to. */
@@ -442,6 +459,9 @@ export async function stagesOf(projectId: string): Promise<{ stages: StageRow[];
     weight: s.weight,
     tasks: s.tasks.map((t) => ({ id: t.id, title: t.title, position: t.position, photoNeeded: t.photoNeeded, done: Boolean(t.doneAt), doneAt: t.doneAt ? t.doneAt.toISOString() : null })),
     gates: gates.filter((g) => g.stageId === s.id).map((g) => ({ id: g.id, name: g.name, result: g.result, date: g.date ? g.date.toISOString().slice(0, 10) : null })),
+    phaseId: s.phaseId,
+    lane: s.lane,
+    afterId: s.afterId,
   }));
   return { stages, done: percentDone(stages) };
 }

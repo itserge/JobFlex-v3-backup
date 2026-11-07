@@ -9,7 +9,8 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
-import { addTemplate, draftStagesWithAi, markStage, markTask, projectForJob, stagesFromTemplate } from "@/lib/projectStages/server";
+import { draftStagesWithAi, markStage, markTask, projectForJob, stagesFromTemplate } from "@/lib/projectStages/server";
+import { addTemplateOrPhases } from "@/lib/projectPhases/server";
 import { PROJECT_TRADES_DEFAULT, parseProjectSettings, type ProjectSettings } from "@/lib/projectStages/shared";
 import { TRADE_TYPES, type TradeType } from "@/lib/tradeTypes";
 
@@ -47,9 +48,10 @@ const dayOf = (s: string | null | undefined) => (s ? new Date(`${s}T00:00:00.000
 export async function addStagesFromTemplate(projectId: string, key: string): Promise<{ added: number }> {
   const { organizationId, user } = await requireEstimatorOrManager();
   const p = await projectOf(organizationId, projectId);
-  const { added, template: tpl } = await addTemplate(p, key);
+  // A new build's custom home comes as phases shaped by its start questions (part 4, lib/projectPhases).
+  const { added, template: tpl, phases } = await addTemplateOrPhases({ ...p, organizationId }, key);
   await keptByEdit(p.id);
-  await logActivity({ organizationId, actorId: user.id, kind: TRAIL_KINDS.PROJECT, summary: `Added the ${tpl.label} stages to ${p.name}`, clientId: p.clientId, meta: { projectId: p.id, template: key } });
+  await logActivity({ organizationId, actorId: user.id, kind: TRAIL_KINDS.PROJECT, summary: `Added the ${tpl.label} ${phases ? `phases (${phases}) and ` : ""}stages to ${p.name}`, clientId: p.clientId, meta: { projectId: p.id, template: key, phases } });
   touched(p.id);
   return { added };
 }

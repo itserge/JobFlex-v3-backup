@@ -18,7 +18,9 @@ import { timelineOf } from "@/lib/projectTimeline/server";
 import { finishOf } from "@/lib/projectFinish/server";
 import { shareOf } from "@/lib/projectClient/server";
 import { selectionsOf } from "@/lib/projectSelections/server";
-import type { PdAvailProposal, PdBudget, PdBuying, PdSubs, PdField, PdFinish, PdJob, PdLooseProposal, PdPayments, PdProject, PdProposal, PdSelections, PdShare, PdStages, PdTimeline, PdWorker } from "./project-detail-data";
+import { lotOf, phasesOf } from "@/lib/projectPhases/server";
+import { answersWords, type BuildAnswers } from "@/lib/projectPhases/shared";
+import type { PdAvailProposal, PdBudget, PdBuying, PdSubs, PdField, PdFinish, PdJob, PdLooseProposal, PdLot, PdPayments, PdPhases, PdProject, PdProposal, PdSelections, PdShare, PdStages, PdTimeline, PdWorker } from "./project-detail-data";
 
 export type ProjectDetailProps = {
   project: PdProject;
@@ -29,6 +31,13 @@ export type ProjectDetailProps = {
   subs: PdSubs;
   /** What the client has to choose, by the day its stage needs it (2026-11-07). */
   selections: PdSelections;
+  /** A new build (part 4, 2026-11-07): its phases with the one it is on, the lot's record, the client's address for
+   *  the parcel lookup, the start questions and their words. Empty / null on a remodel. */
+  phases: PdPhases;
+  lot: PdLot;
+  lotAddress: string | null;
+  build: BuildAnswers | null;
+  buildWords: string | null;
   /** On site: problems, hours, the subs' bills (2026-11-05). */
   field: PdField;
   /** The stages across the weeks, deliveries and inspections on them (2026-11-06). */
@@ -53,7 +62,7 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
   const project = await db.project.findUnique({
     where: { id },
     include: {
-      client: { select: { id: true, name: true } },
+      client: { select: { id: true, name: true, address: true } },
       budgetLines: { orderBy: { position: "asc" }, select: { id: true, category: true, amount: true, label: true } },
       // The newest costs for the list on the card; the totals are summed in the database (lib/projectMoney).
       expenses: { orderBy: { spentAt: "desc" }, take: 60, select: { id: true, category: true, amount: true, vendor: true, note: true, spentAt: true } },
@@ -140,7 +149,7 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
     at: e.spentAt.toISOString(),
   }));
   // The money — the same read as the Projects list and Financials (lib/projectMoney): before tax, crew and stock in.
-  const [moneyAll, stageRead, buying, field, timeline, finish, share, subs, selections] = await Promise.all([
+  const [moneyAll, stageRead, buying, field, timeline, finish, share, subs, selections, phases, lot] = await Promise.all([
     projectMoney(organizationId, [project.id]),
     stagesOf(project.id),
     buyingOf(organizationId, project.id),
@@ -150,7 +159,11 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
     shareOf(organizationId, project.id),
     subsOf(organizationId, project.id),
     selectionsOf(organizationId, project.id),
+    phasesOf(project.id),
+    lotOf(project.id),
   ]);
+  const answers = parseAnswers(project.answersJson);
+  const build = project.kind === "NEW_BUILD" ? (answers.build ?? {}) : null;
   const money = moneyAll.get(project.id)!;
   const budget: PdBudget = {
     summary: money,
@@ -166,6 +179,11 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
     buying,
     subs,
     selections,
+    phases,
+    lot,
+    lotAddress: project.client?.address?.split("\n").map((x) => x.trim()).filter(Boolean).join(", ") || null,
+    build,
+    buildWords: build ? answersWords(build) : null,
     field,
     timeline,
     finish,
@@ -176,12 +194,12 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
         startsAt: project.startsAt,
         endsAt: project.endsAt,
         budget: project.budget,
-        client: project.client,
+        client: project.client ? { id: project.client.id, name: project.client.name } : null,
         description: project.description,
         status: project.status,
         number: project.number,
         kind: project.kind,
-        occupied: parseAnswers(project.answersJson).occupied === true,
+        occupied: answers.occupied === true,
         kindLocked: (await db.projectStage.count({ where: { projectId: project.id, status: "DONE" } })) > 0,
     },
     proposals: project.proposals.map((p) => {

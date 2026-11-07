@@ -65,6 +65,10 @@ export type PdStage = {
   tasks: Array<{ id: string; title: string; position: number; photoNeeded: boolean; done: boolean; doneAt: string | null }>;
   /** The inspections that gate the stage (part 3, 2026-11-07): Done waits until each has PASSED. */
   gates?: Array<{ id: string; name: string; result: string; date: string | null }>;
+  /** A new build (part 4): the phase, the lane, the stage it cannot start before. */
+  phaseId?: string | null;
+  lane?: string | null;
+  afterId?: string | null;
 };
 export type PdStages = {
   stages: PdStage[];
@@ -94,6 +98,11 @@ export type PdShare = import("@/lib/projectClient/server").ShareRead;
 /* CONTRACTORS: QUOTES AND INVOICES (2026-11-07): the company's contractors and the project's quotes, compared against the
    stage's share of the Subcontractors budget (lib/projectSubs/server subsOf). */
 export type PdSubs = import("@/lib/projectSubs/server").SubsRead;
+
+/* NEW CONSTRUCTION (2026-11-07, part 4): the phases with their state and the one the project is on
+   (lib/projectPhases/server phasesOf), and the lot's record (lotOf). Empty on a remodel. */
+export type PdPhases = import("@/lib/projectPhases/server").PhasesRead;
+export type PdLot = import("@/lib/projectPhases/server").LotRecord;
 
 /* SELECTIONS (2026-11-07, part 3): what the client has to choose, each with the stage that needs it, its due day and
    what was chosen (lib/projectSelections/server selectionsOf). */

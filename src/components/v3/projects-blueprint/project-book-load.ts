@@ -15,7 +15,7 @@ import { currentStage, percentDone, stageFlags } from "@/lib/projectStages/share
 import { buyingFlags } from "@/lib/projectBuying/shared";
 import { problemFlags } from "@/lib/crewField/shared";
 import { inspectionFlags, isoDay } from "@/lib/projectTimeline/shared";
-import { finishFlags } from "@/lib/projectFinish/shared";
+import { buildFactsFrom, finishFlags } from "@/lib/projectFinish/shared";
 import type { Project } from "./projects-data";
 
 /** "Jul 08" in UTC — project dates are stored as UTC midnight (the action
@@ -51,7 +51,7 @@ export async function loadProjectBook(organizationId: string): Promise<Project[]
       },
       expenses: { select: { amount: true, createdAt: true } },
       // The stages (2026-11-05): % done, the stage it is on, and what is late.
-      stages: { orderBy: { position: "asc" }, select: { name: true, status: true, weight: true, endsAt: true, tasks: { select: { doneAt: true } } } },
+      stages: { orderBy: { position: "asc" }, select: { name: true, status: true, weight: true, endsAt: true, tasks: { select: { id: true, title: true, doneAt: true } } } },
       // The quotes still moving (2026-11-07): overdue, in, invoiced — the list's flags (lib/projectSubs/shared quoteFlags).
       subQuotes: { where: { status: { in: ["ASKED", "QUOTED", "INVOICED"] } }, select: { id: true, status: true, amount: true, dueBy: true, stageId: true, contractor: { select: { name: true } } } },
       // Selections (2026-11-07): a choice not made by its day, or due in the next days (lib/projectSelections/shared selectionFlags).
@@ -127,6 +127,8 @@ export async function loadProjectBook(organizationId: string): Promise<Project[]
           clientEmail: null,
           warrantyUntil: p.warrantyUntil ? p.warrantyUntil.toISOString() : null,
           finishedAt: p.finishedAt ? p.finishedAt.toISOString() : null,
+          kind: p.kind,
+          build: p.kind === "NEW_BUILD" ? buildFactsFrom(p.stages.flatMap((s) => s.tasks.map((t) => ({ id: t.id, title: t.title, done: Boolean(t.doneAt) })))) : null,
         }),
         ...(p.status === "COMPLETED" || p.status === "ARCHIVED"
           ? []
