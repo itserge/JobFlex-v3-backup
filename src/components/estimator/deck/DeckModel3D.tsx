@@ -174,6 +174,12 @@ const STAIR = layerIndex("stair");
 const STAIR_SKIN = /^(tread|riser|landing tread|box tread)$/;
 /** Legend roles whose ends are plumb cuts (sheared boxes). */
 const PLUMB_CUT = /^(rafter|jack|fly|hip|fascia rake|stringer|stair rail|roof brace|brace|truss top chord)$/;
+/** Hardware drawn as a six-sided head or nut, not a plate (2026-11-06). */
+const HEX_HEAD = /fastener|anchor|bolt|screw/i;
+/** The slab's saw-cut control joints, drawn as dark grooves. */
+const JOINT = /^control joint$/;
+/** A slab's thickness in the 3D, ft (4 in.): the top face sits at the scene's slab height, the sides go down to the ground. */
+const SLAB_THICK_FT = 4 / 12;
 
 /**
  * A scene box's place in the 3D's world — shared by the parts and their highlight, so a lit part lies exactly on its
@@ -605,13 +611,59 @@ function stoneTexture() {
   });
 }
 
-function concreteTexture() {
-  return canvasTexture(64, 64, (g) => {
-    g.fillStyle = "#ffffff";
-    g.fillRect(0, 0, 64, 64);
-    for (let i = 0; i < 900; i++) {
-      g.fillStyle = `rgba(0,0,0,${Math.random() * 0.12})`;
-      g.fillRect(Math.random() * 64, Math.random() * 64, 1, 1);
+/**
+ * Concrete as it is (owner, 2026-11-06: "more realistic concrete slab"): a warm grey with soft lighter and darker
+ * blotches, the aggregate as fine specks, and — on a new pour — the broom finish's fine parallel lines; an old slab
+ * is a shade darker, blotchier, with a hairline crack or two. 512 px to a 6-ft repeat (the slab's uv scale), the
+ * blotches drawn four times so the tile's seam does not show.
+ */
+function concreteTexture(kind: "new" | "existing" = "new") {
+  const S = 512;
+  return canvasTexture(S, S, (g) => {
+    g.fillStyle = kind === "existing" ? "#d6d3ca" : "#e6e3dc";
+    g.fillRect(0, 0, S, S);
+    for (let i = 0; i < (kind === "existing" ? 36 : 20); i++) {
+      const x = Math.random() * S;
+      const y = Math.random() * S;
+      const r = 40 + Math.random() * 130;
+      const dark = Math.random() < 0.6;
+      const tint = dark ? `rgba(40,38,34,${0.05 + Math.random() * 0.07})` : `rgba(255,255,255,${0.05 + Math.random() * 0.07})`;
+      for (const dx of [0, S, -S]) {
+        for (const dy of [0, S, -S]) {
+          const grd = g.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
+          grd.addColorStop(0, tint);
+          grd.addColorStop(1, "rgba(0,0,0,0)");
+          g.fillStyle = grd;
+          g.fillRect(x + dx - r, y + dy - r, 2 * r, 2 * r);
+        }
+      }
+    }
+    if (kind === "new") {
+      for (let y = 0; y < S; y += 2) {
+        g.fillStyle = `rgba(0,0,0,${0.02 + Math.random() * 0.045})`;
+        g.fillRect(0, y + (Math.random() < 0.5 ? 0 : 1), S, 1);
+      }
+    }
+    for (let i = 0; i < 9000; i++) {
+      g.fillStyle = Math.random() < 0.8 ? `rgba(0,0,0,${Math.random() * 0.14})` : `rgba(255,255,255,${Math.random() * 0.2})`;
+      const sz = Math.random() < 0.85 ? 1 : 2;
+      g.fillRect(Math.random() * S, Math.random() * S, sz, sz);
+    }
+    if (kind === "existing") {
+      g.strokeStyle = "rgba(30,28,25,0.38)";
+      g.lineWidth = 1;
+      for (let c = 0; c < 3; c++) {
+        let x = Math.random() * S;
+        let y = Math.random() * S * 0.5;
+        g.beginPath();
+        g.moveTo(x, y);
+        for (let k = 0; k < 14; k++) {
+          x += (Math.random() - 0.5) * 40;
+          y += 10 + Math.random() * 22;
+          g.lineTo(x, y);
+        }
+        g.stroke();
+      }
     }
   });
 }
@@ -1008,11 +1060,16 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
 
     const unitBox = new THREE.BoxGeometry(1, 1, 1);
     const unitCyl = new THREE.CylinderGeometry(0.5, 0.5, 1, 24);
+    // A bolt's head and a nut are six-sided (2026-11-06): a hex prism in the box's place — its axis along the box's
+    // depth for a head on a ledger's face, upright for an anchor's nut on a base plate.
+    const unitHexZ = new THREE.CylinderGeometry(0.5, 0.5, 1, 6).rotateX(Math.PI / 2);
+    const unitHexY = new THREE.CylinderGeometry(0.5, 0.5, 1, 6);
     const siding = sidingTexture();
     const grain = grainTexture();
     const shingles = shingleTexture();
     const ribs = ribTexture();
-    const concrete = concreteTexture();
+    const concrete = concreteTexture("new");
+    const concreteOld = concreteTexture("existing");
     const cladding: Record<string, THREE.CanvasTexture> = { brick: brickTexture(), stucco: stuccoTexture(), "board-batten": battenTexture(), stone: stoneTexture() };
     let dirty = true;
     let requestFrame = () => {};
@@ -1245,6 +1302,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           color: tinted ? 0xffffff : base,
           roughness: i === DECKING ? 0.72 : i === GUTTER ? 0.5 : i === HARDWARE ? 0.45 : i === ROOFING ? 0.85 : i === GLASS ? 0.1 : i === LIGHT ? 0.4 : 0.9,
           metalness: i === GUTTER ? 0.4 : i === HARDWARE ? 0.65 : i === GLASS ? 0.2 : 0,
+          envMapIntensity: i === HARDWARE ? 1.6 : i === GUTTER ? 1.2 : 1,
           map: woodLayer(i) ? grain : i === FOOTING || i === SLAB ? concrete : null,
           transparent: i === GLASS || i === SCREEN,
           opacity: i === GLASS ? 0.35 : i === SCREEN ? 0.55 : 1,
@@ -1278,7 +1336,9 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           if (b[0] === L && b[7] === 0 && !memberIsSawn(b, legendOf(i)?.role ?? null)) idx.push(i);
         });
         // The stairs: the treads and risers on a material of their own that the x-ray fades, the framing on the layer's.
-        const groups: Array<{ idx: number[]; mat: THREE.MeshStandardMaterial }> = [];
+        // The hardware: bolt heads, nuts and screws as hex prisms, the rest as plates. The slab: its control joints as
+        // dark grooves on a material of their own.
+        const groups: Array<{ idx: number[]; mat: THREE.MeshStandardMaterial; geo?: THREE.BufferGeometry }> = [];
         if (L === STAIR && idx.some((bi) => STAIR_SKIN.test(legendOf(bi)?.role ?? ""))) {
           const skinMat = mats[L].clone();
           skinMat.userData.base = mats[L].userData.base;
@@ -1288,9 +1348,25 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           const rest = idx.filter((bi) => !STAIR_SKIN.test(legendOf(bi)?.role ?? ""));
           if (rest.length) groups.push({ idx: rest, mat: mats[L] });
           groups.push({ idx: skin, mat: skinMat });
+        } else if (L === HARDWARE && idx.some((bi) => HEX_HEAD.test(legendOf(bi)?.role ?? ""))) {
+          const heads = idx.filter((bi) => HEX_HEAD.test(legendOf(bi)?.role ?? ""));
+          const upright = heads.filter((bi) => s.boxes[bi][6] > s.boxes[bi][4]);
+          const across = heads.filter((bi) => !(s.boxes[bi][6] > s.boxes[bi][4]));
+          const rest = idx.filter((bi) => !HEX_HEAD.test(legendOf(bi)?.role ?? ""));
+          if (rest.length) groups.push({ idx: rest, mat: mats[L] });
+          if (across.length) groups.push({ idx: across, mat: mats[L], geo: unitHexZ });
+          if (upright.length) groups.push({ idx: upright, mat: mats[L], geo: unitHexY });
+        } else if (L === SLAB && idx.some((bi) => JOINT.test(legendOf(bi)?.role ?? ""))) {
+          const jointMat = new THREE.MeshStandardMaterial({ color: 0x6b6862, roughness: 1, metalness: 0 });
+          jointMat.userData.base = new THREE.Color(0x6b6862);
+          owned.push(jointMat);
+          const joints = idx.filter((bi) => JOINT.test(legendOf(bi)?.role ?? ""));
+          const rest = idx.filter((bi) => !JOINT.test(legendOf(bi)?.role ?? ""));
+          if (rest.length) groups.push({ idx: rest, mat: mats[L] });
+          groups.push({ idx: joints, mat: jointMat });
         } else if (idx.length) groups.push({ idx, mat: mats[L] });
-        for (const { idx, mat } of groups) {
-          const mesh = new THREE.InstancedMesh(unitBox, mat, idx.length);
+        for (const { idx, mat, geo } of groups) {
+          const mesh = new THREE.InstancedMesh(geo ?? unitBox, mat, idx.length);
           mesh.castShadow = L !== HARDWARE && L !== WIRE && L !== LIGHT && L !== GLASS && L !== SCREEN;
           mesh.receiveShadow = true;
           const base = mat.userData.base as THREE.Color;
@@ -1371,7 +1447,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       }
 
       /** Flat rings into one geometry: a fan per ring, both faces, planar UVs, a range of the index per ring. */
-      const fanGeometry = (rings: Array<{ pts: Array<[number, number, number]>; color: THREE.Color }>, uvScale: number): { geo: THREE.BufferGeometry; ends: number[] } => {
+      const fanGeometry = (rings: Array<{ pts: Array<[number, number, number]>; color: THREE.Color; depth?: number; sideColor?: THREE.Color }>, uvScale: number): { geo: THREE.BufferGeometry; ends: number[] } => {
         const positions: number[] = [];
         const colors: number[] = [];
         const uvs: number[] = [];
@@ -1397,6 +1473,25 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
             uvs.push(pv.dot(e1) * uvScale, pv.dot(e2) * uvScale);
           }
           for (let k = 1; k + 1 < ring.pts.length; k++) index.push(start, start + k, start + k + 1);
+          // A ring with depth is a slab, not a sheet (2026-11-06): a side face down from every edge, so it has an
+          // edge to catch the light and a shadow to cast, the way 4 in. of concrete does.
+          if (ring.depth && ring.depth > 0) {
+            const side = ring.sideColor ?? ring.color;
+            const n = ring.pts.length;
+            for (let k = 0; k < n; k++) {
+              const a = ring.pts[k];
+              const b = ring.pts[(k + 1) % n];
+              const s0 = positions.length / 3;
+              const len = Math.hypot(b[0] - a[0], b[2] - a[2]);
+              const quad: Array<[number, number, number]> = [a, b, [b[0], b[1] - ring.depth, b[2]], [a[0], a[1] - ring.depth, a[2]]];
+              quad.forEach((p, qi) => {
+                positions.push(p[0], p[1], p[2]);
+                colors.push(side.r, side.g, side.b);
+                uvs.push((qi === 1 || qi === 2 ? len : 0) * uvScale, (qi >= 2 ? ring.depth! : 0) * uvScale);
+              });
+              index.push(s0, s0 + 2, s0 + 1, s0, s0 + 3, s0 + 2);
+            }
+          }
           ends.push(index.length);
         }
         const geo = new THREE.BufferGeometry();
@@ -1463,6 +1558,10 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         });
         if (!mine.length) continue;
         const base = mats[L].userData.base as THREE.Color;
+        // An old slab (the "existing" floor) reads a shade darker and wears its own texture; a new pour is light and
+        // broom-finished. Either stands 4 in. proud of the ground, with sides.
+        const oldSlab = L === SLAB && mine.some((pi) => (s.polyTags?.[pi] ?? -1) >= 0 && s.legend[s.polyTags[pi]]?.nominal === "existing concrete");
+        const slabBase = oldSlab ? new THREE.Color(0xaaa79e) : base;
         const rings = mine.map((pi, i) => {
           const p = s.polys[pi];
           const pts: Array<[number, number, number]> = [];
@@ -1470,16 +1569,17 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           // The spa's water pane is the one poly that is not its layer's
           // colour: still, blue, a touch glossy.
           const water = SCENE_LAYERS[L] === "spa";
+          if (L === SLAB) return { pts, color: jitter(slabBase, i + L * 31, 0.012), depth: SLAB_THICK_FT, sideColor: slabBase.clone().multiplyScalar(0.86) };
           return { pts, color: water ? new THREE.Color(0x6fb3cb) : jitter(base, i + L * 31, L === ROOFING ? 0.03 : 0.015) };
         });
-        const { geo, ends } = fanGeometry(rings, L === ROOFING ? (metalRoof ? 1 / 3 : 1 / 2.7) : L === SLAB ? 0.5 : 0.25);
+        const { geo, ends } = fanGeometry(rings, L === ROOFING ? (metalRoof ? 1 / 3 : 1 / 2.7) : L === SLAB ? 1 / 6 : 0.25);
         const mat = new THREE.MeshStandardMaterial({
           vertexColors: true,
-          roughness: L === ROOFING ? (metalRoof ? 0.45 : 0.9) : L === GLASS ? 0.1 : SCENE_LAYERS[L] === "spa" ? 0.15 : 0.9,
+          roughness: L === ROOFING ? (metalRoof ? 0.45 : 0.9) : L === GLASS ? 0.1 : SCENE_LAYERS[L] === "spa" ? 0.15 : L === SLAB ? 0.95 : 0.9,
           metalness: L === ROOFING && metalRoof ? 0.4 : L === GLASS ? 0.2 : 0,
           flatShading: true,
           side: THREE.DoubleSide,
-          map: L === ROOFING ? (metalRoof ? ribs : shingles) : L === SLAB ? concrete : null,
+          map: L === ROOFING ? (metalRoof ? ribs : shingles) : L === SLAB ? (oldSlab ? concreteOld : concrete) : null,
           transparent: L === GLASS || L === SCREEN,
           opacity: L === GLASS ? 0.35 : L === SCREEN ? 0.5 : 1,
         });
@@ -2842,6 +2942,8 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       }
       unitBox.dispose();
       unitCyl.dispose();
+      unitHexZ.dispose();
+      unitHexY.dispose();
       siding.dispose();
       for (const t of textures.values()) t.dispose();
       grain.dispose();
@@ -2849,6 +2951,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       ribs.dispose();
       grass.dispose();
       concrete.dispose();
+      concreteOld.dispose();
       for (const t of Object.values(cladding)) t.dispose();
       groundGeo.dispose();
       groundMat.dispose();

@@ -63,7 +63,7 @@ const COMMAND = z.discriminatedUnion("do", [
   z.object({ do: z.literal("placement"), to: z.enum(["attached", "beside", "detached"]) }),
   z.object({ do: z.literal("wall"), to: z.enum(["wood-rim", "engineered-rim", "foam-sheathing", "concrete", "brick-veneer", "hollow-block", "cantilever", "open-truss", "sip-icf", "unknown"]) }),
   z.object({ do: z.literal("structure"), to: z.enum(["deck", "covered-deck", "gazebo", "pergola"]) }),
-  z.object({ do: z.literal("floor"), to: z.enum(["deck", "slab", "ground"]) }),
+  z.object({ do: z.literal("floor"), to: z.enum(["deck", "slab", "existing", "ground"]) }),
   z.object({ do: z.literal("roof"), set: roofSet }),
   z.object({
     do: z.literal("decking"),
@@ -175,7 +175,7 @@ height {in: amount in INCHES (deck floor above ground)}
 shape {kind: rect|L|curve|clipped, corner?: front-left|front-right|back-left|back-right, notchWidthFt?, notchDepthFt?, bulgeFt?, clipFt?}
 slide {ft: number (+ right, − left) or "center"}  — moves the deck along the house wall
 placement {to: attached|beside|detached}; wall {to: wood-rim|engineered-rim|foam-sheathing|concrete|brick-veneer|hollow-block|cantilever|open-truss|sip-icf|unknown}
-structure {to: deck|covered-deck|gazebo|pergola}; floor {to: deck|slab|ground} (gazebo/pergola only)
+structure {to: deck|covered-deck|gazebo|pergola}; floor {to: deck|slab|existing|ground} (gazebo/pergola only; slab = a NEW slab poured and priced, existing = a slab or patio already there, no concrete priced)
 roof {set: {kind?: shed|gable|hip|pyramid|double-tier|gambrel|dutch-gable, pitch?: amount (rise per 12), eaveIn?: amount (inches, 84–144), overhangIn?, roofing?: arch-shingle|3tab-shingle|designer-shingle|cedar-shake|metal-panel|standing-seam, ceiling?: none|tongue-groove|beadboard, gutters?: none|k5|k6|half-round-alum|half-round-copper, guards?, cupola?, soffit?, fasciaFinish?: wood|pvc|aluminum-wrap, walls?: none|screen|lattice|solid, wallSides?, pergolaStyle?: flat|louvered|arched, slatSize?: 2x2|2x4|2x6, slatSpacingIn?, planShape?: follows-deck|square|rect|hexagon|octagon|round, widthFt?, depthFt?, acrossFt?, attach?: wall|free, post?: 4x4|6x6|8x8, braces?, header?: auto|lvl|beam size, rafter?: 2x6..2x12|auto, rafterSpacingIn?: 12|16|24, load?: auto|20|30|50|70, roofDeck?: sheathing|purlins, fasciaEave?, fasciaRake?}}
 decking {set: {product?: catalog id, color?: dark gray|light gray|gray|black|dark brown|reddish brown|red|light brown|brown, shade?: lighter|darker, family?: treated|softwood|hardwood|modified|composite|pvc|mineral|aluminum, tier?: good|better|best, pattern?: straight|diagonal|herringbone, border?: 0|1|2, fastening?: screws|hidden, fascia?: none|match, wastePct?}}
 framing {set: {species?, joist?: 2x6|2x8|2x10|2x12|auto|up|down, spacingIn?: 12|16|24|auto, beam?: 4x6..4x12 or 2-2x6..3-2x12 or auto, beamKind?: solid|built-up, beamStyle?: dropped|flush|auto, post?: 4x4|4x6|6x6|8x8, overhangFt?, doubleRim?, joistTape?, braces?, blocking?: auto|mid-span}}

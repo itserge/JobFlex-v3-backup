@@ -449,8 +449,11 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
       hw("roof-post-bases", "roof-posts", `Post bases, ${r.post}`, roof.posts.length, "hw.postBase", postFactor);
     } else {
       shortsOf("roof-post", [8, 10, 12, 16, 20]);
-      hw("roof-post-bases", "roof-posts", `Post bases, ${r.post}${roof.floor === "slab" ? ", anchored to the slab" : ""}`, roof.posts.length, "hw.postBase", postFactor);
-      if (roof.floor === "slab") hw("roof-anchors", "roof-posts", "Wedge anchors, two per base", roof.hardware.slabAnchors, "hw.wedgeAnchor");
+      // On concrete, new or already there, the posts sit on bases wedge-anchored into it; only a NEW slab gets the
+      // slab line below (owner, 2026-11-06).
+      const onSlab = roof.floor === "slab" || roof.floor === "existing";
+      hw("roof-post-bases", "roof-posts", `Post bases, ${r.post}${onSlab ? `, anchored to the ${roof.floor === "existing" ? "existing " : ""}slab` : ""}`, roof.posts.length, "hw.postBase", postFactor);
+      if (onSlab) hw("roof-anchors", "roof-posts", "Wedge anchors, two per base", roof.hardware.slabAnchors, "hw.wedgeAnchor");
       if (roof.floor === "ground") {
         const pours = roof.posts.map((p) => p.footing).filter((f): f is NonNullable<typeof f> => !!f && f.type === "poured");
         const rb = pours.reduce((a, f) => a + f.bags, 0);

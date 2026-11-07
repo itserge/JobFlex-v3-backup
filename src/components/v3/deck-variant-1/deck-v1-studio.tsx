@@ -1613,12 +1613,12 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
         <>
           <h3 className="v1-h3">It stands on</h3>
           {/* Labelled "It stands", the field the 3D lights by (lib/deck/fieldParts). */}
-          <Answers label="It stands" cols={3} value={design.floor} onChange={(f: Floor) => patch({ floor: f })} options={(["deck", "slab", "ground"] as const).map((f) => ({ value: f, label: FLOOR_LABEL[f] }))} />
+          <Answers label="It stands" cols={2} value={design.floor} onChange={(f: Floor) => patch({ floor: f })} options={(["deck", "slab", "existing", "ground"] as const).map((f) => ({ value: f, label: FLOOR_LABEL[f], sub: f === "slab" ? "poured and priced" : f === "existing" ? "no concrete in the price" : undefined }))} />
         </>
       ) : null}
       {!withDeck ? (
         <p className="v1-hint">
-          {design.floor === "slab" ? "A new 4-in. slab a foot wider than the posts goes in the price; the posts sit on anchored bases." : "Each post gets its own poured footing, sized for what it carries."}{" "}
+          {design.floor === "slab" ? "A new 4-in. slab a foot wider than the posts goes in the price; the posts sit on anchored bases." : design.floor === "existing" ? "The posts sit on bases wedge-anchored into the slab you have — no concrete in the price. It must be sound and at least 4 in. thick." : "Each post gets its own poured footing, sized for what it carries."}{" "}
           Its footprint is {sizeWords(design)} —{" "}
           <button type="button" className="v1-link" onClick={() => go("size")}>
             change it in Size
