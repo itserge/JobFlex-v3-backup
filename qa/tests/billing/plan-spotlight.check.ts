@@ -1,7 +1,7 @@
 // The tool the visitor came for (lib/planSpotlight, 2026-10-14): which tool a
 // link or a trade means, which feature line it marks, and how the rows reorder.
 //   npx --no-install tsx --tsconfig tsconfig.json qa/tests/billing/plan-spotlight.check.ts
-import { SPOTLIGHT, SPOTLIGHT_TOOLS, parseSpotlightTool, spotlightFor, spotlightFromTrade, spotlightLine, spotlightRow, withSpotlightFirst } from "../../../src/lib/planSpotlight";
+import { SPOTLIGHT, SPOTLIGHT_TOOLS, parseSpotlightTool, spotlightFor, spotlightFromTrade, spotlightLine, showsTool, spotlightRow, visibleRows, withSpotlightFirst } from "../../../src/lib/planSpotlight";
 
 let bad = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -31,6 +31,22 @@ const first = withSpotlightFirst(rows, "blueprint");
 check("the marked line goes first; the rest keep their order; nothing is lost", first[0] === "Blueprint estimator" && first.length === rows.length && first.slice(1).join("|") === rows.filter((r) => r !== "Blueprint estimator").join("|"));
 check("no tool, or no line: the rows as they were", withSpotlightFirst(rows, null).join("|") === rows.join("|") && withSpotlightFirst(["CRM"], "roof").join("|") === "CRM");
 check("the line over the cards", /You came for the Roof estimator — it's marked on every plan below\./.test(spotlightLine("roof", true)) && /ask us which plan carries it/.test(spotlightLine("roof", false)) && /You came for Deck Studio/.test(spotlightLine("deck", true)));
+
+console.log("── one trade, one estimator (owner, 2026-11-07)");
+// The live catalog's rows as /pricing printed them on 2026-11-07, plus a few wordings the catalog may grow.
+const catalog = ["Proposal management", "Client management", "CRM", "Calendar", "Workers management", "Financials", "Messages", "1 user", "Smart proposal generation", "Roof estimator", "Fence estimator", "HVAC estimator", "Deck Studio", "Video estimator", "Blueprints estimator (coming soon)", "AI phone answering", "Custom branding & domain", "Up to 3 users", "Unlimited users", "Follow-up automations", "SMS"];
+const others = catalog.filter((r) => !["Roof estimator", "Fence estimator", "HVAC estimator", "Deck Studio"].includes(r));
+const only = (tool: "roof" | "hvac" | "fence", line: string) => {
+  const seen = withSpotlightFirst(visibleRows(catalog, tool), tool);
+  return seen[0] === line && seen.slice(1).join("|") === others.join("|") && showsTool("deck", tool) === false && showsTool(tool, tool) && showsTool("smart", tool) && showsTool("aidesk", tool);
+};
+check("fence: only the Fence estimator among the trades, pinned first; no Roof/HVAC/Deck rows nor the Deck add-on line; the rest stay", only("fence", "Fence estimator"));
+check("roofing: only the Roof estimator", spotlightFor({ industry: "roofing" }) === "roof" && only("roof", "Roof estimator"));
+check("hvac: only the HVAC estimator", spotlightFor({ industry: "hvac" }) === "hvac" && only("hvac", "HVAC estimator"));
+check("deck does not narrow: every row and the add-on line", visibleRows(catalog, "deck").join("|") === catalog.join("|") && showsTool("deck", "deck") && showsTool("roof", "deck"));
+check("no spotlight (direct visitor): every row and the add-on line", visibleRows(catalog, null).join("|") === catalog.join("|") && showsTool("deck", null) && showsTool("fence", undefined));
+check("smart / blueprint / aidesk do not narrow", (["smart", "blueprint", "aidesk"] as const).every((t) => visibleRows(catalog, t).join("|") === catalog.join("|") && showsTool("deck", t)));
+check("a catalog without the spotlighted line: the other trades still go, nothing pinned (the card says 'Not in this plan' as before)", visibleRows(["CRM", "Roof estimator", "Deck Studio"], "fence").join("|") === "CRM" && spotlightRow(visibleRows(["CRM", "Roof estimator"], "fence"), "fence") === null);
 
 console.log(bad ? `\n${bad} FAILED` : "\nall good");
 process.exit(bad ? 1 : 0);

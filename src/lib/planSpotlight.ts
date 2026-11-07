@@ -92,6 +92,29 @@ export function withSpotlightFirst(rows: readonly string[], tool: SpotlightTool 
   return [hit, ...rows.filter((r) => r !== hit)];
 }
 
+/* ONE TRADE, ONE ESTIMATOR (owner, 2026-11-07: "a visitor who came for ONE trade sees only that trade's estimator in
+   the plan cards"). The trade estimators are roof, hvac, fence and deck. A visitor whose spotlight is roof, hvac or
+   fence sees only that one among them — the other trade rows (and the Deck Studio add-on line) are hidden; every row
+   that is not a trade estimator stays. Deck, smart, blueprint, aidesk, or no spotlight: every row, as before. Rows
+   are found by the SPOTLIGHT map's own match, never by free text. Public plan cards only (landing, /pricing, the
+   signup plan step); Subscription and Upgrade in the app keep every row. */
+const TRADE_TOOLS: readonly SpotlightTool[] = ["roof", "hvac", "fence", "deck"];
+const NARROWING: ReadonlySet<SpotlightTool> = new Set<SpotlightTool>(["roof", "hvac", "fence"]);
+
+/** Whether a trade tool's line shows for this visitor (any non-trade tool always does). */
+export function showsTool(tool: SpotlightTool, spotlight: SpotlightTool | null | undefined): boolean {
+  if (!spotlight || !NARROWING.has(spotlight)) return true;
+  return tool === spotlight || !TRADE_TOOLS.includes(tool);
+}
+
+/** The rows a visitor sees: minus the other trades' estimator rows when the spotlight narrows. A row that also
+ *  matches the spotlighted tool stays. Order kept. */
+export function visibleRows(rows: readonly string[], spotlight: SpotlightTool | null | undefined): string[] {
+  if (!spotlight || !NARROWING.has(spotlight)) return [...rows];
+  const own = SPOTLIGHT[spotlight].match;
+  return rows.filter((r) => own.test(r) || !TRADE_TOOLS.some((t) => t !== spotlight && SPOTLIGHT[t].match.test(r)));
+}
+
 /** Tools sold as an add-on to any plan, never by a plan: the Deck Studio (owner-locked 2026-10-20 — the free trial
  *  holds it, then $79/month on any plan; lib/deckAddon). */
 const ADD_ON: Partial<Record<SpotlightTool, string>> = { deck: `the trial includes it, then it's ${deckAddonPriceWords("MONTH")} on any plan` };

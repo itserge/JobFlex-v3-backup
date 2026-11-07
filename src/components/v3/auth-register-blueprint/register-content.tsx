@@ -62,7 +62,7 @@ import { PasswordlessStep } from "./passwordless-step";
 import { autoPlanFor, type AutoPlanOffer } from "@/lib/signupAutoPlan";
 import { rememberOtpDraft, rememberSignupMode, type SignupMode } from "@/lib/signupMode";
 import { forgetOtpDraft, otpPendingState } from "@/actions/signupOtp";
-import { SPOTLIGHT, SPOTLIGHT_MISSING, SPOTLIGHT_TAG, spotlightInPlan, spotlightLine, spotlightRow, withSpotlightFirst, type SpotlightTool } from "@/lib/planSpotlight";
+import { SPOTLIGHT, SPOTLIGHT_MISSING, SPOTLIGHT_TAG, spotlightInPlan, spotlightLine, spotlightRow, visibleRows, withSpotlightFirst, type SpotlightTool } from "@/lib/planSpotlight";
 import type { OtpRestore } from "@/lib/signupOtp";
 import {
   applySignupPromo,
@@ -591,7 +591,9 @@ export function RegisterContent({
         rows.push(f.trim());
       }
     }
-    return withSpotlightFirst(rows, spotlight);
+    /* A roofer, fencer or HVAC visitor sees only their own estimator among the trade rows (lib/planSpotlight
+       visibleRows, owner 2026-11-07). */
+    return withSpotlightFirst(visibleRows(rows, spotlight), spotlight);
   }, [plans, spotlight]);
   /* The row the spotlight marks — null when no plan lists the tool. */
   const spotRow = React.useMemo(() => spotlightRow(featureRows, spotlight), [featureRows, spotlight]);

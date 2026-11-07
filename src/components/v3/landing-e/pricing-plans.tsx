@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { expandPlanFeatures, type PlanDTO } from "@/lib/planCatalog";
 import { annualDeal, offersYearly, sharedDealWords, withBillingTerm, type BillingTerm } from "@/lib/planDeal";
 import { PlanCardHead, PlanDealSlot, PlanPrice, PlanTermSwitch } from "@/components/billing/PlanTermSwitch";
-import { SPOTLIGHT, SPOTLIGHT_MISSING, SPOTLIGHT_TAG, spotlightInPlan, spotlightLine, spotlightRow, withSpotlightFirst, type SpotlightTool } from "@/lib/planSpotlight";
+import { SPOTLIGHT, SPOTLIGHT_MISSING, SPOTLIGHT_TAG, showsTool, spotlightInPlan, spotlightLine, spotlightRow, visibleRows, withSpotlightFirst, type SpotlightTool } from "@/lib/planSpotlight";
 import { deckAddonShortWords } from "@/lib/deckAddon";
 import "./pricing-faq.css";
 
@@ -77,8 +77,12 @@ export function PricingPlans({
 }) {
   const { days } = useTrialOffer();
   const expanded = expandPlanFeatures(plans);
-  const spot = spotlightRow(expanded.rows, spotlight);
-  const rows = withSpotlightFirst(expanded.rows, spotlight);
+  /* A roofer, fencer or HVAC visitor sees only their own estimator among the trade rows (lib/planSpotlight visibleRows,
+     owner 2026-11-07); the in-app Subscription and Upgrade pages keep every row. */
+  const shown = visibleRows(expanded.rows, spotlight);
+  const spot = spotlightRow(shown, spotlight);
+  const rows = withSpotlightFirst(shown, spotlight);
+  const deckLine = showsTool("deck", spotlight);
   const included = expanded.included;
   const heroIndex = Math.max(0, plans.findIndex((p) => p.highlight));
   const railRef = useRef<HTMLDivElement>(null);
@@ -233,15 +237,18 @@ export function PricingPlans({
                     </li>
                   );
                 })}
-                {/* DECK STUDIO (owner, 2026-10-26): on no plan — the same add-on on every one (lib/deckAddon). */}
-                <li className="lp-pw-f lp-pw-f--addon" data-plan-addon="deck">
-                  <Plus />
-                  <span className="sr-only">Add-on: </span>
-                  <span className="lp-pw-ft">
-                    <span className="lp-pw-fn">Deck Studio</span>
-                    <b className="lp-pw-addon">Add-on {deckAddonShortWords(term === "YEAR" && p.yearlyPriceCents ? "YEAR" : "MONTH")}</b>
-                  </span>
-                </li>
+                {/* DECK STUDIO (owner, 2026-10-26): on no plan — the same add-on on every one (lib/deckAddon).
+                    A trade estimator, so hidden for a roofer/fencer/HVAC visitor (owner, 2026-11-07). */}
+                {deckLine ? (
+                  <li className="lp-pw-f lp-pw-f--addon" data-plan-addon="deck">
+                    <Plus />
+                    <span className="sr-only">Add-on: </span>
+                    <span className="lp-pw-ft">
+                      <span className="lp-pw-fn">Deck Studio</span>
+                      <b className="lp-pw-addon">Add-on {deckAddonShortWords(term === "YEAR" && p.yearlyPriceCents ? "YEAR" : "MONTH")}</b>
+                    </span>
+                  </li>
+                ) : null}
               </ul>
               <a href={startHref} className="lp-pw-go" data-cta="pricing" data-cta-button={`plan-${p.slug}`}>
                 Start {days}-day free trial
