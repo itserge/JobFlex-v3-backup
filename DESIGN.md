@@ -523,6 +523,21 @@ a New build row carries a "New build" flag chip beside its status. Edit
 project shows the same segment and locks it once a stage is done. The Stages
 card offers the kind's templates only. Nothing else on the page changes with
 the kind until the later parts (gates, the money) ship.
+Contractors: quotes and invoices (2026-11-07, the plan "Projects: Remodel and
+New construction", part 2): a Contractors card on the project page, after
+Buying, on the hub's own rules — the quotes grouped by stage under a ruled
+group head that carries the stage's budget share, each quote a line with the
+contractor's name and trade, a status tag (asked · reply by; quoted $ · lowest
+or $ over the line; awarded · waiting for the invoice; invoice in; paid), the
+note, the link in mono, and the small buttons (Award in blueprint, Decline,
+Mark paid beside a prefilled amount box, Resend, Copy link). "Ask for a quote"
+is a BlueprintSheet: the stage, the contractors as a check list with the
+stage's trade first and "+ New contractor" in place, the scope textarea
+prefilled, Reply by. The contractor's page /q/[token] is the buyer's plain
+page (buy.css, .jf-buy) with the scope as lines, a price box and a note, Send
+my price, "Pass on it" as a text link; after the award the same page asks for
+the invoice amount and a link. The Projects list flags "Quote overdue" (warning
+chip), "Quote in" and "Invoice in" (blueprint chips).
 
 Projects hub, stages (2026-11-05): the Stages card leads the project page on
 desk and handheld, above the proposals — a remodel is read by where it stands.

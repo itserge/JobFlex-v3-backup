@@ -50,7 +50,7 @@ import {
   type PdJob,
   type PdOpens,
   type PdPayments,
-  type PdBuying,
+  type PdBuying, PdSubs,
   type PdField,
   type PdFinish,
   type PdShare,
@@ -83,6 +83,7 @@ import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
 import { ProjectBudgetCard } from "@/components/v3/project-links/project-budget-card";
 import { ProjectStagesCard } from "@/components/v3/project-links/project-stages-card";
 import { ProjectBuyingCard } from "@/components/v3/project-links/project-buying-card";
+import { ProjectSubsCard } from "@/components/v3/project-links/project-subs-card";
 import { ProjectFieldCard } from "@/components/v3/project-links/project-field-card";
 import { ProjectTimelineCard } from "@/components/v3/project-links/project-timeline-card";
 import { ProjectFinishCard } from "@/components/v3/project-links/project-finish-card";
@@ -141,6 +142,7 @@ export function ProjectDetailContent({
   roster = [],
   stages = { stages: [], done: null, draftedByAi: false },
   buying,
+  subs,
   field,
   timeline,
   finish,
@@ -151,6 +153,7 @@ export function ProjectDetailContent({
   stages?: PdStages;
   /** The to-buy list and the orders (2026-11-05). */
   buying?: PdBuying;
+  subs?: PdSubs;
   /** On site: problems, hours, the subs' bills (2026-11-05). */
   field?: PdField;
   /** The stages across the weeks (2026-11-06). */
@@ -379,6 +382,7 @@ export function ProjectDetailContent({
       <ProposalsCard proposals={proposals} project={project} onAttach={openAttach} canManage={canManage} />
       <ProjectCombine projectId={project.id} projectName={project.name} proposals={proposals} />
       {buying ? <ProjectBuyingCard projectId={project.id} buying={buying} stages={stages.stages} canManage={canManage} /> : null}
+      {subs ? <ProjectSubsCard projectId={project.id} subs={subs} stages={stages.stages} canManage={canManage} /> : null}
       {budget ? <ProjectBudgetCard projectId={project.id} budget={budget} /> : null}
       <ProjectPaymentsCard payments={payments} canManage={canManage} />
 

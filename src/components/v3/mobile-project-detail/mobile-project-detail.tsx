@@ -70,7 +70,7 @@ import {
   type PdJob,
   type PdOpens,
   type PdPayments,
-  type PdBuying,
+  type PdBuying, PdSubs,
   type PdField,
   type PdFinish,
   type PdShare,
@@ -101,6 +101,7 @@ import { ProjectCombine } from "@/components/v3/project-links/project-combine";
 import { ProjectCrewSheet } from "@/components/v3/project-links/project-crew-sheet";
 import { ProjectStagesCard } from "@/components/v3/project-links/project-stages-card";
 import { ProjectBuyingCard } from "@/components/v3/project-links/project-buying-card";
+import { ProjectSubsCard } from "@/components/v3/project-links/project-subs-card";
 import { ProjectFieldCard } from "@/components/v3/project-links/project-field-card";
 import { ProjectTimelineCard } from "@/components/v3/project-links/project-timeline-card";
 import { ProjectFinishCard } from "@/components/v3/project-links/project-finish-card";
@@ -311,6 +312,7 @@ export function MobileProjectDetail({
   roster = [],
   stages = { stages: [], done: null, draftedByAi: false },
   buying,
+  subs,
   field,
   timeline,
   finish,
@@ -330,6 +332,7 @@ export function MobileProjectDetail({
   stages?: PdStages;
   /** The to-buy list and the orders (2026-11-05). */
   buying?: PdBuying;
+  subs?: PdSubs;
   /** On site: problems, hours, the subs' bills (2026-11-05). */
   field?: PdField;
   /** The stages across the weeks (2026-11-06). */
@@ -712,6 +715,11 @@ export function MobileProjectDetail({
           {buying ? (
             <div className="mpd-budget">
               <ProjectBuyingCard projectId={project.id} buying={buying} stages={stages.stages} canManage={canManage} />
+            </div>
+          ) : null}
+          {subs ? (
+            <div className="mpd-budget">
+              <ProjectSubsCard projectId={project.id} subs={subs} stages={stages.stages} canManage={canManage} />
             </div>
           ) : null}
 

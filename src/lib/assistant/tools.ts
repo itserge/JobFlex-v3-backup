@@ -40,6 +40,7 @@ import { FIELD_TOOLS } from "@/lib/assistant/field";
 import { TIMELINE_TOOLS } from "@/lib/assistant/timeline";
 import { CLIENT_TOOLS } from "@/lib/assistant/client";
 import { BUSINESS_TOOLS } from "@/lib/assistant/business";
+import { CONTRACTOR_TOOLS } from "@/lib/assistant/contractors";
 
 export interface ToolContext {
   actor: AssistantActor;
@@ -974,7 +975,7 @@ export const TOOLS: readonly AnyTool[] = [
   find,
   openProposals,
   moneyTool,
-  ...BUSINESS_TOOLS,
+  ...BUSINESS_TOOLS, ...CONTRACTOR_TOOLS,
   crew,
   ...BUILDERS,
   ...FENCE_TOOLS,

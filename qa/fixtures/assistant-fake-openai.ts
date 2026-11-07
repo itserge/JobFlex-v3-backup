@@ -192,6 +192,46 @@ function answer(body: { messages: Msg[] }) {
     return reply(r.receipts ? `${r.period}: ${r.total} — ${r.byCategory.map((c) => `${c.category} ${c.amount}`).join(", ")}.` : `Nothing booked ${r.period.startsWith("the") ? "in " : "for "}${r.period}.`);
   }
 
+  // "Who do we have for carpentry?" → contractors(trade) → the names.
+  const whoFor = /\b(?:who do we have|which \w+ do we use|list our contractors)(?: for ([a-z ]+?))?\s*\??$/i.exec(user);
+  if (whoFor) {
+    const r = done.get("contractors") as { contractors?: Array<{ name: string; trade: string | null }> } | undefined;
+    if (!r) return call("contractors", { trade: whoFor[1]?.trim() ?? null });
+    const cs = r.contractors ?? [];
+    return reply(cs.length ? `${cs.map((c) => `${c.name}${c.trade ? ` (${c.trade})` : ""}`).join(", ")}.` : "Nobody on the list yet.");
+  }
+  // Contractors (2026-11-07): "ask the framers for a quote on the Lee house framing" → ask_quotes; "any quotes back on
+  // the framing" → quotes; "award the framing to Ridge Framing" → award_quote. The project comes from the records
+  // or a find; the stand's drive names it outright.
+  const askQ = /\bask (?:the )?([a-z]+?s?)\b.*?\bfor a quote on (?:the )?(.+?) (?:framing|foundation|roof|plumbing|electrical|drywall|finishes|site work|stage|work)\b/i.exec(user);
+  if (askQ && !done.has("ask_quotes")) {
+    const stage = /\b(framing|foundation|roof|plumbing|electrical|drywall|finishes|site work)\b/i.exec(user)?.[1] ?? null;
+    const found = done.get("find") as Found | undefined;
+    const pid = found?.projects?.[0]?.id ?? null;
+    if (!pid) return call("find", { query: askQ[2].trim(), kind: "project" });
+    return call("ask_quotes", { projectId: pid, stage, trade: askQ[1].replace(/s$/, ""), contractors: null });
+  }
+  if (done.has("ask_quotes")) return reply("Asked — say yes and the requests go out.");
+  const anyQ = /\b(any quotes|who quoted|quotes back|what did .* quote)\b.*?\bon (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  if (anyQ) {
+    const r = done.get("quotes") as { quotes?: Array<{ contractor: string; status: string; amount: number | null; best: boolean }> } | undefined;
+    if (!r) {
+      const found = done.get("find") as Found | undefined;
+      const pid = found?.projects?.[0]?.id ?? null;
+      if (!pid) return call("find", { query: anyQ[2].trim().replace(/\b(framing|foundation|roof)\b/i, "").trim(), kind: "project" });
+      return call("quotes", { projectId: pid, stage: /\b(framing|foundation|roof)\b/i.exec(user)?.[1] ?? null });
+    }
+    const qs = r.quotes ?? [];
+    return reply(qs.length ? qs.map((q) => `${q.contractor}: ${q.status === "QUOTED" && q.amount != null ? `$${q.amount.toLocaleString("en-US")}${q.best ? " (lowest)" : ""}` : q.status.toLowerCase()}`).join("; ") + "." : "No quotes yet.");
+  }
+  const awardQ = /\baward (?:the )?(\w+) (?:on (?:the )?(.+?) )?to ([A-Z][\w ]+?)\s*$/i.exec(user);
+  if (awardQ && !done.has("award_quote")) {
+    const found = done.get("find") as Found | undefined;
+    const pid = found?.projects?.[0]?.id ?? null;
+    if (!pid) return call("find", { query: (awardQ[2] ?? "").trim() || "house", kind: "project" });
+    return call("award_quote", { projectId: pid, contractor: awardQ[3].trim(), stage: awardQ[1] });
+  }
+  if (done.has("award_quote")) return reply("Planned — say yes to award it.");
   // "Start a kitchen remodel for Sarah Lee, she lives there" → start_project (2026-11-07): the kind from the words,
   // the template from the job's word, the client's name as said; the engine reads it back and a yes makes it.
   const started = /\bstart (?:a |an )?(?:new )?(?:(kitchen|bath|bathroom|deck|roof|fence|addition|basement|whole[- ]house|adu|garage|windows?|painting|service|floors?|hvac|siding) )?(remodel|new build|new construction|new house|build|house|project)\b(?:.*?\bfor ([A-Z][a-z]+(?: [A-Z][a-z]+)?))?/i.exec(user);

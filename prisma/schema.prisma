@@ -172,6 +172,7 @@ model Organization {
   assistantLinks       AssistantLink[]
   assistantMessages    AssistantMessage[]
   assistantActions     AssistantAction[]
+  contractors          Contractor[]
   signupPromo          PromoCode?            @relation("OrgSignupPromo", fields: [signupPromoCodeId], references: [id], onDelete: SetNull)
 
   @@index([slug])
@@ -2356,6 +2357,7 @@ model Project {
   inspections  ProjectInspection[]
   punchItems   PunchItem[]
   files        ProjectFile[]
+  subQuotes    ProjectSubQuote[]
 
   @@unique([organizationId, number])
   @@index([organizationId])
@@ -2387,6 +2389,7 @@ model ProjectStage {
   materials   ProjectMaterial[]
   orders      ProjectOrder[]
   inspections ProjectInspection[]
+  subQuotes   ProjectSubQuote[]
 
   @@index([projectId, position])
 }
@@ -2469,6 +2472,63 @@ model PunchItem {
 // invoice: uploaded into the private store (lib/media/privateStore, read through a signed link) or a link to
 // where it lives (Google Drive, the county's permit portal). `kind`: CONTRACT | PERMIT | PLAN | WARRANTY |
 // INVOICE | OTHER. `clientVisible` puts it on the homeowner's page; the crew sees every file, read-only.
+// CONTRACTORS (2026-11-07, the plan "Projects: Remodel and New construction", part 2): the company's subs — the
+// list a project asks for quotes from. A contractor is a business contact, never a user.
+model Contractor {
+  id             String    @id @default(cuid())
+  organizationId String
+  name           String
+  company        String?
+  // One of lib/tradeTypes, or the company's own word.
+  trade          String?
+  phone          String?
+  email          String?
+  license        String?
+  insuranceUntil DateTime?
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  quotes       ProjectSubQuote[]
+  @@index([organizationId, name])
+}
+
+// A quote asked of a contractor for a stage's work, through its award and its invoice (lib/projectSubs). The
+// contractor answers on their own page, /q/<publicToken>, with no sign-in: the price and a note, later the invoice.
+model ProjectSubQuote {
+  id             String    @id @default(cuid())
+  organizationId String
+  projectId      String
+  stageId        String?
+  contractorId   String
+  number         Int       @default(1)
+  scope          String
+  // ASKED | QUOTED | AWARDED | DECLINED | INVOICED | PAID
+  status         String    @default("ASKED")
+  dueBy          DateTime?
+  askedAt        DateTime  @default(now())
+  amount         Float?
+  note           String?
+  quotedAt       DateTime?
+  awardedAt      DateTime?
+  declinedAt     DateTime?
+  invoiceAmount  Float?
+  invoiceUrl     String?
+  invoicedAt     DateTime?
+  paidAt         DateTime?
+  // The Subcontractors expense "Mark paid" logged on the project.
+  expenseId      String?
+  publicToken    String    @unique @default(cuid())
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  project    Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  stage      ProjectStage? @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  contractor Contractor    @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  @@index([projectId, status])
+  @@index([organizationId, status])
+}
+
 model ProjectFile {
   id             String   @id @default(cuid())
   organizationId String

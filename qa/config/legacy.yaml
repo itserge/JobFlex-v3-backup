@@ -105,6 +105,7 @@ scripts:
   - { file: assistant-registry.check.ts, suite: logic, kind: check, status: live, note: "the AI Operator's capability registry: every tool's card, strict arguments, a parsing sample, a known permission; the client catalog in step with the cards" }
   - { file: assistant-selection.live.ts, suite: logic, kind: check, status: live, note: "the model's choice of tool for every card's samples — opt-in (ASSISTANT_SELECTION_LIVE=1 + a real key), otherwise it says so and passes" }
   - { file: project-kind.check.ts, suite: logic, kind: check, status: live, note: "Remodel or New construction: the kind, the questions at the start, the templates per kind with shares that sum to one, living in place, the Operator's template words" }
+  - { file: project-subs.check.ts, suite: logic, kind: check, status: live, note: "contractors' quotes: the statuses, the scope a stage reads as, the reply-by rule, the comparison against the budget line, the overdue rule, the list's flags" }
   - { file: changeOrders.check.ts, suite: logic, kind: check, status: live }
   - { file: crew-days.check.ts, suite: logic, kind: check, status: live, note: "could text through Twilio if its keys were set — the runner preloads the recording twilio stand-in (_no-sms.js)" }
   - { file: crew-onsite.check.ts, suite: logic, kind: check, status: live }
