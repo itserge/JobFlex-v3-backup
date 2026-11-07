@@ -105,6 +105,8 @@ export function Conversation({
     speakUrl: "/api/assistant/speak",
     transcribeUrl: "/api/assistant/transcribe",
     streamSpeech: true,
+    // An iPad's own recogniser goes deaf after the first reply, as an iPhone's does (2026-11-07): the server's ears.
+    appleServerEars: true,
   });
   useEffect(() => {
     sayRef.current = speech.say;

@@ -39,8 +39,9 @@ export function metaLeadPresentation(lead: Contact & { id: string; source: strin
       } catch { /* Keep unrecognized values as plain text. */ }
     }
     const label = field.key.replace(/_/g, " ").trim();
-    // Only prettify option identifiers, never arbitrary prose, emails or URLs.
-    const value = field.value.split(", ").map(v => /^[a-z][a-z0-9_/-]*$/.test(v) && v.includes("_")
+    // Only prettify option identifiers, never arbitrary prose, emails or URLs. A one-word option ("commercial") is
+    // one too: it reads "Commercial" (2026-11-07, the owner's new-lead mail).
+    const value = field.value.split(", ").map(v => /^[a-z][a-z0-9_/-]*$/.test(v)
       ? v.replace(/_/g, " ").replace(/\//g, " / ").replace(/^./, c => c.toUpperCase()) : v).join(", ");
     answers.push({ label: label.charAt(0).toUpperCase() + label.slice(1), value: value || "Not provided" });
   }

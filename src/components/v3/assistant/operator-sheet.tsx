@@ -147,8 +147,13 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
     transcribeUrl: "/api/assistant/transcribe",
     // The route answers a GET as the audio is made: the reply sounds after its first moments.
     streamSpeech: true,
+    // An iPhone's own recogniser goes deaf after the first reply (2026-11-07): there it records and the server writes
+    // it down (use-deck-speech, "the server's ears").
+    appleServerEars: true,
   });
   const listening = speech.mic === "listening" || speech.mic === "recording";
+  /** The server's ears are writing down what was just said. */
+  const writing = speech.mic === "sending";
   const canTalk = speech.mode !== "none";
   /** A live conversation is on (listening, thinking or speaking, until it is ended). */
   const live = speech.hearing === "live";
@@ -424,14 +429,14 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
               <p className="op-dim">Next — as soon as this answer is in.</p>
             </>
           ) : null}
-          {listening || heard ? (
+          {listening || heard || writing ? (
             <div className="op-listen">
               <div className="op-rec">
                 <span className="op-stp red">● Rec</span>
                 <span className="op-clock">{clock}</span>
               </div>
-              <p className="op-tx">{heard || "Listening — just talk."}</p>
-              <p className="op-under">{isHolding ? "Let go to send · slide off to cancel" : live ? "Say 'stop' or tap the dial to end" : "It sends when you pause"}</p>
+              <p className="op-tx">{heard || (writing ? "Writing that down…" : speech.voiced ? "Hearing you…" : "Listening — just talk.")}</p>
+              <p className="op-under">{isHolding ? "Let go to send · slide off to cancel" : live ? "Pause to send · say 'stop' or tap the dial to end" : "It sends when you pause"}</p>
             </div>
           ) : null}
           {error ? (
