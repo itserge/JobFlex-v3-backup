@@ -29,6 +29,7 @@ import { BlueprintSheet } from "@/components/ui/BlueprintSheet";
 import type { PdStages, PdStage } from "@/components/v3/project-detail-blueprint/project-detail-data";
 import { currentStage, lateStages, lateWords, percentDone, stageStatusOf, suggestTasks, templatesFor } from "@/lib/projectStages/shared";
 import type { ProjectKind } from "@/lib/projectKind";
+import { gateHolds, gateShort, gateWords } from "@/lib/projectGates";
 import s from "./project-hub.module.css";
 
 /** "Nov 3" from a stage's day (UTC midnight, like the project's own days). */
@@ -45,6 +46,8 @@ function dates(st: PdStage): string | null {
 type Editing = { id: string | null; name: string; startsAt: string; endsAt: string; tasks: string };
 
 const taskLines = (text: string) => text.split("\n").map((x) => x.replace(/^\s*[-•*]\s*/, "").trim()).filter(Boolean);
+/** The gating inspections still holding a stage (part 3, 2026-11-07): Done waits until each has passed. */
+const holdingOf = (st: PdStage) => gateHolds((st.gates ?? []).map((g) => ({ ...g, gate: true })));
 
 export function ProjectStagesCard({ projectId, stages: initial, canManage, kind = "REMODEL" }: { projectId: string; stages: PdStages; canManage: boolean; kind?: ProjectKind }) {
   const router = useRouter();
@@ -98,7 +101,8 @@ export function ProjectStagesCard({ projectId, stages: initial, canManage, kind 
         if (x.id !== st.id) return x;
         const tasks = x.tasks.map((t) => (t.id === task.id ? { ...t, done: value } : t));
         const allDone = tasks.length > 0 && tasks.every((t) => t.done);
-        const status = value && allDone ? "DONE" : !value && x.status === "DONE" ? "ACTIVE" : value && x.status === "PLANNED" ? "ACTIVE" : x.status;
+        // The last tick closes the stage — unless a gate holds it (the server says the same).
+        const status = value && allDone ? (holdingOf(x).length ? (x.status === "PLANNED" ? "ACTIVE" : x.status) : "DONE") : !value && x.status === "DONE" ? "ACTIVE" : value && x.status === "PLANNED" ? "ACTIVE" : x.status;
         return { ...x, tasks, status };
       }),
     );
@@ -232,6 +236,7 @@ export function ProjectStagesCard({ projectId, stages: initial, canManage, kind 
               const ticked = st.tasks.filter((t) => t.done).length;
               const lateDays = late.get(st.id);
               const when = dates(st);
+              const holding = status === "DONE" ? [] : holdingOf(st);
               return (
                 <div key={st.id} className={`${s.row} ${status === "DONE" ? s.isDone : ""} ${status === "ACTIVE" ? s.isActive : ""}`} data-stage-row data-stage-status={status}>
                   <span className={s.mark} aria-hidden="true">
@@ -244,7 +249,8 @@ export function ProjectStagesCard({ projectId, stages: initial, canManage, kind 
                     {when ? <span>{when}</span> : null}
                     {st.tasks.length ? <span>{`${ticked} of ${st.tasks.length} task${st.tasks.length === 1 ? "" : "s"}`}</span> : null}
                     {lateDays ? <span className={s.lateTag}>{lateWords(lateDays)}</span> : null}
-                    {!when && !st.tasks.length ? <span>{status === "DONE" ? "done" : status === "ACTIVE" ? "in progress" : "planned"}</span> : null}
+                    {holding.length ? <span className={holding.some((g) => g.result === "FAILED") ? s.lateTag : undefined} data-stage-gate>{gateShort(holding)}</span> : null}
+                    {!when && !st.tasks.length && !holding.length ? <span>{status === "DONE" ? "done" : status === "ACTIVE" ? "in progress" : "planned"}</span> : null}
                   </div>
                   {canManage ? (
                     <div className={s.rowActs}>
@@ -259,7 +265,7 @@ export function ProjectStagesCard({ projectId, stages: initial, canManage, kind 
                               Start
                             </button>
                           ) : null}
-                          <button type="button" className={s.btnSm} disabled={busy !== null} onClick={() => setStatus(st, "DONE")} data-stage-done>
+                          <button type="button" className={s.btnSm} disabled={busy !== null || holding.length > 0} title={holding.length ? gateWords(holding, st.name) : undefined} onClick={() => setStatus(st, "DONE")} data-stage-done>
                             Done
                           </button>
                         </>

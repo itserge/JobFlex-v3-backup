@@ -24,7 +24,7 @@ const dayOf = (s: string | null) => (s ? new Date(`${s}T00:00:00.000Z`) : null);
 
 // ── the read ─────────────────────────────────────────────────────────────────
 
-export type TimelineInspection = { id: string; name: string; date: string | null; readyNote: string | null; isFinal: boolean; result: string; resultNote: string | null; resultAt: string | null; stageId: string | null; stageName: string | null };
+export type TimelineInspection = { id: string; name: string; date: string | null; readyNote: string | null; isFinal: boolean; result: string; resultNote: string | null; resultAt: string | null; stageId: string | null; stageName: string | null; kind: string | null; gate: boolean };
 export type TimelineDelivery = { id: string; number: number; stageId: string | null; day: string; status: string; from: string };
 export type TimelineRead = {
   today: string;
@@ -43,7 +43,7 @@ export async function timelineOf(organizationId: string, projectId: string): Pro
   const today = localDayKey(new Date(), tz);
   const [read, inspections, orders, jobs] = await Promise.all([
     stagesOf(projectId),
-    db.projectInspection.findMany({ where: { projectId }, orderBy: [{ date: "asc" }, { createdAt: "asc" }], select: { id: true, name: true, date: true, readyNote: true, isFinal: true, result: true, resultNote: true, resultAt: true, stageId: true, stage: { select: { name: true } } } }),
+    db.projectInspection.findMany({ where: { projectId }, orderBy: [{ date: "asc" }, { createdAt: "asc" }], select: { id: true, name: true, date: true, readyNote: true, isFinal: true, result: true, resultNote: true, resultAt: true, stageId: true, kind: true, gate: true, stage: { select: { name: true } } } }),
     db.projectOrder.findMany({ where: { projectId, status: { not: "CANCELED" } }, select: { id: true, number: true, stageId: true, status: true, expectedAt: true, deliveredAt: true, how: true, buyerName: true, supplier: { select: { name: true } } } }),
     db.job.findMany({ where: { projectId, organizationId, status: { not: "CANCELED" } }, select: { id: true, title: true, status: true, startsAt: true, endsAt: true, events: { select: { startsAt: true } } } }),
   ]);
@@ -56,7 +56,7 @@ export async function timelineOf(organizationId: string, projectId: string): Pro
     today,
     tz,
     stages: read.stages,
-    inspections: inspections.map((i) => ({ id: i.id, name: i.name, date: isoDay(i.date), readyNote: i.readyNote, isFinal: i.isFinal, result: i.result, resultNote: i.resultNote, resultAt: i.resultAt ? i.resultAt.toISOString() : null, stageId: i.stageId, stageName: i.stage?.name ?? null })),
+    inspections: inspections.map((i) => ({ id: i.id, name: i.name, date: isoDay(i.date), readyNote: i.readyNote, isFinal: i.isFinal, result: i.result, resultNote: i.resultNote, resultAt: i.resultAt ? i.resultAt.toISOString() : null, stageId: i.stageId, stageName: i.stage?.name ?? null, kind: i.kind, gate: i.gate })),
     deliveries: orders
       .map((o) => ({ id: o.id, number: o.number, stageId: o.stageId, day: isoDay(o.deliveredAt ?? o.expectedAt), status: o.status, from: o.how === "SUPPLIER" ? (o.supplier?.name ?? "supplier") : o.how === "BUYER" ? (o.buyerName ?? "a buyer") : "stock" }))
       .filter((o): o is TimelineDelivery => !!o.day),

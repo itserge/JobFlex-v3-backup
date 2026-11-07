@@ -58,11 +58,11 @@ export type Project = {
   /** What the stages and the buying flag: a late stage, no stages on sold work, an AI draft to keep, materials
    *  not ordered by their day, a delivery past its day; an inspection due, punch items open, the finish line's
    *  next step (2026-11-06). */
-  attention?: Array<{ kind: "late" | "nostages" | "drafted" | "order-by" | "late-delivery" | "problem" | "inspection" | "punch" | "finish" | "quote-overdue" | "quote-in" | "invoice-in"; text: string }>;
+  attention?: Array<{ kind: "late" | "nostages" | "drafted" | "order-by" | "late-delivery" | "problem" | "inspection" | "punch" | "finish" | "quote-overdue" | "quote-in" | "invoice-in" | "selection-late" | "selection-due"; text: string }>;
 };
 
 /** What a row is flagged for, most urgent first. */
-export type ProjectFlag = { kind: "over" | "warn" | "loss" | "waiting" | "unbudgeted" | "late" | "nostages" | "drafted" | "order-by" | "late-delivery" | "problem" | "inspection" | "punch" | "finish" | "quote-overdue" | "quote-in" | "invoice-in"; text: string };
+export type ProjectFlag = { kind: "over" | "warn" | "loss" | "waiting" | "unbudgeted" | "late" | "nostages" | "drafted" | "order-by" | "late-delivery" | "problem" | "inspection" | "punch" | "finish" | "quote-overdue" | "quote-in" | "invoice-in" | "selection-late" | "selection-due"; text: string };
 
 /** The row's progress, 0–100: the stages' % done when it has stages, else the jobs closed out. */
 export function progressOf(p: Project): number {
@@ -98,7 +98,7 @@ export function projectFlags(p: Project): ProjectFlag[] {
   else if (p.budget <= 0 && (sold > 0 || spent > 0) && p.status !== "COMPLETED") flags.push({ kind: "unbudgeted", text: "No budget set" });
   if ((p.openCount ?? 0) > 0 && p.status !== "COMPLETED") flags.push({ kind: "waiting", text: `${p.openCount} waiting on client` });
   // A late stage, a late delivery and materials not ordered lead (2026-11-05); the rest follow the money's.
-  const urgent = (p.attention ?? []).filter((f) => f.kind === "problem" || f.kind === "inspection" || f.kind === "late" || f.kind === "late-delivery" || f.kind === "order-by");
+  const urgent = (p.attention ?? []).filter((f) => f.kind === "problem" || f.kind === "inspection" || f.kind === "late" || f.kind === "late-delivery" || f.kind === "order-by" || f.kind === "selection-late");
   const rest = (p.attention ?? []).filter((f) => !urgent.includes(f));
   return [...urgent, ...flags, ...rest];
 }

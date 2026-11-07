@@ -117,6 +117,11 @@ export function CrewField({ data, jobId, door, office, canWork }: { data: FieldD
                 {s.current ? "This stage · " : "Next · "}
                 {s.name}
               </span>
+              {s.gates?.length ? (
+                <div className={cx("hint")} data-field-gate>
+                  Before this stage closes: {s.gates.map((g) => `${g.name} — ${g.state}`).join("; ")}
+                </div>
+              ) : null}
               <div className={cx("fieldList")}>
                 {s.tasks.map((t) => {
                   const done = isDone(t.id, t.done);

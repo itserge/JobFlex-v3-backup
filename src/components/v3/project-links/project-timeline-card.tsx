@@ -14,12 +14,14 @@ import { addProjectInspection, deleteProjectInspection, recordProjectInspection,
 import { BlueprintSheet } from "@/components/ui/BlueprintSheet";
 import type { PdTimeline } from "@/components/v3/project-detail-blueprint/project-detail-data";
 import { RESULT_LABEL, addWorkDays, barOf, dayLabel, dayLabelLong, inspectionResultOf, markOf, timelineWindow, workDaysLate, workDaysWords, type ShiftPlan } from "@/lib/projectTimeline/shared";
+import { GATE_PRESETS, INSPECTION_NAME } from "@/lib/projectGates";
 import s from "./project-hub.module.css";
 
 const iso = (d: string | null) => (d ? d.slice(0, 10) : null);
 
-type InspEdit = { id: string | null; name: string; date: string; readyNote: string; stageId: string; isFinal: boolean };
-const PRESETS = ["Footings", "Framing", "Rough-in", "Insulation", "Drywall", "Final inspection"];
+type InspEdit = { id: string | null; name: string; date: string; readyNote: string; stageId: string; isFinal: boolean; gate: boolean };
+/** The quick picks, in the county's words (lib/projectGates); the last is the project's final inspection. */
+const PRESETS = GATE_PRESETS.map((k) => ({ name: INSPECTION_NAME[k], isFinal: k === "FINAL" }));
 
 export function ProjectTimelineCard({ projectId, timeline, canManage }: { projectId: string; timeline: PdTimeline; canManage: boolean }) {
   const router = useRouter();
@@ -78,15 +80,15 @@ export function ProjectTimelineCard({ projectId, timeline, canManage }: { projec
     setInspErr(null);
     setInsp(
       row
-        ? { id: row.id, name: row.name, date: row.date ?? "", readyNote: row.readyNote ?? "", stageId: row.stageId ?? "", isFinal: row.isFinal }
-        : { id: null, name: preset?.name ?? "", date: "", readyNote: "", stageId: "", isFinal: Boolean(preset?.isFinal) },
+        ? { id: row.id, name: row.name, date: row.date ?? "", readyNote: row.readyNote ?? "", stageId: row.stageId ?? "", isFinal: row.isFinal, gate: row.gate }
+        : { id: null, name: preset?.name ?? "", date: "", readyNote: "", stageId: "", isFinal: Boolean(preset?.isFinal), gate: true },
     );
   }
 
   async function saveInspection() {
     if (!insp) return;
     if (!insp.name.trim()) return setInspErr("Name the inspection — Rough-in, Framing, Final");
-    const data = { name: insp.name.trim(), date: insp.date || null, readyNote: insp.readyNote.trim() || null, stageId: insp.stageId || null, isFinal: insp.isFinal };
+    const data = { name: insp.name.trim(), date: insp.date || null, readyNote: insp.readyNote.trim() || null, stageId: insp.stageId || null, isFinal: insp.isFinal, gate: insp.stageId ? insp.gate : false };
     const id = insp.id;
     setInsp(null);
     await run(`insp:${id ?? "new"}`, async () => {
@@ -254,6 +256,11 @@ export function ProjectTimelineCard({ projectId, timeline, canManage }: { projec
                   <span className={s.lineName}>
                     {i.name}
                     {i.isFinal ? <span className={s.tag} style={{ marginLeft: 8 }}>final</span> : null}
+                    {i.gate && i.stageId && r !== "PASSED" ? (
+                      <span className={s.tag} style={{ marginLeft: 8 }} title={`${stageName(i.stageId) ?? "The stage"} cannot be marked done until this passes`} data-inspection-gate>
+                        holds {stageName(i.stageId) ?? "its stage"}
+                      </span>
+                    ) : null}
                     <span className={s.lineSub} style={{ display: "block" }}>
                       {[i.date ? dayLabelLong(i.date) : "no day set", stageName(i.stageId) ? `on ${stageName(i.stageId)}` : null, i.readyNote ? `have ready: ${i.readyNote}` : null, i.resultNote ? `“${i.resultNote}”` : null].filter(Boolean).join(" · ")}
                     </span>
@@ -409,8 +416,8 @@ export function ProjectTimelineCard({ projectId, timeline, canManage }: { projec
             {!insp.id ? (
               <div className={`bps-fld bps-fld--wide ${s.chips}`} style={{ marginTop: 0 }}>
                 {PRESETS.map((p) => (
-                  <button key={p} type="button" className="bps-btn bps-btn--ghost" onClick={() => setInsp({ ...insp, name: p, isFinal: p === "Final inspection" })}>
-                    {p}
+                  <button key={p.name} type="button" className="bps-btn bps-btn--ghost" onClick={() => setInsp({ ...insp, name: p.name, isFinal: p.isFinal })}>
+                    {p.name}
                   </button>
                 ))}
               </div>
@@ -437,6 +444,12 @@ export function ProjectTimelineCard({ projectId, timeline, canManage }: { projec
             <label className="bps-fld bps-fld--wide">
               <span className="bps-lbl">Have ready</span>
               <textarea className="bps-in" rows={3} value={insp.readyNote} onChange={(e) => setInsp({ ...insp, readyNote: e.target.value })} placeholder="The permit card on site, the plans, a ladder to the attic" maxLength={1000} data-inspection-ready />
+            </label>
+            <label className={`bps-fld bps-fld--wide ${s.check}`}>
+              <input type="checkbox" checked={insp.stageId ? insp.gate : false} disabled={!insp.stageId} onChange={(e) => setInsp({ ...insp, gate: e.target.checked })} data-inspection-gate-box />
+              <span className="bps-lbl" style={{ margin: 0 }}>
+                Holds the stage until it passes{insp.stageId ? "" : " — pick a stage first"}
+              </span>
             </label>
             <label className={`bps-fld bps-fld--wide ${s.check}`}>
               <input type="checkbox" checked={insp.isFinal} onChange={(e) => setInsp({ ...insp, isFinal: e.target.checked })} />

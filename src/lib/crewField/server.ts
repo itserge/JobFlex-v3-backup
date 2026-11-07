@@ -1,4 +1,5 @@
 import "server-only";
+import { gateLine } from "@/lib/projectGates";
 // THE CREW IN THE FIELD — the database half (the crew build, 2026-11-05). The rules are ./shared.ts.
 //
 //   · logHours      — the hours a crew member worked on a job on a day (typed when they close the day, or by the
@@ -125,7 +126,8 @@ export async function noteWeather(organizationId: string, workDayId: string): Pr
 // ── the job page's field block ───────────────────────────────────────────────
 
 export type FieldTask = { id: string; title: string; done: boolean; photoNeeded: boolean };
-export type FieldStage = { id: string; name: string; status: string; current: boolean; tasks: FieldTask[] };
+/** `gates` (part 3, 2026-11-07): the inspections that must pass before the stage can close, each with its state in a few words. */
+export type FieldStage = { id: string; name: string; status: string; current: boolean; tasks: FieldTask[]; gates: Array<{ name: string; state: string; result: string }> };
 export type FieldOrder = { id: string; number: number; from: string; status: string; expected: string | null; lines: Array<{ id: string; name: string; qty: string }> };
 export type FieldProblem = { id: string; note: string; blocking: boolean; by: string | null; when: string; status: string; resolution: string | null };
 export type FieldData = {
@@ -153,7 +155,7 @@ export async function fieldOf(organizationId: string, jobId: string, reader: { w
   const job = await db.job.findFirst({ where: { id: jobId, organizationId }, select: { id: true, projectId: true, project: { select: { id: true, name: true } } } });
   if (!job) throw new Error("Job not found");
   const { from, to } = weekOf(today);
-  const [stages, orders, flags, mine, weekRows, day, punch, files] = await Promise.all([
+  const [stages, orders, flags, mine, weekRows, day, punch, files, gates] = await Promise.all([
     job.projectId
       ? db.projectStage.findMany({ where: { projectId: job.projectId, status: { not: "DONE" } }, orderBy: { position: "asc" }, select: { id: true, name: true, status: true, startsAt: true, endsAt: true, tasks: { orderBy: { position: "asc" }, select: { id: true, title: true, doneAt: true, photoNeeded: true } } } })
       : Promise.resolve([]),
@@ -166,10 +168,18 @@ export async function fieldOf(organizationId: string, jobId: string, reader: { w
     db.workDay.findUnique({ where: { jobId_date: { jobId: job.id, date: today } }, select: { weather: true } }),
     job.projectId ? punchForJob(job.projectId, job.id) : Promise.resolve([]),
     job.projectId ? filesForCrew(job.projectId) : Promise.resolve([]),
+    job.projectId ? db.projectInspection.findMany({ where: { projectId: job.projectId, gate: true, stageId: { not: null } }, orderBy: [{ date: "asc" }, { createdAt: "asc" }], select: { stageId: true, name: true, result: true, date: true } }) : Promise.resolve([]),
   ]);
   const users = flags.length ? await db.user.findMany({ where: { id: { in: flags.map((f) => f.raisedById).filter(Boolean) as string[] } }, select: { id: true, name: true } }) : [];
   const nameOf = new Map(users.map((u) => [u.id, u.name]));
-  const stageRows = stages.map((s) => ({ id: s.id, name: s.name, status: s.status, current: false, tasks: s.tasks.map((t) => ({ id: t.id, title: t.title, done: Boolean(t.doneAt), photoNeeded: t.photoNeeded })) }));
+  const stageRows = stages.map((s) => ({
+    id: s.id,
+    name: s.name,
+    status: s.status,
+    current: false,
+    tasks: s.tasks.map((t) => ({ id: t.id, title: t.title, done: Boolean(t.doneAt), photoNeeded: t.photoNeeded })),
+    gates: gates.filter((g) => g.stageId === s.id).map((g) => ({ name: g.name, result: g.result, state: gateLine({ name: g.name, result: g.result, gate: true, date: g.date ? g.date.toISOString().slice(0, 10) : null }) })),
+  }));
   const now = stageForDay(stages.map((s, i) => ({ ...stageRows[i], startsAt: s.startsAt, endsAt: s.endsAt, weight: 1 })), today);
   for (const s of stageRows) s.current = now?.id === s.id;
   return {

@@ -70,7 +70,7 @@ import {
   type PdJob,
   type PdOpens,
   type PdPayments,
-  type PdBuying, PdSubs,
+  type PdBuying, PdSubs, PdSelections,
   type PdField,
   type PdFinish,
   type PdShare,
@@ -102,6 +102,7 @@ import { ProjectCrewSheet } from "@/components/v3/project-links/project-crew-she
 import { ProjectStagesCard } from "@/components/v3/project-links/project-stages-card";
 import { ProjectBuyingCard } from "@/components/v3/project-links/project-buying-card";
 import { ProjectSubsCard } from "@/components/v3/project-links/project-subs-card";
+import { ProjectSelectionsCard } from "@/components/v3/project-links/project-selections-card";
 import { ProjectFieldCard } from "@/components/v3/project-links/project-field-card";
 import { ProjectTimelineCard } from "@/components/v3/project-links/project-timeline-card";
 import { ProjectFinishCard } from "@/components/v3/project-links/project-finish-card";
@@ -313,6 +314,7 @@ export function MobileProjectDetail({
   stages = { stages: [], done: null, draftedByAi: false },
   buying,
   subs,
+  selections,
   field,
   timeline,
   finish,
@@ -333,6 +335,8 @@ export function MobileProjectDetail({
   /** The to-buy list and the orders (2026-11-05). */
   buying?: PdBuying;
   subs?: PdSubs;
+  /** What the client has to choose (2026-11-07). */
+  selections?: PdSelections;
   /** On site: problems, hours, the subs' bills (2026-11-05). */
   field?: PdField;
   /** The stages across the weeks (2026-11-06). */
@@ -710,6 +714,13 @@ export function MobileProjectDetail({
           <div className="mpd-budget">
             <ProjectCombine projectId={project.id} projectName={project.name} proposals={proposals} />
           </div>
+
+          {/* ============ SELECTIONS (2026-11-07) ============ */}
+          {selections ? (
+            <div className="mpd-budget">
+              <ProjectSelectionsCard projectId={project.id} selections={selections} stages={stages.stages} canManage={canManage} />
+            </div>
+          ) : null}
 
           {/* ============ BUYING AND DELIVERIES (2026-11-05) ============ */}
           {buying ? (
