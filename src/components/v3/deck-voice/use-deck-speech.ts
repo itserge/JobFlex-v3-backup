@@ -212,11 +212,27 @@ const HANDON_GRACE_MS = 600;
 const DANGLING = new Set(
   "to from for with and or but the a an of at in on by about into onto than as my our your his her their its me is are was were that this these those so then because if uh um umm like need want create make build price get also plus".split(" "),
 );
-/** The words stop mid-sentence: they end on "…" or a comma, or on a word like "from", "to", "the" — not a question. */
+/** An address still being said (2026-11-07, the owner's "12103 200th Street Southeast" went with no city): a house
+ *  number and its street with no ZIP or state after them yet, or "the address is 12103" and nothing more. */
+const STREET_SAID = /\b\d{2,6}[A-Za-z]?\s+(?:\S+\s+){0,3}?(?:st|street|ave|avenue|rd|road|dr|drive|ln|lane|ct|court|pl|place|blvd|boulevard|way|hwy|highway|pkwy|parkway|cir|circle|ter|terrace|trl|trail)\b\.?/i;
+const STATE_CODES = new Set("AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY".split(" "));
+const STATE_NAME = /\b(alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new hampshire|new jersey|new mexico|new york|north carolina|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|south carolina|south dakota|tennessee|texas|utah|vermont|virginia|washington|west virginia|wisconsin|wyoming)\b/i;
+function addressUnfinished(t: string): boolean {
+  if (/\baddress(?:\s+is)?\s+\d{1,6}[.,]?$/i.test(t)) return true;
+  const m = STREET_SAID.exec(t);
+  if (!m) return false;
+  const after = t.slice(m.index + m[0].length);
+  if (/\b\d{5}(?:-\d{4})?\b/.test(after)) return false;
+  if ((after.match(/\b[A-Z]{2}\b/g) ?? []).some((c) => STATE_CODES.has(c))) return false;
+  return !STATE_NAME.test(after);
+}
+/** The words stop mid-sentence: they end on "…" or a comma, or on a word like "from", "to", "the" — not a question —
+ *  or an address is still missing its city, state or ZIP. */
 export function soundsUnfinished(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
   if (/(\.\.\.|…|,|-|—|–)$/.test(t)) return true;
+  if (addressUnfinished(t)) return true;
   if (/\?$/.test(t)) return false;
   const last = (t.replace(/[.!]+$/, "").split(/\s+/).pop() ?? "").toLowerCase().replace(/[^a-z']/g, "");
   return DANGLING.has(last);

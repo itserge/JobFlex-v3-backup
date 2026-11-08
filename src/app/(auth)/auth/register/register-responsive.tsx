@@ -78,6 +78,8 @@ function RegisterSwitch({
   google,
   industry,
   spotlight = null,
+  spotlightNarrow = false,
+  spotlightUrl = null,
   edition = null,
   utm,
   inAppBrowser,
@@ -104,6 +106,8 @@ function RegisterSwitch({
   industry: TradeType | null;
   /** The tool the visitor came for (lib/planSpotlight): marked on the plan step. */
   spotlight?: SpotlightTool | null;
+  spotlightNarrow?: boolean;
+  spotlightUrl?: SpotlightTool | null;
   /** The door the visitor came in by (2026-10-11, lib/editions). */
   edition: EditionId | null;
   utm: UtmParams | null;
@@ -115,7 +119,7 @@ function RegisterSwitch({
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   return (
     <RegisterSheet live={isHandheld} backdrop={isHandheld ? <PhoneBackdrop trade={industry} /> : null}>
-      <RegisterContent setup={setup} google={google} industry={industry} spotlight={spotlight}
+      <RegisterContent setup={setup} google={google} industry={industry} spotlight={spotlight} spotlightNarrow={spotlightNarrow} spotlightUrl={spotlightUrl}
         edition={edition} utm={utm} inAppBrowser={inAppBrowser} requiresCard={requiresCard} initialError={initialError} prefill={prefill} offerCustom={offerCustom} steps={steps} mode={mode} autoPlan={autoPlan} otpRestore={otpRestore} appView={appView} />
     </RegisterSheet>
   );
@@ -132,6 +136,8 @@ export function RegisterResponsive({
   google = null,
   industry = null,
   spotlight = null,
+  spotlightNarrow = false,
+  spotlightUrl = null,
   edition = null,
   utm = null,
   inAppBrowser = null,
@@ -163,6 +169,10 @@ export function RegisterResponsive({
   industry?: TradeType | null;
   /* The tool the visitor came for (lib/planSpotlight): marked on the plan step. */
   spotlight?: SpotlightTool | null;
+  /* Hide the other trade estimators — only during the ad visit (lib/planSpotlight spotlightNarrows). */
+  spotlightNarrow?: boolean;
+  /* The spotlight this page's URL carried, remembered for the browser session. */
+  spotlightUrl?: SpotlightTool | null;
   /* The door the visitor came in by (2026-10-11, lib/editions). */
   edition?: EditionId | null;
   /** The visit's utm_*, resolved by the page the same way. */
@@ -177,7 +187,7 @@ export function RegisterResponsive({
   prefill?: { name: string; email: string } | null;
 }) {
   return (
-    <RegisterSwitch setup={setup} google={google} industry={industry} spotlight={spotlight}
+    <RegisterSwitch setup={setup} google={google} industry={industry} spotlight={spotlight} spotlightNarrow={spotlightNarrow} spotlightUrl={spotlightUrl}
         edition={edition} utm={utm} inAppBrowser={inAppBrowser} requiresCard={requiresCard} initialError={initialError} prefill={prefill} offerCustom={offerCustom} steps={steps} mode={mode} autoPlan={autoPlan} otpRestore={otpRestore} appView={appView} />
   );
 }

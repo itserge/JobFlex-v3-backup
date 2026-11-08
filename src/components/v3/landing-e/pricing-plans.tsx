@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { expandPlanFeatures, type PlanDTO } from "@/lib/planCatalog";
 import { annualDeal, offersYearly, sharedDealWords, withBillingTerm, type BillingTerm } from "@/lib/planDeal";
 import { PlanCardHead, PlanDealSlot, PlanPrice, PlanTermSwitch } from "@/components/billing/PlanTermSwitch";
-import { SPOTLIGHT, SPOTLIGHT_MISSING, SPOTLIGHT_TAG, spotlightInPlan, spotlightLine, spotlightRow, withSpotlightFirst, type SpotlightTool } from "@/lib/planSpotlight";
+import { SPOTLIGHT, SPOTLIGHT_MISSING, SPOTLIGHT_TAG, planCardRows, rememberSpotlightVisit, showsTool, spotlightBanner, spotlightInPlan, type SpotlightTool } from "@/lib/planSpotlight";
 import { deckAddonShortWords } from "@/lib/deckAddon";
 import "./pricing-faq.css";
 
@@ -64,6 +64,8 @@ export function PricingPlans({
   registerHref,
   tone = "paper",
   spotlight = null,
+  narrow = false,
+  fromUrl = null,
 }: {
   plans: PlanDTO[];
   registerHref: string;
@@ -72,13 +74,22 @@ export function PricingPlans({
    *  lacks it says so — a roofer off the roofing ad sees the Roof estimator
    *  without reading the whole list. */
   spotlight?: SpotlightTool | null;
+  /** Hide the other trade estimators (lib/planSpotlight spotlightNarrows): only while the ad visit lasts. */
+  narrow?: boolean;
+  /** The spotlight this page's own URL carried: remembered for the browser session (SPOTLIGHT_VISIT_COOKIE). */
+  fromUrl?: SpotlightTool | null;
   /** "ink" on the landing's dark pricing band — the switch's colours. */
   tone?: "paper" | "ink";
 }) {
   const { days } = useTrialOffer();
   const expanded = expandPlanFeatures(plans);
-  const spot = spotlightRow(expanded.rows, spotlight);
-  const rows = withSpotlightFirst(expanded.rows, spotlight);
+  /* The spotlighted tool's row, always drawn and pinned, marked by its gate; during the ad visit a roofer, fencer or
+     HVAC visitor sees only their own estimator among the trade rows (lib/planSpotlight planCardRows, owner
+     2026-11-07). The in-app Subscription and Upgrade pages keep every row. */
+  const { rows, spot } = planCardRows(expanded.rows, spotlight, narrow);
+  const deckLine = showsTool("deck", narrow ? spotlight : null);
+  const deckSpot = spotlight === "deck";
+  useEffect(() => rememberSpotlightVisit(fromUrl), [fromUrl]);
   const included = expanded.included;
   const heroIndex = Math.max(0, plans.findIndex((p) => p.highlight));
   const railRef = useRef<HTMLDivElement>(null);
@@ -178,12 +189,24 @@ export function PricingPlans({
     rail.scrollTo({ left: cardLeft(rail, i), behavior: reduce ? "auto" : "smooth" });
   };
 
+  const deckRow = (p: PlanDTO) => (
+    <li className={"lp-pw-f lp-pw-f--addon" + (deckSpot ? " lp-pw-f--spot" : "")} data-plan-addon="deck" data-plan-spot-row={deckSpot ? "addon" : undefined}>
+      <Plus />
+      <span className="sr-only">Add-on: </span>
+      <span className="lp-pw-ft">
+        <span className="lp-pw-fn">Deck Studio</span>
+        <b className="lp-pw-addon">Add-on {deckAddonShortWords(term === "YEAR" && p.yearlyPriceCents ? "YEAR" : "MONTH")}</b>
+        {deckSpot ? <span className="lp-pw-spot-tag">{SPOTLIGHT_TAG}</span> : null}
+      </span>
+    </li>
+  );
+
   return (
     <>
       {spotlight ? (
         <p className={"lp-pw-spot" + (tone === "ink" ? " lp-pw-spot--ink" : "")} data-plan-spotlight={spotlight} data-plan-spotlight-row={spot ?? ""}>
           <span className="lp-pw-spot-k">{SPOTLIGHT[spotlight].label}</span>
-          {spotlightLine(spotlight, !!spot)}
+          {spotlightBanner(spotlight, plans)}
         </p>
       ) : null}
       {yearly ? (
@@ -213,6 +236,7 @@ export function PricingPlans({
               <PlanPrice term={term} monthlyCents={p.priceCents} yearlyCents={p.yearlyPriceCents} figureClassName="lp-pw-price" />
               <PlanDealSlot term={term} monthlyCents={p.priceCents} yearlyCents={p.yearlyPriceCents} />
               <ul className="lp-pw-feats" data-plan-feats>
+                {deckSpot ? deckRow(p) : null}
                 {rows.map((f) => {
                   const lit = spot !== null && f === spot;
                   // The tool the visitor came for is in the plan when its gate says so, whatever the line reads (lib/planSpotlight).
@@ -233,15 +257,10 @@ export function PricingPlans({
                     </li>
                   );
                 })}
-                {/* DECK STUDIO (owner, 2026-10-26): on no plan — the same add-on on every one (lib/deckAddon). */}
-                <li className="lp-pw-f lp-pw-f--addon" data-plan-addon="deck">
-                  <Plus />
-                  <span className="sr-only">Add-on: </span>
-                  <span className="lp-pw-ft">
-                    <span className="lp-pw-fn">Deck Studio</span>
-                    <b className="lp-pw-addon">Add-on {deckAddonShortWords(term === "YEAR" && p.yearlyPriceCents ? "YEAR" : "MONTH")}</b>
-                  </span>
-                </li>
+                {/* DECK STUDIO (owner, 2026-10-26): on no plan — the same add-on on every one (lib/deckAddon).
+                    A trade estimator, so hidden during a roofer/fencer/HVAC ad visit; pinned first for a deck visitor
+                    (owner, 2026-11-07). */}
+                {deckLine && !deckSpot ? deckRow(p) : null}
               </ul>
               <a href={startHref} className="lp-pw-go" data-cta="pricing" data-cta-button={`plan-${p.slug}`}>
                 Start {days}-day free trial

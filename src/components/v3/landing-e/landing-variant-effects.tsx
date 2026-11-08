@@ -73,7 +73,7 @@ export function LandingVariantEffects({
   utm: UtmParams;
   /** The key of the ad's opening line the headline showed (LANDING_HOOKS), if any. */
   hook?: string;
-  /** The tool the link said it sold (`?tool=`, lib/planSpotlight) — remembered like the trade. */
+  /** The tool this URL marks (`?tool=`, else the trade's own estimator; lib/planSpotlight) — remembered like the trade. */
   tool?: SpotlightTool | null;
 }) {
   useEffect(() => {

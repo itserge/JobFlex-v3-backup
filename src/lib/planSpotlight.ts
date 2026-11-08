@@ -92,20 +92,83 @@ export function withSpotlightFirst(rows: readonly string[], tool: SpotlightTool 
   return [hit, ...rows.filter((r) => r !== hit)];
 }
 
+/* ONE TRADE, ONE ESTIMATOR (owner, 2026-11-07: "a visitor who came for ONE trade sees only that trade's estimator in
+   the plan cards"). The trade estimators are roof, hvac, fence and deck. A visitor whose spotlight is roof, hvac or
+   fence sees only that one among them — the other trade rows (and the Deck Studio add-on line) are hidden; every row
+   that is not a trade estimator stays. Deck, smart, blueprint, aidesk, or no spotlight: every row, as before. Rows
+   are found by the SPOTLIGHT map's own match, never by free text. Public plan cards only (landing, /pricing, the
+   signup plan step); Subscription and Upgrade in the app keep every row. */
+const TRADE_TOOLS: readonly SpotlightTool[] = ["roof", "hvac", "fence", "deck"];
+const NARROWING: ReadonlySet<SpotlightTool> = new Set<SpotlightTool>(["roof", "hvac", "fence"]);
+
+/** Whether a trade tool's line shows for this visitor (any non-trade tool always does). */
+export function showsTool(tool: SpotlightTool, spotlight: SpotlightTool | null | undefined): boolean {
+  if (!spotlight || !NARROWING.has(spotlight)) return true;
+  return tool === spotlight || !TRADE_TOOLS.includes(tool);
+}
+
+/** The rows a visitor sees: minus the other trades' estimator rows when the spotlight narrows. A row that also
+ *  matches the spotlighted tool stays. Order kept. */
+export function visibleRows(rows: readonly string[], spotlight: SpotlightTool | null | undefined): string[] {
+  if (!spotlight || !NARROWING.has(spotlight)) return [...rows];
+  const own = SPOTLIGHT[spotlight].match;
+  return rows.filter((r) => own.test(r) || !TRADE_TOOLS.some((t) => t !== spotlight && SPOTLIGHT[t].match.test(r)));
+}
+
+/* NARROWING ONLY DURING THE AD VISIT (owner, 2026-11-07). The 30-day SPOTLIGHT_COOKIE keeps the pinned row and the
+   banner; hiding the other trades happens only while the visit that carried the ad lasts: the page's own URL says
+   roof / hvac / fence (`?industry=` or `?tool=`), or this SESSION cookie (no max-age — it dies with the browser),
+   written by such a visit, names the same tool. A plain visit in a new browser session shows every row again. */
+export const SPOTLIGHT_VISIT_COOKIE = "jf_tool_visit";
+
+/** Does the list narrow? `fromUrl` is the spotlight the page's own URL carried (spotlightFor on the query only). */
+export function spotlightNarrows(spotlight: SpotlightTool | null | undefined, fromUrl: SpotlightTool | null | undefined, visitCookie: string | null | undefined): boolean {
+  if (!spotlight || !NARROWING.has(spotlight)) return false;
+  return fromUrl === spotlight || parseSpotlightTool(visitCookie) === spotlight;
+}
+
+/** In the browser: remember the ad visit for this browser session (only a narrowing tool is written). */
+export function rememberSpotlightVisit(fromUrl: SpotlightTool | null | undefined): void {
+  if (!fromUrl || !NARROWING.has(fromUrl) || typeof document === "undefined") return;
+  try {
+    document.cookie = `${SPOTLIGHT_VISIT_COOKIE}=${fromUrl}; path=/; samesite=lax`;
+  } catch {
+    /* cookies blocked — the next page simply shows every row */
+  }
+}
+
+/**
+ * THE ROWS A PUBLIC PLAN CARD DRAWS (owner, 2026-11-07: "the spotlighted row is always there"). The other trades are
+ * hidden while `narrow` holds; the spotlighted tool's row is pinned first — the catalog's own line when the SPOTLIGHT
+ * map finds one, else a row under the tool's canonical label — and its mark comes from the gate (spotlightInPlan),
+ * never from the text. An add-on tool (Deck Studio) has no plan row: its add-on line is the cards' own.
+ */
+export function planCardRows(rows: readonly string[], spotlight: SpotlightTool | null | undefined, narrow: boolean): { rows: string[]; spot: string | null } {
+  const shown = visibleRows(rows, narrow ? spotlight : null);
+  if (!spotlight || isAddOnTool(spotlight)) return { rows: shown, spot: null };
+  const spot = spotlightRow(shown, spotlight) ?? SPOTLIGHT[spotlight].label;
+  return { rows: [spot, ...shown.filter((r) => r !== spot)], spot };
+}
+
+const andList = (names: readonly string[]) => (names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`);
+
+/** The banner over the plan cards (public and the in-app Upgrade page): which of these plans carry the tool, by the gate. */
+export function spotlightBanner(tool: SpotlightTool, plans: readonly { slug: string; name: string; customPages?: readonly string[] | null }[]): string {
+  const def = SPOTLIGHT[tool];
+  const addOn = ADD_ON[tool];
+  if (addOn) return `You came for ${def.the} — ${addOn}.`;
+  const carry = plans.filter((p) => spotlightInPlan(tool, p));
+  if (carry.length === plans.length) return `You came for ${def.the} — it's in every plan.`;
+  if (!carry.length) return `You came for ${def.the} — it isn't in these plans.`;
+  return `You came for ${def.the} — it's in ${andList(carry.map((p) => p.name))}.`;
+}
+
 /** Tools sold as an add-on to any plan, never by a plan: the Deck Studio (owner-locked 2026-10-20 — the free trial
  *  holds it, then $79/month on any plan; lib/deckAddon). */
 const ADD_ON: Partial<Record<SpotlightTool, string>> = { deck: `the trial includes it, then it's ${deckAddonPriceWords("MONTH")} on any plan` };
 
 export function isAddOnTool(tool: SpotlightTool): boolean {
   return ADD_ON[tool] !== undefined;
-}
-
-/** The line over the cards. */
-export function spotlightLine(tool: SpotlightTool, listed: boolean): string {
-  const def = SPOTLIGHT[tool];
-  const addOn = ADD_ON[tool];
-  if (addOn) return `You came for ${def.the} — ${addOn}.`;
-  return listed ? `You came for ${def.the} — it's marked on every plan below.` : `You came for ${def.the} — it comes with every plan's trial; ask us which plan carries it.`;
 }
 
 export const SPOTLIGHT_TAG = "The tool you came for";

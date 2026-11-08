@@ -12,7 +12,7 @@ import { PricingPage } from "@/components/v3/pricing-d/pricing-page";
 import { customPlanOffered } from "@/lib/customPlanFlag";
 import { cookies } from "next/headers";
 import { INDUSTRY_COOKIE, resolveLandingVariant } from "@/components/v3/landing-e/landing-variants";
-import { SPOTLIGHT_COOKIE, spotlightFor } from "@/lib/planSpotlight";
+import { SPOTLIGHT_COOKIE, SPOTLIGHT_VISIT_COOKIE, spotlightFor, spotlightNarrows } from "@/lib/planSpotlight";
 
 // RENDERED PER REQUEST (owner, 2026-10-07). It used to be ISR (an hour), so
 // the server-side flag it reads — CUSTOM_PLAN_ENABLED (lib/customPlanFlag) —
@@ -35,14 +35,18 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const jar = await cookies();
   // The link wins over the memory: a fencing link marks the fence estimator
   // even for a visitor who clicked an AI desk ad last week.
+  const spotlightUrl = spotlightFor({ tool: sp.tool, industry: resolveLandingVariant(sp.industry ?? sp.trade) });
   const spotlight =
-    spotlightFor({ tool: sp.tool, industry: resolveLandingVariant(sp.industry ?? sp.trade) }) ??
-    spotlightFor({ tool: jar.get(SPOTLIGHT_COOKIE)?.value, industry: resolveLandingVariant(jar.get(INDUSTRY_COOKIE)?.value) });
+    spotlightUrl ?? spotlightFor({ tool: jar.get(SPOTLIGHT_COOKIE)?.value, industry: resolveLandingVariant(jar.get(INDUSTRY_COOKIE)?.value) });
+  // The other trade estimators hide only during the ad visit: this URL, or the visit's session cookie (owner, 2026-11-07).
+  const narrow = spotlightNarrows(spotlight, spotlightUrl, jar.get(SPOTLIGHT_VISIT_COOKIE)?.value);
   return (
     <TrialOfferProvider offer={await signupTrialOffer()}>
     <PricingPage
       plans={plans}
       spotlight={spotlight}
+      narrow={narrow}
+      spotlightUrl={spotlightUrl}
       customOffered={customPlanOffered()}
     />
     </TrialOfferProvider>

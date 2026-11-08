@@ -32,6 +32,7 @@ import { TIER_LABEL } from "@/lib/hvac/catalogView";
 import { hvacBook } from "@/lib/webEstimatorTrades";
 import { hvacConvertSchema, writeHvacProposal } from "@/lib/hvac/proposalWrite";
 import { filingFromIds } from "@/lib/filingContext";
+import { saidHouseAddress } from "@/lib/assistant/address";
 
 const ID = z.string().min(1).max(64);
 
@@ -159,7 +160,9 @@ const buildHvac: WriteTool<HvacArgs, HvacArgs & { address: string }> = {
     const a = overPrior(said.replaces ? await priorBuild<HvacArgs>(actor, said.replaces, "build_hvac") : null, said);
     const w = await whoFor(actor, a.clientId, a.leadId);
     if (!w.ok) return w;
-    const address = a.address?.trim() || w.who.address;
+    const place = saidHouseAddress(a.address);
+    if (place.ask) return { ok: false, say: place.ask };
+    const address = place.address || w.who.address;
     if (!address) return { ok: false, say: "Which house? Give me the address." };
     if (!stateFromAddress(address)) return { ok: false, say: `Which state is ${address} in? Add it to the address — the design temperatures go by it.` };
     if (a.replaces) {

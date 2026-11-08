@@ -21,7 +21,7 @@
 // rather than inline. /mobile-v1/auth/register remains as a direct preview URL.
 
 import type { Metadata, Viewport } from "next";
-import { SPOTLIGHT_COOKIE, spotlightFor } from "@/lib/planSpotlight";
+import { SPOTLIGHT_COOKIE, SPOTLIGHT_VISIT_COOKIE, spotlightFor, spotlightNarrows } from "@/lib/planSpotlight";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
@@ -130,9 +130,10 @@ export default async function RegisterPage({
   /* THE TOOL THE VISITOR CAME FOR (lib/planSpotlight, 2026-10-14): the link's
      `?tool=` or the landing's memory of it, else the trade's own estimator.
      The plan step pins and marks it on every card. */
-  const spotlight =
-    spotlightFor({ tool: sp.tool, industry: industryParam !== undefined ? resolveLandingVariant(industryParam) : undefined }) ??
-    spotlightFor({ tool: jar.get(SPOTLIGHT_COOKIE)?.value, industry: industryKey });
+  const spotlightUrl = spotlightFor({ tool: sp.tool, industry: industryParam !== undefined ? resolveLandingVariant(industryParam) : undefined });
+  const spotlight = spotlightUrl ?? spotlightFor({ tool: jar.get(SPOTLIGHT_COOKIE)?.value, industry: industryKey });
+  // The other trade estimators hide only during the ad visit: this URL, or the visit's session cookie (owner, 2026-11-07).
+  const spotlightNarrow = spotlightNarrows(spotlight, spotlightUrl, jar.get(SPOTLIGHT_VISIT_COOKIE)?.value);
   /* THE CAMPAIGN THE VISITOR CAME IN ON: utm_* from the register link, else
      the landing's memory cookie (the Google return, and an older link in a
      mail or an ad that carries no utm_*, arrive with no query). Stamped on
@@ -270,6 +271,8 @@ export default async function RegisterPage({
         google={google}
         industry={industry}
         spotlight={spotlight}
+        spotlightNarrow={spotlightNarrow}
+        spotlightUrl={spotlightUrl}
         edition={sp.edition === "deck" ? "deck" : null}
         utm={hasUtm(utm) ? utm : null}
         inAppBrowser={inAppBrowser}
