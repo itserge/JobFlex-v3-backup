@@ -26,6 +26,7 @@
 //   "what's the next gate on <project>" → next_gate (2026-11-07, part 4)
 //   "where are we over|what's the margin|where can I save $N on <project>" → money_plan (2026-11-07, part 5)
 //   "what's funded on <project>" → draws; "request draw three on <project>" → request_draw; "the bank funded draw two on <project>" → fund_draw (2026-11-07, part 6)
+//   "the lender's link|page for <project>" → lender_link (2026-11-08, part 7)
 //   Smart Proposal's own run (response_format json_object, no tools): a small estimate in the old draft shape.
 //   Speech (POST /v1/audio/speech, the Talk mode's voice): 0.3 s of silence as an MP3, so a page plays it and goes on.
 //   The Budget card's read (response_format json_schema "budget_read", 2026-11-07): words → the rules' own rows
@@ -365,6 +366,14 @@ function answer(body: { messages: Msg[] }) {
     return call("fund_draw", { projectId: pid, draw: fundQ[1], amount: fundQ[2] ? Number(fundQ[2].replace(/,/g, "")) : null });
   }
   if (done.has("fund_draw")) return reply("Planned — say yes to record it.");
+  // The lender's page (part 7): "the lender's link for X" / "make the bank's page for X" → lender_link.
+  const lenderQ = /\b(?:lender'?s?|bank'?s?) (?:link|page)\b.*?\bfor (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  if (lenderQ && !done.has("lender_link")) {
+    const pid = projectFound(lenderQ[1]);
+    if (!pid) return call("find", { query: lenderQ[1].trim(), kind: "project" });
+    return call("lender_link", { projectId: pid });
+  }
+  if (done.has("lender_link")) return reply("Planned — say yes to make it.");
   // "What's the next gate on the Drive house?" → next_gate (part 4).
   const gateQ = /\b(?:what(?:'s| is) the next gate|where are we|which phase)\b.*?\bon (?:the )?(.+?)(?:\?|$)/i.exec(user);
   if (gateQ) {

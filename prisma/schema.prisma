@@ -2354,6 +2354,11 @@ model Project {
   publicToken    String?   @unique
   sharedAt       DateTime?
   updateSentAt   DateTime?
+  // THE LENDER'S PAGE (2026-11-08, the plan "Projects: Remodel and New construction", part 7, lib/projectClient): a
+  // read-only link key (/l/<token>) with the draws and their bundles, the inspections and the photos the office chose;
+  // made from the Payments card's Draws. Null until then.
+  lenderToken    String?   @unique
+  lenderSharedAt DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 

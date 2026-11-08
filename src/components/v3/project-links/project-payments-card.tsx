@@ -18,6 +18,7 @@ import { markInstallmentPaid, recordRemainingPayment } from "@/actions/installme
 import { BlueprintSheet } from "@/components/ui/BlueprintSheet";
 import type { PdDraws, PdPayments, PdPayStage } from "@/components/v3/project-detail-blueprint/project-detail-data";
 import { fundProjectDraw, layoutProjectDraws, requestProjectDraw, resetProjectDraw, setProjectDraw } from "@/actions/projectDraws";
+import { shareLenderPage } from "@/actions/projectClient";
 import { drawWords } from "@/lib/projectDraws/shared";
 import s from "./project-hub.module.css";
 
@@ -68,7 +69,31 @@ export function ProjectPaymentsCard({ payments, canManage, draws, projectId }: {
   const [drawEdit, setDrawEdit] = useState<{ id: string; number: number; name: string; amount: string; retainagePct: string } | null>(null);
   const [funding, setFunding] = useState<{ id: string; number: number; name: string; amount: string } | null>(null);
   const [openSnapshot, setOpenSnapshot] = useState<string | null>(null);
+  // The lender's page (part 7, 2026-11-08): a read-only link made the first time the sheet opens, copied from it.
+  const [lenderSheet, setLenderSheet] = useState<{ href: string | null; copied: boolean } | null>(null);
   const showDraws = Boolean(draws && projectId && (draws.lender || draws.draws.length));
+  async function openLender() {
+    if (!projectId) return;
+    setLenderSheet({ href: draws?.lenderPage ?? null, copied: false });
+    if (draws?.lenderPage) return;
+    try {
+      const r = await shareLenderPage(projectId);
+      setLenderSheet({ href: r.href, copied: false });
+      startTransition(() => router.refresh());
+    } catch (e) {
+      setLenderSheet(null);
+      setError(e instanceof Error ? e.message : "The lender's page could not be made.");
+    }
+  }
+  function copyLender() {
+    const href = lenderSheet?.href;
+    if (!href) return;
+    try {
+      void navigator.clipboard.writeText(href).then(() => setLenderSheet((cur) => (cur ? { ...cur, copied: true } : cur))).catch(() => null);
+    } catch {
+      /* the field stays selectable */
+    }
+  }
   async function runDraw(key: string, fn: () => Promise<string | null | void>) {
     setBusy(key);
     setNote(null);
@@ -313,9 +338,14 @@ export function ProjectPaymentsCard({ payments, canManage, draws, projectId }: {
                 </span>
                 <span className={s.stageActs}>
                   {canManage ? (
-                    <button type="button" className={s.btnSm} disabled={busy !== null || draws.basis.from === "none"} onClick={() => setDrawLayout(draws.basis.amount ? String(Math.round(draws.basis.amount)) : "")} data-draws-layout>
-                      Lay out the draws
-                    </button>
+                    <>
+                      <button type="button" className={s.btnSm} disabled={busy !== null || draws.basis.from === "none"} onClick={() => setDrawLayout(draws.basis.amount ? String(Math.round(draws.basis.amount)) : "")} data-draws-layout>
+                        Lay out the draws
+                      </button>
+                      <button type="button" className={s.btnSm} disabled={busy !== null} onClick={() => void openLender()} title="A read-only link for the bank: the progress, the phases, the draws and their bundles, the inspections, the photos" data-lender-page>
+                        Lender&apos;s page
+                      </button>
+                    </>
                   ) : null}
                 </span>
               </div>
@@ -323,6 +353,9 @@ export function ProjectPaymentsCard({ payments, canManage, draws, projectId }: {
               <div className={s.stage} style={{ gridTemplateColumns: "minmax(0,1fr) auto" }}>
                 <span className={s.stageState}>{draws.next ? `Next: draw ${draws.next.number}, ${draws.next.name} — ${drawWords(draws.next)}` : "Every draw is funded."}</span>
                 <span className={s.stageActs}>
+                  <button type="button" className={s.btnSm} disabled={busy !== null} onClick={() => void openLender()} title="A read-only link for the bank: the progress, the phases, the draws and their bundles, the inspections, the photos" data-lender-page>
+                    Lender&apos;s page
+                  </button>
                   <button type="button" className={s.btnSm} disabled={busy !== null} onClick={() => setDrawLayout(String(Math.round(draws.total || draws.basis.amount)))} data-draws-layout>
                     Lay them out again
                   </button>
@@ -573,6 +606,40 @@ export function ProjectPaymentsCard({ payments, canManage, draws, projectId }: {
                   <span className="bps-lbl">Amount that landed ($)</span>
                   <input className="bps-in" inputMode="numeric" value={funding.amount} onChange={(e) => setFunding({ ...funding, amount: e.target.value })} autoFocus data-draw-fund-amount />
                 </label>
+              </div>
+            ) : null}
+          </BlueprintSheet>
+          <BlueprintSheet
+            open={lenderSheet !== null}
+            onClose={() => setLenderSheet(null)}
+            title="The lender's page"
+            description="A read-only link for the bank: the house's progress, the phases and what closes each, the draws with the bundle taken at each request, the inspections and the photos chosen for the client. No budget, no margin, no notes. Send it yourself — no lender contact is stored."
+            footer={
+              <button type="button" className="bps-btn bps-btn--primary" onClick={() => setLenderSheet(null)}>
+                Done
+              </button>
+            }
+          >
+            {lenderSheet ? (
+              <div className="bps-form" data-lender-sheet>
+                {lenderSheet.href ? (
+                  <>
+                    <label className="bps-fld bps-fld--wide">
+                      <span className="bps-lbl">The link</span>
+                      <input className="bps-in" readOnly value={lenderSheet.href} onFocus={(e) => e.currentTarget.select()} data-lender-href />
+                    </label>
+                    <div className="bps-fld bps-fld--wide" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button type="button" className="bps-btn bps-btn--ghost" onClick={copyLender} data-lender-copy>
+                        {lenderSheet.copied ? "Copied" : "Copy the link"}
+                      </button>
+                      <a className="bps-btn bps-btn--ghost" href={lenderSheet.href} target="_blank" rel="noreferrer" data-lender-open>
+                        Open it
+                      </a>
+                    </div>
+                  </>
+                ) : (
+                  <p className="bps-hint bps-fld--wide">Making the link…</p>
+                )}
               </div>
             ) : null}
           </BlueprintSheet>

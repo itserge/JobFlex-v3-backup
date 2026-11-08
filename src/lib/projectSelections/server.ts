@@ -45,6 +45,8 @@ export type SelectionRow = {
   vendor: string | null;
   price: number | null;
   chosenAt: string | null;
+  /** Chosen from the client's own page (part 7, 2026-11-08): the choice carries no office actor. */
+  byClient: boolean;
   note: string | null;
   position: number;
 };
@@ -76,6 +78,7 @@ export async function selectionsOf(organizationId: string, projectId: string): P
         vendor: true,
         price: true,
         chosenAt: true,
+        chosenById: true,
         note: true,
         position: true,
         stage: { select: { name: true, startsAt: true, status: true, position: true } },
@@ -104,6 +107,7 @@ export async function selectionsOf(organizationId: string, projectId: string): P
       vendor: r.vendor,
       price: r.price,
       chosenAt: like.chosenAt,
+      byClient: Boolean(r.chosenAt) && !r.chosenById,
       note: r.note,
       position: r.position,
     };

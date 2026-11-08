@@ -601,6 +601,17 @@ export const CATALOG: Catalog = {
     "scheduled": false,
     "version": 1
   },
+  "lender_link": {
+    "label": "The lender's page",
+    "group": "projects",
+    "effect": "record",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
   "where_is": {
     "label": "Where's the order",
     "group": "projects",

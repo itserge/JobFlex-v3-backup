@@ -11,6 +11,12 @@ import "server-only";
 //   · projectPhotos / setPhotosShared — the project's jobs' photos for the office to choose from.
 //   · addFile / setFileVisible / removeFile / filesOf — the contract, the permit, the plans… uploaded into the
 //                             private store or linked; the client sees the ones marked; the crew sees them all.
+//   · part 7 (2026-11-08, the plan "Projects: Remodel and New construction"): the homeowner's page gains a new
+//                             build's phases with what closes each, the choices to make with the day each is needed
+//                             by (clientChoose — their one write, from the page), the loan's draws and the photos under
+//                             their phase; cost-plus is the one contract that shows costs. ensureLenderShare /
+//                             lenderView: the lender's read-only page (/l/<token>) — the draws with their bundles,
+//                             the inspections, the photos; never the budget, the margin or a note.
 
 import { randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
@@ -27,17 +33,22 @@ import { mediaHref } from "@/lib/media/signedLink";
 import { fromMinor, resolveSchedule } from "@/lib/paymentSchedule";
 import { toE164 } from "@/lib/phone";
 import { safeFilename } from "@/lib/safeHref";
-import { stagesOf } from "@/lib/projectStages/server";
+import { sendToMembersByPref } from "@/lib/notificationPrefs";
+import { drawsOf } from "@/lib/projectDraws/server";
+import { parseAnswers } from "@/lib/projectKind";
+import { phasesOf, type PhasesRead } from "@/lib/projectPhases/server";
+import { selectionsOf } from "@/lib/projectSelections/server";
+import { stagesOf, type StageRow } from "@/lib/projectStages/server";
 import { currentStage, projectNo } from "@/lib/projectStages/shared";
 import { dayKeyIn } from "@/lib/projectTimeline/shared";
-import { sendText } from "@/lib/sms/send";
-import { FILE_DATA_URL, FILE_KIND_LABEL, FILE_MAX_BYTES, clientUpdateText, fileKindOf, nextDaysWords, progressWords, safeFileLink, type FileKind } from "./shared";
+import { sendText, textOffice } from "@/lib/sms/send";
+import { FILE_DATA_URL, FILE_KIND_LABEL, FILE_MAX_BYTES, clientDueWords, clientGateWords, clientUpdateText, costPlusWords, fileKindOf, lenderDrawWords, nextDaysWords, photosByPhase, progressWords, safeFileLink, type FileKind } from "./shared";
 
 const SOLD = ["ACCEPTED", "COMPLETED", "PAID"];
-const orgSelect = { id: true, name: true, phone: true, logoUrl: true, billingEmail: true, website: true, timezone: true, smsClientsOn: true, gmailSettingsJson: true, gmailTokensJson: true } as const;
+const orgSelect = { id: true, name: true, phone: true, logoUrl: true, billingEmail: true, website: true, timezone: true, smsClientsOn: true, gmailSettingsJson: true, gmailTokensJson: true, deletedAt: true } as const;
 
 async function projectOf(organizationId: string, projectId: string) {
-  const p = await db.project.findFirst({ where: { id: projectId, organizationId }, select: { id: true, name: true, number: true, clientId: true, publicToken: true, sharedAt: true, updateSentAt: true, client: { select: { name: true, email: true, phone: true } }, organization: { select: orgSelect } } });
+  const p = await db.project.findFirst({ where: { id: projectId, organizationId }, select: { id: true, name: true, number: true, clientId: true, publicToken: true, sharedAt: true, updateSentAt: true, lenderToken: true, lenderSharedAt: true, client: { select: { name: true, email: true, phone: true } }, organization: { select: orgSelect } } });
   if (!p) throw new Error("Project not found");
   return p;
 }
@@ -171,27 +182,82 @@ export async function removeFile(organizationId: string, fileId: string): Promis
 
 // ── the homeowner's page ─────────────────────────────────────────────────────
 
+export type ClientPhase = { id: string; name: string; state: "done" | "now" | "next"; stagesDone: number; stageCount: number; gate: string; stages: Array<{ name: string; state: "done" | "now" | "next" }> };
+export type ClientPhoto = { id: string; href: string; caption: string | null; at: string };
+export type ClientSelection = { id: string; name: string; dueWords: string; allowance: number | null; chosen: string | null; chosenAt: string | null; canChoose: boolean };
+export type ClientDraws = { funded: number; total: number; held: number; rows: Array<{ number: number; name: string; amount: number; state: string; words: string }> };
+
 export type ClientView = {
   company: { name: string; phone: string | null; email: string | null; logoUrl: string | null; website: string | null };
-  project: { name: string; number: string; status: string; clientFirst: string | null };
+  project: { name: string; number: string; status: string; clientFirst: string | null; kind: "REMODEL" | "NEW_BUILD" };
   progress: { done: number | null; words: string; stages: Array<{ name: string; state: "done" | "now" | "next" }> };
+  /** A new build's phases (part 7): where each stands and what closes it, in the homeowner's words; the current one
+   *  carries its stages. Empty on a remodel. */
+  phases: ClientPhase[];
+  /** What the client has to choose (part 7), each with the day it is needed by; a chosen one with what they picked.
+   *  Never the office's note or the suggested allowance. */
+  selections: ClientSelection[];
   nextDays: Array<{ day: string; label: string; jobTitle: string }>;
-  photos: Array<{ id: string; href: string; caption: string | null; at: string }>;
+  photos: ClientPhoto[];
+  /** The photos under their phase on a new build (part 7); one group with no name otherwise. */
+  photoGroups: Array<{ phase: string | null; photos: ClientPhoto[] }>;
   files: Array<{ id: string; name: string; kindLabel: string; href: string; isLink: boolean }>;
   payments: Array<{ title: string; paid: number; total: number; remaining: number; next: { label: string; amount: number; href: string } | null }>;
+  /** The construction loan's draws on a build with a lender (part 7), in the borrower's words; null otherwise. */
+  draws: ClientDraws | null;
+  /** Cost-plus only (part 7): the costs so far by phase and the fee's words — the one contract where the client sees
+   *  costs; null on every other. */
+  costs: { words: string; total: number; rows: Array<{ phase: string; spent: number }> } | null;
   finished: boolean;
   warrantyUntil: string | null;
   finalInspectionPassed: boolean;
 };
+
+/** The phases as the homeowner and the lender read them: done · now · next, the stages done, what closes each (in
+ *  their words), and the current one's stages. */
+function phaseRows(phases: PhasesRead, stages: readonly StageRow[]): ClientPhase[] {
+  const now = currentStage(stages);
+  return phases.phases.map((ph) => {
+    const mine = stages.filter((s) => s.phaseId === ph.id);
+    const state: ClientPhase["state"] = ph.status === "DONE" ? "done" : ph.id === phases.current?.id ? "now" : "next";
+    // The current phase lists its stages — unless it has just the one, named as the phase is (nothing to add).
+    const listStages = state === "now" && !(mine.length === 1 && mine[0].name === ph.name);
+    return {
+      id: ph.id,
+      name: ph.name,
+      state,
+      stagesDone: ph.stagesDone,
+      stageCount: ph.stageCount,
+      gate: clientGateWords(ph),
+      stages: listStages ? mine.map((s) => ({ name: s.name, state: s.status === "DONE" ? ("done" as const) : s.id === now?.id ? ("now" as const) : ("next" as const) })) : [],
+    };
+  });
+}
+
+function photoGroupsOf(photos: ClientPhoto[], stages: readonly StageRow[], phases: PhasesRead, tz: string): Array<{ phase: string | null; photos: ClientPhoto[] }> {
+  if (!phases.phases.length) return photos.length ? [{ phase: null, photos }] : [];
+  return photosByPhase(
+    photos,
+    stages.map((s) => ({ phaseId: s.phaseId ?? null, lane: s.lane ?? null, startsAt: s.startsAt, endsAt: s.endsAt, doneAt: s.doneAt, position: s.position })),
+    phases.phases.map((p) => ({ id: p.id, name: p.name, position: p.position })),
+    (iso) => dayKeyIn(new Date(iso), tz),
+  );
+}
 
 export async function clientView(token: string): Promise<ClientView | null> {
   const p = await db.project.findUnique({
     where: { publicToken: token },
     select: {
       id: true,
+      organizationId: true,
       name: true,
       number: true,
       status: true,
+      kind: true,
+      answersJson: true,
+      moneyMode: true,
+      marginPct: true,
+      feeAmount: true,
       warrantyUntil: true,
       client: { select: { name: true } },
       organization: { select: orgSelect },
@@ -200,18 +266,38 @@ export async function clientView(token: string): Promise<ClientView | null> {
       inspections: { where: { isFinal: true }, take: 1, select: { result: true } },
     },
   });
-  if (!p) return null;
+  if (!p || p.organization.deletedAt) return null;
   const tz = p.organization.timezone || "America/New_York";
   const today = localDayKey(new Date(), tz);
   const jobIds = p.jobs.map((j) => j.id);
   const titleOf = new Map(p.jobs.map((j) => [j.id, j.title]));
-  const [read, events, photos, files, base] = await Promise.all([
+  const kind: ClientView["project"]["kind"] = p.kind === "NEW_BUILD" ? "NEW_BUILD" : "REMODEL";
+  const lender = kind === "NEW_BUILD" && parseAnswers(p.answersJson).build?.lender === true;
+  const [read, phases, selections, drawsRead, events, photos, files, base] = await Promise.all([
     stagesOf(p.id),
+    phasesOf(p.id),
+    selectionsOf(p.organizationId, p.id),
+    lender ? drawsOf(p.organizationId, p.id) : Promise.resolve(null),
     jobIds.length ? db.jobEvent.findMany({ where: { jobId: { in: jobIds }, startsAt: { gte: new Date(Date.now() - 86_400_000) } }, orderBy: { startsAt: "asc" }, take: 40, select: { jobId: true, startsAt: true } }) : Promise.resolve([]),
     jobIds.length ? db.jobPhoto.findMany({ where: { jobId: { in: jobIds }, sharedAt: { not: null } }, orderBy: { createdAt: "desc" }, take: 40, select: { id: true, url: true, caption: true, createdAt: true, analysis: true, media: true, contentType: true } }) : Promise.resolve([]),
     db.projectFile.findMany({ where: { projectId: p.id, clientVisible: true }, orderBy: { createdAt: "desc" }, select: { id: true, name: true, kind: true, url: true, isLink: true } }),
     appBaseUrl(),
   ]);
+  // Cost-plus is the one contract where the client sees the costs: what was spent, by phase.
+  const costRows = p.moneyMode === "COST_PLUS" ? await db.projectExpense.groupBy({ by: ["phaseId"], where: { projectId: p.id }, _sum: { amount: true } }) : [];
+  const phasePos = new Map(phases.phases.map((ph) => [ph.id, { name: ph.name, position: ph.position }]));
+  const costs: ClientView["costs"] =
+    p.moneyMode === "COST_PLUS"
+      ? {
+          words: costPlusWords({ feeAmount: p.feeAmount, marginPct: p.marginPct }),
+          total: costRows.reduce((n, r) => n + (r._sum.amount ?? 0), 0),
+          rows: costRows
+            .map((r) => ({ phase: r.phaseId ? (phasePos.get(r.phaseId)?.name ?? "Other") : "Not on a phase", position: r.phaseId ? (phasePos.get(r.phaseId)?.position ?? 1e9) : 1e9 + 1, spent: r._sum.amount ?? 0 }))
+            .filter((r) => r.spent > 0)
+            .sort((a, b) => a.position - b.position)
+            .map((r) => ({ phase: r.phase, spent: r.spent })),
+        }
+      : null;
   const now = currentStage(read.stages);
   const seenDay = new Set<string>();
   const nextDays: ClientView["nextDays"] = [];
@@ -233,21 +319,133 @@ export async function clientView(token: string): Promise<ClientView | null> {
         : null;
     return { title: pr.title, paid: fromMinor(sch.paidMinor), total: fromMinor(sch.totalMinor), remaining: fromMinor(sch.remainingMinor), next: pay };
   });
+  const photoRows: ClientPhoto[] = photos.filter((x) => mediaOf(x).media === "photo").slice(0, 24).map((x) => ({ id: x.id, href: mediaHref(x.url) ?? x.url, caption: x.caption, at: x.createdAt.toISOString() }));
   return {
     company: { name: p.organization.name, phone: p.organization.phone, email: p.organization.billingEmail, logoUrl: p.organization.logoUrl, website: p.organization.website },
-    project: { name: p.name, number: projectNo(p.number), status: p.status, clientFirst: p.client?.name?.trim().split(/\s+/)[0] ?? null },
+    project: { name: p.name, number: projectNo(p.number), status: p.status, clientFirst: p.client?.name?.trim().split(/\s+/)[0] ?? null, kind },
     progress: {
       done: read.done,
       words: progressWords(read.done, now?.name ?? null),
       stages: read.stages.map((s) => ({ name: s.name, state: s.status === "DONE" ? "done" : s.id === now?.id ? "now" : "next" })),
     },
+    phases: phaseRows(phases, read.stages),
+    selections: selections.selections
+      .filter((s) => s.state === "chosen" || !s.stageDone)
+      .map((s) => ({ id: s.id, name: s.name, dueWords: s.state === "chosen" ? "" : clientDueWords(s.due, selections.today), allowance: s.allowance, chosen: s.state === "chosen" ? s.chosen : null, chosenAt: s.state === "chosen" ? s.chosenAt : null, canChoose: !s.stageDone })),
     nextDays,
-    photos: photos.filter((x) => mediaOf(x).media === "photo").slice(0, 24).map((x) => ({ id: x.id, href: mediaHref(x.url) ?? x.url, caption: x.caption, at: x.createdAt.toISOString() })),
+    photos: photoRows,
+    photoGroups: photoGroupsOf(photoRows, read.stages, phases, tz),
     files: files.map((f) => ({ id: f.id, name: f.name, kindLabel: FILE_KIND_LABEL[fileKindOf(f.kind)], href: f.isLink ? f.url : (mediaHref(f.url) ?? f.url), isLink: f.isLink })),
     payments,
+    draws: drawsRead && drawsRead.draws.length ? { funded: drawsRead.funded, total: drawsRead.total, held: drawsRead.held, rows: drawsRead.draws.map((d) => ({ number: d.number, name: d.name, amount: d.amount, state: d.state, words: lenderDrawWords(d) })) } : null,
+    costs,
     finished: p.status === "COMPLETED" || p.status === "ARCHIVED",
     warrantyUntil: p.warrantyUntil ? p.warrantyUntil.toISOString().slice(0, 10) : null,
     finalInspectionPassed: p.inspections[0]?.result === "PASSED",
+  };
+}
+
+/** The homeowner's one write, from their page: what they chose for a selection on the token's project. The vendor
+ *  and the price the office entered stay; the choice is stamped with no actor (the client's), logged, and the office
+ *  is told. Refused once the stage is done. */
+export async function clientChoose(token: string, selectionId: string, chosenRaw: string): Promise<{ ok: true; words: string } | { ok: false; error: string }> {
+  const p = await db.project.findUnique({ where: { publicToken: token }, select: { id: true, name: true, organizationId: true, clientId: true, organization: { select: { deletedAt: true, name: true, logoUrl: true, phone: true } } } });
+  if (!p || p.organization.deletedAt) return { ok: false, error: "This link is not valid." };
+  const sel = await db.projectSelection.findFirst({ where: { id: selectionId, projectId: p.id }, select: { id: true, name: true, allowance: true, stage: { select: { name: true, status: true } } } });
+  if (!sel) return { ok: false, error: "That choice is not on your list any more — refresh the page." };
+  if (sel.stage?.status === "DONE") return { ok: false, error: `${sel.stage.name} is done — call the office about ${sel.name}.` };
+  const chosen = chosenRaw.trim().slice(0, 500);
+  if (!chosen) return { ok: false, error: "Say what you chose." };
+  await db.projectSelection.update({ where: { id: sel.id }, data: { chosen, chosenAt: new Date(), chosenById: null } });
+  const words = `${sel.name}: ${chosen}`;
+  const short = chosen.length > 160 ? `${chosen.slice(0, 157)}…` : chosen;
+  await logActivity({ organizationId: p.organizationId, actorId: null, kind: TRAIL_KINDS.PROJECT, summary: `The client chose ${words} on ${p.name} — from their page`, clientId: p.clientId, meta: { projectId: p.id, selectionId: sel.id, byClient: true } });
+  await tellOffice(p.organizationId, p.id, `${p.name}: the client chose ${sel.name}: ${short}${sel.allowance != null ? ` (allowance $${Math.round(sel.allowance).toLocaleString("en-US")})` : ""}.`, p.organization);
+  return { ok: true, words };
+}
+
+/** The office, by text (those who ticked Text) and by email (everyone whose pref is on) — the same key the buying,
+ *  the contractors' and the accepted-proposal notes use. */
+async function tellOffice(organizationId: string, projectId: string, line: string, org: { name: string; logoUrl: string | null; phone: string | null }): Promise<void> {
+  try {
+    const href = `${await appBaseUrl()}/dashboard/projects/${projectId}`;
+    await textOffice(organizationId, "proposal-accepted", `${line} ${href}`);
+    const doc: EmailDoc = {
+      subject: line.slice(0, 120),
+      lockup: { kind: "org", name: org.name, logoUrl: org.logoUrl },
+      kicker: { text: "The client's page" },
+      headline: line.slice(0, 200),
+      cta: { label: "Open the project", href },
+      footer: { name: org.name, contact: org.phone ?? undefined },
+    };
+    await sendToMembersByPref(organizationId, "proposal-accepted", doc);
+  } catch (err) {
+    console.warn(`[projectClient] could not tell the office: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+// ── the lender's page ────────────────────────────────────────────────────────
+
+/** The lender's read-only link (/l/<token>), made the first time the office asks for it. */
+export async function ensureLenderShare(organizationId: string, projectId: string, actorId: string | null): Promise<{ token: string; href: string }> {
+  const p = await projectOf(organizationId, projectId);
+  let token = p.lenderToken;
+  if (!token) {
+    token = randomUUID();
+    await db.project.update({ where: { id: p.id }, data: { lenderToken: token, lenderSharedAt: new Date() } });
+    await logActivity({ organizationId, actorId, kind: TRAIL_KINDS.PROJECT, summary: `Made the lender's page for ${p.name}`, clientId: p.clientId, meta: { projectId } });
+  }
+  return { token, href: `${await appBaseUrl()}/l/${token}` };
+}
+
+export type LenderDraw = { number: number; name: string; amount: number; retainagePct: number; state: string; words: string; bundle: string | null; requestedAt: string | null; fundedAt: string | null; fundedAmount: number | null; released: number; held: number };
+export type LenderView = {
+  company: ClientView["company"];
+  project: { name: string; number: string; borrower: string | null; kind: "REMODEL" | "NEW_BUILD" };
+  progress: { done: number | null; words: string };
+  phases: ClientPhase[];
+  /** The schedule as the lender reads it: each draw's dollars, state and the bundle the office took when it asked. */
+  draws: { funded: number; requested: number; held: number; total: number; rows: LenderDraw[] };
+  /** Every inspection with a result or a day, oldest first. */
+  inspections: Array<{ name: string; result: string; date: string | null; stage: string | null }>;
+  photoGroups: ClientView["photoGroups"];
+  asOf: string;
+};
+
+/** What the lender sees from their link, and nothing else: the house's progress, the phases, the draws with their
+ *  bundles, the inspections and the photos the office chose. Never the budget, the margin, a basis or a note. */
+export async function lenderView(token: string): Promise<LenderView | null> {
+  const p = await db.project.findUnique({
+    where: { lenderToken: token },
+    select: { id: true, organizationId: true, name: true, number: true, kind: true, client: { select: { name: true } }, organization: { select: orgSelect }, jobs: { where: { status: { not: "CANCELED" } }, select: { id: true } } },
+  });
+  if (!p || p.organization.deletedAt) return null;
+  const tz = p.organization.timezone || "America/New_York";
+  const jobIds = p.jobs.map((j) => j.id);
+  const [read, phases, draws, inspections, photos] = await Promise.all([
+    stagesOf(p.id),
+    phasesOf(p.id),
+    drawsOf(p.organizationId, p.id),
+    db.projectInspection.findMany({ where: { projectId: p.id, OR: [{ result: { not: "PENDING" } }, { date: { not: null } }] }, orderBy: [{ date: "asc" }, { createdAt: "asc" }], take: 60, select: { name: true, result: true, date: true, stage: { select: { name: true } } } }),
+    jobIds.length ? db.jobPhoto.findMany({ where: { jobId: { in: jobIds }, sharedAt: { not: null } }, orderBy: { createdAt: "desc" }, take: 40, select: { id: true, url: true, caption: true, createdAt: true, analysis: true, media: true, contentType: true } }) : Promise.resolve([]),
+  ]);
+  const now = currentStage(read.stages);
+  const photoRows: ClientPhoto[] = photos.filter((x) => mediaOf(x).media === "photo").slice(0, 24).map((x) => ({ id: x.id, href: mediaHref(x.url) ?? x.url, caption: x.caption, at: x.createdAt.toISOString() }));
+  return {
+    company: { name: p.organization.name, phone: p.organization.phone, email: p.organization.billingEmail, logoUrl: p.organization.logoUrl, website: p.organization.website },
+    project: { name: p.name, number: projectNo(p.number), borrower: p.client?.name?.trim() || null, kind: p.kind === "NEW_BUILD" ? "NEW_BUILD" : "REMODEL" },
+    progress: { done: read.done, words: progressWords(read.done, now?.name ?? null) },
+    phases: phaseRows(phases, read.stages),
+    draws: {
+      funded: draws.funded,
+      requested: draws.requested,
+      held: draws.held,
+      total: draws.total,
+      rows: draws.draws.map((d) => ({ number: d.number, name: d.name, amount: d.amount, retainagePct: d.retainagePct, state: d.state, words: lenderDrawWords(d), bundle: d.snapshot?.words ?? null, requestedAt: d.requestedAt, fundedAt: d.fundedAt, fundedAmount: d.fundedAmount, released: d.payout.released, held: d.payout.held })),
+    },
+    inspections: inspections.map((i) => ({ name: i.name, result: i.result, date: i.date ? i.date.toISOString().slice(0, 10) : null, stage: i.stage?.name ?? null })),
+    photoGroups: photoGroupsOf(photoRows, read.stages, phases, tz),
+    asOf: new Date().toISOString(),
   };
 }
 

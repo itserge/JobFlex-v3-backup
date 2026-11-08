@@ -112,7 +112,7 @@ export function ProjectSelectionsCard({ projectId, selections, stages, canManage
   }
 
   const tagOf = (r: Row): { text: string; tone: string } => {
-    if (r.state === "chosen") return { text: `Chosen${r.chosenAt ? ` ${dayWords(r.chosenAt.slice(0, 10))}` : ""}`, tone: s.tagIn };
+    if (r.state === "chosen") return { text: `Chosen${r.chosenAt ? ` ${dayWords(r.chosenAt.slice(0, 10))}` : ""}${r.byClient ? " · from their page" : ""}`, tone: s.tagIn };
     if (r.stageDone) return { text: "stage done", tone: "" };
     if (r.state === "late") return { text: dueWords(r, today), tone: s.tagLate };
     if (r.state === "soon") return { text: dueWords(r, today), tone: s.tagOrdered };
