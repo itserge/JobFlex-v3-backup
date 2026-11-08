@@ -779,3 +779,23 @@ empty/error/connected states as applicable, and all preserved actions. Use
 relevant existing lint/type checks. Report what was actually verified; a
 redirect or compilation alone is not visual verification. Do not create test
 scaffolding, change the data layer, commit or publish unless authorized.
+
+Subcontractors, part 2 (2026-11-08, the subcontractors plan): the viewer gains
+a side panel, "What the AI read", in the same grammar as the frame — a 14px
+bold title with a small outlined mono pill for the read's state (amber "Needs
+review", emerald "Reviewed", rose "Could not read"), then the figures as a
+two-column list (a mono caps label, an 800-weight tabular figure, and under it
+the source line quoted in 11px muted type with "sure / likely / unsure"), the
+terms as mono-labelled definitions, the flags in an amber left-ruled box, a
+summary line over a hairline, and the review as the sheet's own buttons (Use
+these primary, Not right and Read again ghost). The section's Compare and
+Budget tabs are real tables inside a 2px ink frame that scrolls sideways on a
+phone: mono caps column heads, hairline rows, the lowest sub's column tinted
+emerald, an over-budget cell in rose; the AI's two sentences sit under the
+table in a 3px ink left-ruled box with a mono caps "by" line. On Quotes &
+Proposals the letters to match are white 1.5px-framed rows with the reason as
+an amber pill, the excerpt muted, the files as link-buttons, and a select
+beside Attach and Ignore. A quote that came with a document and no typed price
+reads "Quoted · price to confirm" in the card's tag and its Award waits; over
+the stage's share, Award shows the warning in the card's note style with
+"Award anyway" beside it.

@@ -20,6 +20,10 @@ import { isoDay } from "@/lib/projectTimeline/shared";
 import { FILE_KIND_LABEL, fileKindOf } from "@/lib/projectClient/shared";
 import { DOC_SELECT, docRow, documentsOf, recordDocument, type DocRow } from "@/lib/subDocs/server";
 export type { DocRow } from "@/lib/subDocs/server";
+// Part 2 (2026-11-08): the reply address on a request's email, the AI's read on a version, the budget's pending line.
+import { inboundReplyTo } from "@/lib/subInbound/config";
+import { REPLY_HINT, subjectTag } from "@/lib/subInbound/shared";
+import { parseStoredCompare, parseStoredRead, pendingOf, type StoredCompare, type StoredRead } from "@/lib/subQuotes/shared";
 import {
   REQUEST_FIRST_NUMBER,
   askText,
@@ -363,10 +367,10 @@ function officeDoc(i: { org: { name: string; logoUrl: string | null; phone: stri
 
 /** The office, by text (those who ticked Text), by email (everyone whose "Subcontractor quotes" is on) and in the bell
  *  (a SUB_QUOTE row with the section's link). */
-async function tellOffice(organizationId: string, projectId: string, line: string, meta: Record<string, unknown>): Promise<void> {
+export async function tellOffice(organizationId: string, projectId: string, line: string, meta: Record<string, unknown>, pathOverride?: string): Promise<void> {
   try {
     const base = await appBaseUrl();
-    const path = `/dashboard/projects/${projectId}/subs?tab=quotes`;
+    const path = pathOverride ?? `/dashboard/projects/${projectId}/subs?tab=quotes`;
     const href = `${base}${path}`;
     await logActivity({ organizationId, actorId: null, kind: SUB_EVENT_KIND, summary: line, meta: { projectId, href: path, ...meta } });
     await textOffice(organizationId, "sub-quote", `${line} ${href}`);
@@ -378,7 +382,7 @@ async function tellOffice(organizationId: string, projectId: string, line: strin
 }
 
 type OrgRow = { id: string; name: string | null; phone: string | null; gmailSettingsJson: string | null; gmailTokensJson: string | null; billingEmail: string | null; deletedAt: Date | null };
-type SendWhat = "ask" | "award" | "revision";
+type SendWhat = "ask" | "award" | "revision" | "reminder";
 
 async function sendAsk(org: OrgRow, project: { id: string; name: string; number: number | null }, c: { name: string; email: string | null; phone: string | null; textsOptOut?: boolean }, q: { scope: string; dueBy: Date | null; publicToken: string; revisionNote?: string | null; request?: { number: number; description: string | null; materials: string | null; labor: string | null; startsAt: Date | null; endsAt: Date | null; attachments: number } | null }, what: SendWhat): Promise<{ link: string; email: SendState; text: SendState }> {
   const base = await appBaseUrl();
@@ -388,18 +392,35 @@ async function sendAsk(org: OrgRow, project: { id: string; name: string; number:
   const dates = q.request?.startsAt || q.request?.endsAt ? [q.request?.startsAt ? `starts ${dayWords(q.request.startsAt)}` : null, q.request?.endsAt ? `done by ${dayWords(q.request.endsAt)}` : null].filter(Boolean).join(", ") : null;
   let email: SendState = "none";
   let text: SendState = "none";
+  // Part 2: when replies by email are on, the letter's Reply-To is the request's own address (the token in it names
+  // this recipient row) and the subject carries [RFQ-n] as the fallback — the sub's answer, estimate attached, lands
+  // on the quote by itself (lib/subInbound). Off, the company's own reply-to stays.
+  const replyTo = inboundReplyTo(q.publicToken);
+  const tag = q.request ? ` ${subjectTag(q.request.number)}` : "";
   if (c.email) {
     try {
+      const ask = () => askHtml({ company, to: c.name, project: label, requestNo: q.request ? requestNo(q.request.number) : "quote request", scope: q.scope, description: q.request?.description ?? null, materials: q.request?.materials ?? null, labor: q.request?.labor ?? null, dates, replyBy: dayWords(q.dueBy), attachments: q.request?.attachments ?? 0, link, phone: org.phone });
+      const hint = replyTo ? `<p>${esc(REPLY_HINT)}</p>` : "";
       const html =
         what === "ask"
-          ? askHtml({ company, to: c.name, project: label, requestNo: q.request ? requestNo(q.request.number) : "quote request", scope: q.scope, description: q.request?.description ?? null, materials: q.request?.materials ?? null, labor: q.request?.labor ?? null, dates, replyBy: dayWords(q.dueBy), attachments: q.request?.attachments ?? 0, link, phone: org.phone })
-          : what === "award"
-            ? awardHtml({ company, to: c.name, project: label, scope: q.scope, amount: null, link, phone: org.phone })
-            : revisionHtml({ company, to: c.name, project: label, note: q.revisionNote ?? null, link, phone: org.phone });
+          ? ask() + hint
+          : what === "reminder"
+            ? `<p><b>A reminder:</b> ${esc(company)} would like your quote${q.dueBy ? ` by ${esc(dayWords(q.dueBy) ?? "")}` : " soon"}.</p>` + ask() + hint
+            : what === "award"
+              ? awardHtml({ company, to: c.name, project: label, scope: q.scope, amount: null, link, phone: org.phone })
+              : revisionHtml({ company, to: c.name, project: label, note: q.revisionNote ?? null, link, phone: org.phone }) + hint;
       await sendOrgEmail(org, {
         to: c.email,
-        subject: what === "ask" ? `Quote request — ${company} — ${project.name}` : what === "award" ? `You've got the work — ${company} — ${project.name}` : `Revised quote, please — ${company} — ${project.name}`,
+        subject:
+          what === "ask"
+            ? `Quote request — ${company} — ${project.name}${tag}`
+            : what === "reminder"
+              ? `Reminder: your quote is due — ${company} — ${project.name}${tag}`
+              : what === "award"
+                ? `You've got the work — ${company} — ${project.name}${tag}`
+                : `Revised quote, please — ${company} — ${project.name}${tag}`,
         html,
+        ...(replyTo && what !== "award" ? { replyTo } : {}),
       });
       email = "sent";
     } catch (err) {
@@ -408,7 +429,14 @@ async function sendAsk(org: OrgRow, project: { id: string; name: string; number:
     }
   }
   if (c.phone && !c.textsOptOut) {
-    const body = what === "ask" ? askText(company, project.name, dayWords(q.dueBy), link) : what === "award" ? awardText(company, project.name, link) : revisionText(company, project.name, q.revisionNote ?? null, link);
+    const body =
+      what === "ask"
+        ? askText(company, project.name, dayWords(q.dueBy), link)
+        : what === "reminder"
+          ? `Reminder — ${askText(company, project.name, dayWords(q.dueBy), link)}`
+          : what === "award"
+            ? awardText(company, project.name, link)
+            : revisionText(company, project.name, q.revisionNote ?? null, link);
     const r = await sendText({ organizationId: org.id, to: c.phone, body, kind: "sub-quote" });
     text = r.ok && (r.status === "SENT" || r.status === "HELD") ? "sent" : r.ok ? "none" : "failed";
   }
@@ -618,10 +646,15 @@ export type VersionRow = {
   approved: boolean;
   reviewStatus: string;
   document: DocRow | null;
+  /** Part 2: the AI's read of the document (lib/subQuotes), its state in `reviewStatus`, and the last failure. */
+  read: StoredRead | null;
+  readError: string | null;
+  readAttempts: number;
+  reviewedAt: string | null;
 };
 
-const VERSION_SELECT = { id: true, version: true, amount: true, note: true, source: true, submittedAt: true, approved: true, reviewStatus: true, document: { select: DOC_SELECT } } as const;
-const versionRow = (v: { id: string; version: number; amount: number | null; note: string | null; source: string; submittedAt: Date; approved: boolean; reviewStatus: string; document: Parameters<typeof docRow>[0] | null }): VersionRow => ({
+const VERSION_SELECT = { id: true, version: true, amount: true, note: true, source: true, submittedAt: true, approved: true, reviewStatus: true, extractedJson: true, readError: true, readAttempts: true, reviewedAt: true, document: { select: DOC_SELECT } } as const;
+const versionRow = (v: { id: string; version: number; amount: number | null; note: string | null; source: string; submittedAt: Date; approved: boolean; reviewStatus: string; extractedJson: string | null; readError: string | null; readAttempts: number; reviewedAt: Date | null; document: Parameters<typeof docRow>[0] | null }): VersionRow => ({
   id: v.id,
   version: v.version,
   amount: v.amount,
@@ -631,18 +664,36 @@ const versionRow = (v: { id: string; version: number; amount: number | null; not
   approved: v.approved,
   reviewStatus: v.reviewStatus,
   document: v.document ? docRow(v.document) : null,
+  read: parseStoredRead(v.extractedJson),
+  readError: v.readError,
+  readAttempts: v.readAttempts,
+  reviewedAt: iso(v.reviewedAt),
 });
 
 type FileIn = { url: string; name: string; contentType: string | null; bytes: number | null };
 
-/** One more version on a recipient row — the sub's price from their page, or the office's upload on their behalf —
- *  with its document; the row's own amount and note follow the newest. */
-async function addVersion(q: { id: string; organizationId: string; projectId: string; requestId: string | null; contractorId: string; status: string }, input: { amount: number | null; note: string | null; file: FileIn | null; source: "PORTAL" | "UPLOAD"; by: string | null; via: "SUB" | "OFFICE" }): Promise<VersionRow> {
-  const doc = input.file ? await recordDocument({ organizationId: q.organizationId, projectId: q.projectId, contractorId: q.contractorId, requestId: q.requestId, kind: "QUOTE", name: input.file.name, url: input.file.url, contentType: input.file.contentType, bytes: input.file.bytes, uploadedVia: input.via, uploadedById: input.by }) : null;
+/** One more version on a recipient row — the sub's price from their page, the office's upload on their behalf, or
+ *  (part 2) the document out of their email — with its document; the row's own amount and note follow the newest.
+ *  A document queues the AI's read (reviewStatus PENDING, run by the sweep or the webhook's after()). The document
+ *  is a file kept just now, or one already in the store (a held letter's) handed over by id. */
+async function addVersion(
+  q: { id: string; organizationId: string; projectId: string; requestId: string | null; contractorId: string; status: string },
+  input: { amount: number | null; note: string | null; file: FileIn | null; documentId?: string | null; inboundEmailId?: string | null; source: "PORTAL" | "UPLOAD" | "EMAIL"; by: string | null; via: "SUB" | "OFFICE" | "EMAIL" },
+): Promise<VersionRow> {
+  let documentId: string | null = null;
+  if (input.documentId) {
+    const existing = await db.subDocument.findFirst({ where: { id: input.documentId, organizationId: q.organizationId }, select: { id: true } });
+    if (!existing) throw new Error("That document is not here.");
+    await db.subDocument.update({ where: { id: existing.id }, data: { kind: "QUOTE", projectId: q.projectId, contractorId: q.contractorId, requestId: q.requestId } });
+    documentId = existing.id;
+  } else if (input.file) {
+    const doc = await recordDocument({ organizationId: q.organizationId, projectId: q.projectId, contractorId: q.contractorId, requestId: q.requestId, kind: "QUOTE", name: input.file.name, url: input.file.url, contentType: input.file.contentType, bytes: input.file.bytes, uploadedVia: input.via, uploadedById: input.by, inboundEmailId: input.inboundEmailId ?? null });
+    documentId = doc.id;
+  }
   const top = await db.subQuoteVersion.aggregate({ where: { quoteId: q.id }, _max: { version: true } });
   const now = new Date();
   const v = await db.subQuoteVersion.create({
-    data: { organizationId: q.organizationId, quoteId: q.id, version: (top._max.version ?? 0) + 1, amount: input.amount != null ? r2(input.amount) : null, note: trim(input.note, 1000), documentId: doc?.id ?? null, source: input.source, submittedAt: now, submittedById: input.by },
+    data: { organizationId: q.organizationId, quoteId: q.id, version: (top._max.version ?? 0) + 1, amount: input.amount != null ? r2(input.amount) : null, note: trim(input.note, 1000), documentId, source: input.source, submittedAt: now, submittedById: input.by, reviewStatus: documentId ? "PENDING" : "NONE" },
     select: VERSION_SELECT,
   });
   const reopened = ["ASKED", "VIEWED", "QUOTED", "REVISION"].includes(q.status);
@@ -661,6 +712,77 @@ export async function addVersionByOffice(organizationId: string, quoteId: string
   const version = await addVersion({ id: q.id, organizationId, projectId: q.projectId, requestId: q.requestId, contractorId: q.contractor.id, status: q.status }, { amount: input.amount, note: input.note, file: input.file, source: "UPLOAD", by: actorId, via: "OFFICE" });
   await logActivity({ organizationId, actorId, kind: TRAIL_KINDS.PROJECT, summary: `Added ${q.contractor.name}'s quote V${version.version}${version.amount != null ? ` (${dollars(version.amount)})` : ""}${version.document ? ` — ${version.document.name}` : ""} on ${q.project.name}`, clientId: q.project.clientId, meta: { projectId: q.projectId, quoteId: q.id, versionId: version.id } });
   return { projectId: q.projectId, version };
+}
+
+/** A sub's reply by email (part 2, lib/subInbound): the letter's document becomes a version on the recipient row —
+ *  a file kept just now, or a document the letter already left in the store — with the read queued. */
+export async function addVersionFromEmail(quoteId: string, input: { note: string | null; file: FileIn | null; documentId: string | null; inboundEmailId: string }): Promise<{ version: VersionRow; projectId: string; organizationId: string }> {
+  const q = await db.projectSubQuote.findUnique({ where: { id: quoteId }, select: { id: true, organizationId: true, projectId: true, requestId: true, contractorId: true, status: true } });
+  if (!q) throw new Error("Quote not found");
+  if (!["ASKED", "VIEWED", "QUOTED", "REVISION", "AWARDED"].includes(q.status)) throw new Error("This quote is closed.");
+  const version = await addVersion(q, { amount: null, note: input.note, file: input.file, documentId: input.documentId, inboundEmailId: input.inboundEmailId, source: "EMAIL", by: null, via: "EMAIL" });
+  return { version, projectId: q.projectId, organizationId: q.organizationId };
+}
+
+/** The inbound door (part 2): the recipient row behind the token in a reply address, with what the letter's handler
+ *  needs to decide — whose it is, whether it still takes a quote, and the sub's address on file. */
+export type InboundDoor = { quoteId: string; organizationId: string; projectId: string; projectName: string; requestId: string | null; requestNumber: number | null; contractorId: string; contractorName: string; contractorEmail: string | null; what: string; status: string; closed: boolean };
+export async function quoteByToken(token: string): Promise<InboundDoor | null> {
+  const q = await db.projectSubQuote.findUnique({
+    where: { publicToken: token },
+    select: { id: true, organizationId: true, projectId: true, requestId: true, contractorId: true, status: true, expiresAt: true, contractor: { select: { name: true, email: true } }, stage: { select: { name: true } }, request: { select: { number: true } }, project: { select: { name: true, organization: { select: { deletedAt: true, timezone: true } } } } },
+  });
+  if (!q || q.project.organization.deletedAt) return null;
+  const today = localDayKey(new Date(), q.project.organization.timezone || "America/New_York");
+  const closed = linkClosed(q.status, isoDay(q.expiresAt), today) || !["ASKED", "VIEWED", "QUOTED", "REVISION"].includes(q.status);
+  return { quoteId: q.id, organizationId: q.organizationId, projectId: q.projectId, projectName: q.project.name, requestId: q.requestId, requestNumber: q.request?.number ?? null, contractorId: q.contractorId, contractorName: q.contractor.name, contractorEmail: q.contractor.email, what: q.stage?.name ?? "the work", status: q.status, closed };
+}
+
+// ── the sweep (part 2, lib/subQuotes/sweep) ──────────────────────────────────
+
+/** Links past their expiry close: a recipient still waiting (sent or viewed) becomes EXPIRED, and a request whose
+ *  every recipient is out closes with them. Returns how many recipients expired. */
+export async function expireRequests(now = new Date()): Promise<number> {
+  const due = await db.projectSubQuote.findMany({ where: { status: { in: ["ASKED", "VIEWED"] }, expiresAt: { lt: now } }, select: { id: true, requestId: true, organizationId: true, projectId: true, contractor: { select: { name: true } }, project: { select: { name: true } } }, take: 200 });
+  if (!due.length) return 0;
+  await db.projectSubQuote.updateMany({ where: { id: { in: due.map((d) => d.id) } }, data: { status: "EXPIRED" } });
+  for (const d of due) await logActivity({ organizationId: d.organizationId, actorId: null, kind: TRAIL_KINDS.PROJECT, summary: `${d.contractor.name}'s request on ${d.project.name} expired without a quote`, meta: { projectId: d.projectId, quoteId: d.id, requestId: d.requestId } });
+  for (const id of [...new Set(due.map((d) => d.requestId).filter((x): x is string => Boolean(x)))]) {
+    const open = await db.projectSubQuote.count({ where: { requestId: id, status: { in: ["ASKED", "VIEWED", "QUOTED", "REVISION", "AWARDED", "INVOICED"] } } });
+    if (!open) await db.subRequest.updateMany({ where: { id, status: "SENT" }, data: { status: "CLOSED" } });
+  }
+  return due.length;
+}
+
+/** One reminder to each sub whose reply is due tomorrow (or today, when yesterday's sweep missed) and who has not
+ *  answered; stamped so it goes once. Returns how many were reminded. */
+export async function remindDue(now = new Date()): Promise<number> {
+  const rows = await db.projectSubQuote.findMany({
+    where: { status: { in: ["ASKED", "VIEWED"] }, remindedAt: null, dueBy: { not: null } },
+    select: { id: true, dueBy: true, scope: true, publicToken: true, contractor: { select: { name: true, email: true, phone: true, textsOptOut: true } }, request: { select: { number: true, description: true, materials: true, labor: true, startsAt: true, endsAt: true, fileIdsJson: true, documents: { where: { kind: "PLAN" }, select: { id: true } } } }, project: { select: { id: true, name: true, number: true, organization: { select: ORG_SELECT } } } },
+    take: 100,
+  });
+  let n = 0;
+  for (const q of rows) {
+    if (q.project.organization.deletedAt) continue;
+    const tz = q.project.organization.timezone || "America/New_York";
+    const due = isoDay(q.dueBy);
+    if (due !== localDayKey(new Date(now.getTime() + 86_400_000), tz) && due !== localDayKey(now, tz)) continue;
+    if (!q.contractor.email && !q.contractor.phone) {
+      await db.projectSubQuote.update({ where: { id: q.id }, data: { remindedAt: now } });
+      continue;
+    }
+    let fileIds = 0;
+    try {
+      fileIds = (JSON.parse(q.request?.fileIdsJson ?? "[]") as string[]).length;
+    } catch {
+      fileIds = 0;
+    }
+    await sendAsk(q.project.organization, q.project, q.contractor, { ...q, request: q.request ? { ...q.request, attachments: fileIds + q.request.documents.length } : null }, "reminder");
+    await db.projectSubQuote.update({ where: { id: q.id }, data: { remindedAt: now } });
+    n += 1;
+  }
+  return n;
 }
 
 // ── the contractor's page ────────────────────────────────────────────────────
@@ -896,6 +1018,8 @@ export type RequestRow = {
   createdAt: string;
   attachments: Array<{ id: string; name: string; kind: string; href: string | null }>;
   recipientIds: string[];
+  /** Part 2: the AI's two sentences on the quotes, when they were written. */
+  compare: StoredCompare | null;
 };
 
 export type SubsRead = {
@@ -948,7 +1072,7 @@ export async function subsOf(organizationId: string, projectId: string): Promise
     tzOf(organizationId),
     contractorsOf(organizationId),
     db.projectSubQuote.findMany({ where: { projectId, organizationId }, orderBy: [{ stageId: "asc" }, { number: "asc" }], select: QUOTE_SELECT }),
-    db.subRequest.findMany({ where: { projectId, organizationId }, orderBy: { number: "desc" }, select: { id: true, number: true, title: true, trade: true, stageId: true, scope: true, description: true, materials: true, labor: true, startsAt: true, endsAt: true, dueBy: true, instructions: true, status: true, sentAt: true, createdAt: true, fileIdsJson: true, stage: { select: { name: true } }, documents: { where: { kind: "PLAN" }, select: DOC_SELECT }, recipients: { select: { id: true } } } }),
+    db.subRequest.findMany({ where: { projectId, organizationId }, orderBy: { number: "desc" }, select: { id: true, number: true, title: true, trade: true, stageId: true, scope: true, description: true, materials: true, labor: true, startsAt: true, endsAt: true, dueBy: true, instructions: true, status: true, sentAt: true, createdAt: true, fileIdsJson: true, compareJson: true, stage: { select: { name: true } }, documents: { where: { kind: "PLAN" }, select: DOC_SELECT }, recipients: { select: { id: true } } } }),
     db.projectStage.findMany({ where: { projectId }, select: { id: true, weight: true } }),
     db.projectBudgetLine.findMany({ where: { projectId, category: "SUBCONTRACTORS", label: null }, select: { amount: true } }),
     db.projectFile.findMany({ where: { projectId }, orderBy: { createdAt: "desc" }, select: { id: true, name: true, kind: true, url: true, isLink: true } }),
@@ -1048,6 +1172,7 @@ export async function subsOf(organizationId: string, projectId: string): Promise
         ...r.documents.map((d) => ({ id: d.id, name: d.name, kind: "Drawing", href: `/api/subs/doc/${d.id}` })),
       ],
       recipientIds: r.recipients.map((x) => x.id),
+      compare: parseStoredCompare(r.compareJson),
     };
   });
   return {
@@ -1063,11 +1188,14 @@ export async function subsOf(organizationId: string, projectId: string): Promise
 }
 
 /** The Subcontractors section's figures over a project's quotes. */
-export function sectionMetrics(read: SubsRead): { subs: number; subsActive: number; requestsOpen: number; quotesIn: number; awaitingApproval: number; awarded: number; invoicesOpen: number; committed: number; paid: number; subsBudget: number | null; remaining: number | null; overdue: number } {
+export function sectionMetrics(read: SubsRead): { subs: number; subsActive: number; requestsOpen: number; quotesIn: number; awaitingApproval: number; awarded: number; invoicesOpen: number; committed: number; paid: number; pending: number; pendingCount: number; subsBudget: number | null; remaining: number | null; overdue: number } {
   const q = read.quotes;
   const committed = r2(q.filter((x) => x.status === "AWARDED" || x.status === "INVOICED").reduce((n, x) => n + (x.status === "INVOICED" ? (x.invoiceAmount ?? x.amount ?? 0) : (x.amount ?? 0)), 0));
   const paid = r2(q.filter((x) => x.status === "PAID").reduce((n, x) => n + (x.invoiceAmount ?? x.amount ?? 0), 0));
   return {
+    // Part 2: quoted but not awarded — the budget's own line, never counted as committed.
+    pending: pendingOf(q),
+    pendingCount: q.filter((x) => (x.status === "QUOTED" || x.status === "REVISION") && x.amount != null).length,
     subs: read.contractors.length,
     subsActive: new Set(q.filter((x) => ["ASKED", "VIEWED", "QUOTED", "REVISION", "AWARDED", "INVOICED"].includes(x.status)).map((x) => x.contractorId)).size,
     requestsOpen: read.requests.filter((r) => r.status === "SENT").length,

@@ -175,6 +175,7 @@ model Organization {
   contractors            Contractor[]
   subRequests            SubRequest[]
   subDocuments           SubDocument[]
+  inboundEmails          InboundEmail[]
   signupPromo            PromoCode?              @relation("OrgSignupPromo", fields: [signupPromoCodeId], references: [id], onDelete: SetNull)
 
   @@index([slug])
@@ -2666,6 +2667,8 @@ model ProjectSubQuote {
   approvedVersionId String?
   declineReason     String?
   revisionNote      String?
+  // Part 2: the one "reply by tomorrow" reminder the sweep sends (lib/subQuotes/sweep).
+  remindedAt        DateTime?
   createdById       String?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
@@ -2674,6 +2677,7 @@ model ProjectSubQuote {
   contractor        Contractor        @relation(fields: [contractorId], references: [id], onDelete: Cascade)
   request           SubRequest?       @relation(fields: [requestId], references: [id], onDelete: SetNull)
   versions          SubQuoteVersion[]
+  inboundEmails     InboundEmail[]
 
   @@index([projectId, status])
   @@index([organizationId, status])
@@ -2701,6 +2705,9 @@ model SubRequest {
   endsAt         DateTime?
   dueBy          DateTime?
   instructions   String?
+  // Part 2: the AI's two-sentence comparison of the quotes on this request, with the versions it read (lib/subQuotes).
+  compareJson    String?
+  comparedAt     DateTime?
   // DRAFT | SENT | CLOSED | CANCELLED
   status         String            @default("SENT")
   sentAt         DateTime?
@@ -2734,10 +2741,14 @@ model SubQuoteVersion {
   submittedById  String?
   extractedJson  String?
   extractedAt    DateTime?
-  // NONE | PENDING | REVIEWED | REJECTED
+  // NONE (nothing to read) | PENDING (a document landed, the read is queued) | READ (the AI's figures wait for a
+  // person) | REVIEWED (Use these pressed) | REJECTED (the person said the read is wrong) | FAILED (two tries)
   reviewStatus   String          @default("NONE")
   reviewedById   String?
   reviewedAt     DateTime?
+  // Part 2: how many times the reader tried, and the last error's words.
+  readAttempts   Int             @default(0)
+  readError      String?
   approved       Boolean         @default(false)
   createdAt      DateTime        @default(now())
   quote          ProjectSubQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
@@ -2757,6 +2768,8 @@ model SubDocument {
   projectId      String?
   contractorId   String?
   requestId      String?
+  // Part 2: the email it arrived in, when it came by email.
+  inboundEmailId String?
   // QUOTE | INVOICE | CONTRACT | WAIVER | INSURANCE | W9 | PLAN | OTHER
   kind           String            @default("QUOTE")
   name           String
@@ -2773,11 +2786,45 @@ model SubDocument {
   project        Project?          @relation(fields: [projectId], references: [id], onDelete: Cascade)
   contractor     Contractor?       @relation(fields: [contractorId], references: [id], onDelete: SetNull)
   request        SubRequest?       @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  inboundEmail   InboundEmail?     @relation(fields: [inboundEmailId], references: [id], onDelete: SetNull)
   versions       SubQuoteVersion[]
 
   @@index([organizationId, createdAt])
   @@index([projectId, kind])
   @@index([requestId])
+  @@index([inboundEmailId])
+}
+
+// AN EMAIL THAT CAME IN (2026-11-08, the subcontractors plan, part 2, lib/subInbound): a sub's reply to a request,
+// delivered by Resend Inbound to rfq-<token>@<the inbound domain>. The token in the address names the recipient row;
+// a letter with no token, a closed request, or a stranger's address is held for review (state REVIEW) and matched by
+// hand or ignored. The provider's id makes a redelivery a no-op; the raw message is kept in the private store; the
+// attachments are SubDocuments that point back here; the version it became, when it did, is `versionId`.
+model InboundEmail {
+  id             String           @id @default(cuid())
+  organizationId String?
+  providerId     String           @unique
+  fromAddr       String
+  toJson         String
+  subject        String?
+  messageId      String?
+  text           String?
+  rawUrl         String?
+  receivedAt     DateTime
+  quoteId        String?
+  requestId      String?
+  versionId      String?
+  // MATCHED | REVIEW | IGNORED
+  state          String           @default("REVIEW")
+  note           String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  organization   Organization?    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  quote          ProjectSubQuote? @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  documents      SubDocument[]
+
+  @@index([organizationId, state, receivedAt])
+  @@index([quoteId])
 }
 
 // SELECTIONS (2026-11-07, the plan "Projects: Remodel and New construction", part 3): what the client has to choose

@@ -1,13 +1,15 @@
-// THE SECTION'S TABS (2026-11-08, the subcontractors plan, part 1) — a plain module, so the server pages can read
-// `?tab=` with the same words the client component draws.
+// THE SECTION'S TABS (2026-11-08, the subcontractors plan, part 1; Compare and Budget in part 2) — a plain module,
+// so the server pages can read `?tab=` with the same words the client component draws.
 
-export type SubsTab = "overview" | "subs" | "requests" | "quotes" | "history";
+export type SubsTab = "overview" | "subs" | "requests" | "quotes" | "compare" | "budget" | "history";
 
 export const SUBS_TABS: ReadonlyArray<{ key: SubsTab; label: string }> = [
   { key: "overview", label: "Overview" },
   { key: "subs", label: "My subs" },
   { key: "requests", label: "Requests" },
   { key: "quotes", label: "Quotes" },
+  { key: "compare", label: "Compare" },
+  { key: "budget", label: "Budget" },
   { key: "history", label: "History" },
 ];
 

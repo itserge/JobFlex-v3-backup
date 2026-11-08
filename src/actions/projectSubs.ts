@@ -31,6 +31,9 @@ import {
 } from "@/lib/projectSubs/server";
 import { recordDocument } from "@/lib/subDocs/server";
 import { LICENSE_STATUSES, W9_STATUSES } from "@/lib/projectSubs/shared";
+// Part 2 (2026-11-08): the AI's read of an estimate and its review, the comparison's words, the mail to match.
+import { acceptRead, compareWords, rejectRead, requeueRead } from "@/lib/subQuotes/server";
+import { attachInbound, ignoreInbound } from "@/lib/subInbound/server";
 
 const ID = z.string().min(1).max(64);
 const DAY = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -221,4 +224,53 @@ export async function invoiceSave(token: string, raw: unknown): Promise<{ ok: tr
   if (!d.success) return { ok: false, error: "Check the amount — numbers only — and the link." };
   if (d.data.url && !/^https?:\/\//i.test(d.data.url)) return { ok: false, error: "The link needs to start with https://" };
   return invoiceReply(token, d.data);
+}
+
+// ── part 2: the read, the comparison, the mail to match ──────────────────────
+
+/** Read a version's document again, now — a version whose read failed, or one the office doubts. */
+export async function readQuoteVersionNow(versionId: string): Promise<{ ok: boolean; status: string; error: string | null }> {
+  const { organizationId } = await requireEstimatorOrManager();
+  const r = await requeueRead(organizationId, ID.parse(versionId));
+  touched(r.projectId);
+  return { ok: r.outcome.ok, status: r.outcome.status, error: r.outcome.error };
+}
+
+/** "Use these": the read's total becomes the version's price (and the quote's, when it is the current version). */
+export async function acceptQuoteRead(versionId: string): Promise<{ amount: number | null }> {
+  const { organizationId, user } = await requireEstimatorOrManager();
+  const r = await acceptRead(organizationId, ID.parse(versionId), user.id);
+  touched(r.projectId);
+  return { amount: r.amount };
+}
+
+/** The person says the read is wrong: set aside, the figures stay stored. */
+export async function rejectQuoteRead(versionId: string): Promise<void> {
+  const { organizationId, user } = await requireEstimatorOrManager();
+  const r = await rejectRead(organizationId, ID.parse(versionId), user.id);
+  touched(r.projectId);
+}
+
+/** The two sentences on how a request's quotes differ, written now and kept on the request. */
+export async function compareRequestWords(requestId: string): Promise<{ words: string; by: "model" | "rules"; at: string }> {
+  const { organizationId, user } = await requireEstimatorOrManager();
+  const r = await compareWords(organizationId, ID.parse(requestId), user.id);
+  touched(r.projectId);
+  return { words: r.words.words, by: r.words.by, at: r.words.at };
+}
+
+/** A held letter matched to a quote by hand: its document becomes a version. */
+export async function attachInboundEmail(raw: unknown): Promise<{ versionId: string | null }> {
+  const { organizationId, user } = await requireEstimatorOrManager();
+  const d = z.object({ inboundId: ID, quoteId: ID }).parse(raw);
+  const r = await attachInbound(organizationId, d.inboundId, d.quoteId, user.id);
+  touched(r.projectId);
+  return { versionId: r.versionId };
+}
+
+/** A held letter set aside. */
+export async function ignoreInboundEmail(inboundId: string): Promise<void> {
+  const { organizationId, user } = await requireEstimatorOrManager();
+  await ignoreInbound(organizationId, ID.parse(inboundId), user.id);
+  touched(null);
 }

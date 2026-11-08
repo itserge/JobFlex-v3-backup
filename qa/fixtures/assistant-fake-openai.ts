@@ -31,6 +31,9 @@
 //   Speech (POST /v1/audio/speech, the Talk mode's voice): 0.3 s of silence as an MP3, so a page plays it and goes on.
 //   The Budget card's read (response_format json_schema "budget_read", 2026-11-07): words → the rules' own rows
 //   (lib/projectBudgetImport), with a figure changed when the words say "fakecheck"; a picture → a lender's page.
+//   The estimate reader (json_schema "quote_read", 2026-11-08, the subcontractors plan, part 2): words → the figures
+//   by regex (the fixtures in qa/fixtures/docs); a PDF file part or a picture → XYZ Electric's $23,500 proposal; a
+//   file named "blank" → nothing to read. The comparer (json_schema "compare_words") → two sentences from the fields.
 //   NODE_PATH="" npx --no-install tsx qa/fixtures/assistant-fake-openai.ts     (FAKE_OPENAI_PORT, default 4601)
 import http from "node:http";
 import { readBudgetText } from "../../src/lib/projectBudgetImport";
@@ -614,6 +617,106 @@ function fakeBudgetRead(messages: Msg[]) {
   };
 }
 
+/** THE ESTIMATE READER'S FAKE (2026-11-08, the subcontractors plan, part 2; lib/subQuotes): words → the figures read
+ *  out of them by a few regexes (the fixtures' lines: "Total $23,500", "Labor … $14,000", "Deposit 30% ($7,050)",
+ *  "Valid until: …"); a PDF file part or a picture → XYZ Electric's $23,500 proposal read "from the pages" — unless the
+ *  file's name says "blank", then nothing to read. An instruction to the reader in the words is flagged, never obeyed. */
+function fakeQuoteRead(messages: Msg[]) {
+  const user = messages.find((m) => m.role === "user") as unknown as { content: string | Array<{ type: string; text?: string; file?: { filename?: string } }> } | undefined;
+  const parts = typeof user?.content === "string" ? [{ type: "text", text: user.content }] : (user?.content ?? []);
+  const fig = (value: number | null, source: string | null, confidence: "high" | "medium" | "low" = "high") => ({ value, source: value != null ? source : null, confidence });
+  const none = fig(null, null, "low");
+  const picture = parts.find((p) => p.type === "file" || p.type === "image_url");
+  if (picture) {
+    if (/blank/i.test(picture.file?.filename ?? "")) {
+      return { contractor: null, proposalNumber: null, date: null, total: none, labor: none, materials: none, taxes: none, permits: none, deposit: none, paymentSchedule: null, scope: null, exclusions: [], duration: null, start: null, warranty: null, validUntil: null, conditions: [], flags: ["Nothing to read on the page."], about: "A blank page." };
+    }
+    return {
+      contractor: "XYZ Electric LLC",
+      proposalNumber: "2041",
+      date: "November 8, 2026",
+      total: fig(23500, "Total $23,500"),
+      labor: fig(14000, "Labor — Two licensed electricians, 5 working days — $14,000"),
+      materials: fig(8200, "Materials — Wire, boxes, breakers, 200 A panel, devices — $8,200"),
+      taxes: fig(850, "Sales tax — WA, on materials — $850"),
+      permits: fig(450, "Permit and inspections — City of Kirkland — $450"),
+      deposit: fig(7050, "Deposit 30% ($7,050) on signing", "medium"),
+      paymentSchedule: "Deposit 30% ($7,050) on signing · 40% at the rough-in inspection · 30% on final inspection. Net 15 days per invoice.",
+      scope: "Rough-in wiring for the kitchen and the new bathroom per the plans dated Nov 1, 2026: 14 circuits, 28 boxes; new 200 A panel; GFCI/AFCI; permit and both inspections included.",
+      exclusions: ["Decorative fixtures and their installation", "Drywall patching, painting and trim repair", "Low-voltage, data and audio wiring", "Utility fees and any service entrance upgrade"],
+      duration: "about 5 working days on site",
+      start: "within two weeks of signing",
+      warranty: "Two years on labor from the final inspection; the manufacturer's warranty on materials.",
+      validUntil: "December 8, 2026",
+      conditions: ["This price holds for 30 days", "Changes in scope are priced in writing before the work proceeds", "Site access 7 am to 5 pm, Monday to Friday", "Hidden conditions (knob-and-tube, aluminum wiring, asbestos) are outside this price"],
+      flags: [],
+      about: "A two-page electrical proposal from XYZ Electric LLC, $23,500, read from the pages.",
+    };
+  }
+  const words = parts.map((p) => p.text ?? "").join("\n");
+  const grab = (re: RegExp) => {
+    const m = re.exec(words);
+    return m ? Number(m[1].replace(/,/g, "")) : null;
+  };
+  const line = (re: RegExp) => re.exec(words)?.[0] ?? null;
+  const total = grab(/Total\s*:?\s*\$\s?([\d,]+)/i);
+  const labor = grab(/Labor[^$\n]{0,120}\$\s?([\d,]+)/i);
+  const materials = grab(/Materials[^$\n]{0,120}\$\s?([\d,]+)/i);
+  const taxes = grab(/Sales tax[^$\n]{0,80}\$\s?([\d,]+)/i);
+  const permits = grab(/Permit[^$\n]{0,80}\$\s?([\d,]+)/i);
+  const deposit = grab(/Deposit[^$\n]{0,40}\$\s?([\d,]+)/i);
+  const validUntil = /Valid until:?\s*([A-Z][a-z]+ \d{1,2}, \d{4})/.exec(words)?.[1] ?? (/Valid (\d+) days/i.test(words) ? `${/Valid (\d+) days/i.exec(words)![1]} days from the date` : null);
+  const days = /(\d+) working days/i.exec(words)?.[1] ?? null;
+  const flags: string[] = [];
+  if (/ignore the (project )?budget|approve this quote/i.test(words)) flags.push("The document carries an instruction to the reader; ignored.");
+  const contractor = /^([A-Z][A-Za-z&' ]+(?:LLC|Inc\.?|Electrical|Electric|Plumbing|Framing))/m.exec(words)?.[1]?.trim() ?? null;
+  const xyz = /XYZ Electric/i.test(words);
+  return {
+    contractor,
+    proposalNumber: /Proposal #\s?([\w-]+)/i.exec(words)?.[1] ?? null,
+    date: /Date:\s*([A-Z][a-z]+ \d{1,2}, \d{4})/.exec(words)?.[1] ?? null,
+    total: total != null ? fig(total, line(/Total\s*:?\s*\$\s?[\d,]+/i)) : none,
+    labor: labor != null ? fig(labor, line(/Labor[^$\n]{0,120}\$\s?[\d,]+/i)) : none,
+    materials: materials != null ? fig(materials, line(/Materials[^$\n]{0,120}\$\s?[\d,]+/i)) : none,
+    taxes: taxes != null ? fig(taxes, line(/Sales tax[^$\n]{0,80}\$\s?[\d,]+/i)) : none,
+    permits: permits != null ? fig(permits, line(/Permit[^$\n]{0,80}\$\s?[\d,]+/i)) : none,
+    deposit: deposit != null ? fig(deposit, line(/Deposit[^$\n]{0,40}\$\s?[\d,]+/i), "medium") : none,
+    paymentSchedule: line(/Deposit 30%[^.]*\.(?: Net[^.]*\.)?/i),
+    scope: xyz ? "Rough-in wiring for the kitchen and the new bathroom: 14 circuits, 28 boxes; a new 200 A panel; GFCI/AFCI; permit and both inspections included." : /rough-in/i.test(words) ? "Electrical rough-in." : null,
+    // pdf.js splits the "fi" ligature when it extracts text ("fi xtures"), so the test allows the gap.
+    exclusions: /Decorative\s+fi\s?xtures/i.test(words) ? (xyz ? ["Decorative fixtures and their installation", "Drywall patching, painting and trim repair", "Low-voltage, data and audio wiring", "Utility fees and any service entrance upgrade"] : ["Decorative fixtures"]) : [],
+    duration: days ? `about ${days} working days on site` : null,
+    start: /within two weeks of signing/i.test(words) ? "within two weeks of signing" : null,
+    warranty: line(/Two years on labor[^.]*\./i),
+    validUntil,
+    conditions: xyz ? ["This price holds for 30 days", "Changes in scope are priced in writing before the work proceeds", "Site access 7 am to 5 pm, Monday to Friday"] : [],
+    flags,
+    about: `${contractor ?? "A sub"}'s ${/Revised proposal/i.test(words) ? "revised " : ""}proposal${total != null ? `, $${total.toLocaleString("en-US")}` : ""}, read from the words.`,
+  };
+}
+
+/** THE COMPARER'S FAKE (part 2): two deterministic sentences from the fields the app sent — who is lowest and by how
+ *  much, what the lowest excludes, who is over the budget share. */
+function fakeCompareWords(messages: Msg[]) {
+  const user = messages.find((m) => m.role === "user");
+  const text = typeof user?.content === "string" ? user.content : "";
+  let data: { budgetShare?: number | null; quotes?: Array<{ sub: string; price: number; exclusions?: string[]; overBudgetBy?: number | null }> } = {};
+  try {
+    data = JSON.parse(text.slice(text.indexOf("{"))) as typeof data;
+  } catch {
+    data = {};
+  }
+  const qs = [...(data.quotes ?? [])].sort((a, b) => a.price - b.price);
+  if (qs.length < 2) return { words: "One priced quote so far; nothing to compare yet." };
+  const money = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+  const [low, ...rest] = qs;
+  const first = `${low.sub} is lowest at ${money(low.price)}; ${rest.map((r) => `${r.sub} is ${money(r.price)}, ${money(r.price - low.price)} more`).join("; ")}.`;
+  const ex = low.exclusions?.length ? `${low.sub} excludes ${low.exclusions.slice(0, 2).join(" and ").toLowerCase()}` : `${low.sub} lists no exclusions`;
+  const over = qs.filter((q) => (q.overBudgetBy ?? 0) > 0);
+  const budget = data.budgetShare != null ? (over.length ? `; ${over.map((q) => q.sub).join(" and ")} ${over.length === 1 ? "is" : "are"} over the ${money(data.budgetShare)} share` : `; all are within the ${money(data.budgetShare)} share`) : "";
+  return { words: `${first} ${ex}${budget}.` };
+}
+
 http
   .createServer((req, res) => {
     let raw = "";
@@ -628,6 +731,15 @@ http
       if (req.url?.includes("/chat/completions")) {
         try {
           const body = JSON.parse(raw || "{}") as { messages?: Msg[]; tools?: unknown[]; response_format?: { type?: string; json_schema?: { name?: string } } };
+          // The estimate reader and the comparer (the subcontractors plan, part 2).
+          if (body.response_format?.type === "json_schema" && body.response_format.json_schema?.name === "quote_read") {
+            res.end(JSON.stringify(reply(JSON.stringify(fakeQuoteRead(body.messages ?? [])))));
+            return;
+          }
+          if (body.response_format?.type === "json_schema" && body.response_format.json_schema?.name === "compare_words") {
+            res.end(JSON.stringify(reply(JSON.stringify(fakeCompareWords(body.messages ?? [])))));
+            return;
+          }
           // The Budget card's read: a lender's page for a picture, the rules' rows for words.
           if (body.response_format?.type === "json_schema" && body.response_format.json_schema?.name === "budget_read") {
             res.end(JSON.stringify(reply(JSON.stringify(fakeBudgetRead(body.messages ?? [])))));
