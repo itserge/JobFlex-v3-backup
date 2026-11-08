@@ -1,0 +1,139 @@
+/* THE DOCUMENT VIEWER (2026-11-08, the subcontractors plan, part 1): a full-screen overlay in the blueprint's own
+   grammar — an ink frame, mono annotations, flat buttons — that draws a PDF page by page with pdf.js (so an iPhone
+   shows every page, not the first) or a picture as it is. One component for every document in the app. */
+.overlay {
+  position: fixed;
+  inset: 0;
+  /* Portalled to <body> (doc-viewer.tsx has the why) and one tier above <BlueprintSheet> (130), so a sub's paper
+     opened from inside the profile sheet draws over it; under the plan-change confirm (140) and ⌘K (200). */
+  z-index: 135;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: rgba(10, 10, 10, 0.72);
+  padding: max(8px, env(safe-area-inset-top, 0px)) 8px max(8px, env(safe-area-inset-bottom, 0px));
+}
+.frame {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-row: 1 / -1;
+  min-height: 0;
+  background: var(--paper, #f6f5f1);
+  border: 2px solid var(--ink, #111);
+  max-width: 1100px;
+  width: 100%;
+  margin: 0 auto;
+}
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border-bottom: 2px solid var(--ink, #111);
+  background: #fff;
+}
+.name {
+  flex: 1 1 200px;
+  min-width: 0;
+  font-weight: 800;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.meta {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-muted, #666);
+  white-space: nowrap;
+}
+.acts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.btn {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1.5px solid var(--ink, #111);
+  background: #fff;
+  color: var(--ink, #111);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.btnDark {
+  background: var(--ink, #111);
+  color: #fff;
+}
+.body {
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+  background-color: var(--paper, #f6f5f1);
+  background-image: linear-gradient(var(--ink-line, #ddd) 1px, transparent 1px), linear-gradient(90deg, var(--ink-line, #ddd) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+.pages {
+  display: grid;
+  gap: 16px;
+  justify-items: center;
+}
+.page {
+  background: #fff;
+  border: 1.5px solid var(--ink, #111);
+  box-shadow: 4px 4px 0 rgba(10, 10, 10, 0.12);
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+.picture {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  border: 1.5px solid var(--ink, #111);
+  background: #fff;
+}
+.state {
+  padding: 24px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-muted, #666);
+}
+.side {
+  border-left: 2px solid var(--ink, #111);
+  padding: 12px;
+  overflow: auto;
+  background: #fff;
+}
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  min-height: 0;
+}
+@media (max-width: 760px) {
+  .split {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .side {
+    border-left: 0;
+    border-top: 2px solid var(--ink, #111);
+    max-height: 40vh;
+  }
+}

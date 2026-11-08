@@ -111,69 +111,71 @@ model Organization {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
-  memberships          Membership[]
-  paymentConnections   PaymentConnection[]
-  invites              Invite[]
-  clients              Client[]
-  leads                Lead[]
-  proposals            Proposal[]
-  templates            ProposalTemplate[]
-  jobs                 Job[]
-  jobEvents            JobEvent[]
-  workDays             WorkDay[]
-  workerProfiles       WorkerProfile[]
-  payments             Payment[]
-  invoices             Invoice[]
-  activities           ActivityEvent[]
-  conversations        Conversation[]
-  announcements        Announcement[]
-  emailTemplates       EmailTemplate[]
-  followUpRules        FollowUpRule[]
-  followUps            FollowUp[]
-  aiDrafts             AiDraft[]
-  aiPromptPacks        AiPromptPack[]
-  aiEstimates          AiEstimate[]
-  tags                 Tag[]
-  subscription         Subscription?
-  supportTickets       SupportTicket[]
-  specialties          Specialty[]
-  homeownerReqs        HomeownerRequest[]
-  leadOffers           LeadOffer[]
-  changeOrders         ChangeOrder[]
-  reviewRequests       ReviewRequest[]
-  referralCodes        ReferralCode[]
-  tradePosts           TradePost[]
-  phoneCalls           AiPhoneCall[]
-  notificationPhones   NotificationPhone[]
-  appointments         Appointment[]
-  blockedTimes         BlockedTime[]
-  unavailabilityRules  UnavailabilityRule[]
-  projects             Project[]
-  applicants           Applicant[]
-  influencerPayouts    InfluencerPayout[]
-  influencerStatements InfluencerStatement[]
-  eagleViewReports     EagleViewReport[]
-  roofMeasurements     RoofMeasurement[]
-  overheads            MonthlyOverhead[]
-  suppliers            Supplier[]
-  inventoryItems       InventoryItem[]
-  servicePlanTemplates ServicePlanTemplate[]
-  servicePlans         ServicePlan[]
-  servicePlanVisits    ServicePlanVisit[]
-  clientEquipment      ClientEquipment[]
-  visitReports         VisitReport[]
-  bookings             Booking[]
+  memberships            Membership[]
+  paymentConnections     PaymentConnection[]
+  invites                Invite[]
+  clients                Client[]
+  leads                  Lead[]
+  proposals              Proposal[]
+  templates              ProposalTemplate[]
+  jobs                   Job[]
+  jobEvents              JobEvent[]
+  workDays               WorkDay[]
+  workerProfiles         WorkerProfile[]
+  payments               Payment[]
+  invoices               Invoice[]
+  activities             ActivityEvent[]
+  conversations          Conversation[]
+  announcements          Announcement[]
+  emailTemplates         EmailTemplate[]
+  followUpRules          FollowUpRule[]
+  followUps              FollowUp[]
+  aiDrafts               AiDraft[]
+  aiPromptPacks          AiPromptPack[]
+  aiEstimates            AiEstimate[]
+  tags                   Tag[]
+  subscription           Subscription?
+  supportTickets         SupportTicket[]
+  specialties            Specialty[]
+  homeownerReqs          HomeownerRequest[]
+  leadOffers             LeadOffer[]
+  changeOrders           ChangeOrder[]
+  reviewRequests         ReviewRequest[]
+  referralCodes          ReferralCode[]
+  tradePosts             TradePost[]
+  phoneCalls             AiPhoneCall[]
+  notificationPhones     NotificationPhone[]
+  appointments           Appointment[]
+  blockedTimes           BlockedTime[]
+  unavailabilityRules    UnavailabilityRule[]
+  projects               Project[]
+  applicants             Applicant[]
+  influencerPayouts      InfluencerPayout[]
+  influencerStatements   InfluencerStatement[]
+  eagleViewReports       EagleViewReport[]
+  roofMeasurements       RoofMeasurement[]
+  overheads              MonthlyOverhead[]
+  suppliers              Supplier[]
+  inventoryItems         InventoryItem[]
+  servicePlanTemplates   ServicePlanTemplate[]
+  servicePlans           ServicePlan[]
+  servicePlanVisits      ServicePlanVisit[]
+  clientEquipment        ClientEquipment[]
+  visitReports           VisitReport[]
+  bookings               Booking[]
   // Why a plan was cancelled, and asks for more trial days (2026-10-20).
-  cancellationFeedback CancellationFeedback[]
+  cancellationFeedback   CancellationFeedback[]
   trialExtensionRequests TrialExtensionRequest[]
   // Every declined plan charge, for /admin/revenue/failed-payments (2026-10-21).
-  paymentFailures      PaymentFailure[]
+  paymentFailures        PaymentFailure[]
   // The JobFlex Assistant's phones, turns and proposed changes (2026-11-04).
-  assistantLinks       AssistantLink[]
-  assistantMessages    AssistantMessage[]
-  assistantActions     AssistantAction[]
-  contractors          Contractor[]
-  signupPromo          PromoCode?            @relation("OrgSignupPromo", fields: [signupPromoCodeId], references: [id], onDelete: SetNull)
+  assistantLinks         AssistantLink[]
+  assistantMessages      AssistantMessage[]
+  assistantActions       AssistantAction[]
+  contractors            Contractor[]
+  subRequests            SubRequest[]
+  subDocuments           SubDocument[]
+  signupPromo            PromoCode?              @relation("OrgSignupPromo", fields: [signupPromoCodeId], references: [id], onDelete: SetNull)
 
   @@index([slug])
   @@index([signupPromoCodeId])
@@ -465,7 +467,7 @@ model Client {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   proposals      Proposal[]
   jobs           Job[]
   projects       Project[]
@@ -537,7 +539,7 @@ model Lead {
   activities   ActivityEvent[]
   phoneCalls   AiPhoneCall[]
   appointments Appointment[]
-  bookings       Booking[]
+  bookings     Booking[]
 
   @@index([organizationId, status])
   @@index([assignedToId])
@@ -859,22 +861,22 @@ model Proposal {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  owner        User?             @relation("ProposalOwner", fields: [ownerId], references: [id])
-  audio        ProposalAudio?
-  client       Client?           @relation(fields: [clientId], references: [id])
-  project      Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  lineItems    LineItem[]
-  discounts    Discount[]
-  installments Installment[]
-  invoices     Invoice[]
-  payments     Payment[]
-  activities   ActivityEvent[]
-  jobs         Job[]
-  changeOrders ChangeOrder[]
-  aiDraft      AiDraft?          @relation(fields: [aiDraftId], references: [id])
-  snapshots    PricingSnapshot[]
-  appointments Appointment[]
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  owner          User?             @relation("ProposalOwner", fields: [ownerId], references: [id])
+  audio          ProposalAudio?
+  client         Client?           @relation(fields: [clientId], references: [id])
+  project        Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  lineItems      LineItem[]
+  discounts      Discount[]
+  installments   Installment[]
+  invoices       Invoice[]
+  payments       Payment[]
+  activities     ActivityEvent[]
+  jobs           Job[]
+  changeOrders   ChangeOrder[]
+  aiDraft        AiDraft?          @relation(fields: [aiDraftId], references: [id])
+  snapshots      PricingSnapshot[]
+  appointments   Appointment[]
   reviewRequests ReviewRequest[]
 
   @@index([organizationId, status])
@@ -953,13 +955,13 @@ model Discount {
 }
 
 model Installment {
-  id         String    @id @default(cuid())
-  proposalId String
-  label      String
-  amount     Float
-  isPercent  Boolean   @default(false)
-  dueDate    DateTime?
-  position   Int       @default(0)
+  id               String    @id @default(cuid())
+  proposalId       String
+  label            String
+  amount           Float
+  isPercent        Boolean   @default(false)
+  dueDate          DateTime?
+  position         Int       @default(0)
   // Payment-stage state (src/lib/paymentSchedule.ts is the only place that
   // derives money from these). UNPAID | PENDING (a checkout is open) | PAID |
   // WAIVED (proposal reached PAID before this stage was collected).
@@ -1041,25 +1043,25 @@ model Invoice {
 }
 
 model Payment {
-  id             String    @id @default(cuid())
-  organizationId String
-  proposalId     String?
-  invoiceId      String?
-  clientId       String?
-  amount         Float
-  currency       String    @default("USD")
-  provider       String    @default("STRIPE") // STRIPE | SQUARE | MANUAL
-  status         String    @default("PENDING") // PENDING | PAID | PARTIAL | REFUNDED | PARTIALLY_REFUNDED | VOID
-  externalId     String? // Stripe checkout session id / Square order id — dedupe key
-  method         String? // card | us_bank_account | BANK_TRANSFER | CASH | CHECK | OTHER
-  paidAt         DateTime?
+  id                String    @id @default(cuid())
+  organizationId    String
+  proposalId        String?
+  invoiceId         String?
+  clientId          String?
+  amount            Float
+  currency          String    @default("USD")
+  provider          String    @default("STRIPE") // STRIPE | SQUARE | MANUAL
+  status            String    @default("PENDING") // PENDING | PAID | PARTIAL | REFUNDED | PARTIALLY_REFUNDED | VOID
+  externalId        String? // Stripe checkout session id / Square order id — dedupe key
+  method            String? // card | us_bank_account | BANK_TRANSFER | CASH | CHECK | OTHER
+  paidAt            DateTime?
   // Platform payments (contractor's own Stripe/Square via JobFlex). Money in
   // dollars like `amount`; the settle path is the only writer.
-  feeAmount         Float    @default(0) // JobFlex application fee
+  feeAmount         Float     @default(0) // JobFlex application fee
   netAmount         Float? // amount − feeAmount
   externalPaymentId String? // Stripe payment_intent / Square payment id — refunds key on this
-  livemode          Boolean  @default(true)
-  refundedAmount    Float    @default(0)
+  livemode          Boolean   @default(true)
+  refundedAmount    Float     @default(0)
   scheduleVersion   Int? // Proposal.scheduleVersion the checkout was minted under
   meta              String? // JSON: {orphan, unappliedMinor, duplicate, note}
   // Key-joined Stripe: the fee can't ride inside the charge, so it is billed
@@ -1067,7 +1069,7 @@ model Payment {
   // that happened. Null on a key-joined payment = accrued in the ledger only
   // (no subscription customer to bill), for the operator to collect by hand.
   feeInvoiceItemId  String?
-  createdAt      DateTime  @default(now())
+  createdAt         DateTime  @default(now())
 
   organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   proposal     Proposal?     @relation(fields: [proposalId], references: [id])
@@ -1095,9 +1097,9 @@ model PaymentConnection {
 
   stripeAccountId        String?
   stripeLivemode         Boolean?
-  stripeChargesEnabled   Boolean @default(false)
-  stripeDetailsSubmitted Boolean @default(false)
-  stripeAchEnabled       Boolean @default(false)
+  stripeChargesEnabled   Boolean  @default(false)
+  stripeDetailsSubmitted Boolean  @default(false)
+  stripeAchEnabled       Boolean  @default(false)
   // "Paste an API key" join: the contractor's secret (sk_) or restricted (rk_)
   // key, AES-GCM at rest. Present = this row charges with the key itself;
   // JobFlex's cut is billed separately (Payment.feeInvoiceItemId).
@@ -1111,13 +1113,13 @@ model PaymentConnection {
   stripeWebhookId        String?
   stripeWebhookSecretEnc String?
 
-  squareMerchantId      String?
-  squareLocationId      String?
-  squareLocationName    String?
-  squareAccessTokenEnc  String?
-  squareRefreshTokenEnc String?
-  squareTokenExpiresAt  DateTime?
-  squareEnv             String? // sandbox | production at connect time
+  squareMerchantId             String?
+  squareLocationId             String?
+  squareLocationName           String?
+  squareAccessTokenEnc         String?
+  squareRefreshTokenEnc        String?
+  squareTokenExpiresAt         DateTime?
+  squareEnv                    String? // sandbox | production at connect time
   // "Paste an access token" join (2026-09-13): the seller's own personal
   // access token from their Square developer app — no refresh token, no
   // expiry, and no app fee (that needs the platform app), so JobFlex's cut is
@@ -1163,21 +1165,21 @@ model PaymentConnection {
 // ─────────────────────────────────────────────
 
 model Job {
-  id             String    @id @default(cuid())
-  organizationId String
-  clientId       String?
-  proposalId     String?
-  projectId      String?
-  title          String
-  status         String    @default("SCHEDULED")
-  scopeOfWork    String? // seeded from the linked proposal's scope; shown above notes on the job
+  id                String    @id @default(cuid())
+  organizationId    String
+  clientId          String?
+  proposalId        String?
+  projectId         String?
+  title             String
+  status            String    @default("SCHEDULED")
+  scopeOfWork       String? // seeded from the linked proposal's scope; shown above notes on the job
   // When the crew marked the pick list loaded from the warehouse (2026-09-20).
   materialsLoadedAt DateTime?
-  notes          String?
-  startsAt       DateTime?
-  endsAt         DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  notes             String?
+  startsAt          DateTime?
+  endsAt            DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   client         Client?         @relation(fields: [clientId], references: [id])
@@ -1313,13 +1315,13 @@ model WorkDay {
 }
 
 model JobPhoto {
-  id        String   @id @default(cuid())
-  jobId     String
-  url       String
-  kind      String   @default("BEFORE")
-  caption   String?
-  analysis  String? // JSON-encoded vision output
-  createdAt DateTime @default(now())
+  id           String    @id @default(cuid())
+  jobId        String
+  url          String
+  kind         String    @default("BEFORE")
+  caption      String?
+  analysis     String? // JSON-encoded vision output
+  createdAt    DateTime  @default(now())
   // Stage A (2026-09-30): the columns behind the crew's gallery. Older rows
   // leave them null and are read as before (the analysis JSON marks a video).
   uploadedById String?
@@ -1342,18 +1344,18 @@ model JobPhoto {
 }
 
 model JobExpense {
-  id         String   @id @default(cuid())
+  id             String    @id @default(cuid())
   // Null for a purchase FOR STOCK (stage D, 2026-09-30): the money is the
   // company's the day it is spent and the warehouse's value; it reaches a job
   // only when the stock is issued to it (InventoryMovement PICKED / USED at
   // its unitCost). A receipt for a job is purpose JOB with its jobId.
-  jobId      String?
-  category   String
-  amount     Float
-  note       String?
-  receiptUrl String?
-  ocrJson    String? // JSON-encoded OCR output
-  createdAt  DateTime @default(now())
+  jobId          String?
+  category       String
+  amount         Float
+  note           String?
+  receiptUrl     String?
+  ocrJson        String? // JSON-encoded OCR output
+  createdAt      DateTime  @default(now())
   // Stage A (2026-09-30): a worker's receipt is SUBMITTED and counts nowhere
   // until the owner or a manager APPROVES it (or REJECTS it with a reason);
   // REIMBURSED marks the money handed back to a worker who paid from their
@@ -1894,43 +1896,43 @@ model Specialty {
 // ─────────────────────────────────────────────
 
 model ChangeOrder {
-  id             String    @id @default(cuid())
-  organizationId String
+  id                String    @id @default(cuid())
+  organizationId    String
   // A change order amends a contract. It attaches to either a Job (legacy) or a
   // Proposal (the contract itself) — exactly one is set, enforced in the action.
-  jobId          String?
-  proposalId     String?
-  title          String
-  description    String?
-  amount         Float // signed pre-tax delta: positive adds, negative reduces (legacy readers)
-  status         String    @default("DRAFT") // DRAFT | SENT | APPROVED | DECLINED | VOID
-  publicToken    String    @unique @default(cuid())
-  sentAt         DateTime?
-  approvedAt     DateTime?
-  declinedAt     DateTime?
-  approvedIp     String?
+  jobId             String?
+  proposalId        String?
+  title             String
+  description       String?
+  amount            Float // signed pre-tax delta: positive adds, negative reduces (legacy readers)
+  status            String    @default("DRAFT") // DRAFT | SENT | APPROVED | DECLINED | VOID
+  publicToken       String    @unique @default(cuid())
+  sentAt            DateTime?
+  approvedAt        DateTime?
+  declinedAt        DateTime?
+  approvedIp        String?
   // ── Itemized change orders (2026-09-13). All nullable: a row from before
   // this carries only `amount`, and an APPROVED row with `total` null was
   // already folded into its proposal's total by the old approval code, so the
   // contract-total derivation (lib/contractTotal) excludes it. ──
-  number         Int? // per proposal: "CO #2"
-  kind           String? // change-order type key: plywood_sheathing | custom | an org-authored key
-  linesJson      String? // [{ key, name, quantity, unit, unitPrice, kind: material|labor, meta }]
-  taxable        Boolean   @default(true)
-  taxRate        Float? // copied from the proposal at send — a later rate edit cannot move a sent order
-  taxTotal       Float?
-  total          Float? // amount + taxTotal, rounded to cents; the installment an approval creates
-  photosJson     String?   @default("[]") // [{ id, url, caption }] on Blob
-  reason         String? // why the client is paying more — shown on the client page
-  approvedName   String? // the client's typed full name (lightweight e-sign)
-  approvedVia    String? // client | in_person
-  approvedByUserId String? // the staff member who recorded an in-person approval
+  number            Int? // per proposal: "CO #2"
+  kind              String? // change-order type key: plywood_sheathing | custom | an org-authored key
+  linesJson         String? // [{ key, name, quantity, unit, unitPrice, kind: material|labor, meta }]
+  taxable           Boolean   @default(true)
+  taxRate           Float? // copied from the proposal at send — a later rate edit cannot move a sent order
+  taxTotal          Float?
+  total             Float? // amount + taxTotal, rounded to cents; the installment an approval creates
+  photosJson        String?   @default("[]") // [{ id, url, caption }] on Blob
+  reason            String? // why the client is paying more — shown on the client page
+  approvedName      String? // the client's typed full name (lightweight e-sign)
+  approvedVia       String? // client | in_person
+  approvedByUserId  String? // the staff member who recorded an in-person approval
   approvedUserAgent String?
-  declineReason  String?
-  createdByUserId String?
-  voidedAt       DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  declineReason     String?
+  createdByUserId   String?
+  voidedAt          DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   job          Job?         @relation(fields: [jobId], references: [id], onDelete: Cascade)
@@ -2304,66 +2306,66 @@ model UnavailabilityException {
 // ─────────────────────────────────────────────
 
 model Project {
-  id             String    @id @default(cuid())
-  organizationId String
-  name           String
-  description    String?
-  status         String    @default("ACTIVE") // ACTIVE | ON_HOLD | COMPLETED | ARCHIVED
-  startsAt       DateTime?
-  endsAt         DateTime?
-  budget         Float     @default(0)
+  id              String    @id @default(cuid())
+  organizationId  String
+  name            String
+  description     String?
+  status          String    @default("ACTIVE") // ACTIVE | ON_HOLD | COMPLETED | ARCHIVED
+  startsAt        DateTime?
+  endsAt          DateTime?
+  budget          Float     @default(0)
   // The client the project is for (owner, 2026-09-18: "move the client to
   // the project … keep all his proposals under the same project"). Optional:
   // projects made before this, and multi-client builds, carry none.
-  clientId       String?
+  clientId        String?
   // REMODEL (every project made before 2026-11-07) or NEW_BUILD — the plan "Projects: Remodel and New construction"
   // (lib/projectKind): the templates, the questions at the start and, as the plan ships, the gates and the money.
-  kind           String    @default("REMODEL")
+  kind            String    @default("REMODEL")
   // The questions asked when the project is made, as JSON (lib/projectKind parseAnswers): the client lives there
   // during a remodel; the template the stages came from.
-  answersJson    String?
+  answersJson     String?
   // The project's own number, counted per company from 1001 ("#1042") — the stages build (2026-11-05).
   // Null on a project made before then until the one-time numbering (prisma/sql/prod-2026-11-05-project-stages.sql).
-  number         Int?
+  number          Int?
   // Set when the AI drafted the stages from the proposal lines and nobody has kept or edited them yet; the
   // card shows "Drafted by AI" with Keep until then (lib/projectStages).
   stagesDraftedAt DateTime?
   // THE FINISH LINE (the timeline build, 2026-11-06): the client's sign-off (who, when), the warranty's last day,
   // and the day the office called the project finished (status COMPLETED). Each a step on the project's Finish
   // line card; the review ask and the final payment are read from the proposals (lib/projectFinish).
-  signedOffAt    DateTime?
-  signedOffBy    String?
-  warrantyUntil  DateTime?
-  finishedAt     DateTime?
+  signedOffAt     DateTime?
+  signedOffBy     String?
+  warrantyUntil   DateTime?
+  finishedAt      DateTime?
   // WHO IT IS FOR, AND THE MONEY (2026-11-07, the plan "Projects: Remodel and New construction", part 5,
   // lib/projectMoneyPlan): CLIENT — the client has a budget and the contractor earns a margin or a fee — or SELF, a
   // spec house or the contractor's own home, a cost tracker with no margin. moneyMode: PROJECT_MARGIN | JOB_MARGIN |
   // COST_PLUS | NONE; marginPct the margin (or the cost-plus fee) in percent; feeAmount a fixed cost-plus fee;
   // salePrice a spec house's, which its profit shows against. Every project made before this: for a client, no mode.
-  forWhom        String    @default("CLIENT")
-  moneyMode      String    @default("NONE")
-  marginPct      Float?
-  feeAmount      Float?
-  salePrice      Float?
+  forWhom         String    @default("CLIENT")
+  moneyMode       String    @default("NONE")
+  marginPct       Float?
+  feeAmount       Float?
+  salePrice       Float?
   // THE LOT (2026-11-07, the plan "Projects: Remodel and New construction", part 4): a new build's parcel record
   // (number, zoning, setbacks, acreage, flood zone), the utilities at the street and the permits with their numbers
   // and expiry, as JSON (lib/projectPhases parseLot). Null on a remodel.
-  lotJson        String?
+  lotJson         String?
   // THE CLIENT'S PAGE (the client build, 2026-11-06): the homeowner's link key (/p/<token>, made the first time the
   // office shares the project), when it was first shared, and when the last update went to them (lib/projectClient).
-  publicToken    String?   @unique
-  sharedAt       DateTime?
-  updateSentAt   DateTime?
+  publicToken     String?   @unique
+  sharedAt        DateTime?
+  updateSentAt    DateTime?
   // THE LENDER'S PAGE (2026-11-08, the plan "Projects: Remodel and New construction", part 7, lib/projectClient): a
   // read-only link key (/l/<token>) with the draws and their bundles, the inspections and the photos the office chose;
   // made from the Payments card's Draws. Null until then.
-  lenderToken    String?   @unique
-  lenderSharedAt DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  lenderToken     String?   @unique
+  lenderSharedAt  DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  client       Client?               @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client?             @relation(fields: [clientId], references: [id], onDelete: SetNull)
   jobs         Job[]
   proposals    Proposal[]
   budgetLines  ProjectBudgetLine[]
@@ -2377,6 +2379,8 @@ model Project {
   punchItems   PunchItem[]
   files        ProjectFile[]
   subQuotes    ProjectSubQuote[]
+  subRequests  SubRequest[]
+  subDocuments SubDocument[]
   selections   ProjectSelection[]
   phases       ProjectPhase[]
   draws        ProjectDraw[]
@@ -2421,6 +2425,7 @@ model ProjectStage {
   orders      ProjectOrder[]
   inspections ProjectInspection[]
   subQuotes   ProjectSubQuote[]
+  subRequests SubRequest[]
   selections  ProjectSelection[]
 
   @@index([projectId, position])
@@ -2433,24 +2438,24 @@ model ProjectStage {
 // of the work and its gate (the county's inspections on its stages, the client's word or the lender's) and the lead
 // times it is known for; `budget` and `margin` are part 5's (the money). A remodel has none.
 model ProjectPhase {
-  id             String    @id @default(cuid())
+  id             String   @id @default(cuid())
   organizationId String
   projectId      String
   // LAND | DESIGN | PERMITS | SITE | FOUNDATION | FRAME | ROUGH | DRYWALL | FINISHES | FINAL | SHOP
   key            String
   name           String
-  position       Int       @default(0)
-  share          Float     @default(0)
+  position       Int      @default(0)
+  share          Float    @default(0)
   // INSPECTION | CLIENT | LENDER
-  gateKind       String    @default("CLIENT")
+  gateKind       String   @default("CLIENT")
   gateWords      String?
   lane           String?
   // The lead times, as JSON [{ what, days }].
   leadsJson      String?
   budget         Float?
   margin         Float?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   project  Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
   stages   ProjectStage[]
@@ -2580,58 +2585,199 @@ model PunchItem {
 // CONTRACTORS (2026-11-07, the plan "Projects: Remodel and New construction", part 2): the company's subs — the
 // list a project asks for quotes from. A contractor is a business contact, never a user.
 model Contractor {
-  id             String    @id @default(cuid())
-  organizationId String
-  name           String
-  company        String?
+  id                String            @id @default(cuid())
+  organizationId    String
+  name              String
+  company           String?
   // One of lib/tradeTypes, or the company's own word.
-  trade          String?
-  phone          String?
-  email          String?
-  license        String?
-  insuranceUntil DateTime?
-  notes          String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  quotes       ProjectSubQuote[]
+  trade             String?
+  phone             String?
+  email             String?
+  license           String?
+  insuranceUntil    DateTime?
+  notes             String?
+  // THE DIRECTORY (2026-11-08, the subcontractors plan, part 1): the profile the company keeps on a sub — who to
+  // talk to, where they are and work, their other trades (JSON string[]), the license's state (by hand now, from
+  // the state register in part 3), the insurance's carrier and policy beside its expiry, the bond, the W-9, where
+  // the contact came from (MINE | NETWORK | SEARCH), Google's place id when found by search, and a texts opt-out.
+  contactName       String?
+  website           String?
+  address           String?
+  serviceAreas      String?
+  tradesJson        String?
+  // UNKNOWN | ACTIVE | EXPIRED | SUSPENDED | NONE
+  licenseStatus     String            @default("UNKNOWN")
+  licenseVerifiedAt DateTime?
+  licenseSource     String?
+  insuranceCarrier  String?
+  insurancePolicy   String?
+  bondAmount        Float?
+  bondUntil         DateTime?
+  // NONE | REQUESTED | ON_FILE
+  w9Status          String            @default("NONE")
+  w9DocumentId      String?
+  source            String            @default("MINE")
+  placeId           String?
+  textsOptOut       Boolean           @default(false)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  quotes            ProjectSubQuote[]
+  documents         SubDocument[]
+
   @@index([organizationId, name])
 }
 
 // A quote asked of a contractor for a stage's work, through its award and its invoice (lib/projectSubs). The
 // contractor answers on their own page, /q/<publicToken>, with no sign-in: the price and a note, later the invoice.
+// Since part 1 of the subcontractors plan (2026-11-08) a row is one RECIPIENT of a SubRequest: it carries the sent,
+// viewed and expiry stamps, and every price the sub sends is a SubQuoteVersion (the row's `amount`/`note` mirror the
+// current one, so the older readers keep working).
 model ProjectSubQuote {
-  id             String    @id @default(cuid())
+  id                String            @id @default(cuid())
+  organizationId    String
+  projectId         String
+  stageId           String?
+  contractorId      String
+  number            Int               @default(1)
+  scope             String
+  // ASKED (sent) | VIEWED | QUOTED | REVISION (a revision asked) | AWARDED | DECLINED | EXPIRED | CANCELLED | INVOICED | PAID
+  status            String            @default("ASKED")
+  dueBy             DateTime?
+  askedAt           DateTime          @default(now())
+  amount            Float?
+  note              String?
+  quotedAt          DateTime?
+  awardedAt         DateTime?
+  declinedAt        DateTime?
+  invoiceAmount     Float?
+  invoiceUrl        String?
+  invoicedAt        DateTime?
+  paidAt            DateTime?
+  // The Subcontractors expense "Mark paid" logged on the project.
+  expenseId         String?
+  publicToken       String            @unique @default(cuid())
+  // The request (part 1): the SubRequest this recipient belongs to, the stamps, the versions and the review words.
+  requestId         String?
+  sentAt            DateTime?
+  viewedAt          DateTime?
+  expiresAt         DateTime?
+  currentVersionId  String?
+  approvedVersionId String?
+  declineReason     String?
+  revisionNote      String?
+  createdById       String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  project           Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  stage             ProjectStage?     @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  contractor        Contractor        @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  request           SubRequest?       @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  versions          SubQuoteVersion[]
+
+  @@index([projectId, status])
+  @@index([organizationId, status])
+  @@index([requestId])
+}
+
+// THE REQUEST FOR QUOTES (2026-11-08, the subcontractors plan, part 1, lib/projectSubs): what the office sends one or
+// several subs about a stage's work — a company-wide number ("RFQ-1042"), the trade, the scope, a description,
+// materials and labor words, the dates, the deadline, instructions, and the files attached (project Files by id in
+// `fileIdsJson`; drawings uploaded for it are SubDocuments with `requestId`). Each sub asked is a ProjectSubQuote.
+model SubRequest {
+  id             String            @id @default(cuid())
   organizationId String
   projectId      String
   stageId        String?
-  contractorId   String
-  number         Int       @default(1)
+  number         Int
+  trade          String?
+  title          String
   scope          String
-  // ASKED | QUOTED | AWARDED | DECLINED | INVOICED | PAID
-  status         String    @default("ASKED")
+  description    String?
+  materials      String?
+  labor          String?
+  fileIdsJson    String?
+  startsAt       DateTime?
+  endsAt         DateTime?
   dueBy          DateTime?
-  askedAt        DateTime  @default(now())
+  instructions   String?
+  // DRAFT | SENT | CLOSED | CANCELLED
+  status         String            @default("SENT")
+  sentAt         DateTime?
+  createdById    String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project        Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  stage          ProjectStage?     @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  recipients     ProjectSubQuote[]
+  documents      SubDocument[]
+
+  @@unique([organizationId, number])
+  @@index([projectId, status])
+}
+
+// ONE PRICE A SUB SENT (2026-11-08, part 1): a version on its recipient row — the amount, a note, the document it
+// came with, where it came from (PORTAL = their page, UPLOAD = the office on their behalf, EMAIL and SMS in part 2),
+// the AI's read of the document and its review (part 2), and whether this is the version that was approved. An
+// original is never overwritten: a new price is a new version.
+model SubQuoteVersion {
+  id             String          @id @default(cuid())
+  organizationId String
+  quoteId        String
+  version        Int
   amount         Float?
   note           String?
-  quotedAt       DateTime?
-  awardedAt      DateTime?
-  declinedAt     DateTime?
-  invoiceAmount  Float?
-  invoiceUrl     String?
-  invoicedAt     DateTime?
-  paidAt         DateTime?
-  // The Subcontractors expense "Mark paid" logged on the project.
-  expenseId      String?
-  publicToken    String    @unique @default(cuid())
-  createdById    String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  project    Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  stage      ProjectStage? @relation(fields: [stageId], references: [id], onDelete: SetNull)
-  contractor Contractor    @relation(fields: [contractorId], references: [id], onDelete: Cascade)
-  @@index([projectId, status])
-  @@index([organizationId, status])
+  documentId     String?
+  source         String          @default("PORTAL")
+  submittedAt    DateTime        @default(now())
+  submittedById  String?
+  extractedJson  String?
+  extractedAt    DateTime?
+  // NONE | PENDING | REVIEWED | REJECTED
+  reviewStatus   String          @default("NONE")
+  reviewedById   String?
+  reviewedAt     DateTime?
+  approved       Boolean         @default(false)
+  createdAt      DateTime        @default(now())
+  quote          ProjectSubQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  document       SubDocument?    @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  @@unique([quoteId, version])
+  @@index([organizationId, submittedAt])
+}
+
+// A SUBCONTRACTOR DOCUMENT (2026-11-08, part 1, lib/subDocs): an estimate, later an invoice, a contract, a lien
+// waiver, an insurance certificate, a W-9, a drawing attached to a request — in the private store, read through a
+// signed link or the sub's token, never a permanent URL. `sha256` finds the same file sent twice; `scanStatus` is
+// the malware scan's word once a scanner exists (PENDING | CLEAN | FLAGGED | SKIPPED).
+model SubDocument {
+  id             String            @id @default(cuid())
+  organizationId String
+  projectId      String?
+  contractorId   String?
+  requestId      String?
+  // QUOTE | INVOICE | CONTRACT | WAIVER | INSURANCE | W9 | PLAN | OTHER
+  kind           String            @default("QUOTE")
+  name           String
+  url            String
+  contentType    String?
+  bytes          Int?
+  sha256         String?
+  scanStatus     String            @default("SKIPPED")
+  // OFFICE | SUB | EMAIL
+  uploadedVia    String            @default("OFFICE")
+  uploadedById   String?
+  createdAt      DateTime          @default(now())
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project        Project?          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contractor     Contractor?       @relation(fields: [contractorId], references: [id], onDelete: SetNull)
+  request        SubRequest?       @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  versions       SubQuoteVersion[]
+
+  @@index([organizationId, createdAt])
+  @@index([projectId, kind])
+  @@index([requestId])
 }
 
 // SELECTIONS (2026-11-07, the plan "Projects: Remodel and New construction", part 3): what the client has to choose
@@ -2695,7 +2841,7 @@ model ProjectFile {
 // proposal's lines (lineItemId), an approved change order (changeOrderId), the Deck Studio takeoff, or typed by
 // hand. Bought in parts: `orderedQty` is what orders cover, `receivedQty` what arrived (lib/projectBuying).
 model ProjectMaterial {
-  id             String    @id @default(cuid())
+  id             String   @id @default(cuid())
   organizationId String
   projectId      String
   // The stage it is needed for — the order-by date comes from the stage's first day.
@@ -2704,21 +2850,21 @@ model ProjectMaterial {
   lineItemId     String?
   changeOrderId  String?
   name           String
-  quantity       Float     @default(1)
-  unit           String    @default("each")
+  quantity       Float    @default(1)
+  unit           String   @default("each")
   // What it should cost, each (the estimate's material cost when it has one).
   unitCost       Float?
   // PROPOSAL | CHANGE_ORDER | TAKEOFF | HAND
-  source         String    @default("HAND")
+  source         String   @default("HAND")
   store          String?
   productUrl     String?
-  orderedQty     Float     @default(0)
-  receivedQty    Float     @default(0)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  orderedQty     Float    @default(0)
+  receivedQty    Float    @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  project Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  stage   ProjectStage?     @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  project Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  stage   ProjectStage?      @relation(fields: [stageId], references: [id], onDelete: SetNull)
   lines   ProjectOrderLine[]
 
   @@index([projectId])
@@ -2871,20 +3017,20 @@ model ProjectBudgetLine {
 // rather than to one of its jobs. Spent-to-date on the budget is these plus
 // the JobExpense rows of the project's jobs.
 model ProjectExpense {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   projectId   String
   category    String
   amount      Float
   vendor      String?
   note        String?
-  spentAt     DateTime @default(now())
+  spentAt     DateTime  @default(now())
   // A sub's bill (category SUBCONTRACTORS, the crew build 2026-11-05): when it was paid; null = still owed to them.
   paidAt      DateTime?
   // The phase the cost belongs to (part 5, 2026-11-07): set from the order's or the quote's stage, or picked when the
   // cost is logged by hand; null = on no phase (the project's Money card counts it as loose).
   phaseId     String?
   createdById String?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
 
   project Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
   phase   ProjectPhase? @relation(fields: [phaseId], references: [id], onDelete: SetNull)
@@ -3258,23 +3404,23 @@ model ProductPriceCache {
 // ReportAll's stable robust_id. `wkt` is the raw MULTIPOLYGON in EPSG:4326 —
 // parsed on read by src/lib/parcels.ts, stored verbatim so nothing is lost.
 model ParcelCache {
-  robustId   String   @id
-  parcelId   String?
-  owner      String?
-  address    String?
+  robustId      String    @id
+  parcelId      String?
+  owner         String?
+  address       String?
   // Upper-cased, whitespace-collapsed `address` — the key the address lookup
   // matches on. Equality, never `contains`/`mode: insensitive`: SQLite LIKE is
   // case-insensitive while Postgres LIKE is not, and `mode: "insensitive"` does
   // not exist on SQLite, so the only form that behaves identically on the dev
   // and production engines is exact equality over a pre-normalised column.
-  addressKey String?
-  city       String?
-  zip        String?
-  acreage    Float?
-  wkt        String
-  lat        Float
-  lon        Float
-  fetchedAt  DateTime @default(now())
+  addressKey    String?
+  city          String?
+  zip           String?
+  acreage       Float?
+  wkt           String
+  lat           Float
+  lon           Float
+  fetchedAt     DateTime  @default(now())
   // The assessor's record (2026-09-16): null on rows cached before the client
   // read these fields; `enrichedAt` says whether a row was ever fetched with
   // them, so a stale row can be refreshed once instead of guessed at.
@@ -3285,7 +3431,7 @@ model ParcelCache {
   countyName    String?
   stateAbbr     String?
   landUseClass  String?
-  buildingsJson String?   // JSON array of WKT polygons
+  buildingsJson String? // JSON array of WKT polygons
   enrichedAt    DateTime?
 
   @@index([addressKey])
@@ -3412,15 +3558,15 @@ model EagleViewEntitlement {
 /// The rasters are held as gzipped little-endian float32, the same wire format
 /// the QA fixtures use (dsm.f32.gz / mask.f32.gz), about 1.2 MB each.
 model SolarCache {
-  id         String   @id @default(cuid())
+  id         String @id @default(cuid())
   /// Upper-cased, whitespace-collapsed address, or `@lat,lng` rounded to ~1 m
   /// when the caller had only a pin. Same normalisation as the Instant ledger.
-  addressKey String   @unique
+  addressKey String @unique
   lat        Float
   lng        Float
 
   /// DataLayerUrls as returned, minus nothing — the URLs are re-keyed on use.
-  layersJson String
+  layersJson   String
   /// BuildingInsights, when Google answered; its failure is non-fatal upstream.
   insightsJson String?
 
@@ -3447,31 +3593,31 @@ model SolarCache {
 // change.
 
 model HvacEstimate {
-  id             String   @id @default(cuid())
-  organizationId String
-  createdById    String
-  address        String
-  state          String?
-  county         String?
-  status         String   @default("draft") // draft | converted
-  siteFactsJson  String
-  modelJson      String
-  engineJson     String
-  draftJson      String
+  id                String   @id @default(cuid())
+  organizationId    String
+  createdById       String
+  address           String
+  state             String?
+  county            String?
+  status            String   @default("draft") // draft | converted
+  siteFactsJson     String
+  modelJson         String
+  engineJson        String
+  draftJson         String
   /// The permit-grade Manual J report (Cool Calc), once one is attached.
   approvedReportUrl String?
   /// Cool Calc project/system ids and the report endpoint, JSON (2026-09-15).
-  permitJson     String?
+  permitJson        String?
   /// What was actually quoted or installed, JSON {tons, price, model, notes} — the calibration loop.
-  actualJson     String?
+  actualJson        String?
   /// The engine's nominal size when saved (tons × systems), for calibration without parsing engineJson.
-  sizedTons      Float?
+  sizedTons         Float?
   /// What was priced (src/lib/hvac/jobs.ts): replace-system, water-heater, …
-  jobKind        String?
-  proposalId     String?
-  subtotal       Float    @default(0)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  jobKind           String?
+  proposalId        String?
+  subtotal          Float    @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@index([organizationId, createdAt])
 }
@@ -3479,11 +3625,11 @@ model HvacEstimate {
 model HvacCatalogItem {
   id             String   @id @default(cuid())
   organizationId String
-  itemId         String   // stable key from the import (kind-brand-model)
+  itemId         String // stable key from the import (kind-brand-model)
   kind           String
   brand          String
   model          String
-  itemJson       String   // the CatalogItem, whole
+  itemJson       String // the CatalogItem, whole
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

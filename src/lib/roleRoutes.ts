@@ -78,6 +78,9 @@ export const ROLE_ROUTE_GATES: Record<string, RoleRouteGate> = {
       // /dashboard/proposals/create.
       "/dashboard/manual-blueprint",
       "/dashboard/projects",
+      // The subcontractors plan, part 1 (2026-11-08): the directory and the quotes across projects go with Projects.
+      "/dashboard/subcontractors",
+      "/dashboard/quotes",
       "/dashboard/advanced-ai",
       // The blueprint estimator: Smart Proposal's plan set as its own tool (2026-10-13).
       "/dashboard/blueprint-estimator",

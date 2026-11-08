@@ -778,6 +778,8 @@ export const NOTIFICATION_ICONS: Record<PrefKey, IconName> = {
   'worker-responded': 'i-hardhat',
   'review-received': 'i-thumb',
   'trade-reply': 'i-board',
+  // Subcontractors (2026-11-08): a sub's quote, revision, pass or invoice.
+  'sub-quote': 'i-hardhat',
   'appointment-booked': 'i-cal',
   'booking-online': 'i-cal',
   'smartbook-request': 'i-cal',

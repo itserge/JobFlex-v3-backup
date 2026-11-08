@@ -74,7 +74,13 @@ export const NAV_SECTIONS: NavSection[] = [
     // understand it's for remodelers — a separate system where you run a big project with lots of estimates").
     // Projects leaves Work for a bay of its own, drawn like the estimating tools: one hub, its own colour.
     label: "Remodeling",
-    items: [{ label: "Projects", icon: "i-folder", href: "/dashboard/projects", tool: { tone: "gold" } }],
+    items: [
+      { label: "Projects", icon: "i-folder", href: "/dashboard/projects", tool: { tone: "gold" } },
+      // The subcontractors plan, part 1 (2026-11-08): the company's directory of subs and every quote across its
+      // projects, beside Projects — the pages a project's Subcontractors section opens out onto.
+      { label: "Subcontractors", icon: "i-users", href: "/dashboard/subcontractors" },
+      { label: "Quotes", icon: "i-file", href: "/dashboard/quotes" },
+    ],
   },
   {
     // THE TOOLS GET THEIR OWN SECTION (owner, 2026-10-12): they were the first
@@ -220,6 +226,9 @@ export const NAV_SECTIONS: NavSection[] = [
  */
 const SURFACE_ALIASES: Record<string, string> = {
   "/mobile-v2": "/dashboard",
+  "/mobile-project-subs-v1": "/dashboard/projects",
+  "/mobile-subcontractors-v1": "/dashboard/subcontractors",
+  "/mobile-quotes-v1": "/dashboard/quotes",
   "/mobile-proposals-v2": "/dashboard/proposals",
   "/mobile-clients-v2": "/dashboard/clients",
   "/mobile-leads-v2": "/dashboard/leads",
@@ -307,7 +316,7 @@ const ROLE_NAV: Record<string, RoleNavPlan> = {
   // Estimators: proposals plus the estimating engines.
   ESTIMATOR: [
     { label: "Estimating", hrefs: ["/dashboard/proposals"] },
-    { label: "Remodeling", hrefs: ["/dashboard/projects"] },
+    { label: "Remodeling", hrefs: ["/dashboard/projects", "/dashboard/subcontractors", "/dashboard/quotes"] },
     {
       label: "Automation",
       // Roof and Fence are listed because the production sidebar lists them for
