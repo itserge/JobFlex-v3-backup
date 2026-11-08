@@ -93,13 +93,14 @@ export function withSpotlightFirst(rows: readonly string[], tool: SpotlightTool 
 }
 
 /* ONE TRADE, ONE ESTIMATOR (owner, 2026-11-07: "a visitor who came for ONE trade sees only that trade's estimator in
-   the plan cards"). The trade estimators are roof, hvac, fence and deck. A visitor whose spotlight is roof, hvac or
-   fence sees only that one among them — the other trade rows (and the Deck Studio add-on line) are hidden; every row
-   that is not a trade estimator stays. Deck, smart, blueprint, aidesk, or no spotlight: every row, as before. Rows
-   are found by the SPOTLIGHT map's own match, never by free text. Public plan cards only (landing, /pricing, the
-   signup plan step); Subscription and Upgrade in the app keep every row. */
+   the plan cards"). The trade tools are roof, hvac, fence and deck. A visitor whose spotlight is one of them sees only
+   that one among them — the other trade rows are hidden (for roof / hvac / fence also the Deck Studio add-on line and
+   panel; a deck visitor keeps the add-on, pinned — it is what they came for; owner 2026-11-07: "deck joins the
+   narrowing set"); every row that is not a trade tool stays. Smart, blueprint, aidesk, or no spotlight: every row, as
+   before. Rows are found by the SPOTLIGHT map's own match, never by free text. Public plan cards only (landing,
+   /pricing, the signup plan step); Subscription and Upgrade in the app keep every row. */
 const TRADE_TOOLS: readonly SpotlightTool[] = ["roof", "hvac", "fence", "deck"];
-const NARROWING: ReadonlySet<SpotlightTool> = new Set<SpotlightTool>(["roof", "hvac", "fence"]);
+const NARROWING: ReadonlySet<SpotlightTool> = new Set<SpotlightTool>(TRADE_TOOLS);
 
 /** Whether a trade tool's line shows for this visitor (any non-trade tool always does). */
 export function showsTool(tool: SpotlightTool, spotlight: SpotlightTool | null | undefined): boolean {
@@ -117,7 +118,7 @@ export function visibleRows(rows: readonly string[], spotlight: SpotlightTool | 
 
 /* NARROWING ONLY DURING THE AD VISIT (owner, 2026-11-07). The 30-day SPOTLIGHT_COOKIE keeps the pinned row and the
    banner; hiding the other trades happens only while the visit that carried the ad lasts: the page's own URL says
-   roof / hvac / fence (`?industry=` or `?tool=`), or this SESSION cookie (no max-age — it dies with the browser),
+   roof / hvac / fence / deck (`?industry=` or `?tool=`), or this SESSION cookie (no max-age — it dies with the browser),
    written by such a visit, names the same tool. A plain visit in a new browser session shows every row again. */
 export const SPOTLIGHT_VISIT_COOKIE = "jf_tool_visit";
 
