@@ -2,10 +2,16 @@
 // project stands (% done, the stages ticked), the next days the crew is on site, the photos the office chose, the
 // documents marked for them, what is paid and the next payment with its Pay button (the proposal's own pay page).
 // The token is the only key and the page shows this one project. Styled by ./client.css (root `.jf-client`), the
-// sibling of /buy/[token]'s buy.css. Server-rendered; nothing here writes.
+// sibling of /buy/[token]'s buy.css. Server-rendered; the one write is the homeowner's choice (./choices.tsx).
+//
+// Part 7 (2026-11-08, the plan "Projects: Remodel and New construction"): on a new build the phases stand in for the
+// stage list — where each stands and what closes it, in the homeowner's words — the choices to make carry the day
+// each is needed by and a box to answer, the construction loan's draws show as the borrower reads them, the photos
+// sit under their phase, and a cost-plus contract (only) shows the costs so far.
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { clientView } from "@/lib/projectClient/server";
+import { Choices } from "./choices";
 import "./client.css";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +24,7 @@ export const metadata: Metadata = {
 
 const money = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 const day = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+const stateWords = (state: "done" | "now" | "next") => (state === "done" ? "done" : state === "now" ? "in progress" : "coming up");
 
 export default async function ClientProjectPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -27,6 +34,7 @@ export default async function ClientProjectPage({ params }: { params: Promise<{ 
   const done = v.progress.done ?? 0;
   const owed = v.payments.reduce((n, p) => n + p.remaining, 0);
   const contact = [v.company.phone ? { href: `tel:${v.company.phone.replace(/[^\d+]/g, "")}`, text: v.company.phone } : null, v.company.email ? { href: `mailto:${v.company.email}`, text: v.company.email } : null].filter((x): x is { href: string; text: string } => !!x);
+  const byPhase = v.phases.length > 0;
 
   return (
     <main className="jf-client">
@@ -37,7 +45,7 @@ export default async function ClientProjectPage({ params }: { params: Promise<{ 
             <img className="cl-logo" src={v.company.logoUrl} alt="" />
           ) : null}
           <p className="cl-kicker">
-            {v.company.name} · Your project{v.project.number ? ` · ${v.project.number}` : ""}
+            {v.company.name} · {v.project.kind === "NEW_BUILD" ? "Your new home" : "Your project"}{v.project.number ? ` · ${v.project.number}` : ""}
           </p>
           <h1 className="cl-title">{v.project.name}</h1>
           <p className="cl-sub">
@@ -54,17 +62,54 @@ export default async function ClientProjectPage({ params }: { params: Promise<{ 
               </div>
               <b className="cl-pct">{v.progress.done != null ? `${done}%` : ""}</b>
             </div>
-            <ol className="cl-stages">
-              {v.progress.stages.map((s) => (
-                <li key={s.name} className={`cl-stage is-${s.state}`}>
-                  <span className="cl-mark" aria-hidden="true">
-                    {s.state === "done" ? "✓" : s.state === "now" ? "▶" : ""}
-                  </span>
-                  <span className="cl-stageName">{s.name}</span>
-                  <span className="cl-stageState">{s.state === "done" ? "done" : s.state === "now" ? "in progress" : "coming up"}</span>
-                </li>
-              ))}
-            </ol>
+            {byPhase ? (
+              <ol className="cl-stages" data-client-phases>
+                {v.phases.map((ph) => {
+                  const sub = [ph.stageCount ? `${ph.stagesDone} of ${ph.stageCount} stage${ph.stageCount === 1 ? "" : "s"}` : null, ph.state !== "done" && ph.gate ? ph.gate : null].filter(Boolean).join(" · ");
+                  return (
+                    <li key={ph.id} className={`cl-stage is-${ph.state}`} data-client-phase data-phase-state={ph.state}>
+                      <span className="cl-mark" aria-hidden="true">
+                        {ph.state === "done" ? "✓" : ph.state === "now" ? "▶" : ""}
+                      </span>
+                      <span className="cl-stageName">
+                        {ph.name}
+                        {sub ? <small className="cl-stageSub" data-phase-sub>{sub}</small> : null}
+                      </span>
+                      <span className="cl-stageState">{stateWords(ph.state)}</span>
+                      {ph.stages.length ? (
+                        <ul className="cl-phaseStages" data-phase-stages>
+                          {ph.stages.map((s) => (
+                            <li key={s.name} className={`is-${s.state}`}>
+                              {s.name}
+                              <span>{stateWords(s.state)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ol>
+            ) : (
+              <ol className="cl-stages">
+                {v.progress.stages.map((s) => (
+                  <li key={s.name} className={`cl-stage is-${s.state}`}>
+                    <span className="cl-mark" aria-hidden="true">
+                      {s.state === "done" ? "✓" : s.state === "now" ? "▶" : ""}
+                    </span>
+                    <span className="cl-stageName">{s.name}</span>
+                    <span className="cl-stageState">{stateWords(s.state)}</span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
+        ) : null}
+
+        {v.selections.length ? (
+          <section className="cl-sec" aria-label="Your choices">
+            <h2 className="cl-lab">Your choices</h2>
+            <Choices token={token} selections={v.selections} />
           </section>
         ) : null}
 
@@ -82,17 +127,22 @@ export default async function ClientProjectPage({ params }: { params: Promise<{ 
           </section>
         ) : null}
 
-        {v.photos.length ? (
+        {v.photoGroups.length ? (
           <section className="cl-sec" aria-label="Photos">
             <h2 className="cl-lab">Photos</h2>
-            <div className="cl-photos">
-              {v.photos.map((p) => (
-                <a key={p.id} className="cl-photo" href={p.href} target="_blank" rel="noreferrer" title={p.caption ?? day(p.at)}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={p.href} alt={p.caption ?? "Project photo"} loading="lazy" />
-                </a>
-              ))}
-            </div>
+            {v.photoGroups.map((g, i) => (
+              <div key={g.phase ?? `more-${i}`} className="cl-photoGroup" data-photo-group={g.phase ?? ""}>
+                {g.phase ? <p className="cl-groupLab">{g.phase}</p> : v.photoGroups.length > 1 ? <p className="cl-groupLab">More photos</p> : null}
+                <div className="cl-photos">
+                  {g.photos.map((p) => (
+                    <a key={p.id} className="cl-photo" href={p.href} target="_blank" rel="noreferrer" title={p.caption ?? day(p.at)}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={p.href} alt={p.caption ?? "Project photo"} loading="lazy" />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            ))}
           </section>
         ) : null}
 
@@ -140,6 +190,46 @@ export default async function ClientProjectPage({ params }: { params: Promise<{ 
               </div>
             ))}
             {owed <= 0.5 && v.payments.length > 1 ? <p className="cl-note">Everything is paid — thank you.</p> : null}
+          </section>
+        ) : null}
+
+        {v.draws ? (
+          <section className="cl-sec" aria-label="Your construction loan" data-client-draws>
+            <h2 className="cl-lab">Your construction loan</h2>
+            <p className="cl-drawHead" data-client-draws-head>
+              <b>{money(v.draws.funded)}</b> funded of {money(v.draws.total)}
+              {v.draws.held ? ` · ${money(v.draws.held)} held back until the end` : ""}
+            </p>
+            <ul className="cl-list">
+              {v.draws.rows.map((d) => (
+                <li key={d.number} className="cl-row cl-draw" data-client-draw data-draw-state={d.state}>
+                  <b>
+                    {d.number}. {d.name}
+                  </b>
+                  <span className="cl-drawAmt">{money(d.amount)}</span>
+                  <span className={`cl-drawState is-${d.state}`}>{d.words}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
+        {v.costs ? (
+          <section className="cl-sec" aria-label="Costs so far" data-client-costs>
+            <h2 className="cl-lab">Costs so far</h2>
+            <p className="cl-note">{v.costs.words}</p>
+            <ul className="cl-list">
+              {v.costs.rows.map((r) => (
+                <li key={r.phase} className="cl-row">
+                  <b>{r.phase}</b>
+                  <span>{money(r.spent)}</span>
+                </li>
+              ))}
+              <li className="cl-row">
+                <b>So far</b>
+                <span>{money(v.costs.total)}</span>
+              </li>
+            </ul>
           </section>
         ) : null}
 

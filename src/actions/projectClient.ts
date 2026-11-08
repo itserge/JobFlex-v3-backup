@@ -6,7 +6,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
-import { addFile, ensureShare, projectPhotos, removeFile, sendUpdate, setFileVisible, setPhotosShared, type PhotoRow, type UpdateResult } from "@/lib/projectClient/server";
+import { addFile, ensureLenderShare, ensureShare, projectPhotos, removeFile, sendUpdate, setFileVisible, setPhotosShared, type PhotoRow, type UpdateResult } from "@/lib/projectClient/server";
 import { FILE_KINDS } from "@/lib/projectClient/shared";
 
 function touched(projectId: string) {
@@ -17,6 +17,14 @@ function touched(projectId: string) {
 export async function shareProjectPage(projectId: string): Promise<{ href: string }> {
   const { organizationId, user } = await requireEstimatorOrManager();
   const r = await ensureShare(organizationId, projectId, user.id);
+  touched(projectId);
+  return { href: r.href };
+}
+
+/** The lender's read-only page (part 7, 2026-11-08): made the first time, the same link after. */
+export async function shareLenderPage(projectId: string): Promise<{ href: string }> {
+  const { organizationId, user } = await requireEstimatorOrManager();
+  const r = await ensureLenderShare(organizationId, projectId, user.id);
   touched(projectId);
   return { href: r.href };
 }

@@ -1,0 +1,10 @@
+/* THE LENDER'S PAGE (/l/[token]) — over the homeowner's client.css (root `.jf-client`), the few things a draw
+   schedule needs: the bundle's paragraph set small under a requested or funded draw, the inspections' results in mono
+   (passed emerald, failed amber — nothing red), the stage under an inspection's name. No buttons on this page. */
+
+.jf-lender .cl-bundle { grid-column: 1 / -1; margin: 4px 0 2px; padding: 8px 10px; border-left: 3px solid var(--ink-line); font-size: 13px; line-height: 1.5; color: var(--ink-muted); white-space: normal; }
+.jf-lender .cl-insp b { display: grid; gap: 2px; min-width: 0; }
+.jf-lender .cl-insp b .cl-stageSub { font-weight: 500; }
+.jf-lender .cl-insp > span:last-child { white-space: normal; text-align: right; }
+.jf-lender .cl-insp > span.is-PASSED { color: var(--emerald); }
+.jf-lender .cl-insp > span.is-FAILED { color: var(--cl-amber); }

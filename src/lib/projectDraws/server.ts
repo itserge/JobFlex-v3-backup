@@ -14,6 +14,7 @@ import "server-only";
 
 import { db } from "@/lib/db";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
+import { appBaseUrl } from "@/lib/appUrl";
 import { localDayKey } from "@/lib/jobProgressShared";
 import { mediaOf } from "@/lib/jobMediaShared";
 import { parseAnswers } from "@/lib/projectKind";
@@ -44,6 +45,8 @@ export type DrawsRead = {
   total: number;
   /** What a layout would draw on: the sold contract, else the cost budget. */
   basis: { amount: number; from: "contract" | "budget" | "none" };
+  /** The lender's read-only page (part 7), once the office made it (lib/projectClient ensureLenderShare). */
+  lenderPage: string | null;
   today: string;
 };
 
@@ -51,7 +54,7 @@ export async function drawsOf(organizationId: string, projectId: string): Promis
   const tz = await tzOf(organizationId);
   const today = localDayKey(new Date(), tz);
   const [p, rows, phases, moneyAll] = await Promise.all([
-    db.project.findFirst({ where: { id: projectId, organizationId }, select: { id: true, kind: true, budget: true, answersJson: true } }),
+    db.project.findFirst({ where: { id: projectId, organizationId }, select: { id: true, kind: true, budget: true, answersJson: true, lenderToken: true } }),
     db.projectDraw.findMany({ where: { projectId, organizationId }, orderBy: { number: "asc" }, select: { id: true, number: true, name: true, afterPhase: true, pct: true, amount: true, status: true, requestedAt: true, fundedAt: true, fundedAmount: true, retainagePct: true, snapshotJson: true, note: true } }),
     phasesOf(projectId),
     projectMoney(organizationId, [projectId]),
@@ -66,7 +69,8 @@ export async function drawsOf(organizationId: string, projectId: string): Promis
   const draws: DrawRow[] = read.draws.map((d) => ({ ...d, snapshot: parseSnapshot(byId.get(d.id)?.snapshotJson), fundedAmount: byId.get(d.id)?.fundedAmount ?? null, note: byId.get(d.id)?.note ?? null }));
   const contract = money && money.contract > 0 ? r2(money.contract) : 0;
   const basis = contract > 0 ? { amount: contract, from: "contract" as const } : p.budget > 0 ? { amount: r2(p.budget), from: "budget" as const } : { amount: 0, from: "none" as const };
-  return { lender: parseAnswers(p.answersJson).build?.lender === true, draws, next: draws.find((d) => d.state !== "FUNDED") ?? null, funded: read.funded, requested: read.requested, held: read.held, total: read.total, basis, today };
+  const lenderPage = p.lenderToken ? `${await appBaseUrl()}/l/${p.lenderToken}` : null;
+  return { lender: parseAnswers(p.answersJson).build?.lender === true, draws, next: draws.find((d) => d.state !== "FUNDED") ?? null, funded: read.funded, requested: read.requested, held: read.held, total: read.total, basis, lenderPage, today };
 }
 
 // ── the writes ───────────────────────────────────────────────────────────────

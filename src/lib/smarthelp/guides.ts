@@ -745,6 +745,33 @@ export const GUIDES: Guide[] = [
     ],
   },
   {
+    id: "new-build",
+    title: "Your first new build",
+    group: "how",
+    icon: "House",
+    steps: [
+      {
+        text: "Open Projects and press New project. Pick New construction and answer the lot’s questions — sewer or septic, water or a well, slab, crawl space or basement, the stories, a garage, a shop, a lender, power, gas, fiber — then say who it is for: a client with your margin, or yourself. The house gets its ten phases, each closed by an inspection, the client’s word or the lender’s.",
+        open: "/dashboard/projects",
+      },
+      {
+        text: "The Lot card looks the parcel up from the address — zoning, acres, the flood zone — and keeps the permits with their numbers and expiry. The Phases strip shows where the house stands and what the current gate waits on; the Timeline draws the site and shop lanes beside the house.",
+      },
+      {
+        text: "Selections list what the client has to choose — cabinets, counters, tile — each with the day it is needed by, read off the stage it feeds. Inspections are gates: a stage cannot close until the county has passed it; book them on the Timeline card in the county’s own names.",
+      },
+      {
+        text: "The Money card lays the budget out over the phases to the dollar and reads spent, committed and heading-for by phase, with the contract and the margin at this pace. Where to save, where to squeeze lists the advisor’s moves — lower an allowance, re-bid a sub, move the contingency — with Apply where one tap does it.",
+      },
+      {
+        text: "On a build with a lender, the Payments card carries the draws: Lay out the draws puts the usual five on the loan, each released when its phase closes and its inspections pass. Request takes the lender’s bundle — the inspections, the photos, how far along the house is — and Lender’s page is a read-only link with the schedule to send the bank.",
+      },
+      {
+        text: "The homeowner’s page shows the phases, the choices to make with their dates, the loan’s draws and the photos by phase; press Make the link on the Client’s page card. Ask the Operator: “what’s the next gate on the Lee house”, “request draw three”, “where are we over”, “the lender’s link for the Lee house”.",
+      },
+    ],
+  },
+  {
     id: "crew",
     title: "Jobs and the calendar for your crew",
     group: "how",

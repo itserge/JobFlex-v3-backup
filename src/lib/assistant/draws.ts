@@ -6,6 +6,7 @@ import "server-only";
 import { z } from "zod";
 import type { ReadTool, WriteTool } from "@/lib/assistant/tools";
 import { projectNamed } from "@/lib/assistant/projects";
+import { ensureLenderShare } from "@/lib/projectClient/server";
 import { drawsOf, fundDraw, requestDraw, takeSnapshot } from "@/lib/projectDraws/server";
 import { dollars, drawWords, type DrawRead } from "@/lib/projectDraws/shared";
 
@@ -63,6 +64,7 @@ const drawsTool: ReadTool<{ projectId: string }> = {
       total: dollars(r.total),
       next: r.next ? `Draw ${r.next.number}, ${r.next.name} — ${dollars(r.next.amount)} — ${drawWords(r.next)}` : "Every draw is funded.",
       draws: r.draws.map((d) => ({ number: d.number, name: d.name, amount: dollars(d.amount), after: d.phase?.name ?? null, words: drawWords(d) })),
+      lenderPage: r.lenderPage,
     };
   },
 };
@@ -152,4 +154,42 @@ const fundDrawTool: WriteTool<FundArgs, FundPayload> = {
   },
 };
 
-export const DRAW_TOOLS = [drawsTool, requestDrawTool, fundDrawTool] as const;
+// ── the lender's page (part 7, 2026-11-08) ───────────────────────────────────
+
+type LinkArgs = { projectId: string };
+type LinkPayload = { projectId: string; name: string };
+
+const lenderLinkTool: WriteTool<LinkArgs, LinkPayload> = {
+  kind: "write",
+  name: "lender_link",
+  need: "projects.write",
+  card: {
+    label: "The lender's page",
+    purpose: "Make the lender's read-only page for a new build and give its link: the house's progress, the phases and what closes each, the draws with their bundles, the inspections and the photos the office chose.",
+    when: "'The lender's link for the Lee house', 'make the bank's page', 'where do I send the lender': lender_link with the project id (find it first). Once made, the same link is read back at once.",
+    objects: ["project", "money"],
+    effect: "record",
+    group: "projects",
+    version: 1,
+    since: "2026-11-08",
+    samples: [{ say: "the lender's link for the Lee house", args: { projectId: "proj_1" } }],
+  },
+  description:
+    "The lender's page for a new build (lib/projectClient ensureLenderShare): a read-only link (/l/<token>) with the house's progress, the phases and what closes each, the draws with the bundle taken at each request, the inspections and the photos chosen for the client — never the budget, the margin or a note. Give the project id (find it first). When the link exists it is read back at once; otherwise making it is read back for a yes. Use for: the lender's link, the bank's page, where to send the lender.",
+  params: z.object({ projectId: ID }),
+  payload: z.object({ projectId: ID, name: z.string() }),
+  async plan({ actor }, args) {
+    const p = await projectNamed(actor.organizationId, { projectId: args.projectId, query: null });
+    if (!("one" in p) || !p.one) return { ok: false, say: "I couldn't find that project." };
+    const r = await drawsOf(actor.organizationId, p.one.id);
+    if (!r.lender && !r.draws.length) return { ok: false, say: `${p.one.name} has no lender (the start questions) — the lender's page is for a build paid in draws.` };
+    if (r.lenderPage) return { ok: false, say: `The lender's page for ${p.one.name}: ${r.lenderPage} — read-only. Send it to the lender yourself; no lender contact is stored.` };
+    return { ok: true, payload: { projectId: p.one.id, name: p.one.name }, readback: `Make the lender's page for ${p.one.name} — a read-only link with the house's progress, the draws and their bundles, the inspections and the photos?` };
+  },
+  async execute({ actor }, payload) {
+    const r = await ensureLenderShare(actor.organizationId, payload.projectId, actor.userId);
+    return { say: `Done — the lender's page for ${payload.name}: ${r.href}. Send it to the lender yourself; no lender contact is stored.`, result: { projectId: payload.projectId, href: r.href } };
+  },
+};
+
+export const DRAW_TOOLS = [drawsTool, requestDrawTool, fundDrawTool, lenderLinkTool] as const;

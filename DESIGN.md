@@ -608,6 +608,29 @@ The three sheets (lay out the draws, a draw, funded) are BlueprintSheets. The
 Financials Projects table gains a sixth column, Draws (funded, with requested
 or the count under it; "—" and "no lender" on a remodel).
 
+The homeowner's and the lender's pages (2026-11-08, the plan "Projects: Remodel
+and New construction", part 7): the homeowner's page (/p/<token>, root
+`.jf-client`) keeps its one framed column on graph paper and gains, on a new
+build, the phases in the stages' own row grammar — the round mark, the name
+with a mono sub-line ("3 of 4 stages · Framing inspection booked Nov 12"), the
+state at the right, and the current phase's stages indented under it on dashed
+hairlines; "Your choices" as `.cl-choice` rows (the name, "needed by Nov 20 —
+soon" in mono — amber when soon or past due, the warmest the page gets — the
+allowance, a small outlined "I've chosen…" button that unfolds one text box and
+the page's black `.cl-btn` "Send my choice", then the choice in bold with
+Change); "Your construction loan" as `.cl-draw` rows (number and name, the
+dollars right-aligned in tabular figures, the state on its own mono line —
+funded emerald, requested amber); the photos under mono caps phase labels; and
+on cost-plus only a "Costs so far" list under the fee's words in a `.cl-note`.
+The lender's page (/l/<token>, `lender.css` over client.css, root `.jf-client
+.jf-lender`) is the same column with a "Construction loan · draws" kicker, the
+borrower's name and "as of" in the sub-line, the progress bar, the draw rows
+with the bundle's paragraph set small under each requested or funded draw, the
+phases, the inspections as a ruled list with the result in mono (passed
+emerald, failed amber), and the photos by phase. It carries no buttons. On the
+office side the Draws block's row of actions gains "Lender's page", whose
+BlueprintSheet holds the link read-only with Copy the link and Open it.
+
 Projects hub, stages (2026-11-05): the Stages card leads the project page on
 desk and handheld, above the proposals — a remodel is read by where it stands.
 One row per stage: a 24px round mark (empty · ▶ in progress on ink · ✓ done on

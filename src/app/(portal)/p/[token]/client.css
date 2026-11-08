@@ -76,3 +76,42 @@
 .jf-client .cl-note { margin: 8px 0 0; padding: 10px 12px; border-left: 3px solid var(--ink); background: rgba(10, 10, 10, 0.04); font-size: 14px; line-height: 1.5; }
 .jf-client .cl-foot { margin: 20px 0 0; padding-top: 14px; border-top: var(--cl-frame); text-transform: none; letter-spacing: 0.02em; font-size: 12.5px; line-height: 1.6; }
 .jf-client .cl-foot a { color: var(--ink); font-weight: 700; }
+
+/* PART 7 (2026-11-08): a new build's phases, the choices to make, the loan's draws, the photos by phase, cost-plus.
+   Amber is the warmest the page gets (a choice due soon or past due, a draw requested); still nothing red. */
+.jf-client { --cl-amber: var(--amber, #b7791f); }
+.jf-client .cl-stageSub { display: block; margin-top: 2px; font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: 0.02em; text-transform: none; color: var(--ink-muted); overflow-wrap: anywhere; }
+.jf-client .cl-stage.is-now .cl-stageSub { color: var(--ink); }
+.jf-client .cl-phaseStages { grid-column: 1 / -1; list-style: none; margin: 0 0 4px 36px; padding: 0; }
+.jf-client .cl-phaseStages li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 4px 0; border-top: 1px dashed var(--ink-line); font-size: 13.5px; line-height: 1.5; }
+.jf-client .cl-phaseStages li span { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-muted); white-space: nowrap; }
+.jf-client .cl-phaseStages li.is-done { color: var(--ink-muted); }
+.jf-client .cl-phaseStages li.is-now { font-weight: 700; }
+.jf-client .cl-phaseStages li.is-now span { color: var(--ink); }
+
+.jf-client .cl-choice { padding: 8px 0 12px; border-bottom: var(--cl-hair); }
+.jf-client .cl-choice:last-child { border-bottom: none; }
+.jf-client .cl-choice .cl-row { min-height: 0; padding: 0; border-bottom: none; }
+.jf-client .cl-choice .cl-row > span:last-child { white-space: normal; text-align: right; }
+.jf-client .cl-choice.is-soon .cl-row > span:last-child, .jf-client .cl-choice.is-late .cl-row > span:last-child { color: var(--cl-amber); }
+.jf-client .cl-choiceMeta { margin: 4px 0 0; font-size: 14px; line-height: 1.5; }
+.jf-client .cl-choiceMeta b { font-weight: 800; }
+.jf-client .cl-btnSm { margin-top: 8px; min-height: 40px; padding: 0 14px; border: 1.5px solid var(--ink); background: #fff; color: var(--ink); font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; }
+.jf-client .cl-link { border: 0; background: none; padding: 0; margin: 0; color: var(--ink); font: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; cursor: pointer; }
+.jf-client .cl-link:disabled { opacity: 0.5; cursor: default; }
+.jf-client .cl-form { margin-top: 10px; display: grid; gap: 10px; }
+.jf-client .cl-field { display: grid; gap: 6px; }
+.jf-client .cl-field input { min-height: 48px; padding: 0 12px; border: 1.5px solid var(--ink); background: #fff; color: var(--ink); font: inherit; font-size: 16px; width: 100%; }
+.jf-client .cl-formActs { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.jf-client button.cl-btn { cursor: pointer; font-family: inherit; }
+.jf-client .cl-btn:disabled { opacity: 0.5; cursor: default; box-shadow: none; }
+.jf-client .cl-err { margin: 0; padding: 8px 12px; border-left: 3px solid var(--ink); background: rgba(10, 10, 10, 0.04); font-size: 14px; line-height: 1.5; }
+
+.jf-client .cl-drawHead { margin: 0 0 4px; font-size: 14px; }
+.jf-client .cl-draw { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; align-items: baseline; }
+.jf-client .cl-draw .cl-drawAmt { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 15px; }
+.jf-client .cl-draw .cl-drawState { grid-column: 1 / -1; font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-muted); white-space: normal; letter-spacing: 0.02em; }
+.jf-client .cl-draw .cl-drawState.is-FUNDED { color: var(--emerald); }
+.jf-client .cl-draw .cl-drawState.is-REQUESTED { color: var(--cl-amber); }
+.jf-client .cl-groupLab { margin: 10px 0 6px; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-muted); }
+.jf-client .cl-photoGroup:first-of-type .cl-groupLab { margin-top: 0; }
