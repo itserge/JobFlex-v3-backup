@@ -1,6 +1,7 @@
 // CONTRACTORS: QUOTES AND INVOICES — the pure core (2026-11-07, part 2 of the plan "Projects: Remodel and New
-// construction"): the statuses, the scope a stage reads as, the reply-by rule, the trade a stage points at, the
-// comparison against the budget line, the overdue rule, the list's flags and the texts. Pure: no model, no database.
+// construction"; the statuses grew to ten with the subcontractors plan, 2026-11-08): the statuses, the scope a
+// stage reads as, the reply-by rule, the trade a stage points at, the comparison against the budget line, the
+// overdue rule, the list's flags and the texts. Pure: no model, no database.
 //   NODE_PATH="" npx --no-install tsx --tsconfig tsconfig.json qa/tests/logic/project-subs.check.ts
 import "../_lib/_server-only";
 import { QUOTE_LABEL, QUOTE_STATUSES, askText, awardText, compareQuotes, overdue, quoteFlags, quoteStatusOf, replyByDefault, scopeFor, stageSubsBudget, tradeForStage, type QuoteLike } from "../../../src/lib/projectSubs/shared";
@@ -14,7 +15,7 @@ function check(name: string, ok: boolean, extra?: unknown) {
 const q = (id: string, status: string, amount: number | null, more: Partial<QuoteLike> = {}): QuoteLike => ({ id, status, amount, dueBy: null, stageId: "s1", contractorName: `C${id}`, ...more });
 
 // ── statuses ──
-check("statuses: six, each labelled; an odd one reads as asked", QUOTE_STATUSES.length === 6 && QUOTE_STATUSES.every((s) => QUOTE_LABEL[s]) && quoteStatusOf("PAID") === "PAID" && quoteStatusOf("nope") === "ASKED");
+check("statuses: ten, each labelled; an odd one reads as sent", QUOTE_STATUSES.length === 10 && QUOTE_STATUSES.every((s) => QUOTE_LABEL[s]) && quoteStatusOf("PAID") === "PAID" && quoteStatusOf("nope") === "ASKED");
 
 // ── the scope ──
 const scope = scopeFor("Framing and dry-in", ["Floor system", "Walls and trusses", "Inspection: framing", "Final photos of the house", "Collect the final payment"]);
@@ -47,7 +48,7 @@ check("budget line: the stage's weight share of the subs budget; nothing without
   const fine = q("f", "ASKED", null, { dueBy: "2026-11-12" });
   const quoted = q("q", "QUOTED", 5_000, { contractorName: "Lee Carpentry" });
   const inv = q("i", "INVOICED", 5_000, { contractorName: "Pipe Co" });
-  check("overdue: asked and past the reply-by day", overdue(late, today) && !overdue(fine, today) && !overdue({ ...late, status: "QUOTED" }, today));
+  check("overdue: sent and past the reply-by day", overdue(late, today) && !overdue(fine, today) && !overdue({ ...late, status: "QUOTED" }, today));
   const flags = quoteFlags([late, fine, quoted, inv], today);
   check("flags: an overdue quote, a quote in and an invoice in, each named", flags.length === 3 && flags[0].kind === "quote-overdue" && /Ridge Framing/.test(flags[0].text) && flags[1].kind === "quote-in" && /Lee Carpentry/.test(flags[1].text) && flags[2].kind === "invoice-in" && /Pipe Co/.test(flags[2].text), flags);
   check("flags: several of a kind are counted", quoteFlags([late, { ...late, id: "l2" }], today)[0].text === "2 quotes overdue" && quoteFlags([], today).length === 0);

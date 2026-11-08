@@ -53,7 +53,7 @@ export async function loadProjectBook(organizationId: string): Promise<Project[]
       // The stages (2026-11-05): % done, the stage it is on, and what is late.
       stages: { orderBy: { position: "asc" }, select: { name: true, status: true, weight: true, endsAt: true, tasks: { select: { id: true, title: true, doneAt: true } } } },
       // The quotes still moving (2026-11-07): overdue, in, invoiced — the list's flags (lib/projectSubs/shared quoteFlags).
-      subQuotes: { where: { status: { in: ["ASKED", "QUOTED", "INVOICED"] } }, select: { id: true, status: true, amount: true, dueBy: true, stageId: true, contractor: { select: { name: true } } } },
+      subQuotes: { where: { status: { in: ["ASKED", "VIEWED", "REVISION", "QUOTED", "INVOICED"] } }, select: { id: true, status: true, amount: true, dueBy: true, stageId: true, contractor: { select: { name: true } } } },
       // Selections (2026-11-07): a choice not made by its day, or due in the next days (lib/projectSelections/shared selectionFlags).
       selections: { where: { chosenAt: null }, select: { name: true, leadDays: true, dueBy: true, chosenAt: true, stage: { select: { name: true, startsAt: true, status: true } } } },
       // Buying (2026-11-05): materials not ordered by their stage's order-by day, deliveries past their day.

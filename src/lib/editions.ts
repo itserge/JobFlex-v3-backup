@@ -39,6 +39,8 @@ const DECK_NAV: readonly string[] = [
   "/dashboard/clients",
   "/dashboard/leads",
   "/dashboard/projects",
+  "/dashboard/subcontractors",
+  "/dashboard/quotes",
   "/dashboard/crm",
   "/dashboard/calendar",
   "/dashboard/booking",

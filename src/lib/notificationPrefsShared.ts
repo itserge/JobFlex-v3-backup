@@ -32,6 +32,7 @@ export type PrefKey =
   | "worker-responded"
   | "review-received"
   | "trade-reply"
+  | "sub-quote"
   | "crew-assigned"
   | "crew-moved"
   | "crew-tomorrow"
@@ -107,6 +108,9 @@ export const PREF_EVENTS: readonly PrefEventMeta[] = [
   { key: "worker-responded", name: "Worker responded", sub: "Accepted or declined an assignment", emailAvailable: true, smsAvailable: true, seed: [true, true, false], audience: { office: false }, example: "Marcus Bell accepted \"Standing-seam metal · 18412 92nd Ave NE\" on Mon Oct 13." },
   { key: "review-received", name: "Review received", sub: "A homeowner left a rating", emailAvailable: false, smsAvailable: false, seed: [true, false, false] },
   { key: "trade-reply", name: "Trade board reply", sub: "Someone answered your post", emailAvailable: true, smsAvailable: false, seed: [true, true, false] },
+  // Subcontractors (2026-11-08, the subcontractors plan, part 1, lib/projectSubs): a sub sent a quote or a revised
+  // one, passed on a request, or sent an invoice — the bell (a SUB_QUOTE row), the office email and the text.
+  { key: "sub-quote", name: "Subcontractor quotes", sub: "A sub sent a quote or a revised one, passed, or sent an invoice", emailAvailable: true, smsAvailable: true, seed: [true, true, true], audience: { office: true }, example: "ABC Electrical quoted $18,500 for Electrical rough-in on the Lee house (Electrical_Proposal.pdf attached). jobflex.app/…" },
 ];
 
 /** The crew's texts (2026-09-29): what a worker with a phone hears, one
@@ -168,7 +172,7 @@ export type SmsGroupKey = "crew" | "sales" | "money";
 export const SMS_GROUPS: readonly { key: SmsGroupKey; label: string; sub: string; keys: readonly PrefKey[] }[] = [
   { key: "crew", label: "Crew on site", sub: "Started, back for another day, completed, photos and videos", keys: ["job-started", "job-completed", "job-photos", "worker-responded"] },
   { key: "sales", label: "Sales & leads", sub: "A new lead, a SmartBook time to confirm, a proposal accepted or declined", keys: ["lead-assigned", "smartbook-request", "proposal-accepted", "proposal-declined"] },
-  { key: "money", label: "Money", sub: "A payment, a change order answered, financing", keys: ["payment-received", "change-order", "financing"] },
+  { key: "money", label: "Money", sub: "A payment, a change order answered, financing, a sub's quote or invoice", keys: ["payment-received", "change-order", "financing", "sub-quote"] },
 ];
 /** Which groups a member's stored matrix has on: a group is on when any of
  *  its texting events is (the seeds leave "proposal declined" off, and a
@@ -291,6 +295,8 @@ export function prefKeyForEvent(e: EventLike): PrefKey | null {
   switch (e.kind) {
     case "VIEWED":
       return "proposal-viewed";
+    case "SUB_QUOTE":
+      return "sub-quote";
     case "CO_APPROVED":
     case "CO_DECLINED":
       return "change-order";
