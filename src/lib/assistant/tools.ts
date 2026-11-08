@@ -44,6 +44,7 @@ import { FIELD_TOOLS } from "@/lib/assistant/field";
 import { TIMELINE_TOOLS } from "@/lib/assistant/timeline";
 import { CLIENT_TOOLS } from "@/lib/assistant/client";
 import { BUSINESS_TOOLS } from "@/lib/assistant/business";
+import { CLIENT_360_TOOLS } from "@/lib/assistant/clients360";
 import { CONTRACTOR_TOOLS } from "@/lib/assistant/contractors";
 
 export interface ToolContext {
@@ -992,7 +993,7 @@ export const TOOLS: readonly AnyTool[] = [
   textCrewEach,
   paymentReminder,
   remindOverdue,
-  ...PEOPLE_TOOLS,
+  ...PEOPLE_TOOLS, ...CLIENT_360_TOOLS,
   ...VISIT_TOOLS,
   ...REMIND_TOOLS,
   ...MONEY_TOOLS,

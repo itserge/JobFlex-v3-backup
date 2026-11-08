@@ -15,6 +15,7 @@
 // which the donor's reveal cascade (`.content > *`) depends on.
 
 import { useCallback, useRef } from "react";
+import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initCrmContent } from "./crm-behavior";
@@ -75,7 +76,9 @@ export function CrmContent({ data, brief }: { data: CrmContentData; brief: CrmBr
         </div>
       </div>
 
-      {/* CRM TABS: Today · Office · Overview · Customer book · Workflows · Follow-up queue */}
+      {/* CRM TABS (Smart CRM part 1, 2026-11-08): the four screens first — Today · Inbox · Pipeline · Customers —
+          then the working panels (Office · Overview · Workflows · Follow-up queue) behind them. Inbox and Pipeline
+          go to their pages (the shared inbox and the leads board) until parts 2 and 3 rebuild them here. */}
       <nav className="crm-tabs" id="crmTabs">
         <button className="crm-tab active" type="button" data-tab="today" data-crm-tab="today">
           <svg className="ic">
@@ -83,6 +86,24 @@ export function CrmContent({ data, brief }: { data: CrmContentData; brief: CrmBr
           </svg>
           Today
           {brief.today.score.open > 0 && <span className="crm-tab-n">{brief.today.score.open}</span>}
+        </button>
+        <button className="crm-tab" type="button" data-crm-nav="inbox" onClick={() => router.push("/dashboard/messages" as Route)}>
+          <svg className="ic">
+            <use href="#i-msg" />
+          </svg>
+          Inbox
+        </button>
+        <button className="crm-tab" type="button" data-crm-nav="pipeline" onClick={() => router.push("/dashboard/leads" as Route)}>
+          <svg className="ic">
+            <use href="#i-target" />
+          </svg>
+          Pipeline
+        </button>
+        <button className="crm-tab" type="button" data-tab="customers">
+          <svg className="ic">
+            <use href="#i-users" />
+          </svg>
+          Customers
         </button>
         {brief.office && (
           <button className="crm-tab" type="button" data-tab="office" data-crm-tab="office">
@@ -97,12 +118,6 @@ export function CrmContent({ data, brief }: { data: CrmContentData; brief: CrmBr
             <use href="#i-grid" />
           </svg>
           Overview
-        </button>
-        <button className="crm-tab" type="button" data-tab="customers">
-          <svg className="ic">
-            <use href="#i-users" />
-          </svg>
-          Customer book
         </button>
         <button className="crm-tab" type="button" data-tab="workflows">
           <svg className="ic">

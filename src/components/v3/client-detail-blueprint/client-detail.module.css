@@ -1561,3 +1561,47 @@
 /* No reduced-motion block for the ledger any more: the row's only
    hover response is a background swap, which is a colour change
    and not motion. It went out with the arrow it was written for. */
+
+/* ── THE 360 (Smart CRM part 1, 2026-11-08): merge banner, brief, memory, promises, story.
+   Scoped like everything above; shell tokens only (--ink, --muted, --accent, --warning, --danger, --success). */
+
+:global(.jf-blueprint) .mergeBand { padding: 12px 18px; border-left: 4px solid var(--warning); display: grid; gap: 8px; }
+:global(.jf-blueprint) .mergeRow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+:global(.jf-blueprint) .mergeTxt { font-size: 13px; min-width: 0; }
+:global(.jf-blueprint) .mergeMeta { color: var(--muted); font-family: var(--font-mono); font-size: 11px; }
+:global(.jf-blueprint) .mergeActs { display: flex; gap: 8px; flex: none; }
+
+:global(.jf-blueprint) .briefBand { padding: 16px 18px; background: color-mix(in srgb, var(--accent) 7%, var(--cd-card, #fff)); }
+:global(.jf-blueprint) .briefHead { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+:global(.jf-blueprint) .aiStamp { display: inline-flex; align-items: center; padding: 3px 7px; border: 1.5px solid var(--accent); border-radius: var(--radius); color: var(--accent); font: 800 9px/1.2 var(--font-sans); letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap; }
+:global(.jf-blueprint) .briefTxt { margin: 10px 0 0; font-size: 14px; line-height: 1.55; max-width: 72ch; }
+:global(.jf-blueprint) .briefNext { margin: 8px 0 0; font-size: 13px; }
+:global(.jf-blueprint) .briefFoot { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 12px; }
+:global(.jf-blueprint) .briefNote { font: 500 10px/1.5 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+:global(.jf-blueprint) .factAdd { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 0 14px; border-bottom: 1px solid var(--cd-rule, rgba(10, 10, 10, 0.12)); margin-bottom: 8px; }
+:global(.jf-blueprint) .factAdd select, :global(.jf-blueprint) .factAdd input { font: inherit; font-size: 13px; padding: 7px 9px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: var(--cd-card, #fff); min-width: 0; }
+:global(.jf-blueprint) .factAdd input[type="text"] { flex: 1 1 200px; }
+
+:global(.jf-blueprint) .factRow, :global(.jf-blueprint) .promiseRow, :global(.jf-blueprint) .storyRow { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--cd-rule, rgba(10, 10, 10, 0.1)); }
+:global(.jf-blueprint) .factRow:last-child, :global(.jf-blueprint) .promiseRow:last-child, :global(.jf-blueprint) .storyRow:last-child { border-bottom: none; }
+:global(.jf-blueprint) .factCat { flex: none; margin-top: 1px; display: inline-flex; padding: 3px 7px; border: 1.5px solid var(--ink); border-radius: var(--radius); font: 800 9px/1.2 var(--font-sans); letter-spacing: 0.08em; text-transform: uppercase; }
+:global(.jf-blueprint) .factBody { min-width: 0; flex: 1 1 auto; display: grid; gap: 2px; }
+:global(.jf-blueprint) .factTxt { font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+:global(.jf-blueprint) .factTxt a { text-decoration: underline; text-underline-offset: 2px; }
+:global(.jf-blueprint) .factMeta { font: 500 10px/1.5 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+:global(.jf-blueprint) .factWas { color: var(--warning); }
+:global(.jf-blueprint) .factDrop { flex: none; border: none; background: none; color: var(--muted); font-size: 16px; line-height: 1; padding: 2px 6px; cursor: pointer; border-radius: var(--radius); }
+:global(.jf-blueprint) .factDrop:hover { color: var(--danger); background: rgba(10, 10, 10, 0.05); }
+
+:global(.jf-blueprint) .promiseStamp { flex: none; margin-top: 1px; display: inline-flex; padding: 3px 7px; border: 1.5px solid currentColor; border-radius: var(--radius); color: var(--ink); font: 800 9px/1.2 var(--font-sans); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+:global(.jf-blueprint) .promiseLate { color: var(--danger); }
+:global(.jf-blueprint) .promiseDone .promiseStamp { color: var(--success); }
+:global(.jf-blueprint) .promiseDone { opacity: 0.65; }
+:global(.jf-blueprint) .promiseActs { display: flex; gap: 6px; flex: none; }
+
+:global(.jf-blueprint) .storyStamp { flex: none; margin-top: 1px; display: inline-flex; min-width: 72px; justify-content: center; padding: 3px 7px; border: 1.5px solid currentColor; border-radius: var(--radius); font: 800 9px/1.2 var(--font-sans); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; color: var(--ink); }
+:global(.jf-blueprint) .tone_accent { color: var(--accent); }
+:global(.jf-blueprint) .tone_good { color: var(--success); }
+:global(.jf-blueprint) .tone_warn { color: var(--warning); }
+:global(.jf-blueprint) .tone_bad { color: var(--danger); }
