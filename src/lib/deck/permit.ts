@@ -330,7 +330,11 @@ export function detailDrawings(s: DeckStructure, which: "floor" | "roof" | "all"
         // 2026-10-12: the cross beams under the ridge and the ring's straps.
         ...(roof.crossBeams ? [`${roof.crossBeams === 1 ? "A cross beam" : `${roof.crossBeams} cross beams`} (${[...new Set(roof.headers.filter((h) => h.cross).map((h) => h.spec.size))].join(" / ")}) hung on the headers in beam hangers over a post at each end, each carrying a king post under the ridge beam.`] : []),
         ...(roof.ringTensionLb > 0 ? [`A tension strap across every header joint, rated for at least ${roof.ringTensionLb.toLocaleString("en-US")} lb: the hips push the corners out.`] : []),
-        roof.attach === "wall" ? `Roof ledger on the house with structural screws, flashed. ${RULE.ledgerBoard}.` : `Free-standing: knee braces at the posts hold the roof square. ${RULE.bracing}.`,
+        roof.attach === "wall"
+          ? `Roof on the house with structural screws, flashed where it meets the siding: ${roof.wallFlashing.some((w) => w.kind === "apron") ? "apron (L) flashing along the top" : ""}${roof.wallFlashing.some((w) => w.kind === "apron") && roof.wallFlashing.some((w) => w.kind === "step") ? ", " : ""}${roof.wallFlashing.some((w) => w.kind === "step") ? "step flashing up each slope, one piece per course" : ""}, 4 in. up the wall under the house wrap and counter-flashed by the siding${roof.wallFlashing.some((w) => w.kind === "kickout") ? "; kickout flashing where each eave meets the wall, IRC R903.2.1" : ""}. ${RULE.ledgerBoard}; IRC R903.2.`
+          : roof.houseGap
+            ? `Free-standing beside the house, nothing fastened to it: the back posts ${ftIn(roof.houseGap.postsIn)} off the wall, the back eave ${inchesOr(roof.houseGap.eaveIn)}${roof.houseGap.gutter ? `, its gutter in the gap ${roof.houseGap.clearIn} in. clear of the siding` : ""}. Knee braces at the posts hold the roof square. ${RULE.bracing}.`
+            : `Free-standing: knee braces at the posts hold the roof square. ${RULE.bracing}.`,
       ],
     });
   }
@@ -447,6 +451,74 @@ export function lateralDetail(f: DeckFrame): DetailDrawing | null {
   };
 }
 
+/** A short distance in inches ("11 in."), a longer one in feet and inches ("1'-11""). */
+const inchesOr = (inches: number) => (inches < 12 ? `${Math.round(inches)} in.` : ftIn(inches));
+
+/** How the roof meets the house: a section through the wall flashing (on the house), or through the gap and the back
+ *  gutter (free-standing beside it). Null when it is neither. */
+function wallDetail(roof: NonNullable<DeckStructure["roof"]>): DetailDrawing | null {
+  const items: DrawItem[] = [];
+  if (roof.attach === "wall" && roof.wallFlashing.length) {
+    const step = roof.wallFlashing.some((w) => w.kind === "step");
+    const apron = roof.wallFlashing.some((w) => w.kind === "apron");
+    const kick = roof.wallFlashing.filter((w) => w.kind === "kickout").length;
+    // A section square to the wall: the wall on the left, the roof against it — level across a slope (step flashing)
+    // or falling away from it (apron).
+    const fall = step ? 0 : Math.min(0.6, roof.slope);
+    items.push({ t: "rect", x: -8, z: -10, w: 6.5, h: 30, cls: "hatch" });
+    items.push({ t: "text", x: -4.75, z: 21.5, s: "house wall", anchor: "middle", cls: "label" });
+    items.push({ t: "rect", x: -1.5, z: 2.5, w: 1.5, h: 17.5, cls: "wood" });
+    items.push({ t: "text", x: 0.5, z: 17, s: "siding, held 2 in. off the roof", cls: "note" });
+    items.push({ t: "line", x1: -1.6, z1: -8, x2: -1.6, z2: 20, cls: "steel" });
+    items.push({ t: "poly", pts: [0, -0.9, 30, -0.9 - 30 * fall, 30, -2.4 - 30 * fall, 0, -2.4], cls: "wood", closed: true });
+    items.push({ t: "poly", pts: [0, -0.9, 30, -0.9 - 30 * fall, 30, -0.2 - 30 * fall, 0, -0.2], cls: "concrete", closed: true });
+    items.push({ t: "text", x: 31, z: -1.5 - 30 * fall, s: "roofing on the sheathing", cls: "note" });
+    // The L: 4 in. up the wall behind the house wrap, 4 in. out over the roofing.
+    items.push({ t: "line", x1: 0.15, z1: 4, x2: 0.15, z2: 0, cls: "steel" });
+    items.push({ t: "line", x1: 0.15, z1: 0, x2: 4.2, z2: -4 * fall, cls: "steel" });
+    items.push({ t: "text", x: 5.5, z: 6.5, s: step ? "step flashing 4 × 4 in., one per course" : "apron (L) flashing 4 × 4 in.", cls: "note" });
+    items.push({ t: "dim", x1: 2, z1: 0, x2: 2, z2: 4, label: "4 in. up" });
+    return {
+      title: "Roof at the house wall",
+      drawing: { box: { x: -12, z: -26, w: 72, h: 52 }, items },
+      notes: [
+        `${apron ? "Apron (L) flashing along the roof's top edge" : ""}${apron && step ? "; " : ""}${step ? "step flashing up each sloped edge, one piece woven in with every course" : ""}: 4 in. up the wall behind the house wrap, 4 in. over the roofing. The siding is cut back to stand 2 in. off the roof and counter-flashes it. IRC R903.2.`,
+        ...(kick ? [`Kickout flashing where each eave meets the wall (${kick}): it turns the water off the step flashing into the gutter, not down the siding. IRC R903.2.1.`] : []),
+        "Water at the wall runs off to the sides and down to the gutters; none runs behind the siding.",
+      ],
+    };
+  }
+  const g = roof.houseGap;
+  if (!g) return null;
+  // A section square to the wall through the back eave: the wall, the gap, the gutter, the fascia, the roof rising to the posts.
+  const gw = g.gutter ? Math.max(0, g.eaveIn - g.clearIn - 2.5) : 0;
+  const eave = g.eaveIn;
+  const sl = Math.min(0.6, roof.slope);
+  items.push({ t: "rect", x: -8, z: -30, w: 8, h: 50, cls: "hatch" });
+  items.push({ t: "text", x: -4, z: 22, s: "house wall", anchor: "middle", cls: "label" });
+  items.push({ t: "poly", pts: [eave - 1.2, 0, eave + 40, 40 * sl, eave + 40, 40 * sl + 1.4, eave - 1.2, 1.4], cls: "concrete", closed: true });
+  items.push({ t: "poly", pts: [eave, -5.5, eave + 40, 40 * sl - 5.5, eave + 40, 40 * sl, eave, 0], cls: "wood", closed: true });
+  items.push({ t: "rect", x: eave - 2.25, z: -7.5, w: 2.25, h: 7.5, cls: "wood" });
+  items.push({ t: "text", x: eave + 14, z: 40 * sl + 6, s: "roof, rising to the header and posts", cls: "note" });
+  if (g.gutter) {
+    const x0 = g.clearIn;
+    items.push({ t: "poly", pts: [x0, -1, x0, -6, x0 + gw * 0.6, -6, x0 + gw, -3.5, x0 + gw, -1], cls: "steel", closed: false });
+    items.push({ t: "text", x: eave + 2, z: -10.5, s: "← back gutter, to the downspouts", cls: "note" });
+    items.push({ t: "dim", x1: 0, z1: -14, x2: x0, z2: -14, label: `${g.clearIn} in. clear` });
+  } else {
+    items.push({ t: "text", x: eave / 2, z: -10, s: "no gutter: the drip falls here", anchor: "middle", cls: "note" });
+  }
+  items.push({ t: "dim", x1: 0, z1: -20, x2: g.postsIn, z2: -20, label: `${ftIn(g.postsIn)} to the post line` });
+  return {
+    title: "Roof beside the house wall",
+    drawing: { box: { x: -12, z: -26, w: Math.max(72, g.postsIn + 16), h: 52 }, items },
+    notes: [
+      `Free-standing: nothing is fastened to the house. The back posts stand ${ftIn(g.postsIn)} off the wall, so the back eave stops ${inchesOr(g.eaveIn)} from it${g.gutter ? ` and its gutter hangs in the gap, ${g.clearIn} in. clear of the siding` : ""}.`,
+      g.gutter ? "The back slope drains to that gutter and its downspouts — never down the siding or into the foundation." : "Without a gutter the back slope drips into the gap beside the foundation: add a gutter, or hang the roof on the house and flash it. IRC R801.3.",
+    ],
+  };
+}
+
 /** The roof's own details beyond the rafter seat: the uplift path down to the footing, and the bracing a free-standing roof stands on. */
 export function roofDetails(s: DeckStructure, windMph: number | null): DetailDrawing[] {
   const roof = s.roof;
@@ -476,6 +548,10 @@ export function roofDetails(s: DeckStructure, windMph: number | null): DetailDra
       ...(windMph && windMph >= 130 ? [`At ${windMph} mph the IRC's own provisions stop for the roof (R301.2.1.1): its wind design follows the WFCM, ICC 600 or ASCE 7 — an engineer's letter may be asked for.`] : []),
     ],
   });
+  // AT THE HOUSE WALL (owner, 2026-11-07): how the roof meets the house — flashed when it hangs on it, a gap with the
+  // back gutter in it when it stands free beside it.
+  const wall = wallDetail(roof);
+  if (wall) out.push(wall);
   if (roof.attach !== "wall") {
     const b: DrawItem[] = [];
     b.push({ t: "rect", x: 0, z: 0, w: 5.5, h: 44, cls: "wood" });

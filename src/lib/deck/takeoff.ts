@@ -526,7 +526,15 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
       if (roof.sheets > 0) push({ id: "underlayment", step: "roof-deck", kind: "roofing", label: "Synthetic underlayment", qty: roof.squares, unit: "sq", rateKey: "roof.underlayment", rateQty: roof.squares, factor: 1 });
       const dripPieces = Math.ceil((roof.eaveFt + roof.rakeFt) / 10 - 1e-9);
       hw("drip-edge", "roof-deck", "Drip edge, 10-ft pieces", dripPieces, "roof.dripEdge", 1 / metal, "ea", `${Math.round(roof.eaveFt)} ft of eave, ${Math.round(roof.rakeFt)} ft of rake`);
-      if (roof.wallFt > 0) hw("wall-flashing", "roof-deck", "Step and counter flashing where the roof meets the house", Math.ceil(roof.wallFt + 2), "roof.wallFlashing", 1 / metal, "ft");
+      // Where the roof meets the house (2026-11-07): named by what is there — apron (L) along a level top edge, step
+      // flashing up a sloped one — and a kickout at the foot of each sloped one.
+      if (roof.wallFt > 0) {
+        const kinds = new Set(roof.wallFlashing.map((w) => w.kind));
+        const what = kinds.has("apron") && kinds.has("step") ? "Apron (L) and step flashing" : kinds.has("step") ? "Step flashing" : "Apron (L) flashing";
+        hw("wall-flashing", "roof-deck", `${what} where the roof meets the house, counter-flashed`, Math.ceil(roof.wallFt + 2), "roof.wallFlashing", 1 / metal, "ft");
+      }
+      const kickouts = roof.wallFlashing.filter((w) => w.kind === "kickout").length;
+      if (kickouts) hw("kickout", "roof-deck", "Kickout flashing where an eave meets the wall", kickouts, "roof.kickout", 1 / metal, "ea", "turns the water into the gutter");
       if (!metalRoof) hw("roofing-nails", "roof-deck", "Roofing nails and cap nails", Math.ceil(roof.squares), "roof.nails", 1 / metal, "sq");
       if (shingles) {
         const key = r.roofing === "3tab-shingle" ? "roof.shingle.3tab" : r.roofing === "designer-shingle" ? "roof.shingle.designer" : "roof.shingle.arch";
