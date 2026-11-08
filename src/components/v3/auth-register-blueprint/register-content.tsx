@@ -256,7 +256,7 @@ export function RegisterContent({
      off the roofing ad sees the Roof estimator without reading the list. */
   spotlight?: SpotlightTool | null;
   /* NARROWING ONLY DURING THE AD VISIT (lib/planSpotlight spotlightNarrows, owner 2026-11-07): the other trade
-     estimators hide while this URL or the visit's session cookie says roof / hvac / fence. */
+     estimators hide while this URL or the visit's session cookie says roof / hvac / fence / deck. */
   spotlightNarrow?: boolean;
   /* The spotlight this page's own URL carried — remembered for the browser session. */
   spotlightUrl?: SpotlightTool | null;

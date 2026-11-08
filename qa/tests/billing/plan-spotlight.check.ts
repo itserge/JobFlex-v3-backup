@@ -42,10 +42,11 @@ const only = (tool: "roof" | "hvac" | "fence", line: string) => {
 check("fence: only the Fence estimator among the trades, pinned first; no Roof/HVAC/Deck rows nor the Deck add-on line; the rest stay", only("fence", "Fence estimator"));
 check("roofing: only the Roof estimator", spotlightFor({ industry: "roofing" }) === "roof" && only("roof", "Roof estimator"));
 check("hvac: only the HVAC estimator", spotlightFor({ industry: "hvac" }) === "hvac" && only("hvac", "HVAC estimator"));
-check("the Deck Studio panel under the cards follows the narrowing: hidden for a roof/hvac/fence ad visit, shown otherwise", (["roof", "hvac", "fence"] as const).every((t) => !showsTool("deck", spotlightNarrows(t, t, undefined) ? t : null) && showsTool("deck", spotlightNarrows(t, null, undefined) ? t : null)) && showsTool("deck", "deck") && showsTool("deck", null));
-check("deck does not narrow: every row and the add-on line", visibleRows(catalog, "deck").join("|") === catalog.join("|") && showsTool("deck", "deck") && showsTool("roof", "deck"));
+check("the Deck Studio panel under the cards follows the narrowing: hidden for a roof/hvac/fence ad visit, shown otherwise — and for a deck visitor", (["roof", "hvac", "fence"] as const).every((t) => !showsTool("deck", spotlightNarrows(t, t, undefined) ? t : null) && showsTool("deck", spotlightNarrows(t, null, undefined) ? t : null)) && showsTool("deck", spotlightNarrows("deck", "deck", undefined) ? "deck" : null) && showsTool("deck", null));
+check("deck narrows too (owner, 2026-11-07): no Roof/HVAC/Fence rows; its Deck Studio row and add-on line stay", visibleRows(catalog, "deck").join("|") === [...others.slice(0, others.indexOf("Video estimator")), "Deck Studio", ...others.slice(others.indexOf("Video estimator"))].join("|") && showsTool("deck", "deck") && !showsTool("roof", "deck") && !showsTool("hvac", "deck") && !showsTool("fence", "deck") && showsTool("smart", "deck") && showsTool("aidesk", "deck"));
+check("deck ad visit: the add-on line is pinned (no synthesized plan row) and the panel stays", (() => { const c = planCardRows(catalog, "deck", spotlightNarrows("deck", spotlightFor({ industry: "deck" }), undefined)); return c.spot === null && !c.rows.some((r) => /roof|hvac|fence/i.test(r)) && showsTool("deck", "deck"); })());
 check("no spotlight (direct visitor): every row and the add-on line", visibleRows(catalog, null).join("|") === catalog.join("|") && showsTool("deck", null) && showsTool("fence", undefined));
-check("smart / blueprint / aidesk do not narrow", (["smart", "blueprint", "aidesk"] as const).every((t) => visibleRows(catalog, t).join("|") === catalog.join("|") && showsTool("deck", t)));
+check("smart / blueprint / aidesk do not narrow: every row and the add-on line", (["smart", "blueprint", "aidesk"] as const).every((t) => visibleRows(catalog, t).join("|") === catalog.join("|") && showsTool("deck", t)));
 check("a catalog without the spotlighted line: the other trades still go", visibleRows(["CRM", "Roof estimator", "Deck Studio"], "fence").join("|") === "CRM");
 
 console.log("── the spotlighted row is always there, marked by the gate (owner, 2026-11-07)");
@@ -66,7 +67,8 @@ check("the URL carries roof / hvac / fence → narrows", spotlightNarrows("fence
 check("no URL, the visit's session cookie names the tool → narrows", spotlightNarrows("fence", null, "fence"));
 check("no URL, no session cookie (a new browser session), only the 30-day cookie → every row, the spotlight still pinned", !spotlightNarrows("fence", null, undefined) && (() => { const c = card(catalog, "fence", false); return c.rows[0] === "Fence estimator" && c.spot === "Fence estimator" && c.rows.length === catalog.length && c.rows.includes("Roof estimator") && c.rows.includes("HVAC estimator"); })());
 check("a session cookie for another tool does not narrow this one; nonsense in it is nothing", !spotlightNarrows("fence", null, "roof") && !spotlightNarrows("fence", null, "<x>"));
-check("deck / smart / blueprint / aidesk / none never narrow, URL or cookie", (["deck", "smart", "blueprint", "aidesk"] as const).every((t) => !spotlightNarrows(t, t, t)) && !spotlightNarrows(null, null, "fence"));
+check("deck narrows during its ad visit (URL or session cookie), not after it", spotlightNarrows("deck", "deck", undefined) && spotlightNarrows("deck", spotlightFor({ tool: "deck" }), undefined) && spotlightNarrows("deck", null, "deck") && !spotlightNarrows("deck", null, undefined));
+check("smart / blueprint / aidesk / none never narrow, URL or cookie", (["smart", "blueprint", "aidesk"] as const).every((t) => !spotlightNarrows(t, t, t)) && !spotlightNarrows(null, null, "fence"));
 const narrowed = card(catalog, "fence", spotlightNarrows("fence", "fence", undefined));
 check("/?industry=fence: Fence pinned, no Roof/HVAC/Deck rows, the rest stay", narrowed.rows.join("|") === ["Fence estimator", ...others].join("|"));
 
