@@ -12,6 +12,7 @@ import { appBaseUrl } from "@/lib/appUrl";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { sendOrgEmail } from "@/lib/email/orgSend";
 import { sendToMembersByPref } from "@/lib/notificationPrefs";
+import type { PrefKey } from "@/lib/notificationPrefsShared";
 import type { EmailDoc } from "@/lib/email/doc";
 import { localDayKey } from "@/lib/jobProgressShared";
 import { mediaHref } from "@/lib/media/signedLink";
@@ -23,7 +24,7 @@ export type { DocRow } from "@/lib/subDocs/server";
 // Part 2 (2026-11-08): the reply address on a request's email, the AI's read on a version, the budget's pending line.
 import { inboundReplyTo } from "@/lib/subInbound/config";
 import { REPLY_HINT, subjectTag } from "@/lib/subInbound/shared";
-import { parseStoredCompare, parseStoredRead, pendingOf, type StoredCompare, type StoredRead } from "@/lib/subQuotes/shared";
+import { committedOf, parseStoredCompare, parseStoredRead, pendingOf, type StoredCompare, type StoredRead } from "@/lib/subQuotes/shared";
 import {
   REQUEST_FIRST_NUMBER,
   askText,
@@ -47,6 +48,8 @@ import {
 /** The bell's kind for a sub's move (a quote in, revised, declined, an invoice) — not in the trail-only set, so it
  *  rings; its preference row is "sub-quote". */
 export const SUB_EVENT_KIND = "SUB_QUOTE";
+/** Part 4: a contract signed or a change order answered — its preference row is "sub-contract". */
+export const SUB_CONTRACT_KIND = "SUB_CONTRACT";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const day = (s: string | null | undefined) => (s ? new Date(`${s}T00:00:00.000Z`) : null);
@@ -278,16 +281,25 @@ export type DirectoryRow = ContractorRow & {
   paidTotal: number;
   lastAskedAt: string | null;
   documents: DocRow[];
+  /** Part 4: executed subcontracts with this sub, and their total. */
+  contracts: number;
+  contractsTotal: number;
 };
 
 export async function directoryOf(organizationId: string): Promise<{ today: string; contractors: DirectoryRow[] }> {
   const tz = await tzOf(organizationId);
   const today = localDayKey(new Date(), tz);
-  const [contractors, quotes, docs] = await Promise.all([
+  const [contractors, quotes, docs, contracts] = await Promise.all([
     contractorsOf(organizationId),
     db.projectSubQuote.findMany({ where: { organizationId }, select: { contractorId: true, status: true, invoiceAmount: true, amount: true, askedAt: true } }),
     db.subDocument.findMany({ where: { organizationId, contractorId: { not: null }, kind: { in: ["W9", "INSURANCE"] } }, orderBy: { createdAt: "desc" }, select: DOC_SELECT }),
+    db.subcontract.findMany({ where: { organizationId, status: "EXECUTED" }, select: { contractorId: true, amount: true, changeOrders: { where: { status: "APPROVED" }, select: { amount: true } } } }),
   ]);
+  const contractsBy = new Map<string, { n: number; total: number }>();
+  for (const c of contracts) {
+    const cur = contractsBy.get(c.contractorId) ?? { n: 0, total: 0 };
+    contractsBy.set(c.contractorId, { n: cur.n + 1, total: cur.total + c.amount + c.changeOrders.reduce((n, x) => n + x.amount, 0) });
+  }
   const by = new Map<string, typeof quotes>();
   for (const q of quotes) by.set(q.contractorId, [...(by.get(q.contractorId) ?? []), q]);
   const docsBy = new Map<string, DocRow[]>();
@@ -305,6 +317,8 @@ export async function directoryOf(organizationId: string): Promise<{ today: stri
         paidTotal: r2(mine.filter((q) => q.status === "PAID").reduce((n, q) => n + (q.invoiceAmount ?? q.amount ?? 0), 0)),
         lastAskedAt: mine.length ? mine.reduce((m, q) => (q.askedAt > m ? q.askedAt : m), mine[0].askedAt).toISOString() : null,
         documents: docsBy.get(c.id) ?? [],
+        contracts: contractsBy.get(c.id)?.n ?? 0,
+        contractsTotal: r2(contractsBy.get(c.id)?.total ?? 0),
       };
     }),
   };
@@ -376,15 +390,17 @@ function officeDoc(i: { org: { name: string; logoUrl: string | null; phone: stri
 
 /** The office, by text (those who ticked Text), by email (everyone whose "Subcontractor quotes" is on) and in the bell
  *  (a SUB_QUOTE row with the section's link). */
-export async function tellOffice(organizationId: string, projectId: string, line: string, meta: Record<string, unknown>, pathOverride?: string): Promise<void> {
+export async function tellOffice(organizationId: string, projectId: string, line: string, meta: Record<string, unknown>, pathOverride?: string, opts: { kind?: string; pref?: PrefKey } = {}): Promise<void> {
   try {
     const base = await appBaseUrl();
     const path = pathOverride ?? `/dashboard/projects/${projectId}/subs?tab=quotes`;
     const href = `${base}${path}`;
-    await logActivity({ organizationId, actorId: null, kind: SUB_EVENT_KIND, summary: line, meta: { projectId, href: path, ...meta } });
-    await textOffice(organizationId, "sub-quote", `${line} ${href}`);
+    // Part 4: a contract event rings as SUB_CONTRACT under the "Subcontracts" preference; everything else as before.
+    const pref: PrefKey = opts.pref ?? "sub-quote";
+    await logActivity({ organizationId, actorId: null, kind: opts.kind ?? SUB_EVENT_KIND, summary: line, meta: { projectId, href: path, ...meta } });
+    await textOffice(organizationId, pref, `${line} ${href}`);
     const org = await db.organization.findUnique({ where: { id: organizationId }, select: { name: true, logoUrl: true, phone: true } });
-    await sendToMembersByPref(organizationId, "sub-quote", officeDoc({ org: { name: org?.name ?? "JobFlex", logoUrl: org?.logoUrl ?? null, phone: org?.phone ?? null }, line, href }));
+    await sendToMembersByPref(organizationId, pref, officeDoc({ org: { name: org?.name ?? "JobFlex", logoUrl: org?.logoUrl ?? null, phone: org?.phone ?? null }, line, href }));
   } catch (err) {
     console.warn(`[projectSubs] could not tell the office: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -1005,7 +1021,11 @@ export type QuoteRow = QuoteLike & {
   over: boolean;
   overBy: number | null;
   overdue: boolean;
+  /** Part 4: the quote's live subcontract, when one exists — its number, state, price and approved changes. */
+  contract: QuoteContract | null;
 };
+
+export type QuoteContract = { id: string; number: number; status: string; amount: number; changes: number; pending: number };
 
 export type RequestRow = {
   id: string;
@@ -1074,7 +1094,15 @@ const QUOTE_SELECT = {
   stage: { select: { name: true } },
   request: { select: { number: true } },
   versions: { orderBy: { version: "asc" as const }, select: VERSION_SELECT },
+  // Part 4: the live contract (one per quote), its approved and pending change orders.
+  contracts: { where: { status: { in: ["DRAFT", "SENT", "VIEWED", "EXECUTED"] as string[] } }, orderBy: { number: "desc" as const }, take: 1, select: { id: true, number: true, status: true, amount: true, changeOrders: { select: { status: true, amount: true } } } },
 } as const;
+
+function quoteContractOf(r: { contracts: Array<{ id: string; number: number; status: string; amount: number; changeOrders: Array<{ status: string; amount: number }> }> }): QuoteContract | null {
+  const c = r.contracts[0];
+  if (!c) return null;
+  return { id: c.id, number: c.number, status: c.status, amount: c.amount, changes: r2(c.changeOrders.filter((x) => x.status === "APPROVED").reduce((n, x) => n + x.amount, 0)), pending: c.changeOrders.filter((x) => x.status === "PROPOSED").length };
+}
 
 export async function subsOf(organizationId: string, projectId: string): Promise<SubsRead> {
   const [tz, contractors, rows, requests, stages, subsLines, files, documents, base] = await Promise.all([
@@ -1146,6 +1174,7 @@ export async function subsOf(organizationId: string, projectId: string): Promise
       over: c.over,
       overBy: c.overBy,
       overdue: overdue(l, today),
+      contract: quoteContractOf(r),
     };
   });
   const fileById = new Map(files.map((f) => [f.id, f]));
@@ -1197,9 +1226,10 @@ export async function subsOf(organizationId: string, projectId: string): Promise
 }
 
 /** The Subcontractors section's figures over a project's quotes. */
-export function sectionMetrics(read: SubsRead): { subs: number; subsActive: number; requestsOpen: number; quotesIn: number; awaitingApproval: number; awarded: number; invoicesOpen: number; committed: number; paid: number; pending: number; pendingCount: number; subsBudget: number | null; remaining: number | null; overdue: number } {
+export function sectionMetrics(read: SubsRead): { subs: number; subsActive: number; requestsOpen: number; quotesIn: number; awaitingApproval: number; awarded: number; invoicesOpen: number; committed: number; paid: number; pending: number; pendingCount: number; subsBudget: number | null; remaining: number | null; overdue: number; contractsSigned: number; contractsOut: number } {
   const q = read.quotes;
-  const committed = r2(q.filter((x) => x.status === "AWARDED" || x.status === "INVOICED").reduce((n, x) => n + (x.status === "INVOICED" ? (x.invoiceAmount ?? x.amount ?? 0) : (x.amount ?? 0)), 0));
+  // Part 4: an executed contract (plus approved change orders) is the commitment; the awarded amount until then.
+  const committed = r2(q.reduce((n, x) => n + committedOf(x), 0));
   const paid = r2(q.filter((x) => x.status === "PAID").reduce((n, x) => n + (x.invoiceAmount ?? x.amount ?? 0), 0));
   return {
     // Part 2: quoted but not awarded — the budget's own line, never counted as committed.
@@ -1217,6 +1247,8 @@ export function sectionMetrics(read: SubsRead): { subs: number; subsActive: numb
     subsBudget: read.subsBudget,
     remaining: read.subsBudget != null ? r2(read.subsBudget - committed - paid) : null,
     overdue: q.filter((x) => x.overdue).length,
+    contractsSigned: q.filter((x) => x.contract?.status === "EXECUTED").length,
+    contractsOut: q.filter((x) => x.contract && (x.contract.status === "SENT" || x.contract.status === "VIEWED")).length,
   };
 }
 
@@ -1226,9 +1258,9 @@ export async function subsHistory(organizationId: string, projectId: string): Pr
   const rows = await db.activityEvent.findMany({
     where: {
       organizationId,
-      kind: { in: [TRAIL_KINDS.PROJECT, SUB_EVENT_KIND] },
+      kind: { in: [TRAIL_KINDS.PROJECT, SUB_EVENT_KIND, SUB_CONTRACT_KIND] },
       meta: { contains: `"projectId":"${projectId}"` },
-      OR: [{ meta: { contains: '"quoteId"' } }, { meta: { contains: '"requestId"' } }, { meta: { contains: '"contractorId"' } }, { meta: { contains: '"quotes"' } }],
+      OR: [{ meta: { contains: '"quoteId"' } }, { meta: { contains: '"requestId"' } }, { meta: { contains: '"contractorId"' } }, { meta: { contains: '"quotes"' } }, { meta: { contains: '"contractId"' } }],
     },
     orderBy: { createdAt: "desc" },
     take: 80,
@@ -1237,7 +1269,7 @@ export async function subsHistory(organizationId: string, projectId: string): Pr
   const ids = [...new Set(rows.map((r) => r.actorId).filter((x): x is string => Boolean(x)))];
   const users = ids.length ? await db.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, email: true } }) : [];
   const nameOf = new Map(users.map((u) => [u.id, u.name?.trim() || u.email || "Member"]));
-  return rows.map((r) => ({ id: r.id, kind: r.kind, summary: r.summary, at: r.createdAt.toISOString(), who: r.actorId ? (nameOf.get(r.actorId) ?? "Former member") : r.kind === SUB_EVENT_KIND ? "The sub" : null }));
+  return rows.map((r) => ({ id: r.id, kind: r.kind, summary: r.summary, at: r.createdAt.toISOString(), who: r.actorId ? (nameOf.get(r.actorId) ?? "Former member") : r.kind === SUB_EVENT_KIND || r.kind === SUB_CONTRACT_KIND ? "The sub" : null }));
 }
 
 // ── company-wide ─────────────────────────────────────────────────────────────

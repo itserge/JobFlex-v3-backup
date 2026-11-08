@@ -817,3 +817,34 @@ wrapped row of checks, where you work, and the contact; the profile sheet gains
 "The state register" as a bold kind, the license number and the register's
 words with "checked <day>" in muted type, and "Check the register" as a ghost
 button beside Edit.
+
+Subcontractors, part 4 (2026-11-08, the subcontractors plan): the Contracts
+tab is a hub card in the section's strip (after Compare) with the same ruled
+rows — "SC-1001 · Ridge Framing" as a link-button in bold over the title in
+mono, the total at the right ("$42,000 + changes" under it in mono when a
+change order moved it), and the state as a pill (emerald executed, amber
+waiting, rose cancelled) over its words in muted type; awarded quotes still
+without a contract sit above it with "Draft the contract" as the row's primary
+button. The contract opens in a 640px BlueprintSheet: a draft is the hub's own
+form (title; price and the two days on one row; the scope; the payment
+schedule as rows of name, share and due day with "+ Payment" and the
+"Deposit 20 · Rough-in 40 · Completion 40" ghost button, the dollars in muted
+type beside them; the files as checks; the terms; the signer's name) with
+Save the draft and Preview as ghost buttons and Sign and send primary; a sent
+or signed one is the facts grid, the link in mono, "Open the signed PDF"
+primary (the document viewer), and the change orders as ruled rows with their
+pill, under them the proposal form with the over-the-share warning in the
+card's note style. The sub's /s/<token> page is the buyer's plain card: the
+agreement as a document under a 2px rule, each section a bold heading with its
+paragraphs or a bulleted list, hairlines between; the files as the quote
+page's ruled list; the two signatures side by side, each typed name in italic
+on a 1.5px rule with the time in muted type; then the full-name field, the
+consent as a 22px check beside its sentence, and "Sign the subcontract" as the
+page's black button. Signed, the dashed box says so with "Download the signed
+PDF"; a change order waiting is a framed white block with its number and
+signed amount in bold, the scope, the name field and "Agree to CO #2", and
+"Decline it" as the quiet link under it. The signed PDF is Letter, Helvetica,
+the proposal PDF's palette: the eyebrow "Subcontract SC-1001", the title, the
+three meta columns, the sections, the two signature blocks with the names in
+Helvetica-Oblique on a rule, the green stamp line, and "Page n of N" in the
+footer.

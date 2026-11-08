@@ -10,7 +10,9 @@
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { addQuoteVersion, awardProjectQuote, declineProjectQuote, markProjectQuotePaid, requestQuoteRevision, resendProjectQuote } from "@/actions/projectSubs";
+import type { Route } from "next";
+import { addQuoteVersion, awardProjectQuote, declineProjectQuote, draftSubcontract, markProjectQuotePaid, requestQuoteRevision, resendProjectQuote } from "@/actions/projectSubs";
+import { CONTRACT_LABEL, contractNo, contractStatusOf } from "@/lib/subContracts/shared";
 import { DocViewer, type ViewerDoc } from "@/components/v3/docs/doc-viewer";
 import { QuoteReadPanel } from "@/components/v3/docs/quote-read-panel";
 import type { PdStage, PdSubs } from "@/components/v3/project-detail-blueprint/project-detail-data";
@@ -67,7 +69,7 @@ export function quoteTone(q: QuoteRow): string {
   return "";
 }
 
-export function ProjectSubsCard({ projectId, subs, stages, canManage, sectionHref }: { projectId: string; subs: PdSubs; stages: PdStage[]; canManage: boolean; sectionHref?: string | null }) {
+export function ProjectSubsCard({ projectId, subs, stages, canManage, sectionHref, onOpenContract }: { projectId: string; subs: PdSubs; stages: PdStage[]; canManage: boolean; sectionHref?: string | null; onOpenContract?: (contractId: string) => void }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [busy, setBusy] = useState<string | null>(null);
@@ -255,6 +257,39 @@ export function ProjectSubsCard({ projectId, subs, stages, canManage, sectionHre
                         {["ASKED", "VIEWED", "QUOTED", "REVISION", "AWARDED"].includes(q.status) ? (
                           <button type="button" className={s.btnSm} disabled={busy !== null} onClick={() => setUploadFor({ id: q.id, amount: "", pct: null })} data-subs-upload>
                             Their estimate…
+                          </button>
+                        ) : null}
+                        {(q.status === "AWARDED" || q.status === "INVOICED") && !q.contract ? (
+                          // Part 4: the award's next step — the agreement drafted from this quote, opened in the Contracts tab.
+                          <button
+                            type="button"
+                            className={s.btnPrimary}
+                            style={{ minHeight: 32, padding: "0 12px", fontSize: 10.5 }}
+                            disabled={busy !== null || q.amount == null}
+                            onClick={() =>
+                              void run(`contract:${q.id}`, async () => {
+                                const row = await draftSubcontract(q.id);
+                                if (onOpenContract) onOpenContract(row.id);
+                                else if (sectionHref) router.push(`${sectionHref}?tab=contracts&contract=${row.id}` as Route);
+                                return `Subcontract ${contractNo(row.number)} drafted from ${q.contractorName}'s quote — check it, then sign and send.`;
+                              })
+                            }
+                            data-subs-draft-contract
+                          >
+                            {busy === `contract:${q.id}` ? "Drafting…" : "Draft the contract"}
+                          </button>
+                        ) : null}
+                        {q.contract ? (
+                          <button
+                            type="button"
+                            className={s.btnSm}
+                            onClick={() => {
+                              if (onOpenContract) onOpenContract(q.contract!.id);
+                              else if (sectionHref) router.push(`${sectionHref}?tab=contracts&contract=${q.contract!.id}` as Route);
+                            }}
+                            data-subs-open-contract
+                          >
+                            {contractNo(q.contract.number)} · {CONTRACT_LABEL[contractStatusOf(q.contract.status)]}
                           </button>
                         ) : null}
                         {q.status === "AWARDED" || q.status === "INVOICED" ? (
