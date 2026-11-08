@@ -9,18 +9,26 @@ import { useRouter } from "next/navigation";
 import { BlueprintSheet } from "@/components/ui/BlueprintSheet";
 import { DocViewer, type ViewerDoc } from "@/components/v3/docs/doc-viewer";
 import type { DirectoryRow, DocRow } from "@/lib/projectSubs/server";
-import { LICENSE_LABEL, W9_LABEL, dollars, insuranceWords, licenseStatusOf, w9StatusOf } from "@/lib/projectSubs/shared";
+import { LICENSE_LABEL, W9_LABEL, contractorFlags, dollars, insuranceWords, licenseStatusOf, w9StatusOf } from "@/lib/projectSubs/shared";
 import { docSize } from "@/lib/subDocs/shared";
 import { ContractorSheet, draftOf, type ContractorDraft } from "@/components/v3/subs-section/contractor-sheet";
+// Part 3 (2026-11-08): the state register's word on a sub, and the company's JobFlex Network listing.
+import { saveCompanyNetwork, verifyContractorLicenseNow } from "@/actions/projectSubs";
+import { LICENSE_KIND_LABEL, parseRegisterNote, type NetworkSettings } from "@/lib/subFinder/shared";
+import { TRADE_TYPES } from "@/lib/tradeTypes";
 import h from "@/components/v3/project-links/project-hub.module.css";
 import s from "@/components/v3/subs-section/subs.module.css";
 
 const longDay = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
-export function SubcontractorsPage({ today, rows: initial, canManage }: { today: string; rows: DirectoryRow[]; canManage: boolean }) {
+export function SubcontractorsPage({ today, rows: initial, canManage, network }: { today: string; rows: DirectoryRow[]; canManage: boolean; network: NetworkSettings }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [rows, setRows] = useState(initial);
+  const [net, setNet] = useState<NetworkSettings>(network);
+  const [netDraft, setNetDraft] = useState<NetworkSettings | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [trade, setTrade] = useState("");
   const [onlyFlagged, setOnlyFlagged] = useState(false);
@@ -53,12 +61,23 @@ export function SubcontractorsPage({ today, rows: initial, canManage }: { today:
             Quotes &amp; Proposals
           </a>
           {canManage ? (
+            <button type="button" className={h.btnSm} onClick={() => setNetDraft({ ...net, contact: { ...net.contact } })} data-subs-network-open>
+              {net.on ? "On the JobFlex Network" : "JobFlex Network"}
+            </button>
+          ) : null}
+          {canManage ? (
             <button type="button" className={h.btnPrimary} onClick={() => setEditing(draftOf(null))} data-subs-add-contractor>
               + Contractor
             </button>
           ) : null}
         </div>
       </header>
+
+      {note ? (
+        <p className={h.note} role="status" data-subs-company-note>
+          {note}
+        </p>
+      ) : null}
 
       <div className={s.filters} data-subs-filters>
         <input type="search" placeholder="Name, company, phone, email" value={q} onChange={(e) => setQ(e.target.value)} data-subs-search />
@@ -163,6 +182,30 @@ export function SubcontractorsPage({ today, rows: initial, canManage }: { today:
               <Fact label="W-9" value={W9_LABEL[w9StatusOf(open.w9Status)]} />
               {open.notes ? <Fact label="Notes" value={open.notes} /> : null}
             </dl>
+            {(() => {
+              // Part 3: what the state register said about this sub, when it was last checked.
+              const reg = parseRegisterNote(open.registerJson);
+              return (
+                <div className={h.field} data-subs-register>
+                  <span className={h.lab}>The state register</span>
+                  {reg ? (
+                    <p style={{ margin: 0, fontSize: 13.5 }} data-subs-register-words>
+                      <b>{LICENSE_KIND_LABEL[reg.kind]}</b> {reg.license}
+                      {reg.specialties.length ? ` · ${reg.specialties.join(", ")}` : ""}
+                      {reg.expires ? ` · ${reg.expires < today ? "expired" : "expires"} ${reg.expires}` : ""}
+                      {reg.insurance?.cancelled ? ` · insurance cancelled ${reg.insurance.cancelled}` : reg.insurance?.expires ? ` · insured to ${reg.insurance.expires}${reg.insurance.carrier ? ` (${reg.insurance.carrier.trim()})` : ""}` : " · no insurance on record"}
+                      {reg.bond?.amount ? ` · bond $${Math.round(reg.bond.amount).toLocaleString("en-US")}${reg.bond.impaired ? " (impaired)" : ""}` : ""}
+                      {reg.principal ? ` · ${reg.principal}` : ""}
+                      <span className={s.muted}> · checked {longDay(reg.checkedAt)}</span>
+                    </p>
+                  ) : (
+                    <p className={s.muted} style={{ margin: 0, fontSize: 13 }}>
+                      {open.registerCheckedAt ? `Not found in the register (checked ${longDay(open.registerCheckedAt)}).` : "Not checked yet."}
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
             <div className={h.field}>
               <span className={h.lab}>Paper on file</span>
               {open.documents.length ? (
@@ -185,9 +228,104 @@ export function SubcontractorsPage({ today, rows: initial, canManage }: { today:
                 <button type="button" className="bps-btn bps-btn--primary" onClick={() => { setEditing(draftOf(open)); setOpen(null); }}>
                   Edit
                 </button>
+                <button
+                  type="button"
+                  className="bps-btn bps-btn--ghost"
+                  disabled={busy !== null}
+                  onClick={() =>
+                    void (async () => {
+                      setBusy(`verify:${open.id}`);
+                      try {
+                        const r = await verifyContractorLicenseNow(open.id);
+                        // The flags are the server's; recomputed here so a lapse shows on the row at once.
+                        setRows((cur) => cur.map((x) => (x.id === r.row.id ? { ...x, ...r.row, flags: contractorFlags(r.row, today) } : x)));
+                        setOpen((cur) => (cur && cur.id === r.row.id ? { ...cur, ...r.row } : cur));
+                        setNote(r.words);
+                        startTransition(() => router.refresh());
+                      } catch (err) {
+                        setNote(err instanceof Error ? err.message : "The register did not answer.");
+                      } finally {
+                        setBusy(null);
+                      }
+                    })()
+                  }
+                  data-subs-verify
+                >
+                  {busy === `verify:${open.id}` ? "Checking…" : "Check the register"}
+                </button>
               </div>
             ) : null}
           </div>
+          </div>
+        ) : null}
+      </BlueprintSheet>
+
+      {/* Part 3: the company's own listing on the JobFlex Network — found by other JobFlex companies as a sub. */}
+      <BlueprintSheet open={netDraft !== null} onClose={() => setNetDraft(null)} title="JobFlex Network" description="Other JobFlex companies searching for a sub in your trades and area see your company — with the contact you give here, nothing else.">
+        {netDraft ? (
+          <div className={h.w}>
+            <div className={h.form} data-subs-network-sheet>
+              <label className={h.check}>
+                <input type="checkbox" checked={netDraft.on} onChange={(e) => setNetDraft({ ...netDraft, on: e.target.checked })} data-subs-network-on /> List my company as a subcontractor
+              </label>
+              <div className={h.field}>
+                <span className={h.lab}>The trades you take on</span>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px" }}>
+                  {TRADE_TYPES.map((t) => (
+                    <label key={t} className={h.check} style={{ fontSize: 13 }}>
+                      <input type="checkbox" checked={netDraft.trades.includes(t)} onChange={(e) => setNetDraft({ ...netDraft, trades: e.target.checked ? [...netDraft.trades, t] : netDraft.trades.filter((x) => x !== t) })} data-subs-network-trade={t} /> {t}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <label className={h.field}>
+                <span className={h.lab}>Where you work</span>
+                <input className={h.input} value={netDraft.serviceAreas} maxLength={300} onChange={(e) => setNetDraft({ ...netDraft, serviceAreas: e.target.value })} placeholder="Kirkland, Bellevue, Redmond — or King County, or Washington" data-subs-network-areas />
+              </label>
+              <div className={s.sheetGrid}>
+                <label className={h.field}>
+                  <span className={h.lab}>Contact name</span>
+                  <input className={h.input} value={netDraft.contact.name} maxLength={120} onChange={(e) => setNetDraft({ ...netDraft, contact: { ...netDraft.contact, name: e.target.value } })} data-subs-network-contact />
+                </label>
+                <label className={h.field}>
+                  <span className={h.lab}>Phone</span>
+                  <input className={h.input} value={netDraft.contact.phone} maxLength={40} onChange={(e) => setNetDraft({ ...netDraft, contact: { ...netDraft.contact, phone: e.target.value } })} data-subs-network-phone />
+                </label>
+                <label className={h.field}>
+                  <span className={h.lab}>Email</span>
+                  <input className={h.input} value={netDraft.contact.email} maxLength={200} onChange={(e) => setNetDraft({ ...netDraft, contact: { ...netDraft.contact, email: e.target.value } })} data-subs-network-email />
+                </label>
+              </div>
+              <div className={h.stageActs} style={{ justifyContent: "flex-start" }}>
+                <button
+                  type="button"
+                  className="bps-btn bps-btn--primary"
+                  disabled={busy !== null}
+                  onClick={() =>
+                    void (async () => {
+                      setBusy("network");
+                      try {
+                        const saved = await saveCompanyNetwork(netDraft);
+                        setNet(saved);
+                        setNetDraft(null);
+                        setNote(saved.on ? `Listed on the JobFlex Network for ${saved.trades.join(", ") || "any trade"}.` : "Taken off the JobFlex Network.");
+                        startTransition(() => router.refresh());
+                      } catch (err) {
+                        setNote(err instanceof Error ? err.message : "That didn't save.");
+                      } finally {
+                        setBusy(null);
+                      }
+                    })()
+                  }
+                  data-subs-network-save
+                >
+                  Save
+                </button>
+                <button type="button" className="bps-btn bps-btn--ghost" onClick={() => setNetDraft(null)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
           </div>
         ) : null}
       </BlueprintSheet>
@@ -199,7 +337,7 @@ export function SubcontractorsPage({ today, rows: initial, canManage }: { today:
         onSaved={(row) => {
           setRows((cur) => {
             const prev = cur.find((r) => r.id === row.id);
-            const next: DirectoryRow = { ...row, flags: prev?.flags ?? [], asked: prev?.asked ?? 0, quoted: prev?.quoted ?? 0, awarded: prev?.awarded ?? 0, paidTotal: prev?.paidTotal ?? 0, lastAskedAt: prev?.lastAskedAt ?? null, documents: prev?.documents ?? [] };
+            const next: DirectoryRow = { ...row, flags: contractorFlags(row, today), asked: prev?.asked ?? 0, quoted: prev?.quoted ?? 0, awarded: prev?.awarded ?? 0, paidTotal: prev?.paidTotal ?? 0, lastAskedAt: prev?.lastAskedAt ?? null, documents: prev?.documents ?? [] };
             return (prev ? cur.map((r) => (r.id === row.id ? next : r)) : [...cur, next]).sort((a, b) => a.name.localeCompare(b.name));
           });
           setEditing(null);

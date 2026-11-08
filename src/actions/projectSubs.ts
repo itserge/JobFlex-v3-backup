@@ -8,7 +8,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireEstimatorOrManager } from "@/lib/orgContext";
+import { requireEstimatorOrManager, requireManager } from "@/lib/orgContext";
 import { clientIp, rateLimitShared } from "@/lib/rateLimit";
 import {
   addContractor,
@@ -34,6 +34,9 @@ import { LICENSE_STATUSES, W9_STATUSES } from "@/lib/projectSubs/shared";
 // Part 2 (2026-11-08): the AI's read of an estimate and its review, the comparison's words, the mail to match.
 import { acceptRead, compareWords, rejectRead, requeueRead } from "@/lib/subQuotes/server";
 import { attachInbound, ignoreInbound } from "@/lib/subInbound/server";
+// Part 3 (2026-11-08): Find — the state register, Google Places and the JobFlex Network.
+import { findSubs, saveFound, saveNetworkSettings, verifyContractor, type FindRead } from "@/lib/subFinder/server";
+import type { FinderResult, NetworkSettings } from "@/lib/subFinder/shared";
 
 const ID = z.string().min(1).max(64);
 const DAY = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -273,4 +276,60 @@ export async function ignoreInboundEmail(inboundId: string): Promise<void> {
   const { organizationId, user } = await requireEstimatorOrManager();
   await ignoreInbound(organizationId, ID.parse(inboundId), user.id);
   touched(null);
+}
+
+// ── part 3: Find ─────────────────────────────────────────────────────────────
+
+const finderLicense = z.object({ number: z.string().min(1).max(40), status: z.string().max(40).nullable(), kind: z.enum(["ACTIVE", "EXPIRED", "SUSPENDED", "UNKNOWN"]), expires: z.string().max(10).nullable(), specialties: z.array(z.string().max(80)).max(4), principal: z.string().max(120).nullable(), ubi: z.string().max(20).nullable(), insurance: z.object({ license: z.string().max(40), carrier: z.string().max(120).nullable(), policy: z.string().max(60).nullable(), amount: z.number().nullable(), effective: z.string().max(10).nullable(), expires: z.string().max(10).nullable(), cancelled: z.string().max(10).nullable() }).nullable(), bond: z.object({ license: z.string().max(40), firm: z.string().max(120).nullable(), amount: z.number().nullable(), effective: z.string().max(10).nullable(), expires: z.string().max(10).nullable(), impaired: z.boolean() }).nullable() });
+const finderResult = z.object({
+  key: z.string().max(120),
+  sources: z.array(z.enum(["register", "places", "network"])).max(3),
+  name: z.string().trim().min(1).max(160),
+  address: z.string().max(300).nullable(),
+  city: z.string().max(80).nullable(),
+  phone: z.string().max(40).nullable(),
+  website: z.string().max(300).nullable(),
+  email: z.string().max(200).nullable(),
+  placeId: z.string().max(200).nullable(),
+  rating: z.number().nullable(),
+  ratingCount: z.number().nullable(),
+  distanceMi: z.number().nullable(),
+  license: finderLicense.nullable(),
+  network: z.object({ organizationId: z.string().max(64), contact: z.object({ name: z.string().max(120).nullable(), phone: z.string().max(40).nullable(), email: z.string().max(200).nullable() }), trades: z.array(z.string().max(60)).max(20), serviceAreas: z.string().max(300).nullable() }).nullable(),
+  savedId: z.string().max(64).nullable(),
+});
+
+/** One search near a project (or from the company page): sixty an hour per company. */
+export async function findProjectSubs(raw: unknown): Promise<FindRead> {
+  const { organizationId } = await requireEstimatorOrManager();
+  const d = z.object({ projectId: ID.nullable(), trade: z.string().trim().max(60).nullable(), address: z.string().trim().max(300).nullable(), radiusMi: z.number().min(1).max(100), words: z.string().trim().max(80).nullable(), includeLapsed: z.boolean().optional() }).parse(raw);
+  const gate = await rateLimitShared(`sub-find:${organizationId}`, 60, HOUR);
+  if (!gate.ok) throw new Error("That is a lot of searches — try again in a few minutes.");
+  return findSubs(organizationId, d.projectId, d);
+}
+
+/** A found result saved to My subs (the same place, license or name is not saved twice). */
+export async function saveFoundSub(raw: unknown): Promise<{ row: ContractorRow; existed: boolean }> {
+  const { organizationId, user } = await requireEstimatorOrManager();
+  const d = z.object({ result: finderResult, trade: z.string().trim().max(60).nullable() }).parse(raw);
+  const r = await saveFound(organizationId, user.id, d.result as FinderResult, d.trade);
+  touched(null);
+  return r;
+}
+
+/** The state register's word on a saved sub, now. */
+export async function verifyContractorLicenseNow(contractorId: string): Promise<{ row: ContractorRow; words: string }> {
+  const { organizationId, user } = await requireEstimatorOrManager();
+  const r = await verifyContractor(organizationId, ID.parse(contractorId), user.id);
+  touched(null);
+  return r;
+}
+
+/** The company's JobFlex Network listing (owners and managers). */
+export async function saveCompanyNetwork(raw: unknown): Promise<NetworkSettings> {
+  const { organizationId, user } = await requireManager();
+  const d = z.object({ on: z.boolean(), trades: z.array(z.string().trim().min(1).max(60)).max(20), serviceAreas: z.string().trim().max(300), contact: z.object({ name: z.string().trim().max(120), phone: z.string().trim().max(40), email: z.string().trim().max(200) }), since: z.string().nullable().optional() }).parse(raw);
+  const r = await saveNetworkSettings(organizationId, user.id, { ...d, since: d.since ?? null });
+  touched(null);
+  return r;
 }

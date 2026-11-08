@@ -59,6 +59,9 @@ model Organization {
   metaSettingsJson      String? // settings/meta      {connected,autoCreate,autoText,defaultPage,formCategory}
   proposalSettingsJson  String? // settings/proposals {validityDays,markups{...},schedule[],terms,requireSig,autoFollowUp}
   projectSettingsJson   String? // Projects → Automatic projects (2026-11-05) {auto,trades[]} — lib/projectStages/shared parseProjectSettings
+  // THE JOBFLEX NETWORK (2026-11-08, the subcontractors plan, part 3; lib/subFinder): the company's opt-in to be found
+  // by other JobFlex companies as a sub — {on, trades[], serviceAreas, contact{name,phone,email}, since}.
+  networkJson           String?
   // Lead Center matching profile — canonical TRADE_TYPES multi-select (JSON string[],
   // closed vocabulary from src/lib/tradeTypes.ts; distinct from the free-text Specialty
   // model which steers AI estimator prompts). lat/lng geocoded from `address` at
@@ -2715,6 +2718,10 @@ model Contractor {
   w9DocumentId      String?
   source            String            @default("MINE")
   placeId           String?
+  // Part 3: the state register's last word on this sub (status, specialties, bond, insurance, UBI, principal) and
+  // when it was checked — lib/subFinder verifies by hand and nightly.
+  registerJson      String?
+  registerCheckedAt DateTime?
   textsOptOut       Boolean           @default(false)
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt

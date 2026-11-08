@@ -717,6 +717,62 @@ function fakeCompareWords(messages: Msg[]) {
   return { words: `${first} ${ex}${budget}.` };
 }
 
+/** THE STATE REGISTER'S FAKE (2026-11-08, the subcontractors plan, part 3; lib/subFinder/register): a handful of
+ *  Kirkland contractors in L&I's three files, filtered by the pieces of the SoQL $where the app sends — the city, the
+ *  ZIP, "active only", the specialty list, the name words, the license list. */
+const FAKE_REGISTER: Array<Record<string, string>> = [
+  { businessname: "XYZ ELECTRIC LLC", contractorlicensenumber: "XYZELEL902KD", contractorlicensetypecode: "CC", address1: "4410 RAINIER AVE S", city: "KIRKLAND", state: "WA", zip: "98034", phonenumber: "2065550144", licenseeffectivedate: "2019-03-01T00:00:00.000", licenseexpirationdate: "2028-03-01T00:00:00.000", specialtycode1desc: "GENERAL", specialtycode2desc: "LIMITED ENERGY", ubi: "603111222", primaryprincipalname: "RUIZ, DANA", statuscode: "A", contractorlicensestatus: "ACTIVE" },
+  { businessname: "CASCADE ELECTRIC INC", contractorlicensenumber: "CASCAEI884MN", contractorlicensetypecode: "CC", address1: "120 CENTRAL WAY", city: "KIRKLAND", state: "WA", zip: "98033", phonenumber: "4255550133", licenseeffectivedate: "2015-06-10T00:00:00.000", licenseexpirationdate: "2027-06-10T00:00:00.000", specialtycode1desc: "GENERAL", ubi: "602555333", primaryprincipalname: "NGUYEN, MINH", statuscode: "A", contractorlicensestatus: "ACTIVE" },
+  { businessname: "ABC ELECTRICAL LLC", contractorlicensenumber: "ABCELEL123AA", contractorlicensetypecode: "CC", address1: "900 6TH ST S", city: "KIRKLAND", state: "WA", zip: "98033", phonenumber: "4255550199", licenseeffectivedate: "2016-01-04T00:00:00.000", licenseexpirationdate: "2027-01-04T00:00:00.000", specialtycode1desc: "GENERAL", ubi: "602777888", primaryprincipalname: "BROOKS, ANA", statuscode: "S", contractorlicensestatus: "SUSPENDED", contractorlicensesuspenddate: "2026-09-01T00:00:00.000" },
+  { businessname: "RIDGE FRAMING LLC", contractorlicensenumber: "RIDGEFL901PQ", contractorlicensetypecode: "CC", address1: "77 LAKEVIEW DR", city: "KIRKLAND", state: "WA", zip: "98034", phonenumber: "4255550111", licenseeffectivedate: "2018-09-15T00:00:00.000", licenseexpirationdate: "2027-09-15T00:00:00.000", specialtycode1desc: "Framing and Rough Carpentry", ubi: "603444555", primaryprincipalname: "OKAFOR, SAM", statuscode: "A", contractorlicensestatus: "ACTIVE" },
+  { businessname: "NORTHWEST PLUMBING", contractorlicensenumber: "NORTHPL777KD", contractorlicensetypecode: "CC", address1: "15 MAIN ST", city: "BELLEVUE", state: "WA", zip: "98004", phonenumber: "4255550122", licenseeffectivedate: "2014-02-02T00:00:00.000", licenseexpirationdate: "2027-02-02T00:00:00.000", specialtycode1desc: "PLUMBING", ubi: "602999111", primaryprincipalname: "LEE, JUNE", statuscode: "A", contractorlicensestatus: "ACTIVE" },
+  { businessname: "LEE CARPENTRY", contractorlicensenumber: "LEECAC555RT", contractorlicensetypecode: "CC", address1: "3 PINE ST", city: "SEATTLE", state: "WA", zip: "98101", phonenumber: "2065550177", licenseeffectivedate: "2012-05-05T00:00:00.000", licenseexpirationdate: "2025-05-05T00:00:00.000", specialtycode1desc: "Cabinets, Millwork and Finish Carpentry", ubi: "601222333", primaryprincipalname: "LEE, MARK", statuscode: "E", contractorlicensestatus: "EXPIRED" },
+];
+const FAKE_INSURANCE: Array<Record<string, string>> = [
+  { contractorlicensenumber: "XYZELEL902KD", businessname: "XYZ ELECTRIC LLC", insurancecompany: "Northwest Mutual Ins Co", insurancepolicyno: "NWM-7781", insuranceamt: "1000000.0000", effectivedate: "2025-11-20T00:00:00.000", expirationdate: "2027-11-20T00:00:00.000" },
+  { contractorlicensenumber: "CASCAEI884MN", businessname: "CASCADE ELECTRIC INC", insurancecompany: "Travelers Cas Insurance Co", insurancepolicyno: "6809M1", insuranceamt: "1000000.0000", effectivedate: "2025-01-01T00:00:00.000", expirationdate: "2027-01-01T00:00:00.000" },
+  { contractorlicensenumber: "ABCELEL123AA", businessname: "ABC ELECTRICAL LLC", insurancecompany: "Old Line Ins Co", insurancepolicyno: "OL-22", insuranceamt: "500000.0000", effectivedate: "2025-12-31T00:00:00.000", expirationdate: "2026-12-31T00:00:00.000", canceldate: "2026-08-15T00:00:00.000" },
+  { contractorlicensenumber: "RIDGEFL901PQ", businessname: "RIDGE FRAMING LLC", insurancecompany: "Liberty Mutual", insurancepolicyno: "LM-3390", insuranceamt: "2000000.0000", effectivedate: "2026-03-01T00:00:00.000", expirationdate: "2027-03-01T00:00:00.000" },
+];
+const FAKE_BOND: Array<Record<string, string>> = [
+  { contractorlicensenumber: "XYZELEL902KD", businessname: "XYZ ELECTRIC LLC", bondfirmname: "RLI Ins Co", bondamt: "12000.0000", bondeffectivedate: "2019-03-01T00:00:00.000", bondexpirationdate: "Until Canceled", bondimpaired: "N" },
+  { contractorlicensenumber: "ABCELEL123AA", businessname: "ABC ELECTRICAL LLC", bondfirmname: "Western Surety", bondamt: "12000.0000", bondeffectivedate: "2016-01-04T00:00:00.000", bondexpirationdate: "Until Canceled", bondimpaired: "Y", bondimpaireddate: "2026-09-01T00:00:00.000" },
+  { contractorlicensenumber: "RIDGEFL901PQ", businessname: "RIDGE FRAMING LLC", bondfirmname: "Hartford", bondamt: "6000.0000", bondeffectivedate: "2018-09-15T00:00:00.000", bondexpirationdate: "Until Canceled", bondimpaired: "N" },
+];
+function fakeRegister(dataset: string, where: string): Array<Record<string, string>> {
+  const w = where.toUpperCase();
+  const unq = (s: string) => s.split(",").map((x) => x.trim().replace(/^'|'$/g, ""));
+  const likes = [...w.matchAll(/LIKE '%([^%']+)%'/g)].map((m) => m[1]);
+  const city = /UPPER\(CITY\) = '([^']+)'/.exec(w)?.[1] ?? null;
+  const zip = /\bZIP = '([^']+)'/.exec(w)?.[1] ?? null;
+  const activeOnly = /CONTRACTORLICENSESTATUS IN/.test(w);
+  const licenseIn = /CONTRACTORLICENSENUMBER\) IN \(([^)]+)\)/.exec(w)?.[1];
+  const licenses = licenseIn ? unq(licenseIn) : null;
+  const specIn = /specialtycode1desc in \(([^)]+)\)/i.exec(where)?.[1];
+  const specialties = specIn ? unq(specIn) : null;
+  const rows = dataset === "ciwg-agsx" ? FAKE_INSURANCE : dataset === "bzff-4fmt" ? FAKE_BOND : FAKE_REGISTER;
+  return rows.filter((r) => {
+    if (licenses && !licenses.includes(r.contractorlicensenumber.toUpperCase())) return false;
+    if (dataset !== "m8qx-ubtq") return true;
+    if (city && r.city.toUpperCase() !== city) return false;
+    if (zip && r.zip !== zip) return false;
+    if (activeOnly && !["ACTIVE", "RE-LICENSED"].includes(r.contractorlicensestatus)) return false;
+    if (specialties && !specialties.includes(r.specialtycode1desc) && !specialties.includes(r.specialtycode2desc ?? "")) return false;
+    if (likes.length && !likes.some((l) => r.businessname.toUpperCase().includes(l))) return false;
+    return true;
+  });
+}
+/** GOOGLE'S FAKE (part 3): three electricians near Kirkland — two the register knows, one it does not. */
+function fakePlaces(body: { textQuery?: string }) {
+  const electric = /electric/i.test(body.textQuery ?? "");
+  const place = (id: string, name: string, address: string, phone: string, website: string | null, rating: number, count: number, lat: number, lng: number) => ({ id, displayName: { text: name, languageCode: "en" }, formattedAddress: address, nationalPhoneNumber: phone, ...(website ? { websiteUri: website } : {}), rating, userRatingCount: count, businessStatus: "OPERATIONAL", location: { latitude: lat, longitude: lng } });
+  return {
+    places: electric
+      ? [place("pl_xyz", "XYZ Electric LLC", "4410 Rainier Ave S, Kirkland, WA 98034", "(206) 555-0144", "https://xyzelectric.example", 4.8, 57, 47.6815, -122.2087), place("pl_cascade", "Cascade Electric", "120 Central Way, Kirkland, WA 98033", "(425) 555-0133", "https://cascade-electric.example", 4.5, 21, 47.6768, -122.2059), place("pl_bright", "Brightline Electric Co", "8 Market St, Kirkland, WA 98033", "(425) 555-0188", null, 4.9, 12, 47.6792, -122.2101)]
+      : [place("pl_ridge", "Ridge Framing LLC", "77 Lakeview Dr, Kirkland, WA 98034", "(425) 555-0111", null, 4.6, 9, 47.69, -122.21), place("pl_nwp", "Northwest Plumbing", "15 Main St, Bellevue, WA 98004", "(425) 555-0122", "https://nwplumbing.example", 4.2, 33, 47.61, -122.2)],
+  };
+}
+
 http
   .createServer((req, res) => {
     let raw = "";
@@ -728,6 +784,23 @@ http
         return;
       }
       res.setHeader("content-type", "application/json");
+      // The state register (data.wa.gov) and Google Places, for Find (the subcontractors plan, part 3).
+      if (req.url?.includes("/resource/")) {
+        const u = new URL(req.url, "http://127.0.0.1");
+        const dataset = (u.pathname.split("/").pop() ?? "").replace(/\.json$/, "");
+        res.end(JSON.stringify(fakeRegister(dataset, u.searchParams.get("$where") ?? "")));
+        return;
+      }
+      if (req.url?.includes("/v1/places:searchText")) {
+        let body: { textQuery?: string } = {};
+        try {
+          body = JSON.parse(raw || "{}") as { textQuery?: string };
+        } catch {
+          body = {};
+        }
+        res.end(JSON.stringify(fakePlaces(body)));
+        return;
+      }
       if (req.url?.includes("/chat/completions")) {
         try {
           const body = JSON.parse(raw || "{}") as { messages?: Msg[]; tools?: unknown[]; response_format?: { type?: string; json_schema?: { name?: string } } };

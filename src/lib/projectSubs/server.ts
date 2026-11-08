@@ -89,6 +89,9 @@ export type ContractorRow = {
   textsOptOut: boolean;
   notes: string | null;
   createdAt: string;
+  /** Part 3: what the state register said about this sub, and when (lib/subFinder parseRegisterNote). */
+  registerJson: string | null;
+  registerCheckedAt: string | null;
 };
 
 const CONTRACTOR_SELECT = {
@@ -118,6 +121,8 @@ const CONTRACTOR_SELECT = {
   textsOptOut: true,
   notes: true,
   createdAt: true,
+  registerJson: true,
+  registerCheckedAt: true,
 } as const;
 
 type ContractorDb = {
@@ -147,9 +152,13 @@ type ContractorDb = {
   textsOptOut: boolean;
   notes: string | null;
   createdAt: Date;
+  registerJson: string | null;
+  registerCheckedAt: Date | null;
 };
 
 const row = (c: ContractorDb): ContractorRow => ({
+  registerJson: c.registerJson,
+  registerCheckedAt: iso(c.registerCheckedAt),
   id: c.id,
   name: c.name,
   company: c.company,
