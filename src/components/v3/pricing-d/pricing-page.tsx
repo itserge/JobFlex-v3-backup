@@ -23,7 +23,7 @@ import { CtaFooter } from "@/components/v3/landing-e/cta-footer";
 import { Reveal } from "@/components/v3/landing-e/reveal";
 import { REGISTER } from "@/components/v3/landing-e/routes";
 import { PricingPlans } from "@/components/v3/landing-e/pricing-plans";
-import type { SpotlightTool } from "@/lib/planSpotlight";
+import { showsTool, type SpotlightTool } from "@/lib/planSpotlight";
 import { PricingVisit } from "./pricing-visit";
 import { CustomPlanBlock } from "./custom-plan-block";
 import { DeckAddonPlate } from "./deck-addon-plate";
@@ -81,10 +81,13 @@ export function PricingPage({
                   <Reveal className="pr-plans">
                     <PricingPlans plans={sellable} registerHref={REGISTER} spotlight={spotlight} narrow={narrow} fromUrl={spotlightUrl} />
                   </Reveal>
-                  {/* The Deck Studio add-on (owner, 2026-10-26): on any plan, in the trial. */}
-                  <div className="mt-10 sm:mt-12">
-                    <DeckAddonPlate registerHref={REGISTER} cta="pricing-deck" delay={120} />
-                  </div>
+                  {/* The Deck Studio add-on (owner, 2026-10-26): on any plan, in the trial. A trade estimator: hidden
+                      while a roofer/fencer/HVAC ad visit narrows the cards (lib/planSpotlight, owner 2026-11-07). */}
+                  {showsTool("deck", narrow ? spotlight : null) ? (
+                    <div className="mt-10 sm:mt-12">
+                      <DeckAddonPlate registerHref={REGISTER} cta="pricing-deck" delay={120} />
+                    </div>
+                  ) : null}
                 </>
               ) : (
                 <p className="py-12 text-center text-[15px] text-slate-500">

@@ -39,7 +39,7 @@ import { Children, useCallback, useEffect, useMemo, useState, useSyncExternalSto
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { expandPlanFeatures } from "@/lib/planCatalog";
-import { SPOTLIGHT, SPOTLIGHT_MISSING, SPOTLIGHT_TAG, spotlightInPlan, spotlightLine, spotlightRow, withSpotlightFirst, type SpotlightTool } from "@/lib/planSpotlight";
+import { SPOTLIGHT, SPOTLIGHT_MISSING, SPOTLIGHT_TAG, planCardRows, spotlightBanner, spotlightInPlan, type SpotlightTool } from "@/lib/planSpotlight";
 import { changePlan, previewPlanChange, updateCustomPages, type PlanChangePreviewResult } from "@/actions/billing";
 import { CardDeclinedNote, PlanChangeMoney, ScheduledSwitchNote, longDay, money } from "@/components/billing/PlanChangeNotes";
 import { CustomChangeNote } from "./custom-change-note";
@@ -280,8 +280,11 @@ export function UpgradeContent({
   // plan never reads as missing the cheaper plan's basics — the same rule the
   // signup step applies (lib/planCatalog.expandPlanFeatures).
   const expanded = useMemo(() => expandPlanFeatures(plans), [plans]);
-  const spotRow = useMemo(() => spotlightRow(expanded.rows, spotlight), [expanded.rows, spotlight]);
-  const featureRows = useMemo(() => withSpotlightFirst(expanded.rows, spotlight), [expanded.rows, spotlight]);
+  // The spotlighted tool's row is always drawn and pinned, marked by its gate — the public cards' rule
+  // (lib/planSpotlight planCardRows, owner 2026-11-07) — but nothing is hidden here: a signed-up company sees every row.
+  const featureCard = useMemo(() => planCardRows(expanded.rows, spotlight, false), [expanded.rows, spotlight]);
+  const spotRow = featureCard.spot;
+  const featureRows = featureCard.rows;
   const included = expanded.included;
 
 
@@ -636,7 +639,7 @@ export function UpgradeContent({
       {spotlight ? (
         <p className="jf-up-spot" data-plan-spotlight={spotlight} data-plan-spotlight-row={spotRow ?? ""}>
           <span className="jf-up-spot-k">{SPOTLIGHT[spotlight].label}</span>
-          {spotlightLine(spotlight, spotRow !== null)}
+          {spotlightBanner(spotlight, plans)}
         </p>
       ) : null}
       <div className="jf-up-plans has-custom">

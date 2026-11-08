@@ -152,7 +152,7 @@ export function planCardRows(rows: readonly string[], spotlight: SpotlightTool |
 
 const andList = (names: readonly string[]) => (names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`);
 
-/** The banner over the public cards: which of these plans carry the tool, by the gate. */
+/** The banner over the plan cards (public and the in-app Upgrade page): which of these plans carry the tool, by the gate. */
 export function spotlightBanner(tool: SpotlightTool, plans: readonly { slug: string; name: string; customPages?: readonly string[] | null }[]): string {
   const def = SPOTLIGHT[tool];
   const addOn = ADD_ON[tool];
@@ -169,14 +169,6 @@ const ADD_ON: Partial<Record<SpotlightTool, string>> = { deck: `the trial includ
 
 export function isAddOnTool(tool: SpotlightTool): boolean {
   return ADD_ON[tool] !== undefined;
-}
-
-/** The line over the in-app cards (Subscription, Upgrade); the public cards say spotlightBanner. */
-export function spotlightLine(tool: SpotlightTool, listed: boolean): string {
-  const def = SPOTLIGHT[tool];
-  const addOn = ADD_ON[tool];
-  if (addOn) return `You came for ${def.the} — ${addOn}.`;
-  return listed ? `You came for ${def.the} — it's marked on every plan below.` : `You came for ${def.the} — it comes with every plan's trial; ask us which plan carries it.`;
 }
 
 export const SPOTLIGHT_TAG = "The tool you came for";

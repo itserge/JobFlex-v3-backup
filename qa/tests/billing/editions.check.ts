@@ -10,7 +10,7 @@ import { EDITIONS, canSwitch, editionLevel, hasEdition, homeFor, navAllowed, par
 import { DECK_ADDON_CENTS, DECK_PICK_TRIAL_WORDS, addonHeld, deckAddonCents, deckAddonHeldWords, deckAddonPriceWords, deckAddonShortWords, deckTrialWords, isDeckAddonLine, parseDeckAddonRecord, planLine, planLines } from "../../../src/lib/deckAddon";
 import { annualDeal, dealWords, savedWords } from "../../../src/lib/planDeal";
 import { autoPlanFor } from "../../../src/lib/signupAutoPlan";
-import { isAddOnTool, spotlightLine, spotlightRow } from "../../../src/lib/planSpotlight";
+import { isAddOnTool, spotlightBanner, spotlightRow } from "../../../src/lib/planSpotlight";
 import { freePlanLosses } from "../../../src/lib/freePlan";
 import { NAV_SECTIONS, navSectionsFor, flattenNavItems } from "../../../src/components/v3/blueprint-shell/nav-map";
 
@@ -63,7 +63,7 @@ const signupPlans = [
 ];
 const deckPick = autoPlanFor({ plans: signupPlans, tool: "deck" });
 check("a deck ad never moves the sign-up off Professional, even onto a plan whose features name Deck Studio", deckPick?.slug === "professional" && deckPick?.why === "default", JSON.stringify(deckPick));
-check("Deck Studio is an add-on tool: never marked on a plan's row, and the line says the trial includes it", isAddOnTool("deck") && !isAddOnTool("roof") && spotlightRow(["Deck Studio", "Roof estimator"], "deck") === null && spotlightRow(["Roof estimator"], "roof") === "Roof estimator" && spotlightLine("deck", true) === "You came for Deck Studio — the trial includes it, then it's $79/month on any plan.");
+check("Deck Studio is an add-on tool: never marked on a plan's row, and the line says the trial includes it", isAddOnTool("deck") && !isAddOnTool("roof") && spotlightRow(["Deck Studio", "Roof estimator"], "deck") === null && spotlightRow(["Roof estimator"], "roof") === "Roof estimator" && spotlightBanner("deck", [{ slug: "starter", name: "Starter" }]) === "You came for Deck Studio — the trial includes it, then it's $79/month on any plan.");
 
 console.log("── Before you go names the add-on when it is on the plan");
 const withDeck = freePlanLosses({ pages: null, planProposals: null, freeProposals: 5, deckAddon: "$49/mo" });
