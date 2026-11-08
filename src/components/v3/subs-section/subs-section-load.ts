@@ -7,6 +7,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { stagesOf } from "@/lib/projectStages/server";
 import { sectionMetrics, subsHistory, subsOf, type HistoryRow, type SubsRead } from "@/lib/projectSubs/server";
+import { projectSiteAddress } from "@/lib/subFinder/server";
 import type { PdStage } from "@/components/v3/project-detail-blueprint/project-detail-data";
 
 export type SubsSectionRead = {
@@ -15,11 +16,13 @@ export type SubsSectionRead = {
   subs: SubsRead;
   metrics: ReturnType<typeof sectionMetrics>;
   history: HistoryRow[];
+  /** Part 3: the site address Find starts from — the Lot card's parcel, else the client's, else the company's. */
+  siteAddress: string | null;
 };
 
 export async function loadSubsSection(projectId: string, organizationId: string): Promise<SubsSectionRead | null> {
   const project = await db.project.findFirst({ where: { id: projectId, organizationId }, select: { id: true, name: true, number: true, kind: true, status: true } });
   if (!project) return null;
-  const [stageRead, subs, history] = await Promise.all([stagesOf(project.id), subsOf(organizationId, project.id), subsHistory(organizationId, project.id)]);
-  return { project, stages: stageRead.stages, subs, metrics: sectionMetrics(subs), history };
+  const [stageRead, subs, history, siteAddress] = await Promise.all([stagesOf(project.id), subsOf(organizationId, project.id), subsHistory(organizationId, project.id), projectSiteAddress(organizationId, project.id)]);
+  return { project, stages: stageRead.stages, subs, metrics: sectionMetrics(subs), history, siteAddress };
 }

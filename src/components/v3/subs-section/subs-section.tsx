@@ -14,7 +14,8 @@ import { COMPARE_FIELDS, REVIEW_LABEL, budgetRows, budgetTotals, compareTable, r
 import { ProjectSubsCard } from "@/components/v3/project-links/project-subs-card";
 import { RequestSheet, newRequestDraft, type RequestDraft } from "@/components/v3/project-links/request-sheet";
 import type { ContractorRow, DocRow } from "@/lib/projectSubs/server";
-import { QUOTE_LABEL, contractorFlags, dollars, insuranceWords, quoteStatusOf, requestNo } from "@/lib/projectSubs/shared";
+import { QUOTE_LABEL, contractorFlags, dollars, insuranceWords, quoteStatusOf, requestNo, tradeForStage } from "@/lib/projectSubs/shared";
+import { SubsFind } from "./subs-find";
 import type { SubsSectionRead } from "./subs-section-load";
 import { ContractorSheet, draftOf, type ContractorDraft } from "./contractor-sheet";
 import { SUBS_TABS as TABS, type SubsTab } from "./subs-tabs";
@@ -142,6 +143,25 @@ export function SubsSection({ read, canManage, initialTab, hrefs }: { read: Subs
             ))}
           </section>
         </>
+      ) : null}
+
+      {tab === "find" ? (
+        // Part 3: subs the company does not have yet; Request quote saves one and opens the request sheet with them ticked.
+        <SubsFind
+          projectId={read.project.id}
+          stages={read.stages}
+          siteAddress={read.siteAddress}
+          canManage={canManage}
+          onSaved={(row) => {
+            setContractors((cur) => (cur.some((c) => c.id === row.id) ? cur : [...cur, row].sort((a, b) => a.name.localeCompare(b.name))));
+            refresh();
+          }}
+          onRequest={(contractorId, trade) => {
+            const st = read.stages.find((x) => trade && tradeForStage(x.name) === trade) ?? read.stages[0];
+            setNote(null);
+            setAsk({ ...newRequestDraft(read.stages, st?.id ?? ""), picked: new Set([contractorId]) });
+          }}
+        />
       ) : null}
 
       {tab === "subs" ? (

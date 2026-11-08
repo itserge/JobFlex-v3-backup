@@ -799,3 +799,21 @@ beside Attach and Ignore. A quote that came with a document and no typed price
 reads "Quoted · price to confirm" in the card's tag and its Award waits; over
 the stage's share, Award shows the warning in the card's note style with
 "Award anyway" beside it.
+
+Subcontractors, part 3 (2026-11-08, the subcontractors plan): the Find tab is a
+hub card whose filter row (trade, the address, the radius, a name, the
+"expired and suspended too" check, Search) sits above the same ruled result
+rows the directory uses — the business in bold with small mono source tags
+beside it (State register · Google · JobFlex) and an emerald "In My subs" pill
+once saved; under the name the address and the miles in mono, then the license
+pill (emerald active, rose expired or suspended, amber unknown) with a mono
+"★ 4.8 (57)" beside it, and one muted line with the register's words
+(specialties, expiry, insurance, bond); Details opens the same facts grid the
+profile uses. The actions sit at the right: Call, Website and Details as small
+buttons, Add to My subs small, Request quote primary. On the directory page the
+header gains a small "JobFlex Network" button (it reads "On the JobFlex
+Network" once listed) whose BlueprintSheet holds the on switch, the trades as a
+wrapped row of checks, where you work, and the contact; the profile sheet gains
+"The state register" as a bold kind, the license number and the register's
+words with "checked <day>" in muted type, and "Check the register" as a ghost
+button beside Edit.
