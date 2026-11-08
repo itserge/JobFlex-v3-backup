@@ -410,7 +410,7 @@ export function ProjectDetailContent({
       <ProjectCombine projectId={project.id} projectName={project.name} proposals={proposals} />
       {selections ? <ProjectSelectionsCard projectId={project.id} selections={selections} stages={stages.stages} canManage={canManage} /> : null}
       {buying ? <ProjectBuyingCard projectId={project.id} buying={buying} stages={stages.stages} canManage={canManage} /> : null}
-      {subs ? <ProjectSubsCard projectId={project.id} subs={subs} stages={stages.stages} canManage={canManage} /> : null}
+      {subs ? <ProjectSubsCard projectId={project.id} subs={subs} stages={stages.stages} canManage={canManage} sectionHref={`/dashboard/projects/${project.id}/subs`} /> : null}
       {moneyPlan ? <ProjectMoneyCard projectId={project.id} money={moneyPlan} canManage={canManage} /> : null}
       {budget ? <ProjectBudgetCard projectId={project.id} budget={budget} /> : null}
       <ProjectPaymentsCard payments={payments} canManage={canManage} draws={draws} projectId={project.id} />

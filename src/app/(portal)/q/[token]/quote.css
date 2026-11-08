@@ -1,6 +1,7 @@
-/* THE CONTRACTOR'S PAGE (2026-11-07) — what the buyer's stylesheet (../../buy/[token]/buy.css, root .jf-buy) has
-   no word for: the scope as a plain ruled list (the buyer's lines carry a checkbox and a quantity; these carry
-   neither), and the quiet "Pass on it" link under the Send button. */
+/* THE CONTRACTOR'S PAGE (2026-11-07; grown 2026-11-08) — what the buyer's stylesheet (../../buy/[token]/buy.css, root
+   .jf-buy) has no word for: the scope as a plain ruled list (the buyer's lines carry a checkbox and a quantity; these
+   carry neither), the request's details as a definition list, the files and the versions as ruled lists, the file
+   picker drawn as the page's own outlined button, the upload bar, and the quiet "Pass on it" link under Send. */
 .jf-buy .qt-scope {
   margin: 18px 0 6px;
   padding: 0;
@@ -32,4 +33,109 @@
   text-decoration: underline;
   cursor: pointer;
   font: inherit;
+}
+
+/* The request's details: a mono label over the words. */
+.jf-buy .qt-meta {
+  margin: 12px 0 0;
+  display: grid;
+  gap: 2px 0;
+}
+.jf-buy .qt-meta dt {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin-top: 10px;
+}
+.jf-buy .qt-meta dd {
+  margin: 2px 0 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+/* Files to open and the prices sent so far: ruled rows, the name a link, the kind in mono at the right. */
+.jf-buy .qt-files,
+.jf-buy .qt-versions {
+  margin-top: 16px;
+}
+.jf-buy .qt-files ul,
+.jf-buy .qt-versions ul {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+.jf-buy .qt-files li,
+.jf-buy .qt-versions li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+  border-bottom: var(--by-hair);
+  font-size: 14.5px;
+  line-height: 1.4;
+}
+.jf-buy .qt-files li a,
+.jf-buy .qt-versions li a {
+  color: var(--ink);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+.jf-buy .qt-files li span {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+.jf-buy .qt-versions li b {
+  font-weight: 800;
+}
+.jf-buy .qt-vnote {
+  flex-basis: 100%;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+/* The file picker as the page's own outlined button; the thin upload bar under it. */
+.jf-buy .qt-file {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  border: 1.5px dashed var(--ink);
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 10px 12px;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.jf-buy .qt-file:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.jf-buy .qt-progress {
+  position: relative;
+  height: 6px;
+  margin-top: 6px;
+  border: 1px solid var(--ink);
+  background: #fff;
+}
+.jf-buy .qt-progress i {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--ink);
 }

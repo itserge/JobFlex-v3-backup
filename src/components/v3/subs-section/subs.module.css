@@ -1,0 +1,247 @@
+/* SUBCONTRACTORS — the section and the company pages (2026-11-08, the subcontractors plan, part 1), in the hub's
+   grammar: 2px ink frames on paper, mono caps labels, flat buttons, ruled rows. The cards inside the tabs come from
+   project-hub.module.css; this file holds only what the section adds — the head, the tab strip, the metric tiles,
+   the ruled tables and their filters, the pills. One stylesheet for the desk and the phone. */
+.page {
+  display: grid;
+  gap: 14px;
+  padding: 0 0 32px;
+}
+.head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--ink, #111);
+}
+.kicker {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-muted, #666);
+}
+.kicker a {
+  color: inherit;
+}
+.title {
+  margin: 4px 0 0;
+  font-size: 24px;
+  line-height: 1.1;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+.sub {
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  color: var(--ink-muted, #666);
+}
+.acts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  border-bottom: 1.5px solid var(--ink-line, #ddd);
+}
+.tab {
+  appearance: none;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: none;
+  padding: 8px 10px;
+  margin-bottom: -1.5px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-muted, #666);
+  cursor: pointer;
+  text-decoration: none;
+}
+.tab:hover {
+  color: var(--ink, #111);
+}
+.tabOn {
+  color: var(--ink, #111);
+  border-bottom-color: var(--ink, #111);
+}
+.tab b {
+  margin-left: 6px;
+  font-weight: 700;
+  color: var(--accent, #1d4ed8);
+}
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+.tile {
+  border: 1.5px solid var(--ink, #111);
+  background: #fff;
+  padding: 10px 12px;
+  min-width: 0;
+}
+.tileLbl {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-muted, #666);
+}
+.tileVal {
+  margin-top: 4px;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.tileSub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--ink-muted, #666);
+}
+.tileWarn .tileVal {
+  color: var(--rose, #a83232);
+}
+.filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.filters input,
+.filters select {
+  min-height: 36px;
+  border: 1.5px solid var(--ink, #111);
+  background: #fff;
+  color: var(--ink, #111);
+  font: inherit;
+  font-size: 13px;
+  padding: 0 10px;
+}
+.filters input[type="text"],
+.filters input[type="search"] {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.table {
+  border: 1.5px solid var(--ink, #111);
+  background: #fff;
+}
+.row {
+  display: grid;
+  gap: 4px 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--ink-line, #ddd);
+  align-items: baseline;
+  font-size: 14px;
+}
+.row:last-child {
+  border-bottom: 0;
+}
+.rowHead {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-muted, #666);
+  background: var(--paper, #f6f5f1);
+}
+.name {
+  font-weight: 700;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.mono {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-muted, #666);
+  white-space: nowrap;
+}
+.amt {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  text-align: right;
+  white-space: nowrap;
+}
+.muted {
+  color: var(--ink-muted, #666);
+  font-size: 13px;
+}
+.pill {
+  display: inline-block;
+  padding: 1px 7px;
+  border: 1.5px solid var(--ink, #111);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  margin-right: 4px;
+}
+.pillIn {
+  border-color: var(--emerald, #1b7f4b);
+  color: var(--emerald, #1b7f4b);
+}
+.pillLate {
+  border-color: var(--rose, #a83232);
+  color: var(--rose, #a83232);
+}
+.pillWait {
+  border-color: var(--amber, #b7791f);
+  color: var(--amber, #b7791f);
+}
+.linkBtn {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--ink, #111);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.empty {
+  padding: 18px 12px;
+  text-align: center;
+  font-size: 13.5px;
+  color: var(--ink-muted, #666);
+}
+.hist {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) auto;
+}
+.sheetGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+@media (max-width: 640px) {
+  .sheetGrid {
+    grid-template-columns: 1fr;
+  }
+  .hist {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* THE PROFILE'S FACTS (the directory's sheet, 2026-11-08): the hub scopes its .facts family to its card (`.w.w`),
+   and a BlueprintSheet is portalled to <body>, outside any card — so the same grid lives here, unscoped. */
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 14px; margin: 0; }
+.fact { display: grid; gap: 2px; min-width: 0; }
+.factLbl { font: 700 10px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-muted); }
+.factVal { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; margin: 0; }

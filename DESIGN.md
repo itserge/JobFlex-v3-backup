@@ -631,6 +631,29 @@ emerald, failed amber), and the photos by phase. It carries no buttons. On the
 office side the Draws block's row of actions gains "Lender's page", whose
 BlueprintSheet holds the link read-only with Copy the link and Open it.
 
+Subcontractors, part 1 (2026-11-08, the subcontractors plan): the project's
+Subcontractors section (/dashboard/projects/[id]/subs, and the company pages
+/dashboard/subcontractors and /dashboard/quotes) is the hub's grammar on a
+page of its own — a 2px ink rule under the head (kicker, 24px title, a mono
+sub-line of figures, the actions at the right), a tab strip of mono caps
+buttons with a 3px ink underline on the one in use and an accent count beside
+Requests and Quotes, then one hub card per tab. Overview is a grid of 1.5px
+framed tiles (mono caps label, 22px tabular figure, a 12px sub-line; a figure
+that needs attention in rose). The ruled tables (directory, requests, Quotes &
+Proposals) are 1.5px frames of grid rows on hairlines with a mono caps head
+row; states are small outlined pills in mono caps — emerald for in, awarded and
+paid, amber for waiting and expiring, rose for overdue, declined, expired and
+cancelled. The filters are a row of 36px ink-framed inputs and selects. The
+document viewer is a full-screen overlay: a dim ground, one ink-framed panel
+to 1100px with a white bar (the name in 14px bold, mono page count and meta,
+flat mono caps buttons — zoom, Fit, Full screen, Download, Print, Original,
+Close in ink) over the paper's graph-paper ground where pdf.js draws each
+page as a framed sheet with a hard 4px shadow; a side panel (part 2) sits at
+320px on the right and under the pages on a phone. The sub's page keeps the
+buyer's grammar and adds the request's details as a mono-labelled definition
+list, the files and the versions as ruled rows, a dashed outlined file picker
+and a 6px upload bar.
+
 Projects hub, stages (2026-11-05): the Stages card leads the project page on
 desk and handheld, above the proposals — a remodel is read by where it stands.
 One row per stage: a 24px round mark (empty · ▶ in progress on ink · ✓ done on

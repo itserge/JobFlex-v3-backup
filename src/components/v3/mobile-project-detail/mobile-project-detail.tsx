@@ -763,7 +763,7 @@ export function MobileProjectDetail({
           ) : null}
           {subs ? (
             <div className="mpd-budget">
-              <ProjectSubsCard projectId={project.id} subs={subs} stages={stages.stages} canManage={canManage} />
+              <ProjectSubsCard projectId={project.id} subs={subs} stages={stages.stages} canManage={canManage} sectionHref={`/mobile-project-subs-v1/${project.id}`} />
             </div>
           ) : null}
 

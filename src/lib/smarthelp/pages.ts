@@ -16,6 +16,8 @@ export const HELP_PAGES: ReadonlyArray<{ path: string; name: string }> = [
   { path: "/dashboard/clients", name: "Clients" },
   { path: "/dashboard/leads", name: "Leads" },
   { path: "/dashboard/projects", name: "Projects" },
+  { path: "/dashboard/subcontractors", name: "Subcontractors" },
+  { path: "/dashboard/quotes", name: "Quotes & Proposals" },
   { path: "/dashboard/crm", name: "CRM" },
   { path: "/dashboard/calendar", name: "Calendar" },
   { path: "/dashboard/booking", name: "Online booking" },
