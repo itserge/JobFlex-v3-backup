@@ -575,6 +575,25 @@ Timeline draws a side lane's stages under a mono caps label row ("Site lane");
 the shift sheet says "Everything that depends on it moves" when the stages
 carry dependencies. The Finish line's three new-build steps take the same row
 grammar as the seven, with a single Done button.
+Who it is for, and the money (2026-11-07, the plan "Projects: Remodel and New
+construction", part 5): a Money card before Budget on the hub's own rules.
+The head's sub-line says who it is for and how the money is made with a
+"change" text button; a facts grid follows (mono caps label over a 13.5px
+value): the headline as a tag — green on budget, amber past 90%, red over —
+then Budget, Spent, Committed, Left, Heading for, and Contract + Margin at
+this pace (or Sale price + Profit). "By phase" is a ruled group of lines:
+the name, a red "$X over at this pace" tag or a green "$X under", a 10px bar
+(spent in ink, committed in amber, a 2px heading-for mark in muted or rose, a
+2px budget mark in emerald), a mono sub-line with the four figures and % done,
+and small buttons "+ Cost" and "Edit"; a "Not on a phase" line closes it.
+"Where to save, where to squeeze" lists the advisor's suggestions as lines
+with a "saves $X" tag (a change order's reads "$X the client's", green) and
+an Apply button where one tap does it. The sheets (who it is for and the
+money, lay out the budget, a phase's budget, a cost on a phase) are
+BlueprintSheets; the New project dialogs unfold "Who is it for" above the lot's
+questions on a new build; the Edit project dialog carries the same segments
+for every project.
+
 Draws (2026-11-07, the plan "Projects: Remodel and New construction", part
 6): a lender's schedule is a `.prop` frame at the top of the Payments card on a
 new build with a lender — the ruled prop head "Draws — the lender's schedule"

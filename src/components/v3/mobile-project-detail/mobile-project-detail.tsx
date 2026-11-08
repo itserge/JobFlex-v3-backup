@@ -70,7 +70,7 @@ import {
   type PdJob,
   type PdOpens,
   type PdPayments,
-  type PdBuying, PdSubs, PdSelections, PdPhases, PdLot, PdDraws,
+  type PdBuying, PdSubs, PdSelections, PdPhases, PdLot, PdMoneyPlan, PdDraws,
   type PdField,
   type PdFinish,
   type PdShare,
@@ -105,6 +105,7 @@ import { ProjectSubsCard } from "@/components/v3/project-links/project-subs-card
 import { ProjectSelectionsCard } from "@/components/v3/project-links/project-selections-card";
 import { ProjectPhasesStrip } from "@/components/v3/project-links/project-phases-strip";
 import { ProjectLotCard } from "@/components/v3/project-links/project-lot-card";
+import { ProjectMoneyCard } from "@/components/v3/project-links/project-money-card";
 import type { BuildAnswers } from "@/lib/projectPhases/shared";
 import { ProjectFieldCard } from "@/components/v3/project-links/project-field-card";
 import { ProjectTimelineCard } from "@/components/v3/project-links/project-timeline-card";
@@ -323,6 +324,7 @@ export function MobileProjectDetail({
   lotAddress = null,
   build = null,
   buildWords = null,
+  moneyPlan,
   draws = null,
   field,
   timeline,
@@ -352,6 +354,8 @@ export function MobileProjectDetail({
   lotAddress?: string | null;
   build?: BuildAnswers | null;
   buildWords?: string | null;
+  /** Who it is for and the money (part 5). */
+  moneyPlan?: PdMoneyPlan;
   /** A lender's draws (part 6). */
   draws?: PdDraws | null;
   /** On site: problems, hours, the subs' bills (2026-11-05). */
@@ -760,6 +764,13 @@ export function MobileProjectDetail({
           {subs ? (
             <div className="mpd-budget">
               <ProjectSubsCard projectId={project.id} subs={subs} stages={stages.stages} canManage={canManage} />
+            </div>
+          ) : null}
+
+          {/* ============ THE MONEY (2026-11-07, part 5) ============ */}
+          {moneyPlan ? (
+            <div className="mpd-budget">
+              <ProjectMoneyCard projectId={project.id} money={moneyPlan} canManage={canManage} />
             </div>
           ) : null}
 

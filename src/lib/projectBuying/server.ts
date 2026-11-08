@@ -315,7 +315,7 @@ export type OrderPatch = {
 async function orderOf(organizationId: string, orderId: string) {
   const o = await db.projectOrder.findFirst({
     where: { id: orderId, organizationId },
-    select: { id: true, number: true, how: true, status: true, projectId: true, supplierId: true, buyerName: true, paidTotal: true, expenseId: true, supplier: { select: { name: true } }, project: { select: { name: true, number: true, clientId: true } }, lines: { select: { id: true, materialId: true, quantity: true, receivedQty: true, status: true, material: { select: { name: true, unit: true } } } } },
+    select: { id: true, number: true, how: true, status: true, projectId: true, stageId: true, supplierId: true, buyerName: true, paidTotal: true, expenseId: true, supplier: { select: { name: true } }, project: { select: { name: true, number: true, clientId: true } }, lines: { select: { id: true, materialId: true, quantity: true, receivedQty: true, status: true, material: { select: { name: true, unit: true } } } } },
   });
   if (!o) throw new Error("Order not found");
   return o;
@@ -412,11 +412,13 @@ export async function logOrderExpense(organizationId: string, orderId: string, a
   const vendor = o.how === "SUPPLIER" ? (o.supplier?.name ?? "Supplier") : o.how === "BUYER" ? (o.buyerName ?? "Buyer") : "Stock";
   const note = `Order ${o.number} · ${o.lines.length} line${o.lines.length === 1 ? "" : "s"}`;
   const amt = r2(Math.max(0, amount));
+  // The cost lands on the order's stage's phase (part 5), so the Money card reads it per phase.
+  const phaseId = o.stageId ? ((await db.projectStage.findUnique({ where: { id: o.stageId }, select: { phaseId: true } }))?.phaseId ?? null) : null;
   let expenseId = o.expenseId;
   if (expenseId && (await db.projectExpense.findFirst({ where: { id: expenseId, projectId: o.projectId }, select: { id: true } }))) {
-    await db.projectExpense.update({ where: { id: expenseId }, data: { amount: amt, vendor, note } });
+    await db.projectExpense.update({ where: { id: expenseId }, data: { amount: amt, vendor, note, phaseId } });
   } else {
-    expenseId = (await db.projectExpense.create({ data: { projectId: o.projectId, category: "MATERIALS", amount: amt, vendor, note, createdById: actorId }, select: { id: true } })).id;
+    expenseId = (await db.projectExpense.create({ data: { projectId: o.projectId, category: "MATERIALS", amount: amt, vendor, note, phaseId, createdById: actorId }, select: { id: true } })).id;
   }
   await db.projectOrder.update({ where: { id: o.id }, data: { expenseId, paidTotal: amt } });
   return { expenseId };

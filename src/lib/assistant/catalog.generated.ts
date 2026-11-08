@@ -557,6 +557,17 @@ export const CATALOG: Catalog = {
     "scheduled": false,
     "version": 1
   },
+  "money_plan": {
+    "label": "Where the money stands",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
   "draws": {
     "label": "Draws",
     "group": "projects",

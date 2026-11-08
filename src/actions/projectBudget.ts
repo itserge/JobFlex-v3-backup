@@ -220,15 +220,19 @@ const expenseInput = z.object({
   note: z.string().trim().max(500).optional().nullable(),
   /** "YYYY-MM-DD"; absent means today. */
   spentAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  /** The phase the cost belongs to (part 5, a new build) — checked to be the project's. */
+  phaseId: z.string().min(1).optional().nullable(),
 });
 
 export async function addProjectExpense(raw: unknown): Promise<{ id: string }> {
   const { organizationId, user } = await requireEstimatorOrManager();
   const data = expenseInput.parse(raw);
   const projectId = await projectInOrg(data.projectId, organizationId);
+  const phaseId = data.phaseId ? ((await db.projectPhase.findFirst({ where: { id: data.phaseId, projectId }, select: { id: true } }))?.id ?? null) : null;
   const row = await db.projectExpense.create({
     data: {
       projectId,
+      phaseId,
       category: data.category,
       amount: Math.round(data.amount * 100) / 100,
       vendor: data.vendor || null,

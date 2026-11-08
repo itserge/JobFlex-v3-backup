@@ -20,8 +20,9 @@ import { shareOf } from "@/lib/projectClient/server";
 import { selectionsOf } from "@/lib/projectSelections/server";
 import { lotOf, phasesOf } from "@/lib/projectPhases/server";
 import { drawsOf } from "@/lib/projectDraws/server";
+import { moneyPlanOf } from "@/lib/projectMoneyPlan/server";
 import { answersWords, type BuildAnswers } from "@/lib/projectPhases/shared";
-import type { PdAvailProposal, PdBudget, PdBuying, PdSubs, PdField, PdFinish, PdJob, PdLooseProposal, PdDraws, PdLot, PdPayments, PdPhases, PdProject, PdProposal, PdSelections, PdShare, PdStages, PdTimeline, PdWorker } from "./project-detail-data";
+import type { PdAvailProposal, PdBudget, PdBuying, PdSubs, PdField, PdFinish, PdJob, PdLooseProposal, PdDraws, PdLot, PdMoneyPlan, PdPayments, PdPhases, PdProject, PdProposal, PdSelections, PdShare, PdStages, PdTimeline, PdWorker } from "./project-detail-data";
 
 export type ProjectDetailProps = {
   project: PdProject;
@@ -39,6 +40,8 @@ export type ProjectDetailProps = {
   lotAddress: string | null;
   build: BuildAnswers | null;
   buildWords: string | null;
+  /** Who it is for and the money (part 5): the figures by phase and the advisor's list. */
+  moneyPlan: PdMoneyPlan;
   /** A lender's draws on a new build (part 6). */
   draws: PdDraws;
   /** On site: problems, hours, the subs' bills (2026-11-05). */
@@ -152,7 +155,7 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
     at: e.spentAt.toISOString(),
   }));
   // The money — the same read as the Projects list and Financials (lib/projectMoney): before tax, crew and stock in.
-  const [moneyAll, stageRead, buying, field, timeline, finish, share, subs, selections, phases, lot, draws] = await Promise.all([
+  const [moneyAll, stageRead, buying, field, timeline, finish, share, subs, selections, phases, lot, moneyPlan, draws] = await Promise.all([
     projectMoney(organizationId, [project.id]),
     stagesOf(project.id),
     buyingOf(organizationId, project.id),
@@ -164,6 +167,7 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
     selectionsOf(organizationId, project.id),
     phasesOf(project.id),
     lotOf(project.id),
+    moneyPlanOf(organizationId, project.id),
     drawsOf(organizationId, project.id),
   ]);
   const answers = parseAnswers(project.answersJson);
@@ -188,6 +192,7 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
     lotAddress: project.client?.address?.split("\n").map((x) => x.trim()).filter(Boolean).join(", ") || null,
     build,
     buildWords: build ? answersWords(build) : null,
+    moneyPlan,
     draws,
     field,
     timeline,
@@ -206,6 +211,11 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
         kind: project.kind,
         occupied: answers.occupied === true,
         kindLocked: (await db.projectStage.count({ where: { projectId: project.id, status: "DONE" } })) > 0,
+        forWhom: project.forWhom,
+        moneyMode: project.moneyMode,
+        marginPct: project.marginPct,
+        feeAmount: project.feeAmount,
+        salePrice: project.salePrice,
     },
     proposals: project.proposals.map((p) => {
         const approved = p.changeOrders.filter((c) => c.status === "APPROVED");
