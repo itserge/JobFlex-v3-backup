@@ -114,6 +114,9 @@ export type PdLot = import("@/lib/projectPhases/server").LotRecord;
    the advisor's list (lib/projectMoneyPlan/server moneyPlanOf). */
 export type PdMoneyPlan = import("@/lib/projectMoneyPlan/server").MoneyPlanRead;
 
+/* DRAWS (2026-11-07, part 6): a lender's draws on a new build, each against its phase (lib/projectDraws/server drawsOf). */
+export type PdDraws = import("@/lib/projectDraws/server").DrawsRead;
+
 /* SELECTIONS (2026-11-07, part 3): what the client has to choose, each with the stage that needs it, its due day and
    what was chosen (lib/projectSelections/server selectionsOf). */
 export type PdSelections = import("@/lib/projectSelections/server").SelectionsRead;

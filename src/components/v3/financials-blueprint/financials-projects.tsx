@@ -38,7 +38,7 @@ export function FinancialsProjects({ projects }: { projects: FinancialsProject[]
         <div className={s.head}>
           <div>
             <div className={s.kicker}>Projects</div>
-            <div className={s.sub}>What each remodel makes — contracts before sales tax, the cost budget against the spend.</div>
+            <div className={s.sub}>What each project makes — contracts before sales tax, the cost budget against the spend; a new build&apos;s lender draws.</div>
           </div>
           <div className={s.totals}>
             <span>
@@ -64,6 +64,7 @@ export function FinancialsProjects({ projects }: { projects: FinancialsProject[]
             <span role="columnheader">Spent</span>
             <span role="columnheader">Margin</span>
             <span role="columnheader">Paid · owed</span>
+            <span role="columnheader">Draws</span>
           </div>
           {projects.map((p) => {
             const m = marginText(p);
@@ -94,6 +95,11 @@ export function FinancialsProjects({ projects }: { projects: FinancialsProject[]
                   <em className={s.lbl}>Paid</em>
                   {whole(p.collected)}
                   <i>{p.owed > 0 ? `${whole(p.owed)} owed` : "nothing owed"}</i>
+                </span>
+                <span role="cell" className={s.num} data-fin-draws>
+                  <em className={s.lbl}>Draws</em>
+                  {p.draws ? whole(p.draws.funded) : "—"}
+                  <i>{p.draws ? (p.draws.requested > 0 ? `${whole(p.draws.requested)} requested` : `funded of ${p.draws.count} draws`) : "no lender"}</i>
                 </span>
               </Link>
             );

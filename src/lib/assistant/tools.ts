@@ -38,6 +38,7 @@ import { PROJECT_TOOLS } from "@/lib/assistant/projects";
 import { SELECTION_TOOLS } from "@/lib/assistant/selections";
 import { PHASE_TOOLS } from "@/lib/assistant/phases";
 import { MONEY_PLAN_TOOLS } from "@/lib/assistant/moneyPlan";
+import { DRAW_TOOLS } from "@/lib/assistant/draws";
 import { BUYING_TOOLS } from "@/lib/assistant/buying";
 import { FIELD_TOOLS } from "@/lib/assistant/field";
 import { TIMELINE_TOOLS } from "@/lib/assistant/timeline";
@@ -999,6 +1000,7 @@ export const TOOLS: readonly AnyTool[] = [
   ...SELECTION_TOOLS,
   ...PHASE_TOOLS,
   ...MONEY_PLAN_TOOLS,
+  ...DRAW_TOOLS,
   ...BUYING_TOOLS,
   ...FIELD_TOOLS,
   ...TIMELINE_TOOLS,

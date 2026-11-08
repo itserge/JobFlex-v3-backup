@@ -568,6 +568,39 @@ export const CATALOG: Catalog = {
     "scheduled": false,
     "version": 1
   },
+  "draws": {
+    "label": "Draws",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "request_draw": {
+    "label": "Request a draw",
+    "group": "projects",
+    "effect": "record",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "fund_draw": {
+    "label": "Draw funded",
+    "group": "projects",
+    "effect": "record",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
   "where_is": {
     "label": "Where's the order",
     "group": "projects",

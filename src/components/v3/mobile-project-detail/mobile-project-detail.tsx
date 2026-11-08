@@ -70,7 +70,7 @@ import {
   type PdJob,
   type PdOpens,
   type PdPayments,
-  type PdBuying, PdSubs, PdSelections, PdPhases, PdLot, PdMoneyPlan,
+  type PdBuying, PdSubs, PdSelections, PdPhases, PdLot, PdMoneyPlan, PdDraws,
   type PdField,
   type PdFinish,
   type PdShare,
@@ -325,6 +325,7 @@ export function MobileProjectDetail({
   build = null,
   buildWords = null,
   moneyPlan,
+  draws = null,
   field,
   timeline,
   finish,
@@ -355,6 +356,8 @@ export function MobileProjectDetail({
   buildWords?: string | null;
   /** Who it is for and the money (part 5). */
   moneyPlan?: PdMoneyPlan;
+  /** A lender's draws (part 6). */
+  draws?: PdDraws | null;
   /** On site: problems, hours, the subs' bills (2026-11-05). */
   field?: PdField;
   /** The stages across the weeks (2026-11-06). */
@@ -780,7 +783,7 @@ export function MobileProjectDetail({
 
           {/* ============ PAYMENTS (2026-11-04) ============ */}
           <div className="mpd-budget">
-            <ProjectPaymentsCard payments={payments} canManage={canManage} />
+            <ProjectPaymentsCard payments={payments} canManage={canManage} draws={draws} projectId={project.id} />
           </div>
           <ProjectCrewSheet key={crewFor?.id ?? "none"} job={crewFor} roster={roster} onClose={() => setCrewFor(null)} />
 

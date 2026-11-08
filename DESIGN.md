@@ -594,6 +594,20 @@ BlueprintSheets; the New project dialogs unfold "Who is it for" above the lot's
 questions on a new build; the Edit project dialog carries the same segments
 for every project.
 
+Draws (2026-11-07, the plan "Projects: Remodel and New construction", part
+6): a lender's schedule is a `.prop` frame at the top of the Payments card on a
+new build with a lender — the ruled prop head "Draws — the lender's schedule"
+with the funded · requested · held figures in mono at the right, then one
+`.stage` row per draw in the proposals' own grid: "3. Dry-in" with the phase it
+follows under it in mono ("after Framing and dry-in" / "Foundation closed"),
+the dollars right-aligned, the state in mono coloured as the stages are (funded
+emerald, requested amber, ready to request accent), and the small buttons
+Request (grey with the reason as its title until the draw is ready), Mark
+funded, Edit, Undo, and "The bundle" to unfold the paragraph the lender got.
+The three sheets (lay out the draws, a draw, funded) are BlueprintSheets. The
+Financials Projects table gains a sixth column, Draws (funded, with requested
+or the count under it; "—" and "no lender" on a remodel).
+
 Projects hub, stages (2026-11-05): the Stages card leads the project page on
 desk and handheld, above the proposals — a remodel is read by where it stands.
 One row per stage: a 24px round mark (empty · ▶ in progress on ink · ✓ done on

@@ -50,7 +50,7 @@ import {
   type PdJob,
   type PdOpens,
   type PdPayments,
-  type PdBuying, PdSubs, PdSelections, PdPhases, PdLot, PdMoneyPlan,
+  type PdBuying, PdSubs, PdSelections, PdPhases, PdLot, PdMoneyPlan, PdDraws,
   type PdField,
   type PdFinish,
   type PdShare,
@@ -155,6 +155,7 @@ export function ProjectDetailContent({
   build = null,
   buildWords = null,
   moneyPlan,
+  draws = null,
   field,
   timeline,
   finish,
@@ -176,6 +177,8 @@ export function ProjectDetailContent({
   buildWords?: string | null;
   /** Who it is for and the money (part 5). */
   moneyPlan?: PdMoneyPlan;
+  /** A lender's draws (part 6). */
+  draws?: PdDraws | null;
   /** On site: problems, hours, the subs' bills (2026-11-05). */
   field?: PdField;
   /** The stages across the weeks (2026-11-06). */
@@ -410,7 +413,7 @@ export function ProjectDetailContent({
       {subs ? <ProjectSubsCard projectId={project.id} subs={subs} stages={stages.stages} canManage={canManage} /> : null}
       {moneyPlan ? <ProjectMoneyCard projectId={project.id} money={moneyPlan} canManage={canManage} /> : null}
       {budget ? <ProjectBudgetCard projectId={project.id} budget={budget} /> : null}
-      <ProjectPaymentsCard payments={payments} canManage={canManage} />
+      <ProjectPaymentsCard payments={payments} canManage={canManage} draws={draws} projectId={project.id} />
 
       {/* ВИДЫ + ATTACH */}
       <div className={cx("pd-bar")}>
