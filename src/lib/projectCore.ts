@@ -7,6 +7,13 @@ import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { numbered } from "@/lib/projectStages/server";
 import { serializeAnswers, type ProjectKind } from "@/lib/projectKind";
 import type { BuildAnswers } from "@/lib/projectPhases/shared";
+import { parseMoneySettings, type ForWhom, type MoneyMode } from "@/lib/projectMoneyPlan/shared";
+
+/** The money settings a new project is made with: as said, else a client build with no mode. */
+function moneyFields(data: Pick<NewProject, "forWhom" | "moneyMode" | "marginPct" | "feeAmount" | "salePrice">) {
+  const s = parseMoneySettings({ forWhom: data.forWhom, moneyMode: data.moneyMode, marginPct: data.marginPct, feeAmount: data.feeAmount, salePrice: data.salePrice });
+  return { forWhom: s.forWhom, moneyMode: s.moneyMode, marginPct: s.marginPct, feeAmount: s.feeAmount, salePrice: s.salePrice };
+}
 
 export type NewProject = {
   name: string;
@@ -24,6 +31,12 @@ export type NewProject = {
   occupied?: boolean;
   /** A new build's start questions (lib/projectPhases); the phases are shaped from them. */
   build?: BuildAnswers;
+  /** Who it is for and how the money is made (part 5, lib/projectMoneyPlan); a client build with no mode unless said. */
+  forWhom?: ForWhom;
+  moneyMode?: MoneyMode;
+  marginPct?: number | null;
+  feeAmount?: number | null;
+  salePrice?: number | null;
 };
 
 export async function createProjectAs(who: { organizationId: string; actorId: string | null }, data: NewProject): Promise<{ id: string; number: number | null; name: string }> {
@@ -44,6 +57,7 @@ export async function createProjectAs(who: { organizationId: string; actorId: st
         budget: data.budget ?? 0,
         kind: data.kind,
         answersJson,
+        ...moneyFields(data),
       },
       select: { id: true, number: true, name: true },
     }),

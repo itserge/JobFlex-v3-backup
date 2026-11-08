@@ -34,6 +34,12 @@ const projectInput = z.object({
   occupied: z.boolean().optional(),
   // A new build's start questions (part 4): the phases are shaped from them.
   build: buildAnswersInput.optional(),
+  // Who it is for and how the money is made (part 5, lib/projectMoneyPlan).
+  forWhom: z.enum(["CLIENT", "SELF"]).optional(),
+  moneyMode: z.enum(["PROJECT_MARGIN", "JOB_MARGIN", "COST_PLUS", "NONE"]).optional(),
+  marginPct: z.number().min(0).max(100).nullable().optional(),
+  feeAmount: z.number().min(0).max(100_000_000).nullable().optional(),
+  salePrice: z.number().min(0).max(100_000_000).nullable().optional(),
   description: z.string().optional().nullable(),
   status: z.enum(["ACTIVE", "ON_HOLD", "COMPLETED", "ARCHIVED"]).default("ACTIVE"),
   startsAt: z.coerce.date().optional().nullable(),
@@ -118,6 +124,12 @@ export async function updateProject(raw: unknown) {
       ...(rest.endsAt !== undefined && { endsAt: rest.endsAt }),
       ...(rest.budget !== undefined && { budget: rest.budget }),
       ...(rest.clientId !== undefined && { clientId: await clientInOrg(organizationId, rest.clientId) }),
+      // The money settings (part 5): one's own build never has a mode.
+      ...(rest.forWhom !== undefined && { forWhom: rest.forWhom, ...(rest.forWhom === "SELF" ? { moneyMode: "NONE" } : {}) }),
+      ...(rest.moneyMode !== undefined && (rest.forWhom ?? existing.forWhom) !== "SELF" && { moneyMode: rest.moneyMode }),
+      ...(rest.marginPct !== undefined && { marginPct: rest.marginPct }),
+      ...(rest.feeAmount !== undefined && { feeAmount: rest.feeAmount }),
+      ...(rest.salePrice !== undefined && { salePrice: rest.salePrice }),
     },
   });
   revalidatePath("/dashboard/projects");

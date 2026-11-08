@@ -283,11 +283,13 @@ export async function markQuotePaid(organizationId: string, quoteId: string, amo
   const vendor = q.contractor.name;
   const note = `Quote ${q.number}${q.stage ? ` · ${q.stage.name}` : ""}`;
   const now = new Date();
+  // The cost lands on the quote's stage's phase (part 5), so the Money card reads it per phase.
+  const phaseId = q.stageId ? ((await db.projectStage.findUnique({ where: { id: q.stageId }, select: { phaseId: true } }))?.phaseId ?? null) : null;
   let expenseId = q.expenseId;
   if (expenseId && (await db.projectExpense.findFirst({ where: { id: expenseId, projectId: q.projectId }, select: { id: true } }))) {
-    await db.projectExpense.update({ where: { id: expenseId }, data: { amount: amt, vendor, note, paidAt: now } });
+    await db.projectExpense.update({ where: { id: expenseId }, data: { amount: amt, vendor, note, paidAt: now, phaseId } });
   } else {
-    expenseId = (await db.projectExpense.create({ data: { projectId: q.projectId, category: "SUBCONTRACTORS", amount: amt, vendor, note, spentAt: now, paidAt: now, createdById: actorId }, select: { id: true } })).id;
+    expenseId = (await db.projectExpense.create({ data: { projectId: q.projectId, category: "SUBCONTRACTORS", amount: amt, vendor, note, spentAt: now, paidAt: now, phaseId, createdById: actorId }, select: { id: true } })).id;
   }
   await db.projectSubQuote.update({ where: { id: q.id }, data: { status: "PAID", paidAt: now, expenseId, invoiceAmount: q.invoiceAmount ?? amt } });
   await logActivity({ organizationId, actorId, kind: TRAIL_KINDS.PROJECT, summary: `Paid ${q.contractor.name} ${dollars(amt)} on ${q.project.name}`, clientId: q.project.clientId, meta: { projectId: q.projectId, quoteId: q.id, expenseId } });

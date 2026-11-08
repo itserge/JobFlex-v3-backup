@@ -48,6 +48,12 @@ export interface PdProject {
   kind?: string;
   occupied?: boolean;
   kindLocked?: boolean;
+  /** Who it is for and how the money is made (part 5, lib/projectMoneyPlan) — the Edit project dialog. */
+  forWhom?: string;
+  moneyMode?: string;
+  marginPct?: number | null;
+  feeAmount?: number | null;
+  salePrice?: number | null;
 }
 
 /* STAGES OF A PROJECT (2026-11-05): the order of the work and its tasks, as the Stages card reads them
@@ -103,6 +109,10 @@ export type PdSubs = import("@/lib/projectSubs/server").SubsRead;
    (lib/projectPhases/server phasesOf), and the lot's record (lotOf). Empty on a remodel. */
 export type PdPhases = import("@/lib/projectPhases/server").PhasesRead;
 export type PdLot = import("@/lib/projectPhases/server").LotRecord;
+
+/* WHO IT IS FOR, AND THE MONEY (2026-11-07, part 5): the settings, the figures by phase, the margin at this pace and
+   the advisor's list (lib/projectMoneyPlan/server moneyPlanOf). */
+export type PdMoneyPlan = import("@/lib/projectMoneyPlan/server").MoneyPlanRead;
 
 /* SELECTIONS (2026-11-07, part 3): what the client has to choose, each with the stage that needs it, its due day and
    what was chosen (lib/projectSelections/server selectionsOf). */
