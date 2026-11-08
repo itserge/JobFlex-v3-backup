@@ -1,6 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { inboundConfig } from "@/lib/subInbound/config";
 import { ingestReceivedEmail, type IngestResult, type ReceivedEmail } from "@/lib/subInbound/server";
+import { claimsClientEmail, fileInboundEmail, type InboxIngest } from "@/lib/inbox/server";
 import { runPendingReads } from "@/lib/subQuotes/server";
 import { verifyWebhook, webhookHeaders } from "@/lib/supportInbound";
 import { runWebhookEnvelope } from "@/lib/webhookEnvelope";
@@ -40,12 +41,20 @@ export async function POST(req: Request) {
   }
   const d = event.data;
 
-  const box: { result: IngestResult | null } = { result: null };
+  // THE INBOX (Smart CRM part 2, 2026-11-08): a client's letter — the thread address c-<token>@…, or a sender
+  // exactly one live client wears — files into their thread; everything else is the subcontractors' as before.
+  const claim = await claimsClientEmail(d).catch(() => null);
+  const box: { result: IngestResult | null; inbox: InboxIngest | null } = { result: null, inbox: null };
   const env = await runWebhookEnvelope({ provider: "RESEND", eventId: d.email_id, type: "email.received" }, async () => {
-    box.result = await ingestReceivedEmail(d);
+    if (claim) box.inbox = await fileInboundEmail(d, claim);
+    else box.result = await ingestReceivedEmail(d);
   });
   if (env.outcome === "failed") return NextResponse.json({ ok: false, error: env.error }, { status: 500 });
   if (env.outcome === "duplicate") return NextResponse.json({ ok: true, outcome: "duplicate" });
+  if (claim) {
+    console.info(`[inbound-email] ${d.email_id}: inbox ${box.inbox?.outcome ?? "?"} — ${box.inbox?.words ?? ""}`);
+    return NextResponse.json({ ok: true, inbox: box.inbox?.outcome ?? null });
+  }
 
   // The read runs once the answer is out; the ten-minute sweep picks up whatever this misses.
   if (box.result?.outcome === "matched" && box.result.versionId) {

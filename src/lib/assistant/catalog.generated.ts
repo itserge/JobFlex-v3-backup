@@ -403,6 +403,28 @@ export const CATALOG: Catalog = {
     "scheduled": false,
     "version": 1
   },
+  "inbox": {
+    "label": "Inbox",
+    "group": "people",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "reply_client": {
+    "label": "Reply to a client",
+    "group": "people",
+    "effect": "message",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
   "book_visit": {
     "label": "Book a visit",
     "group": "visits",

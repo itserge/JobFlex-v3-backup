@@ -95,7 +95,7 @@ export async function sendPaymentReminder(input: { proposalId: string; installme
           href,
         }),
       );
-      await sendOrgEmail(org, { to: proposal.client.email, subject, html });
+      await sendOrgEmail(org, { to: proposal.client.email, subject, html, clientId: proposal.clientId });
       report.email = "sent";
     } catch (err) {
       console.warn("[reminders] email failed:", err);
