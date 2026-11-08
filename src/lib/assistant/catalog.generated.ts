@@ -381,6 +381,28 @@ export const CATALOG: Catalog = {
     "scheduled": false,
     "version": 1
   },
+  "client_story": {
+    "label": "Client story",
+    "group": "lookups",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "merge_clients": {
+    "label": "Merge duplicates",
+    "group": "people",
+    "effect": "record",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
   "book_visit": {
     "label": "Book a visit",
     "group": "visits",

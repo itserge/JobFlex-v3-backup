@@ -115,6 +115,10 @@ model Organization {
   paymentConnections     PaymentConnection[]
   invites                Invite[]
   clients                Client[]
+  clientFacts            ClientFact[]
+  clientPromises         ClientPromise[]
+  clientBriefs           ClientBrief[]
+  clientMerges           ClientMerge[]
   leads                  Lead[]
   proposals              Proposal[]
   templates              ProposalTemplate[]
@@ -380,6 +384,7 @@ model User {
   assistantLinks    AssistantLink[]
   assistantMessages AssistantMessage[]
   assistantActions  AssistantAction[]
+  clientPromises    ClientPromise[]
 }
 
 model Account {
@@ -481,9 +486,100 @@ model Client {
   equipment      ClientEquipment[]
   visitReports   VisitReport[]
   bookings       Booking[]
+  facts          ClientFact[]
+  promises       ClientPromise[]
+  brief          ClientBrief?
 
   @@index([organizationId])
   @@index([organizationId, deletedAt])
+}
+
+// THE CLIENT'S MEMORY (Smart CRM part 1, 2026-11-08 — the plan doc: structured, source-linked facts; a
+// contradiction is flagged and the newer choice wins while the old one stays). One row per remembered fact.
+// `status` CURRENT | SUPERSEDED (an older choice the newer one replaced) | RETRACTED (a person removed it).
+// `sourceKind` says where it came from — CALL | EMAIL | SMS | NOTE | VISIT | LEAD | PORTAL | PERSON (typed by
+// hand) — and sourceId points into that table, so every line can show its original.
+model ClientFact {
+  id             String    @id @default(cuid())
+  organizationId String
+  clientId       String
+  category       String // CONTACT | PROJECT | DECISION | COMMITMENT | MONEY | PREFERENCE | HOUSE
+  fact           String
+  status         String    @default("CURRENT")
+  supersededById String?
+  sourceKind     String?
+  sourceId       String?
+  sourceAt       DateTime?
+  byAi           Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, clientId, status])
+}
+
+// A PROMISE EITHER SIDE MADE (part 1 keeps them; part 4's tracker finds them in messages and closes them when
+// the promised thing verifiably happened). `direction` OURS (we owe the client) | THEIRS (the client owes us,
+// e.g. "will pay Friday"). `status` OPEN | KEPT | MISSED | CANCELED.
+model ClientPromise {
+  id             String    @id @default(cuid())
+  organizationId String
+  clientId       String
+  direction      String    @default("OURS")
+  text           String
+  ownerId        String?
+  dueAt          DateTime?
+  status         String    @default("OPEN")
+  keptAt         DateTime?
+  sourceKind     String?
+  sourceId       String?
+  sourceAt       DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  owner        User?        @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status, dueAt])
+  @@index([organizationId, clientId])
+}
+
+// WHERE THE CLIENT STANDS — the saved AI summary at the top of the client's page, rebuilt when something newer
+// than `builtAt` lands on the timeline. `nextAction` is the one next step it ends on.
+model ClientBrief {
+  clientId       String   @id
+  organizationId String
+  summary        String
+  nextAction     String?
+  builtAt        DateTime
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
+// TWO RECORDS OF ONE PERSON, FOLDED TOGETHER (part 1: duplicates found by phone and email; merging always asks
+// first). The log row keeps what the removed record said, so the merge can be read back later.
+model ClientMerge {
+  id             String   @id @default(cuid())
+  organizationId String
+  keptId         String
+  mergedId       String
+  mergedName     String
+  mergedEmail    String?
+  mergedPhone    String?
+  movedJson      String? // counts of what moved, by table
+  byUserId       String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, keptId])
 }
 
 model Tag {

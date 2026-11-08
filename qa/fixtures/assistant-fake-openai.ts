@@ -748,6 +748,21 @@ http
           // Smart Proposal's run: JSON out, no tools — the estimate itself.
           if (body.response_format?.type === "json_object" && !body.tools?.length) {
             const prompt = (body.messages ?? []).map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? ""))).join("\n");
+            // The client brief (lib/clientMemory, 2026-11-08): where they stand + facts. Deterministic: the name is
+            // read off the prompt; a known cedar decking fact is superseded by composite, the way a changed mind is.
+            if (prompt.includes("CLIENT BRIEF")) {
+              const name = /CLIENT: ([^·\n]+)/.exec(prompt)?.[1]?.trim() ?? "the client";
+              const cedar = /- \[([a-z0-9]+)\] \(DECISION\) Decking: cedar/i.exec(prompt);
+              const newFacts: Array<Record<string, unknown>> = [];
+              if (!prompt.includes("Prefers texts in the morning")) newFacts.push({ category: "PREFERENCE", fact: "Prefers texts in the morning", sourceKind: "TEXT", sourceId: null, supersedesId: null });
+              if (cedar) newFacts.push({ category: "DECISION", fact: "Decking: composite (changed from cedar)", sourceKind: "EMAIL", sourceId: null, supersedesId: cedar[1] });
+              res.end(JSON.stringify(reply(JSON.stringify({
+                summary: `${name} signed the epoxy garage job and paid the deposit; the deck proposal is out and they asked for composite instead of cedar. Waiting on the updated proposal and a start date.`,
+                nextAction: "Send the updated deck proposal",
+                newFacts,
+              }))));
+              return;
+            }
             res.end(JSON.stringify(reply(JSON.stringify(fakeEstimate(prompt)))));
             return;
           }
