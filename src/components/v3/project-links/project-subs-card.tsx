@@ -12,8 +12,10 @@ import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { addQuoteVersion, awardProjectQuote, declineProjectQuote, markProjectQuotePaid, requestQuoteRevision, resendProjectQuote } from "@/actions/projectSubs";
 import { DocViewer, type ViewerDoc } from "@/components/v3/docs/doc-viewer";
+import { QuoteReadPanel } from "@/components/v3/docs/quote-read-panel";
 import type { PdStage, PdSubs } from "@/components/v3/project-detail-blueprint/project-detail-data";
 import { QUOTE_LABEL, dollars, quoteStatusOf } from "@/lib/projectSubs/shared";
+import { REVIEW_LABEL, awardWarning, reviewStatusOf } from "@/lib/subQuotes/shared";
 import { DOC_ACCEPT, docSize } from "@/lib/subDocs/shared";
 import { DocUploadError, uploadSubDocument } from "@/lib/subDocs/client";
 import { RequestSheet, newRequestDraft, type RequestDraft } from "./request-sheet";
@@ -47,7 +49,8 @@ export function quoteTag(q: QuoteRow): string {
   const doc = q.versions.some((v) => v.document) ? " · PDF" : "";
   if (st === "ASKED") return q.overdue ? `Overdue — sent for ${q.dueBy ? longDay(q.dueBy) : "a reply"}` : `Sent${q.dueBy ? ` · reply by ${longDay(q.dueBy)}` : ""}`;
   if (st === "VIEWED") return q.overdue ? `Viewed, overdue — reply was due ${q.dueBy ? longDay(q.dueBy) : ""}` : `Viewed${q.viewedAt ? ` ${longDay(q.viewedAt)}` : ""}${q.dueBy ? ` · reply by ${longDay(q.dueBy)}` : ""}`;
-  if (st === "QUOTED") return `Quoted ${q.amount != null ? dollars(q.amount) : ""}${vs}${doc}${q.best ? " · lowest" : ""}${q.over && q.overBy != null ? ` · ${dollars(q.overBy)} over the line` : ""}`;
+  // Part 2: a quote that came by email carries its document and no typed price — the AI's read waits for a person.
+  if (st === "QUOTED") return q.amount == null ? `Quoted · price to confirm${vs}${doc}` : `Quoted ${dollars(q.amount)}${vs}${doc}${q.best ? " · lowest" : ""}${q.over && q.overBy != null ? ` · ${dollars(q.overBy)} over the line` : ""}`;
   if (st === "REVISION") return `Revision asked${q.amount != null ? ` · was ${dollars(q.amount)}` : ""}${vs}`;
   if (st === "AWARDED") return `Awarded${q.amount != null ? ` · ${dollars(q.amount)}` : ""}${vs} · waiting for the invoice`;
   if (st === "INVOICED") return `Invoice in · ${q.invoiceAmount != null ? dollars(q.invoiceAmount) : ""}${q.amount != null && q.invoiceAmount != null && q.invoiceAmount > q.amount ? ` (quoted ${dollars(q.amount)})` : ""}`;
@@ -73,9 +76,13 @@ export function ProjectSubsCard({ projectId, subs, stages, canManage, sectionHre
   const [paying, setPaying] = useState<Record<string, string>>({});
   const [revising, setRevising] = useState<{ id: string; note: string } | null>(null);
   const [uploadFor, setUploadFor] = useState<{ id: string; amount: string; pct: number | null } | null>(null);
-  const [viewing, setViewing] = useState<ViewerDoc | null>(null);
+  // The viewer opens a version's document with "What the AI read" beside it (part 2); the version is looked up on
+  // every render so the panel follows a refresh.
+  const [viewing, setViewing] = useState<{ doc: ViewerDoc; versionId: string } | null>(null);
+  const [awarding, setAwarding] = useState<string | null>(null);
   const [contractors, setContractors] = useState<ContractorRow[]>(subs.contractors);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const viewingVersion = viewing ? (subs.quotes.flatMap((q) => q.versions).find((v) => v.id === viewing.versionId) ?? null) : null;
 
   async function run(key: string, fn: () => Promise<string | null | void>) {
     setBusy(key);
@@ -178,19 +185,21 @@ export function ProjectSubsCard({ projectId, subs, stages, canManage, sectionHre
                     {q.versions.length ? (
                       <div style={{ fontSize: 12.5, marginTop: 4, display: "grid", gap: 2 }} data-subs-versions-list>
                         {q.versions.map((v) => (
-                          <div key={v.id} className={s.lineSub} data-subs-version data-subs-version-n={v.version}>
+                          <div key={v.id} className={s.lineSub} data-subs-version data-subs-version-n={v.version} data-subs-read-status={v.reviewStatus}>
                             V{v.version}
                             {v.amount != null ? ` · ${dollars(v.amount)}` : ""} · {longDay(v.submittedAt)}
-                            {v.source === "UPLOAD" ? " · by the office" : ""}
+                            {v.source === "UPLOAD" ? " · by the office" : v.source === "EMAIL" ? " · by email" : ""}
                             {v.approved ? " · approved" : ""}
                             {v.document ? (
                               <>
                                 {" · "}
-                                <button type="button" className={s.link} style={{ textDecoration: "underline", background: "none", border: 0, padding: 0, cursor: "pointer", font: "inherit" }} onClick={() => setViewing(viewerDocOf(v, q.contractorName))} data-subs-open-doc>
+                                <button type="button" className={s.link} style={{ textDecoration: "underline", background: "none", border: 0, padding: 0, cursor: "pointer", font: "inherit" }} onClick={() => { const d = viewerDocOf(v, q.contractorName); if (d) setViewing({ doc: d, versionId: v.id }); }} data-subs-open-doc>
                                   {v.document.name}
                                 </button>
                               </>
                             ) : null}
+                            {v.document && v.reviewStatus !== "NONE" ? ` · ${REVIEW_LABEL[reviewStatusOf(v.reviewStatus)]}` : ""}
+                            {v.read?.read.total.value != null && v.amount == null ? ` · read ${dollars(v.read.read.total.value)}` : ""}
                           </div>
                         ))}
                       </div>
@@ -206,9 +215,32 @@ export function ProjectSubsCard({ projectId, subs, stages, canManage, sectionHre
                     {canManage ? (
                       <div className={s.stageActs} style={{ justifyContent: "flex-start", flexWrap: "wrap" }}>
                         {q.status === "QUOTED" ? (
-                          <button type="button" className={s.btnPrimary} style={{ minHeight: 32, padding: "0 12px", fontSize: 10.5 }} disabled={busy !== null} onClick={() => void run(`award:${q.id}`, async () => { await awardProjectQuote(q.id); return `${g.stageName} awarded to ${q.contractorName}; the others were told.`; })} data-subs-award>
+                          <button
+                            type="button"
+                            className={s.btnPrimary}
+                            style={{ minHeight: 32, padding: "0 12px", fontSize: 10.5 }}
+                            disabled={busy !== null || q.amount == null}
+                            title={q.amount == null ? "Confirm the price first — open the estimate and use the AI's read, or type it with Their estimate…" : undefined}
+                            onClick={() => {
+                              // Part 2: over the stage's share, the warning comes first and the award waits for a second press.
+                              if (awardWarning(q.amount, q.line, g.stageName)) setAwarding(q.id);
+                              else void run(`award:${q.id}`, async () => { await awardProjectQuote(q.id); return `${g.stageName} awarded to ${q.contractorName}; the others were told.`; });
+                            }}
+                            data-subs-award
+                          >
                             Award
                           </button>
+                        ) : null}
+                        {awarding === q.id ? (
+                          <span className={s.note} style={{ marginTop: 0, display: "inline-flex", gap: 8, alignItems: "center", flexWrap: "wrap" }} data-subs-award-warning>
+                            {awardWarning(q.amount, q.line, g.stageName)}
+                            <button type="button" className="bps-btn bps-btn--primary" disabled={busy !== null} onClick={() => { setAwarding(null); void run(`award:${q.id}`, async () => { await awardProjectQuote(q.id); return `${g.stageName} awarded to ${q.contractorName} over the share; the others were told.`; }); }} data-subs-award-anyway>
+                              Award anyway
+                            </button>
+                            <button type="button" className="bps-btn bps-btn--ghost" onClick={() => setAwarding(null)}>
+                              Cancel
+                            </button>
+                          </span>
                         ) : null}
                         {q.status === "QUOTED" ? (
                           <button type="button" className={s.btnSm} disabled={busy !== null} onClick={() => setRevising({ id: q.id, note: "" })} data-subs-revise>
@@ -298,7 +330,7 @@ export function ProjectSubsCard({ projectId, subs, stages, canManage, sectionHre
       </section>
 
       <RequestSheet projectId={projectId} draft={ask} setDraft={(fn) => setAsk((cur) => fn(cur))} stages={stages} contractors={contractors} setContractors={(fn) => setContractors((cur) => fn(cur))} files={subs.files} onSent={(words) => { setAsk(null); setNote(words); startTransition(() => router.refresh()); }} onClose={() => setAsk(null)} />
-      <DocViewer doc={viewing} onClose={() => setViewing(null)} />
+      <DocViewer doc={viewing?.doc ?? null} onClose={() => setViewing(null)} side={viewingVersion ? <QuoteReadPanel version={viewingVersion} canManage={canManage} onChanged={() => startTransition(() => router.refresh())} /> : undefined} />
     </div>
   );
 }

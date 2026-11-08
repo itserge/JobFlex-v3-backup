@@ -55,11 +55,19 @@ export interface OrgEmailTransports {
 
 export async function sendOrgEmail(
   org: OrgEmailSender,
-  opts: { to: string | string[]; subject: string; html: string; kind?: EmailKind },
+  opts: {
+    to: string | string[];
+    subject: string;
+    html: string;
+    kind?: EmailKind;
+    /** A Reply-To of the caller's own (2026-11-08, the subcontractors plan, part 2: a request's reply address,
+     *  rfq-<token>@<inbound domain>, so the sub's answer lands in JobFlex). Default: the org's reply-to. */
+    replyTo?: string;
+  },
   transports: OrgEmailTransports = { gmail: sendViaGmail, platform: sendEmail },
 ): Promise<OrgEmailResult> {
   const settings = parseGmailSettings(org.gmailSettingsJson);
-  const replyTo = orgReplyTo(org);
+  const replyTo = opts.replyTo?.trim() || orgReplyTo(org);
   let gmailFallback: OrgEmailResult["gmailFallback"];
 
   // Prefer the org's own Gmail when connected + opted in + OAuth configured.

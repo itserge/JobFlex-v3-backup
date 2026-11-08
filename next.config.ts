@@ -39,6 +39,9 @@ const nextConfig: NextConfig = {
   ...(process.env.JOBFLEX_DIST_DIR ? { distDir: process.env.JOBFLEX_DIST_DIR } : {}),
   reactStrictMode: true,
   typedRoutes: true,
+  // pdf.js (lib/subQuotes/pdfText, 2026-11-08) runs in Node for the estimate reader: loaded from node_modules at
+  // run time, not bundled — its legacy build carries browser globals the server bundle has no use for.
+  serverExternalPackages: ["pdfjs-dist"],
   // THE TYPE CHECK RUNS BEFORE THE BUILD ON VERCEL (2026-10-28). Inside `next build` it ran after the compile, in a
   // worker beside everything the compile still held, and the 8 GB build container was OOM-killed ("Running TypeScript
   // … SIGKILL"). vercel.json's buildCommand now runs `next typegen && tsc --noEmit` on its own first (about 5 GB at

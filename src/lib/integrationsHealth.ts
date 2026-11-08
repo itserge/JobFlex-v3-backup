@@ -453,6 +453,30 @@ function short(err: unknown): string {
   return (err instanceof Error ? err.message : String(err)).replace(/\s+/g, " ").slice(0, 80);
 }
 
+/** SUBCONTRACTOR MAIL AND READS (2026-11-08, the subcontractors plan, part 2):
+ *  the letters nobody has matched (one that fits no company is the webhook's
+ *  own worry), the estimate reads that failed twice, a read queue the sweep is
+ *  not draining, and a sweep that has not run. Not load-bearing: a stuck read
+ *  is a job for the morning, not an outage. */
+export async function checkSubsMail(now: string): Promise<ServiceHealth> {
+  const { inboundCounts } = await import("@/lib/subInbound/server");
+  const { readSweepStatus } = await import("@/lib/subQuotes/sweep");
+  const { inboundConfig } = await import("@/lib/subInbound/config");
+  const [counts, sweep] = await Promise.all([inboundCounts(), readSweepStatus()]);
+  const cfg = inboundConfig();
+  const base: ServiceHealth = { key: "subsMail", name: "Subcontractor mail & reads", level: "ok", reason: "", optional: true, checkedAt: now, note: cfg.enabled ? "replies by email on" : "replies by email off" };
+  const problems: string[] = [];
+  if (counts.unowned) problems.push(`${counts.unowned} letter${counts.unowned === 1 ? "" : "s"} fit no company`);
+  if (counts.review) problems.push(`${counts.review} to match`);
+  if (counts.failedReads) problems.push(`${counts.failedReads} read${counts.failedReads === 1 ? "" : "s"} failed`);
+  if (counts.pendingReads > 10) problems.push(`${counts.pendingReads} reads waiting`);
+  const sweepAge = sweep ? Date.now() - Date.parse(sweep.at) : null;
+  if (sweep?.error) problems.push(`the sweep said: ${sweep.error}`);
+  if (sweepAge != null && sweepAge > 45 * 60_000) problems.push(`the sweep last ran ${Math.round(sweepAge / 60_000)} min ago`);
+  if (!problems.length) return { ...base, reason: sweep ? `sweep ${new Date(sweep.at).toISOString().slice(11, 16)}Z · ${sweep.reads.read} read, ${sweep.expired} expired, ${sweep.reminded} reminded` : "nothing waiting; the sweep has not run yet", asOf: sweep?.at };
+  return { ...base, level: counts.unowned || counts.failedReads || sweep?.error ? "degraded" : "ok", reason: problems.join("; "), asOf: sweep?.at };
+}
+
 /** Runs every check, writes the report, and returns it. Never throws: a health
  *  check that can fail is one more thing to watch. */
 export async function runIntegrationsHealth(): Promise<HealthReport> {
@@ -473,6 +497,7 @@ export async function runIntegrationsHealth(): Promise<HealthReport> {
       checkGmailOAuth,
       checkPaymentConnections,
       checkInfluencerPayouts,
+      checkSubsMail,
     ].map((fn) =>
       fn(now).catch(
         (err): ServiceHealth => ({
