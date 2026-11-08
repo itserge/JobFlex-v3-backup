@@ -122,6 +122,8 @@ model Organization {
   clientPromises         ClientPromise[]
   clientBriefs           ClientBrief[]
   clientMerges           ClientMerge[]
+  clientThreads          ClientThread[]
+  clientMessages         ClientMessage[]
   leads                  Lead[]
   proposals              Proposal[]
   templates              ProposalTemplate[]
@@ -388,6 +390,8 @@ model User {
   assistantMessages AssistantMessage[]
   assistantActions  AssistantAction[]
   clientPromises    ClientPromise[]
+  clientThreads     ClientThread[]
+  clientMessages    ClientMessage[]
 }
 
 model Account {
@@ -492,6 +496,7 @@ model Client {
   facts          ClientFact[]
   promises       ClientPromise[]
   brief          ClientBrief?
+  threads        ClientThread[]
 
   @@index([organizationId])
   @@index([organizationId, deletedAt])
@@ -583,6 +588,71 @@ model ClientMerge {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, keptId])
+}
+
+// THE INBOX (Smart CRM part 2, 2026-11-08 — the plan doc "JobFlex Smart CRM — plan"): one thread per client.
+// The thread is the conversation's spine: who it is (a client when known — one thread per client — else the sender's
+// email or phone until someone links it), where it stands (OPEN · NEEDS_REPLY · WAITING on the client · CLOSED),
+// and what the AI read in the newest inbound message (aiReadJson, drawn by the page's "what this means" panel).
+// `replyToken` names the thread in our Reply-To address (c-<token>@<the receiving domain>), so a client's email
+// reply lands here without any login. Texts and desk calls stay in their own tables and are merged into the
+// thread's view by phone; ClientMessage holds what has no other home — inbound emails (body kept), replies sent
+// from the inbox, and portal notes.
+model ClientThread {
+  id             String   @id @default(cuid())
+  organizationId String
+  clientId       String?
+  leadId         String?
+  name           String
+  email          String?
+  phone          String?
+  replyToken     String   @unique @default(cuid())
+  status         String   @default("OPEN") // OPEN | NEEDS_REPLY | WAITING | CLOSED
+  urgent         Boolean  @default(false)
+  assignedToId   String?
+  unread         Int      @default(0)
+  lastAt         DateTime @default(now())
+  lastPreview    String?
+  lastDirection  String? // IN | OUT
+  lastChannel    String? // EMAIL | SMS | CALL | PORTAL | NOTE
+  aiReadJson     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client?         @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  assignedTo   User?           @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+  messages     ClientMessage[]
+
+  @@unique([organizationId, clientId])
+  @@index([organizationId, status, lastAt])
+  @@index([organizationId, lastAt])
+}
+
+model ClientMessage {
+  id             String   @id @default(cuid())
+  organizationId String
+  threadId       String
+  direction      String // IN | OUT
+  channel        String // EMAIL | PORTAL | NOTE
+  fromAddr       String?
+  toAddr         String?
+  subject        String?
+  body           String
+  attachmentsJson String?
+  rawUrl         String?
+  externalId     String?  @unique
+  emailMessageId String?
+  sentById       String?
+  aiReadJson     String?
+  status         String   @default("RECEIVED") // RECEIVED | SENT | FAILED
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  thread       ClientThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sentBy       User?        @relation(fields: [sentById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, threadId, createdAt])
 }
 
 model Tag {

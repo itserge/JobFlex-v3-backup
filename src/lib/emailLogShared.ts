@@ -1,7 +1,7 @@
 // The mail log's words (lib/emailLog) — pure, browser-safe: the kinds a
 // letter is filed under, the statuses, and the admin log's periods.
 
-export const EMAIL_KINDS = ["otp", "dunning", "proposal", "follow-up", "welcome", "support", "other"] as const;
+export const EMAIL_KINDS = ["otp", "dunning", "proposal", "follow-up", "welcome", "support", "inbox", "inbox-forward", "other"] as const;
 export type EmailKind = (typeof EMAIL_KINDS)[number];
 export const isEmailKind = (v: unknown): v is EmailKind => typeof v === "string" && (EMAIL_KINDS as readonly string[]).includes(v);
 

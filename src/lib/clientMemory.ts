@@ -110,12 +110,34 @@ export async function rebuildClientBrief(client: ClientRef, timeline: readonly T
   if (!summary) return null;
   const nextAction = typeof parsed.nextAction === "string" && parsed.nextAction.trim() ? clip(parsed.nextAction, 140) : null;
 
-  // The new facts, checked: a real category, not a repeat, a real supersedes target. AI words stay marked byAi.
+  await foldClientFacts(organizationId, clientId, Array.isArray(parsed.newFacts) ? (parsed.newFacts as RawFact[]) : [], { known });
+
+  const builtAt = new Date();
+  await db.clientBrief.upsert({
+    where: { clientId },
+    create: { clientId, organizationId, summary, nextAction, builtAt },
+    update: { summary, nextAction, builtAt },
+  });
+  return { summary, nextAction, builtAt };
+}
+
+export type RawFact = { category?: unknown; fact?: unknown; sourceKind?: unknown; sourceId?: unknown; supersedesId?: unknown };
+
+/** The model's new facts folded into the memory, checked: a real category, not a repeat of what is known, a real
+ *  supersedes target (the replaced choice stays, marked). AI words stay marked byAi. The inbox's reader and the
+ *  brief's rebuild both come through here. Returns how many landed. */
+export async function foldClientFacts(
+  organizationId: string,
+  clientId: string,
+  raw: readonly RawFact[],
+  opts: { known?: Array<{ id: string; category: string; fact: string }>; sourceKind?: string | null; sourceId?: string | null; sourceAt?: Date | null } = {},
+): Promise<number> {
+  const known = opts.known ?? (await db.clientFact.findMany({ where: { organizationId, clientId, status: "CURRENT" }, select: { id: true, category: true, fact: true }, take: 60 }));
   const have = new Set(known.map((f) => norm(f.fact)));
   const byId = new Map(known.map((f) => [f.id, f]));
-  const raw = Array.isArray(parsed.newFacts) ? parsed.newFacts.slice(0, MAX_NEW_FACTS) : [];
-  for (const nf of raw) {
-    const f = nf as { category?: unknown; fact?: unknown; sourceKind?: unknown; sourceId?: unknown; supersedesId?: unknown };
+  let added = 0;
+  for (const nf of raw.slice(0, MAX_NEW_FACTS)) {
+    const f = nf as RawFact;
     const fact = typeof f.fact === "string" ? clip(f.fact, FACT_MAX) : "";
     const category = typeof f.category === "string" && (FACT_CATEGORIES as readonly string[]).includes(f.category) ? f.category : null;
     if (!fact || !category || have.has(norm(fact))) continue;
@@ -128,23 +150,17 @@ export async function rebuildClientBrief(client: ClientRef, timeline: readonly T
         category,
         fact,
         byAi: true,
-        sourceKind: typeof f.sourceKind === "string" ? f.sourceKind.slice(0, 20).toUpperCase() : null,
-        sourceId: typeof f.sourceId === "string" ? f.sourceId.slice(0, 120) : null,
-        sourceAt: new Date(),
+        sourceKind: (typeof f.sourceKind === "string" ? f.sourceKind : opts.sourceKind ?? null)?.slice(0, 20).toUpperCase() ?? null,
+        sourceId: (typeof f.sourceId === "string" ? f.sourceId : opts.sourceId ?? null)?.slice(0, 120) ?? null,
+        sourceAt: opts.sourceAt ?? new Date(),
       },
     });
+    added++;
     if (supersedesId) {
       await db.clientFact.updateMany({ where: { id: supersedesId, organizationId, status: "CURRENT" }, data: { status: "SUPERSEDED", supersededById: made.id } });
     }
   }
-
-  const builtAt = new Date();
-  await db.clientBrief.upsert({
-    where: { clientId },
-    create: { clientId, organizationId, summary, nextAction, builtAt },
-    update: { summary, nextAction, builtAt },
-  });
-  return { summary, nextAction, builtAt };
+  return added;
 }
 
 /** A fact a person typed in (byAi false), or removed — removal keeps the row as RETRACTED. */

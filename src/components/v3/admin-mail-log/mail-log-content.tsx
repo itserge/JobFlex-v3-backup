@@ -46,6 +46,8 @@ const KIND_LABEL: Record<EmailKind, string> = {
   "follow-up": "Follow-up",
   welcome: "Welcome",
   support: "Support",
+  inbox: "Inbox reply",
+  "inbox-forward": "Inbox copy",
   other: "Other",
 };
 const STATUS_LABEL: Record<EmailStatus, string> = { sent: "Sent", failed: "Failed", skipped: "Skipped" };
