@@ -28,6 +28,7 @@ import { seasonCalendar } from "@/lib/lawn/calendar";
 import { lawnTaxed } from "@/lib/lawn/tax";
 import { lawnConvertSchema, writeLawnProposal } from "@/lib/lawn/proposalWrite";
 import { filingFromIds } from "@/lib/filingContext";
+import { saidHouseAddress } from "@/lib/assistant/address";
 
 const ID = z.string().min(1).max(64);
 const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -117,7 +118,9 @@ const lawnSite: ReadTool<{ address: string }> = {
   async run({ actor }, a) {
     const gate = await lawnGate(actor);
     if (gate) return { notAllowed: gate };
-    const r = await readLawn(actor, a.address);
+    const place = saidHouseAddress(a.address);
+    if (place.ask || !place.address) return { notDone: place.ask ?? "Which property? Give me the address." };
+    const r = await readLawn(actor, place.address);
     if (!r.ok) return { notDone: r.say };
     await rememberSite(actor, "lawn", r.read);
     const m = r.read.measures;
@@ -229,7 +232,10 @@ const buildLawn: WriteTool<LawnArgs, LawnArgs & { address: string }> = {
     const w = await whoFor(actor, a.clientId, a.leadId);
     if (!w.ok) return w;
     const kept = await rememberedSite<LawnRead>(actor, "lawn");
-    const address = a.address?.trim() || (!a.lawnSqft && kept ? kept.address : null) || w.who.address;
+    // Measured from the photo, the address must be whole; with the lawn's square feet said it is only a label.
+    const place = saidHouseAddress(a.address);
+    if (place.ask && !a.lawnSqft) return { ok: false, say: place.ask };
+    const address = place.address || (!a.lawnSqft && kept ? kept.address : null) || w.who.address;
     if (!address) return { ok: false, say: "Which property? Give me the address, or the lawn's square feet." };
     if (a.replaces) {
       const miss = await replaceable(actor, a.replaces, "lawn");

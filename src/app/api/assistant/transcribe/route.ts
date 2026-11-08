@@ -16,6 +16,7 @@ import { actorForSession, refusal } from "@/lib/assistant/actor";
 import { getOpenAI, isOpenAIEnabled } from "@/lib/sdk/openai";
 import { rateLimitShared, HOUR } from "@/lib/rateLimit";
 import { takeTrialCap } from "@/lib/trialMeter";
+import { tidySpokenAddress } from "@/lib/assistant/address";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,7 +31,14 @@ const FALLBACK_MODEL = "whisper-1";
  *  alone: one says yes to a read-back, the other ends a live conversation.) */
 const MADE_UP = /^(thank you( (so much|very much))?|thanks( for watching)?|thank you for watching|you|hmm+|uh+|um+|please subscribe|subtitles by .*|\.+|♪+)[.!?\s]*$/i;
 /** Biases the decoder toward the words it will hear. Not a transcript — Whisper takes it as style. */
-const PROMPT = "JobFlex words: proposal, estimate, schedule, crew, invoice, payment reminder, roof, fence, deck, HVAC, gutters, tomorrow, Thursday, send it, yes, no.";
+const WORDS = "JobFlex words: proposal, estimate, schedule, crew, invoice, payment reminder, roof, fence, deck, HVAC, gutters, tomorrow, Thursday, send it, yes, no.";
+/** How addresses are written (2026-11-07: "12103 202nd Street Southeast" came back "12103 200 seconds. Creed
+ *  Southeast"): house number, numbered streets as ordinals, short street types and directions, state and ZIP. Made-up
+ *  addresses, so a real one said back is never mistaken for the prompt. */
+const ADDRESS_STYLE = "Addresses are written like 4518 132nd Ave NE, Bellevue, WA 98005 and 1720 W 3rd St, Tulsa, OK 74127.";
+const PROMPT = `${WORDS} ${ADDRESS_STYLE}`;
+/** Letters that aren't the Latin alphabet — an English word written in another script ("Президеншиал руф"). */
+const OTHER_SCRIPT = /[\u0400-\u04FF\u0590-\u06FF\u0900-\u0DFF\u3040-\u30FF\u4E00-\u9FFF\uAC00-\uD7AF]/;
 
 export async function POST(req: Request) {
   let organizationId: string;
@@ -77,15 +85,26 @@ export async function POST(req: Request) {
       model = FALLBACK_MODEL;
       res = await ask(model);
     }
-    const text = (res.text ?? "").trim();
+    let text = (res.text ?? "").trim();
+    // Told English and written in another script (an accent on "Presidential roof" came back in Cyrillic, 2026-11-07):
+    // Whisper keeps to the language it is told.
+    if (language === "en" && model !== FALLBACK_MODEL && OTHER_SCRIPT.test(text)) {
+      const again = await ask(FALLBACK_MODEL).catch(() => null);
+      if (again?.text?.trim() && !OTHER_SCRIPT.test(again.text)) {
+        text = again.text.trim();
+        model = FALLBACK_MODEL;
+      }
+    }
     console.info(`[assistant] heard ${audio.size} bytes in ${Date.now() - t0} ms · ${model} · ${text ? `${text.length} chars` : "nothing"}`);
-    // On silence Whisper says its prompt back: six words in a row of it is the prompt, not speech.
+    // On silence Whisper says its prompt back: six words in a row of the word list, or the address examples, is the
+    // prompt, not speech.
     const words = (s: string) => s.toLowerCase().replace(/[^a-z0-9/\s]/g, " ").split(/\s+/).filter(Boolean);
     const p = words(PROMPT).join(" ");
     const w = words(text);
     const echo = language === "en" && w.length >= 6 && w.some((_, i) => i + 6 <= w.length && p.includes(w.slice(i, i + 6).join(" ")));
     if (!text || echo || MADE_UP.test(text)) return NextResponse.json({ text: "" });
-    return NextResponse.json({ text: text.slice(0, 600) });
+    // An address in it, put the way it is written ("12103 200 seconds. Creed Southeast" → "12103 202nd St SE").
+    return NextResponse.json({ text: tidySpokenAddress(text).slice(0, 600) });
   } catch (err) {
     if (typeof (err as { status?: unknown })?.status === "number") await trial.refund();
     return NextResponse.json({ error: "Couldn't write that down — try again, or type it." }, { status: 502 });

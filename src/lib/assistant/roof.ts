@@ -38,6 +38,7 @@ import { buildRoofPackage, defaultSpec, withSystem, type PkgLine, type RoofFacts
 import { rankBrandsFor, withBrand, withBrandPrice } from "@/lib/roofPackage/brands";
 import { roofConvertSchema, writeRoofProposal } from "@/lib/roofPackage/proposalWrite";
 import { filingFromIds } from "@/lib/filingContext";
+import { saidHouseAddress } from "@/lib/assistant/address";
 
 const ID = z.string().min(1).max(64);
 
@@ -163,7 +164,11 @@ const buildRoof: WriteTool<RoofArgs, RoofArgs & { address: string }> = {
     const a = overPrior(said.replaces ? await priorBuild<RoofArgs>(actor, said.replaces, "build_roof") : null, said);
     const w = await whoFor(actor, a.clientId, a.leadId);
     if (!w.ok) return w;
-    const address = a.address?.trim() || w.who.address;
+    // An address said now is put the way it is written, and never measured while it is missing its city or ZIP
+    // (2026-11-07: "12103 200th Street Southeast" went to EagleView with no city, and was refused).
+    const place = saidHouseAddress(a.address);
+    if (place.ask) return { ok: false, say: place.ask };
+    const address = place.address || w.who.address;
     if (!address) return { ok: false, say: "Which house? Give me the address." };
     if (!fromTheAir() && !a.homeSqft) return { ok: false, say: `I can't measure roofs from the air here. ${SIZE_ASK}` };
     if (a.replaces) {

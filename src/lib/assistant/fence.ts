@@ -31,6 +31,7 @@ import { typedRuns } from "@/lib/fence/layout";
 import { fenceConvertSchema } from "@/lib/fence/convertSchema";
 import { writeFenceProposal } from "@/lib/fence/proposalWrite";
 import { filingFromIds } from "@/lib/filingContext";
+import { saidHouseAddress } from "@/lib/assistant/address";
 
 const ID = z.string().min(1).max(64);
 
@@ -114,7 +115,9 @@ const fenceSite: ReadTool<{ address: string }> = {
   async run({ actor }, a) {
     const gate = await fenceGate(actor);
     if (gate) return { notAllowed: gate };
-    const r = await lookupSite(actor, a.address);
+    const place = saidHouseAddress(a.address);
+    if (place.ask || !place.address) return { notDone: place.ask ?? "Which property? Give me the address." };
+    const r = await lookupSite(actor, place.address);
     if (!r.ok) return { notDone: r.say };
     await rememberSite(actor, "fence", r.site);
     const w = siteWords(r.site);
@@ -258,8 +261,10 @@ const buildFence: WriteTool<FenceArgs, FenceArgs & { siteAddress: string }> = {
     const caps = await buildCaps(actor, ["estimatorUses"]);
     if (caps) return { ok: false, say: caps };
     let site = await rememberedSite<FenceSite>(actor, "fence");
-    if (a.address && (!site || site.address.toLowerCase() !== a.address.toLowerCase())) {
-      const r = await lookupSite(actor, a.address);
+    const place = saidHouseAddress(a.address);
+    if (place.ask) return { ok: false, say: place.ask };
+    if (place.address && (!site || site.address.toLowerCase() !== place.address.toLowerCase())) {
+      const r = await lookupSite(actor, place.address);
       if (!r.ok) return { ok: false, say: r.say };
       site = r.site;
       await rememberSite(actor, "fence", site);
