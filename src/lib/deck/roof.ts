@@ -35,6 +35,21 @@
 //     2x stock one size deeper than the rafters, two structural screws
 //     every 16 in.
 //
+// AT THE HOUSE WALL (owner, 2026-11-07, after a Facebook comment asked why the
+// roof made "a valley between the house and the deck"): "if it's a
+// freestanding there is a gap for gutters and if it's attached then the
+// proper flashing gets there."
+//   · On the wall: every line where the roofing meets the siding is flashed
+//     (`wallFlashing`) — apron (L) flashing along a level top edge, step
+//     flashing up a sloped one, counter-flashed by the siding — and a kickout
+//     at the foot of each sloped line turns the water into the gutter
+//     (IRC R903.2, R903.2.1). Water at the wall runs off to the sides.
+//   · Free-standing over a deck against the house: the back posts stand far
+//     enough off the wall for the overhang, the fascia and the back eave's
+//     gutter with WALL_CLEAR_IN of air behind it (`houseGap`). The back
+//     slope's water goes to that gutter and the downspouts, never down the
+//     siding; it used to overhang 7 in. into the wall with its gutter inside.
+//
 // Every face of the roof is one shape in plan: an eave line, a run inward to
 // its top (ridge, apex, wall or the cap of a lower tier), and a side at each
 // end that is a hip (at the corner's half-angle), a rake (square to the
@@ -72,6 +87,13 @@ const TRUSS_2X4_MAX_IN = 30 * 12;
 const WOOD_PCF = 35;
 /** A roof ledger: two structural screws per 16 in. of wall (one per stud, two rows). */
 const LEDGER_SCREW_SPACING_IN = 16;
+/** A free-standing roof beside the house: air between its back gutter (or, without one, its fascia) and the siding, in. */
+export const WALL_CLEAR_IN = 3;
+/** Wall flashing: how far it turns up the siding and out over the roofing, in. */
+export const FLASH_LEG_IN = 4;
+/** A gutter's width, in. (as the 3D hangs it: a 6-in. K-style, else 5); the sub-fascia and fascia stand this much past the eave line before it. */
+const gutterWidthIn = (kind: RoofDesign["gutters"]["kind"]) => (kind === "none" ? 0 : kind === "k6" ? 6 : 5);
+const FASCIA_OUT_IN = THICK_2X_IN + 0.75 + 0.25;
 /** A gutter run gets another downspout every this many feet. */
 const DOWNSPOUT_EVERY_FT = 35;
 /** Gutter hangers, inches on centre: 24, or 18 under snow. */
@@ -186,6 +208,34 @@ export interface RoofPlane {
   kind: PlaneKind;
   ring: number[];
   of?: string;
+}
+
+/** One piece of flashing where the roof meets the house (2026-11-07). The line runs on the roofing's top along the
+ *  wall, (x0, y0, z0) to (x1, y1, z1); `ox, oy` point from the wall out over the roof. A kickout sits at the foot of a
+ *  sloped line: (x0, y0, z0) where the eave meets the wall, `ox, oy` the way it throws the water, past the eave. */
+export interface WallFlash {
+  kind: "apron" | "step" | "kickout";
+  x0: number;
+  y0: number;
+  z0: number;
+  x1: number;
+  y1: number;
+  z1: number;
+  ox: number;
+  oy: number;
+  lengthIn: number;
+  of: string;
+}
+
+/** A free-standing roof over a deck against the house, and the air left at the wall (2026-11-07). */
+export interface HouseGap {
+  /** Wall to the back eave line, in. */
+  eaveIn: number;
+  /** Air between the back gutter (or the fascia, without one) and the siding, in. */
+  clearIn: number;
+  /** The back posts' centres off the wall, in. */
+  postsIn: number;
+  gutter: boolean;
 }
 
 export interface RoofPost {
@@ -365,6 +415,10 @@ export interface RoofFrame {
   slats: { count: number; nominal: string; totalIn: number } | null;
   members: RoofMember[];
   planes: RoofPlane[];
+  /** Flashing where the roof meets the house: apron, step, kickout (empty when it stands free). */
+  wallFlashing: WallFlash[];
+  /** Free-standing over a deck against the house: the gap at the wall for the back gutter (null otherwise). */
+  houseGap: HouseGap | null;
   /** Lineal feet of each edge. */
   eaveFt: number;
   rakeFt: number;
@@ -476,16 +530,28 @@ export function oneDeeper(size: JoistSize): JoistSize {
 const depthOf = (nominal: string) => DRESSED_DEPTH_IN[Number(nominal.split("x")[1])] ?? 5.5;
 
 /** The roof's outline as the contractor set it, in the deck's coordinates (or its own when there is no deck). */
+/** A free-standing roof over a deck against the house: how far its posts' centres must stand off the wall so the
+ *  overhang, the fascia and the back gutter fit with WALL_CLEAR_IN of air behind them; null when no wall is behind it. */
+export function houseClearIn(design: DeckDesign): number | null {
+  const r = design.roof;
+  if (r.attach === "wall" || design.floor !== "deck" || design.placement === "detached" || r.kind === "pergola") return null;
+  const gutter = gutterWidthIn(r.gutters.kind);
+  return Math.ceil(WALL_CLEAR_IN + gutter + FASCIA_OUT_IN + r.overhangIn);
+}
+
 export function roofRing(design: DeckDesign, deck: DeckUnder | null): { pts: V2[]; regular: boolean; apothemIn: number } {
   const r = design.roof;
   const p = r.plan;
   const wall = r.attach === "wall";
+  // The back posts of a free-standing roof against the house stand off the wall (2026-11-07); otherwise just inside the deck.
+  const backIn = Math.max(POST_INSET_IN, houseClearIn(design) ?? 0);
   if (isPolygonShape(p.shape)) {
     const n = p.shape === "hexagon" ? 6 : p.shape === "octagon" ? 8 : ROUND_SIDES;
     const across = p.acrossFt * 12;
     const a = across / 2;
     const R = a / Math.cos(Math.PI / n);
-    const c: V2 = deck ? { x: Math.max(...deck.zones.map((z) => z.x1)) / 2 + p.offsetFt * 12, y: Math.max(...deck.zones.map((z) => z.y1)) / 2 } : { x: R, y: n === 6 ? a : a };
+    // Centred on the deck — and, against the house, far enough out that its back side clears the wall (2026-11-07).
+    const c: V2 = deck ? { x: Math.max(...deck.zones.map((z) => z.x1)) / 2 + p.offsetFt * 12, y: Math.max(Math.max(...deck.zones.map((z) => z.y1)) / 2, Math.min((houseClearIn(design) ?? 0) + a, Math.max(...deck.zones.map((z) => z.y1)) - a)) } : { x: R, y: n === 6 ? a : a };
     const phi0 = -Math.PI / 2 - Math.PI / n;
     const pts: V2[] = [];
     for (let k = 0; k < n; k++) pts.push({ x: c.x + R * Math.cos(phi0 + (2 * Math.PI * k) / n), y: c.y + R * Math.sin(phi0 + (2 * Math.PI * k) / n) });
@@ -500,8 +566,14 @@ export function roofRing(design: DeckDesign, deck: DeckUnder | null): { pts: V2[
     const z = deck.zones[0];
     x0 = z.x0 + POST_INSET_IN;
     x1 = z.x1 - POST_INSET_IN;
-    y0 = wall ? 0 : z.y0 + POST_INSET_IN;
+    y0 = wall ? 0 : Math.max(z.y0 + POST_INSET_IN, backIn);
     y1 = z.y1 - POST_INSET_IN;
+    // A pyramid over a square deck stays a pyramid when it stands clear of the house: its width comes in to match.
+    if (r.kind === "pyramid" && Math.abs(z.x1 - z.x0 - (z.y1 - z.y0)) < 0.5 && x1 - x0 > y1 - y0 + 0.5) {
+      const mid = (x0 + x1) / 2;
+      x0 = mid - (y1 - y0) / 2;
+      x1 = mid + (y1 - y0) / 2;
+    }
   } else {
     const W = p.widthFt * 12;
     const D = p.depthFt * 12;
@@ -519,10 +591,21 @@ export function roofRing(design: DeckDesign, deck: DeckUnder | null): { pts: V2[
         const cy = dd / 2;
         y0 = Math.max(POST_INSET_IN, cy - D / 2);
         y1 = Math.min(dd - POST_INSET_IN, cy + D / 2);
+        // Against the house it slides out to clear the wall, keeping its depth where the deck has room (2026-11-07).
+        if (y0 < backIn) {
+          y1 = Math.min(dd - POST_INSET_IN, y1 + (backIn - y0));
+          y0 = backIn;
+        }
       }
       // Posts stay on the deck.
       x0 = Math.max(POST_INSET_IN, x0);
       x1 = Math.min(dw - POST_INSET_IN, x1);
+      // A square stays square: where the deck cut its depth, its width comes in to match, about its centre.
+      if (p.shape === "square" && x1 - x0 > y1 - y0 + 0.5) {
+        const mid = (x0 + x1) / 2;
+        x0 = mid - (y1 - y0) / 2;
+        x1 = mid + (y1 - y0) / 2;
+      }
     } else {
       x0 = 0;
       x1 = W;
@@ -1663,6 +1746,7 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
 
   // ── Rafters on every face.
   const faces: RoofFace[] = [];
+  const wallFlashing: WallFlash[] = [];
   let commons = 0;
   let jacks = 0;
   let flies = 0;
@@ -1792,6 +1876,24 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
 
     // Planes: sheathing and roofing over the whole face, the ceiling under the rafters inside the header, the soffit under the overhang.
     const zt = (v: number) => zTopAt(v, f.ovhIn, hTop, sl);
+    // FLASHING AT THE HOUSE (2026-11-07): every line where this face meets the wall, on the roofing's top — apron (L)
+    // flashing along a level top edge (the roof falls away from it), step flashing up a sloped side from the eave, and a
+    // kickout at that side's foot, out past the eave, turning the water into the gutter (IRC R903.2.1).
+    if (wall && !pergola) {
+      const zr = (v: number) => zt(v) + 0.9;
+      const flash = (kind: WallFlash["kind"], P: V2, zP: number, Q: V2, zQ: number, o: V2) => {
+        const L = Math.hypot(Q.x - P.x, Q.y - P.y, zQ - zP);
+        if (L < 2) return;
+        wallFlashing.push({ kind, x0: P.x, y0: P.y, z0: zP, x1: Q.x, y1: Q.y, z1: zQ, ox: o.x, oy: o.y, lengthIn: L, of: f.id });
+      };
+      if (f.top === "wall") flash("apron", TA, zr(f.vTopIn), TB, zr(f.vTopIn), { x: -f.n.x, y: -f.n.y });
+      const sloped = (E: V2, T: V2, away: V2) => {
+        flash("step", E, zr(0), T, zr(f.vTopIn), away);
+        flash("kickout", E, zr(0), { x: E.x - f.n.x * 6, y: E.y - f.n.y * 6 }, zr(0), away);
+      };
+      if (f.sideA === "wall") sloped(f.A, TA, u);
+      if (f.sideB === "wall") sloped(f.B, TB, { x: -u.x, y: -u.y });
+    }
     const ring3 = (pts: Array<[V2, number]>) => pts.flatMap(([p, z]) => [p.x, p.y, z]);
     if (!pergola) {
       // The drip edge: sheathing and roofing run a touch past the eave
@@ -2424,6 +2526,14 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
     crossHangers: 2 * crossPlan.length,
   };
 
+  // The gap a free-standing roof leaves at the house wall (y = 0), for the checks, the 3D's note and the plans.
+  let houseGap: HouseGap | null = null;
+  if (!wall && houseClearIn(design) != null && eaveRing.length) {
+    const eaveIn = Math.min(...eaveRing.map((p) => p.y));
+    const gutterIn = gutterWidthIn(r.gutters.kind);
+    houseGap = { eaveIn: Math.round(eaveIn), clearIn: Math.round(eaveIn - FASCIA_OUT_IN - gutterIn), postsIn: Math.round(Math.min(...ring.map((p) => p.y))), gutter: gutterIn > 0 };
+  }
+
   return {
     roof: r,
     kind,
@@ -2467,6 +2577,8 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
     slats,
     members,
     planes,
+    wallFlashing,
+    houseGap,
     eaveFt: Math.round(eaveFt * 10) / 10,
     rakeFt: Math.round(rakeFt * 10) / 10,
     wallFt: Math.round(wallFt * 10) / 10,

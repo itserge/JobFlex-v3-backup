@@ -215,6 +215,7 @@ export const DECK_RATES: readonly DeckRateDef[] = [
   roof("metal.screws", "Metal roofing screws and closures", "sq", 22, "metal"),
   roof("dripEdge", "Drip edge, 10-ft piece", "ea", 9.5, "metal"),
   roof("wallFlashing", "Step and counter flashing at the house", "ft", 4.5, "metal"),
+  roof("kickout", "Kickout flashing, pre-formed", "ea", 15, "metal"),
   trim("fascia.wood", "Fascia board, primed 1x8 wood", "ft", 2.4, "cedar"),
   trim("fascia.pvc", "Fascia board, PVC 1x8", "ft", 5.2),
   trim("fascia.wrap", "Aluminum fascia wrap", "ft", 3.4, "metal"),
