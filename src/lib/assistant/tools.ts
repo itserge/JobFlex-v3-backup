@@ -48,6 +48,9 @@ import { CLIENT_360_TOOLS } from "@/lib/assistant/clients360";
 import { INBOX_TOOLS } from "@/lib/assistant/inbox";
 import { PIPELINE_TOOLS } from "@/lib/assistant/pipeline";
 import { CONTRACTOR_TOOLS } from "@/lib/assistant/contractors";
+// The subcontractors plan, part 6 (2026-11-09): find, requests, compare, the subs budget, invoices, documents, reminders,
+// approving and paying a sub's invoice.
+import { SUB_TOOLS } from "@/lib/assistant/subs";
 
 export interface ToolContext {
   actor: AssistantActor;
@@ -982,7 +985,7 @@ export const TOOLS: readonly AnyTool[] = [
   find,
   openProposals,
   moneyTool,
-  ...BUSINESS_TOOLS, ...CONTRACTOR_TOOLS,
+  ...BUSINESS_TOOLS, ...CONTRACTOR_TOOLS, ...SUB_TOOLS,
   crew,
   ...BUILDERS,
   ...FENCE_TOOLS,

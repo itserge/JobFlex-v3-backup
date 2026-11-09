@@ -251,6 +251,95 @@ function answer(body: { messages: Msg[] }) {
     return call("award_quote", { projectId: pid, contractor: awardQ[3].trim(), stage: awardQ[1] });
   }
   if (done.has("award_quote")) return reply("Planned — say yes to award it.");
+  // Subcontractors, part 6 (2026-11-09): "find electricians near <project>" → find_subs; "who hasn't replied on
+  // <project>" → sub_requests; "remind the subs … on <project>" → remind_subs; "compare the quotes on <project>" →
+  // compare_quotes; "how's the subs budget on <project>" → subs_budget; "which sub invoices are unpaid" → sub_invoices;
+  // "approve <Sub>'s invoice on <project>" → approve_sub_invoice; "pay <Sub>'s invoice by check 1043 on <project>" →
+  // pay_sub_invoice; "open <Sub>'s invoice on <project>" → sub_document. The project comes from a find, as above.
+  const subsPid = () => ((done.get("find") as Found | undefined) as { projects?: Array<{ id: string }> } | undefined)?.projects?.[0]?.id ?? null;
+  const findSubsQ = /\bfind (?:me )?(?:some )?([a-z]+?)s? near (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  if (findSubsQ) {
+    const r = done.get("find_subs") as { results?: Array<{ name: string; license: string; rating: string | null }>; note?: string } | undefined;
+    if (!r) {
+      const pid = subsPid();
+      if (!pid) return call("find", { query: findSubsQ[2].trim(), kind: "project" });
+      const t = findSubsQ[1].toLowerCase();
+      const trade = /electric/.test(t) ? "Electrical" : /plumb/.test(t) ? "Plumbing" : /fram|carpent/.test(t) ? "Carpentry" : /roof/.test(t) ? "Roofing" : findSubsQ[1];
+      return call("find_subs", { projectId: pid, trade, near: null, name: null });
+    }
+    const xs = r.results ?? [];
+    return reply(xs.length ? `Found ${xs.length}: ${xs.map((x) => `${x.name} (${x.license}${x.rating ? `, ★ ${x.rating}` : ""})`).join("; ")}.` : (r.note ?? "Nobody found."));
+  }
+  const notRepliedQ = /\bwho (?:hasn't|has not|haven't) (?:replied|answered)\b.*?\bon (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  if (notRepliedQ && !/\bremind\b/i.test(user)) {
+    const r = done.get("sub_requests") as { requests?: Array<{ request: string; notReplied: string[] }>; note?: string } | undefined;
+    if (!r) {
+      const pid = subsPid();
+      if (!pid) return call("find", { query: notRepliedQ[1].trim(), kind: "project" });
+      return call("sub_requests", { projectId: pid, stage: null });
+    }
+    const waiting = (r.requests ?? []).flatMap((q) => q.notReplied.map((n) => `${n} on ${q.request}`));
+    return reply(waiting.length ? `Not replied yet: ${waiting.join(", ")}.` : (r.note ?? "Everyone has replied."));
+  }
+  const remindSubsQ = /\bremind (?:the )?(?:subs|framers|electricians|plumbers|contractors)\b.*?\bon (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  if (remindSubsQ && !done.has("remind_subs")) {
+    const pid = subsPid();
+    if (!pid) return call("find", { query: remindSubsQ[1].trim(), kind: "project" });
+    return call("remind_subs", { projectId: pid, stage: null });
+  }
+  if (done.has("remind_subs")) return reply("Planned — say yes and they are reminded.");
+  const compareQ = /\bcompare (?:the )?(?:(\w+) )?quotes on (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  if (compareQ) {
+    const r = done.get("compare_quotes") as { quotes?: Array<{ sub: string; price: number | null; lowest: boolean }>; note?: string } | undefined;
+    if (!r) {
+      const pid = subsPid();
+      if (!pid) return call("find", { query: compareQ[2].trim(), kind: "project" });
+      return call("compare_quotes", { projectId: pid, stage: compareQ[1] ?? null });
+    }
+    const qs = (r.quotes ?? []).filter((q) => q.price != null);
+    return reply(qs.length ? `${qs.map((q) => `${q.sub} $${q.price!.toLocaleString("en-US")}${q.lowest ? " (lowest)" : ""}`).join("; ")}.` : (r.note ?? "No prices yet."));
+  }
+  const subsBudgetQ = /\bsubs? budget on (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  if (subsBudgetQ) {
+    const r = done.get("subs_budget") as { committed?: number; paid?: number; pending?: number; left?: number | null; note?: string } | undefined;
+    if (!r) {
+      const pid = subsPid();
+      if (!pid) return call("find", { query: subsBudgetQ[1].trim(), kind: "project" });
+      return call("subs_budget", { projectId: pid });
+    }
+    const d = (n: number | null | undefined) => `$${Math.round(n ?? 0).toLocaleString("en-US")}`;
+    return reply(r.note && r.committed == null ? r.note : `Committed ${d(r.committed)}, paid ${d(r.paid)}, pending ${d(r.pending)}${r.left != null ? `, ${d(r.left)} left` : ""}.`);
+  }
+  if (/\bsub invoices\b.*\bunpaid\b|\bunpaid sub invoices\b/i.test(user)) {
+    const r = done.get("sub_invoices") as { invoices?: Array<{ invoice: string; sub: string; amount: number | null; status: string }>; note?: string } | undefined;
+    if (!r) return call("sub_invoices", { projectId: null, which: "unpaid" });
+    const xs = r.invoices ?? [];
+    return reply(xs.length ? `${xs.map((x) => `${x.invoice} ${x.sub}${x.amount != null ? ` $${x.amount.toLocaleString("en-US")}` : ""} (${x.status})`).join("; ")}.` : (r.note ?? "None."));
+  }
+  const approveInvQ = /\bapprove ([A-Z][\w ]*?)'s invoice on (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  if (approveInvQ && !done.has("approve_sub_invoice")) {
+    const pid = subsPid();
+    if (!pid) return call("find", { query: approveInvQ[2].trim(), kind: "project" });
+    return call("approve_sub_invoice", { projectId: pid, sub: approveInvQ[1].trim(), invoice: null });
+  }
+  if (done.has("approve_sub_invoice")) return reply("Planned — say yes to approve it.");
+  const payInvQ = /\bpay ([A-Z][\w ]*?)'s invoice by (check|ach|wire|zelle|cash|card)(?: #?(\w+))? on (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  if (payInvQ && !done.has("pay_sub_invoice")) {
+    const pid = subsPid();
+    if (!pid) return call("find", { query: payInvQ[4].trim(), kind: "project" });
+    return call("pay_sub_invoice", { projectId: pid, sub: payInvQ[1].trim(), invoice: null, method: payInvQ[2].toUpperCase(), reference: payInvQ[3] ?? null, amount: null });
+  }
+  if (done.has("pay_sub_invoice")) return reply("Planned — your PIN and a yes record it.");
+  const openDocQ = /\bopen ([A-Z][\w ]*?)'s (estimate|invoice|contract|waiver) on (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  if (openDocQ) {
+    const r = done.get("sub_document") as { name?: string; link?: string; note?: string } | undefined;
+    if (!r) {
+      const pid = subsPid();
+      if (!pid) return call("find", { query: openDocQ[3].trim(), kind: "project" });
+      return call("sub_document", { projectId: pid, sub: openDocQ[1].trim(), what: openDocQ[2].toLowerCase() });
+    }
+    return reply(r.link ? `${r.name}: ${r.link}` : (r.note ?? "Not found."));
+  }
   // Selections and gates (2026-11-07, part 3): "what's left to choose on the Bennett kitchen" → selections; "the Bennetts
   // picked the shaker cabinets from Pacific Cabinet Supply for $8,400" → choose_selection; "add a tile selection to the
   // Smith bath, due 2026-11-20, allowance $2,000" → add_selection; "mark the rough-in done on the Bennett kitchen" →

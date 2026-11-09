@@ -905,6 +905,15 @@ export async function contractMoneyDocumentIds(contractId: string): Promise<stri
   return [...inv.map((x) => x.documentId!), ...pay.map((x) => x.waiverDocumentId!)];
 }
 
+// ── company-wide ─────────────────────────────────────────────────────────────
+
+/** Every invoice still open across the company's projects — to review, or approved and not paid in full — oldest
+ *  due first (the AI Operator's "which sub invoices are unpaid"). */
+export async function openInvoices(organizationId: string): Promise<Array<InvoiceRow & { projectName: string }>> {
+  const rows = await db.subInvoice.findMany({ where: { organizationId, status: { in: ["RECEIVED", "APPROVED"] } }, orderBy: [{ dueAt: "asc" }, { receivedAt: "asc" }], take: 60, select: { ...INVOICE_SELECT, project: { select: { name: true } } } });
+  return rows.map((r) => ({ ...invoiceRow(r), projectName: r.project.name }));
+}
+
 // ── the sweep ────────────────────────────────────────────────────────────────
 
 /** Approved invoices due by tomorrow and not paid: the office is told once. */
