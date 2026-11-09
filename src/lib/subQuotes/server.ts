@@ -12,6 +12,7 @@ import "server-only";
 //   · compareRequest   — the request's quotes side by side, from the reads.
 //   · compareWords     — the model's two sentences on the difference, from the fields only; cached on the request.
 
+import { createHash } from "node:crypto";
 import { zodResponseFormat } from "openai/helpers/zod";
 import { db } from "@/lib/db";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
@@ -62,6 +63,52 @@ async function heicToJpeg(buf: Buffer): Promise<string | null> {
   }
 }
 
+/** A stored document as the model's input — the PDF's words when it has a text layer, the PDF itself when it is a scan,
+ *  a picture as a picture (HEIC through sharp). Shared by the estimate reader here and the invoice reader
+ *  (lib/subInvoices); `noun` only names the document in the words the model is given. Also the file's SHA-256, which
+ *  finds the same file sent twice. */
+export async function documentParts(document: { url: string; name: string; contentType: string | null }, noun: "estimate" | "invoice"): Promise<
+  { ok: true; parts: Array<Record<string, unknown>>; from: StoredRead["from"]; text: string | null; pages: number | null; sha256: string } | { ok: false; error: string }
+> {
+  const dataUrl = await readStoredAsDataUrl(document.url, MAX_READ_BYTES);
+  if (!dataUrl) return { ok: false, error: "The file could not be opened — missing, or larger than 20 MB." };
+  const m = /^data:([^;,]+);base64,(.+)$/s.exec(dataUrl);
+  if (!m) return { ok: false, error: "The file could not be decoded." };
+  const type = (document.contentType ?? m[1]).toLowerCase();
+  const isPdf = type === "application/pdf" || /\.pdf$/i.test(document.name);
+  const buf = Buffer.from(m[2], "base64");
+  const sha256 = createHash("sha256").update(buf).digest("hex");
+  const Noun = noun === "estimate" ? "The estimate" : "The invoice";
+  if (isPdf) {
+    const words = await pdfTextOf(new Uint8Array(buf)).catch(() => null);
+    if (!words) return { ok: false, error: "The PDF could not be opened." };
+    if (!words.sparse) {
+      const text = words.text.slice(0, MAX_TEXT_CHARS);
+      return { ok: true, from: "text", text, pages: words.pages, sha256, parts: [{ type: "text", text: `${Noun}'s words, extracted from the PDF (${words.pages} page${words.pages === 1 ? "" : "s"}):\n\n${text}` }] };
+    }
+    return {
+      ok: true,
+      from: "pdf",
+      text: null,
+      pages: words.pages,
+      sha256,
+      parts: [
+        { type: "text", text: `${Noun} is this PDF — a scan with no text layer (${words.pages} page${words.pages === 1 ? "" : "s"}); read the pages.` },
+        { type: "file", file: { filename: document.name.replace(/[^A-Za-z0-9._-]/g, "-"), file_data: `data:application/pdf;base64,${m[2]}` } },
+      ],
+    };
+  }
+  if (/^image\/(jpeg|png|webp)$/.test(type)) {
+    return { ok: true, from: "picture", text: null, pages: null, sha256, parts: [{ type: "text", text: `${Noun} is this picture of the page.` }, { type: "image_url", image_url: { url: `data:${type};base64,${m[2]}`, detail: "high" } }] };
+  }
+  if (/^image\/hei[cf]$/.test(type)) {
+    const jpeg = await heicToJpeg(buf);
+    if (!jpeg) return { ok: false, error: `A HEIC picture — open it to read the figures, or ask for a PDF or a JPEG.` };
+    return { ok: true, from: "picture", text: null, pages: null, sha256, parts: [{ type: "text", text: `${Noun} is this picture of the page.` }, { type: "image_url", image_url: { url: jpeg, detail: "high" } }] };
+  }
+  return { ok: false, error: `Not a document the reader knows (${type}).` };
+}
+
 /** The model's read of one version's document; the result stored on the version. */
 export async function readVersion(versionId: string): Promise<ReadOutcome> {
   const v = await db.subQuoteVersion.findUnique({
@@ -85,49 +132,9 @@ export async function readVersion(versionId: string): Promise<ReadOutcome> {
   }
   try {
     await noteRequestOrg(v.organizationId);
-    const dataUrl = await readStoredAsDataUrl(v.document.url, MAX_READ_BYTES);
-    if (!dataUrl) return await fail("The file could not be opened — missing, or larger than 20 MB.");
-    const m = /^data:([^;,]+);base64,(.+)$/s.exec(dataUrl);
-    if (!m) return await fail("The file could not be decoded.");
-    const type = (v.document.contentType ?? m[1]).toLowerCase();
-    const isPdf = type === "application/pdf" || /\.pdf$/i.test(v.document.name);
-    const buf = Buffer.from(m[2], "base64");
-
-    let from: StoredRead["from"] = "text";
-    let text: string | null = null;
-    let pages: number | null = null;
-    let parts: Array<Record<string, unknown>>;
-    if (isPdf) {
-      const words = await pdfTextOf(new Uint8Array(buf)).catch(() => null);
-      if (!words) return await fail("The PDF could not be opened.");
-      pages = words.pages;
-      if (!words.sparse) {
-        text = words.text.slice(0, MAX_TEXT_CHARS);
-        parts = [{ type: "text", text: `The estimate's words, extracted from the PDF (${words.pages} page${words.pages === 1 ? "" : "s"}):\n\n${text}` }];
-      } else {
-        from = "pdf";
-        parts = [
-          { type: "text", text: `The estimate is this PDF — a scan with no text layer (${words.pages} page${words.pages === 1 ? "" : "s"}); read the pages.` },
-          { type: "file", file: { filename: v.document.name.replace(/[^A-Za-z0-9._-]/g, "-"), file_data: `data:application/pdf;base64,${m[2]}` } },
-        ];
-      }
-    } else if (/^image\/(jpeg|png|webp)$/.test(type)) {
-      from = "picture";
-      parts = [
-        { type: "text", text: "The estimate is this picture of the page." },
-        { type: "image_url", image_url: { url: `data:${type};base64,${m[2]}`, detail: "high" } },
-      ];
-    } else if (/^image\/hei[cf]$/.test(type)) {
-      const jpeg = await heicToJpeg(buf);
-      if (!jpeg) return await fail("A HEIC picture — open it to read the figures, or ask for a PDF or a JPEG.");
-      from = "picture";
-      parts = [
-        { type: "text", text: "The estimate is this picture of the page." },
-        { type: "image_url", image_url: { url: jpeg, detail: "high" } },
-      ];
-    } else {
-      return await fail(`Not a document the reader knows (${type}).`);
-    }
+    const doc = await documentParts(v.document, "estimate");
+    if (!doc.ok) return await fail(doc.error);
+    const { parts, from, text, pages } = doc;
 
     const client = getOpenAI();
     const model = from === "text" ? await resolveOpenAIModel() : getVisionModel();

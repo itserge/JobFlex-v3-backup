@@ -145,11 +145,14 @@ export async function ingestReceivedEmail(d: ReceivedEmail): Promise<IngestResul
   const receivedAt = d.created_at ? new Date(d.created_at) : now;
   const organizationId = door?.organizationId ?? null;
 
+  // Part 5a: on awarded work the request is closed for prices but open for invoices — a letter with a document there
+  // is the sub's invoice.
+  const invoicing = !!door && (door.status === "AWARDED" || door.status === "INVOICED");
   // Why it would wait for a person.
   let why: InboundWhy = "matched";
   if (!token) why = "no-address";
   else if (!door) why = "no-such-request";
-  else if (door.closed) why = "request-closed";
+  else if (door.closed && !invoicing) why = "request-closed";
   else if (senderMatches(d.from, door.contractorEmail) === "other") why = "stranger";
   if (isAutoReply(subject ?? "", headers)) why = "auto-reply";
   const state = why === "matched" ? "MATCHED" : why === "auto-reply" ? "IGNORED" : "REVIEW";
@@ -212,6 +215,19 @@ export async function ingestReceivedEmail(d: ReceivedEmail): Promise<IngestResul
 
   // Matched. The first document becomes the version (its read is queued); the others are kept on the letter.
   const [first, ...rest] = kept;
+  if (first && invoicing) {
+    // An invoice on awarded work: the document recorded as an INVOICE, the invoice made (lib/subInvoices — numbered,
+    // checked, its read queued, the office told), the other files kept on the letter.
+    const doc = await recordDocument({ organizationId: door.organizationId, projectId: door.projectId, contractorId: door.contractorId, requestId: null, kind: "INVOICE", name: first.name, url: first.url, contentType: first.contentType, bytes: first.bytes, uploadedVia: "EMAIL", uploadedById: null, inboundEmailId: row.id });
+    if (first.scan !== "SKIPPED") await db.subDocument.update({ where: { id: doc.id }, data: { scanStatus: first.scan } }).catch(() => undefined);
+    for (const k of rest) {
+      const other = await recordDocument({ organizationId: door.organizationId, projectId: door.projectId, contractorId: door.contractorId, requestId: null, kind: "OTHER", name: k.name, url: k.url, contentType: k.contentType, bytes: k.bytes, uploadedVia: "EMAIL", uploadedById: null, inboundEmailId: row.id });
+      if (k.scan !== "SKIPPED") await db.subDocument.update({ where: { id: other.id }, data: { scanStatus: k.scan } }).catch(() => undefined);
+    }
+    const { invoiceFromEmail } = await import("@/lib/subInvoices/server");
+    const inv = await invoiceFromEmail(door.quoteId, { documentId: doc.id, inboundEmailId: row.id, note: excerpt ? excerpt.slice(0, 1000) : null });
+    return { outcome: "matched", inboundId: row.id, versionId: null, why, words: inv ? `${first.name} is ${door.contractorName}'s invoice SI-${inv.number}; the figures are being read.` : `${first.name} is kept on the letter.` };
+  }
   if (first) {
     const r = await addVersionFromEmail(door.quoteId, { note: excerpt ? excerpt.slice(0, 1000) : null, file: { url: first.url, name: first.name, contentType: first.contentType, bytes: first.bytes }, documentId: null, inboundEmailId: row.id });
     if (first.scan !== "SKIPPED" && r.version.document) await db.subDocument.update({ where: { id: r.version.document.id }, data: { scanStatus: first.scan } }).catch(() => undefined);

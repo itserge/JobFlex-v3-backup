@@ -31,7 +31,7 @@ import s from "./subs.module.css";
 const longDay = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 const isoDay = (day: string) => new Date(`${day.slice(0, 10)}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 
-type Draft = { title: string; amount: string; scope: string; startsAt: string; endsAt: string; milestones: Array<{ name: string; pct: string; due: string }>; terms: string; attachmentIds: Set<string>; signer: string };
+type Draft = { title: string; amount: string; scope: string; startsAt: string; endsAt: string; milestones: Array<{ name: string; pct: string; due: string }>; retainagePct: string; terms: string; attachmentIds: Set<string>; signer: string };
 
 function draftOf(c: ContractRow, signer: string): Draft {
   return {
@@ -41,6 +41,7 @@ function draftOf(c: ContractRow, signer: string): Draft {
     startsAt: c.startsAt ?? "",
     endsAt: c.endsAt ?? "",
     milestones: c.milestones.map((m) => ({ name: m.name, pct: String(m.pct), due: m.due ?? "" })),
+    retainagePct: c.retainagePct ? String(c.retainagePct) : "",
     terms: c.terms,
     attachmentIds: new Set(c.attachmentIds),
     signer,
@@ -186,6 +187,7 @@ function ContractSheet({ contract, documents, quotes, canManage, signerName, onC
       startsAt: d.startsAt || null,
       endsAt: d.endsAt || null,
       depositPct: ms[0] && /deposit/i.test(ms[0].name) ? ms[0].pct : null,
+      retainagePct: d.retainagePct.trim() ? Math.max(0, Math.min(50, num(d.retainagePct) || 0)) || null : null,
       milestones: ms,
       terms: d.terms,
       attachmentIds: [...d.attachmentIds],
@@ -254,6 +256,10 @@ function ContractSheet({ contract, documents, quotes, canManage, signerName, onC
                       </span>
                     </div>
                   </div>
+                  <label className={h.field} data-subs-contract-retainage>
+                    <span className={h.lab}>Retainage held from each payment (%) — paid with the last; empty for none</span>
+                    <input className={h.input} inputMode="decimal" value={d.retainagePct} onChange={(e) => set("retainagePct", e.target.value)} placeholder="e.g. 10" style={{ maxWidth: 160 }} data-subs-contract-retainage-input />
+                  </label>
                   <div className={h.field} data-subs-contract-files>
                     <span className={h.lab}>Files the sub sees with it</span>
                     {docsForSub.length ? (
@@ -326,7 +332,7 @@ function ContractSheet({ contract, documents, quotes, canManage, signerName, onC
                     <Fact label="Total" value={`${usd(contract.total)}${contract.total !== contract.amount ? ` (${usd(contract.amount)} + approved changes)` : ""}`} />
                     <Fact label="State" value={contract.words} />
                     {contract.startsAt || contract.endsAt ? <Fact label="Schedule" value={`${contract.startsAt ? `starts ${isoDay(contract.startsAt)}` : ""}${contract.startsAt && contract.endsAt ? " · " : ""}${contract.endsAt ? `done by ${isoDay(contract.endsAt)}` : ""}`} /> : null}
-                    <Fact label="Payments" value={milestoneAmounts(contract.amount, contract.milestones).map((m) => `${m.name} ${m.pct}% ${usd(m.amount)}`).join(" · ")} />
+                    <Fact label="Payments" value={`${milestoneAmounts(contract.amount, contract.milestones).map((m) => `${m.name} ${m.pct}% ${usd(m.amount)}`).join(" · ")}${contract.retainagePct ? ` · ${contract.retainagePct}% retainage` : ""}`} />
                     {contract.companySignedName ? <Fact label="For the company" value={`${contract.companySignedName}${contract.companySignedAt ? ` · ${longDay(contract.companySignedAt)}` : ""}`} /> : null}
                     {contract.signedName ? <Fact label="For the sub" value={signatureWords({ signedName: contract.signedName, signedAt: contract.signedAt, signedIp: contract.signedIp }) ?? contract.signedName} /> : null}
                     {contract.cancelledAt ? <Fact label="Cancelled" value={`${longDay(contract.cancelledAt)}${contract.cancelReason ? ` — ${contract.cancelReason}` : ""}`} /> : null}

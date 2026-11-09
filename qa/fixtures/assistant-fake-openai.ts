@@ -34,6 +34,11 @@
 //   The estimate reader (json_schema "quote_read", 2026-11-08, the subcontractors plan, part 2): words → the figures
 //   by regex (the fixtures in qa/fixtures/docs); a PDF file part or a picture → XYZ Electric's $23,500 proposal; a
 //   file named "blank" → nothing to read. The comparer (json_schema "compare_words") → two sentences from the fields.
+//   The invoice reader (json_schema "invoice_read", 2026-11-09, part 5a): words → the number, the days, the amount due
+//   by regex (qa/fixtures/docs/invoice-*.pdf); a PDF file part or a picture → XYZ Electric's $7,050 invoice #1187.
+//   Ramp's API (/developer/v1/…, 2026-11-09, part 5a) for Bill Pay on the stand: one entity with a bill-pay account,
+//   vendors made on request with an ACH account, approved bills scheduled at once; POST /__fake/ramp/pay/<billId>
+//   marks one paid (Ramp paying the sub), so the walk can see the payment recorded. RAMP_API_BASE points here.
 //   NODE_PATH="" npx --no-install tsx qa/fixtures/assistant-fake-openai.ts     (FAKE_OPENAI_PORT, default 4601)
 import http from "node:http";
 import { readBudgetText } from "../../src/lib/projectBudgetImport";
@@ -621,6 +626,110 @@ function fakeBudgetRead(messages: Msg[]) {
  *  out of them by a few regexes (the fixtures' lines: "Total $23,500", "Labor … $14,000", "Deposit 30% ($7,050)",
  *  "Valid until: …"); a PDF file part or a picture → XYZ Electric's $23,500 proposal read "from the pages" — unless the
  *  file's name says "blank", then nothing to read. An instruction to the reader in the words is flagged, never obeyed. */
+/** Ramp's Bill Pay, faked for the stand (part 5a): enough of /developer/v1 for lib/ramp/bills to make a vendor and an
+ *  approved bill, read it back, and see it paid when the walk says so. Money in cents, the way Ramp sends it. */
+const fakeRamp = { vendors: [] as Array<Record<string, unknown>>, bills: new Map<string, Record<string, unknown>>(), seq: 0 };
+function fakeRampRoute(method: string, url: string, raw: string): { status: number; body: unknown } {
+  const u = new URL(url, "http://127.0.0.1");
+  const path = u.pathname.replace(/^\/developer\/v1/, "");
+  const id = () => `${Date.now().toString(36)}${(fakeRamp.seq++).toString(36)}`;
+  const json = (() => {
+    try {
+      return JSON.parse(raw || "{}") as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  })();
+  const page = (data: unknown[]) => ({ data, page: { next: null } });
+  if (u.pathname.startsWith("/__fake/ramp/pay/")) {
+    const b = fakeRamp.bills.get(decodeURIComponent(u.pathname.split("/").pop() ?? ""));
+    if (!b) return { status: 404, body: { error: "no such bill" } };
+    b.paid_at = new Date().toISOString();
+    b.status_summary = "PAYMENT_COMPLETED";
+    b.status = "PAID";
+    b.payment = { payment_method: "ACH" };
+    return { status: 200, body: b };
+  }
+  if (path === "/token" && method === "POST") return { status: 200, body: { access_token: `fake-access-${id()}`, refresh_token: "fake-refresh", expires_in: 3600, scope: "bills:read bills:write vendors:read vendors:write" } };
+  if (path === "/entities") return { status: 200, body: page([{ id: "ent_fake", entity_name: "QA Co", is_primary: true, default_bill_pay_payment_account_id: "ba_fake" }]) };
+  if (path === "/business") return { status: 200, body: { id: "biz_fake", business_name_legal: "QA Co" } };
+  if (path === "/vendors" && method === "GET") return { status: 200, body: page(fakeRamp.vendors) };
+  if (path === "/vendors" && method === "POST") {
+    const v = { id: `ven_${id()}`, name: json.name, display_name: json.name, is_active: true, address: null };
+    fakeRamp.vendors.push(v);
+    return { status: 200, body: v };
+  }
+  if (/^\/vendors\/[^/]+\/accounts$/.test(path)) return { status: 200, body: page([{ id: `va_${path.split("/")[2]}`, is_default: true, payment_method: "ACH", account_number_last_four: "6789" }]) };
+  if (/^\/vendors\/[^/]+\/contacts$/.test(path)) return { status: 200, body: page([]) };
+  const lines = (json.line_items as Array<{ amount?: number }> | undefined) ?? [];
+  const cents = lines.reduce((n, l) => n + (typeof l.amount === "number" ? l.amount : 0), 0);
+  if (path === "/bills" && method === "POST") {
+    const b = { id: `bill_${id()}`, amount: { amount: cents, minor_unit_conversion_rate: 100 }, approval_status: "APPROVED", status_summary: "PAYMENT_SCHEDULED", invoice_number: json.invoice_number, vendor: { id: json.vendor_id }, deep_link_url: "https://app.ramp.com/bills/fake", attachments: [] };
+    fakeRamp.bills.set(b.id, b);
+    return { status: 200, body: b };
+  }
+  if (path === "/bills/drafts" && method === "POST") {
+    const d = { id: `draft_${id()}`, draft: true, amount: { amount: cents, minor_unit_conversion_rate: 100 }, invoice_number: json.invoice_number };
+    fakeRamp.bills.set(d.id, d);
+    return { status: 200, body: d };
+  }
+  if (/^\/bills\/drafts\/[^/]+\/submit$/.test(path)) {
+    const d = fakeRamp.bills.get(path.split("/")[3]);
+    if (!d) return { status: 404, body: {} };
+    const b = { ...d, id: `bill_${id()}`, draft: false, approval_status: "PENDING", status_summary: "APPROVAL_PENDING", deep_link_url: "https://app.ramp.com/bills/fake" };
+    fakeRamp.bills.set(b.id, b);
+    d.bill_id = b.id;
+    return { status: 200, body: b };
+  }
+  if (/\/attachments$/.test(path)) return { status: 200, body: { id: `att_${id()}` } };
+  if (/^\/bills\/drafts\/[^/]+$/.test(path)) return { status: 200, body: fakeRamp.bills.get(path.split("/")[3]) ?? {} };
+  if (/^\/bills\/[^/]+$/.test(path)) {
+    const b = fakeRamp.bills.get(path.split("/")[2]);
+    return b ? { status: 200, body: b } : { status: 404, body: { error: "no such bill" } };
+  }
+  return { status: 200, body: page([]) };
+}
+
+/** The invoice reader's answer (part 5a): the fixture's words read by regex; a file or a picture is XYZ's invoice. */
+function fakeInvoiceRead(messages: Msg[]) {
+  const user = messages.find((m) => m.role === "user") as unknown as { content: string | Array<{ type: string; text?: string; file?: { filename?: string } }> } | undefined;
+  const parts = typeof user?.content === "string" ? [{ type: "text", text: user.content }] : (user?.content ?? []);
+  const fig = (value: number | null, source: string | null, confidence: "high" | "medium" | "low" = "high") => ({ value, source: value != null ? source : null, confidence });
+  const none = fig(null, null, "low");
+  if (parts.some((p) => p.type === "file" || p.type === "image_url")) {
+    return { contractor: "XYZ Electric LLC", invoiceNumber: "1187", date: "November 20, 2026", dueDate: "December 5, 2026", amountDue: fig(7050, "Amount due $7,050"), subtotal: none, retainage: none, taxes: none, previouslyPaid: none, period: "Deposit, 30% of $23,500", reference: "Proposal #2041", remitTo: "XYZ Electric LLC, 4410 Rainier Ave S, Seattle, WA 98118", lines: [{ description: "Deposit, 30% of $23,500 per the accepted proposal", amount: 7050 }], flags: [], about: "An invoice from XYZ Electric, #1187, $7,050 for the deposit, read from the pages." };
+  }
+  const words = parts.map((p) => p.text ?? "").join("\n");
+  const money = (re: RegExp) => {
+    const m = re.exec(words);
+    return m ? Number(m[1].replace(/,/g, "")) : null;
+  };
+  const amountDue = money(/Amount due\s*:?\s*\$\s?([\d,]+(?:\.\d{2})?)/i);
+  const retainage = money(/Retainage[^$\n]{0,60}\$\s?([\d,]+)/i);
+  // "Payment: Deposit, at signing" when the invoice names it (pdf.js runs the table into the same line, so stop at "ITEM").
+  const period = /Payment:\s*([A-Za-z ,-]+?)(?=\s+ITEM\b|\s*$|\n)/i.exec(words)?.[1]?.trim() ?? /(Deposit[^\n$]{0,40}|Rough-in[^\n$]{0,40}|On completion[^\n$]{0,40})/i.exec(words)?.[1]?.trim().replace(/\s+(—|ITEM).*$/, "") ?? null;
+  const number = /Invoice #\s?([\w-]+)/i.exec(words)?.[1] ?? null;
+  const flags: string[] = [];
+  if (/approve this|pay at once|ignore the contract/i.test(words)) flags.push("The document carries an instruction to the reader; ignored.");
+  return {
+    contractor: /^([A-Z][A-Za-z&' ]+(?:LLC|Inc\.?))/m.exec(words)?.[1]?.trim() ?? null,
+    invoiceNumber: number,
+    date: /Date:\s*([A-Z][a-z]+ \d{1,2}, \d{4})/.exec(words)?.[1] ?? null,
+    dueDate: /Due:\s*([A-Z][a-z]+ \d{1,2}, \d{4})/.exec(words)?.[1] ?? null,
+    amountDue: amountDue != null ? fig(amountDue, /Amount due\s*:?\s*\$\s?[\d,]+/i.exec(words)?.[0] ?? null) : none,
+    subtotal: none,
+    retainage: retainage != null ? fig(retainage, /Retainage[^$\n]{0,60}\$\s?[\d,]+/i.exec(words)?.[0] ?? null, "medium") : none,
+    taxes: none,
+    previouslyPaid: none,
+    period,
+    reference: /Reference:\s*([^\n]{1,60})/i.exec(words)?.[1]?.trim() ?? null,
+    remitTo: /Remit to ([^.\n]{1,120})/i.exec(words)?.[1]?.trim() ?? null,
+    lines: amountDue != null ? [{ description: period ?? "Work billed", amount: amountDue }] : [],
+    flags,
+    about: `An invoice${number ? ` #${number}` : ""}${amountDue != null ? `, $${amountDue.toLocaleString("en-US")}` : ""}, read from the words.`,
+  };
+}
+
 function fakeQuoteRead(messages: Msg[]) {
   const user = messages.find((m) => m.role === "user") as unknown as { content: string | Array<{ type: string; text?: string; file?: { filename?: string } }> } | undefined;
   const parts = typeof user?.content === "string" ? [{ type: "text", text: user.content }] : (user?.content ?? []);
@@ -784,6 +893,13 @@ http
         return;
       }
       res.setHeader("content-type", "application/json");
+      // Ramp's Bill Pay (part 5a).
+      if (req.url?.startsWith("/developer/v1") || req.url?.startsWith("/__fake/ramp/")) {
+        const out = fakeRampRoute(req.method ?? "GET", req.url, raw);
+        res.statusCode = out.status;
+        res.end(JSON.stringify(out.body));
+        return;
+      }
       // The state register (data.wa.gov) and Google Places, for Find (the subcontractors plan, part 3).
       if (req.url?.includes("/resource/")) {
         const u = new URL(req.url, "http://127.0.0.1");
@@ -807,6 +923,10 @@ http
           // The estimate reader and the comparer (the subcontractors plan, part 2).
           if (body.response_format?.type === "json_schema" && body.response_format.json_schema?.name === "quote_read") {
             res.end(JSON.stringify(reply(JSON.stringify(fakeQuoteRead(body.messages ?? [])))));
+            return;
+          }
+          if (body.response_format?.type === "json_schema" && body.response_format.json_schema?.name === "invoice_read") {
+            res.end(JSON.stringify(reply(JSON.stringify(fakeInvoiceRead(body.messages ?? [])))));
             return;
           }
           if (body.response_format?.type === "json_schema" && body.response_format.json_schema?.name === "compare_words") {

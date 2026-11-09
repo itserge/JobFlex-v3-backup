@@ -24,7 +24,7 @@ export type { DocRow } from "@/lib/subDocs/server";
 // Part 2 (2026-11-08): the reply address on a request's email, the AI's read on a version, the budget's pending line.
 import { inboundReplyTo } from "@/lib/subInbound/config";
 import { REPLY_HINT, subjectTag } from "@/lib/subInbound/shared";
-import { committedOf, parseStoredCompare, parseStoredRead, pendingOf, type StoredCompare, type StoredRead } from "@/lib/subQuotes/shared";
+import { committedOf, paidOf, parseStoredCompare, parseStoredRead, pendingOf, type StoredCompare, type StoredRead } from "@/lib/subQuotes/shared";
 import {
   REQUEST_FIRST_NUMBER,
   askText,
@@ -631,6 +631,10 @@ export async function requestRevision(organizationId: string, quoteId: string, n
 export async function markQuotePaid(organizationId: string, quoteId: string, amount: number | null, actorId: string | null): Promise<{ projectId: string; expenseId: string }> {
   const q = await quoteOf(organizationId, quoteId);
   if (!["AWARDED", "INVOICED", "PAID"].includes(q.status)) throw new Error("Award the quote first.");
+  // Part 5a: a quote with invoices or recorded payments is paid on its invoices (the Invoices tab) — a lump "paid"
+  // here would count the money twice.
+  const [invoices, payments] = await Promise.all([db.subInvoice.count({ where: { quoteId: q.id, status: { not: "VOID" } } }), db.subPayment.count({ where: { quoteId: q.id, status: "RECORDED" } })]);
+  if (invoices || payments) throw new Error("This work has invoices — record the payment on them in the Invoices tab.");
   const amt = r2(Math.max(0, amount ?? q.invoiceAmount ?? q.amount ?? 0));
   if (!(amt > 0)) throw new Error("How much was paid?");
   const vendor = q.contractor.name;
@@ -842,6 +846,8 @@ export type QuoteView = {
   invoiceAmount: number | null;
   invoiceUrl: string | null;
   paid: boolean;
+  /** Part 5a: the signed subcontract's page, where invoices go once there is one. */
+  contractLink: string | null;
 };
 
 /** The sub's door: the recipient row behind a token, whether it still takes a price, and whose it is. */
@@ -873,6 +879,7 @@ export async function quoteView(token: string): Promise<QuoteView | null> {
       request: { select: { id: true, number: true, title: true, description: true, materials: true, labor: true, startsAt: true, endsAt: true, instructions: true, fileIdsJson: true, documents: { where: { kind: "PLAN" }, select: DOC_SELECT } } },
       versions: { orderBy: { version: "asc" }, select: VERSION_SELECT },
       project: { select: { id: true, name: true, number: true, organization: { select: { name: true, phone: true, deletedAt: true, timezone: true } } } },
+      contracts: { where: { status: "EXECUTED" }, take: 1, select: { publicToken: true } },
     },
   });
   if (!q || q.project.organization.deletedAt) return null;
@@ -921,6 +928,7 @@ export async function quoteView(token: string): Promise<QuoteView | null> {
     invoiceAmount: q.invoiceAmount,
     invoiceUrl: q.invoiceUrl,
     paid: q.status === "PAID",
+    contractLink: q.contracts[0] ? `/s/${q.contracts[0].publicToken}` : null,
   };
 }
 
@@ -976,11 +984,18 @@ export async function quoteReply(token: string, input: { amount: number | null; 
 
 /** The contractor's invoice, after the award: the amount and a link to the document (or none). */
 export async function invoiceReply(token: string, input: { amount: number; url: string | null }): Promise<{ ok: true } | { ok: false; error: string }> {
-  const q = await db.projectSubQuote.findUnique({ where: { publicToken: token }, select: { id: true, organizationId: true, projectId: true, requestId: true, status: true, contractor: { select: { name: true } }, stage: { select: { name: true } }, project: { select: { name: true, organization: { select: { deletedAt: true } } } } } });
+  const q = await db.projectSubQuote.findUnique({ where: { publicToken: token }, select: { id: true, organizationId: true, status: true, project: { select: { organization: { select: { deletedAt: true } } } }, contracts: { where: { status: "EXECUTED" }, take: 1, select: { id: true } }, invoices: { where: { status: "RECEIVED", source: "PORTAL", documentId: null }, orderBy: { number: "desc" }, take: 1, select: { id: true } } } });
   if (!q || q.project.organization.deletedAt) return { ok: false, error: "This link is not valid." };
   if (q.status !== "AWARDED" && q.status !== "INVOICED") return { ok: false, error: q.status === "PAID" ? "This invoice is paid — thank you." : "The work has not been awarded yet." };
-  await db.projectSubQuote.update({ where: { id: q.id }, data: { status: "INVOICED", invoiceAmount: r2(input.amount), invoiceUrl: input.url, invoicedAt: new Date() } });
-  await tellOffice(q.organizationId, q.projectId, `${q.contractor.name} sent an invoice for ${dollars(input.amount)} on ${q.project.name}${q.stage ? ` (${q.stage.name})` : ""}.`, { quoteId: q.id, requestId: q.requestId });
+  // Part 5a: with a signed subcontract, invoices go on its page (a payment of the schedule, a PDF, the waivers).
+  if (q.contracts.length) return { ok: false, error: "Send invoices from your subcontract's page — the link is in the email with your signed copy." };
+  // An invoice row like any other (lib/subInvoices), so the office reviews, approves and pays it the same way; sending
+  // again replaces the one not yet reviewed, as this page has always said.
+  const { createInvoice, editInvoice } = await import("@/lib/subInvoices/server");
+  const note = input.url ? `Invoice link: ${input.url}` : null;
+  if (q.invoices[0]) await editInvoice(q.organizationId, q.invoices[0].id, { amount: r2(input.amount), note });
+  else await createInvoice({ organizationId: q.organizationId, quoteId: q.id, amount: r2(input.amount), invoiceNumber: null, milestone: null, issuedAt: null, note, source: "PORTAL", file: null, actorId: null });
+  await db.projectSubQuote.update({ where: { id: q.id }, data: { invoiceUrl: input.url } });
   return { ok: true };
 }
 
@@ -1023,6 +1038,9 @@ export type QuoteRow = QuoteLike & {
   overdue: boolean;
   /** Part 4: the quote's live subcontract, when one exists — its number, state, price and approved changes. */
   contract: QuoteContract | null;
+  /** Part 5a: the cash recorded as paid on it (payments not voided), and its invoices not voided. */
+  paidOut: number;
+  invoiceCount: number;
 };
 
 export type QuoteContract = { id: string; number: number; status: string; amount: number; changes: number; pending: number };
@@ -1096,6 +1114,9 @@ const QUOTE_SELECT = {
   versions: { orderBy: { version: "asc" as const }, select: VERSION_SELECT },
   // Part 4: the live contract (one per quote), its approved and pending change orders.
   contracts: { where: { status: { in: ["DRAFT", "SENT", "VIEWED", "EXECUTED"] as string[] } }, orderBy: { number: "desc" as const }, take: 1, select: { id: true, number: true, status: true, amount: true, changeOrders: { select: { status: true, amount: true } } } },
+  // Part 5a: the payments recorded on it.
+  payments: { where: { status: "RECORDED" }, select: { amount: true } },
+  invoices: { where: { status: { not: "VOID" } }, select: { id: true } },
 } as const;
 
 function quoteContractOf(r: { contracts: Array<{ id: string; number: number; status: string; amount: number; changeOrders: Array<{ status: string; amount: number }> }> }): QuoteContract | null {
@@ -1175,6 +1196,8 @@ export async function subsOf(organizationId: string, projectId: string): Promise
       overBy: c.overBy,
       overdue: overdue(l, today),
       contract: quoteContractOf(r),
+      paidOut: r2(r.payments.reduce((n, p) => n + p.amount, 0)),
+      invoiceCount: r.invoices.length,
     };
   });
   const fileById = new Map(files.map((f) => [f.id, f]));
@@ -1230,7 +1253,7 @@ export function sectionMetrics(read: SubsRead): { subs: number; subsActive: numb
   const q = read.quotes;
   // Part 4: an executed contract (plus approved change orders) is the commitment; the awarded amount until then.
   const committed = r2(q.reduce((n, x) => n + committedOf(x), 0));
-  const paid = r2(q.filter((x) => x.status === "PAID").reduce((n, x) => n + (x.invoiceAmount ?? x.amount ?? 0), 0));
+  const paid = r2(q.reduce((n, x) => n + paidOf(x), 0));
   return {
     // Part 2: quoted but not awarded — the budget's own line, never counted as committed.
     pending: pendingOf(q),

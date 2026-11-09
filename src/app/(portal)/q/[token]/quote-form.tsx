@@ -231,6 +231,15 @@ export function QuoteForm({ token, view }: { token: string; view: QuoteView }) {
             {view.phone ? ` · Questions: ${view.phone}` : ""}
           </p>
         </>
+      ) : awarded && view.contractLink ? (
+        // Part 5a: with a signed subcontract, invoices go on its page — the payment they bill, the PDF, the waivers.
+        <p className="by-closed" data-quote-contract-link>
+          Your subcontract is signed — send your invoices from its page, where each one is tied to a payment of the schedule:{" "}
+          <a href={view.contractLink} style={{ fontWeight: 700, textDecoration: "underline" }}>
+            open your subcontract
+          </a>
+          .
+        </p>
       ) : awarded ? (
         <>
           {view.amount != null ? <p className="by-count">Your quote: {money(view.amount)}.</p> : null}

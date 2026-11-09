@@ -186,6 +186,8 @@ model Organization {
   subDocuments           SubDocument[]
   inboundEmails          InboundEmail[]
   subcontracts           Subcontract[]
+  subInvoices            SubInvoice[]
+  subPayments            SubPayment[]
   signupPromo            PromoCode?              @relation("OrgSignupPromo", fields: [signupPromoCodeId], references: [id], onDelete: SetNull)
 
   @@index([slug])
@@ -2553,6 +2555,8 @@ model Project {
   subRequests  SubRequest[]
   subDocuments SubDocument[]
   subcontracts Subcontract[]
+  subInvoices  SubInvoice[]
+  subPayments  SubPayment[]
   selections   ProjectSelection[]
   phases       ProjectPhase[]
   draws        ProjectDraw[]
@@ -2802,6 +2806,8 @@ model Contractor {
   quotes            ProjectSubQuote[]
   documents         SubDocument[]
   subcontracts      Subcontract[]
+  invoices          SubInvoice[]
+  payments          SubPayment[]
 
   @@index([organizationId, name])
 }
@@ -2856,6 +2862,8 @@ model ProjectSubQuote {
   versions          SubQuoteVersion[]
   inboundEmails     InboundEmail[]
   contracts         Subcontract[]
+  invoices          SubInvoice[]
+  payments          SubPayment[]
 
   @@index([projectId, status])
   @@index([organizationId, status])
@@ -2968,6 +2976,8 @@ model SubDocument {
   inboundEmail    InboundEmail?     @relation(fields: [inboundEmailId], references: [id], onDelete: SetNull)
   versions        SubQuoteVersion[]
   signedContracts Subcontract[]
+  invoices        SubInvoice[]
+  waivers         SubPayment[]
 
   @@index([organizationId, createdAt])
   @@index([projectId, kind])
@@ -3035,6 +3045,8 @@ model Subcontract {
   terms             String
   // SubDocument ids the sub sees with the agreement (the awarded estimate, the drawings).
   attachmentIdsJson String                   @default("[]")
+  // Part 5a: the percent held back from each payment, released with the last (null = none).
+  retainagePct      Float?
   publicToken       String                   @unique @default(cuid())
   sentAt            DateTime?
   viewedAt          DateTime?
@@ -3060,6 +3072,8 @@ model Subcontract {
   version           SubQuoteVersion?         @relation(fields: [versionId], references: [id], onDelete: SetNull)
   pdfDocument       SubDocument?             @relation(fields: [pdfDocumentId], references: [id], onDelete: SetNull)
   changeOrders      SubcontractChangeOrder[]
+  invoices           SubInvoice[]
+  payments           SubPayment[]
 
   @@unique([organizationId, number])
   @@index([projectId, status])
@@ -3095,6 +3109,123 @@ model SubcontractChangeOrder {
 
   @@index([contractId, status])
   @@index([organizationId, status])
+}
+
+// A SUB'S INVOICE (2026-11-09, the subcontractors plan, part 5a, lib/subInvoices): what a sub bills — sent on their
+// contract's page (/s/<token>), by email, or uploaded by the office — numbered company-wide ("SI-1001") beside the
+// sub's own number, tied to the quote and, when there is one, the contract and a payment of its schedule. The document
+// is read by the AI like an estimate and a person confirms the figures; the rules flag a duplicate, an amount above the
+// payment or the contract's balance, a change order not yet approved, the stage going over its share. Approved, it is
+// paid by recorded payments (SubPayment) — or sent to Ramp as a bill.
+model SubInvoice {
+  id             String          @id @default(cuid())
+  organizationId String
+  projectId      String
+  contractorId   String
+  quoteId        String
+  contractId     String?
+  number         Int
+  // The sub's own invoice number, as written on it.
+  invoiceNumber  String?
+  // null until typed or read and confirmed.
+  amount         Float?
+  // The payment of the contract's schedule it bills (an index into milestonesJson), its name kept as it was.
+  milestone      Int?
+  milestoneName  String?
+  issuedAt       DateTime?
+  dueAt          DateTime?
+  receivedAt     DateTime        @default(now())
+  // PORTAL (the sub's page) | EMAIL | OFFICE
+  source         String          @default("PORTAL")
+  documentId     String?
+  inboundEmailId String?
+  note           String?
+  // The AI's read, the same words as an estimate's: NONE | PENDING | READ | REVIEWED | REJECTED | FAILED
+  extractedJson  String?
+  reviewStatus   String          @default("NONE")
+  readAttempts   Int             @default(0)
+  readError      String?
+  // [{ kind, text }] — the rules' flags, written when it lands and again after the read.
+  flagsJson      String          @default("[]")
+  duplicateOfId  String?
+  // RECEIVED | APPROVED | PAID | DISPUTED | VOID
+  status         String          @default("RECEIVED")
+  approvedAt     DateTime?
+  approvedById   String?
+  disputedAt     DateTime?
+  disputeReason  String?
+  voidedAt       DateTime?
+  voidReason     String?
+  // The office was told once that it is due (the sweep).
+  dueNotifiedAt  DateTime?
+  rampBillId     String?
+  createdById    String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project        Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contractor     Contractor      @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  quote          ProjectSubQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  contract       Subcontract?    @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  document       SubDocument?    @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  payments       SubPayment[]
+
+  @@unique([organizationId, number])
+  @@index([projectId, status])
+  @@index([quoteId])
+  @@index([contractorId, receivedAt])
+  @@index([organizationId, reviewStatus])
+}
+
+// A PAYMENT TO A SUB (part 5a): money that left the company outside JobFlex — a check, ACH, a wire, Zelle, cash, a
+// card — or through Ramp's Bill Pay, recorded against an invoice (or as a release of the retainage held), with the
+// retainage kept back from it and the sub's lien waiver. Each one writes the project's Subcontractors expense on the
+// stage's phase; voiding it takes the expense back out.
+model SubPayment {
+  id               String          @id @default(cuid())
+  organizationId   String
+  projectId        String
+  contractorId     String
+  quoteId          String
+  contractId       String?
+  invoiceId        String?
+  // What left the company's account.
+  amount           Float
+  // Kept back from this invoice under the contract's retainage, still owed.
+  retainageHeld    Float           @default(0)
+  // A payment that releases retainage held earlier (no invoice of its own).
+  retainageRelease Boolean         @default(false)
+  // CHECK | ACH | WIRE | ZELLE | CASH | CARD | RAMP | OTHER
+  method           String
+  reference        String?
+  paidAt           DateTime
+  // RECORDED | VOID
+  status           String          @default("RECORDED")
+  waiverDocumentId String?
+  // CONDITIONAL_PROGRESS | UNCONDITIONAL_PROGRESS | CONDITIONAL_FINAL | UNCONDITIONAL_FINAL
+  waiverKind       String?
+  expenseId        String?
+  rampBillId       String?
+  // One payment per key: a double press, or Ramp's paid bill read twice, records once.
+  idempotencyKey   String?         @unique
+  note             String?
+  voidedAt         DateTime?
+  voidReason       String?
+  createdById      String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  organization     Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project          Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contractor       Contractor      @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  quote            ProjectSubQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  contract         Subcontract?    @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  invoice          SubInvoice?     @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  waiverDocument   SubDocument?    @relation(fields: [waiverDocumentId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, status])
+  @@index([invoiceId])
+  @@index([quoteId])
+  @@index([contractorId, paidAt])
 }
 
 // SELECTIONS (2026-11-07, the plan "Projects: Remodel and New construction", part 3): what the client has to choose

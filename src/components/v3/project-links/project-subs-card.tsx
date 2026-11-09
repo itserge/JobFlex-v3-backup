@@ -69,7 +69,7 @@ export function quoteTone(q: QuoteRow): string {
   return "";
 }
 
-export function ProjectSubsCard({ projectId, subs, stages, canManage, sectionHref, onOpenContract }: { projectId: string; subs: PdSubs; stages: PdStage[]; canManage: boolean; sectionHref?: string | null; onOpenContract?: (contractId: string) => void }) {
+export function ProjectSubsCard({ projectId, subs, stages, canManage, sectionHref, onOpenContract, onOpenInvoices }: { projectId: string; subs: PdSubs; stages: PdStage[]; canManage: boolean; sectionHref?: string | null; onOpenContract?: (contractId: string) => void; onOpenInvoices?: () => void }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [busy, setBusy] = useState<string | null>(null);
@@ -292,7 +292,22 @@ export function ProjectSubsCard({ projectId, subs, stages, canManage, sectionHre
                             {contractNo(q.contract.number)} · {CONTRACT_LABEL[contractStatusOf(q.contract.status)]}
                           </button>
                         ) : null}
-                        {q.status === "AWARDED" || q.status === "INVOICED" ? (
+                        {q.invoiceCount > 0 || q.paidOut > 0 ? (
+                          // Part 5a: invoiced work is paid on its invoices — the Invoices tab, not a lump "paid" here.
+                          <button
+                            type="button"
+                            className={s.btnSm}
+                            onClick={() => {
+                              if (onOpenInvoices) onOpenInvoices();
+                              else if (sectionHref) router.push(`${sectionHref}?tab=invoices` as Route);
+                            }}
+                            data-subs-open-invoices
+                          >
+                            {q.invoiceCount} invoice{q.invoiceCount === 1 ? "" : "s"}
+                            {q.paidOut > 0 ? ` · ${dollars(q.paidOut)} paid` : ""}
+                          </button>
+                        ) : null}
+                        {(q.status === "AWARDED" || q.status === "INVOICED") && !q.contract && q.invoiceCount === 0 && q.paidOut === 0 ? (
                           <>
                             <input className={s.input} inputMode="decimal" style={{ width: 110 }} value={paying[q.id] ?? String(q.invoiceAmount ?? q.amount ?? "")} onChange={(e) => setPaying((cur) => ({ ...cur, [q.id]: e.target.value }))} aria-label={`Paid to ${q.contractorName}`} data-subs-paid />
                             <button

@@ -1,7 +1,7 @@
 "use client";
 // THE SUBCONTRACTORS SECTION (2026-11-08, the subcontractors plan, part 1): a page of its own inside a project,
 // reached from the project page's Subcontractors card. One tab strip — Overview · Find · My subs · Requests · Quotes ·
-// Compare · Contracts · Budget · History (Invoices and Payments arrive with part 5) — each tab a hub card. Overview
+// Compare · Contracts · Invoices · Payments · Budget · History — each tab a hub card. Overview
 // is the figures the prompt asks for and the last moves; Subs is the company's directory (add, edit, the paper on
 // file); Requests lists every request with its recipients and their state; Quotes is the project's Subcontractors
 // card itself (every version, the viewer, award, revision, mark paid); History is the project's trail filtered to
@@ -17,6 +17,7 @@ import type { ContractorRow, DocRow } from "@/lib/projectSubs/server";
 import { QUOTE_LABEL, contractorFlags, dollars, insuranceWords, quoteStatusOf, requestNo, tradeForStage } from "@/lib/projectSubs/shared";
 import { SubsFind } from "./subs-find";
 import { SubsContracts } from "./subs-contracts";
+import { SubsInvoices, SubsPayments } from "./subs-invoices";
 import type { SubsSectionRead } from "./subs-section-load";
 import { ContractorSheet, draftOf, type ContractorDraft } from "./contractor-sheet";
 import { SUBS_TABS as TABS, type SubsTab } from "./subs-tabs";
@@ -102,6 +103,7 @@ export function SubsSection({ read, canManage, initialTab, hrefs, signerName = "
             {t.key === "requests" && m.requestsOpen ? <b>{m.requestsOpen}</b> : null}
             {t.key === "quotes" && m.awaitingApproval ? <b>{m.awaitingApproval}</b> : null}
             {t.key === "contracts" && m.contractsOut ? <b>{m.contractsOut}</b> : null}
+            {t.key === "invoices" && read.invoices.totals.toReview ? <b>{read.invoices.totals.toReview}</b> : null}
           </button>
         ))}
       </nav>
@@ -121,7 +123,8 @@ export function SubsSection({ read, canManage, initialTab, hrefs, signerName = "
             <Tile label="Awarded" value={String(m.awarded)} sub={`${m.invoicesOpen} invoice${m.invoicesOpen === 1 ? "" : "s"} open`} />
             <Tile label="Contracts" value={String(m.contractsSigned)} sub={`signed${m.contractsOut ? ` · ${m.contractsOut} out for signature` : ""}`} />
             <Tile label="Committed" value={money(m.committed)} sub="signed contracts and changes, else awarded" />
-            <Tile label="Paid" value={money(m.paid)} sub="to subs on this project" />
+            <Tile label="Paid" value={money(m.paid)} sub={read.invoices.totals.held ? `${money(read.invoices.totals.held)} retainage held` : "to subs on this project"} />
+            <Tile label="Invoices" value={String(read.invoices.totals.toReview)} sub={read.invoices.totals.owed ? `to review · ${money(read.invoices.totals.owed)} owed now` : "to review"} warn={read.invoices.totals.toReview > 0} />
             <Tile label="Subs budget" value={m.subsBudget != null ? money(m.subsBudget) : "—"} sub={m.remaining != null ? `${money(m.remaining)} left after committed and paid${m.pending ? `; ${money(m.pending)} pending` : ""}` : "no Subcontractors line in the budget"} warn={m.remaining != null && m.remaining < 0} />
           </div>
           {read.subs.flags.length ? (
@@ -286,7 +289,14 @@ export function SubsSection({ read, canManage, initialTab, hrefs, signerName = "
         </section>
       ) : null}
 
-      {tab === "quotes" ? <ProjectSubsCard projectId={read.project.id} subs={{ ...read.subs, contractors }} stages={read.stages} canManage={canManage} onOpenContract={(id) => { setOpenContract(id); setTab("contracts"); }} /> : null}
+      {tab === "quotes" ? <ProjectSubsCard projectId={read.project.id} subs={{ ...read.subs, contractors }} stages={read.stages} canManage={canManage} onOpenContract={(id) => { setOpenContract(id); setTab("contracts"); }} onOpenInvoices={() => setTab("invoices")} /> : null}
+
+      {tab === "invoices" ? (
+        // Part 5a: the subs' invoices, read and checked; payments recorded against them, retainage, waivers, Ramp.
+        <SubsInvoices read={read.invoices} quotes={read.subs.quotes} contracts={read.contracts} canManage={canManage} ramp={read.ramp} projectId={read.project.id} onNote={setNote} refresh={refresh} />
+      ) : null}
+
+      {tab === "payments" ? <SubsPayments read={read.invoices} canManage={canManage} projectId={read.project.id} onNote={setNote} refresh={refresh} /> : null}
 
       {tab === "contracts" ? (
         // Part 4: the subcontracts drafted from awarded quotes, signed on the sub's page, with their change orders.
@@ -443,7 +453,7 @@ export function SubsSection({ read, canManage, initialTab, hrefs, signerName = "
                   <p className={h.empty}>No quotes yet — the Subcontractors line is untouched.</p>
                 )}
                 <p className={s.muted} style={{ marginTop: 10, fontSize: 12.5 }}>
-                  Pending is quoted but not awarded — it never counts as committed or spent. Committed is a signed contract with its approved change orders, else the awarded or invoiced amount; Left is the share after committed and paid. Awarding over a share, or a change order that goes over it, asks once before it goes through.
+                  Pending is quoted but not awarded — it never counts as committed or spent. Committed is a signed contract with its approved change orders, else the awarded or invoiced amount, less what has been paid on it (retainage held stays committed); Paid is the recorded payments; Left is the share after committed and paid. Awarding over a share, or a change order that goes over it, asks once before it goes through.
                 </p>
               </section>
             );

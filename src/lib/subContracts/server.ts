@@ -21,6 +21,7 @@ import { SUB_CONTRACT_KIND, tellOffice, type SendState } from "@/lib/projectSubs
 import { DOC_SELECT, docRow, recordDocument, type DocRow } from "@/lib/subDocs/server";
 import { docPathname } from "@/lib/subDocs/shared";
 import { projectSiteAddress } from "@/lib/subFinder/server";
+import { contractInvoiceView, contractMoneyDocumentIds, type SubInvoiceView } from "@/lib/subInvoices/server";
 import {
   CONTRACT_FIRST_NUMBER,
   CONTRACT_LIVE,
@@ -69,6 +70,7 @@ const CONTRACT_SELECT = {
   startsAt: true,
   endsAt: true,
   depositPct: true,
+  retainagePct: true,
   milestonesJson: true,
   terms: true,
   attachmentIdsJson: true,
@@ -114,6 +116,7 @@ export type ContractRow = {
   startsAt: string | null;
   endsAt: string | null;
   depositPct: number | null;
+  retainagePct: number | null;
   milestones: Milestone[];
   terms: string;
   attachmentIds: string[];
@@ -171,6 +174,7 @@ function rowOf(c: ContractDb, base: string, attachments: DocRow[]): ContractRow 
     startsAt: isoDay(c.startsAt),
     endsAt: isoDay(c.endsAt),
     depositPct: c.depositPct,
+    retainagePct: c.retainagePct,
     milestones: parseMilestones(c.milestonesJson),
     terms: c.terms,
     attachmentIds: parseIds(c.attachmentIdsJson),
@@ -330,6 +334,7 @@ export type ContractPatch = {
   startsAt?: string | null;
   endsAt?: string | null;
   depositPct?: number | null;
+  retainagePct?: number | null;
   milestones?: Milestone[];
   terms?: string;
   attachmentIds?: string[];
@@ -361,6 +366,7 @@ export async function updateContract(organizationId: string, id: string, patch: 
       ...(patch.startsAt !== undefined ? { startsAt: day(patch.startsAt) } : {}),
       ...(patch.endsAt !== undefined ? { endsAt: day(patch.endsAt) } : {}),
       ...(patch.depositPct !== undefined ? { depositPct: patch.depositPct } : {}),
+      ...(patch.retainagePct !== undefined ? { retainagePct: patch.retainagePct != null && patch.retainagePct > 0 ? Math.min(50, Math.round(patch.retainagePct * 10) / 10) : null } : {}),
       ...(patch.milestones ? { milestonesJson: JSON.stringify(patch.milestones) } : {}),
       ...(patch.terms != null ? { terms: patch.terms.trim().slice(0, 20000) } : {}),
       ...(attachmentIds ? { attachmentIdsJson: JSON.stringify(attachmentIds) } : {}),
@@ -489,6 +495,8 @@ export type ContractView = {
   signed: { name: string; at: string; ip: string | null } | null;
   pdfHref: string | null;
   changes: ChangeRow[];
+  /** Part 5a: once signed, the sub's invoices and payments on it, the schedule with what is billed. */
+  money: SubInvoiceView | null;
 };
 
 async function byToken(token: string) {
@@ -532,6 +540,7 @@ export async function contractView(token: string): Promise<ContractView | null> 
       startsAt: isoDay(c.startsAt),
       endsAt: isoDay(c.endsAt),
       milestones: parseMilestones(c.milestonesJson),
+      retainagePct: c.retainagePct,
       terms: c.terms,
       attachments: attachments.map((a) => a.name),
       changes,
@@ -541,6 +550,7 @@ export async function contractView(token: string): Promise<ContractView | null> 
     signed: c.signedName && c.signedAt ? { name: c.signedName, at: c.signedAt.toISOString(), ip: c.signedIp } : null,
     pdfHref: c.pdfDocument ? `/api/s/${token}/file/${c.pdfDocument.id}?download=1` : null,
     changes,
+    money: c.status === "EXECUTED" ? await contractInvoiceView(token) : null,
   };
 }
 
@@ -548,7 +558,8 @@ export async function contractView(token: string): Promise<ContractView | null> 
 export async function contractDocumentForToken(token: string, documentId: string): Promise<{ url: string; name: string; contentType: string | null } | null> {
   const c = await byToken(token);
   if (!c) return null;
-  const allowed = new Set([...parseIds(c.attachmentIdsJson), ...(c.pdfDocumentId ? [c.pdfDocumentId] : [])]);
+  // Part 5a: the sub's own invoices and lien waivers on this contract open through it too.
+  const allowed = new Set([...parseIds(c.attachmentIdsJson), ...(c.pdfDocumentId ? [c.pdfDocumentId] : []), ...(await contractMoneyDocumentIds(c.id))]);
   if (!allowed.has(documentId)) return null;
   const d = await db.subDocument.findFirst({ where: { id: documentId, organizationId: c.organizationId }, select: { url: true, name: true, contentType: true } });
   return d;
@@ -611,6 +622,7 @@ export async function buildContractPdf(organizationId: string, id: string): Prom
     startsAt: isoDay(c.startsAt),
     endsAt: isoDay(c.endsAt),
     milestones: parseMilestones(c.milestonesJson),
+    retainagePct: c.retainagePct,
     terms: c.terms,
     attachments: (att.get(c.id) ?? []).map((d) => d.name),
     changes,

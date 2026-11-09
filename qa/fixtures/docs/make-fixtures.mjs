@@ -12,8 +12,11 @@
 //   estimate-injection.pdf    an estimate that carries an instruction to the reader — figures must come back, no action
 //   invoice-xyz.pdf           the deposit invoice (part 5 reads invoices; the inbound walk uses it as "not a quote")
 //   blank-scan.pdf            a white page: a document with nothing to read
+//   invoice-ridge.pdf         Ridge Framing's deposit invoice on a $42,000 subcontract (part 5a reads it: #R-207, $8,400)
 //   fake.pdf                  text bytes named .pdf: the first-bytes check must refuse it
 // estimate-sample.pdf (ABC Electrical, $18,500, one page) is hand-made by the part 1 script and stays as it is.
+//
+// ONLY=<file name> writes just that one (a new fixture without rewriting the others' bytes).
 //
 // Playwright is not a dependency of the app: it comes from the QA tree's node_modules (qa/node_modules of the main
 // checkout, where the walks load it from), or from PLAYWRIGHT_DIR.
@@ -113,6 +116,25 @@ function estimateHtml({ number, date, validUntil, revised = false, injection = f
 </body></html>`;
 }
 
+function ridgeInvoiceHtml() {
+  return `<!doctype html><html><head><meta charset="utf-8"><style>${CSS}</style></head><body>
+<div class="page">
+  <div class="brand">
+    <div><h1>Ridge Framing LLC</h1><small>2210 Industry Dr, Kirkland, WA 98034 · (425) 555-0177</small></div>
+    <div style="text-align:right"><h1>Invoice #R-207</h1><small>Date: November 9, 2026</small><small>Due: November 24, 2026 (net 15)</small></div>
+  </div>
+  <h2>Bill to</h2>
+  <p>QA Co · Subcontract for framing · Payment: Deposit, at signing</p>
+  <table>
+    <tr><th>Item</th><th class="n">Amount</th></tr>
+    <tr><td>Deposit, at signing — 20% of the $42,000 subcontract</td><td class="n">$8,400</td></tr>
+    <tr class="total"><td>Amount due</td><td class="n">$8,400</td></tr>
+  </table>
+  <p style="margin-top:14px">Remit to Ridge Framing LLC, 2210 Industry Dr, Kirkland, WA 98034. Check or ACH. Thank you.</p>
+</div>
+</body></html>`;
+}
+
 function invoiceHtml() {
   return `<!doctype html><html><head><meta charset="utf-8"><style>${CSS}</style></head><body>
 <div class="page">
@@ -137,7 +159,9 @@ const revised = { number: "2041-R1", date: "November 12, 2026", validUntil: "Dec
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 816, height: 1056 } });
+const ONLY = process.env.ONLY ?? null;
 const pdf = async (html, name) => {
+  if (ONLY && ONLY !== name) return;
   await page.setContent(html, { waitUntil: "load" });
   const buf = await page.pdf({ format: "Letter", printBackground: true, preferCSSPageSize: false, margin: { top: "0", right: "0", bottom: "0", left: "0" } });
   writeFileSync(join(here, name), buf);
@@ -148,6 +172,11 @@ await pdf(estimateHtml(estimate), "estimate-xyz.pdf");
 await pdf(estimateHtml(revised), "estimate-xyz-revised.pdf");
 await pdf(estimateHtml({ ...estimate, injection: true }), "estimate-injection.pdf");
 await pdf(invoiceHtml(), "invoice-xyz.pdf");
+await pdf(ridgeInvoiceHtml(), "invoice-ridge.pdf");
+if (ONLY) {
+  await browser.close();
+  process.exit(0);
+}
 await pdf(`<!doctype html><html><body style="margin:0"><div style="width:8.5in;height:11in;background:#fff"></div></body></html>`, "blank-scan.pdf");
 
 // The first page as a picture: a screenshot of the page, then a PDF that holds only the picture (no text layer).

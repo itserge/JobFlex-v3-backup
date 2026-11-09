@@ -9,6 +9,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { contractChangeAnswer, contractSign } from "@/actions/projectSubs";
 import type { ContractView } from "@/lib/subContracts/server";
+import { ContractMoney } from "./contract-money";
 import { AGREE_CHANGE_WORDS, CHANGE_LABEL, SIGN_WORDS, changeNo, changeStatusOf, contractNo, signedUsd, usd } from "@/lib/subContracts/shared";
 
 const when = (iso: string) => new Date(iso).toLocaleString("en-US", { month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
@@ -206,6 +207,7 @@ export function ContractSign({ token, view }: { token: string; view: ContractVie
                   </ul>
                 </div>
               ) : null}
+              {view.money ? <ContractMoney token={token} money={view.money} company={view.company} /> : null}
             </>
           ) : view.canSign ? (
             <div className="sc-signbox" data-contract-signbox>

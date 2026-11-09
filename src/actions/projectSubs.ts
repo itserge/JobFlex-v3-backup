@@ -40,6 +40,12 @@ import type { FinderResult, NetworkSettings } from "@/lib/subFinder/shared";
 // Part 4 (2026-11-08): subcontracts — the draft, the send, the signature, the change orders.
 import { buildContractPdf, cancelContract, decideChangeByToken, decideChangeInOffice, draftContract, proposeChange, resendContract, sendContract, signContract, updateContract, type ChangeRow, type ContractRow } from "@/lib/subContracts/server";
 import { changeDecisionInput, signInput } from "@/lib/subContracts/shared";
+// Part 5a (2026-11-09): invoices and payments.
+import { after } from "next/server";
+import { acceptInvoiceRead, approveInvoice, attachWaiver, createInvoice, disputeInvoice, editInvoice, invoiceFromContractPage, readInvoiceAgain, recordPayment, rejectInvoiceRead, releaseRetainage, runPendingInvoiceReads, sendInvoiceToRamp, voidInvoice, voidPayment, waiverFromContractPage, type InvoiceRow, type PaymentRow } from "@/lib/subInvoices/server";
+import { MANUAL_METHODS, WAIVER_KINDS, subInvoiceInput, type PayMethod } from "@/lib/subInvoices/shared";
+import { requireFeatureOrThrow } from "@/lib/entitlements";
+import { getOrgPlanById } from "@/lib/orgPlan";
 
 const ID = z.string().min(1).max(64);
 const DAY = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -351,6 +357,7 @@ const contractPatch = z.object({
   startsAt: DAY.nullable().optional(),
   endsAt: DAY.nullable().optional(),
   depositPct: z.number().min(0).max(100).nullable().optional(),
+  retainagePct: z.number().min(0).max(50).nullable().optional(),
   milestones: z.array(milestoneIn).min(1).max(8).optional(),
   terms: z.string().trim().min(1).max(20000).optional(),
   attachmentIds: z.array(ID).max(30).optional(),
@@ -441,4 +448,148 @@ export async function contractChangeAnswer(token: string, raw: unknown): Promise
   const d = changeDecisionInput.safeParse(raw);
   if (!d.success) return { ok: false, error: d.error.issues[0]?.message ?? "Type your full name to agree." };
   return decideChangeByToken(token, { changeId: d.data.changeId, agree: d.data.agree, name: d.data.agree ? d.data.name : null, reason: d.data.agree ? null : (d.data.reason ?? null), ip: await clientIp(), userAgent: await userAgent() });
+}
+
+// ── part 5a: invoices and payments ───────────────────────────────────────────
+// Invoices are reviewed by estimators and managers (like quotes); money moves only by an owner or manager (the plan's
+// rule for paying). The sub's contract page sends an invoice and a lien waiver with its token alone, rate-limited.
+
+const PAYDAY = DAY;
+const invoicePatch = z.object({
+  invoiceId: ID,
+  amount: z.number().min(0).max(100_000_000).nullable().optional(),
+  invoiceNumber: z.string().trim().max(60).nullable().optional(),
+  milestone: z.number().int().min(0).max(20).nullable().optional(),
+  issuedAt: DAY.nullable().optional(),
+  dueAt: DAY.nullable().optional(),
+  note: z.string().trim().max(1000).nullable().optional(),
+});
+
+export async function enterSubInvoice(raw: unknown): Promise<InvoiceRow> {
+  const { organizationId, user } = await requireEstimatorOrManager();
+  const d = z.object({ quoteId: ID, amount: z.number().min(0).max(100_000_000).nullable(), invoiceNumber: z.string().trim().max(60).nullable(), milestone: z.number().int().min(0).max(20).nullable(), issuedAt: DAY.nullable(), dueAt: DAY.nullable(), note: z.string().trim().max(1000).nullable(), file: fileIn.nullable() }).parse(raw);
+  const row = await createInvoice({ organizationId, quoteId: d.quoteId, amount: d.amount, invoiceNumber: d.invoiceNumber, milestone: d.milestone, issuedAt: d.issuedAt, dueAt: d.dueAt, note: d.note, source: "OFFICE", file: d.file, actorId: user.id });
+  if (d.file) after(() => runPendingInvoiceReads(2).then(() => undefined));
+  touched(row.projectId);
+  return row;
+}
+
+export async function editSubInvoice(raw: unknown): Promise<InvoiceRow> {
+  const { organizationId } = await requireEstimatorOrManager();
+  const { invoiceId, ...patch } = invoicePatch.parse(raw);
+  const row = await editInvoice(organizationId, invoiceId, patch);
+  touched(row.projectId);
+  return row;
+}
+
+export async function approveSubInvoice(invoiceId: string): Promise<InvoiceRow> {
+  const { organizationId, user } = await requireEstimatorOrManager();
+  const row = await approveInvoice(organizationId, ID.parse(invoiceId), user.id);
+  touched(row.projectId);
+  return row;
+}
+
+export async function disputeSubInvoice(raw: unknown): Promise<InvoiceRow> {
+  const { organizationId, user } = await requireEstimatorOrManager();
+  const d = z.object({ invoiceId: ID, reason: z.string().trim().min(1).max(500) }).parse(raw);
+  const row = await disputeInvoice(organizationId, d.invoiceId, d.reason, user.id);
+  touched(row.projectId);
+  return row;
+}
+
+export async function voidSubInvoice(raw: unknown): Promise<InvoiceRow> {
+  const { organizationId, user } = await requireEstimatorOrManager();
+  const d = z.object({ invoiceId: ID, reason: z.string().trim().max(300).nullable() }).parse(raw);
+  const row = await voidInvoice(organizationId, d.invoiceId, d.reason, user.id);
+  touched(row.projectId);
+  return row;
+}
+
+export async function adoptSubInvoiceRead(invoiceId: string): Promise<InvoiceRow> {
+  const { organizationId, user } = await requireEstimatorOrManager();
+  const row = await acceptInvoiceRead(organizationId, ID.parse(invoiceId), user.id);
+  touched(row.projectId);
+  return row;
+}
+
+export async function setAsideSubInvoiceRead(invoiceId: string): Promise<void> {
+  const { organizationId } = await requireEstimatorOrManager();
+  await rejectInvoiceRead(organizationId, ID.parse(invoiceId));
+  touched(null);
+}
+
+export async function readSubInvoiceNow(invoiceId: string): Promise<{ ok: boolean; status: string; error: string | null }> {
+  const { organizationId } = await requireEstimatorOrManager();
+  const r = await readInvoiceAgain(organizationId, ID.parse(invoiceId));
+  touched(null);
+  return r;
+}
+
+/** Money moves only on a plan that has Subcontractor payments (lib/entitlements — on every plan today). */
+async function paymentsAllowed(organizationId: string): Promise<void> {
+  requireFeatureOrThrow(await getOrgPlanById(organizationId), "sub_payments");
+}
+
+export async function recordSubPayment(raw: unknown): Promise<{ payment: PaymentRow; duplicate: boolean; email: "sent" | "none" | "failed" }> {
+  const { organizationId, user } = await requireManager();
+  await paymentsAllowed(organizationId);
+  const d = z
+    .object({ invoiceId: ID, amount: z.number().min(0).max(100_000_000), held: z.number().min(0).max(100_000_000), method: z.enum(MANUAL_METHODS as unknown as [PayMethod, ...PayMethod[]]), reference: z.string().trim().max(60).nullable(), paidAt: PAYDAY, waiverKind: z.enum(WAIVER_KINDS).nullable(), waiverFile: fileIn.nullable(), note: z.string().trim().max(500).nullable(), key: z.string().min(8).max(80) })
+    .parse(raw);
+  const r = await recordPayment(organizationId, { invoiceId: d.invoiceId, amount: d.amount, held: d.held, release: false, method: d.method, reference: d.reference, paidAt: d.paidAt, waiverKind: d.waiverKind, waiverFile: d.waiverFile, note: d.note, key: `office:${organizationId}:${d.key}` }, user.id);
+  touched(null);
+  return r;
+}
+
+export async function voidSubPayment(raw: unknown): Promise<PaymentRow> {
+  const { organizationId, user } = await requireManager();
+  const d = z.object({ paymentId: ID, reason: z.string().trim().max(300).nullable() }).parse(raw);
+  const row = await voidPayment(organizationId, d.paymentId, d.reason, user.id);
+  touched(null);
+  return row;
+}
+
+export async function keepSubWaiver(raw: unknown): Promise<PaymentRow> {
+  const { organizationId, user } = await requireEstimatorOrManager();
+  const d = z.object({ paymentId: ID, kind: z.enum(WAIVER_KINDS), file: fileIn }).parse(raw);
+  const row = await attachWaiver(organizationId, d.paymentId, d.kind, d.file, user.id);
+  touched(null);
+  return row;
+}
+
+export async function releaseSubRetainage(raw: unknown): Promise<{ payment: PaymentRow; duplicate: boolean }> {
+  const { organizationId, user } = await requireManager();
+  await paymentsAllowed(organizationId);
+  const d = z.object({ contractId: ID, amount: z.number().min(0.01).max(100_000_000).nullable(), method: z.enum(MANUAL_METHODS as unknown as [PayMethod, ...PayMethod[]]), reference: z.string().trim().max(60).nullable(), paidAt: PAYDAY, key: z.string().min(8).max(80) }).parse(raw);
+  const r = await releaseRetainage(organizationId, d.contractId, { amount: d.amount, method: d.method, reference: d.reference, paidAt: d.paidAt, key: `office:${organizationId}:${d.key}` }, user.id);
+  touched(null);
+  return { payment: r.payment, duplicate: r.duplicate };
+}
+
+export async function sendSubInvoiceToRamp(invoiceId: string): Promise<{ ok: true; warning: string | null } | { ok: false; error: string }> {
+  const { organizationId, user } = await requireManager();
+  await paymentsAllowed(organizationId);
+  const r = await sendInvoiceToRamp(organizationId, ID.parse(invoiceId), { userId: user.id, name: user.name?.trim() || user.email || "JobFlex" });
+  touched(null);
+  return r;
+}
+
+/** The sub sends an invoice from their signed contract's page. */
+export async function contractInvoiceSave(token: string, raw: unknown): Promise<{ ok: true; number: string } | { ok: false; error: string }> {
+  const gate = await publicGate(token, "invoice");
+  if (gate) return gate;
+  const d = subInvoiceInput.safeParse(raw);
+  if (!d.success) return { ok: false, error: d.error.issues[0]?.message ?? "Check the amount — numbers only." };
+  const r = await invoiceFromContractPage(token, d.data);
+  if (r.ok && d.data.file) after(() => runPendingInvoiceReads(2).then(() => undefined));
+  return r;
+}
+
+/** The sub sends the lien waiver for a payment from the same page. */
+export async function contractWaiverSave(token: string, raw: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
+  const gate = await publicGate(token, "waiver");
+  if (gate) return gate;
+  const d = z.object({ paymentId: ID, kind: z.enum(WAIVER_KINDS), file: fileIn }).safeParse(raw);
+  if (!d.success) return { ok: false, error: "Attach the signed waiver — a PDF or a picture." };
+  return waiverFromContractPage(token, d.data.paymentId, d.data.kind, d.data.file);
 }

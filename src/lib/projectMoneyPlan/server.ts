@@ -93,7 +93,7 @@ export async function moneyPlanOf(organizationId: string, projectId: string): Pr
         stages: { orderBy: { position: "asc" }, select: { id: true, phaseId: true, status: true, weight: true, startsAt: true, endsAt: true, name: true, tasks: { select: { doneAt: true, title: true } } } },
         expenses: { select: { amount: true, category: true, phaseId: true } },
         orders: { where: { status: { in: ["ORDERED", "SHIPPED", "DELIVERED", "PARTIAL"] }, expenseId: null }, select: { quotedTotal: true, stageId: true } },
-        subQuotes: { where: { status: { in: ["AWARDED", "INVOICED"] } }, select: { id: true, status: true, amount: true, invoiceAmount: true, stageId: true, contractor: { select: { name: true, trade: true } }, stage: { select: { name: true, weight: true } }, contracts: { where: { status: "EXECUTED" }, select: { amount: true, changeOrders: { where: { status: "APPROVED" }, select: { amount: true } } } } } },
+        subQuotes: { where: { status: { in: ["AWARDED", "INVOICED"] } }, select: { id: true, status: true, amount: true, invoiceAmount: true, stageId: true, contractor: { select: { name: true, trade: true } }, stage: { select: { name: true, weight: true } }, contracts: { where: { status: "EXECUTED" }, select: { amount: true, changeOrders: { where: { status: "APPROVED" }, select: { amount: true } } } }, payments: { where: { status: "RECORDED" }, select: { amount: true } } } },
       },
     }),
     projectMoney(organizationId, [projectId]),
@@ -119,7 +119,7 @@ export async function moneyPlanOf(organizationId: string, projectId: string): Pr
     const ph = q.stageId ? phaseOfStage.get(q.stageId) : null;
     // Part 4 of the subcontractors plan: an executed subcontract (plus its approved change orders) is the commitment.
     const c = q.contracts[0];
-    const v = committedOf({ stageId: q.stageId, status: q.status, amount: q.amount, invoiceAmount: q.invoiceAmount, contract: c ? { status: "EXECUTED", amount: c.amount, changes: c.changeOrders.reduce((n, x) => n + x.amount, 0) } : null });
+    const v = committedOf({ stageId: q.stageId, status: q.status, amount: q.amount, invoiceAmount: q.invoiceAmount, contract: c ? { status: "EXECUTED", amount: c.amount, changes: c.changeOrders.reduce((n, x) => n + x.amount, 0) } : null, paidOut: q.payments.reduce((n, x) => n + x.amount, 0) });
     if (ph) committedBy.set(ph, (committedBy.get(ph) ?? 0) + v);
     else looseCommitted += v;
   }
