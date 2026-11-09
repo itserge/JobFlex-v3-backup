@@ -185,6 +185,7 @@ model Organization {
   subRequests            SubRequest[]
   subDocuments           SubDocument[]
   inboundEmails          InboundEmail[]
+  subcontracts           Subcontract[]
   signupPromo            PromoCode?              @relation("OrgSignupPromo", fields: [signupPromoCodeId], references: [id], onDelete: SetNull)
 
   @@index([slug])
@@ -2551,6 +2552,7 @@ model Project {
   subQuotes    ProjectSubQuote[]
   subRequests  SubRequest[]
   subDocuments SubDocument[]
+  subcontracts Subcontract[]
   selections   ProjectSelection[]
   phases       ProjectPhase[]
   draws        ProjectDraw[]
@@ -2586,17 +2588,18 @@ model ProjectStage {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  project     Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  phase       ProjectPhase?       @relation(fields: [phaseId], references: [id], onDelete: SetNull)
-  after       ProjectStage?       @relation("StageAfter", fields: [afterId], references: [id], onDelete: SetNull)
-  dependents  ProjectStage[]      @relation("StageAfter")
-  tasks       ProjectTask[]
-  materials   ProjectMaterial[]
-  orders      ProjectOrder[]
-  inspections ProjectInspection[]
-  subQuotes   ProjectSubQuote[]
-  subRequests SubRequest[]
-  selections  ProjectSelection[]
+  project      Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  phase        ProjectPhase?       @relation(fields: [phaseId], references: [id], onDelete: SetNull)
+  after        ProjectStage?       @relation("StageAfter", fields: [afterId], references: [id], onDelete: SetNull)
+  dependents   ProjectStage[]      @relation("StageAfter")
+  tasks        ProjectTask[]
+  materials    ProjectMaterial[]
+  orders       ProjectOrder[]
+  inspections  ProjectInspection[]
+  subQuotes    ProjectSubQuote[]
+  subRequests  SubRequest[]
+  subcontracts Subcontract[]
+  selections   ProjectSelection[]
 
   @@index([projectId, position])
   @@index([phaseId])
@@ -2798,6 +2801,7 @@ model Contractor {
   organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   quotes            ProjectSubQuote[]
   documents         SubDocument[]
+  subcontracts      Subcontract[]
 
   @@index([organizationId, name])
 }
@@ -2851,6 +2855,7 @@ model ProjectSubQuote {
   request           SubRequest?       @relation(fields: [requestId], references: [id], onDelete: SetNull)
   versions          SubQuoteVersion[]
   inboundEmails     InboundEmail[]
+  contracts         Subcontract[]
 
   @@index([projectId, status])
   @@index([organizationId, status])
@@ -2926,6 +2931,7 @@ model SubQuoteVersion {
   createdAt      DateTime        @default(now())
   quote          ProjectSubQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
   document       SubDocument?    @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  contracts      Subcontract[]
 
   @@unique([quoteId, version])
   @@index([organizationId, submittedAt])
@@ -2936,31 +2942,32 @@ model SubQuoteVersion {
 // signed link or the sub's token, never a permanent URL. `sha256` finds the same file sent twice; `scanStatus` is
 // the malware scan's word once a scanner exists (PENDING | CLEAN | FLAGGED | SKIPPED).
 model SubDocument {
-  id             String            @id @default(cuid())
-  organizationId String
-  projectId      String?
-  contractorId   String?
-  requestId      String?
+  id              String            @id @default(cuid())
+  organizationId  String
+  projectId       String?
+  contractorId    String?
+  requestId       String?
   // Part 2: the email it arrived in, when it came by email.
-  inboundEmailId String?
+  inboundEmailId  String?
   // QUOTE | INVOICE | CONTRACT | WAIVER | INSURANCE | W9 | PLAN | OTHER
-  kind           String            @default("QUOTE")
-  name           String
-  url            String
-  contentType    String?
-  bytes          Int?
-  sha256         String?
-  scanStatus     String            @default("SKIPPED")
+  kind            String            @default("QUOTE")
+  name            String
+  url             String
+  contentType     String?
+  bytes           Int?
+  sha256          String?
+  scanStatus      String            @default("SKIPPED")
   // OFFICE | SUB | EMAIL
-  uploadedVia    String            @default("OFFICE")
-  uploadedById   String?
-  createdAt      DateTime          @default(now())
-  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  project        Project?          @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  contractor     Contractor?       @relation(fields: [contractorId], references: [id], onDelete: SetNull)
-  request        SubRequest?       @relation(fields: [requestId], references: [id], onDelete: SetNull)
-  inboundEmail   InboundEmail?     @relation(fields: [inboundEmailId], references: [id], onDelete: SetNull)
-  versions       SubQuoteVersion[]
+  uploadedVia     String            @default("OFFICE")
+  uploadedById    String?
+  createdAt       DateTime          @default(now())
+  organization    Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project         Project?          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contractor      Contractor?       @relation(fields: [contractorId], references: [id], onDelete: SetNull)
+  request         SubRequest?       @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  inboundEmail    InboundEmail?     @relation(fields: [inboundEmailId], references: [id], onDelete: SetNull)
+  versions        SubQuoteVersion[]
+  signedContracts Subcontract[]
 
   @@index([organizationId, createdAt])
   @@index([projectId, kind])
@@ -2998,6 +3005,96 @@ model InboundEmail {
 
   @@index([organizationId, state, receivedAt])
   @@index([quoteId])
+}
+
+// THE SUBCONTRACT (2026-11-08, the subcontractors plan, part 4, lib/subContracts): the agreement drafted from an
+// awarded quote — the price, the scope, the dates, the deposit and the payment schedule, the terms, the documents
+// attached — numbered company-wide ("SC-1001"), signed for the company when it is sent (a typed name), signed by the
+// sub on /s/<token> (a typed name, the consent, the time, the address and the browser kept), executed at that moment
+// with the signed PDF stored as a SubDocument. An executed contract (plus its approved change orders) is what the
+// stage's budget counts as committed; the awarded quote counts until then.
+model Subcontract {
+  id                String                   @id @default(cuid())
+  organizationId    String
+  projectId         String
+  stageId           String?
+  contractorId      String
+  quoteId           String
+  versionId         String?
+  number            Int
+  // DRAFT | SENT | VIEWED | EXECUTED (signed by both) | CANCELLED
+  status            String                   @default("DRAFT")
+  title             String
+  amount            Float
+  scope             String
+  startsAt          DateTime?
+  endsAt            DateTime?
+  depositPct        Float?
+  // [{ name, pct, due }] — the payment schedule; the amounts follow the price.
+  milestonesJson    String                   @default("[]")
+  terms             String
+  // SubDocument ids the sub sees with the agreement (the awarded estimate, the drawings).
+  attachmentIdsJson String                   @default("[]")
+  publicToken       String                   @unique @default(cuid())
+  sentAt            DateTime?
+  viewedAt          DateTime?
+  companySignedName String?
+  companySignedAt   DateTime?
+  companySignedById String?
+  signedName        String?
+  signedAt          DateTime?
+  signedIp          String?
+  signedUserAgent   String?
+  executedAt        DateTime?
+  cancelledAt       DateTime?
+  cancelReason      String?
+  pdfDocumentId     String?
+  createdById       String?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  organization      Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project           Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  stage             ProjectStage?            @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  contractor        Contractor               @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  quote             ProjectSubQuote          @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  version           SubQuoteVersion?         @relation(fields: [versionId], references: [id], onDelete: SetNull)
+  pdfDocument       SubDocument?             @relation(fields: [pdfDocumentId], references: [id], onDelete: SetNull)
+  changeOrders      SubcontractChangeOrder[]
+
+  @@unique([organizationId, number])
+  @@index([projectId, status])
+  @@index([organizationId, status])
+  @@index([quoteId])
+}
+
+// A CHANGE ORDER ON A SUBCONTRACT (part 4): a priced change to the scope (plus or minus), proposed by the office,
+// agreed by the sub on the signing page (or approved in person, the sub's name typed by the office) or declined;
+// approved ones move the commitment. Numbered per contract ("CO #2").
+model SubcontractChangeOrder {
+  id               String      @id @default(cuid())
+  organizationId   String
+  contractId       String
+  number           Int
+  // PROPOSED | APPROVED | DECLINED | VOID (withdrawn by the office)
+  status           String      @default("PROPOSED")
+  amount           Float
+  scope            String
+  reason           String?
+  proposedById     String?
+  proposedAt       DateTime    @default(now())
+  decidedAt        DateTime?
+  decidedName      String?
+  decidedIp        String?
+  decidedUserAgent String?
+  // SUB (on the signing page) | OFFICE (in person, or withdrawn)
+  decidedVia       String?
+  declineReason    String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  contract         Subcontract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@index([contractId, status])
+  @@index([organizationId, status])
 }
 
 // SELECTIONS (2026-11-07, the plan "Projects: Remodel and New construction", part 3): what the client has to choose

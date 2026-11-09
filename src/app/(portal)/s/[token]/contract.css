@@ -1,0 +1,98 @@
+/* THE SUB'S SUBCONTRACT (2026-11-08, the subcontractors plan, part 4) — what the buyer's stylesheet (../../buy/[token]/
+   buy.css, root .jf-buy) and the quote page's (../../q/[token]/quote.css) have no word for: the agreement as a ruled
+   document (a bold heading per section, its paragraphs and lists), the two signature blocks side by side with the
+   typed names in italic on a rule, the consent box, and the change orders as framed blocks. */
+.jf-buy .sc-doc {
+  margin: 18px 0 0;
+  border-top: 2px solid var(--ink);
+}
+.jf-buy .sc-sec {
+  padding: 14px 0 10px;
+  border-bottom: var(--by-hair);
+}
+.jf-buy .sc-h {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+.jf-buy .sc-p {
+  margin: 0 0 8px;
+  font-size: 14px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.jf-buy .sc-list {
+  margin: 0;
+  padding: 0 0 0 18px;
+  list-style: disc;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.jf-buy .sc-list li {
+  margin: 0 0 4px;
+  overflow-wrap: anywhere;
+}
+.jf-buy .sc-sigs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+.jf-buy .sc-sig {
+  min-width: 0;
+}
+.jf-buy .sc-name {
+  margin: 6px 0 0;
+  padding-bottom: 4px;
+  border-bottom: 1.5px solid var(--ink);
+  font-size: 20px;
+  font-style: italic;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.jf-buy .sc-meta {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--ink-muted);
+  line-height: 1.45;
+}
+.jf-buy .sc-signbox {
+  margin-top: 18px;
+}
+.jf-buy .sc-agree {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  margin-top: 12px;
+  font-size: 14px;
+  line-height: 1.45;
+  cursor: pointer;
+}
+.jf-buy .sc-agree input {
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--ink);
+}
+.jf-buy .sc-changes {
+  margin-top: 18px;
+  display: grid;
+  gap: 12px;
+}
+.jf-buy .sc-change {
+  padding: 12px;
+  border: var(--by-frame);
+  background: #fff;
+}
+.jf-buy .sc-change-head {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+.jf-buy .by-closed a {
+  color: var(--ink);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

@@ -169,6 +169,11 @@ export function SubcontractorsPage({ today, rows: initial, canManage, network }:
                 <div className={s.tileLbl}>Paid</div>
                 <div className={s.tileVal}>{dollars(open.paidTotal)}</div>
               </div>
+              <div className={s.tile} data-subs-profile-contracts>
+                <div className={s.tileLbl}>Contracts</div>
+                <div className={s.tileVal}>{open.contracts}</div>
+                <div className={s.tileSub}>{open.contracts ? `${dollars(open.contractsTotal)} signed` : "none signed"}</div>
+              </div>
             </div>
             <dl className={s.facts}>
               {open.contactName ? <Fact label="Contact" value={open.contactName} /> : null}
@@ -337,7 +342,7 @@ export function SubcontractorsPage({ today, rows: initial, canManage, network }:
         onSaved={(row) => {
           setRows((cur) => {
             const prev = cur.find((r) => r.id === row.id);
-            const next: DirectoryRow = { ...row, flags: contractorFlags(row, today), asked: prev?.asked ?? 0, quoted: prev?.quoted ?? 0, awarded: prev?.awarded ?? 0, paidTotal: prev?.paidTotal ?? 0, lastAskedAt: prev?.lastAskedAt ?? null, documents: prev?.documents ?? [] };
+            const next: DirectoryRow = { ...row, flags: contractorFlags(row, today), asked: prev?.asked ?? 0, quoted: prev?.quoted ?? 0, awarded: prev?.awarded ?? 0, paidTotal: prev?.paidTotal ?? 0, lastAskedAt: prev?.lastAskedAt ?? null, documents: prev?.documents ?? [], contracts: prev?.contracts ?? 0, contractsTotal: prev?.contractsTotal ?? 0 };
             return (prev ? cur.map((r) => (r.id === row.id ? next : r)) : [...cur, next]).sort((a, b) => a.name.localeCompare(b.name));
           });
           setEditing(null);

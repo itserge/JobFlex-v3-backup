@@ -37,6 +37,9 @@ import { attachInbound, ignoreInbound } from "@/lib/subInbound/server";
 // Part 3 (2026-11-08): Find — the state register, Google Places and the JobFlex Network.
 import { findSubs, saveFound, saveNetworkSettings, verifyContractor, type FindRead } from "@/lib/subFinder/server";
 import type { FinderResult, NetworkSettings } from "@/lib/subFinder/shared";
+// Part 4 (2026-11-08): subcontracts — the draft, the send, the signature, the change orders.
+import { buildContractPdf, cancelContract, decideChangeByToken, decideChangeInOffice, draftContract, proposeChange, resendContract, sendContract, signContract, updateContract, type ChangeRow, type ContractRow } from "@/lib/subContracts/server";
+import { changeDecisionInput, signInput } from "@/lib/subContracts/shared";
 
 const ID = z.string().min(1).max(64);
 const DAY = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -332,4 +335,110 @@ export async function saveCompanyNetwork(raw: unknown): Promise<NetworkSettings>
   const r = await saveNetworkSettings(organizationId, user.id, { ...d, since: d.since ?? null });
   touched(null);
   return r;
+}
+
+// ── part 4: subcontracts ─────────────────────────────────────────────────────
+// The office drafts a contract from an awarded quote, edits it while a draft, signs for the company and sends it;
+// the sub signs on /s/<token> (contractSign below, no session, rate-limited by address). Change orders on a signed
+// contract are proposed here and answered by the sub on the same page (contractChangeAnswer) or approved in person.
+
+const milestoneIn = z.object({ name: z.string().trim().min(1).max(80), pct: z.number().min(0.1).max(100), due: DAY.nullable() });
+const contractPatch = z.object({
+  contractId: ID,
+  title: z.string().trim().min(1).max(160).optional(),
+  amount: z.number().min(0.01).max(100_000_000).optional(),
+  scope: z.string().trim().min(1).max(8000).optional(),
+  startsAt: DAY.nullable().optional(),
+  endsAt: DAY.nullable().optional(),
+  depositPct: z.number().min(0).max(100).nullable().optional(),
+  milestones: z.array(milestoneIn).min(1).max(8).optional(),
+  terms: z.string().trim().min(1).max(20000).optional(),
+  attachmentIds: z.array(ID).max(30).optional(),
+});
+
+export async function draftSubcontract(quoteId: string): Promise<ContractRow> {
+  const { organizationId, user } = await requireEstimatorOrManager();
+  const row = await draftContract(organizationId, ID.parse(quoteId), user.id);
+  touched(row.projectId);
+  return row;
+}
+
+export async function saveSubcontract(raw: unknown): Promise<ContractRow> {
+  const { organizationId } = await requireEstimatorOrManager();
+  const { contractId, ...patch } = contractPatch.parse(raw);
+  const row = await updateContract(organizationId, contractId, patch);
+  touched(row.projectId);
+  return row;
+}
+
+export async function sendSubcontract(raw: unknown): Promise<{ row: ContractRow; email: "sent" | "none" | "failed"; text: "sent" | "none" | "failed" }> {
+  const { organizationId, user } = await requireEstimatorOrManager();
+  const d = z.object({ contractId: ID, signerName: z.string().trim().min(2).max(120) }).parse(raw);
+  const r = await sendContract(organizationId, d.contractId, { id: user.id }, d.signerName);
+  touched(r.row.projectId);
+  return r;
+}
+
+export async function resendSubcontract(contractId: string): Promise<{ email: "sent" | "none" | "failed"; text: "sent" | "none" | "failed" }> {
+  const { organizationId } = await requireEstimatorOrManager();
+  return resendContract(organizationId, ID.parse(contractId));
+}
+
+export async function cancelSubcontract(raw: unknown): Promise<ContractRow> {
+  const { organizationId, user } = await requireEstimatorOrManager();
+  const d = z.object({ contractId: ID, reason: z.string().trim().max(300).nullable() }).parse(raw);
+  const row = await cancelContract(organizationId, d.contractId, d.reason, user.id);
+  touched(row.projectId);
+  return row;
+}
+
+/** The signed PDF made again (a failed first try, a lost file). */
+export async function rebuildSubcontractPdf(contractId: string): Promise<DocRow> {
+  const { organizationId } = await requireEstimatorOrManager();
+  const doc = await buildContractPdf(organizationId, ID.parse(contractId));
+  touched(doc.projectId);
+  return doc;
+}
+
+export async function proposeSubcontractChange(raw: unknown): Promise<{ change: ChangeRow; email: "sent" | "none" | "failed"; text: "sent" | "none" | "failed" }> {
+  const { organizationId, user } = await requireEstimatorOrManager();
+  const d = z.object({ contractId: ID, amount: z.number().min(-100_000_000).max(100_000_000), scope: z.string().trim().min(1).max(4000), reason: z.string().trim().max(1000).nullable() }).parse(raw);
+  const r = await proposeChange(organizationId, d.contractId, { amount: d.amount, scope: d.scope, reason: d.reason }, user.id);
+  touched(null);
+  return r;
+}
+
+export async function decideSubcontractChange(raw: unknown): Promise<ChangeRow> {
+  const { organizationId, user } = await requireEstimatorOrManager();
+  const d = z.object({ changeId: ID, approve: z.boolean(), name: z.string().trim().max(120).nullable(), reason: z.string().trim().max(500).nullable() }).parse(raw);
+  const row = await decideChangeInOffice(organizationId, d.changeId, { approve: d.approve, name: d.name, reason: d.reason }, user.id);
+  touched(null);
+  return row;
+}
+
+async function userAgent(): Promise<string | null> {
+  try {
+    const { headers } = await import("next/headers");
+    return (await headers()).get("user-agent");
+  } catch {
+    return null;
+  }
+}
+
+/** The sub signs on /s/<token>: a typed name and the consent box; the address and the browser are kept. */
+export async function contractSign(token: string, raw: unknown): Promise<{ ok: true; already: boolean; signedAt: string; pdfHref: string | null } | { ok: false; error: string }> {
+  const gate = await publicGate(token, "sign");
+  if (gate) return gate;
+  const d = signInput.safeParse(raw);
+  if (!d.success) return { ok: false, error: d.error.issues[0]?.message ?? "Type your full name and tick the box." };
+  return signContract(token, { name: d.data.name, ip: await clientIp(), userAgent: await userAgent() });
+}
+
+/** The sub agrees to (a typed name) or declines a change order on the same page. */
+export async function contractChangeAnswer(token: string, raw: unknown): Promise<{ ok: true; already: boolean } | { ok: false; error: string }> {
+  const gate = await publicGate(token, "change");
+  if (gate) return gate;
+  const d = changeDecisionInput.safeParse(raw);
+  if (!d.success) return { ok: false, error: d.error.issues[0]?.message ?? "Type your full name to agree." };
+  return decideChangeByToken(token, { changeId: d.data.changeId, agree: d.data.agree, name: d.data.agree ? d.data.name : null, reason: d.data.agree ? null : (d.data.reason ?? null), ip: await clientIp(), userAgent: await userAgent() });
 }

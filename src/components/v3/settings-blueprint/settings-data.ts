@@ -780,6 +780,8 @@ export const NOTIFICATION_ICONS: Record<PrefKey, IconName> = {
   'trade-reply': 'i-board',
   // Subcontractors (2026-11-08): a sub's quote, revision, pass or invoice.
   'sub-quote': 'i-hardhat',
+  // Part 4: a subcontract signed, a change order answered.
+  'sub-contract': 'i-pen',
   'appointment-booked': 'i-cal',
   'booking-online': 'i-cal',
   'smartbook-request': 'i-cal',

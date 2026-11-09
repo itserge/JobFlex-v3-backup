@@ -70,7 +70,7 @@ export type RecordInput = {
   url: string;
   contentType: string | null;
   bytes: number | null;
-  uploadedVia: "OFFICE" | "SUB" | "EMAIL";
+  uploadedVia: "OFFICE" | "SUB" | "EMAIL" | "SYSTEM";
   uploadedById: string | null;
   /** The email it arrived in (part 2), when it came by email. */
   inboundEmailId?: string | null;

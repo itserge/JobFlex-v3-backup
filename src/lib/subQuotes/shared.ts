@@ -271,7 +271,29 @@ export function parseStoredCompare(json: string | null | undefined): StoredCompa
 
 // ── the budget ───────────────────────────────────────────────────────────────
 
-export type MoneyLike = { stageId: string | null; status: string; amount: number | null; invoiceAmount?: number | null };
+/** Part 4: the quote's live contract, as the money reads it — executed, its price plus the approved change orders. */
+export type ContractLite = { status: string; amount: number; changes: number };
+export type MoneyLike = { stageId: string | null; status: string; amount: number | null; invoiceAmount?: number | null; contract?: ContractLite | null };
+
+/** What one quote commits: once its subcontract is executed, the contract's price plus its approved change orders
+ *  (part 4); until then the awarded amount, or the invoice once one is in, as before. Open, declined and paid quotes
+ *  commit nothing (paid is spent). */
+export function committedOf(q: MoneyLike): number {
+  if (q.status !== "AWARDED" && q.status !== "INVOICED") return 0;
+  if (q.contract && q.contract.status === "EXECUTED") return q.contract.amount + q.contract.changes;
+  return q.status === "INVOICED" ? (q.invoiceAmount ?? q.amount ?? 0) : (q.amount ?? 0);
+}
+
+/** The warning before a change order is approved (part 4): what the change does to the stage's share, counting what
+ *  is committed already; null when the share holds. */
+export function changeWarning(delta: number, line: number | null, committedNow: number, what: string): string | null {
+  if (line == null || !(line > 0)) return null;
+  const after = committedNow + delta;
+  if (after <= line) return null;
+  const over = Math.round(after - line);
+  const pct = Math.round((over / line) * 1000) / 10;
+  return `Approving puts ${what} ${dollars(over)} over its ${dollars(line)} share (${pct}%).`;
+}
 
 /** Quoted but not yet awarded (a revision asked keeps its last price): the budget's pending line. */
 export function pendingOf(quotes: ReadonlyArray<MoneyLike>): number {
@@ -289,13 +311,13 @@ export function awardWarning(amount: number | null, line: number | null, what: s
 export type BudgetRow = { stageId: string | null; stageName: string; line: number | null; pending: number; committed: number; paid: number; left: number | null; over: boolean; quotes: number };
 
 /** The Budget tab's rows, one per stage with quotes (and one for quotes on no stage): the share, pending, committed
- *  (awarded and invoiced), paid, and what is left of the share after committed and paid — pending never counts. */
+ *  (executed contracts, else awarded and invoiced), paid, and what is left of the share after committed and paid — pending never counts. */
 export function budgetRows(stages: ReadonlyArray<{ id: string; name: string }>, quotes: ReadonlyArray<MoneyLike & { line: number | null }>): BudgetRow[] {
   const r2 = (n: number) => Math.round(n * 100) / 100;
   const groups = new Map<string, Array<MoneyLike & { line: number | null }>>();
   for (const q of quotes) groups.set(q.stageId ?? "", [...(groups.get(q.stageId ?? "") ?? []), q]);
   const rowFor = (stageId: string | null, name: string, qs: Array<MoneyLike & { line: number | null }>): BudgetRow => {
-    const committed = r2(qs.filter((q) => q.status === "AWARDED" || q.status === "INVOICED").reduce((n, q) => n + (q.status === "INVOICED" ? (q.invoiceAmount ?? q.amount ?? 0) : (q.amount ?? 0)), 0));
+    const committed = r2(qs.reduce((n, q) => n + committedOf(q), 0));
     const paid = r2(qs.filter((q) => q.status === "PAID").reduce((n, q) => n + (q.invoiceAmount ?? q.amount ?? 0), 0));
     const line = qs.find((q) => q.line != null)?.line ?? null;
     const left = line != null ? r2(line - committed - paid) : null;

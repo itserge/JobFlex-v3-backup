@@ -1,7 +1,7 @@
 "use client";
 // THE SUBCONTRACTORS SECTION (2026-11-08, the subcontractors plan, part 1): a page of its own inside a project,
-// reached from the project page's Subcontractors card. One tab strip — Overview · Subs · Requests · Quotes · History
-// (Find, Compare, Contracts, Invoices, Payments and Budget arrive with their parts) — each tab a hub card. Overview
+// reached from the project page's Subcontractors card. One tab strip — Overview · Find · My subs · Requests · Quotes ·
+// Compare · Contracts · Budget · History (Invoices and Payments arrive with part 5) — each tab a hub card. Overview
 // is the figures the prompt asks for and the last moves; Subs is the company's directory (add, edit, the paper on
 // file); Requests lists every request with its recipients and their state; Quotes is the project's Subcontractors
 // card itself (every version, the viewer, award, revision, mark paid); History is the project's trail filtered to
@@ -16,6 +16,7 @@ import { RequestSheet, newRequestDraft, type RequestDraft } from "@/components/v
 import type { ContractorRow, DocRow } from "@/lib/projectSubs/server";
 import { QUOTE_LABEL, contractorFlags, dollars, insuranceWords, quoteStatusOf, requestNo, tradeForStage } from "@/lib/projectSubs/shared";
 import { SubsFind } from "./subs-find";
+import { SubsContracts } from "./subs-contracts";
 import type { SubsSectionRead } from "./subs-section-load";
 import { ContractorSheet, draftOf, type ContractorDraft } from "./contractor-sheet";
 import { SUBS_TABS as TABS, type SubsTab } from "./subs-tabs";
@@ -26,7 +27,7 @@ const longDay = (iso: string) => new Date(iso).toLocaleDateString("en-US", { mon
 const isoShort = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 const money = (n: number) => dollars(n);
 
-export function SubsSection({ read, canManage, initialTab, hrefs }: { read: SubsSectionRead; canManage: boolean; initialTab: SubsTab; hrefs: { project: string; directory: string; quotes: string } }) {
+export function SubsSection({ read, canManage, initialTab, hrefs, signerName = "", initialContract = null }: { read: SubsSectionRead; canManage: boolean; initialTab: SubsTab; hrefs: { project: string; directory: string; quotes: string }; signerName?: string; initialContract?: string | null }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [tab, setTab] = useState<SubsTab>(initialTab);
@@ -37,6 +38,7 @@ export function SubsSection({ read, canManage, initialTab, hrefs }: { read: Subs
   const [editing, setEditing] = useState<ContractorDraft | null>(null);
   const [ask, setAsk] = useState<RequestDraft | null>(null);
   const [compareReq, setCompareReq] = useState<string | null>(null);
+  const [openContract, setOpenContract] = useState<string | null>(initialContract);
   const m = read.metrics;
   const today = read.subs.today;
 
@@ -99,6 +101,7 @@ export function SubsSection({ read, canManage, initialTab, hrefs }: { read: Subs
             {t.label}
             {t.key === "requests" && m.requestsOpen ? <b>{m.requestsOpen}</b> : null}
             {t.key === "quotes" && m.awaitingApproval ? <b>{m.awaitingApproval}</b> : null}
+            {t.key === "contracts" && m.contractsOut ? <b>{m.contractsOut}</b> : null}
           </button>
         ))}
       </nav>
@@ -116,7 +119,8 @@ export function SubsSection({ read, canManage, initialTab, hrefs }: { read: Subs
             <Tile label="Requests open" value={String(m.requestsOpen)} sub={m.overdue ? `${m.overdue} overdue` : "none overdue"} warn={m.overdue > 0} />
             <Tile label="Quotes in" value={String(m.quotesIn)} sub={`${m.awaitingApproval} awaiting approval${m.pending ? ` · ${money(m.pending)} pending` : ""}`} />
             <Tile label="Awarded" value={String(m.awarded)} sub={`${m.invoicesOpen} invoice${m.invoicesOpen === 1 ? "" : "s"} open`} />
-            <Tile label="Committed" value={money(m.committed)} sub="awarded and invoiced" />
+            <Tile label="Contracts" value={String(m.contractsSigned)} sub={`signed${m.contractsOut ? ` · ${m.contractsOut} out for signature` : ""}`} />
+            <Tile label="Committed" value={money(m.committed)} sub="signed contracts and changes, else awarded" />
             <Tile label="Paid" value={money(m.paid)} sub="to subs on this project" />
             <Tile label="Subs budget" value={m.subsBudget != null ? money(m.subsBudget) : "—"} sub={m.remaining != null ? `${money(m.remaining)} left after committed and paid${m.pending ? `; ${money(m.pending)} pending` : ""}` : "no Subcontractors line in the budget"} warn={m.remaining != null && m.remaining < 0} />
           </div>
@@ -282,7 +286,12 @@ export function SubsSection({ read, canManage, initialTab, hrefs }: { read: Subs
         </section>
       ) : null}
 
-      {tab === "quotes" ? <ProjectSubsCard projectId={read.project.id} subs={{ ...read.subs, contractors }} stages={read.stages} canManage={canManage} /> : null}
+      {tab === "quotes" ? <ProjectSubsCard projectId={read.project.id} subs={{ ...read.subs, contractors }} stages={read.stages} canManage={canManage} onOpenContract={(id) => { setOpenContract(id); setTab("contracts"); }} /> : null}
+
+      {tab === "contracts" ? (
+        // Part 4: the subcontracts drafted from awarded quotes, signed on the sub's page, with their change orders.
+        <SubsContracts contracts={read.contracts} quotes={read.subs.quotes} documents={docs} canManage={canManage} signerName={signerName} initialContract={openContract} onNote={setNote} refresh={refresh} />
+      ) : null}
 
       {tab === "compare"
         ? (() => {
@@ -434,7 +443,7 @@ export function SubsSection({ read, canManage, initialTab, hrefs }: { read: Subs
                   <p className={h.empty}>No quotes yet — the Subcontractors line is untouched.</p>
                 )}
                 <p className={s.muted} style={{ marginTop: 10, fontSize: 12.5 }}>
-                  Pending is quoted but not awarded — it never counts as committed or spent. Committed is awarded and invoiced; Left is the share after committed and paid. Awarding over a share asks once before it goes through.
+                  Pending is quoted but not awarded — it never counts as committed or spent. Committed is a signed contract with its approved change orders, else the awarded or invoiced amount; Left is the share after committed and paid. Awarding over a share, or a change order that goes over it, asks once before it goes through.
                 </p>
               </section>
             );

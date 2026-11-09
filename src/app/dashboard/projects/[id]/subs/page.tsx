@@ -20,13 +20,15 @@ export const metadata: Metadata = {
 
 export default async function ProjectSubsPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { id } = await params;
-  const { tab } = await searchParams;
+  const { tab, contract } = await searchParams;
   let organizationId: string;
   let role: string;
+  let signerName = "";
   try {
     const ctx = await requireOrg();
     organizationId = ctx.organizationId;
     role = ctx.role;
+    signerName = ctx.user.name?.trim() ?? "";
   } catch (err) {
     if (err instanceof UnauthorizedError) redirect(`/auth/login?next=${encodeURIComponent(`/dashboard/projects/${id}/subs`)}`);
     if (err instanceof NoOrgError) redirect("/dashboard?error=forbidden");
@@ -34,5 +36,5 @@ export default async function ProjectSubsPage({ params, searchParams }: { params
   }
   const read = await loadSubsSection(id, organizationId);
   if (!read) notFound();
-  return <SubsSection read={read} canManage={isOwnerOrManager(role)} initialTab={tabOf(typeof tab === "string" ? tab : undefined)} hrefs={{ project: `/dashboard/projects/${id}`, directory: "/dashboard/subcontractors", quotes: "/dashboard/quotes" }} />;
+  return <SubsSection read={read} canManage={isOwnerOrManager(role)} initialTab={tabOf(typeof tab === "string" ? tab : undefined)} signerName={signerName} initialContract={typeof contract === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(contract) ? contract : null} hrefs={{ project: `/dashboard/projects/${id}`, directory: "/dashboard/subcontractors", quotes: "/dashboard/quotes" }} />;
 }
