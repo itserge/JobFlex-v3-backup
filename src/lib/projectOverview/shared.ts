@@ -56,7 +56,11 @@ export type OvAct =
   | { t: "remind-picks"; note: string; label: string };
 
 export type OvTone = "red" | "amber";
-export type OvItem = { key: string; tone: OvTone; text: string; why: string | null; act: OvAct | null; alt: OvAct | null; rank: number };
+/** The row's step said to the AI Operator (part 2, the morning briefing's numbered replies, 2026-11-09): a write tool
+ *  with its arguments, planned and read back for a yes like any other; or a question the Operator answers with its
+ *  own tools. The label finishes "Reply 1 to …". */
+export type OvOp = { label: string; tool: string; args: Record<string, unknown> } | { label: string; ask: string };
+export type OvItem = { key: string; tone: OvTone; text: string; why: string | null; act: OvAct | null; alt: OvAct | null; rank: number; op?: OvOp | null };
 
 export type OvAhead = { key: string; day: string; title: string; stageId: string | null; ready: string[]; missing: string[] };
 
@@ -311,7 +315,68 @@ export function doNowOf(r: OverviewInput): OvItem[] {
 
 function finishItems(r: OverviewInput, out: OvItem[]): OvItem[] {
   for (const f of r.finish) out.push({ key: `finish:${f.kind}`, tone: "amber", text: f.text, why: null, act: { t: "go", card: "finish", label: "Next step" }, alt: null, rank: 19 });
+  for (const x of out) x.op = opOf(x, r);
   return out.sort((a, b) => (a.tone === b.tone ? a.rank - b.rank : a.tone === "red" ? -1 : 1));
+}
+
+/** The Operator's step for a row (OvOp): the same thing its button does, where a tool does it. Rows whose button only
+ *  opens a card the Operator can't act on (a site problem, a late delivery, a contract to draft) have none. A question
+ *  is said so " on <the project>" ends it (lib/projectOverview/brief askText). */
+export function opOf(x: OvItem, r: OverviewInput): OvOp | null {
+  const projectId = r.project.id;
+  const cut = x.key.indexOf(":");
+  const kind = cut < 0 ? x.key : x.key.slice(0, cut);
+  const id = cut < 0 ? "" : x.key.slice(cut + 1);
+  const insp = () => (r.timeline?.inspections ?? []).find((i) => i.id === id) ?? null;
+  const stage = () => r.stages.find((s) => s.id === id) ?? null;
+  const client = r.project.clientName ?? "the client";
+  switch (kind) {
+    case "insp-result": {
+      const i = insp();
+      return i ? { label: `say ${i.name} passed`, tool: "inspection_result", args: { projectId, inspection: i.name, result: "PASSED", note: null } } : null;
+    }
+    case "insp-failed": {
+      const i = insp();
+      return i ? { label: `book the ${i.name} re-inspection`, ask: `Book the ${i.name} re-inspection` } : null;
+    }
+    case "late": {
+      const s = stage();
+      if (!s) return null;
+      return x.alt?.t === "stage-done" ? { label: `mark ${s.name} done`, tool: "set_stage", args: { projectId, stage: s.name, status: "DONE" } } : { label: `see what holds ${s.name} up`, ask: `What's holding up ${s.name}` };
+    }
+    case "start": {
+      const s = stage();
+      return s ? { label: `start ${s.name}`, tool: "set_stage", args: { projectId, stage: s.name, status: "ACTIVE" } } : null;
+    }
+    case "order":
+      return id ? { label: `order the ${id} materials`, ask: `Order the materials for ${id}` } : null;
+    case "picks-late":
+    case "picks-soon":
+      return x.act?.t === "remind-picks" ? { label: `remind ${client} to pick`, tool: "send_project_update", args: { projectId, note: x.act.note } } : null;
+    case "over-budget":
+    case "losing":
+      return { label: "see the ways to save", ask: "Where can I save money" };
+    case "sub-inv": {
+      const inv = (r.invoices?.invoices ?? []).find((v) => v.id === id);
+      return inv ? { label: `see ${inv.contractorName}'s invoice`, ask: `Show me the invoice from ${inv.contractorName}` } : null;
+    }
+    case "quotes-overdue":
+      return { label: "remind the subs who owe a quote", tool: "remind_subs", args: { projectId, stage: null } };
+    case "quotes-in":
+      return { label: "compare the quotes", ask: "Compare the quotes" };
+    case "owed": {
+      const amount = /\$[\d,]+/.exec(x.text)?.[0];
+      return { label: `remind ${client} to pay`, ask: `Remind ${client} to pay the ${amount ?? "balance"} they owe` };
+    }
+    case "draw": {
+      const d = r.draws?.next;
+      return d && d.id === id ? { label: `ask the lender for draw ${d.number}`, tool: "request_draw", args: { projectId, draw: String(d.number) } } : null;
+    }
+    case "finish":
+      return { label: "see what's left to finish", ask: "What's left to finish" };
+    default:
+      return null;
+  }
 }
 
 /** The next 14 days: each stage that starts in them with what it needs, and the inspections, deliveries and picks

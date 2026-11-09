@@ -36,3 +36,13 @@ export async function snooze(organizationId: string, userId: string, projectId: 
 export async function clearSnoozes(organizationId: string, userId: string, projectId: string): Promise<void> {
   await db.syncState.deleteMany({ where: { key: keyOf(organizationId, userId, projectId) } });
 }
+
+/** One person's hidden rows on many projects at once (the morning briefing, part 2): one read, not one per project. */
+export async function readSnoozesFor(organizationId: string, userId: string, projectIds: readonly string[], today: string): Promise<Map<string, Snoozes>> {
+  const out = new Map<string, Snoozes>();
+  if (!projectIds.length) return out;
+  const keys = projectIds.map((id) => keyOf(organizationId, userId, id));
+  const rows = await db.syncState.findMany({ where: { key: { in: keys } }, select: { key: true, cursor: true } });
+  for (const r of rows) out.set(r.key.slice(r.key.lastIndexOf(":") + 1), parseSnoozes(r.cursor, today));
+  return out;
+}
