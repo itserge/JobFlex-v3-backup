@@ -31,7 +31,7 @@ for (const t of TOOLS) {
   check(`${id}: a read tool reads; a write tool changes something`, t.kind === "read" ? c.effect === "read" : c.effect !== "read");
   if (t.kind === "write") {
     check(`${id}: a build (a draft without a yes) says so with steps; anything else has none`, t.instant ? c.effect === "draft" && (c.steps?.length ?? 0) >= 2 : !c.steps);
-    check(`${id}: money takes the PIN — and only money`, (c.effect === "money") === ["send_invoice", "financing_link"].includes(id));
+    check(`${id}: money takes the PIN — and only money`, (c.effect === "money") === ["send_invoice", "financing_link", "pay_sub_invoice"].includes(id));
     if (t.scheduled) check(`${id}: a scheduled tool is a reminder`, c.group === "reminders");
   }
   // The arguments as the model gets them: a strict object — every field present, so each is required.

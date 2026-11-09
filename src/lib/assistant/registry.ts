@@ -222,13 +222,16 @@ const GROUP_GUIDE: Partial<Record<ToolGroup, readonly string[]>> = {
   lookups: ["Look things up before you answer; names, ids, dates, counts and money come only from these."],
   people: ["Find first; never add a person twice."],
   visits: ["A visit is an appointment with a client or a lead; a job is the crew's work (schedule_job)."],
-  money: ["Invoices and financing links ask the person for their PIN with the yes."],
+  money: ["Invoices, financing links and payments recorded to subs ask the person for their PIN with the yes."],
   estimates: [
     "A build saves a DRAFT proposal; nothing goes to the client until they say yes to sending it. 'Send it' means send_proposal for the newest one built.",
     "A build needs the size. A deck: width and depth. Other jobs: the quantities that set the price and the main material. If that is missing, ask ONE short question for all of it — the estimator fills in the rest. When they name a client or a lead, find them first and pass the id; if nobody matches, build without one.",
     "Don't repeat a build's price, lines or link — the person already has them.",
   ],
-  projects: ["A project is a remodel run as stages (Footings, Framing, Decking…) with tasks inside each; find it by its name, client or number (find, kind project)."],
+  projects: [
+    "A project is a remodel run as stages (Footings, Framing, Decking…) with tasks inside each; find it by its name, client or number (find, kind project).",
+    "Subcontractors (subs) work on a project's stages: requests for quotes, quotes, signed contracts and their invoices live on the project. Pass the sub's name as the person said it; the tools match it.",
+  ],
 };
 
 /** The prompt's "what you can do": each live tool's own line under its group, in the groups' order. */

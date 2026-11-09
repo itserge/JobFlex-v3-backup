@@ -30,6 +30,9 @@ export const CAPABILITIES = [
   // The stages build (2026-11-05): projects are estimators' and managers' (requireEstimatorOrManager), never SALES'.
   "projects.read",
   "projects.write",
+  // The subcontractors plan, part 6 (2026-11-09): recording a payment to a sub — owners and managers (requireManager),
+  // like the Invoices tab's Record the payment.
+  "subs.pay",
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
@@ -78,6 +81,8 @@ export function roleAllows(role: string, need: Capability): boolean {
       return mayOpen(role, "/dashboard/projects");
     case "projects.write":
       return role !== "SALES" && mayOpen(role, "/dashboard/projects");
+    case "subs.pay":
+      return manager && mayOpen(role, "/dashboard/projects");
   }
 }
 

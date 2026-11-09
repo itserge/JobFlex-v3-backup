@@ -124,6 +124,105 @@ export const CATALOG: Catalog = {
     "scheduled": false,
     "version": 1
   },
+  "find_subs": {
+    "label": "Find subs",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "sub_requests": {
+    "label": "Quote requests",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "compare_quotes": {
+    "label": "Compare quotes",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "subs_budget": {
+    "label": "Subs budget",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "sub_invoices": {
+    "label": "Sub invoices",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "sub_document": {
+    "label": "A sub's document",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "remind_subs": {
+    "label": "Remind subs",
+    "group": "projects",
+    "effect": "message",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "approve_sub_invoice": {
+    "label": "Approve a sub's invoice",
+    "group": "projects",
+    "effect": "record",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "pay_sub_invoice": {
+    "label": "Record a sub's payment",
+    "group": "money",
+    "effect": "money",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": true,
+    "scheduled": false,
+    "version": 1
+  },
   "crew": {
     "label": "Crew",
     "group": "lookups",

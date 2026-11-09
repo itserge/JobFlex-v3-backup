@@ -15,8 +15,9 @@ import { dayOf } from "@/lib/assistant/shared";
 
 const ID = z.string().min(1).max(64);
 
-/** The contractors a word points at: a trade ("framers", "plumbing"), a name, a company — the company's list. */
-async function contractorsNamed(organizationId: string, words: { contractors: string | null; trade: string | null; stageTrade: string | null }) {
+/** The contractors a word points at: a trade ("framers", "plumbing"), a name, a company — the company's list. Shared
+ *  with the part 6 tools (./subs). */
+export async function contractorsNamed(organizationId: string, words: { contractors: string | null; trade: string | null; stageTrade: string | null }) {
   const all = await contractorsOf(organizationId);
   const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, " ").trim();
   if (words.contractors?.trim()) {
