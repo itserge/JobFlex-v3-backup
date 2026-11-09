@@ -248,7 +248,7 @@ export function AssistantSettings({ mobile = false }: { mobile?: boolean }) {
                     aria-label="Language you speak to the AI Operator"
                     value={view.prefs.lang}
                     disabled={busy}
-                    onChange={(e) => savePrefs({ ...view.prefs, briefing: { on: view.prefs.briefing.on, time: briefTime }, lang: e.target.value as SpeechLang })}
+                    onChange={(e) => savePrefs({ ...view.prefs, briefing: { ...view.prefs.briefing, time: briefTime }, lang: e.target.value as SpeechLang })}
                   >
                     {SPEECH_LANGS.map((l) => (
                       <option key={l.code} value={l.code}>
@@ -273,7 +273,7 @@ export function AssistantSettings({ mobile = false }: { mobile?: boolean }) {
               <li>
                 <div className={s.prefText}>
                   <p className={s.rowMain}>Morning briefing</p>
-                  <p className={s.rowSub}>Today&apos;s jobs and visits, proposals waiting, money owed and overdue, leads to call back. Mondays add the last 30 days&apos; money.</p>
+                  <p className={s.rowSub}>Today&apos;s jobs and visits, proposals waiting, money owed and overdue, leads to call back, and the projects that need you. Mondays add the last 30 days&apos; money.</p>
                 </div>
                 <div className={s.prefCtl}>
                   <select
@@ -281,7 +281,7 @@ export function AssistantSettings({ mobile = false }: { mobile?: boolean }) {
                     aria-label="Briefing time"
                     value={briefTime}
                     disabled={busy}
-                    onChange={(e) => savePrefs({ ...view.prefs, briefing: { on: view.prefs.briefing.on, time: e.target.value } })}
+                    onChange={(e) => savePrefs({ ...view.prefs, briefing: { ...view.prefs.briefing, time: e.target.value } })}
                   >
                     {BRIEFING_TIMES.map((t) => (
                       <option key={t} value={t}>
@@ -293,9 +293,27 @@ export function AssistantSettings({ mobile = false }: { mobile?: boolean }) {
                     type="button"
                     className={view.prefs.briefing.on ? s.secondary : s.primary}
                     disabled={busy}
-                    onClick={() => savePrefs({ ...view.prefs, briefing: { on: !view.prefs.briefing.on, time: briefTime } })}
+                    onClick={() => savePrefs({ ...view.prefs, briefing: { ...view.prefs.briefing, on: !view.prefs.briefing.on, time: briefTime } })}
                   >
                     {view.prefs.briefing.on ? "Turn off" : "Turn on"}
+                  </button>
+                </div>
+              </li>
+              <li>
+                <div className={s.prefText}>
+                  <p className={s.rowMain}>Projects in the briefing</p>
+                  <p className={s.rowSub}>The projects that need you, worst first, from each project&apos;s Overview — with up to three next steps you answer by number (&ldquo;Reply 1 to mark Demolition done&rdquo;).</p>
+                </div>
+                <div className={s.prefCtl}>
+                  <button
+                    type="button"
+                    className={view.prefs.briefing.projects ? s.secondary : s.primary}
+                    disabled={busy}
+                    aria-pressed={view.prefs.briefing.projects}
+                    data-brief-projects=""
+                    onClick={() => savePrefs({ ...view.prefs, briefing: { ...view.prefs.briefing, time: briefTime, projects: !view.prefs.briefing.projects } })}
+                  >
+                    {view.prefs.briefing.projects ? "Turn off" : "Turn on"}
                   </button>
                 </div>
               </li>
@@ -309,7 +327,7 @@ export function AssistantSettings({ mobile = false }: { mobile?: boolean }) {
                     type="button"
                     className={view.prefs.alerts.proposalOpened ? s.secondary : s.primary}
                     disabled={busy}
-                    onClick={() => savePrefs({ ...view.prefs, briefing: { on: view.prefs.briefing.on, time: briefTime }, alerts: { ...view.prefs.alerts, proposalOpened: !view.prefs.alerts.proposalOpened } })}
+                    onClick={() => savePrefs({ ...view.prefs, briefing: { ...view.prefs.briefing, time: briefTime }, alerts: { ...view.prefs.alerts, proposalOpened: !view.prefs.alerts.proposalOpened } })}
                   >
                     {view.prefs.alerts.proposalOpened ? "Turn off" : "Turn on"}
                   </button>
@@ -325,7 +343,7 @@ export function AssistantSettings({ mobile = false }: { mobile?: boolean }) {
                     type="button"
                     className={view.prefs.alerts.newLead ? s.secondary : s.primary}
                     disabled={busy}
-                    onClick={() => savePrefs({ ...view.prefs, briefing: { on: view.prefs.briefing.on, time: briefTime }, alerts: { ...view.prefs.alerts, newLead: !view.prefs.alerts.newLead } })}
+                    onClick={() => savePrefs({ ...view.prefs, briefing: { ...view.prefs.briefing, time: briefTime }, alerts: { ...view.prefs.alerts, newLead: !view.prefs.alerts.newLead } })}
                   >
                     {view.prefs.alerts.newLead ? "Turn off" : "Turn on"}
                   </button>

@@ -135,7 +135,9 @@ type Crew = { workers: Array<{ id: string; name: string; texts: boolean }> };
 function answer(body: { messages: Msg[] }) {
   const messages = body.messages ?? [];
   const system = messages.find((m) => m.role === "system")?.content ?? "";
-  const user = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
+  // A numbered reply to the morning briefing's projects (Project Overview part 2, 2026-11-09) asks "<question> on <project>
+  // (project id …)": the words are matched as said, the project found by its name like any other.
+  const user = ([...messages].reverse().find((m) => m.role === "user")?.content ?? "").replace(/\s*\(project id [a-z0-9]+\)\.?$/i, "");
   const text = user.toLowerCase();
   const today = todayOf(system);
   const done = soFar(messages);

@@ -27,6 +27,8 @@ import { chainOf, clearChain, noteWorkset, recallWorkset, setChain } from "@/lib
 import { checkPin } from "@/lib/assistant/pin";
 import { readPrefs } from "@/lib/assistant/prefs";
 import { reportProgress } from "@/lib/assistant/progress";
+import { forgetPicks, readPicks } from "@/lib/assistant/projectsBrief";
+import { askText, numbersWords, type BriefPick } from "@/lib/projectOverview/brief";
 import { APPROVAL_TTL_MS, type ActionStatus, type AssistantFeed, BUILD_STEPS, DEFAULT_SPEECH_LANG, type Fact, type FeedAction, RUNNING_STALE_MS, confirmPrompt, dayOf, factsOf, needsPin, nowWords, quickReply, stillAwaiting, undoWindowMs, workItemsFrom, worksetPrompt } from "@/lib/assistant/shared";
 
 const MAX_ROUNDS = 4;
@@ -319,6 +321,28 @@ async function offer(actor: AssistantActor, o: Offer, now: Date): Promise<FeedAc
   return feedAction(row);
 }
 
+/** A numbered reply to the morning briefing's projects (Project Overview part 2, 2026-11-09): the row's step planned
+ *  by its tool's own code and read back for a yes, exactly as if the model had proposed it — or the tool's own reason
+ *  when it can't be (done already, a gate holds it, not theirs to do). */
+async function planPick(actor: AssistantActor, pick: BriefPick, now: Date): Promise<{ action: FeedAction } | { say: string }> {
+  const gone = { say: `I can't ${pick.label} from here any more. Open ${pick.projectName} to see where it stands.` };
+  const next = pick.tool ? toolNamed(pick.tool) : null;
+  if (!next || next.kind !== "write" || next.instant || next.scheduled) return gone;
+  if (await toolOff(next.name)) return { say: "That feature is switched off right now." };
+  const no = await refusal(actor, next.need, true);
+  if (no) return { say: no };
+  const args = next.params.safeParse(pick.args);
+  if (!args.success) return gone;
+  const plan = await next.plan({ actor, now }, args.data).catch(() => null);
+  if (!plan) return { say: "It didn't go through. Try again in a minute." };
+  if (!plan.ok) return { say: plan.say };
+  await db.assistantAction.updateMany({ where: { organizationId: actor.organizationId, userId: actor.userId, status: "AWAITING" }, data: { status: "EXPIRED" } });
+  const row = await db.assistantAction.create({
+    data: { organizationId: actor.organizationId, userId: actor.userId, channel: actor.channel, tool: next.name, argsJson: JSON.stringify(plan.payload), readback: plan.readback, status: "AWAITING" },
+  });
+  return { action: feedAction(row) };
+}
+
 // ── one turn ────────────────────────────────────────────────────────────────
 
 const HELP =
@@ -377,6 +401,29 @@ export async function handleTurn(input: TurnInput): Promise<TurnResult> {
   // "Send it" with nothing waiting is a request (the newest estimate built — the model has the list); a bare yes is not.
   if (quick?.kind === "yes" && !awaiting && !/\bsend\b/i.test(text)) return say("There's nothing waiting for a yes right now. What do you need?");
 
+  // A number answering this morning's projects ("Reply 1 to mark Demolition done"): kept until the model speaks, so a
+  // digit after its own "1 or 2?" still goes to it. A write is planned here, no model; a question goes to the model.
+  let ask = text;
+  let picked = false;
+  if (quick?.kind === "digit") {
+    const picks = await readPicks(actor, now).catch(() => [] as BriefPick[]);
+    if (picks.length) {
+      const n = quick.n;
+      const pick = picks.find((p) => p.n === n);
+      if (!pick) return say(`This morning's list goes to ${picks.length}. Reply ${numbersWords(picks.length)}, or say what you need.`);
+      if (pick.tool) {
+        const r = await planPick(actor, pick, now);
+        if ("say" in r) return say(r.say);
+        await clearChain(actor);
+        return say(`${r.action.readback} ${confirmPrompt(actor.channel, needsPin(r.action.tool))}`, r.action);
+      }
+      if (pick.ask) {
+        ask = askText(pick);
+        picked = true;
+      }
+    }
+  }
+
   // ── the model's turn ──
   // The limit, and everything the model is given, read together.
   const [limit, history, built, workset, live, resolved] = await Promise.all([
@@ -399,12 +446,17 @@ export async function handleTurn(input: TurnInput): Promise<TurnResult> {
   }
   if (!isOpenAIEnabled()) return say("The AI Operator isn't switched on here yet (no AI key on this server).");
   // A digit answering the model's "1 or 2?" is part of the last request, not a new one.
-  marked = Promise.all([db.assistantMessage.update({ where: { id: inbound.id }, data: { countsAsCommand: quick?.kind !== "digit" } }), noteRequestOrg(actor.organizationId).catch(() => undefined)]);
+  // A briefing's numbered question is a request of its own; and once the model speaks, this morning's numbers are forgotten.
+  marked = Promise.all([
+    db.assistantMessage.update({ where: { id: inbound.id }, data: { countsAsCommand: quick?.kind !== "digit" || picked } }),
+    noteRequestOrg(actor.organizationId).catch(() => undefined),
+    forgetPicks(actor.organizationId, actor.userId).catch(() => undefined),
+  ]);
   const records = worksetPrompt(workset);
   const messages: ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt(actor, now, awaiting?.readback ?? null, built, live, records, input.spoken === true) },
     ...history.reverse().map((m): ChatCompletionMessageParam => (m.direction === "IN" ? { role: "user", content: m.body } : { role: "assistant", content: m.body })),
-    { role: "user", content: text },
+    { role: "user", content: ask },
   ];
 
   const ctx: ToolContext = { actor, now };

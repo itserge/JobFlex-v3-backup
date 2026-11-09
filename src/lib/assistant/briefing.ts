@@ -17,6 +17,8 @@ import { sendAssistantText } from "@/lib/assistant/sms";
 import { allPrefs } from "@/lib/assistant/prefs";
 import { toolNamed } from "@/lib/assistant/tools";
 import { briefingDue, confirmPrompt, dayOf, money } from "@/lib/assistant/shared";
+import { readProjectsBrief, savePicks, type OrgOverviews } from "@/lib/assistant/projectsBrief";
+import { fitProjects, type BriefPick } from "@/lib/projectOverview/brief";
 
 const sentKey = (organizationId: string, userId: string) => `assistant:briefed:${organizationId}:${userId}`;
 
@@ -37,11 +39,13 @@ function rows(c: TodayCheck, n = 3): string {
 
 export interface Briefing {
   text: string;
+  /** The projects paragraph's numbered replies (Project Overview part 2): kept for the day when it goes. */
+  picks: BriefPick[];
   /** The all-overdue reminder, planned and read back by its tool, for the person's yes; null when nothing is overdue. */
   offer: { tool: string; payload: unknown; readback: string } | null;
 }
 
-export async function composeBriefing(actor: AssistantActor, now = new Date()): Promise<Briefing> {
+export async function composeBriefing(actor: AssistantActor, now = new Date(), opts: { projects?: boolean; cache?: Map<string, Promise<OrgOverviews>> } = {}): Promise<Briefing> {
   const tz = actor.timezone;
   const b = await readCrmBrief({ organizationId: actor.organizationId, userId: actor.userId, role: actor.role, now });
   const check = (key: string) => b.today.checks.find((c) => c.key === key && !c.done && c.count > 0) ?? null;
@@ -55,6 +59,10 @@ export async function composeBriefing(actor: AssistantActor, now = new Date()): 
   } else lines.push("Nothing on the calendar today.");
   const unstaffed = check("schedule.unstaffed");
   if (unstaffed) lines.push(`No crew on it yet: ${rows(unstaffed)}.`);
+  // The projects that need them (Project Overview part 2, 2026-11-09): each project's own Overview, worst first, with
+  // numbered next steps. Put in here once the rest is known, so it can give way in a text.
+  const projectsAt = lines.length;
+  const projects = opts.projects === false ? null : await readProjectsBrief(actor, now, opts.cache).catch(() => null);
 
   const waiting = [check("sales.sent-unseen"), check("sales.viewed-silent")].filter((c): c is TodayCheck => Boolean(c));
   if (waiting.length) lines.push(`Waiting on a signature: ${waiting.map((c) => `${c.title} (${rows(c, 2)})`).join("; ")}.`);
@@ -80,7 +88,11 @@ export async function composeBriefing(actor: AssistantActor, now = new Date()): 
     const plan = await tool.plan({ actor, now }, {}).catch(() => null);
     if (plan && plan.ok) offer = { tool: tool.name, payload: plan.payload, readback: plan.readback };
   }
-  return { text: lines.join("\n"), offer };
+  if (projects) {
+    const used = lines.join("\n").length + (offer ? offer.readback.length + 40 : 0);
+    lines.splice(projectsAt, 0, ...fitProjects(projects, used));
+  }
+  return { text: lines.join("\n"), offer, picks: projects?.picks ?? [] };
 }
 
 /** The briefing to one person: a line in the Operator (its card when there is an offer) and a text to the linked phone. */
@@ -99,8 +111,9 @@ export async function deliverBriefing(actor: AssistantActor, b: Briefing, now = 
   }
   const body = b.offer ? `${b.text}\n${b.offer.readback}` : b.text;
   await db.assistantMessage.create({ data: { organizationId: actor.organizationId, userId: actor.userId, channel: "app", direction: "OUT", body: body.slice(0, 4000), actionId } });
+  // This morning's numbers (none: yesterday's are forgotten) — a digit reply runs one (lib/assistant/engine).
+  await savePicks(actor.organizationId, actor.userId, dayOf(now, actor.timezone), b.picks).catch(() => undefined);
   if (byText && link) await sendAssistantText(link.phone, b.offer ? `${body} ${confirmPrompt("sms")}` : body, "jobflex-assistant-brief").catch(() => false);
-  void now;
 }
 
 /** Claim today for this person: exactly one of two minute jobs running side by side wins. */
@@ -124,6 +137,8 @@ export async function runBriefings(now = new Date()): Promise<number> {
   const orgs = await db.organization.findMany({ where: { id: { in: [...new Set(on.map((p) => p.organizationId))] }, deletedAt: null }, select: { id: true, timezone: true } });
   const tzOf = new Map(orgs.map((o) => [o.id, o.timezone]));
   let sent = 0;
+  // Each company's projects read once for everyone briefed this minute.
+  const projects = new Map<string, Promise<OrgOverviews>>();
   for (const p of on) {
     const tz = tzOf.get(p.organizationId);
     if (!tz) continue;
@@ -134,7 +149,7 @@ export async function runBriefings(now = new Date()): Promise<number> {
     try {
       const actor = await actorFor(p.organizationId, p.userId, "app");
       if (!actor || (await refusal(actor, "today", false))) continue;
-      await deliverBriefing(actor, await composeBriefing(actor, now), now);
+      await deliverBriefing(actor, await composeBriefing(actor, now, { projects: p.prefs.briefing.projects, cache: projects }), now);
       sent += 1;
     } catch (err) {
       console.warn(`[assistant-brief] …${p.userId.slice(-4)}: ${err instanceof Error ? err.message : String(err)}`);
