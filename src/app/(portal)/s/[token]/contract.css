@@ -96,3 +96,39 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+
+/* Part 5a: the money under a signed agreement — the figures as the quote page's definition list, the schedule, the
+   invoices and payments as its ruled lists; each payment's waiver as a kind and the page's outlined file button. */
+.jf-buy .sc-money {
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 2px solid var(--ink);
+}
+.jf-buy .sc-money-figures dd {
+  font-weight: 700;
+}
+.jf-buy .sc-waiver {
+  display: grid;
+  gap: 6px;
+  flex-basis: 100%;
+}
+.jf-buy .sc-waiver select {
+  min-height: 40px;
+  border: 1.5px solid var(--ink);
+  background: #fff;
+  font: inherit;
+  font-size: 14px;
+  padding: 0 8px;
+}
+.jf-buy .sc-waiver-pick {
+  text-align: center;
+}
+.jf-buy .sc-money .by-field select {
+  width: 100%;
+  min-height: 48px;
+  border: var(--by-frame);
+  background: #fff;
+  font: inherit;
+  font-size: 15px;
+  padding: 0 10px;
+}

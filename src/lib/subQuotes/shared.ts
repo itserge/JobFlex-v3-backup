@@ -273,15 +273,23 @@ export function parseStoredCompare(json: string | null | undefined): StoredCompa
 
 /** Part 4: the quote's live contract, as the money reads it — executed, its price plus the approved change orders. */
 export type ContractLite = { status: string; amount: number; changes: number };
-export type MoneyLike = { stageId: string | null; status: string; amount: number | null; invoiceAmount?: number | null; contract?: ContractLite | null };
+export type MoneyLike = { stageId: string | null; status: string; amount: number | null; invoiceAmount?: number | null; contract?: ContractLite | null; paidOut?: number | null };
 
 /** What one quote commits: once its subcontract is executed, the contract's price plus its approved change orders
- *  (part 4); until then the awarded amount, or the invoice once one is in, as before. Open, declined and paid quotes
- *  commit nothing (paid is spent). */
+ *  (part 4); until then the awarded amount, or the invoice once one is in, as before. Part 5a: the cash already paid
+ *  on it (recorded payments) is spent, so it comes off — retainage still held stays committed until it is released.
+ *  Open, declined and paid quotes commit nothing (paid is spent). */
 export function committedOf(q: MoneyLike): number {
   if (q.status !== "AWARDED" && q.status !== "INVOICED") return 0;
-  if (q.contract && q.contract.status === "EXECUTED") return q.contract.amount + q.contract.changes;
-  return q.status === "INVOICED" ? (q.invoiceAmount ?? q.amount ?? 0) : (q.amount ?? 0);
+  const base = q.contract && q.contract.status === "EXECUTED" ? q.contract.amount + q.contract.changes : q.status === "INVOICED" ? (q.invoiceAmount ?? q.amount ?? 0) : (q.amount ?? 0);
+  return Math.max(0, Math.round((base - (q.paidOut ?? 0)) * 100) / 100);
+}
+
+/** What one quote has been paid: the recorded payments' cash (part 5a); a quote marked paid before payments were
+ *  recorded counts its invoice (or price) as paid. */
+export function paidOf(q: MoneyLike): number {
+  if (q.paidOut != null && q.paidOut > 0) return q.paidOut;
+  return q.status === "PAID" ? (q.invoiceAmount ?? q.amount ?? 0) : 0;
 }
 
 /** The warning before a change order is approved (part 4): what the change does to the stage's share, counting what
@@ -318,7 +326,7 @@ export function budgetRows(stages: ReadonlyArray<{ id: string; name: string }>, 
   for (const q of quotes) groups.set(q.stageId ?? "", [...(groups.get(q.stageId ?? "") ?? []), q]);
   const rowFor = (stageId: string | null, name: string, qs: Array<MoneyLike & { line: number | null }>): BudgetRow => {
     const committed = r2(qs.reduce((n, q) => n + committedOf(q), 0));
-    const paid = r2(qs.filter((q) => q.status === "PAID").reduce((n, q) => n + (q.invoiceAmount ?? q.amount ?? 0), 0));
+    const paid = r2(qs.reduce((n, q) => n + paidOf(q), 0));
     const line = qs.find((q) => q.line != null)?.line ?? null;
     const left = line != null ? r2(line - committed - paid) : null;
     return { stageId, stageName: name, line, pending: pendingOf(qs), committed, paid, left, over: left != null && left < 0, quotes: qs.length };

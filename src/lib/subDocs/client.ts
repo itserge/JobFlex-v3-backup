@@ -7,7 +7,9 @@
 import { upload } from "@vercel/blob/client";
 import { MAX_DOC_BYTES, docSize, docTypeOf } from "./shared";
 
-export type UploadDoor = { kind: "token"; token: string } | { kind: "office"; projectId: string | null };
+/** The door a file goes through: the sub's quote link, the sub's signed contract link (part 5a: invoices and lien
+ *  waivers), or the office's session. */
+export type UploadDoor = { kind: "token"; token: string } | { kind: "contract"; token: string } | { kind: "office"; projectId: string | null };
 export type UploadedFile = { url: string; name: string; contentType: string; bytes: number };
 
 export class DocUploadError extends Error {}
@@ -61,7 +63,7 @@ function putWithProgress(url: string, body: Blob, type: string, onProgress?: (pc
   });
 }
 
-const base = (door: UploadDoor) => (door.kind === "token" ? `/api/q/${encodeURIComponent(door.token)}` : "/api/subs");
+const base = (door: UploadDoor) => (door.kind === "token" ? `/api/q/${encodeURIComponent(door.token)}` : door.kind === "contract" ? `/api/s/${encodeURIComponent(door.token)}` : "/api/subs");
 
 /** One document into the store through its door. Throws DocUploadError in plain words. */
 export async function uploadSubDocument(door: UploadDoor, file: File, onProgress?: (pct: number) => void): Promise<UploadedFile> {

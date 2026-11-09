@@ -153,6 +153,8 @@ export type AgreementLike = {
   startsAt: string | null;
   endsAt: string | null;
   milestones: readonly Milestone[];
+  /** Part 5a: the percent held back from each payment, released with the last; null or 0 = none. */
+  retainagePct?: number | null;
   terms: string;
   attachments: readonly string[];
   changes: readonly ChangeLike[];
@@ -187,7 +189,14 @@ export function agreementSections(a: AgreementLike): AgreementSection[] {
       heading: "3. The schedule",
       lines: [a.startsAt || a.endsAt ? `Work starts ${a.startsAt ? `on ${longDay(a.startsAt)}` : "on a day the parties agree"} and is finished ${a.endsAt ? `by ${longDay(a.endsAt)}` : "within the time the parties agree"}.` : "Work starts and finishes on dates the parties agree in writing."],
     },
-    { key: "payments", heading: "4. Payment schedule", lines: milestoneAmounts(a.amount, a.milestones).map((m) => `${m.name}: ${m.pct}% — ${usd(m.amount)}${m.due ? `, due ${longDay(m.due)}` : ""}`) },
+    {
+      key: "payments",
+      heading: "4. Payment schedule",
+      lines: [
+        ...milestoneAmounts(a.amount, a.milestones).map((m) => `${m.name}: ${m.pct}% — ${usd(m.amount)}${m.due ? `, due ${longDay(m.due)}` : ""}`),
+        ...(a.retainagePct != null && a.retainagePct > 0 ? [`Retainage: ${a.retainagePct}% of each payment is held back and paid with the final payment, once the work is accepted and the final lien waiver is given.`] : []),
+      ],
+    },
     { key: "terms", heading: "5. Terms", lines: a.terms.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean) },
   ];
   if (a.attachments.length) out.push({ key: "attachments", heading: "Attachments", lines: a.attachments.map((n) => n) });

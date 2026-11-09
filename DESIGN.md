@@ -848,3 +848,30 @@ the proposal PDF's palette: the eyebrow "Subcontract SC-1001", the title, the
 three meta columns, the sections, the two signature blocks with the names in
 Helvetica-Oblique on a rule, the green stamp line, and "Page n of N" in the
 footer.
+
+Subcontractors, part 5a (2026-11-09, the subcontractors plan): the Invoices tab
+opens on five metric tiles (Billed, To review, Owed now, Paid, Retainage held —
+the first two amber when non-zero), then a "By contract" hub card whose ruled
+rows give each signed contract's total, billed, paid, held and what is left to
+bill in muted type with "Release retainage" as the row's small button (its form
+opens inside the row), then the Invoices card: "SI-1001 · Ridge Framing" as a
+bold link-button over their number, the payment it bills and the day in mono,
+the amount at the right with "paid · held" under it in mono, the state as a
+pill (emerald approved or paid, amber to review, rose questioned or void) with
+a rose "2 to check" pill beside it. The invoice's 640px BlueprintSheet holds the
+facts grid, the rules' flags as amber-ruled lines, "Open the invoice and what
+the AI read" (the document viewer with the read as its side panel: the amount
+due with the line it came from in quotes, the number and days, what it bills,
+the read's own flags, and Use these / Not right / Read again), the figures to
+correct, then Approve (primary; "Approve anyway" on the second press), Question
+it and Void as ghost buttons; an approved one shows "Record a payment" as five
+labelled inputs on a wrapping grid, the waiver's kind and an outlined "+ Attach
+the waiver", and "Record the payment" primary beside "Pay with Ramp". The
+Payments tab is one card of ruled lines, each payment's sentence ("Paid $7,560
+by check #1043 on Nov 10 · $840 retainage held") with an emerald "Waiver" link
+or an amber "Waiver missing" pill at the right. On the sub's /s page the money
+sits under the agreement after a 2px rule: the figures as the quote page's
+definition list, the schedule and the invoices as its ruled lists (each
+invoice's state in words, a questioned one with the company's reason), the
+payments with the waiver's kind and the page's outlined file button, then "Send
+an invoice" in the same field style as the signature with the black button.

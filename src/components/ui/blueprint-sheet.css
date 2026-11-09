@@ -9,7 +9,10 @@
  * tokens restated on the root so the sheet draws the same wherever it opens.
  */
 
-.bps {
+/* The tokens, shared with `.bps-tokens` (2026-11-09): a panel drawn outside a sheet that still uses its buttons — the
+ * document viewer's side panel ("What the AI read") — takes the class so `.bps-btn` has its colours and border there. */
+.bps,
+.bps-tokens {
   --bps-ink: #0a0a0a;
   --bps-paper: #f2f0eb;
   --bps-muted: #555;
@@ -25,7 +28,8 @@
   --bps-font: var(--font-inter), "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
   --bps-mono: var(--font-jbmono), "JetBrains Mono", "SF Mono", ui-monospace, "Courier New", monospace;
   --bps-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
-
+}
+.bps {
   position: fixed;
   inset: 0;
   z-index: 130;

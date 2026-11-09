@@ -3,6 +3,7 @@ import { inboundConfig } from "@/lib/subInbound/config";
 import { ingestReceivedEmail, type IngestResult, type ReceivedEmail } from "@/lib/subInbound/server";
 import { claimsClientEmail, fileInboundEmail, type InboxIngest } from "@/lib/inbox/server";
 import { runPendingReads } from "@/lib/subQuotes/server";
+import { runPendingInvoiceReads } from "@/lib/subInvoices/server";
 import { verifyWebhook, webhookHeaders } from "@/lib/supportInbound";
 import { runWebhookEnvelope } from "@/lib/webhookEnvelope";
 
@@ -60,6 +61,8 @@ export async function POST(req: Request) {
   if (box.result?.outcome === "matched" && box.result.versionId) {
     after(async () => {
       await runPendingReads(2).catch((err: unknown) => console.warn(`[inbound-email] read after the letter failed: ${err instanceof Error ? err.message : String(err)}`));
+      // Part 5a: an invoice that came by email is read the same way.
+      await runPendingInvoiceReads(2).catch((err: unknown) => console.warn(`[inbound-email] invoice read after the letter failed: ${err instanceof Error ? err.message : String(err)}`));
     });
   }
   console.info(`[inbound-email] ${d.email_id}: ${box.result?.outcome ?? "?"} — ${box.result?.words ?? ""}`);
