@@ -17,6 +17,7 @@ import { problemFlags } from "@/lib/crewField/shared";
 import { inspectionFlags, isoDay } from "@/lib/projectTimeline/shared";
 import { buildFactsFrom, finishFlags } from "@/lib/projectFinish/shared";
 import type { Project } from "./projects-data";
+import { spaceOf } from "@/lib/projectSpaces";
 
 /** "Jul 08" in UTC — project dates are stored as UTC midnight (the action
  *  coerces a "YYYY-MM-DD" string), and a local format renders the previous
@@ -81,6 +82,7 @@ export async function loadProjectBook(organizationId: string): Promise<Project[]
       id: p.id,
       name: p.name,
       kind: p.kind,
+      space: spaceOf(p.kind, p.answersJson),
       description: p.description,
       status: p.status,
       startsAt: shortPlate(p.startsAt),

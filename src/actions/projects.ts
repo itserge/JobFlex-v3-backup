@@ -10,7 +10,7 @@ import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { loadProjectBook } from "@/components/v3/projects-blueprint/project-book-load";
 import type { Project } from "@/components/v3/projects-blueprint/projects-data";
 import { createProjectAs } from "@/lib/projectCore";
-import { PROJECT_KINDS, parseAnswers, serializeAnswers } from "@/lib/projectKind";
+import { PROJECT_KINDS, parseAnswers, serializeAnswers, kindOf, kindsSwap } from "@/lib/projectKind";
 
 /** A new build's start questions (part 4, lib/projectPhases), each optional — the defaults are the common lot. (Not
  *  exported: a "use server" file may export only async functions.) */
@@ -107,7 +107,8 @@ export async function updateProject(raw: unknown) {
   if (!existing || existing.organizationId !== organizationId) throw new Error("Not found");
   const { id, ...rest } = data;
   // The kind can change until a stage is done: the templates, and soon the gates and the money, hang on it.
-  if (rest.kind !== undefined && rest.kind !== existing.kind) {
+  // A remodel and a job project trade places at any time (2026-11-09): they work alike and differ only in workspace.
+  if (rest.kind !== undefined && rest.kind !== existing.kind && !kindsSwap(kindOf(existing.kind), rest.kind)) {
     const done = await db.projectStage.count({ where: { projectId: id, status: "DONE" } });
     if (done) throw new Error("The kind can't change once a stage is done.");
   }

@@ -77,7 +77,9 @@ export const NAV_SECTIONS: NavSection[] = [
     // REMODELING (owner, 2026-11-04: "get the projects in our sidebar presented and highlighted, so contractors
     // understand it's for remodelers — a separate system where you run a big project with lots of estimates").
     // Projects leaves Work for a bay of its own, drawn like the estimating tools: one hub, its own colour.
-    label: "Remodeling",
+    // CONSTRUCTION since 2026-11-09: Projects opens three workspaces — New Home Builder, Remodeler, Job Projects
+    // (lib/projectSpaces) — so the bay is named for all three.
+    label: "Construction",
     items: [
       { label: "Projects", icon: "i-folder", href: "/dashboard/projects", tool: { tone: "gold" } },
       // The subcontractors plan, part 1 (2026-11-08): the company's directory of subs and every quote across its
@@ -322,7 +324,7 @@ const ROLE_NAV: Record<string, RoleNavPlan> = {
   // Estimators: proposals plus the estimating engines.
   ESTIMATOR: [
     { label: "Estimating", hrefs: ["/dashboard/proposals"] },
-    { label: "Remodeling", hrefs: ["/dashboard/projects", "/dashboard/subcontractors", "/dashboard/quotes"] },
+    { label: "Construction", hrefs: ["/dashboard/projects", "/dashboard/subcontractors", "/dashboard/quotes"] },
     {
       label: "Automation",
       // Roof and Fence are listed because the production sidebar lists them for

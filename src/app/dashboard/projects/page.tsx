@@ -21,6 +21,9 @@ import { isEstimatorRole, isWorkerRole, requireOrg, NoOrgError, UnauthorizedErro
 import { db } from "@/lib/db";
 import { ProjectsContent } from "@/components/v3/projects-blueprint/projects-content";
 import { loadProjectBook } from "@/components/v3/projects-blueprint/project-book-load";
+import { ProjectSpacesHome } from "@/components/v3/projects-blueprint/project-spaces";
+import { spaceOfRow } from "@/components/v3/projects-blueprint/project-spaces-data";
+import { parseSpace } from "@/lib/projectSpaces";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +32,10 @@ export const metadata: Metadata = {
   description: "Projects — status filters and the full project book on one sheet.",
 };
 
-export default async function ProjectsPage() {
+export default async function ProjectsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  // The workspace (2026-11-09, lib/projectSpaces): none chosen opens the three cards.
+  const sp = await searchParams;
+  const space = parseSpace(typeof sp.space === "string" ? sp.space : null);
   let organizationId: string;
   let role: string;
   try {
@@ -41,6 +47,8 @@ export default async function ProjectsPage() {
     if (err instanceof NoOrgError) redirect("/dashboard?error=forbidden");
     throw err;
   }
+
+  if (!space) return <ProjectSpacesHome rows={await loadProjectBook(organizationId)} />;
 
   const [rows, clientRows] = await Promise.all([
     loadProjectBook(organizationId),
@@ -55,5 +63,5 @@ export default async function ProjectsPage() {
   const clients = clientRows.map((c) => ({ id: c.id, name: c.name, street: (c.address ?? "").split("\n")[0]?.trim() ?? "" }));
 
   // "+ New client…" is createClient's door: sales and managers (an estimator is refused there).
-  return <ProjectsContent projects={rows} clients={clients} canAddClient={!isEstimatorRole(role) && !isWorkerRole(role)} />;
+  return <ProjectsContent key={space} space={space} allProjects={rows} projects={rows.filter((p) => spaceOfRow(p) === space)} clients={clients} canAddClient={!isEstimatorRole(role) && !isWorkerRole(role)} />;
 }
