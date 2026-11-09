@@ -17,6 +17,8 @@ import { BUILD_DEFAULTS, BUILD_QUESTIONS } from "@/lib/projectPhases/shared";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { AutoProjectsSheet } from "@/components/v3/project-links/auto-projects-sheet";
 import { initProjectsContent } from "./projects-behavior";
+import { SpaceHeader } from "./project-spaces";
+import { SPACES, type SpaceId } from "@/lib/projectSpaces";
 import type { Project, ProjectClientChoice } from "./projects-data";
 
 /**
@@ -26,10 +28,16 @@ import type { Project, ProjectClientChoice } from "./projects-data";
  */
 export function ProjectsContent({
   projects,
+  allProjects,
+  space,
   clients = [],
   canAddClient = false,
 }: {
   projects: Project[];
+  /** Every workspace's rows (the road's pins read only this workspace's; kept for the counts to come). */
+  allProjects?: Project[];
+  /** The workspace (2026-11-09, lib/projectSpaces): its header, its road, its kind for New project. */
+  space?: SpaceId;
   clients?: ProjectClientChoice[];
   canAddClient?: boolean;
 }) {
@@ -44,7 +52,9 @@ export function ProjectsContent({
   const seedRef = useRef(projects);
 
   const init = useCallback(
-    (content: HTMLElement) => initProjectsContent(content, { projects: seedRef.current }),
+    (content: HTMLElement) => initProjectsContent(content, { projects: seedRef.current, kind: space ? SPACES[space].kind : undefined }),
+    // The workspace is fixed for the life of the mount (the page keys the content on it).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
   useBlueprintContent(init);
@@ -54,24 +64,44 @@ export function ProjectsContent({
   return (
     <>
       <AutoProjectsSheet open={autoOpen} onClose={() => setAutoOpen(false)} />
-      {/* PAGE HEAD */}
-      <div className="page-head">
-        <div>
-          <div className="kicker">Remodeling</div>
-          <h1 className="page-title">Projects</h1>
+      {/* PAGE HEAD — in a workspace, its own header and road (2026-11-09, ./project-spaces); the buttons are the same. */}
+      {space ? (
+        <SpaceHeader
+          space={space}
+          rows={allProjects ?? projects}
+          actions={
+            <>
+              <button className="btn btn-ghost" type="button" onClick={() => setAutoOpen(true)} data-auto-projects>
+                Automatic projects
+              </button>
+              <button className="btn btn-primary" id="newProjectBtn" style={{ background: SPACES[space].color, borderColor: SPACES[space].color }}>
+                <svg className="ic">
+                  <use href="#i-plus" />
+                </svg>
+                New {SPACES[space].one}
+              </button>
+            </>
+          }
+        />
+      ) : (
+        <div className="page-head">
+          <div>
+            <div className="kicker">Remodeling</div>
+            <h1 className="page-title">Projects</h1>
+          </div>
+          <div className="page-actions">
+            <button className="btn btn-ghost" type="button" onClick={() => setAutoOpen(true)} data-auto-projects>
+              Automatic projects
+            </button>
+            <button className="btn btn-primary" id="newProjectBtn">
+              <svg className="ic">
+                <use href="#i-plus" />
+              </svg>
+              New project
+            </button>
+          </div>
         </div>
-        <div className="page-actions">
-          <button className="btn btn-ghost" type="button" onClick={() => setAutoOpen(true)} data-auto-projects>
-            Automatic projects
-          </button>
-          <button className="btn btn-primary" id="newProjectBtn">
-            <svg className="ic">
-              <use href="#i-plus" />
-            </svg>
-            New project
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* MASTHEAD (2026-09-20) — the book's four numbers, painted by the
           behavior: what is being worked, what is sold, spend against budget,
@@ -146,8 +176,8 @@ export function ProjectsContent({
         <div className="mdl-box">
           <div className="mdl-head">
             <div>
-              <span className="mdl-kick">Delivery / new record</span>
-              <div className="mdl-title" id="pjNewTitle">New project</div>
+              <span className="mdl-kick">{space ? `${SPACES[space].brand} / new record` : "Delivery / new record"}</span>
+              <div className="mdl-title" id="pjNewTitle">{space ? `New ${SPACES[space].one}` : "New project"}</div>
             </div>
             <button className="mdl-x" type="button" data-mdl="close" aria-label="Close dialog">
               <svg className="ic">
@@ -174,6 +204,10 @@ export function ProjectsContent({
                 <button className="fseg-btn" type="button" data-v="NEW_BUILD" aria-pressed="false">
                   <svg className="fseg-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8.5 8 3l6 5.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /><path d="M4 7.5V14h8V7.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /><path d="M6 8.2V14M8 7v7M10 8.2V14" fill="none" stroke="currentColor" strokeWidth="1" /></svg>
                   New construction
+                </button>
+                <button className="fseg-btn" type="button" data-v="JOB" aria-pressed="false">
+                  <svg className="fseg-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 9h12M3 9v5M13 9v5M2 5h12M4 5v4M8 5v4M12 5v4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+                  Job project
                 </button>
               </div>
               <span className="fld-hint" id="pjfKindHint">The house stands: a kitchen, a bath, an addition, a whole house.</span>

@@ -12,7 +12,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { listProjectClients, updateProject } from "@/actions/projects";
-import { KIND_HINT, KIND_LABEL, PROJECT_KINDS, kindOf, type ProjectKind } from "@/lib/projectKind";
+import { KIND_HINT, KIND_LABEL, PROJECT_KINDS, kindOf, type ProjectKind, kindsSwap } from "@/lib/projectKind";
 import { FOR_WHOM, FOR_WHOM_HINT, FOR_WHOM_LABEL, MONEY_MODES, MONEY_MODE_HINT, MONEY_MODE_LABEL, parseMoneySettings, type ForWhom, type MoneyMode } from "@/lib/projectMoneyPlan/shared";
 import { closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
 import { initDatePopovers } from "@/components/v3/shared/date-popover";
@@ -139,7 +139,7 @@ export function ProjectEditDialog({ project, open, onClose }: { project: Editabl
         startsAt: start || null,
         endsAt: end || null,
         clientId: String(f.get("clientId") ?? "") || null,
-        ...(project.kindLocked ? {} : { kind }),
+        ...(project.kindLocked && !kindsSwap(kindOf(project.kind), kind) ? {} : { kind }),
         occupied: kind === "REMODEL" ? occupied : false,
         forWhom,
         moneyMode: forWhom === "SELF" ? "NONE" : moneyMode,
@@ -209,12 +209,12 @@ export function ProjectEditDialog({ project, open, onClose }: { project: Editabl
               <span className={cx("mf-lbl")}>What kind of project</span>
               <div className={cx("pd-edit-seg")} role="group" aria-label="Project kind">
                 {PROJECT_KINDS.map((k) => (
-                  <button key={k} type="button" className={cx("pd-edit-opt", kind === k && "on")} aria-pressed={kind === k} disabled={project.kindLocked && kind !== k} data-kind={k} onClick={() => setKind(k)}>
+                  <button key={k} type="button" className={cx("pd-edit-opt", kind === k && "on")} aria-pressed={kind === k} disabled={project.kindLocked && !kindsSwap(kindOf(project.kind), k)} data-kind={k} onClick={() => setKind(k)}>
                     {KIND_LABEL[k]}
                   </button>
                 ))}
               </div>
-              <div className={cx("mf-note")}>{project.kindLocked ? "The kind stays once a stage is done." : KIND_HINT[kind]}</div>
+              <div className={cx("mf-note")}>{project.kindLocked && kindOf(project.kind) === "NEW_BUILD" ? "A new build stays one once a stage is done." : KIND_HINT[kind]}</div>
             </div>
             {kind === "REMODEL" ? (
               <div className={cx("mf")}>

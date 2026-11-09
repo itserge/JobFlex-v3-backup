@@ -415,6 +415,27 @@ monthly" is one 12px line (weight 600) under the price.
 - Reuse the live shared sidebar, navigation map and responsive shell.
   Sidebar subpage toggles are separate buttons with hover and expanded state;
   nested links retain consistent type and a clear indentation guide.
+- Project workspaces (owner, 2026-11-09: "it should look like a different
+  platform specially made for it"): Projects opens on three cards — New Home
+  Builder, Remodeler, Job Projects — and each workspace, and every project in
+  it, wears its own colour as `--space` (lib/projectSpaces): teal `#0e6b67`,
+  violet `#5a3fa8`, the blueprint blue `#1854a0`, with an 8% wash of each for
+  bands. Approved additions to the palette for this use only: they mark which
+  workspace a surface belongs to and never mean good or bad — the status
+  colours (success, warning, danger) keep those meanings. A workspace's card
+  and header carry a line drawing in ink with its colour where the eye should
+  land (`SpaceArt`: a house frame on its lot, a kitchen, a deck and its
+  stairs); its offset shadow is in its colour.
+- The project Overview card (`project-overview-card.tsx`) leads every
+  project page, desk and phone: a status band with a 10px left rule in the
+  status colour (8px on a phone), the ask bar, a road of numbered 34px discs
+  joined by a 4px track (done filled in the workspace colour, the current one
+  ringed with "here", a late one filled red with "late"), then Do now and
+  Coming up side by side, People and Money side by side (one column at
+  ≤768px), and What happened last folded. Do now rows have a 5px left rule in
+  red or amber, one primary button in the workspace colour, an optional
+  secondary in ink, and a quiet "Not now". A one-tap write (a stage done, an
+  inspection's result) asks "Sure? …" on the same button before it runs.
 
 ## Mobile and motion
 

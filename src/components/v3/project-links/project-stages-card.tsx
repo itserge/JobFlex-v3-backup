@@ -238,7 +238,7 @@ export function ProjectStagesCard({ projectId, stages: initial, canManage, kind 
               const when = dates(st);
               const holding = status === "DONE" ? [] : holdingOf(st);
               return (
-                <div key={st.id} className={`${s.row} ${status === "DONE" ? s.isDone : ""} ${status === "ACTIVE" ? s.isActive : ""}`} data-stage-row data-stage-status={status}>
+                <div key={st.id} className={`${s.row} ${status === "DONE" ? s.isDone : ""} ${status === "ACTIVE" ? s.isActive : ""}`} data-stage-row data-stage-status={status} data-stage-id={st.id}>
                   <span className={s.mark} aria-hidden="true">
                     {status === "DONE" ? "✓" : status === "ACTIVE" ? "▶" : ""}
                   </span>

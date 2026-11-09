@@ -17,8 +17,10 @@ export type Project = {
   name: string;
   description: string | null;
   status: string;
-  /** REMODEL or NEW_BUILD (2026-11-07). */
+  /** REMODEL, NEW_BUILD or JOB (2026-11-07; JOB 2026-11-09). */
   kind?: string;
+  /** The workspace it lives in (2026-11-09, lib/projectSpaces): build, remodel or jobs. */
+  space?: "build" | "remodel" | "jobs";
   startsAt: string | null;
   endsAt: string | null;
   budget: number;
