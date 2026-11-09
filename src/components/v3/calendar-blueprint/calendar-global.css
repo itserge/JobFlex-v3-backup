@@ -91,3 +91,34 @@ html.eff-1000 .jf-blueprint .content .page-title { font-size: 38px; }
 .jf-blueprint:has([data-cal-window]) .sb-overlay,
 .jf-blueprint:has([data-cal-window]) .main > .topbar,
 .jf-blueprint:has([data-cal-window]) .content [data-announcement] { display: none; }
+
+/* ── THE MONTH DAY TIMELINE (calendar part 1, 2026-11-09) ──────────────
+   Hangs off <body> (position: fixed) while a card is over a month day, so it
+   sits outside the shell root: it reads the :root tokens, with fallbacks. Its
+   children let the drag fall through — the box itself is the drop target. */
+@keyframes calendar_clockIn { from { opacity: 0; transform: scaleY(0.96); } to { opacity: 1; transform: none; } }
+.cal-dayclock { position: fixed; z-index: 120; box-sizing: border-box; overflow: hidden; background: #fff; border: 2px solid var(--ink, #0a0a0a); border-radius: var(--radius, 2px); box-shadow: 4px 4px 0 rgba(10, 10, 10, 0.18); font-family: var(--font-sans, system-ui, sans-serif); animation: calendar_clockIn 0.14s ease-out; }
+.cal-dayclock * { pointer-events: none; }
+.cal-dayclock .dc-head { height: 88px; box-sizing: border-box; padding: 8px 8px 6px; text-align: center; background: var(--paper, #f2f0eb); border-bottom: 2px solid var(--ink, #0a0a0a); }
+.cal-dayclock .dc-day { font-family: var(--font-mono, monospace); font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent, #1854a0); }
+.cal-dayclock .dc-time { font-size: 25px; font-weight: 900; line-height: 1.2; letter-spacing: -0.02em; color: var(--ink, #0a0a0a); font-variant-numeric: tabular-nums; }
+.cal-dayclock .dc-span { font-family: var(--font-mono, monospace); font-size: 10.5px; font-weight: 600; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-dayclock .dc-scale { position: relative; }
+.cal-dayclock .dc-hour { position: absolute; left: 0; right: 0; border-top: 1px dashed #d5d1c8; }
+.cal-dayclock .dc-hour span { position: absolute; left: 4px; top: 2px; font-family: var(--font-mono, monospace); font-size: 9px; font-weight: 600; line-height: 1; color: #8a857c; }
+.cal-dayclock .dc-busy { position: absolute; left: 24px; right: 4px; box-sizing: border-box; min-height: 12px; overflow: hidden; padding: 1px 4px; font-size: 9.5px; line-height: 1.25; background: #ece9e2; border: 1px solid #d5d1c8; border-radius: 2px; color: #555; }
+.cal-dayclock .dc-busy.clash { background: #fbeae8; border-color: var(--rose, #c0392b); color: #9f2a1e; }
+.cal-dayclock .dc-band { position: absolute; left: 20px; right: 2px; box-sizing: border-box; min-height: 6px; background: rgba(24, 84, 160, 0.13); border: 2px solid var(--accent, #1854a0); border-radius: 2px; }
+.cal-dayclock .dc-band.clash { background: rgba(192, 57, 43, 0.12); border-color: var(--rose, #c0392b); }
+.cal-dayclock .dc-now { position: absolute; left: 0; right: 0; border-top: 2px dashed var(--emerald, #2e7d32); }
+.cal-dayclock .dc-line { position: absolute; left: 0; right: 0; z-index: 2; height: 3px; transform: translateY(-50%); background: var(--accent, #1854a0); box-shadow: 0 0 6px rgba(24, 84, 160, 0.45); }
+.cal-dayclock .dc-pill { position: absolute; right: 4px; z-index: 3; transform: translateY(-50%); padding: 2px 7px; border-radius: 2px; background: var(--accent, #1854a0); color: #fff; font-family: var(--font-mono, monospace); font-size: 11px; font-weight: 700; line-height: 1.3; white-space: nowrap; }
+.cal-dayclock .dc-foot { height: 44px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 0 8px; text-align: center; font-family: var(--font-mono, monospace); font-size: 10px; font-weight: 600; line-height: 1.3; color: #555; border-top: 1.5px solid #d5d1c8; background: var(--paper, #f2f0eb); }
+.cal-dayclock .dc-foot.clash { color: #9f2a1e; background: #fbeae8; }
+.cal-dayclock .dc-foot.same { color: var(--emerald, #2e7d32); }
+/* The week strips: hold on one and the timeline moves a week (same weekday, same time). */
+.cal-dayclock .dc-wk { height: 24px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; font-family: var(--font-mono, monospace); font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent, #1854a0); background: #eef2f8; }
+.cal-dayclock .dc-wk--up { border-bottom: 1.5px solid #d5d1c8; }
+.cal-dayclock .dc-wk--down { border-top: 1.5px solid #d5d1c8; }
+.cal-dayclock .dc-wk.off { color: transparent; background: #fafaf8; }
+.cal-dayclock .dc-wk.hold { color: #fff; background: var(--accent, #1854a0); }

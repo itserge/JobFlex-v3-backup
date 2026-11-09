@@ -47,6 +47,7 @@ import { BUSINESS_TOOLS } from "@/lib/assistant/business";
 import { CLIENT_360_TOOLS } from "@/lib/assistant/clients360";
 import { INBOX_TOOLS } from "@/lib/assistant/inbox";
 import { PIPELINE_TOOLS } from "@/lib/assistant/pipeline";
+import { OPEN_TIME_TOOLS } from "@/lib/assistant/openTimes";
 import { CONTRACTOR_TOOLS } from "@/lib/assistant/contractors";
 // The subcontractors plan, part 6 (2026-11-09): find, requests, compare, the subs budget, invoices, documents, reminders,
 // approving and paying a sub's invoice.
@@ -1000,6 +1001,7 @@ export const TOOLS: readonly AnyTool[] = [
   remindOverdue,
   ...PEOPLE_TOOLS, ...CLIENT_360_TOOLS, ...INBOX_TOOLS, ...PIPELINE_TOOLS,
   ...VISIT_TOOLS,
+  ...OPEN_TIME_TOOLS,
   ...REMIND_TOOLS,
   ...MONEY_TOOLS,
   ...PROJECT_TOOLS,

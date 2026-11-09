@@ -67,6 +67,8 @@ import {
   type TrayJob,
 } from "./calendar-data";
 import { LANES, readPick, savePick, shownBy, type Lane } from "./calendar-lanes";
+import { busyOnDay, clashesFor, clockWords, dayClockFrac, dayClockMinutesAt, dayClockStep, spanWords as clockSpanWords, DAY_CLOCK_END_HOUR, DAY_CLOCK_START_HOUR, type DayBusy } from "@/lib/calendar/dayClock";
+import { findOpenTimes, type OpenBusy } from "@/lib/calendar/openTimes";
 
 export type CalendarContentOptions = {
   /** The org's real calendar, read server-side. Omit to fall back to the donor
@@ -415,6 +417,8 @@ export function initCalendarContent(
     dragJob: null as string | null,
     /** Minutes between a dragged block's start and the point it was grabbed. */
     dragGrabMin: 0,
+    /** The numbers row's "Booked with nobody" (calendar part 1): only jobs and visits no one is on. */
+    unassigned: false,
     sheet: null as string | null,
     editing: null as string | null,
     kind: "job" as CalKind,
@@ -541,6 +545,7 @@ export function initCalendarContent(
       if (!shownBy(e, cal.lane, cal.projects)) return false;
       if (cal.statuses.length && cal.statuses.indexOf(e.status) === -1) return false;
       if (cal.workers.length && !e.workers.some(function (w) { return cal.workers.indexOf(w) !== -1; })) return false;
+      if (cal.unassigned && (e.workers.length || (e.kind !== "job" && e.kind !== "appointment"))) return false;
       if (!q) return true;
       // "ai desk", "online", "plan" find the visits booked that way.
       const via = e.kind === "appointment" ? " " + VISIT_VIA[e.via || "team"].tag + " " + (e.visitFor || "") : "";
@@ -764,13 +769,43 @@ export function initCalendarContent(
     return canManage || e.kind !== "job";
   }
 
+  // ===== CALENDAR PART 1 (2026-11-09): "Day 2 of 3" and the money line on job chips =====
+  /** "$860", "$8.3k", "$14k". */
+  function money0(n: number) {
+    return n >= 10000 ? "$" + Math.round(n / 1000) + "k" : n >= 1000 ? "$" + Math.round(n / 100) / 10 + "k" : "$" + Math.round(n);
+  }
+  /** A job with several days on the calendar: which one this is, by start. Rebuilt on every full render. */
+  let dayLabels: Map<string, string> | null = null;
+  function dayOfJob(e: CalEvent): string {
+    if (e.kind !== "job" || !e.jobId) return "";
+    if (!dayLabels) {
+      dayLabels = new Map();
+      const byJob = new Map<string, CalEvent[]>();
+      for (const x of eventsData) if (x.kind === "job" && x.jobId) byJob.set(x.jobId, (byJob.get(x.jobId) || []).concat([x]));
+      for (const list of byJob.values()) {
+        if (list.length < 2) continue;
+        list.sort(function (a, b) { return a.start.getTime() - b.start.getTime(); });
+        list.forEach(function (x, i) { dayLabels!.set(x.id, "Day " + (i + 1) + " of " + list.length); });
+      }
+    }
+    return dayLabels.get(e.id) || "";
+  }
+  /** What the job is worth and what its crew is paid — the office's eyes only (the seed never sends it elsewhere). */
+  function moneyLine(e: CalEvent): string {
+    if (!canManage || e.kind !== "job" || !e.value) return "";
+    return money0(e.value) + (e.crewPay ? " → " + money0(e.crewPay) : "");
+  }
+
   function chipHtml(e: CalEvent, compact: boolean) {
     const proj = projTag(e);
+    const dayOf = dayOfJob(e);
+    const cash = moneyLine(e);
     return '<button class="evc ' + statusCls(e) + (proj ? " evc--proj" : "") + '" type="button" draggable="' + canDrag(e) + '" data-ev="' + e.id + '"' + projAttrs(e) + ">" +
       '<span class="evc-t"><svg class="ic"><use href="#' + evIcon(e) + '"/></svg><span class="evc-txt">' + esc(e.title) + "</span></span>" +
       (compact
         ? (e.kind === "appointment" || proj ? '<span class="evc-time">' + viaTag(e) + proj + "</span>" : "")
-        : '<span class="evc-time">' + viaTag(e) + proj + (e.allDay ? "All day" : fmtTime(e.start)) + " · " + esc(workerNames(e).join(", ") || (e.orgWide ? "everyone" : "unassigned")) + "</span>") +
+        : '<span class="evc-time">' + viaTag(e) + proj + (dayOf ? '<b class="evc-day">' + dayOf + "</b> · " : "") + (e.allDay ? "All day" : fmtTime(e.start)) + " · " + esc(workerNames(e).join(", ") || (e.orgWide ? "everyone" : "unassigned")) + "</span>" +
+          (cash ? '<span class="evc-cash" title="Job value → crew pay">' + cash + "</span>" : "")) +
       "</button>";
   }
 
@@ -1174,7 +1209,7 @@ export function initCalendarContent(
       ' style="' + geoStyle(p) + '">' +
       '<span class="evc-t"><svg class="ic"><use href="#' + evIcon(p.e) + '"/></svg>' +
       '<span class="evc-txt">' + esc(p.e.title) + "</span></span>" +
-      '<span class="wg-ev-time">' + viaTag(p.e) + proj + fmtRange(p.e.start, p.e.end) + "</span>" +
+      '<span class="wg-ev-time">' + viaTag(p.e) + proj + (dayOfJob(p.e) ? dayOfJob(p.e) + " · " : "") + fmtRange(p.e.start, p.e.end) + (moneyLine(p.e) ? " · " + moneyLine(p.e) : "") + "</span>" +
       // The two edge grips. Rendered inside the block (which is the containing
       // block for them) and marked aria-hidden: they are a pointer affordance
       // for a gesture the sheet's own start/end pickers already expose to the
@@ -1309,22 +1344,367 @@ export function initCalendarContent(
   }
 
   // ================= RENDER: tray =================
+  // ===== THE "TO PLACE" LIST (calendar part 1, 2026-11-09) =====
+  // Sold work waiting for a day ("Ready to book" — two of one client's jobs sit together) and leads waiting for a
+  // visit. Drag a card onto the calendar, or tap its calendar button for the first open times and book one.
+  function trayLen(j: TrayJob) {
+    return j.durationMin ?? (j.kind === "visit" ? 60 : 240);
+  }
+  function lenWords(min: number) {
+    return min >= 1440 ? Math.round(min / 1440) + "d" : min % 60 ? Math.floor(min / 60) + "h " + (min % 60) + "m" : min / 60 + "h";
+  }
+  function trayCardHtml(j: TrayJob) {
+    const visit = j.kind === "visit";
+    return '<div class="tray-card' + (visit ? " tray-card--visit" : "") + '" draggable="true" data-job="' + esc(j.id) + '">' +
+      '<div class="tray-top"><div class="tray-t">' + esc(visit ? j.client : j.title) + "</div>" +
+      '<button class="tray-open" type="button" data-open-times="' + esc(j.id) + '" title="First open times" aria-label="First open times for ' + esc(visit ? j.client : j.title) + '">' +
+      '<svg class="ic"><use href="#i-cal"/></svg></button></div>' +
+      '<div class="tray-c">' + esc(visit ? j.title : j.client) + " · " + esc(j.city) + "</div>" +
+      '<div class="tray-m">' + (visit ? "Visit" : "Ready to book") + " · " + lenWords(trayLen(j)) +
+      (canManage && j.value ? " · " + money0(j.value) : "") + "</div>" +
+      '<div class="tray-slots" data-slots="' + esc(j.id) + '"></div>' +
+      "</div>";
+  }
   function renderTray() {
     const trayList = byId("trayList");
     if (!trayList) return;
-    trayList.innerHTML = trayJobs.map(function (j) {
-      return '<div class="tray-card" draggable="true" data-job="' + j.id + '">' +
-        '<div class="tray-t">' + esc(j.title) + "</div>" +
-        '<div class="tray-c">' + esc(j.client) + " · " + esc(j.city) + "</div>" +
-        '<div class="tray-m">Est. ' + esc(j.duration) + " · drag to a day</div>" +
-        "</div>";
+    const jobs = trayJobs.filter(function (j) { return j.kind !== "visit"; });
+    const visits = trayJobs.filter(function (j) { return j.kind === "visit"; });
+    let html = "";
+    if (jobs.length) {
+      html += '<div class="tray-sec">Ready to book <span>' + jobs.length + "</span></div>";
+      const seen = new Set<string>();
+      for (const j of jobs) {
+        if (seen.has(j.id)) continue;
+        const same = j.clientKey ? jobs.filter(function (x) { return x.clientKey === j.clientKey; }) : [j];
+        same.forEach(function (x) { seen.add(x.id); });
+        html += same.length > 1
+          ? '<div class="tray-group"><div class="tray-gh">' + esc(j.client) + " — " + same.length + " jobs, same client</div>" + same.map(trayCardHtml).join("") +
+            '<div class="tray-gf">Book one, then the other on the same day.</div></div>'
+          : trayCardHtml(j);
+      }
+    }
+    if (visits.length) {
+      html += '<div class="tray-sec">Visits to book <span>' + visits.length + "</span></div>" + visits.map(trayCardHtml).join("");
+    }
+    trayList.innerHTML = html;
+  }
+
+  /** A sales rep's (or any limited role's) own crew profile — what they book goes on their own calendar. */
+  function selfWorkerId(): string | null {
+    if (canManage) return null;
+    const me = seed?.desk?.me;
+    const w = me ? workersData.find(function (x) { return x.userId === me; }) : undefined;
+    return w ? w.id : null;
+  }
+  /** Who could take this card: the one person the calendar is focused on; else a lead's own rep; else everyone in the
+   *  right role (crew for a job, sales and the office for a visit) — falling back to the whole team. A limited role
+   *  books only themselves. */
+  function peopleFor(j: TrayJob): Array<{ id: string; name: string }> {
+    const all = workersData.map(function (w) { return { id: w.id, name: w.name, role: w.role, userId: w.userId }; });
+    if (!canManage) {
+      const me = seed?.desk?.me;
+      return all.filter(function (w) { return me && w.userId === me; });
+    }
+    if (cal.workers.length === 1) return all.filter(function (w) { return w.id === cal.workers[0]; });
+    if (j.kind === "visit" && j.ownerWorkerId) {
+      const own = all.filter(function (w) { return w.id === j.ownerWorkerId; });
+      if (own.length) return own;
+    }
+    const want = j.kind === "visit" ? ["Sales rep", "Estimator", "Owner", "Manager", "Admin"] : ["Installer"];
+    const fit = all.filter(function (w) { return want.indexOf(w.role) !== -1; });
+    return fit.length ? fit : all;
+  }
+  /** Everyone's booked time, from what the calendar holds. A company-wide block (a holiday) is everyone's. */
+  function busySpans(): OpenBusy[] {
+    const out: OpenBusy[] = [];
+    for (const e of eventsData) {
+      if (e.status === "CANCELED" || e.kind === "desk") continue;
+      if (e.kind === "blocked" && e.orgWide) { out.push({ personId: null, start: e.start, end: e.end }); continue; }
+      for (const w of e.workers) out.push({ personId: w, start: e.start, end: e.end });
+    }
+    return out;
+  }
+  function showOpenTimes(id: string) {
+    const host = root.querySelector<HTMLElement>('[data-slots="' + CSS.escape(id) + '"]');
+    const j = trayJobs.find(function (x) { return x.id === id; });
+    if (!host || !j) return;
+    if (host.classList.contains("open")) { host.classList.remove("open"); host.innerHTML = ""; return; }
+    const people = peopleFor(j);
+    const slots = findOpenTimes({ from: new Date(Date.now() + 30 * 60_000), people, busy: busySpans(), durationMin: trayLen(j), count: 3 });
+    host.classList.add("open");
+    host.innerHTML = slots.length
+      ? '<div class="tray-slots-h">First open times</div>' +
+        slots.map(function (sl) {
+          return '<button class="tray-slot" type="button" data-book="' + esc(j.id) + "|" + sl.start.toISOString() + "|" + esc(sl.personId) + '">' +
+            "<b>" + esc(sl.start.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })) + " · " + clockWords(sl.start.getHours() * 60 + sl.start.getMinutes()) + "</b>" +
+            "<span>" + esc(sl.name) + "</span></button>";
+        }).join("")
+      : '<div class="tray-slots-h">' + (people.length ? "No open time in the next 3 weeks" : "Nobody to send yet — add your team on Workers") + "</div>";
+  }
+  /** Book a tray card at a start, optionally on one person — the same path a drop takes. */
+  function bookTray(j: TrayJob, start: Date, workerId: string | null) {
+    const end = new Date(start.getTime() + trayLen(j) * 60_000);
+    const day = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    evSeq += 1;
+    const visit = j.kind === "visit";
+    const created: CalEvent = {
+      id: "e" + evSeq, kind: visit ? "appointment" : "job",
+      // "Visit — Pia Lee (Deck)"; a job keeps its own title, as the server writes it.
+      title: visit ? "Visit — " + j.client + (j.title.indexOf("Visit — ") === 0 ? " (" + j.title.slice(8) + ")" : "") : j.title,
+      start, end, status: "SCHEDULED", workers: workerId ? [workerId] : [], client: j.client, addr: j.city,
+      leadId: j.leadId,
+      ...(visit ? {} : { jobId: j.id, value: j.value ?? null }),
+    };
+    eventsData.push(created);
+    landed = created.id;
+    trayJobs = trayJobs.filter(function (x) { return x.id !== j.id; });
+    dayLabels = null;
+    renderCal(); flashEvent();
+    if (!wired) return;
+    if (visit) void persistVisitDrop(created, j, workerId);
+    else void persistTrayDrop(created, j, day, true, workerId);
+  }
+  async function persistVisitDrop(created: CalEvent, j: TrayJob, workerId: string | null) {
+    try {
+      const res = await createAppointment({
+        title: created.title,
+        leadId: j.leadId ?? null,
+        startsAt: created.start.toISOString(),
+        endsAt: created.end.toISOString(),
+        workerIds: workerId ? [workerId] : [],
+      });
+      created.id = "apt:" + res.id;
+      created.rid = res.id;
+      renderCal();
+    } catch (err) {
+      const i = eventsData.indexOf(created);
+      if (i > -1) eventsData.splice(i, 1);
+      trayJobs = trayJobs.concat([j]);
+      renderCal();
+      toast(actionError(err));
+    }
+  }
+
+  // ===== THE NUMBERS ROW + THE CREW BAR (calendar part 1, 2026-11-09) =====
+  function renderStats() {
+    const host = byId("calStats");
+    if (!host) return;
+    const m0 = new Date(cal.cursor.getFullYear(), cal.cursor.getMonth(), 1);
+    const m1 = new Date(cal.cursor.getFullYear(), cal.cursor.getMonth() + 1, 1);
+    const mon = m0.toLocaleDateString(undefined, { month: "long" });
+    const live = eventsData.filter(function (e) { return e.start < m1 && e.end > m0 && e.status !== "CANCELED"; });
+    const visits = live.filter(function (e) { return e.kind === "appointment"; }).length;
+    const jobs = new Set(live.filter(function (e) { return e.kind === "job"; }).map(function (e) { return e.jobId || e.id; })).size;
+    const crewDays = live.filter(function (e) { return e.kind === "job" && e.workers.length; }).length;
+    const startToday = new Date(TODAY);
+    const nobody = eventsData.filter(function (e) {
+      return (e.kind === "job" || e.kind === "appointment") && !e.workers.length && e.end >= startToday && e.status !== "CANCELED" && e.status !== "COMPLETED";
+    }).length;
+    const tile = (n: number, label: string, act: string, tone: string, on = false) =>
+      '<button class="cal-stat' + (on ? " on" : "") + '" type="button" data-stat="' + act + '" data-tone="' + tone + '"><b>' + n + "</b><span>" + label + "</span></button>";
+    host.innerHTML =
+      tile(visits, "Visits in " + mon, "visits", "blue", cal.lane === "appointments") +
+      tile(jobs, "Jobs in " + mon, "jobs", "ink", cal.lane === "installs") +
+      tile(crewDays, "Crew days in " + mon, "crew", "ink") +
+      (canManage || trayJobs.length ? tile(trayJobs.length, "Waiting to be scheduled", "waiting", "amber") : "") +
+      (canManage ? tile(nobody, "Booked with nobody on it", "nobody", nobody ? "red" : "ink", cal.unassigned) : "");
+  }
+  function renderCrew() {
+    const host = byId("calCrew");
+    if (!host) return;
+    if (!canManage || !workersData.length) { host.innerHTML = ""; return; }
+    // The count follows what's on screen: this month, or this week.
+    const a = cal.view === "month" ? new Date(cal.cursor.getFullYear(), cal.cursor.getMonth(), 1) : startOfWeek(cal.cursor);
+    const b = cal.view === "month" ? new Date(cal.cursor.getFullYear(), cal.cursor.getMonth() + 1, 1) : new Date(a.getFullYear(), a.getMonth(), a.getDate() + 7);
+    const focus = cal.workers.length === 1 ? cal.workers[0] : null;
+    host.innerHTML =
+      '<span class="cal-crew-l">' + (focus ? "Showing one calendar" : "Team") + "</span>" +
+      (focus ? '<button class="cal-who all" type="button" data-who="">Everyone</button>' : "") +
+      workersData.map(function (w) {
+        const n = eventsData.filter(function (e) { return e.start < b && e.end > a && e.status !== "CANCELED" && e.kind !== "desk" && e.workers.indexOf(w.id) !== -1; }).length;
+        return '<button class="cal-who' + (focus === w.id ? " on" : "") + '" type="button" data-who="' + esc(w.id) + '" aria-pressed="' + (focus === w.id) + '" title="' + esc(w.name + " · " + w.role) + '">' +
+          '<span class="cav">' + esc(initials(w.name)) + "</span>" + esc(w.name) + ' <small>' + esc(w.role) + "</small><i>" + n + "</i></button>";
+      }).join("");
+  }
+
+  // ===== THE MONTH DAY TIMELINE (calendar part 1, 2026-11-09) =====
+  // A month cell named only the DAY: a moved card kept its old hour and a tray job always landed at 9:00–2:00. Now,
+  // while a card is over a month day, that day's column grows into a tall timeline laid over it — up and down is the
+  // time, the line sits under the cursor, and the drop books exactly what it reads. It shows how long the card runs
+  // from there, who's already booked that day, and says so before anyone is double-booked. It hangs off <body>
+  // (position: fixed) so the page's entrance transforms can't shift it; its children let the drag fall through, so the
+  // box itself is the one drop target (it carries data-day for the drop handler).
+  const CLOCK_HEAD = 88;
+  const CLOCK_FOOT = 44;
+  /** The strips above and below: hold the cursor on one and the timeline moves a week — the timeline covers its own
+   *  column, so the same weekday a week away can't be reached by moving straight down. */
+  const CLOCK_STRIP = 24;
+  const WEEK_HOLD_MS = 500;
+  let weekHold: { dir: number; timer: number } | null = null;
+  function stopWeekHold() {
+    if (weekHold) window.clearTimeout(weekHold.timer);
+    weekHold = null;
+  }
+  disposers.push(stopWeekHold);
+  /** The month cell `delta` days from `day`, when the grid shows it. */
+  function mgCellFor(day: Date, delta: number): HTMLElement | null {
+    const want = new Date(day.getFullYear(), day.getMonth(), day.getDate() + delta).toISOString();
+    return root.querySelector<HTMLElement>('.mg-cell[data-day="' + want + '"]');
+  }
+  let clockEl: HTMLElement | null = null;
+  let clockGeo: { left: number; top: number; width: number; height: number; scaleTop: number; scaleH: number } | null = null;
+  let clockMins: number | null = null;
+  function clockGeometry(cell: DOMRect) {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const scaleH = Math.max(288, Math.min(456, vh - CLOCK_HEAD - CLOCK_FOOT - 40));
+    const height = CLOCK_STRIP + CLOCK_HEAD + scaleH + CLOCK_FOOT + CLOCK_STRIP;
+    const width = Math.max(176, cell.width + 12);
+    const left = Math.min(Math.max(8, cell.left + cell.width / 2 - width / 2), vw - width - 8);
+    const top = Math.min(Math.max(8, cell.top + cell.height / 2 - height / 2), Math.max(8, vh - height - 8));
+    return { left, top, width, height, scaleTop: top + CLOCK_STRIP + CLOCK_HEAD, scaleH };
+  }
+  /** What's in the air: how long it runs, who's on it, itself (so it isn't its own clash), where it sits now. */
+  function dragShape(): { durMin: number; workers: string[]; selfId: string | null; current: Date | null } | null {
+    if (cal.dragEvent) {
+      const ev = eventsData.find(function (x) { return x.id === cal.dragEvent; });
+      // All-day items move by day only — the timeline has nothing to say about them.
+      if (!ev || ev.allDay || ev.kind === "desk") return null;
+      return { durMin: Math.max(SNAP_MIN, Math.round((ev.end.getTime() - ev.start.getTime()) / 60000)), workers: ev.workers, selfId: ev.id, current: ev.start };
+    }
+    if (cal.dragJob) {
+      const j = trayJobs.find(function (x) { return x.id === cal.dragJob; });
+      if (!j) return null;
+      const self = selfWorkerId();
+      const on = self ? [self] : cal.workers.length === 1 ? cal.workers : j.ownerWorkerId ? [j.ownerWorkerId] : [];
+      return { durMin: trayLen(j), workers: on, selfId: null, current: null };
+    }
+    return null;
+  }
+  function closeClock() {
+    stopWeekHold();
+    clockEl?.remove();
+    clockEl = null;
+    clockGeo = null;
+    clockMins = null;
+  }
+  disposers.push(closeClock);
+  function paintClock(day: Date, mins: number) {
+    if (!clockEl || !clockGeo) return;
+    const shape = dragShape();
+    if (!shape) return;
+    clockMins = mins;
+    const at = (m: number) => (dayClockFrac(m) * 100).toFixed(3) + "%";
+    const allIds = workersData.map(function (w) { return w.id; });
+    const rows = eventsData
+      .filter(function (e) {
+        if (e.id === shape.selfId || e.status === "CANCELED" || e.kind === "desk") return false;
+        return !cal.workers.length || e.workers.some(function (w) { return cal.workers.indexOf(w) !== -1; }) || (e.kind === "blocked" && !!e.orgWide);
+      })
+      .map(function (e) {
+        const everyone = e.kind === "blocked" && !!e.orgWide;
+        return {
+          id: e.id, start: e.start, end: e.end,
+          workers: everyone ? allIds : e.workers,
+          who: everyone ? "Everyone" : workerNames(e).join(", ") || "Nobody yet",
+          what: e.kind === "appointment" ? "Visit" : e.kind === "blocked" ? "Blocked" : e.title,
+        };
+      });
+    const busy: DayBusy[] = busyOnDay(day, rows);
+    const end = mins + shape.durMin;
+    const clashes = clashesFor(busy, mins, end, shape.workers);
+    const clash = clashes[0] || null;
+    const cur = shape.current && sameDay(shape.current, day) ? shape.current.getHours() * 60 + shape.current.getMinutes() : null;
+    const hours: string[] = [];
+    for (let h = DAY_CLOCK_START_HOUR; h < DAY_CLOCK_END_HOUR; h++) {
+      hours.push('<div class="dc-hour" style="top:' + at(h * 60) + '"><span>' + (h % 12 === 0 ? 12 : h % 12) + (h < 12 ? "a" : "p") + "</span></div>");
+    }
+    const blocks = busy.map(function (b) {
+      const hit = clashes.indexOf(b) !== -1;
+      return '<div class="dc-busy' + (hit ? " clash" : "") + '" style="top:' + at(b.startMin) + ";height:calc(" + at(b.endMin) + " - " + at(b.startMin) + ')"><b>' + esc(b.who) + "</b> · " + esc(b.what) + "</div>";
     }).join("");
+    const note = clash
+      ? esc(clash.who) + " " + (clash.who.indexOf(",") !== -1 ? "are" : "is") + " busy " + clockWords(clash.startMin) + "–" + clockWords(clash.endMin) + " · " + esc(clash.what)
+      : cur !== null
+        ? cur === mins ? "Same as now — nothing changes" : "Now at " + clockWords(cur)
+        : "Let go to book this time";
+    clockEl.dataset.day = new Date(day.getFullYear(), day.getMonth(), day.getDate()).toISOString();
+    const short = (d: Date) => d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+    const up = mgCellFor(day, -7);
+    const down = mgCellFor(day, 7);
+    const strip = (cellEl: HTMLElement | null, dir: number) =>
+      '<div class="dc-wk dc-wk--' + (dir < 0 ? "up" : "down") + (cellEl ? "" : " off") + (weekHold && weekHold.dir === dir ? " hold" : "") + '">' +
+      (cellEl ? (dir < 0 ? "▲ " : "▼ ") + esc(short(new Date(cellEl.dataset.day as string))) : "") + "</div>";
+    clockEl.innerHTML =
+      strip(up, -7) +
+      '<div class="dc-head"><div class="dc-day">' + esc(day.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })) + "</div>" +
+      '<div class="dc-time" data-dc-time>' + clockWords(mins) + "</div>" +
+      '<div class="dc-span">' + clockSpanWords(mins, shape.durMin) + "</div></div>" +
+      '<div class="dc-scale" style="height:' + clockGeo.scaleH + 'px">' + hours.join("") + blocks +
+      (cur !== null ? '<div class="dc-now" style="top:' + at(cur) + '"></div>' : "") +
+      '<div class="dc-band' + (clash ? " clash" : "") + '" style="top:' + at(mins) + ";height:calc(" + at(Math.min(end, DAY_CLOCK_END_HOUR * 60)) + " - " + at(mins) + ')"></div>' +
+      '<div class="dc-line" style="top:' + at(mins) + '"></div><div class="dc-pill" style="top:' + at(mins) + '">' + clockWords(mins) + "</div></div>" +
+      '<div class="dc-foot' + (clash ? " clash" : cur !== null && cur === mins ? " same" : "") + '" data-dc-note>' + note + "</div>" +
+      strip(down, 7);
+  }
+  /** Lay the timeline over a month cell (and keep it there until the cursor leaves it or holds on a week strip). */
+  function anchorClock(cellEl: HTMLElement, mins: number | null, clientY: number) {
+    const geo = clockGeometry(cellEl.getBoundingClientRect());
+    if (!clockEl) {
+      clockEl = document.createElement("div");
+      clockEl.className = "cal-dayclock";
+      clockEl.setAttribute("data-cal-dayclock", "");
+      document.body.appendChild(clockEl);
+    }
+    clockGeo = geo;
+    clockEl.style.left = geo.left + "px";
+    clockEl.style.top = geo.top + "px";
+    clockEl.style.width = geo.width + "px";
+    clockEl.style.height = geo.height + "px";
+    paintClock(new Date(cellEl.dataset.day as string), mins ?? dayClockMinutesAt(clientY - geo.scaleTop, geo.scaleH, dayClockStep(geo.scaleH)));
+  }
+  /** Every dragover while a card is in the air, before the drop-target logic below runs. */
+  function monthClockOver(e: DragEvent) {
+    const t = asEl(e.target);
+    if (clockEl && t && clockEl.contains(t) && clockGeo) {
+      const day = new Date(clockEl.dataset.day as string);
+      // On a week strip: hold, and the timeline moves to that week's same day, keeping the time.
+      const y = e.clientY - clockGeo.top;
+      const dir = y < CLOCK_STRIP ? -7 : y > clockGeo.height - CLOCK_STRIP ? 7 : 0;
+      if (dir) {
+        if (!weekHold || weekHold.dir !== dir) {
+          stopWeekHold();
+          const target = mgCellFor(day, dir);
+          if (!target) return;
+          weekHold = {
+            dir,
+            timer: window.setTimeout(function () {
+              weekHold = null;
+              if (clockEl) anchorClock(target, clockMins, 0);
+            }, WEEK_HOLD_MS),
+          };
+          if (clockMins != null) paintClock(day, clockMins);
+        }
+        return;
+      }
+      if (weekHold) { stopWeekHold(); if (clockMins != null) paintClock(day, clockMins); }
+      const m = dayClockMinutesAt(e.clientY - clockGeo.scaleTop, clockGeo.scaleH, dayClockStep(clockGeo.scaleH));
+      if (m !== clockMins) paintClock(day, m);
+      return;
+    }
+    const cellEl = cal.view === "month" ? t?.closest<HTMLElement>(".mg-cell[data-day]") : null;
+    if (!cellEl || !dragShape()) { closeClock(); return; }
+    // A month day under the cursor: lay its timeline over its column, read the time at the cursor's height.
+    stopWeekHold();
+    anchorClock(cellEl, null, e.clientY);
   }
 
   const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   function renderCal() {
-    renderBar(); renderFilters(); renderLanes();
+    dayLabels = null;
+    renderBar(); renderFilters(); renderLanes(); renderStats(); renderCrew();
     byId("monthCard")?.classList.toggle("is-hidden", cal.view !== "month");
     byId("weekCard")?.classList.toggle("is-hidden", cal.view !== "week");
     byId("teamCard")?.classList.toggle("is-hidden", cal.view !== "team");
@@ -2023,6 +2403,36 @@ export function initCalendarContent(
     renderCal();
   });
   onId("trayBtn", "click", function () { cal.trayOpen = !cal.trayOpen; renderCal(); });
+  // Calendar part 1: first open times, a pick from them, the numbers row, the crew bar.
+  on(root, "click", function (e) {
+    const t = asEl(e.target);
+    if (!t) return;
+    const ot = t.closest<HTMLElement>("[data-open-times]");
+    if (ot) { e.stopPropagation(); showOpenTimes(ot.dataset.openTimes as string); return; }
+    const bk = t.closest<HTMLElement>("[data-book]");
+    if (bk) {
+      e.stopPropagation();
+      const [id, iso, who] = (bk.dataset.book as string).split("|");
+      const j = trayJobs.find(function (x) { return x.id === id; });
+      if (j) bookTray(j, new Date(iso), who || null);
+      return;
+    }
+    const st = t.closest<HTMLElement>("[data-stat]");
+    if (st) {
+      const k = st.dataset.stat;
+      if (k === "visits") { cal.lane = cal.lane === "appointments" ? "all" : "appointments"; pickChanged(); renderStats(); }
+      else if (k === "jobs") { cal.lane = cal.lane === "installs" ? "all" : "installs"; pickChanged(); renderStats(); }
+      else if (k === "waiting") { cal.trayOpen = true; renderCal(); byId("tray")?.scrollIntoView({ behavior: "smooth", block: "nearest" }); }
+      else if (k === "nobody") { cal.unassigned = !cal.unassigned; renderCal(); }
+      return;
+    }
+    const who = t.closest<HTMLElement>("[data-who]");
+    if (who) {
+      const id = who.dataset.who || "";
+      cal.workers = !id || (cal.workers.length === 1 && cal.workers[0] === id) ? [] : [id];
+      renderCal();
+    }
+  });
   onId("inboxBtn", "click", openInbox);
   onId("newEventBtn", "click", function () { openQuickAdd(null, null); });
   const calSearch = root.querySelector<HTMLInputElement>("#calSearch");
@@ -2495,12 +2905,14 @@ export function initCalendarContent(
     }
   });
   on(document, "dragend", function () {
+    closeClock();
     $$(".dragging").forEach(function (x) { x.classList.remove("dragging"); });
     $$(".dragover").forEach(function (x) { x.classList.remove("dragover"); });
     dropGhost();
     cal.dragEvent = null; cal.dragJob = null; cal.dragGrabMin = 0;
   });
   on(document, "dragover", function (e) {
+    if (cal.dragEvent || cal.dragJob) monthClockOver(e as DragEvent);
     const cell = asEl(e.target)?.closest<HTMLElement>("[data-day]");
     if (!cell || (!cal.dragEvent && !cal.dragJob)) return;
     e.preventDefault();
@@ -2525,6 +2937,9 @@ export function initCalendarContent(
   });
   on(document, "drop", function (e) {
     const cell = asEl(e.target)?.closest<HTMLElement>("[data-day]");
+    // The month day timeline's reading, taken before it closes.
+    const fromClock = !!clockEl && cell === clockEl && clockMins != null ? clockMins : null;
+    closeClock();
     if (!cell) return;
     e.preventDefault();
     const day = new Date(cell.dataset.day as string);
@@ -2537,6 +2952,10 @@ export function initCalendarContent(
       // shown — grab offset included.
       dropMins = dropStartMins(cell, (e as DragEvent).clientY);
       hour = Math.floor(dropMins / 60);
+    }
+    if (fromClock != null) {
+      dropMins = fromClock;
+      hour = Math.floor(fromClock / 60);
     }
     const targetWorker = cell.dataset.worker || null;
     if (cal.dragEvent) {
@@ -2620,6 +3039,13 @@ export function initCalendarContent(
       }
     } else if (cal.dragJob) {
       const j = trayJobs.find(function (x) { return x.id === cal.dragJob; });
+      // Calendar part 1: a card dropped while the calendar shows ONE person goes to them; a visit books a visit.
+      const toWorker = targetWorker || (canManage && cal.workers.length === 1 ? cal.workers[0] : null) || selfWorkerId();
+      if (j && (j.kind === "visit" || dropMins != null)) {
+        cal.dragEvent = null; cal.dragJob = null;
+        bookTray(j, dropMins != null ? atMins(day, dropMins) : atMins(day, 9 * 60), toWorker);
+        return;
+      }
       if (j) {
         const ns = dropMins != null ? atMins(day, dropMins) : (function () {
           const x = new Date(day);
@@ -3406,6 +3832,7 @@ export function initCalendarContent(
             ...fresh.events.map((e) => ({ ...e, start: new Date(e.start), end: new Date(e.end), workers: e.workers.slice(), assignmentIds: { ...(e.assignmentIds || {}) } })),
           );
           projectsData = (fresh.projects ?? []).map((p) => ({ ...p }));
+          trayJobs = fresh.tray.map((j) => ({ ...j }));
           projIndex = new Map(projectsData.map((p) => [p.id, p]));
           cal.projects = cal.projects.filter((id) => projIndex.has(id));
           renderCal();

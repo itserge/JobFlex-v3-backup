@@ -168,8 +168,8 @@ export async function buildCalendarSeed(): Promise<CalendarSeed> {
             status: true,
             projectId: true,
             client: { select: { name: true, phone: true, address: true, city: true, state: true } },
-            proposal: { select: { scopeOfWork: true } },
-            assignments: { select: { id: true, workerId: true, status: true } },
+            proposal: { select: { scopeOfWork: true, total: true } },
+            assignments: { select: { id: true, workerId: true, status: true, pay: true } },
           },
         },
       },
@@ -249,6 +249,26 @@ export async function buildCalendarSeed(): Promise<CalendarSeed> {
         }),
       ])
     : [[], []];
+
+  // Leads waiting for a visit (calendar part 1): open, no visit booked yet, from the last 60 days. The office sees
+  // every one; a sales rep their own and the unclaimed (the leads page's rule). Field workers and estimators none.
+  const visitLeadsP =
+    canManage || sales
+      ? db.lead
+          .findMany({
+            where: {
+              organizationId,
+              status: { in: ["NEW", "ROUTED", "CLAIMED", "CONTACTED"] },
+              appointments: { none: {} },
+              createdAt: { gte: new Date(Date.now() - 60 * 86_400_000) },
+              ...(sales ? { OR: [{ assignedToId: userId }, { claimedById: userId }, { status: "NEW" }] } : {}),
+            },
+            orderBy: { createdAt: "desc" },
+            select: { id: true, name: true, projectType: true, city: true, address: true, assignedToId: true, claimedById: true },
+            take: 20,
+          })
+          .catch(() => [] as Array<{ id: string; name: string; projectType: string | null; city: string | null; address: string | null; assignedToId: string | null; claimedById: string | null }>)
+      : Promise.resolve([] as Array<{ id: string; name: string; projectType: string | null; city: string | null; address: string | null; assignedToId: string | null; claimedById: string | null }>);
 
   // ── Link picker sources ──────────────────────────────────────────────────
   const [pickerJobs, pickerProposals, pickerLeads, pickerClients] = await Promise.all([
@@ -342,6 +362,13 @@ export async function buildCalendarSeed(): Promise<CalendarSeed> {
     scope: scopeOnly(e.job?.proposal?.scopeOfWork) ?? undefined,
     notes: e.notes ?? undefined,
     allDay: isAllDay(e.startsAt, e.endsAt) || undefined,
+    // Money on the chip is the office's: the job's value and its crew's pay, never sent to a limited role.
+    ...(canManage && e.job
+      ? {
+          value: e.job.proposal?.total ? Math.round(e.job.proposal.total) : null,
+          crewPay: e.job.assignments.reduce((a, x) => a + (x.pay || 0), 0) || null,
+        }
+      : {}),
   }));
 
   const markerById = new Map((await aptMarkers).map((r) => [r.key.slice(aptSourceKey("").length), parseAptSource(r.cursor)]));
@@ -392,13 +419,37 @@ export async function buildCalendarSeed(): Promise<CalendarSeed> {
     };
   });
 
-  const tray: TrayJob[] = unscheduledJobs.map((j) => ({
-    id: j.id,
-    title: j.title,
-    client: j.client?.name ?? "No client",
-    city: j.client?.city ?? j.client?.address ?? "—",
-    duration: durLabel(j.startsAt, j.endsAt),
-  }));
+  // THE "TO PLACE" LIST (calendar part 1, 2026-11-09): sold work waiting for a day, then leads waiting for a visit.
+  const jobTray: TrayJob[] = unscheduledJobs.map((j) => {
+    const span = j.startsAt && j.endsAt ? Math.round((j.endsAt.getTime() - j.startsAt.getTime()) / 60_000) : null;
+    return {
+      id: j.id,
+      kind: "job" as const,
+      title: j.title,
+      client: j.client?.name ?? "No client",
+      city: j.client?.city ?? j.client?.address ?? "—",
+      duration: durLabel(j.startsAt, j.endsAt),
+      durationMin: span && span > 0 ? span : null,
+      value: j.proposal?.total ? Math.round(j.proposal.total) : null,
+      clientKey: j.clientId ?? null,
+    };
+  });
+  const visitTray: TrayJob[] = (await visitLeadsP).map((l) => {
+    const ownerUser = l.assignedToId ?? l.claimedById;
+    return {
+      id: `lead:${l.id}`,
+      kind: "visit" as const,
+      leadId: l.id,
+      title: l.projectType ? `Visit — ${l.projectType}` : "Site visit",
+      client: l.name,
+      city: l.city ?? l.address ?? "—",
+      duration: "1h",
+      durationMin: 60,
+      clientKey: `lead:${l.id}`,
+      ownerWorkerId: ownerUser ? (workerIdByUserId.get(ownerUser) ?? null) : null,
+    };
+  });
+  const tray: TrayJob[] = [...jobTray, ...visitTray];
 
   const inbox: InboxItem[] = pendingAssignments.map((a) => ({
     id: a.id,
