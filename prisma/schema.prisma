@@ -124,6 +124,7 @@ model Organization {
   clientMerges           ClientMerge[]
   clientThreads          ClientThread[]
   clientMessages         ClientMessage[]
+  dealStates             DealState[]
   leads                  Lead[]
   proposals              Proposal[]
   templates              ProposalTemplate[]
@@ -654,6 +655,26 @@ model ClientMessage {
   sentBy       User?        @relation(fields: [sentById], references: [id], onDelete: SetNull)
 
   @@index([organizationId, threadId, createdAt])
+}
+
+// THE PIPELINE'S HAND (Smart CRM part 3, 2026-11-08 — the plan doc). The board is worked out from leads and
+// proposals as they stand (lib/pipeline); this row keeps only what a person set on a card: a stage it was dragged
+// to (Negotiation has no event of its own), who owns it, when it should close, why it was lost. Keyed by the card —
+// "lead:<id>" or "proposal:<id>". An event later than `stageAt` (a proposal signed) wins over the hand.
+model DealState {
+  key            String    @id
+  organizationId String
+  stage          String?
+  stageAt        DateTime?
+  ownerId        String?
+  expectedClose  DateTime?
+  lostReason     String?
+  movedById      String?
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
 }
 
 model Tag {

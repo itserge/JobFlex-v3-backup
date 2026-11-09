@@ -69,6 +69,8 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "CRM", icon: "i-crm", href: "/dashboard/crm" },
       // The CRM's Inbox (Smart CRM part 2, 2026-11-08): every client conversation in one place.
       { label: "Inbox", icon: "i-msg", href: "/dashboard/inbox" },
+      // The CRM's Pipeline (Smart CRM part 3, 2026-11-08): every deal from new lead to won.
+      { label: "Pipeline", icon: "i-board", href: "/dashboard/pipeline" },
     ],
   },
   {
@@ -305,9 +307,11 @@ const ROLE_NAV: Record<string, RoleNavPlan> = {
       label: "Pipeline",
       hrefs: [
         "/dashboard/leads",
+        "/dashboard/pipeline",
         "/dashboard/clients",
         "/dashboard/proposals",
         "/dashboard/crm",
+        "/dashboard/inbox",
       ],
     },
     {

@@ -63,6 +63,11 @@ export const ROLE_ROUTE_GATES: Record<string, RoleRouteGate> = {
       // /dashboard/proposals/create.
       "/dashboard/manual-blueprint",
       "/dashboard/crm",
+      // The Smart CRM's own pages (2026-11-08), opened from the CRM tabs a rep already holds: the client Inbox
+      // (the conversations side of /dashboard/messages) and the Pipeline (the leads board's successor). Both
+      // scope to the rep — their own proposals, their own or unclaimed leads — and the source report stays the office's.
+      "/dashboard/inbox",
+      "/dashboard/pipeline",
       "/dashboard/calendar",
       "/dashboard/phone",
       "/dashboard/messages",

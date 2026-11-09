@@ -1,0 +1,83 @@
+/* THE PIPELINE (Smart CRM part 3, 2026-11-08) — scoped under the shell's .jf-blueprint root; shell tokens only.
+   The board scrolls sideways inside its own box (never the page); the source table does the same. */
+
+:global(.jf-blueprint) .page { --pl-card: #ffffff; --pl-rule: rgba(10, 10, 10, 0.12); display: grid; gap: 16px; min-width: 0; }
+:global(.jf-blueprint) .head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; }
+:global(.jf-blueprint) .toggles { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+:global(.jf-blueprint) .seg { display: inline-flex; border: 1.5px solid var(--ink); border-radius: var(--radius); overflow: hidden; }
+:global(.jf-blueprint) .segBtn { padding: 7px 14px; border: 0; background: var(--pl-card); color: var(--ink); font: 800 10px/1.2 var(--font-sans); letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; }
+:global(.jf-blueprint) .segBtn + .segBtn { border-left: 1.5px solid var(--ink); }
+:global(.jf-blueprint) .segOn { background: var(--ink); color: var(--paper); }
+:global(.jf-blueprint) .chip { padding: 7px 12px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: var(--pl-card); color: var(--ink); font: 800 10px/1.2 var(--font-sans); letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; }
+:global(.jf-blueprint) .chipOn { background: var(--ink); color: var(--paper); }
+
+:global(.jf-blueprint) .card { background: var(--pl-card); border: 2px solid var(--ink); border-radius: var(--radius); min-width: 0; }
+:global(.jf-blueprint) .figures { display: flex; flex-wrap: wrap; }
+:global(.jf-blueprint) .fig { flex: 1 1 150px; padding: 14px 18px; border-right: 1px solid var(--pl-rule); }
+:global(.jf-blueprint) .figNote { flex: 2 1 280px; display: flex; align-items: center; font-size: 12px; line-height: 1.5; color: var(--ink); border-right: 0; }
+:global(.jf-blueprint) .kick { font: 500 10px/1.5 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+:global(.jf-blueprint) .figVal { margin-top: 2px; font-size: 24px; font-weight: 900; letter-spacing: -0.02em; }
+:global(.jf-blueprint) .good { color: var(--success); }
+:global(.jf-blueprint) .bad { color: var(--danger); }
+:global(.jf-blueprint) .warn { color: var(--warning); }
+:global(.jf-blueprint) .accent { color: var(--accent); }
+
+/* The stage bar: all eight stages in view at any width; each one a drop target and a jump to its column. */
+:global(.jf-blueprint) .rail { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); border: 2px solid var(--ink); border-radius: var(--radius); overflow: hidden; background: var(--pl-card); }
+:global(.jf-blueprint) .railStep { display: grid; gap: 3px; min-width: 0; padding: 9px 11px; border: 0; border-right: 1px solid var(--pl-rule); background: none; color: var(--ink); text-align: left; cursor: pointer; }
+:global(.jf-blueprint) .railStep:last-child { border-right: 0; }
+:global(.jf-blueprint) .railStep:hover { background: var(--paper); }
+:global(.jf-blueprint) .railLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 800 9.5px/1.2 var(--font-sans); letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+:global(.jf-blueprint) .railNum { font: 700 13px/1.2 var(--font-mono); }
+:global(.jf-blueprint) .railWon .railNum { color: var(--success); }
+:global(.jf-blueprint) .railLost .railNum { color: var(--muted); }
+:global(.jf-blueprint) .railOver { background: color-mix(in srgb, var(--accent) 14%, var(--pl-card)); box-shadow: inset 0 0 0 2px var(--accent); }
+
+:global(.jf-blueprint) .board { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 10px; align-items: flex-start; }
+:global(.jf-blueprint) .col { flex: 0 0 248px; display: flex; flex-direction: column; gap: 10px; min-height: 120px; padding: 2px; border-radius: var(--radius); }
+:global(.jf-blueprint) .colOver { outline: 2px dashed var(--accent); outline-offset: 2px; background: color-mix(in srgb, var(--accent) 6%, transparent); }
+:global(.jf-blueprint) .colHead { display: flex; justify-content: space-between; gap: 8px; padding: 9px 11px; border-radius: var(--radius); background: var(--ink); color: var(--paper); font: 800 10px/1.2 var(--font-sans); letter-spacing: 0.08em; text-transform: uppercase; }
+:global(.jf-blueprint) .colWon { background: var(--success); }
+:global(.jf-blueprint) .colLost { background: var(--muted); }
+:global(.jf-blueprint) .colEmpty { margin: 0; padding: 10px; text-align: center; font-size: 12px; color: var(--muted); }
+
+:global(.jf-blueprint) .deal { display: grid; gap: 6px; padding: 11px 12px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: var(--pl-card); cursor: grab; }
+:global(.jf-blueprint) .deal:active { cursor: grabbing; }
+:global(.jf-blueprint) .dealHigh { border-left: 4px solid var(--danger); }
+:global(.jf-blueprint) .dealMed { border-left: 4px solid var(--warning); }
+:global(.jf-blueprint) .dealTop { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; min-width: 0; }
+:global(.jf-blueprint) .dealName { padding: 0; border: 0; background: none; font: 800 13px/1.3 var(--font-sans); color: var(--ink); text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+:global(.jf-blueprint) .dealName:hover { text-decoration: underline; }
+:global(.jf-blueprint) .dealVal { flex: none; font-family: var(--font-mono); font-size: 12px; }
+:global(.jf-blueprint) .dealTitle { font: 500 10px/1.5 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); overflow-wrap: anywhere; }
+:global(.jf-blueprint) .stamps { display: flex; flex-wrap: wrap; gap: 5px; }
+:global(.jf-blueprint) .stamp { display: inline-flex; padding: 2px 6px; border: 1.5px solid currentColor; border-radius: var(--radius); color: var(--muted); font: 800 9px/1.2 var(--font-sans); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+:global(.jf-blueprint) .why { font-size: 11.5px; line-height: 1.4; color: var(--ink); }
+:global(.jf-blueprint) .next { font-size: 12px; line-height: 1.4; font-weight: 600; }
+:global(.jf-blueprint) .dealFoot { display: grid; gap: 6px; padding-top: 6px; border-top: 1px solid var(--pl-rule); }
+:global(.jf-blueprint) .meta { font: 500 9.5px/1.5 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+:global(.jf-blueprint) .moveLabel { display: block; }
+:global(.jf-blueprint) .move, :global(.jf-blueprint) .date { width: 100%; box-sizing: border-box; min-height: 32px; padding: 4px 6px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: var(--pl-card); font: 600 12px/1.2 var(--font-sans); color: var(--ink); }
+:global(.jf-blueprint) .legend { margin: 0; font: 500 10px/1.5 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+:global(.jf-blueprint) .err { margin: 0; padding: 8px 12px; border: 1.5px solid var(--danger); border-radius: var(--radius); color: var(--danger); font-size: 13px; background: var(--pl-card); }
+:global(.jf-blueprint) .srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+:global(.jf-blueprint) .sources { display: grid; gap: 0; }
+:global(.jf-blueprint) .srcHead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; border-bottom: 2px solid var(--ink); background: var(--paper); }
+:global(.jf-blueprint) .srcTitle { font-size: 13px; font-weight: 850; letter-spacing: 0.04em; text-transform: uppercase; }
+:global(.jf-blueprint) .tableBox { overflow-x: auto; }
+:global(.jf-blueprint) .table { width: 100%; border-collapse: collapse; font-size: 13px; }
+:global(.jf-blueprint) .table th { padding: 9px 12px; border-bottom: 1.5px solid var(--ink); font: 800 9.5px/1.3 var(--font-sans); letter-spacing: 0.08em; text-transform: uppercase; text-align: left; white-space: nowrap; }
+:global(.jf-blueprint) .table td { padding: 9px 12px; border-bottom: 1px solid var(--pl-rule); white-space: nowrap; }
+:global(.jf-blueprint) .num { text-align: right; font-family: var(--font-mono); }
+:global(.jf-blueprint) .dot { display: inline-block; width: 9px; height: 9px; margin-right: 8px; border-radius: 50%; vertical-align: middle; }
+:global(.jf-blueprint) .spend { width: 84px; padding: 4px 6px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: var(--pl-card); font: 600 12px/1.2 var(--font-mono); text-align: right; }
+:global(.jf-blueprint) .sources .legend { padding: 10px 16px; }
+
+@media (max-width: 768px) {
+  :global(.jf-blueprint) .rail { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  :global(.jf-blueprint) .railStep:nth-child(4) { border-right: 0; }
+  :global(.jf-blueprint) .railStep:nth-child(-n + 4) { border-bottom: 1px solid var(--pl-rule); }
+  :global(.jf-blueprint) .col { flex-basis: 82vw; }
+  :global(.jf-blueprint) .fig { flex-basis: 45%; border-right: 0; }
+}
