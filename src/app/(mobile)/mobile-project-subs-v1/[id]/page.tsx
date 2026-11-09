@@ -30,13 +30,15 @@ export const viewport: Viewport = {
 
 export default async function MobileProjectSubsPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { id } = await params;
-  const { tab } = await searchParams;
+  const { tab, contract } = await searchParams;
   let organizationId: string;
   let role: string;
+  let signerName = "";
   try {
     const ctx = await requireOrg();
     organizationId = ctx.organizationId;
     role = ctx.role;
+    signerName = ctx.user.name?.trim() ?? "";
   } catch (err) {
     if (err instanceof UnauthorizedError) redirect(`/auth/login?next=${encodeURIComponent(`/mobile-project-subs-v1/${id}`)}`);
     if (err instanceof NoOrgError) redirect("/dashboard?error=forbidden");
@@ -46,7 +48,7 @@ export default async function MobileProjectSubsPage({ params, searchParams }: { 
   if (!read) notFound();
   return (
     <main style={{ padding: "calc(12px + env(safe-area-inset-top, 0px)) 12px calc(24px + env(safe-area-inset-bottom, 0px))", background: "var(--paper, #f6f5f1)", minHeight: "100dvh" }}>
-      <SubsSection read={read} canManage={isOwnerOrManager(role)} initialTab={tabOf(typeof tab === "string" ? tab : undefined)} hrefs={{ project: `/mobile-project-detail-v2/${id}`, directory: "/mobile-subcontractors-v1", quotes: "/mobile-quotes-v1" }} />
+      <SubsSection read={read} canManage={isOwnerOrManager(role)} initialTab={tabOf(typeof tab === "string" ? tab : undefined)} signerName={signerName} initialContract={typeof contract === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(contract) ? contract : null} hrefs={{ project: `/mobile-project-detail-v2/${id}`, directory: "/mobile-subcontractors-v1", quotes: "/mobile-quotes-v1" }} />
     </main>
   );
 }

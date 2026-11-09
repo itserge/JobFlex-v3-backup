@@ -230,7 +230,30 @@
   grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
+/* Part 4: the Contracts tab's rows — the number and sub, the total, the state, Open; the awarded quotes waiting for a
+   contract above them. Their mono lines (the title, "awarded Nov 8") wrap, unlike the directory's short ones. On a
+   phone: the name and the total side by side, the state and the button under them. */
+.contractRow {
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.2fr) auto;
+}
+.waitRow {
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) auto;
+}
+.contractRow .mono,
+.waitRow .mono {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 @media (max-width: 640px) {
+  .contractRow,
+  .waitRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .contractRow > :nth-child(n + 3),
+  .waitRow > :nth-child(n + 3) {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
   .sheetGrid {
     grid-template-columns: 1fr;
   }
