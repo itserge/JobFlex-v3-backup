@@ -93,6 +93,7 @@ import { ProjectFieldCard } from "@/components/v3/project-links/project-field-ca
 import { ProjectTimelineCard } from "@/components/v3/project-links/project-timeline-card";
 import { ProjectFinishCard } from "@/components/v3/project-links/project-finish-card";
 import { ProjectClientCard } from "@/components/v3/project-links/project-client-card";
+import { openRepairSheet } from "@/components/v3/repairs/repair-sheet";
 
 /** "New proposal" on a project opens the estimator picker filed under it, so
  *  any engine — Smart Proposal, roof, fence, HVAC, video or manual — can make
@@ -368,6 +369,15 @@ export function ProjectDetailContent({
             </svg>
             Edit project
           </button>
+          {/* A come-back on one of the project's jobs (2026-11-09) — the office's. */}
+          {canManage && kJobs > 0 ? (
+            <button className={cx("btn", "btn-ghost")} type="button" onClick={() => openRepairSheet({ projectId: project.id })} data-project-repair>
+              <svg className={cx("ic")}>
+                <use href="#i-wrench" />
+              </svg>
+              Repair
+            </button>
+          ) : null}
           <button className={cx("btn", "btn-primary")} type="button" onClick={() => newProposalIn(project)}>
             <svg className={cx("ic")}>
               <use href="#i-plus" />

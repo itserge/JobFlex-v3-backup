@@ -19,10 +19,19 @@
 // never a job's cost until the stock is issued, so nothing is counted twice.
 // Financials' "Cost by job" and the job page's money card both read this, so
 // the two agree to the cent — scripts/qa/worker-expenses.check.ts proves it.
+//
+// REPAIRS (2026-11-09, the ProSmart gaps plan, part 2): a come-back is its own
+// job (kind REPAIR) with its own crew pay and receipts, and what it cost lands
+// on the job that came back — `repairs` / `repairsCount`, inside `total`. A
+// list of every job drops the repair's own entry (each dollar once, under the
+// job it belongs to); a caller who asks for the repair by id still gets it.
+// crew / receipts / stock stay the job's OWN, so a caller summing those over a
+// project's jobs (lib/projectMoney) counts a repair once, through its own row.
 
 import { db } from "@/lib/db";
 import { cents, countsInTotals, isPending } from "@/lib/expenseTotals";
 import { hoursCostByJob } from "@/lib/crewField/server";
+import { foldRepairCosts } from "@/lib/repairs/shared";
 
 export type StockLine = {
   itemId: string;
@@ -48,7 +57,10 @@ export type JobCost = {
   stockLines: StockLine[];
   /** Names of stock lines counted at $0 because nothing carried a price. */
   unpriced: string[];
-  /** crew + receipts + stock. */
+  /** What its repairs (come-backs) cost — their crew, receipts and stock — and how many there are. */
+  repairs: number;
+  repairsCount: number;
+  /** crew + receipts + stock + repairs. */
   total: number;
 };
 
@@ -63,25 +75,34 @@ export function movementPrice(unitCost: number | null | undefined, lastCost: num
 
 /** The job costs of the given jobs of one company (every job with any cost when `jobIds` is omitted). */
 export async function jobCosts(organizationId: string, jobIds?: string[]): Promise<Map<string, JobCost>> {
-  const scope = jobIds ? { id: { in: jobIds } } : {};
+  // The repairs of the asked jobs come along, so their cost can be folded in (all of them when nothing is asked).
+  const repairs = (
+    await db.job.findMany({
+      where: { organizationId, repairOfId: jobIds ? { in: jobIds } : { not: null } },
+      select: { id: true, repairOfId: true },
+    })
+  ).filter((j): j is { id: string; repairOfId: string } => !!j.repairOfId);
+  const ids = jobIds ? [...new Set([...jobIds, ...repairs.map((j) => j.id)])] : undefined;
+  const scope = ids ? { id: { in: ids } } : {};
   const [assignments, expenses, moves, hours] = await Promise.all([
     db.jobAssignment.findMany({ where: { job: { organizationId, ...scope } }, select: { jobId: true, pay: true } }),
     db.jobExpense.findMany({ where: { job: { organizationId, ...scope } }, select: { jobId: true, amount: true, status: true } }),
     db.inventoryMovement.findMany({
-      where: { kind: { in: [...ISSUED, "RETURNED"] }, item: { organizationId }, ...(jobIds ? { jobId: { in: jobIds } } : { jobId: { not: null } }) },
+      where: { kind: { in: [...ISSUED, "RETURNED"] }, item: { organizationId }, ...(ids ? { jobId: { in: ids } } : { jobId: { not: null } }) },
       select: { jobId: true, itemId: true, kind: true, quantity: true, unitCost: true, item: { select: { name: true, unit: true, lastCost: true } } },
     }),
     // The hours the crew typed, at the rate of the day (the crew build, 2026-11-05).
-    hoursCostByJob(organizationId, jobIds),
+    hoursCostByJob(organizationId, ids),
   ]);
 
   const out = new Map<string, JobCost>();
+  const blank = (jobId: string): JobCost => ({ jobId, crew: 0, receipts: 0, receiptsCount: 0, receiptsPending: 0, stock: 0, stockLines: [], unpriced: [], repairs: 0, repairsCount: 0, total: 0 });
   const get = (jobId: string) => {
     let c = out.get(jobId);
-    if (!c) out.set(jobId, (c = { jobId, crew: 0, receipts: 0, receiptsCount: 0, receiptsPending: 0, stock: 0, stockLines: [], unpriced: [], total: 0 }));
+    if (!c) out.set(jobId, (c = blank(jobId)));
     return c;
   };
-  for (const id of jobIds ?? []) get(id);
+  for (const id of ids ?? []) get(id);
 
   for (const a of assignments) get(a.jobId).crew += Math.max(0, a.pay ?? 0);
   for (const [jobId, cost] of hours) get(jobId).crew += cost;
@@ -128,7 +149,8 @@ export async function jobCosts(organizationId: string, jobIds?: string[]): Promi
     c.stock = cents(c.stock);
     c.total = cents(c.crew + c.receipts + c.stock);
   }
-  return out;
+  // A repair's cost goes to the job that came back; its own entry stays only when it was asked for by id.
+  return foldRepairCosts(out, repairs, blank, new Set(jobIds ?? []));
 }
 
 /** One job's cost. */

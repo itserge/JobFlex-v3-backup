@@ -226,6 +226,7 @@ function footHtml(p: ProposalRow, k: CardKit): string {
     '<a class="cc-c" href="/portal/q/' + encodeURIComponent(p.publicId) + '" target="_blank" rel="noopener noreferrer" title="Client view — the page the client gets, in a new tab">' + ic("eye") + "Client view</a>" +
     '<button class="cc-c" type="button" data-act="change-order" title="Price extras, send for signature">' + ic("plus") +
     (p.co && p.co.count ? "Change orders · " + p.co.count : "Change order") + "</button>" +
+    k.repairHtml(p, "cc-c") +
     (p.zillow
       ? '<a class="cc-c" href="' + k.esc(p.zillow) + '" target="_blank" rel="noopener noreferrer" title="Open the listing">' + ic("building") + "Zillow</a>"
       : "") +

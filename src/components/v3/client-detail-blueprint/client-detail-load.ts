@@ -71,6 +71,8 @@ export type ClientDetailRecord = {
   /** The client's open projects (2026-09-18), newest first — the masthead
    *  links the first and "Add to project" files the rest. */
   projects: { id: string; name: string }[];
+  /** The jobs a repair could go back to (2026-11-09) — counted for the office only, 0 for anyone else. */
+  repairJobs: number;
   proposals: ProposalRow[];
   payments: PaymentRow[];
   activity: ActivityRow[];
@@ -223,6 +225,7 @@ const ACTIVITY_ICON: Record<string, string> = {
 export async function loadClientDetail(
   id: string | undefined,
   organizationId: string,
+  opts: { office?: boolean } = {},
 ): Promise<ClientDetailView> {
   if (!id) return { found: false, reason: "none" };
 
@@ -324,11 +327,14 @@ export async function loadClientDetail(
     notes: row.notes?.trim() || "—",
   };
 
+  const repairJobs = opts.office ? await db.job.count({ where: { organizationId, clientId: row.id, kind: { not: "REPAIR" }, status: { not: "CANCELED" } } }) : 0;
+
   return {
     found: true,
     clientId: row.id,
     client,
     projects: row.projects,
+    repairJobs,
     plans,
     planTemplates,
     equipment,

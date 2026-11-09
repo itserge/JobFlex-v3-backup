@@ -7,24 +7,12 @@ import "server-only";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import type { ReadTool } from "@/lib/assistant/tools";
-import { dayOf, dayWords, timeOf, wallInstant, clockWords } from "@/lib/assistant/shared";
-import { findOpenTimes, type OpenBusy } from "@/lib/calendar/openTimes";
+import { lengthWords, openTimesFor } from "@/lib/calendar/openTimesServer";
 import { isPageLocked } from "@/lib/customPageAccess";
 
 const ID = z.string().min(1).max(64);
 const CREW_ROLES = ["INSTALLER"];
 const VISIT_ROLES = ["SALES", "ESTIMATOR", "OWNER", "MANAGER", "ADMIN"];
-const LOOK_DAYS = 21;
-
-/** The company's wall clock as a plain local Date — the finder thinks in local days and hours, and the server's own
- *  zone must not leak into "8 AM". Read back with `fromWall`. */
-function toWall(d: Date, tz: string): Date {
-  return new Date(`${dayOf(d, tz)}T${timeOf(d, tz)}:00`);
-}
-function fromWall(w: Date, tz: string): Date | null {
-  const day = `${w.getFullYear()}-${String(w.getMonth() + 1).padStart(2, "0")}-${String(w.getDate()).padStart(2, "0")}`;
-  return wallInstant(day, `${String(w.getHours()).padStart(2, "0")}:${String(w.getMinutes()).padStart(2, "0")}`, tz);
-}
 
 type Args = { who: string | null; kind: "job" | "visit"; hours: number | null; jobId: string | null };
 
@@ -85,39 +73,13 @@ const openTimes: ReadTool<Args> = {
       if (!args.hours && job.startsAt && job.endsAt && job.endsAt > job.startsAt) durMin = Math.round((job.endsAt.getTime() - job.startsAt.getTime()) / 60_000);
     }
 
-    const until = new Date(now.getTime() + (LOOK_DAYS + 2) * 86_400_000);
-    const ids = people.map((p) => p.id);
-    const workerOfUser = new Map(workers.map((w) => [w.userId, w.id]));
-    const [jobEvents, visits, blocks] = await Promise.all([
-      db.jobEvent.findMany({
-        where: { organizationId: org, startsAt: { lt: until }, endsAt: { gt: now }, job: { status: { not: "CANCELED" }, assignments: { some: { workerId: { in: ids } } } } },
-        select: { startsAt: true, endsAt: true, job: { select: { assignments: { select: { workerId: true } } } } },
-      }),
-      db.appointment.findMany({
-        where: { organizationId: org, status: { notIn: ["CANCELED", "NO_SHOW"] }, startsAt: { lt: until }, endsAt: { gt: now }, assignments: { some: { workerId: { in: ids } } } },
-        select: { startsAt: true, endsAt: true, assignments: { select: { workerId: true } } },
-      }),
-      db.blockedTime.findMany({ where: { organizationId: org, startsAt: { lt: until }, endsAt: { gt: now } }, select: { ownerId: true, startsAt: true, endsAt: true } }),
-    ]);
-    const busy: OpenBusy[] = [];
-    for (const e of jobEvents) for (const a of e.job?.assignments ?? []) busy.push({ personId: a.workerId, start: toWall(e.startsAt, tz), end: toWall(e.endsAt, tz) });
-    for (const v of visits) for (const a of v.assignments) busy.push({ personId: a.workerId, start: toWall(v.startsAt, tz), end: toWall(v.endsAt, tz) });
-    for (const b of blocks) {
-      const who = b.ownerId ? workerOfUser.get(b.ownerId) : null;
-      if (b.ownerId && !who) continue;
-      busy.push({ personId: who ?? null, start: toWall(b.startsAt, tz), end: toWall(b.endsAt, tz) });
-    }
-
-    const slots = findOpenTimes({ from: toWall(new Date(now.getTime() + 30 * 60_000), tz), people, busy, durationMin: durMin, days: LOOK_DAYS, count: 3 });
-    const len = durMin >= 1440 ? `${Math.round(durMin / 1440)} day${durMin >= 2880 ? "s" : ""}` : durMin % 60 ? `${(durMin / 60).toFixed(1)} h` : `${durMin / 60} h`;
+    const slots = await openTimesFor({ organizationId: org, tz, now, people, durMin, count: 3 });
+    const len = lengthWords(durMin);
     if (!slots.length) return { say: `No open ${len} in the next three weeks for ${people.map((p) => p.name).join(", ")}.` };
     return {
       for: jobTitle ?? (args.kind === "visit" ? "a visit" : "a job"),
       length: len,
-      times: slots.map((s) => {
-        const at = fromWall(s.start, tz) ?? s.start;
-        return { workerId: s.personId, who: s.name, day: dayOf(at, tz), start: timeOf(at, tz), words: `${dayWords(at, tz)} at ${clockWords(at, tz)} — ${s.name}` };
-      }),
+      times: slots.map((s) => ({ workerId: s.workerId, who: s.who, day: s.day, start: s.start, words: s.words })),
       page: "/dashboard/calendar",
     };
   },

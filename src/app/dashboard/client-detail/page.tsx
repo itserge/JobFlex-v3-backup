@@ -25,7 +25,7 @@
 
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
-import { NoOrgError, UnauthorizedError, requireOrg } from "@/lib/orgContext";
+import { NoOrgError, UnauthorizedError, isLimitedRole, requireOrg } from "@/lib/orgContext";
 import { ClientDetailViewportSwitch } from "@/components/v3/client-detail-blueprint/client-detail-viewport-switch";
 import { loadClientDetail } from "@/components/v3/client-detail-blueprint/client-detail-load";
 
@@ -44,10 +44,11 @@ export default async function ClientDetailPage({
   const { client: id } = await searchParams;
 
   let organizationId: string;
+  let role = "";
   try {
     // requireOrg rather than a bare auth() check: the load is org-scoped, and a
     // signed-in user with no membership has no org to scope it to.
-    ({ organizationId } = await requireOrg());
+    ({ organizationId, role } = await requireOrg());
   } catch (err) {
     if (err instanceof UnauthorizedError) {
       redirect("/auth/login?next=%2Fdashboard%2Fclient-detail");
@@ -56,7 +57,8 @@ export default async function ClientDetailPage({
     throw err;
   }
 
-  const view = await loadClientDetail(id, organizationId);
+  // The office books repairs from a client (2026-11-09): the loader counts the jobs a repair could go back to.
+  const view = await loadClientDetail(id, organizationId, { office: !isLimitedRole(role) });
   // The PAGE owns the viewport switch (see the switch component's header): the
   // record is reached from the handheld clients book, so it needs the fleet's
   // mobile nav below 768px, and the loaded view cannot reach a props-less

@@ -26,6 +26,9 @@ export type WorkerEntry = {
   /** Pay on this worker's jobs, all of it and the part not yet marked paid (2026-09-20). */
   earned?: number;
   unpaid?: number;
+  /** Come-backs over the last year (2026-11-09, lib/repairs/server crewComebackStats): repairs on their work (only
+   *  "our work" counts), what those cost, and the repairs they were sent on. */
+  comebacks?: { count: number; cost: number; sentOn: number };
   token: string;
   invite: InviteStatus;
   role: string;

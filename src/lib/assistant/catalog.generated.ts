@@ -601,6 +601,28 @@ export const CATALOG: Catalog = {
     "scheduled": false,
     "version": 1
   },
+  "book_repair": {
+    "label": "Book a repair",
+    "group": "schedule",
+    "effect": "schedule",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "comebacks": {
+    "label": "Come-backs",
+    "group": "crew",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
   "remind_me": {
     "label": "Reminder",
     "group": "reminders",

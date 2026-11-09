@@ -66,6 +66,7 @@ import { useReveal } from "./use-reveal";
 import { BriefBand, MemoryPanel, MergeBanner, PromisesPanel, StoryPanel } from "./client-360";
 import { activateServicePlan, cancelServicePlan, enrollClientInPlan, renewServicePlan, sendServicePlan } from "@/actions/servicePlans";
 import { EquipmentPanel } from "./equipment-panel";
+import { openRepairSheet } from "@/components/v3/repairs/repair-sheet";
 
 const FILTERS: { value: ProposalFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -234,6 +235,12 @@ function ClientRecordPage({ view }: { view: ClientDetailRecord }) {
             <Btn icon="msg" onClick={() => messageRef.current?.open()}>
               Message
             </Btn>
+            {/* Send someone back to this client's house (2026-11-09) — the office's, when there's work to go back to. */}
+            {view.repairJobs > 0 ? (
+              <Btn icon="wrench" onClick={() => openRepairSheet({ clientId })}>
+                Repair
+              </Btn>
+            ) : null}
             <Btn tone="primary" icon="plus" onClick={newProposal}>
               New proposal
             </Btn>
