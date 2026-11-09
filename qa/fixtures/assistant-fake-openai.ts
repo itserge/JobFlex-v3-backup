@@ -823,6 +823,38 @@ http
             const prompt = (body.messages ?? []).map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? ""))).join("\n");
             // The client brief (lib/clientMemory, 2026-11-08): where they stand + facts. Deterministic: the name is
             // read off the prompt; a known cedar decking fact is superseded by composite, the way a changed mind is.
+            // The inbox (lib/inbox/reader, lib/inbox/drafts, 2026-11-08): a deterministic reading of the message —
+            // composite/cedar, Thanksgiving, "pay Friday" and "broken"/"crack" are the words it answers to.
+            if (prompt.includes("CLIENT MESSAGE READ")) {
+              const msg = prompt.split("MESSAGE:").pop() ?? "";
+              const lower = msg.toLowerCase();
+              const cedar = /- \[([a-z0-9]+)\] \(DECISION\) Decking: cedar/i.exec(prompt);
+              const complaint = /crack|broken|leak|unhappy/.test(lower);
+              res.end(JSON.stringify(reply(JSON.stringify({
+                intent: complaint ? "complaint" : /composite|go ahead|like the estimate/.test(lower) ? "ready to proceed" : "asking a question",
+                urgent: complaint,
+                needsReply: !/^\s*(thanks|thank you)[.! ]*$/i.test(msg.trim()),
+                summary: complaint ? "Reports a problem with the finished work." : "Likes the estimate and asks for a change.",
+                requests: /update/.test(lower) ? ["Update the proposal"] : [],
+                changes: /composite/.test(lower) ? ["Deck: composite instead of cedar"] : [],
+                deadlines: /thanksgiving/.test(lower) ? [{ what: "Finished before Thanksgiving", date: "2026-11-26" }] : [],
+                questions: /\?/.test(msg) ? ["Can you update the proposal?"] : [],
+                money: [],
+                complaints: complaint ? ["Crack in the work"] : [],
+                promises: /pay (on )?friday/.test(lower) ? [{ text: "Pay the deposit Friday", due: "2026-11-13" }] : [],
+                facts: /composite/.test(lower) ? [{ category: "DECISION", fact: "Decking: composite", supersedesId: cedar ? cedar[1] : null }] : [],
+                suggested: complaint ? "Call them today about the crack" : "Send the updated deck proposal",
+              }))));
+              return;
+            }
+            if (prompt.includes("INBOX DRAFTS")) {
+              res.end(JSON.stringify(reply(JSON.stringify({ drafts: [
+                { label: "Confirm and move", text: "Thanks — I'll switch the deck to composite and send the updated proposal today, with a start date that finishes before Thanksgiving." },
+                { label: "Ask one thing", text: "Happy to switch to composite. Do you want the same color as the railing, or should I bring samples?" },
+                { label: "Offer a call", text: "Composite works. Can I call you this afternoon to walk through the new price and the schedule?" },
+              ] }))));
+              return;
+            }
             if (prompt.includes("CLIENT BRIEF")) {
               const name = /CLIENT: ([^·\n]+)/.exec(prompt)?.[1]?.trim() ?? "the client";
               const cedar = /- \[([a-z0-9]+)\] \(DECISION\) Decking: cedar/i.exec(prompt);

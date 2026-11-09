@@ -127,7 +127,10 @@ export async function messageClient(input: {
     });
     if (!org) throw new Error("Organization not found");
     const subject = (input.subject ?? "").trim() || `A message from ${org.name ?? "your contractor"}`;
-    await sendOrgEmail(org, { to, subject, html: textToHtml(body) });
+    await sendOrgEmail(org, { to, subject, html: textToHtml(body), clientId: client.id, organizationId });
+    // THE INBOX (Smart CRM part 2): the words go on the client's thread — the mail log keeps only the subject.
+    const { recordOutbound } = await import("@/lib/inbox/server");
+    await recordOutbound(organizationId, { id: client.id, name: client.name, email: client.email, phone: client.phone }, { channel: "EMAIL", subject, body, toAddr: to, userId: user.id }).catch(() => null);
   } else {
     if (!client.phone) throw new Error(`${client.name} has no phone number on file`);
     if (!await isTwilioEnabled()) throw new Error("Texting needs a Twilio number — set one up on the Phone page");

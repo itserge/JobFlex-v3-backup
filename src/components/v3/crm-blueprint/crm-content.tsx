@@ -78,7 +78,7 @@ export function CrmContent({ data, brief }: { data: CrmContentData; brief: CrmBr
 
       {/* CRM TABS (Smart CRM part 1, 2026-11-08): the four screens first — Today · Inbox · Pipeline · Customers —
           then the working panels (Office · Overview · Workflows · Follow-up queue) behind them. Inbox and Pipeline
-          go to their pages (the shared inbox and the leads board) until parts 2 and 3 rebuild them here. */}
+          go to their pages: the client Inbox (part 2) and the leads board until part 3 rebuilds it here. */}
       <nav className="crm-tabs" id="crmTabs">
         <button className="crm-tab active" type="button" data-tab="today" data-crm-tab="today">
           <svg className="ic">
@@ -87,7 +87,7 @@ export function CrmContent({ data, brief }: { data: CrmContentData; brief: CrmBr
           Today
           {brief.today.score.open > 0 && <span className="crm-tab-n">{brief.today.score.open}</span>}
         </button>
-        <button className="crm-tab" type="button" data-crm-nav="inbox" onClick={() => router.push("/dashboard/messages" as Route)}>
+        <button className="crm-tab" type="button" data-crm-nav="inbox" onClick={() => router.push("/dashboard/inbox" as Route)}>
           <svg className="ic">
             <use href="#i-msg" />
           </svg>

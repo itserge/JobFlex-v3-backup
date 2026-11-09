@@ -132,7 +132,7 @@ export async function sendInvoice(input: { proposalId: string; installmentId: st
           bankInstructions: input.method === "bank" ? settings.bankTransferInstructions : null,
         }),
       );
-      const sent = await sendOrgEmail(org, { to: proposal.client.email, subject, html });
+      const sent = await sendOrgEmail(org, { to: proposal.client.email, subject, html, clientId: proposal.clientId });
       report.email = "sent";
       await noteGmailFallback(sent, { organizationId: org.id, proposalId: proposal.id, clientId: proposal.clientId, what: "The invoice email" });
     } catch (err) {
