@@ -129,7 +129,7 @@ export type FieldTask = { id: string; title: string; done: boolean; photoNeeded:
 /** `gates` (part 3, 2026-11-07): the inspections that must pass before the stage can close, each with its state in a few words. */
 export type FieldStage = { id: string; name: string; status: string; current: boolean; tasks: FieldTask[]; gates: Array<{ name: string; state: string; result: string }> };
 export type FieldOrder = { id: string; number: number; from: string; status: string; expected: string | null; lines: Array<{ id: string; name: string; qty: string }> };
-export type FieldProblem = { id: string; note: string; blocking: boolean; by: string | null; when: string; status: string; resolution: string | null };
+export type FieldProblem = { id: string; note: string; blocking: boolean; by: string | null; when: string; status: string; resolution: string | null; /** ISO, for the project Overview's order (2026-11-09). */ at?: string };
 export type FieldData = {
   project: { id: string; name: string } | null;
   stages: FieldStage[];
@@ -290,7 +290,7 @@ export async function projectField(organizationId: string, projectId: string): P
     byWorker.set(h.workerId, w);
   }
   return {
-    problems: flags.map((f) => ({ id: f.id, jobId: f.jobId, jobTitle: titleOf.get(f.jobId) ?? "job", note: f.note, blocking: f.blocking, by: f.raisedById ? (nameOf.get(f.raisedById) ?? null) : null, when: when(f.createdAt), status: f.status, resolution: f.resolution })),
+    problems: flags.map((f) => ({ id: f.id, jobId: f.jobId, jobTitle: titleOf.get(f.jobId) ?? "job", note: f.note, blocking: f.blocking, by: f.raisedById ? (nameOf.get(f.raisedById) ?? null) : null, when: when(f.createdAt), at: f.createdAt.toISOString(), status: f.status, resolution: f.resolution })),
     hoursWeek: [...byWorker.entries()].map(([workerId, w]) => ({ workerId, ...w })).sort((a, b) => b.hours - a.hours),
     hoursAll: { hours: r2(hours.reduce((n, h) => n + h.hours, 0)), cost: hoursCost(hours) },
     subs: subs.map((s) => ({ id: s.id, vendor: s.vendor, amount: s.amount, note: s.note, spentAt: s.spentAt.toISOString(), paidAt: s.paidAt ? s.paidAt.toISOString() : null })),

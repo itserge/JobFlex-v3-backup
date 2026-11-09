@@ -57,7 +57,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BUILD_DEFAULTS, BUILD_QUESTIONS, buildAnswersFromStrings } from "@/lib/projectPhases/shared";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { KIND_HINT, KIND_LABEL } from "@/lib/projectKind";
+import { SPACES, parseSpace } from "@/lib/projectSpaces";
+import { ProjectSpacesHome, SpaceHeader } from "@/components/v3/projects-blueprint/project-spaces";
+import { spaceOfRow } from "@/components/v3/projects-blueprint/project-spaces-data";
 import styles from "./mobile-projects.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
@@ -506,7 +510,9 @@ export function MobileProjects() {
   const nameAutoRef = useRef(false);
   const [draftStatus, setDraftStatus] = useState<string>(STATUSES[0]);
   // The kind and the remodel's question (2026-11-07, lib/projectKind).
-  const [draftKind, setDraftKind] = useState<"REMODEL" | "NEW_BUILD">("REMODEL");
+  // The workspace (2026-11-09): `?space=`, read on every render so the drawer's links switch it in place.
+  const space = parseSpace(useSearchParams().get("space"));
+  const [draftKind, setDraftKind] = useState<"REMODEL" | "NEW_BUILD" | "JOB">("REMODEL");
   const [draftOccupied, setDraftOccupied] = useState(false);
   // A new build's start questions (part 4, lib/projectPhases): the picks by question; unsaid = the usual.
   const [draftBuild, setDraftBuild] = useState<Record<string, string>>({});
@@ -717,7 +723,7 @@ export function MobileProjects() {
 
   /* ---------- derived ------------------------------------------------- */
   /** The loaded book, or an empty one while the first read is in flight. */
-  const book = useMemo(() => data ?? [], [data]);
+  const book = useMemo(() => (data ?? []).filter((p) => !space || spaceOfRow(p) === space), [data, space]);
   const loading = data === null;
 
   const visible = useMemo(
@@ -861,7 +867,7 @@ export function MobileProjects() {
     nameAutoRef.current = false;
     if (!clientChoices) void listProjectClients().then(setClientChoices).catch(() => setClientChoices([]));
     setDraftStatus(STATUSES[0]);
-    setDraftKind("REMODEL");
+    setDraftKind(space ? SPACES[space].kind : "REMODEL");
     setDraftOccupied(false);
     setDraftBuild({});
     setDraftForWhom("CLIENT");
@@ -965,17 +971,20 @@ export function MobileProjects() {
       {/* ============ SCROLLER ============ */}
       <main className={styles.scroll} ref={scrollRef}>
         <div className={styles.content} ref={contentRef}>
-          {/* PAGE HEAD — no eyebrow (owner's call, 2026-08-15). "Delivery" named
-              the sidebar group the page already sits in, so on a phone it spent a
-              whole line above the title saying where you already were. */}
-          <div className={styles.pageHead}>
-            <h1 className={styles.pageTitle}>Projects</h1>
-            <div className={styles.pageActions}>
-              <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" onClick={openNew}>
-                <Icon id="i-plus" />New project
+          {/* THE WORKSPACES (2026-11-09, lib/projectSpaces): none chosen opens the three cards; one chosen, its own
+              header and road, and the book is its projects. */}
+          {!space ? <ProjectSpacesHome rows={data ?? []} /> : null}
+          {space ? (
+            <>
+          <SpaceHeader
+            space={space}
+            rows={data ?? []}
+            actions={
+              <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" onClick={openNew} style={{ background: SPACES[space].color, borderColor: SPACES[space].color }}>
+                <Icon id="i-plus" />New {SPACES[space].one}
               </button>
-            </div>
-          </div>
+            }
+          />
 
           {/* MASTHEAD */}
           <div className={styles.pmast}>
@@ -1192,6 +1201,8 @@ export function MobileProjects() {
               <span className={styles.pagerInfo}>{safePage} / {pages}</span>
             </div>
           ) : null}
+            </>
+          ) : null}
         </div>
       </main>
 
@@ -1268,16 +1279,16 @@ export function MobileProjects() {
           ) : null}
 
           {/* THE KIND (2026-11-07): a remodel or a new build; a remodel asks whether the client lives there. */}
-          <div className={styles.fld}>
+          <div className={styles.fld} style={space ? { display: "none" } : undefined}>
             <span className={styles.fldLbl}>What kind of project</span>
             <div className={styles.fseg} role="group" aria-label="Project kind" data-kind-seg>
-              {(["REMODEL", "NEW_BUILD"] as const).map((k) => (
+              {(["REMODEL", "NEW_BUILD", "JOB"] as const).map((k) => (
                 <button key={k} className={`${styles.fsegBtn} ${draftKind === k ? styles.on : ""}`} type="button" data-v={k} aria-pressed={draftKind === k} onClick={() => setDraftKind(k)}>
-                  {k === "REMODEL" ? "Remodel" : "New construction"}
+                  {KIND_LABEL[k]}
                 </button>
               ))}
             </div>
-            <span className={styles.fldHint}>{draftKind === "REMODEL" ? "The house stands: a kitchen, a bath, an addition, a whole house." : "A lot, then a house: land, permits, foundation to the keys."}</span>
+            <span className={styles.fldHint}>{KIND_HINT[draftKind]}</span>
           </div>
           {draftKind === "NEW_BUILD" ? (
             <div className={styles.fld} data-money-seg>

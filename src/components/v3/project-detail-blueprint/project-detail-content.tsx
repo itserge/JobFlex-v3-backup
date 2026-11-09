@@ -93,6 +93,9 @@ import { ProjectFieldCard } from "@/components/v3/project-links/project-field-ca
 import { ProjectTimelineCard } from "@/components/v3/project-links/project-timeline-card";
 import { ProjectFinishCard } from "@/components/v3/project-links/project-finish-card";
 import { ProjectClientCard } from "@/components/v3/project-links/project-client-card";
+import { ProjectOverviewCard } from "@/components/v3/project-links/project-overview-card";
+import type { Overview, Snoozes } from "@/lib/projectOverview/shared";
+import { SPACES, spaceHref, type SpaceId } from "@/lib/projectSpaces";
 
 /** "New proposal" on a project opens the estimator picker filed under it, so
  *  any engine — Smart Proposal, roof, fence, HVAC, video or manual — can make
@@ -160,8 +163,16 @@ export function ProjectDetailContent({
   timeline,
   finish,
   share,
+  overview,
+  space = "remodel",
+  snoozes = {},
 }: {
   project: PdProject;
+  /** The Overview at the top (2026-11-09, lib/projectOverview) and the workspace the project lives in (lib/projectSpaces);
+   *  `snoozes`: the rows the signed-in person hid with "Not now". */
+  overview?: Overview;
+  space?: SpaceId;
+  snoozes?: Snoozes;
   /** The order of the work (2026-11-05). */
   stages?: PdStages;
   /** The to-buy list and the orders (2026-11-05). */
@@ -327,7 +338,10 @@ export function ProjectDetailContent({
       <div className={cx("page-head")}>
         <div>
           <div className={cx("kicker")}>
-            Projects
+            {/* The workspace it lives in, in its colour, and the way back to it (2026-11-09). */}
+            <Link href={spaceHref(space) as Route} style={{ color: SPACES[space].color }} data-project-space={space}>
+              {SPACES[space].name}
+            </Link>
             {project.number ? <span data-project-number>{` · #${project.number}`}</span> : null}
             <span data-project-kind={kindOf(project.kind)}>{` · ${KIND_TAG[kindOf(project.kind)]}`}</span>
             {project.client ? (
@@ -376,6 +390,8 @@ export function ProjectDetailContent({
           </button>
         </div>
       </div>
+
+      {overview ? <ProjectOverviewCard projectId={project.id} projectName={project.name} overview={overview} space={space} snoozes={snoozes} canManage={canManage} /> : null}
 
       {/* KPI */}
       <div className={cx("kpi-grid", "kpi-grid--pd")}>

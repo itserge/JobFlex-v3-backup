@@ -7,17 +7,23 @@
 
 import { parseBuildAnswers, type BuildAnswers } from "@/lib/projectPhases/shared";
 
-export const PROJECT_KINDS = ["REMODEL", "NEW_BUILD"] as const;
+// A JOB (2026-11-09, the owner: "cards for new home builders, for remodelers, or just a job project"): one trade's
+// work, bigger than a visit — a deck, a roof, a fence, a new system. It works as a remodel does in every card; it
+// is its own kind so it lives in its own workspace (lib/projectSpaces) and is offered the trade templates.
+export const PROJECT_KINDS = ["REMODEL", "NEW_BUILD", "JOB"] as const;
 export type ProjectKind = (typeof PROJECT_KINDS)[number];
 
-export const KIND_LABEL: Record<ProjectKind, string> = { REMODEL: "Remodel", NEW_BUILD: "New construction" };
+export const KIND_LABEL: Record<ProjectKind, string> = { REMODEL: "Remodel", NEW_BUILD: "New construction", JOB: "Job project" };
 /** The short tag on a card or a page head. */
-export const KIND_TAG: Record<ProjectKind, string> = { REMODEL: "Remodel", NEW_BUILD: "New build" };
+export const KIND_TAG: Record<ProjectKind, string> = { REMODEL: "Remodel", NEW_BUILD: "New build", JOB: "Job" };
 /** One line under each choice in the New project dialog. */
 export const KIND_HINT: Record<ProjectKind, string> = {
   REMODEL: "The house stands: a kitchen, a bath, an addition, a whole house.",
   NEW_BUILD: "A lot, then a house: land, permits, foundation to the keys.",
+  JOB: "One trade, bigger than a visit: a deck, a roof, a fence, a new system.",
 };
+/** A remodel and a job may trade places at any time; a new build's kind locks once a stage is done. */
+export const kindsSwap = (a: ProjectKind, b: ProjectKind): boolean => a === b || (a !== "NEW_BUILD" && b !== "NEW_BUILD");
 
 export const isProjectKind = (v: unknown): v is ProjectKind => typeof v === "string" && (PROJECT_KINDS as readonly string[]).includes(v);
 /** A stored value read tolerantly: anything odd is a remodel, which every project made before this is. */

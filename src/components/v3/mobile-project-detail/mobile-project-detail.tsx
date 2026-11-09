@@ -111,6 +111,9 @@ import { ProjectFieldCard } from "@/components/v3/project-links/project-field-ca
 import { ProjectTimelineCard } from "@/components/v3/project-links/project-timeline-card";
 import { ProjectFinishCard } from "@/components/v3/project-links/project-finish-card";
 import { ProjectClientCard } from "@/components/v3/project-links/project-client-card";
+import { ProjectOverviewCard } from "@/components/v3/project-links/project-overview-card";
+import type { Overview, Snoozes } from "@/lib/projectOverview/shared";
+import { SPACES, spaceHref, type SpaceId } from "@/lib/projectSpaces";
 
 const DAY_MS = 86400000;
 
@@ -330,6 +333,9 @@ export function MobileProjectDetail({
   timeline,
   finish,
   share,
+  overview,
+  space = "remodel",
+  snoozes = {},
 }: {
   project: PdProject;
   jobs: PdJob[];
@@ -366,6 +372,10 @@ export function MobileProjectDetail({
   finish?: PdFinish;
   /** The client's page and the files (2026-11-06). */
   share?: PdShare;
+  /** The Overview (2026-11-09), the workspace, the rows hidden with "Not now". */
+  overview?: Overview;
+  space?: SpaceId;
+  snoozes?: Snoozes;
 }) {
   // The project's dates are days, not moments (withLocalDays).
   const project = useMemo(() => withLocalDays(projectIn), [projectIn]);
@@ -612,7 +622,10 @@ export function MobileProjectDetail({
             <h1 className="mpd-title">{project.name}</h1>
             <div className="mpd-dateline">
               {project.number ? <span data-project-number>{`#${project.number} · `}</span> : null}
-              <span data-project-kind={kindOf(project.kind)}>{`${KIND_TAG[kindOf(project.kind)]} · `}</span>
+              <Link href={spaceHref(space) as Route} style={{ color: SPACES[space].color, fontWeight: 800 }} data-project-space={space}>
+                {SPACES[space].name}
+              </Link>
+              <span data-project-kind={kindOf(project.kind)}>{` · ${KIND_TAG[kindOf(project.kind)]} · `}</span>
               {hasWindow ? (
                 <>
                   Project window ·{" "}
@@ -626,6 +639,13 @@ export function MobileProjectDetail({
               )}
             </div>
           </div>
+
+          {/* ============ THE OVERVIEW (2026-11-09): how it stands and what to do, first ============ */}
+          {overview ? (
+            <div className="mpd-budget">
+              <ProjectOverviewCard projectId={project.id} projectName={project.name} overview={overview} space={space} snoozes={snoozes} canManage={canManage} subsHref={`/mobile-project-subs-v1/${project.id}`} />
+            </div>
+          ) : null}
 
           {/* ============ MASTHEAD — budget + the three counts ============ */}
           <div className="mpd-mast">

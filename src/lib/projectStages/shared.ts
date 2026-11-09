@@ -347,9 +347,22 @@ export const STAGE_TEMPLATES: readonly StageTemplate[] = [
   },
 ];
 
-/** The templates a project of this kind is offered, in the picker's order. */
+/** The one-trade templates (2026-11-09): a job project's (lib/projectKind JOB). They stay offered to a remodel too —
+ *  a remodel can be a deck — but a job project is offered only these. */
+export const JOB_TEMPLATE_KEYS: ReadonlySet<string> = new Set(["deck", "roof", "fence", "floors", "hvac", "siding", "windows", "painting", "service"]);
+
+/** The templates a project of this kind is offered, in the picker's order: a remodel's own first, then the trades. */
 export function templatesFor(kind: ProjectKind): readonly StageTemplate[] {
-  return STAGE_TEMPLATES.filter((x) => x.kind === kind);
+  if (kind === "JOB") return STAGE_TEMPLATES.filter((x) => JOB_TEMPLATE_KEYS.has(x.key));
+  const mine = STAGE_TEMPLATES.filter((x) => x.kind === kind);
+  return kind === "REMODEL" ? [...mine.filter((x) => !JOB_TEMPLATE_KEYS.has(x.key)), ...mine.filter((x) => JOB_TEMPLATE_KEYS.has(x.key))] : mine;
+}
+
+/** The kind a project made from this template is (an automatic project, 2026-11-09): a trade's template — or none,
+ *  a sold proposal no template matched — is a job project; a kitchen, a bath, an addition is a remodel. */
+export function kindForTemplate(tpl: { key: string; kind: ProjectKind } | null): ProjectKind {
+  if (!tpl || JOB_TEMPLATE_KEYS.has(tpl.key)) return "JOB";
+  return tpl.kind;
 }
 
 export function templateByKey(key: string | null | undefined): StageTemplate | null {

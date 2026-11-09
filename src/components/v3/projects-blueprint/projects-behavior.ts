@@ -26,6 +26,8 @@ export type ProjectsContentOptions = {
    *  fall back to, and an empty book renders the empty state rather than
    *  demo rows. */
   projects: Project[];
+  /** The workspace's kind (2026-11-09, lib/projectSpaces): New project makes one of these and does not ask. */
+  kind?: "REMODEL" | "NEW_BUILD" | "JOB";
 };
 
 /** `createProject` rejects with an Error whose message is written for the user
@@ -397,8 +399,11 @@ export function initProjectsContent(
     const descEl = root.querySelector<HTMLTextAreaElement>("#pjfDesc");
     let draftStatus = STATUSES[0];
     // The kind and the remodel's question (2026-11-07), painted like the status segment.
-    let draftKind = "REMODEL";
+    const homeKind = options.kind ?? "REMODEL";
+    let draftKind: string = homeKind;
     let draftOccupied = false;
+    // In a workspace the kind is the workspace's: the question is not asked (2026-11-09).
+    if (options.kind) $("#pjfKind")?.closest<HTMLElement>(".fld")?.classList.add("is-hidden");
     // A new build's start questions (part 4): the picks by question, as the buttons' values; unsaid = the usual.
     let draftBuild: Record<string, string> = {};
     // Who it is for and how the money is made (part 5): a new build for a client with one margin unless said.
@@ -477,6 +482,7 @@ export function initProjectsContent(
     const KIND_HINT: Record<string, string> = {
       REMODEL: "The house stands: a kitchen, a bath, an addition, a whole house.",
       NEW_BUILD: "A lot, then a house: land, permits, foundation to the keys.",
+      JOB: "One trade, bigger than a visit: a deck, a roof, a fence, a new system.",
     };
     function paintKind() {
       $$("#pjfKind .fseg-btn").forEach((b) => {
@@ -545,7 +551,7 @@ export function initProjectsContent(
       paintNewClient();
       nameAuto = false;
       draftStatus = STATUSES[0];
-      draftKind = "REMODEL";
+      draftKind = homeKind;
       draftOccupied = false;
       draftBuild = {};
       draftForWhom = "CLIENT";
@@ -613,7 +619,7 @@ export function initProjectsContent(
       }
       const kindSeg = t.closest<HTMLElement>("#pjfKind .fseg-btn");
       if (kindSeg) {
-        draftKind = kindSeg.dataset.v === "NEW_BUILD" ? "NEW_BUILD" : "REMODEL";
+        draftKind = kindSeg.dataset.v === "NEW_BUILD" || kindSeg.dataset.v === "JOB" ? kindSeg.dataset.v : "REMODEL";
         paintKind();
       }
       const occSeg = t.closest<HTMLElement>("#pjfOccupied .fseg-btn");
