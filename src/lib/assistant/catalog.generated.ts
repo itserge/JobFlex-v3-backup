@@ -425,6 +425,39 @@ export const CATALOG: Catalog = {
     "scheduled": false,
     "version": 1
   },
+  "pipeline": {
+    "label": "Pipeline",
+    "group": "proposals",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "lead_sources": {
+    "label": "Lead sources",
+    "group": "lookups",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "move_deal": {
+    "label": "Move a deal",
+    "group": "proposals",
+    "effect": "record",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
   "book_visit": {
     "label": "Book a visit",
     "group": "visits",
