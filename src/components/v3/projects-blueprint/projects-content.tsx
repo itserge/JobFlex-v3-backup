@@ -176,7 +176,7 @@ export function ProjectsContent({
         <div className="mdl-box">
           <div className="mdl-head">
             <div>
-              <span className="mdl-kick">Delivery / new record</span>
+              <span className="mdl-kick">{space ? `${SPACES[space].brand} / new record` : "Delivery / new record"}</span>
               <div className="mdl-title" id="pjNewTitle">{space ? `New ${SPACES[space].one}` : "New project"}</div>
             </div>
             <button className="mdl-x" type="button" data-mdl="close" aria-label="Close dialog">

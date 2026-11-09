@@ -531,6 +531,9 @@ export function initProjectsContent(
 
     function openDlg() {
       restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      // Paint the kind's own questions before it shows: in a workspace the dialog opens on its kind, and only a
+      // remodel asks whether the client lives there (2026-11-09).
+      paintKind();
       openMdl(pjDlg!);
       // land on the first field, not on the dialog frame
       requestAnimationFrame(() => inp("#pjfName")?.focus());
