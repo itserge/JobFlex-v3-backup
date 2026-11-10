@@ -53,6 +53,7 @@ import {
   triggerMoment,
   type FollowUpChannel,
 } from "@/lib/followUps/copy";
+import { FOLLOW_UP_MODES, FOLLOW_UP_WORDS, modeLabel, parseMode, parseWords, type FollowUpMode, type FollowUpWords } from "@/lib/followUps/agent";
 import {
   STATUS_ORDER,
   STATUS_CLS,
@@ -577,7 +578,13 @@ export function initCrmContent(content: HTMLElement, options: CrmContentOptions)
             humanDelay(r.delayMinutes) +
             "</b> · Sends: <b>" +
             channelLabel(r.channel) +
-            "</b></div>" +
+            "</b> · <b data-rule-mode=\"" +
+            parseMode(r.mode) +
+            "\">" +
+            modeLabel(parseMode(r.mode)) +
+            "</b>" +
+            (parseWords(r.words) === "AI" ? " · <b data-rule-words=\"AI\">Written for each client</b>" : "") +
+            "</div>" +
             '<div class="rule-tpl">' +
             escapeAttr(triggerMoment(r.triggerStatus)) +
             "</div>" +
@@ -612,6 +619,13 @@ export function initCrmContent(content: HTMLElement, options: CrmContentOptions)
     if (!form) return;
     form.classList.toggle("is-hidden", !crm.creating);
     if (crm.creating) form.innerHTML = ruleFormHtml(null);
+  }
+
+  /** One plain sentence under the form: what the two choices mean together. */
+  function agentNote(mode: FollowUpMode, words: FollowUpWords): string {
+    const m = FOLLOW_UP_MODES.find((x) => x.value === mode);
+    const w = FOLLOW_UP_WORDS.find((x) => x.value === words);
+    return (m ? m.hint : "") + (mode === "SUGGEST" ? "" : " " + (w ? w.hint : ""));
   }
 
   function ruleFormHtml(r: FollowUpRule | null) {
@@ -663,6 +677,21 @@ export function initCrmContent(content: HTMLElement, options: CrmContentOptions)
         );
       }).join("") +
       "</select></span></label>" +
+      // WHO SENDS IT and WHOSE WORDS (Smart CRM part 4, lib/followUps/agent). Whatever is picked, a follow-up stops
+      // by itself when the client replies, signs or pays.
+      '<label><span class="rf-lbl">Who sends it</span><span class="bp-sel"><select class="bp-sel-in" data-f="mode">' +
+      FOLLOW_UP_MODES.map(function (m) {
+        return '<option value="' + m.value + '"' + (parseMode(r?.mode) === m.value ? " selected" : "") + ">" + m.label + "</option>";
+      }).join("") +
+      "</select></span></label>" +
+      '<label><span class="rf-lbl">Words</span><span class="bp-sel"><select class="bp-sel-in" data-f="words">' +
+      FOLLOW_UP_WORDS.map(function (w) {
+        return '<option value="' + w.value + '"' + (parseWords(r?.words) === w.value ? " selected" : "") + ">" + w.label + "</option>";
+      }).join("") +
+      "</select></span></label>" +
+      "</div>" +
+      '<div class="rf-note" data-rf-agent>' +
+      escapeAttr(agentNote(parseMode(r?.mode), parseWords(r?.words))) +
       "</div>" +
       '<div class="rf-note">' +
       (smsEnabled
@@ -785,6 +814,8 @@ export function initCrmContent(content: HTMLElement, options: CrmContentOptions)
 
   // ================= QUEUE =================
   function severity(q: QueueItem) {
+    // In a person's hands (lib/followUps/agent): the draft is on the Today tab.
+    if (q.waiting) return { cls: "sev--soon", label: "waiting for you" };
     if (!q.overdue) return { cls: "sev--sched", label: q.rel };
     if (q.days <= 0) return { cls: "sev--soon", label: "due today" };
     if (q.days >= 7) return { cls: "sev--vlate", label: q.days + "d late" };
@@ -864,7 +895,10 @@ export function initCrmContent(content: HTMLElement, options: CrmContentOptions)
           escapeAttr(q.date) +
           '</div><div class="q-rel">' +
           escapeAttr(q.rel) +
-          "</div></td>" +
+          "</div>" +
+          // Why the agent is holding it ("Someone wrote to them Nov 9 — waiting 2 days").
+          (q.reason && !q.waiting ? '<div class="q-rel" data-q-reason>' + escapeAttr(q.reason) + "</div>" : "") +
+          "</td>" +
           '<td><div class="q-act">' +
           '<button class="btn btn-ghost btn--sm" type="button" data-act="q-done"' +
           busy +
@@ -1014,6 +1048,11 @@ export function initCrmContent(content: HTMLElement, options: CrmContentOptions)
     if (!form) return;
     const field = (f: string) =>
       form.querySelector<HTMLInputElement | HTMLSelectElement>('[data-f="' + f + '"]');
+    if (el.dataset.f === "mode" || el.dataset.f === "words") {
+      const note = form.querySelector<HTMLElement>("[data-rf-agent]");
+      if (note) note.textContent = agentNote(parseMode(field("mode")?.value), parseWords(field("words")?.value));
+      return;
+    }
     if (el.dataset.f === "trigger" || el.dataset.f === "channel") {
       syncPreviewFromForm(
         field("trigger")?.value || "SENT",
@@ -1282,6 +1321,8 @@ export function initCrmContent(content: HTMLElement, options: CrmContentOptions)
       // must not silently re-enable a rule the user switched off.
       enabled: existing ? existing.enabled : true,
       channel: (get("channel") || "EMAIL") as FollowUpChannel,
+      mode: parseMode(get("mode")),
+      words: parseWords(get("words")),
     };
 
     crm.savingRule = true;
@@ -1303,6 +1344,8 @@ export function initCrmContent(content: HTMLElement, options: CrmContentOptions)
           triggerStatus: payload.triggerStatus,
           delayMinutes: payload.delayMinutes,
           channel: payload.channel,
+          mode: payload.mode,
+          words: payload.words,
         });
         crm.editing = null;
       } else {
@@ -1313,6 +1356,8 @@ export function initCrmContent(content: HTMLElement, options: CrmContentOptions)
           delayMinutes: payload.delayMinutes,
           enabled: payload.enabled,
           channel: payload.channel,
+          mode: payload.mode,
+          words: payload.words,
         });
         crm.creating = false;
       }
@@ -1361,6 +1406,19 @@ export function initCrmContent(content: HTMLElement, options: CrmContentOptions)
       crm.busyQueue = null;
     }
   }
+
+  // The Today tab's band (crm-agent.tsx, React) sent, skipped or closed a follow-up: the queue here drops the row.
+  on(window, "crm:follow-up-closed", function (e) {
+    const id = (e as CustomEvent<string>).detail;
+    if (!id || !queueData.some((q) => q.id === id)) return;
+    queueData = queueData.filter((q) => q.id !== id);
+    safe("queue-sync", function () {
+      renderQueue();
+      renderFuStatus();
+      renderStats();
+      renderActions();
+    });
+  });
 
   // ================= INITIALIZATION =================
   safe("init", function () {

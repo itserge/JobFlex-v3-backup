@@ -1,0 +1,89 @@
+/* THE CLIENT'S HOME PAGE (/c/[token], 2026-11-10) — plain stylesheet, every selector under the literal root
+   `.jf-chome`, the sibling of /p/[token]'s client.css: one 2px ink frame on graph paper, mono labels, generous rows.
+   A phone first (the client opens it from a text); a desk gets the same column centred at 680px. Tokens from
+   globals.css. A payment due is said in words, not in red. */
+
+.jf-chome {
+  --ch-frame: 2px solid var(--ink);
+  --ch-hair: 1.5px solid var(--ink-line);
+  min-height: 100dvh;
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(var(--ink-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--ink-line) 1px, transparent 1px);
+  background-size: 24px 24px;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  padding: calc(20px + var(--safe-top, 0px)) 16px calc(32px + var(--safe-bottom, 0px));
+}
+.jf-chome * { box-sizing: border-box; }
+.jf-chome :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.jf-chome a { color: var(--ink); }
+
+.jf-chome .ch-card { max-width: 680px; margin: 0 auto; background: var(--paper); border: var(--ch-frame); padding: 20px 18px 22px; }
+@media (min-width: 640px) {
+  .jf-chome { padding: 40px 24px 48px; }
+  .jf-chome .ch-card { padding: 28px 28px 30px; }
+}
+
+.jf-chome .ch-kicker, .jf-chome .ch-lab, .jf-chome .ch-msgWho {
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; line-height: 1.4; color: var(--ink-muted);
+}
+.jf-chome .ch-head { padding-bottom: 16px; border-bottom: var(--ch-frame); }
+.jf-chome .ch-logo { display: block; max-height: 40px; max-width: 180px; margin-bottom: 10px; }
+.jf-chome .ch-kicker { margin: 0; overflow-wrap: anywhere; }
+.jf-chome .ch-title { margin: 8px 0 6px; font-size: 28px; line-height: 1.1; font-weight: 900; letter-spacing: -0.02em; }
+.jf-chome .ch-sub { margin: 0; font-size: 15px; line-height: 1.5; }
+.jf-chome .ch-acts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+
+.jf-chome .ch-sec { padding: 16px 0 0; }
+.jf-chome .ch-sec + .ch-sec { margin-top: 16px; border-top: var(--ch-hair); }
+.jf-chome .ch-lab { display: block; margin: 0 0 8px; }
+
+.jf-chome .ch-btn {
+  display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 20px; border: var(--ch-frame); background: var(--ink); color: var(--paper);
+  font: inherit; font-size: 13px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; text-decoration: none; box-shadow: 3px 3px 0 var(--accent); white-space: nowrap; cursor: pointer;
+}
+.jf-chome .ch-btn:disabled { opacity: 0.55; cursor: not-allowed; box-shadow: none; }
+.jf-chome .ch-btn--ghost { background: #fff; color: var(--ink); box-shadow: none; }
+.jf-chome .ch-btn--pay { margin-top: 10px; background: var(--emerald); border-color: var(--emerald); box-shadow: 3px 3px 0 var(--ink); }
+
+.jf-chome .ch-figs { display: flex; flex-wrap: wrap; gap: 10px 24px; }
+.jf-chome .ch-figs div { display: flex; flex-direction: column; gap: 2px; }
+.jf-chome .ch-figs span { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-muted); }
+.jf-chome .ch-figs b { font-size: 22px; font-weight: 900; font-variant-numeric: tabular-nums; }
+.jf-chome .ch-good { color: var(--emerald); }
+.jf-chome .ch-bar { position: relative; height: 12px; margin-top: 10px; border: var(--ch-frame); background: #fff; }
+.jf-chome .ch-bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--emerald); }
+
+.jf-chome .ch-list, .jf-chome .ch-props, .jf-chome .ch-msgs { list-style: none; margin: 0; padding: 0; }
+.jf-chome .ch-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; min-height: 40px; padding: 8px 0; border-bottom: var(--ch-hair); font-size: 15px; line-height: 1.4; }
+.jf-chome .ch-row:last-child { border-bottom: none; }
+.jf-chome .ch-row b { font-weight: 800; }
+.jf-chome .ch-row > span:last-child { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-muted); white-space: nowrap; }
+.jf-chome .ch-row a { font-weight: 700; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; overflow-wrap: anywhere; min-width: 0; }
+
+.jf-chome .ch-prop { padding: 12px 0; border-bottom: var(--ch-hair); }
+.jf-chome .ch-prop:last-child { border-bottom: none; }
+.jf-chome .ch-propTop { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.jf-chome .ch-propTop a { font-size: 16px; font-weight: 800; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; min-width: 0; overflow-wrap: anywhere; }
+.jf-chome .ch-propTop b { font-size: 16px; font-weight: 900; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.jf-chome .ch-propMeta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 6px; font-size: 13px; color: var(--ink-muted); }
+.jf-chome .ch-chip { display: inline-flex; padding: 2px 8px; border: 1.5px solid var(--ink); background: #fff; color: var(--ink); font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.jf-chome .ch-prop--ok .ch-chip, .jf-chome .ch-prop--done .ch-chip { border-color: var(--emerald); color: var(--emerald); }
+.jf-chome .ch-prop--off { opacity: 0.6; }
+.jf-chome .ch-due { color: var(--ink); font-weight: 800; }
+
+.jf-chome .ch-msgs { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.jf-chome .ch-msg { padding: 10px 12px; border: 1.5px solid var(--ink-line); background: #fff; max-width: 92%; }
+.jf-chome .ch-msg--mine { align-self: flex-end; border-color: var(--ink); background: rgba(24, 84, 160, 0.06); }
+.jf-chome .ch-msg p { margin: 4px 0 0; font-size: 15px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.jf-chome .ch-empty { margin: 0 0 10px; font-size: 14px; color: var(--ink-muted); }
+
+.jf-chome .ch-form { display: flex; flex-direction: column; gap: 8px; }
+.jf-chome .ch-in { width: 100%; padding: 10px 12px; border: var(--ch-frame); background: #fff; color: var(--ink); font: inherit; font-size: 16px; line-height: 1.5; resize: vertical; }
+.jf-chome .ch-formRow { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.jf-chome .ch-ok { font-size: 13px; font-weight: 700; color: var(--emerald); }
+.jf-chome .ch-bad { font-size: 13px; font-weight: 700; color: var(--ink); }
+
+.jf-chome .ch-foot { margin: 20px 0 0; padding-top: 14px; border-top: var(--ch-frame); font-size: 12.5px; line-height: 1.6; color: var(--ink-muted); }

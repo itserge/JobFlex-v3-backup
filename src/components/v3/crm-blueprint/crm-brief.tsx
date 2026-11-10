@@ -13,7 +13,7 @@
 // flips it back and says why. The parent re-mounts the panel with
 // `key={today.dayKey}` so a new day starts clean.
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { setCrmCheck } from "@/actions/crmBrief";
 import { GROUP_LABEL, money, moneyShort, type CheckGroup, type OfficeBrief, type Stat, type TodayBrief, type TodayCheck, type Tone } from "@/lib/crm/brief";
@@ -79,7 +79,13 @@ function Ring({ done, total, clear }: { done: number; total: number; clear: bool
 
 export type GotoTab = "queue" | "workflows" | "customers";
 
-export function TodayPanel({ today, onGoto }: { today: TodayBrief; onGoto?: (tab: GotoTab) => void }) {
+/**
+ * @param extra the CRM desk band (./crm-agent: follow-ups waiting for a yes + the promise tracker), drawn under the
+ *   head and above the checks.
+ * @param extraOpen how many things that band holds for the person today — while it holds any, the "nothing waiting
+ *   on you" block stays away.
+ */
+export function TodayPanel({ today, onGoto, extra, extraOpen = 0 }: { today: TodayBrief; onGoto?: (tab: GotoTab) => void; extra?: ReactNode; extraOpen?: number }) {
   const [done, setDone] = useState<Set<string>>(() => new Set(today.checks.filter((c) => c.done).map((c) => c.key)));
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -170,12 +176,16 @@ export function TodayPanel({ today, onGoto }: { today: TodayBrief; onGoto?: (tab
         </div>
       )}
 
+      {extra}
+
       {total === 0 ? (
+        extraOpen > 0 ? null : (
         <div className={s.quiet} data-crm-quiet>
           <Ic id="check" className={s.quietIc} />
           <b>Nothing waiting on you.</b>
           <span>No late payments, no unanswered leads, no crew to confirm. Go build something.</span>
         </div>
+        )
       ) : (
         groups.map((g) => (
           <section key={g.key} id={`crm-group-${g.key}`} className={s.group} data-crm-group={g.key}>

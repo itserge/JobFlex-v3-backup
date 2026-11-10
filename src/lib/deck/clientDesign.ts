@@ -20,7 +20,8 @@
 // in the studio is a deck the tables carry. The client's page never prices.
 
 import type { BoxRow, EmailDoc } from "../email/doc";
-import { deckingProduct, railType } from "./catalog";
+import { deckingProduct, railColorOf, railType } from "./catalog";
+import { deckingColor } from "./deckingColors";
 import { applyDeckPatch } from "./checks";
 import { defaultDeckDesign, normalizeDeckDesign, ROOF_KIND_LABEL, structureWords, type DeckDesign, type ElectricalDesign, type FixtureKind, type RoofDesign } from "./design";
 import { deckShapeForHouse } from "./house";
@@ -361,7 +362,8 @@ export function mergeClientDesign(base: DeckDesign, raw: unknown, opts: { settle
     photo: base.photo,
     electrical: mergeFixtures(base.electrical, c.electrical),
     rail: { ...c.rail, heightIn: base.rail.heightIn, postSpacingFt: base.rail.postSpacingFt, customPerFt: base.rail.customPerFt, type: c.rail.type === "custom" && base.rail.type !== "custom" ? base.rail.type : c.rail.type },
-    decking: { ...c.decking, fastening: base.decking.fastening, fascia: base.decking.fascia, wastePct: base.decking.wastePct },
+    // The colour is the client's to pick from the line's own list; a colour typed in is the contractor's.
+    decking: { ...c.decking, fastening: base.decking.fastening, fascia: base.decking.fascia, wastePct: base.decking.wastePct, ownColor: base.decking.ownColor },
     roof,
   });
   // The deck and the house agree: a step in the wall under the deck notches it.
@@ -403,6 +405,9 @@ export function changesFrom(base: DeckDesign, next: DeckDesign): string[] {
   if (base.stairs.length !== next.stairs.length) out.push(`${next.stairs.length} ${next.stairs.length === 1 ? "stair" : "stairs"}`);
   if (base.rail.type !== next.rail.type) out.push(next.rail.type === "none" ? "no railing" : `${railType(next.rail.type).label.toLowerCase()} railing`);
   if (base.decking.product !== next.decking.product) out.push(`boards: ${deckingProduct(next.decking.product).label}`);
+  const boardColour = deckingColor(next.decking.product, next.decking.color);
+  if (boardColour && (base.decking.color !== next.decking.color || base.decking.product !== next.decking.product)) out.push(`board colour: ${boardColour.name}`);
+  if (next.rail.type !== "none" && base.rail.color !== next.rail.color && base.rail.type === next.rail.type) out.push(`rail colour: ${railColorOf(next.rail.type, next.rail.color)?.name.toLowerCase() ?? "the usual"}`);
   if (base.lower.on !== next.lower.on) out.push(next.lower.on ? "a lower level" : "no lower level");
   if (base.roof.kind !== next.roof.kind && next.structure !== "deck") out.push(`${ROOF_KIND_LABEL[next.roof.kind].split(" — ")[0].toLowerCase()} roof`);
   const wall = (d: DeckDesign) => JSON.stringify([d.house.leftFt, d.house.rightFt, d.house.jogs.map((j) => [j.atFt, j.dir, j.depthFt])]);

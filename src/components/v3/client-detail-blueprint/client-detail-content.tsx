@@ -67,6 +67,7 @@ import { BriefBand, MemoryPanel, MergeBanner, PromisesPanel, StoryPanel } from "
 import { activateServicePlan, cancelServicePlan, enrollClientInPlan, renewServicePlan, sendServicePlan } from "@/actions/servicePlans";
 import { EquipmentPanel } from "./equipment-panel";
 import { openRepairSheet } from "@/components/v3/repairs/repair-sheet";
+import { ClientPageLink } from "./client-page-link";
 
 const FILTERS: { value: ProposalFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -235,6 +236,16 @@ function ClientRecordPage({ view }: { view: ClientDetailRecord }) {
             <Btn icon="msg" onClick={() => messageRef.current?.open()}>
               Message
             </Btn>
+            {/* Their one lasting page (2026-11-10, Smart CRM part 5): copy, open, text or email it. */}
+            {!view.crmLocked ? (
+              <ClientPageLink clientId={clientId} clientName={view.client.name}>
+                {(open) => (
+                  <Btn icon="link" onClick={open}>
+                    Client&apos;s page
+                  </Btn>
+                )}
+              </ClientPageLink>
+            ) : null}
             {/* Send someone back to this client's house (2026-11-09) — the office's, when there's work to go back to. */}
             {view.repairJobs > 0 ? (
               <Btn icon="wrench" onClick={() => openRepairSheet({ clientId })}>

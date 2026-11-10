@@ -20,9 +20,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Route } from "next";
 import { createWheelMotion, wheelPixels } from "@/lib/smooth-wheel";
-import { AlertTriangle, Check, ChevronDown, ChevronRight, ExternalLink, FileText, Lock, Maximize2, Mic, Minimize2, Plus, RotateCcw, Send, X, ZoomIn, ZoomOut } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronRight, ExternalLink, FileText, Lock, Maximize2, Mic, Minimize2, Plus, RotateCcw, Send, X } from "lucide-react";
 import { resolveMarket, parseStateZip, type MarketSnapshot } from "@/lib/fence/market";
-import { DECKING, DECKING_BRAND_LABEL, DECKING_BRAND_ORDER, DECKING_FAMILY_LABEL, DECKING_FAMILY_ORDER, FRAMING_SPECIES, RAIL_TYPES, WALL_TYPES, defaultDecking, defaultFramingSpecies, treatedDecking, wallType, type DeckingFamily, type DeckingProduct } from "@/lib/deck/catalog";
+import { DECKING, DECKING_BRAND_LABEL, DECKING_BRAND_ORDER, DECKING_FAMILY_LABEL, DECKING_FAMILY_ORDER, FRAMING_SPECIES, RAIL_TYPES, WALL_TYPES, defaultDecking, defaultFramingSpecies, deckingProduct, treatedDecking, wallType, type DeckingFamily, type DeckingProduct } from "@/lib/deck/catalog";
 import { regionalPicks, regionalWords } from "@/lib/deck/regional";
 import { LEDGER_FASTENER_LABEL, LOADS, POST_SIZES, SOLID_BEAMS, ftIn, solidBeamTabulated, type LoadPsf, type SoilPsf } from "@/lib/deck/codeTables";
 import {
@@ -44,6 +44,7 @@ import {
   PATTERN_LABEL,
   PERGOLA_STYLE_LABEL,
   PLACEMENT_LABEL,
+  RAIL_BALUSTER_LABEL,
   RAIL_INFILL_LABEL,
   ROOFING_LABEL,
   ROOFINGS,
@@ -86,7 +87,7 @@ import { railWords } from "@/lib/deck/rails";
 import { electricalWords } from "@/lib/deck/electrical";
 import { siteFromAddress, SLOPE_LIMITS, TERMITE_LABEL } from "@/lib/deck/site";
 import { applyDeckPatch, checkSummary, deckChecks, type DeckCheck, type DeckPatch } from "@/lib/deck/checks";
-import { deckScene, sceneBuildLayers, SCENE_LAYER_LABEL, type SceneLegend } from "@/lib/deck/scene";
+import { deckScene, sceneBuildLayers, SCENE_LAYER_LABEL, type DeckScene, type SceneLegend } from "@/lib/deck/scene";
 import { BOM_STEP_LABEL, FIXTURE_RATE, type BomStep } from "@/lib/deck/takeoff";
 import { STORE_SURVEY, storePrice } from "@/lib/deck/storePrices";
 import { DECK_RATES, DECK_RATE_GROUP_LABEL, deckRate, sanitizeDeckRateBook, type DeckRateBook, type DeckRateGroup } from "@/lib/deck/rates";
@@ -108,6 +109,9 @@ import { DeckKindPicker } from "@/components/v3/deck-estimator-blueprint/deck-ki
 import { DeckPlan, type PlanEdgeHit, nearestStairEdge } from "@/components/v3/deck-estimator-blueprint/deck-plan";
 import { Answers, CUSTOM, CUSTOM_LABEL, CustomBox, Field, FieldScope, More, NameInput, NumberInput, Scope, Seg, Stepper, Toggle, ago, cx, feetText, intText, money, parseFeet, parseInches, priceShow, priceText, type FieldScopeValue } from "./deck-v1-parts";
 import { DeckV1Send, type SendPrefill } from "./deck-v1-send";
+import { PartCardView, PartDoneLine, TakenOutLine, usePartLight, type PartDone, type PickedPart } from "./deck-v1-pick";
+import { BoardColorPicker, BorderColorPicker, RailColorPicker } from "./deck-v1-colors";
+import { partAt, takenOut, type TakenOut } from "@/lib/deck/parts";
 import { DeckAddonDialog, DeckPreviewBanner } from "@/components/v3/deck-addon/deck-addon";
 import type { AddonInterval } from "@/lib/deckAddon";
 import { PHOTO_ENABLED, PhotoFileInput, PhotoSection, PhotoTools, PhotoViewBox, PhotoWhere, useDeckPhoto, type V1View } from "./deck-v1-photo";
@@ -163,6 +167,8 @@ function findField(scope: ParentNode, label: string): HTMLElement | null {
   for (const span of Array.from(scope.querySelectorAll<HTMLElement>(".v1-lbl > span:first-child"))) if (span.textContent?.trim() === label) return span.closest<HTMLElement>(".v1-field, .v1-stepper") ?? span;
   return null;
 }
+/** The part a card is open on (null when none): what the 3D lights. */
+const view3dPart = (p: PickedPart | null) => p?.ref ?? null;
 /** The hover tag shows a part's legend: the same legend under the pointer is the same tag (no re-render per pointer move). */
 const sameLegend = (a: SceneLegend | null | undefined, b: SceneLegend | null | undefined) => a === b || (!!a && !!b && a.role === b.role && a.nominal === b.nominal && a.lengthFt === b.lengthFt && a.note === b.note);
 
@@ -545,7 +551,21 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
     setWallFocus(null);
     setWallHover(null);
   };
+  // A part touched in the 3D (2026-11-09): its legend, the scene's box it is, and the scene that box belongs to — a
+  // change to the design redraws the scene and the old box number means nothing, so the card closes with it.
+  const [picked, setPicked] = React.useState<{ legend: SceneLegend | null; point: [number, number, number]; boxIdx: number | null; layer: string | null; scene: DeckScene | null } | null>(null);
+  const [partWhole, setPartWhole] = React.useState(false);
+  const [partDone, setPartDone] = React.useState<PartDone | null>(null);
   const scene = React.useMemo(() => deckScene(structure), [structure]);
+  const sceneRef = React.useRef<DeckScene | null>(scene);
+  React.useEffect(() => {
+    sceneRef.current = scene;
+  }, [scene]);
+  // THE PART UNDER THE FINGER (lib/deck/parts): named from the scene's box, while that scene still stands.
+  const priceOpts = React.useMemo(() => ({ rates: book, market }), [book, market]);
+  const pickedPart = React.useMemo<PickedPart | null>(() => (picked && picked.scene === scene ? { legend: picked.legend, point: picked.point, ref: partAt(structure, scene, picked.boxIdx, picked.layer) } : null), [picked, scene, structure]);
+  const partLit = usePartLight(pkg, scene, view3dPart(pickedPart), partWhole);
+  const outByHand = React.useMemo<TakenOut[]>(() => takenOut(structure), [structure]);
   // The focused field's light; the hovered field's is computed in Lit3D, from the store.
   const focusLit = React.useMemo<SceneHighlight | null>(() => (fieldFocus ? fieldLight(scene, structure, fieldFocus) : null), [fieldFocus, scene, structure]);
   const wallLit = React.useMemo<SceneHighlight | null>(() => {
@@ -579,7 +599,6 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
   const [playing, setPlaying] = React.useState(false);
   const [resetToken, setResetToken] = React.useState(0);
   const [hoverPick, setHoverPick] = React.useState<DeckPick | null>(null);
-  const [picked, setPicked] = React.useState<{ legend: SceneLegend; point: [number, number, number] } | null>(null);
   const [focus, setFocus] = React.useState<[number, number, number] | [number, number, number, number] | null>(null);
   const [placing, setPlacing] = React.useState<Placing>(null);
   const [editing, setEditing] = React.useState(false);
@@ -724,8 +743,11 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
         setPlacing(null);
         return;
       }
-      if (pick?.legend) setPicked({ legend: pick.legend, point: pick.point });
-      else setPicked(null);
+      setPartWhole(false);
+      if (pick && (pick.legend || typeof pick.boxIdx === "number") && pick.layer !== "ground" && pick.layer !== "house") {
+        setPicked({ legend: pick.legend, point: pick.point, boxIdx: pick.boxIdx ?? null, layer: pick.layer, scene: sceneRef.current });
+        setPartDone(null);
+      } else setPicked(null);
   };
   const pickRef = React.useRef(onPick);
   const editRef = React.useRef(onEdit);
@@ -1215,7 +1237,9 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
   const metalRoof = r.roofing === "metal-panel" || r.roofing === "standing-seam";
   const front = design.shape.kind === "rect" ? design.shape.front : undefined;
   const woodRail = design.rail.type === "treated" || design.rail.type === "cedar";
-  const infills = design.rail.type === "cable" ? (["auto", "cable"] as const) : design.rail.type === "glass" ? (["auto", "glass"] as const) : design.rail.type === "aluminum" ? (["auto", "balusters", "cable", "glass", "horizontal"] as const) : woodRail ? (["auto", "balusters", "horizontal"] as const) : (["auto", "balusters", "panel"] as const);
+  const infills = design.rail.type === "cable" ? (["auto", "cable"] as const) : design.rail.type === "glass" ? (["auto", "glass"] as const) : design.rail.type === "aluminum" ? (["auto", "balusters", "cable", "glass", "horizontal", "mesh"] as const) : woodRail ? (["auto", "balusters", "horizontal", "mesh"] as const) : design.rail.type === "vinyl" ? (["auto", "balusters", "panel"] as const) : (["auto", "balusters", "panel", "mesh"] as const);
+  // Round black metal balusters: in a wood, composite or vinyl rail (an aluminum system's pickets are metal anyway).
+  const balusterChoice = structure.rails.infill === "balusters" && design.rail.type !== "aluminum" && design.rail.type !== "cable" && design.rail.type !== "glass" && design.rail.type !== "none";
   const placingFixture = placing?.kind === "fixture" ? design.electrical.fixtures.find((f) => f.id === placing.id) : null;
 
   /* ── The continuous form ── */
@@ -1909,6 +1933,15 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
             </Field>
           </CustomBox>
         ) : null}
+        <BoardColorPicker
+          productId={design.decking.product}
+          productLabel={design.custom.decking ? design.custom.decking.name : deckingProduct(design.decking.product).label}
+          ownBoard={!!design.custom.decking}
+          color={design.decking.color}
+          own={design.decking.ownColor}
+          onPick={(id) => patch({ decking: { color: id, ownColor: null } }, ["decking"])}
+          onOwn={(own) => patch({ decking: { ownColor: own } }, ["decking"])}
+        />
         {regional ? (
           <p className="v1-hint" data-deck-regional={regional.region}>
             {regionalWords(regional)}
@@ -1942,6 +1975,9 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
           <Field label="Picture-frame border" wide>
             <Seg label="Picture-frame border" value={design.decking.border} onChange={(v) => patch({ decking: { border: v } })} options={[{ value: 0, label: "None" }, { value: 1, label: "One board" }, { value: 2, label: "Two boards" }]} />
           </Field>
+          {design.decking.border > 0 && design.shape.kind === "rect" && !design.custom.decking ? (
+            <BorderColorPicker productId={design.decking.product} deckColor={design.decking.ownColor ? "" : design.decking.color} color={design.decking.borderColor} onPick={(id) => patch({ decking: { borderColor: id } }, ["decking"])} />
+          ) : null}
           <div className="v1-grid2">
             <Field label="Fastened with">
               <select className="v1-sel" value={design.custom.fastening ? CUSTOM : design.decking.fastening} onChange={(e) => (e.target.value === CUSTOM ? pickCustom("fastening") : patch({ decking: { fastening: e.target.value as DeckDesign["decking"]["fastening"] }, custom: { fastening: undefined } }))} data-deck-pick="fastening">
@@ -2069,6 +2105,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
           options={[{ value: 36, label: "36 in." }, { value: 42, label: "42 in." }]}
         />
       </Field>
+      <RailColorPicker type={design.rail.type} color={design.rail.color} onPick={(id) => patch({ rail: { color: id } })} />
       {design.rail.type === "custom" ? (
         <div className="v1-grid2">
           <Field label="Your railing">
@@ -2080,7 +2117,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
         </div>
       ) : null}
       {design.rail.type !== "none" ? (
-        <More title="Infill, posts and cap" now={[RAIL_INFILL_LABEL[structure.rails.infill], `posts ${design.rail.postSpacingFt} ft apart`, woodRail && design.rail.cap ? "drink cap" : ""].filter(Boolean).join(" · ")} id="rail-more">
+        <More title="Infill, posts and cap" now={[structure.rails.infill === "balusters" && structure.rails.baluster === "metal" && design.rail.type !== "aluminum" ? "Round black metal balusters" : RAIL_INFILL_LABEL[structure.rails.infill], `posts ${design.rail.postSpacingFt} ft apart`, woodRail && design.rail.cap ? "drink cap" : "", structure.rails.drinkLf ? "drink rail" : ""].filter(Boolean).join(" · ")} id="rail-more">
           <div className="v1-grid2">
             <Field label="Infill" aside={design.rail.infill === "auto" ? `picked: ${RAIL_INFILL_LABEL[structure.rails.infill].toLowerCase()}` : undefined}>
               <select className="v1-sel" value={design.rail.infill} onChange={(e) => patch({ rail: { infill: e.target.value as DeckDesign["rail"]["infill"] } })}>
@@ -2089,12 +2126,18 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                 ))}
               </select>
             </Field>
+            {balusterChoice ? (
+              <Field label="Balusters" wide>
+                <Seg label="Balusters" value={design.rail.baluster} onChange={(v) => patch({ rail: { baluster: v } })} options={(["square", "round"] as const).map((v) => ({ value: v, label: RAIL_BALUSTER_LABEL[v] }))} />
+              </Field>
+            ) : null}
             <Field label="Posts apart" aside="ft">
               <Seg label="Rail posts apart" value={design.rail.postSpacingFt} onChange={(v) => patch({ rail: { postSpacingFt: v } })} options={[{ value: 4, label: "4" }, { value: 6, label: "6" }, { value: 8, label: "8" }]} />
             </Field>
           </div>
           <div className="v1-toggles">
             {woodRail ? <Toggle checked={design.rail.cap} onChange={(v) => patch({ rail: { cap: v } })}>A flat 2x6 drink cap</Toggle> : null}
+            {!woodRail && design.rail.type !== "glass" ? <Toggle checked={design.rail.drink} onChange={(v) => patch({ rail: { drink: v } })}>A deck board on top — a drink rail</Toggle> : null}
             {design.lower.on ? <Toggle checked={design.rail.lowerLevel} onChange={(v) => patch({ rail: { lowerLevel: v } })}>Rail on the lower level too</Toggle> : null}
           </div>
         </More>
@@ -3283,7 +3326,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                 </div>
               ) : view === "3d" ? (
                 <>
-                  <Lit3D hover={hover} structure={structure} focusLit={focusLit} wallLit={wallLit} voiceLit={voiceLit} look={look} viewControls="top-right" scene={scene} built={built} xray={xray} backdrop={ph.backdrop} night={night} connections={connections} placing={placing?.kind === "fixture" || placing?.kind === "stair"} edit={editing} onEdit={onEditStable} resetToken={resetToken} focus={focus} onPick={onPickStable} className="v1-canvas" label={`The ${what.toLowerCase()} in 3D: ${scene.facts}`} />
+                  <Lit3D hover={hover} structure={structure} focusLit={focusLit} wallLit={wallLit} voiceLit={voiceLit ?? partLit} look={look} flyOnClick={false} viewControls="top-right" scene={scene} built={built} xray={xray} backdrop={ph.backdrop} night={night} connections={connections} placing={placing?.kind === "fixture" || placing?.kind === "stair"} edit={editing} onEdit={onEditStable} resetToken={resetToken} focus={focus} onPick={onPickStable} className="v1-canvas" label={`The ${what.toLowerCase()} in 3D: ${scene.facts}`} />
                   {hoverPick?.legend && !placing ? (
                     <div className="v1-tag" data-deck-hover>
                       <b>
@@ -3409,34 +3452,60 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                 Re-sized to the tables: {autoNotes.join(" · ")}.
               </p>
             ) : null}
-            {view === "3d" && picked ? (
-              <div className="v1-pick" data-deck-picked>
-                <div className="v1-pick-head">
-                  <b>{picked.legend.role}</b>
-                  <span className="v1-meta">
-                    {picked.legend.nominal}
-                    {picked.legend.lengthFt ? ` · ${ftIn(picked.legend.lengthFt * 12)}` : ""}
-                    {picked.legend.count > 1 ? ` · ${picked.legend.count} of them` : ""}
-                  </span>
-                </div>
-                <p className="v1-pick-body">{picked.legend.note}</p>
-                <div className="v1-row-acts">
-                  {zoomedAt === picked.point.join(",") ? (
-                    <button type="button" className="v1-btn v1-btn-sm" onClick={() => { setResetToken((t) => t + 1); setZoomedAt(null); }} data-deck-zoom="out">
-                      <ZoomOut size={16} strokeWidth={2.5} aria-hidden="true" /> Zoom out
-                    </button>
-                  ) : (
-                    <button type="button" className="v1-btn v1-btn-sm" onClick={() => { setFocus([...picked.point] as [number, number, number]); setZoomedAt(picked.point.join(",")); }} data-deck-zoom="in">
-                      <ZoomIn size={16} strokeWidth={2.5} aria-hidden="true" /> Zoom in
-                    </button>
-                  )}
-                  <button type="button" className="v1-btn v1-btn-sm v1-btn-quiet" onClick={() => setPicked(null)}>
-                    Close
-                  </button>
-                </div>
-              </div>
+            {view === "3d" && partDone ? (
+              <PartDoneLine
+                done={partDone}
+                onClose={() => setPartDone(null)}
+                onUndo={() => {
+                  dirty.current = true;
+                  setDesign(partDone.before);
+                  setPartDone(null);
+                }}
+              />
+            ) : null}
+            {view === "3d" && pickedPart ? (
+              <PartCardView
+                design={design}
+                pkg={pkg}
+                picked={pickedPart}
+                opts={priceOpts}
+                locked={viewOnly}
+                zoomed={zoomedAt === pickedPart.point.join(",")}
+                onZoom={(zoomIn) => {
+                  if (zoomIn) {
+                    setFocus([...pickedPart.point] as [number, number, number]);
+                    setZoomedAt(pickedPart.point.join(","));
+                  } else {
+                    setResetToken((t) => t + 1);
+                    setZoomedAt(null);
+                  }
+                }}
+                onClose={() => {
+                  setPicked(null);
+                  setPartWhole(false);
+                }}
+                onWhole={setPartWhole}
+                onApply={(next, done) => {
+                  dirty.current = true;
+                  setDesign(next);
+                  setPartDone(done);
+                  setPicked(null);
+                }}
+              />
             ) : view === "3d" && connections ? (
               <p className="v1-pick v1-pick-body">Numbered tags mark the connections: click one to read how it is made and fly to it. Click any part to name it.</p>
+            ) : view === "3d" && !viewOnly && !partDone ? (
+              <p className="v1-part-hint" data-deck-part-hint>Click a brace, a beam, a post or any other part of the picture to take it out or swap it — the frame re-sizes around the change.</p>
+            ) : null}
+            {view === "3d" && !viewOnly ? (
+              <TakenOutLine
+                list={outByHand}
+                onPutBack={(t) => {
+                  dirty.current = true;
+                  setPartDone(null);
+                  setDesign((d) => settle(applyDeckPatch(d, t.patch)));
+                }}
+              />
             ) : null}
             {view === "photo" ? <PhotoTools ph={ph} design={design} patch={patch} /> : null}
             <PhotoFileInput inputRef={ph.setFileInput} onFile={ph.onPhotoFile} />

@@ -2,7 +2,7 @@ import "server-only";
 // PUBLIC LINKS ON THE FREE PLAN (owner, 2026-11-09). A link the company sends to someone outside it — the buyer's
 // list (/buy/<token>), the crew's day (/w/<token>), a sub's quote (/q/<token>) and subcontract (/s/<token>), the
 // homeowner's project page (/p/<token>), the lender's page (/l/<token>), SmartBook's time pick (/b/<token>) and its
-// answer page (/b/r/<token>) — keeps working while the company that owns it holds a live plan or a trial, and is
+// answer page (/b/r/<token>), the client's page (/c/<token>) — keeps working while the company that owns it holds a live plan or a trial, and is
 // PAUSED while it is on the Free plan: the page says "This link is paused" and shows nothing of the company's, and
 // the link's own actions and routes refuse. Asked as nobody (lib/customPageAccess linkPaused): the visitor has no
 // session, and a signed-in visitor's session never opens it. The feature behind each link is the paid feature it
@@ -11,7 +11,7 @@ import { db } from "@/lib/db";
 import { linkPaused } from "@/lib/customPageAccess";
 import type { PaidFeatureId } from "@/lib/customPlan";
 
-export type PublicLinkKind = "buy" | "crew" | "sub-quote" | "subcontract" | "project" | "lender" | "smartbook-pick" | "smartbook-request";
+export type PublicLinkKind = "buy" | "crew" | "sub-quote" | "subcontract" | "project" | "lender" | "smartbook-pick" | "smartbook-request" | "client-home";
 
 const FEATURE: Record<PublicLinkKind, PaidFeatureId> = {
   buy: "project-tools",
@@ -22,6 +22,8 @@ const FEATURE: Record<PublicLinkKind, PaidFeatureId> = {
   subcontract: "subcontractors",
   "smartbook-pick": "smartbook",
   "smartbook-request": "smartbook",
+  // The client's page (/c/<token>, Smart CRM part 5, 2026-11-10).
+  "client-home": "smart-crm",
 };
 
 /** The words a paused link shows, and the refusal its actions answer with. */
@@ -48,6 +50,8 @@ export async function publicLinkOrg(kind: PublicLinkKind, token: string): Promis
       return (await db.project.findUnique({ where: { publicToken: token }, ...pick }))?.organizationId ?? null;
     case "lender":
       return (await db.project.findUnique({ where: { lenderToken: token }, ...pick }))?.organizationId ?? null;
+    case "client-home":
+      return (await db.client.findUnique({ where: { homeToken: token }, ...pick }))?.organizationId ?? null;
     case "smartbook-pick":
     case "smartbook-request": {
       const key = kind === "smartbook-pick" ? `smartbook:t:${token}` : `smartbook:rt:${token}`;

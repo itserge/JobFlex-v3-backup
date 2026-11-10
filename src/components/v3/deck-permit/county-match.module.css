@@ -18,6 +18,12 @@
 .start { display: grid; gap: 12px; }
 .buildRow { display: grid; gap: 4px; max-width: 360px; font-size: 11.5px; color: var(--ink-soft); }
 .buildRow select { height: 36px; border: 1.5px solid var(--ink); background: #fff; font: inherit; font-size: 13px; padding: 0 8px; color: var(--ink); }
+.topRow { display: grid; grid-template-columns: minmax(0, 360px) minmax(0, 1fr); gap: 12px; align-items: start; }
+.whereRow { max-width: none; }
+.whereRow input { height: 36px; box-sizing: border-box; width: 100%; border: 1.5px solid var(--ink); background: #fff; font: inherit; font-size: 13px; padding: 0 8px; color: var(--ink); }
+.whereRow small { font-size: 11px; color: var(--muted); }
+.whereNeed input { border-color: var(--danger, #a83232); outline: 2px solid var(--danger, #a83232); outline-offset: 1px; }
+.whereNeed small { color: var(--danger, #a83232); font-weight: 700; }
 .kept { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 12px; border-left: 4px solid var(--ok); background: var(--ok-soft); }
 .kept > div { display: grid; gap: 2px; }
 .kept span { font-size: 12px; color: var(--ink-soft); }
@@ -41,8 +47,10 @@
 .sources a, .summarySources a { color: var(--blueprint); word-break: break-word; }
 .counts { display: flex; flex-wrap: wrap; gap: 6px 16px; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); }
 .counts b { font-size: 14px; color: var(--ink); }
+.verdict { margin: 0; padding: 8px 12px; border-left: 4px solid var(--blueprint, #1854a0); background: rgba(24, 84, 160, 0.06); font-size: 13px; line-height: 1.5; }
 .group { display: grid; gap: 4px; }
 .group h3 { margin: 0 0 2px; font-size: 11px; font-weight: 900; letter-spacing: 0.12em; text-transform: uppercase; border-bottom: 1.5px solid var(--ink); padding-bottom: 3px; }
+.groupSaid { margin: 0; font-size: 12px; line-height: 1.45; color: var(--ink-soft); }
 .item { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 6px 2px; border-bottom: 1px solid var(--hair); }
 .item input { width: 18px; height: 18px; margin: 1px 0 0; accent-color: var(--blueprint); }
 .item > span:nth-child(2) { display: grid; gap: 2px; min-width: 0; }
@@ -63,7 +71,8 @@
   .box { width: 100%; max-height: none; height: 100%; border: 0; }
   .ways { grid-template-columns: minmax(0, 1fr); }
   .buildRow { max-width: none; }
-  .buildRow select { height: 44px; }
+  .topRow { grid-template-columns: minmax(0, 1fr); }
+  .buildRow select, .whereRow input { height: 44px; font-size: 16px; }
   .foot { padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
   .foot button, .way button, .kept button { min-height: 44px; }
   .item { padding: 9px 2px; }

@@ -22,7 +22,7 @@
 // house is painted first, block by block from the far one, with its own
 // windows and roof.
 
-import { SCENE_LAYERS, buildRank, memberBoxCorners, MEMBER_BOX_FACES, type DeckScene, type SceneLayer } from "./scene";
+import { BORDER_BOARD_ROLE, RAIL_CAP_ROLE, RAIL_INFILL_ROLE, SCENE_LAYERS, buildRank, memberBoxCorners, MEMBER_BOX_FACES, type DeckScene, type SceneLayer } from "./scene";
 
 export type IsoDeckingFinish = "wood" | "hardwood" | "composite" | "pvc" | "mineral" | "aluminum";
 export type IsoRoofing = "arch-shingle" | "3tab-shingle" | "designer-shingle" | "cedar-shake" | "metal-panel" | "standing-seam" | "none";
@@ -177,10 +177,14 @@ function roofingGloss(r: IsoRoofing | undefined): { gloss: number; shine: number
 function finishOf(layer: SceneLayer, role: string, colors: DeckScene["colors"], mats: IsoMaterials): Finish {
   if (FRAME_LAYERS.has(layer)) return { base: colors.frame, gloss: 0.06, shine: 10 };
   switch (layer) {
-    case "decking": case "stair": return { base: colors.decking, ...deckingGloss(mats.decking) };
+    case "decking": case "stair": return { base: layer === "decking" && colors.border && BORDER_BOARD_ROLE.test(role) ? colors.border : colors.decking, ...deckingGloss(mats.decking) };
     case "fascia": return { base: colors.fascia, ...deckingGloss(mats.decking) };
     case "rail":
       if (role === "cable") return { base: "#c9ced4", gloss: 0.75, shine: 60 };
+      // Black metal balusters or a wire mesh in a rail of another colour (2026-11-09).
+      if (colors.railInfill && RAIL_INFILL_ROLE.test(role)) return { base: colors.railInfill, gloss: 0.55, shine: 36 };
+      // A kit rail's drink rail is the deck's own board (2026-11-10).
+      if (colors.railCap && RAIL_CAP_ROLE.test(role)) return { base: colors.railCap, ...deckingGloss(mats.decking) };
       return { base: colors.rail, ...railGloss(mats.rail) };
     case "roofing": return { base: colors.roofing, ...roofingGloss(mats.roofing) };
     case "sheathing": return { base: "#d6bf90", gloss: 0.05, shine: 10 };
@@ -585,7 +589,7 @@ export function isoDrawing(scene: DeckScene, opts: IsoOptions = {}): IsoDrawing 
         const dx = c[0] - a[0], dy = c[1] - a[1], l = Math.hypot(dx, dy);
         if (l > best) { best = l; axis = Math.abs(dx) > 5 * Math.abs(dy) ? "x" : Math.abs(dy) > 5 * Math.abs(dx) ? "y" : "diag"; }
       }
-      solids.push({ layer: "decking", rank: buildRank("decking"), finish: finishOf("decking", "", scene.colors, mats), faces: [ringP], board: { axis, seed: hash01(ringP[0][0], ringP[0][1], z) }, sheen: glossy, shadow: true });
+      solids.push({ layer: "decking", rank: buildRank("decking"), finish: finishOf("decking", scene.diagonal?.border?.includes(i) ? "border board" : "", scene.colors, mats), faces: [ringP], board: { axis, seed: hash01(ringP[0][0], ringP[0][1], z) }, sheen: glossy, shadow: true });
     });
   }
 

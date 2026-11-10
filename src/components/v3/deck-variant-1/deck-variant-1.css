@@ -879,3 +879,83 @@
 .jf-deck-v1 .v1-resume-text b { margin-right: 6px; }
 .jf-deck-v1 .v1-resume-acts { display: flex; gap: 8px; }
 @media (max-width: 768px) { .jf-deck-v1 .v1-resume { margin: 0 12px 10px; } }
+
+/* ── THE PART CARD (2026-11-09; deck-v1-pick.tsx): a part touched in the 3D, what it does, what can be done with it ── */
+.jf-deck-v1 .v1-pick-acts { display: inline-flex; gap: 6px; margin-left: auto; }
+.jf-deck-v1 .v1-pick-acts .v1-btn { display: inline-flex; align-items: center; gap: 6px; }
+.jf-deck-v1 .v1-pick-how { font-size: var(--deck-meta); line-height: 1.45; color: var(--ink-muted); }
+.jf-deck-v1 .v1-pick-stays { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; background: var(--paper-deep); border: 1.5px dashed var(--ink-line); border-radius: var(--r-sm); font-size: 13.5px; line-height: 1.45; color: var(--ink-soft); }
+.jf-deck-v1 .v1-pick-stays svg { flex: none; margin-top: 3px; }
+.jf-deck-v1 .v1-pick-choices { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.jf-deck-v1 .v1-choice { display: grid; gap: 4px; width: 100%; min-height: 44px; padding: 9px 12px; text-align: left; background: var(--paper-deep); border: 1.5px solid var(--ink); border-radius: var(--r-sm); cursor: pointer; }
+.jf-deck-v1 .v1-choice:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--accent-ink); }
+.jf-deck-v1 .v1-choice.is-remove:hover:not(:disabled) { background: color-mix(in srgb, var(--rose) 7%, #fff); border-color: var(--rose); }
+.jf-deck-v1 .v1-choice:disabled { cursor: not-allowed; border-color: var(--ink-line); color: var(--ink-muted); background: var(--paper); }
+.jf-deck-v1 .v1-choice-top { display: flex; align-items: center; gap: 8px; }
+.jf-deck-v1 .v1-choice-top svg { flex: none; }
+.jf-deck-v1 .v1-choice.is-remove:not(:disabled) .v1-choice-top svg { color: var(--rose); }
+.jf-deck-v1 .v1-choice-name { flex: 1; min-width: 0; font-size: var(--deck-body); font-weight: 800; line-height: 1.3; }
+.jf-deck-v1 .v1-choice-delta { flex: none; font-size: 13.5px; font-weight: 800; white-space: nowrap; }
+.jf-deck-v1 .v1-choice-delta.is-less, .jf-deck-v1 .v1-size-delta.is-less { color: var(--emerald); }
+.jf-deck-v1 .v1-choice-delta.is-more, .jf-deck-v1 .v1-size-delta.is-more { color: var(--v1-amber-ink); }
+.jf-deck-v1 .v1-choice-note, .jf-deck-v1 .v1-choice-changes { font-size: 13px; line-height: 1.4; color: var(--ink-soft); }
+.jf-deck-v1 .v1-choice-changes { color: var(--ink); font-weight: 600; }
+.jf-deck-v1 .v1-choice-issue { display: flex; align-items: flex-start; gap: 6px; font-size: 13px; line-height: 1.4; color: var(--v1-amber-ink); }
+.jf-deck-v1 .v1-choice-issue svg { flex: none; margin-top: 2px; }
+.jf-deck-v1 .v1-pick-sizes { display: grid; gap: 6px; }
+.jf-deck-v1 .v1-size { cursor: pointer; }
+.jf-deck-v1 .v1-size:disabled { cursor: default; }
+.jf-deck-v1 .v1-size.is-refused { color: var(--ink-muted); border-color: var(--ink-line); background: var(--paper); text-decoration: line-through; cursor: not-allowed; }
+.jf-deck-v1 .v1-size.is-refused .v1-size-delta { text-decoration: none; }
+.jf-deck-v1 .v1-size.has-issues { border-style: dashed; }
+.jf-deck-v1 .v1-size-delta { font-size: 12.5px; font-weight: 700; color: var(--ink-muted); }
+.jf-deck-v1 .v1-chip.is-on .v1-size-delta { color: inherit; }
+.jf-deck-v1 .v1-part-hint { padding: 10px 12px; border-top: 1px solid var(--ink-line); font-size: 13px; line-height: 1.45; color: var(--ink-muted); }
+.jf-deck-v1 .v1-part-done { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; margin: 0; padding: 10px 12px; border-top: 1px solid var(--ink); background: color-mix(in srgb, var(--emerald) 7%, #fff); font-size: 13.5px; line-height: 1.4; }
+.jf-deck-v1 .v1-part-done > span { flex: 1 1 220px; min-width: 0; font-weight: 600; }
+.jf-deck-v1 .v1-part-done .v1-btn { display: inline-flex; align-items: center; gap: 6px; }
+.jf-deck-v1 .v1-part-out { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; margin: 0; padding: 10px 12px; border-top: 1px solid var(--ink-line); }
+.jf-deck-v1 .v1-part-out .v1-chip { cursor: pointer; }
+.jf-deck-v1 .v1-part-back { display: inline-flex; align-items: center; gap: 4px; color: var(--accent-ink); font-weight: 800; }
+.jf-deck-v1 .v1-stage.is-full .v1-pick.is-part { max-height: 46vh; }
+.jf-deck-v1 .v1-stage.is-full .v1-part-hint { display: none; }
+@media (max-width: 768px) {
+  /* On a phone the docked viewer keeps a part's card and its Undo (the plain legend card stays hidden there). */
+  .jf-deck-v1 .v1-stage.is-docked .v1-pick.is-part { display: grid; }
+  .jf-deck-v1 .v1-stage.is-docked .v1-part-hint { display: none; }
+  .jf-deck-v1 .v1-choice { min-height: 48px; }
+  .jf-deck-v1 .v1-size { min-height: 44px; }
+}
+
+/* ── THE BOARD'S COLOUR (2026-11-09; deck-v1-colors.tsx): the line's own colours as small planks, one tap each ── */
+.jf-deck-v1 .v1-colors { display: grid; gap: var(--deck-space-sm); min-width: 0; }
+.jf-deck-v1 .v1-colors-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+.jf-deck-v1 .v1-colors-now { font-size: var(--deck-body); font-weight: 800; }
+.jf-deck-v1 .v1-colors-now.is-missing { color: var(--v1-amber-ink); font-weight: 700; }
+.jf-deck-v1 .v1-colors-group { display: grid; gap: 6px; }
+.jf-deck-v1 .v1-planks { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+.jf-deck-v1 .v1-plank { display: grid; gap: 5px; min-width: 0; padding: 5px 5px 7px; text-align: left; background: var(--paper-deep); border: 1.5px solid var(--ink-line); border-radius: var(--r-sm); cursor: pointer; }
+.jf-deck-v1 .v1-plank:hover { border-color: var(--accent-ink); background: var(--accent-soft); }
+.jf-deck-v1 .v1-plank.is-on { border-color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); background: color-mix(in srgb, var(--accent) 9%, #fff); }
+.jf-deck-v1 .v1-plank-chip { display: grid; place-items: center; height: 40px; border: 1px solid color-mix(in srgb, var(--ink) 35%, transparent); border-radius: 2px; color: #fff; }
+.jf-deck-v1 .v1-plank-chip svg { filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.75)); }
+.jf-deck-v1 .v1-plank-name { font-size: 12.5px; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
+.jf-deck-v1 .v1-colors-other { display: inline-flex; align-items: center; gap: 6px; justify-self: start; min-height: 32px; background: none; border: 0; padding: 0; cursor: pointer; font-size: var(--deck-meta); }
+.jf-deck-v1 .v1-own-color { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: end; gap: 8px; }
+.jf-deck-v1 .v1-own-color-name, .jf-deck-v1 .v1-own-color-look { display: grid; gap: 4px; min-width: 0; }
+.jf-deck-v1 .v1-own-color-look input[type="color"] { width: 56px; height: var(--deck-control, 40px); padding: 2px; background: var(--paper-deep); border: 1.5px solid var(--ink); border-radius: var(--r-sm); cursor: pointer; }
+@media (max-width: 768px) {
+  .jf-deck-v1 .v1-planks { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); }
+  .jf-deck-v1 .v1-plank-chip { height: 44px; }
+}
+.jf-deck-v1 .v1-planks.is-rail { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+.jf-deck-v1 .v1-planks.is-rail .v1-plank-chip { height: 28px; }
+@media (max-width: 768px) {
+  /* A phone in Full view with a part's card open: the picture keeps a third of the screen — the build-up and view
+     buttons step aside while the card is up, and the card scrolls inside its own share. */
+  .jf-deck-v1 .v1-stage.is-full .v1-view-box { min-height: 34vh; }
+  .jf-deck-v1 .v1-stage.is-full:has(.v1-pick.is-part) .v1-tools { display: none; }
+  .jf-deck-v1 .v1-stage.is-full .v1-pick.is-part { max-height: 44vh; overflow-y: auto; }
+}
+.jf-deck-v1 .v1-plank-chip.v1-plank-same { background: repeating-linear-gradient(135deg, var(--paper-deep) 0 6px, color-mix(in srgb, var(--ink) 10%, var(--paper-deep)) 6px 12px); color: var(--ink); }
+.jf-deck-v1 .v1-plank-chip.v1-plank-same svg { filter: none; }

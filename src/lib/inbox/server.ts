@@ -211,6 +211,16 @@ export async function fileInboundText(organizationId: string, who: { clientId: s
   await readInboundMessage({ threadId: t.id, organizationId, clientId: t.clientId, channel: "SMS", subject: null, body, sourceId: smsId ?? undefined }).catch((err) => console.warn("[inbox] text read failed:", err instanceof Error ? err.message : err));
 }
 
+/** A message the client wrote on their own page (/c/<token>, Smart CRM part 5): on their thread as PORTAL, read like
+ *  any other inbound message. Returns the message's id. */
+export async function fileInboundPortal(organizationId: string, client: { id: string; name: string; email: string | null; phone: string | null }, body: string): Promise<string> {
+  const t = await ensureThread(organizationId, { clientId: client.id, name: client.name, email: client.email, phone: client.phone });
+  const m = await db.clientMessage.create({ data: { organizationId, threadId: t.id, direction: "IN", channel: "PORTAL", body, status: "RECEIVED" } });
+  await bump(t.id, { direction: "IN", channel: "PORTAL", preview: body });
+  await readInboundMessage({ threadId: t.id, organizationId, clientId: t.clientId, channel: "PORTAL", subject: null, body, sourceId: m.id }).catch((err) => console.warn("[inbox] portal read failed:", err instanceof Error ? err.message : err));
+  return m.id;
+}
+
 // ── replies ──────────────────────────────────────────────────────────────────
 
 /** A message sent to a client from outside the inbox (the client page's Message dialog): its words go on the
@@ -225,6 +235,18 @@ export async function recordOutbound(
     data: { organizationId, threadId: t.id, direction: "OUT", channel: m.channel, toAddr: m.toAddr?.slice(0, 320) ?? null, subject: m.subject?.slice(0, 500) ?? null, body: m.body, sentById: m.userId ?? null, status: "SENT" },
   });
   await bump(t.id, { direction: "OUT", channel: m.channel, preview: m.body });
+}
+
+/** A person wrote to a client: lib/promises reads it for a commitment, after the response. Never in the way of
+ *  the send — a failure here is logged and forgotten. */
+async function notePromises(input: { organizationId: string; clientId: string | null; userId: string | null; body: string; channel: "EMAIL" | "SMS"; sourceId?: string | null }): Promise<void> {
+  if (!input.clientId) return;
+  try {
+    const { catchPromisesLater } = await import("@/lib/promises/server");
+    catchPromisesLater(input);
+  } catch (err) {
+    console.warn("[inbox] promise read skipped:", err instanceof Error ? err.message : err);
+  }
 }
 
 /** The inbox's email reply: sent with the thread's own Reply-To and the mail threading headers, body kept here. */
@@ -251,21 +273,27 @@ export async function replyByEmail(threadId: string, organizationId: string, use
       headers: last?.emailMessageId ? { "In-Reply-To": last.emailMessageId, References: last.emailMessageId } : undefined,
     },
   );
-  await db.clientMessage.create({
+  const sent = await db.clientMessage.create({
     data: { organizationId, threadId, direction: "OUT", channel: "EMAIL", toAddr: to.slice(0, 320), subject: subject.slice(0, 500), body, sentById: userId, status: "SENT" },
+    select: { id: true },
   });
   await bump(threadId, { direction: "OUT", channel: "EMAIL", preview: body });
+  // THE PROMISE TRACKER (part 4): what the person just committed to is written down, after the response.
+  await notePromises({ organizationId, clientId: thread.clientId, userId, body, channel: "EMAIL", sourceId: sent.id });
   return { ok: true, via: res.via };
 }
 
 /** The inbox's text reply: through the company's number (sendText logs the SmsMessage row the view merges). */
-export async function replyByText(threadId: string, organizationId: string, input: { body: string }): Promise<SendTextResult> {
+export async function replyByText(threadId: string, organizationId: string, input: { body: string; userId?: string | null }): Promise<SendTextResult> {
   const thread = await db.clientThread.findUnique({ where: { id: threadId }, include: { client: { select: { phone: true } } } });
   if (!thread || thread.organizationId !== organizationId) return { ok: false, reason: "failed" };
   const to = thread.client?.phone?.trim() || thread.phone?.trim();
   if (!to) return { ok: false, reason: "invalid-number" };
   const r = await sendText({ organizationId, to, body: input.body.trim(), kind: "reply" });
-  if (r.ok && r.status !== "SKIPPED") await bump(threadId, { direction: "OUT", channel: "SMS", preview: input.body });
+  if (r.ok && r.status !== "SKIPPED") {
+    await bump(threadId, { direction: "OUT", channel: "SMS", preview: input.body });
+    await notePromises({ organizationId, clientId: thread.clientId, userId: input.userId ?? null, body: input.body, channel: "SMS" });
+  }
   return r;
 }
 

@@ -14,6 +14,7 @@ import { foldClientFacts, type RawFact } from "@/lib/clientMemory";
 import { clip } from "@/lib/clientTimeline/shared";
 import { parseMessageRead, type MessageRead } from "./shared";
 import { isPageLocked } from "@/lib/customPageAccess";
+import { guessKind } from "@/lib/promises/shared";
 
 export interface ReadInput {
   threadId: string;
@@ -99,6 +100,9 @@ export async function readInboundMessage(input: ReadInput): Promise<MessageRead 
           clientId: input.clientId,
           direction: "THEIRS",
           text: p.text,
+          // What kind of thing they promised (pay, sign, decide…): the hourly sweep closes it when it happens
+          // (lib/promises, 2026-11-10).
+          kind: guessKind(p.text, "THEIRS"),
           dueAt: p.due ? new Date(`${p.due}T17:00:00`) : null,
           sourceKind: input.channel,
           sourceId: input.sourceId ?? null,

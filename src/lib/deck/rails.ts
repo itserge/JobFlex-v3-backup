@@ -20,7 +20,7 @@
 // (8 ft is a kit maker's own figure).
 
 import { GUARD_REQUIRED_ABOVE_IN } from "./codeTables";
-import { railType, type RailTypeId } from "./catalog";
+import { RAIL_METAL_BLACK, RAIL_STAINLESS, deckingProduct, railColorOf, railType, type RailColor, type RailTypeId } from "./catalog";
 import type { DeckDesign, RailDesign, RailInfill } from "./design";
 import type { StairBuild } from "./stairs";
 import { BALUSTER_SPACING_IN } from "./stairs";
@@ -33,8 +33,15 @@ export const RAIL_CAP_NOMINAL = "2x6";
 export const BALUSTER_NOMINAL = "2x2";
 /** A rail post reaches from its top down past the joists, bolted through the rim. */
 export const POST_EMBED_IN = 2;
+/** A metal baluster — round black aluminum in a wood or composite rail, an aluminum system's own picket: ¾ in., about 4½ in. on centre (15 to a 6-ft section). */
+export const METAL_BALUSTER_IN = 0.75;
+export const METAL_BALUSTER_SPACING_IN = 4.5;
+export const METAL_BALUSTER_NOMINAL = "¾-in. aluminum baluster";
+/** Welded wire mesh ("hog wire"): 6-gauge wire, 4 x 4 in. openings, one panel a bay in a groove of the rails. */
+export const MESH_GRID_IN = 4;
+export const MESH_WIRE_IN = 0.2;
 
-export type RailRole = "rail-post" | "rail-top" | "rail-bottom" | "rail-cap" | "baluster" | "cable" | "rail-panel";
+export type RailRole = "rail-post" | "rail-top" | "rail-bottom" | "rail-cap" | "baluster" | "cable" | "rail-panel" | "mesh";
 
 export interface RailMember {
   role: RailRole;
@@ -109,6 +116,16 @@ export interface RailBuild {
   members: RailMember[];
   panelsOut: RailPanel[];
   hardware: { postTies: number; postCaps: number; railBrackets: number };
+  /** The system's colour (2026-11-09): the one picked or its usual one; null for a wood rail (it is the wood). */
+  color: RailColor | null;
+  /** The balusters as built: the rail's own square ones, or thin metal ones (round black in wood, composite and vinyl; an aluminum system's own pickets). */
+  baluster: "square" | "metal";
+  /** Wire mesh panels, one a bay. */
+  meshPanels: number;
+  /** The infill's own colour where it is not the rail's: stainless cable, black metal balusters or mesh in a rail of another colour (null: the rail's). */
+  infillColor: string | null;
+  /** Feet of kit rail capped with a deck board — a drink rail (2026-11-10); 0 for none. A wood rail's 2x6 cap is `capLf`. */
+  drinkLf: number;
 }
 
 const plural = (n: number, w: string) => `${n} ${n === 1 ? w : `${w}s`}`;
@@ -145,12 +162,22 @@ export function buildRails(input: RailInput): RailBuild {
   const H = rail.heightIn;
   const spacing = rail.postSpacingFt * 12;
   const hardware = { postTies: 0, postCaps: 0, railBrackets: 0 };
+  const color = railColorOf(rail.type, rail.color);
+  // Thin metal balusters: asked for in a wood, composite or vinyl rail; what an aluminum system has anyway.
+  const metalBalusters = rail.type === "aluminum" || (rail.baluster === "round" && (system === "wood" || rail.type === "composite" || rail.type === "vinyl" || rail.type === "custom"));
+  const balusterKind: RailBuild["baluster"] = metalBalusters ? "metal" : "square";
+  const infillColor = infill === "cable" ? RAIL_STAINLESS : infill === "mesh" || (infill === "balusters" && metalBalusters && rail.type !== "aluminum") ? RAIL_METAL_BLACK : null;
+  // A DRINK RAIL ON A KIT SYSTEM (2026-11-10): a deck board laid flat over the top rail and the post tops, in the
+  // deck's own board. Level runs only (the stairs keep their graspable rail), and never over glass.
+  const drink = rail.drink && system !== "wood" && rail.type !== "glass";
+  const capBoard = deckingProduct(input.design.decking.product);
+  let meshPanels = 0;
   let posts = 0;
   let lf = 0;
   let balusters = 0;
   let cableLf = 0;
   let panels = 0;
-  const empty: RailBuild = { on: false, required, type: rail.type, label: type.label, heightIn: H, infill, system, segments: [], lf: 0, stairLf: 0, totalLf: 0, posts: 0, stairPosts: 0, topRailLf: 0, bottomRailLf: 0, capLf: 0, balusters: 0, cableLf: 0, panels: 0, litCaps: 0, riserLights: 0, members: [], panelsOut: [], hardware };
+  const empty: RailBuild = { on: false, required, type: rail.type, label: type.label, heightIn: H, infill, system, segments: [], lf: 0, stairLf: 0, totalLf: 0, posts: 0, stairPosts: 0, topRailLf: 0, bottomRailLf: 0, capLf: 0, balusters: 0, cableLf: 0, panels: 0, litCaps: 0, riserLights: 0, members: [], panelsOut: [], hardware, color: null, baluster: "square", meshPanels: 0, infillColor: null, drinkLf: 0 };
   if (rail.type === "none") return empty;
 
   /** Posts the other level set: two levels meeting at a corner would set two posts in one place (2026-10-11). */
@@ -227,7 +254,7 @@ export function buildRails(input: RailInput): RailBuild {
           posts += 1;
           // Drawn a quarter inch proud of the top rail where no cap covers them (flush, the post's top and the rail's lay
           // in one plane and flickered, 2026-10-11); the length bought is the post's.
-          const proud = rail.cap && system === "wood" ? 0 : 0.25;
+          const proud = (rail.cap && system === "wood") || drink ? 0 : 0.25;
           members.push({ role: "rail-post", nominal: system === "wood" ? RAIL_POST_NOMINAL : "post", lengthIn: postLen, cx, cy, cz: postBottom + (postLen + proud) / 2, sx: 3.5, sy: 3.5, sz: postLen + proud, yaw: 0, tilt: 0, of: `${level.id}-${side.side}` });
           hardware.postTies += 1;
           hardware.postCaps += 1;
@@ -238,17 +265,38 @@ export function buildRails(input: RailInput): RailBuild {
         members.push({ role: "rail-top", nominal: RAIL_TOP_NOMINAL, lengthIn: len, cx: mx, cy: my, cz: postTop - (rail.cap && system === "wood" ? 1.5 : 0) - 1.75, sx: len, sy: 1.5, sz: 3.5, yaw, tilt: 0, of: level.id });
         members.push({ role: "rail-bottom", nominal: RAIL_TOP_NOMINAL, lengthIn: len, cx: mx, cy: my, cz: level.surfaceIn + 3.5 + 1.75, sx: len, sy: 1.5, sz: 3.5, yaw, tilt: 0, of: level.id });
         if (rail.cap && system === "wood") members.push({ role: "rail-cap", nominal: RAIL_CAP_NOMINAL, lengthIn: len + 3.5, cx: mx, cy: my, cz: postTop + 0.75, sx: len + 3.5, sy: 5.5, sz: 1.5, yaw, tilt: 0, of: level.id });
+        if (drink) members.push({ role: "rail-cap", nominal: "deck board", lengthIn: len + 3.5, cx: mx, cy: my, cz: postTop + capBoard.thickIn / 2, sx: len + 3.5, sy: capBoard.widthIn, sz: capBoard.thickIn, yaw, tilt: 0, of: level.id });
         hardware.railBrackets += 4 * (n - 1);
         const capIn = rail.cap && system === "wood" ? 1.5 : 0;
         const infillH = H - 3.5 - 3.5 - capIn - 3.5;
         const zMid = level.surfaceIn + 3.5 + 3.5 + infillH / 2;
         if (infill === "balusters") {
-          const count = Math.max(0, Math.floor(len / BALUSTER_SPACING_IN) - (n - 1));
+          const count = Math.max(0, Math.floor(len / (metalBalusters ? METAL_BALUSTER_SPACING_IN : BALUSTER_SPACING_IN)) - (n - 1));
           balusters += count;
           const step = len / (count + 1);
+          const w = metalBalusters ? METAL_BALUSTER_IN : 1.5;
           for (let k = 1; k <= count; k++) {
             const t = a + step * k;
-            members.push({ role: "baluster", nominal: BALUSTER_NOMINAL, lengthIn: infillH, cx: side.x0 + ux * t - nx * 2.25, cy: side.y0 + uy * t - ny * 2.25, cz: zMid, sx: 1.5, sy: 1.5, sz: infillH, yaw: 0, tilt: 0, of: level.id });
+            members.push({ role: "baluster", nominal: metalBalusters ? METAL_BALUSTER_NOMINAL : BALUSTER_NOMINAL, lengthIn: infillH, cx: side.x0 + ux * t - nx * 2.25, cy: side.y0 + uy * t - ny * 2.25, cz: zMid, sx: w, sy: w, sz: infillH, yaw: 0, tilt: 0, of: level.id });
+          }
+        } else if (infill === "mesh") {
+          // One welded panel a bay, its wires drawn: uprights and levels 4 in. apart, the panel's edges in the rails' grooves.
+          const bays = n - 1;
+          meshPanels += bays;
+          const z0 = level.surfaceIn + 3.5 + 3.5;
+          for (let k = 0; k < bays; k++) {
+            const t0 = a + inset + ((len - 2 * inset) * k) / bays + 1.75;
+            const t1 = a + inset + ((len - 2 * inset) * (k + 1)) / bays - 1.75;
+            const bay = t1 - t0;
+            if (bay < 8) continue;
+            const ups = Math.max(1, Math.round(bay / MESH_GRID_IN) - 1);
+            for (let i = 1; i <= ups; i++) {
+              const t = t0 + (bay * i) / (ups + 1);
+              members.push({ role: "mesh", nominal: "welded wire", lengthIn: infillH, cx: side.x0 + ux * t - nx * 2.25, cy: side.y0 + uy * t - ny * 2.25, cz: z0 + infillH / 2, sx: MESH_WIRE_IN, sy: MESH_WIRE_IN, sz: infillH, yaw: 0, tilt: 0, of: level.id });
+            }
+            const rows = Math.max(1, Math.round(infillH / MESH_GRID_IN) - 1);
+            const tm = (t0 + t1) / 2;
+            for (let i = 1; i <= rows; i++) members.push({ role: "mesh", nominal: "welded wire", lengthIn: bay, cx: side.x0 + ux * tm - nx * 2.25, cy: side.y0 + uy * tm - ny * 2.25, cz: z0 + (infillH * i) / (rows + 1), sx: bay, sy: MESH_WIRE_IN, sz: MESH_WIRE_IN, yaw, tilt: 0, of: level.id });
           }
         } else if (infill === "horizontal") {
           const rows = Math.floor(infillH / 5.5);
@@ -340,11 +388,28 @@ export function buildRails(input: RailInput): RailBuild {
     members,
     panelsOut,
     hardware: { ...hardware, postTies: hardware.postTies + stairPosts, postCaps: hardware.postCaps + stairPosts },
+    color,
+    baluster: balusterKind,
+    meshPanels,
+    infillColor,
+    drinkLf: drink ? Math.round(lf) : 0,
   };
+}
+
+/** The rail as the order names it: "White composite", "Textured black aluminum", "Cable, bronze frame", "Cedar". */
+export function railNamed(r: Pick<RailBuild, "label" | "type" | "color">): string {
+  if (!r.color || r.type === "custom") return r.label;
+  if (r.type === "cable" || r.type === "glass") return `${r.label}, ${r.color.name.toLowerCase()} frame`;
+  return `${r.color.name} ${r.label.toLowerCase()}`;
+}
+/** The infill in words: "round black metal balusters", "wire mesh panels", "cable". */
+export function infillWords(r: Pick<RailBuild, "infill" | "baluster" | "type">): string {
+  if (r.infill === "balusters") return r.type === "aluminum" ? "pickets" : r.baluster === "metal" ? "round black metal balusters" : "balusters";
+  return r.infill === "mesh" ? "wire mesh panels" : r.infill === "glass" ? "glass panels" : r.infill === "panel" ? "panels" : r.infill === "horizontal" ? "horizontal rails" : "cable";
 }
 
 /** "42 ft of cedar railing, 36 in., balusters — 9 posts". */
 export function railWords(r: RailBuild): string {
   if (!r.on) return "No railing";
-  return `${Math.round(r.totalLf)} ft of ${r.label.toLowerCase()} railing, ${r.heightIn} in., ${r.infill} — ${plural(r.posts + r.stairPosts, "post")}`;
+  return `${Math.round(r.totalLf)} ft of ${railNamed(r).toLowerCase()} railing, ${r.heightIn} in., ${infillWords(r)}${r.drinkLf ? ", a deck-board drink rail on top" : ""} — ${plural(r.posts + r.stairPosts, "post")}`;
 }

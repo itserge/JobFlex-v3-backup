@@ -69,6 +69,7 @@ import {
 import { deckingProduct, framingSpecies, wallType, type DeckingProduct, type FramingSpecies, type WallType } from "./catalog";
 import { BUILT_UP_CHOICES, frontEdgeAt, isSolidBeam, normalizeDeckDesign, shapeAreaSqFt, shapeEdges, shapeOutline, shapeZones, type BeamKind, type BeamSize, type BeamStyle, type DeckDesign, type DeckEdge, type Zone, spaRectIn } from "./design";
 import { ringEdges } from "./ringEdges";
+import { deckingColor, deckingLook, deckingNamed } from "./deckingColors";
 import { deckRate, lumberKey, type DeckRateBook } from "./rates";
 import type { MarketSnapshot } from "../fence/market";
 
@@ -102,6 +103,8 @@ const PIER_FOR_POST_IN: Record<PostSize, number> = { "4x4": 8, "4x6": 10, "6x6":
 export const BAG_CUFT = 0.6;
 /** AWC's knee brace: a 2x4 from 2 ft down the post to 2 ft out along the beam. */
 const BRACE_LEG_IN = 24;
+/** A deck brace's name in `framing.bracesOff`: its beam, which end post (0 = the first), and the way it leans (along the beam, or out to the joists). */
+export const deckBraceKey = (beamId: string, end: number, axis: "x" | "y"): string => `${beamId}:${end === 0 ? "a" : "z"}:${axis}`;
 
 /* ------------------------------------------------------------------ */
 /*  What comes out                                                     */
@@ -315,6 +318,8 @@ export interface DeckFrame {
     /** A beam with no size in its table. */
     beamBeyondTable: string[];
   };
+  /** Knee braces the layout would set that were taken out by hand (design.framing.bracesOff). */
+  bracesLeftOut: number;
 }
 
 export interface BuildOptions {
@@ -689,7 +694,14 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
   const species0 = framingSpecies(design.framing.species);
   const species = design.custom.species ? { ...species0, label: design.custom.species.name, short: design.custom.species.name } : species0;
   const decking0 = deckingProduct(design.decking.product);
-  const decking = design.custom.decking ? { ...decking0, label: design.custom.decking.name } : decking0;
+  // THE COLOUR RIDES WITH THE BOARD (2026-11-09): the frame's board is named with its colour and looks like it, so the
+  // 3D, the material list, the proposal and the permit set all say the same board. A board of the contractor's own has
+  // no maker's list: only a colour typed in applies to it.
+  const look = deckingLook(decking0, design.custom.decking ? { color: "", ownColor: design.decking.ownColor } : design.decking);
+  // A PICTURE-FRAME BORDER IN A SECOND COLOUR (2026-11-10): another colour of the same line, bought and drawn apart.
+  const borderPick = !design.custom.decking && design.decking.border > 0 && design.shape.kind === "rect" ? deckingColor(decking0.id, design.decking.borderColor) : null;
+  const border = borderPick && (design.decking.ownColor || borderPick.id !== design.decking.color) ? { name: borderPick.name, label: deckingNamed(decking0.label, borderPick.name), color: borderPick.hex, ...(borderPick.hex2 ? { color2: borderPick.hex2 } : {}) } : null;
+  const decking: DeckingProduct = { ...decking0, label: deckingNamed(design.custom.decking ? design.custom.decking.name : decking0.label, look.name), color: look.hex, ...(look.name ? { colorName: look.name } : {}), ...(look.hex2 ? { color2: look.hex2 } : {}), ...(border ? { border } : {}) };
   const wall = wallType(design.wall);
   const group = species.group;
   const load = design.loadPsf;
@@ -907,6 +919,8 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
     const near = (bottomIn: number) => bottomIn < GROUND_CONTACT_WITHIN_IN;
     const joistGround = near(joistBottomIn);
     const hardware = { hangers: 0, doubleHangers: 0, ties: 0, postBases: 0, postCaps: 0, braces: 0, rimScrews: 0, lateralTies: 0 };
+    /** Braces the tables' layout would set that the contractor took out by hand. */
+    let bracesLeftOut = 0;
     const rimPlies = (exposed: boolean) => (design.framing.doubleRim && exposed ? 2 : 1);
 
     // Joist positions: one at each side of the outline, the rest on the
@@ -1119,6 +1133,9 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
     // Knee braces at the end posts of each beam, where the post is tall
     // enough. A deck on the house is braced along its beams; one that
     // stands free is braced the other way as well.
+    // ONE BY ONE (2026-11-09 — owner: "somebody doesn't want those braces: you just click it and delete"): a brace
+    // taken out in the 3D is left out by its key — its beam, which end, which way it leans (`deckBraceKey`).
+    const bracesOff = new Set(design.framing.bracesOff);
     if (design.framing.braces) {
       for (const b of beams) {
         const ends = posts.filter((p) => p.beamId === b.id && p.corner);
@@ -1128,8 +1145,11 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
           const along: 1 | -1 = k === 0 ? 1 : -1;
           const z = b.bottomIn - BRACE_LEG_IN / 2;
           const len = Math.round(BRACE_LEG_IN * Math.SQRT2);
-          sticks.push({ role: "brace", nominal: "2x4", lengthIn: len, cx: p.x + (along * BRACE_LEG_IN) / 2, cy: p.y, cz: z, sx: BRACE_LEG_IN, sy: THICK_2X_IN, sz: BRACE_LEG_IN, ground: false, lean: { axis: "x", dir: along }, of: b.id });
-          hardware.braces += 1;
+          if (bracesOff.has(deckBraceKey(b.id, k, "x"))) bracesLeftOut += 1;
+          else {
+            sticks.push({ role: "brace", nominal: "2x4", lengthIn: len, cx: p.x + (along * BRACE_LEG_IN) / 2, cy: p.y, cz: z, sx: BRACE_LEG_IN, sy: THICK_2X_IN, sz: BRACE_LEG_IN, ground: false, lean: { axis: "x", dir: along }, of: deckBraceKey(b.id, k, "x") });
+            hardware.braces += 1;
+          }
           if (freeStanding && style === "dropped") {
             // The other way there is no beam to brace to: the brace runs from the post up to the underside of the
             // outside joist at the deck's edge, legs equal so it stays at 45° — and only where the joists reach past
@@ -1137,9 +1157,10 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
             const out: 1 | -1 = b.role === "front" ? 1 : -1;
             const edgeY = out === 1 ? Math.max(...zones.map((zn) => zn.y1)) : Math.min(...zones.map((zn) => zn.y0));
             const leg = Math.min(BRACE_LEG_IN, Math.abs(edgeY - p.y));
-            if (leg >= 12) {
+            if (leg >= 12 && bracesOff.has(deckBraceKey(b.id, k, "y"))) bracesLeftOut += 1;
+            else if (leg >= 12) {
               const cz2 = joistBottomIn - leg / 2;
-              sticks.push({ role: "brace", nominal: "2x4", lengthIn: Math.round(leg * Math.SQRT2), cx: p.x, cy: p.y + (out * leg) / 2, cz: cz2, sx: THICK_2X_IN, sy: leg, sz: leg, ground: false, lean: { axis: "y", dir: out }, of: b.id });
+              sticks.push({ role: "brace", nominal: "2x4", lengthIn: Math.round(leg * Math.SQRT2), cx: p.x, cy: p.y + (out * leg) / 2, cz: cz2, sx: THICK_2X_IN, sy: leg, sz: leg, ground: false, lean: { axis: "y", dir: out }, of: deckBraceKey(b.id, k, "y") });
               hardware.braces += 1;
             }
           }
@@ -1180,6 +1201,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       groundHighIn,
       groundLowIn,
       flags: { tooLow, droppedDoesNotFit, joistBeyondTable: !plan.inside, beamBeyondTable: beyond },
+      bracesLeftOut,
     };
   };
 

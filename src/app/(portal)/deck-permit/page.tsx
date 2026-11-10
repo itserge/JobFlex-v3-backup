@@ -15,6 +15,8 @@ import { DeckPermitSheet } from "@/components/v3/deck-permit/deck-permit";
 import { readSitePlan } from "@/lib/deck/sitePlanStore";
 import { BASE_SITE_PLAN } from "@/lib/deck/sitePlan";
 import { readPlanEdits } from "@/lib/deck/planEditsStore";
+import { defaultTemplate, readTemplateIndex } from "@/lib/deck/planTemplatesStore";
+import { editsFromTemplate } from "@/lib/deck/plans/edits";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "JobFlex · Deck permit set", description: "The site plan, the framing and the details for the building office." };
@@ -71,11 +73,17 @@ export default async function DeckPermitPage({ searchParams }: { searchParams: P
   // The contractor's edits to the sets (lib/deck/planEditsStore), kept by the property like the site plan; a deck
   // without an address keeps them by its draft or proposal.
   const editsRef = { address, draftId: packed ? null : draftId ?? null, proposalId: packed ? null : proposalId ?? null };
-  const [org, sitePlan, edits] = await Promise.all([
+  const [org, sitePlan, edits, templates] = await Promise.all([
     db.organization.findUnique({ where: { id: organizationId }, select: { name: true, address: true, phone: true } }).catch(() => null),
     // The site plan is kept by the property (lib/deck/sitePlanStore): the draft, the proposal and an unsaved design at this address share it.
     readSitePlan(organizationId, address, BASE_SITE_PLAN),
     readPlanEdits(organizationId, editsRef),
+    readTemplateIndex(organizationId),
   ]);
-  return <DeckPermitSheet design={design} address={address} title={title} shop={{ name: org?.name ?? "", address: org?.address ?? null, phone: org?.phone ?? null, email: null }} initialPlan={sitePlan} editable={editable} initialEdits={edits} editsRef={editsRef} />;
+  // A deck nobody has edited yet starts from the company's own template, when one is picked for new decks
+  // (lib/deck/planTemplatesStore; owner 2026-11-10: "he run his decks with exact template"). It is kept for the deck
+  // from its first change on; a deck with edits of its own — or started over — is left as it is.
+  const started = edits || !design ? null : await defaultTemplate(organizationId, templates);
+  const initialEdits = started ? editsFromTemplate(started.body, started.info) : edits;
+  return <DeckPermitSheet design={design} address={address} title={title} shop={{ name: org?.name ?? "", address: org?.address ?? null, phone: org?.phone ?? null, email: null }} initialPlan={sitePlan} editable={editable} initialEdits={initialEdits} editsRef={editsRef} initialTemplates={editable ? templates : null} />;
 }

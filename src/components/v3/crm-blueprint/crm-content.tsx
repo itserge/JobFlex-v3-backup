@@ -14,7 +14,7 @@
 // Returning a fragment keeps these blocks as DIRECT children of `.content`,
 // which the donor's reveal cascade (`.content > *`) depends on.
 
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
@@ -22,6 +22,8 @@ import { initCrmContent } from "./crm-behavior";
 import type { CrmContentData } from "./crm-data";
 import type { CrmBrief } from "@/lib/crm/brief";
 import { OfficePanel, TodayPanel } from "./crm-brief";
+import { AgentDesk } from "./crm-agent";
+import { deskOpen, type CrmDesk } from "@/lib/crm/desk";
 
 /**
  * @param data the org's real CRM rows, read in the page's server component.
@@ -33,8 +35,19 @@ import { OfficePanel, TodayPanel } from "./crm-brief";
  *   drawn by React inside two `.ppanel` sections the behavior module switches
  *   like any other tab. Today is the sheet the CRM opens on.
  */
-export function CrmContent({ data, brief }: { data: CrmContentData; brief: CrmBrief }) {
+/**
+ * @param desk the follow-ups waiting for a yes and the promise tracker (lib/crm/deskServer) — the band at the top of
+ *   Today. Null when it could not be read: the page still opens, without the band.
+ */
+export function CrmContent({ data, brief, desk }: { data: CrmContentData; brief: CrmBrief; desk: CrmDesk | null }) {
   const router = useRouter();
+  // What the band holds for the person today (waiting follow-ups + promises overdue or due today): it joins the Today
+  // tab's count and keeps the "nothing waiting on you" block away.
+  const [deskN, setDeskN] = useState(() => deskOpen(desk));
+  // A follow-up sent, skipped or done from the band also leaves the queue the behavior module draws.
+  const followUpClosed = useCallback((id: string) => {
+    window.dispatchEvent(new CustomEvent("crm:follow-up-closed", { detail: id }));
+  }, []);
 
   // The payload reaches `init` through refs, NOT through the callback's deps.
   // `useBlueprintContent` re-runs whenever `init` changes identity, and a re-run
@@ -85,7 +98,7 @@ export function CrmContent({ data, brief }: { data: CrmContentData; brief: CrmBr
             <use href="#i-cal" />
           </svg>
           Today
-          {brief.today.score.open > 0 && <span className="crm-tab-n">{brief.today.score.open}</span>}
+          {brief.today.score.open + deskN > 0 && <span className="crm-tab-n">{brief.today.score.open + deskN}</span>}
         </button>
         <button className="crm-tab" type="button" data-crm-nav="inbox" onClick={() => router.push("/dashboard/inbox" as Route)}>
           <svg className="ic">
@@ -138,7 +151,7 @@ export function CrmContent({ data, brief }: { data: CrmContentData; brief: CrmBr
 
       {/* ========== TODAY — what to check ========== */}
       <section className="ppanel" data-panel="today">
-        <TodayPanel key={brief.today.dayKey} today={brief.today} />
+        <TodayPanel key={brief.today.dayKey} today={brief.today} extraOpen={deskN} extra={desk ? <AgentDesk initial={desk} onFollowUpClosed={followUpClosed} onCount={setDeskN} /> : null} />
       </section>
 
       {/* ========== OFFICE — how the company is doing, right now ========== */}

@@ -24,6 +24,8 @@ import { db } from "@/lib/db";
 import { longDate, relative } from "@/lib/format";
 import { isTwilioEnabled } from "@/lib/sdk/twilio";
 import { parseChannel } from "@/lib/followUps/copy";
+import { parseMode, parseWords } from "@/lib/followUps/agent";
+import { readCrmDesk } from "@/lib/crm/deskServer";
 import { ensureDefaultFollowUpRules } from "@/lib/followUps/defaults";
 import { actorsOf, whoOfEvent } from "@/lib/activityLog";
 import { CrmContent } from "@/components/v3/crm-blueprint/crm-content";
@@ -37,6 +39,7 @@ import type {
 } from "@/components/v3/crm-blueprint/crm-data";
 import { STATUS_ORDER } from "@/components/v3/crm-blueprint/crm-data";
 import { readCrmBrief } from "@/lib/crm/briefServer";
+import { isPageLocked } from "@/lib/customPageAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -91,6 +94,12 @@ export default async function CrmPage() {
 
   // Today's checks and the office figures, read beside the rest.
   const briefP = readCrmBrief({ organizationId, userId, role, now });
+  // The follow-ups waiting for a yes and the promise tracker (Smart CRM part 4) — the band on the Today tab.
+  // On the Free plan the band is not drawn (owner, 2026-11-09; Smart CRM is a paid feature).
+  const deskP = (await isPageLocked(organizationId, "smart-crm")) ? Promise.resolve(null) : readCrmDesk({ organizationId, userId, role, now }).catch((err) => {
+    console.warn("[crm] desk:", err instanceof Error ? err.message : err);
+    return null;
+  });
 
   const [
     leads,
@@ -164,6 +173,8 @@ export default async function CrmPage() {
       overdue,
       days: overdue ? Math.floor((now.getTime() - f.runAt.getTime()) / 86_400_000) : 0,
       runAt: f.runAt.getTime(),
+      waiting: f.state === "READY",
+      reason: f.reason,
     };
   });
 
@@ -222,6 +233,8 @@ export default async function CrmPage() {
     enabled: r.enabled,
     channel: parseChannel(r.template),
     isDefault: r.isDefault,
+    mode: parseMode(r.mode),
+    words: parseWords(r.words),
   }));
 
   const data: CrmContentData = {
@@ -248,6 +261,6 @@ export default async function CrmPage() {
     renderedAt: now.getTime(),
   };
 
-  const brief = await briefP;
-  return <CrmContent data={data} brief={brief} />;
+  const [brief, desk] = await Promise.all([briefP, deskP]);
+  return <CrmContent data={data} brief={brief} desk={desk} />;
 }

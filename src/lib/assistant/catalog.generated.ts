@@ -557,6 +557,61 @@ export const CATALOG: Catalog = {
     "scheduled": false,
     "version": 1
   },
+  "follow_ups": {
+    "label": "Follow-ups waiting",
+    "group": "people",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "send_follow_up": {
+    "label": "Send or skip a follow-up",
+    "group": "people",
+    "effect": "message",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "promises": {
+    "label": "Promises",
+    "group": "people",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "add_promise": {
+    "label": "Track a promise",
+    "group": "people",
+    "effect": "record",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "settle_promise": {
+    "label": "Close or move a promise",
+    "group": "people",
+    "effect": "record",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
   "book_visit": {
     "label": "Book a visit",
     "group": "visits",
@@ -628,6 +683,17 @@ export const CATALOG: Catalog = {
     "group": "money",
     "effect": "read",
     "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "send_client_page": {
+    "label": "Send a client their page",
+    "group": "people",
+    "effect": "message",
+    "kind": "write",
     "build": false,
     "steps": null,
     "pin": false,

@@ -30,7 +30,9 @@ async function gate(): Promise<Gate> {
 
 const Place = z.object({ state: z.string().max(4), county: z.string().max(80), city: z.string().max(80).nullable().optional() });
 type PlaceIn = z.infer<typeof Place>;
-const words = (p: PlaceIn) => (p.city ? `the City of ${p.city}, ${p.state} (in ${p.county}${/county|parish|borough/i.test(p.county) ? "" : " County"})` : `${p.county}${/county|parish|borough/i.test(p.county) ? "" : " County"}, ${p.state}`);
+const countyWords = (c: string) => `${c}${/county|parish|borough|census area|municipality/i.test(c) ? "" : " County"}`;
+// A city typed without its county (2026-11-10) is named as typed: the search finds whose department it is.
+const words = (p: PlaceIn) => (!p.county.trim() ? `${p.city}, ${p.state}` : p.city ? `the City of ${p.city}, ${p.state} (in ${countyWords(p.county)})` : `${countyWords(p.county)}, ${p.state}`);
 
 const Summary = z.object({
   set: z.enum(["permit", "crew"]),
@@ -105,7 +107,7 @@ export async function checkCountyRequirements(form: FormData): Promise<CheckResu
       if (text.trim().length < 3) return { ok: false, error: "Type what you want on the set." };
       from = "ask";
     } else if (mode === "find" || mode === "kept") {
-      if (!placeIn || !key) return { ok: false, error: "JobFlex needs the county first: set the job's address in the studio (the county is read from it), or type the county and state under Title block." };
+      if (!placeIn || !key) return { ok: false, error: "JobFlex needs to know where the job is: type the city or county and the state — for example “Nashville, TN”." };
       const kept = await readKeptList(g.organizationId, key, build);
       const fresh = kept && Date.now() - Date.parse(kept.at) < 120 * 24 * 3600 * 1000;
       if (kept && (mode === "kept" || (fresh && form.get("refresh") !== "1"))) {

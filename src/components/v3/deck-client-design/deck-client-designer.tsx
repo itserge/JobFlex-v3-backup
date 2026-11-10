@@ -20,7 +20,8 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
-import { deckingProduct, railType, treatedDecking, type RailTypeId } from "@/lib/deck/catalog";
+import { deckingProduct, railColorOf, railColors, railType, treatedDecking, type RailTypeId } from "@/lib/deck/catalog";
+import { deckingColors } from "@/lib/deck/deckingColors";
 import { applyDeckPatch } from "@/lib/deck/checks";
 import { LEAD_CONSENT_TEXT } from "@/lib/leadConsent";
 import { PRO } from "@/lib/home/jobflexPro";
@@ -858,6 +859,12 @@ export function DeckClientDesigner(props: DeckClientDesignerProps) {
                   disabled={(v) => v === "none" && railsRequired}
                   onChange={(v) => patch({ rail: { type: v, infill: "auto" } })}
                 />
+                {railColors(design.rail.type).length ? (
+                  <>
+                    <div className={s.lbl}>{design.rail.type === "cable" || design.rail.type === "glass" ? "Frame colour" : "Rail colour"}</div>
+                    <Chips label="Rail colour" value={railColorOf(design.rail.type, design.rail.color)?.id ?? ""} options={railColors(design.rail.type).map((c) => ({ value: c.id, name: c.name, swatch: c.hex }))} onChange={(v) => patch({ rail: { color: v } })} />
+                  </>
+                ) : null}
               </Section>
             ) : null}
 
@@ -878,6 +885,23 @@ export function DeckClientDesigner(props: DeckClientDesignerProps) {
                   })}
                 </div>
                 {boardNow === null ? <p className={s.hint}>Now: {deckingProduct(design.decking.product).label} — {shopName}&apos;s pick.</p> : null}
+                {/* The line's own colours (2026-11-09): the one picked is the one drawn, priced and ordered. */}
+                {deckingColors(design.decking.product).length && !design.custom.decking ? (
+                  <>
+                    <div className={s.lbl}>Colour — {deckingProduct(design.decking.product).label}</div>
+                    <div className={s.boards} role="radiogroup" aria-label="Board colour">
+                      {deckingColors(design.decking.product).map((c) => {
+                        const on = !design.decking.ownColor && design.decking.color === c.id;
+                        return (
+                          <button key={c.id} type="button" role="radio" aria-checked={on} className={cx(s.board, on && s.boardOn)} onClick={() => patch({ decking: { color: c.id } })} data-client-color={c.id}>
+                            <span className={s.swatch} style={{ "--wood": c.hex } as React.CSSProperties} aria-hidden="true" />
+                            <span className={s.boardName}>{c.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : null}
                 <div className={s.lbl}>Pattern</div>
                 <Chips label="Board pattern" value={design.decking.pattern} options={PATTERNS.map((p) => ({ value: p.id, name: p.name }))} onChange={(v) => patch({ decking: { pattern: v, diagonal: v === "diagonal" } })} />
                 <div className={s.lbl}>Border</div>
