@@ -27,6 +27,9 @@
 //   "where are we over|what's the margin|where can I save $N on <project>" → money_plan (2026-11-07, part 5)
 //   "what's funded on <project>" → draws; "request draw three on <project>" → request_draw; "the bank funded draw two on <project>" → fund_draw (2026-11-07, part 6)
 //   "the lender's link|page for <project>" → lender_link (2026-11-08, part 7)
+//   "what's going on with <project>" / "what's holding up <stage> on <project>" → project_overview; "what do I need to do
+//   this week" / "which projects are behind|over budget|at risk" → projects_overview; the Overview's sentence
+//   (json_schema "overview_line") from its facts (2026-11-09, Project Overview part 3)
 //   Smart Proposal's own run (response_format json_object, no tools): a small estimate in the old draft shape.
 //   Speech (POST /v1/audio/speech, the Talk mode's voice): 0.3 s of silence as an MP3, so a page plays it and goes on.
 //   The Budget card's read (response_format json_schema "budget_read", 2026-11-07): words → the rules' own rows
@@ -148,6 +151,10 @@ function answer(body: { messages: Msg[] }) {
     if (o?.notDone) return reply(o.notDone);
     if (o?.error) return reply(`That didn't work: ${o.error}`);
   }
+
+  // A numbered row the Operator has no tool for (Project Overview part 3): "What can I do about this: <row> on <project>".
+  const aboutQ = /^What can I do about this: (.+?) on (.+?)\.?$/i.exec(user);
+  if (aboutQ) return reply(`"${aboutQ[1]}" needs someone there — I can't fix it from here. Open ${aboutQ[2]} to see who flagged it, or tell me what to send them.`);
 
   // The estimators by voice (2026-11-05): a roof, HVAC or lawn care at an address — before the generic build rule,
   // which would price them with Smart Proposal. The address: "at 14 Oak St, Tacoma WA" / "address: …".
@@ -425,6 +432,38 @@ function answer(body: { messages: Msg[] }) {
     return call("start_project", { name, kind, client, template, occupied: /lives? there|living there|occupied/i.test(user) ? true : null, ...lot });
   }
   if (done.has("start_project")) return reply("Planned — say yes and I'll start it.");
+  // The Overview (Project Overview part 3, 2026-11-09): "what's going on with <project>" → find → project_overview;
+  // "what's holding up <stage> on <project>" → project_overview with the stage; "what do I need to do this week" →
+  // projects_overview week; "which projects are behind|over budget|at risk" → projects_overview. The to-do list comes
+  // back numbered as the tool gave it.
+  type OvToDo = { n: number; what: string; project?: string };
+  const toDoLines = (xs: OvToDo[] | undefined) => (xs ?? []).map((x) => `${x.n}) ${x.project ? `${x.project}: ` : ""}${x.what}`).join("\n");
+  const holdQ = /\bwhat(?:'s| is) holding up (?:the )?(.+?) on (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  const goingQ = /\bwhat(?:'s| is) going on with (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  if (holdQ || goingQ) {
+    const r = done.get("project_overview") as { status?: string; line?: string; toDo?: OvToDo[]; stage?: string; state?: string; late?: string | null; inspectionsHolding?: string[]; stillNeeds?: string[]; tasksLeft?: string[]; error?: string } | undefined;
+    if (!r) {
+      const q = (holdQ ? holdQ[2] : goingQ![1]).trim();
+      const pid = projectFound(q);
+      if (!pid) return call("find", { query: q, kind: "project" });
+      return call("project_overview", { query: null, projectId: pid, stage: holdQ ? holdQ[1].trim() : null });
+    }
+    if (r.error) return reply(r.error);
+    if (holdQ) {
+      const holds = [...(r.inspectionsHolding ?? []), ...(r.stillNeeds ?? [])];
+      return reply(`${r.stage} is ${r.state}${r.late ? `, ${r.late}` : ""}. ${holds.length ? `Holding it: ${holds.join("; ")}.` : "Nothing holds it."}${r.tasksLeft?.length ? ` Tasks left: ${r.tasksLeft.join(", ")}.` : ""}`);
+    }
+    return reply(`${r.status}: ${r.line}.${r.toDo?.length ? `\nTo do now:\n${toDoLines(r.toDo)}\nReply with a number to do it.` : ""}`);
+  }
+  const weekQ = /\bwhat do i (?:need|have) to do this week\b/i.test(user);
+  const boardQ = /\bwhich projects are (behind|over budget|at risk)\b/i.exec(user);
+  if (weekQ || boardQ) {
+    const r = done.get("projects_overview") as { toDo?: OvToDo[]; thisWeek?: Array<{ day: string; project: string; what: string }>; count?: number; projects?: Array<{ project: string; behind: string | null; overBudget: string | null }>; note?: string } | undefined;
+    if (!r) return call("projects_overview", { ask: weekQ ? "week" : boardQ![1].toLowerCase() === "over budget" ? "over_budget" : boardQ![1].toLowerCase() === "at risk" ? "at_risk" : "behind" });
+    if (r.note) return reply(r.note);
+    if (weekQ) return reply(`To do:\n${toDoLines(r.toDo)}${r.thisWeek?.length ? `\nThis week: ${r.thisWeek.map((x) => `${x.day} ${x.project}: ${x.what}`).join("; ")}` : ""}\nReply with a number to do it.`);
+    return reply(r.count ? `${r.count}: ${(r.projects ?? []).map((p) => `${p.project}${p.behind ? ` (${p.behind} behind)` : ""}${p.overBudget ? ` (${p.overBudget} over)` : ""}`).join("; ")}.` : "None.");
+  }
   // The money (part 5): "where are we over on X" / "what's the margin on X" / "where can I save 20,000 on X" → money_plan.
   const moneyQ = /\b(?:where are we over|what(?:'s| is) the margin|where can i save(?: \$?([\d,]+))?)\b.*?\bon (?:the )?(.+?)(?:\?|$)/i.exec(user);
   if (moneyQ) {
@@ -897,6 +936,22 @@ function fakeQuoteRead(messages: Msg[]) {
 
 /** THE COMPARER'S FAKE (part 2): two deterministic sentences from the fields the app sent — who is lowest and by how
  *  much, what the lowest excludes, who is over the budget share. */
+/** The Overview's sentence (part 3): from the facts given; a project named "fakecheck" gets a number that isn't in
+ *  them, so the walk sees the check fall back to the rules' sentence. */
+function fakeOverviewLine(messages: Msg[]) {
+  const user = messages.find((m) => m.role === "user");
+  const text = typeof user?.content === "string" ? user.content : "";
+  let f: { project?: string; status?: string; line?: string; toDo?: string[] } = {};
+  try {
+    f = JSON.parse(text.slice(text.indexOf("{"))) as typeof f;
+  } catch {
+    f = {};
+  }
+  if (/fakecheck/i.test(f.project ?? "")) return { sentence: `${f.project} is $99,999 over and 41 days behind.` };
+  const first = f.toDo?.[0]?.replace(/ \(.*\)$/, "");
+  return { sentence: `${f.project} ${f.status === "On track" ? "is on track" : f.status === "At risk" ? "is at risk" : "needs you"} — ${(f.line ?? "").replace(/ · /g, ", ")}${first ? `; start with: ${first.charAt(0).toLowerCase()}${first.slice(1)}` : ""}.` };
+}
+
 function fakeCompareWords(messages: Msg[]) {
   const user = messages.find((m) => m.role === "user");
   const text = typeof user?.content === "string" ? user.content : "";
@@ -1018,6 +1073,10 @@ http
           }
           if (body.response_format?.type === "json_schema" && body.response_format.json_schema?.name === "invoice_read") {
             res.end(JSON.stringify(reply(JSON.stringify(fakeInvoiceRead(body.messages ?? [])))));
+            return;
+          }
+          if (body.response_format?.type === "json_schema" && body.response_format.json_schema?.name === "overview_line") {
+            res.end(JSON.stringify(reply(JSON.stringify(fakeOverviewLine(body.messages ?? [])))));
             return;
           }
           if (body.response_format?.type === "json_schema" && body.response_format.json_schema?.name === "compare_words") {

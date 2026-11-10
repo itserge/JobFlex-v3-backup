@@ -24,7 +24,8 @@ import { moneyPlanOf } from "@/lib/projectMoneyPlan/server";
 import { answersWords, type BuildAnswers } from "@/lib/projectPhases/shared";
 import { invoicesOf } from "@/lib/subInvoices/server";
 import { finishFlags } from "@/lib/projectFinish/shared";
-import { overviewOf, type Overview } from "@/lib/projectOverview/shared";
+import { overviewOf, type Overview, type OverviewInput } from "@/lib/projectOverview/shared";
+import { readSummary } from "@/lib/projectOverview/summary";
 import { spaceOf, type SpaceId } from "@/lib/projectSpaces";
 import type { PdAvailProposal, PdBudget, PdBuying, PdSubs, PdField, PdFinish, PdJob, PdLooseProposal, PdDraws, PdLot, PdMoneyPlan, PdPayments, PdPhases, PdProject, PdProposal, PdSelections, PdShare, PdStages, PdTimeline, PdWorker } from "./project-detail-data";
 
@@ -74,6 +75,17 @@ export type ProjectDetailProps = {
 };
 
 export async function loadProjectDetail(id: string, organizationId: string): Promise<ProjectDetailProps | null> {
+  const r = await readProject(id, organizationId);
+  return r ? r.props : null;
+}
+
+/** The page's read and the Overview's own input — for the Operator's "what's holding up framing?" (part 3), which asks
+ *  the rules about one stage. Server-only; the input never goes to a browser. */
+export async function loadProjectRules(id: string, organizationId: string): Promise<{ props: ProjectDetailProps; input: OverviewInput } | null> {
+  return readProject(id, organizationId);
+}
+
+async function readProject(id: string, organizationId: string): Promise<{ props: ProjectDetailProps; input: OverviewInput } | null> {
   const project = await db.project.findUnique({
     where: { id },
     include: {
@@ -323,7 +335,7 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
     ).map((w) => ({ id: w.id, name: w.displayName, trade: firstTrade(w.specialties) })),
   };
   const iso = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
-  const overview = overviewOf({
+  const input: OverviewInput = {
     today: timeline.today,
     project: { id: project.id, kind: project.kind, status: project.status, endsAt: iso(project.endsAt), clientName: project.client?.name ?? null, clientPhone: null, clientEmail: null, budget: project.budget },
     stages: stageRead.stages,
@@ -344,8 +356,13 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
     collected: money.collected,
     owed: money.owed,
     subsHref: `/dashboard/projects/${project.id}/subs`,
-  });
-  return { ...props, overview, space: spaceOf(project.kind, project.answersJson) };
+  };
+  const overview = overviewOf(input);
+  // The sentence at its top (part 3): today's, when it still stands on today's facts; the page writes a new one after
+  // it is sent when not (summaryFresh false — lib/projectOverview/summary).
+  const summary = await readSummary(project.id, timeline.today, project.name, overview).catch(() => null);
+  const withSummary: Overview = summary ? { ...overview, summary: summary.text, summaryBy: summary.by, summaryFresh: summary.fresh } : overview;
+  return { props: { ...props, overview: withSummary, space: spaceOf(project.kind, project.answersJson) }, input };
 }
 
 const SOLD = new Set(["ACCEPTED", "COMPLETED", "PAID"]);

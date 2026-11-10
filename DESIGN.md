@@ -436,6 +436,9 @@ monthly" is one 12px line (weight 600) under the price.
   red or amber, one primary button in the workspace colour, an optional
   secondary in ink, and a quiet "Not now". A one-tap write (a stage done, an
   inspection's result) asks "Sure? …" on the same button before it runs.
+  Under the status line, one sentence in 15px body weight (`.summary`, at
+  most 78ch): the day's AI sentence, kept only when every number in it is one
+  of the project's, else the rules' own — never a badge, an icon or "AI".
 
 ## Mobile and motion
 
