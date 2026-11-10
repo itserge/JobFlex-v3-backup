@@ -9,6 +9,7 @@ import * as React from "react";
 import { bringBack as bringSheetBack, dropSheet, editCount, isBlank, isOut, takeOut as takeSheetOut, type EditedSheet } from "@/lib/deck/plans/edits";
 import { ToolButtons, usePlanEdit, type PlanEditApi } from "@/components/v3/deck-plans/plan-edit";
 import ps from "@/components/v3/deck-plans/plan-set.module.css";
+import { TemplateList, TemplateSaveRow, TemplateSkipped, type TemplatesProp } from "./plan-templates";
 import s from "./deck-permit.module.css";
 
 /** The sheets a building department nearly always asks for: a heads-up before one is taken out. */
@@ -37,26 +38,60 @@ function mentionsOf(no: string): number {
 }
 
 /* ── The panel ──────────────────────────────────────────────────────────── */
-export function PlanEditPanel() {
+export function PlanEditPanel({ templates }: { templates?: TemplatesProp }) {
   const api = usePlanEdit();
+  // The contractor's own templates (./plan-templates): the save row, open or not, and the last thing it said.
+  const [saving, setSaving] = React.useState(false);
+  const [said, setSaid] = React.useState("");
   if (!api) return null;
   const stale = Object.entries(api.stale);
-  const count = editCount(api.edits);
+  const skipped = Object.keys(api.tplSkip).length;
+  // A template's card this deck does not take is not a change on it.
+  const count = Math.max(0, editCount(api.edits) - skipped);
+  const tpl = api.canEdit ? templates : undefined;
+  const from = api.edits.tpl ?? null;
+  const setName = api.set === "crew" ? "construction" : "permit";
+  const saveButton = tpl ? (
+    <button type="button" className={`${s.btn} ${saving ? s.btnOn : ""}`} aria-pressed={saving} onClick={() => { setSaid(""); setSaving((v) => !v); }} data-plan-tpl-save-open>
+      Save as a template
+    </button>
+  ) : null;
+  const saveRow = tpl && saving ? (
+    <TemplateSaveRow
+      api={api}
+      tpl={tpl}
+      onClose={(words) => {
+        setSaving(false);
+        if (words) setSaid(words);
+      }}
+    />
+  ) : null;
+  const saidLine = said ? <div className={s.alertHint} data-plan-tpl-said>{said}</div> : null;
   if (!api.editing) {
-    if (!stale.length && !count) return null;
+    if (!stale.length && !count && !skipped && !from && !said) return null;
     return (
       <div className={s.editPanel} data-plan-edit-summary>
         <div className={s.editLine}>
           <span>
-            {count ? `This ${api.set === "crew" ? "construction" : "permit"} set has ${count} change${count === 1 ? "" : "s"} of yours on it.` : ""}
+            {from
+              ? `This ${setName} set started from your template “${from.name}”${count ? ` (${count} change${count === 1 ? "" : "s"} from the studio's own set)` : ""}.`
+              : count
+                ? `This ${setName} set has ${count} change${count === 1 ? "" : "s"} of yours on it.`
+                : ""}
             {api.status ? <span className={s.editStatus}> {api.status}</span> : null}
           </span>
           {api.canEdit ? (
-            <button type="button" className={s.btn} onClick={() => api.setEditing(true)}>
-              Edit
-            </button>
+            <span className={s.panelActions}>
+              {count || api.edits.simple ? saveButton : null}
+              <button type="button" className={s.btn} onClick={() => api.setEditing(true)}>
+                Edit
+              </button>
+            </span>
           ) : null}
         </div>
+        {saveRow}
+        {saidLine}
+        <TemplateSkipped api={api} />
         <StaleList api={api} items={stale} />
       </div>
     );
@@ -68,15 +103,20 @@ export function PlanEditPanel() {
           <div className={s.siteGroupTitle}>Editing the {api.set === "crew" ? "construction set" : "permit set"}</div>
           <p className={s.siteSaid}>
             Tap a card on the sheets to pick it, tap it again to type in it. Take out what your building department does not need; add a card or a sheet for what it asks for. The drawings come from the design — change those in the studio. Every change is kept for this deck{api.status ? ` · ${api.status}` : ""}.
+            {from ? ` It started from your template “${from.name}”.` : ""}
           </p>
         </div>
         <div className={s.panelActions}>
+          {saveButton}
           <button type="button" className={s.btn} disabled={!api.canUndo} onClick={api.undo} data-plan-undo>
             Undo
           </button>
           <ResetButton api={api} />
         </div>
       </div>
+      {saveRow}
+      {saidLine}
+      <TemplateSkipped api={api} />
       <StaleList api={api} items={stale} />
       {Object.keys(api.overflow).length ? (
         <div className={s.alerts} data-plan-overflow>
@@ -88,6 +128,7 @@ export function PlanEditPanel() {
         </div>
       ) : null}
       <SheetList api={api} />
+      {tpl ? <TemplateList api={api} tpl={tpl} onSaid={(words) => { setSaving(false); setSaid(words); }} /> : null}
     </div>
   );
 }
@@ -267,7 +308,7 @@ export function PlanEditBar() {
     );
   } else if (id && meta) {
     const hidden = isOut(api.edits, id);
-    const edited = !!api.edits.cards[id];
+    const edited = !!api.cardOf(id);
     const stale = !!api.stale[id];
     let acts: React.ReactNode;
     let note: string | null = null;

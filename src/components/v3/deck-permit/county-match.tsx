@@ -243,7 +243,7 @@ function CountyMatchSheet({ api, first, place: place0, address, build: build0, f
       </div>
     );
   } else if (step.at === "review") {
-    body = <Review res={step.res} ticks={ticks} setTicks={setTicks} showIt={showIt} studioHref={studioHref} />;
+    body = <Review res={step.res} set={api.set} ticks={ticks} setTicks={setTicks} showIt={showIt} studioHref={studioHref} />;
   } else {
     const dept = placeWords ?? "the building department";
     const listOnFile = kept && kept.where === placeJson && kept.build === build ? kept : null;
@@ -361,6 +361,8 @@ function CountyMatchSheet({ api, first, place: place0, address, build: build0, f
   }
   const res = step.at === "review" ? step.res : null;
   const nTicked = res ? res.check.items.filter((i) => i.status === "add" && ticks[i.id]).length : 0;
+  // Nothing ticked: the county's check is still kept with the set when it leaves the contractor something to do.
+  const nTodo = res && res.from !== "ask" ? res.check.items.filter((i) => i.status === "you" || (i.status === "add" && !i.trim)).length : 0;
   if (typeof document === "undefined") return null;
   return createPortal(
     <div className={cm.scrim} onClick={(e) => e.target === e.currentTarget && step.at !== "reading" && onClose()} data-county-sheet>
@@ -377,7 +379,7 @@ function CountyMatchSheet({ api, first, place: place0, address, build: build0, f
           <div className={cm.foot}>
             <button type="button" className={s.btn} onClick={() => setStep({ at: "start" })}>Back</button>
             <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => apply(res)} data-county-apply>
-              {nTicked ? `Apply ${nTicked} change${nTicked === 1 ? "" : "s"}` : "Keep the list"}
+              {nTicked ? `Apply ${nTicked} change${nTicked === 1 ? "" : "s"}` : nTodo ? "Keep the to-do list" : "Done"}
             </button>
           </div>
         ) : null}
@@ -387,9 +389,12 @@ function CountyMatchSheet({ api, first, place: place0, address, build: build0, f
   );
 }
 
-function Review({ res, ticks, setTicks, showIt, studioHref }: { res: Extract<CheckResult, { ok: true }>; ticks: Record<string, boolean>; setTicks: React.Dispatch<React.SetStateAction<Record<string, boolean>>>; showIt: (where: string) => void; studioHref: string }) {
+function Review({ res, set, ticks, setTicks, showIt, studioHref }: { res: Extract<CheckResult, { ok: true }>; set: "permit" | "crew"; ticks: Record<string, boolean>; setTicks: React.Dispatch<React.SetStateAction<Record<string, boolean>>>; showIt: (where: string) => void; studioHref: string }) {
   const c: CountyCheck = res.check;
-  const adds = c.items.filter((i) => i.status === "add");
+  const adds = c.items.filter((i) => i.status === "add" && !i.trim);
+  // What the department's list never mentions (lib/deck/plans/countyMatch trimOffers): offered, never ticked for him.
+  const trims = c.items.filter((i) => i.trim);
+  const nDesign = c.items.filter((i) => i.status === "you" && i.design).length;
   const ons = c.items.filter((i) => i.status === "on_set");
   const yous = c.items.filter((i) => i.status === "you");
   const fromWords = res.from === "ask" ? "What you asked" : res.from === "online" ? "Found online" : res.from === "kept" ? `The list on file${res.keptAt ? ` (${new Date(res.keptAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })})` : ""}` : res.from === "paste" ? "What you pasted" : "Your file";
@@ -412,6 +417,25 @@ function Review({ res, ticks, setTicks, showIt, studioHref }: { res: Extract<Che
         <span><b>{adds.length}</b> {res.from === "ask" ? "changes" : "JobFlex can add"}</span>
         <span><b>{yous.length}</b> for you</span>
       </div>
+      {res.from !== "ask" ? (
+        // Owner, 2026-11-10: "check if it's gonna do it, or it's already applying changes" — said here, every time.
+        <p className={cm.verdict} data-county-verdict>
+          {adds.length ? (
+            <>
+              <b>Nothing has been changed yet.</b> Untick what you don&apos;t want, then press Apply — the {set === "crew" ? "construction" : "permit"} set is redrawn with it, and one Undo takes it all back.
+            </>
+          ) : (
+            <>
+              <b>Nothing for JobFlex to change on the sheets.</b>{" "}
+              {ons.length ? `${ons.length} of the department's point${ons.length === 1 ? " is" : "s are"} already drawn. ` : ""}
+              {nDesign ? `${nDesign} need${nDesign === 1 ? "s" : ""} a change to the deck itself — make it in the studio and the sheets follow. ` : ""}
+              {yous.length - nDesign ? `${yous.length - nDesign} ${yous.length - nDesign === 1 ? "is" : "are"} yours — papers to bring and facts about the site that no drawing can show. ` : ""}
+              Nothing has been changed.
+            </>
+          )}
+          {set === "permit" ? " This is the permit set; the construction set is the crew's own and the department doesn't review it." : ""}
+        </p>
+      ) : null}
       {adds.length ? (
         <section className={cm.group} data-county-group="add">
           <h3>JobFlex will add or change — untick any you don&apos;t want</h3>
@@ -421,6 +445,20 @@ function Review({ res, ticks, setTicks, showIt, studioHref }: { res: Extract<Che
               <span>
                 <b>{i.change}</b>
                 <Need i={i} />
+              </span>
+            </label>
+          ))}
+        </section>
+      ) : null}
+      {trims.length ? (
+        <section className={cm.group} data-county-group="trim">
+          <h3>Not on the department&apos;s list — tick any to take out for a shorter set</h3>
+          <p className={cm.groupSaid}>The list doesn&apos;t ask for these. A department&apos;s list is the least it wants to see, so JobFlex leaves them in unless you tick them; anything taken out comes back in Edit any time.</p>
+          {trims.map((i) => (
+            <label key={i.id} className={cm.item} data-county-item={i.id}>
+              <input type="checkbox" checked={!!ticks[i.id]} onChange={(e) => setTicks((t) => ({ ...t, [i.id]: e.target.checked }))} />
+              <span>
+                <b>{i.change}</b>
               </span>
             </label>
           ))}

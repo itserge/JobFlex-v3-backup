@@ -119,6 +119,11 @@ export interface CheckItem {
   on: boolean;
   /** The change, in words, for the review. */
   change: string;
+  /**
+   * Not something the department asked for: a part of the set its list never mentions, offered — unticked — to take
+   * out for a shorter set (trimOffers). Never counted as a requirement, never kept as a to-do.
+   */
+  trim?: boolean;
 }
 export interface CountyCheck {
   department: string;
@@ -277,7 +282,47 @@ export function checkRead(read: ModelCheck, set: SetSummary, opts: { asked?: boo
         items.push(you(""));
     }
   }
+  if (!opts.asked) items.push(...trimOffers(items, set));
   return { department: cut(read.department, 120), level: read.level, place: cut(read.place, 120), about: cut(read.about, 300), items };
+}
+
+/* ── What the department's list never mentions ─────────────────────────── */
+// Owner, 2026-11-10: "if you delete what's not required from the current one and kind of updating the sets to new
+// requirements". A department's list is the least it wants to see, so nothing is ever taken out for being absent from
+// it. But the parts of the permit set a reviewer least needs (the Simple set's list, lib/deck/plans/edits SIMPLE_OUT —
+// without the general notes) are OFFERED, unticked, when the list neither points at them nor uses their words: the
+// contractor ticks the ones to drop. `words`: what in a requirement means the part is wanted after all.
+const TRIMMABLE: ReadonlyArray<{ id: string; words: RegExp }> = [
+  { id: "sheet:elevations", words: /elevation/i },
+  { id: "sheet:schedules", words: /schedule|material|lumber|fastener|connector|hardware/i },
+  { id: "cover/framing-picture", words: /render|picture|isometric|perspective|\b3-?d\b/i },
+  { id: "cover/check", words: /compliance|code (check|summary|analysis|review)/i },
+  { id: "foundation/bearing", words: /bearing|soil/i },
+  { id: "foundation/layout", words: /layout|(post|pier|footing)s? (centre|center|location|spacing)/i },
+  { id: "details/detail-pattern", words: /pattern|decking (direction|layout)/i },
+];
+export function trimOffers(items: CheckItem[], set: SetSummary): CheckItem[] {
+  // Only against a real list (something on it was matched to the set), and only on the department's own set.
+  if (set.set !== "permit" || !items.some((i) => i.status === "on_set" || i.status === "add")) return [];
+  const asked = items.map((i) => `${i.need} ${i.quote}`).join(" \n ");
+  const pointed = new Set(items.map((i) => i.where).filter((w): w is string => !!w));
+  const out: CheckItem[] = [];
+  const offer = (where: string, whereLabel: string, action: CheckAction, change: string) =>
+    out.push({ id: `t${out.length}`, need: "Not on the department's list", quote: "", status: "add", where, whereLabel, why: "", action, design: false, on: false, change, trim: true });
+  for (const t of TRIMMABLE) {
+    if (t.words.test(asked)) continue;
+    if (t.id.startsWith("sheet:")) {
+      const s = set.sheets.find((x) => x.id === t.id.slice("sheet:".length));
+      if (!s || s.out || s.need || pointed.has(t.id) || [...pointed].some((w) => w.startsWith(`${s.id}/`))) continue;
+      offer(t.id, `${s.no} · ${s.name}`, { kind: "remove_sheet", sheet: s.id }, `Takes ${s.no} ${s.name} out of the set.`);
+    } else {
+      const c = set.cards.find((x) => x.id === t.id);
+      const sheet = c ? set.sheets.find((x) => x.id === c.sheet) : null;
+      if (!c || c.need || sheet?.out || pointed.has(c.id)) continue;
+      offer(c.id, `${c.sheetNo} · ${c.label}`, { kind: "remove_card", card: c.id }, `Takes out “${c.label}” on ${c.sheetNo}.`);
+    }
+  }
+  return out;
 }
 
 /* ── Applying the ticked changes ───────────────────────────────────────── */
@@ -361,7 +406,7 @@ export function applyChecked(items: CheckItem[], e: SetEdits, set: Pick<SetSumma
         break;
       case "replace_card":
         // An edit like one typed in the Edit: the design's own words fingerprinted, so a later change to them shows.
-        out.cards[a.card] = { html: wordsCardHtml(a.title, a.lines), was: out.cards[a.card]?.was || wasOf(a.card) };
+        out.cards[a.card] = { html: wordsCardHtml(a.title, a.lines), was: wasOf(a.card) || out.cards[a.card]?.was || "" };
         break;
     }
   }
@@ -377,9 +422,9 @@ export function keptCheck(c: CountyCheck, appliedIds: Set<string>, at: string, f
     from,
     sources: sources.slice(0, 8),
     onSet: c.items.filter((i) => i.status === "on_set").length,
-    added: c.items.filter((i) => i.status === "add" && appliedIds.has(i.id)).length,
+    added: c.items.filter((i) => i.status === "add" && !i.trim && appliedIds.has(i.id)).length,
     todo: c.items
-      .filter((i) => i.status === "you" || (i.status === "add" && !appliedIds.has(i.id)))
+      .filter((i) => i.status === "you" || (i.status === "add" && !i.trim && !appliedIds.has(i.id)))
       .slice(0, 30)
       .map((i) => ({ need: i.need, why: i.status === "you" ? i.why : "Not applied — add it by hand if the department needs it.", design: i.design })),
   };
@@ -399,7 +444,7 @@ export function setWords(s: SetSummary): string {
 
 /** The words a kept checklist is read again from, for the next deck in the same county. */
 export function requirementsWords(c: CountyCheck): string {
-  return [`${c.department || c.place}${c.place && c.department ? ` (${c.place})` : ""} — what it asks to see with a deck permit:`, ...c.items.map((i, k) => `${k + 1}. ${i.need}${i.quote ? ` — “${i.quote}”` : ""}`)].join("\n").slice(0, 30_000);
+  return [`${c.department || c.place}${c.place && c.department ? ` (${c.place})` : ""} — what it asks to see with a deck permit:`, ...c.items.filter((i) => !i.trim).map((i, k) => `${k + 1}. ${i.need}${i.quote ? ` — “${i.quote}”` : ""}`)].join("\n").slice(0, 30_000);
 }
 
 /** Where a county's requirements are kept for a company: the state, the county, the city when the city issues its own. */

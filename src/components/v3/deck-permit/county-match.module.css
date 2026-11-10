@@ -47,8 +47,10 @@
 .sources a, .summarySources a { color: var(--blueprint); word-break: break-word; }
 .counts { display: flex; flex-wrap: wrap; gap: 6px 16px; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); }
 .counts b { font-size: 14px; color: var(--ink); }
+.verdict { margin: 0; padding: 8px 12px; border-left: 4px solid var(--blueprint, #1854a0); background: rgba(24, 84, 160, 0.06); font-size: 13px; line-height: 1.5; }
 .group { display: grid; gap: 4px; }
 .group h3 { margin: 0 0 2px; font-size: 11px; font-weight: 900; letter-spacing: 0.12em; text-transform: uppercase; border-bottom: 1.5px solid var(--ink); padding-bottom: 3px; }
+.groupSaid { margin: 0; font-size: 12px; line-height: 1.45; color: var(--ink-soft); }
 .item { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 6px 2px; border-bottom: 1px solid var(--hair); }
 .item input { width: 18px; height: 18px; margin: 1px 0 0; accent-color: var(--blueprint); }
 .item > span:nth-child(2) { display: grid; gap: 2px; min-width: 0; }

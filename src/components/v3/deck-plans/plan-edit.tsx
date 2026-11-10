@@ -16,7 +16,7 @@
 // With no <PlanEditProvider> above it a Card draws exactly what it holds.
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { addedAfter, bringBack, cleanCardHtml, dropAdded, emptyPlanEdits, isOut, takeOut, emptySetEdits, fingerprint, mapCardClasses, NEW_CARD_HTML, newEditId, type AddedCard, type EditedSheet, type PlanEdits, type PlanSetName, type SetEdits } from "@/lib/deck/plans/edits";
+import { addedAfter, bringBack, cleanCardHtml, dropAdded, emptyPlanEdits, isOut, takeOut, emptySetEdits, fingerprint, mapCardClasses, NEW_CARD_HTML, newEditId, type AddedCard, type CardEdit, type EditedSheet, type PlanEdits, type PlanSetName, type SetEdits } from "@/lib/deck/plans/edits";
 import ps from "./plan-set.module.css";
 import pe from "./plan-edit.module.css";
 
@@ -61,6 +61,8 @@ export interface PlanEditApi {
   typing: Typing | null;
   caret: { li: boolean; tr: boolean };
   stale: Record<string, { label: string; sheetNo: string }>;
+  /** The template's typed-over cards this deck does not take: its own card reads differently (another size, another county). */
+  tplSkip: Record<string, { label: string; sheetNo: string }>;
   overflow: Record<string, string>;
   sheets: EditedSheet[];
   canUndo: boolean;
@@ -80,6 +82,13 @@ export interface PlanEditApi {
   addCardAfter(after: string): void;
   addSheet(): void;
   resetSet(): void;
+  /** The edit a card shows: its own, or the template's where this deck's card reads the same; null when it shows the design's. */
+  cardOf(id: string): CardEdit | null;
+  /** Both sets' edits as they stand now (after the typing in hand is kept). */
+  snapshot(): PlanEdits;
+  /** Both sets replaced in one step (a template put on the deck) — one Undo. */
+  applyAll(next: PlanEdits): void;
+  reportTpl(id: string, skipped: { label: string; sheetNo: string } | null): void;
   // For the cards and the sheets:
   register(id: string, reg: Reg | null): void;
   report(id: string, stale: { label: string; sheetNo: string } | null): void;
@@ -110,6 +119,7 @@ export function PlanEditProvider({ set, initial, canEdit, zoom, modules, onSave,
   const [typing, setTyping] = React.useState<Typing | null>(null);
   const [caret, setCaret] = React.useState({ li: false, tr: false });
   const [stale, setStale] = React.useState<Record<string, { label: string; sheetNo: string }>>({});
+  const [tplSkip, setTplSkip] = React.useState<Record<string, { label: string; sheetNo: string }>>({});
   const [overflow, setOverflow] = React.useState<Record<string, string>>({});
   const [sheets, setSheets] = React.useState<EditedSheet[]>([]);
   const [status, setStatus] = React.useState("");
@@ -119,10 +129,10 @@ export function PlanEditProvider({ set, initial, canEdit, zoom, modules, onSave,
   const typingRef = React.useRef<HTMLElement | null>(null);
   const dirty = React.useRef(false);
   const pendingType = React.useRef<string | null>(null);
-  const now = React.useRef({ all, set, typing, selected, editing });
+  const now = React.useRef({ all, set, typing, selected, editing, tplSkip });
   // The handlers read the latest state through this (they run after the render that set it).
   React.useLayoutEffect(() => {
-    now.current = { all, set, typing, selected, editing };
+    now.current = { all, set, typing, selected, editing, tplSkip };
   });
 
   // The build's class names ⇄ the tokens an edit keeps ("p:h").
@@ -198,6 +208,17 @@ export function PlanEditProvider({ set, initial, canEdit, zoom, modules, onSave,
       return next;
     });
   }, []);
+  const reportTpl = React.useCallback((id: string, v: { label: string; sheetNo: string } | null) => {
+    setTplSkip((cur) => {
+      const had = cur[id];
+      if (!v && !had) return cur;
+      if (v && had && had.label === v.label && had.sheetNo === v.sheetNo) return cur;
+      const next = { ...cur };
+      if (v) next[id] = v;
+      else delete next[id];
+      return next;
+    });
+  }, []);
   const reportOverflow = React.useCallback((no: string, name: string | null) => {
     setOverflow((cur) => {
       if ((cur[no] ?? null) === name) return cur;
@@ -223,7 +244,8 @@ export function PlanEditProvider({ set, initial, canEdit, zoom, modules, onSave,
       const reg = regs.current.get(id);
       if (!reg?.el || reg.meta.drawing) return;
       const e = now.current.all[now.current.set];
-      const edited = !!e.cards[id];
+      // A template's card this deck does not take is drawn as the design's own: typing starts from that.
+      const edited = !!e.cards[id] && !(e.cards[id].tpl && now.current.tplSkip[id]);
       const start = reg.el.innerHTML;
       const origEl = edited ? reg.orig : reg.el;
       setSelected(id);
@@ -254,7 +276,9 @@ export function PlanEditProvider({ set, initial, canEdit, zoom, modules, onSave,
         } else if (stored === t.origStored) {
           if (cur.cards[t.id]) change((x) => dropCard(x, t.id));
         } else if (stored !== toStored(t.start)) {
-          const was = cur.cards[t.id]?.was ?? fingerprint(t.origWords);
+          // Typed on this deck, it is this deck's own edit from here (no longer the template's).
+          const prev = cur.cards[t.id];
+          const was = prev && !(prev.tpl && now.current.tplSkip[t.id]) ? prev.was : fingerprint(t.origWords);
           change((x) => ({ ...x, cards: { ...x.cards, [t.id]: { html: stored, was } } }));
         }
       }
@@ -375,6 +399,23 @@ export function PlanEditProvider({ set, initial, canEdit, zoom, modules, onSave,
     change(() => emptySetEdits());
   }, [change]);
 
+  const snapshot = React.useCallback(() => now.current.all, []);
+  const applyAll = React.useCallback(
+    (next: PlanEdits) => {
+      setTyping(null);
+      setSelected(null);
+      commit(next);
+    },
+    [commit],
+  );
+  const cardOf = React.useCallback(
+    (id: string) => {
+      const c = all[set].cards[id];
+      return c && !(c.tpl && tplSkip[id]) ? c : null;
+    },
+    [all, set, tplSkip],
+  );
+
   // A card just added: picked and typed into, its heading selected so typing replaces it.
   React.useLayoutEffect(() => {
     const id = pendingType.current;
@@ -400,6 +441,7 @@ export function PlanEditProvider({ set, initial, canEdit, zoom, modules, onSave,
       typing,
       caret,
       stale,
+      tplSkip,
       overflow,
       sheets,
       canUndo: depth > 0,
@@ -419,6 +461,10 @@ export function PlanEditProvider({ set, initial, canEdit, zoom, modules, onSave,
       addCardAfter,
       addSheet,
       resetSet,
+      cardOf,
+      snapshot,
+      applyAll,
+      reportTpl,
       register,
       report,
       reportOverflow,
@@ -427,7 +473,7 @@ export function PlanEditProvider({ set, initial, canEdit, zoom, modules, onSave,
       typingRef,
       setTypingEl,
     }),
-    [set, all, canEdit, editing, selected, typing, caret, stale, overflow, sheets, depth, status, setEditing, select, change, undo, metaOf, startTyping, finishTyping, tool, deleteCard, restoreCard, originalCard, keepMine, addCardAfter, addSheet, resetSet, register, report, reportOverflow, reportSheets, toLive, setTypingEl],
+    [set, all, canEdit, editing, selected, typing, caret, stale, tplSkip, overflow, sheets, depth, status, setEditing, select, change, undo, metaOf, startTyping, finishTyping, tool, deleteCard, restoreCard, originalCard, keepMine, addCardAfter, addSheet, resetSet, cardOf, snapshot, applyAll, reportTpl, register, report, reportOverflow, reportSheets, toLive, setTypingEl],
   );
   return (
     <EditCtx.Provider value={api}>
@@ -529,7 +575,7 @@ export function Card({ k, label, need, drawing, contents, noAdd, className, styl
   const id = `${sheet.id}/${k}`;
   return (
     <>
-      <CardView api={api} id={id} meta={{ label, sheetNo: sheet.no, sheetName: sheet.name, drawing: !!drawing, need, added: false, noAdd: !!noAdd || !!drawing }} contents={contents} className={className} style={style} as={as} data={data} stored={api.edits.cards[id]?.html ?? null} was={api.edits.cards[id]?.was ?? null}>
+      <CardView api={api} id={id} meta={{ label, sheetNo: sheet.no, sheetName: sheet.name, drawing: !!drawing, need, added: false, noAdd: !!noAdd || !!drawing }} contents={contents} className={className} style={style} as={as} data={data} stored={api.edits.cards[id]?.html ?? null} was={api.edits.cards[id]?.was ?? null} tpl={!!api.edits.cards[id]?.tpl}>
         {children}
       </CardView>
       {as === "div" ? <AddedChain api={api} after={id} /> : null}
@@ -565,15 +611,36 @@ const headingOf = (html: string) =>
     .trim()
     .slice(0, 60);
 
-function CardView({ api, id, meta, contents, className, style, as = "div", data, stored, was, children }: { api: PlanEditApi; id: string; meta: CardMeta; contents?: boolean; className?: string; style?: React.CSSProperties; as?: "div" | "span"; data: DataAttrs; stored: string | null; was: string | null; children?: React.ReactNode }) {
+function CardView({ api, id, meta, contents, className, style, as = "div", data, stored: storedIn, was, tpl, children }: { api: PlanEditApi; id: string; meta: CardMeta; contents?: boolean; className?: string; style?: React.CSSProperties; as?: "div" | "span"; data: DataAttrs; stored: string | null; was: string | null; tpl?: boolean; children?: React.ReactNode }) {
   const elRef = React.useRef<HTMLElement | null>(null);
   const origRef = React.useRef<HTMLElement | null>(null);
   const hidden = isOut(api.edits, id);
   const typing = api.typing?.id === id && !api.typing.full ? api.typing : null;
   const isStale = !!api.stale[id];
   const Tag = as;
+  // A template's card (typed on another deck) shows only once this deck's own card is seen to read the same as the
+  // one it was typed over: the design's own is drawn first, the template's words after the check — never the other
+  // way round, so another deck's figures do not show even for a moment.
+  const fromTpl = !!tpl && storedIn != null;
+  const [okFor, setOkFor] = React.useState<string | null>(null);
+  const tplOk = fromTpl && !!was && okFor === was;
+  const stored = fromTpl && !tplOk ? null : storedIn;
 
-  const { register, report } = api;
+  const { register, report, reportTpl } = api;
+  const beingTyped = api.typing?.id === id;
+  // After every render, on purpose: the design's own words are read off the card as drawn (they follow the design and
+  // the county's figures, not a prop); the state is set only when the answer changes, so it settles in one pass.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  React.useLayoutEffect(() => {
+    if (!fromTpl) return reportTpl(id, null);
+    if (beingTyped) return;
+    const own = tplOk ? origRef.current : elRef.current;
+    if (!own) return reportTpl(id, null);
+    const same = !!was && fingerprint(own.textContent ?? "") === was;
+    if (same !== tplOk) setOkFor(same ? was : null);
+    reportTpl(id, same ? null : { label: meta.label, sheetNo: meta.sheetNo });
+  });
+  React.useEffect(() => () => reportTpl(id, null), [reportTpl, id]);
   React.useLayoutEffect(() => {
     register(id, { el: elRef.current, orig: origRef.current, meta });
   });

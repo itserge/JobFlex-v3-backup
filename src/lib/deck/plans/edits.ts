@@ -26,6 +26,12 @@ export interface CardEdit {
   html: string;
   /** The fingerprint of the design's own words for this card when it was edited (fingerprint()). */
   was: string;
+  /**
+   * It came from the contractor's template (templateFrom): typed on another deck, so it shows on this one only where
+   * the design's own words are the same as the ones it was typed over (`was`) — a table of another deck's sizes never
+   * prints here.
+   */
+  tpl?: boolean;
 }
 export interface AddedCard {
   id: string;
@@ -52,6 +58,8 @@ export interface SetEdits {
   simple?: boolean;
   /** What the contractor brought back out of the Simple set's list. */
   shown?: string[];
+  /** The contractor's template this set started from (lib/deck/planTemplatesStore), for the panel's words. */
+  tpl?: { id: string; name: string } | null;
 }
 export interface KeptCheck {
   place: string;
@@ -77,7 +85,7 @@ const MAX_ADDED = 80;
 const MAX_SHEETS = 12;
 const MAX_NAME = 80;
 
-export const emptySetEdits = (): SetEdits => ({ hidden: [], cards: {}, added: [], sheets: [], names: {}, check: null, simple: false, shown: [] });
+export const emptySetEdits = (): SetEdits => ({ hidden: [], cards: {}, added: [], sheets: [], names: {}, check: null, simple: false, shown: [], tpl: null });
 
 /* ── The Simple set (2026-11-09, part 3) ───────────────────────────────── */
 /**
@@ -239,7 +247,7 @@ function normalizeSet(raw: unknown): SetEdits {
       const e = v as Record<string, unknown>;
       const html = cleanCardHtml(str(e.html, MAX_CARD_HTML * 2));
       const was = /^[0-9a-f]{8}$/.test(String(e.was ?? "")) ? String(e.was) : "";
-      cards[id] = { html, was };
+      cards[id] = e.tpl === true ? { html, was, tpl: true } : { html, was };
     }
   }
   const sheets: AddedSheet[] = [];
@@ -266,7 +274,9 @@ function normalizeSet(raw: unknown): SetEdits {
     }
   }
   const shown = Array.isArray(r.shown) ? [...new Set(r.shown.filter((x) => idOk(x)))].slice(0, 100) : [];
-  return { hidden, cards, added, sheets, names, check: normalizeKeptCheck(r.check), simple: r.simple === true, shown };
+  const t = (r.tpl && typeof r.tpl === "object" ? r.tpl : null) as Record<string, unknown> | null;
+  const tpl = t && idOk(t.id, 40) ? { id: t.id, name: templateName(t.name) || "My template" } : null;
+  return { hidden, cards, added, sheets, names, check: normalizeKeptCheck(r.check), simple: r.simple === true, shown, tpl };
 }
 
 const FROMS = ["upload", "paste", "online", "kept", "ask"] as const;
@@ -380,3 +390,61 @@ export function dropSheet(e: SetEdits, sheetId: string): SetEdits {
 export const NEW_CARD_HTML = '<div class="p:h">New note</div><ol class="p:notes"><li>Type the note here.</li></ol>';
 /** A short random id for an added card or sheet. */
 export const newEditId = (prefix: string): string => `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+/* ── The contractor's own template (2026-11-10) ───────────────────────── */
+// Owner: "when constructor he did his preset with deleting what he don't need it, that he can make save as a template
+// and he run his decks with exact template of the permit set and the construction set, the way he wants it after
+// deleting and adjusting the original permit set." A template is both sets' edits as they stand — what was taken
+// out, renamed, added, typed over, Simple or Full — without the county check (that belongs to an address). On the
+// next deck everything applies as it is, but a card typed over: it carries another deck's words, so it shows only
+// where this deck's own card reads the same as the one it was typed over (CardEdit.tpl).
+export interface PlanTemplateInfo {
+  id: string;
+  name: string;
+  /** ISO time it was saved. */
+  at: string;
+}
+export interface PlanTemplateIndex {
+  v: 1;
+  /** The template every new deck starts with, when there is one. */
+  defaultId: string | null;
+  list: PlanTemplateInfo[];
+}
+export const MAX_TEMPLATES = 8;
+export const MAX_TEMPLATE_NAME = 60;
+export const templateName = (v: unknown): string => String(typeof v === "string" ? v : "").replace(/\s+/g, " ").trim().slice(0, MAX_TEMPLATE_NAME);
+
+const templateSet = (e: SetEdits): SetEdits => ({
+  ...e,
+  cards: Object.fromEntries(Object.entries(e.cards).map(([id, c]) => [id, { html: c.html, was: c.was, tpl: true as const }])),
+  check: null,
+  tpl: null,
+});
+/** A deck's edits as a template: both sets, every typed-over card marked as the template's, no county check. */
+export function templateFrom(edits: PlanEdits): PlanEdits {
+  const n = normalizePlanEdits(edits);
+  return { v: 1, permit: templateSet(n.permit), crew: templateSet(n.crew) };
+}
+/** A template on a deck: its edits under the template's name, the deck's own county checks kept. */
+export function editsFromTemplate(body: PlanEdits, t: { id: string; name: string }, keep?: PlanEdits | null): PlanEdits {
+  const n = templateFrom(body);
+  const mark = { id: t.id, name: templateName(t.name) || "My template" };
+  return { v: 1, permit: { ...n.permit, tpl: mark, check: keep?.permit.check ?? null }, crew: { ...n.crew, tpl: mark, check: keep?.crew.check ?? null } };
+}
+/** True when a deck's edits change nothing on either set (a template saved from it would be the studio's own set). */
+export const nothingToSave = (edits: PlanEdits): boolean => (["permit", "crew"] as const).every((k) => isBlank(edits[k]) && !edits[k].simple);
+
+export function normalizeTemplateIndex(raw: unknown): PlanTemplateIndex {
+  const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const list: PlanTemplateInfo[] = [];
+  if (Array.isArray(r.list)) {
+    for (const v of r.list.slice(0, MAX_TEMPLATES)) {
+      const e = (v ?? {}) as Record<string, unknown>;
+      const name = templateName(e.name);
+      if (!idOk(e.id, 40) || !name || list.some((x) => x.id === e.id)) continue;
+      list.push({ id: e.id, name, at: /^\d{4}-\d{2}-\d{2}/.test(String(e.at ?? "")) ? String(e.at).slice(0, 24) : "" });
+    }
+  }
+  const defaultId = typeof r.defaultId === "string" && list.some((x) => x.id === r.defaultId) ? r.defaultId : null;
+  return { v: 1, defaultId, list };
+}
