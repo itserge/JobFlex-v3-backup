@@ -10,13 +10,15 @@
 
 /* ── A sheet ─────────────────────────────────────────────────────────── */
 .sheet { position: relative; background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,0.10); border: 1px solid var(--hair); box-sizing: border-box; overflow: hidden; }
-.b { width: 17in; height: 11in; }
-.a { width: 8.5in; height: 11in; }
-.c { width: 24in; height: 18in; }
-.d { width: 36in; height: 24in; }
+/* The paper (2026-11-09: named paperA–D — a bare ".c" was also the tables' centred cell, which gave every centred
+   cell an 18-in. height and blanked the code compliance, setbacks and checklist tables). */
+.paperB { width: 17in; height: 11in; }
+.paperA { width: 8.5in; height: 11in; }
+.paperC { width: 24in; height: 18in; }
+.paperD { width: 36in; height: 24in; }
 /* The border: a binding margin on the left of a permit sheet. */
 .frame { position: absolute; inset: 0.25in 0.25in 0.25in 0.5in; border: 1.6pt solid var(--ink); display: grid; grid-template-columns: minmax(0, 1fr) 2.6in; }
-.a .frame { inset: 0.3in 0.3in 0.3in 0.4in; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+.paperA .frame { inset: 0.3in 0.3in 0.3in 0.4in; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
 .field { position: relative; min-width: 0; min-height: 0; padding: 0.14in 0.16in; box-sizing: border-box; display: grid; gap: 0.12in; }
 
 /* ── The title block, down the right edge ───────────────────────────── */
@@ -147,10 +149,10 @@
   .drawing { width: 17in; max-width: 100%; height: 3in; display: grid; place-items: center; background: #fff; border: 1px solid var(--hair); font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mut); }
 .toolbar { display: none !important; }
   /* Each sheet prints on its own paper: the permit set on 11 × 17, the crew's set on letter. */
-  .b { page: jfPlanB; }
-  .a { page: jfPlanA; }
-  .c { page: jfPlanC; }
-  .d { page: jfPlanD; }
+  .paperB { page: jfPlanB; }
+  .paperA { page: jfPlanA; }
+  .paperC { page: jfPlanC; }
+  .paperD { page: jfPlanD; }
 }
 @page jfPlanB { size: 17in 11in; margin: 0; }
 @page jfPlanA { size: 8.5in 11in; margin: 0; }

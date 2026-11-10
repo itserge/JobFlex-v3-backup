@@ -136,6 +136,7 @@ scripts:
   - { file: deck-m3.check.ts, suite: logic, kind: check, status: live }
   - { file: deck-material-list.check.ts, suite: logic, kind: check, status: live }
   - { file: deck-permit.check.ts, suite: logic, kind: check, status: live }
+  - { file: plan-edits.check.ts, suite: logic, kind: check, status: live, note: "the permit and construction sets' Edit: a card's words cleaned to a few tags (no script, style, picture or link), classes kept as tokens and drawn with the build's names, the design's words fingerprinted, edits read back to their limits, sheets taken out without renumbering, added sheets after the G sheets or last on the crew's, added cards and sheets deleted again" }
   - { file: deck-photo-fit.check.ts, suite: logic, kind: check, status: live }
   - { file: deck-proposal-edit.check.ts, suite: logic, kind: check, status: live }
   - { file: deck-roof-engineering.check.ts, suite: logic, kind: check, status: live }

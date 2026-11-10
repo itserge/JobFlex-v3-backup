@@ -28,15 +28,20 @@ import { readDeckCounty, readDeckLot, saveDeckSitePlan } from "@/actions/deckSit
 import { DrawingSvg } from "./deck-sections";
 import { SitePlanSvg } from "./deck-site-plan";
 import { PlanSet, ViewFrame } from "@/components/v3/deck-plans/plan-set";
+import { Card, PlanEditProvider, usePlanEdit } from "@/components/v3/deck-plans/plan-edit";
+import { saveDeckPlanEdits } from "@/actions/deckPlanEdits";
+import type { PlanEdits } from "@/lib/deck/plans/edits";
+import { PlanEditBar, PlanEditPanel } from "./plan-edit-panel";
 import ps from "@/components/v3/deck-plans/plan-set.module.css";
 import s from "./deck-permit.module.css";
 
 const SHEET_W_PX = 17 * 96;
 
 type Shop = { name: string; address: string | null; phone: string | null; email: string | null };
+type EditsRef = { address: string | null; draftId: string | null; proposalId: string | null };
 type Built = { structure: DeckStructure; checks: ReturnType<typeof deckChecks> };
 
-export function DeckPermitSheet({ design, address, title, shop, initialPlan = null, editable = true }: { design: DeckDesign | null; address: string | null; title: string; shop: Shop; initialPlan?: SitePlan | null; editable?: boolean }) {
+export function DeckPermitSheet({ design, address, title, shop, initialPlan = null, editable = true, initialEdits = null, editsRef = null }: { design: DeckDesign | null; address: string | null; title: string; shop: Shop; initialPlan?: SitePlan | null; editable?: boolean; initialEdits?: PlanEdits | null; editsRef?: EditsRef | null }) {
   const built = React.useMemo<Built | null>(() => {
     if (!design) return null;
     const structure = buildStructure(design);
@@ -52,7 +57,7 @@ export function DeckPermitSheet({ design, address, title, shop, initialPlan = nu
       </div>
     );
   }
-  return <PermitSet design={design} address={address} title={title} shop={shop} initialPlan={initialPlan} editable={editable} built={built} />;
+  return <PermitSet design={design} address={address} title={title} shop={shop} initialPlan={initialPlan} editable={editable} built={built} initialEdits={initialEdits} editsRef={editsRef ?? { address, draftId: null, proposalId: null }} />;
 }
 
 /* ── The screen's width, for fitting an 11 × 17 sheet on it ─────────────────── */
@@ -63,7 +68,10 @@ const subscribeWidth = (cb: () => void) => {
 const widthNow = () => window.innerWidth;
 const widthServer = () => SHEET_W_PX + 32;
 
-function PermitSet({ design, address, title, shop, initialPlan, editable, built }: { design: DeckDesign; address: string | null; title: string; shop: Shop; initialPlan: SitePlan | null; editable: boolean; built: Built }) {
+/** The CSS modules a card's classes come from, by the prefix an edit keeps them under ("p:h"). */
+const CARD_MODULES = { p: ps as Record<string, string>, d: s as Record<string, string> };
+
+function PermitSet({ design, address, title, shop, initialPlan, editable, built, initialEdits, editsRef }: { design: DeckDesign; address: string | null; title: string; shop: Shop; initialPlan: SitePlan | null; editable: boolean; built: Built; initialEdits: PlanEdits | null; editsRef: EditsRef }) {
   const { structure, checks } = built;
   const { roof } = structure;
   const fallback = React.useMemo(() => defaultSitePlan(structure, address), [structure, address]);
@@ -154,9 +162,19 @@ function PermitSet({ design, address, title, shop, initialPlan, editable, built 
   const today = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
   // The title block's project line: the draft's or proposal's own title when it already names the deck, else the deck and the title.
   const named = title && title !== "Deck" ? (title.toLowerCase().includes(what.toLowerCase()) ? title : `${what} — ${title}`) : what;
+  // The contractor's edits (components/v3/deck-plans/plan-edit), kept by the property beside the site plan.
+  const saveEdits = React.useCallback(
+    async (edits: PlanEdits) => {
+      if (!editable) return "";
+      const r = await saveDeckPlanEdits({ ...editsRef, edits });
+      return r.ok ? "Edits saved for this deck" : r.error;
+    },
+    [editable, editsRef],
+  );
 
   return (
-    <div className={`${s.sheet} jf-blueprint`}>
+    <PlanEditProvider set={which} initial={initialEdits} canEdit={editable} zoom={zoom} modules={CARD_MODULES} onSave={saveEdits}>
+    <PermitPage>
       <div className="content" style={{ display: "contents" }}>
         {/* ── On screen only: what to confirm before it prints ───────────── */}
         <div className={s.panel} data-permit-panel>
@@ -171,9 +189,11 @@ function PermitSet({ design, address, title, shop, initialPlan, editable, built 
                 <button type="button" aria-pressed={which === "permit"} onClick={() => setWhich("permit")} data-plan-set-pick="permit">Permit set</button>
                 <button type="button" aria-pressed={which === "crew"} onClick={() => setWhich("crew")} data-plan-set-pick="crew">Construction set</button>
               </span>
-              <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => window.print()}>Print / save as PDF</button>
+              <EditToggle />
+              <PrintButton />
             </div>
           </div>
+          <PlanEditPanel />
           {fails.length || warns.length ? (
             <div className={s.alerts} data-permit-alerts>
               {fails.map((c) => (
@@ -233,7 +253,52 @@ function PermitSet({ design, address, title, shop, initialPlan, editable, built 
           />
         </div>
       </div>
-    </div>
+      <PlanEditBar />
+    </PermitPage>
+    </PlanEditProvider>
+  );
+}
+
+/** The page: room under the sheets for the edit bar while editing. */
+function PermitPage({ children }: { children: React.ReactNode }) {
+  const api = usePlanEdit();
+  return <div className={`${s.sheet} jf-blueprint ${api?.editing ? s.sheetEditing : ""}`}>{children}</div>;
+}
+
+/** Edit ⇄ Done editing, beside Print (owner: "a button on very top, a button called edit"). */
+function EditToggle() {
+  const api = usePlanEdit();
+  if (!api?.canEdit) return null;
+  return (
+    <button type="button" className={`${s.btn} ${api.editing ? s.btnOn : ""}`} aria-pressed={api.editing} onClick={() => api.setEditing(!api.editing)} data-plan-edit-toggle>
+      {api.editing ? "Done editing" : "Edit"}
+    </button>
+  );
+}
+
+/** Print — with a word first when a card the contractor edited no longer matches the design. */
+function PrintButton() {
+  const api = usePlanEdit();
+  const [ask, setAsk] = React.useState(false);
+  const stale = api ? Object.keys(api.stale).length : 0;
+  const print = () => {
+    setAsk(false);
+    api?.finishTyping(true);
+    window.setTimeout(() => window.print(), 50);
+  };
+  if (ask && stale) {
+    return (
+      <span className={s.askRow} data-plan-print-ask>
+        <span>{stale === 1 ? "A card you edited" : `${stale} cards you edited`} no longer match the design. Print anyway?</span>
+        <button type="button" className={s.btn} onClick={() => setAsk(false)}>Not yet</button>
+        <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={print}>Print anyway</button>
+      </span>
+    );
+  }
+  return (
+    <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => (stale ? setAsk(true) : print())}>
+      Print / save as PDF
+    </button>
   );
 }
 
@@ -247,11 +312,11 @@ function SiteSheet({ layout, plan, scale, structure, address }: { layout: Return
   const req = (side: string) => (side === "rear" ? plan.setbackRearFt : side === "left" || side === "right" ? plan.setbackSideFt : null);
   return (
     <>
-      <ViewFrame no={1} sheetNo="A-101" title="Site plan" scaleLabel={`1" = ${scale}'-0"`} id="site">
+      <ViewFrame no={1} sheetNo="A-101" title="Site plan" scaleLabel={`1" = ${scale}'-0"`} id="site" need="Every building department asks for the site plan: the lot, the house, the deck and the distances to the lines.">
         <SitePlanSvg layout={layout} plan={plan} scaleFtPerIn={scale} storeys={structure.design.house.storeys} label={`Site plan of ${address ?? "the lot"}`} />
       </ViewFrame>
       <div className={ps.side}>
-        <div>
+        <Card k="project" label="Project">
           <div className={ps.h}>Project</div>
           <table className={ps.kv}>
             <tbody>
@@ -261,8 +326,8 @@ function SiteSheet({ layout, plan, scale, structure, address }: { layout: Return
               <tr><th>Owner</th><td>{plan.owner || "—"}</td></tr>
             </tbody>
           </table>
-        </div>
-        <div>
+        </Card>
+        <Card k="coverage" label="Lot coverage">
           <div className={ps.h}>Lot coverage</div>
           <table className={ps.t} data-plan-coverage>
             <tbody>
@@ -273,8 +338,8 @@ function SiteSheet({ layout, plan, scale, structure, address }: { layout: Return
             </tbody>
           </table>
           <div className={ps.small} style={{ marginTop: 3 }}>Whether a deck counts toward lot coverage is the zoning code&apos;s call; both figures are given.</div>
-        </div>
-        <div>
+        </Card>
+        <Card k="setbacks" label="Setbacks" need="Most building departments check the deck's distance to each property line.">
           <div className={ps.h}>Setbacks<span>deck to the property lines</span></div>
           <table className={ps.t} data-plan-setbacks>
             <thead>
@@ -294,8 +359,8 @@ function SiteSheet({ layout, plan, scale, structure, address }: { layout: Return
               })}
             </tbody>
           </table>
-        </div>
-        <div>
+        </Card>
+        <Card k="notes" label="Site notes">
           <div className={ps.h}>Site notes</div>
           <ol className={ps.notes}>
             <li>{plan.lot.kind === "parcel" ? `Property lines from the county's parcel map${plan.lot.apn ? ` (parcel ${plan.lot.apn})` : ""} — not a boundary survey; distances are approximate.` : "Lot as measured by the contractor — not a boundary survey."}</li>
@@ -303,7 +368,7 @@ function SiteSheet({ layout, plan, scale, structure, address }: { layout: Return
             <li>Locate the property lines and every utility before excavating; call 811 at least two business days ahead.</li>
             <li>Keep the grade sloping away from the house under the deck; no change to drainage onto a neighbouring lot.</li>
           </ol>
-        </div>
+        </Card>
       </div>
     </>
   );
@@ -324,15 +389,17 @@ function scopeWords(st: DeckStructure): string {
 
 function Detail({ n, dt }: { n: number; dt: DetailDrawing }) {
   return (
-    <div className={s.detail} data-permit-detail={dt.title}>
-      <div className={s.detailTitle}>{`${n} · ${dt.title}`}</div>
+    <Card k={`roof-detail-${n}`} label={dt.title} drawing className={s.detail} data-permit-detail={dt.title}>
+      <Card k={`roof-detail-${n}-title`} label={`${dt.title} — the detail's name`} noAdd className={s.detailTitle}>{`${n} · ${dt.title}`}</Card>
       <DrawingSvg drawing={dt.drawing} label={dt.title} className={s.dwDetail} fontScale={1.35} />
-      <ol className={s.notes}>
-        {dt.notes.map((t, k) => (
-          <li key={k}>{t}</li>
-        ))}
-      </ol>
-    </div>
+      <Card k={`roof-detail-${n}-notes`} label={`${dt.title} — notes`}>
+        <ol className={s.notes}>
+          {dt.notes.map((t, k) => (
+            <li key={k}>{t}</li>
+          ))}
+        </ol>
+      </Card>
+    </Card>
   );
 }
 
@@ -341,6 +408,7 @@ function RoofSchedule({ structure }: { structure: DeckStructure }) {
   if (!roof) return null;
   return (
     <>
+      <Card k="roof-schedule" label={roof.kind === "pergola" ? "Pergola schedule" : "Roof schedule"} need="Most building departments ask for the roof's members, sizes and spans.">
       <div className={s.h2}>{roof.kind === "pergola" ? "Pergola schedule" : "Roof schedule"}</div>
       <table className={s.table}>
         <thead><tr><th>Member</th><th>Size</th><th className={s.r}>Spacing / span</th><th>Table</th></tr></thead>
@@ -355,6 +423,8 @@ function RoofSchedule({ structure }: { structure: DeckStructure }) {
           {roof.ledger ? <tr><td>Roof ledger</td><td>{roof.ledger.nominal}</td><td className={s.r}>{roof.ledger.fasteners} screws</td><td className={s.rule}>{RULE.ledgerBoard}</td></tr> : null}
         </tbody>
       </table>
+      </Card>
+      <Card k="loads" label="Roof loads">
       <div className={s.h2}>Loads</div>
       <table className={s.table}>
         <tbody>
@@ -363,6 +433,7 @@ function RoofSchedule({ structure }: { structure: DeckStructure }) {
           <tr><td>Stands</td><td className={s.r}>{roof.attach === "wall" ? "on the house wall and its posts" : "on its own posts, braced"}</td></tr>
         </tbody>
       </table>
+      </Card>
     </>
   );
 }
