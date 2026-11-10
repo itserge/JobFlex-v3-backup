@@ -12,6 +12,7 @@
 //
 // Pure: no model, no database, no React.
 
+import { US_STATES } from "../../usStates";
 import { z } from "zod";
 import { cleanCardHtml, isOut, newEditId, type AddedCard, type KeptCheck, type SetEdits } from "./edits";
 
@@ -406,7 +407,56 @@ export function placeKey(state: string, county: string, city?: string | null): s
   const slug = (t: string | null | undefined) => (t ?? "").toLowerCase().replace(/\bcounty\b/g, "").replace(/[^a-z0-9]+/g, "");
   const st = slug(state).slice(0, 2);
   const co = slug(county).slice(0, 40);
-  if (st.length !== 2 || co.length < 2) return null;
   const ci = slug(city).slice(0, 40);
+  if (st.length !== 2) return null;
+  // A city typed without its county (2026-11-10): the city's own building department is still a place to keep a list for.
+  if (co.length < 2) return ci.length >= 2 ? `${st}:-:${ci}` : null;
   return ci ? `${st}:${co}:${ci}` : `${st}:${co}`;
+}
+
+export type PlaceIn = { state: string; county: string; city: string | null };
+const COUNTY_WORD = /\b(county|parish|borough|census area|municipality)\b/i;
+const STATES_LONGEST_FIRST = [...US_STATES].sort((a, b) => b.name.length - a.name.length);
+const cased = (t: string) => (t === t.toLowerCase() || t === t.toUpperCase() ? t.toLowerCase().replace(/(^|[\s-])([a-z])/g, (_m, a: string, b: string) => a + b.toUpperCase()) : t);
+
+/**
+ * A place the way a contractor types it — "nashville TN", "Knox County, Tennessee", "Knoxville, Knox County, TN",
+ * "12 Elm St, Knoxville, TN 37919" — read into a state and a city or a county (2026-11-10; owner: "the button find the
+ * requirements is not working" — it waited on a county read from a street address the job didn't have). The state
+ * comes last, as its two letters or its name; a part that says County (Parish, Borough) is the county, the last other
+ * part the city; a street line is skipped. Nothing readable → null.
+ */
+export function placeFromWords(text: string | null | undefined): PlaceIn | null {
+  let t = String(text ?? "").replace(/\s+/g, " ").trim().slice(0, 160);
+  t = t.replace(/[,\s]+(usa|u\.s\.a\.?|united states)$/i, "").replace(/[,\s]+\d{5}(-\d{4})?$/, "").replace(/[.,\s]+$/, "");
+  if (!t) return null;
+  let state = "";
+  let rest = "";
+  const low = t.toLowerCase();
+  for (const st of STATES_LONGEST_FIRST) {
+    const n = st.name.toLowerCase();
+    if (low.endsWith(n) && low.length > n.length && /[\s,]/.test(low[low.length - n.length - 1])) {
+      state = st.code;
+      rest = t.slice(0, t.length - n.length);
+      break;
+    }
+  }
+  if (!state) {
+    const m = /^(.*[\s,])([A-Za-z]{2})\.?$/.exec(t);
+    const code = m ? m[2].toUpperCase() : "";
+    if (!m || !US_STATES.some((st) => st.code === code)) return null;
+    state = code;
+    rest = m[1];
+  }
+  const parts = rest.split(",").map((x) => x.replace(/^\s*(the\s+)?city of\s+/i, "").replace(/[.\s]+$/, "").trim()).filter(Boolean);
+  const county = parts.find((x) => COUNTY_WORD.test(x)) ?? "";
+  const others = parts.filter((x) => x !== county && !/^\d/.test(x) && /[a-z]/i.test(x));
+  const city = others.length ? others[others.length - 1] : null;
+  if (!county && !city) return null;
+  return { state, county: cased(county).slice(0, 80), city: city ? cased(city).slice(0, 80) : null };
+}
+/** …and back into words: "Knoxville, Knox County, TN", "Nashville, TN". */
+export function placeLabel(p: PlaceIn | null | undefined): string {
+  if (!p) return "";
+  return [p.city, p.county, p.state].map((x) => (x ?? "").trim()).filter(Boolean).join(", ");
 }

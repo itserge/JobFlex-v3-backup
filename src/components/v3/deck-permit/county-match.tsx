@@ -14,7 +14,7 @@ import { createPortal } from "react-dom";
 import type { Route } from "next";
 import Link from "next/link";
 import { checkCountyRequirements, keptCountyRequirements, type CheckResult } from "@/actions/deckCountyRequirements";
-import { applyChecked, keptCheck, wordsCardHtml, type CheckItem, type CountyCheck, type FigureField, type SetSummary } from "@/lib/deck/plans/countyMatch";
+import { applyChecked, keptCheck, placeFromWords, placeLabel, wordsCardHtml, type CheckItem, type CountyCheck, type FigureField, type SetSummary } from "@/lib/deck/plans/countyMatch";
 import { cardWords, fingerprint, newEditId, type KeptCheck } from "@/lib/deck/plans/edits";
 import { fileKind, pdfBudget, photoJpeg } from "@/lib/projectBudgetFiles";
 import { usePlanEdit, type PlanEditApi } from "@/components/v3/deck-plans/plan-edit";
@@ -60,7 +60,7 @@ function summaryOf(api: PlanEditApi, figures: string, paper: string, place: stri
 }
 
 /** The two ways into it, beside Edit: the county's requirements, or the contractor's own words. */
-export function CountyMatchButtons(props: { place: Place; placeWords: string | null; build: BuildKind; figures: string; paper: string; plan: SitePlan; update: (p: SitePlan) => void; studioHref: string }) {
+export function CountyMatchButtons(props: { place: Place; address: string | null; build: BuildKind; figures: string; paper: string; plan: SitePlan; update: (p: SitePlan) => void; studioHref: string }) {
   const api = usePlanEdit();
   const [open, setOpen] = React.useState<"county" | "ask" | null>(null);
   if (!api?.canEdit) return null;
@@ -79,29 +79,55 @@ export function CountyMatchButtons(props: { place: Place; placeWords: string | n
 
 type Step = { at: "start" } | { at: "reading"; words: string } | { at: "review"; res: Extract<CheckResult, { ok: true }> };
 
-function CountyMatchSheet({ api, first, place, placeWords, build: build0, figures, paper, plan, update, studioHref, onClose }: { api: PlanEditApi; first: "county" | "ask"; place: Place; placeWords: string | null; build: BuildKind; figures: string; paper: string; plan: SitePlan; update: (p: SitePlan) => void; studioHref: string; onClose: () => void }) {
+function CountyMatchSheet({ api, first, place: place0, address, build: build0, figures, paper, plan, update, studioHref, onClose }: { api: PlanEditApi; first: "county" | "ask"; place: Place; address: string | null; build: BuildKind; figures: string; paper: string; plan: SitePlan; update: (p: SitePlan) => void; studioHref: string; onClose: () => void }) {
   const [build, setBuild] = React.useState<BuildKind>(build0);
   const [step, setStep] = React.useState<Step>({ at: "start" });
   const [error, setError] = React.useState("");
   const [text, setText] = React.useState("");
   const [ask, setAsk] = React.useState("");
   const [ticks, setTicks] = React.useState<Record<string, boolean>>({});
-  const [kept, setKept] = React.useState<{ build: BuildKind; at: string; from: string; department: string; sources: number } | null>(null);
+  const [kept, setKept] = React.useState<{ where: string; build: BuildKind; at: string; from: string; department: string; sources: number } | null>(null);
   const fileRef = React.useRef<HTMLInputElement | null>(null);
+  const whereRef = React.useRef<HTMLInputElement | null>(null);
+  // Where the job is, typed right here (2026-11-10; owner: "the button find the requirements is not working" — it
+  // waited, greyed out, on a county read from a street address the job didn't have). It starts from what was typed
+  // for this job before, else the county the address named, else the address's own city and state.
+  const whereKey = `deckcountywhere:${(address ?? "").trim().toLowerCase().slice(0, 120)}`;
+  const [where, setWhere] = React.useState(() => {
+    try {
+      const was = window.localStorage.getItem(whereKey);
+      if (was && placeFromWords(was)) return was;
+    } catch {
+      // No storage (a private window): start from the address.
+    }
+    return placeLabel(place0) || placeLabel(placeFromWords(address));
+  });
+  const [needWhere, setNeedWhere] = React.useState(false);
+  const placeJson = React.useMemo(() => {
+    const p = placeFromWords(where);
+    return p ? JSON.stringify(p) : "";
+  }, [where]);
+  const place = React.useMemo<Place>(() => (placeJson ? (JSON.parse(placeJson) as Place) : null), [placeJson]);
+  const placeWords = place ? placeLabel(place) : null;
 
-  // A list already found or uploaded for this place and build.
+  // A list already found or uploaded for this place and build: asked at once on opening, then once the typing rests.
+  const openedAt = React.useRef(placeJson);
   React.useEffect(() => {
+    if (!placeJson) return;
     let live = true;
-    if (!place) return;
-    keptCountyRequirements({ place, build })
-      .then((r) => {
-        if (live && r.ok && r.kept) setKept({ build, at: r.kept.at, from: r.kept.from, department: r.kept.department, sources: r.kept.sources.length });
-      })
-      .catch(() => undefined);
+    const wait = placeJson === openedAt.current ? 0 : 450;
+    const t = window.setTimeout(() => {
+      keptCountyRequirements({ place: JSON.parse(placeJson) as NonNullable<Place>, build })
+        .then((r) => {
+          if (live && r.ok && r.kept) setKept({ where: placeJson, build, at: r.kept.at, from: r.kept.from, department: r.kept.department, sources: r.kept.sources.length });
+        })
+        .catch(() => undefined);
+    }, wait);
     return () => {
       live = false;
+      window.clearTimeout(t);
     };
-  }, [place, build]);
+  }, [placeJson, build]);
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && step.at !== "reading") onClose();
@@ -120,6 +146,13 @@ function CountyMatchSheet({ api, first, place, placeWords, build: build0, figure
       f.set("place", JSON.stringify(place));
       f.set("build", build);
       if (refresh) f.set("refresh", "1");
+      if (place) {
+        try {
+          window.localStorage.setItem(whereKey, where.trim().slice(0, 160));
+        } catch {
+          // Not kept for next time; nothing else changes.
+        }
+      }
       await fill(f);
       const res = await checkCountyRequirements(f);
       if (!res.ok) {
@@ -212,7 +245,16 @@ function CountyMatchSheet({ api, first, place, placeWords, build: build0, figure
   } else if (step.at === "review") {
     body = <Review res={step.res} ticks={ticks} setTicks={setTicks} showIt={showIt} studioHref={studioHref} />;
   } else {
-    const where = placeWords ?? "the county";
+    const dept = placeWords ?? "the building department";
+    const listOnFile = kept && kept.where === placeJson && kept.build === build ? kept : null;
+    const find = () => {
+      if (!place) {
+        setNeedWhere(true);
+        whereRef.current?.focus();
+        return;
+      }
+      run("find", () => undefined, `Looking up the requirements for ${BUILD_SHORT[build]} in ${placeWords}…`, !!listOnFile);
+    };
     const askWay = (
       <div className={`${cm.way} ${cm.wayAsk}`} key="ask">
         <div className={cm.wayHead}>Tell AI what you want</div>
@@ -233,22 +275,46 @@ function CountyMatchSheet({ api, first, place, placeWords, build: build0, figure
     body = (
       <div className={cm.start}>
         {first === "ask" ? askWay : null}
-        <label className={cm.buildRow}>
-          <span>What&apos;s being built</span>
-          <select value={build} onChange={(e) => setBuild(e.target.value as BuildKind)} data-county-build>
-            {(Object.keys(BUILD_LABEL) as BuildKind[]).map((k) => (
-              <option key={k} value={k}>{BUILD_LABEL[k]}</option>
-            ))}
-          </select>
-        </label>
+        <div className={cm.topRow}>
+          <label className={cm.buildRow}>
+            <span>What&apos;s being built</span>
+            <select value={build} onChange={(e) => setBuild(e.target.value as BuildKind)} data-county-build>
+              {(Object.keys(BUILD_LABEL) as BuildKind[]).map((k) => (
+                <option key={k} value={k}>{BUILD_LABEL[k]}</option>
+              ))}
+            </select>
+          </label>
+          <label className={`${cm.buildRow} ${cm.whereRow} ${needWhere && !place ? cm.whereNeed : ""}`}>
+            <span>Where — city or county, and state</span>
+            <input
+              ref={whereRef}
+              type="text"
+              value={where}
+              maxLength={160}
+              autoComplete="off"
+              placeholder="Nashville, TN  ·  Knox County, TN"
+              onChange={(e) => setWhere(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") find();
+              }}
+              aria-invalid={needWhere && !place}
+              data-county-where
+            />
+            {needWhere && !place ? (
+              <small data-county-where-need>{where.trim() ? "Add the state too — for example “Nashville, TN” or “Knox County, TN”." : "Type the city or county and the state — for example “Nashville, TN”."}</small>
+            ) : place ? (
+              <small data-county-where-read>Looking in {placeWords}.</small>
+            ) : null}
+          </label>
+        </div>
         {error ? <div className={s.alertFail} data-county-error>{error}</div> : null}
-        {kept && kept.build === build ? (
+        {listOnFile ? (
           <div className={cm.kept} data-county-kept>
             <div>
-              <b>{kept.department || where}&apos;s list is on file</b>
-              <span>{kept.from === "online" ? `Found online` : "From your upload"} {kept.at ? `on ${new Date(kept.at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}{kept.sources ? ` · ${kept.sources} source${kept.sources === 1 ? "" : "s"}` : ""}</span>
+              <b>{listOnFile.department || dept}&apos;s list is on file</b>
+              <span>{listOnFile.from === "online" ? `Found online` : "From your upload"} {listOnFile.at ? `on ${new Date(listOnFile.at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}{listOnFile.sources ? ` · ${listOnFile.sources} source${listOnFile.sources === 1 ? "" : "s"}` : ""}</span>
             </div>
-            <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => run("kept", () => undefined, `Checking the set against ${kept.department || where}'s list…`)} data-county-use-kept>
+            <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={() => run("kept", () => undefined, `Checking the set against ${listOnFile.department || dept}'s list…`)} data-county-use-kept>
               Check this set against it
             </button>
           </div>
@@ -256,11 +322,11 @@ function CountyMatchSheet({ api, first, place, placeWords, build: build0, figure
         <div className={cm.ways}>
           <div className={cm.way}>
             <div className={cm.wayHead}>Find them for me</div>
-            <p>JobFlex looks up {where}&apos;s own published requirements for {BUILD_SHORT[build]} — its permit guide and submittal checklist — and checks this set against them. Its sources are listed for you to confirm.</p>
-            <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={!place} onClick={() => run("find", () => undefined, `Looking up ${where}'s requirements for ${BUILD_SHORT[build]}…`, !!kept && kept.build === build)} data-county-find>
-              {kept && kept.build === build ? "Search again" : "Find the requirements"}
+            <p>JobFlex looks up the building department&apos;s own published requirements for {BUILD_SHORT[build]}{placeWords ? ` in ${placeWords}` : ""} — its permit guide and submittal checklist — and checks this set against them. Its sources are listed for you to confirm.</p>
+            <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={find} data-county-find>
+              {listOnFile ? "Search again" : "Find the requirements"}
             </button>
-            {!place ? <small>Set the job&apos;s address in the studio first — the county is read from it (or type the county and state under Title block).</small> : null}
+            {!place ? <small>Type the city or county and the state above first.</small> : null}
           </div>
           <div className={cm.way}>
             <div className={cm.wayHead}>Upload the department&apos;s list</div>

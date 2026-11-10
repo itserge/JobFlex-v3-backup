@@ -7,7 +7,7 @@
 // unless the contractor asked for it. Ticked changes become ordinary edits; notes, figures and the sheet size go to the
 // jurisdiction panel. Pure: no model, no database.
 //   NODE_PATH="" npx --no-install tsx --tsconfig tsconfig.json qa/tests/logic/county-match.check.ts
-import { applyChecked, checkRead, figureValue, keptCheck, placeKey, requirementsWords, setWords, type ModelCheck, type SetSummary } from "../../../src/lib/deck/plans/countyMatch";
+import { applyChecked, checkRead, figureValue, keptCheck, placeFromWords, placeKey, placeLabel, requirementsWords, setWords, type ModelCheck, type SetSummary } from "../../../src/lib/deck/plans/countyMatch";
 import { emptySetEdits, normalizeKeptCheck, normalizePlanEdits } from "../../../src/lib/deck/plans/edits";
 
 let bad = 0;
@@ -117,6 +117,25 @@ check("the list in words, for the next deck there", /^Knox County Codes Administ
 check("the set in words names its cards and figures", /site\/setbacks · A-101 · Setbacks/.test(setWords(set)) && /Wind 115 mph/.test(setWords(set)));
 check("a place's key", placeKey("TN", "Knox County", null) === "tn:knox" && placeKey("tn", "Knox", "Knoxville") === "tn:knox:knoxville" && placeKey("", "Knox", null) === null);
 check("figure words", figureValue("frostIn", "36 inches") === 36 && figureValue("groundSnowPsf", "1,000") === null && figureValue("edition", "2018 IRC") === "2018 IRC");
+
+/* ── where the job is, as a contractor types it (2026-11-10: "nashville TN" left Find greyed out) ── */
+{
+  const P = (t: string) => placeFromWords(t);
+  const eq = (t: string, want: unknown) => JSON.stringify(P(t)) === JSON.stringify(want);
+  check("a city and a state, no comma, lower case", eq("nashville TN", { state: "TN", county: "", city: "Nashville" }), P("nashville TN"));
+  check("a city, a comma, the state's name", eq("Nashville, Tennessee", { state: "TN", county: "", city: "Nashville" }), P("Nashville, Tennessee"));
+  check("a county", eq("Knox County, TN", { state: "TN", county: "Knox County", city: null }), P("Knox County, TN"));
+  check("a county without a comma, lower case", eq("knox county tn", { state: "TN", county: "Knox County", city: null }), P("knox county tn"));
+  check("a city in its county", eq("Knoxville, Knox County, TN", { state: "TN", county: "Knox County", city: "Knoxville" }), P("Knoxville, Knox County, TN"));
+  check("a whole address: the street and the ZIP are skipped", eq("1234 Simple St, Knoxville, TN 37919", { state: "TN", county: "", city: "Knoxville" }), P("1234 Simple St, Knoxville, TN 37919"));
+  check("a parish, and a two-word state", eq("Jefferson Parish, Louisiana", { state: "LA", county: "Jefferson Parish", city: null }) && eq("Charleston, West Virginia", { state: "WV", county: "", city: "Charleston" }) && eq("Kansas City, Kansas", { state: "KS", county: "", city: "Kansas City" }));
+  check("the City of …, and its own capitals kept", eq("City of McMinnville, OR", { state: "OR", county: "", city: "McMinnville" }), P("City of McMinnville, OR"));
+  check("no state, no place", P("nashville") === null && P("") === null && P("Knox County") === null && P("TN") === null && P("Tennessee") === null);
+  check("a street with no commas is not guessed at", P("1234 Simple St Knoxville TN") === null);
+  check("two letters that are no state", P("Nashville, ZZ") === null);
+  check("back into words", placeLabel(P("knoxville, knox county, tn")) === "Knoxville, Knox County, TN" && placeLabel(P("nashville TN")) === "Nashville, TN" && placeLabel(null) === "");
+  check("a city alone has a key of its own", placeKey("TN", "", "Nashville") === "tn:-:nashville" && placeKey("TN", "", null) === null && placeKey("TN", "Davidson County", "Nashville") === "tn:davidson:nashville");
+}
 
 if (bad) {
   console.log(`\n${bad} FAILED`);

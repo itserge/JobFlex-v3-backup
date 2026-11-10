@@ -197,7 +197,7 @@ function PermitSet({ design, address, title, shop, initialPlan, editable, built,
               </span>
               <SimpleSwitch />
               <EditToggle />
-              <CountyMatchButtons place={place} placeWords={countyName} build={build} figures={figureWords} paper={pick.paper.name} plan={plan} update={update} studioHref={studioHref} />
+              <CountyMatchButtons place={place} address={address} build={build} figures={figureWords} paper={pick.paper.name} plan={plan} update={update} studioHref={studioHref} />
               <PrintButton />
             </div>
           </div>
