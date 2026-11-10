@@ -32,6 +32,13 @@ export async function GET(req: Request) {
       console.warn("[follow-ups] promise sweep failed:", err instanceof Error ? err.message : err);
       return null;
     });
+  // Campaigns still going out (2026-11-10, lib/winback): each sends its next batch, inside the company's own hours.
+  const campaigns = await Promise.all([import("@/lib/winback/server"), import("@/lib/appUrl")])
+    .then(async ([m, u]) => m.drainCampaigns(await u.appBaseUrl()))
+    .catch((err) => {
+      console.warn("[follow-ups] campaign drain failed:", err instanceof Error ? err.message : err);
+      return null;
+    });
   // The Monday report (2026-11-10, lib/pulse): a company whose clock says Monday morning gets last week's leads,
   // reply speed, win rate and best sources by mail — once, to its owners and admins who left it on.
   const weekly = await import("@/lib/pulse/server")
@@ -40,5 +47,5 @@ export async function GET(req: Request) {
       console.warn("[follow-ups] weekly report failed:", err instanceof Error ? err.message : err);
       return null;
     });
-  return NextResponse.json({ ok: true, ...res, leadFollowUps: leads, orgTimezones: timezones, promises, weeklyReports: weekly });
+  return NextResponse.json({ ok: true, ...res, leadFollowUps: leads, orgTimezones: timezones, promises, campaigns, weeklyReports: weekly });
 }

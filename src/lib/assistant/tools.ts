@@ -58,6 +58,7 @@ import { REPAIR_TOOLS } from "@/lib/assistant/repairs";
 import { COMMISSION_TOOLS } from "@/lib/assistant/commission";
 // The client's page (2026-11-10, Smart CRM part 5): send a client their one lasting link.
 import { CLIENT_HOME_TOOLS } from "@/lib/assistant/clientHome";
+import { WIN_BACK_TOOLS } from "@/lib/assistant/winback";
 import { CONTRACTOR_TOOLS } from "@/lib/assistant/contractors";
 // The subcontractors plan, part 6 (2026-11-09): find, requests, compare, the subs budget, invoices, documents, reminders,
 // approving and paying a sub's invoice.
@@ -1015,6 +1016,7 @@ export const TOOLS: readonly AnyTool[] = [
   ...REPAIR_TOOLS,
   ...COMMISSION_TOOLS,
   ...CLIENT_HOME_TOOLS,
+  ...WIN_BACK_TOOLS,
   ...REMIND_TOOLS,
   ...MONEY_TOOLS,
   ...PROJECT_TOOLS,

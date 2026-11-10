@@ -255,8 +255,19 @@
 }
 /* Six tabs (Today · Office · Overview · Book · Rules · Due) at 390px: ~60px
    each, so the label shrinks a step and keeps its one line. */
-.tabs[data-n="6"] .tab, .tabs[data-n="5"] .tab { font-size: 11.5px; gap: 4px; padding: 0 2px; }
-.tabs[data-n="6"] .tabCount, .tabs[data-n="5"] .tabCount { min-width: 18px; height: 17px; font-size: 10px; }
+.tabs[data-n="7"] .tab, .tabs[data-n="6"] .tab, .tabs[data-n="5"] .tab { font-size: 11.5px; gap: 4px; padding: 0 2px; }
+.tabs[data-n="7"] .tabCount, .tabs[data-n="6"] .tabCount, .tabs[data-n="5"] .tabCount { min-width: 18px; height: 17px; font-size: 10px; }
+/* Seven tabs (the office's, with Win back) cannot share 358px: the strip
+   scrolls sideways instead, each tab at least 62px. The columns and the
+   indicator keep ONE width, so the rule still lands under its tab. */
+.tabs[data-n="7"] {
+  grid-template-columns: repeat(7, max(62px, calc(100% / 7)));
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.tabs[data-n="7"]::-webkit-scrollbar { display: none; }
+.tabs[data-n="7"] .tabInd { width: max(62px, calc(100% / 7)); }
 /* Label and count sit on ONE line at every width — never stacked. */
 .tab {
   display: flex; align-items: center; justify-content: center; gap: 7px;

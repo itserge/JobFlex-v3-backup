@@ -149,6 +149,7 @@ export const ACTIVE_STATUSES = ['NEW', 'ROUTED', 'CLAIMED', 'CONTACTED', 'QUOTED
 export const TABS = [
   { key: 'today', label: 'Today' },
   { key: 'office', label: 'Office' },
+  { key: 'back', label: 'Win back' },
   { key: 'overview', label: 'Overview' },
   { key: 'book', label: 'Book' },
   { key: 'rules', label: 'Rules' },

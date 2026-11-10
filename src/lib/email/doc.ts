@@ -48,5 +48,7 @@ export interface EmailDoc {
   after?: string[];
   /** Mono fine print, below a hairline. */
   fine?: string;
+  /** A small link at the end of the fine print — a campaign's "Unsubscribe" (2026-11-10). Needs `fine`. */
+  fineLink?: { label: string; href: string };
   footer: { name: string; contact?: string; ref?: string };
 }

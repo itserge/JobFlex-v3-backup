@@ -33,6 +33,9 @@ export const CAPABILITIES = [
   // The subcontractors plan, part 6 (2026-11-09): recording a payment to a sub — owners and managers (requireManager),
   // like the Invoices tab's Record the payment.
   "subs.pay",
+  // Smart CRM part 6 (2026-11-10): lists of past clients and campaigns to them — owners and managers (requireManager),
+  // like the CRM's Bring back tab: a campaign writes to the company's whole book in the company's name.
+  "clients.campaign",
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
@@ -83,6 +86,8 @@ export function roleAllows(role: string, need: Capability): boolean {
       return role !== "SALES" && mayOpen(role, "/dashboard/projects");
     case "subs.pay":
       return manager && mayOpen(role, "/dashboard/projects");
+    case "clients.campaign":
+      return manager && mayOpen(role, "/dashboard/crm");
   }
 }
 
