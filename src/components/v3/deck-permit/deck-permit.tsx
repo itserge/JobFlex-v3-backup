@@ -32,6 +32,7 @@ import { Card, PlanEditProvider, usePlanEdit } from "@/components/v3/deck-plans/
 import { saveDeckPlanEdits } from "@/actions/deckPlanEdits";
 import type { PlanEdits } from "@/lib/deck/plans/edits";
 import { PlanEditBar, PlanEditPanel } from "./plan-edit-panel";
+import { CountyCheckSummary, CountyMatchButtons, type BuildKind } from "./county-match";
 import ps from "@/components/v3/deck-plans/plan-set.module.css";
 import s from "./deck-permit.module.css";
 
@@ -162,6 +163,11 @@ function PermitSet({ design, address, title, shop, initialPlan, editable, built,
   const today = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
   // The title block's project line: the draft's or proposal's own title when it already names the deck, else the deck and the title.
   const named = title && title !== "Deck" ? (title.toLowerCase().includes(what.toLowerCase()) ? title : `${what} — ${title}`) : what;
+  // Matching the county's requirements (./county-match): where, what is being built, what the set prints.
+  const place = plan.county?.name && plan.county.state ? { state: plan.county.state, county: plan.county.name, city: plan.county.city ?? null } : null;
+  const build: BuildKind = design.structure === "deck" ? (design.placement === "attached" ? "deck-attached" : "deck-free") : design.structure === "covered-deck" ? "covered" : design.structure;
+  const figureWords = criteria.rows.map((r) => `${r.label} ${r.value}`).join(" · ");
+  const studioHref = editsRef.draftId ? `/dashboard/deck-estimator?draft=${encodeURIComponent(editsRef.draftId)}` : "/dashboard/deck-estimator";
   // The contractor's edits (components/v3/deck-plans/plan-edit), kept by the property beside the site plan.
   const saveEdits = React.useCallback(
     async (edits: PlanEdits) => {
@@ -190,9 +196,11 @@ function PermitSet({ design, address, title, shop, initialPlan, editable, built,
                 <button type="button" aria-pressed={which === "crew"} onClick={() => setWhich("crew")} data-plan-set-pick="crew">Construction set</button>
               </span>
               <EditToggle />
+              <CountyMatchButtons place={place} placeWords={countyName} build={build} figures={figureWords} paper={pick.paper.name} plan={plan} update={update} studioHref={studioHref} />
               <PrintButton />
             </div>
           </div>
+          <CountyCheckSummary studioHref={studioHref} />
           <PlanEditPanel />
           {fails.length || warns.length ? (
             <div className={s.alerts} data-permit-alerts>

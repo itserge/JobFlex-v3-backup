@@ -46,6 +46,20 @@ export interface SetEdits {
   sheets: AddedSheet[];
   /** Sheet names typed over the set's own, by sheet id. */
   names: Record<string, string>;
+  /** The last check against the county's requirements (lib/deck/plans/countyMatch): what it found, what is left to do. */
+  check?: KeptCheck | null;
+}
+export interface KeptCheck {
+  place: string;
+  department: string;
+  /** ISO time of the check. */
+  at: string;
+  onSet: number;
+  added: number;
+  /** Where the requirements came from. */
+  from: "upload" | "paste" | "online" | "kept" | "ask";
+  sources: Array<{ title: string; url: string }>;
+  todo: Array<{ need: string; why: string; design: boolean }>;
 }
 export interface PlanEdits {
   v: 1;
@@ -59,7 +73,7 @@ const MAX_ADDED = 80;
 const MAX_SHEETS = 12;
 const MAX_NAME = 80;
 
-export const emptySetEdits = (): SetEdits => ({ hidden: [], cards: {}, added: [], sheets: [], names: {} });
+export const emptySetEdits = (): SetEdits => ({ hidden: [], cards: {}, added: [], sheets: [], names: {}, check: null });
 export const emptyPlanEdits = (): PlanEdits => ({ v: 1, permit: emptySetEdits(), crew: emptySetEdits() });
 
 /** The id an edit names a sheet by: its kind, or "extra:<id>" for one the contractor added. */
@@ -220,7 +234,38 @@ function normalizeSet(raw: unknown): SetEdits {
       if (idOk(id) && name) names[id] = name;
     }
   }
-  return { hidden, cards, added, sheets, names };
+  return { hidden, cards, added, sheets, names, check: normalizeKeptCheck(r.check) };
+}
+
+const FROMS = ["upload", "paste", "online", "kept", "ask"] as const;
+/** A kept check read back: its words cut to size, its links only http(s). */
+export function normalizeKeptCheck(raw: unknown): KeptCheck | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const cut = (v: unknown, n: number) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, n);
+  const n = (v: unknown) => (Number.isInteger(v) && (v as number) >= 0 && (v as number) < 1000 ? (v as number) : 0);
+  const todo = Array.isArray(r.todo)
+    ? r.todo
+        .slice(0, 30)
+        .map((t) => {
+          const x = (t ?? {}) as Record<string, unknown>;
+          return { need: cut(x.need, 160), why: cut(x.why, 240), design: x.design === true };
+        })
+        .filter((t) => t.need)
+    : [];
+  const sources = Array.isArray(r.sources)
+    ? r.sources
+        .slice(0, 8)
+        .map((t) => {
+          const x = (t ?? {}) as Record<string, unknown>;
+          return { title: cut(x.title, 120), url: cut(x.url, 400) };
+        })
+        .filter((t) => /^https?:\/\/[^\s"<>]+$/i.test(t.url))
+    : [];
+  const place = cut(r.place, 120);
+  if (!place && !todo.length) return null;
+  const from = (FROMS as readonly string[]).includes(String(r.from)) ? (r.from as KeptCheck["from"]) : "upload";
+  return { place, department: cut(r.department, 120), at: /^\d{4}-\d{2}-\d{2}/.test(String(r.at ?? "")) ? String(r.at).slice(0, 24) : "", onSet: n(r.onSet), added: n(r.added), from, sources, todo };
 }
 
 /** Edits read from anywhere, cut to their shape and limits; anything else is dropped. */

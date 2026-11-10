@@ -12,7 +12,7 @@ import ps from "@/components/v3/deck-plans/plan-set.module.css";
 import s from "./deck-permit.module.css";
 
 /** The sheets a building department nearly always asks for: a heads-up before one is taken out. */
-const NEED_SHEET: Partial<Record<EditedSheet["kind"], string>> = {
+export const NEED_SHEET: Partial<Record<EditedSheet["kind"], string>> = {
   site: "Every building department asks for the site plan.",
   foundation: "Every building department asks for the foundation plan.",
   framing: "Every building department asks for the framing plan.",
