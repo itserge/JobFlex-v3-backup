@@ -42,6 +42,12 @@
 //   Ramp's API (/developer/v1/…, 2026-11-09, part 5a) for Bill Pay on the stand: one entity with a bill-pay account,
 //   vendors made on request with an ACH account, approved bills scheduled at once; POST /__fake/ramp/pay/<billId>
 //   marks one paid (Ramp paying the sub), so the walk can see the payment recorded. RAMP_API_BASE points here.
+//   The permit set's requirements check (json_schema "permit_requirements", 2026-11-09, the plan set's Edit, part 2):
+//   a department's list → one item per line by words (frost / wind / snow figures, a 24 x 36 sheet, "Note:" lines, the
+//   site plan and footings already on the set, elevations not required, a 42-in. guard for the studio, an affidavit to
+//   sign); the contractor's own words ("WHAT THE CONTRACTOR WANTS") → take out the elevations / materials, a note, the
+//   septic tank on the site plan, a deeper footing for the studio. The Responses API with web_search (POST /v1/responses)
+//   → Knox County's deck checklist with two cited links.
 //   NODE_PATH="" npx --no-install tsx qa/fixtures/assistant-fake-openai.ts     (FAKE_OPENAI_PORT, default 4601)
 import http from "node:http";
 import { readBudgetText } from "../../src/lib/projectBudgetImport";
@@ -723,6 +729,93 @@ function answer(body: { messages: Msg[] }) {
 
 /** What the model would read off a budget: a picture is a lender's page; words are read by the rules, with one figure
  *  off when they say "fakecheck" (so the card's "not in it as written" shows). */
+type PermitAction = { kind: string; sheet: string; after: string; card: string; title: string; lines: string[]; field: string; value: string };
+const noAction = (): PermitAction => ({ kind: "none", sheet: "", after: "", card: "", title: "", lines: [], field: "", value: "" });
+function fakePermitRequirements(messages: Msg[]) {
+  const texts = messages.filter((m) => m.role === "user").map((m) => (typeof m.content === "string" ? m.content : ((m.content as unknown as Array<{ type: string; text?: string }>) ?? []).map((p) => p.text ?? "").join("\n")));
+  const last = texts[texts.length - 1] ?? "";
+  const asked = /WHAT THE CONTRACTOR WANTS/.test(last);
+  const body = last.replace(/^.*?:\n\n/s, "");
+  const items: Array<{ need: string; quote: string; status: string; where: string; why: string; action: PermitAction }> = [];
+  const add = (need: string, quote: string, status: string, a: Partial<PermitAction> = {}, where = "", why = "") => items.push({ need, quote, status, where, why, action: { ...noAction(), ...a } });
+  for (const raw of body.split(/\n|(?<=\.)\s+(?=[A-Z])/)) {
+    const line = raw.replace(/^\s*\d+[.)]\s*/, "").trim();
+    const lower = line.toLowerCase();
+    if (!line) continue;
+    if (asked) {
+      if (/take out|remove|drop/.test(lower) && /elevation/.test(lower)) add("Take out the elevations", line, "add", { kind: "remove_sheet", sheet: "elevations" });
+      if (/take out|remove|drop/.test(lower) && /material/.test(lower)) add("Take out the materials schedule", line, "add", { kind: "remove_sheet", sheet: "schedules" });
+      const note = /note:\s*(.+?)\.?$/i.exec(line);
+      if (note) add("Add a general note", line, "add", { kind: "note", lines: [note[1].replace(/^./, (c) => c.toUpperCase()) + "."] });
+      if (/septic/.test(lower)) add("Show the septic tank on the site plan", line, "add", { kind: "card", sheet: "site", title: "Septic tank", lines: [line.replace(/^show /i, "").replace(/^./, (c) => c.toUpperCase())] });
+      if (/deeper|footing.*\d/.test(lower)) add("Deeper footings", line, "you", { kind: "design" }, "", "Change the frost depth in the studio's Footings step so the footings and the drawings follow.");
+      continue;
+    }
+    const num = /(\d+(?:\.\d+)?)/.exec(line)?.[1] ?? "";
+    if (/frost/.test(lower) && num) add(`Footings to the frost line, ${num} in.`, line, "add", { kind: "figure", field: "frostIn", value: num });
+    else if (/wind/.test(lower) && num) add(`Design wind speed ${num} mph`, line, "add", { kind: "figure", field: "windMph", value: num });
+    else if (/snow/.test(lower) && num) add(`Ground snow load ${num} psf`, line, "add", { kind: "figure", field: "groundSnowPsf", value: num });
+    else if (/24\s*[x×]\s*36/.test(lower)) add("Plans on 24 x 36 sheets", line, "add", { kind: "paper", value: "24x36" });
+    else if (/^note:/i.test(line)) add("A general note on the plans", line, "add", { kind: "note", lines: [line.replace(/^note:\s*/i, "")] });
+    else if (/site plan/.test(lower)) add("A site plan with the setbacks", line, "on_set", {}, "site/setbacks");
+    else if (/footing/.test(lower)) add("Footing sizes and depths", line, "on_set", {}, "foundation/footings");
+    else if (/elevations? (are )?not required/.test(lower)) add("No elevations needed", line, "add", { kind: "remove_sheet", sheet: "elevations" });
+    else if (/guard/.test(lower) && /42/.test(lower)) add("Guards 42 in. high", line, "you", { kind: "design" }, "", "Raise the railing to 42 in. in the studio's Railing step.");
+    else if (/affidavit|signed|signature/.test(lower)) add("The owner's signed affidavit", line, "you", {}, "", "Have the owner sign the department's affidavit and attach it.");
+    else if (/inspection/.test(lower)) add("Inspections listed on the plans", line, "add", { kind: "card", sheet: "notes", title: "Inspections", lines: [line] });
+  }
+  const knox = /knox/i.test(body);
+  return {
+    department: asked ? "" : knox ? "Knox County Codes Administration" : "The building department",
+    level: asked ? "unknown" : "county",
+    place: asked ? "" : knox ? "Knox County, TN" : "",
+    about: asked ? "The contractor's changes to the set." : `A deck permit checklist, ${items.length} items.`,
+    items,
+  };
+}
+const FAKE_KNOX = `Knox County Codes Administration issues permits for decks in unincorporated Knox County. A deck attached to the house needs a permit.
+1. A site plan showing the deck and the distance to each property line.
+2. Footing sizes and depths on the plans.
+3. Frost depth: footings at least 12 in. below grade.
+4. Design wind speed 115 mph.
+5. Guards 42 in. high where the deck is more than 30 in. above grade.
+6. Note: All lumber shall be pressure-treated and stamped.
+7. The owner's signed affidavit.
+SOURCES:
+https://www.knoxcounty.org/codes/deck-guide.pdf
+https://www.knoxcounty.org/codes/residential.php`;
+function fakeWebSearch() {
+  const text = FAKE_KNOX;
+  return {
+    id: `resp_fake_${Date.now()}`,
+    object: "response",
+    created_at: Math.floor(Date.now() / 1000),
+    status: "completed",
+    model: "fake-assistant",
+    output: [
+      { type: "web_search_call", id: "ws_1", status: "completed" },
+      {
+        type: "message",
+        id: "msg_1",
+        role: "assistant",
+        status: "completed",
+        content: [
+          {
+            type: "output_text",
+            text,
+            annotations: [
+              { type: "url_citation", url: "https://www.knoxcounty.org/codes/deck-guide.pdf", title: "Knox County — Residential Deck Guide", start_index: 0, end_index: 40 },
+              { type: "url_citation", url: "https://www.knoxcounty.org/codes/residential.php", title: "Knox County Codes — Residential permits", start_index: 41, end_index: 80 },
+            ],
+          },
+        ],
+      },
+    ],
+    output_text: text,
+    usage: { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+  };
+}
+
 function fakeBudgetRead(messages: Msg[]) {
   const user = messages.find((m) => m.role === "user") as unknown as { content: string | Array<{ type: string; text?: string }> } | undefined;
   const parts = typeof user?.content === "string" ? [{ type: "text", text: user.content }] : (user?.content ?? []);
@@ -1063,6 +1156,11 @@ http
         res.end(JSON.stringify(fakePlaces(body)));
         return;
       }
+      // The permit set's "Find them for me" (2026-11-09): the Responses API with web search.
+      if (req.url?.includes("/responses") && (req.method ?? "GET").toUpperCase() === "POST" && /web_search/.test(raw)) {
+        res.end(JSON.stringify(fakeWebSearch()));
+        return;
+      }
       if (req.url?.includes("/chat/completions")) {
         try {
           const body = JSON.parse(raw || "{}") as { messages?: Msg[]; tools?: unknown[]; response_format?: { type?: string; json_schema?: { name?: string } } };
@@ -1084,6 +1182,10 @@ http
             return;
           }
           // The Budget card's read: a lender's page for a picture, the rules' rows for words.
+          if (body.response_format?.type === "json_schema" && body.response_format.json_schema?.name === "permit_requirements") {
+            res.end(JSON.stringify(reply(JSON.stringify(fakePermitRequirements(body.messages ?? [])))));
+            return;
+          }
           if (body.response_format?.type === "json_schema" && body.response_format.json_schema?.name === "budget_read") {
             res.end(JSON.stringify(reply(JSON.stringify(fakeBudgetRead(body.messages ?? [])))));
             return;
