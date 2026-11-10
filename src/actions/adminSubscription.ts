@@ -38,7 +38,7 @@ function afterWrite() {
 
 /* Cancel a live Stripe subscription from the organization's card (lib/adminCancel):
    at the end of the paid period, or now. The owner's own cancel stays in
-   Settings → Billing only. */
+   the Subscription page only. */
 export async function adminCancelSubscription(orgId: string, mode: AdminCancelMode, reason: string, notify: boolean): Promise<AdminCancelResult> {
   const admin = await requirePlatformAdmin();
   const r = await cancelAsAdmin({ organizationId: orgId, mode, reason, notify }, admin);

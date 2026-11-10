@@ -1,0 +1,440 @@
+/* THE CANCEL QUESTIONS — see CancelFlow.tsx. Plain CSS on the house dialog's
+   frame (confirm-plan-change.css) and Before you go's look (free-switch.css),
+   namespaced `jfcf-`; selectors carry two or more classes because the
+   window renders in a portal on <body> beside pages that reset bare
+   elements. Tokens only (globals.css). Square corners, hairline rules
+   (--ink-line), square boxes and radios, no shadow on any choice; every row
+   and button is 44px or more to the touch. */
+
+.jf-confirm.jfcf .jf-confirm-box {
+  width: min(600px, 100%);
+}
+
+/* Back on the kicker's line, at its left; the cross keeps the top right. */
+.jf-confirm.jfcf .jfcf-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 24px;
+  padding-right: 44px;
+}
+.jf-confirm.jfcf .jffs-link.jfcf-back {
+  gap: 6px;
+  margin: -10px 0 -10px -4px;
+  padding: 0 8px 0 4px;
+  color: var(--ink, #0a0a0a);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.jf-confirm.jfcf .jffs-link.jfcf-back svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: square;
+}
+@media (hover: hover) {
+  .jf-confirm.jfcf .jffs-link.jfcf-back:hover {
+    color: var(--accent-ink, #0e3d7a);
+  }
+}
+.jf-confirm.jfcf .jf-confirm-h:focus {
+  outline: none;
+}
+.jf-confirm.jfcf .jf-confirm-h:focus-visible {
+  outline: 2px solid var(--accent, #1854a0);
+  outline-offset: 3px;
+}
+
+/* Visually hidden (a fieldset's legend that the title already says). */
+.jf-confirm.jfcf .jfcf-vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.jf-confirm.jfcf fieldset.jfcf-set {
+  min-inline-size: 0;
+  margin-top: 14px;
+  border: 0;
+}
+.jf-confirm.jfcf fieldset.jfcf-set.jfcf-gap {
+  margin-top: 22px;
+}
+.jf-confirm.jfcf fieldset.jfcf-set > legend.jffs-ext-lbl {
+  float: left;
+  width: 100%;
+  margin-bottom: 10px;
+}
+.jf-confirm.jfcf fieldset.jfcf-set > legend.jffs-ext-lbl + * {
+  clear: both;
+}
+.jf-confirm.jfcf .jffs-why-sub {
+  margin: 0 0 10px;
+}
+.jf-confirm.jfcf .jffs-why-opts {
+  margin-top: 0;
+}
+.jf-confirm.jfcf .jffs-why-opts > .jffs-radio + .jffs-radio {
+  border-top: 1px solid var(--ink-line, rgba(10, 10, 10, 0.12));
+}
+.jf-confirm.jfcf .jfcf-opt-sub {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-muted, #555);
+}
+
+/* Screen A: three big cards, one picked. Hairline frame, the picked one a
+   blueprint frame on the soft fill — no shadow. */
+.jf-confirm.jfcf .jfcf-cards {
+  display: grid;
+  gap: 10px;
+}
+.jf-confirm.jfcf .jffs-radio.jfcf-card {
+  min-height: 64px;
+  padding: 14px 16px;
+  border: 1.5px solid var(--ink-line, rgba(10, 10, 10, 0.12));
+  border-radius: var(--r-sm, 2px);
+  gap: 14px;
+}
+.jf-confirm.jfcf .jffs-radio.jfcf-card:has(input:checked) {
+  border-color: var(--accent, #1854a0);
+}
+.jf-confirm.jfcf .jfcf-card-t {
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: -0.005em;
+}
+
+/* Tool lists: two to a row, each tile framed in a hairline. */
+.jf-confirm.jfcf .jfcf-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.jf-confirm.jfcf .jffs-check.jfcf-tile {
+  min-height: 48px;
+  padding: 6px 10px;
+  border: 1.5px solid var(--ink-line, rgba(10, 10, 10, 0.12));
+  border-radius: var(--r-sm, 2px);
+  gap: 10px;
+  font-size: 13.5px;
+}
+.jf-confirm.jfcf .jffs-check.jfcf-tile:has(input:checked) {
+  border-color: var(--accent, #1854a0);
+}
+.jf-confirm.jfcf .jffs-check .jffs-opt-t,
+.jf-confirm.jfcf .jffs-radio .jffs-opt-t {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Words under a choice. */
+.jf-confirm.jfcf .jfcf-words {
+  margin-top: 12px;
+}
+.jf-confirm.jfcf .jffs-area.jfcf-input {
+  min-height: 44px;
+  resize: none;
+}
+
+/* C1: 7 / 14 days, side by side. */
+.jf-confirm.jfcf .jfcf-days {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.jf-confirm.jfcf .jfcf-days .jffs-radio {
+  min-height: 52px;
+  border: 1.5px solid var(--ink-line, rgba(10, 10, 10, 0.12));
+  border-radius: var(--r-sm, 2px);
+  font-size: 15px;
+  font-weight: 800;
+}
+.jf-confirm.jfcf .jfcf-days .jffs-radio:has(input:checked) {
+  border-color: var(--accent, #1854a0);
+}
+
+/* B3: a follow-up opens under the reason it belongs to, indented to the
+   reason's words, on the reason's soft fill. */
+.jf-confirm.jfcf .jfcf-reasons > .jfcf-reason + .jfcf-reason {
+  border-top: 1px solid var(--ink-line, rgba(10, 10, 10, 0.12));
+}
+.jf-confirm.jfcf .jfcf-reason[data-on="1"] {
+  background: var(--accent-soft, rgba(24, 84, 160, 0.08));
+}
+.jf-confirm.jfcf .jfcf-follow {
+  padding: 2px 12px 14px 44px;
+}
+.jf-confirm.jfcf fieldset.jfcf-set.jfcf-follow {
+  margin-top: 0;
+}
+.jf-confirm.jfcf .jfcf-follow > .jfcf-words:first-child {
+  margin-top: 4px;
+}
+.jf-confirm.jfcf .jfcf-reason .jfcf-follow .jffs-ext-lbl {
+  font-size: 13.5px;
+}
+.jf-confirm.jfcf .jfcf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.jf-confirm.jfcf .jfcf-chips .jffs-radio {
+  min-height: 44px;
+  padding: 6px 12px 6px 10px;
+  border: 1.5px solid var(--ink-line, rgba(10, 10, 10, 0.12));
+  border-radius: var(--r-sm, 2px);
+  gap: 8px;
+  font-size: 13.5px;
+}
+.jf-confirm.jfcf .jfcf-chips .jffs-radio:has(input:checked) {
+  border-color: var(--accent, #1854a0);
+  background: #fff;
+}
+.jf-confirm.jfcf .jfcf-chips .jffs-radio .jffs-box {
+  width: 16px;
+  height: 16px;
+}
+.jf-confirm.jfcf .jfcf-chips .jffs-radio input:checked + .jffs-box::after {
+  width: 8px;
+  height: 8px;
+}
+/* D2's email box sits under "Yes". */
+.jf-confirm.jfcf fieldset > .jfcf-follow {
+  margin-top: 8px;
+  padding: 0;
+}
+.jf-confirm.jfcf fieldset > .jfcf-follow .jffs-check {
+  border: 1.5px solid var(--ink-line, rgba(10, 10, 10, 0.12));
+  border-radius: var(--r-sm, 2px);
+}
+
+/* C2: one tool open at a time. Each a hairline-framed row with the
+   question and a chevron; open, its problems under it. */
+.jf-confirm.jfcf .jfcf-acc {
+  margin-top: 14px;
+  display: grid;
+  gap: 8px;
+}
+.jf-confirm.jfcf .jfcf-acc-i {
+  border: 1.5px solid var(--ink-line, rgba(10, 10, 10, 0.12));
+  border-radius: var(--r-sm, 2px);
+}
+.jf-confirm.jfcf .jfcf-acc-i[data-open="1"] {
+  border-color: var(--ink, #0a0a0a);
+}
+.jf-confirm.jfcf .jfcf-acc-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 12px 8px 14px;
+  border: 0;
+  background: #fff;
+  color: var(--ink, #0a0a0a);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.jf-confirm.jfcf .jfcf-acc-h:focus-visible {
+  outline: 2px solid var(--accent, #1854a0);
+  outline-offset: -2px;
+}
+@media (hover: hover) {
+  .jf-confirm.jfcf .jfcf-acc-h:hover {
+    background: var(--paper, #f2f0eb);
+  }
+}
+.jf-confirm.jfcf .jfcf-acc-t {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 14.5px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+.jf-confirm.jfcf .jfcf-acc-n {
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--accent, #1854a0);
+}
+.jf-confirm.jfcf .jfcf-acc-h svg {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  transition: transform 0.18s var(--ease-out, ease);
+}
+.jf-confirm.jfcf .jfcf-acc-i[data-open="1"] .jfcf-acc-h svg {
+  transform: rotate(180deg);
+}
+.jf-confirm.jfcf .jfcf-acc-b {
+  padding: 2px 12px 14px;
+}
+.jf-confirm.jfcf .jfcf-acc-b fieldset.jfcf-set {
+  margin-top: 0;
+}
+
+/* E: the answers in one line, and the way back to them. */
+.jf-confirm.jfcf .jfcf-sum {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+  margin-top: 14px;
+  padding: 4px 0 4px 12px;
+  border-left: 3px solid var(--accent, #1854a0);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink, #0a0a0a);
+}
+.jf-confirm.jfcf .jfcf-sum-t {
+  flex: 1 1 220px;
+  min-width: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.jf-confirm.jfcf .jfcf-sum-k {
+  margin-right: 6px;
+  font-weight: 500;
+  color: var(--ink-muted, #555);
+}
+.jf-confirm.jfcf .jfcf-sum-k::after {
+  content: ":";
+}
+.jf-confirm.jfcf .jffs-link.jfcf-edit {
+  color: var(--accent, #1854a0);
+  font-weight: 700;
+}
+
+/* The foot stays on screen while a long screen scrolls under it. */
+.jf-confirm.jfcf .jfcf-foot {
+  position: sticky;
+  bottom: -24px;
+  z-index: 1;
+  margin: 8px -28px -24px;
+  padding: 4px 28px 24px;
+  background: #fff;
+}
+.jf-confirm.jfcf .jfcf-foot .jffs-why-hint {
+  margin-top: 0;
+}
+.jf-confirm.jfcf .jfcf-foot .jf-confirm-row {
+  margin-top: 8px;
+}
+.jf-confirm.jfcf .jfcf-foot .jffs-err {
+  margin-top: 4px;
+}
+.jf-confirm.jfcf .jffs-acts {
+  margin-top: 18px;
+}
+
+@media (max-width: 600px) {
+  .jf-confirm.jfcf .jf-confirm-box {
+    width: 100%;
+  }
+  .jf-confirm.jfcf .jfcf-foot {
+    bottom: -18px;
+    margin: 6px -18px -18px;
+    padding: 2px 18px 18px;
+  }
+  .jf-confirm.jfcf .jffs-radio.jfcf-card {
+    min-height: 60px;
+    padding: 12px 14px;
+  }
+  .jf-confirm.jfcf .jfcf-card-t {
+    font-size: 15px;
+  }
+  .jf-confirm.jfcf .jfcf-follow {
+    padding-left: 12px;
+  }
+  .jf-confirm.jfcf .jfcf-grid {
+    gap: 6px;
+  }
+  .jf-confirm.jfcf .jffs-check.jfcf-tile {
+    min-height: 46px;
+    padding: 4px 8px;
+    gap: 8px;
+    font-size: 13px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .jf-confirm.jfcf .jfcf-acc-h svg {
+    transition: none;
+  }
+}
+
+/* The foot's rule over a screen that scrolls under it; an "Optional" note
+   in a question's legend sits on its own line under the question. */
+.jf-confirm.jfcf .jfcf-foot {
+  border-top: 1px solid var(--ink-line, rgba(10, 10, 10, 0.12));
+}
+.jf-confirm.jfcf .jfcf-screen[data-step="A"] .jfcf-foot,
+.jf-confirm.jfcf .jfcf-screen[data-step="C1"] .jfcf-foot,
+.jf-confirm.jfcf .jfcf-screen[data-step="E_confirm"] .jfcf-foot {
+  border-top-color: transparent;
+}
+.jf-confirm.jfcf legend.jffs-ext-lbl .jffs-opt-note {
+  display: block;
+  margin: 2px 0 0;
+}
+@media (max-width: 600px) {
+  .jf-confirm.jfcf .jf-confirm-row.jfcf-pair {
+    flex-direction: row;
+  }
+  .jf-confirm.jfcf .jf-confirm-row.jfcf-pair .jf-confirm-btn {
+    flex: 1 1 0;
+    width: auto;
+    padding: 0 10px;
+  }
+}
+/* A phone's 844px holds every screen in its first state with nothing to
+   scroll: the spacing steps down by one notch. */
+@media (max-width: 600px) {
+  .jf-confirm.jfcf fieldset.jfcf-set {
+    margin-top: 10px;
+  }
+  .jf-confirm.jfcf fieldset.jfcf-set.jfcf-gap {
+    margin-top: 16px;
+  }
+  .jf-confirm.jfcf .jffs-why-sub {
+    margin-bottom: 8px;
+  }
+  .jf-confirm.jfcf .jfcf-grid .jffs-check.jfcf-tile {
+    min-height: 44px;
+  }
+  .jf-confirm.jfcf .jfcf-screen[data-step="E_before"] .jffs-keeps {
+    margin-top: 12px;
+  }
+  .jf-confirm.jfcf .jfcf-screen[data-step="E_before"] .jffs-acts {
+    margin-top: 12px;
+  }
+}
+@media (max-width: 600px) {
+  .jf-confirm.jfcf .jfcf-kick-long {
+    display: none;
+  }
+  .jf-confirm.jfcf .jfcf-top {
+    justify-content: space-between;
+  }
+}
+/* A desk: the tool lists three to a row, so the longest screen in its
+   first state still opens with nothing to scroll. */
+@media (min-width: 601px) {
+  .jf-confirm.jfcf .jf-confirm-box {
+    width: min(660px, 100%);
+  }
+  .jf-confirm.jfcf .jfcf-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

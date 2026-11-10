@@ -588,6 +588,31 @@ body:has(.jf-mobile-subscription) div:has(> nav[aria-label="Primary"]) { display
   text-underline-offset: 3px;
 }
 .jf-mobile-subscription .jfms-heroCardLink:focus-visible { outline: 2px solid var(--paper); outline-offset: -4px; }
+/* The way out at the card's foot (owner, 2026-11-09): one more pressed band,
+   a full-width outline button on the ink ground — secondary, 44px. */
+.jf-mobile-subscription .jfms-heroFoot {
+  padding: 12px var(--card-pad) var(--card-pad);
+  border-top: 1.5px solid rgba(242, 240, 235, 0.25);
+}
+.jf-mobile-subscription .jfms-heroFoot .jfms-heroCancel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 16px;
+  border: 1.5px solid rgba(242, 240, 235, 0.45);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--paper);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.jf-mobile-subscription .jfms-heroFoot .jfms-heroCancel:active { background: rgba(242, 240, 235, 0.1); }
+.jf-mobile-subscription .jfms-heroFoot .jfms-heroCancel:focus-visible { outline: 2px solid var(--paper); outline-offset: 2px; }
 .jf-mobile-subscription .jfms-heroFactL {
   display: block;
   font-family: var(--font-mono);

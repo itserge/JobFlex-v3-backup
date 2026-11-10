@@ -88,6 +88,7 @@ import { BillingRecovery } from "../payment-ribbon/billing-recovery";
 import type { SubscriptionViewProps } from "@/app/(dashboard)/dashboard/subscription/subscription-load";
 import { nextChargeLines, usd } from "@/app/(dashboard)/dashboard/subscription/next-charge-lines";
 import { FreeSwitchNotice } from "@/components/billing/FreeSwitch";
+import { CancelFlow } from "@/components/billing/CancelFlow";
 import { UpdatePaymentCardButton } from "@/components/billing/PlanChangeNotes";
 import { MobileUpgradeContent } from "@/components/v3/mobile-upgrade/mobile-upgrade";
 import type { UpgradePlan } from "@/components/v3/upgrade-blueprint/upgrade-content";
@@ -193,6 +194,7 @@ export function MobileSubscription({
   sandbox,
   interval,
   scheduledSwitch,
+  cancel = null,
 }: MobileSubscriptionProps) {
 
   const scrollRef = useRef<HTMLElement>(null);
@@ -439,6 +441,13 @@ export function MobileSubscription({
                 ) : null}
               </div>
             ) : null}
+            {/* The way out (owner, 2026-11-09): the plan card's foot, a quiet
+                full-width outline — the one place an owner cancels. */}
+            {cancel ? (
+              <div className="jfms-heroFoot">
+                <CancelFlow offer={cancel} className="jfms-heroCancel" />
+              </div>
+            ) : null}
           </section>
 
           {/* The Deck Studio add-on (2026-10-19) — reads its own state. */}
@@ -460,8 +469,8 @@ export function MobileSubscription({
           </section>
 
           {/* ============ THE SWITCH TO FREE, BOOKED ============
-              The date and the way back (lib/freePlan). Cancelling itself
-              lives in Settings → Billing. */}
+              The date and the way back (lib/freePlan). Cancelling itself is
+              the plan card's foot button. */}
           {freeSwitch && !complimentary ? (
             <FreeSwitchNotice planName={planName} at={freeSwitch.at} canKeep />
           ) : null}

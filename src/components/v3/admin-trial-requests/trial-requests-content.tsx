@@ -4,7 +4,7 @@
 // /admin/trial-requests (owner, 2026-10-20)
 //
 // Owners on a trial (or at most 14 days past it) who asked for more days from
-// "Before you go" (lib/trialExtension). The table lists every request, newest
+// the cancel questions (lib/trialExtension; screen C1 of lib/cancelTree). The table lists every request, newest
 // first; a row opens the drawer: the request, what the company did between
 // the trial's start and its end (read on open — actions/trialExtension
 // trialRequestUsage), and while it is pending the two decisions — Approve
@@ -43,6 +43,9 @@ export interface TrialRequestDTO {
   currentPeriodEnd: string | null;
   requestedDays: number;
   note: string | null;
+  /** Asked from the cancel questions (2026-11-09, lib/cancelTree B1): what got
+   *  in the way and what they would try first; null for an older request. */
+  answers: { inTheWay: string; tryFirst: string } | null;
   status: string;
   grantedDays: number | null;
   extendedUntil: string | null;
@@ -128,7 +131,7 @@ export function AdminTrialRequestsContent({ rows, openId }: { rows: TrialRequest
             <div className={cx("card-head", ui.cardHead)}>
               <div className="card-titles">
                 <div className="card-title">Requests</div>
-                <div className="card-sub">Asked from &ldquo;Before you go&rdquo; on the way to cancelling. Open one to see what the trial was used for.</div>
+                <div className="card-sub">Asked from the cancel questions on the way to cancelling. Open one to see what the trial was used for.</div>
               </div>
               <div className={ui.filters} role="group" aria-label="Filter requests">
                 {FILTERS.map((f) => (
@@ -199,8 +202,8 @@ export function AdminTrialRequestsContent({ rows, openId }: { rows: TrialRequest
                     </span>
                     <span className={ui.tdWide}>
                       <span className={ui.tdLbl}>Note</span>
-                      <span className={styles.note} title={r.note ?? undefined}>
-                        {r.note || "—"}
+                      <span className={styles.note} title={r.note ?? r.answers?.tryFirst ?? undefined}>
+                        {r.note || (r.answers ? r.answers.tryFirst || r.answers.inTheWay : "—")}
                       </span>
                     </span>
                     <span>
@@ -349,7 +352,13 @@ function DetailSheet({ handleRef }: { handleRef: React.RefObject<DetailHandle | 
           </div>
 
           <div className={ui.secL}>What they still want to try</div>
-          <p className={styles.quote}>{req.note ? `“${req.note}”` : "No note."}</p>
+          {req.answers ? (
+            <div className={styles.quote} data-trial-answers="">
+              <p>{`In the way: ${req.answers.inTheWay}`}</p>
+              <p>{`Would try first: ${req.answers.tryFirst || "—"}`}</p>
+            </div>
+          ) : null}
+          {req.note || !req.answers ? <p className={styles.quote}>{req.note ? `“${req.note}”` : "No note."}</p> : null}
 
           <Usage usage={usage} />
 

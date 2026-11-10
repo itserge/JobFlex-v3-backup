@@ -44,7 +44,7 @@ const DATA_Q: Record<"roofing" | "fencing" | "hvac" | "other", Faq> = {
 const cardQuestions = (days: number): Record<"card" | "cardless", Faq> => ({
   card: {
     q: "Do I need a credit card to start?",
-    a: `Yes. A card is required to start your ${days}-day free trial. Your selected plan renews automatically at the disclosed price when the trial ends unless you cancel from Settings → Billing first.`,
+    a: `Yes. A card is required to start your ${days}-day free trial. Your selected plan renews automatically at the disclosed price when the trial ends unless you cancel from the Subscription page first.`,
   },
   cardless: {
     q: "Do I need a credit card to start?",
@@ -68,7 +68,7 @@ function questions(variant: LandingVariantKey | undefined, requiresCard: boolean
     data,
     {
       q: `What happens after ${days} days?`,
-      a: requiresCard ? "Your selected plan renews automatically at the price and billing interval shown in checkout unless you cancel before the trial ends. Cancel anytime from Settings → Billing: you keep the plan to the end of the period you've paid for, then your account moves to the free plan — no more charges, and your work stays." : "With a card added, your selected plan starts billing at the disclosed price when the trial ends. Without a card, nothing is charged: your account moves to the free plan and your work stays.",
+      a: requiresCard ? "Your selected plan renews automatically at the price and billing interval shown in checkout unless you cancel before the trial ends. Cancel anytime from the Subscription page: you keep the plan to the end of the period you've paid for, then your account moves to the free plan — no more charges, and your work stays." : "With a card added, your selected plan starts billing at the disclosed price when the trial ends. Without a card, nothing is charged: your account moves to the free plan and your work stays.",
     },
     {
       q: "Does it work from my phone?",

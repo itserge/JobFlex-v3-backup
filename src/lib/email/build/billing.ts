@@ -149,9 +149,9 @@ export function buildPaymentFailed(i: PaymentFailedInput): EmailDoc {
 }
 
 /* THE SWITCH TO FREE, BOOKED (owner, 2026-10-13; lib/freePlan): sent when
-   the owner cancels from Settings → Billing. It says the one date that
+   the owner cancels from the Subscription page. It says the one date that
    matters, that nothing more is billed and the data stays, and offers the
-   way back — "Keep <plan>" opens Settings → Billing, where it is one press.
+   way back — "Keep <plan>" opens the Subscription page, where it is one press.
    The same letter when JobFlex support cancels it (lib/adminCancel,
    2026-11-01): it does not say "you cancelled", and when the plan ended today
    it says so and offers a plan instead of Keep. */
@@ -160,7 +160,7 @@ export interface FreeSwitchBookedInput {
   planName: string;
   /** The end of the paid cycle (or the trial): the day the plan switches. */
   switchAt: Date | null;
-  /** Absolute link to /dashboard/settings?tab=billing. */
+  /** Absolute link to /dashboard/subscription. */
   href: string;
   /** Cancelled by JobFlex support, not by the owner. */
   byJobflex?: boolean;
@@ -186,7 +186,7 @@ export function buildFreeSwitchBooked(i: FreeSwitchBookedInput): EmailDoc {
         { type: "cond", label: "Switched to Free", chip: "Today", tone: "warn" },
       ],
       cta: { label: "Choose a plan", href: i.href },
-      after: ["Want it back? Choose a plan any time from Settings → Billing. Questions? Reply to this email."],
+      after: ["Want it back? Choose a plan any time on the Subscription page. Questions? Reply to this email."],
       footer: PLATFORM_FOOTER,
     };
   }
@@ -207,7 +207,7 @@ export function buildFreeSwitchBooked(i: FreeSwitchBookedInput): EmailDoc {
       { type: "cond", label: "Switches to Free", chip: when ?? "End of cycle", tone: "warn" },
     ],
     cta: { label: `Keep ${i.planName}`, href: i.href },
-    after: ["Changed your mind? Keep your plan any time before that date from Settings → Billing. Questions? Reply to this email."],
+    after: ["Changed your mind? Keep your plan any time before that date on the Subscription page. Questions? Reply to this email."],
     footer: PLATFORM_FOOTER,
   };
 }

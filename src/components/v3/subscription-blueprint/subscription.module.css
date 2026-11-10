@@ -858,6 +858,20 @@
 :global(.jf-blueprint) .sub-hero-link:hover { color: #fff; }
 :global(.jf-blueprint) .sub-hero-link:focus-visible { outline: 2px solid var(--paper); outline-offset: 3px; }
 
+/* The way out at the plan card's foot (owner, 2026-11-09): a hairline over
+   it, the button at the right — secondary, an outline on the ink ground,
+   never the card's loudest thing. 44px to the touch. */
+:global(.jf-blueprint) .sub-hero--foot { flex-wrap: wrap; row-gap: 22px; }
+:global(.jf-blueprint) .sub-hero-foot { flex: 1 1 100%; display: flex; justify-content: flex-end;
+  margin: 0 -34px -14px; padding: 14px 34px 0; border-top: 1px solid rgba(242,240,235,.18); }
+:global(.jf-blueprint) .sub-cancel { display: inline-flex; align-items: center; justify-content: center;
+  min-height: 44px; padding: 0 18px; border: 1.5px solid rgba(242,240,235,.45); border-radius: var(--radius);
+  background: transparent; color: var(--paper); font: inherit; font-size: 13px; font-weight: 700;
+  letter-spacing: .02em; cursor: pointer;
+  transition: border-color .14s var(--ease-out, ease), background-color .14s var(--ease-out, ease); }
+:global(.jf-blueprint) .sub-cancel:hover { border-color: var(--paper); background: rgba(242,240,235,.08); }
+:global(.jf-blueprint) .sub-cancel:focus-visible { outline: 2px solid var(--paper); outline-offset: 3px; }
+
 :global(.jf-blueprint) .spec { display: grid; grid-template-columns: repeat(4, 1fr); }
 :global(.jf-blueprint) .spec-cell { position: relative; padding: 20px 22px 22px; border-right: 1.5px solid var(--ink); }
 :global(.jf-blueprint) .spec-cell:last-child { border-right: none; }
