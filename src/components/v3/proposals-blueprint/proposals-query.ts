@@ -27,6 +27,8 @@ import { describeAddress, zillowSearchUrl } from "@/lib/zillow";
 import type { ClientDesignState, Installment, ProposalRow } from "./proposals-data";
 import { clientStanding, standingLine, type ClientLinkRow } from "@/lib/deck/clientDesign";
 import { clientLinksByProposal } from "@/lib/deck/clientLinksServer";
+import { commissionByDeal } from "@/lib/proposalRow/server";
+import { callFirstWords } from "@/lib/proposalRow/shared";
 
 /** The donor prints "25m ago" / "3d ago"; anything older gets a coarser unit. */
 export function agoLabel(d: Date): string {
@@ -91,7 +93,7 @@ export async function readProposalBook(): Promise<ProposalRow[]> {
       client: {
         select: { name: true, email: true, address: true, city: true, state: true, zip: true },
       },
-      owner: { select: { id: true, name: true, email: true } },
+      owner: { select: { id: true, name: true, email: true, phone: true } },
       // The project a proposal is filed under (2026-09-18) — the list chains
       // a project's proposals together under its name.
       project: { select: { id: true, name: true } },
@@ -141,6 +143,13 @@ export async function readProposalBook(): Promise<ProposalRow[]> {
   // membership, not the user, so it is looked up once for the whole book.
   const roleByUser = new Map(
     (await db.membership.findMany({ where: { organizationId }, select: { userId: true, role: true } })).map((m) => [m.userId, m.role]),
+  );
+
+  // THE ROW, PART 4 (2026-11-10): the commission on each sold deal, and the rep's phone for "call first".
+  const sale = await commissionByDeal(organizationId, proposals.map((p) => p.id)).catch(() => new Map<string, { pct: number; earned: number; full: number; repId: string }>());
+  const ownerIds = [...new Set(proposals.filter((p) => p.callRepFirst && p.owner).map((p) => p.owner!.id))];
+  const repPhone = new Map(
+    ownerIds.length ? (await db.workerProfile.findMany({ where: { organizationId, userId: { in: ownerIds } }, select: { userId: true, phone: true } })).map((w) => [w.userId, w.phone]) : [],
   );
 
   const rows = proposals.map((p) => {
@@ -251,6 +260,13 @@ export async function readProposalBook(): Promise<ProposalRow[]> {
         return accepted || declined || design ? { accepted, declined, design } : null;
       })(),
       inst: inst.length ? inst : undefined,
+      // The office sees every deal's commission; a rep sees their own.
+      sale: (() => {
+        const c = sale.get(p.id);
+        return c && (!ownProposalsOnly || c.repId === user.id) ? { pct: c.pct, earned: c.earned, full: c.full } : null;
+      })(),
+      callFirst: p.callRepFirst ? callFirstWords(p.owner ? { name: p.owner.name, phone: repPhone.get(p.owner.id) ?? p.owner.phone ?? null } : null) : null,
+      canceled: p.canceledAt ? { at: plateDate(p.canceledAt) ?? "", reason: p.cancelReason } : null,
       materials,
       // Completion photos — the tear-sheet's Before / After boxes render these
       // and upload into them through uploadProposalPhoto().

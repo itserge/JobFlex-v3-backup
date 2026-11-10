@@ -58,6 +58,13 @@ export function instDollars(p: { total: number }, it: Installment): number {
 }
 
 export type ProposalRow = {
+  /** THE ROW, PART 4 (2026-11-10): the sales commission on this sold deal — its percent and what the rep has earned
+   *  of the whole (earned as collected, before tax). The office and the rep themself; null when none. */
+  sale?: { pct: number; earned: number; full: number } | null;
+  /** "Call Nelly first · (425) 555-0101" — the crew calls the rep before starting; null when not set. */
+  callFirst?: string | null;
+  /** A sold job the office cancelled: when (plate) and why. Its status reads DECLINED. */
+  canceled?: { at: string; reason: string | null } | null;
   /** Proposal.id — the cuid every server action and the editor route take. */
   id: string;
   /** Proposal.publicId — /portal/q/<publicId> is the client-facing page. */
