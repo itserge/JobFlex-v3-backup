@@ -97,6 +97,10 @@
 /* Deck estimator clarity scale. Scoped so other Blueprint pages keep their sizing. */
 .content:has(> .jf-deck-v1) {
   --deck-shell-inset: 16px;
+  /* The desk's two columns are the shell's .content (deck-variant-1.css, THE DESK), so their widths live here. */
+  --deck-form-width: 500px;
+  --deck-form-width-compact: 440px;
+  --deck-column-gap: 12px;
 }
 .jf-deck-v1 {
   --deck-space-xs: 8px;
@@ -119,9 +123,6 @@
   --deck-preview-min: 320px; /* the desk viewer's picture never gets shorter (deck-variant-1.css, THE DESK) */
   --deck-address-width: 520px;
   --deck-card-number: 28px;
-  --deck-form-width: 500px;
-  --deck-form-width-compact: 440px;
-  --deck-column-gap: 12px;
   --deck-footer-gap: 4px;
 }
 .jf-deck-v1 .v1-q {

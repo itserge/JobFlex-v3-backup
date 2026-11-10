@@ -47,7 +47,12 @@
 .isEnded.isEnded .stamp.stamp { color: var(--rose); background: color-mix(in srgb, var(--rose) 7%, var(--sheet, var(--paper-deep))); }
 .isCard.isCard .stamp.stamp { color: var(--emerald); background: color-mix(in srgb, var(--emerald) 7%, var(--sheet, var(--paper-deep))); }
 .isEarly.isEarly .stamp.stamp { color: var(--ink-soft); background: transparent; border-color: var(--ink-line); }
-.ribbonText.ribbonText { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+/* A narrow column (Deck Studio sets the ribbon in its form column, 2026-11-10): the line keeps ~240px beside the stamp
+   and the button with the cross moves to a row of their own, on the right — not the line squeezed to a word a row
+   between them. Wide enough for one row (every full-width page), nothing wraps and the line takes the space left. */
+.ribbon.ribbon { flex-wrap: wrap; }
+.ribbonText.ribbonText { flex: 1 1 240px; min-width: 0; overflow-wrap: anywhere; }
+.ribbon.ribbon > .ribbonText.ribbonText + * { margin-left: auto; }
 .ribbonText.ribbonText b { font-weight: 800; }
 .ribbonText.ribbonText span { color: var(--ink-muted); }
 

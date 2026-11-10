@@ -523,7 +523,12 @@ bottom. The viewer is one sticky block in the right column, from the top of the
 studio, just under the topbar and as tall as the window: head → facts → view
 tabs → picture → tools in the flow, the picture taking the rest (never under
 320px), the canvas filling it. Nothing in the viewer moves while the page
-scrolls; a viewer taller than the window scrolls inside itself. Its head puts the
+scrolls; a viewer taller than the window scrolls inside itself. The layout's
+notices (trial or payment ribbon, plan welcome, announcements) stand at the top
+of the left column and scroll away with the cards — never a row above both
+columns and never pinned over the viewer: the viewer starts at its one place and
+keeps the full height whether a notice is shown or not. In that narrow column the
+ribbon puts its button and cross on a right-aligned row of their own. Its head puts the
 buttons on their own right-aligned line when the title and they do not fit on
 one. Ordinary wheel scrolling anywhere in the main workspace, including over the
 scene, scrolls the page. Dragging still orbits the scene; modified wheel/pinch

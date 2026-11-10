@@ -605,14 +605,22 @@
    scroll with the page; the viewer is one sticky block in the right column, from the first row to the last, its top
    just under the shell's sticky topbar (where it already sits, so it never moves) and its height the window's. Inside
    it, in the flow: head, facts, tabs, picture, tools — the picture takes what is left (never under 320px) and the
-   canvas fills the picture. Nothing in it depends on the scroll. Taller than the window → it scrolls inside itself. */
+   canvas fills the picture. Nothing in it depends on the scroll. Taller than the window → it scrolls inside itself.
+   THE GRID IS THE SHELL'S .content (2026-11-10, the trial ribbon): the layout puts its notices — the trial or payment
+   ribbon, the switch-to-Free plate, the plan welcome, announcements — above the page, in .content. As rows above the
+   studio they pushed the viewer's first place down by their height (the trial ribbon: 104 css px), so the viewer rose by
+   that much as they scrolled away, and its tools began under the window. Now .content is the two columns, the studio's
+   root dissolves into it (display: contents — its tokens and type still inherit), the notices stand at the top of the
+   LEFT column and scroll away with the cards, and the viewer starts in row 1 at its one place, whatever is above the
+   form: the same picture as an account without a notice (a notice pinned over the viewer would cost the picture its
+   height on every screen). */
 @media (min-width: 769px) {
   .jf-blueprint .content:has(> .jf-deck-v1) { padding-top: var(--deck-shell-inset); padding-bottom: 0; }
   .jf-blueprint:has(.jf-deck-v1) .main { overflow-anchor: none; scrollbar-gutter: stable; scroll-padding-top: calc(var(--topbar-h, 62px) + var(--deck-shell-inset, 16px)); scroll-padding-bottom: 96px; }
   /* (.main is above .content, where --deck-shell-inset is set: hence the fallbacks — without them the calc is invalid there.) */
   .jf-deck-v1 { gap: var(--deck-space-sm); padding-bottom: 0; }
   .jf-deck-v1 > :not(.v1-work) { flex: none; }
-  .jf-deck-v1.v1-studio {
+  .jf-blueprint .content:has(> .jf-deck-v1.v1-studio) {
     --v1-stage-top: calc(var(--topbar-h, 62px) + var(--deck-shell-inset));
     display: grid;
     grid-template-columns: minmax(380px, var(--deck-form-width)) minmax(0, 1fr);
@@ -620,7 +628,10 @@
     column-gap: var(--deck-column-gap);
     row-gap: 0;
   }
-  /* Empty rows (a band that is not shown) stay 0 tall: the left column's spacing is its own margin, not row gaps. */
+  .jf-deck-v1.v1-studio { display: contents; }
+  /* The notices keep their own bottom margin; empty rows (a band that is not shown) stay 0 tall: the left column's
+     spacing is margins, not row gaps. */
+  .jf-blueprint .content:has(> .jf-deck-v1.v1-studio) > :not(.jf-deck-v1),
   .jf-deck-v1.v1-studio > :not(.v1-work), .jf-deck-v1.v1-studio .v1-work > .v1-q { grid-column: 1; min-width: 0; }
   .jf-deck-v1.v1-studio > :not(.v1-work) + *, .jf-deck-v1.v1-studio .v1-work > .v1-q { margin-top: var(--deck-space-sm); }
   .jf-deck-v1.v1-studio .v1-work { display: contents; }
@@ -630,10 +641,11 @@
   .jf-deck-v1 .v1-q { min-height: 0; gap: var(--deck-footer-gap); }
   /* The price bar rides the bottom of the window, level with the viewer's bottom. */
   .jf-deck-v1 .v1-q-foot { bottom: 0; flex: none; margin-top: 0; }
-  /* Row 1 to past the last of header + three bands + resume + form (6): a spanned row with nothing in it is 0 tall. */
+  /* Row 1 to past the last of the notices (≤ 4) + header + three bands + resume + form (6): a spanned row with nothing
+     in it is 0 tall. */
   .jf-deck-v1 .v1-stage.is-docked {
     grid-column: 2;
-    grid-row: 1 / span 8;
+    grid-row: 1 / span 16;
     position: sticky;
     top: var(--v1-stage-top);
     display: flex;
@@ -662,10 +674,10 @@
   .jf-deck-v1 .v1-total-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 1180px) and (min-width: 769px) {
-  .jf-deck-v1.v1-studio { grid-template-columns: minmax(340px, var(--deck-form-width-compact)) minmax(0, 1fr); }
+  .jf-blueprint .content:has(> .jf-deck-v1.v1-studio) { grid-template-columns: minmax(340px, var(--deck-form-width-compact)) minmax(0, 1fr); }
 }
 @media (max-width: 960px) and (min-width: 769px) {
-  .jf-deck-v1.v1-studio { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .jf-blueprint .content:has(> .jf-deck-v1.v1-studio) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .jf-deck-v1 .v1-answers-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .jf-deck-v1 .v1-tools { grid-template-columns: minmax(0, 1fr) auto; }
   .jf-deck-v1 .v1-playback, .jf-deck-v1 .v1-edit-hint { grid-column: 1 / -1; grid-row: 2; }
