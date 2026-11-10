@@ -1,4 +1,5 @@
 // JOB DETAIL — BLUEPRINT · the shapes both editions read, and nothing else.
+import type { RepairFacts } from "@/lib/repairs/server";
 import type { CrewBoardData, CrewDoor } from "@/components/v3/crew-board/crew-board-data";
 import type { TradeId } from "@/lib/inventory";
 //
@@ -221,6 +222,9 @@ export type JdMoney = {
   stock: number;
   /** Stock lines with no price anywhere — counted at $0, named so the page can say so. */
   stockUnpriced: string[];
+  /** What its come-backs (repairs) cost, and how many there are (lib/jobCost, 2026-11-09). */
+  repairs: number;
+  repairsCount: number;
   cost: number;
   costIsPlanned: boolean;
   /** False while nothing is booked and there is no plan — the profit is not known yet. */
@@ -269,6 +273,10 @@ export type JdBooking = {
 export type JobDetailRecord = {
   id: string;
   title: string;
+  /** REPAIRS (2026-11-09, lib/repairs/server repairFactsFor): what this repair is (of which job, why, who pays),
+   *  and this job's own come-backs. The office's record only. */
+  repair?: RepairFacts["repair"];
+  comebacks?: RepairFacts["comebacks"];
   status: StatusKey;
   /** Page head: "Aug 11 → Aug 14, 2026", or "No dates yet". */
   dates: string;

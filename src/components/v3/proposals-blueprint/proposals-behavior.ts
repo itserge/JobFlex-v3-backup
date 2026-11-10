@@ -87,6 +87,8 @@ export type ProposalsContentOptions = {
   /** The org's real proposal book, read server-side. There is no fixture to
    *  fall back to any more — an omitted book renders the real empty states. */
   rows?: ProposalRow[];
+  /** An office seat (owner, admin, manager): a sold proposal's bar offers Repair (2026-11-09). */
+  office?: boolean;
 };
 
 type MaterialsSheetProps = Parameters<typeof MaterialsSheet>[0];
@@ -211,6 +213,11 @@ export function initProposalsContent(
   function fmtMoney(n: number) {
     return "$" + Math.round(n).toLocaleString("en-US");
   }
+  /** Repair on sold work (2026-11-09) — the office's; the sheet lives in the shell and opens on `jf:repair`. */
+  function repairBtnHtml(p: ProposalRow, cls: string): string {
+    if (!options.office || !(p.status === "ACCEPTED" || p.status === "COMPLETED" || p.status === "PAID")) return "";
+    return '<button class="' + cls + '" type="button" data-act="repair" title="Send someone back — a come-back or a warranty repair"><svg class="ic"><use href="#i-wrench"/></svg>Repair</button>';
+  }
   // The All tab draws each proposal through the dossier card (cards/card-c.ts, owner's pick 2026-10-30); the kit
   // hands it this page's helpers so its figures and buttons are the classic card's.
   const cardKit: CardKit = {
@@ -225,6 +232,7 @@ export function initProposalsContent(
     paidCellHtml: (p) => paidCellHtml(p),
     payBarHtml: (p, withTotal) => payBarHtml(p, withTotal),
     sendCellHtml: (p) => sendCellHtml(p),
+    repairHtml: (p, cls) => repairBtnHtml(p, cls),
     payActsHtml: (p, next) => payActsHtml(p, next),
     finHtml: (p) => finHtml(p),
     instDollars: (p, it) => instDollars(p, it),
@@ -783,6 +791,8 @@ export function initProposalsContent(
       send +
       '<a class="pbar-btn pbar-btn--view" href="/portal/q/' + encodeURIComponent(p.publicId) + '" target="_blank" rel="noopener noreferrer" title="Client view — the page the client gets, in a new tab"><svg class="ic"><use href="#i-eye"/></svg>Client view</a>' +
       '<button class="pbar-btn" type="button" data-act="change-order" title="Price extras, send for signature"><svg class="ic"><use href="#i-plus"/></svg>' + (p.co && p.co.count ? "Change orders · " + p.co.count : "Change order") + "</button>" +
+      // A repair goes back to sold work (2026-11-09) — the office's; the sheet lives in the shell (jf:repair).
+      repairBtnHtml(p, "pbar-btn") +
       zillow +
       '<button class="pbar-btn" type="button" data-act="copylink" title="Copy the client\'s link to paste into a text"><svg class="ic"><use href="#i-link"/></svg>Copy client link</button>' +
       "</div>" +
@@ -1070,6 +1080,7 @@ export function initProposalsContent(
       '<button class="btn btn-ghost btn--sm" type="button" data-act="change-order"><svg class="ic"><use href="#i-plus"/></svg>' +
       (p.co && p.co.count ? "Change orders · " + p.co.count : "Change order") +
       "</button>" +
+      repairBtnHtml(p, "btn btn-ghost btn--sm") +
       // Real: the client-facing page for this proposal.
       '<a class="btn btn-ghost btn--sm" href="/portal/q/' +
       encodeURIComponent(p.publicId) +
@@ -1217,6 +1228,7 @@ export function initProposalsContent(
       '<button class="btn btn-ghost btn--sm" type="button" data-act="change-order"><svg class="ic"><use href="#i-plus"/></svg>' +
       (p.co && p.co.count ? "Change orders · " + p.co.count : "Change order") +
       "</button>" +
+      repairBtnHtml(p, "btn btn-ghost btn--sm") +
       '</div><div class="psheet-foot-r">' +
       '<button class="btn btn-ghost btn--sm" type="button" data-act="unmark"><svg class="ic"><use href="#i-undo"/></svg>Reopen job</button>' +
       (p.owed > 0
@@ -1888,6 +1900,11 @@ export function initProposalsContent(
       }
       if (kind === "change-order" && p) {
         openChangeOrder(p);
+        return;
+      }
+      // A repair on sold work (2026-11-09): the sheet lives in the shell.
+      if (kind === "repair" && p) {
+        document.dispatchEvent(new CustomEvent("jf:repair", { detail: { proposalId: p.id } }));
         return;
       }
       if (kind === "del" && p) {

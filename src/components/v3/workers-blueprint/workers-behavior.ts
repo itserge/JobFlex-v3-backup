@@ -380,6 +380,13 @@ export function initWorkersContent(
           (e.earned ? '<div class="fld-v mono">$' + e.earned.toLocaleString('en-US') + '</div>' : '<div class="fld-v none">no pay set yet</div>') + '</div>' +
         '<div class="fld-row"><div class="kpi-lbl">Still owed</div>' +
           (e.unpaid ? '<div class="fld-v mono">$' + e.unpaid.toLocaleString('en-US') + '</div>' : '<div class="fld-v none">nothing</div>') + '</div>' +
+        // Come-backs on their work in the last year (2026-11-09): only "our work" counts; the repairs they went on.
+        (e.comebacks
+          ? '<div class="fld-row" data-worker-comebacks><div class="kpi-lbl">Come-backs · 12 mo</div>' +
+            (e.comebacks.count
+              ? '<div class="fld-v mono">' + e.comebacks.count + ' on their work' + (e.comebacks.cost ? ' · $' + Math.round(e.comebacks.cost).toLocaleString('en-US') : '') + (e.comebacks.sentOn ? ' · fixed ' + e.comebacks.sentOn : '') + '</div>'
+              : '<div class="fld-v none">none' + (e.comebacks.sentOn ? ' · fixed ' + e.comebacks.sentOn : '') + '</div>') + '</div>'
+          : '') +
         '<div class="fld-row"><div class="kpi-lbl">Joined</div><div class="fld-v mono">' + escapeText(e.joined) + '</div></div>' +
         '<div class="fld-row"><div class="kpi-lbl">Last active</div>' +
           (e.lastActive && e.lastActive !== 'Never' ? '<div class="fld-v mono">' + escapeText(e.lastActive.replace(/^Active /, '')) + '</div>' : '<div class="fld-v none">never</div>') + '</div>' +

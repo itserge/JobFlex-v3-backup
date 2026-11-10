@@ -34,6 +34,8 @@ export type CardKit = {
   payBarHtml: (p: ProposalRow, withTotal?: boolean) => string;
   /** The send button / sent stamp for the row (carries data-act="send"/"resend"). */
   sendCellHtml: (p: ProposalRow) => string;
+  /** "Repair" for sold work, the office only (2026-11-09) — "" otherwise. `cls` is the caller's button class. */
+  repairHtml: (p: ProposalRow, cls: string) => string;
   /** Mark paid / Send invoice / Remind for the next stage (data-act markpaid|paidfull|invoice|remind). */
   payActsHtml: (p: ProposalRow, next: Installment | null) => string;
   /** Wisetack line + Send financing link (data-act fin-send), or "". */
