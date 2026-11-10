@@ -32,6 +32,7 @@ import { db } from "@/lib/db";
 import { CUSTOM_PLAN_SLUG, customPriceCents } from "@/lib/customPlan";
 import { getPlanBySlug } from "@/lib/planCatalogServer";
 import { currentTrialPlan } from "@/lib/trialPlan";
+import { CARD_ONLY_CHECKOUT } from "@/lib/stripeCheckoutCard";
 
 export type CardlessStart =
   | {
@@ -189,6 +190,7 @@ export async function openCardCheckout(orgId: string, origin: string): Promise<{
     const session = await stripe.checkout.sessions.create({
       mode: "setup",
       currency: "usd",
+      ...CARD_ONLY_CHECKOUT,
       customer: rec.customerId,
       client_reference_id: orgId,
       metadata: { organizationId: orgId, jf_purpose: "trial-card", subscriptionId: rec.subId },
@@ -209,6 +211,7 @@ export async function openCardCheckout(orgId: string, origin: string): Promise<{
   const offer = await winbackOffer(orgId).catch(() => null);
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
+    ...CARD_ONLY_CHECKOUT,
     customer: rec.customerId,
     client_reference_id: orgId,
     line_items: priced.lineItems,

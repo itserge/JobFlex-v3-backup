@@ -20,6 +20,7 @@ import { getStripeClient } from "@/lib/sdk/stripe";
 import { invoiceSubscriptionId } from "@/lib/stripeCompat";
 import { syncSubscriptionFromStripe } from "@/lib/stripeSync";
 import type { ShopOnJobflex } from "@/lib/email/build/billing";
+import { CARD_ONLY_CHECKOUT } from "@/lib/stripeCheckoutCard";
 
 export const CARD_UPDATE_PURPOSE = "card-update";
 
@@ -40,6 +41,7 @@ export async function openCardUpdate(orgId: string, origin: string): Promise<{ u
   const session = await stripe.checkout.sessions.create({
     mode: "setup",
     currency: "usd",
+    ...CARD_ONLY_CHECKOUT,
     customer: sub.externalCustomerId,
     client_reference_id: orgId,
     metadata: meta,
