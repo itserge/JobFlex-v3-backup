@@ -35,6 +35,7 @@ import { ROOF_TOOLS } from "@/lib/assistant/roof";
 import { HVAC_TOOLS } from "@/lib/assistant/hvac";
 import { LAWN_TOOLS } from "@/lib/assistant/lawn";
 import { PROJECT_TOOLS } from "@/lib/assistant/projects";
+import { OVERVIEW_TOOLS } from "@/lib/assistant/overview";
 import { SELECTION_TOOLS } from "@/lib/assistant/selections";
 import { PHASE_TOOLS } from "@/lib/assistant/phases";
 import { MONEY_PLAN_TOOLS } from "@/lib/assistant/moneyPlan";
@@ -1005,6 +1006,7 @@ export const TOOLS: readonly AnyTool[] = [
   ...REMIND_TOOLS,
   ...MONEY_TOOLS,
   ...PROJECT_TOOLS,
+  ...OVERVIEW_TOOLS,
   ...SELECTION_TOOLS,
   ...PHASE_TOOLS,
   ...MONEY_PLAN_TOOLS,

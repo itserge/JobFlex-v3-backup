@@ -16,6 +16,8 @@
 .w.w .status:not(.tone_red):not(.tone_amber) .statusWord { color: var(--ov-green); }
 .w.w .statusLine { font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .w.w .statusSub { font-family: var(--font-mono, ui-monospace, monospace); font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ov-muted); }
+/* the day's sentence (part 3): the AI's, checked against the numbers, or the rules' own */
+.w.w .summary { margin: 4px 0 0; max-width: 78ch; font-size: 15px; font-weight: 500; line-height: 1.45; color: var(--ink); text-wrap: pretty; }
 
 /* ask the Operator */
 .w.w .ask { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 22px; border-bottom: 1px dashed var(--ov-line); }
