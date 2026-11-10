@@ -415,7 +415,8 @@ export function buildStair(input: StairInput): StairBuild {
       railLengthIn = sloped;
       const postsPerSide = Math.max(2, Math.ceil(sloped / STAIR_RAIL_POST_SPACING_IN) + 1);
       railPosts = postsPerSide * railSides;
-      const perSide = Math.floor(sloped / BALUSTER_SPACING_IN);
+      const metalBalusters = rail.type === "aluminum" || (rail.baluster === "round" && rail.type !== "cable" && rail.type !== "glass");
+      const perSide = Math.floor(sloped / (metalBalusters ? 4.5 : BALUSTER_SPACING_IN));
       balusters = perSide * railSides;
       const sides: number[] = railSides === 2 ? [THICK_2X_IN / 2 + 1.75, w - THICK_2X_IN / 2 - 1.75] : [w - THICK_2X_IN / 2 - 1.75];
       const slopeT = Math.atan2(riseIn, totalRunIn);
@@ -435,7 +436,8 @@ export function buildStair(input: StairInput): StairBuild {
         for (let k = 1; k < perSide; k++) {
           const b = (sloped * k) / perSide * Math.cos(slopeT);
           const zn = level.surfaceIn - (riseIn * b) / Math.max(1, totalRunIn);
-          member("stair-baluster", "2x2", HANDRAIL_HEIGHT_IN - 4, P(a + inward, b), zn + 4 + (HANDRAIL_HEIGHT_IN - 4) / 2, 1.5, 1.5, HANDRAIL_HEIGHT_IN - 4, 0);
+          // Thin metal balusters where the deck's rail has them (lib/deck/rails, 2026-11-09): the stair matches the deck.
+          member("stair-baluster", metalBalusters ? "¾-in. aluminum baluster" : "2x2", HANDRAIL_HEIGHT_IN - 4, P(a + inward, b), zn + 4 + (HANDRAIL_HEIGHT_IN - 4) / 2, metalBalusters ? 0.75 : 1.5, metalBalusters ? 0.75 : 1.5, HANDRAIL_HEIGHT_IN - 4, 0);
         }
       }
     }

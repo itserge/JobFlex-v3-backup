@@ -142,6 +142,7 @@ scripts:
   - { file: deck-photo-fit.check.ts, suite: logic, kind: check, status: live }
   - { file: deck-proposal-edit.check.ts, suite: logic, kind: check, status: live }
   - { file: deck-roof-engineering.check.ts, suite: logic, kind: check, status: live }
+  - { file: deck-parts.check.ts, suite: logic, kind: check, status: live }
   - { file: deck-roof-supports.check.ts, suite: logic, kind: check, status: live, note: "passes placement \"freestanding\", no longer a Placement value (attached|beside|detached) — its free-standing cases run as an attached deck" }
   - { file: deck-roof.check.ts, suite: logic, kind: check, status: live }
   - { file: deck-samples.check.ts, suite: logic, kind: check, status: live }

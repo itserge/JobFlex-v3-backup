@@ -36,7 +36,7 @@ import { codeWords } from "./stateCodes";
 import { type CustomSlot, CEILING_LABEL, FASCIA_FINISH_LABEL, FIXTURE_LABEL, GUTTER_LABEL, PLACEMENT_LABEL, ROOFING_LABEL, ROOF_KIND_LABEL, WALL_FILL_LABEL, sizeWords, structureWords, type DeckDesign } from "./design";
 import { RULE_RAFTER } from "./roofTables";
 import { TERMITE_LABEL } from "./site";
-import { railWords } from "./rails";
+import { railNamed, railWords } from "./rails";
 import { electricalWords } from "./electrical";
 import type { MarketSnapshot } from "../fence/market";
 
@@ -282,7 +282,7 @@ export function priceStructure(s: DeckStructure, opts: DeckPriceOptions = {}): D
       line({ id: "deck-rail", name: `Railing — ${design.rail.customName || "custom"}`, description: `${railWords(rails)}; your installed price by the foot`, quantity: railFt, unit: "ln ft", material: each * railFt * 0.6, labor: each * railFt * 0.4, exampleMaterial: 0, exampleLabor: 0 });
     } else {
       const l = work(`rail.${t.id}.labor`, railFt);
-      line({ id: "deck-rail", name: `Railing — ${t.label.toLowerCase()}, ${rails.heightIn} in.`, description: `${plural(rails.posts + rails.stairPosts, "post")} bolted through the rim with tension ties; ${rails.infill === "balusters" ? `${rails.balusters} ${rails.system === "wood" ? "2x2 balusters" : "pickets"} at 5 in.` : rails.infill === "cable" ? `${rails.cableLf} ft of cable` : rails.infill === "glass" ? `${rails.panels} glass panels` : rails.infill === "panel" ? `${rails.panels} panels` : "horizontal rails"}${rails.capLf ? "; a flat 2x6 cap" : ""}${rails.stairLf ? `; ${Math.round(rails.stairLf)} ft on the stairs` : ""}`, quantity: railFt, unit: "ln ft", material: stepMaterial("rails"), labor: l.amount, exampleMaterial: stepExample("rails"), exampleLabor: l.example });
+      line({ id: "deck-rail", name: `Railing — ${railNamed(rails).toLowerCase()}, ${rails.heightIn} in.`, description: `${plural(rails.posts + rails.stairPosts, "post")} bolted through the rim with tension ties; ${rails.infill === "balusters" ? (rails.baluster === "metal" && rails.type !== "aluminum" ? `${rails.balusters} round black metal balusters at 4½ in.` : `${rails.balusters} ${rails.system === "wood" ? "2x2 balusters" : "pickets"} at ${rails.baluster === "metal" ? "4½" : "5"} in.`) : rails.infill === "cable" ? `${rails.cableLf} ft of cable` : rails.infill === "glass" ? `${rails.panels} glass panels` : rails.infill === "panel" ? `${rails.panels} panels` : rails.infill === "mesh" ? `${rails.meshPanels} welded wire mesh panels` : "horizontal rails"}${rails.capLf ? "; a flat 2x6 cap" : ""}${rails.stairLf ? `; ${Math.round(rails.stairLf)} ft on the stairs` : ""}`, quantity: railFt, unit: "ln ft", material: stepMaterial("rails"), labor: l.amount, exampleMaterial: stepExample("rails"), exampleLabor: l.example });
     }
   }
 

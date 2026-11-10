@@ -89,6 +89,8 @@ const WOOD_PCF = 35;
 const LEDGER_SCREW_SPACING_IN = 16;
 /** A free-standing roof beside the house: air between its back gutter (or, without one, its fascia) and the siding, in. */
 export const WALL_CLEAR_IN = 3;
+/** A roof brace's name in `roof.bracesOff`: its post and the way it runs from it, to the nearest eighth of a turn (0 = toward +x, 2 = out from the house). */
+export const roofBraceKey = (postId: string, yaw: number): string => `${postId}:${((Math.round(yaw / (Math.PI / 4)) % 8) + 8) % 8}`;
 /** Wall flashing: how far it turns up the siding and out over the roofing, in. */
 export const FLASH_LEG_IN = 4;
 /** A gutter's width, in. (as the 3D hangs it: a 6-in. K-style, else 5); the sub-fascia and fascia stand this much past the eave line before it. */
@@ -279,6 +281,11 @@ export interface RoofHeader {
   /** Its ends are on the wall (no post there). */
   wallEnd: boolean;
   /**
+   * Nothing bears on it (2026-11-09): a gable end under trusses or a ridge board, a shed's sloping side — it ties two
+   * posts together and may be left out by hand (design.roof.headersOff). Absent on a beam that carries the roof.
+   */
+  idle?: boolean;
+  /**
    * A cross beam (2026-10-12): it spans from one eave header to the other, hung on them right over the posts under its
    * ends, and carries a king post under the ridge at its middle. Not part of the ring.
    */
@@ -446,6 +453,10 @@ export interface RoofFrame {
   /** Any header or the ridge is an engineered beam. */
   engineered: boolean;
   hardware: { hurricaneTies: number; rafterHangers: number; postBases: number; postCaps: number; slabAnchors: number; braces: number; ledgerScrews: number; ringPlate: number; kingBrackets: number; wallHangers: number; gussets: number; cornerStraps: number; crossHangers: number };
+  /** Beams between the posts left out by hand — only ever ones nothing bears on (design.roof.headersOff). */
+  headersLeftOut: Array<{ id: string; x0: number; y0: number; x1: number; y1: number; lengthIn: number }>;
+  /** Knee braces the roof would have that were taken out by hand (design.roof.bracesOff). */
+  bracesLeftOut: number;
   /** Posts left standing in a stair's opening — a ring corner, or one no header could be laid to clear (the checks say to move the stair). */
   postsInStair: Array<{ x: number; y: number; side: StairOpening["side"]; corner: boolean }>;
   flags: {
@@ -1378,9 +1389,12 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
   };
   /** Posts that could not be cleared (each laying of the headers starts the list again). */
   const stuckPosts: V2[] = [];
+  const headersOff = new Set(r.headersOff ?? []);
+  const headersLeftOut: RoofFrame["headersLeftOut"] = [];
 
   const layHeaders = () => {
     headers.length = 0;
+    headersLeftOut.length = 0;
     extraPosts.length = 0;
     stuckPosts.length = 0;
     pergolaMidYs.length = 0;
@@ -1420,6 +1434,14 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
           king = true;
         } else tribFt = 1;
       } else if (kind === "shed") tribFt = Math.abs(B.x - A.x) > Math.abs(B.y - A.y) ? (y1 - y0) / 2 / 12 + ovh / 12 : 1;
+      // A BEAM NOTHING BEARS ON (2026-11-09 — owner: "we don't need that beam because a truss is up there"): a gable end
+      // with no king post on it (trusses, or a ridge board with ties) and a shed's sloping side only tie two posts
+      // together. Left out by hand, it is simply not laid; the moment something bears on it again it is back.
+      const idle = !pergola && !face && !king && (kind === "gable" || (kind === "shed" && Math.abs(B.x - A.x) <= Math.abs(B.y - A.y)));
+      if (idle && headersOff.has(`h${k + 1}`)) {
+        headersLeftOut.push({ id: `h${k + 1}`, x0: A.x, y0: A.y, x1: B.x, y1: B.y, lengthIn });
+        continue;
+      }
       const eq = Math.round(((2 * tribFt * totalPsf) / 50) * 10) / 10;
       let eqUsed = eq;
       let pick = pickHeader(lengthIn, eq, tribFt * totalPsf, minSegs.get(`h${k + 1}`) ?? 1);
@@ -1515,7 +1537,7 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
       const postAt: number[] = [0, ...inner, lengthIn];
       for (const at of inner) extraPosts.push({ x: A.x + u.x * at, y: A.y + u.y * at, edge: k });
       const spanIn = postAt.slice(1).reduce((m, v, i) => Math.max(m, v - postAt[i]), 0);
-      headers.push({ id, x0: A.x, y0: A.y, x1: B.x, y1: B.y, lengthIn, spec, postAt, spanIn, eqJoistSpanFt: eqHeader, maxSpanIn, kingPost: king, wallEnd });
+      headers.push({ id, x0: A.x, y0: A.y, x1: B.x, y1: B.y, lengthIn, spec, postAt, spanIn, eqJoistSpanFt: eqHeader, maxSpanIn, kingPost: king, wallEnd, ...(idle ? { idle: true } : {}) });
     }
     // THE CROSS BEAMS (2026-10-12): one span each, eave header to eave header, hung on them over the posts under their
     // ends; the king post's load at the middle read as the even load that bends it as much (2P/L) — sawn from the deck
@@ -2333,8 +2355,11 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
     }
   }
 
-  // Knee braces at every post, along its headers.
+  // Knee braces at every post, along its headers. One taken out in the 3D is left out by its key: the post and the
+  // way the brace runs (`roofBraceKey`, 2026-11-09).
   let braces = 0;
+  let bracesLeftOut = 0;
+  const bracesOff = new Set(r.bracesOff ?? []);
   if (r.braces) {
     for (const p of posts) {
       if (p.heightIn < BRACE_LEG_IN * 2) continue;
@@ -2351,7 +2376,12 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
           const yaw = Math.atan2(u.y * d, u.x * d);
           // Its top lands on THIS header's underside where the brace meets it (a shallower header rides higher than the post's top).
           const under = headerTopAt(p.y + u.y * d * BRACE_LEG_IN) - h.spec.depthIn;
-          members.push({ role: "roof-brace", nominal: "4x4", lengthIn: L, cx: ex, cy: ey, cz: under - BRACE_LEG_IN / 2, sx: L, sy: 3.5, sz: 3.5, yaw, tilt: Math.PI / 4, x0: p.x, y0: p.y, x1: p.x + u.x * d * BRACE_LEG_IN, y1: p.y + u.y * d * BRACE_LEG_IN });
+          const key = roofBraceKey(p.id, yaw);
+          if (bracesOff.has(key)) {
+            bracesLeftOut++;
+            continue;
+          }
+          members.push({ role: "roof-brace", nominal: "4x4", lengthIn: L, cx: ex, cy: ey, cz: under - BRACE_LEG_IN / 2, sx: L, sy: 3.5, sz: 3.5, yaw, tilt: Math.PI / 4, x0: p.x, y0: p.y, x1: p.x + u.x * d * BRACE_LEG_IN, y1: p.y + u.y * d * BRACE_LEG_IN, of: key });
           braces++;
         }
       }
@@ -2600,6 +2630,8 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
     gablets,
     engineered,
     hardware,
+    headersLeftOut,
+    bracesLeftOut,
     postsInStair,
     flags: {
       rafterBeyondTable: !trusses && commonSpanIn > rafterMax + 0.01,

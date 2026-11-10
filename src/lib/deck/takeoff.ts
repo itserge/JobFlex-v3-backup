@@ -27,7 +27,7 @@ import { type CustomSlot, ROOFING_LABEL, type DeckDesign } from "./design";
 import type { DeckStructure } from "./structure";
 import { structureLevels } from "./structure";
 import { BOX_FRAME_NOMINAL, STRINGER_NOMINAL } from "./stairs";
-import { BALUSTER_NOMINAL, RAIL_CAP_NOMINAL, RAIL_POST_NOMINAL, RAIL_TOP_NOMINAL } from "./rails";
+import { BALUSTER_NOMINAL, METAL_BALUSTER_SPACING_IN, RAIL_CAP_NOMINAL, RAIL_POST_NOMINAL, RAIL_TOP_NOMINAL, infillWords, railNamed } from "./rails";
 import { FIXTURE_LABEL, type FixtureKind } from "./design";
 
 export type BomStep = "footings" | "ledger" | "framing" | "decking" | "fascia" | "stairs" | "rails" | "drainage" | "slab" | "roof-posts" | "roof-frame" | "roof-deck" | "roofing" | "trim" | "ceiling" | "gutters" | "walls" | "cupola" | "electrical" | "own";
@@ -386,15 +386,18 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
       const railRuns = Math.ceil(((rails.topRailLf + rails.bottomRailLf) * 1.05) / 12 - 1e-9);
       lumber("rails", "top and bottom rails", RAIL_TOP_NOMINAL, 12, railRuns, false, `${Math.round(rails.topRailLf)} ft of rail, two rails high`, "rail-run");
       if (rails.capLf) lumber("rails", "rail cap", RAIL_CAP_NOMINAL, 12, Math.ceil((rails.capLf * 1.05) / 12 - 1e-9), false, "a flat drink cap", "rail-cap");
-      if (rails.balusters) {
+      // Round black metal balusters are bought by the piece with their connectors; a wire mesh by the panel (2026-11-09).
+      if (rails.balusters && rails.baluster === "metal") hw("rail-metal-balusters", "rails", "Round aluminum balusters, black", rails.balusters, "hw.metalBaluster", 1, "ea", `about ${METAL_BALUSTER_SPACING_IN} in. on centre, in the maker's connectors or drilled rails`);
+      else if (rails.balusters) {
         const balLen = rails.heightIn - 12;
         const bk = lfOf(new Array<number>(rails.balusters).fill(balLen), [8]);
         lumber("rails", "balusters", BALUSTER_NOMINAL, bk.stockFt, bk.boards, false, `${rails.balusters} at 5 in. on centre`, "baluster");
       }
+      if (rails.meshPanels) hw("rail-mesh-panels", "rails", "Welded wire mesh rail panels, 4 x 4 in. openings", rails.meshPanels, "hw.meshPanel", 1, "ea", "one a bay, set in a groove of the rails");
       hw("rail-brackets", "rails", "Rail brackets", rails.hardware.railBrackets, "hw.railBracket");
       hw("rail-post-caps", "rails", "Post caps, decorative", rails.hardware.postCaps, "hw.postCapWood");
     } else if (rails.system === "kit") {
-      push({ id: "rail-system", step: "rails", kind: "boards", label: `${rails.label} railing system, ${rails.heightIn} in., ${rails.infill}`, qty: Math.ceil(rails.totalLf), unit: "ft", note: `${rails.posts + rails.stairPosts} posts, ${rails.infill === "cable" ? `${rails.cableLf} ft of cable` : rails.infill === "glass" || rails.infill === "panel" ? `${rails.panels} panels` : `${rails.balusters} pickets`}`, rateKey: `rail.${rails.type}.material`, rateQty: Math.ceil(rails.totalLf), factor: 1 });
+      push({ id: "rail-system", step: "rails", kind: "boards", label: `${railNamed(rails)} railing system, ${rails.heightIn} in., ${infillWords(rails)}`, qty: Math.ceil(rails.totalLf), unit: "ft", note: `${rails.posts + rails.stairPosts} posts, ${rails.infill === "cable" ? `${rails.cableLf} ft of cable` : rails.infill === "glass" || rails.infill === "panel" ? `${rails.panels} panels` : rails.infill === "mesh" ? `${rails.meshPanels} mesh panels` : rails.infill === "horizontal" ? "horizontal rails" : `${rails.balusters} ${rails.baluster === "metal" && rails.type !== "aluminum" ? "round black metal balusters" : "pickets"}`}`, rateKey: `rail.${rails.type}.material`, rateQty: Math.ceil(rails.totalLf), factor: 1 });
     } else if (rails.system === "custom") {
       push({ id: "rail-system", step: "rails", kind: "boards", label: "Custom railing — your price", qty: Math.ceil(rails.totalLf), unit: "ft", rateKey: "rail.custom.material", rateQty: Math.ceil(rails.totalLf), factor: 1 });
     }

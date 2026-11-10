@@ -22,7 +22,7 @@
 // house is painted first, block by block from the far one, with its own
 // windows and roof.
 
-import { SCENE_LAYERS, buildRank, memberBoxCorners, MEMBER_BOX_FACES, type DeckScene, type SceneLayer } from "./scene";
+import { RAIL_INFILL_ROLE, SCENE_LAYERS, buildRank, memberBoxCorners, MEMBER_BOX_FACES, type DeckScene, type SceneLayer } from "./scene";
 
 export type IsoDeckingFinish = "wood" | "hardwood" | "composite" | "pvc" | "mineral" | "aluminum";
 export type IsoRoofing = "arch-shingle" | "3tab-shingle" | "designer-shingle" | "cedar-shake" | "metal-panel" | "standing-seam" | "none";
@@ -181,6 +181,8 @@ function finishOf(layer: SceneLayer, role: string, colors: DeckScene["colors"], 
     case "fascia": return { base: colors.fascia, ...deckingGloss(mats.decking) };
     case "rail":
       if (role === "cable") return { base: "#c9ced4", gloss: 0.75, shine: 60 };
+      // Black metal balusters or a wire mesh in a rail of another colour (2026-11-09).
+      if (colors.railInfill && RAIL_INFILL_ROLE.test(role)) return { base: colors.railInfill, gloss: 0.55, shine: 36 };
       return { base: colors.rail, ...railGloss(mats.rail) };
     case "roofing": return { base: colors.roofing, ...roofingGloss(mats.roofing) };
     case "sheathing": return { base: "#d6bf90", gloss: 0.05, shine: 10 };

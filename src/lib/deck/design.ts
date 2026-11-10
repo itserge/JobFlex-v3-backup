@@ -16,7 +16,8 @@
 
 import { parseWallRead, type JogOffer, type WallRead } from "./photoFit";
 import { LOADS, POST_SIZES, SOILS, SOLID_BEAMS, SPACINGS, JOIST_SIZES, type BuiltUpBeam, type JoistSize, type LedgerFastener, type LoadPsf, type PostSize, type SoilPsf, type SolidBeam, type SpacingIn } from "./codeTables";
-import { DECKING, FRAMING_SPECIES, RAIL_TYPES, WALL_TYPES, defaultDecking, defaultFramingSpecies, wallType, type FramingSpeciesId, type RailTypeId, type WallTypeId } from "./catalog";
+import { DECKING, FRAMING_SPECIES, RAIL_TYPES, WALL_TYPES, defaultDecking, defaultFramingSpecies, railColors, wallType, type FramingSpeciesId, type RailTypeId, type WallTypeId } from "./catalog";
+import { deckingColors } from "./deckingColors";
 import { SLOPE_LIMITS, flatSlope, type SiteSlope, type TermiteHazard } from "./site";
 import { defaultHouse, normalizeHouse, type HouseDesign } from "./house";
 
@@ -220,6 +221,14 @@ export interface RoofDesign {
   soffit: boolean;
   gutters: { kind: GutterKind; guards: boolean };
   braces: boolean;
+  /** Knee braces taken out one by one in the 3D (2026-11-09; lib/deck/parts): each a post and the way its brace runs. */
+  bracesOff: string[];
+  /**
+   * Beams between the posts left out by hand (2026-11-09 — owner: "we don't need that beam because a truss is up
+   * there"): only one that carries nothing is ever left out — a gable end under trusses or a ridge board, a shed's
+   * sloping side — and the engine puts it back the moment something bears on it (lib/deck/roof).
+   */
+  headersOff: string[];
   /** A pergola's slats on top of its rafters. */
   slats: { size: SlatSize; spacingIn: number };
   /** A pergola's top (M3). */
@@ -257,8 +266,12 @@ export interface StairDesign {
 }
 export const STAIR_LIMITS = { widthFt: { min: 3, max: 12 }, count: 6 } as const;
 
-export type RailInfill = "balusters" | "cable" | "glass" | "panel" | "horizontal";
-export const RAIL_INFILL_LABEL: Record<RailInfill, string> = { balusters: "Balusters", cable: "Cable", glass: "Glass panels", panel: "Panels", horizontal: "Horizontal rails" };
+export type RailInfill = "balusters" | "cable" | "glass" | "panel" | "horizontal" | "mesh";
+export const RAIL_INFILL_LABEL: Record<RailInfill, string> = { balusters: "Balusters", cable: "Cable", glass: "Glass panels", panel: "Panels", horizontal: "Horizontal rails", mesh: "Wire mesh panels" };
+export const RAIL_INFILLS: readonly RailInfill[] = ["balusters", "cable", "glass", "panel", "horizontal", "mesh"];
+/** The balusters: the system's own square ones, or thin round black metal ones — the look of most composite and wood rails built today. */
+export type RailBaluster = "square" | "round";
+export const RAIL_BALUSTER_LABEL: Record<RailBaluster, string> = { square: "Square, the rail's own", round: "Round black metal" };
 export type RailLighting = "none" | "post-caps" | "post-caps-risers";
 export const RAIL_LIGHTING_LABEL: Record<RailLighting, string> = { none: "No lights", "post-caps": "Lit post caps", "post-caps-risers": "Lit post caps and stair risers" };
 
@@ -277,6 +290,10 @@ export interface RailDesign {
   customName: string;
   /** Rail on the lower level too (where its height asks for one it is always on). */
   lowerLevel: boolean;
+  /** The system's colour (2026-11-09): an id in its stock colours (lib/deck/catalog RAIL_COLORS); "" = its usual one. */
+  color: string;
+  /** Square balusters of the rail's own, or round black metal ones. */
+  baluster: RailBaluster;
 }
 
 /* ------------------------------------------------------------------ */
@@ -405,6 +422,12 @@ export type OwnUnit = "ea" | "pcs" | "ft" | "sq ft" | "bags";
 export const OWN_UNITS: readonly OwnUnit[] = ["ea", "pcs", "ft", "sq ft", "bags"];
 export const CUSTOM_LIMITS = { name: 80, price: { min: 0, max: 100000 }, qty: { min: 0, max: 100000 }, items: 40 } as const;
 
+/** A colour typed in by the contractor: what the order calls it, and its look in the 3D. */
+export interface OwnColor {
+  name: string;
+  hex: string;
+}
+
 export interface ElectricalDesign {
   fixtures: Fixture[];
   /** Feet from the house's panel to where the feed reaches the structure. */
@@ -461,6 +484,8 @@ export interface DeckDesign {
     blocking: "auto" | "mid-span";
     /** Knee braces at corner posts over 2 ft (AWC's guide). */
     braces: boolean;
+    /** Braces taken out one by one in the 3D (2026-11-09; lib/deck/parts): each a post and the way its brace leans. */
+    bracesOff: string[];
   };
   ledger: {
     fastener: LedgerFastener;
@@ -484,6 +509,14 @@ export interface DeckDesign {
     fastening: "auto" | "screws" | "hidden";
     fascia: "auto" | "none" | "match";
     wastePct: number;
+    /**
+     * The board's colour, as its maker names it (2026-11-09 — owner: "whatever the client sees, he gets"): an id in the
+     * line's own colour list (lib/deck/deckingColors), "" until one is picked. The 3D, the proposal and the material
+     * list all carry it.
+     */
+    color: string;
+    /** A colour of the contractor's own — a stain, a line the list does not have: its name and how it looks. Wins over `color`. */
+    ownColor: OwnColor | null;
   };
   extras: {
     /** Feet of railing typed by hand; "auto" = every open edge less the stair openings, where a guard is required or a rail chosen. */
@@ -580,6 +613,8 @@ export function defaultRoofDesign(structure: Structure = "covered-deck"): RoofDe
     soffit: false,
     gutters: { kind: structure === "covered-deck" ? "k5" : "none", guards: false },
     braces: true,
+    bracesOff: [],
+    headersOff: [],
     slats: { size: "2x2", spacingIn: 12 },
     pergolaStyle: "flat",
     walls: { fill: "none", sides: 3 },
@@ -589,7 +624,7 @@ export function defaultRoofDesign(structure: Structure = "covered-deck"): RoofDe
 
 /** The railing a deck starts with: none chosen — the checks ask for one where the height requires it. */
 export function defaultRailDesign(): RailDesign {
-  return { type: "none", heightIn: 36, infill: "auto", postSpacingFt: 6, cap: true, lighting: "none", customPerFt: 0, customName: "", lowerLevel: true };
+  return { type: "none", heightIn: 36, infill: "auto", postSpacingFt: 6, cap: true, lighting: "none", customPerFt: 0, customName: "", lowerLevel: true, color: "", baluster: "square" };
 }
 
 /** A flight of stairs where a contractor usually puts one: down the front, in the middle, 4 ft wide, onto a new pad. */
@@ -639,10 +674,11 @@ export function defaultDeckDesign(opts: { state?: string | null; frostIn?: numbe
       joistTape: true,
       blocking: "auto",
       braces: true,
+      bracesOff: [],
     },
     ledger: { fastener: "lag", lateral: "two" },
     footing: { type: "poured", aboveGradeIn: 3, frostAlways: false },
-    decking: { product: defaultDecking(opts.state), diagonal: false, pattern: "straight", border: 0, fastening: "auto", fascia: "auto", wastePct: 10 },
+    decking: { product: defaultDecking(opts.state), diagonal: false, pattern: "straight", border: 0, fastening: "auto", fascia: "auto", wastePct: 10, color: "", ownColor: null },
     extras: { railFt: "auto", demoSqFt: 0, stainless: false, underDeckDrain: false, items: [] },
     // The guard's height the state asks for (42 in. in California), from the start.
     rail: { ...defaultRailDesign(), heightIn: deckCodeFor(stateCode(opts.state)).guardIn },
@@ -784,6 +820,8 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
   const patternRaw: DeckPattern = oneOf(dk.pattern, ["straight", "diagonal", "herringbone"] as const, dk.diagonal === true ? "diagonal" : "straight");
   const pattern: DeckPattern = patternRaw === "straight" && dk.diagonal === true ? "diagonal" : patternRaw;
 
+  const deckingProductId = oneOf(dk.product, DECKING.map((p) => p.id), d.decking.product);
+
   return {
     v: DECK_DESIGN_VERSION,
     shape,
@@ -806,6 +844,7 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
       joistTape: typeof f.joistTape === "boolean" ? f.joistTape : d.framing.joistTape,
       blocking: oneOf(f.blocking, ["auto", "mid-span"] as const, d.framing.blocking),
       braces: typeof f.braces === "boolean" ? f.braces : d.framing.braces,
+      bracesOff: keyList(f.bracesOff),
     },
     ledger: { fastener, lateral: oneOf(l.lateral, ["two", "four"] as const, d.ledger.lateral) },
     footing: {
@@ -814,13 +853,16 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
       frostAlways: typeof ft.frostAlways === "boolean" ? ft.frostAlways : d.footing.frostAlways,
     },
     decking: {
-      product: oneOf(dk.product, DECKING.map((p) => p.id), d.decking.product),
+      product: deckingProductId,
       diagonal: pattern !== "straight",
       pattern,
       border: (oneOf(num(dk.border, 0), [0, 1, 2] as const, 0) as 0 | 1 | 2),
       fastening: oneOf(dk.fastening, ["auto", "screws", "hidden"] as const, d.decking.fastening),
       fascia: oneOf(dk.fascia, ["auto", "none", "match"] as const, d.decking.fascia),
       wastePct: Math.round(clamp(num(dk.wastePct, d.decking.wastePct), DECK_LIMITS.wastePct.min, DECK_LIMITS.wastePct.max)),
+      // A colour belongs to its line: another board picked, and the colour is asked again.
+      color: typeof dk.color === "string" && deckingColors(deckingProductId).some((c) => c.id === dk.color) ? dk.color : "",
+      ownColor: normalizeOwnColor(dk.ownColor),
     },
     extras: {
       railFt,
@@ -842,6 +884,26 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
     house: normalizeHouse(r.house, shape),
     custom: normalizeCustom(r.custom),
   };
+}
+
+/** Keys of parts taken out by hand: short, plain, no more than forty, each once. */
+function keyList(raw: unknown): string[] {
+  const out: string[] = [];
+  for (const v of Array.isArray(raw) ? raw : []) {
+    if (typeof v !== "string" || !/^[A-Za-z0-9:+.\-]{1,24}$/.test(v) || out.includes(v)) continue;
+    out.push(v);
+    if (out.length >= 40) break;
+  }
+  return out;
+}
+/** "#a1b2c3", lower case — or null. */
+export const hexColor = (v: unknown): string | null => (typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v.trim()) ? v.trim().toLowerCase() : null);
+/** A colour of the contractor's own read back: a name it must have; a look that falls back to a mid brown. */
+export function normalizeOwnColor(raw: unknown): OwnColor | null {
+  const o = obj(raw);
+  const name = typeof o.name === "string" ? o.name.replace(/\s+/g, " ").trim().slice(0, 60) : "";
+  if (!name) return null;
+  return { name, hex: hexColor(o.hex) ?? "#8a6a4c" };
 }
 
 const round2c = (n: number) => Math.round(n * 100) / 100;
@@ -986,6 +1048,8 @@ export function normalizeRoof(raw: unknown, structure: Structure, floor: Floor, 
     soffit: kind !== "pergola" && r.soffit === true,
     gutters: { kind: kind === "pergola" ? "none" : oneOf(gu.kind, GUTTER_KINDS, d.gutters.kind), guards: gu.guards === true },
     braces: typeof r.braces === "boolean" ? r.braces : d.braces,
+    bracesOff: keyList(r.bracesOff),
+    headersOff: keyList(r.headersOff),
     slats: { size: oneOf(sl.size, ["2x2", "2x4", "2x6"] as const, d.slats.size), spacingIn: Math.round(clamp(num(sl.spacingIn, d.slats.spacingIn), ROOF_LIMITS.slatSpacingIn.min, ROOF_LIMITS.slatSpacingIn.max)) },
     pergolaStyle: kind === "pergola" ? oneOf(r.pergolaStyle, ["flat", "louvered", "arched"] as const, d.pergolaStyle) : "flat",
     walls: { fill: oneOf(wa.fill, ["none", "screen", "lattice", "solid"] as const, d.walls.fill), sides: Math.round(clamp(num(wa.sides, Math.min(3, ringSides - (attach === "wall" ? 1 : 0))), ROOF_LIMITS.wallSides.min, Math.min(ROOF_LIMITS.wallSides.max, ringSides))) },
@@ -1005,13 +1069,16 @@ function normalizeRail(raw: unknown, legacyExtras: Record<string, unknown>): Rai
   return {
     type,
     heightIn: num(r.heightIn, 36) >= 42 ? 42 : 36,
-    infill: oneOf(r.infill, ["auto", "balusters", "cable", "glass", "panel", "horizontal"] as const, d.infill),
+    infill: oneOf(r.infill, ["auto", ...RAIL_INFILLS] as const, d.infill),
     postSpacingFt: (oneOf(num(r.postSpacingFt, 6), [4, 6, 8] as const, 6) as 4 | 6 | 8),
     cap: typeof r.cap === "boolean" ? r.cap : d.cap,
     lighting: oneOf(r.lighting, ["none", "post-caps", "post-caps-risers"] as const, d.lighting),
     customPerFt: Math.round(clamp(num(r.customPerFt, num(legacyExtras.railCustomPerFt, 0)), DECK_LIMITS.railCustomPerFt.min, DECK_LIMITS.railCustomPerFt.max) * 100) / 100,
     customName: cleanName(r.customName),
     lowerLevel: typeof r.lowerLevel === "boolean" ? r.lowerLevel : d.lowerLevel,
+    // A colour belongs to its system: another system picked, and it starts on that system's usual one.
+    color: typeof r.color === "string" && railColors(type).some((c) => c.id === r.color) ? r.color : "",
+    baluster: oneOf(r.baluster, ["square", "round"] as const, d.baluster),
   };
 }
 

@@ -406,7 +406,7 @@ const seattle = resolveMarket({ state: "WA", zip: "98052" });
   check("every line the engine makes passes the rules the convert action applies", parsed.success, parsed.success ? "" : JSON.stringify(parsed.error.issues[0]));
   check("a broken 3D is refused, not sent to a client", !deckConvertSchema.safeParse({ title: "x", assumptions: [], lines: [{ name: "a", quantity: 1, materialCost: 1, laborCost: 1 }], plan: { design: {}, scene: { v: 1, boxes: "nope" } } }).success);
   const scope = deckScope(full, "118 Cedar Ln, Redmond");
-  check("the client's scope: plain sentences, the deck's size first, no dollar sign and no estimate words", /^Build a 20 ft × 14 ft deck \(280 sq ft\), 8'-0" above the ground, at 118 Cedar Ln/.test(scope[0]) && scope.every((s) => !/\$|estimate|example|allowance/i.test(s)) && scope.some((s) => /ft of aluminum railing/.test(s)) && scope.some((s) => /13 risers/.test(s)));
+  check("the client's scope: plain sentences, the deck's size first, no dollar sign and no estimate words", /^Build a 20 ft × 14 ft deck \(280 sq ft\), 8'-0" above the ground, at 118 Cedar Ln/.test(scope[0]) && scope.every((s) => !/\$|estimate|example|allowance/i.test(s)) && scope.some((s) => /ft of textured black aluminum railing/.test(s)) && scope.some((s) => /13 risers/.test(s)));
   check("the notes name the code, the soil and frost the footings assume, and what is not included", deckNotes(p).some((n) => /International Residential Code/.test(n) && /DCA 6/.test(n) && /permit fees/.test(n)) && deckNotes(p).some((n) => /1,500 psf/.test(n) && /18 in\./.test(n)) && deckNotes(p).some((n) => /guard rail/.test(n)));
 }
 
