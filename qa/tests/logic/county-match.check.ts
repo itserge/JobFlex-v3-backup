@@ -7,8 +7,8 @@
 // unless the contractor asked for it. Ticked changes become ordinary edits; notes, figures and the sheet size go to the
 // jurisdiction panel. Pure: no model, no database.
 //   NODE_PATH="" npx --no-install tsx --tsconfig tsconfig.json qa/tests/logic/county-match.check.ts
-import { applyChecked, checkRead, figureValue, keptCheck, placeKey, requirementsWords, setWords, type ModelCheck, type SetSummary } from "../../../src/lib/deck/plans/countyMatch";
-import { emptySetEdits, normalizeKeptCheck, normalizePlanEdits } from "../../../src/lib/deck/plans/edits";
+import { applyChecked, checkRead, figureValue, keptCheck, placeFromWords, placeKey, placeLabel, requirementsWords, setWords, trimOffers, type ModelCheck, type SetSummary } from "../../../src/lib/deck/plans/countyMatch";
+import { emptySetEdits, isOut, normalizeKeptCheck, normalizePlanEdits } from "../../../src/lib/deck/plans/edits";
 
 let bad = 0;
 const check = (name: string, ok: boolean, extra?: unknown) => {
@@ -117,6 +117,81 @@ check("the list in words, for the next deck there", /^Knox County Codes Administ
 check("the set in words names its cards and figures", /site\/setbacks · A-101 · Setbacks/.test(setWords(set)) && /Wind 115 mph/.test(setWords(set)));
 check("a place's key", placeKey("TN", "Knox County", null) === "tn:knox" && placeKey("tn", "Knox", "Knoxville") === "tn:knox:knoxville" && placeKey("", "Knox", null) === null);
 check("figure words", figureValue("frostIn", "36 inches") === 36 && figureValue("groundSnowPsf", "1,000") === null && figureValue("edition", "2018 IRC") === "2018 IRC");
+
+/* ── where the job is, as a contractor types it (2026-11-10: "nashville TN" left Find greyed out) ── */
+{
+  const P = (t: string) => placeFromWords(t);
+  const eq = (t: string, want: unknown) => JSON.stringify(P(t)) === JSON.stringify(want);
+  check("a city and a state, no comma, lower case", eq("nashville TN", { state: "TN", county: "", city: "Nashville" }), P("nashville TN"));
+  check("a city, a comma, the state's name", eq("Nashville, Tennessee", { state: "TN", county: "", city: "Nashville" }), P("Nashville, Tennessee"));
+  check("a county", eq("Knox County, TN", { state: "TN", county: "Knox County", city: null }), P("Knox County, TN"));
+  check("a county without a comma, lower case", eq("knox county tn", { state: "TN", county: "Knox County", city: null }), P("knox county tn"));
+  check("a city in its county", eq("Knoxville, Knox County, TN", { state: "TN", county: "Knox County", city: "Knoxville" }), P("Knoxville, Knox County, TN"));
+  check("a whole address: the street and the ZIP are skipped", eq("1234 Simple St, Knoxville, TN 37919", { state: "TN", county: "", city: "Knoxville" }), P("1234 Simple St, Knoxville, TN 37919"));
+  check("a parish, and a two-word state", eq("Jefferson Parish, Louisiana", { state: "LA", county: "Jefferson Parish", city: null }) && eq("Charleston, West Virginia", { state: "WV", county: "", city: "Charleston" }) && eq("Kansas City, Kansas", { state: "KS", county: "", city: "Kansas City" }));
+  check("the City of …, and its own capitals kept", eq("City of McMinnville, OR", { state: "OR", county: "", city: "McMinnville" }), P("City of McMinnville, OR"));
+  check("no state, no place", P("nashville") === null && P("") === null && P("Knox County") === null && P("TN") === null && P("Tennessee") === null);
+  check("a street with no commas is not guessed at", P("1234 Simple St Knoxville TN") === null);
+  check("two letters that are no state", P("Nashville, ZZ") === null);
+  check("back into words", placeLabel(P("knoxville, knox county, tn")) === "Knoxville, Knox County, TN" && placeLabel(P("nashville TN")) === "Nashville, TN" && placeLabel(null) === "");
+  check("a city alone has a key of its own", placeKey("TN", "", "Nashville") === "tn:-:nashville" && placeKey("TN", "", null) === null && placeKey("TN", "Davidson County", "Nashville") === "tn:davidson:nashville");
+}
+
+/* ── what the department's list never mentions (2026-11-10: "if you delete what's not required from the current one") ── */
+{
+  // A whole permit set, and a short list like Nashville's: a site plan, the footings, a paper to sign.
+  const whole: SetSummary = {
+    ...set,
+    sheets: [...set.sheets, { id: "schedules", no: "S-601", name: "Schedules", out: false, need: false }, { id: "details", no: "S-501", name: "Details", out: false, need: false }],
+    cards: [
+      ...set.cards,
+      { id: "cover/framing-picture", sheet: "cover", sheetNo: "G-001", label: "Framing picture", drawing: true, addable: false, need: false, text: "Framing" },
+      { id: "cover/check", sheet: "cover", sheetNo: "G-001", label: "Code check", drawing: false, addable: true, need: false, text: "Joists OK" },
+      { id: "foundation/layout", sheet: "foundation", sheetNo: "S-101", label: "Footing layout", drawing: false, addable: true, need: false, text: "F1 at 0 ft" },
+      { id: "details/detail-pattern", sheet: "details", sheetNo: "S-501", label: "Decking pattern", drawing: true, addable: false, need: false, text: "Pattern" },
+    ],
+  };
+  const short: ModelCheck = { ...read, items: [item("A site plan with setbacks", "on_set", A(), "site/setbacks"), item("Footings shown", "on_set", A(), "foundation/footings"), item("Affidavit", "you", A(), "", "Sign it.")] };
+  const c = checkRead(short, whole);
+  const trims = c.items.filter((i) => i.trim);
+  const ids = trims.map((i) => i.where).join();
+  check("parts the list never mentions are offered", ids === "sheet:elevations,sheet:schedules,cover/framing-picture,cover/check,foundation/bearing,foundation/layout,details/detail-pattern", ids);
+  check("…every one unticked, a removal, and said in plain words", trims.every((i) => i.on === false && i.status === "add" && (i.action.kind === "remove_sheet" || i.action.kind === "remove_card") && /^Takes /.test(i.change)), trims);
+  check("…after the department's own points, under ids of their own", c.items.slice(0, 3).every((i) => !i.trim) && new Set(c.items.map((i) => i.id)).size === c.items.length, c.items.map((i) => i.id));
+
+  const kept = keptCheck(c, new Set(trims.map((i) => i.id)), "2026-11-10T00:00:00.000Z", "online", []);
+  check("the kept check counts none of them, taken or not", kept.added === 0 && kept.onSet === 2 && kept.todo.length === 1 && kept.todo[0].need === "Affidavit", kept);
+  check("…nor does the list kept for the next deck", !/Not on the department/.test(requirementsWords(c)) && requirementsWords(c).split("\n").length === 4, requirementsWords(c));
+
+  const r = applyChecked([trims[0], trims[4]], emptySetEdits(), whole, "Knox County, TN");
+  check("a ticked one takes the sheet or the card out", isOut(r.edits, "sheet:elevations") && isOut(r.edits, "foundation/bearing") && !isOut(r.edits, "sheet:schedules") && r.count === 2, r.edits.hidden);
+
+  // What the list asks for is never offered — by its words, or by where the model found it.
+  const wordy: ModelCheck = { ...short, items: [...short.items, item("Front and side elevations", "on_set", A(), ""), item("A lumber and fastener schedule", "on_set", A(), ""), item("Soil bearing capacity stated", "on_set", A(), "")] };
+  const w = checkRead(wordy, whole).items.filter((i) => i.trim).map((i) => i.where).join();
+  check("a part the list's words ask for is not offered", w === "cover/framing-picture,cover/check,foundation/layout,details/detail-pattern", w);
+  const pointing: ModelCheck = { ...short, items: [...short.items, item("Height above grade", "on_set", A(), "elevations/view-1"), item("Member sizes", "on_set", A(), "cover/check")] };
+  const pt = checkRead(pointing, whole).items.filter((i) => i.trim).map((i) => i.where).join();
+  check("…nor one the model found a requirement on", !/sheet:elevations|cover\/check/.test(pt) && /sheet:schedules/.test(pt), pt);
+
+  const gone: SetSummary = { ...whole, sheets: whole.sheets.map((x) => (x.id === "elevations" || x.id === "foundation" ? { ...x, out: true } : x)) };
+  const g = trimOffers(c.items.filter((i) => !i.trim), gone).map((i) => i.where).join();
+  check("a sheet already out, and the cards on it, are not offered again", !/sheet:elevations|foundation\//.test(g) && /sheet:schedules/.test(g), g);
+  check("nothing offered on the construction set", trimOffers(c.items.filter((i) => !i.trim), { ...whole, set: "crew" }).length === 0);
+  check("nothing offered when the contractor asked in his own words", checkRead(short, whole, { asked: true }).items.every((i) => !i.trim));
+  check("nothing offered when the list matched nothing on the set", trimOffers([{ ...c.items[2] }], whole).length === 0);
+}
+
+/* ── a card rewritten on top of a template's card keeps what that one was typed over ── */
+{
+  const c = checkRead(read, set, { asked: true });
+  const rw = c.items.find((i) => i.need === "Notes card rewritten");
+  const e = { ...emptySetEdits(), cards: { "site/notes": { html: "<div>mine</div>", was: "abc12345", tpl: true } } };
+  const r = rw ? applyChecked([rw], e, set, "Knox County, TN") : null;
+  check("no drawn words to hand: the stored card's fingerprint stays", !!r && r.edits.cards["site/notes"]?.was === "abc12345" && /survey/.test(r.edits.cards["site/notes"]?.html ?? ""), r?.edits.cards);
+  const r2 = rw ? applyChecked([rw], e, set, "Knox County, TN", () => "f5e5a9b1") : null;
+  check("…and the drawn card's own wins when it is known", !!r2 && r2.edits.cards["site/notes"]?.was === "f5e5a9b1", r2?.edits.cards);
+}
 
 if (bad) {
   console.log(`\n${bad} FAILED`);

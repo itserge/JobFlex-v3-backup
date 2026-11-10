@@ -30,8 +30,9 @@ import { SitePlanSvg } from "./deck-site-plan";
 import { PlanSet, ViewFrame } from "@/components/v3/deck-plans/plan-set";
 import { Card, PlanEditProvider, usePlanEdit } from "@/components/v3/deck-plans/plan-edit";
 import { saveDeckPlanEdits } from "@/actions/deckPlanEdits";
-import type { PlanEdits } from "@/lib/deck/plans/edits";
+import type { PlanEdits, PlanTemplateIndex } from "@/lib/deck/plans/edits";
 import { PlanEditBar, PlanEditPanel } from "./plan-edit-panel";
+import { NO_TEMPLATES } from "./plan-templates";
 import { CountyCheckSummary, CountyMatchButtons, type BuildKind } from "./county-match";
 import ps from "@/components/v3/deck-plans/plan-set.module.css";
 import s from "./deck-permit.module.css";
@@ -42,7 +43,7 @@ type Shop = { name: string; address: string | null; phone: string | null; email:
 type EditsRef = { address: string | null; draftId: string | null; proposalId: string | null };
 type Built = { structure: DeckStructure; checks: ReturnType<typeof deckChecks> };
 
-export function DeckPermitSheet({ design, address, title, shop, initialPlan = null, editable = true, initialEdits = null, editsRef = null }: { design: DeckDesign | null; address: string | null; title: string; shop: Shop; initialPlan?: SitePlan | null; editable?: boolean; initialEdits?: PlanEdits | null; editsRef?: EditsRef | null }) {
+export function DeckPermitSheet({ design, address, title, shop, initialPlan = null, editable = true, initialEdits = null, editsRef = null, initialTemplates = null }: { design: DeckDesign | null; address: string | null; title: string; shop: Shop; initialPlan?: SitePlan | null; editable?: boolean; initialEdits?: PlanEdits | null; editsRef?: EditsRef | null; initialTemplates?: PlanTemplateIndex | null }) {
   const built = React.useMemo<Built | null>(() => {
     if (!design) return null;
     const structure = buildStructure(design);
@@ -58,7 +59,7 @@ export function DeckPermitSheet({ design, address, title, shop, initialPlan = nu
       </div>
     );
   }
-  return <PermitSet design={design} address={address} title={title} shop={shop} initialPlan={initialPlan} editable={editable} built={built} initialEdits={initialEdits} editsRef={editsRef ?? { address, draftId: null, proposalId: null }} />;
+  return <PermitSet design={design} address={address} title={title} shop={shop} initialPlan={initialPlan} editable={editable} built={built} initialEdits={initialEdits} editsRef={editsRef ?? { address, draftId: null, proposalId: null }} initialTemplates={initialTemplates} />;
 }
 
 /* ── The screen's width, for fitting an 11 × 17 sheet on it ─────────────────── */
@@ -72,7 +73,7 @@ const widthServer = () => SHEET_W_PX + 32;
 /** The CSS modules a card's classes come from, by the prefix an edit keeps them under ("p:h"). */
 const CARD_MODULES = { p: ps as Record<string, string>, d: s as Record<string, string> };
 
-function PermitSet({ design, address, title, shop, initialPlan, editable, built, initialEdits, editsRef }: { design: DeckDesign; address: string | null; title: string; shop: Shop; initialPlan: SitePlan | null; editable: boolean; built: Built; initialEdits: PlanEdits | null; editsRef: EditsRef }) {
+function PermitSet({ design, address, title, shop, initialPlan, editable, built, initialEdits, editsRef, initialTemplates }: { design: DeckDesign; address: string | null; title: string; shop: Shop; initialPlan: SitePlan | null; editable: boolean; built: Built; initialEdits: PlanEdits | null; editsRef: EditsRef; initialTemplates: PlanTemplateIndex | null }) {
   const { structure, checks } = built;
   const { roof } = structure;
   const fallback = React.useMemo(() => defaultSitePlan(structure, address), [structure, address]);
@@ -84,6 +85,9 @@ function PermitSet({ design, address, title, shop, initialPlan, editable, built,
   const [which, setWhich] = React.useState<"permit" | "crew">("permit");
   const dirty = React.useRef(false);
   const screenW = React.useSyncExternalStore(subscribeWidth, widthNow, widthServer);
+  // The contractor's own templates of the two sets (./plan-templates), kept by the company.
+  const [templates, setTemplates] = React.useState<PlanTemplateIndex>(() => initialTemplates ?? NO_TEMPLATES);
+  const templatesProp = React.useMemo(() => ({ index: templates, set: setTemplates }), [templates]);
 
   // A change from the panel: drawn at once, kept a moment later.
   const update = React.useCallback(
@@ -197,13 +201,13 @@ function PermitSet({ design, address, title, shop, initialPlan, editable, built,
               </span>
               <SimpleSwitch />
               <EditToggle />
-              <CountyMatchButtons place={place} placeWords={countyName} build={build} figures={figureWords} paper={pick.paper.name} plan={plan} update={update} studioHref={studioHref} />
+              <CountyMatchButtons place={place} address={address} build={build} figures={figureWords} paper={pick.paper.name} plan={plan} update={update} studioHref={studioHref} />
               <PrintButton />
             </div>
           </div>
           <SimpleNote />
           <CountyCheckSummary studioHref={studioHref} />
-          <PlanEditPanel />
+          <PlanEditPanel templates={templatesProp} />
           {fails.length || warns.length ? (
             <div className={s.alerts} data-permit-alerts>
               {fails.map((c) => (

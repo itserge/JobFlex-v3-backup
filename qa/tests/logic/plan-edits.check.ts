@@ -5,7 +5,7 @@
 // taken out without renumbering the others, sheets added after the G sheets (permit) or at the end (crew).
 // Pure: no React, no database.
 //   NODE_PATH="" npx --no-install tsx --tsconfig tsconfig.json qa/tests/logic/plan-edits.check.ts
-import { addedAfter, bringBack, cleanCardHtml, dropAdded, dropSheet, editCount, editedSheets, emptySetEdits, fingerprint, isBlank, isOut, mapCardClasses, normalizePlanEdits, sheetEditId, SIMPLE_OUT, takeOut, type SetEdits } from "../../../src/lib/deck/plans/edits";
+import { addedAfter, bringBack, cleanCardHtml, dropAdded, dropSheet, editCount, editedSheets, editsFromTemplate, emptySetEdits, fingerprint, isBlank, isOut, mapCardClasses, MAX_TEMPLATES, normalizePlanEdits, normalizeTemplateIndex, nothingToSave, sheetEditId, SIMPLE_OUT, takeOut, templateFrom, templateName, type PlanEdits, type SetEdits } from "../../../src/lib/deck/plans/edits";
 import { crewSheetList, permitSheetList } from "../../../src/lib/deck/plans/sheets";
 import { buildStructure } from "../../../src/lib/deck/structure";
 import { defaultDeckDesign } from "../../../src/lib/deck/design";
@@ -131,6 +131,53 @@ const check = (name: string, ok: boolean, extra?: unknown) => {
   check("every Simple id names a sheet or a card", SIMPLE_OUT.every((id) => /^sheet:[a-z0-9]+$/.test(id) || /^[a-z0-9-]+\/[a-z0-9-]+$/.test(id)));
   const n = normalizePlanEdits({ permit: { simple: true, shown: ["foundation/bearing", "bad id"] } });
   check("read back: Simple and what was brought back", n.permit.simple === true && JSON.stringify(n.permit.shown) === '["foundation/bearing"]');
+}
+
+/* ── the contractor's own template (2026-11-10: "save as a template and he run his decks with exact template") ── */
+{
+  const check0 = { place: "Knox County, TN", department: "Codes", at: "2026-11-10T00:00:00.000Z", from: "online" as const, sources: [], onSet: 3, added: 1, todo: [{ need: "Affidavit", why: "Sign it.", design: false }] };
+  const deck: PlanEdits = {
+    v: 1,
+    permit: {
+      ...emptySetEdits(),
+      simple: true,
+      hidden: ["framing/notes", "sheet:site"],
+      cards: { "cover/scope": { html: "<div>My scope</div>", was: fingerprint("The scope as drawn") } },
+      added: [{ id: "add-a", after: "cover/scope", html: "<div>Call before you dig</div>" }],
+      names: { cover: "Cover" },
+      check: check0,
+    },
+    crew: { ...emptySetEdits(), hidden: ["crew-cover/tools"], tpl: { id: "tp-old", name: "Old" } },
+  };
+  const t = templateFrom(deck);
+  check("a template keeps both sets: what was taken out, added, renamed, and Simple", t.permit.simple === true && t.permit.hidden.join() === "framing/notes,sheet:site" && t.permit.added.length === 1 && t.permit.names.cover === "Cover" && t.crew.hidden.join() === "crew-cover/tools", t);
+  check("…its typed-over cards marked as the template's, with what they were typed over", t.permit.cards["cover/scope"].tpl === true && t.permit.cards["cover/scope"].was === fingerprint("The scope as drawn") && /My scope/.test(t.permit.cards["cover/scope"].html));
+  check("…and neither the county's check nor another template's name", t.permit.check == null && t.crew.check == null && t.permit.tpl == null && t.crew.tpl == null);
+
+  const other: PlanEdits = { v: 1, permit: { ...emptySetEdits(), check: { ...check0, place: "Davidson County, TN" } }, crew: emptySetEdits() };
+  const on = editsFromTemplate(t, { id: "tp-1", name: "  My   permit set " }, other);
+  check("on a deck: the template's name on both sets", on.permit.tpl?.id === "tp-1" && on.permit.tpl?.name === "My permit set" && on.crew.tpl?.id === "tp-1", [on.permit.tpl, on.crew.tpl]);
+  check("…the deck's own county check kept, not the template deck's", on.permit.check?.place === "Davidson County, TN" && on.crew.check == null, on.permit.check);
+  check("…and nothing of the deck's own without one", editsFromTemplate(t, { id: "tp-1", name: "" }).permit.check == null && editsFromTemplate(t, { id: "tp-1", name: "" }).permit.tpl?.name === "My template");
+
+  const back = normalizePlanEdits(JSON.parse(JSON.stringify(on)));
+  check("read back: the card's mark and the set's template", back.permit.cards["cover/scope"]?.tpl === true && back.permit.tpl?.id === "tp-1" && back.crew.tpl?.name === "My permit set", back.permit.tpl);
+  check("a card typed on the deck itself carries no mark", normalizePlanEdits(deck).permit.cards["cover/scope"]?.tpl === undefined);
+  check("the template's name is no change of its own", editCount(on.crew) === editCount(deck.crew) && isBlank({ ...emptySetEdits(), tpl: { id: "tp-1", name: "X" } }));
+
+  const blank: PlanEdits = { v: 1, permit: emptySetEdits(), crew: emptySetEdits() };
+  check("nothing to save: an untouched deck", nothingToSave(blank));
+  check("…but Simple alone is worth saving, and so is one card out on the construction set", !nothingToSave({ ...blank, permit: { ...emptySetEdits(), simple: true } }) && !nothingToSave({ ...blank, crew: takeOut(emptySetEdits(), "crew-cover/tools") }));
+  check("…a county check alone is not", nothingToSave({ ...blank, permit: { ...emptySetEdits(), check: check0 } }));
+
+  check("a name: spaces tidied, cut to 60, words only", templateName("  A   B ") === "A B" && templateName("x".repeat(80)).length === 60 && templateName(7) === "" && templateName(null) === "");
+  const idx = normalizeTemplateIndex({
+    defaultId: "tp-2",
+    list: [{ id: "tp-1", name: " One ", at: "2026-11-10T01:02:03.000Z" }, { id: "tp-1", name: "Twice" }, { id: "bad id!", name: "Bad" }, { id: "tp-3", name: "   " }, { id: "tp-2", name: "Two", at: "yesterday" }],
+  });
+  check("the list read back: no twin, no bad id, no empty name, a date or none", idx.list.map((x) => `${x.id}=${x.name}`).join() === "tp-1=One,tp-2=Two" && idx.list[0].at.startsWith("2026-11-10") && idx.list[1].at === "" && idx.defaultId === "tp-2", idx);
+  check("…a default that is not on the list is none", normalizeTemplateIndex({ defaultId: "tp-9", list: [{ id: "tp-1", name: "One" }] }).defaultId === null && normalizeTemplateIndex(null).list.length === 0 && normalizeTemplateIndex("x").defaultId === null);
+  check(`…and never more than ${MAX_TEMPLATES}`, normalizeTemplateIndex({ list: Array.from({ length: 20 }, (_, k) => ({ id: `tp-${k}`, name: `T${k}` })) }).list.length === MAX_TEMPLATES);
 }
 
 if (bad) {
