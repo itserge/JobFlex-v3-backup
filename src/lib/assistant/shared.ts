@@ -59,10 +59,10 @@ export function quickReply(raw: string): QuickReply | null {
   if (/^(undo|stop it|wait|hold on|don'?t send)$/.test(t)) return { kind: "undo" };
   if (/^(stop|stopall|unsubscribe|end|quit)$/.test(t)) return { kind: "stop" };
   if (/^(help|info|\?)$/.test(t)) return { kind: "help" };
-  const d = /^(?:#|no\.? ?|number )?([1-9])$/.exec(t);
+  const d = /^(?:do |run )?(?:#|no\.? ?|number )?([1-9])$/.exec(t);
   if (d) return { kind: "digit", n: Number(d[1]) };
-  // Said, not typed (2026-11-09, the briefing's numbered replies by voice): "one", "number two", "the first one".
-  const w = /^(?:number |the )?(one|two|three|four|five|six|seven|eight|nine|first|second|third)(?: one)?$/.exec(t);
+  // Said, not typed (2026-11-09, the numbered replies by voice): "one", "number two", "the first one", "do the second one".
+  const w = /^(?:do |run )?(?:number |the )?(one|two|three|four|five|six|seven|eight|nine|first|second|third)(?: one)?$/.exec(t);
   if (w) return { kind: "digit", n: WORD_DIGITS[w[1]] };
   return null;
 }

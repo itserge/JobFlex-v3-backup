@@ -9,7 +9,7 @@
 import type { DeckStructure } from "../structure";
 import type { PaperKey } from "./paper";
 
-export type PlanSheetKind = "cover" | "notes" | "notes2" | "site" | "foundation" | "framing" | "roof" | "elevations" | "sections" | "details" | "schedules" | "crew-cover" | "crew-layout" | "crew-framing" | "crew-stairs" | "crew-materials" | "crew-sequence";
+export type PlanSheetKind = "cover" | "notes" | "notes2" | "site" | "foundation" | "framing" | "roof" | "elevations" | "sections" | "details" | "schedules" | "crew-cover" | "crew-layout" | "crew-framing" | "crew-stairs" | "crew-materials" | "crew-sequence" | "extra";
 
 export interface PlanSheet {
   no: string;
@@ -17,6 +17,8 @@ export interface PlanSheet {
   kind: PlanSheetKind;
   /** B = 11 × 17, C = 18 × 24, D = 24 × 36 landscape (lib/deck/plans/paper); A = letter portrait, the crew's. */
   paper: "A" | PaperKey;
+  /** A sheet the contractor added in the set's Edit (kind "extra"; lib/deck/plans/edits). */
+  extraId?: string;
 }
 
 /** `complianceMore`: the code compliance table runs past G-002 and continues on G-003. */

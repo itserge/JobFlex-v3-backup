@@ -36,6 +36,10 @@ export type CardKit = {
   sendCellHtml: (p: ProposalRow) => string;
   /** "Repair" for sold work, the office only (2026-11-09) — "" otherwise. `cls` is the caller's button class. */
   repairHtml: (p: ProposalRow, cls: string) => string;
+  /** "Payments" (the panel) for sold work, the office only (2026-11-09) — "" otherwise. */
+  paymentsHtml: (p: ProposalRow, cls: string) => string;
+  /** "Crew" and "More" (the sold proposal's sheet) for sold work, the office only (2026-11-10) — "" otherwise. */
+  moreHtml: (p: ProposalRow, cls: string) => string;
   /** Mark paid / Send invoice / Remind for the next stage (data-act markpaid|paidfull|invoice|remind). */
   payActsHtml: (p: ProposalRow, next: Installment | null) => string;
   /** Wisetack line + Send financing link (data-act fin-send), or "". */

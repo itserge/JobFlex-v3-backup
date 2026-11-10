@@ -33,8 +33,11 @@ import { LEDGER_FASTENER_LABEL, RULE } from "@/lib/deck/codeTables";
 import { railNamed } from "@/lib/deck/rails";
 import { permitSheetList, crewSheetList, type PlanSheet } from "@/lib/deck/plans/sheets";
 import { PAPERS, fitOn, type Paper, type PaperKey } from "@/lib/deck/plans/paper";
+import { editedSheets, emptySetEdits, sheetEditId } from "@/lib/deck/plans/edits";
 import { PlanSvg } from "./plan-svg";
+import { Card, ExtraSheetBody, SheetCtx, useEditSurface, usePlanEdit, useSheetOverflow } from "./plan-edit";
 import s from "./plan-set.module.css";
+import pe from "./plan-edit.module.css";
 
 export interface PlanShop {
   name: string;
@@ -98,10 +101,20 @@ function PlanSetSheets(props: PlanSetProps) {
   const list = React.useMemo(() => materialList(priceStructure(structure)), [structure]);
   const split = React.useMemo(() => splitCompliance(props.checks), [props.checks]);
   const paper = PAPERS[props.paper ?? "B"];
-  const sheets = React.useMemo(() => (set === "crew" ? crewSheetList(structure) : permitSheetList(structure, { complianceMore: split[1].length > 0, paper: paper.key })), [structure, set, split, paper]);
+  const own = React.useMemo(() => (set === "crew" ? crewSheetList(structure) : permitSheetList(structure, { complianceMore: split[1].length > 0, paper: paper.key })), [structure, set, split, paper]);
+  // The contractor's edits (components/v3/deck-plans/plan-edit): sheets taken out, renamed, added.
+  const api = usePlanEdit();
+  const setEdits = api ? api.all[set] : null;
+  const listed = React.useMemo(() => editedSheets(own, setEdits ?? emptySetEdits(), set), [own, setEdits, set]);
+  const sheets = React.useMemo(() => listed.filter((sh) => !sh.out), [listed]);
+  const reportSheets = api?.reportSheets;
+  React.useEffect(() => {
+    if (api?.set === set) reportSheets?.(listed);
+  }, [api?.set, set, listed, reportSheets]);
+  const surface = useEditSurface();
   return (
     <PaperCtx.Provider value={paper}>
-      <div className={s.set} data-plan-set={set} data-plan-paper={set === "crew" ? "A" : paper.key}>
+      <div className={`${s.set} ${surface.className ?? ""}`} onClickCapture={surface.onClickCapture} data-plan-set={set} data-plan-paper={set === "crew" ? "A" : paper.key}>
         {sheets.map((sh, i) => (
           <SheetOf key={sh.no} sheet={sh} index={i} sheets={sheets} m={m} scene={scene} list={list} split={split} {...props} />
         ))}
@@ -113,16 +126,15 @@ function PlanSetSheets(props: PlanSetProps) {
 function SheetOf(p: PlanSetProps & { sheet: PlanSheet; index: number; sheets: PlanSheet[]; m: PlanModel | null; scene: DeckScene; list: MaterialList; split: [DeckCheck[], DeckCheck[]] }) {
   const { sheet, m, scene, list, split } = p;
   const frame = (children: React.ReactNode, className?: string) => (
-    <section className={`${s.sheet} ${sheet.paper === "A" ? s.a : sheet.paper === "C" ? s.c : sheet.paper === "D" ? s.d : s.b}`} data-plan-sheet={sheet.no} data-plan-kind={sheet.kind}>
-      <div className={s.frame}>
-        <div className={`${s.field} ${className ?? ""}`}>{children}</div>
-        {sheet.paper !== "A" ? <TitleBlock {...p} /> : <CrewStrip {...p} />}
-      </div>
-    </section>
+    <SheetFrame sheet={sheet} className={className} side={sheet.paper !== "A" ? <TitleBlock {...p} /> : <CrewStrip {...p} />}>
+      {children}
+    </SheetFrame>
   );
   const slot = p.slots?.[sheet.kind];
   if (slot) return <>{slot(sheet, frame)}</>;
   switch (sheet.kind) {
+    case "extra":
+      return <>{frame(<ExtraSheetBody sheetId={sheet.extraId ?? ""} />, sheet.paper === "A" ? pe.extraA : pe.extra)}</>;
     case "foundation":
       return m ? <>{frame(<FoundationSheet m={m} />, s.foundation)}</> : null;
     case "framing":
@@ -156,6 +168,23 @@ function SheetOf(p: PlanSetProps & { sheet: PlanSheet; index: number; sheets: Pl
     default:
       return <>{frame(<div className={s.small}>{sheet.name} — drawn in the next step.</div>)}</>;
   }
+}
+
+/** A sheet: its border, its field, its title block — and, while edited, the sheet the cards on it belong to. */
+function SheetFrame({ sheet, className, side, children }: { sheet: PlanSheet; className?: string; side: React.ReactNode; children: React.ReactNode }) {
+  const field = React.useRef<HTMLDivElement | null>(null);
+  useSheetOverflow(field, sheet.no, sheet.name);
+  const ctx = React.useMemo(() => ({ id: sheetEditId(sheet), no: sheet.no, name: sheet.name }), [sheet]);
+  return (
+    <section className={`${s.sheet} ${sheet.paper === "A" ? s.paperA : sheet.paper === "C" ? s.paperC : sheet.paper === "D" ? s.paperD : s.paperB}`} data-plan-sheet={sheet.no} data-plan-kind={sheet.kind}>
+      <div className={s.frame}>
+        <SheetCtx.Provider value={ctx}>
+          <div ref={field} className={`${s.field} ${className ?? ""}`}>{children}</div>
+        </SheetCtx.Provider>
+        {side}
+      </div>
+    </section>
+  );
 }
 
 /* ── The title block ─────────────────────────────────────────────────── */
@@ -230,8 +259,12 @@ const initials = (name: string) =>
 
 /* ── A view and its title ────────────────────────────────────────────── */
 /** A figure titled the professional way: its number over the sheet in a bubble, its name over a rule, its scale under. */
-export function ViewFrame({ no, sheetNo, title, scaleLabel, note, children, id, style }: { no: number; sheetNo: string; title: string; scaleLabel: string; note?: string; children: React.ReactNode; id?: string; style?: React.CSSProperties }) {
-  return (
+/**
+ * In the set's Edit a view is a card of its own (taken out whole; its lines come from the design) and its name a
+ * card inside it (typed over) — unless `card` is false: a detail is a card with its notes (DetailCell).
+ */
+export function ViewFrame({ no, sheetNo, title, scaleLabel, note, children, id, style, card = true, need }: { no: number; sheetNo: string; title: string; scaleLabel: string; note?: string; children: React.ReactNode; id?: string; style?: React.CSSProperties; card?: boolean; need?: string }) {
+  const fig = (
     <figure className={s.view} style={{ margin: 0, ...style }} data-plan-figure={id}>
       <div className={s.viewBody}>{children}</div>
       <figcaption className={s.viewTitle}>
@@ -241,7 +274,7 @@ export function ViewFrame({ no, sheetNo, title, scaleLabel, note, children, id, 
         </span>
         <span>
           <span className={s.viewName}>
-            <span>{title}</span>
+            <Card k={`view-${no}-title`} label={`${title} — the drawing's name`} as="span" noAdd>{title}</Card>
             {note ? <span className={s.viewScale}>{note}</span> : null}
           </span>
           <span className={s.viewScale}>Scale: {scaleLabel}</span>
@@ -249,10 +282,16 @@ export function ViewFrame({ no, sheetNo, title, scaleLabel, note, children, id, 
       </figcaption>
     </figure>
   );
-}
-function ViewBox({ view, no, sheetNo, style, note }: { view: View; no: number; sheetNo: string; style?: React.CSSProperties; note?: string }) {
+  if (!card) return fig;
   return (
-    <ViewFrame no={no} sheetNo={sheetNo} title={view.title} scaleLabel={view.scaleLabel} note={note} id={view.id} style={style}>
+    <Card k={`view-${no}`} label={title} drawing contents need={need}>
+      {fig}
+    </Card>
+  );
+}
+function ViewBox({ view, no, sheetNo, style, note, card, need }: { view: View; no: number; sheetNo: string; style?: React.CSSProperties; note?: string; card?: boolean; need?: string }) {
+  return (
+    <ViewFrame no={no} sheetNo={sheetNo} title={view.title} scaleLabel={view.scaleLabel} note={note} id={view.id} style={style} card={card} need={need}>
       <PlanSvg view={view} />
     </ViewFrame>
   );
@@ -266,9 +305,9 @@ function FoundationSheet({ m }: { m: PlanModel }) {
   const worst = m.bearing.reduce((a, b) => Math.max(a, b.ratio), 0);
   return (
     <>
-      <ViewBox view={view} no={1} sheetNo="S-101" />
+      <ViewBox view={view} no={1} sheetNo="S-101" need="Every building department asks for the foundation plan." />
       <div className={s.side}>
-        <div>
+        <Card k="footings" label="Footing schedule" need="Most building departments ask for the footing schedule — the size and depth of every footing.">
           <div className={s.h}>Footing schedule<span>{m.footings.reduce((n, f) => n + f.at.length, 0)} footings</span></div>
           <table className={s.t} data-plan-footing-schedule>
             <thead>
@@ -296,8 +335,8 @@ function FoundationSheet({ m }: { m: PlanModel }) {
               ))}
             </tbody>
           </table>
-        </div>
-        <div>
+        </Card>
+        <Card k="bearing" label="Bearing check">
           <div className={s.h}>Bearing check<span>{d.soilPsf.toLocaleString("en-US")} psf soil</span></div>
           <table className={s.t} data-plan-bearing>
             <thead>
@@ -323,8 +362,8 @@ function FoundationSheet({ m }: { m: PlanModel }) {
           <div className={s.small} style={{ marginTop: 3 }}>
             Load = the deck each post carries (shaded on the plan) × ({m.f.load} psf live + 10 psf dead). Needs = load ÷ {d.soilPsf.toLocaleString("en-US")} psf presumptive soil bearing (IRC Table R401.4.1). Highest ratio {worst.toFixed(2)}{worst <= 1.0001 ? " — every footing bears." : " — a pad over 1.00 needs to be wider before submitting."}
           </div>
-        </div>
-        <div>
+        </Card>
+        <Card k="layout" label="Layout to post centres">
           <div className={s.h}>Layout<span>to post centres</span></div>
           <table className={s.t} data-plan-layout>
             <thead>
@@ -349,8 +388,8 @@ function FoundationSheet({ m }: { m: PlanModel }) {
             </tbody>
           </table>
           <div className={s.small} style={{ marginTop: 3 }}>Datum: {m.layout.origin}. Square the layout when the two diagonals read their figures.</div>
-        </div>
-        <div>
+        </Card>
+        <Card k="notes" label="Foundation notes">
           <div className={s.h}>Foundation notes</div>
           <ol className={s.notes}>
             <li>Footings bear on undisturbed soil, the bottom at least {inFrac(d.frostIn)} below grade — the frost depth used for this design; the building department may set a deeper one.</li>
@@ -359,7 +398,7 @@ function FoundationSheet({ m }: { m: PlanModel }) {
             <li>Call 811 at least two business days before digging. Verify every footing location against the layout before pouring.</li>
             <li>Footing inspection before concrete is placed, where the building department requires it.</li>
           </ol>
-        </div>
+        </Card>
       </div>
     </>
   );
@@ -396,9 +435,9 @@ function FramingSheet({ m }: { m: PlanModel }) {
   ];
   return (
     <>
-      <ViewBox view={view} no={1} sheetNo="S-102" />
+      <ViewBox view={view} no={1} sheetNo="S-102" need="Every building department asks for the framing plan." />
       <div className={s.side}>
-        <div>
+        <Card k="framing" label="Framing schedule" need="Most building departments ask for the framing schedule — every joist, beam and post with its size and span.">
           <div className={s.h}>Framing schedule<span>{f.species.short}</span></div>
           <table className={s.t} data-plan-framing-schedule>
             <thead>
@@ -426,8 +465,8 @@ function FramingSheet({ m }: { m: PlanModel }) {
             </tbody>
           </table>
           <div className={s.small} style={{ marginTop: 3 }}>Span = the longest clear span on this deck; Allowed = the table&apos;s figure for this size, spacing, species and {f.load} psf. Use = span ÷ allowed.</div>
-        </div>
-        <div>
+        </Card>
+        <Card k="connectors" label="Connector schedule" need="Most building departments ask which hangers, ties and bolts hold the deck together.">
           <div className={s.h}>Connector schedule<span>hot-dip galvanized or stainless</span></div>
           <table className={s.t} data-plan-connectors>
             <thead>
@@ -439,8 +478,8 @@ function FramingSheet({ m }: { m: PlanModel }) {
               ))}
             </tbody>
           </table>
-        </div>
-        <div>
+        </Card>
+        <Card k="notes" label="Framing notes">
           <div className={s.h}>Framing notes</div>
           <ol className={s.notes}>
             <li>Lumber {f.species.label.toLowerCase()}, No. 2 or better, preservative-treated: ground-contact for posts, beams and the ledger, above-ground elsewhere (AWPA U1).</li>
@@ -451,7 +490,7 @@ function FramingSheet({ m }: { m: PlanModel }) {
             {d.framing.joistTape ? <li>Butyl joist tape over the tops of the joists, rim, ledger and beams before the decking.</li> : null}
             <li>Decking: {f.decking.label}, fastened per its maker&apos;s guide; joists no farther apart than {f.deckingMaxSpacingIn}&quot; for these boards laid as drawn.</li>
           </ol>
-        </div>
+        </Card>
       </div>
     </>
   );
@@ -479,13 +518,13 @@ function SectionsSheet({ m, scene }: { m: PlanModel; scene: DeckScene }) {
   const stairViews = React.useMemo(() => flights.slice(0, 2).map((st, i) => fitOn(paper, (sc) => stairSection(m, st, i + 1, sc), 5.15, flights.length > 1 ? 3.9 : 6.6, 1 / 12)), [m, flights, paper]);
   return (
     <>
-      <ViewBox view={section} no={1} sheetNo="S-301" note={`Cut on grid ${m.cols[Math.floor((m.cols.length - 1) / 2)]?.label ?? ""}, looking along the house`} />
+      <ViewBox view={section} no={1} sheetNo="S-301" need="Most building departments ask for a section through the deck, footing to guard." note={`Cut on grid ${m.cols[Math.floor((m.cols.length - 1) / 2)]?.label ?? ""}, looking along the house`} />
       <div className={s.side} style={{ alignContent: "space-between" }}>
         {stairViews.map((v, i) => (
           <ViewBox key={v.id} view={v} no={i + 2} sheetNo="S-301" />
         ))}
         {flights.length ? (
-          <div>
+          <Card k="stairs" label="Stair schedule" need="Most building departments check the stair: its risers, treads and handrail.">
             <div className={s.h}>Stair schedule<span>{m.s.code.short}</span></div>
             <table className={s.t} data-plan-stairs>
               <thead>
@@ -506,7 +545,7 @@ function SectionsSheet({ m, scene }: { m: PlanModel; scene: DeckScene }) {
               </tbody>
             </table>
             <div className={s.small} style={{ marginTop: 3 }}>Riser heights uniform within 3/8&quot;; a nosing of 3/4&quot;–1-1/4&quot; where the treads are under 11&quot;; a handrail on any stair of four or more risers; a light at the top of the stair ({m.s.code.short} R311.7, R303.8).</div>
-          </div>
+          </Card>
         ) : null}
       </div>
     </>
@@ -526,19 +565,29 @@ function DetailsSheet({ m }: { m: PlanModel }) {
     </>
   );
 }
+/** Why a building department wants a detail (a heads-up before it is taken out). */
+const DETAIL_NEED: Record<string, string | undefined> = {
+  ledger: "Most building departments ask for the ledger detail — how the deck is fastened and flashed at the house.",
+  lateral: "Most building departments ask for the lateral load connection to the house.",
+  post: "Most building departments ask how the posts sit on the footings and carry the beam.",
+  guard: "Most building departments ask how the guard posts are fastened.",
+  stringer: "Most building departments ask how the stair hangs from the deck.",
+};
 function DetailCell({ dt, w }: { dt: PlanDetail; w: number }) {
   const paper = usePaper();
   const view = React.useMemo(() => fitOn(paper, dt.build, w, 3.3, 1.5 / 12), [dt, w, paper]);
   const no = DETAIL_NO[dt.key as keyof typeof DETAIL_NO] ?? 0;
   return (
-    <div className={s.detail} data-plan-detail={dt.key}>
-      <ViewBox view={view} no={no} sheetNo="S-501" />
-      <ol className={s.notes}>
-        {dt.notes.map((n, i) => (
-          <li key={i}>{n}</li>
-        ))}
-      </ol>
-    </div>
+    <Card k={`detail-${dt.key}`} label={view.title} drawing need={DETAIL_NEED[dt.key]} className={s.detail} data-plan-detail={dt.key}>
+      <ViewBox view={view} no={no} sheetNo="S-501" card={false} />
+      <Card k={`detail-${dt.key}-notes`} label={`${view.title} — notes`}>
+        <ol className={s.notes}>
+          {dt.notes.map((n, i) => (
+            <li key={i}>{n}</li>
+          ))}
+        </ol>
+      </Card>
+    </Card>
   );
 }
 
@@ -590,6 +639,9 @@ function IsoPicture({ scene, structure, yawDeg, skip, label, className }: { scen
 
 function CoverSheet(p: PlanSetProps & { sheets: PlanSheet[]; m: PlanModel | null; scene: DeckScene }) {
   const paper = usePaper();
+  // The Simple set (lib/deck/plans/edits SIMPLE_OUT) leaves G-002 out: its general notes come here, under the criteria.
+  const api = usePlanEdit();
+  const simple = !!api && api.set === p.set && !!api.all[p.set].simple;
   const { structure: st, project, shop, checks, sheets, m, scene, criteria } = p;
   const d = st.design;
   const f = st.frame;
@@ -630,19 +682,19 @@ function CoverSheet(p: PlanSetProps & { sheets: PlanSheet[]; m: PlanModel | null
   return (
     <>
       <div className={s.coverMain}>
-        <div className={s.coverKick}>Deck permit set · issued for permit · {project.date}</div>
-        <div className={s.coverTitle}>{project.title}</div>
-        <div className={s.coverAddr}>{project.address ?? "Job address"}{project.county ? ` · ${project.county}` : ""}</div>
-        <div className={s.coverPic}>
+        <Card k="kick" label="The cover's top line" noAdd className={s.coverKick}>Deck permit set · issued for permit · {project.date}</Card>
+        <Card k="title" label="The project's name" noAdd className={s.coverTitle}>{project.title}</Card>
+        <Card k="address" label="The address line" noAdd className={s.coverAddr}>{project.address ?? "Job address"}{project.county ? ` · ${project.county}` : ""}</Card>
+        <Card k="picture" label="The deck, rendered" drawing className={s.coverPic}>
           <IsoPicture scene={scene} structure={st} yawDeg={-32} label="The deck, rendered from the engine's 3D model" className={s.coverIso} />
           <div className={s.coverPicNote}>Rendered from the same 3D model the plans are drawn from — every member as framed.</div>
-        </div>
+        </Card>
         <div className={s.coverRow}>
-          <div className={s.coverFrame}>
+          <Card k="framing-picture" label="The framing, rendered" drawing className={s.coverFrame}>
             <IsoPicture scene={scene} structure={st} yawDeg={-32} skip={["decking", "rail", "glass", "screen", "wall", "light", "wire", "hardware", "fascia"]} label="The framing, without the decking and the guard" className={s.coverIsoSmall} />
             <div className={s.coverPicNote}>The framing under the boards.</div>
-          </div>
-          <div style={{ minWidth: 0 }}>
+          </Card>
+          <Card k="index" label="Sheet index" style={{ minWidth: 0 }}>
             <div className={s.h}>Sheet index<span>{sheets.length} sheets · {paper.name}</span></div>
             <table className={s.t}>
               <tbody>
@@ -651,11 +703,11 @@ function CoverSheet(p: PlanSetProps & { sheets: PlanSheet[]; m: PlanModel | null
                 ))}
               </tbody>
             </table>
-          </div>
+          </Card>
         </div>
       </div>
       <div className={s.side}>
-        <div>
+        <Card k="data" label="Project data">
           <div className={s.h}>Project data</div>
           <table className={s.kv}>
             <tbody>
@@ -666,9 +718,9 @@ function CoverSheet(p: PlanSetProps & { sheets: PlanSheet[]; m: PlanModel | null
               <tr><th>Contractor</th><td>{shop.name || "—"}{project.licence ? ` · lic. ${project.licence}` : ""}</td></tr>
             </tbody>
           </table>
-        </div>
+        </Card>
         {criteria?.length ? (
-          <div>
+          <Card k="criteria" label="Design criteria" need="Most building departments read the design loads — wind, snow, frost, seismic — off the cover.">
             <div className={s.h}>Design criteria</div>
             <table className={s.t} data-plan-criteria>
               <tbody>
@@ -677,9 +729,19 @@ function CoverSheet(p: PlanSetProps & { sheets: PlanSheet[]; m: PlanModel | null
                 ))}
               </tbody>
             </table>
-          </div>
+          </Card>
         ) : null}
-        <div>
+        {simple ? (
+          <Card k="general-notes" label="General notes" need="Most building departments ask for the general notes.">
+            <div className={s.h}>General notes</div>
+            <ol className={s.notes} data-plan-cover-notes>
+              {[...(p.notes ?? []), ...CLOSING_NOTES].map((n, i) => (
+                <li key={i}>{n}</li>
+              ))}
+            </ol>
+          </Card>
+        ) : null}
+        <Card k="check" label="Code check">
           <div className={s.h}>Code check<span>{passes.length} pass · {fails.length ? `${fails.length} to fix` : "none to fix"}</span></div>
           <table className={s.t} data-plan-summary>
             <tbody>
@@ -689,7 +751,7 @@ function CoverSheet(p: PlanSetProps & { sheets: PlanSheet[]; m: PlanModel | null
             </tbody>
           </table>
           <div className={s.small} style={{ marginTop: 3 }}>Every figure from {st.code.short} R507 and the AWC DCA 6 tables, checked by the studio — the full list with each rule on G-002.</div>
-        </div>
+        </Card>
       </div>
     </>
   );
@@ -711,38 +773,50 @@ function splitCompliance(checks: DeckCheck[], capacityPt = 690): [DeckCheck[], D
   return [checks, []];
 }
 
+/** The general notes' last three, on G-002 — and on the cover of the Simple set, which leaves G-002 out. */
+const CLOSING_NOTES = [
+  "The contractor verifies every dimension, the house's band joist and the site before ordering or cutting; report any difference to the designer before building.",
+  "Inspections, where the building department requires them: footings before concrete; framing before the decking is laid; final when the guards and stairs are complete.",
+  "Keep this set and the approved permit on site until the final inspection.",
+];
+
 function NotesSheet(p: PlanSetProps & { m: PlanModel | null; more?: boolean }) {
   const { checks, notes, structure: st, more } = p;
   const legend = React.useMemo(() => legendView(), []);
   return (
     <>
       <div className={s.notesCol}>
+        <Card k="general-notes" label="General notes" need="Most building departments ask for the general notes.">
         <div className={s.h}>General notes</div>
         <ol className={`${s.notes} ${s.notes2}`} data-plan-notes>
-          {(notes ?? []).map((n, i) => (
+          {[...(notes ?? []), ...CLOSING_NOTES].map((n, i) => (
             <li key={i}>{n}</li>
           ))}
-          <li>The contractor verifies every dimension, the house&apos;s band joist and the site before ordering or cutting; report any difference to the designer before building.</li>
-          <li>Inspections, where the building department requires them: footings before concrete; framing before the decking is laid; final when the guards and stairs are complete.</li>
-          <li>Keep this set and the approved permit on site until the final inspection.</li>
         </ol>
-        <div className={s.h} style={{ marginTop: 6 }}>Symbols</div>
-        <div className={s.legendBox}>
-          <PlanSvg view={legend} />
-        </div>
-        <div className={s.h} style={{ marginTop: 6 }}>Abbreviations</div>
-        <div className={s.abbr}>
-          {ABBR.map(([a, b]) => (
-            <React.Fragment key={a}>
-              <b>{a}</b>
-              <span>{b}</span>
-            </React.Fragment>
-          ))}
-        </div>
+        </Card>
+        <Card k="symbols" label="Symbols" drawing>
+          <div className={s.h} style={{ marginTop: 6 }}>Symbols</div>
+          <div className={s.legendBox}>
+            <PlanSvg view={legend} />
+          </div>
+        </Card>
+        <Card k="abbreviations" label="Abbreviations">
+          <div className={s.h} style={{ marginTop: 6 }}>Abbreviations</div>
+          <div className={s.abbr}>
+            {ABBR.map(([a, b]) => (
+              <React.Fragment key={a}>
+                <b>{a}</b>
+                <span>{b}</span>
+              </React.Fragment>
+            ))}
+          </div>
+        </Card>
       </div>
       <div className={s.side}>
-        <div className={s.h}>Code compliance<span>{st.code.short}{more ? " · continued on G-003" : ""}</span></div>
-        <ComplianceTable checks={checks} />
+        <Card k="compliance" label="Code compliance" need="Most building departments read the code compliance table — each rule and how the deck meets it.">
+          <div className={s.h}>Code compliance<span>{st.code.short}{more ? " · continued on G-003" : ""}</span></div>
+          <ComplianceTable checks={checks} />
+        </Card>
       </div>
     </>
   );
@@ -774,14 +848,14 @@ function ComplianceMore({ checks, code }: { checks: DeckCheck[]; code: string })
   const half = Math.ceil(checks.length / 2);
   return (
     <>
-      <div style={{ minWidth: 0 }}>
+      <Card k="compliance-1" label="Code compliance, continued" style={{ minWidth: 0 }}>
         <div className={s.h}>Code compliance, continued<span>{code}</span></div>
         <ComplianceTable checks={checks.slice(0, half)} />
-      </div>
-      <div style={{ minWidth: 0 }}>
+      </Card>
+      <Card k="compliance-2" label="Code compliance, continued (2)" style={{ minWidth: 0 }}>
         <div className={s.h}>&nbsp;<span>continued</span></div>
         <ComplianceTable checks={checks.slice(half)} />
-      </div>
+      </Card>
     </>
   );
 }
@@ -824,17 +898,17 @@ function SchedulesSheet({ list, m }: { list: MaterialList; m: PlanModel | null }
   );
   return (
     <>
-      <div style={{ minWidth: 0 }}>
+      <Card k="materials-1" label="Materials schedule" style={{ minWidth: 0 }}>
         <div className={s.h}>Materials schedule<span>{list.count} lines · keyed by part</span></div>
         {table(colA)}
-      </div>
-      <div style={{ minWidth: 0 }}>
+      </Card>
+      <Card k="materials-2" label="Materials schedule, continued" style={{ minWidth: 0 }}>
         <div className={s.h}>&nbsp;<span>continued</span></div>
         {table(colB)}
-      </div>
+      </Card>
       <div className={s.side}>
         {m ? (
-          <div>
+          <Card k="concrete" label="Concrete">
             <div className={s.h}>Concrete<span>80-lb bags</span></div>
             <table className={s.t}>
               <thead><tr><th>Footing</th><th className={s.n}>Each</th><th className={s.n}>No.</th></tr></thead>
@@ -845,10 +919,10 @@ function SchedulesSheet({ list, m }: { list: MaterialList; m: PlanModel | null }
                 })}
               </tbody>
             </table>
-          </div>
+          </Card>
         ) : null}
         {m ? <InspectionRecord m={m} /> : null}
-        <div>
+        <Card k="notes" label="Material notes">
           <div className={s.h}>Material notes</div>
           <ol className={s.notes}>
             <li>Quantities are the studio&apos;s takeoff of this design, waste included where noted. Confirm counts against the site before ordering.</li>
@@ -856,7 +930,7 @@ function SchedulesSheet({ list, m }: { list: MaterialList; m: PlanModel | null }
             <li>Connectors and fasteners hot-dip galvanized (G185) or stainless where in contact with treated lumber; stainless within 300 ft of salt water.</li>
             <li>A substitution matches or exceeds the size, grade, species and corrosion resistance named here.</li>
           </ol>
-        </div>
+        </Card>
       </div>
     </>
   );
@@ -902,23 +976,23 @@ function CrewCover(p: PlanSetProps & { sheets: PlanSheet[]; m: PlanModel | null;
   if (st.rails.on) big.push(["Guard", `${st.rails.heightIn}" · ${Math.round(st.rails.totalLf)} ft`]);
   return (
     <>
-      <div>
+      <Card k="head" label="The set's name" noAdd>
         <div className={s.coverKick}>Construction set · {project.date}</div>
         <div className={s.crewTitle}>{project.title}</div>
         <div className={s.coverAddr}>{project.address ?? ""}</div>
-      </div>
-      <div className={s.crewPic}>
+      </Card>
+      <Card k="picture" label="The deck, rendered" drawing className={s.crewPic}>
         <IsoPicture scene={scene} structure={st} yawDeg={-32} label="The deck, from the engine's 3D model" className={s.coverIso} />
-      </div>
-      <div className={s.bigGrid}>
+      </Card>
+      <Card k="big" label="The big figures" className={s.bigGrid}>
         {big.map(([k, v]) => (
           <div key={k} className={s.bigCell}>
             <span>{k}</span>
             <b>{v}</b>
           </div>
         ))}
-      </div>
-      <div>
+      </Card>
+      <Card k="index" label="In this set">
         <div className={s.h}>In this set<span>keep it on site with the permit</span></div>
         <table className={s.t}>
           <tbody>
@@ -928,7 +1002,7 @@ function CrewCover(p: PlanSetProps & { sheets: PlanSheet[]; m: PlanModel | null;
           </tbody>
         </table>
         <div className={s.small} style={{ marginTop: 4 }}>The building department&apos;s set (G-001 to S-601) governs; this set is the same design, drawn for building it. Verify every dimension on site before cutting.</div>
-      </div>
+      </Card>
     </>
   );
 }
@@ -938,7 +1012,7 @@ function CrewLayout({ m }: { m: PlanModel }) {
   return (
     <>
       <ViewBox view={view} no={1} sheetNo="C-1" />
-      <div>
+      <Card k="layout" label="Footing layout">
         <div className={s.h}>Footing layout<span>to post centres, from the datum</span></div>
         <table className={s.t} data-plan-crew-layout>
           <thead>
@@ -958,7 +1032,7 @@ function CrewLayout({ m }: { m: PlanModel }) {
           <li>Measure each footing along the house, then out from it; drive a stake at each centre. Check the two diagonals — equal to the table when square.</li>
           <li>Check a right angle at the datum with 3-4-5 (or 6-8-10) before trusting the strings.</li>
         </ol>
-      </div>
+      </Card>
     </>
   );
 }
@@ -969,7 +1043,7 @@ function CrewFraming({ m }: { m: PlanModel }) {
   return (
     <>
       <ViewBox view={view} no={1} sheetNo="C-2" />
-      <div>
+      <Card k="cuts" label="Cut list">
         <div className={s.h}>Cut list<span>{cuts.reduce((n, c) => n + c.qty, 0)} pieces</span></div>
         <table className={s.t} data-plan-cuts>
           <thead>
@@ -981,7 +1055,7 @@ function CrewFraming({ m }: { m: PlanModel }) {
             ))}
           </tbody>
         </table>
-      </div>
+      </Card>
     </>
   );
 }
@@ -995,7 +1069,7 @@ function CrewStairs({ m }: { m: PlanModel }) {
   return (
     <>
       <ViewBox view={view} no={1} sheetNo="C-3" />
-      <div>
+      <Card k="stringer" label="Stringer layout">
         <div className={s.h}>Stringer layout<span>stair 1 of {flights.length}</span></div>
         <div className={s.bigGrid}>
           <div className={s.bigCell}><span>Square: tongue</span><b>{inFrac(L.rise, 16)}</b></div>
@@ -1011,7 +1085,7 @@ function CrewStairs({ m }: { m: PlanModel }) {
           <li>Take {inFrac(L.drop, 16)} — the tread&apos;s thickness — off the bottom so the bottom riser matches the rest; the risers stay within 3/8&quot; of each other.</li>
           <li>Never cut past the layout lines into the throat; at least 5&quot; of solid wood stays under every notch (this one leaves {inFrac(L.throat, 8)}).</li>
         </ol>
-      </div>
+      </Card>
     </>
   );
 }
@@ -1019,7 +1093,7 @@ function CrewStairs({ m }: { m: PlanModel }) {
 function CrewMaterials({ list }: { list: MaterialList }) {
   const groups = list.groups.filter((g) => g.lines.some((l) => !l.byClient));
   return (
-    <div style={{ minWidth: 0 }}>
+    <Card k="materials" label="Materials" style={{ minWidth: 0 }}>
       <div className={s.h}>Materials<span>{list.count} lines · tick as it arrives</span></div>
       <table className={s.t} data-plan-crew-materials>
         <thead>
@@ -1041,16 +1115,17 @@ function CrewMaterials({ list }: { list: MaterialList }) {
           ))}
         </tbody>
       </table>
-    </div>
+    </Card>
   );
 }
 
+const slugOf = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "phase";
 function CrewSequence({ m, list }: { m: PlanModel; list: MaterialList }) {
   const phases = React.useMemo(() => buildSequence(m, list), [m, list]);
   return (
     <div className={s.seq} data-plan-sequence>
       {phases.map((ph, i) => (
-        <div key={ph.title} className={s.phase}>
+        <Card k={`phase-${slugOf(ph.title)}`} label={ph.title} key={ph.title} className={s.phase}>
           <div className={s.phaseHead}><b>{i + 1}</b> {ph.title}</div>
           <ul>
             {ph.steps.map((t, j) => (
@@ -1058,7 +1133,7 @@ function CrewSequence({ m, list }: { m: PlanModel; list: MaterialList }) {
             ))}
           </ul>
           {ph.hold ? <div className={s.hold}>HOLD · {ph.hold}</div> : null}
-        </div>
+        </Card>
       ))}
     </div>
   );
@@ -1090,7 +1165,7 @@ function InspectionRecord({ m }: { m: PlanModel }) {
     ],
   ];
   return (
-    <div>
+    <Card k="inspections" label="Inspection record">
       <div className={s.h}>Inspection record<span>for the building department</span></div>
       <table className={s.t} data-plan-inspections>
         <thead>
@@ -1102,6 +1177,6 @@ function InspectionRecord({ m }: { m: PlanModel }) {
           ))}
         </tbody>
       </table>
-    </div>
+    </Card>
   );
 }

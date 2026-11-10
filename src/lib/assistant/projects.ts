@@ -81,7 +81,7 @@ const projectStatus: ReadTool<{ query: string | null; projectId: string | null }
     ]
   },
   description:
-    "Where a project stands: its number, % done, the stage it is on, every stage with its days, tasks and what is late, the money (contract, spent, margin, owed), its jobs and crew. Give the project id (from find, kind project) or words from its name, its client or its number. Use for: what's happening with Smith's deck, how far along is the kitchen, is anything late, how much does Smith still owe, what's next on the project.",
+    "Where a project stands: its number, % done, the stage it is on, every stage with its days, tasks and what is late, the money (contract, spent, margin, owed), its jobs and crew. Give the project id (from find, kind project) or words from its name, its client or its number. Use for: how far along is the kitchen, is anything late, how much does Smith still owe, which stages are left. For what to do now, what's coming up and who's waiting (the Overview), use project_overview.",
   params: z.object({ query: z.string().max(80).nullable().describe("words from the project's name, client or number; null when projectId is given"), projectId: ID.nullable() }),
   async run({ actor }, args) {
     const org = actor.organizationId;

@@ -14,6 +14,7 @@ import { loadDeckDraft, loadDeckFromProposal } from "@/actions/deckEstimator";
 import { DeckPermitSheet } from "@/components/v3/deck-permit/deck-permit";
 import { readSitePlan } from "@/lib/deck/sitePlanStore";
 import { BASE_SITE_PLAN } from "@/lib/deck/sitePlan";
+import { readPlanEdits } from "@/lib/deck/planEditsStore";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "JobFlex · Deck permit set", description: "The site plan, the framing and the details for the building office." };
@@ -67,10 +68,14 @@ export default async function DeckPermitPage({ searchParams }: { searchParams: P
       title = res.title;
     }
   }
-  const [org, sitePlan] = await Promise.all([
+  // The contractor's edits to the sets (lib/deck/planEditsStore), kept by the property like the site plan; a deck
+  // without an address keeps them by its draft or proposal.
+  const editsRef = { address, draftId: packed ? null : draftId ?? null, proposalId: packed ? null : proposalId ?? null };
+  const [org, sitePlan, edits] = await Promise.all([
     db.organization.findUnique({ where: { id: organizationId }, select: { name: true, address: true, phone: true } }).catch(() => null),
     // The site plan is kept by the property (lib/deck/sitePlanStore): the draft, the proposal and an unsaved design at this address share it.
     readSitePlan(organizationId, address, BASE_SITE_PLAN),
+    readPlanEdits(organizationId, editsRef),
   ]);
-  return <DeckPermitSheet design={design} address={address} title={title} shop={{ name: org?.name ?? "", address: org?.address ?? null, phone: org?.phone ?? null, email: null }} initialPlan={sitePlan} editable={editable} />;
+  return <DeckPermitSheet design={design} address={address} title={title} shop={{ name: org?.name ?? "", address: org?.address ?? null, phone: org?.phone ?? null, email: null }} initialPlan={sitePlan} editable={editable} initialEdits={edits} editsRef={editsRef} />;
 }
