@@ -31,6 +31,7 @@ export function CompanyPulse() {
   const [data, setData] = useState<PulseRead | null>(null);
   const [period, setPeriod] = useState<PulsePeriod | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [paused, setPaused] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async (next: PulsePeriod | null) => {
@@ -42,7 +43,10 @@ export function CompanyPulse() {
     // A slower answer to an older tap never lands on top of a newer one.
     if (mine !== asked.current) return;
     setBusy(false);
-    if (!res.ok) return setErr(res.error);
+    if (!res.ok) {
+      setPaused("paused" in res && res.paused === true);
+      return setErr(res.error);
+    }
     setData(res.pulse);
     setPeriod(res.pulse.period);
   }, []);
@@ -89,21 +93,30 @@ export function CompanyPulse() {
         <h3 className={b.secH}>
           Company pulse {data ? <span className={b.secSub}>{data.range}</span> : null}
         </h3>
-        <div className={p.seg} role="group" aria-label="Period">
-          {PULSE_PERIODS.map((k) => (
-            <button key={k} type="button" className={`${p.segB} ${period === k ? p.segOn : ""}`} aria-pressed={period === k} disabled={busy && period === k} onClick={() => void load(k)} data-pulse-period={k}>
-              {PERIOD_LABEL[k]}
-            </button>
-          ))}
-        </div>
+        {/* On the Free plan there is nothing to switch between — only the way back to a plan. */}
+        {paused ? null : (
+          <div className={p.seg} role="group" aria-label="Period">
+            {PULSE_PERIODS.map((k) => (
+              <button key={k} type="button" className={`${p.segB} ${period === k ? p.segOn : ""}`} aria-pressed={period === k} disabled={busy && period === k} onClick={() => void load(k)} data-pulse-period={k}>
+                {PERIOD_LABEL[k]}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {err ? (
         <div className={b.err} role="alert">
           {err}{" "}
-          <button type="button" className={b.ghost} onClick={() => void load(period)}>
-            Try again
-          </button>
+          {paused ? (
+            <Link href={"/dashboard/subscription" as Route} className={b.ghost}>
+              See plans
+            </Link>
+          ) : (
+            <button type="button" className={b.ghost} onClick={() => void load(period)}>
+              Try again
+            </button>
+          )}
         </div>
       ) : null}
 

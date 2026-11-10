@@ -13,6 +13,7 @@ import { buildWeeklyReport } from "@/lib/email/build/operator";
 import { sendToMembersByPref } from "@/lib/notificationPrefs";
 import { readSourceReport } from "@/lib/pipeline/server";
 import { isTrialWriteLocked } from "@/lib/trialState";
+import { isPageLocked } from "@/lib/customPageAccess";
 import { buildPulse, defaultPeriod, pulseWindow, weeklyReportDue, type Pulse, type PulsePeriod } from "@/lib/pulse/shared";
 
 const DAY = 86_400_000;
@@ -105,6 +106,8 @@ export async function runWeeklyReports(now = new Date()): Promise<WeeklyRun> {
     const tz = o.timezone || FALLBACK_TZ;
     try {
       if (await isTrialWriteLocked(o.id)) continue;
+      // The pulse is Smart CRM — a paid feature (owner, 2026-11-09): on the Free plan no report is counted or sent.
+      if (await isPageLocked(o.id, "smart-crm", { as: null })) continue;
       if (!(await claimWeek(o.id, dayKeyTz(now, tz)))) continue;
       out.due += 1;
       const pulse = await readPulse(o.id, { period: "last-week", now, tz });
