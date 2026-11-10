@@ -1254,6 +1254,40 @@ http
               res.end(JSON.stringify(reply(JSON.stringify({ promises: found }))));
               return;
             }
+            // Bring clients back (lib/winback/understand, Smart CRM part 6, 2026-11-10). CLIENT LIST FILTER reads the
+            // contractor's words into a filter — deterministic: "deck"/"roof"/"fence" are the work, "two years"/"a
+            // year" the quiet months, "never bought" / "bought" who, "tacoma" the place; anything else → all null
+            // ("couldn't tell"). CAMPAIGN DRAFT writes the email; a note with "(guard)" gets an invented discount,
+            // the draft the code must refuse.
+            if (prompt.includes("CLIENT LIST FILTER.")) {
+              const said = (/THE WORDS: ([^\n]*)/.exec(prompt)?.[1] ?? "").toLowerCase();
+              const work = ["deck", "roof", "fence"].filter((k) => said.includes(k));
+              res.end(JSON.stringify(reply(JSON.stringify({
+                had: /never bought|didn't go ahead/.test(said) ? "lost" : /bought|past clients|deck clients|roof clients/.test(said) ? "won" : null,
+                quietMonths: /two years/.test(said) ? 24 : /a year|one year/.test(said) ? 12 : /six months/.test(said) ? 6 : null,
+                activeMonths: null, lastJobMinMonths: null, lastJobMaxMonths: null, minPaid: null, maxPaid: null,
+                work: work.length ? work : null,
+                places: /tacoma/.test(said) ? ["tacoma"] : null,
+                tag: null, plan: null, minRating: null, builtBefore: null, builtAfter: null, minSqft: null,
+              }))));
+              return;
+            }
+            if (prompt.includes("CAMPAIGN DRAFT.")) {
+              const company = (/COMPANY: ([^\n(]+)/.exec(prompt)?.[1] ?? "us").trim();
+              const about = /WHAT IT'S ABOUT: ([^\n]*)/.exec(prompt)?.[1]?.trim() ?? "";
+              const reason = /\(guard\)/i.test(about)
+                ? "Take $500 off any project you book this month."
+                : about
+                  ? `We wanted you to be the first to know: ${about.replace(/[.!]+$/, "")}.`
+                  : /WHO IS ON THE LIST: [^\n]*(never bought|quote still out|never sent a quote)/.test(prompt)
+                    ? /\(past work\)/i.test(prompt) ? "Thank you again for the project we did; it has been a while since we finished {last job}." : "A while back we put together a quote for you, and we wanted to check whether the project is still on your mind."
+                    : "It has been a while since we finished {last job}, and we wanted to see how it is holding up.";
+              res.end(JSON.stringify(reply(JSON.stringify({
+                subject: about && !/\(guard\)/i.test(about) ? "Something new from us" : "Checking in on your project",
+                body: `Hi {first name},\n\n${reason}\n\nIf there is anything around the house you have been meaning to get done, just reply to this email and we will set up a time to take a look.\n\n${company}`,
+              }))));
+              return;
+            }
             if (prompt.includes("INBOX DRAFTS")) {
               res.end(JSON.stringify(reply(JSON.stringify({ drafts: [
                 { label: "Confirm and move", text: "Thanks — I'll switch the deck to composite and send the updated proposal today, with a start date that finishes before Thanksgiving." },

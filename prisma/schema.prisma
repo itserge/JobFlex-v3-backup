@@ -592,6 +592,100 @@ model ClientBrief {
   @@index([organizationId])
 }
 
+// BRING CLIENTS BACK (Smart CRM part 6, 2026-11-10; lib/winback). Smart lists over the company's own clients, one
+// email to the people on a list, who it went to, who asked for no more of them, and what is known about each
+// client's house. No relations on purpose (like TextRule / PageView): these tables reach production on their own,
+// before the code that reads them; every read is scoped by organizationId.
+
+/// A smart list the company kept: a filter over its clients, with the words it was asked for in.
+model ClientList {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  words          String? // what the person typed, when the list came from plain words
+  filterJson     String // lib/winback/shared ListFilter
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId, createdAt])
+}
+
+/// One email to the people on a list. The filter and its plain-words reading are copied in when it is made, so a
+/// list edited later never changes who an old campaign says it went to.
+model ClientCampaign {
+  id             String    @id @default(cuid())
+  organizationId String
+  name           String
+  listId         String?
+  filterJson     String
+  audience       String // the filter in plain words (lib/winback/shared filterWords)
+  subject        String
+  body           String
+  status         String    @default("DRAFT") // DRAFT | SENDING | SENT | CANCELED
+  writtenBy      String    @default("person") // ai | rules | person
+  createdById    String?
+  startedById    String?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([organizationId, status])
+  @@index([organizationId, createdAt])
+}
+
+/// One client on one campaign: queued when it starts, then sent, failed, or left out with the reason.
+model ClientCampaignRecipient {
+  id             String    @id @default(cuid())
+  organizationId String
+  campaignId     String
+  clientId       String
+  name           String
+  email          String? // lower case
+  lastJob        String? // what {last job} reads as for them
+  status         String    @default("QUEUED") // QUEUED | SENT | SKIPPED | FAILED
+  reason         String? // why skipped (lib/winback/shared SKIP_REASONS) or the send error
+  sentAt         DateTime?
+  optedOutAt     DateTime? // they used this email's unsubscribe link
+  createdAt      DateTime  @default(now())
+
+  @@unique([campaignId, clientId])
+  @@index([campaignId, status])
+  @@index([organizationId, clientId, sentAt])
+  @@index([organizationId, status, sentAt])
+}
+
+/// An address that asked one company for no more campaign emails. Other mail (proposals, invoices) still goes.
+model ClientEmailOptOut {
+  id             String   @id @default(cuid())
+  organizationId String
+  email          String // lower case
+  via            String   @default("page") // one-click | page | office
+  campaignId     String?
+  createdAt      DateTime @default(now())
+
+  @@unique([organizationId, email])
+}
+
+/// What is known about a client's house, from free public records or typed in by the office.
+model ClientHouse {
+  clientId       String   @id
+  organizationId String
+  addressKey     String? // the address the facts were looked up for (lib/reportall addressKeyOf)
+  yearBuilt      Int?
+  livingSqft     Int?
+  storeys        Float?
+  lotAcres       Float?
+  roofSqft       Int?
+  source         String   @default("none") // hand | parcel | county | none (looked up, nothing found)
+  sourceNote     String? // which record answered
+  checkedAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId])
+}
+
 // TWO RECORDS OF ONE PERSON, FOLDED TOGETHER (part 1: duplicates found by phone and email; merging always asks
 // first). The log row keeps what the removed record said, so the merge can be read back later.
 model ClientMerge {

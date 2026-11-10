@@ -281,7 +281,7 @@ function plainText(doc: EmailDoc): string {
   if (doc.cta) lines.push(`${doc.cta.label}: ${doc.cta.href}`, "");
   if (doc.link) lines.push(`${doc.link.label}: ${doc.link.href}`, "");
   for (const p of doc.after ?? []) lines.push(p, "");
-  if (doc.fine) lines.push(doc.fine, "");
+  if (doc.fine) lines.push(doc.fine, ...(doc.fineLink ? [`${doc.fineLink.label}: ${doc.fineLink.href}`] : []), "");
   lines.push(`— ${doc.footer.name}`);
   if (doc.footer.contact) lines.push(doc.footer.contact);
   return lines.join("\n");
@@ -368,7 +368,11 @@ export function renderEmail(doc: EmailDoc): { subject: string; html: string; tex
     doc.fine
       ? `<tr><td class="pad" style="padding:18px ${PAD_M}px 0;"><div style="height:1px;background:${C.hair};"></div><div style="margin-top:11px;font-family:${MONO};font-size:11px;line-height:1.6;letter-spacing:.06em;color:${C.inkFaint};">${esc(
           doc.fine,
-        )}</div></td></tr>`
+        )}${
+          doc.fineLink
+            ? ` <a href="${esc(safeHref(doc.fineLink.href))}" style="color:${C.inkMuted};text-decoration:underline;text-underline-offset:2px;">${esc(doc.fineLink.label)}</a>`
+            : ""
+        }</div></td></tr>`
       : ""
   }
 
