@@ -487,6 +487,12 @@ model Client {
   deletedAt      DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
+  // THE CLIENT'S HOME PAGE (2026-11-10, Smart CRM part 5): one lasting link per client — /c/<homeToken> — with their
+  // proposals, project, payments, messages, documents and warranty, plan visits and a button to book a visit. Made
+  // on first use (lib/clientHome), kept for good; a new one only when the office replaces it (the old link stops).
+  // `homeViewedAt`: when the client last opened it — the office sees "opened 2d ago".
+  homeToken      String?   @unique
+  homeViewedAt   DateTime?
 
   organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   proposals      Proposal[]

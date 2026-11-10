@@ -624,3 +624,23 @@ export function buildSmartBookRequest(i: SmartBookRequestInput): EmailDoc {
     footer: orgFooter(i.org),
   };
 }
+
+export interface ClientPageMessageInput {
+  org: OrgBrand;
+  clientName: string;
+  body: string;
+  href: string;
+}
+
+/** A client wrote on their own page (2026-11-10, Smart CRM part 5) — the office's heads-up; the message is in the Inbox. */
+export function buildClientPageMessage(i: ClientPageMessageInput): EmailDoc {
+  return {
+    subject: `${i.clientName} wrote on their page`,
+    lockup: orgLockup(i.org),
+    kicker: { text: "Message", tone: "neutral" },
+    headline: `${i.clientName} wrote to you`,
+    prose: [`“${truncate(i.body, 600)}”`, "Answer from the Inbox — by email or text."],
+    link: { label: "Open the Inbox", href: i.href },
+    footer: orgFooter(i.org),
+  };
+}
