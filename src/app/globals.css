@@ -116,7 +116,7 @@
   --deck-preview-height: clamp(320px, calc(100vh - 420px), 520px);
   --deck-view-control: 32px;
   --deck-tool-control: 36px;
-  --deck-preview-min: 140px;
+  --deck-preview-min: 320px; /* the desk viewer's picture never gets shorter (deck-variant-1.css, THE DESK) */
   --deck-address-width: 520px;
   --deck-card-number: 28px;
   --deck-form-width: 500px;

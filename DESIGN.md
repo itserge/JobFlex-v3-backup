@@ -499,7 +499,7 @@ and 40px dimension steppers. On handheld, preserve 44px targets and 16px input
 text. The page title remains 36px (30px handheld).
 The form column is 500px on a wide desktop, 440px at middle widths. Use a
 12px column gap and 4px above the price footer. Numbered cards and footer
-share their outer edges; keep the form scrollbar in the column gap.
+share their outer edges.
 
 Use one Job address field, with its label above and a 520px maximum width.
 Keep the compact icon-and-label Drafts menu beside
@@ -515,11 +515,19 @@ pricing and price sources remain in the package section.
 Align the draft name and finish actions with the package content, without a
 nested card. Save draft and Send to client share an equal-width row; the primary
 proposal action spans the full width below them, including on handheld.
-On desktop, ordinary wheel scrolling anywhere in the main workspace, including
-over the scene, first scrolls search, title and address away while expanding
-both workspaces. Only then do the left cards scroll. Upward scrolling reverses
-that order. Dragging still orbits the scene; modified wheel/pinch stays available
-for zoom. Escape returns to the top. AI desk, Texting and the estimator use
+On desktop the page is one scroller (2026-11-10, replacing the two-scroller
+version whose scene was cut off at the top and whose viewer head slid over it):
+the title, address, bands and numbered cards stack in the left column and scroll
+with the page under the shell's sticky topbar; the price footer rides the window
+bottom. The viewer is one sticky block in the right column, from the top of the
+studio, just under the topbar and as tall as the window: head → facts → view
+tabs → picture → tools in the flow, the picture taking the rest (never under
+320px), the canvas filling it. Nothing in the viewer moves while the page
+scrolls; a viewer taller than the window scrolls inside itself. Its head puts the
+buttons on their own right-aligned line when the title and they do not fit on
+one. Ordinary wheel scrolling anywhere in the main workspace, including over the
+scene, scrolls the page. Dragging still orbits the scene; modified wheel/pinch
+stays available for zoom. Escape returns to the top. AI desk, Texting and the estimator use
 gentler wheel movement with brief easing; touch and keyboard stay native,
 and reduced-motion preferences disable the easing.
 The landing and public marketing pages use the same gentle desktop wheel

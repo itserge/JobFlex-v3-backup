@@ -432,6 +432,15 @@
 .jf-deck-v1 .v1-view-head .v1-seg { grid-column: 1 / -1; grid-row: 3; }
 .jf-deck-v1 .v1-view-head .v1-seg-btn { min-height: var(--deck-view-control); padding: 0 var(--deck-space-sm); font-size: var(--deck-meta); flex: none; }
 .jf-deck-v1 .v1-view-facts { min-width: 0; font-family: var(--font-sans); font-size: var(--deck-meta); letter-spacing: 0.02em; text-align: left; white-space: normal; overflow: visible; text-overflow: clip; }
+/* The docked head, desk and phone (2026-11-10): the title, then the buttons — on one line while both fit, else the
+   buttons as a line of their own under it, right-aligned, wrapping among themselves. The grid it replaces gave the
+   unbreakable title whatever the buttons left, and on a phone "THE COVERED DECK" ran under Send. Full view keeps its
+   one-line grid (below). */
+.jf-deck-v1 .v1-stage.is-docked .v1-view-head { display: flex; flex-wrap: wrap; align-items: center; }
+.jf-deck-v1 .v1-stage.is-docked .v1-view-title { flex: 1 1 auto; min-width: 0; white-space: normal; overflow-wrap: break-word; }
+.jf-deck-v1 .v1-stage.is-docked .v1-view-acts { flex: 0 1 auto; min-width: 0; margin-left: auto; }
+.jf-deck-v1 .v1-stage.is-docked .v1-view-head .v1-view-facts,
+.jf-deck-v1 .v1-stage.is-docked .v1-view-head .v1-seg { flex: 0 0 100%; }
 /* The picture takes what the window leaves once the head, price and tools are counted, so the whole pinned
    stage stays inside the window (the shell's fluid zoom is ×0.89 at 1440, ×0.83 at 1280: see the 1365px rule). */
 .jf-deck-v1 .v1-view-box { position: relative; height: var(--deck-preview-height); background: var(--paper); overflow: hidden; }
@@ -587,27 +596,58 @@
 .jf-deck-v1 .v1-playback { display: flex; align-items: center; gap: var(--deck-space-md); }
 .jf-deck-v1 .v1-price-sources { display: flex; align-items: center; flex-wrap: wrap; gap: var(--deck-space-xs); padding: 0 var(--deck-space-md) var(--deck-space-md); }
 
-/* The desktop work area fills the space left by the actual shell and header.
-   All sections share one scroller; the estimate shortcut and scene stay put. */
+/* THE DESK (2026-11-10, rebuilt): ONE scroller — the shell's .main — and the viewer pinned by CSS alone.
+   Before, the page and the form were two scrollers glued by a wheel script that grew the studio by every pixel the
+   header scrolled away (a height written on each scroll event) and drew the 3D at the panel's fully grown height,
+   pinned to the picture's bottom: at the top of the page the scene's top third was hidden under the viewer's head, the
+   head slid over the scene as the page scrolled, and the buttons and tabs moved with it, a frame behind.
+   Now: the studio is a two-column grid. The header, the bands and the numbered cards stack in the left column and
+   scroll with the page; the viewer is one sticky block in the right column, from the first row to the last, its top
+   just under the shell's sticky topbar (where it already sits, so it never moves) and its height the window's. Inside
+   it, in the flow: head, facts, tabs, picture, tools — the picture takes what is left (never under 320px) and the
+   canvas fills the picture. Nothing in it depends on the scroll. Taller than the window → it scrolls inside itself. */
 @media (min-width: 769px) {
-  .jf-blueprint .content:has(> .jf-deck-v1) { padding-top: var(--deck-shell-inset); padding-bottom: var(--deck-shell-inset); }
-  .jf-blueprint:has(.jf-deck-v1) .main { overflow-anchor: none; }
-  .jf-blueprint:has(.jf-deck-v1) .topbar { position: static; }
-  .jf-deck-v1 { height: var(--deck-workspace-height, auto); margin-bottom: var(--deck-scroll-space, 0px); gap: var(--deck-space-sm); padding-bottom: 0; }
+  .jf-blueprint .content:has(> .jf-deck-v1) { padding-top: var(--deck-shell-inset); padding-bottom: 0; }
+  .jf-blueprint:has(.jf-deck-v1) .main { overflow-anchor: none; scrollbar-gutter: stable; scroll-padding-top: calc(var(--topbar-h, 62px) + var(--deck-shell-inset, 16px)); scroll-padding-bottom: 96px; }
+  /* (.main is above .content, where --deck-shell-inset is set: hence the fallbacks — without them the calc is invalid there.) */
+  .jf-deck-v1 { gap: var(--deck-space-sm); padding-bottom: 0; }
   .jf-deck-v1 > :not(.v1-work) { flex: none; }
+  .jf-deck-v1.v1-studio {
+    --v1-stage-top: calc(var(--topbar-h, 62px) + var(--deck-shell-inset));
+    display: grid;
+    grid-template-columns: minmax(380px, var(--deck-form-width)) minmax(0, 1fr);
+    align-items: start;
+    column-gap: var(--deck-column-gap);
+    row-gap: 0;
+  }
+  /* Empty rows (a band that is not shown) stay 0 tall: the left column's spacing is its own margin, not row gaps. */
+  .jf-deck-v1.v1-studio > :not(.v1-work), .jf-deck-v1.v1-studio .v1-work > .v1-q { grid-column: 1; min-width: 0; }
+  .jf-deck-v1.v1-studio > :not(.v1-work) + *, .jf-deck-v1.v1-studio .v1-work > .v1-q { margin-top: var(--deck-space-sm); }
+  .jf-deck-v1.v1-studio .v1-work { display: contents; }
   .jf-deck-v1 .v1-top { gap: var(--deck-space-sm); }
   .jf-deck-v1 .v1-job-addr .v1-field { grid-template-columns: minmax(0, 1fr); }
   .jf-deck-v1 .v1-job-addr .v1-in { height: var(--deck-control); }
-  .jf-deck-v1 .v1-work { flex: 1; min-height: 0; align-items: stretch; }
   .jf-deck-v1 .v1-q { min-height: 0; gap: var(--deck-footer-gap); }
-  .jf-deck-v1 .v1-q-scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; margin-right: calc(-1 * var(--deck-scrollbar-width, 0px)); padding-bottom: 0; }
-  .jf-deck-v1 .v1-q-foot { position: static; flex: none; margin-top: 0; }
-  .jf-deck-v1 .v1-stage { position: static; min-height: 0; }
-  .jf-deck-v1 .v1-viewer { display: flex; flex-direction: column; min-height: 0; overflow: auto; }
+  /* The price bar rides the bottom of the window, level with the viewer's bottom. */
+  .jf-deck-v1 .v1-q-foot { bottom: 0; flex: none; margin-top: 0; }
+  /* Row 1 to past the last of header + three bands + resume + form (6): a spanned row with nothing in it is 0 tall. */
+  .jf-deck-v1 .v1-stage.is-docked {
+    grid-column: 2;
+    grid-row: 1 / span 8;
+    position: sticky;
+    top: var(--v1-stage-top);
+    display: flex;
+    flex-direction: column;
+    height: calc(var(--app-h, 100vh) - var(--v1-stage-top));
+    min-height: 0;
+    /* Sticky keeps the MARGIN box inside the grid area: at the very end of the page the scroll stops on a device
+       pixel, up to half a pixel short, and the viewer was nudged up by that much. 4px of slack, nothing drawn. */
+    margin-bottom: -4px;
+  }
+  .jf-deck-v1 .v1-stage.is-docked .v1-viewer { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
   .jf-deck-v1 .v1-viewer > :not(.v1-view-box) { flex: none; }
-  .jf-deck-v1 .v1-view-box, .jf-deck-v1 .v1-view-box.is-wall { flex: 1; min-height: var(--deck-preview-min); height: auto; }
-  /* The panel reveals a stationary scene; scrolling never resizes the canvas. */
-  .jf-deck-v1 .v1-canvas { top: auto; height: var(--deck-scene-height, 100%); }
+  .jf-deck-v1 .v1-stage.is-docked .v1-view-box,
+  .jf-deck-v1 .v1-stage.is-docked .v1-view-box.is-wall { flex: 1 1 0; min-height: var(--deck-preview-min); height: auto; }
   .jf-deck-v1 .v1-tools { grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--deck-space-sm); padding: var(--deck-space-xs) var(--deck-space-sm); }
   .jf-deck-v1 .v1-tools-primary { flex-wrap: nowrap; gap: var(--deck-space-xs); }
   .jf-deck-v1 .v1-tools .v1-btn { flex: none; min-height: var(--deck-tool-control); padding: 0 var(--deck-space-xs); font-size: var(--deck-meta); white-space: nowrap; }
@@ -619,12 +659,13 @@
 
 /* ── Middle widths: the form column gives a little ─────────────────────── */
 @media (max-width: 1180px) {
-  .jf-deck-v1 .v1-work { grid-template-columns: minmax(340px, var(--deck-form-width-compact)) minmax(0, 1fr); }
-
   .jf-deck-v1 .v1-total-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+@media (max-width: 1180px) and (min-width: 769px) {
+  .jf-deck-v1.v1-studio { grid-template-columns: minmax(340px, var(--deck-form-width-compact)) minmax(0, 1fr); }
+}
 @media (max-width: 960px) and (min-width: 769px) {
-  .jf-deck-v1 .v1-work { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .jf-deck-v1.v1-studio { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .jf-deck-v1 .v1-answers-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .jf-deck-v1 .v1-tools { grid-template-columns: minmax(0, 1fr) auto; }
   .jf-deck-v1 .v1-playback, .jf-deck-v1 .v1-edit-hint { grid-column: 1 / -1; grid-row: 2; }

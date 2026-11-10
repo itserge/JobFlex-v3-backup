@@ -337,66 +337,18 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
   const qScrollRef = React.useRef<HTMLDivElement>(null);
   /** Glides the desktop form to a section on the wheel's own motion; false on a phone, where the page scrolls natively. */
   const glideRef = React.useRef<((section: HTMLElement) => boolean) | null>(null);
+  // THE WHEEL (2026-11-10): one scroller. On the desk the shell's .main scrolls the header and the cards away together
+  // while the viewer stays pinned by CSS (deck-variant-1.css, "THE DESK"); on a phone the shell's .layout scrolls. The
+  // wheel keeps the page's own easing (--scroll-wheel-*); nothing here measures or sizes the layout on a scroll — the
+  // two-scroller version wrote the studio's height on every scroll event and drew the scene at a height of its own.
   React.useEffect(() => {
     const studio = studioRef.current;
     const shell = studio?.closest<HTMLElement>(".jf-blueprint");
     const main = studio?.closest<HTMLElement>(".main");
-    const scroller = qScrollRef.current;
-    const header = studio?.querySelector<HTMLElement>(".v1-top");
-    const work = studio?.querySelector<HTMLElement>(".v1-work");
-    if (!studio || !main || !shell || !scroller || !header || !work) return;
+    if (!studio || !main || !shell) return;
     const desktop = window.matchMedia("(min-width: 769px)");
-    let headerRange = 0;
-    let baseHeight = 0;
-    let appliedScroll = -1;
-    let scale = 1;
-    let childCount = studio.children.length;
-    const fit = () => {
-      if (!desktop.matches || appliedScroll === main.scrollTop) return;
-      appliedScroll = main.scrollTop;
-      studio.style.setProperty("--deck-workspace-height", `${Math.max(0, baseHeight + appliedScroll)}px`);
-      studio.style.setProperty("--deck-scroll-space", `${Math.max(0, headerRange - appliedScroll)}px`);
-    };
-    const measure = () => {
-      // A resize or scroll can land after the studio left the page (opening a client's design navigates).
-      if (!studio.isConnected || !studio.parentElement) return;
-      if (!desktop.matches) {
-        studio.style.removeProperty("--deck-workspace-height");
-        studio.style.removeProperty("--deck-scroll-space");
-        studio.style.removeProperty("--deck-scrollbar-width");
-        studio.style.removeProperty("--deck-scene-height");
-        return;
-      }
-      scale = Number.parseFloat(getComputedStyle(shell).zoom) || 1;
-      const mainBox = main.getBoundingClientRect();
-      const top = studio.getBoundingClientRect().top;
-      const bottomSpace = Number.parseFloat(getComputedStyle(studio.parentElement!).paddingBottom) || 0;
-      headerRange = Math.max(0, (work.getBoundingClientRect().top - mainBox.top) / scale + main.scrollTop);
-      baseHeight = (mainBox.bottom - top) / scale - bottomSpace - main.scrollTop;
-      studio.style.setProperty("--deck-scrollbar-width", `${scroller.offsetWidth - scroller.clientWidth}px`);
-      appliedScroll = -1;
-      fit();
-      // Allocate the scene for the fully expanded panel once. Scrolling reveals
-      // this fixed surface from the bottom instead of resizing WebGL or its camera.
-      const viewBox = studio.querySelector<HTMLElement>(".v1-view-box");
-      if (viewBox) {
-        const sceneHeight = viewBox.getBoundingClientRect().height / scale + Math.max(0, headerRange - main.scrollTop);
-        studio.style.setProperty("--deck-scene-height", `${Math.ceil(sceneHeight)}px`);
-      }
-    };
-    measure();
-    const motion = createWheelMotion(
-      () => main.scrollTop + scroller.scrollTop,
-      (value) => {
-        // Both scroll positions first, the variables last (2026-10-18, perf): a scroll write needs a clean layout,
-        // so a variable set between the two forced a full layout of the page every frame.
-        main.scrollTop = Math.min(headerRange, value);
-        scroller.scrollTop = Math.max(0, value - headerRange);
-        fit();
-      },
-      () => Math.max(headerRange, main.scrollTop + scroller.scrollHeight - scroller.clientHeight),
-      studio,
-    );
+    const zoom = () => Number.parseFloat(getComputedStyle(shell).zoom) || 1;
+    const motion = createWheelMotion(() => main.scrollTop, (value) => { main.scrollTop = value; }, () => main.scrollHeight - main.clientHeight, studio);
     const mobileScroller = main.closest<HTMLElement>(".layout") ?? main;
     const mobileMotion = createWheelMotion(() => mobileScroller.scrollTop, (value) => { mobileScroller.scrollTop = value; }, () => mobileScroller.scrollHeight - mobileScroller.clientHeight, studio);
     const wheelRoot = desktop.matches ? main : mobileScroller;
@@ -409,43 +361,36 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
         if (!target?.closest("canvas")) event.preventDefault();
         return;
       }
+      // A viewer taller than a short window scrolls inside itself (natively; it does not hand the wheel to the page).
+      const viewer = desktop.matches ? target?.closest<HTMLElement>(".v1-stage.is-docked .v1-viewer") : null;
+      if (viewer && !target?.closest("canvas") && viewer.scrollHeight > viewer.clientHeight + 1) return;
       event.preventDefault();
       event.stopPropagation();
-      if (desktop.matches) {
-        if (childCount !== studio.children.length) { childCount = studio.children.length; measure(); }
-        motion.move(wheelPixels(event, main.clientHeight) / scale);
-      } else mobileMotion.move(wheelPixels(event, mobileScroller.clientHeight));
+      if (desktop.matches) motion.move(wheelPixels(event, main.clientHeight) / zoom());
+      else mobileMotion.move(wheelPixels(event, mobileScroller.clientHeight));
     };
-    // "Package & price" and the other go-tos (2026-10-19): a native smooth scroll moved the header and the form as two
-    // scrollers at once and stuttered; the glide drives the one combined position the wheel does.
+    // "Package & price" and the other go-tos (2026-10-19): the glide drives the same position the wheel does, and puts
+    // the section's top just under the sticky topbar (the page's scroll-padding-top).
     glideRef.current = (section) => {
       if (!desktop.matches) return false;
-      if (childCount !== studio.children.length) { childCount = studio.children.length; measure(); }
-      motion.glideTo(() => headerRange + Math.max(0, (section.getBoundingClientRect().top - scroller.getBoundingClientRect().top) / scale + scroller.scrollTop));
+      motion.glideTo(() => {
+        const pad = Number.parseFloat(getComputedStyle(main).scrollPaddingTop) || 0;
+        return main.scrollTop + (section.getBoundingClientRect().top - main.getBoundingClientRect().top) / zoom() - pad;
+      });
       return true;
     };
-    const onScroll = () => fit();
     const stop = () => { motion.stop(); mobileMotion.stop(); };
     const onKey = (event: KeyboardEvent) => {
       stop();
-      if (event.key === "Escape" && desktop.matches) { scroller.scrollTop = 0; main.scrollTop = 0; fit(); }
+      if (event.key === "Escape" && desktop.matches) main.scrollTop = 0;
     };
-    const observer = new ResizeObserver(measure);
-    observer.observe(main);
-    for (const child of Array.from(studio.children)) if (child !== work) observer.observe(child);
-    for (const chrome of studio.querySelectorAll(".v1-view-head, .v1-tools")) observer.observe(chrome);
-    window.addEventListener("resize", measure);
     wheelRoot.addEventListener("wheel", onWheel, { capture: true, passive: false });
-    main.addEventListener("scroll", onScroll, { passive: true });
     wheelRoot.addEventListener("pointerdown", stop, true);
     studio.addEventListener("keydown", onKey);
     return () => {
       stop();
       glideRef.current = null;
-      observer.disconnect();
-      window.removeEventListener("resize", measure);
       wheelRoot.removeEventListener("wheel", onWheel, true);
-      main.removeEventListener("scroll", onScroll);
       wheelRoot.removeEventListener("pointerdown", stop, true);
       studio.removeEventListener("keydown", onKey);
     };
@@ -1357,7 +1302,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
       for (const entry of entries) pending.set((entry.target as HTMLElement).dataset.deckSection as StepId, entry.isIntersecting);
       if (timer) clearTimeout(timer);
       timer = setTimeout(flush, QUIET);
-    }, { root: window.matchMedia("(min-width: 769px)").matches ? scroller : null });
+    }); // the window: the cards scroll with the page (the shell's .main), on the desk as on a phone
     scroller.querySelectorAll('[data-deck-section="materials"], [data-deck-section="package"]').forEach((section) => observer.observe(section));
     return () => {
       observer.disconnect();
@@ -3069,7 +3014,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
   ];
 
   return (
-    <div className={cx("jf-deck-v1", fullView && "is-full-view")} ref={studioRef} data-nest>
+    <div className={cx("jf-deck-v1", "v1-studio", fullView && "is-full-view")} ref={studioRef} data-nest>
       <header className="v1-top">
         <div className="v1-title-row">
           <h1 className="v1-title">Deck Studio</h1>
