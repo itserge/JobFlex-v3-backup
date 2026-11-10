@@ -439,6 +439,10 @@ model Membership {
   organizationId String
   role           String   @default("USER")
   createdAt      DateTime @default(now())
+  // SALES COMMISSION (2026-11-10, the ProSmart gaps plan, part 4): this member's percent on the proposals they own,
+  // earned as the client's money is collected (lib/proposalRow). Null = no commission. A change stamps the old
+  // percent onto their sold proposals first (Proposal.commissionPct), so a past deal keeps its terms.
+  commissionPct  Float?
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -1047,6 +1051,14 @@ model Proposal {
   // Automatic payment reminders for THIS proposal: true / false override the
   // company's reminder mode; null follows it (settings → payments).
   remindersOn       Boolean?
+  // THE PROPOSAL ROW (2026-11-10, the ProSmart gaps plan, part 4). `commissionPct`: this deal's sales commission, frozen
+  // (null = the owner's own percent on Membership). `canceledAt` / `cancelReason`: a SOLD job cancelled by the
+  // office — the status goes to DECLINED (out of sold work and money to collect) and Reopen puts it back.
+  // `callRepFirst`: the crew calls the rep before starting (a tricky build, something to explain).
+  commissionPct     Float?
+  canceledAt        DateTime?
+  cancelReason      String?
+  callRepFirst      Boolean   @default(false)
   // "Listen to this proposal" (2026-09-23): the spoken summary's cached audio
   // file and the hash of the script it was read from (lib/proposalAudio). A
   // price change moves the hash and the next play regenerates the audio.

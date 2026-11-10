@@ -187,6 +187,12 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
           <h1 className={cx("page-title")}>{record.title}</h1>
           <div className={cx("jd-dates")}>{record.dates}</div>
           {record.repair ? <RepairBanner jobId={record.id} repair={record.repair} /> : null}
+          {record.callFirst ? (
+            <div className={cx("jd-callfirst")} data-job-call-first>
+              <Ic id="i-phone" />
+              {record.callFirst} — before starting
+            </div>
+          ) : null}
         </div>
       </div>
 

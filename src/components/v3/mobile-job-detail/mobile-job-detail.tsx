@@ -281,6 +281,11 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
             )}
             <h1 className="mjd-title">{record.title}</h1>
             <div className="mjd-dates">{record.dates}</div>
+            {record.callFirst ? (
+              <div className="mjd-callfirst" data-job-call-first>
+                {record.callFirst} — before starting
+              </div>
+            ) : null}
             {/* A repair says what it's for (2026-11-09); the desk page lets the office change why it came back. */}
             {record.repair ? (
               <div className="mjd-repair" data-job-repair-banner>

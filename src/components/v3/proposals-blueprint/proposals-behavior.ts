@@ -213,6 +213,17 @@ export function initProposalsContent(
   function fmtMoney(n: number) {
     return "$" + Math.round(n).toLocaleString("en-US");
   }
+  /** Crew and More on sold work (2026-11-10) — the office's; the sheet lives in the shell (`jf:proposal-more`). A
+   *  cancelled sale keeps More (to reopen it). */
+  function moreBtnsHtml(p: ProposalRow, cls: string): string {
+    if (!options.office) return "";
+    const sold = p.status === "ACCEPTED" || p.status === "COMPLETED" || p.status === "PAID";
+    if (!sold && !p.canceled) return "";
+    return (
+      (sold ? '<button class="' + cls + '" type="button" data-act="crew" title="Who is on the job, and their pay"><svg class="ic"><use href="#i-users"/></svg>Crew</button>' : "") +
+      '<button class="' + cls + '" type="button" data-act="more" title="Crew, who sold it and their commission, call the rep first, the project, cancel the sold job"><svg class="ic"><use href="#i-dots"/></svg>More</button>'
+    );
+  }
   /** The Payments panel on sold work (2026-11-09) — the office's; the sheet lives in the shell (`jf:payments`). */
   function paymentsBtnHtml(p: ProposalRow, cls: string): string {
     if (!options.office || !(p.status === "ACCEPTED" || p.status === "COMPLETED" || p.status === "PAID")) return "";
@@ -240,6 +251,7 @@ export function initProposalsContent(
     sendCellHtml: (p) => sendCellHtml(p),
     repairHtml: (p, cls) => repairBtnHtml(p, cls),
     paymentsHtml: (p, cls) => paymentsBtnHtml(p, cls),
+    moreHtml: (p, cls) => moreBtnsHtml(p, cls),
     payActsHtml: (p, next) => payActsHtml(p, next),
     finHtml: (p) => finHtml(p),
     instDollars: (p, it) => instDollars(p, it),
@@ -1089,6 +1101,7 @@ export function initProposalsContent(
       "</button>" +
       repairBtnHtml(p, "btn btn-ghost btn--sm") +
       paymentsBtnHtml(p, "btn btn-ghost btn--sm") +
+      moreBtnsHtml(p, "btn btn-ghost btn--sm") +
       // Real: the client-facing page for this proposal.
       '<a class="btn btn-ghost btn--sm" href="/portal/q/' +
       encodeURIComponent(p.publicId) +
@@ -1238,6 +1251,7 @@ export function initProposalsContent(
       "</button>" +
       repairBtnHtml(p, "btn btn-ghost btn--sm") +
       paymentsBtnHtml(p, "btn btn-ghost btn--sm") +
+      moreBtnsHtml(p, "btn btn-ghost btn--sm") +
       '</div><div class="psheet-foot-r">' +
       '<button class="btn btn-ghost btn--sm" type="button" data-act="unmark"><svg class="ic"><use href="#i-undo"/></svg>Reopen job</button>' +
       (p.owed > 0
@@ -1909,6 +1923,11 @@ export function initProposalsContent(
       }
       if (kind === "change-order" && p) {
         openChangeOrder(p);
+        return;
+      }
+      // A sold proposal's sheet (2026-11-10): Crew opens it on the crew.
+      if ((kind === "crew" || kind === "more") && p) {
+        document.dispatchEvent(new CustomEvent("jf:proposal-more", { detail: { proposalId: p.id, section: kind === "crew" ? "crew" : undefined } }));
         return;
       }
       // The Payments panel (2026-11-09): the sheet lives in the shell.

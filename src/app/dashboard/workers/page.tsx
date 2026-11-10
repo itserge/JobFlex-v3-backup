@@ -21,6 +21,7 @@ import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
 import { WorkersContent } from "@/components/v3/workers-blueprint/workers-content";
 import { lastActiveLabel, laterOf, type InviteStatus, type WorkerEntry } from "@/components/v3/workers-blueprint/workers-data";
 import { crewComebackStats } from "@/lib/repairs/server";
+import { repCommissions } from "@/lib/proposalRow/server";
 import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 export const dynamic = "force-dynamic";
@@ -97,6 +98,8 @@ export default async function WorkersPage() {
 
   // Come-backs per person (2026-11-09) — best effort: the roster never fails on its counts.
   const comebacks = await crewComebackStats(organizationId).catch(() => new Map<string, { comebacks: number; cost: number; sentOn: number }>());
+  // Sales commission per member (2026-11-10) — best effort too.
+  const commissions = await repCommissions(organizationId).catch(() => new Map<string, { pct: number | null; earned: number; full: number; deals: number }>());
 
   const entries: WorkerEntry[] = workers.map((w) => ({
     id: w.id,
@@ -114,6 +117,8 @@ export default async function WorkersPage() {
     jobs: w.assignments.filter((a) => a.job.status === "SCHEDULED" || a.job.status === "IN_PROGRESS").map((a) => ({ id: a.job.id, title: a.job.title })),
     earned: Math.round(w.assignments.reduce((sum, a) => sum + a.pay, 0) * 100) / 100,
     unpaid: Math.round(w.assignments.filter((a) => !a.paidAt).reduce((sum, a) => sum + a.pay, 0) * 100) / 100,
+    userId: w.userId,
+    commission: commissions.get(w.userId) ?? { pct: null, earned: 0, full: 0, deals: 0 },
     comebacks: (() => {
       const c = comebacks.get(w.id);
       return c ? { count: c.comebacks, cost: c.cost, sentOn: c.sentOn } : { count: 0, cost: 0, sentOn: 0 };

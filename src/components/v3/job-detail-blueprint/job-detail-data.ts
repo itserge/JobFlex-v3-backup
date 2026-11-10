@@ -277,6 +277,8 @@ export type JobDetailRecord = {
    *  and this job's own come-backs. The office's record only. */
   repair?: RepairFacts["repair"];
   comebacks?: RepairFacts["comebacks"];
+  /** "Call Nelly first · (425) 555-0101" — the office set it on the proposal (2026-11-10, part 4). */
+  callFirst?: string | null;
   status: StatusKey;
   /** Page head: "Aug 11 → Aug 14, 2026", or "No dates yet". */
   dates: string;

@@ -51,6 +51,8 @@ import { PIPELINE_TOOLS } from "@/lib/assistant/pipeline";
 import { OPEN_TIME_TOOLS } from "@/lib/assistant/openTimes";
 // Repairs and come-backs (2026-11-09, the ProSmart gaps plan, part 2): book a repair, and the come-back counts.
 import { REPAIR_TOOLS } from "@/lib/assistant/repairs";
+// Sales commission (2026-11-10, the ProSmart gaps plan, part 4).
+import { COMMISSION_TOOLS } from "@/lib/assistant/commission";
 import { CONTRACTOR_TOOLS } from "@/lib/assistant/contractors";
 // The subcontractors plan, part 6 (2026-11-09): find, requests, compare, the subs budget, invoices, documents, reminders,
 // approving and paying a sub's invoice.
@@ -1006,6 +1008,7 @@ export const TOOLS: readonly AnyTool[] = [
   ...VISIT_TOOLS,
   ...OPEN_TIME_TOOLS,
   ...REPAIR_TOOLS,
+  ...COMMISSION_TOOLS,
   ...REMIND_TOOLS,
   ...MONEY_TOOLS,
   ...PROJECT_TOOLS,
