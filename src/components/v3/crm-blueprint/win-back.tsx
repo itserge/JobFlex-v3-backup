@@ -392,7 +392,7 @@ export function WinBackPanel() {
           {data.sendingProblem ? (
             <div className={w.setup} role="note" data-wb-setup>
               <b>One thing before you can send</b>
-              {data.sendingProblem} <a href="/dashboard/company">Open Settings → Company</a>
+              {data.sendingProblem} <a href="/dashboard/company">Open the Company page</a>
             </div>
           ) : null}
 

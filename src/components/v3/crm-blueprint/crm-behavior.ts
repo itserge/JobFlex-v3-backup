@@ -493,11 +493,14 @@ export function initCrmContent(content: HTMLElement, options: CrmContentOptions)
     body.innerHTML = rows.length
       ? rows
           .map(function (c) {
+            // The whole row opens the client's record (2026-11-10: the book listed people and led nowhere). The name
+            // is the button — it takes the keyboard — and the row carries the same `data-nav` for the mouse.
+            const nav = ' data-nav="/dashboard/client-detail?client=' + encodeURIComponent(c.id) + '"';
             return (
-              '<tr class="prow">' +
-              '<td><div class="cb-name">' +
+              '<tr class="prow cb-row"' + nav + ">" +
+              '<td><button type="button" class="cb-name"' + nav + ' aria-label="Open ' + escapeAttr(c.name) + '">' +
               escapeAttr(c.name) +
-              '</div><div class="cb-mail">' +
+              '</button><div class="cb-mail">' +
               (c.email ? escapeAttr(c.email) : "—") +
               "</div></td>" +
               // A status outside the donor's eight has no class; the bare

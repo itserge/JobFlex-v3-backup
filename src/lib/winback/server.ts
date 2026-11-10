@@ -337,7 +337,7 @@ export async function deleteCampaign(organizationId: string, id: string): Promis
 export async function sendingProblem(organizationId: string): Promise<string | null> {
   const org = await db.organization.findUnique({ where: { id: organizationId }, select: { address: true } });
   if (!org) return "No such company.";
-  if (!org.address?.trim() || org.address.trim().length < 8) return "Add your company's mailing address in Settings → Company first. The law asks for it at the bottom of every marketing email.";
+  if (!org.address?.trim() || org.address.trim().length < 8) return "Add your company's mailing address on the Company page first. The law asks for it at the bottom of every marketing email.";
   return null;
 }
 
