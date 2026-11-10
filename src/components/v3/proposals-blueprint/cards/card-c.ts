@@ -165,8 +165,10 @@ function moneyHtml(p: ProposalRow, k: CardKit): string {
   const state = payState(p);
   const contract = p.contract ?? p.total;
   const signed = SIGNED.has(p.status);
+  // "1 late" (2026-11-09): payments past their due date and still open, said where the money is.
+  const late = signed ? (p.inst ?? []).filter((it) => it.overdue && (it.status === "UNPAID" || it.status === "PENDING")).length : 0;
   const head =
-    '<div class="cc-mk">' + (signed ? "Contract" : "Quote") + "</div>" +
+    '<div class="cc-mk">' + (signed ? "Contract" : "Quote") + (late ? '<span class="cc-late" data-late="' + late + '">' + late + " late</span>" : "") + "</div>" +
     '<div class="cc-amt">' + k.fmtMoney(contract) + "</div>";
 
   // Nothing to collect: a declined quote, an archived one, or no payment plan yet — a calm plate.
@@ -204,7 +206,7 @@ function moneyHtml(p: ProposalRow, k: CardKit): string {
 
   return (
     '<div class="cc-money cc-money--' + state + '">' +
-    '<div class="cc-sum">' + head + barHtml(p, state, k) + line + "</div>" +
+    '<div class="cc-sum">' + head + barHtml(p, state, k) + line + (state !== "plan" ? k.paymentsHtml(p, "cc-pay-open") : "") + "</div>" +
     (stages ? '<ol class="cc-stages">' + stages + "</ol>" : "") +
     left +
     k.finHtml(p) +
