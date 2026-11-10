@@ -7,6 +7,7 @@
 // a REQUIRED prop, so the sheet has no path that paints a demo record.
 
 import type { FollowUpChannel } from "@/lib/followUps/copy";
+import type { FollowUpMode, FollowUpWords } from "@/lib/followUps/agent";
 import type { WhoLike } from "@/lib/team/who";
 
 export type CrmLead = {
@@ -47,6 +48,10 @@ export type FollowUpRule = {
   /** A starter rule (lib/followUps/defaults): deleting it turns it off, and
    *  the row stays, reading "Turned off". */
   isDefault?: boolean;
+  /** Who sends it — on its own, after a yes, or a person (lib/followUps/agent). */
+  mode?: FollowUpMode;
+  /** The standard words, or written for each client. */
+  words?: FollowUpWords;
 };
 
 export type QueueItem = {
@@ -59,6 +64,10 @@ export type QueueItem = {
   days: number;
   /** When it goes (epoch ms) — the Workflows status line's "next send". */
   runAt: number;
+  /** Handed to a person: its draft (or reminder) is on the Today tab. */
+  waiting?: boolean;
+  /** Why the agent is holding it, in words. */
+  reason?: string | null;
 };
 
 export const STATUS_ORDER = ['PAID', 'COMPLETED', 'ACCEPTED', 'VIEWED', 'SENT', 'DRAFT', 'DECLINED', 'EXPIRED', 'ARCHIVED'];

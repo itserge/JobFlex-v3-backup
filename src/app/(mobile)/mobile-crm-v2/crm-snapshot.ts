@@ -19,6 +19,7 @@ import { db } from "@/lib/db";
 import { longDate, relative } from "@/lib/format";
 import { isTwilioEnabled } from "@/lib/sdk/twilio";
 import { parseChannel } from "@/lib/followUps/copy";
+import { parseMode, parseWords } from "@/lib/followUps/agent";
 import { actorsOf, whoOfEvent } from "@/lib/activityLog";
 import type {
   ActivityItem,
@@ -142,6 +143,8 @@ export async function getCrmSnapshot(): Promise<CrmSnapshotResult> {
       overdue,
       days: overdue ? Math.floor((now.getTime() - f.runAt.getTime()) / 86_400_000) : 0,
       runAt: f.runAt.getTime(),
+      waiting: f.state === "READY",
+      reason: f.reason,
     };
   });
 
@@ -202,6 +205,8 @@ export async function getCrmSnapshot(): Promise<CrmSnapshotResult> {
     enabled: r.enabled,
     channel: parseChannel(r.template),
     isDefault: r.isDefault,
+    mode: parseMode(r.mode),
+    words: parseWords(r.words),
   }));
 
   return {

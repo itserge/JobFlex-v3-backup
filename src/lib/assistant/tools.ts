@@ -48,6 +48,8 @@ import { BUSINESS_TOOLS } from "@/lib/assistant/business";
 import { CLIENT_360_TOOLS } from "@/lib/assistant/clients360";
 import { INBOX_TOOLS } from "@/lib/assistant/inbox";
 import { PIPELINE_TOOLS } from "@/lib/assistant/pipeline";
+// The follow-up agent and the promise tracker (Smart CRM part 4, 2026-11-10).
+import { FOLLOW_UP_TOOLS } from "@/lib/assistant/followups";
 import { OPEN_TIME_TOOLS } from "@/lib/assistant/openTimes";
 // Repairs and come-backs (2026-11-09, the ProSmart gaps plan, part 2): book a repair, and the come-back counts.
 import { REPAIR_TOOLS } from "@/lib/assistant/repairs";
@@ -1004,7 +1006,7 @@ export const TOOLS: readonly AnyTool[] = [
   textCrewEach,
   paymentReminder,
   remindOverdue,
-  ...PEOPLE_TOOLS, ...CLIENT_360_TOOLS, ...INBOX_TOOLS, ...PIPELINE_TOOLS,
+  ...PEOPLE_TOOLS, ...CLIENT_360_TOOLS, ...INBOX_TOOLS, ...PIPELINE_TOOLS, ...FOLLOW_UP_TOOLS,
   ...VISIT_TOOLS,
   ...OPEN_TIME_TOOLS,
   ...REPAIR_TOOLS,

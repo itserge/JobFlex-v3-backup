@@ -237,8 +237,11 @@ export function triggerMoment(trigger: string): string {
  * `renderEmail()` — the preview cards and `dispatchOne()` both do, so the
  * pixels a contractor approves are the pixels the homeowner opens.
  */
-export function followUpEmailDoc(trigger: string, ctx: FollowUpContext): EmailDoc {
+export function followUpEmailDoc(trigger: string, ctx: FollowUpContext, own?: { subject?: string | null; prose: string[] }): EmailDoc {
   const v = voiceFor(trigger);
+  // Words written for this client (lib/followUps/agent, 2026-11-10): the frame — logo, price box, button, footer —
+  // stays the standard one; only the subject and the paragraphs are theirs, and the stock closing line is dropped.
+  const custom = own && own.prose.length ? own : null;
 
   const box: EmailDoc["box"] = [];
   if (v.box === "quote") {
@@ -262,16 +265,22 @@ export function followUpEmailDoc(trigger: string, ctx: FollowUpContext): EmailDo
   }
 
   return {
-    subject: v.subject(ctx),
+    subject: custom?.subject?.trim() || v.subject(ctx),
     lockup: { kind: "org", name: ctx.orgName, logoUrl: ctx.orgLogoUrl ?? null, orgId: ctx.orgId ?? null },
     kicker: { text: v.kicker, tone: v.tone },
     headline: v.headline,
-    prose: v.prose(ctx),
+    prose: custom ? custom.prose : v.prose(ctx),
     box: box.length ? box : undefined,
     cta: v.cta ? { label: v.cta, href: ctx.href } : undefined,
-    after: v.after?.(ctx),
+    after: custom ? undefined : v.after?.(ctx),
     footer: { name: ctx.orgName, contact: ctx.orgPhone ?? undefined },
   };
+}
+
+/** The standard words as a person reads them before saying yes: the subject and the paragraphs, no frame. */
+export function followUpPlainWords(trigger: string, ctx: FollowUpContext): { subject: string; body: string } {
+  const v = voiceFor(trigger);
+  return { subject: v.subject(ctx), body: [...v.prose(ctx), ...(v.after?.(ctx) ?? [])].join("\n\n") };
 }
 
 /** The text-message version of the same nudge. One message, no link where the

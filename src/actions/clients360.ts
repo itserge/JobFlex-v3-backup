@@ -57,30 +57,32 @@ export async function addPromise(raw: unknown): Promise<{ ok: boolean }> {
   const { organizationId, user } = await requireSalesOrManager();
   const input = promiseInput.parse(raw);
   await clientOf(organizationId, input.clientId);
-  await db.clientPromise.create({
-    data: {
-      organizationId,
-      clientId: input.clientId,
-      direction: input.direction,
-      text: input.text.trim(),
-      dueAt: input.dueAt ? new Date(input.dueAt) : null,
-      ownerId: input.direction === "OURS" ? user.id : null,
-      sourceKind: "PERSON",
-      sourceAt: new Date(),
-    },
-  });
+  const { addPromise: add } = await import("@/lib/promises/server");
+  await add({ organizationId, clientId: input.clientId, text: input.text, direction: input.direction, dueAt: input.dueAt ? new Date(input.dueAt) : null, userId: user.id });
   revalidatePath("/dashboard/client-detail");
+  revalidatePath("/dashboard/crm");
   return { ok: true };
 }
 
 export async function settlePromise(promiseId: string, outcome: "KEPT" | "CANCELED"): Promise<{ ok: boolean }> {
   const { organizationId } = await requireSalesOrManager();
-  const r = await db.clientPromise.updateMany({
-    where: { id: String(promiseId), organizationId, status: "OPEN" },
-    data: { status: outcome, keptAt: outcome === "KEPT" ? new Date() : null },
-  });
+  const { settlePromise: settle } = await import("@/lib/promises/server");
+  const ok = await settle(organizationId, String(promiseId), outcome === "CANCELED" ? "CANCELED" : "KEPT");
   revalidatePath("/dashboard/client-detail");
-  return { ok: r.count > 0 };
+  revalidatePath("/dashboard/crm");
+  return { ok };
+}
+
+/** A new day for an open promise — the reminders start over. */
+export async function movePromiseDay(promiseId: string, day: string | null): Promise<{ ok: boolean }> {
+  const { organizationId } = await requireSalesOrManager();
+  if (day !== null && !/^\d{4}-\d{2}-\d{2}$/.test(String(day))) return { ok: false };
+  const { movePromise } = await import("@/lib/promises/server");
+  const { dueInstant } = await import("@/lib/promises/shared");
+  const ok = await movePromise(organizationId, String(promiseId), day ? dueInstant(day) : null);
+  revalidatePath("/dashboard/client-detail");
+  revalidatePath("/dashboard/crm");
+  return { ok };
 }
 
 /** Fold the duplicate into this record. The page always asks the person first. */
