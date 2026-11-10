@@ -105,9 +105,12 @@ function paintFrame(canvas: HTMLCanvasElement, d: IsoDrawing) {
     if (!ca) continue;
     const [c, a] = ca;
     const path = new Path2D(f.d);
-    ctx.globalAlpha = (f.opacity ?? 1) * a * (f.layer === "shadow" ? 0.34 : 1);
-    ctx.fillStyle = c;
-    ctx.fill(path);
+    // "none": lines only (a long member's own edges over its strips) — a canvas would keep the last colour and fill.
+    if (f.fill !== "none") {
+      ctx.globalAlpha = (f.opacity ?? 1) * a * (f.layer === "shadow" ? 0.34 : 1);
+      ctx.fillStyle = c;
+      ctx.fill(path);
+    }
     if (f.stroke) {
       ctx.globalAlpha = f.strokeOpacity ?? 1;
       ctx.strokeStyle = f.stroke;

@@ -75,7 +75,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ proposalId: st
   if (!scene) return NextResponse.json({ error: "No drawing for this proposal." }, { status: 404 });
   try {
     const d = isoDrawing(scene, { detail: "quick", maxSolids: 700 });
-    const faces = d.faces.filter((f) => f.layer !== "shadow" && f.layer !== "ground").map((f) => ({ d: f.d, rank: f.rank, layer: f.layer }));
+    // Every face goes as its outline; the picture's line-only pieces (a long member's edges, fill "none") would only
+    // draw those lines twice.
+    const faces = d.faces.filter((f) => f.layer !== "shadow" && f.layer !== "ground" && f.fill !== "none").map((f) => ({ d: f.d, rank: f.rank, layer: f.layer }));
     return NextResponse.json({ viewBox: d.viewBox, faces }, { headers: { "Cache-Control": "private, max-age=300" } });
   } catch {
     return NextResponse.json({ error: "The drawing couldn't be made." }, { status: 500 });

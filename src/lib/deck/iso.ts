@@ -17,11 +17,14 @@
 // the same as before: the world turned `yaw` about the up axis, seen from
 // `pitch` above the horizon, the viewer in front of the deck.
 //
-// Faces are painted far to near by their centre's depth — right for boxes
-// that do not cut through each other, which a frame's members do not. The
+// Faces are painted far to near. The order is worked out pair by pair from
+// the faces' own planes (lib/deck/isoOrder) — a face's middle alone put the
+// near end of a beam on top of the deck board over it — and falls back to
+// the middle's depth where two members are drawn through each other. The
 // house is painted first, block by block from the far one, with its own
 // windows and roof.
 
+import { paintOrder, type OrderFace } from "./isoOrder";
 import { BORDER_BOARD_ROLE, RAIL_CAP_ROLE, RAIL_INFILL_ROLE, SCENE_LAYERS, buildRank, memberBoxCorners, MEMBER_BOX_FACES, type DeckScene, type SceneLayer } from "./scene";
 
 export type IsoDeckingFinish = "wood" | "hardwood" | "composite" | "pvc" | "mineral" | "aluminum";
@@ -36,7 +39,8 @@ export interface IsoMaterials {
 export interface IsoFace {
   /** SVG path data, already rounded. */
   d: string;
-  /** A colour, or `url(#id)` into the drawing's defs (the id without the figure's prefix). */
+  /** A colour, or `url(#id)` into the drawing's defs (the id without the figure's prefix); "none" for lines only
+   *  (the edges of a long member drawn over its strips). */
   fill: string;
   opacity?: number;
   stroke?: string;
@@ -230,6 +234,8 @@ interface Solid {
   shadow?: boolean;
   /** Only the top face is drawn (a window pane, a door). */
   pane?: "window" | "door";
+  /** Per face, for a strip of a long member: is its far end a cut (not the member's own end), and its near end? */
+  seams?: Array<[boolean, boolean] | null>;
 }
 
 /** The eight corners of a box about `c` along the unit axes u (length), v (width), w (depth). */
@@ -277,14 +283,16 @@ const SPLIT_FT = 4;
 /** The layers whose members run long past other things — a receding
  *  fascia sorted by its middle fanned out OVER the roof at the corners. */
 const SPLIT_LAYERS = new Set<SceneLayer>(["trim", "gutter", "header", "beam", "ledger", "rim", "fascia"]);
-function splitLongFaces(faces: V3[][]): V3[][] {
+function splitLongFaces(faces: V3[][]): { faces: V3[][]; seams: Array<[boolean, boolean] | null> } {
   const out: V3[][] = [];
+  // A strip's ring runs: a long edge, the cut at its far end, the other long edge, the cut at its near end.
+  const seams: Array<[boolean, boolean] | null> = [];
   for (const f of faces) {
-    if (f.length !== 4) { out.push(f); continue; }
+    if (f.length !== 4) { out.push(f); seams.push(null); continue; }
     const e01 = Math.hypot(f[1][0] - f[0][0], f[1][1] - f[0][1], f[1][2] - f[0][2]);
     const e12 = Math.hypot(f[2][0] - f[1][0], f[2][1] - f[1][1], f[2][2] - f[1][2]);
     const L = Math.max(e01, e12);
-    if (L <= SPLIT_FT) { out.push(f); continue; }
+    if (L <= SPLIT_FT) { out.push(f); seams.push(null); continue; }
     const n = Math.min(6, Math.ceil(L / SPLIT_FT));
     const lerp = (A: V3, B: V3, t: number): V3 => [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, A[2] + (B[2] - A[2]) * t];
     for (let k = 0; k < n; k++) {
@@ -295,9 +303,10 @@ function splitLongFaces(faces: V3[][]): V3[][] {
           ? [lerp(f[0], f[1], t0), lerp(f[0], f[1], t1), lerp(f[3], f[2], t1), lerp(f[3], f[2], t0)]
           : [lerp(f[1], f[2], t0), lerp(f[1], f[2], t1), lerp(f[0], f[3], t1), lerp(f[0], f[3], t0)],
       );
+      seams.push([k < n - 1, k > 0]);
     }
   }
-  return out;
+  return { faces: out, seams };
 }
 
 function newell(ring: V3[]): V3 {
@@ -535,14 +544,11 @@ export function isoDrawing(scene: DeckScene, opts: IsoOptions = {}): IsoDrawing 
     // wrong order — a receding fascia fanned out OVER the roof at every
     // gazebo corner. Long faces are split into strips so each strip
     // sorts by where it actually is.
-    const s: Solid = {
-      layer,
-      rank: buildRank(layer),
-      finish,
-      // Only the long thin members split — a deck board in strips grew a
-      // stroke at every joint and the whole surface read as scratched.
-      faces: SPLIT_LAYERS.has(layer) ? splitLongFaces(boxSolid(b, role)) : boxSolid(b, role),
-    };
+    // Only the long thin members split; a strip is painted without a line
+    // across the member at its cuts (a beam in strips read as spliced).
+    const strips = SPLIT_LAYERS.has(layer) ? splitLongFaces(boxSolid(b, role)) : null;
+    const s: Solid = { layer, rank: buildRank(layer), finish, faces: strips ? strips.faces : boxSolid(b, role) };
+    if (strips) s.seams = strips.seams;
     if ((layer === "decking" || layer === "stair") && mats.decking !== "aluminum" && b[9] === undefined) {
       const alongX = b[4] >= b[5];
       s.board = { axis: alongX ? "x" : "y", seed: hash01(b[1], b[2], b[3]) };
@@ -604,8 +610,13 @@ export function isoDrawing(scene: DeckScene, opts: IsoOptions = {}): IsoDrawing 
   def({ kind: "blur", id: "soft", sd: 0.55 });
 
   /* ── faces: those turned toward the viewer (both sides of a lone polygon), lit, sorted far to near ── */
-  type Painted = { d: string; fill: string; opacity?: number; stroke?: string; strokeOpacity?: number; layer: IsoFace["layer"]; rank: number; depth: number; first: number; sub: number };
-  const painted: Painted[] = [];
+  // `node`: the face a painted piece belongs to (its own fill, then its grain, sheen and lines), −1 for the shadows.
+  type Painted = { d: string; fill: string; opacity?: number; stroke?: string; strokeOpacity?: number; layer: IsoFace["layer"]; rank: number; depth: number; first: number; sub: number; node?: number };
+  const all: Painted[] = [];
+  /** The faces that are ordered by their geometry (everything but the ground, the house and the shadows). */
+  const nodes: OrderFace[] = [];
+  let node = -1;
+  const painted = { push: (p: Painted) => { p.node = node; all.push(p); } };
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   const pathOf = (face: V3[], track = true): string => {
     const pts: string[] = [];
@@ -643,7 +654,9 @@ export function isoDrawing(scene: DeckScene, opts: IsoOptions = {}): IsoDrawing 
   for (const s of solids) {
     const lone = s.faces.length === 1;
     const base = parseHex(s.finish.base) ?? [160, 150, 130];
+    let faceAt = -1;
     for (const face of s.faces) {
+      faceAt++;
       if (face.length < 3) continue;
       let n = newell(face);
       const facing = dot(n, toViewer);
@@ -668,6 +681,10 @@ export function isoDrawing(scene: DeckScene, opts: IsoOptions = {}): IsoDrawing 
       const top = n[2] > 0.5;
       // The picture is fitted to what is built and the house: the lawn runs on past its edge.
       const d = pathOf(face, s.layer !== "ground");
+      if (s.first == null) {
+        node = nodes.length;
+        nodes.push({ pts: face, scr: face.map(project), depth: dep, rank: s.rank });
+      } else node = -1;
       if (s.flat) {
         painted.push({ d, fill: s.flat, layer: s.layer, rank: s.rank, depth: dep, first, sub: 0 });
         continue;
@@ -690,6 +707,15 @@ export function isoDrawing(scene: DeckScene, opts: IsoOptions = {}): IsoDrawing 
       }
       const fill = lit(b, n, s.finish);
       const edge = s.layer === "screen" ? undefined : shadeHex(fill, s.layer === "trim" || s.layer === "house" ? 0.86 : 0.76);
+      const seam = s.seams?.[faceAt] ?? null;
+      if (seam && edge && (seam[0] || seam[1]) && face.length === 4) {
+        // A strip of a long member: filled to its cuts in its own colour (no line across the member), then the
+        // member's own edges drawn along it.
+        painted.push({ d, fill, opacity: s.finish.opacity, stroke: fill, strokeOpacity: 1, layer: s.layer, rank: s.rank, depth: dep, first, sub: 0 });
+        const q = face.map((p) => { const [Xp, Yp] = project(p); return `${r2(Xp)},${r2(Yp)}`; });
+        const lines = `M${q[0]}L${q[1]}${seam[0] ? "M" : "L"}${q[2]}L${q[3]}${seam[1] ? "" : `L${q[0]}`}`;
+        painted.push({ d: lines, fill: "none", stroke: edge, strokeOpacity: 0.9, layer: s.layer, rank: s.rank, depth: dep, first, sub: 0 });
+      } else
       painted.push({ d, fill, opacity: s.finish.opacity, stroke: edge, strokeOpacity: edge ? 0.9 : undefined, layer: s.layer, rank: s.rank, depth: dep, first, sub: 0 });
       // Decorations go on faces the viewer can actually read. A face seen
       // nearly edge-on — the far slopes' slivers past a corner — wore the
@@ -739,11 +765,19 @@ export function isoDrawing(scene: DeckScene, opts: IsoOptions = {}): IsoDrawing 
     }
   }
   // The shadows go right after the ground, before the house.
+  node = -1;
   for (const sr of shadowRings) painted.push({ d: pathOf(sr, false), fill: "#1d2a16", layer: "shadow", rank: -1, depth: 0, first: -1, sub: 0 });
-  painted.sort((a, b) => (a.first - b.first) || (a.depth - b.depth) || (a.rank - b.rank) || (a.sub - b.sub));
+  // The ground, the shadows and the house in their fixed order; then what is built, each face after every face it
+  // can cover (isoOrder) with its own grain, sheen and lines right behind it.
+  const early = all.filter((p) => p.node === -1).sort((a, b) => (a.first - b.first) || (a.depth - b.depth) || (a.rank - b.rank) || (a.sub - b.sub));
+  // What each face paints (its fill, its own edges, the lines on it) stays together, in the order it was drawn.
+  const drawn: Painted[][] = nodes.map(() => []);
+  for (const p of all) if (p.node !== undefined && p.node >= 0) drawn[p.node].push(p);
+  const paintedAll = early;
+  for (const f of paintOrder(nodes, { dir: toViewer, eye: persp > 0 ? add(mid, scale(toViewer, persp)) : null })) for (const p of drawn[f]) paintedAll.push(p);
   if (!Number.isFinite(x0)) { x0 = 0; y0 = 0; x1 = 1; y1 = 1; }
   const m = 1.0;
-  const faces: IsoFace[] = painted.map((p) => {
+  const faces: IsoFace[] = paintedAll.map((p) => {
     const f: IsoFace = { d: p.d, fill: p.fill, layer: p.layer, rank: p.rank };
     if (p.opacity != null) f.opacity = p.opacity;
     if (p.stroke) { f.stroke = p.stroke; f.strokeOpacity = p.strokeOpacity; }
