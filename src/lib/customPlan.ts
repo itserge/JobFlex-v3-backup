@@ -94,8 +94,7 @@ export type PaidFeatureId =
   | "smart-crm"
   | "project-tools"
   | "crew-field"
-  | "smartbook"
-  | "smarthelp";
+  | "smartbook";
 
 export interface PaidFeature {
   id: PaidFeatureId;
@@ -113,7 +112,6 @@ export const PAID_FEATURES: PaidFeature[] = [
   { id: "project-tools", label: "Project stages & buying", note: "Stages, tasks, buying and deliveries", href: null, aliases: [] },
   { id: "crew-field", label: "Crew field tools", note: "Tasks, deliveries, hours and flags on the job", href: null, aliases: [] },
   { id: "smartbook", label: "SmartBook", note: "New leads book a visit by text, email or call", href: null, aliases: [] },
-  { id: "smarthelp", label: "SmartHelp", note: "Guides and answers inside JobFlex", href: null, aliases: [] },
 ];
 
 /** Every id the gate answers for: a sellable add-on page or a paid feature. */
@@ -270,10 +268,8 @@ const CUSTOM_BASE_ROWS = [
   "messages",
   "1 user",
   // The paid features (2026-11-09, PAID_FEATURES): a Custom plan holds them all.
-  "ai operator",
-  "project stages & buying",
-  "crew field tools",
-  "smartbook",
+  "ai operator & smartbook",
+  "projects: stages, buying & crew tools",
 ];
 const CUSTOM_PAGE_ROWS: Record<string, string[]> = {
   "smart-proposal": ["smart proposal generation"],

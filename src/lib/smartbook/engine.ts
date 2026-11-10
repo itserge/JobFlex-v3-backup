@@ -39,6 +39,8 @@ import { inLanguage, knowledgeOf, readContractor, readCustomer, type CustomerRea
 import { againText, dayPartWords, emailProse, emailWords, firstNameOf, firstText, say, tell, timesList, visitNoun, whenWords, type CustomerWords, type RequestFacts } from "./words";
 import { isPageLocked } from "@/lib/customPageAccess";
 import { notePausedOnFree } from "@/lib/pausedNotice";
+import { hasFullAccess } from "@/lib/fullAccess";
+import { readAccessSubscription } from "@/lib/subscriptionAccess";
 
 const ORG_SELECT = { id: true, name: true, slug: true, timezone: true, logoUrl: true, phone: true, billingEmail: true, gmailSettingsJson: true, gmailTokensJson: true, tradeTypesJson: true, bookingSettingsJson: true, smsFromNumber: true } as const;
 const LEAD_SELECT = { id: true, organizationId: true, name: true, email: true, phone: true, address: true, city: true, state: true, zip: true, projectType: true, description: true, source: true, status: true, assignedToId: true, createdAt: true } as const;
@@ -963,6 +965,18 @@ export async function restartSmartBook(organizationId: string, leadId: string, b
   return out ?? { ok: false, error: "Busy for a moment — try again." };
 }
 
+/** SMARTBOOK'S ONE AI CALL IS ADVANCED'S (owner, 2026-11-09): Starter and Professional get SmartBook by text and
+ *  email; the call step is the AI desk's, which is the Advanced plan's (or a Custom plan that bought the AI desk
+ *  page). A platform admin in the company has it, as everything (lib/fullAccess). */
+export const SMARTBOOK_CALL_PLAN_WORDS = "SmartBook's call is on the Advanced plan — on yours it books by text and email.";
+export async function smartBookCallOnPlan(organizationId: string): Promise<boolean> {
+  if (await hasFullAccess(organizationId)) return true;
+  const plan = ((await readAccessSubscription(organizationId))?.plan ?? "").toUpperCase();
+  if (plan === "ENTERPRISE") return true;
+  if (plan === "CUSTOM") return !(await isPageLocked(organizationId, "phone"));
+  return false;
+}
+
 const START_WORDS: Record<Exclude<StartResult, { started: true }>["why"], string> = {
   off: "SmartBook is off.",
   source: "SmartBook doesn't answer this kind of lead.",
@@ -1219,6 +1233,12 @@ async function step(ctx: Ctx, conv: Conversation, now: Date): Promise<void> {
       if (conv.status !== "offered" || !conv.phone || !ctx.smart.call) {
         conv.called = true;
         conv.next = nudge;
+        return;
+      }
+      if (!(await smartBookCallOnPlan(ctx.org.id))) {
+        conv.called = true;
+        conv.next = nudge;
+        await trail(ctx, `SmartBook didn't call ${conv.name} — the call is on the Advanced plan; the text and email carry on`, { dir: "none", channel: "call" });
         return;
       }
       const { callLead, inCallingHours } = await import("@/lib/aiDesk/leadCalls");

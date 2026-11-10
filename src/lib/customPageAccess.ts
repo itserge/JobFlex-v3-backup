@@ -224,7 +224,7 @@ export async function lapsedOrgIds(): Promise<string[]> {
   const maybe = rows.filter((r) => planLapsed(r)).map((r) => r.organizationId);
   const out: string[] = [];
   for (const org of maybe) {
-    if ((await lockReason(org, "smarthelp", null).catch(() => "ended" as const)) === "ended") out.push(org);
+    if ((await lockReason(org, "operator", null).catch(() => "ended" as const)) === "ended") out.push(org);
   }
   return out;
 }

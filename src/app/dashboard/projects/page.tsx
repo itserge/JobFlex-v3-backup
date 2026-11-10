@@ -24,6 +24,7 @@ import { loadProjectBook } from "@/components/v3/projects-blueprint/project-book
 import { ProjectSpacesHome } from "@/components/v3/projects-blueprint/project-spaces";
 import { spaceOfRow } from "@/components/v3/projects-blueprint/project-spaces-data";
 import { parseSpace } from "@/lib/projectSpaces";
+import { isPageLocked } from "@/lib/customPageAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -63,5 +64,5 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   const clients = clientRows.map((c) => ({ id: c.id, name: c.name, street: (c.address ?? "").split("\n")[0]?.trim() ?? "" }));
 
   // "+ New client…" is createClient's door: sales and managers (an estimator is refused there).
-  return <ProjectsContent key={space} space={space} allProjects={rows} projects={rows.filter((p) => spaceOfRow(p) === space)} clients={clients} canAddClient={!isEstimatorRole(role) && !isWorkerRole(role)} />;
+  return <ProjectsContent key={space} space={space} allProjects={rows} projects={rows.filter((p) => spaceOfRow(p) === space)} clients={clients} canAddClient={!isEstimatorRole(role) && !isWorkerRole(role)} autoLocked={await isPageLocked(organizationId, "project-tools")} />;
 }

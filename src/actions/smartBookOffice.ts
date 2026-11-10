@@ -17,7 +17,7 @@ import { smsAllowanceUsed } from "@/lib/sms/send";
 import { getMetaConnection } from "@/lib/meta/connections";
 import { ensureMetaAutoImport, metaConsentSummary } from "@/lib/meta/autoImport";
 import { parseMetaSettings } from "@/lib/settings";
-import { decideRequest, offerTimesByHand, pauseSmartBook, readSmartBookSettings, restartSmartBook, saveSmartBookSettings, smartBookPreview, startSmartBookTest, type Decision, type SmartBookPreview } from "@/lib/smartbook/engine";
+import { decideRequest, offerTimesByHand, pauseSmartBook, readSmartBookSettings, restartSmartBook, saveSmartBookSettings, smartBookPreview, startSmartBookTest, smartBookCallOnPlan, SMARTBOOK_CALL_PLAN_WORDS, type Decision, type SmartBookPreview } from "@/lib/smartbook/engine";
 import { leadSmartBook, smartBookRequests, type LeadSmartBook, type RequestCard } from "@/lib/smartbook/office";
 import { FIRST_MESSAGE_MAX, type SmartBookSettings } from "@/lib/smartbook/settings";
 import { isTestLead, testLeadId } from "@/lib/smartbook/store";
@@ -90,7 +90,8 @@ export async function loadSmartBookSettings(): Promise<{ ok: true; view: SmartBo
     metaConsentSummary(ctx.organizationId).catch(() => null),
     db.user.findUnique({ where: { id: ctx.user.id }, select: { email: true, smsPhone: true, smsVerifiedAt: true } }),
     // SmartBook's call is the desk's own call to a lead (lib/aiDesk/leadCalls): its readiness, in its words.
-    leadCallReadiness(ctx.organizationId).then((r) => (r.ok ? null : r.why)).catch(() => "The AI desk can't be checked right now."),
+    // The call is Advanced's (owner, 2026-11-09): on Starter and Professional the switch says so.
+    smartBookCallOnPlan(ctx.organizationId).then((onPlan) => (onPlan ? leadCallReadiness(ctx.organizationId).then((r) => (r.ok ? null : r.why)) : SMARTBOOK_CALL_PLAN_WORDS)).catch(() => "The AI desk can't be checked right now."),
     deskBalanceFor(ctx.organizationId).catch(() => null),
     db.organization.findUnique({ where: { id: ctx.organizationId }, select: { metaSettingsJson: true } }),
   ]);

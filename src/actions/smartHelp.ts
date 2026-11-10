@@ -17,7 +17,6 @@
 // before its answer returns, so the id the panel rates by is always there; guide counters count after the response.
 import { after } from "next/server";
 import { NoOrgError, UnauthorizedError, requireOrg } from "@/lib/orgContext";
-import { pageLockedResult } from "@/lib/customPageAccess";
 import { rateLimit, rateLimitShared, retryInWords } from "@/lib/rateLimit";
 import type { SmartHelpReply } from "@/lib/smarthelp/answer";
 import { GUIDES } from "@/lib/smarthelp/guides";
@@ -84,9 +83,6 @@ export async function guideFor(id: string, page: string): Promise<{ guide: { id:
   if (!guide) return { error: "That guide isn't here anymore — close SmartHelp and open it again." };
   const who = await asker();
   if (!who) return { error: ASK_FAILED };
-  // SmartHelp is a paid feature (owner, 2026-11-09): the Free plan sees the guide list, not the guides.
-  const paused = await pageLockedResult(who.organizationId, "smarthelp");
-  if (paused) return { error: paused.error };
   const access = await viewerAccess(who);
   if (guide.feature && !access.features[guide.feature]) return { error: "That guide isn't open to your account yet." };
   after(() => countGuide(guide.id, "opens"));
@@ -103,8 +99,6 @@ export async function askSmartHelp(input: {
 }): Promise<{ reply: SmartHelpReply; logId: string; canForce: boolean } | { error: string; retryAfterMs?: number }> {
   const who = await asker();
   if (!who) return { error: ASK_FAILED };
-  const paused = await pageLockedResult(who.organizationId, "smarthelp");
-  if (paused) return { error: paused.error };
   // This instance's brake comes before anything else; the shared quotas below count model calls only.
   const brake = rateLimit(`smarthelp:any:${who.user.id}`, 60, 3_600_000);
   if (!brake.ok) {

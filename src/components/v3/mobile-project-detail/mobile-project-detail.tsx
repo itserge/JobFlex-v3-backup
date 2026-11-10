@@ -812,7 +812,7 @@ export function MobileProjectDetail({
           {/* ============ BUDGET (2026-09-18) ============ */}
           {budget ? (
             <div className="mpd-budget">
-              <ProjectBudgetCard projectId={project.id} budget={budget} />
+              <ProjectBudgetCard projectId={project.id} budget={budget} toolsLocked={toolsLocked} />
             </div>
           ) : null}
 

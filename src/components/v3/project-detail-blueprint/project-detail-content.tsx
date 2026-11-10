@@ -451,7 +451,7 @@ export function ProjectDetailContent({
       {buying ? <ProjectBuyingCard projectId={project.id} buying={buying} stages={stages.stages} canManage={canManage} /> : null}
       {subs ? <ProjectSubsCard projectId={project.id} subs={subs} stages={stages.stages} canManage={canManage} sectionHref={`/dashboard/projects/${project.id}/subs`} /> : null}
       {moneyPlan ? <ProjectMoneyCard projectId={project.id} money={moneyPlan} canManage={canManage} /> : null}
-      {budget ? <ProjectBudgetCard projectId={project.id} budget={budget} /> : null}
+      {budget ? <ProjectBudgetCard projectId={project.id} budget={budget} toolsLocked={toolsLocked} /> : null}
       <ProjectPaymentsCard payments={payments} canManage={canManage} draws={draws} projectId={project.id} />
 
       {/* ВИДЫ + ATTACH */}
