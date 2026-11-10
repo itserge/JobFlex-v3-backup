@@ -102,8 +102,7 @@ import {
   EMAIL_COLUMN_INDEX,
   EMAIL_UNAVAILABLE_TAG,
   EMAIL_UNAVAILABLE_TITLE,
-  INAPP_UNAVAILABLE_TAG,
-  INAPP_UNAVAILABLE_TITLE,
+  inAppOff,
   FEE_NOTE_KICKER,
   MANAGE_ACTION,
   NOTIFICATIONS_CARD,
@@ -1192,8 +1191,8 @@ function NotificationsPane({ data }: { data: SettingsData }) {
                     ariaLabel={`${channel} — ${event.name}`}
                   />
                 ) : (
-                  <span className="mst-chipOff" key={channel} title={ci === 0 ? INAPP_UNAVAILABLE_TITLE : EMAIL_UNAVAILABLE_TITLE}>
-                    {ci === 0 ? INAPP_UNAVAILABLE_TAG : EMAIL_UNAVAILABLE_TAG}
+                  <span className="mst-chipOff" key={channel} title={ci === 0 ? inAppOff(PREF_EVENTS[ri].key).title : EMAIL_UNAVAILABLE_TITLE}>
+                    {ci === 0 ? inAppOff(PREF_EVENTS[ri].key).tag : EMAIL_UNAVAILABLE_TAG}
                   </span>
                 ),
               )}

@@ -782,6 +782,8 @@ export const NOTIFICATION_ICONS: Record<PrefKey, IconName> = {
   'sub-quote': 'i-hardhat',
   // Part 4: a subcontract signed, a change order answered.
   'sub-contract': 'i-pen',
+  // The Monday report (2026-11-10, Smart CRM part 7): email only.
+  'weekly-report': 'i-file',
   'appointment-booked': 'i-cal',
   'booking-online': 'i-cal',
   'smartbook-request': 'i-cal',
@@ -803,6 +805,14 @@ export const EMAIL_UNAVAILABLE_TAG = 'In-app only' as const;
 /** The In-app cell of an event the bell never carries (billing problems: the payment banner is the in-app notice). */
 export const INAPP_UNAVAILABLE_TITLE = 'Shown as the payment banner in the app — always on.' as const;
 export const INAPP_UNAVAILABLE_TAG = 'Banner' as const;
+
+/** What stands in the In-app cell of an event the bell never carries: the payment banner for billing problems, and
+ *  "Email only" for the Monday report (2026-11-10) — a mail, with nothing to ring about. */
+export function inAppOff(key: PrefKey): { tag: string; title: string } {
+  return key === 'weekly-report'
+    ? { tag: 'Email only', title: 'Sent by email on Monday mornings — nothing shows in the bell.' }
+    : { tag: INAPP_UNAVAILABLE_TAG, title: INAPP_UNAVAILABLE_TITLE };
+}
 
 export type MatrixAction = 'enable-all' | 'email-only' | 'test';
 

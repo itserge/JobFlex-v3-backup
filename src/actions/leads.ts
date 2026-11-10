@@ -14,6 +14,7 @@ import { enforcePlanLimit } from "@/lib/limitsEngine";
 import { requirePage } from "@/lib/customPageAccess";
 import { callLead } from "@/lib/aiDesk/leadCalls";
 import { salesCanTouchLead } from "@/lib/leads/salesAccess";
+import { markLeadContacted } from "@/lib/leads/contacted";
 
 const statusSchema = z.enum([
   LeadStatus.NEW,
@@ -26,6 +27,9 @@ const statusSchema = z.enum([
   LeadStatus.ARCHIVED,
 ]);
 
+/** The statuses that mean somebody at the company has spoken with the lead. */
+const REACHED = new Set<string>([LeadStatus.CONTACTED, LeadStatus.QUOTED, LeadStatus.WON]);
+
 export async function updateLeadStatus(id: string, next: string) {
   const { organizationId, user, role } = await requireSalesOrManager();
   const status = statusSchema.parse(next);
@@ -36,6 +40,11 @@ export async function updateLeadStatus(id: string, next: string) {
   }
   if (lead.status === status) return { ok: true, unchanged: true };
   await db.lead.update({ where: { id }, data: { status } });
+  // Moved on by hand to "contacted" (or straight to quoted / won): that is the first reply, so the clock stops here
+  // — before 2026-11-10 only a booked visit or a desk call set the time, and a lead a person phoned and marked
+  // contacted counted as "still waiting" in the speed-to-lead numbers for good. The time only, and never moved once
+  // set (lib/leads/contacted).
+  if (REACHED.has(status) && !lead.contactedAt) await markLeadContacted(organizationId, id).catch(() => {});
   await db.activityEvent.create({
     data: {
       organizationId,

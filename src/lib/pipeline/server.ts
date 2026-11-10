@@ -343,11 +343,12 @@ export interface SourceRow {
   costPerJob: number | null;
 }
 
-/** Each source over the period: leads → contacted → visits → estimates sent → won → collected. */
+/** Each source over the period: leads → contacted → visits → estimates sent → won → collected. `now` is the period's
+ *  end — the company pulse asks for a week that is over (2026-11-10), so nothing after it is counted. */
 export async function readSourceReport(organizationId: string, days: number, now = new Date()): Promise<SourceRow[]> {
   const since = new Date(now.getTime() - days * DAY);
   const [leads, spend] = await Promise.all([
-    db.lead.findMany({ where: { organizationId, createdAt: { gte: since } }, select: { id: true, email: true, phone: true, source: true, status: true, contactedAt: true, createdAt: true } }),
+    db.lead.findMany({ where: { organizationId, createdAt: { gte: since, lte: now } }, select: { id: true, email: true, phone: true, source: true, status: true, contactedAt: true, createdAt: true } }),
     readSpend(organizationId),
   ]);
   const ids = leads.map((l) => l.id);
@@ -362,7 +363,7 @@ export async function readSourceReport(organizationId: string, days: number, now
   const clientOf = (l: { email: string | null; phone: string | null }) => clientEmail.get(l.email?.trim().toLowerCase() ?? "") ?? clientPhone.get(digits10(l.phone)) ?? null;
   const leadClient = new Map(leads.map((l) => [l.id, clientOf(l)]));
   const cids = [...new Set([...leadClient.values()].filter((x): x is string => !!x))];
-  const proposals = cids.length ? await db.proposal.findMany({ where: { organizationId, clientId: { in: cids }, createdAt: { gte: since } }, select: { id: true, clientId: true, status: true, total: true, sentAt: true } }) : [];
+  const proposals = cids.length ? await db.proposal.findMany({ where: { organizationId, clientId: { in: cids }, createdAt: { gte: since, lte: now } }, select: { id: true, clientId: true, status: true, total: true, sentAt: true } }) : [];
   const paid = proposals.length ? await db.payment.groupBy({ by: ["proposalId"], where: { organizationId, proposalId: { in: proposals.map((p) => p.id) }, status: "PAID" }, _sum: { amount: true } }) : [];
   const paidOf = new Map(paid.map((p) => [p.proposalId!, p._sum.amount ?? 0]));
   const byClient = new Map<string, typeof proposals>();

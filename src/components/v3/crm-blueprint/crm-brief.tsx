@@ -298,7 +298,8 @@ function Delta({ d }: { d: Stat["delta"] }) {
   return <span className={`${s.delta} ${TONE_CLS[d.tone]}`}>{d.pct == null ? d.words : `${d.pct >= 0 ? "▲" : "▼"} ${d.words}`}</span>;
 }
 
-export function OfficePanel({ office, company }: { office: OfficeBrief; company?: string | null }) {
+/** `extra` sits right under the health tiles: the company pulse (part 7, company-pulse.tsx), which loads itself. */
+export function OfficePanel({ office, company, extra }: { office: OfficeBrief; company?: string | null; extra?: ReactNode }) {
   const names = new Map(office.team.map((m) => [m.userId, { id: m.userId, name: m.name, role: m.role }]));
   const maxFunnel = Math.max(1, ...office.funnel.steps.map((x) => x.count));
   const maxCash = Math.max(1, ...office.cash.buckets.map((b) => b.amount));
@@ -409,6 +410,8 @@ export function OfficePanel({ office, company }: { office: OfficeBrief; company?
           ))}
         </div>
       </section>
+
+      {extra}
 
       <div className={s.two}>
         {/* FUNNEL */}

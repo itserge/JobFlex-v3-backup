@@ -162,6 +162,14 @@ function answer(body: { messages: Msg[] }) {
   const aboutQ = /^What can I do about this: (.+?) on (.+?)\.?$/i.exec(user);
   if (aboutQ) return reply(`"${aboutQ[1]}" needs someone there — I can't fix it from here. Open ${aboutQ[2]} to see who flagged it, or tell me what to send them.`);
 
+  // The company pulse (Smart CRM part 7, 2026-11-10): "how was last week", "how fast do we answer new leads",
+  // "what's our win rate" — before the money rule, which would answer "how did we do" with the month's totals.
+  if (/\b(how was (last|this) week|company pulse|win rate|who closes best|how fast do we (answer|reply)|speed to lead)\b/.test(text)) {
+    const cp = done.get("company_pulse") as { summary: string; speedToLead?: { firstReply: string; stillWaiting: string[] }; winRate?: { bySalesperson: string[] }; worthALook?: string[] } | undefined;
+    if (!cp) return call("company_pulse", { period: /last week/.test(text) ? "last-week" : /this week/.test(text) ? "week" : /90|quarter/.test(text) ? "90d" : "30d" });
+    return reply([cp.summary, cp.winRate?.bySalesperson.length ? `By salesperson: ${cp.winRate.bySalesperson.join("; ")}.` : null, cp.speedToLead?.stillWaiting.length ? `Still waiting: ${cp.speedToLead.stillWaiting.join("; ")}.` : null, ...(cp.worthALook ?? [])].filter(Boolean).join(" "));
+  }
+
   // The estimators by voice (2026-11-05): a roof, HVAC or lawn care at an address — before the generic build rule,
   // which would price them with Smart Proposal. The address: "at 14 Oak St, Tacoma WA" / "address: …".
   // "14 Oak St, Tacoma WA" — up to the end, a sentence's end, or the next ", 2,400 …" / ", the lawn …" clause.

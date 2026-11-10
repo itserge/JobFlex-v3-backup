@@ -6,6 +6,7 @@
 import type { BoxRow, EmailDoc, Lockup } from "../doc";
 import { truncate } from "../fit";
 import { formatUSD, type OrgBrand } from "./client";
+import { waitWords, type Pulse } from "@/lib/pulse/shared";
 
 const TITLE_MAX = 70;
 
@@ -641,6 +642,67 @@ export function buildClientPageMessage(i: ClientPageMessageInput): EmailDoc {
     headline: `${i.clientName} wrote to you`,
     prose: [`“${truncate(i.body, 600)}”`, "Answer from the Inbox — by email or text."],
     link: { label: "Open the Inbox", href: i.href },
+    footer: orgFooter(i.org),
+  };
+}
+
+export interface WeeklyReportInput {
+  org: OrgBrand;
+  /** Last week, read by lib/pulse/server readPulse — never a quiet one (a week with nothing in it sends no mail). */
+  pulse: Pulse;
+  /** The Office sheet, where the same numbers live. */
+  href: string;
+}
+
+/** The Monday report (2026-11-10, Smart CRM part 7): last week's leads, reply speed, win rate per salesperson,
+ *  best sources and money in — the company's own numbers, each against the week before. To owners and admins. */
+export function buildWeeklyReport(i: WeeklyReportInput): EmailDoc {
+  const p = i.pulse;
+  const stat = (key: string) => p.stats.find((s) => s.key === key);
+  const withDelta = (key: string, value: string) => {
+    const d = stat(key)?.delta;
+    return d ? `${value} · ${d.words}` : value;
+  };
+  const n = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
+  const t = p.wins.total;
+  const waiting = p.speed.buckets.find((b) => b.key === "waiting")?.count ?? 0;
+
+  const box: BoxRow[] = [
+    { type: "field", label: "New leads", value: withDelta("leads", String(p.speed.leads)) },
+    { type: "field", label: "First reply", value: p.speed.medianMin === null ? "No reply on record" : withDelta("reply", `${waitWords(p.speed.medianMin)} (the middle lead)`) },
+  ];
+  if (waiting) box.push({ type: "field", label: "Still waiting", value: n(waiting, "lead") });
+  box.push({ type: "field", label: "Proposals sent", value: withDelta("sent", String(t.sent)) });
+  box.push({ type: "field", label: "Jobs won", value: withDelta("won", t.won ? `${t.won} · ${formatUSD(t.wonValue)}` : "0") });
+  if (t.rate !== null) box.push({ type: "field", label: "Win rate", value: withDelta("rate", `${t.rate}% (${t.won} of ${t.won + t.lost} decided)`) });
+  // Each salesperson who sent or closed anything: at most five, the biggest seller first (the pulse's order).
+  for (const r of p.wins.rows.filter((x) => x.userId).slice(0, 5)) {
+    const decided = r.won + r.lost;
+    const parts = [decided ? `${r.won} of ${decided} won (${r.rate}%)` : `${n(r.sent, "proposal")} sent`, r.wonValue > 0 ? formatUSD(r.wonValue) : null];
+    box.push({ type: "field", label: truncate(r.name, 28), value: parts.filter(Boolean).join(" · ") });
+  }
+  for (const s of p.sources.slice(0, 3)) {
+    box.push({ type: "field", label: truncate(`From ${s.label}`, 28), value: `${n(s.leads, "lead")} · ${s.won} won${s.wonValue > 0 ? ` (${formatUSD(s.wonValue)})` : ""}` });
+  }
+  box.push({ type: "anchor", label: "Collected", value: formatUSD(p.collected) });
+
+  const within = p.speed.medianMin === null ? null : waitWords(p.speed.medianMin);
+  const reply = within === null ? "" : ` Half of them heard back in ${within}${within.startsWith("under") ? "" : " or less"}.`;
+  const lead = p.speed.leads
+    ? `Last week brought ${n(p.speed.leads, "new lead")}.${reply}${waiting ? ` ${waiting === 1 ? "One is" : `${waiting} are`} still waiting for a first reply.` : ""}`
+    : "No new leads came in last week.";
+  const won = t.won ? `${n(t.won, "job")} won` : "no jobs won";
+  const headline = p.speed.leads || t.won ? `${n(p.speed.leads, "new lead")}, ${won}` : `${formatUSD(p.collected)} collected`;
+  return {
+    subject: `Your week at ${i.org.name} — ${n(p.speed.leads, "lead")}, ${won}${t.won ? ` (${formatUSD(t.wonValue)})` : ""}`,
+    lockup: orgLockup(i.org),
+    kicker: { text: `Weekly report · ${p.range}` },
+    headline,
+    // The waiting leads are already in the first paragraph; the other things worth a look follow, three at most.
+    prose: [lead, ...p.notes.filter((x) => x.key !== "waiting").slice(0, 3).map((x) => x.text)],
+    box,
+    cta: { label: "Open the company pulse", href: i.href },
+    fine: "Sent on Monday mornings to owners and admins. To stop it: Settings → Notifications → Weekly company report.",
     footer: orgFooter(i.org),
   };
 }

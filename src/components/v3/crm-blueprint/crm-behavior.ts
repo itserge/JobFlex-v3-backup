@@ -967,6 +967,11 @@ export function initCrmContent(content: HTMLElement, options: CrmContentOptions)
     });
   }
 
+  // A link may open the sheet on one of its tabs (2026-11-10: the Monday report's button → ?tab=office). Only a
+  // tab that is really on the bar — a sales rep following an owner's link has no Office tab and stays on Today.
+  const wanted = new URLSearchParams(window.location.search).get("tab");
+  if (wanted && /^[a-z]+$/.test(wanted) && wanted !== crm.tab && document.querySelector(`#crmTabs .crm-tab[data-tab="${wanted}"]`)) switchTab(wanted);
+
   const cbChips = $("#cbChips");
   if (cbChips) {
     on(cbChips, "click", function (e) {
