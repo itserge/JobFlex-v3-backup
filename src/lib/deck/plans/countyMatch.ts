@@ -13,7 +13,7 @@
 // Pure: no model, no database, no React.
 
 import { z } from "zod";
-import { cleanCardHtml, newEditId, type AddedCard, type KeptCheck, type SetEdits } from "./edits";
+import { cleanCardHtml, isOut, newEditId, type AddedCard, type KeptCheck, type SetEdits } from "./edits";
 
 /* ── What the model is told about the set ──────────────────────────────── */
 export interface SetCard {
@@ -350,10 +350,10 @@ export function applyChecked(items: CheckItem[], e: SetEdits, set: Pick<SetSumma
         break;
       }
       case "remove_card":
-        if (!out.hidden.includes(a.card)) out.hidden.push(a.card);
+        if (!isOut(out, a.card)) out.hidden.push(a.card);
         break;
       case "remove_sheet":
-        if (!out.hidden.includes(`sheet:${a.sheet}`)) out.hidden.push(`sheet:${a.sheet}`);
+        if (!isOut(out, `sheet:${a.sheet}`)) out.hidden.push(`sheet:${a.sheet}`);
         break;
       case "rename_sheet":
         out.names[a.sheet] = a.title;

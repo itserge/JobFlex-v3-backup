@@ -6,7 +6,7 @@
 // card after it, bring it back, back to the design's own words). Nothing here
 // prints. The edits themselves: components/v3/deck-plans/plan-edit.
 import * as React from "react";
-import { dropSheet, editCount, isBlank, type EditedSheet } from "@/lib/deck/plans/edits";
+import { bringBack as bringSheetBack, dropSheet, editCount, isBlank, isOut, takeOut as takeSheetOut, type EditedSheet } from "@/lib/deck/plans/edits";
 import { ToolButtons, usePlanEdit, type PlanEditApi } from "@/components/v3/deck-plans/plan-edit";
 import ps from "@/components/v3/deck-plans/plan-set.module.css";
 import s from "./deck-permit.module.css";
@@ -178,8 +178,8 @@ function SheetRow({ api, sh }: { api: PlanEditApi; sh: EditedSheet }) {
       return { ...e, names };
     });
   };
-  const takeOut = () => api.change((e) => (e.hidden.includes(sh.editId) ? e : { ...e, hidden: [...e.hidden, sh.editId] }));
-  const bringBack = () => api.change((e) => ({ ...e, hidden: e.hidden.filter((h) => h !== sh.editId) }));
+  const takeOut = () => api.change((e) => takeSheetOut(e, sh.editId));
+  const bringBack = () => api.change((e) => bringSheetBack(e, sh.editId));
   const onTick = (on: boolean) => {
     if (on) return bringBack();
     const refs = mentionsOf(sh.no);
@@ -266,7 +266,7 @@ export function PlanEditBar() {
       </>
     );
   } else if (id && meta) {
-    const hidden = api.edits.hidden.includes(id);
+    const hidden = isOut(api.edits, id);
     const edited = !!api.edits.cards[id];
     const stale = !!api.stale[id];
     let acts: React.ReactNode;

@@ -195,11 +195,13 @@ function PermitSet({ design, address, title, shop, initialPlan, editable, built,
                 <button type="button" aria-pressed={which === "permit"} onClick={() => setWhich("permit")} data-plan-set-pick="permit">Permit set</button>
                 <button type="button" aria-pressed={which === "crew"} onClick={() => setWhich("crew")} data-plan-set-pick="crew">Construction set</button>
               </span>
+              <SimpleSwitch />
               <EditToggle />
               <CountyMatchButtons place={place} placeWords={countyName} build={build} figures={figureWords} paper={pick.paper.name} plan={plan} update={update} studioHref={studioHref} />
               <PrintButton />
             </div>
           </div>
+          <SimpleNote />
           <CountyCheckSummary studioHref={studioHref} />
           <PlanEditPanel />
           {fails.length || warns.length ? (
@@ -271,6 +273,36 @@ function PermitSet({ design, address, title, shop, initialPlan, editable, built,
 function PermitPage({ children }: { children: React.ReactNode }) {
   const api = usePlanEdit();
   return <div className={`${s.sheet} jf-blueprint ${api?.editing ? s.sheetEditing : ""}`}>{children}</div>;
+}
+
+/**
+ * Full ⇄ Simple, for the permit set (part 3 of the set's Edit, 2026-11-09): the Simple set leaves out what a building
+ * department least needs (lib/deck/plans/edits SIMPLE_OUT) — about six sheets — and moves the general notes to the
+ * cover. Anything it leaves out comes back one at a time in the Edit; Full brings it all back.
+ */
+function SimpleSwitch() {
+  const api = usePlanEdit();
+  if (!api?.canEdit || api.set !== "permit") return null;
+  const on = !!api.edits.simple;
+  const set = (simple: boolean) => {
+    if (simple !== on) api.change((e) => ({ ...e, simple, shown: [] }));
+  };
+  return (
+    <span className={ps.seg} role="group" aria-label="How much the permit set shows">
+      <button type="button" aria-pressed={!on} onClick={() => set(false)} data-plan-simple="full">Full</button>
+      <button type="button" aria-pressed={on} onClick={() => set(true)} data-plan-simple="simple">Simple</button>
+    </span>
+  );
+}
+function SimpleNote() {
+  const api = usePlanEdit();
+  if (!api || api.set !== "permit" || !api.edits.simple) return null;
+  const shown = api.sheets.filter((x) => !x.out).length;
+  return (
+    <div className={s.alertHint} data-plan-simple-note>
+      <b>Simple set — {shown} sheets.</b> Left out: the general notes sheet (its notes are on the cover), the elevations, the schedules and materials, the code compliance table, the bearing check and the layout table. Bring any back in Edit, or press Full.
+    </div>
+  );
 }
 
 /** Edit ⇄ Done editing, beside Print (owner: "a button on very top, a button called edit"). */

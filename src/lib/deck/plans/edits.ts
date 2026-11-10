@@ -48,6 +48,10 @@ export interface SetEdits {
   names: Record<string, string>;
   /** The last check against the county's requirements (lib/deck/plans/countyMatch): what it found, what is left to do. */
   check?: KeptCheck | null;
+  /** The Simple set (the permit set only): SIMPLE_OUT taken out without writing them into `hidden`. */
+  simple?: boolean;
+  /** What the contractor brought back out of the Simple set's list. */
+  shown?: string[];
 }
 export interface KeptCheck {
   place: string;
@@ -73,7 +77,34 @@ const MAX_ADDED = 80;
 const MAX_SHEETS = 12;
 const MAX_NAME = 80;
 
-export const emptySetEdits = (): SetEdits => ({ hidden: [], cards: {}, added: [], sheets: [], names: {}, check: null });
+export const emptySetEdits = (): SetEdits => ({ hidden: [], cards: {}, added: [], sheets: [], names: {}, check: null, simple: false, shown: [] });
+
+/* ── The Simple set (2026-11-09, part 3) ───────────────────────────────── */
+/**
+ * What the Simple permit set leaves out (owner's contractor: "too complicated, too much information"): the general
+ * notes sheet (its notes move to the cover — plan-set CoverSheet), the compliance's continuation, the elevations, the
+ * schedules and materials; on the sheets that stay, the framing picture and the code check on the cover, the bearing
+ * check and the layout table under the foundation plan, the decking pattern detail. About six sheets (seven with a
+ * roof): the cover, the site plan, the foundation and framing plans, the section, the details. The ids are the plan
+ * set's own (components/v3/deck-plans/plan-set Card keys).
+ */
+export const SIMPLE_OUT: readonly string[] = ["sheet:notes", "sheet:notes2", "sheet:elevations", "sheet:schedules", "cover/framing-picture", "cover/check", "foundation/bearing", "foundation/layout", "details/detail-pattern"];
+/** Out because the set is Simple (and not brought back). */
+export const presetOut = (e: SetEdits, id: string): boolean => !!e.simple && SIMPLE_OUT.includes(id) && !(e.shown ?? []).includes(id);
+/** A card ("<sheet>/<key>") or a sheet ("sheet:<id>") that does not print. */
+export const isOut = (e: SetEdits, id: string): boolean => e.hidden.includes(id) || presetOut(e, id);
+/** Take a card or sheet out (one the Simple set brought back goes back out the same way). */
+export function takeOut(e: SetEdits, id: string): SetEdits {
+  if (isOut(e, id)) return e;
+  if ((e.shown ?? []).includes(id) && e.simple && SIMPLE_OUT.includes(id)) return { ...e, shown: (e.shown ?? []).filter((x) => x !== id) };
+  return { ...e, hidden: [...e.hidden, id] };
+}
+/** Bring a card or sheet back, whichever way it was out. */
+export function bringBack(e: SetEdits, id: string): SetEdits {
+  if (!isOut(e, id)) return e;
+  const next = e.hidden.includes(id) ? { ...e, hidden: e.hidden.filter((x) => x !== id) } : e;
+  return presetOut(next, id) ? { ...next, shown: [...(next.shown ?? []), id] } : next;
+}
 export const emptyPlanEdits = (): PlanEdits => ({ v: 1, permit: emptySetEdits(), crew: emptySetEdits() });
 
 /** The id an edit names a sheet by: its kind, or "extra:<id>" for one the contractor added. */
@@ -234,7 +265,8 @@ function normalizeSet(raw: unknown): SetEdits {
       if (idOk(id) && name) names[id] = name;
     }
   }
-  return { hidden, cards, added, sheets, names, check: normalizeKeptCheck(r.check) };
+  const shown = Array.isArray(r.shown) ? [...new Set(r.shown.filter((x) => idOk(x)))].slice(0, 100) : [];
+  return { hidden, cards, added, sheets, names, check: normalizeKeptCheck(r.check), simple: r.simple === true, shown };
 }
 
 const FROMS = ["upload", "paste", "online", "kept", "ask"] as const;
@@ -294,7 +326,7 @@ export function editedSheets(sheets: PlanSheet[], e: SetEdits, set: PlanSetName)
   const own: EditedSheet[] = sheets.map((sh) => {
     const id = sheetEditId(sh);
     const name = e.names[id];
-    return { ...sh, name: name ?? sh.name, editId: `sheet:${id}`, out: e.hidden.includes(`sheet:${id}`), ownName: name ? sh.name : null };
+    return { ...sh, name: name ?? sh.name, editId: `sheet:${id}`, out: isOut(e, `sheet:${id}`), ownName: name ? sh.name : null };
   });
   if (!e.sheets.length) return own;
   const paper = sheets[0]?.paper ?? (set === "crew" ? "A" : "B");
@@ -311,7 +343,7 @@ export function editedSheets(sheets: PlanSheet[], e: SetEdits, set: PlanSetName)
 }
 function extraSheet(x: AddedSheet, no: string, paper: PlanSheet["paper"], e: SetEdits): EditedSheet {
   const id = `extra:${x.id}`;
-  return { no, name: x.name, kind: "extra", extraId: x.id, paper, editId: `sheet:${id}`, out: e.hidden.includes(`sheet:${id}`), ownName: null };
+  return { no, name: x.name, kind: "extra", extraId: x.id, paper, editId: `sheet:${id}`, out: isOut(e, `sheet:${id}`), ownName: null };
 }
 
 /** The added cards that follow `after`, in the order they were added. */

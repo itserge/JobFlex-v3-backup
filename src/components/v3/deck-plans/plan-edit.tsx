@@ -16,7 +16,7 @@
 // With no <PlanEditProvider> above it a Card draws exactly what it holds.
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { addedAfter, cleanCardHtml, dropAdded, emptyPlanEdits, emptySetEdits, fingerprint, mapCardClasses, NEW_CARD_HTML, newEditId, type AddedCard, type EditedSheet, type PlanEdits, type PlanSetName, type SetEdits } from "@/lib/deck/plans/edits";
+import { addedAfter, bringBack, cleanCardHtml, dropAdded, emptyPlanEdits, isOut, takeOut, emptySetEdits, fingerprint, mapCardClasses, NEW_CARD_HTML, newEditId, type AddedCard, type EditedSheet, type PlanEdits, type PlanSetName, type SetEdits } from "@/lib/deck/plans/edits";
 import ps from "./plan-set.module.css";
 import pe from "./plan-edit.module.css";
 
@@ -340,11 +340,11 @@ export function PlanEditProvider({ set, initial, canEdit, zoom, modules, onSave,
     (id: string) => {
       const e = now.current.all[now.current.set];
       if (e.added.some((a) => a.id === id)) change((x) => dropAdded(x, id));
-      else change((x) => (x.hidden.includes(id) ? x : { ...x, hidden: [...x.hidden, id] }));
+      else change((x) => takeOut(x, id));
     },
     [change],
   );
-  const restoreCard = React.useCallback((id: string) => change((x) => (x.hidden.includes(id) ? { ...x, hidden: x.hidden.filter((h) => h !== id) } : x)), [change]);
+  const restoreCard = React.useCallback((id: string) => change((x) => bringBack(x, id)), [change]);
   const originalCard = React.useCallback((id: string) => change((x) => (x.cards[id] ? dropCard(x, id) : x)), [change]);
   const keepMine = React.useCallback(
     (id: string) => {
@@ -513,7 +513,7 @@ export function useEditSurface(): { onClickCapture?: (ev: React.MouseEvent) => v
     if (!cardEl) return api.select(null);
     const id = cardEl.dataset.cardId ?? "";
     const meta = api.metaOf(id);
-    if (api.selected === id && meta && !meta.drawing && !api.edits.hidden.includes(id)) api.startTyping(id, { x: ev.clientX, y: ev.clientY });
+    if (api.selected === id && meta && !meta.drawing && !isOut(api.edits, id)) api.startTyping(id, { x: ev.clientX, y: ev.clientY });
     else api.select(id);
   };
   return { onClickCapture, className: `${pe.surface} ${pe.editing}` };
@@ -568,7 +568,7 @@ const headingOf = (html: string) =>
 function CardView({ api, id, meta, contents, className, style, as = "div", data, stored, was, children }: { api: PlanEditApi; id: string; meta: CardMeta; contents?: boolean; className?: string; style?: React.CSSProperties; as?: "div" | "span"; data: DataAttrs; stored: string | null; was: string | null; children?: React.ReactNode }) {
   const elRef = React.useRef<HTMLElement | null>(null);
   const origRef = React.useRef<HTMLElement | null>(null);
-  const hidden = api.edits.hidden.includes(id);
+  const hidden = isOut(api.edits, id);
   const typing = api.typing?.id === id && !api.typing.full ? api.typing : null;
   const isStale = !!api.stale[id];
   const Tag = as;
@@ -685,6 +685,11 @@ export function useSheetOverflow(ref: React.RefObject<HTMLElement | null>, no: s
     const field = ref.current;
     const frame = field?.parentElement;
     if (!field || !frame) return;
+    // Measured as it prints: the cards taken out (drawn faded while editing) are set aside for the measure — synchronously,
+    // before the screen paints, so nothing flickers.
+    const outs = Array.from(field.querySelectorAll<HTMLElement>("[data-card-out]"));
+    const was = outs.map((el) => el.style.display);
+    outs.forEach((el) => (el.style.display = "none"));
     let over = field.scrollHeight > Math.min(field.clientHeight, frame.clientHeight) + 3;
     if (!over) {
       for (const child of Array.from(field.children) as HTMLElement[]) {
@@ -694,6 +699,7 @@ export function useSheetOverflow(ref: React.RefObject<HTMLElement | null>, no: s
         }
       }
     }
+    outs.forEach((el, i) => (el.style.display = was[i]));
     reportOverflow(no, over ? name : null);
   });
   React.useEffect(() => () => reportOverflow?.(no, null), [reportOverflow, no]);

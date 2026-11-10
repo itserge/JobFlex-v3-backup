@@ -638,6 +638,9 @@ function IsoPicture({ scene, structure, yawDeg, skip, label, className }: { scen
 
 function CoverSheet(p: PlanSetProps & { sheets: PlanSheet[]; m: PlanModel | null; scene: DeckScene }) {
   const paper = usePaper();
+  // The Simple set (lib/deck/plans/edits SIMPLE_OUT) leaves G-002 out: its general notes come here, under the criteria.
+  const api = usePlanEdit();
+  const simple = !!api && api.set === p.set && !!api.all[p.set].simple;
   const { structure: st, project, shop, checks, sheets, m, scene, criteria } = p;
   const d = st.design;
   const f = st.frame;
@@ -727,6 +730,16 @@ function CoverSheet(p: PlanSetProps & { sheets: PlanSheet[]; m: PlanModel | null
             </table>
           </Card>
         ) : null}
+        {simple ? (
+          <Card k="general-notes" label="General notes" need="Most building departments ask for the general notes.">
+            <div className={s.h}>General notes</div>
+            <ol className={s.notes} data-plan-cover-notes>
+              {[...(p.notes ?? []), ...CLOSING_NOTES].map((n, i) => (
+                <li key={i}>{n}</li>
+              ))}
+            </ol>
+          </Card>
+        ) : null}
         <Card k="check" label="Code check">
           <div className={s.h}>Code check<span>{passes.length} pass · {fails.length ? `${fails.length} to fix` : "none to fix"}</span></div>
           <table className={s.t} data-plan-summary>
@@ -759,6 +772,13 @@ function splitCompliance(checks: DeckCheck[], capacityPt = 690): [DeckCheck[], D
   return [checks, []];
 }
 
+/** The general notes' last three, on G-002 — and on the cover of the Simple set, which leaves G-002 out. */
+const CLOSING_NOTES = [
+  "The contractor verifies every dimension, the house's band joist and the site before ordering or cutting; report any difference to the designer before building.",
+  "Inspections, where the building department requires them: footings before concrete; framing before the decking is laid; final when the guards and stairs are complete.",
+  "Keep this set and the approved permit on site until the final inspection.",
+];
+
 function NotesSheet(p: PlanSetProps & { m: PlanModel | null; more?: boolean }) {
   const { checks, notes, structure: st, more } = p;
   const legend = React.useMemo(() => legendView(), []);
@@ -768,12 +788,9 @@ function NotesSheet(p: PlanSetProps & { m: PlanModel | null; more?: boolean }) {
         <Card k="general-notes" label="General notes" need="Most building departments ask for the general notes.">
         <div className={s.h}>General notes</div>
         <ol className={`${s.notes} ${s.notes2}`} data-plan-notes>
-          {(notes ?? []).map((n, i) => (
+          {[...(notes ?? []), ...CLOSING_NOTES].map((n, i) => (
             <li key={i}>{n}</li>
           ))}
-          <li>The contractor verifies every dimension, the house&apos;s band joist and the site before ordering or cutting; report any difference to the designer before building.</li>
-          <li>Inspections, where the building department requires them: footings before concrete; framing before the decking is laid; final when the guards and stairs are complete.</li>
-          <li>Keep this set and the approved permit on site until the final inspection.</li>
         </ol>
         </Card>
         <Card k="symbols" label="Symbols" drawing>

@@ -5,7 +5,7 @@
 // taken out without renumbering the others, sheets added after the G sheets (permit) or at the end (crew).
 // Pure: no React, no database.
 //   NODE_PATH="" npx --no-install tsx --tsconfig tsconfig.json qa/tests/logic/plan-edits.check.ts
-import { addedAfter, cleanCardHtml, dropAdded, dropSheet, editCount, editedSheets, emptySetEdits, fingerprint, isBlank, mapCardClasses, normalizePlanEdits, sheetEditId, type SetEdits } from "../../../src/lib/deck/plans/edits";
+import { addedAfter, bringBack, cleanCardHtml, dropAdded, dropSheet, editCount, editedSheets, emptySetEdits, fingerprint, isBlank, isOut, mapCardClasses, normalizePlanEdits, sheetEditId, SIMPLE_OUT, takeOut, type SetEdits } from "../../../src/lib/deck/plans/edits";
 import { crewSheetList, permitSheetList } from "../../../src/lib/deck/plans/sheets";
 import { buildStructure } from "../../../src/lib/deck/structure";
 import { defaultDeckDesign } from "../../../src/lib/deck/design";
@@ -111,6 +111,26 @@ const check = (name: string, ok: boolean, extra?: unknown) => {
   check("deleting an added card moves the next one up", x.added.length === 3 && addedAfter(x, "foundation/notes").map((a) => a.id).join() === "add-b", x.added);
   const y = dropSheet(e, "sh-1");
   check("deleting an added sheet takes its cards with it", y.sheets.length === 0 && y.added.map((a) => a.id).join() === "add-a,add-b" && !y.names["extra:sh-1"], y);
+}
+
+/* ── the Simple set (part 3) ─────────────────────────────────────────────── */
+{
+  const st = buildStructure(defaultDeckDesign({ state: "TN", frostIn: 12 }));
+  const own = permitSheetList(st);
+  const simple: SetEdits = { ...emptySetEdits(), simple: true };
+  const kept = editedSheets(own, simple, "permit").filter((x) => !x.out);
+  check("the Simple set: cover, site plan, foundation, framing, section, details", kept.map((x) => x.no).join(",") === "G-001,A-101,S-101,S-102,S-301,S-501", kept.map((x) => x.no));
+  check("its cards out without writing them into the edits", isOut(simple, "foundation/bearing") && isOut(simple, "cover/check") && simple.hidden.length === 0 && !isOut(simple, "foundation/footings"));
+  const back = bringBack(simple, "foundation/bearing");
+  check("a card the Simple set left out comes back on its own", !isOut(back, "foundation/bearing") && (back.shown ?? []).includes("foundation/bearing") && isOut(back, "foundation/layout"));
+  check("…and goes back out the same way", isOut(takeOut(back, "foundation/bearing"), "foundation/bearing") && !(takeOut(back, "foundation/bearing").shown ?? []).includes("foundation/bearing"));
+  const mine = takeOut(simple, "framing/notes");
+  check("a card of the contractor's own choosing goes into the edits", mine.hidden.includes("framing/notes") && isOut(mine, "framing/notes"));
+  const full = { ...mine, simple: false, shown: [] };
+  check("Full brings the Simple set's cards back and keeps the contractor's own", !isOut(full, "foundation/bearing") && !isOut(full, "sheet:notes") && isOut(full, "framing/notes"));
+  check("every Simple id names a sheet or a card", SIMPLE_OUT.every((id) => /^sheet:[a-z0-9]+$/.test(id) || /^[a-z0-9-]+\/[a-z0-9-]+$/.test(id)));
+  const n = normalizePlanEdits({ permit: { simple: true, shown: ["foundation/bearing", "bad id"] } });
+  check("read back: Simple and what was brought back", n.permit.simple === true && JSON.stringify(n.permit.shown) === '["foundation/bearing"]');
 }
 
 if (bad) {
