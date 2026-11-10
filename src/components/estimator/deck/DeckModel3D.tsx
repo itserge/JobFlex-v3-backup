@@ -30,7 +30,7 @@ import * as React from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
-import { SCENE_LAYERS, sceneBuildLayers, memberBoxCorners, memberIsSawn, MEMBER_BOX_FACES, type DeckScene, type SceneHandle, type SceneLayer, type SceneLegend } from "@/lib/deck/scene";
+import { BORDER_BOARD_ROLE, RAIL_CAP_ROLE, RAIL_INFILL_ROLE, SCENE_LAYERS, sceneBuildLayers, memberBoxCorners, memberIsSawn, MEMBER_BOX_FACES, type DeckScene, type SceneHandle, type SceneLayer, type SceneLegend } from "@/lib/deck/scene";
 
 /** Where the camera can be asked to look from. */
 export type DeckLook = "yard" | "top" | "front" | "left" | "right" | "under" | "house" | "spin" | "in" | "out" | "turn-left" | "turn-right";
@@ -57,6 +57,8 @@ export interface DeckPick {
   point: [number, number, number];
   /** What a fixture placed here would be mounted on. */
   mount: "post" | "header" | "rail" | "deck" | "ceiling" | "wall" | "stair" | "peak";
+  /** The scene's box that was touched (lib/deck/parts names the part from it); null for a flat face, the ground or the house. */
+  boxIdx?: number | null;
 }
 
 export interface DeckModel3DProps {
@@ -100,6 +102,12 @@ export interface DeckModel3DProps {
    * ground, looking up at the framing; any other view brings it back above.
    */
   viewControls?: "top-right" | "bottom-left" | false;
+  /**
+   * A click on a part flies the camera to it (the default). A host that opens a card on the part — to take it out or
+   * swap it (2026-11-09) — passes false: the picture stays where it is, so the frame is seen re-framing around the
+   * change, and the card's own Zoom flies in when asked.
+   */
+  flyOnClick?: boolean;
 }
 
 /**
@@ -151,6 +159,7 @@ const JOG_DEFAULT_FT = 2;
 const LAYER_COUNT = SCENE_LAYERS.length;
 const layerIndex = (name: SceneLayer) => SCENE_LAYERS.indexOf(name);
 const DECKING = layerIndex("decking");
+const RAIL = layerIndex("rail");
 const FASCIA = layerIndex("fascia");
 const FOOTING = layerIndex("footing");
 const BRACE = layerIndex("brace");
@@ -268,6 +277,18 @@ function jitter(base: THREE.Color, i: number, amount: number): THREE.Color {
   const hsl = { h: 0, s: 0, l: 0 };
   base.getHSL(hsl);
   return new THREE.Color().setHSL(hsl.h, hsl.s, Math.min(1, Math.max(0, hsl.l + t)));
+}
+
+/**
+ * A STREAKED BOARD (2026-11-09): a line sold in a blended colour (Trex Transcend Lineage, TimberTech Legacy…) is laid
+ * board by board somewhere between its two tones — most near the main one, a few well into the second — the way a
+ * pallet of them looks on a deck. Steady per board, so a redraw never reshuffles the floor.
+ */
+function streaked(base: THREE.Color, second: THREE.Color | null, i: number, amount: number): THREE.Color {
+  if (!second) return jitter(base, i, amount);
+  const n = Math.sin(i * 78.233 + 12.9898) * 43758.5453;
+  const t = n - Math.floor(n);
+  return jitter(base.clone().lerp(second, t * t * 0.75), i, amount * 0.6);
 }
 
 /* ── Procedural textures: lap siding, wood grain, shingles, metal ribs, grass, concrete ── */
@@ -748,7 +769,7 @@ interface Built {
   dispose: () => void;
 }
 
-export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = false, night = false, connections = false, placing = false, className, label, resetToken = 0, onPick, focus = null, look = null, edit = false, onEdit, backdrop = null , highlight = null, viewControls = false }: DeckModel3DProps) {
+export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = false, night = false, connections = false, placing = false, className, label, resetToken = 0, onPick, focus = null, look = null, edit = false, onEdit, backdrop = null , highlight = null, viewControls = false, flyOnClick = true }: DeckModel3DProps) {
   const mountRef = React.useRef<HTMLDivElement>(null);
   /** Where the view bar sits, read when the scene is set up (a host keeps one place). */
   const viewControlsRef = React.useRef(viewControls);
@@ -760,6 +781,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
   const nightRef = React.useRef(night);
   const connRef = React.useRef(connections);
   const placingRef = React.useRef(placing);
+  const flyRef = React.useRef(flyOnClick);
   const editRef = React.useRef(edit);
   const pickRef = React.useRef(onPick);
   const editCbRef = React.useRef(onEdit);
@@ -810,9 +832,10 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
     nightRef.current = night;
     connRef.current = connections;
     placingRef.current = placing;
+    flyRef.current = flyOnClick;
     editRef.current = edit;
     api.current?.apply();
-  }, [built, xray, night, connections, placing, edit]);
+  }, [built, xray, night, connections, placing, edit, flyOnClick]);
 
   React.useEffect(() => {
     const mount = mountRef.current;
@@ -1240,6 +1263,11 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       const centres: Array<[THREE.Vector3, number]> = [];
       const frameColor = new THREE.Color(s.colors.frame);
       const deckColor = new THREE.Color(s.colors.decking);
+      const deckColor2 = s.colors.decking2 ? new THREE.Color(s.colors.decking2) : null;
+      // A picture-frame border in a second colour of the line (2026-11-10).
+      const borderColor = s.colors.border ? new THREE.Color(s.colors.border) : null;
+      const borderColor2 = s.colors.border2 ? new THREE.Color(s.colors.border2) : null;
+      const borderRings = new Set(s.diagonal?.border ?? []);
       const roofColor = new THREE.Color(s.colors.roofing ?? "#565250");
       const railColor = new THREE.Color(s.colors.rail ?? s.colors.frame);
       const metalRoof = s.colors.roofing === "#6f7478" || s.colors.roofing === "#3f4a55";
@@ -1348,6 +1376,31 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           const rest = idx.filter((bi) => !STAIR_SKIN.test(legendOf(bi)?.role ?? ""));
           if (rest.length) groups.push({ idx: rest, mat: mats[L] });
           groups.push({ idx: skin, mat: skinMat });
+        } else if (L === RAIL && (s.colors.railInfill || s.colors.railCap) && idx.some((bi) => RAIL_INFILL_ROLE.test(legendOf(bi)?.role ?? "") || RAIL_CAP_ROLE.test(legendOf(bi)?.role ?? ""))) {
+          // THE INFILL IN ITS OWN COLOUR (2026-11-09): stainless cable, black metal balusters or a wire mesh in a rail of
+          // another colour — smooth metal, no wood grain. A DECK BOARD ON TOP (2026-11-10): a kit rail's drink rail is
+          // the deck's own board, in the deck's colour.
+          const isInfill = (bi: number) => !!s.colors.railInfill && RAIL_INFILL_ROLE.test(legendOf(bi)?.role ?? "");
+          const isCap = (bi: number) => !!s.colors.railCap && RAIL_CAP_ROLE.test(legendOf(bi)?.role ?? "");
+          const infill = idx.filter(isInfill);
+          const caps = idx.filter(isCap);
+          const rest = idx.filter((bi) => !isInfill(bi) && !isCap(bi));
+          if (rest.length) groups.push({ idx: rest, mat: mats[L] });
+          if (infill.length) {
+            const infillMat = mats[L].clone();
+            infillMat.map = null;
+            infillMat.roughness = 0.42;
+            infillMat.metalness = 0.55;
+            infillMat.userData.base = new THREE.Color(s.colors.railInfill);
+            owned.push(infillMat);
+            groups.push({ idx: infill, mat: infillMat });
+          }
+          if (caps.length) {
+            const capMat = mats[DECKING].clone();
+            capMat.userData.base = new THREE.Color(s.colors.railCap);
+            owned.push(capMat);
+            groups.push({ idx: caps, mat: capMat });
+          }
         } else if (L === HARDWARE && idx.some((bi) => HEX_HEAD.test(legendOf(bi)?.role ?? ""))) {
           const heads = idx.filter((bi) => HEX_HEAD.test(legendOf(bi)?.role ?? ""));
           const upright = heads.filter((bi) => s.boxes[bi][6] > s.boxes[bi][4]);
@@ -1376,7 +1429,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
             // slid by depth²÷length and the ends stood square, so rafters met at the ridge overlapping, 2026-10-11).
             boxMatrix(b, legendOf(bi)?.role ?? null, ox, oz, m4);
             mesh.setMatrixAt(k, m4);
-            mesh.setColorAt(k, L === LIGHT && s.glows.some((g) => Math.abs(g[0] - b[1]) < 0.05 && Math.abs(g[1] - b[2]) < 0.05 && Math.abs(g[2] - b[3]) < 0.05) ? new THREE.Color(s.glows.find((g) => Math.abs(g[0] - b[1]) < 0.05 && Math.abs(g[1] - b[2]) < 0.05 && Math.abs(g[2] - b[3]) < 0.05)![3]).lerp(new THREE.Color(0xffffff), 0.45) : jitter(base, bi + L * 97, L === DECKING ? 0.045 : L === TRIM || L === GUTTER || L === HARDWARE ? 0.01 : 0.03));
+            mesh.setColorAt(k, L === LIGHT && s.glows.some((g) => Math.abs(g[0] - b[1]) < 0.05 && Math.abs(g[1] - b[2]) < 0.05 && Math.abs(g[2] - b[3]) < 0.05) ? new THREE.Color(s.glows.find((g) => Math.abs(g[0] - b[1]) < 0.05 && Math.abs(g[1] - b[2]) < 0.05 && Math.abs(g[2] - b[3]) < 0.05)![3]).lerp(new THREE.Color(0xffffff), 0.45) : L === DECKING ? (borderColor && BORDER_BOARD_ROLE.test(legendOf(bi)?.role ?? "") ? streaked(borderColor, borderColor2, bi + L * 97, 0.045) : streaked(base, deckColor2, bi + L * 97, 0.045)) : jitter(base, bi + L * 97, L === TRIM || L === GUTTER || L === HARDWARE ? 0.01 : 0.03));
             centres[bi] = [new THREE.Vector3(b[1] - ox, b[3], b[2] - oz), Math.max(b[4], b[5], b[6])];
           });
           mesh.instanceMatrix.needsUpdate = true;
@@ -1515,7 +1568,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           const bottom = top - s.diagonal!.thickFt;
           const n = ring.length / 2;
           const start = positions.length / 3;
-          const c = jitter(deckColor, bi, 0.045);
+          const c = borderColor && borderRings.has(bi) ? streaked(borderColor, borderColor2, bi, 0.045) : streaked(deckColor, deckColor2, bi, 0.045);
           for (const y of [top, bottom]) {
             for (let k = 0; k < n; k++) {
               positions.push(ring[k * 2] - ox, y, ring[k * 2 + 1] - oz);
@@ -2491,7 +2544,11 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         }
       }
       const hits = ray.intersectObjects(content.group.children.filter((o) => o.visible && !(o instanceof THREE.Sprite) && !(o instanceof THREE.LineSegments) && !o.userData.dims), true);
-      const hit = hits.find((h) => h.object.visible && (h.object as THREE.Mesh).isMesh);
+      // X-RAY IS SEE-THROUGH TO THE FINGER TOO (2026-11-09): with the boards, the roofing, the trim and the ceiling faded,
+      // a touch goes through them to the frame behind — the rafter tie under the shingles, the beam behind the fascia —
+      // so a part of the frame can be picked (and taken out or swapped) without turning the picture inside out.
+      const through = (o: THREE.Object3D) => xrayRef.current && typeof o.userData.layer === "number" && FADES.has(o.userData.layer as number);
+      const hit = hits.find((h) => h.object.visible && (h.object as THREE.Mesh).isMesh && !through(h.object));
       if (!hit) {
         const g = ray.intersectObject(ground, false)[0];
         if (!g) return null;
@@ -2509,7 +2566,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         const entry = content.layers[L]?.find((e) => e.mesh === obj);
         boxIdx = entry?.boxIdx[hit.instanceId] ?? null;
         if (boxIdx !== null && s.tags.length === s.boxes.length && s.tags[boxIdx] >= 0) legend = s.legend[s.tags[boxIdx]] ?? null;
-        return { pick: { legend, layer: layerName, point, mount: MOUNT_OF[layerName] ?? "deck" }, boxIdx, mesh: obj, instanceId: hit.instanceId, calloutLegend: null };
+        return { pick: { legend, layer: layerName, point, mount: MOUNT_OF[layerName] ?? "deck", boxIdx }, boxIdx, mesh: obj, instanceId: hit.instanceId, calloutLegend: null };
       }
       if (typeof obj.userData.boxIdx === "number") {
         boxIdx = obj.userData.boxIdx as number;
@@ -2524,7 +2581,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           if (pi >= 0 && s.polyTags.length === s.polys.length && s.polyTags[pi] >= 0) legend = s.legend[s.polyTags[pi]] ?? null;
         }
       }
-      return { pick: { legend, layer: layerName, point, mount: MOUNT_OF[layerName] ?? "deck" }, boxIdx, mesh: null, instanceId: null, calloutLegend: null };
+      return { pick: { legend, layer: layerName, point, mount: MOUNT_OF[layerName] ?? "deck", boxIdx }, boxIdx, mesh: null, instanceId: null, calloutLegend: null };
     };
     const planePoint = (clientX: number, clientY: number, plane: THREE.Plane): THREE.Vector3 | null => {
       const rect = renderer.domElement.getBoundingClientRect();
@@ -2618,9 +2675,10 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       }
       if (coarse || downAt) return;
       const r = pickAt(e.clientX, e.clientY);
-      if (!r || !r.mesh || r.instanceId === null) {
+      // A part with no colour of its own per piece cannot be tinted (reading its colour threw, 2026-11-09): it is still named.
+      if (!r || !r.mesh || r.instanceId === null || !r.mesh.instanceColor) {
         clearHover();
-        renderer.domElement.style.cursor = placingRef.current ? "crosshair" : "";
+        renderer.domElement.style.cursor = placingRef.current ? "crosshair" : r?.mesh ? "pointer" : "";
         pickRef.current?.(r?.pick ?? null, "hover");
         return;
       }
@@ -2661,7 +2719,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         pickRef.current?.(null, "click");
         return;
       }
-      if (!placingRef.current && content) {
+      if (!placingRef.current && content && flyRef.current) {
         if (r.boxIdx !== null && content.centres[r.boxIdx]) {
           const [c, size] = content.centres[r.boxIdx];
           const s = sceneRef.current;

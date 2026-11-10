@@ -136,8 +136,13 @@ export interface DeckingProduct {
   blockingRowsMaxFt?: number;
   /** The least open air the maker asks for under the joists, inches. */
   minClearanceIn?: number;
-  /** The 3D's colour. */
+  /** The 3D's colour: the line's usual tone — or, on a built frame, the colour picked (lib/deck/deckingColors). */
   color: string;
+  /** On a built frame: the picked colour's name, and the second tone of a streaked board. */
+  colorName?: string;
+  color2?: string;
+  /** On a built frame: a picture-frame border in a second colour of the line — its name, the board as the order names it, its look. */
+  border?: { name: string; label: string; color: string; color2?: string };
   labor: DeckingLaborClass;
   /** What the market tables price it on (lib/fence/market). */
   basis: MarketBasis;
@@ -337,3 +342,52 @@ export const RAIL_TYPES: readonly RailType[] = [
 export function railType(id: string | null | undefined): RailType {
   return RAIL_TYPES.find((r) => r.id === id) ?? RAIL_TYPES[0];
 }
+
+/**
+ * THE COLOURS A RAILING SYSTEM IS STOCKED IN (2026-11-09 — owner: "check the railings, the styles and colors … whatever
+ * the client sees, he gets"). Read from the makers' railing pages and brochures that month: each is the colour by the
+ * name contractors use, the first one the system's usual — what the 3D draws until another is picked.
+ *
+ * A COMPOSITE rail is NOT sold in the deck board's colour: Trex, TimberTech and Fiberon sell rails and post sleeves in
+ * white, black and one or two browns only (the 3D used to draw a composite rail the colour of the boards — a rail
+ * nobody can buy). Wood rails are the wood; a custom system takes the common metal colours.
+ */
+export interface RailColor {
+  id: string;
+  name: string;
+  hex: string;
+  /** Whose colour it is, for the hint under the list. */
+  like: string;
+}
+const RAIL_BLACK: RailColor = { id: "black", name: "Textured black", hex: "#1f1f1e", like: "Westbury Black Fine Texture, Trex Signature Charcoal Black, Fortress Black Sand" };
+const RAIL_BRONZE: RailColor = { id: "bronze", name: "Bronze", hex: "#4d4435", like: "Westbury Bronze Fine Texture, Trex Signature Bronze, TimberTech Dark Bronze" };
+const RAIL_WHITE: RailColor = { id: "white", name: "White", hex: "#f0efea", like: "Westbury White Fine Texture, Trex Classic White, Fortress Matte White" };
+export const RAIL_COLORS: Readonly<Partial<Record<RailTypeId, readonly RailColor[]>>> = {
+  aluminum: [RAIL_BLACK, RAIL_BRONZE, RAIL_WHITE, { id: "grey", name: "Grey", hex: "#6e6e6e", like: "Westbury Grey Fine Texture, Feeney Dove Gray" }, { id: "oil-bronze", name: "Oil-rubbed bronze", hex: "#3a362b", like: "Key-Link Oil Rubbed Bronze, Westbury Ninety Bronze" }],
+  composite: [
+    { id: "white", name: "White", hex: "#f2f0ec", like: "Trex Classic White, TimberTech White, Fiberon Tranquil White" },
+    { id: "black", name: "Black", hex: "#242021", like: "Trex Charcoal Black, TimberTech Matte Black, Fiberon Serene Black" },
+    { id: "brown", name: "Dark brown", hex: "#483a2f", like: "TimberTech Matte Espresso, Fiberon Simply Brown" },
+    { id: "red-bronze", name: "Reddish bronze", hex: "#4a2420", like: "Trex Vintage Lantern" },
+  ],
+  vinyl: [
+    { id: "white", name: "White", hex: "#fbfbf8", like: "Weatherables, Durables and RDI White" },
+    { id: "tan", name: "Tan", hex: "#ded0b5", like: "Weatherables Tan, Durables Tan, RDI Sand" },
+    { id: "khaki", name: "Khaki", hex: "#b5ae9e", like: "Weatherables Khaki, Durables Khaki, RDI Clay" },
+  ],
+  cable: [RAIL_BLACK, RAIL_BRONZE, RAIL_WHITE, { id: "silver", name: "Silver", hex: "#a8a9a1", like: "Feeney Silver, Westbury Grey Fine Texture" }],
+  glass: [RAIL_BLACK, RAIL_WHITE, RAIL_BRONZE],
+  custom: [RAIL_BLACK, RAIL_BRONZE, RAIL_WHITE, { id: "brown", name: "Dark brown", hex: "#483a2f", like: "a dark brown powder coat or cap stock" }],
+};
+/** The colours of a system ([] for wood: it is the wood). */
+export function railColors(type: RailTypeId | string | null | undefined): readonly RailColor[] {
+  return RAIL_COLORS[type as RailTypeId] ?? [];
+}
+/** The picked colour, or the system's usual one; null for a wood rail. */
+export function railColorOf(type: RailTypeId | string | null | undefined, id: string | null | undefined): RailColor | null {
+  const list = railColors(type);
+  return list.find((c) => c.id === id) ?? list[0] ?? null;
+}
+/** Stainless cable, and the black of a metal baluster, a rod or a wire mesh in a rail of another colour. */
+export const RAIL_STAINLESS = "#b9bcc0";
+export const RAIL_METAL_BLACK = "#1f1f1e";

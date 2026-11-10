@@ -30,6 +30,7 @@ import { legendView } from "@/lib/deck/plans/legend";
 import { buildSequence, cutList, stringerLayout, stringerView } from "@/lib/deck/plans/crew";
 import { lateralDevices } from "@/lib/deck/permit";
 import { LEDGER_FASTENER_LABEL, RULE } from "@/lib/deck/codeTables";
+import { railNamed } from "@/lib/deck/rails";
 import { permitSheetList, crewSheetList, type PlanSheet } from "@/lib/deck/plans/sheets";
 import { PAPERS, fitOn, type Paper, type PaperKey } from "@/lib/deck/plans/paper";
 import { editedSheets, emptySetEdits, sheetEditId } from "@/lib/deck/plans/edits";
@@ -662,7 +663,7 @@ function CoverSheet(p: PlanSetProps & { sheets: PlanSheet[]; m: PlanModel | null
     rows.push(["Footings", m ? `${m.posts.length} poured, ${m.footings.filter((x) => x.kind === "post").map((x) => `${x.tag} ${inFrac(x.padIn)} Ø`).join(", ")} · ${inFrac(d.frostIn)} below grade` : ""]);
     rows.push(["Decking", f.decking.label]);
   }
-  if (st.rails.on) rows.push(["Guard", `${st.rails.label}, ${st.rails.heightIn}" · ${Math.round(st.rails.totalLf)} ft`]);
+  if (st.rails.on) rows.push(["Guard", `${railNamed(st.rails)}, ${st.rails.heightIn}" · ${Math.round(st.rails.totalLf)} ft`]);
   if (st.stairs.length) rows.push(["Stairs", st.stairs.map((x, i) => `${i + 1}: ${x.risers} risers @ ${inFrac(x.riserIn)}, ${inFrac(x.widthIn)} wide`).join(" · ")]);
   if (st.roof) rows.push(["Roof", st.roof.kind === "pergola" ? "Pergola over the deck" : `${st.roof.kind} roof, ${st.roof.roof.pitch}:12`]);
   const summary: Array<[string, string, boolean]> = [];

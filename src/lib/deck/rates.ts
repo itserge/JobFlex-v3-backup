@@ -136,6 +136,10 @@ export const DECK_RATES: readonly DeckRateDef[] = [
   hw("railPostTie", "Rail post tension ties, pair, with bolts", 16),
   hw("railBracket", "Rail bracket", 2.2),
   hw("postCapWood", "Post cap, decorative", 9),
+  // Rail infill bought by the piece (2026-11-09), at DecksDirect's listed prices that month: Deckorators Classic round
+  // aluminum balusters, Satin Black, $17.97 for ten; a Wild Hog welded mesh panel, 36 in. x 6 ft, $82.79.
+  hw("metalBaluster", "Round aluminum baluster, black", 1.8),
+  hw("meshPanel", "Welded wire mesh rail panel, 6 ft", 82.79, "ea", 600),
   hw("litCap", "Lit post cap, low voltage", 34),
   hw("riserLight", "Stair riser light", 26),
   hw("lightKit", "Low-voltage transformer, wire and timer", 140, "ea", 2000),

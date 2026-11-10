@@ -254,7 +254,10 @@ function deckFrameChecks(frame: DeckFrame, addRaw: (c: DeckCheck) => void, roof:
     if (design.framing.post === "4x4" || design.framing.post === "4x6") add({ id: "post-size", level: "info", part: "Posts", text: `The code's table allows a ${design.framing.post} here; the American Wood Council's guide builds every deck on 6x6 posts, and many building offices ask for them.`, rule: "AWC DCA 6" });
     const braced = frame.sticks.filter((s) => s.role === "brace").length;
     if (braced > 0) add({ id: "post-braces", level: "pass", part: "Posts", text: `${plural(braced, "knee brace")}: a 2x4 at each corner post, 2 ft down the post and 2 ft out, a 1/2-in. lag at each end.`, rule: RULE.bracing });
-    else if (design.framing.braces === false && tallest.heightIn > BRACE_ABOVE_IN) add({ id: "post-braces", level: "warn", part: "Posts", text: `Posts over 2 ft with no knee braces. The American Wood Council's guide braces every corner post that tall.`, rule: RULE.bracing, fix: { label: "Add knee braces", patch: { framing: { braces: true } } } });
+    else if (design.framing.braces === false && tallest.heightIn > BRACE_ABOVE_IN) add({ id: "post-braces", level: "warn", part: "Posts", text: `Posts over 2 ft with no knee braces. The American Wood Council's guide braces every corner post that tall.`, rule: RULE.bracing, fix: { label: "Add knee braces", patch: { framing: { braces: true, bracesOff: [] } } } });
+    // Taken out one by one in the 3D (lib/deck/parts): said, with the way back.
+    const leftOut = frame.bracesLeftOut;
+    if (design.framing.braces && leftOut > 0) add({ id: "post-braces-out", level: "warn", part: "Posts", text: `${plural(leftOut, "knee brace")} taken out by hand at ${leftOut === 1 ? "a post" : "posts"} over 2 ft. The American Wood Council's guide braces every corner post that tall${design.placement === "attached" ? "" : ", and a deck that stands free leans on its braces"} — the building office may ask for ${leftOut === 1 ? "it" : "them"}.`, rule: RULE.bracing, fix: { label: leftOut === 1 ? "Put it back" : "Put them back", patch: { framing: { bracesOff: [] } } } });
   }
 
   /* ── Footings ───────────────────────────────────────────────────── */
@@ -512,7 +515,14 @@ function roofChecks(roof: RoofFrame, design: DeckDesign, frame: DeckFrame | null
       if (fts.length) add({ id: "roof-footings", level: fts.some((f) => !f.required) ? "fail" : "pass", part: "Roof posts", text: fts.some((f) => !f.required) ? "One post's footing is past the footing table — more posts, or an engineer." : `${plural(fts.length, "poured footing")}, ${Math.min(...pads) === Math.max(...pads) ? `${pads[0]} in.` : `${Math.min(...pads)} to ${Math.max(...pads)} in.`} across, ${fts[0].depthIn} in. deep${roof.attach === "wall" ? ", below the frost line as a structure on the house must be" : ""}.`, rule: RULE.footing });
     }
     if (roof.hardware.braces) add({ id: "roof-braces", level: "pass", part: "Roof posts", text: `${plural(roof.hardware.braces, "4x4 knee brace")} at the posts, 2 ft down and 2 ft out along the headers, a lag at each end — what holds a free-standing roof square.`, rule: RULE.bracing });
-    else if (r.braces === false && roof.attach === "free") add({ id: "roof-braces", level: "warn", part: "Roof posts", text: "A free-standing roof with no knee braces has nothing holding it square but the post bases. Brace it, or have the bracing looked at where a permit is needed.", rule: RULE.bracing, fix: { label: "Add knee braces", patch: { roof: { ...r, braces: true } } } });
+    else if (r.braces === false && roof.attach === "free") add({ id: "roof-braces", level: "warn", part: "Roof posts", text: "A free-standing roof with no knee braces has nothing holding it square but the post bases. Brace it, or have the bracing looked at where a permit is needed.", rule: RULE.bracing, fix: { label: "Add knee braces", patch: { roof: { ...r, braces: true, bracesOff: [] } } } });
+    // Taken out one by one in the 3D (lib/deck/parts): said, with the way back.
+    if (r.braces && roof.bracesLeftOut > 0) add({ id: "roof-braces-out", level: roof.attach === "free" ? "warn" : "info", part: "Roof posts", text: `${plural(roof.bracesLeftOut, "knee brace")} taken out by hand${roof.attach === "free" ? ". The braces are what hold a free-standing roof square: have the bracing that is left looked at where a permit is needed" : "; the house holds this roof on one side, the braces that are left hold the rest"}.`, rule: RULE.bracing, fix: { label: roof.bracesLeftOut === 1 ? "Put it back" : "Put them back", patch: { roof: { ...r, bracesOff: [] } } } });
+    if (roof.headersLeftOut.length) {
+      const n = roof.headersLeftOut.length;
+      const over = roof.trusses ? "the truss above spans post to post in one piece" : roof.kind === "shed" ? "the rafters rest on the high and low beams" : "the end rafters rest on the side beams";
+      add({ id: "roof-end-beam", level: "info", part: "Roof beams", text: `${n === 1 ? `The ${ftIn(roof.headersLeftOut[0].lengthIn)} end beam is` : `${n} end beams are`} left out by hand: nothing bears there — ${over}. ${n === 1 ? "It" : "They"} did tie the posts together, so the building office may want the roof's sideways bracing shown.`, rule: RULE.bracing, fix: { label: n === 1 ? "Put the beam back" : "Put the beams back", patch: { roof: { ...r, headersOff: [] } } } });
+    }
   }
 
   /* ── On the house ───────────────────────────────────────────────────── */
