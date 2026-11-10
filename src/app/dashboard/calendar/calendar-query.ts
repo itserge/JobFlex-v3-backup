@@ -25,6 +25,7 @@ import { db } from "@/lib/db";
 import { countNewForSurface } from "@/lib/badgeCounts";
 import { aptSourceKey, bookedLine, parseAptSource, visitVia } from "@/lib/calendar/visitVia";
 import { deskHoursKey, expandWindows, parseDeskHours } from "@/lib/deskHours";
+import { DEFAULT_REPAIR_HOURS } from "@/lib/repairs/shared";
 import type {
   CalEvent,
   CalKind,
@@ -167,6 +168,7 @@ export async function buildCalendarSeed(): Promise<CalendarSeed> {
           select: {
             status: true,
             projectId: true,
+            kind: true,
             client: { select: { name: true, phone: true, address: true, city: true, state: true } },
             proposal: { select: { scopeOfWork: true, total: true } },
             assignments: { select: { id: true, workerId: true, status: true, pay: true } },
@@ -231,6 +233,8 @@ export async function buildCalendarSeed(): Promise<CalendarSeed> {
           include: {
             client: { select: { name: true, city: true, address: true } },
             proposal: { select: { total: true } },
+            // A repair waiting for its time is booked on whoever the office already sent (2026-11-09).
+            assignments: { select: { workerId: true }, take: 1 },
           },
           take: 30,
         }),
@@ -343,6 +347,7 @@ export async function buildCalendarSeed(): Promise<CalendarSeed> {
     jobId: e.jobId,
     projectId: e.job?.projectId ?? null,
     kind: "job" as const,
+    ...(e.job?.kind === "REPAIR" ? { repair: true } : {}),
     title: e.title,
     start: e.startsAt,
     end: e.endsAt,
@@ -429,9 +434,11 @@ export async function buildCalendarSeed(): Promise<CalendarSeed> {
       client: j.client?.name ?? "No client",
       city: j.client?.city ?? j.client?.address ?? "—",
       duration: durLabel(j.startsAt, j.endsAt),
-      durationMin: span && span > 0 ? span : null,
+      // A repair left without a time has no length of its own: the sheet's two hours, not an install's four.
+      durationMin: span && span > 0 ? span : j.kind === "REPAIR" ? DEFAULT_REPAIR_HOURS * 60 : null,
       value: j.proposal?.total ? Math.round(j.proposal.total) : null,
       clientKey: j.clientId ?? null,
+      ...(j.kind === "REPAIR" ? { repair: true, ownerWorkerId: j.assignments[0]?.workerId ?? null } : {}),
     };
   });
   const visitTray: TrayJob[] = (await visitLeadsP).map((l) => {

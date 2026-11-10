@@ -73,6 +73,9 @@ import { JD_ASSIGN, ST, STATUS_BUTTONS, fmt, type JobDetailRecord, KEY_TO_STATUS
 import { Who } from "@/components/v3/who/who";
 import { CrewActions, CrewDays, CrewPendingBanner, CrewReceipts } from "@/components/v3/crew-board/crew-board";
 import { CrewField } from "@/components/v3/crew-board/crew-field";
+import { openRepairSheet } from "@/components/v3/repairs/repair-sheet";
+import { setRepairCauseAction } from "@/actions/repairs";
+import { REPAIR_CAUSES } from "@/lib/repairs/shared";
 
 /** Hashed module class, or the literal name when the module has none — which is
  *  how the fleet's global `rv` / `rv-in` / `pressed` pass through. */
@@ -158,7 +161,7 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
             <Link className={cx("jd-proj")} href={`/dashboard/projects/${record.project.id}` as Route} data-job-project>
               ← Project · {record.project.name}
             </Link>
-          ) : !worker ? (
+          ) : !worker && !record.repair ? (
             <button
               type="button"
               className={cx("jd-proj", "jd-proj--make")}
@@ -182,6 +185,7 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
           </div>
           <h1 className={cx("page-title")}>{record.title}</h1>
           <div className={cx("jd-dates")}>{record.dates}</div>
+          {record.repair ? <RepairBanner jobId={record.id} repair={record.repair} /> : null}
         </div>
       </div>
 
@@ -214,15 +218,24 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
         {/* THE PROPOSAL SECTION IS THE LINK, and it exists only when
             `Job.proposalId` resolved. No proposal — no button, not a disabled
             one: there is nothing to open. */}
-        {record.proposal && (
-          <Link
-            className={cx("btn", "btn-ghost", "jd-vp")}
-            href={`/dashboard/manual-blueprint?proposal=${record.proposal.id}` as Route}
-          >
-            <Ic id="i-file" />
-            View proposal · {fmt(record.proposal.total)}
-          </Link>
-        )}
+        <div className={cx("jd-tabacts")}>
+          {/* A repair goes back to this job's house (2026-11-09) — the office's; the sheet is in the shell. */}
+          {record.canWrite && (
+            <button type="button" className={cx("btn", "btn-ghost", "jd-vp")} onClick={() => openRepairSheet({ jobId: record.id })} data-job-repair>
+              <Ic id="i-wrench" />
+              {record.repair ? "Another repair" : record.comebacks?.length ? `Repair · ${record.comebacks.length}` : "Repair"}
+            </button>
+          )}
+          {record.proposal && (
+            <Link
+              className={cx("btn", "btn-ghost", "jd-vp")}
+              href={`/dashboard/manual-blueprint?proposal=${record.proposal.id}` as Route}
+            >
+              <Ic id="i-file" />
+              View proposal · {fmt(record.proposal.total)}
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* Write failures land here rather than in an alert() — one line, in the
@@ -344,7 +357,8 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
               <div className={cx("jd-sec")}>
                 <div className={cx("jd-sec-l")}>Scope of work</div>
                 {record.scopeOfWork ? (
-                  <p>{record.scopeOfWork}</p>
+                  // Line breaks kept: a repair's scope is a checklist, then the note (2026-11-09).
+                  <p className={cx("jd-scope")}>{record.scopeOfWork}</p>
                 ) : (
                   <EmptyNote>No scope recorded on this job.</EmptyNote>
                 )}
@@ -411,6 +425,35 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
               )}
             </section>
           </div>
+        )}
+
+        {/* COME-BACKS (2026-11-09): the repairs sent back to this job, what each cost, and why it came back. */}
+        {tab === "overview" && record.comebacks && record.comebacks.length > 0 && (
+          <section className={cx("card")} data-job-comebacks>
+            <div className={cx("jd-h")}>
+              <h2 className={cx("jd-t")}>Come-backs</h2>
+              <span className={cx("jd-s")}>
+                {record.comebacks.length} repair{record.comebacks.length === 1 ? "" : "s"}
+                {record.money && record.money.repairs > 0 ? ` · ${fmt(record.money.repairs)} off this job's profit` : ""}
+              </span>
+            </div>
+            {record.comebacks.map((c) => (
+              <div className={cx("jd-row")} key={c.id} data-comeback>
+                <div>
+                  <div className={cx("jd-row-n")}>
+                    <Link href={`/dashboard/jobs/${c.id}` as Route}>{c.title}</Link>
+                  </div>
+                  <div className={cx("jd-row-m")}>
+                    {c.when}
+                    {c.who ? ` · ${c.who}` : " · nobody on it yet"} · {c.cause.toLowerCase()} · {c.billable ? "billable" : "warranty"} · {c.status === "COMPLETED" ? "done" : c.status === "IN_PROGRESS" ? "in progress" : c.status === "CANCELED" ? "cancelled" : "scheduled"}
+                  </div>
+                </div>
+                <div className={cx("jd-row-act")}>
+                  <b>{c.cost > 0 ? fmt(c.cost) : "—"}</b>
+                </div>
+              </div>
+            ))}
+          </section>
         )}
 
         {/* WHO DID WHAT (2026-09-24): the job's trail — every action a member
@@ -852,6 +895,7 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
                   {record.money.crewUnpaid > 0 ? ` (${fmt(record.money.crewUnpaid)} unpaid)` : ""} · receipts {fmt(record.money.expenses)}
                   {record.money.expensesPending > 0 ? ` (${fmt(record.money.expensesPending)} on review, not counted)` : ""}
                   {record.money.stock > 0 ? ` · from the warehouse ${fmt(record.money.stock)}` : ""}
+                  {record.money.repairsCount > 0 ? ` · repairs ${fmt(record.money.repairs)} (${record.money.repairsCount})` : ""}
                   {record.money.stockUnpriced.length > 0 ? ` (no price on ${record.money.stockUnpriced.join(", ")} — counted at $0)` : ""}
                   {record.money.planFrom === "project" ? ` · project budget share ${fmt(record.money.plannedCost)}` : ""}
                 </div>
@@ -893,5 +937,60 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
         {tab === "expenses" && <CrewReceipts data={record.board} door={record.door} />}
       </div>
     </>
+  );
+}
+
+/** "Repair of <job> · why it came back · who pays" under a repair's title (2026-11-09). The office can change why —
+ *  the crew's come-back count reads it. */
+function RepairBanner({ jobId, repair }: { jobId: string; repair: NonNullable<JobDetailRecord["repair"]> }) {
+  const router = useRouter();
+  const [cause, setCause] = useState<string | null>(repair.cause);
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className={cx("jd-repair")} data-job-repair-banner>
+      <span className={cx("jd-repair-tag")}>
+        <Ic id="i-wrench" />
+        Repair
+      </span>
+      {repair.of ? (
+        <span>
+          of{" "}
+          <Link href={`/dashboard/jobs/${repair.of.id}` as Route} data-job-repair-of>
+            {repair.of.title}
+          </Link>
+        </span>
+      ) : null}
+      <label className={cx("jd-repair-why")}>
+        <span>Why it came back</span>
+        <select
+          value={cause ?? ""}
+          disabled={busy}
+          onChange={(e) => {
+            const next = e.target.value || null;
+            setBusy(true);
+            setRepairCauseAction(jobId, next)
+              .then((r) => {
+                setCause(r.cause);
+                router.refresh();
+              })
+              .finally(() => setBusy(false));
+          }}
+          data-job-repair-cause
+        >
+          {REPAIR_CAUSES.map((c) => (
+            <option key={c.key} value={c.key}>
+              {c.label}
+            </option>
+          ))}
+          <option value="">Not sure yet</option>
+        </select>
+      </label>
+      <span>{repair.whoPays}</span>
+      {repair.changeOrder ? (
+        <span>
+          · change order{repair.changeOrder.number ? ` #${repair.changeOrder.number}` : ""} {repair.changeOrder.status.toLowerCase()}
+        </span>
+      ) : null}
+    </div>
   );
 }

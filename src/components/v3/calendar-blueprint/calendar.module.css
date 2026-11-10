@@ -2700,6 +2700,10 @@
 .bp :global(.content .tray-open:hover) { border-color: var(--blueprint); }
 .bp :global(.content .tray-open .ic) { width: 14px; height: 14px; }
 .bp :global(.content .tray-card--visit) { border-left: 3px solid var(--blueprint); }
+/* Repairs (2026-11-09): come-backs sit first in To place, edged in amber; their chips carry the wrench and a dashed edge. */
+.bp :global(.content .tray-card--repair) { border-left: 3px solid var(--amber, #b88420); }
+.bp :global(.content .tray-sec--repair) { color: var(--amber, #b88420); }
+.bp :global(.content .evc.evc--repair) { border-style: dashed; }
 .bp :global(.content .tray-group) { display: flex; flex-direction: column; gap: 6px; padding: 7px; border: 1.5px dashed var(--hair-soft); border-radius: var(--radius); }
 .bp :global(.content .tray-gh) { font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); }
 .bp :global(.content .tray-gf) { font-size: 10.5px; color: var(--muted); }

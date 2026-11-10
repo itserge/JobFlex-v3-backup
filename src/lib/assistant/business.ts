@@ -80,6 +80,7 @@ const jobsMoney: ReadTool<{ which: "losing" | "best" | "open" }> = {
         expenses: [c?.receipts ?? 0],
         pendingExpenses: [c?.receiptsPending ?? 0],
         stock: c?.stock ?? 0,
+        repairs: c?.repairs ?? 0,
       });
       const booked = (c?.total ?? 0) > 0;
       return {

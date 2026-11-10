@@ -35,7 +35,7 @@ import type { ProposalRow } from "./proposals-data";
  *   component. The behavior module takes it as its starting state and then
  *   keeps itself in step with the database through the proposal server actions.
  */
-export function ProposalsContent({ rows }: { rows: ProposalRow[] }) {
+export function ProposalsContent({ rows, office = false }: { rows: ProposalRow[]; office?: boolean }) {
   // The seed reaches `init` through a ref, NOT through the callback's deps.
   // `useBlueprintContent` re-runs whenever `init` changes identity, and a
   // re-run tears the page down and replays the whole reveal cascade — so the
@@ -44,9 +44,10 @@ export function ProposalsContent({ rows }: { rows: ProposalRow[] }) {
   // first commit onwards, and a navigation away unmounts this component, so the
   // next visit gets a fresh ref holding freshly-queried rows.
   const seedRef = useRef(rows);
+  const officeRef = useRef(office);
 
   const init = useCallback(
-    (content: HTMLElement) => initProposalsContent(content, { rows: seedRef.current }),
+    (content: HTMLElement) => initProposalsContent(content, { rows: seedRef.current, office: officeRef.current }),
     [],
   );
   useBlueprintContent(init);

@@ -1,0 +1,53 @@
+/* THE REPAIR SHEET (2026-11-09) — see repair-sheet.tsx. Global and prefixed `rps-`, like the sheet it sits in
+ * (blueprint-sheet.css): it portals to <body>, so it reads the `--bps-*` tokens the sheet restates. */
+
+.rps { display: block; }
+.rps .bps-chip { height: auto; min-height: 32px; padding: 6px 11px; text-align: left; line-height: 1.25; }
+.rps-seg { flex-wrap: wrap; align-self: flex-start; max-width: 100%; }
+.rps-seg > button { white-space: nowrap; }
+
+.rps-warn {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 9px 11px;
+  border: 1.5px solid var(--bps-warning); border-radius: var(--bps-radius);
+  background: #fffaf0; font-size: 12.5px;
+}
+.rps-warn b { color: var(--bps-warning); font-weight: 800; }
+.rps-warn a { color: var(--bps-ink); text-decoration: underline; text-underline-offset: 2px; }
+.rps-tip { margin-top: 6px; font-size: 12px; font-weight: 700; color: var(--bps-warning); }
+
+.rps-photos { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rps-photo {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 220px;
+  height: 30px; padding: 0 4px 0 10px;
+  border: 1.5px solid var(--bps-hair); border-radius: var(--bps-radius);
+  font-family: var(--bps-mono); font-size: 11px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.rps-photo button { width: 22px; height: 22px; border: 0; background: none; font-size: 16px; line-height: 1; cursor: pointer; color: var(--bps-muted); }
+
+.rps-bill { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.rps-inline { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.rps-money { width: 120px; }
+.rps-check { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; line-height: 1.4; cursor: pointer; }
+.rps-check input { margin-top: 2px; }
+
+.rps-when { display: grid; grid-template-columns: 1.4fr 1fr 0.8fr; gap: 8px; margin-top: 4px; }
+.rps-offers { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.rps-offers .bps-hint { flex: 1 1 100%; }
+.rps-clash { margin-top: 4px; font-weight: 600; }
+
+.rps-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; width: 100%; }
+.rps-sees { flex: 1 1 220px; min-width: 0; font-size: 12px; color: var(--bps-muted); overflow-wrap: anywhere; }
+.rps-acts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-left: auto; }
+
+.rps-done { display: flex; flex-direction: column; gap: 8px; }
+.rps-done-t { font-size: 15px; font-weight: 800; }
+.rps-done ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.rps-bad { color: var(--bps-danger); }
+
+@media (max-width: 768px) {
+  .rps-when { grid-template-columns: 1fr 1fr; }
+  .rps-when select { grid-column: 1 / -1; }
+  .rps-acts { width: 100%; }
+  .rps-acts .bps-btn { flex: 1 1 auto; }
+}

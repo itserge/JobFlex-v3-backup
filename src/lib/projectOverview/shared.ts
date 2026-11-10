@@ -28,8 +28,20 @@ export const daysFrom = (a: string, b: string) => dayNum(b) - dayNum(a);
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 /** "Nov 12". */
 export const shortDay = (iso: string) => `${MONTHS[Number(iso.slice(5, 7)) - 1]} ${Number(iso.slice(8, 10))}`;
-/** "today", "tomorrow", "Thursday", "Nov 20" — the next six days by weekday. */
-export function dayWord(iso: string, today: string): string {
+/** A moment's day on the company's clock: "2026-11-10T00:40:00Z" in Los Angeles is "2026-11-09" (a problem flagged at
+ *  4:40 PM there is today's, not tomorrow's). A plain day, or no zone, stays as written. */
+export function localDay(iso: string, tz?: string | null): string {
+  if (!tz || iso.length <= 10) return iso.slice(0, 10);
+  try {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
+  } catch {
+    return iso.slice(0, 10);
+  }
+}
+/** "today", "tomorrow", "Thursday", "Nov 20" — the next six days by weekday. A moment (a flag, a reminder, a send) is
+ *  read on the company's clock when its zone is given. */
+export function dayWord(when: string, today: string, tz?: string | null): string {
+  const iso = localDay(when, tz);
   const n = daysFrom(today, iso);
   if (n === 0) return "today";
   if (n === 1) return "tomorrow";
@@ -56,7 +68,11 @@ export type OvAct =
   | { t: "remind-picks"; note: string; label: string };
 
 export type OvTone = "red" | "amber";
-export type OvItem = { key: string; tone: OvTone; text: string; why: string | null; act: OvAct | null; alt: OvAct | null; rank: number };
+/** The row's step said to the AI Operator (part 2, the morning briefing's numbered replies, 2026-11-09): a write tool
+ *  with its arguments, planned and read back for a yes like any other; or a question the Operator answers with its
+ *  own tools. The label finishes "Reply 1 to …". */
+export type OvOp = { label: string; tool: string; args: Record<string, unknown> } | { label: string; ask: string };
+export type OvItem = { key: string; tone: OvTone; text: string; why: string | null; act: OvAct | null; alt: OvAct | null; rank: number; op?: OvOp | null };
 
 export type OvAhead = { key: string; day: string; title: string; stageId: string | null; ready: string[]; missing: string[] };
 
@@ -103,9 +119,15 @@ export type Overview = {
   money: OvMoney | null;
   road: OvStep[];
   history: OvEvent[];
+  /** One sentence on where the project stands (part 3, 2026-11-09): the AI's, checked against these numbers, or the
+   *  rules' own (lib/projectOverview/summary). Set by the page's loader; absent in the pure rules. */
+  summary?: string | null;
+  summaryBy?: "ai" | "rules";
+  /** False: the sentence is the rules' stand-in until today's is written (after the page is sent). */
+  summaryFresh?: boolean;
 };
 
-type Stage = { id: string; name: string; status: string; startsAt: string | null; endsAt: string | null; doneAt: string | null; gates?: Array<{ id: string; name: string; result: string; date: string | null }>; phaseId?: string | null };
+type Stage = { id: string; name: string; status: string; startsAt: string | null; endsAt: string | null; doneAt: string | null; gates?: Array<{ id: string; name: string; result: string; date: string | null }>; phaseId?: string | null; tasks?: Array<{ title: string; done: boolean }> };
 type Job = { title: string; status: string; startsAt: string | null; endsAt: string | null; crew: Array<{ name: string; status: string }> };
 type PayRow = { title: string; billed: number; paid: number; remaining: number; stages: Array<{ id: string; label: string; amount: number; status: string; paidAt: string | null; invoiceSentAt: string | null; remindedAt: string | null }> };
 
@@ -148,6 +170,7 @@ export const RED_LATE_DAYS = 3;
 /** Every item the Overview's Do now could show, ranked; the caller shows them in order. */
 export function doNowOf(r: OverviewInput): OvItem[] {
   const t = r.today;
+  const tz = r.timeline?.tz ?? null;
   const out: OvItem[] = [];
   const push = (x: OvItem) => out.push(x);
   const active = r.project.status !== "COMPLETED" && r.project.status !== "ARCHIVED";
@@ -155,7 +178,7 @@ export function doNowOf(r: OverviewInput): OvItem[] {
   // 0 · the crew is stuck
   for (const p of r.field?.problems ?? []) {
     if (p.status !== "OPEN") continue;
-    push({ key: `problem:${p.id}`, tone: p.blocking ? "red" : "amber", text: p.blocking ? `Crew stuck on ${p.jobTitle}: ${p.note}` : `Problem on ${p.jobTitle}: ${p.note}`, why: p.by ? `Flagged by ${p.by} ${p.at ? dayWord(p.at, t) : p.when}` : `Flagged ${p.at ? dayWord(p.at, t) : p.when}`, act: { t: "go", card: "field", label: "Open it" }, alt: null, rank: p.blocking ? 0 : 9 });
+    push({ key: `problem:${p.id}`, tone: p.blocking ? "red" : "amber", text: p.blocking ? `Crew stuck on ${p.jobTitle}: ${p.note}` : `Problem on ${p.jobTitle}: ${p.note}`, why: p.by ? `Flagged by ${p.by} ${p.at ? dayWord(p.at, t, tz) : p.when}` : `Flagged ${p.at ? dayWord(p.at, t, tz) : p.when}`, act: { t: "go", card: "field", label: "Open it" }, alt: null, rank: p.blocking ? 0 : 9 });
   }
   if (!active) return finishItems(r, out);
 
@@ -295,9 +318,9 @@ export function doNowOf(r: OverviewInput): OvItem[] {
   for (const p of r.payments) {
     for (const s of p.stages) {
       if (s.status !== "UNPAID" || !s.invoiceSentAt) continue;
-      const n = daysFrom(s.invoiceSentAt, t);
+      const n = daysFrom(localDay(s.invoiceSentAt, tz), t);
       if (n < 7) continue;
-      push({ key: `owed:${s.id}`, tone: n >= 21 ? "red" : "amber", text: `${r.project.clientName ?? "The client"} owes ${dollars(s.amount)}`, why: `${s.label}, invoiced ${plural(n, "day")} ago${s.remindedAt ? `, reminded ${dayWord(s.remindedAt, t)}` : ""}`, act: { t: "go", card: "payments", label: "Remind" }, alt: null, rank: 17 });
+      push({ key: `owed:${s.id}`, tone: n >= 21 ? "red" : "amber", text: `${r.project.clientName ?? "The client"} owes ${dollars(s.amount)}`, why: `${s.label}, invoiced ${plural(n, "day")} ago${s.remindedAt ? `, reminded ${dayWord(s.remindedAt, t, tz)}` : ""}`, act: { t: "go", card: "payments", label: "Remind" }, alt: null, rank: 17 });
     }
   }
   const next = r.draws?.lender ? r.draws.next : null;
@@ -311,49 +334,137 @@ export function doNowOf(r: OverviewInput): OvItem[] {
 
 function finishItems(r: OverviewInput, out: OvItem[]): OvItem[] {
   for (const f of r.finish) out.push({ key: `finish:${f.kind}`, tone: "amber", text: f.text, why: null, act: { t: "go", card: "finish", label: "Next step" }, alt: null, rank: 19 });
+  for (const x of out) x.op = opOf(x, r);
   return out.sort((a, b) => (a.tone === b.tone ? a.rank - b.rank : a.tone === "red" ? -1 : 1));
+}
+
+/** The Operator's step for a row (OvOp): the same thing its button does, where a tool does it. Rows whose button only
+ *  opens a card the Operator can't act on (a site problem, a late delivery, a contract to draft) have none. A question
+ *  is said so " on <the project>" ends it (lib/projectOverview/brief askText). */
+export function opOf(x: OvItem, r: OverviewInput): OvOp | null {
+  const projectId = r.project.id;
+  const cut = x.key.indexOf(":");
+  const kind = cut < 0 ? x.key : x.key.slice(0, cut);
+  const id = cut < 0 ? "" : x.key.slice(cut + 1);
+  const insp = () => (r.timeline?.inspections ?? []).find((i) => i.id === id) ?? null;
+  const stage = () => r.stages.find((s) => s.id === id) ?? null;
+  const client = r.project.clientName ?? "the client";
+  switch (kind) {
+    case "insp-result": {
+      const i = insp();
+      return i ? { label: `say ${i.name} passed`, tool: "inspection_result", args: { projectId, inspection: i.name, result: "PASSED", note: null } } : null;
+    }
+    case "insp-failed": {
+      const i = insp();
+      return i ? { label: `book the ${i.name} re-inspection`, ask: `Book the ${i.name} re-inspection` } : null;
+    }
+    case "late": {
+      const s = stage();
+      if (!s) return null;
+      return x.alt?.t === "stage-done" ? { label: `mark ${s.name} done`, tool: "set_stage", args: { projectId, stage: s.name, status: "DONE" } } : { label: `see what holds ${s.name} up`, ask: `What's holding up ${s.name}` };
+    }
+    case "start": {
+      const s = stage();
+      return s ? { label: `start ${s.name}`, tool: "set_stage", args: { projectId, stage: s.name, status: "ACTIVE" } } : null;
+    }
+    case "order":
+      return id ? { label: `order the ${id} materials`, ask: `Order the materials for ${id}` } : null;
+    case "picks-late":
+    case "picks-soon":
+      return x.act?.t === "remind-picks" ? { label: `remind ${client} to pick`, tool: "send_project_update", args: { projectId, note: x.act.note } } : null;
+    case "over-budget":
+    case "losing":
+      return { label: "see the ways to save", ask: "Where can I save money" };
+    case "sub-inv": {
+      const inv = (r.invoices?.invoices ?? []).find((v) => v.id === id);
+      return inv ? { label: `see ${inv.contractorName}'s invoice`, ask: `Show me the invoice from ${inv.contractorName}` } : null;
+    }
+    case "quotes-overdue":
+      return { label: "remind the subs who owe a quote", tool: "remind_subs", args: { projectId, stage: null } };
+    case "quotes-in":
+      return { label: "compare the quotes", ask: "Compare the quotes" };
+    case "owed": {
+      const amount = /\$[\d,]+/.exec(x.text)?.[0];
+      return { label: `remind ${client} to pay`, ask: `Remind ${client} to pay the ${amount ?? "balance"} they owe` };
+    }
+    case "draw": {
+      const d = r.draws?.next;
+      return d && d.id === id ? { label: `ask the lender for draw ${d.number}`, tool: "request_draw", args: { projectId, draw: String(d.number) } } : null;
+    }
+    case "finish":
+      return { label: "see what's left to finish", ask: "What's left to finish" };
+    default:
+      return null;
+  }
 }
 
 /** The next 14 days: each stage that starts in them with what it needs, and the inspections, deliveries and picks
  *  that fall in them. Soonest first. */
+/** What a stage needs before (or while) it runs, and what it has: its materials, the client's picks, the sub signed, its
+ *  inspections booked, the crew on the calendar. Coming up's list for each stage, and the Operator's "what's holding
+ *  up framing?" (holdupOf, part 3). */
+export function stageNeedsOf(s: Stage, r: OverviewInput): { ready: string[]; missing: string[]; inspections: string[] } {
+  const ready: string[] = [];
+  const missing: string[] = [];
+  const inspections: string[] = [];
+  const crewDays = new Set((r.timeline?.crewDays ?? []).map((c) => c.day));
+  const mats = (r.buying?.materials ?? []).filter((m) => m.stageId === s.id);
+  const toBuy = mats.filter((m) => m.quantity - m.orderedQty > 0);
+  if (toBuy.length) missing.push(`${plural(toBuy.length, "material")} not ordered`);
+  else if (mats.length) ready.push("Materials ordered");
+  for (const o of r.buying?.orders ?? []) {
+    if (o.stageName !== s.name || !o.expectedAt || ["DELIVERED", "PARTIAL", "CANCELED"].includes(o.status)) continue;
+    if (s.startsAt && daysFrom(s.startsAt, o.expectedAt) > 0) missing.push(`Order ${o.number} lands ${shortDay(o.expectedAt)}, after the start`);
+  }
+  const sels = (r.selections?.selections ?? []).filter((x) => x.stageId === s.id);
+  for (const x of sels.filter((x) => !x.chosenAt)) missing.push(`Client pick: ${x.name}${x.due ? `, due ${shortDay(x.due)}` : ""}`);
+  if (sels.length && sels.every((x) => x.chosenAt)) ready.push("Client picks made");
+  const qs = (r.subs?.quotes ?? []).filter((q) => q.stageId === s.id);
+  const signed = qs.find((q) => q.contract?.status === "EXECUTED");
+  const awarded = qs.find((q) => q.status === "AWARDED");
+  if (signed) ready.push(`${signed.contractorName} signed`);
+  else if (awarded) missing.push(awarded.contract && awarded.contract.status !== "CANCELLED" ? `${awarded.contractorName} contract not signed` : `${awarded.contractorName}: no contract yet`);
+  else if (qs.length || (r.subs?.requests ?? []).some((q) => q.stageId === s.id)) missing.push(qs.some((q) => q.status === "QUOTED") ? "Quotes in, no sub chosen" : "No sub chosen yet");
+  for (const i of (r.timeline?.inspections ?? []).filter((i) => i.stageId === s.id && i.result === "PENDING")) {
+    if (i.date) ready.push(`${i.name} booked ${shortDay(i.date)}`);
+    else missing.push(`${i.name} not booked`);
+    inspections.push(i.id);
+  }
+  if (crewDays.size && s.startsAt) {
+    const span = Math.max(0, s.endsAt ? daysFrom(s.startsAt!, s.endsAt) : 0);
+    const on = Array.from({ length: span + 1 }, (_, k) => new Date((dayNum(s.startsAt!) + k) * DAY).toISOString().slice(0, 10)).some((d) => crewDays.has(d));
+    if (on) ready.push("Crew on the calendar");
+    else missing.push("No crew on the calendar");
+  }
+  return { ready, missing, inspections };
+}
+
+export type OvHoldup = { stageId: string; name: string; status: string; days: string | null; late: number; gates: string[]; tasksLeft: string[]; ready: string[]; missing: string[]; crewStuck: string[] };
+
+/** "What's holding up framing?" (part 3): the stage's state and days, how late, the inspections not passed that hold it,
+ *  the tasks left, what it needs and has, and anything stopping the crew on the project. */
+export function holdupOf(r: OverviewInput, stageId: string): OvHoldup | null {
+  const s = r.stages.find((x) => x.id === stageId);
+  if (!s) return null;
+  const late = s.status !== "DONE" && s.endsAt ? Math.max(0, daysFrom(s.endsAt, r.today)) : 0;
+  const gates = (s.gates ?? []).filter((g) => g.result !== "PASSED").map((g) => `${g.name}${g.result === "FAILED" ? " failed" : g.date ? ` booked ${shortDay(g.date)}` : " not booked"}`);
+  const tasksLeft = (s.tasks ?? []).filter((x) => !x.done).map((x) => x.title).slice(0, 8);
+  const needs = stageNeedsOf(s, r);
+  const crewStuck = (r.field?.problems ?? []).filter((p) => p.status === "OPEN" && p.blocking).map((p) => `${p.jobTitle}: ${p.note}`);
+  const days = s.startsAt || s.endsAt ? [s.startsAt ? shortDay(s.startsAt) : null, s.endsAt ? shortDay(s.endsAt) : null].filter(Boolean).join(" to ") : null;
+  // An inspection not booked is said once, as the gate holding the stage.
+  return { stageId: s.id, name: s.name, status: s.status, days, late, gates, tasksLeft, ready: needs.ready, missing: needs.missing.filter((m) => !gates.includes(m)), crewStuck };
+}
+
 export function aheadOf(r: OverviewInput): OvAhead[] {
   const t = r.today;
   const inWindow = (d: string | null | undefined) => !!d && daysFrom(t, d) > 0 && daysFrom(t, d) <= AHEAD_DAYS;
   const out: OvAhead[] = [];
   const covered = new Set<string>();
-  const crewDays = new Set((r.timeline?.crewDays ?? []).map((c) => c.day));
   for (const s of r.stages) {
     if (s.status !== "PLANNED" || !inWindow(s.startsAt)) continue;
-    const ready: string[] = [];
-    const missing: string[] = [];
-    const mats = (r.buying?.materials ?? []).filter((m) => m.stageId === s.id);
-    const toBuy = mats.filter((m) => m.quantity - m.orderedQty > 0);
-    if (toBuy.length) missing.push(`${plural(toBuy.length, "material")} not ordered`);
-    else if (mats.length) ready.push("Materials ordered");
-    for (const o of r.buying?.orders ?? []) {
-      if (o.stageName !== s.name || !o.expectedAt || ["DELIVERED", "PARTIAL", "CANCELED"].includes(o.status)) continue;
-      if (daysFrom(s.startsAt!, o.expectedAt) > 0) missing.push(`Order ${o.number} lands ${shortDay(o.expectedAt)}, after the start`);
-    }
-    const sels = (r.selections?.selections ?? []).filter((x) => x.stageId === s.id);
-    for (const x of sels.filter((x) => !x.chosenAt)) missing.push(`Client pick: ${x.name}${x.due ? `, due ${shortDay(x.due)}` : ""}`);
-    if (sels.length && sels.every((x) => x.chosenAt)) ready.push("Client picks made");
-    const qs = (r.subs?.quotes ?? []).filter((q) => q.stageId === s.id);
-    const signed = qs.find((q) => q.contract?.status === "EXECUTED");
-    const awarded = qs.find((q) => q.status === "AWARDED");
-    if (signed) ready.push(`${signed.contractorName} signed`);
-    else if (awarded) missing.push(awarded.contract && awarded.contract.status !== "CANCELLED" ? `${awarded.contractorName} contract not signed` : `${awarded.contractorName}: no contract yet`);
-    else if (qs.length || (r.subs?.requests ?? []).some((q) => q.stageId === s.id)) missing.push(qs.some((q) => q.status === "QUOTED") ? "Quotes in, no sub chosen" : "No sub chosen yet");
-    for (const i of (r.timeline?.inspections ?? []).filter((i) => i.stageId === s.id && i.result === "PENDING")) {
-      if (i.date) ready.push(`${i.name} booked ${shortDay(i.date)}`);
-      else missing.push(`${i.name} not booked`);
-      covered.add(i.id);
-    }
-    if (crewDays.size) {
-      const span = Math.max(0, s.endsAt ? daysFrom(s.startsAt!, s.endsAt) : 0);
-      const on = Array.from({ length: span + 1 }, (_, k) => new Date((dayNum(s.startsAt!) + k) * DAY).toISOString().slice(0, 10)).some((d) => crewDays.has(d));
-      if (on) ready.push("Crew on the calendar");
-      else missing.push("No crew on the calendar");
-    }
+    const { ready, missing, inspections } = stageNeedsOf(s, r);
+    for (const id of inspections) covered.add(id);
     out.push({ key: `stage:${s.id}`, day: s.startsAt!.slice(0, 10), title: `${s.name} starts`, stageId: s.id, ready, missing });
   }
   for (const i of r.timeline?.inspections ?? []) {
@@ -374,12 +485,13 @@ export function aheadOf(r: OverviewInput): OvAhead[] {
 /** Who waits on whom: the client, each sub, the crew, the lender, a late supplier. */
 export function peopleOf(r: OverviewInput): OvPerson[] {
   const t = r.today;
+  const tz = r.timeline?.tz ?? null;
   const out: OvPerson[] = [];
   const clientName = r.share?.clientName ?? r.project.clientName;
   if (clientName) {
     const picks = (r.selections?.selections ?? []).filter((s) => !s.chosenAt && !s.stageDone);
     const owed = r.payments.flatMap((p) => p.stages).filter((s) => s.status === "UNPAID" && s.invoiceSentAt).reduce((n, s) => n + s.amount, 0);
-    const line = picks.length ? `you wait: ${plural(picks.length, "pick")}` : owed > 0 ? `owes ${dollars(owed)}` : r.share?.updateSentAt ? `last update ${dayWord(r.share.updateSentAt, t)}` : "nothing waiting";
+    const line = picks.length ? `you wait: ${plural(picks.length, "pick")}` : owed > 0 ? `owes ${dollars(owed)}` : r.share?.updateSentAt ? `last update ${dayWord(r.share.updateSentAt, t, tz)}` : "nothing waiting";
     out.push({ key: "client", role: "Client", name: clientName, line, waits: picks.length || owed > 0 ? "them" : null, phone: r.share?.clientPhone ?? r.project.clientPhone, email: r.share?.clientEmail ?? r.project.clientEmail });
   }
   const subs = new Map<string, OvPerson & { rank: number }>();
@@ -394,7 +506,7 @@ export function peopleOf(r: OverviewInput): OvPerson[] {
           : q.status === "AWARDED" && q.contract && q.contract.status !== "EXECUTED"
           ? ["contract not signed", "them", 2]
           : WAITING.includes(q.status)
-            ? [q.dueBy && q.dueBy < t ? "quote overdue" : `asked ${dayWord(q.askedAt, t)}`, "them", 3]
+            ? [q.dueBy && q.dueBy < t ? "quote overdue" : `asked ${dayWord(q.askedAt, t, tz)}`, "them", 3]
             : q.contract?.status === "EXECUTED"
               ? [`signed ${dollars(q.contract.amount)}`, null, 4]
               : ["", null, 9];

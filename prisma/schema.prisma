@@ -634,23 +634,23 @@ model ClientThread {
 }
 
 model ClientMessage {
-  id             String   @id @default(cuid())
-  organizationId String
-  threadId       String
-  direction      String // IN | OUT
-  channel        String // EMAIL | PORTAL | NOTE
-  fromAddr       String?
-  toAddr         String?
-  subject        String?
-  body           String
+  id              String   @id @default(cuid())
+  organizationId  String
+  threadId        String
+  direction       String // IN | OUT
+  channel         String // EMAIL | PORTAL | NOTE
+  fromAddr        String?
+  toAddr          String?
+  subject         String?
+  body            String
   attachmentsJson String?
-  rawUrl         String?
-  externalId     String?  @unique
-  emailMessageId String?
-  sentById       String?
-  aiReadJson     String?
-  status         String   @default("RECEIVED") // RECEIVED | SENT | FAILED
-  createdAt      DateTime @default(now())
+  rawUrl          String?
+  externalId      String?  @unique
+  emailMessageId  String?
+  sentById        String?
+  aiReadJson      String?
+  status          String   @default("RECEIVED") // RECEIVED | SENT | FAILED
+  createdAt       DateTime @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   thread       ClientThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
@@ -1359,26 +1359,42 @@ model PaymentConnection {
 // ─────────────────────────────────────────────
 
 model Job {
-  id                String    @id @default(cuid())
-  organizationId    String
-  clientId          String?
-  proposalId        String?
-  projectId         String?
-  title             String
-  status            String    @default("SCHEDULED")
-  scopeOfWork       String? // seeded from the linked proposal's scope; shown above notes on the job
+  id                  String    @id @default(cuid())
+  organizationId      String
+  clientId            String?
+  proposalId          String?
+  projectId           String?
+  title               String
+  status              String    @default("SCHEDULED")
+  scopeOfWork         String? // seeded from the linked proposal's scope; shown above notes on the job
   // When the crew marked the pick list loaded from the warehouse (2026-09-20).
-  materialsLoadedAt DateTime?
-  notes             String?
-  startsAt          DateTime?
-  endsAt            DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  materialsLoadedAt   DateTime?
+  notes               String?
+  startsAt            DateTime?
+  endsAt              DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  // REPAIRS AND COME-BACKS (2026-11-09, the ProSmart gaps plan, part 2). A repair is a real crew job — kind REPAIR —
+  // sent back to the house of the job that came back (`repairOfId`): the crew is texted, it lands on their schedule
+  // and the calendar, and it closes with the same Done as any job. It never carries the proposal (the contract
+  // stays the original job's); its crew pay and receipts count against the original job's profit (lib/jobCost).
+  // `repairReasons` = JSON string[] of lib/repairs/shared reason keys; `repairCause` WORKMANSHIP | PRODUCT | CLIENT
+  // (null = not sure) — only "our work" counts against the crew who did the job; `repairBillable` + `repairCharge`
+  // = the client pays, through a change order on the original contract (`repairChangeOrderId`). WORK | REPAIR.
+  kind                String    @default("WORK")
+  repairOfId          String?
+  repairReasons       String?
+  repairCause         String?
+  repairBillable      Boolean   @default(false)
+  repairCharge        Float?
+  repairChangeOrderId String?
 
   organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   client         Client?         @relation(fields: [clientId], references: [id])
   proposal       Proposal?       @relation(fields: [proposalId], references: [id])
   project        Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  repairOf       Job?            @relation("JobRepairs", fields: [repairOfId], references: [id], onDelete: SetNull)
+  repairs        Job[]           @relation("JobRepairs")
   events         JobEvent[]
   assignments    JobAssignment[]
   photos         JobPhoto[]
@@ -1394,6 +1410,8 @@ model Job {
 
   @@index([organizationId, status])
   @@index([projectId])
+  @@index([repairOfId])
+  @@index([organizationId, kind])
 }
 
 model JobEvent {
@@ -3093,8 +3111,8 @@ model Subcontract {
   version           SubQuoteVersion?         @relation(fields: [versionId], references: [id], onDelete: SetNull)
   pdfDocument       SubDocument?             @relation(fields: [pdfDocumentId], references: [id], onDelete: SetNull)
   changeOrders      SubcontractChangeOrder[]
-  invoices           SubInvoice[]
-  payments           SubPayment[]
+  invoices          SubInvoice[]
+  payments          SubPayment[]
 
   @@unique([organizationId, number])
   @@index([projectId, status])

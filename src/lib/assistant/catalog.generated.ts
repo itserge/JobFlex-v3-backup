@@ -601,6 +601,28 @@ export const CATALOG: Catalog = {
     "scheduled": false,
     "version": 1
   },
+  "book_repair": {
+    "label": "Book a repair",
+    "group": "schedule",
+    "effect": "schedule",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "comebacks": {
+    "label": "Come-backs",
+    "group": "crew",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
   "remind_me": {
     "label": "Reminder",
     "group": "reminders",
@@ -699,6 +721,28 @@ export const CATALOG: Catalog = {
     "pin": false,
     "scheduled": false,
     "version": 2
+  },
+  "project_overview": {
+    "label": "Project overview",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "projects_overview": {
+    "label": "Projects overview",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
   },
   "selections": {
     "label": "Selections",

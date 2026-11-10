@@ -64,6 +64,7 @@ import { Who } from "@/components/v3/who/who";
 import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
 import { useRouter } from "next/navigation";
 import "./mobile-job-detail.css";
+import { openRepairSheet } from "@/components/v3/repairs/repair-sheet";
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -279,6 +280,24 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
             )}
             <h1 className="mjd-title">{record.title}</h1>
             <div className="mjd-dates">{record.dates}</div>
+            {/* A repair says what it's for (2026-11-09); the desk page lets the office change why it came back. */}
+            {record.repair ? (
+              <div className="mjd-repair" data-job-repair-banner>
+                <b>Repair</b>
+                {record.repair.of ? (
+                  <>
+                    {" of "}
+                    <Link href={`/dashboard/jobs/${record.repair.of.id}` as Route}>{record.repair.of.title}</Link>
+                  </>
+                ) : null}{" "}
+                · {record.repair.causeLabel.toLowerCase()} · {record.repair.whoPays}
+              </div>
+            ) : record.comebacks?.length ? (
+              <div className="mjd-repair" data-job-comebacks>
+                {record.comebacks.length} come-back{record.comebacks.length === 1 ? "" : "s"}
+                {record.money && record.money.repairs > 0 ? ` · ${fmt(record.money.repairs)} off the profit` : ""}
+              </div>
+            ) : null}
           </div>
 
           {/* THE CREW'S DAY (2026-10-01, after the owner's iPhone check): the
@@ -441,7 +460,7 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
                   <div className="mjd-sec">
                     <div className="mjd-sec-l">Scope of work</div>
                     {record.scopeOfWork ? (
-                      <p>{record.scopeOfWork}</p>
+                      <p className="mjd-scope">{record.scopeOfWork}</p>
                     ) : (
                       <EmptyNote>No scope recorded on this job.</EmptyNote>
                     )}
@@ -817,15 +836,24 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
           The proposal link, and ONLY when the job has one. With no linked
           proposal the row is not rendered at all — the shell's third grid
           track collapses to zero and the sheet runs to the bottom edge. */}
-      {record.proposal && (
-        <div className="mjd-bar">
-          <Link
-            className="mjd-btn mjd-btn-primary mjd-btn-block"
-            href={`/dashboard/manual-blueprint?proposal=${record.proposal.id}` as Route}
-          >
-            <Icon id="i-file" />
-            View proposal · {fmt(record.proposal.total)}
-          </Link>
+      {(record.proposal || record.canWrite) && (
+        <div className={`mjd-bar${record.proposal && record.canWrite ? " mjd-bar--two" : ""}`}>
+          {/* Send someone back (2026-11-09) — the office's; the sheet is in the shell. */}
+          {record.canWrite && (
+            <button type="button" className={`mjd-btn ${record.proposal ? "mjd-btn-ghost" : "mjd-btn-primary"} mjd-btn-block`} onClick={() => openRepairSheet({ jobId: record.id })} data-job-repair>
+              <Icon id="i-wrench" />
+              {record.repair ? "Another repair" : record.comebacks?.length ? `Repair · ${record.comebacks.length}` : "Repair"}
+            </button>
+          )}
+          {record.proposal && (
+            <Link
+              className="mjd-btn mjd-btn-primary mjd-btn-block"
+              href={`/dashboard/manual-blueprint?proposal=${record.proposal.id}` as Route}
+            >
+              <Icon id="i-file" />
+              View proposal · {fmt(record.proposal.total)}
+            </Link>
+          )}
         </div>
       )}
     </div>

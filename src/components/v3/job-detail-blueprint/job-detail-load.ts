@@ -29,6 +29,7 @@ import { loadCrewBoard } from "@/components/v3/crew-board/crew-board-load";
 import { contractRevenue, contractTotal } from "@/lib/contractTotal";
 import { projectMoney } from "@/lib/projectMoney";
 import { crewTotals, jobMoney } from "@/lib/jobCosting";
+import { repairFactsFor } from "@/lib/repairs/server";
 import { jobCostOf, type JobCost } from "@/lib/jobCost";
 import { isTradeId, pickList } from "@/lib/inventory";
 import { inventoryLinkOf, linkedTradeOf } from "@/lib/inventoryPick";
@@ -401,6 +402,7 @@ export async function loadJobDetail(
     expenses: [cost.receipts],
     pendingExpenses: [cost.receiptsPending],
     stock: cost.stock,
+    repairs: cost.repairs,
   });
   const money: JdMoney = {
     contract: m.contract,
@@ -415,6 +417,8 @@ export async function loadJobDetail(
     expenses: m.expenses,
     expensesPending: m.expensesPending,
     stock: m.stock,
+    repairs: m.repairs,
+    repairsCount: cost.repairsCount,
     stockUnpriced: cost.unpriced,
     cost: m.cost,
     costIsPlanned: m.costIsPlanned,
@@ -537,6 +541,8 @@ export async function loadJobDetail(
     chrome: "dashboard",
     portal: null,
     field: await fieldOf(organizationId, job.id, { workerId: null, office: !isLimitedRole(role) }),
+    // What this repair is, and this job's come-backs (2026-11-09) — the office's; a sales seat reads no money.
+    ...(isOwnerOrManager(role) ? await repairFactsFor(organizationId, job.id) : {}),
   };
 }
 

@@ -35,6 +35,7 @@ import { ROOF_TOOLS } from "@/lib/assistant/roof";
 import { HVAC_TOOLS } from "@/lib/assistant/hvac";
 import { LAWN_TOOLS } from "@/lib/assistant/lawn";
 import { PROJECT_TOOLS } from "@/lib/assistant/projects";
+import { OVERVIEW_TOOLS } from "@/lib/assistant/overview";
 import { SELECTION_TOOLS } from "@/lib/assistant/selections";
 import { PHASE_TOOLS } from "@/lib/assistant/phases";
 import { MONEY_PLAN_TOOLS } from "@/lib/assistant/moneyPlan";
@@ -48,6 +49,8 @@ import { CLIENT_360_TOOLS } from "@/lib/assistant/clients360";
 import { INBOX_TOOLS } from "@/lib/assistant/inbox";
 import { PIPELINE_TOOLS } from "@/lib/assistant/pipeline";
 import { OPEN_TIME_TOOLS } from "@/lib/assistant/openTimes";
+// Repairs and come-backs (2026-11-09, the ProSmart gaps plan, part 2): book a repair, and the come-back counts.
+import { REPAIR_TOOLS } from "@/lib/assistant/repairs";
 import { CONTRACTOR_TOOLS } from "@/lib/assistant/contractors";
 // The subcontractors plan, part 6 (2026-11-09): find, requests, compare, the subs budget, invoices, documents, reminders,
 // approving and paying a sub's invoice.
@@ -1002,9 +1005,11 @@ export const TOOLS: readonly AnyTool[] = [
   ...PEOPLE_TOOLS, ...CLIENT_360_TOOLS, ...INBOX_TOOLS, ...PIPELINE_TOOLS,
   ...VISIT_TOOLS,
   ...OPEN_TIME_TOOLS,
+  ...REPAIR_TOOLS,
   ...REMIND_TOOLS,
   ...MONEY_TOOLS,
   ...PROJECT_TOOLS,
+  ...OVERVIEW_TOOLS,
   ...SELECTION_TOOLS,
   ...PHASE_TOOLS,
   ...MONEY_PLAN_TOOLS,

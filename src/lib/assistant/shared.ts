@@ -41,6 +41,8 @@ const NO = /^(n|no|nope|nah|cancel|don'?t|do not|never ?mind|no thanks|нет)$/
  *  read-back, UNDO, STOP / HELP (texting's keywords), or a single choice digit.
  *  "yes please" and "ok thanks" are a yes; "no, make it Friday" is not a bare
  *  no — it is a new request, and the model's. Anything longer is the model's. */
+const WORD_DIGITS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, first: 1, second: 2, third: 3 };
+
 export function quickReply(raw: string): QuickReply | null {
   const t = raw
     .trim()
@@ -57,8 +59,11 @@ export function quickReply(raw: string): QuickReply | null {
   if (/^(undo|stop it|wait|hold on|don'?t send)$/.test(t)) return { kind: "undo" };
   if (/^(stop|stopall|unsubscribe|end|quit)$/.test(t)) return { kind: "stop" };
   if (/^(help|info|\?)$/.test(t)) return { kind: "help" };
-  const d = /^(?:#|no\.? ?|number )?([1-9])$/.exec(t);
+  const d = /^(?:do |run )?(?:#|no\.? ?|number )?([1-9])$/.exec(t);
   if (d) return { kind: "digit", n: Number(d[1]) };
+  // Said, not typed (2026-11-09, the numbered replies by voice): "one", "number two", "the first one", "do the second one".
+  const w = /^(?:do |run )?(?:number |the )?(one|two|three|four|five|six|seven|eight|nine|first|second|third)(?: one)?$/.exec(t);
+  if (w) return { kind: "digit", n: WORD_DIGITS[w[1]] };
   return null;
 }
 

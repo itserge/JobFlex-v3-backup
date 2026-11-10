@@ -1105,3 +1105,10 @@ body:has(.jf-mobile-job-detail)::before { content: none; }
   font-variant-numeric: tabular-nums;
 }
 .jf-mobile-job-detail .mjd-tab.mjd-on i { color: rgba(242, 240, 235, 0.65); }
+
+/* Repairs (2026-11-09): the line under a repair's dates, and two buttons in the thumb bar. */
+.jf-mobile-job-detail .mjd-repair { margin-top: 8px; font-size: 13px; line-height: 1.4; color: var(--muted); }
+.jf-mobile-job-detail .mjd-repair b { color: var(--ink); font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; font-size: 11.5px; }
+.jf-mobile-job-detail .mjd-repair a { color: var(--blueprint); font-weight: 700; }
+.jf-mobile-job-detail .mjd-bar--two { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); gap: 8px; }
+.jf-mobile-job-detail .mjd-scope { white-space: pre-line; }

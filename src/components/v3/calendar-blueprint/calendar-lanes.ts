@@ -3,18 +3,20 @@
 // One set of rules for the desktop grid (calendar-behavior) and the handheld build (mobile-calendar-v2):
 //
 //   Projects     — job visits whose job belongs to a project;
-//   Installs     — every other job visit;
+//   Installs     — every other job visit, repairs aside;
+//   Repairs      — the come-backs (a job of kind REPAIR, 2026-11-09);
 //   Appointments — estimate visits;
 //   All          — everything, blocked time and the AI desk's hours included.
 //
 // Picked projects narrow the grid to those projects' jobs. The lane and the picks stick per browser — a convenience,
 // so every read and write may fail quietly and the calendar opens on All.
-export type Lane = "all" | "projects" | "appointments" | "installs";
+export type Lane = "all" | "projects" | "appointments" | "installs" | "repairs";
 export const LANES: Array<[Lane, string]> = [
   ["all", "All"],
   ["projects", "Projects"],
   ["appointments", "Appointments"],
   ["installs", "Installs"],
+  ["repairs", "Repairs"],
 ];
 
 const LANE_KEY = "jf-cal-lane";
@@ -43,9 +45,10 @@ export function savePick(lane: Lane, projects: string[]): void {
 }
 
 /** Does the event belong to the lane and the picked projects? */
-export function shownBy(e: { kind: string; projectId?: string | null }, lane: Lane, projects: readonly string[]): boolean {
+export function shownBy(e: { kind: string; projectId?: string | null; repair?: boolean }, lane: Lane, projects: readonly string[]): boolean {
   if (lane === "projects" && !(e.kind === "job" && e.projectId)) return false;
-  if (lane === "installs" && !(e.kind === "job" && !e.projectId)) return false;
+  if (lane === "installs" && !(e.kind === "job" && !e.projectId && !e.repair)) return false;
+  if (lane === "repairs" && !(e.kind === "job" && e.repair)) return false;
   if (lane === "appointments" && e.kind !== "appointment") return false;
   if (projects.length && (!e.projectId || !projects.includes(e.projectId))) return false;
   return true;

@@ -78,6 +78,8 @@ export type CalEvent = {
    *  crew is paid — the chip reads "$14k → $2.1k". */
   value?: number | null;
   crewPay?: number | null;
+  /** A repair job (kind REPAIR, 2026-11-09) — the Repairs lane and the chip's wrench. */
+  repair?: boolean;
 };
 
 /** `userId`: the login behind the crew profile — reserved AI desk hours are kept by user (lib/deskHours). */
@@ -98,6 +100,8 @@ export type TrayJob = {
   /** THE "TO PLACE" LIST (calendar part 1, 2026-11-09): "job" = sold work waiting for a day (the default); "visit" = a
    *  lead waiting for a visit — `id` is then "lead:<leadId>" and a drop books an appointment, not a job. */
   kind?: "job" | "visit";
+  /** A repair (a come-back, 2026-11-09): its own "Repairs to book" group, booked on whoever is already on it. */
+  repair?: boolean;
   /** How long the booking takes, in minutes: the job's planned span, a visit's hour. Absent = 4 hours. */
   durationMin?: number | null;
   /** The job's value (its proposal's total) — managers only; the card and "First open times" show it. */

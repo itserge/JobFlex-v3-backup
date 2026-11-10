@@ -518,6 +518,7 @@ export function initCalendarContent(
   /** The chip's leading icon: the channel's for a visit, the kind's otherwise. */
   function evIcon(e: CalEvent) {
     if (e.kind === "appointment") return VISIT_VIA[e.via || "team"].icon;
+    if (e.repair) return "i-wrench";
     return KIND_IC[e.kind] || "i-cal";
   }
   /** A project's job carries its project: a swatch in the project's colour and the name, which is what tells two
@@ -800,7 +801,7 @@ export function initCalendarContent(
     const proj = projTag(e);
     const dayOf = dayOfJob(e);
     const cash = moneyLine(e);
-    return '<button class="evc ' + statusCls(e) + (proj ? " evc--proj" : "") + '" type="button" draggable="' + canDrag(e) + '" data-ev="' + e.id + '"' + projAttrs(e) + ">" +
+    return '<button class="evc ' + statusCls(e) + (proj ? " evc--proj" : "") + (e.repair ? " evc--repair" : "") + '" type="button" draggable="' + canDrag(e) + '" data-ev="' + e.id + '"' + projAttrs(e) + ">" +
       '<span class="evc-t"><svg class="ic"><use href="#' + evIcon(e) + '"/></svg><span class="evc-txt">' + esc(e.title) + "</span></span>" +
       (compact
         ? (e.kind === "appointment" || proj ? '<span class="evc-time">' + viaTag(e) + proj + "</span>" : "")
@@ -1355,12 +1356,14 @@ export function initCalendarContent(
   }
   function trayCardHtml(j: TrayJob) {
     const visit = j.kind === "visit";
-    return '<div class="tray-card' + (visit ? " tray-card--visit" : "") + '" draggable="true" data-job="' + esc(j.id) + '">' +
+    const who = j.repair && j.ownerWorkerId ? workersData.find(function (w) { return w.id === j.ownerWorkerId; })?.name : undefined;
+    return '<div class="tray-card' + (visit ? " tray-card--visit" : "") + (j.repair ? " tray-card--repair" : "") + '" draggable="true" data-job="' + esc(j.id) + '">' +
       '<div class="tray-top"><div class="tray-t">' + esc(visit ? j.client : j.title) + "</div>" +
       '<button class="tray-open" type="button" data-open-times="' + esc(j.id) + '" title="First open times" aria-label="First open times for ' + esc(visit ? j.client : j.title) + '">' +
       '<svg class="ic"><use href="#i-cal"/></svg></button></div>' +
       '<div class="tray-c">' + esc(visit ? j.title : j.client) + " · " + esc(j.city) + "</div>" +
-      '<div class="tray-m">' + (visit ? "Visit" : "Ready to book") + " · " + lenWords(trayLen(j)) +
+      '<div class="tray-m">' + (visit ? "Visit" : j.repair ? "Repair" : "Ready to book") + " · " + lenWords(trayLen(j)) +
+      (j.repair ? " · " + esc(who || "nobody on it yet") : "") +
       (canManage && j.value ? " · " + money0(j.value) : "") + "</div>" +
       '<div class="tray-slots" data-slots="' + esc(j.id) + '"></div>' +
       "</div>";
@@ -1368,9 +1371,14 @@ export function initCalendarContent(
   function renderTray() {
     const trayList = byId("trayList");
     if (!trayList) return;
-    const jobs = trayJobs.filter(function (j) { return j.kind !== "visit"; });
+    const repairs = trayJobs.filter(function (j) { return j.repair; });
+    const jobs = trayJobs.filter(function (j) { return j.kind !== "visit" && !j.repair; });
     const visits = trayJobs.filter(function (j) { return j.kind === "visit"; });
     let html = "";
+    // Come-backs first (2026-11-09): a client is waiting on a fix.
+    if (repairs.length) {
+      html += '<div class="tray-sec tray-sec--repair">Repairs to book <span>' + repairs.length + "</span></div>" + repairs.map(trayCardHtml).join("");
+    }
     if (jobs.length) {
       html += '<div class="tray-sec">Ready to book <span>' + jobs.length + "</span></div>";
       const seen = new Set<string>();
@@ -1407,7 +1415,7 @@ export function initCalendarContent(
       return all.filter(function (w) { return me && w.userId === me; });
     }
     if (cal.workers.length === 1) return all.filter(function (w) { return w.id === cal.workers[0]; });
-    if (j.kind === "visit" && j.ownerWorkerId) {
+    if ((j.kind === "visit" || j.repair) && j.ownerWorkerId) {
       const own = all.filter(function (w) { return w.id === j.ownerWorkerId; });
       if (own.length) return own;
     }
@@ -1455,6 +1463,7 @@ export function initCalendarContent(
       start, end, status: "SCHEDULED", workers: workerId ? [workerId] : [], client: j.client, addr: j.city,
       leadId: j.leadId,
       ...(visit ? {} : { jobId: j.id, value: j.value ?? null }),
+      ...(j.repair ? { repair: true } : {}),
     };
     eventsData.push(created);
     landed = created.id;
@@ -1463,7 +1472,8 @@ export function initCalendarContent(
     renderCal(); flashEvent();
     if (!wired) return;
     if (visit) void persistVisitDrop(created, j, workerId);
-    else void persistTrayDrop(created, j, day, true, workerId);
+    // A repair keeps whoever the office sent — put on again, they'd be asked (and texted) twice.
+    else void persistTrayDrop(created, j, day, true, j.repair && workerId === j.ownerWorkerId ? null : workerId);
   }
   async function persistVisitDrop(created: CalEvent, j: TrayJob, workerId: string | null) {
     try {
@@ -3040,7 +3050,7 @@ export function initCalendarContent(
     } else if (cal.dragJob) {
       const j = trayJobs.find(function (x) { return x.id === cal.dragJob; });
       // Calendar part 1: a card dropped while the calendar shows ONE person goes to them; a visit books a visit.
-      const toWorker = targetWorker || (canManage && cal.workers.length === 1 ? cal.workers[0] : null) || selfWorkerId();
+      const toWorker = targetWorker || (canManage && cal.workers.length === 1 ? cal.workers[0] : null) || selfWorkerId() || (j && j.repair ? j.ownerWorkerId ?? null : null);
       if (j && (j.kind === "visit" || dropMins != null)) {
         cal.dragEvent = null; cal.dragJob = null;
         bookTray(j, dropMins != null ? atMins(day, dropMins) : atMins(day, 9 * 60), toWorker);
@@ -3056,15 +3066,15 @@ export function initCalendarContent(
         const created: CalEvent = {
           id: "e" + evSeq, kind: "job", title: j.title + " — " + j.client,
           start: ns, end: new Date(ns.getTime() + 4 * 3600 * 1000),
-          status: "SCHEDULED", workers: targetWorker ? [targetWorker] : [],
-          client: j.client, addr: j.city,
+          status: "SCHEDULED", workers: targetWorker ? [targetWorker] : j.repair && j.ownerWorkerId ? [j.ownerWorkerId] : [],
+          client: j.client, addr: j.city, ...(j.repair ? { repair: true } : {}),
         };
         eventsData.push(created);
         landed = "e" + evSeq;
         trayJobs = trayJobs.filter(function (x) { return x.id !== j.id; });
         cal.dragEvent = null; cal.dragJob = null;
         renderCal(); flashEvent();
-        if (wired) void persistTrayDrop(created, j, day, dropMins != null || hour != null, targetWorker);
+        if (wired) void persistTrayDrop(created, j, day, dropMins != null || hour != null, j.repair && targetWorker === j.ownerWorkerId ? null : targetWorker);
         return;
       }
     }
