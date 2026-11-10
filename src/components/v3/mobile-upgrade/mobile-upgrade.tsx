@@ -104,7 +104,7 @@ export type MobileUpgradeProps = {
   /** Rendered inside the subscription page: no shell, no head, no return-leg
    *  banners — the cards as a swipe carousel plus their sheets. */
   embedded?: boolean;
-  /** The subscription page opens compact cards; upgrade keeps full lists. */
+  /** The subscription page's quieter cards (no description line on Build your plan, no note under the rail); every list is open. */
   compactFeatures?: boolean;
   /** TEMP (2026-09-19): the DEV ONLY block, handed in by the page behind the
    *  server gate; undefined everywhere else. */
@@ -635,7 +635,7 @@ export function MobileUpgradeContent({
           <PlanDealSlot term={interval} monthlyCents={p.priceCents} yearlyCents={p.yearlyPriceCents} />
         </div>
 
-        <PlanFeatures compact={compactFeatures} name={p.name}>
+        <PlanFeatures>
         <ul className="mu-feats" data-plan-feats>
           {featureRows.map((f) => {
             const on = has?.has(f.toLowerCase()) ?? false;
@@ -1052,7 +1052,7 @@ export function MobileUpgradeContent({
 
             {/* ON THE PLAN: only the pages it holds, nothing when none
                 (owner, 2026-09-04). OFF it: the add-on list, ticked as picked. */}
-            <PlanFeatures compact={compactFeatures} name="Build your plan">
+            <PlanFeatures>
             <ul className="mu-feats" data-plan-feats>
               {onCustom
                 ? CUSTOM_PAGES.filter((pg) => owned.includes(pg.id)).map((pg) => (
@@ -1230,16 +1230,7 @@ export function MobileUpgradeContent({
   );
 }
 
-function PlanFeatures({ compact, name, children }: { compact: boolean; name: string; children: React.ReactNode }) {
-  if (!compact) return children;
-  return (
-    <details className="mu-feature-details">
-      <summary aria-label={`View features for ${name}`}>
-        <span className="mu-features-closed">View features</span>
-        <span className="mu-features-open">Hide features</span>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
-      </summary>
-      {children}
-    </details>
-  );
+/** A card's feature list (owner, 2026-11-09): open on every surface — the subscription page's "View features" fold is gone. */
+function PlanFeatures({ children }: { children: React.ReactNode }) {
+  return children;
 }
