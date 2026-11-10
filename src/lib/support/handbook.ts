@@ -139,7 +139,7 @@ Press **Upgrade / Downgrade / Switch to annual / Switch to monthly** on a card, 
 
 ### Cancel and keep
 Since 2026-11-09 the only place a plan is cancelled is the **Subscription** page (/dashboard/subscription — the left menu on a computer; the menu behind the ☰ at the top left on a phone). Owner only; the page itself is the owner's. Settings → Billing → **Manage subscription** still shows the plan, price, date and card, but has no cancel button any more.
-1. At the foot of the dark "Your plan" card: **Cancel subscription** (a quiet outline button).
+1. At the top of the page, beside the blue **Upgrade plan**: **Cancel subscription** (a white outline button; on a phone it is under Upgrade plan). Once a cancel is booked it reads "Cancels on <date>" instead.
 2. "Before you cancel — what's the main reason?" — pick one: **I didn't have enough time to really try it** · **The tools or features didn't work for me** · **Something else** → **Continue** (or **Keep my plan**). Every screen has **Back** (top left) and keeps the answers; the cross or Esc closes the window and changes nothing.
    - Not enough time → "What got in the way?" (pick at least one: Busy season, no time to set up · I didn't know where to start · Setup took longer than expected · Waiting on my team / partner · Other with their words) and, optional, "What would you try first if you had more time?" (the tools). Then, only on a trial or within 14 days after it ended: "Want 7 or 14 more days to try it properly?" → 7 / 14 → **Request extension** ("Request sent — We'll answer by email within one business day."; nothing is cancelled, the window closes) or **No, continue cancelling**. One open request per company ("Request pending"). A JobFlex admin approves (email "Your trial is extended until <date>") or declines (email "We couldn't extend your trial this time"). Support cannot promise an extension — the admins decide.
    - Tools didn't work → "Which tools didn't work for you?" (at least one) → "What was wrong with <tool>?" for each, all optional → "What are you using instead?" and "If we fixed this, would you give JobFlex another try?" (Yes — email me when it's fixed · Maybe · No).
@@ -152,7 +152,7 @@ Since 2026-11-09 the only place a plan is cancelled is the **Subscription** page
 
 **The steps to send the customer — word for word, only <plan> and <date> filled in** (2026-11-09; a customer told "follow the steps" once missed the small **Continue to cancel** link):
 1. Open Subscription: https://www.jobflex.app/dashboard/subscription — or click **Subscription** in the left menu (on a phone, tap ☰ at the top left, then Subscription). Only the account owner sees this page.
-2. At the bottom of the dark "Your plan" card, click **Cancel subscription**.
+2. At the top of the page, next to **Upgrade plan** (on a phone, just under it), click **Cancel subscription**.
 3. Pick the main reason, answer the short questions on each screen, and click **Continue** each time.
 4. On "Before you go", click **Continue to cancel** — the link under the big **Keep <plan>** button.
 5. On "Cancel <plan>?", click **Cancel subscription**.

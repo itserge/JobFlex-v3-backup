@@ -362,6 +362,22 @@ export function MobileSubscription({
             <div className="jfms-kicker">Account</div>
             <h1 className="jfms-pageTitle">Subscription</h1>
             <p className="jfms-pageSub">Your plan, what it bills, and what it has cost.</p>
+            {/* The head's two actions (owner, 2026-11-09): Upgrade plan, then the
+                way out — one over the other, the width, 44px. Once booked the
+                date stands in Cancel's place; on Free or a grant, nothing. */}
+            <div className="jfms-headActs">
+              <Link className="jfms-btn jfms-btnPrimary" href={"/dashboard/upgrade" as Route}>
+                <Icon id="i-arrow" className="jfms-ic" />
+                Upgrade plan
+              </Link>
+              {cancel ? (
+                <CancelFlow offer={cancel} className="jfms-btn jfms-btnLine" />
+              ) : freeSwitch && !complimentary ? (
+                <p className="jfms-headNote" data-cancels-on="">
+                  {freeSwitch.at ? <>Cancels on <b>{longDate(freeSwitch.at)}</b></> : "Cancels at the end of the cycle"}
+                </p>
+              ) : null}
+            </div>
           </div>
 
           <BillingRecovery isOwner status={status} blocked={accessBlocked} />
@@ -441,13 +457,6 @@ export function MobileSubscription({
                 ) : null}
               </div>
             ) : null}
-            {/* The way out (owner, 2026-11-09): the plan card's foot, a quiet
-                full-width outline — the one place an owner cancels. */}
-            {cancel ? (
-              <div className="jfms-heroFoot">
-                <CancelFlow offer={cancel} className="jfms-heroCancel" />
-              </div>
-            ) : null}
           </section>
 
           {/* The Deck Studio add-on (2026-10-19) — reads its own state. */}
@@ -470,7 +479,7 @@ export function MobileSubscription({
 
           {/* ============ THE SWITCH TO FREE, BOOKED ============
               The date and the way back (lib/freePlan). Cancelling itself is
-              the plan card's foot button. */}
+              the page head's second button. */}
           {freeSwitch && !complimentary ? (
             <FreeSwitchNotice planName={planName} at={freeSwitch.at} canKeep />
           ) : null}

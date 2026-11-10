@@ -1,9 +1,9 @@
 "use client";
 
 // Subscription overview shares the live loader and plan actions with the
-// dedicated mobile composition. Cancelling lives here, at the foot of the plan
-// card (owner, 2026-11-09 — components/billing/CancelFlow, the one place an
-// owner cancels). Secondary details use native disclosures.
+// dedicated mobile composition. Cancelling lives here, in the page head beside
+// Upgrade plan (owner, 2026-11-09 — components/billing/CancelFlow, the one place
+// an owner cancels). Secondary details use native disclosures.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -205,13 +205,24 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
             </svg>
             Upgrade plan
           </Link>
+          {/* THE WAY OUT (owner, 2026-11-09): the secondary outline beside
+              Upgrade plan (lib/cancelOfferServer says when there is one).
+              Once booked, the date stands in its place; on Free or a grant,
+              nothing. */}
+          {props.cancel ? (
+            <CancelFlow offer={props.cancel} className={cx("btn", "btn-line")} />
+          ) : freeSwitch && !comp ? (
+            <span className={cx("head-note")} data-cancels-on="">
+              {freeSwitch.at ? <>Cancels on <b>{longDate(freeSwitch.at)}</b></> : "Cancels at the end of the cycle"}
+            </span>
+          ) : null}
         </div>
       </div>
 
       <BillingRecovery isOwner status={props.status} blocked={props.accessBlocked} />
 
       {/* CURRENT PLAN HERO */}
-      <section className={cx("sub-hero", props.cancel && "sub-hero--foot", RV)}>
+      <section className={cx("sub-hero", RV)}>
         <div className={cx("sub-hero-l")}>
           <div className={cx("sub-hero-meta")}>Your plan</div>
           <div className={cx("sub-hero-name")}>{props.planName}</div>
@@ -311,14 +322,6 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
             ) : null}
           </div>
         </div>
-        {/* THE WAY OUT (owner, 2026-11-09): a quiet secondary button at the
-            card's foot, the one place an owner cancels (lib/cancelOfferServer
-            says when there is one). */}
-        {props.cancel ? (
-          <div className={cx("sub-hero-foot")}>
-            <CancelFlow offer={props.cancel} className={cx("sub-cancel")} />
-          </div>
-        ) : null}
       </section>
 
       {/* THE DECK STUDIO ADD-ON (owner, 2026-10-19): on the plan with Remove, or the way to add it — reads its own state. */}
@@ -328,7 +331,7 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
       </div>
 
       {/* THE SWITCH TO FREE, BOOKED (owner, 2026-10-13): the date and the
-          way back. Cancelling itself is the plan card's foot button. */}
+          way back. Cancelling itself is the page head's second button. */}
       {freeSwitch && !comp ? (
         <FreeSwitchNotice className={cx(RV)} planName={props.planName} at={freeSwitch.at} canKeep />
       ) : null}
