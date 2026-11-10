@@ -123,6 +123,20 @@
 .content #allCard[data-card="c"] .cc .cc-mk {
   font: 700 10.5px/1.2 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-muted);
 }
+/* "1 late" beside the contract (2026-11-09): payments past due and still open. */
+.content #allCard[data-card="c"] .cc .cc-late {
+  display: inline-flex; align-items: center; margin-left: 8px; padding: 2px 7px;
+  border: 1.5px solid var(--danger, #a83232); color: var(--danger, #a83232); background: #fff;
+  font: 800 10px/1.2 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; vertical-align: 1px;
+}
+/* The Payments panel's door, under the paid / due line. */
+.content #allCard[data-card="c"] .cc .cc-pay-open {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; height: 30px; padding: 0 10px;
+  border: 1.5px solid var(--ink); border-radius: 2px; background: #fff; color: var(--ink);
+  font: 800 11px/1 var(--font-sans); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;
+}
+.content #allCard[data-card="c"] .cc .cc-pay-open .ic { width: 13px; height: 13px; }
+.content #allCard[data-card="c"] .cc .cc-pay-open:hover { background: var(--accent-soft, #eef3fa); }
 .content #allCard[data-card="c"] .cc .cc-amt {
   margin-top: 6px;
   font-size: 22px; font-weight: 900; line-height: 1.1; letter-spacing: -0.01em;

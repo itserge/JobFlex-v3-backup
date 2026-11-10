@@ -74,6 +74,7 @@ import { Who } from "@/components/v3/who/who";
 import { CrewActions, CrewDays, CrewPendingBanner, CrewReceipts } from "@/components/v3/crew-board/crew-board";
 import { CrewField } from "@/components/v3/crew-board/crew-field";
 import { openRepairSheet } from "@/components/v3/repairs/repair-sheet";
+import { openPaymentsPanel } from "@/components/v3/payments-panel/payments-sheet";
 import { setRepairCauseAction } from "@/actions/repairs";
 import { REPAIR_CAUSES } from "@/lib/repairs/shared";
 
@@ -224,6 +225,13 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
             <button type="button" className={cx("btn", "btn-ghost", "jd-vp")} onClick={() => openRepairSheet({ jobId: record.id })} data-job-repair>
               <Ic id="i-wrench" />
               {record.repair ? "Another repair" : record.comebacks?.length ? `Repair · ${record.comebacks.length}` : "Repair"}
+            </button>
+          )}
+          {/* Every payment on the job's contract (2026-11-09) — the office's. */}
+          {record.canWrite && record.proposal && (
+            <button type="button" className={cx("btn", "btn-ghost", "jd-vp")} onClick={() => openPaymentsPanel({ proposalId: record.proposal!.id })} data-job-payments>
+              <Ic id="i-card" />
+              Payments
             </button>
           )}
           {record.proposal && (

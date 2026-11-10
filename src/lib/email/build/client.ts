@@ -435,3 +435,39 @@ export function buildPaymentReceipt(i: PaymentReceiptInput): EmailDoc {
     footer: orgFooter(i.org, i.ref),
   };
 }
+
+export interface OrderNoticeInput {
+  org: OrgBrand;
+  clientName: string;
+  title: string;
+  /** The office's own line ("Delivery is about three weeks out."), or none. */
+  note: string | null;
+  paidToDate: number;
+  remaining: number;
+  href: string;
+  ref: string;
+}
+
+/** "Your order is placed" (2026-11-09, the ProSmart gaps plan, part 3): the materials for the job are ordered — the
+ *  letter a client waits for after the deposit. Sent from the Payments panel, or by itself on the first payment when
+ *  the company switches that on (Settings → Payments). */
+export function buildOrderNotice(i: OrderNoticeInput): EmailDoc {
+  const first = i.clientName.split(" ")[0] || "there";
+  const prose = [`We've placed the order for ${i.title}. Thank you for your deposit — your job is now in production.`];
+  if (i.note?.trim()) prose.push(i.note.trim());
+  prose.push("We'll be in touch to set the install day. Reply to this email with any question.");
+  return {
+    subject: `Your order is placed — ${truncate(i.title, 48)}`,
+    lockup: orgLockup(i.org),
+    kicker: { text: "Order placed", tone: "ok" },
+    headline: `Good news, ${first}`,
+    prose,
+    box: [
+      { type: "item", name: "Paid to date", amount: formatUSD(i.paidToDate) },
+      { type: "anchor", label: "Remaining", value: formatUSD(i.remaining) },
+    ],
+    link: { label: "View your proposal", href: i.href },
+    fine: `Ref ${i.ref}`,
+    footer: orgFooter(i.org, i.ref),
+  };
+}

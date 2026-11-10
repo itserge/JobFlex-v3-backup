@@ -65,6 +65,7 @@ import { ChangeOrderSheet } from "@/components/changeOrders/ChangeOrderSheet";
 import { useRouter } from "next/navigation";
 import "./mobile-job-detail.css";
 import { openRepairSheet } from "@/components/v3/repairs/repair-sheet";
+import { openPaymentsPanel } from "@/components/v3/payments-panel/payments-sheet";
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -837,12 +838,18 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
           proposal the row is not rendered at all — the shell's third grid
           track collapses to zero and the sheet runs to the bottom edge. */}
       {(record.proposal || record.canWrite) && (
-        <div className={`mjd-bar${record.proposal && record.canWrite ? " mjd-bar--two" : ""}`}>
+        <div className={`mjd-bar${record.proposal && record.canWrite ? " mjd-bar--three" : ""}`}>
           {/* Send someone back (2026-11-09) — the office's; the sheet is in the shell. */}
           {record.canWrite && (
             <button type="button" className={`mjd-btn ${record.proposal ? "mjd-btn-ghost" : "mjd-btn-primary"} mjd-btn-block`} onClick={() => openRepairSheet({ jobId: record.id })} data-job-repair>
               <Icon id="i-wrench" />
               {record.repair ? "Another repair" : record.comebacks?.length ? `Repair · ${record.comebacks.length}` : "Repair"}
+            </button>
+          )}
+          {record.canWrite && record.proposal && (
+            <button type="button" className="mjd-btn mjd-btn-ghost mjd-btn-block" onClick={() => openPaymentsPanel({ proposalId: record.proposal!.id })} data-job-payments>
+              <Icon id="i-card" />
+              Payments
             </button>
           )}
           {record.proposal && (

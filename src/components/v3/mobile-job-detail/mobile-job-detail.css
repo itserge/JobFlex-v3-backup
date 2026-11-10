@@ -1112,3 +1112,5 @@ body:has(.jf-mobile-job-detail)::before { content: none; }
 .jf-mobile-job-detail .mjd-repair a { color: var(--blueprint); font-weight: 700; }
 .jf-mobile-job-detail .mjd-bar--two { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); gap: 8px; }
 .jf-mobile-job-detail .mjd-scope { white-space: pre-line; }
+.jf-mobile-job-detail .mjd-bar--three { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.jf-mobile-job-detail .mjd-bar--three > :last-child { grid-column: 1 / -1; }
