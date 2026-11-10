@@ -76,6 +76,8 @@ import { getCrmSnapshot } from "./crm-snapshot";
 import { getCrmBrief } from "@/actions/crmBrief";
 import { moneyShort, type CrmBrief } from "@/lib/crm/brief";
 import { OfficePanel, TodayPanel } from "@/components/v3/crm-blueprint/crm-brief";
+import { AgentDesk } from "@/components/v3/crm-blueprint/crm-agent";
+import { FOLLOW_UP_MODES, FOLLOW_UP_WORDS, modeLabel, type FollowUpMode, type FollowUpWords } from "@/lib/followUps/agent";
 import {
   LEAD_CLS,
   PAGE_BOOK,
@@ -357,7 +359,10 @@ export function MobileCrm() {
   /* ---- rule form sheet ---- */
   const [ruleOpen, setRuleOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "", trigger: "SENT", days: "2", channel: "EMAIL" as FollowUpChannel });
+  const [form, setForm] = useState({ name: "", trigger: "SENT", days: "2", channel: "EMAIL" as FollowUpChannel, mode: "AUTO" as FollowUpMode, words: "STANDARD" as FollowUpWords });
+  // What the desk band (follow-ups waiting for a yes + promises) holds for the person today.
+  const [deskN, setDeskN] = useState(0);
+  const followUpClosed = useCallback((id: string) => setQueue((prev) => prev.filter((q) => q.id !== id)), []);
   const [nameErr, setNameErr] = useState(false);
   const [daysErr, setDaysErr] = useState<string | null>(null);
 
@@ -944,6 +949,8 @@ export function MobileCrm() {
       trigger: r?.triggerStatus ?? "SENT",
       days: String(days),
       channel: r?.channel ?? "EMAIL",
+      mode: r?.mode ?? "AUTO",
+      words: r?.words ?? "STANDARD",
     });
     // The preview under the list follows the form, so closing the sheet leaves
     // the card on the message the rule being edited actually sends.
@@ -994,6 +1001,8 @@ export function MobileCrm() {
         // A new rule starts live; an edit keeps whatever the switch says.
         enabled: existing ? existing.enabled : true,
         channel: form.channel,
+        mode: form.mode,
+        words: form.words,
       });
       if (!res.ok) throw new Error(res.error);
     });
@@ -1220,7 +1229,7 @@ export function MobileCrm() {
 
           {/* ============ TAB: TODAY — what to check ============ */}
           {ready && tab === "today" && brief && (
-            <TodayPanel key={brief.today.dayKey} today={brief.today} onGoto={(t) => goTab(t === "queue" ? "queue" : t === "workflows" ? "rules" : "book")} />
+            <TodayPanel key={brief.today.dayKey} today={brief.today} onGoto={(t) => goTab(t === "queue" ? "queue" : t === "workflows" ? "rules" : "book")} extraOpen={deskN} extra={<AgentDesk onFollowUpClosed={followUpClosed} onCount={setDeskN} />} />
           )}
           {ready && tab === "today" && !brief && (
             <div className={styles.note} role="status">
@@ -1535,7 +1544,8 @@ export function MobileCrm() {
                       <Icon id="i-dots" />
                     </button>
                     <div className={styles.rmeta}>
-                      {triggerLabel(r.triggerStatus)} · {channelLabel(r.channel)}
+                      {triggerLabel(r.triggerStatus)} · {channelLabel(r.channel)} · <span data-rule-mode={r.mode ?? "AUTO"}>{modeLabel(r.mode ?? "AUTO")}</span>
+                      {r.words === "AI" && r.mode !== "SUGGEST" ? " · Written for each client" : ""}
                     </div>
                     <div className={styles.rowFoot}>
                       <span className={styles.rowMeta}>
@@ -1701,7 +1711,15 @@ export function MobileCrm() {
                       >
                         <Icon id="i-dots" />
                       </button>
-                      <div className={styles.qtitle}>{q.title ?? "Follow-up"}</div>
+                      <div className={styles.qtitle}>
+                        {q.title ?? "Follow-up"}
+                        {/* Why it's waiting sits under the job's name, in the same cell — never a second thing in that row. */}
+                        {q.reason && !q.waiting ? (
+                          <span className={styles.qreason} data-q-reason>
+                            {q.reason}
+                          </span>
+                        ) : null}
+                      </div>
                       <div className={styles.rowFoot}>
                         <span className={styles.rowMeta}>
                           <span className={`${styles.sev} ${styles[sev.cls]}`}>{sev.label}</span>
@@ -1928,6 +1946,41 @@ export function MobileCrm() {
                 : TEXT_NEEDS_TWILIO}
             </span>
           </div>
+          {/* Who sends it, and whose words (lib/followUps/agent). */}
+          <div className={styles.fld}>
+            <label className={styles.fldLbl} htmlFor="mcrMode">
+              Who sends it
+            </label>
+            <span className={styles.pselBox}>
+              <select className={styles.psel} id="mcrMode" name="mode" value={form.mode} onChange={(e) => setForm((f) => ({ ...f, mode: e.target.value as FollowUpMode }))}>
+                {FOLLOW_UP_MODES.map((m) => (
+                  <option value={m.value} key={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+              <Icon id="i-chev" className={`${styles.ic} ${styles.pselCaret}`} />
+            </span>
+            <span className={styles.fldHint}>{FOLLOW_UP_MODES.find((m) => m.value === form.mode)?.hint}</span>
+          </div>
+          {form.mode !== "SUGGEST" && (
+            <div className={styles.fld}>
+              <label className={styles.fldLbl} htmlFor="mcrWords">
+                Words
+              </label>
+              <span className={styles.pselBox}>
+                <select className={styles.psel} id="mcrWords" name="words" value={form.words} onChange={(e) => setForm((f) => ({ ...f, words: e.target.value as FollowUpWords }))}>
+                  {FOLLOW_UP_WORDS.map((w) => (
+                    <option value={w.value} key={w.value}>
+                      {w.label}
+                    </option>
+                  ))}
+                </select>
+                <Icon id="i-chev" className={`${styles.ic} ${styles.pselCaret}`} />
+              </span>
+              <span className={styles.fldHint}>{FOLLOW_UP_WORDS.find((w) => w.value === form.words)?.hint}</span>
+            </div>
+          )}
           {/* The write the server refused, where the person is looking — the
               page's own note sits under this sheet. */}
           {ruleOpen && actionErr ? (

@@ -12,12 +12,13 @@ import { DEFAULT_SPEECH_LANG, isSpeechLang, type SpeechLang } from "@/lib/assist
 export interface AssistantPrefs {
   /** projects: the Overview's projects paragraph in it (part 2, 2026-11-09) — on unless they turn it off. */
   briefing: { on: boolean; time: string; projects: boolean };
-  alerts: { proposalOpened: boolean; newLead: boolean };
+  /** promises: the reminder when a promise to a client is due or late (Smart CRM part 4) — on unless turned off. */
+  alerts: { proposalOpened: boolean; newLead: boolean; promises: boolean };
   /** The language they speak to the Operator in: the ears listen for it. */
   lang: SpeechLang;
 }
 
-export const DEFAULT_PREFS: AssistantPrefs = { briefing: { on: false, time: "06:30", projects: true }, alerts: { proposalOpened: false, newLead: false }, lang: DEFAULT_SPEECH_LANG };
+export const DEFAULT_PREFS: AssistantPrefs = { briefing: { on: false, time: "06:30", projects: true }, alerts: { proposalOpened: false, newLead: false, promises: true }, lang: DEFAULT_SPEECH_LANG };
 
 const PREFIX = "assistant:prefs:";
 const keyOf = (organizationId: string, userId: string) => `${PREFIX}${organizationId}:${userId}`;
@@ -31,7 +32,7 @@ export function parsePrefs(raw: string | null | undefined): AssistantPrefs {
     const time = typeof v.briefing?.time === "string" && TIME_RE.test(v.briefing.time) ? v.briefing.time : DEFAULT_PREFS.briefing.time;
     return {
       briefing: { on: v.briefing?.on === true, time, projects: v.briefing?.projects !== false },
-      alerts: { proposalOpened: v.alerts?.proposalOpened === true, newLead: v.alerts?.newLead === true },
+      alerts: { proposalOpened: v.alerts?.proposalOpened === true, newLead: v.alerts?.newLead === true, promises: v.alerts?.promises !== false },
       lang: isSpeechLang(v.lang) ? v.lang : DEFAULT_SPEECH_LANG,
     };
   } catch {

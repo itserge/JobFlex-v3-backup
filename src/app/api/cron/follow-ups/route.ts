@@ -24,5 +24,13 @@ export async function GET(req: Request) {
     console.warn("[follow-ups] time-zone sweep failed:", err instanceof Error ? err.message : err);
     return null;
   });
-  return NextResponse.json({ ok: true, ...res, leadFollowUps: leads, orgTimezones: timezones });
+  // The promise tracker (2026-11-10, lib/promises): a promise a later event proves kept is closed, and its owner is
+  // reminded the morning it is due and once more when it is late.
+  const promises = await import("@/lib/promises/server")
+    .then((m) => m.sweepPromises())
+    .catch((err) => {
+      console.warn("[follow-ups] promise sweep failed:", err instanceof Error ? err.message : err);
+      return null;
+    });
+  return NextResponse.json({ ok: true, ...res, leadFollowUps: leads, orgTimezones: timezones, promises });
 }

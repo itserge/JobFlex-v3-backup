@@ -830,6 +830,17 @@
   color: var(--muted-light);
   overflow-wrap: anywhere;
 }
+/* Why a queued follow-up is held ("Someone wrote to them Mon — waiting 2 days"):
+   a plain sentence on its own line under the job's name. */
+.qreason {
+  display: block;
+  margin-top: 5px;
+  font-family: var(--font);
+  font-size: 12.5px; font-weight: 500;
+  letter-spacing: 0; text-transform: none;
+  line-height: 1.4;
+  color: var(--muted);
+}
 /* Flat, framed, 44px: the queue's one-tap action. Everything else about a
    follow-up lives in its sheet. */
 .qsend {
