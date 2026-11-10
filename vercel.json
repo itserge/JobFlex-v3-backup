@@ -31,6 +31,7 @@
     { "path": "/api/cron/smartbook", "schedule": "*/2 * * * *" },
     { "path": "/api/cron/traffic-surge", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/outreach", "schedule": "5 * * * *" },
-    { "path": "/api/cron/assistant", "schedule": "* * * * *" }
+    { "path": "/api/cron/assistant", "schedule": "* * * * *" },
+    { "path": "/api/cron/subs", "schedule": "*/10 * * * *" }
   ]
 }

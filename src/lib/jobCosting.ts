@@ -22,8 +22,10 @@
 //                the profit is worked from this, never from `contract`.
 //   crew       = what the workers on the job are paid (JobAssignment.pay).
 //   expenses   = the receipts booked against the job (JobExpense).
-//   cost       = crew + expenses once anything is booked; until then the
-//                planned cost stands in, marked as planned.
+//   repairs    = what its come-backs cost (their own crew, receipts, stock —
+//                lib/jobCost folds them in; 2026-11-09).
+//   cost       = crew + expenses + repairs once anything is booked; until
+//                then the planned cost stands in, marked as planned.
 //   profit     = revenue − cost.
 //
 // Pure: no database, no server imports, so the job page, the Financials
@@ -56,6 +58,8 @@ export type JobCostingInput = {
   pendingExpenses?: readonly number[];
   /** Materials taken from the warehouse for the job, at the items' last cost (2026-09-20). */
   stock?: number;
+  /** What the job's repairs (come-backs) cost (lib/jobCost `repairs`). */
+  repairs?: number;
 };
 
 export type JobMoney = {
@@ -74,7 +78,9 @@ export type JobMoney = {
   expensesPending: number;
   /** Warehouse materials on the job, at cost. */
   stock: number;
-  /** What the job has cost: crew + expenses + stock, or the planned cost until one is booked. */
+  /** Its come-backs' cost. */
+  repairs: number;
+  /** What the job has cost: crew + expenses + stock + repairs, or the planned cost until one is booked. */
   cost: number;
   /** True while the cost is the estimate's, because nothing is booked yet. */
   costIsPlanned: boolean;
@@ -112,7 +118,8 @@ export function jobMoney(input: JobCostingInput): JobMoney {
   const expenses = money(sum(input.expenses.map((e) => Math.max(0, e))));
   const expensesPending = money(sum((input.pendingExpenses ?? []).map((e) => Math.max(0, e))));
   const stock = money(Math.max(0, input.stock ?? 0));
-  const booked = money(crew + expenses + stock);
+  const repairs = money(Math.max(0, input.repairs ?? 0));
+  const booked = money(crew + expenses + stock + repairs);
   const costIsPlanned = booked <= 0 && plannedTotal > 0;
   const cost = costIsPlanned ? plannedTotal : booked;
   const profit = money(revenue - cost);
@@ -128,6 +135,7 @@ export function jobMoney(input: JobCostingInput): JobMoney {
     expenses,
     expensesPending,
     stock,
+    repairs,
     cost,
     costIsPlanned,
     costKnown: booked > 0 || plannedTotal > 0,

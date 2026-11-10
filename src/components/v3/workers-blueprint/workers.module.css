@@ -1432,6 +1432,10 @@
 .bp :global(.content .fld-row) { padding: 10px 0; border-bottom: 1.5px solid var(--hair-soft); }
 .bp :global(.content .fld-row:last-of-type) { border-bottom: none; }
 .bp :global(.content .fld-v) { margin-top: 4px; font-size: 13px; color: var(--ink); word-break: break-word; }
+/* Sales commission (2026-11-10): the percent box, Save, and what they've earned. */
+.bp :global(.content .comm-set) { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
+.bp :global(.content .comm-in) { width: 64px; height: 30px; padding: 0 8px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; font: inherit; font-size: 13px; }
+.bp :global(.content .comm-earned) { display: block; margin-top: 6px; font-size: 12px; color: var(--muted); }
 .bp :global(.content .fld-v.mono) { font-family: var(--font-mono); font-size: 12.5px; }
 .bp :global(.content .fld-v.none) { color: var(--muted-faint); font-style: italic; }
 .bp :global(.content .insp-jobs) { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }

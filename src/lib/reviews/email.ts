@@ -24,6 +24,7 @@ export async function sendReviewRequestEmail(reviewRequestId: string, kind: Revi
     select: {
       publicToken: true,
       organizationId: true,
+      clientId: true,
       client: { select: { name: true, email: true } },
       proposal: { select: { title: true } },
       job: { select: { title: true } },
@@ -53,6 +54,6 @@ export async function sendReviewRequestEmail(reviewRequestId: string, kind: Revi
   };
   const doc = kind === "reminder" ? buildReviewReminder(input) : buildReviewRequest(input);
   const { subject, html } = renderEmail(doc);
-  await sendOrgEmail(org, { to, subject, html });
+  await sendOrgEmail(org, { to, subject, html, clientId: rr.clientId, organizationId: rr.organizationId });
   return true;
 }

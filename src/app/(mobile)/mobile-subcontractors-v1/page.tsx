@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import type { Metadata, Viewport } from "next";
 import { isOwnerOrManager, requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { directoryOf } from "@/lib/projectSubs/server";
+import { networkSettings } from "@/lib/subFinder/server";
 import { SubcontractorsPage } from "@/components/v3/subs-company/subcontractors-page";
 
 export const dynamic = "force-dynamic";
@@ -29,10 +30,10 @@ export default async function MobileSubcontractorsPage() {
     if (err instanceof NoOrgError) redirect("/dashboard?error=forbidden");
     throw err;
   }
-  const read = await directoryOf(organizationId);
+  const [read, network] = await Promise.all([directoryOf(organizationId), networkSettings(organizationId)]);
   return (
     <main style={{ padding: "calc(12px + env(safe-area-inset-top, 0px)) 12px calc(24px + env(safe-area-inset-bottom, 0px))", background: "var(--paper, #f6f5f1)", minHeight: "100dvh" }}>
-      <SubcontractorsPage today={read.today} rows={read.contractors} canManage={isOwnerOrManager(role)} />
+      <SubcontractorsPage today={read.today} rows={read.contractors} canManage={isOwnerOrManager(role)} network={network} />
     </main>
   );
 }

@@ -59,6 +59,9 @@ model Organization {
   metaSettingsJson      String? // settings/meta      {connected,autoCreate,autoText,defaultPage,formCategory}
   proposalSettingsJson  String? // settings/proposals {validityDays,markups{...},schedule[],terms,requireSig,autoFollowUp}
   projectSettingsJson   String? // Projects → Automatic projects (2026-11-05) {auto,trades[]} — lib/projectStages/shared parseProjectSettings
+  // THE JOBFLEX NETWORK (2026-11-08, the subcontractors plan, part 3; lib/subFinder): the company's opt-in to be found
+  // by other JobFlex companies as a sub — {on, trades[], serviceAreas, contact{name,phone,email}, since}.
+  networkJson           String?
   // Lead Center matching profile — canonical TRADE_TYPES multi-select (JSON string[],
   // closed vocabulary from src/lib/tradeTypes.ts; distinct from the free-text Specialty
   // model which steers AI estimator prompts). lat/lng geocoded from `address` at
@@ -115,6 +118,13 @@ model Organization {
   paymentConnections     PaymentConnection[]
   invites                Invite[]
   clients                Client[]
+  clientFacts            ClientFact[]
+  clientPromises         ClientPromise[]
+  clientBriefs           ClientBrief[]
+  clientMerges           ClientMerge[]
+  clientThreads          ClientThread[]
+  clientMessages         ClientMessage[]
+  dealStates             DealState[]
   leads                  Lead[]
   proposals              Proposal[]
   templates              ProposalTemplate[]
@@ -175,6 +185,10 @@ model Organization {
   contractors            Contractor[]
   subRequests            SubRequest[]
   subDocuments           SubDocument[]
+  inboundEmails          InboundEmail[]
+  subcontracts           Subcontract[]
+  subInvoices            SubInvoice[]
+  subPayments            SubPayment[]
   signupPromo            PromoCode?              @relation("OrgSignupPromo", fields: [signupPromoCodeId], references: [id], onDelete: SetNull)
 
   @@index([slug])
@@ -379,6 +393,9 @@ model User {
   assistantLinks    AssistantLink[]
   assistantMessages AssistantMessage[]
   assistantActions  AssistantAction[]
+  clientPromises    ClientPromise[]
+  clientThreads     ClientThread[]
+  clientMessages    ClientMessage[]
 }
 
 model Account {
@@ -422,6 +439,10 @@ model Membership {
   organizationId String
   role           String   @default("USER")
   createdAt      DateTime @default(now())
+  // SALES COMMISSION (2026-11-10, the ProSmart gaps plan, part 4): this member's percent on the proposals they own,
+  // earned as the client's money is collected (lib/proposalRow). Null = no commission. A change stamps the old
+  // percent onto their sold proposals first (Proposal.commissionPct), so a past deal keeps its terms.
+  commissionPct  Float?
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -480,9 +501,186 @@ model Client {
   equipment      ClientEquipment[]
   visitReports   VisitReport[]
   bookings       Booking[]
+  facts          ClientFact[]
+  promises       ClientPromise[]
+  brief          ClientBrief?
+  threads        ClientThread[]
 
   @@index([organizationId])
   @@index([organizationId, deletedAt])
+}
+
+// THE CLIENT'S MEMORY (Smart CRM part 1, 2026-11-08 — the plan doc: structured, source-linked facts; a
+// contradiction is flagged and the newer choice wins while the old one stays). One row per remembered fact.
+// `status` CURRENT | SUPERSEDED (an older choice the newer one replaced) | RETRACTED (a person removed it).
+// `sourceKind` says where it came from — CALL | EMAIL | SMS | NOTE | VISIT | LEAD | PORTAL | PERSON (typed by
+// hand) — and sourceId points into that table, so every line can show its original.
+model ClientFact {
+  id             String    @id @default(cuid())
+  organizationId String
+  clientId       String
+  category       String // CONTACT | PROJECT | DECISION | COMMITMENT | MONEY | PREFERENCE | HOUSE
+  fact           String
+  status         String    @default("CURRENT")
+  supersededById String?
+  sourceKind     String?
+  sourceId       String?
+  sourceAt       DateTime?
+  byAi           Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, clientId, status])
+}
+
+// A PROMISE EITHER SIDE MADE (part 1 keeps them; part 4's tracker finds them in messages and closes them when
+// the promised thing verifiably happened). `direction` OURS (we owe the client) | THEIRS (the client owes us,
+// e.g. "will pay Friday"). `status` OPEN | KEPT | MISSED | CANCELED.
+model ClientPromise {
+  id             String    @id @default(cuid())
+  organizationId String
+  clientId       String
+  direction      String    @default("OURS")
+  text           String
+  ownerId        String?
+  dueAt          DateTime?
+  status         String    @default("OPEN")
+  keptAt         DateTime?
+  sourceKind     String?
+  sourceId       String?
+  sourceAt       DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  owner        User?        @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status, dueAt])
+  @@index([organizationId, clientId])
+}
+
+// WHERE THE CLIENT STANDS — the saved AI summary at the top of the client's page, rebuilt when something newer
+// than `builtAt` lands on the timeline. `nextAction` is the one next step it ends on.
+model ClientBrief {
+  clientId       String   @id
+  organizationId String
+  summary        String
+  nextAction     String?
+  builtAt        DateTime
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
+// TWO RECORDS OF ONE PERSON, FOLDED TOGETHER (part 1: duplicates found by phone and email; merging always asks
+// first). The log row keeps what the removed record said, so the merge can be read back later.
+model ClientMerge {
+  id             String   @id @default(cuid())
+  organizationId String
+  keptId         String
+  mergedId       String
+  mergedName     String
+  mergedEmail    String?
+  mergedPhone    String?
+  movedJson      String? // counts of what moved, by table
+  byUserId       String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, keptId])
+}
+
+// THE INBOX (Smart CRM part 2, 2026-11-08 — the plan doc "JobFlex Smart CRM — plan"): one thread per client.
+// The thread is the conversation's spine: who it is (a client when known — one thread per client — else the sender's
+// email or phone until someone links it), where it stands (OPEN · NEEDS_REPLY · WAITING on the client · CLOSED),
+// and what the AI read in the newest inbound message (aiReadJson, drawn by the page's "what this means" panel).
+// `replyToken` names the thread in our Reply-To address (c-<token>@<the receiving domain>), so a client's email
+// reply lands here without any login. Texts and desk calls stay in their own tables and are merged into the
+// thread's view by phone; ClientMessage holds what has no other home — inbound emails (body kept), replies sent
+// from the inbox, and portal notes.
+model ClientThread {
+  id             String   @id @default(cuid())
+  organizationId String
+  clientId       String?
+  leadId         String?
+  name           String
+  email          String?
+  phone          String?
+  replyToken     String   @unique @default(cuid())
+  status         String   @default("OPEN") // OPEN | NEEDS_REPLY | WAITING | CLOSED
+  urgent         Boolean  @default(false)
+  assignedToId   String?
+  unread         Int      @default(0)
+  lastAt         DateTime @default(now())
+  lastPreview    String?
+  lastDirection  String? // IN | OUT
+  lastChannel    String? // EMAIL | SMS | CALL | PORTAL | NOTE
+  aiReadJson     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client?         @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  assignedTo   User?           @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+  messages     ClientMessage[]
+
+  @@unique([organizationId, clientId])
+  @@index([organizationId, status, lastAt])
+  @@index([organizationId, lastAt])
+}
+
+model ClientMessage {
+  id              String   @id @default(cuid())
+  organizationId  String
+  threadId        String
+  direction       String // IN | OUT
+  channel         String // EMAIL | PORTAL | NOTE
+  fromAddr        String?
+  toAddr          String?
+  subject         String?
+  body            String
+  attachmentsJson String?
+  rawUrl          String?
+  externalId      String?  @unique
+  emailMessageId  String?
+  sentById        String?
+  aiReadJson      String?
+  status          String   @default("RECEIVED") // RECEIVED | SENT | FAILED
+  createdAt       DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  thread       ClientThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sentBy       User?        @relation(fields: [sentById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, threadId, createdAt])
+}
+
+// THE PIPELINE'S HAND (Smart CRM part 3, 2026-11-08 — the plan doc). The board is worked out from leads and
+// proposals as they stand (lib/pipeline); this row keeps only what a person set on a card: a stage it was dragged
+// to (Negotiation has no event of its own), who owns it, when it should close, why it was lost. Keyed by the card —
+// "lead:<id>" or "proposal:<id>". An event later than `stageAt` (a proposal signed) wins over the hand.
+model DealState {
+  key            String    @id
+  organizationId String
+  stage          String?
+  stageAt        DateTime?
+  ownerId        String?
+  expectedClose  DateTime?
+  lostReason     String?
+  movedById      String?
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
 }
 
 model Tag {
@@ -853,6 +1051,14 @@ model Proposal {
   // Automatic payment reminders for THIS proposal: true / false override the
   // company's reminder mode; null follows it (settings → payments).
   remindersOn       Boolean?
+  // THE PROPOSAL ROW (2026-11-10, the ProSmart gaps plan, part 4). `commissionPct`: this deal's sales commission, frozen
+  // (null = the owner's own percent on Membership). `canceledAt` / `cancelReason`: a SOLD job cancelled by the
+  // office — the status goes to DECLINED (out of sold work and money to collect) and Reopen puts it back.
+  // `callRepFirst`: the crew calls the rep before starting (a tricky build, something to explain).
+  commissionPct     Float?
+  canceledAt        DateTime?
+  cancelReason      String?
+  callRepFirst      Boolean   @default(false)
   // "Listen to this proposal" (2026-09-23): the spoken summary's cached audio
   // file and the hash of the script it was read from (lib/proposalAudio). A
   // price change moves the hash and the next play regenerates the audio.
@@ -1165,26 +1371,42 @@ model PaymentConnection {
 // ─────────────────────────────────────────────
 
 model Job {
-  id                String    @id @default(cuid())
-  organizationId    String
-  clientId          String?
-  proposalId        String?
-  projectId         String?
-  title             String
-  status            String    @default("SCHEDULED")
-  scopeOfWork       String? // seeded from the linked proposal's scope; shown above notes on the job
+  id                  String    @id @default(cuid())
+  organizationId      String
+  clientId            String?
+  proposalId          String?
+  projectId           String?
+  title               String
+  status              String    @default("SCHEDULED")
+  scopeOfWork         String? // seeded from the linked proposal's scope; shown above notes on the job
   // When the crew marked the pick list loaded from the warehouse (2026-09-20).
-  materialsLoadedAt DateTime?
-  notes             String?
-  startsAt          DateTime?
-  endsAt            DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  materialsLoadedAt   DateTime?
+  notes               String?
+  startsAt            DateTime?
+  endsAt              DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  // REPAIRS AND COME-BACKS (2026-11-09, the ProSmart gaps plan, part 2). A repair is a real crew job — kind REPAIR —
+  // sent back to the house of the job that came back (`repairOfId`): the crew is texted, it lands on their schedule
+  // and the calendar, and it closes with the same Done as any job. It never carries the proposal (the contract
+  // stays the original job's); its crew pay and receipts count against the original job's profit (lib/jobCost).
+  // `repairReasons` = JSON string[] of lib/repairs/shared reason keys; `repairCause` WORKMANSHIP | PRODUCT | CLIENT
+  // (null = not sure) — only "our work" counts against the crew who did the job; `repairBillable` + `repairCharge`
+  // = the client pays, through a change order on the original contract (`repairChangeOrderId`). WORK | REPAIR.
+  kind                String    @default("WORK")
+  repairOfId          String?
+  repairReasons       String?
+  repairCause         String?
+  repairBillable      Boolean   @default(false)
+  repairCharge        Float?
+  repairChangeOrderId String?
 
   organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   client         Client?         @relation(fields: [clientId], references: [id])
   proposal       Proposal?       @relation(fields: [proposalId], references: [id])
   project        Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  repairOf       Job?            @relation("JobRepairs", fields: [repairOfId], references: [id], onDelete: SetNull)
+  repairs        Job[]           @relation("JobRepairs")
   events         JobEvent[]
   assignments    JobAssignment[]
   photos         JobPhoto[]
@@ -1200,6 +1422,8 @@ model Job {
 
   @@index([organizationId, status])
   @@index([projectId])
+  @@index([repairOfId])
+  @@index([organizationId, kind])
 }
 
 model JobEvent {
@@ -2392,6 +2616,9 @@ model Project {
   subQuotes    ProjectSubQuote[]
   subRequests  SubRequest[]
   subDocuments SubDocument[]
+  subcontracts Subcontract[]
+  subInvoices  SubInvoice[]
+  subPayments  SubPayment[]
   selections   ProjectSelection[]
   phases       ProjectPhase[]
   draws        ProjectDraw[]
@@ -2427,17 +2654,18 @@ model ProjectStage {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  project     Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  phase       ProjectPhase?       @relation(fields: [phaseId], references: [id], onDelete: SetNull)
-  after       ProjectStage?       @relation("StageAfter", fields: [afterId], references: [id], onDelete: SetNull)
-  dependents  ProjectStage[]      @relation("StageAfter")
-  tasks       ProjectTask[]
-  materials   ProjectMaterial[]
-  orders      ProjectOrder[]
-  inspections ProjectInspection[]
-  subQuotes   ProjectSubQuote[]
-  subRequests SubRequest[]
-  selections  ProjectSelection[]
+  project      Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  phase        ProjectPhase?       @relation(fields: [phaseId], references: [id], onDelete: SetNull)
+  after        ProjectStage?       @relation("StageAfter", fields: [afterId], references: [id], onDelete: SetNull)
+  dependents   ProjectStage[]      @relation("StageAfter")
+  tasks        ProjectTask[]
+  materials    ProjectMaterial[]
+  orders       ProjectOrder[]
+  inspections  ProjectInspection[]
+  subQuotes    ProjectSubQuote[]
+  subRequests  SubRequest[]
+  subcontracts Subcontract[]
+  selections   ProjectSelection[]
 
   @@index([projectId, position])
   @@index([phaseId])
@@ -2629,12 +2857,19 @@ model Contractor {
   w9DocumentId      String?
   source            String            @default("MINE")
   placeId           String?
+  // Part 3: the state register's last word on this sub (status, specialties, bond, insurance, UBI, principal) and
+  // when it was checked — lib/subFinder verifies by hand and nightly.
+  registerJson      String?
+  registerCheckedAt DateTime?
   textsOptOut       Boolean           @default(false)
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   quotes            ProjectSubQuote[]
   documents         SubDocument[]
+  subcontracts      Subcontract[]
+  invoices          SubInvoice[]
+  payments          SubPayment[]
 
   @@index([organizationId, name])
 }
@@ -2677,6 +2912,8 @@ model ProjectSubQuote {
   approvedVersionId String?
   declineReason     String?
   revisionNote      String?
+  // Part 2: the one "reply by tomorrow" reminder the sweep sends (lib/subQuotes/sweep).
+  remindedAt        DateTime?
   createdById       String?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
@@ -2685,6 +2922,10 @@ model ProjectSubQuote {
   contractor        Contractor        @relation(fields: [contractorId], references: [id], onDelete: Cascade)
   request           SubRequest?       @relation(fields: [requestId], references: [id], onDelete: SetNull)
   versions          SubQuoteVersion[]
+  inboundEmails     InboundEmail[]
+  contracts         Subcontract[]
+  invoices          SubInvoice[]
+  payments          SubPayment[]
 
   @@index([projectId, status])
   @@index([organizationId, status])
@@ -2712,6 +2953,9 @@ model SubRequest {
   endsAt         DateTime?
   dueBy          DateTime?
   instructions   String?
+  // Part 2: the AI's two-sentence comparison of the quotes on this request, with the versions it read (lib/subQuotes).
+  compareJson    String?
+  comparedAt     DateTime?
   // DRAFT | SENT | CLOSED | CANCELLED
   status         String            @default("SENT")
   sentAt         DateTime?
@@ -2745,14 +2989,19 @@ model SubQuoteVersion {
   submittedById  String?
   extractedJson  String?
   extractedAt    DateTime?
-  // NONE | PENDING | REVIEWED | REJECTED
+  // NONE (nothing to read) | PENDING (a document landed, the read is queued) | READ (the AI's figures wait for a
+  // person) | REVIEWED (Use these pressed) | REJECTED (the person said the read is wrong) | FAILED (two tries)
   reviewStatus   String          @default("NONE")
   reviewedById   String?
   reviewedAt     DateTime?
+  // Part 2: how many times the reader tried, and the last error's words.
+  readAttempts   Int             @default(0)
+  readError      String?
   approved       Boolean         @default(false)
   createdAt      DateTime        @default(now())
   quote          ProjectSubQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
   document       SubDocument?    @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  contracts      Subcontract[]
 
   @@unique([quoteId, version])
   @@index([organizationId, submittedAt])
@@ -2763,32 +3012,282 @@ model SubQuoteVersion {
 // signed link or the sub's token, never a permanent URL. `sha256` finds the same file sent twice; `scanStatus` is
 // the malware scan's word once a scanner exists (PENDING | CLEAN | FLAGGED | SKIPPED).
 model SubDocument {
-  id             String            @id @default(cuid())
-  organizationId String
-  projectId      String?
-  contractorId   String?
-  requestId      String?
+  id              String            @id @default(cuid())
+  organizationId  String
+  projectId       String?
+  contractorId    String?
+  requestId       String?
+  // Part 2: the email it arrived in, when it came by email.
+  inboundEmailId  String?
   // QUOTE | INVOICE | CONTRACT | WAIVER | INSURANCE | W9 | PLAN | OTHER
-  kind           String            @default("QUOTE")
-  name           String
-  url            String
-  contentType    String?
-  bytes          Int?
-  sha256         String?
-  scanStatus     String            @default("SKIPPED")
+  kind            String            @default("QUOTE")
+  name            String
+  url             String
+  contentType     String?
+  bytes           Int?
+  sha256          String?
+  scanStatus      String            @default("SKIPPED")
   // OFFICE | SUB | EMAIL
-  uploadedVia    String            @default("OFFICE")
-  uploadedById   String?
-  createdAt      DateTime          @default(now())
-  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  project        Project?          @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  contractor     Contractor?       @relation(fields: [contractorId], references: [id], onDelete: SetNull)
-  request        SubRequest?       @relation(fields: [requestId], references: [id], onDelete: SetNull)
-  versions       SubQuoteVersion[]
+  uploadedVia     String            @default("OFFICE")
+  uploadedById    String?
+  createdAt       DateTime          @default(now())
+  organization    Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project         Project?          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contractor      Contractor?       @relation(fields: [contractorId], references: [id], onDelete: SetNull)
+  request         SubRequest?       @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  inboundEmail    InboundEmail?     @relation(fields: [inboundEmailId], references: [id], onDelete: SetNull)
+  versions        SubQuoteVersion[]
+  signedContracts Subcontract[]
+  invoices        SubInvoice[]
+  waivers         SubPayment[]
 
   @@index([organizationId, createdAt])
   @@index([projectId, kind])
   @@index([requestId])
+  @@index([inboundEmailId])
+}
+
+// AN EMAIL THAT CAME IN (2026-11-08, the subcontractors plan, part 2, lib/subInbound): a sub's reply to a request,
+// delivered by Resend Inbound to rfq-<token>@<the inbound domain>. The token in the address names the recipient row;
+// a letter with no token, a closed request, or a stranger's address is held for review (state REVIEW) and matched by
+// hand or ignored. The provider's id makes a redelivery a no-op; the raw message is kept in the private store; the
+// attachments are SubDocuments that point back here; the version it became, when it did, is `versionId`.
+model InboundEmail {
+  id             String           @id @default(cuid())
+  organizationId String?
+  providerId     String           @unique
+  fromAddr       String
+  toJson         String
+  subject        String?
+  messageId      String?
+  text           String?
+  rawUrl         String?
+  receivedAt     DateTime
+  quoteId        String?
+  requestId      String?
+  versionId      String?
+  // MATCHED | REVIEW | IGNORED
+  state          String           @default("REVIEW")
+  note           String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  organization   Organization?    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  quote          ProjectSubQuote? @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  documents      SubDocument[]
+
+  @@index([organizationId, state, receivedAt])
+  @@index([quoteId])
+}
+
+// THE SUBCONTRACT (2026-11-08, the subcontractors plan, part 4, lib/subContracts): the agreement drafted from an
+// awarded quote — the price, the scope, the dates, the deposit and the payment schedule, the terms, the documents
+// attached — numbered company-wide ("SC-1001"), signed for the company when it is sent (a typed name), signed by the
+// sub on /s/<token> (a typed name, the consent, the time, the address and the browser kept), executed at that moment
+// with the signed PDF stored as a SubDocument. An executed contract (plus its approved change orders) is what the
+// stage's budget counts as committed; the awarded quote counts until then.
+model Subcontract {
+  id                String                   @id @default(cuid())
+  organizationId    String
+  projectId         String
+  stageId           String?
+  contractorId      String
+  quoteId           String
+  versionId         String?
+  number            Int
+  // DRAFT | SENT | VIEWED | EXECUTED (signed by both) | CANCELLED
+  status            String                   @default("DRAFT")
+  title             String
+  amount            Float
+  scope             String
+  startsAt          DateTime?
+  endsAt            DateTime?
+  depositPct        Float?
+  // [{ name, pct, due }] — the payment schedule; the amounts follow the price.
+  milestonesJson    String                   @default("[]")
+  terms             String
+  // SubDocument ids the sub sees with the agreement (the awarded estimate, the drawings).
+  attachmentIdsJson String                   @default("[]")
+  // Part 5a: the percent held back from each payment, released with the last (null = none).
+  retainagePct      Float?
+  publicToken       String                   @unique @default(cuid())
+  sentAt            DateTime?
+  viewedAt          DateTime?
+  companySignedName String?
+  companySignedAt   DateTime?
+  companySignedById String?
+  signedName        String?
+  signedAt          DateTime?
+  signedIp          String?
+  signedUserAgent   String?
+  executedAt        DateTime?
+  cancelledAt       DateTime?
+  cancelReason      String?
+  pdfDocumentId     String?
+  createdById       String?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  organization      Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project           Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  stage             ProjectStage?            @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  contractor        Contractor               @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  quote             ProjectSubQuote          @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  version           SubQuoteVersion?         @relation(fields: [versionId], references: [id], onDelete: SetNull)
+  pdfDocument       SubDocument?             @relation(fields: [pdfDocumentId], references: [id], onDelete: SetNull)
+  changeOrders      SubcontractChangeOrder[]
+  invoices          SubInvoice[]
+  payments          SubPayment[]
+
+  @@unique([organizationId, number])
+  @@index([projectId, status])
+  @@index([organizationId, status])
+  @@index([quoteId])
+}
+
+// A CHANGE ORDER ON A SUBCONTRACT (part 4): a priced change to the scope (plus or minus), proposed by the office,
+// agreed by the sub on the signing page (or approved in person, the sub's name typed by the office) or declined;
+// approved ones move the commitment. Numbered per contract ("CO #2").
+model SubcontractChangeOrder {
+  id               String      @id @default(cuid())
+  organizationId   String
+  contractId       String
+  number           Int
+  // PROPOSED | APPROVED | DECLINED | VOID (withdrawn by the office)
+  status           String      @default("PROPOSED")
+  amount           Float
+  scope            String
+  reason           String?
+  proposedById     String?
+  proposedAt       DateTime    @default(now())
+  decidedAt        DateTime?
+  decidedName      String?
+  decidedIp        String?
+  decidedUserAgent String?
+  // SUB (on the signing page) | OFFICE (in person, or withdrawn)
+  decidedVia       String?
+  declineReason    String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  contract         Subcontract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@index([contractId, status])
+  @@index([organizationId, status])
+}
+
+// A SUB'S INVOICE (2026-11-09, the subcontractors plan, part 5a, lib/subInvoices): what a sub bills — sent on their
+// contract's page (/s/<token>), by email, or uploaded by the office — numbered company-wide ("SI-1001") beside the
+// sub's own number, tied to the quote and, when there is one, the contract and a payment of its schedule. The document
+// is read by the AI like an estimate and a person confirms the figures; the rules flag a duplicate, an amount above the
+// payment or the contract's balance, a change order not yet approved, the stage going over its share. Approved, it is
+// paid by recorded payments (SubPayment) — or sent to Ramp as a bill.
+model SubInvoice {
+  id             String          @id @default(cuid())
+  organizationId String
+  projectId      String
+  contractorId   String
+  quoteId        String
+  contractId     String?
+  number         Int
+  // The sub's own invoice number, as written on it.
+  invoiceNumber  String?
+  // null until typed or read and confirmed.
+  amount         Float?
+  // The payment of the contract's schedule it bills (an index into milestonesJson), its name kept as it was.
+  milestone      Int?
+  milestoneName  String?
+  issuedAt       DateTime?
+  dueAt          DateTime?
+  receivedAt     DateTime        @default(now())
+  // PORTAL (the sub's page) | EMAIL | OFFICE
+  source         String          @default("PORTAL")
+  documentId     String?
+  inboundEmailId String?
+  note           String?
+  // The AI's read, the same words as an estimate's: NONE | PENDING | READ | REVIEWED | REJECTED | FAILED
+  extractedJson  String?
+  reviewStatus   String          @default("NONE")
+  readAttempts   Int             @default(0)
+  readError      String?
+  // [{ kind, text }] — the rules' flags, written when it lands and again after the read.
+  flagsJson      String          @default("[]")
+  duplicateOfId  String?
+  // RECEIVED | APPROVED | PAID | DISPUTED | VOID
+  status         String          @default("RECEIVED")
+  approvedAt     DateTime?
+  approvedById   String?
+  disputedAt     DateTime?
+  disputeReason  String?
+  voidedAt       DateTime?
+  voidReason     String?
+  // The office was told once that it is due (the sweep).
+  dueNotifiedAt  DateTime?
+  rampBillId     String?
+  createdById    String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project        Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contractor     Contractor      @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  quote          ProjectSubQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  contract       Subcontract?    @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  document       SubDocument?    @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  payments       SubPayment[]
+
+  @@unique([organizationId, number])
+  @@index([projectId, status])
+  @@index([quoteId])
+  @@index([contractorId, receivedAt])
+  @@index([organizationId, reviewStatus])
+}
+
+// A PAYMENT TO A SUB (part 5a): money that left the company outside JobFlex — a check, ACH, a wire, Zelle, cash, a
+// card — or through Ramp's Bill Pay, recorded against an invoice (or as a release of the retainage held), with the
+// retainage kept back from it and the sub's lien waiver. Each one writes the project's Subcontractors expense on the
+// stage's phase; voiding it takes the expense back out.
+model SubPayment {
+  id               String          @id @default(cuid())
+  organizationId   String
+  projectId        String
+  contractorId     String
+  quoteId          String
+  contractId       String?
+  invoiceId        String?
+  // What left the company's account.
+  amount           Float
+  // Kept back from this invoice under the contract's retainage, still owed.
+  retainageHeld    Float           @default(0)
+  // A payment that releases retainage held earlier (no invoice of its own).
+  retainageRelease Boolean         @default(false)
+  // CHECK | ACH | WIRE | ZELLE | CASH | CARD | RAMP | OTHER
+  method           String
+  reference        String?
+  paidAt           DateTime
+  // RECORDED | VOID
+  status           String          @default("RECORDED")
+  waiverDocumentId String?
+  // CONDITIONAL_PROGRESS | UNCONDITIONAL_PROGRESS | CONDITIONAL_FINAL | UNCONDITIONAL_FINAL
+  waiverKind       String?
+  expenseId        String?
+  rampBillId       String?
+  // One payment per key: a double press, or Ramp's paid bill read twice, records once.
+  idempotencyKey   String?         @unique
+  note             String?
+  voidedAt         DateTime?
+  voidReason       String?
+  createdById      String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  organization     Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project          Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contractor       Contractor      @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  quote            ProjectSubQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  contract         Subcontract?    @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  invoice          SubInvoice?     @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  waiverDocument   SubDocument?    @relation(fields: [waiverDocumentId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, status])
+  @@index([invoiceId])
+  @@index([quoteId])
+  @@index([contractorId, paidAt])
 }
 
 // SELECTIONS (2026-11-07, the plan "Projects: Remodel and New construction", part 3): what the client has to choose

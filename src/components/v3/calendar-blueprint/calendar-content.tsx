@@ -193,6 +193,10 @@ export function CalendarContent({ seed, standalone = false }: { seed?: CalendarS
         </div>
       </div>
 
+      {/* THE NUMBERS ROW (calendar part 1, 2026-11-09): visits and jobs this month, crew days, waiting to be
+          scheduled, booked with nobody on it — each one a click to see just those. Drawn by renderStats. */}
+      <div className="cal-stats" id="calStats"></div>
+
       {/* FILTERS: search · worker dropdown · status dropdown */}
       <div className="cal-filters">
         <label className="lsearch">
@@ -216,6 +220,10 @@ export function CalendarContent({ seed, standalone = false }: { seed?: CalendarS
       {/* LANES + PROJECTS (2026-11-04): All · Projects · Appointments · Installs, and a chip per project on the
           calendar in its own colour — drawn by calendar-behavior renderLanes. */}
       <div className="cal-lanes" id="calLanes"></div>
+
+      {/* THE CREW BAR (calendar part 1): each person with what they have on screen; a click shows only their
+          calendar (and a card dropped then goes to them). Office only — drawn by renderCrew. */}
+      <div className="cal-crew" id="calCrew"></div>
 
       {/* CALENDAR + TRAY */}
       <div className="cal-wrap" id="calWrap">
@@ -253,8 +261,8 @@ export function CalendarContent({ seed, standalone = false }: { seed?: CalendarS
         <aside className="tray" id="tray">
           <div className="tray-head">
             <div>
-              <div className="kpi-lbl">Unscheduled</div>
-              <div className="tray-sub">Drag a job onto a day to schedule it</div>
+              <div className="kpi-lbl">To place</div>
+              <div className="tray-sub">Drag onto a day — the time is where you let go. Or tap a card&apos;s calendar for the first open times.</div>
             </div>
             <span className="tray-count" id="trayCount">0</span>
           </div>

@@ -22,7 +22,7 @@ const site = (state: string, snow: number) => {
   return applyDeckPatch(d, { site: { ...d.site, groundSnowPsf: snow, state } });
 };
 const roofOn = (b: DeckDesign, w: number, dpt: number, roof: Partial<DeckDesign["roof"]>, free = true) =>
-  applyDeckPatch(applyDeckPatch(b, { shape: { kind: "rect", widthFt: w, depthFt: dpt }, ...(free ? { placement: "freestanding" as const } : {}) }), { structure: "covered-deck", roof: { ...defaultRoofDesign("covered-deck"), ...(free ? { attach: "free" as const } : {}), ...roof } });
+  applyDeckPatch(applyDeckPatch(b, { shape: { kind: "rect", widthFt: w, depthFt: dpt }, ...(free ? { placement: "detached" as const } : {}) }), { structure: "covered-deck", roof: { ...defaultRoofDesign("covered-deck"), ...(free ? { attach: "free" as const } : {}), ...roof } });
 const TX = site("TX", 0);
 const UT = site("UT", 50);
 

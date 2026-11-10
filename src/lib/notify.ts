@@ -22,10 +22,10 @@ import { leadSourceOf } from "@/lib/leads/sources";
 import { metaLeadPresentation } from "@/lib/meta/leadPresentation";
 import { renderTemplate, type TemplateVars } from "@/lib/email/render";
 import { renderEmail } from "@/lib/email/renderEmail";
+import { orderNoticeSentAt, sendOrderNotice, sendReceipt } from "@/lib/payments/clientMail";
 import {
   buildProposalSent,
   buildProposalAccepted,
-  buildPaymentReceipt,
   formatUSD,
   isBareUrlParagraph,
 } from "@/lib/email/build/client";
@@ -1392,15 +1392,6 @@ function providerLabel(provider: string, method: string | null): string {
   }
 }
 
-function methodPhrase(provider: string, method: string | null): string {
-  if (method === "us_bank_account") return "bank account";
-  if (provider === "STRIPE" || provider === "SQUARE" || provider === "STAX") return "card";
-  if (method === "BANK_TRANSFER") return "bank transfer";
-  if (method === "CASH") return "cash";
-  if (method === "CHECK") return "check";
-  return "";
-}
-
 /**
  * A payment landed on a proposal (hosted checkout webhook, active verify, or
  * a manual mark). Receipt to the client when the org wants receipts; heads-up
@@ -1451,26 +1442,14 @@ export async function notifyPaymentReceived({ paymentId }: { paymentId: string }
   const clientName = payment.client?.name ?? "Your client";
   const ref = payment.id.slice(-8).toUpperCase();
 
-  const wantsReceipts = parsePaymentSettings(org.paymentSettingsJson).receiptsOnPayment;
-  if (wantsReceipts && payment.client?.email) {
-    const { subject, html } = renderEmail(
-      buildPaymentReceipt({
-        org: { id: payment.organizationId, name: org.name, logoUrl: org.logoUrl, phone: org.phone },
-        clientName,
-        title: proposal.title,
-        stageLabel,
-        amount: payment.amount,
-        method: methodPhrase(payment.provider, payment.method) || "",
-        paidAt: payment.paidAt ?? new Date(),
-        paidToDate,
-        remaining,
-        href: `${appUrl}/portal/q/${proposal.publicId}`,
-        ref,
-      }),
-    );
-    await sendOrgEmail(org, { to: payment.client.email, subject, html }).catch((err) =>
-      console.warn("[notifyPaymentReceived] client receipt failed", err),
-    );
+  // The receipt and the "order placed" notice (2026-11-09) go through lib/payments/clientMail, the same letters the
+  // Payments panel previews and resends, and each one is written to the proposal's trail.
+  const paySettings = parsePaymentSettings(org.paymentSettingsJson);
+  if (paySettings.receiptsOnPayment && (payment.client?.email || proposal.clientId)) {
+    await sendReceipt(payment.id, { actorId: null, source: "auto" }).catch((err) => console.warn("[notifyPaymentReceived] client receipt failed", err));
+  }
+  if (paySettings.orderNoticeAuto && payment.proposalId && !(await orderNoticeSentAt(payment.proposalId))) {
+    await sendOrderNotice(payment.proposalId, { note: null, actorId: null, source: "auto" }).catch((err) => console.warn("[notifyPaymentReceived] order notice failed", err));
   }
 
   await textOffice(payment.organizationId, "payment-received", paymentLine(clientName, proposal.title, payment.amount, remaining), { alsoUserIds: [payment.proposal?.ownerId] });

@@ -420,6 +420,30 @@ monthly" is one 12px line (weight 600) under the price.
 - Reuse the live shared sidebar, navigation map and responsive shell.
   Sidebar subpage toggles are separate buttons with hover and expanded state;
   nested links retain consistent type and a clear indentation guide.
+- Project workspaces (owner, 2026-11-09: "it should look like a different
+  platform specially made for it"): Projects opens on three cards — New Home
+  Builder, Remodeler, Job Projects — and each workspace, and every project in
+  it, wears its own colour as `--space` (lib/projectSpaces): teal `#0e6b67`,
+  violet `#5a3fa8`, the blueprint blue `#1854a0`, with an 8% wash of each for
+  bands. Approved additions to the palette for this use only: they mark which
+  workspace a surface belongs to and never mean good or bad — the status
+  colours (success, warning, danger) keep those meanings. A workspace's card
+  and header carry a line drawing in ink with its colour where the eye should
+  land (`SpaceArt`: a house frame on its lot, a kitchen, a deck and its
+  stairs); its offset shadow is in its colour.
+- The project Overview card (`project-overview-card.tsx`) leads every
+  project page, desk and phone: a status band with a 10px left rule in the
+  status colour (8px on a phone), the ask bar, a road of numbered 34px discs
+  joined by a 4px track (done filled in the workspace colour, the current one
+  ringed with "here", a late one filled red with "late"), then Do now and
+  Coming up side by side, People and Money side by side (one column at
+  ≤768px), and What happened last folded. Do now rows have a 5px left rule in
+  red or amber, one primary button in the workspace colour, an optional
+  secondary in ink, and a quiet "Not now". A one-tap write (a stage done, an
+  inspection's result) asks "Sure? …" on the same button before it runs.
+  Under the status line, one sentence in 15px body weight (`.summary`, at
+  most 78ch): the day's AI sentence, kept only when every number in it is one
+  of the project's, else the rules' own — never a badge, an icon or "AI".
 
 ## Mobile and motion
 
@@ -784,3 +808,99 @@ empty/error/connected states as applicable, and all preserved actions. Use
 relevant existing lint/type checks. Report what was actually verified; a
 redirect or compilation alone is not visual verification. Do not create test
 scaffolding, change the data layer, commit or publish unless authorized.
+
+Subcontractors, part 2 (2026-11-08, the subcontractors plan): the viewer gains
+a side panel, "What the AI read", in the same grammar as the frame — a 14px
+bold title with a small outlined mono pill for the read's state (amber "Needs
+review", emerald "Reviewed", rose "Could not read"), then the figures as a
+two-column list (a mono caps label, an 800-weight tabular figure, and under it
+the source line quoted in 11px muted type with "sure / likely / unsure"), the
+terms as mono-labelled definitions, the flags in an amber left-ruled box, a
+summary line over a hairline, and the review as the sheet's own buttons (Use
+these primary, Not right and Read again ghost). The section's Compare and
+Budget tabs are real tables inside a 2px ink frame that scrolls sideways on a
+phone: mono caps column heads, hairline rows, the lowest sub's column tinted
+emerald, an over-budget cell in rose; the AI's two sentences sit under the
+table in a 3px ink left-ruled box with a mono caps "by" line. On Quotes &
+Proposals the letters to match are white 1.5px-framed rows with the reason as
+an amber pill, the excerpt muted, the files as link-buttons, and a select
+beside Attach and Ignore. A quote that came with a document and no typed price
+reads "Quoted · price to confirm" in the card's tag and its Award waits; over
+the stage's share, Award shows the warning in the card's note style with
+"Award anyway" beside it.
+
+Subcontractors, part 3 (2026-11-08, the subcontractors plan): the Find tab is a
+hub card whose filter row (trade, the address, the radius, a name, the
+"expired and suspended too" check, Search) sits above the same ruled result
+rows the directory uses — the business in bold with small mono source tags
+beside it (State register · Google · JobFlex) and an emerald "In My subs" pill
+once saved; under the name the address and the miles in mono, then the license
+pill (emerald active, rose expired or suspended, amber unknown) with a mono
+"★ 4.8 (57)" beside it, and one muted line with the register's words
+(specialties, expiry, insurance, bond); Details opens the same facts grid the
+profile uses. The actions sit at the right: Call, Website and Details as small
+buttons, Add to My subs small, Request quote primary. On the directory page the
+header gains a small "JobFlex Network" button (it reads "On the JobFlex
+Network" once listed) whose BlueprintSheet holds the on switch, the trades as a
+wrapped row of checks, where you work, and the contact; the profile sheet gains
+"The state register" as a bold kind, the license number and the register's
+words with "checked <day>" in muted type, and "Check the register" as a ghost
+button beside Edit.
+
+Subcontractors, part 4 (2026-11-08, the subcontractors plan): the Contracts
+tab is a hub card in the section's strip (after Compare) with the same ruled
+rows — "SC-1001 · Ridge Framing" as a link-button in bold over the title in
+mono, the total at the right ("$42,000 + changes" under it in mono when a
+change order moved it), and the state as a pill (emerald executed, amber
+waiting, rose cancelled) over its words in muted type; awarded quotes still
+without a contract sit above it with "Draft the contract" as the row's primary
+button. The contract opens in a 640px BlueprintSheet: a draft is the hub's own
+form (title; price and the two days on one row; the scope; the payment
+schedule as rows of name, share and due day with "+ Payment" and the
+"Deposit 20 · Rough-in 40 · Completion 40" ghost button, the dollars in muted
+type beside them; the files as checks; the terms; the signer's name) with
+Save the draft and Preview as ghost buttons and Sign and send primary; a sent
+or signed one is the facts grid, the link in mono, "Open the signed PDF"
+primary (the document viewer), and the change orders as ruled rows with their
+pill, under them the proposal form with the over-the-share warning in the
+card's note style. The sub's /s/<token> page is the buyer's plain card: the
+agreement as a document under a 2px rule, each section a bold heading with its
+paragraphs or a bulleted list, hairlines between; the files as the quote
+page's ruled list; the two signatures side by side, each typed name in italic
+on a 1.5px rule with the time in muted type; then the full-name field, the
+consent as a 22px check beside its sentence, and "Sign the subcontract" as the
+page's black button. Signed, the dashed box says so with "Download the signed
+PDF"; a change order waiting is a framed white block with its number and
+signed amount in bold, the scope, the name field and "Agree to CO #2", and
+"Decline it" as the quiet link under it. The signed PDF is Letter, Helvetica,
+the proposal PDF's palette: the eyebrow "Subcontract SC-1001", the title, the
+three meta columns, the sections, the two signature blocks with the names in
+Helvetica-Oblique on a rule, the green stamp line, and "Page n of N" in the
+footer.
+
+Subcontractors, part 5a (2026-11-09, the subcontractors plan): the Invoices tab
+opens on five metric tiles (Billed, To review, Owed now, Paid, Retainage held —
+the first two amber when non-zero), then a "By contract" hub card whose ruled
+rows give each signed contract's total, billed, paid, held and what is left to
+bill in muted type with "Release retainage" as the row's small button (its form
+opens inside the row), then the Invoices card: "SI-1001 · Ridge Framing" as a
+bold link-button over their number, the payment it bills and the day in mono,
+the amount at the right with "paid · held" under it in mono, the state as a
+pill (emerald approved or paid, amber to review, rose questioned or void) with
+a rose "2 to check" pill beside it. The invoice's 640px BlueprintSheet holds the
+facts grid, the rules' flags as amber-ruled lines, "Open the invoice and what
+the AI read" (the document viewer with the read as its side panel: the amount
+due with the line it came from in quotes, the number and days, what it bills,
+the read's own flags, and Use these / Not right / Read again), the figures to
+correct, then Approve (primary; "Approve anyway" on the second press), Question
+it and Void as ghost buttons; an approved one shows "Record a payment" as five
+labelled inputs on a wrapping grid, the waiver's kind and an outlined "+ Attach
+the waiver", and "Record the payment" primary beside "Pay with Ramp". The
+Payments tab is one card of ruled lines, each payment's sentence ("Paid $7,560
+by check #1043 on Nov 10 · $840 retainage held") with an emerald "Waiver" link
+or an amber "Waiver missing" pill at the right. On the sub's /s page the money
+sits under the agreement after a 2px rule: the figures as the quote page's
+definition list, the schedule and the invoices as its ruled lists (each
+invoice's state in words, a questioned one with the company's reason), the
+payments with the waiver's kind and the page's outlined file button, then "Send
+an invoice" in the same field style as the signature with the black button.

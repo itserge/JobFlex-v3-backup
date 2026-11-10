@@ -22,10 +22,13 @@
 // why the link runs through the proposal's jobs and what that costs.
 
 import { notFound, redirect } from "next/navigation";
+import { after } from "next/server";
 import type { Metadata } from "next";
 import { isOwnerOrManager, requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
 import { loadProjectDetail } from "@/components/v3/project-detail-blueprint/project-detail-load";
+import { readSnoozes } from "@/lib/projectOverview/server";
+import { writeSummary } from "@/lib/projectOverview/summary";
 // The page renders the VIEWPORT SWITCH rather than the desktop content
 // directly: above 768px it is ProjectDetailContent, unchanged, and at or below
 // it the handheld rebuild in src/components/v3/mobile-project-detail/. Exactly
@@ -49,10 +52,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   // decide; the classic tree let requireOrg throw into its own boundary.
   let organizationId: string;
   let role: string;
+  let userId: string;
   try {
     const ctx = await requireOrg();
     organizationId = ctx.organizationId;
     role = ctx.role;
+    userId = ctx.user.id;
   } catch (err) {
     if (err instanceof UnauthorizedError) {
       redirect(`/auth/login?next=${encodeURIComponent(`/dashboard/projects/${id}`)}`);
@@ -61,12 +66,14 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     throw err;
   }
 
-  const props = await loadProjectDetail(id, organizationId);
+  const [props, snoozes] = await Promise.all([loadProjectDetail(id, organizationId), readSnoozes(organizationId, userId, id).catch(() => ({}))]);
   if (!props) notFound();
+  // The Overview's sentence for today, written once the page has gone (part 3): the rules' stand-in shows until then.
+  if (props.overview.summaryFresh === false) after(() => writeSummary(organizationId, props.project.id, props.timeline.today, props.project.name, props.overview).then(() => undefined));
 
   // What this role may open from the page — an estimator runs projects but has no client record or job page
   // (lib/roleRoutes), so those read as plain text for them (2026-11-04).
   const gate = ROLE_ROUTE_GATES[role];
   const opens = (path: string) => !gate || isPathAllowed(gate, path);
-  return <ProjectDetailViewportSwitch {...props} canManage={isOwnerOrManager(role)} opens={{ client: opens("/dashboard/client-detail"), jobs: opens("/dashboard/jobs") }} />;
+  return <ProjectDetailViewportSwitch {...props} snoozes={snoozes} canManage={isOwnerOrManager(role)} opens={{ client: opens("/dashboard/client-detail"), jobs: opens("/dashboard/jobs") }} />;
 }

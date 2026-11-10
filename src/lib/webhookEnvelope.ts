@@ -15,7 +15,7 @@ export type EnvelopeResult =
   | { outcome: "failed"; error: string };
 
 export async function runWebhookEnvelope(
-  meta: { provider: "STRIPE" | "SQUARE" | "STAX" | "WISETACK"; eventId: string; type: string },
+  meta: { provider: "STRIPE" | "SQUARE" | "STAX" | "WISETACK" | "RESEND"; eventId: string; type: string },
   handler: () => Promise<void>,
 ): Promise<EnvelopeResult> {
   const where = { provider_eventId: { provider: meta.provider, eventId: meta.eventId } };
@@ -42,7 +42,8 @@ export async function runWebhookEnvelope(
     });
     return { outcome: "processed" };
   } catch (err: unknown) {
-    const msg = credentialErrorMessage(meta.provider === "STRIPE" ? "Stripe" : meta.provider === "SQUARE" ? "Square" : meta.provider === "WISETACK" ? "Wisetack" : "Stax", err);
+    // Resend (inbound mail) has no credential dictionary: its errors are reported as they come.
+    const msg = meta.provider === "RESEND" ? (err instanceof Error ? err.message : String(err)) : credentialErrorMessage(meta.provider === "STRIPE" ? "Stripe" : meta.provider === "SQUARE" ? "Square" : meta.provider === "WISETACK" ? "Wisetack" : "Stax", err);
     // The route answers 500 and the provider retries; this is where the
     // failure is seen — `server_error`, scoped to provider and event type.
     logServerError(`webhooks/${meta.provider.toLowerCase()}:${meta.type}`, new Error(msg), { kind: "webhook" });

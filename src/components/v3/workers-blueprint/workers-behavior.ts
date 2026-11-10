@@ -22,6 +22,7 @@ import {
   updateWorker,
 } from "@/actions/workers";
 import { closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
+import { setRepCommission } from "@/actions/proposalRow";
 import { leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import { failureAsError, isPlanLimitError } from "@/lib/planLimits";
 import { roleAccess } from "@/lib/roleAccess";
@@ -380,6 +381,20 @@ export function initWorkersContent(
           (e.earned ? '<div class="fld-v mono">$' + e.earned.toLocaleString('en-US') + '</div>' : '<div class="fld-v none">no pay set yet</div>') + '</div>' +
         '<div class="fld-row"><div class="kpi-lbl">Still owed</div>' +
           (e.unpaid ? '<div class="fld-v mono">$' + e.unpaid.toLocaleString('en-US') + '</div>' : '<div class="fld-v none">nothing</div>') + '</div>' +
+        // Sales commission (2026-11-10): their percent, set here, and what they've earned — paid as the client pays.
+        (e.userId && e.commission
+          ? '<div class="fld-row" data-worker-commission><div class="kpi-lbl">Sales commission</div>' +
+            '<div class="fld-v"><span class="comm-set"><input class="comm-in" type="text" inputmode="decimal" value="' + (e.commission.pct ?? '') + '" placeholder="0" aria-label="Commission percent" data-comm-pct>%' +
+            '<button class="btn btn-ghost btn--sm" type="button" data-act="comm-save">Save</button></span>' +
+            '<span class="comm-earned mono" data-comm-earned>' + (e.commission.deals ? '$' + Math.round(e.commission.earned).toLocaleString('en-US') + ' earned of $' + Math.round(e.commission.full).toLocaleString('en-US') + ' · ' + e.commission.deals + ' deal' + (e.commission.deals === 1 ? '' : 's') : 'on the deals they sell, as the client pays') + '</span></div></div>'
+          : '') +
+        // Come-backs on their work in the last year (2026-11-09): only "our work" counts; the repairs they went on.
+        (e.comebacks
+          ? '<div class="fld-row" data-worker-comebacks><div class="kpi-lbl">Come-backs · 12 mo</div>' +
+            (e.comebacks.count
+              ? '<div class="fld-v mono">' + e.comebacks.count + ' on their work' + (e.comebacks.cost ? ' · $' + Math.round(e.comebacks.cost).toLocaleString('en-US') : '') + (e.comebacks.sentOn ? ' · fixed ' + e.comebacks.sentOn : '') + '</div>'
+              : '<div class="fld-v none">none' + (e.comebacks.sentOn ? ' · fixed ' + e.comebacks.sentOn : '') + '</div>') + '</div>'
+          : '') +
         '<div class="fld-row"><div class="kpi-lbl">Joined</div><div class="fld-v mono">' + escapeText(e.joined) + '</div></div>' +
         '<div class="fld-row"><div class="kpi-lbl">Last active</div>' +
           (e.lastActive && e.lastActive !== 'Never' ? '<div class="fld-v mono">' + escapeText(e.lastActive.replace(/^Active /, '')) + '</div>' : '<div class="fld-v none">never</div>') + '</div>' +
@@ -648,6 +663,22 @@ export function initWorkersContent(
     const kind = act.dataset.act;
 
     if (kind === 'close-insp') { wk.selected = null; paintSelection(); renderInspector(); return; }
+    if (kind === 'comm-save') {
+      const entry = workersData.find(function (x) { return x.id === wk.selected; });
+      const input = act.parentElement?.querySelector<HTMLInputElement>('[data-comm-pct]');
+      if (!entry?.userId || !input) return;
+      const raw = input.value.replace(/[%\s]/g, '');
+      const pct = raw ? Number.parseFloat(raw) : null;
+      if (pct !== null && (!Number.isFinite(pct) || pct < 0 || pct > 100)) { input.focus(); return; }
+      act.setAttribute('disabled', '');
+      void setRepCommission(entry.userId, pct)
+        .then(function (r) {
+          entry.commission = { pct: r.pct, earned: r.earned, full: r.full, deals: r.deals };
+          renderInspector();
+        })
+        .catch(function () { act.removeAttribute('disabled'); });
+      return;
+    }
     if (kind === 'invite') { openInvite(null); return; }
     if (kind === 'edit') {
       const entry = workersData.find(function (x) { return x.id === wk.selected; });

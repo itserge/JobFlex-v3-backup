@@ -524,8 +524,21 @@ function roofChecks(roof: RoofFrame, design: DeckDesign, frame: DeckFrame | null
     // The windows themselves are checked when the house carries them (lib/deck/openingChecks, "roof-openings").
     const known = !!design.house.openings?.length;
     add({ id: "roof-wall-height", level: "info", part: "On the house", text: `The roof meets the house ${ftIn(Math.round(above))} above the ${roof.floor === "deck" ? "deck" : "floor"} (${ftIn(Math.round(meetIn))} above the ground). Check it clears ${known ? "" : "the windows and "}the house's own eave; the siding there is cut back and flashed (${Math.round(roof.wallFt)} ft).`, rule: "IRC R903.2" });
+    // The flashing where the roof meets the siding, and the water's way off the wall (owner, 2026-11-07).
+    const fl = roof.wallFlashing;
+    const apron = fl.filter((w) => w.kind === "apron").reduce((n, w) => n + w.lengthIn, 0);
+    const step = fl.filter((w) => w.kind === "step");
+    const kicks = fl.filter((w) => w.kind === "kickout").length;
+    if (fl.length) add({ id: "roof-wall-flashing", level: "pass", part: "On the house", text: `Flashed where the roof meets the siding: ${[apron ? `${ftIn(Math.round(apron))} of apron (L) flashing along the top` : "", step.length ? `step flashing up ${step.length === 1 ? "the slope" : `${step.length} slopes`} (${ftIn(Math.round(step.reduce((n, w) => n + w.lengthIn, 0)))}), one piece per course` : ""].filter(Boolean).join(" and ")}, 4 in. up the wall under the house wrap, counter-flashed by the siding. Water at the wall runs off to the sides and down to the gutters.`, rule: "IRC R903.2" });
+    if (kicks) add({ id: "roof-kickout", level: "pass", part: "On the house", text: `${kicks === 1 ? "A kickout" : `${kicks} kickouts`} where the eave${kicks === 1 ? " meets" : "s meet"} the wall: the water off the step flashing is thrown into the gutter, not down the siding.`, rule: "IRC R903.2.1" });
   } else if (!pergola) {
-    add({ id: "roof-free", level: "info", part: "Standing free", text: `A free-standing ${kindName} roof: ${plural(roof.posts.length, "post")}, headers all round, knee braces. The building office may want its lateral bracing shown.`, rule: RULE.selfSupporting });
+    const gap = roof.houseGap;
+    // Hanging it on the house is offered only where the wall takes a ledger (a deck attached to it, not beside brick veneer).
+    const onHouseAlt = design.placement === "attached" ? [{ label: "Hang it on the house instead", patch: { roof: { ...r, attach: "wall" as const } } }] : undefined;
+    // Free-standing over a deck against the house: the gap at the wall, its gutter, or the drip there without one (2026-11-07).
+    if (gap && gap.gutter) add({ id: "roof-free", level: "info", part: "Standing free", text: `A free-standing ${kindName} roof beside the house: ${plural(roof.posts.length, "post")}, headers all round, knee braces. Its back posts stand ${ftIn(gap.postsIn)} off the wall, so the back eave stops ${gap.eaveIn < 12 ? `${gap.eaveIn} in.` : ftIn(gap.eaveIn)} from it and its gutter hangs in the gap, ${gap.clearIn} in. clear of the siding — the back slope drains to that gutter and the downspouts, never down the wall. Nothing is fastened to the house. The building office may want its lateral bracing shown.`, rule: RULE.selfSupporting, alts: onHouseAlt });
+    else if (gap) add({ id: "roof-free", level: "warn", part: "Standing free", text: `A free-standing ${kindName} roof beside the house with no gutter: the back slope drips ${gap.eaveIn < 12 ? `${gap.eaveIn} in.` : ftIn(gap.eaveIn)} from the wall, into the gap beside the foundation, and splashes the siding. A gutter on the back eave carries it to the downspouts — or hang the roof on the house and flash it.`, rule: "IRC R801.3", fix: { label: "Add 5-in. gutters", patch: { roof: { ...r, gutters: { kind: "k5", guards: false } } } }, alts: onHouseAlt });
+    else add({ id: "roof-free", level: "info", part: "Standing free", text: `A free-standing ${kindName} roof: ${plural(roof.posts.length, "post")}, headers all round, knee braces. The building office may want its lateral bracing shown.`, rule: RULE.selfSupporting });
   }
 
   /* ── Covering, trim, gutters ────────────────────────────────────────── */

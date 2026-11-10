@@ -1,0 +1,50 @@
+/* THE PLAN SET'S EDIT (2026-11-09) — the cards' marks while editing, the
+   sheets the contractor adds, the phone's full-screen editor. Screen only:
+   nothing here prints but the cards themselves. Colours from the plan set's
+   own tokens (.set), with their values as fallbacks for the editor that
+   opens outside it. */
+.contents { display: contents; }
+.orig { display: none !important; }
+.addedCard { min-width: 0; }
+
+/* ── While editing: every card answers the pointer ─────────────────────── */
+.editing [data-card-id] { cursor: pointer; }
+.editing [data-card-id]:not(.contents),
+.editing .contents[data-card-id] > * { outline: 1px dashed rgba(24, 84, 160, 0.4); outline-offset: 2px; }
+.editing [data-card-id]:not(.contents):hover,
+.editing .contents[data-card-id]:hover > * { outline: 1.5px solid rgba(24, 84, 160, 0.75); }
+.editing [data-card-sel]:not(.contents),
+.editing .contents[data-card-sel] > * { outline: 2.5px solid var(--blue, #1854a0) !important; outline-offset: 2px; background-color: var(--tint, rgba(24, 84, 160, 0.06)); }
+.editing [data-card-typing] { outline: 2.5px solid var(--ok, #2c6335) !important; outline-offset: 2px; cursor: text; background-color: #fff; }
+.editing [data-card-out]:not(.contents),
+.editing .contents[data-card-out] > * { opacity: 0.3; background-image: repeating-linear-gradient(-45deg, transparent 0 8px, rgba(168, 50, 50, 0.14) 8px 10px); }
+/* An edited card whose design changed under it — on screen, editing or not. */
+.surface [data-card-stale]:not(.contents) { outline: 2px solid var(--warn, #96691a); outline-offset: 2px; background-color: var(--warnSoft, rgba(184, 132, 32, 0.1)); }
+
+/* ── A sheet the contractor added: cards in columns ────────────────────── */
+.extra.extra { display: block; column-count: 2; column-gap: 0.35in; }
+.extraA.extraA { display: block; column-count: 1; }
+.extra.extra > *,
+.extraA.extraA > * { break-inside: avoid; margin: 0 0 0.12in; }
+.emptySheet.emptySheet { display: block; width: 100%; height: 1.4in; margin: 0; border: 2px dashed rgba(24, 84, 160, 0.45); background: var(--tint, rgba(24, 84, 160, 0.06)); color: var(--blue, #1854a0); font: 800 13pt/1.2 var(--font, Inter, sans-serif); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; }
+
+@media print {
+  .surface [data-card-id] { outline: none !important; background-color: transparent !important; background-image: none !important; }
+  .surface [data-card-out],
+  .emptySheet.emptySheet,
+  .full { display: none !important; }
+}
+
+/* ── On a phone: the card typed into, full screen ──────────────────────── */
+.full { position: fixed; inset: 0; z-index: 200; display: grid; grid-template-rows: auto auto minmax(0, 1fr); background: #f3f1ec; color: var(--ink, #0a0a0a); font-family: var(--font-inter), Inter, Helvetica, Arial, sans-serif; }
+.fullHead { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px 10px; background: #fff; border-bottom: 2px solid var(--ink, #0a0a0a); }
+.fullTitle { display: grid; gap: 1px; min-width: 0; text-align: center; }
+.fullTitle span { font-family: var(--font-jbmono), ui-monospace, monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: #5b5b5b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fullTitle b { font-size: 14px; font-weight: 900; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fullBtn { min-height: 44px; padding: 0 14px; border: 2px solid var(--ink, #0a0a0a); background: #fff; color: var(--ink, #0a0a0a); font: 800 12px/1 var(--font-inter), Inter, Helvetica, Arial, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; white-space: nowrap; }
+.fullBtn:disabled { opacity: 0.4; cursor: default; }
+.fullDone { background: #1854a0; border-color: #1854a0; color: #fff; }
+.fullTools { display: flex; gap: 6px; padding: 8px 10px; overflow-x: auto; background: #fff; border-bottom: 1px solid rgba(10, 10, 10, 0.12); }
+.fullBody { overflow: auto; padding: 16px; -webkit-overflow-scrolling: touch; }
+.fullCard { zoom: 1.7; box-sizing: border-box; min-height: 40px; padding: 6pt; background: #fff; outline: 2px solid var(--ok, #2c6335); outline-offset: 0; }
+.fullCard:focus { outline-width: 3px; }

@@ -38,7 +38,10 @@ const balance = (s: ReturnType<typeof buildStructure>) => {
 const free = build(covered(39.5, 25, { kind: "gable", attach: "free" }));
 const fr = free.roof!;
 check("the owner's 39'-6\" × 25' free gable is trussed: no ridge member, no king posts, no ties", !!fr.trusses && fr.ridge === null && fr.kingPosts === 0 && fr.ties === 0, JSON.stringify(fr.trusses));
-check("…the trusses span the 24'-3\" between the eave headers, 24 in. apart along the 39 ft ridge", !!fr.trusses && near(fr.trusses.spanIn, 291, 2) && fr.trusses.spacingIn === 24 && fr.trusses.count >= 20 && fr.trusses.count <= 22 && fr.trusses.gableEnds === 2, `${fr.trusses?.count} × ${fr.trusses?.spanIn} in.`);
+// Free-standing on a deck against the house, its back posts stand off the wall for the back gutter's gap (2026-11-07):
+// the trusses span from them to the front posts, 4½ in. in from the deck's front edge.
+const spanFree = 25 * 12 - 4.5 - (fr.houseGap?.postsIn ?? 4.5);
+check("…the trusses span from the back posts — off the house for the gutter's gap — to the front, 24 in. apart along the 39 ft ridge", !!fr.trusses && !!fr.houseGap && near(fr.trusses.spanIn, spanFree, 2) && fr.trusses.spacingIn === 24 && fr.trusses.count >= 20 && fr.trusses.count <= 22 && fr.trusses.gableEnds === 2, `${fr.trusses?.count} × ${fr.trusses?.spanIn} in.`);
 check("…each truss drawn whole: two top chords, a bottom chord and four webs", fr.members.filter((m) => m.role === "truss").length === 7 * (fr.trusses?.count ?? 0));
 check("…every post brings down less than its footing table reads", fr.posts.every((p) => p.loadLb <= limitLb), `${Math.max(...fr.posts.map((p) => p.loadLb))} lb, the table reads ${limitLb}`);
 const fb = balance(free);
@@ -51,7 +54,7 @@ check("…the ridge passes with no beam to carry, and nothing on the roof fails"
 const pkg = priceStructure(free);
 const tc = pkg.bom.find((l) => l.id === "trusses-common");
 const tg = pkg.bom.find((l) => l.id === "trusses-gable");
-check("the materials buy the trusses by the truss, priced by the foot of span: commons and two gable ends", !!tc && !!tg && tc.rateKey === "lf.truss" && tc.qty === (fr.trusses?.count ?? 0) - 2 && tg.qty === 2 && near(tc.rateQty, tc.qty * 291 / 12, 1), `${tc?.qty} + ${tg?.qty}`);
+check("the materials buy the trusses by the truss, priced by the foot of span: commons and two gable ends", !!tc && !!tg && tc.rateKey === "lf.truss" && tc.qty === (fr.trusses?.count ?? 0) - 2 && tg.qty === 2 && near(tc.rateQty, (tc.qty * spanFree) / 12, 1), `${tc?.qty} + ${tg?.qty}`);
 check("…a hurricane tie at both bearings of every truss, and the truss bracing", fr.hardware.hurricaneTies === 2 * (fr.trusses?.count ?? 0) && pkg.bom.some((l) => /truss bracing/.test(l.label)));
 check("…and no rafters or ridge lumber bought", !pkg.bom.some((l) => /— rafters$|— ridge$|rafter ties/.test(l.label)), pkg.bom.filter((l) => /rafter|ridge/.test(l.label)).map((l) => l.label).join(" | "));
 

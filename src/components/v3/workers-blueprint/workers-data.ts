@@ -26,6 +26,14 @@ export type WorkerEntry = {
   /** Pay on this worker's jobs, all of it and the part not yet marked paid (2026-09-20). */
   earned?: number;
   unpaid?: number;
+  /** Come-backs over the last year (2026-11-09, lib/repairs/server crewComebackStats): repairs on their work (only
+   *  "our work" counts), what those cost, and the repairs they were sent on. */
+  comebacks?: { count: number; cost: number; sentOn: number };
+  /** The login behind the profile — what the sales commission is set on (2026-11-10, part 4). */
+  userId?: string;
+  /** Sales commission (2026-11-10): their percent, and what they have earned of the whole on their sold deals —
+   *  earned as the client's money is collected, before tax. */
+  commission?: { pct: number | null; earned: number; full: number; deals: number };
   token: string;
   invite: InviteStatus;
   role: string;

@@ -40,6 +40,9 @@ export interface PaymentSettings {
   reminderMode: "auto" | "manual" | "off";
   lateFees: boolean;
   receiptsOnPayment: boolean;
+  /** "Your order is placed" goes to the client by itself when the first payment lands (2026-11-09; off = the office
+   *  sends it from the Payments panel). */
+  orderNoticeAuto: boolean;
   currency: string;
   depositPct: number;
   netTerms: string;
@@ -57,6 +60,7 @@ export const PAYMENT_DEFAULTS: PaymentSettings = {
   reminderMode: "manual",
   lateFees: true,
   receiptsOnPayment: true,
+  orderNoticeAuto: false,
   currency: "USD",
   depositPct: 30,
   netTerms: "Net 14",

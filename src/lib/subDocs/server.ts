@@ -70,8 +70,10 @@ export type RecordInput = {
   url: string;
   contentType: string | null;
   bytes: number | null;
-  uploadedVia: "OFFICE" | "SUB" | "EMAIL";
+  uploadedVia: "OFFICE" | "SUB" | "EMAIL" | "SYSTEM";
   uploadedById: string | null;
+  /** The email it arrived in (part 2), when it came by email. */
+  inboundEmailId?: string | null;
 };
 
 /** The row for a file that landed: the URL must be a stored file under this company's folder (a data URL is taken
@@ -94,6 +96,7 @@ export async function recordDocument(input: RecordInput): Promise<DocRow> {
       bytes: input.bytes != null && input.bytes > 0 ? Math.round(input.bytes) : null,
       uploadedVia: input.uploadedVia,
       uploadedById: input.uploadedById,
+      inboundEmailId: input.inboundEmailId ?? null,
     },
     select: DOC_SELECT,
   });

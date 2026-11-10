@@ -2666,3 +2666,54 @@
 .bp :global(.content .cal-window-mark b) { font-weight: 900; color: var(--ink); text-transform: uppercase; letter-spacing: 0.02em; }
 .bp :global(.content .cal-window-note) { margin-right: auto; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
 .bp :global(.content .cal-window-head .btn) { text-decoration: none; }
+
+/* ── CALENDAR PART 1 (2026-11-09): the numbers row, the crew bar, the "To place" list, money on job chips ── */
+.bp :global(.content .cal-stats) { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 0 0 14px; }
+.bp :global(.content .cal-stats:empty) { display: none; }
+.bp :global(.content .cal-stat) { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 10px 12px; border: var(--border); border-radius: var(--radius); background: #fff; box-shadow: 3px 3px 0 var(--shadow); text-align: left; cursor: pointer; transition: transform 0.1s var(--ease), border-color 0.12s; }
+.bp :global(.content .cal-stat:hover) { transform: translate(-1px, -1px); }
+.bp :global(.content .cal-stat b) { font-size: 22px; font-weight: 900; line-height: 1; letter-spacing: -0.02em; color: var(--ink); }
+.bp :global(.content .cal-stat span) { font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.bp :global(.content .cal-stat[data-tone="blue"] b) { color: var(--blueprint); }
+.bp :global(.content .cal-stat[data-tone="amber"] b) { color: var(--warning); }
+.bp :global(.content .cal-stat[data-tone="red"] b) { color: var(--danger); }
+.bp :global(.content .cal-stat.on) { background: var(--ink); }
+.bp :global(.content .cal-stat.on b), .bp :global(.content .cal-stat.on span) { color: #fff; }
+
+.bp :global(.content .cal-crew) { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -4px 0 14px; }
+.bp :global(.content .cal-crew:empty) { display: none; }
+.bp :global(.content .cal-crew-l) { margin-right: 4px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.bp :global(.content .cal-who) { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px 4px 4px; border: 1.5px solid var(--hair-soft); border-radius: 999px; background: #fff; font-size: 12px; font-weight: 600; color: var(--ink); cursor: pointer; transition: border-color 0.12s; }
+.bp :global(.content .cal-who:hover) { border-color: var(--ink); }
+.bp :global(.content .cal-who .cav) { width: 20px; height: 20px; font-size: 9px; }
+.bp :global(.content .cal-who small) { font-family: var(--font-mono); font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-light); }
+.bp :global(.content .cal-who i) { min-width: 16px; padding: 0 4px; border-radius: 999px; background: var(--paper-deep); font-style: normal; font-family: var(--font-mono); font-size: 10px; font-weight: 700; text-align: center; }
+.bp :global(.content .cal-who.on) { border-color: var(--ink); background: var(--ink); color: #fff; }
+.bp :global(.content .cal-who.on small) { color: rgba(255, 255, 255, 0.7); }
+.bp :global(.content .cal-who.on i) { background: rgba(255, 255, 255, 0.18); }
+.bp :global(.content .cal-who.all) { padding: 4px 10px; border-style: dashed; }
+
+.bp :global(.content .tray-sec) { display: flex; justify-content: space-between; margin: 4px 2px 0; font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.bp :global(.content .tray-sec span) { color: var(--ink); }
+.bp :global(.content .tray-top) { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
+.bp :global(.content .tray-open) { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; margin: -3px -3px 0 0; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; color: var(--blueprint); cursor: pointer; }
+.bp :global(.content .tray-open:hover) { border-color: var(--blueprint); }
+.bp :global(.content .tray-open .ic) { width: 14px; height: 14px; }
+.bp :global(.content .tray-card--visit) { border-left: 3px solid var(--blueprint); }
+/* Repairs (2026-11-09): come-backs sit first in To place, edged in amber; their chips carry the wrench and a dashed edge. */
+.bp :global(.content .tray-card--repair) { border-left: 3px solid var(--amber, #b88420); }
+.bp :global(.content .tray-sec--repair) { color: var(--amber, #b88420); }
+.bp :global(.content .evc.evc--repair) { border-style: dashed; }
+.bp :global(.content .tray-group) { display: flex; flex-direction: column; gap: 6px; padding: 7px; border: 1.5px dashed var(--hair-soft); border-radius: var(--radius); }
+.bp :global(.content .tray-gh) { font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); }
+.bp :global(.content .tray-gf) { font-size: 10.5px; color: var(--muted); }
+.bp :global(.content .tray-slots) { display: none; }
+.bp :global(.content .tray-slots.open) { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; padding-top: 8px; border-top: 1.5px solid var(--hair-soft); cursor: default; }
+.bp :global(.content .tray-slots-h) { font-family: var(--font-mono); font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.bp :global(.content .tray-slot) { display: flex; flex-direction: column; gap: 1px; padding: 6px 8px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; font-size: 11.5px; text-align: left; cursor: pointer; }
+.bp :global(.content .tray-slot:hover) { background: var(--ink); color: #fff; }
+.bp :global(.content .tray-slot span) { color: var(--muted); }
+.bp :global(.content .tray-slot:hover span) { color: rgba(255, 255, 255, 0.75); }
+
+.bp :global(.content .evc-day) { font-weight: 800; color: var(--ink); }
+.bp :global(.content .evc-cash) { display: block; margin-top: 1px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; color: var(--success-dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

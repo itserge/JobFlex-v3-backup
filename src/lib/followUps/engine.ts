@@ -193,6 +193,7 @@ export async function dispatchOne(id: string): Promise<boolean> {
       // Sends via the org's connected Gmail when opted in, else Resend/SMTP with
       // the contractor as reply-to.
       await sendOrgEmail(proposal.organization, {
+        clientId: proposal.clientId,
         to: proposal.client.email,
         subject: subj,
         html,

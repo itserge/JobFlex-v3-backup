@@ -27,10 +27,27 @@
 //   "where are we over|what's the margin|where can I save $N on <project>" → money_plan (2026-11-07, part 5)
 //   "what's funded on <project>" → draws; "request draw three on <project>" → request_draw; "the bank funded draw two on <project>" → fund_draw (2026-11-07, part 6)
 //   "the lender's link|page for <project>" → lender_link (2026-11-08, part 7)
+//   "what's going on with <project>" / "what's holding up <stage> on <project>" → project_overview; "what do I need to do
+//   this week" / "which projects are behind|over budget|at risk" → projects_overview; the Overview's sentence
+//   (json_schema "overview_line") from its facts (2026-11-09, Project Overview part 3)
 //   Smart Proposal's own run (response_format json_object, no tools): a small estimate in the old draft shape.
 //   Speech (POST /v1/audio/speech, the Talk mode's voice): 0.3 s of silence as an MP3, so a page plays it and goes on.
 //   The Budget card's read (response_format json_schema "budget_read", 2026-11-07): words → the rules' own rows
 //   (lib/projectBudgetImport), with a figure changed when the words say "fakecheck"; a picture → a lender's page.
+//   The estimate reader (json_schema "quote_read", 2026-11-08, the subcontractors plan, part 2): words → the figures
+//   by regex (the fixtures in qa/fixtures/docs); a PDF file part or a picture → XYZ Electric's $23,500 proposal; a
+//   file named "blank" → nothing to read. The comparer (json_schema "compare_words") → two sentences from the fields.
+//   The invoice reader (json_schema "invoice_read", 2026-11-09, part 5a): words → the number, the days, the amount due
+//   by regex (qa/fixtures/docs/invoice-*.pdf); a PDF file part or a picture → XYZ Electric's $7,050 invoice #1187.
+//   Ramp's API (/developer/v1/…, 2026-11-09, part 5a) for Bill Pay on the stand: one entity with a bill-pay account,
+//   vendors made on request with an ACH account, approved bills scheduled at once; POST /__fake/ramp/pay/<billId>
+//   marks one paid (Ramp paying the sub), so the walk can see the payment recorded. RAMP_API_BASE points here.
+//   The permit set's requirements check (json_schema "permit_requirements", 2026-11-09, the plan set's Edit, part 2):
+//   a department's list → one item per line by words (frost / wind / snow figures, a 24 x 36 sheet, "Note:" lines, the
+//   site plan and footings already on the set, elevations not required, a 42-in. guard for the studio, an affidavit to
+//   sign); the contractor's own words ("WHAT THE CONTRACTOR WANTS") → take out the elevations / materials, a note, the
+//   septic tank on the site plan, a deeper footing for the studio. The Responses API with web_search (POST /v1/responses)
+//   → Knox County's deck checklist with two cited links.
 //   NODE_PATH="" npx --no-install tsx qa/fixtures/assistant-fake-openai.ts     (FAKE_OPENAI_PORT, default 4601)
 import http from "node:http";
 import { readBudgetText } from "../../src/lib/projectBudgetImport";
@@ -127,7 +144,9 @@ type Crew = { workers: Array<{ id: string; name: string; texts: boolean }> };
 function answer(body: { messages: Msg[] }) {
   const messages = body.messages ?? [];
   const system = messages.find((m) => m.role === "system")?.content ?? "";
-  const user = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
+  // A numbered reply to the morning briefing's projects (Project Overview part 2, 2026-11-09) asks "<question> on <project>
+  // (project id …)": the words are matched as said, the project found by its name like any other.
+  const user = ([...messages].reverse().find((m) => m.role === "user")?.content ?? "").replace(/\s*\(project id [a-z0-9]+\)\.?$/i, "");
   const text = user.toLowerCase();
   const today = todayOf(system);
   const done = soFar(messages);
@@ -138,6 +157,10 @@ function answer(body: { messages: Msg[] }) {
     if (o?.notDone) return reply(o.notDone);
     if (o?.error) return reply(`That didn't work: ${o.error}`);
   }
+
+  // A numbered row the Operator has no tool for (Project Overview part 3): "What can I do about this: <row> on <project>".
+  const aboutQ = /^What can I do about this: (.+?) on (.+?)\.?$/i.exec(user);
+  if (aboutQ) return reply(`"${aboutQ[1]}" needs someone there — I can't fix it from here. Open ${aboutQ[2]} to see who flagged it, or tell me what to send them.`);
 
   // The estimators by voice (2026-11-05): a roof, HVAC or lawn care at an address — before the generic build rule,
   // which would price them with Smart Proposal. The address: "at 14 Oak St, Tacoma WA" / "address: …".
@@ -243,6 +266,95 @@ function answer(body: { messages: Msg[] }) {
     return call("award_quote", { projectId: pid, contractor: awardQ[3].trim(), stage: awardQ[1] });
   }
   if (done.has("award_quote")) return reply("Planned — say yes to award it.");
+  // Subcontractors, part 6 (2026-11-09): "find electricians near <project>" → find_subs; "who hasn't replied on
+  // <project>" → sub_requests; "remind the subs … on <project>" → remind_subs; "compare the quotes on <project>" →
+  // compare_quotes; "how's the subs budget on <project>" → subs_budget; "which sub invoices are unpaid" → sub_invoices;
+  // "approve <Sub>'s invoice on <project>" → approve_sub_invoice; "pay <Sub>'s invoice by check 1043 on <project>" →
+  // pay_sub_invoice; "open <Sub>'s invoice on <project>" → sub_document. The project comes from a find, as above.
+  const subsPid = () => ((done.get("find") as Found | undefined) as { projects?: Array<{ id: string }> } | undefined)?.projects?.[0]?.id ?? null;
+  const findSubsQ = /\bfind (?:me )?(?:some )?([a-z]+?)s? near (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  if (findSubsQ) {
+    const r = done.get("find_subs") as { results?: Array<{ name: string; license: string; rating: string | null }>; note?: string } | undefined;
+    if (!r) {
+      const pid = subsPid();
+      if (!pid) return call("find", { query: findSubsQ[2].trim(), kind: "project" });
+      const t = findSubsQ[1].toLowerCase();
+      const trade = /electric/.test(t) ? "Electrical" : /plumb/.test(t) ? "Plumbing" : /fram|carpent/.test(t) ? "Carpentry" : /roof/.test(t) ? "Roofing" : findSubsQ[1];
+      return call("find_subs", { projectId: pid, trade, near: null, name: null });
+    }
+    const xs = r.results ?? [];
+    return reply(xs.length ? `Found ${xs.length}: ${xs.map((x) => `${x.name} (${x.license}${x.rating ? `, ★ ${x.rating}` : ""})`).join("; ")}.` : (r.note ?? "Nobody found."));
+  }
+  const notRepliedQ = /\bwho (?:hasn't|has not|haven't) (?:replied|answered)\b.*?\bon (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  if (notRepliedQ && !/\bremind\b/i.test(user)) {
+    const r = done.get("sub_requests") as { requests?: Array<{ request: string; notReplied: string[] }>; note?: string } | undefined;
+    if (!r) {
+      const pid = subsPid();
+      if (!pid) return call("find", { query: notRepliedQ[1].trim(), kind: "project" });
+      return call("sub_requests", { projectId: pid, stage: null });
+    }
+    const waiting = (r.requests ?? []).flatMap((q) => q.notReplied.map((n) => `${n} on ${q.request}`));
+    return reply(waiting.length ? `Not replied yet: ${waiting.join(", ")}.` : (r.note ?? "Everyone has replied."));
+  }
+  const remindSubsQ = /\bremind (?:the )?(?:subs|framers|electricians|plumbers|contractors)\b.*?\bon (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  if (remindSubsQ && !done.has("remind_subs")) {
+    const pid = subsPid();
+    if (!pid) return call("find", { query: remindSubsQ[1].trim(), kind: "project" });
+    return call("remind_subs", { projectId: pid, stage: null });
+  }
+  if (done.has("remind_subs")) return reply("Planned — say yes and they are reminded.");
+  const compareQ = /\bcompare (?:the )?(?:(\w+) )?quotes on (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  if (compareQ) {
+    const r = done.get("compare_quotes") as { quotes?: Array<{ sub: string; price: number | null; lowest: boolean }>; note?: string } | undefined;
+    if (!r) {
+      const pid = subsPid();
+      if (!pid) return call("find", { query: compareQ[2].trim(), kind: "project" });
+      return call("compare_quotes", { projectId: pid, stage: compareQ[1] ?? null });
+    }
+    const qs = (r.quotes ?? []).filter((q) => q.price != null);
+    return reply(qs.length ? `${qs.map((q) => `${q.sub} $${q.price!.toLocaleString("en-US")}${q.lowest ? " (lowest)" : ""}`).join("; ")}.` : (r.note ?? "No prices yet."));
+  }
+  const subsBudgetQ = /\bsubs? budget on (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  if (subsBudgetQ) {
+    const r = done.get("subs_budget") as { committed?: number; paid?: number; pending?: number; left?: number | null; note?: string } | undefined;
+    if (!r) {
+      const pid = subsPid();
+      if (!pid) return call("find", { query: subsBudgetQ[1].trim(), kind: "project" });
+      return call("subs_budget", { projectId: pid });
+    }
+    const d = (n: number | null | undefined) => `$${Math.round(n ?? 0).toLocaleString("en-US")}`;
+    return reply(r.note && r.committed == null ? r.note : `Committed ${d(r.committed)}, paid ${d(r.paid)}, pending ${d(r.pending)}${r.left != null ? `, ${d(r.left)} left` : ""}.`);
+  }
+  if (/\bsub invoices\b.*\bunpaid\b|\bunpaid sub invoices\b/i.test(user)) {
+    const r = done.get("sub_invoices") as { invoices?: Array<{ invoice: string; sub: string; amount: number | null; status: string }>; note?: string } | undefined;
+    if (!r) return call("sub_invoices", { projectId: null, which: "unpaid" });
+    const xs = r.invoices ?? [];
+    return reply(xs.length ? `${xs.map((x) => `${x.invoice} ${x.sub}${x.amount != null ? ` $${x.amount.toLocaleString("en-US")}` : ""} (${x.status})`).join("; ")}.` : (r.note ?? "None."));
+  }
+  const approveInvQ = /\bapprove ([A-Z][\w ]*?)'s invoice on (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  if (approveInvQ && !done.has("approve_sub_invoice")) {
+    const pid = subsPid();
+    if (!pid) return call("find", { query: approveInvQ[2].trim(), kind: "project" });
+    return call("approve_sub_invoice", { projectId: pid, sub: approveInvQ[1].trim(), invoice: null });
+  }
+  if (done.has("approve_sub_invoice")) return reply("Planned — say yes to approve it.");
+  const payInvQ = /\bpay ([A-Z][\w ]*?)'s invoice by (check|ach|wire|zelle|cash|card)(?: #?(\w+))? on (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  if (payInvQ && !done.has("pay_sub_invoice")) {
+    const pid = subsPid();
+    if (!pid) return call("find", { query: payInvQ[4].trim(), kind: "project" });
+    return call("pay_sub_invoice", { projectId: pid, sub: payInvQ[1].trim(), invoice: null, method: payInvQ[2].toUpperCase(), reference: payInvQ[3] ?? null, amount: null });
+  }
+  if (done.has("pay_sub_invoice")) return reply("Planned — your PIN and a yes record it.");
+  const openDocQ = /\bopen ([A-Z][\w ]*?)'s (estimate|invoice|contract|waiver) on (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  if (openDocQ) {
+    const r = done.get("sub_document") as { name?: string; link?: string; note?: string } | undefined;
+    if (!r) {
+      const pid = subsPid();
+      if (!pid) return call("find", { query: openDocQ[3].trim(), kind: "project" });
+      return call("sub_document", { projectId: pid, sub: openDocQ[1].trim(), what: openDocQ[2].toLowerCase() });
+    }
+    return reply(r.link ? `${r.name}: ${r.link}` : (r.note ?? "Not found."));
+  }
   // Selections and gates (2026-11-07, part 3): "what's left to choose on the Bennett kitchen" → selections; "the Bennetts
   // picked the shaker cabinets from Pacific Cabinet Supply for $8,400" → choose_selection; "add a tile selection to the
   // Smith bath, due 2026-11-20, allowance $2,000" → add_selection; "mark the rough-in done on the Bennett kitchen" →
@@ -326,6 +438,38 @@ function answer(body: { messages: Msg[] }) {
     return call("start_project", { name, kind, client, template, occupied: /lives? there|living there|occupied/i.test(user) ? true : null, ...lot });
   }
   if (done.has("start_project")) return reply("Planned — say yes and I'll start it.");
+  // The Overview (Project Overview part 3, 2026-11-09): "what's going on with <project>" → find → project_overview;
+  // "what's holding up <stage> on <project>" → project_overview with the stage; "what do I need to do this week" →
+  // projects_overview week; "which projects are behind|over budget|at risk" → projects_overview. The to-do list comes
+  // back numbered as the tool gave it.
+  type OvToDo = { n: number; what: string; project?: string };
+  const toDoLines = (xs: OvToDo[] | undefined) => (xs ?? []).map((x) => `${x.n}) ${x.project ? `${x.project}: ` : ""}${x.what}`).join("\n");
+  const holdQ = /\bwhat(?:'s| is) holding up (?:the )?(.+?) on (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  const goingQ = /\bwhat(?:'s| is) going on with (?:the )?(.+?)(?:\?|$)/i.exec(user);
+  if (holdQ || goingQ) {
+    const r = done.get("project_overview") as { status?: string; line?: string; toDo?: OvToDo[]; stage?: string; state?: string; late?: string | null; inspectionsHolding?: string[]; stillNeeds?: string[]; tasksLeft?: string[]; error?: string } | undefined;
+    if (!r) {
+      const q = (holdQ ? holdQ[2] : goingQ![1]).trim();
+      const pid = projectFound(q);
+      if (!pid) return call("find", { query: q, kind: "project" });
+      return call("project_overview", { query: null, projectId: pid, stage: holdQ ? holdQ[1].trim() : null });
+    }
+    if (r.error) return reply(r.error);
+    if (holdQ) {
+      const holds = [...(r.inspectionsHolding ?? []), ...(r.stillNeeds ?? [])];
+      return reply(`${r.stage} is ${r.state}${r.late ? `, ${r.late}` : ""}. ${holds.length ? `Holding it: ${holds.join("; ")}.` : "Nothing holds it."}${r.tasksLeft?.length ? ` Tasks left: ${r.tasksLeft.join(", ")}.` : ""}`);
+    }
+    return reply(`${r.status}: ${r.line}.${r.toDo?.length ? `\nTo do now:\n${toDoLines(r.toDo)}\nReply with a number to do it.` : ""}`);
+  }
+  const weekQ = /\bwhat do i (?:need|have) to do this week\b/i.test(user);
+  const boardQ = /\bwhich projects are (behind|over budget|at risk)\b/i.exec(user);
+  if (weekQ || boardQ) {
+    const r = done.get("projects_overview") as { toDo?: OvToDo[]; thisWeek?: Array<{ day: string; project: string; what: string }>; count?: number; projects?: Array<{ project: string; behind: string | null; overBudget: string | null }>; note?: string } | undefined;
+    if (!r) return call("projects_overview", { ask: weekQ ? "week" : boardQ![1].toLowerCase() === "over budget" ? "over_budget" : boardQ![1].toLowerCase() === "at risk" ? "at_risk" : "behind" });
+    if (r.note) return reply(r.note);
+    if (weekQ) return reply(`To do:\n${toDoLines(r.toDo)}${r.thisWeek?.length ? `\nThis week: ${r.thisWeek.map((x) => `${x.day} ${x.project}: ${x.what}`).join("; ")}` : ""}\nReply with a number to do it.`);
+    return reply(r.count ? `${r.count}: ${(r.projects ?? []).map((p) => `${p.project}${p.behind ? ` (${p.behind} behind)` : ""}${p.overBudget ? ` (${p.overBudget} over)` : ""}`).join("; ")}.` : "None.");
+  }
   // The money (part 5): "where are we over on X" / "what's the margin on X" / "where can I save 20,000 on X" → money_plan.
   const moneyQ = /\b(?:where are we over|what(?:'s| is) the margin|where can i save(?: \$?([\d,]+))?)\b.*?\bon (?:the )?(.+?)(?:\?|$)/i.exec(user);
   if (moneyQ) {
@@ -585,6 +729,93 @@ function answer(body: { messages: Msg[] }) {
 
 /** What the model would read off a budget: a picture is a lender's page; words are read by the rules, with one figure
  *  off when they say "fakecheck" (so the card's "not in it as written" shows). */
+type PermitAction = { kind: string; sheet: string; after: string; card: string; title: string; lines: string[]; field: string; value: string };
+const noAction = (): PermitAction => ({ kind: "none", sheet: "", after: "", card: "", title: "", lines: [], field: "", value: "" });
+function fakePermitRequirements(messages: Msg[]) {
+  const texts = messages.filter((m) => m.role === "user").map((m) => (typeof m.content === "string" ? m.content : ((m.content as unknown as Array<{ type: string; text?: string }>) ?? []).map((p) => p.text ?? "").join("\n")));
+  const last = texts[texts.length - 1] ?? "";
+  const asked = /WHAT THE CONTRACTOR WANTS/.test(last);
+  const body = last.replace(/^.*?:\n\n/s, "");
+  const items: Array<{ need: string; quote: string; status: string; where: string; why: string; action: PermitAction }> = [];
+  const add = (need: string, quote: string, status: string, a: Partial<PermitAction> = {}, where = "", why = "") => items.push({ need, quote, status, where, why, action: { ...noAction(), ...a } });
+  for (const raw of body.split(/\n|(?<=\.)\s+(?=[A-Z])/)) {
+    const line = raw.replace(/^\s*\d+[.)]\s*/, "").trim();
+    const lower = line.toLowerCase();
+    if (!line) continue;
+    if (asked) {
+      if (/take out|remove|drop/.test(lower) && /elevation/.test(lower)) add("Take out the elevations", line, "add", { kind: "remove_sheet", sheet: "elevations" });
+      if (/take out|remove|drop/.test(lower) && /material/.test(lower)) add("Take out the materials schedule", line, "add", { kind: "remove_sheet", sheet: "schedules" });
+      const note = /note:\s*(.+?)\.?$/i.exec(line);
+      if (note) add("Add a general note", line, "add", { kind: "note", lines: [note[1].replace(/^./, (c) => c.toUpperCase()) + "."] });
+      if (/septic/.test(lower)) add("Show the septic tank on the site plan", line, "add", { kind: "card", sheet: "site", title: "Septic tank", lines: [line.replace(/^show /i, "").replace(/^./, (c) => c.toUpperCase())] });
+      if (/deeper|footing.*\d/.test(lower)) add("Deeper footings", line, "you", { kind: "design" }, "", "Change the frost depth in the studio's Footings step so the footings and the drawings follow.");
+      continue;
+    }
+    const num = /(\d+(?:\.\d+)?)/.exec(line)?.[1] ?? "";
+    if (/frost/.test(lower) && num) add(`Footings to the frost line, ${num} in.`, line, "add", { kind: "figure", field: "frostIn", value: num });
+    else if (/wind/.test(lower) && num) add(`Design wind speed ${num} mph`, line, "add", { kind: "figure", field: "windMph", value: num });
+    else if (/snow/.test(lower) && num) add(`Ground snow load ${num} psf`, line, "add", { kind: "figure", field: "groundSnowPsf", value: num });
+    else if (/24\s*[x×]\s*36/.test(lower)) add("Plans on 24 x 36 sheets", line, "add", { kind: "paper", value: "24x36" });
+    else if (/^note:/i.test(line)) add("A general note on the plans", line, "add", { kind: "note", lines: [line.replace(/^note:\s*/i, "")] });
+    else if (/site plan/.test(lower)) add("A site plan with the setbacks", line, "on_set", {}, "site/setbacks");
+    else if (/footing/.test(lower)) add("Footing sizes and depths", line, "on_set", {}, "foundation/footings");
+    else if (/elevations? (are )?not required/.test(lower)) add("No elevations needed", line, "add", { kind: "remove_sheet", sheet: "elevations" });
+    else if (/guard/.test(lower) && /42/.test(lower)) add("Guards 42 in. high", line, "you", { kind: "design" }, "", "Raise the railing to 42 in. in the studio's Railing step.");
+    else if (/affidavit|signed|signature/.test(lower)) add("The owner's signed affidavit", line, "you", {}, "", "Have the owner sign the department's affidavit and attach it.");
+    else if (/inspection/.test(lower)) add("Inspections listed on the plans", line, "add", { kind: "card", sheet: "notes", title: "Inspections", lines: [line] });
+  }
+  const knox = /knox/i.test(body);
+  return {
+    department: asked ? "" : knox ? "Knox County Codes Administration" : "The building department",
+    level: asked ? "unknown" : "county",
+    place: asked ? "" : knox ? "Knox County, TN" : "",
+    about: asked ? "The contractor's changes to the set." : `A deck permit checklist, ${items.length} items.`,
+    items,
+  };
+}
+const FAKE_KNOX = `Knox County Codes Administration issues permits for decks in unincorporated Knox County. A deck attached to the house needs a permit.
+1. A site plan showing the deck and the distance to each property line.
+2. Footing sizes and depths on the plans.
+3. Frost depth: footings at least 12 in. below grade.
+4. Design wind speed 115 mph.
+5. Guards 42 in. high where the deck is more than 30 in. above grade.
+6. Note: All lumber shall be pressure-treated and stamped.
+7. The owner's signed affidavit.
+SOURCES:
+https://www.knoxcounty.org/codes/deck-guide.pdf
+https://www.knoxcounty.org/codes/residential.php`;
+function fakeWebSearch() {
+  const text = FAKE_KNOX;
+  return {
+    id: `resp_fake_${Date.now()}`,
+    object: "response",
+    created_at: Math.floor(Date.now() / 1000),
+    status: "completed",
+    model: "fake-assistant",
+    output: [
+      { type: "web_search_call", id: "ws_1", status: "completed" },
+      {
+        type: "message",
+        id: "msg_1",
+        role: "assistant",
+        status: "completed",
+        content: [
+          {
+            type: "output_text",
+            text,
+            annotations: [
+              { type: "url_citation", url: "https://www.knoxcounty.org/codes/deck-guide.pdf", title: "Knox County — Residential Deck Guide", start_index: 0, end_index: 40 },
+              { type: "url_citation", url: "https://www.knoxcounty.org/codes/residential.php", title: "Knox County Codes — Residential permits", start_index: 41, end_index: 80 },
+            ],
+          },
+        ],
+      },
+    ],
+    output_text: text,
+    usage: { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+  };
+}
+
 function fakeBudgetRead(messages: Msg[]) {
   const user = messages.find((m) => m.role === "user") as unknown as { content: string | Array<{ type: string; text?: string }> } | undefined;
   const parts = typeof user?.content === "string" ? [{ type: "text", text: user.content }] : (user?.content ?? []);
@@ -614,6 +845,282 @@ function fakeBudgetRead(messages: Msg[]) {
   };
 }
 
+/** THE ESTIMATE READER'S FAKE (2026-11-08, the subcontractors plan, part 2; lib/subQuotes): words → the figures read
+ *  out of them by a few regexes (the fixtures' lines: "Total $23,500", "Labor … $14,000", "Deposit 30% ($7,050)",
+ *  "Valid until: …"); a PDF file part or a picture → XYZ Electric's $23,500 proposal read "from the pages" — unless the
+ *  file's name says "blank", then nothing to read. An instruction to the reader in the words is flagged, never obeyed. */
+/** Ramp's Bill Pay, faked for the stand (part 5a): enough of /developer/v1 for lib/ramp/bills to make a vendor and an
+ *  approved bill, read it back, and see it paid when the walk says so. Money in cents, the way Ramp sends it. */
+const fakeRamp = { vendors: [] as Array<Record<string, unknown>>, bills: new Map<string, Record<string, unknown>>(), seq: 0 };
+function fakeRampRoute(method: string, url: string, raw: string): { status: number; body: unknown } {
+  const u = new URL(url, "http://127.0.0.1");
+  const path = u.pathname.replace(/^\/developer\/v1/, "");
+  const id = () => `${Date.now().toString(36)}${(fakeRamp.seq++).toString(36)}`;
+  const json = (() => {
+    try {
+      return JSON.parse(raw || "{}") as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  })();
+  const page = (data: unknown[]) => ({ data, page: { next: null } });
+  if (u.pathname.startsWith("/__fake/ramp/pay/")) {
+    const b = fakeRamp.bills.get(decodeURIComponent(u.pathname.split("/").pop() ?? ""));
+    if (!b) return { status: 404, body: { error: "no such bill" } };
+    b.paid_at = new Date().toISOString();
+    b.status_summary = "PAYMENT_COMPLETED";
+    b.status = "PAID";
+    b.payment = { payment_method: "ACH" };
+    return { status: 200, body: b };
+  }
+  if (path === "/token" && method === "POST") return { status: 200, body: { access_token: `fake-access-${id()}`, refresh_token: "fake-refresh", expires_in: 3600, scope: "bills:read bills:write vendors:read vendors:write" } };
+  if (path === "/entities") return { status: 200, body: page([{ id: "ent_fake", entity_name: "QA Co", is_primary: true, default_bill_pay_payment_account_id: "ba_fake" }]) };
+  if (path === "/business") return { status: 200, body: { id: "biz_fake", business_name_legal: "QA Co" } };
+  if (path === "/vendors" && method === "GET") return { status: 200, body: page(fakeRamp.vendors) };
+  if (path === "/vendors" && method === "POST") {
+    const v = { id: `ven_${id()}`, name: json.name, display_name: json.name, is_active: true, address: null };
+    fakeRamp.vendors.push(v);
+    return { status: 200, body: v };
+  }
+  if (/^\/vendors\/[^/]+\/accounts$/.test(path)) return { status: 200, body: page([{ id: `va_${path.split("/")[2]}`, is_default: true, payment_method: "ACH", account_number_last_four: "6789" }]) };
+  if (/^\/vendors\/[^/]+\/contacts$/.test(path)) return { status: 200, body: page([]) };
+  const lines = (json.line_items as Array<{ amount?: number }> | undefined) ?? [];
+  const cents = lines.reduce((n, l) => n + (typeof l.amount === "number" ? l.amount : 0), 0);
+  if (path === "/bills" && method === "POST") {
+    const b = { id: `bill_${id()}`, amount: { amount: cents, minor_unit_conversion_rate: 100 }, approval_status: "APPROVED", status_summary: "PAYMENT_SCHEDULED", invoice_number: json.invoice_number, vendor: { id: json.vendor_id }, deep_link_url: "https://app.ramp.com/bills/fake", attachments: [] };
+    fakeRamp.bills.set(b.id, b);
+    return { status: 200, body: b };
+  }
+  if (path === "/bills/drafts" && method === "POST") {
+    const d = { id: `draft_${id()}`, draft: true, amount: { amount: cents, minor_unit_conversion_rate: 100 }, invoice_number: json.invoice_number };
+    fakeRamp.bills.set(d.id, d);
+    return { status: 200, body: d };
+  }
+  if (/^\/bills\/drafts\/[^/]+\/submit$/.test(path)) {
+    const d = fakeRamp.bills.get(path.split("/")[3]);
+    if (!d) return { status: 404, body: {} };
+    const b = { ...d, id: `bill_${id()}`, draft: false, approval_status: "PENDING", status_summary: "APPROVAL_PENDING", deep_link_url: "https://app.ramp.com/bills/fake" };
+    fakeRamp.bills.set(b.id, b);
+    d.bill_id = b.id;
+    return { status: 200, body: b };
+  }
+  if (/\/attachments$/.test(path)) return { status: 200, body: { id: `att_${id()}` } };
+  if (/^\/bills\/drafts\/[^/]+$/.test(path)) return { status: 200, body: fakeRamp.bills.get(path.split("/")[3]) ?? {} };
+  if (/^\/bills\/[^/]+$/.test(path)) {
+    const b = fakeRamp.bills.get(path.split("/")[2]);
+    return b ? { status: 200, body: b } : { status: 404, body: { error: "no such bill" } };
+  }
+  return { status: 200, body: page([]) };
+}
+
+/** The invoice reader's answer (part 5a): the fixture's words read by regex; a file or a picture is XYZ's invoice. */
+function fakeInvoiceRead(messages: Msg[]) {
+  const user = messages.find((m) => m.role === "user") as unknown as { content: string | Array<{ type: string; text?: string; file?: { filename?: string } }> } | undefined;
+  const parts = typeof user?.content === "string" ? [{ type: "text", text: user.content }] : (user?.content ?? []);
+  const fig = (value: number | null, source: string | null, confidence: "high" | "medium" | "low" = "high") => ({ value, source: value != null ? source : null, confidence });
+  const none = fig(null, null, "low");
+  if (parts.some((p) => p.type === "file" || p.type === "image_url")) {
+    return { contractor: "XYZ Electric LLC", invoiceNumber: "1187", date: "November 20, 2026", dueDate: "December 5, 2026", amountDue: fig(7050, "Amount due $7,050"), subtotal: none, retainage: none, taxes: none, previouslyPaid: none, period: "Deposit, 30% of $23,500", reference: "Proposal #2041", remitTo: "XYZ Electric LLC, 4410 Rainier Ave S, Seattle, WA 98118", lines: [{ description: "Deposit, 30% of $23,500 per the accepted proposal", amount: 7050 }], flags: [], about: "An invoice from XYZ Electric, #1187, $7,050 for the deposit, read from the pages." };
+  }
+  const words = parts.map((p) => p.text ?? "").join("\n");
+  const money = (re: RegExp) => {
+    const m = re.exec(words);
+    return m ? Number(m[1].replace(/,/g, "")) : null;
+  };
+  const amountDue = money(/Amount due\s*:?\s*\$\s?([\d,]+(?:\.\d{2})?)/i);
+  const retainage = money(/Retainage[^$\n]{0,60}\$\s?([\d,]+)/i);
+  // "Payment: Deposit, at signing" when the invoice names it (pdf.js runs the table into the same line, so stop at "ITEM").
+  const period = /Payment:\s*([A-Za-z ,-]+?)(?=\s+ITEM\b|\s*$|\n)/i.exec(words)?.[1]?.trim() ?? /(Deposit[^\n$]{0,40}|Rough-in[^\n$]{0,40}|On completion[^\n$]{0,40})/i.exec(words)?.[1]?.trim().replace(/\s+(—|ITEM).*$/, "") ?? null;
+  const number = /Invoice #\s?([\w-]+)/i.exec(words)?.[1] ?? null;
+  const flags: string[] = [];
+  if (/approve this|pay at once|ignore the contract/i.test(words)) flags.push("The document carries an instruction to the reader; ignored.");
+  return {
+    contractor: /^([A-Z][A-Za-z&' ]+(?:LLC|Inc\.?))/m.exec(words)?.[1]?.trim() ?? null,
+    invoiceNumber: number,
+    date: /Date:\s*([A-Z][a-z]+ \d{1,2}, \d{4})/.exec(words)?.[1] ?? null,
+    dueDate: /Due:\s*([A-Z][a-z]+ \d{1,2}, \d{4})/.exec(words)?.[1] ?? null,
+    amountDue: amountDue != null ? fig(amountDue, /Amount due\s*:?\s*\$\s?[\d,]+/i.exec(words)?.[0] ?? null) : none,
+    subtotal: none,
+    retainage: retainage != null ? fig(retainage, /Retainage[^$\n]{0,60}\$\s?[\d,]+/i.exec(words)?.[0] ?? null, "medium") : none,
+    taxes: none,
+    previouslyPaid: none,
+    period,
+    reference: /Reference:\s*([^\n]{1,60})/i.exec(words)?.[1]?.trim() ?? null,
+    remitTo: /Remit to ([^.\n]{1,120})/i.exec(words)?.[1]?.trim() ?? null,
+    lines: amountDue != null ? [{ description: period ?? "Work billed", amount: amountDue }] : [],
+    flags,
+    about: `An invoice${number ? ` #${number}` : ""}${amountDue != null ? `, $${amountDue.toLocaleString("en-US")}` : ""}, read from the words.`,
+  };
+}
+
+function fakeQuoteRead(messages: Msg[]) {
+  const user = messages.find((m) => m.role === "user") as unknown as { content: string | Array<{ type: string; text?: string; file?: { filename?: string } }> } | undefined;
+  const parts = typeof user?.content === "string" ? [{ type: "text", text: user.content }] : (user?.content ?? []);
+  const fig = (value: number | null, source: string | null, confidence: "high" | "medium" | "low" = "high") => ({ value, source: value != null ? source : null, confidence });
+  const none = fig(null, null, "low");
+  const picture = parts.find((p) => p.type === "file" || p.type === "image_url");
+  if (picture) {
+    if (/blank/i.test(picture.file?.filename ?? "")) {
+      return { contractor: null, proposalNumber: null, date: null, total: none, labor: none, materials: none, taxes: none, permits: none, deposit: none, paymentSchedule: null, scope: null, exclusions: [], duration: null, start: null, warranty: null, validUntil: null, conditions: [], flags: ["Nothing to read on the page."], about: "A blank page." };
+    }
+    return {
+      contractor: "XYZ Electric LLC",
+      proposalNumber: "2041",
+      date: "November 8, 2026",
+      total: fig(23500, "Total $23,500"),
+      labor: fig(14000, "Labor — Two licensed electricians, 5 working days — $14,000"),
+      materials: fig(8200, "Materials — Wire, boxes, breakers, 200 A panel, devices — $8,200"),
+      taxes: fig(850, "Sales tax — WA, on materials — $850"),
+      permits: fig(450, "Permit and inspections — City of Kirkland — $450"),
+      deposit: fig(7050, "Deposit 30% ($7,050) on signing", "medium"),
+      paymentSchedule: "Deposit 30% ($7,050) on signing · 40% at the rough-in inspection · 30% on final inspection. Net 15 days per invoice.",
+      scope: "Rough-in wiring for the kitchen and the new bathroom per the plans dated Nov 1, 2026: 14 circuits, 28 boxes; new 200 A panel; GFCI/AFCI; permit and both inspections included.",
+      exclusions: ["Decorative fixtures and their installation", "Drywall patching, painting and trim repair", "Low-voltage, data and audio wiring", "Utility fees and any service entrance upgrade"],
+      duration: "about 5 working days on site",
+      start: "within two weeks of signing",
+      warranty: "Two years on labor from the final inspection; the manufacturer's warranty on materials.",
+      validUntil: "December 8, 2026",
+      conditions: ["This price holds for 30 days", "Changes in scope are priced in writing before the work proceeds", "Site access 7 am to 5 pm, Monday to Friday", "Hidden conditions (knob-and-tube, aluminum wiring, asbestos) are outside this price"],
+      flags: [],
+      about: "A two-page electrical proposal from XYZ Electric LLC, $23,500, read from the pages.",
+    };
+  }
+  const words = parts.map((p) => p.text ?? "").join("\n");
+  const grab = (re: RegExp) => {
+    const m = re.exec(words);
+    return m ? Number(m[1].replace(/,/g, "")) : null;
+  };
+  const line = (re: RegExp) => re.exec(words)?.[0] ?? null;
+  const total = grab(/Total\s*:?\s*\$\s?([\d,]+)/i);
+  const labor = grab(/Labor[^$\n]{0,120}\$\s?([\d,]+)/i);
+  const materials = grab(/Materials[^$\n]{0,120}\$\s?([\d,]+)/i);
+  const taxes = grab(/Sales tax[^$\n]{0,80}\$\s?([\d,]+)/i);
+  const permits = grab(/Permit[^$\n]{0,80}\$\s?([\d,]+)/i);
+  const deposit = grab(/Deposit[^$\n]{0,40}\$\s?([\d,]+)/i);
+  const validUntil = /Valid until:?\s*([A-Z][a-z]+ \d{1,2}, \d{4})/.exec(words)?.[1] ?? (/Valid (\d+) days/i.test(words) ? `${/Valid (\d+) days/i.exec(words)![1]} days from the date` : null);
+  const days = /(\d+) working days/i.exec(words)?.[1] ?? null;
+  const flags: string[] = [];
+  if (/ignore the (project )?budget|approve this quote/i.test(words)) flags.push("The document carries an instruction to the reader; ignored.");
+  const contractor = /^([A-Z][A-Za-z&' ]+(?:LLC|Inc\.?|Electrical|Electric|Plumbing|Framing))/m.exec(words)?.[1]?.trim() ?? null;
+  const xyz = /XYZ Electric/i.test(words);
+  return {
+    contractor,
+    proposalNumber: /Proposal #\s?([\w-]+)/i.exec(words)?.[1] ?? null,
+    date: /Date:\s*([A-Z][a-z]+ \d{1,2}, \d{4})/.exec(words)?.[1] ?? null,
+    total: total != null ? fig(total, line(/Total\s*:?\s*\$\s?[\d,]+/i)) : none,
+    labor: labor != null ? fig(labor, line(/Labor[^$\n]{0,120}\$\s?[\d,]+/i)) : none,
+    materials: materials != null ? fig(materials, line(/Materials[^$\n]{0,120}\$\s?[\d,]+/i)) : none,
+    taxes: taxes != null ? fig(taxes, line(/Sales tax[^$\n]{0,80}\$\s?[\d,]+/i)) : none,
+    permits: permits != null ? fig(permits, line(/Permit[^$\n]{0,80}\$\s?[\d,]+/i)) : none,
+    deposit: deposit != null ? fig(deposit, line(/Deposit[^$\n]{0,40}\$\s?[\d,]+/i), "medium") : none,
+    paymentSchedule: line(/Deposit 30%[^.]*\.(?: Net[^.]*\.)?/i),
+    scope: xyz ? "Rough-in wiring for the kitchen and the new bathroom: 14 circuits, 28 boxes; a new 200 A panel; GFCI/AFCI; permit and both inspections included." : /rough-in/i.test(words) ? "Electrical rough-in." : null,
+    // pdf.js splits the "fi" ligature when it extracts text ("fi xtures"), so the test allows the gap.
+    exclusions: /Decorative\s+fi\s?xtures/i.test(words) ? (xyz ? ["Decorative fixtures and their installation", "Drywall patching, painting and trim repair", "Low-voltage, data and audio wiring", "Utility fees and any service entrance upgrade"] : ["Decorative fixtures"]) : [],
+    duration: days ? `about ${days} working days on site` : null,
+    start: /within two weeks of signing/i.test(words) ? "within two weeks of signing" : null,
+    warranty: line(/Two years on labor[^.]*\./i),
+    validUntil,
+    conditions: xyz ? ["This price holds for 30 days", "Changes in scope are priced in writing before the work proceeds", "Site access 7 am to 5 pm, Monday to Friday"] : [],
+    flags,
+    about: `${contractor ?? "A sub"}'s ${/Revised proposal/i.test(words) ? "revised " : ""}proposal${total != null ? `, $${total.toLocaleString("en-US")}` : ""}, read from the words.`,
+  };
+}
+
+/** THE COMPARER'S FAKE (part 2): two deterministic sentences from the fields the app sent — who is lowest and by how
+ *  much, what the lowest excludes, who is over the budget share. */
+/** The Overview's sentence (part 3): from the facts given; a project named "fakecheck" gets a number that isn't in
+ *  them, so the walk sees the check fall back to the rules' sentence. */
+function fakeOverviewLine(messages: Msg[]) {
+  const user = messages.find((m) => m.role === "user");
+  const text = typeof user?.content === "string" ? user.content : "";
+  let f: { project?: string; status?: string; line?: string; toDo?: string[] } = {};
+  try {
+    f = JSON.parse(text.slice(text.indexOf("{"))) as typeof f;
+  } catch {
+    f = {};
+  }
+  if (/fakecheck/i.test(f.project ?? "")) return { sentence: `${f.project} is $99,999 over and 41 days behind.` };
+  const first = f.toDo?.[0]?.replace(/ \(.*\)$/, "");
+  return { sentence: `${f.project} ${f.status === "On track" ? "is on track" : f.status === "At risk" ? "is at risk" : "needs you"} — ${(f.line ?? "").replace(/ · /g, ", ")}${first ? `; start with: ${first.charAt(0).toLowerCase()}${first.slice(1)}` : ""}.` };
+}
+
+function fakeCompareWords(messages: Msg[]) {
+  const user = messages.find((m) => m.role === "user");
+  const text = typeof user?.content === "string" ? user.content : "";
+  let data: { budgetShare?: number | null; quotes?: Array<{ sub: string; price: number; exclusions?: string[]; overBudgetBy?: number | null }> } = {};
+  try {
+    data = JSON.parse(text.slice(text.indexOf("{"))) as typeof data;
+  } catch {
+    data = {};
+  }
+  const qs = [...(data.quotes ?? [])].sort((a, b) => a.price - b.price);
+  if (qs.length < 2) return { words: "One priced quote so far; nothing to compare yet." };
+  const money = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+  const [low, ...rest] = qs;
+  const first = `${low.sub} is lowest at ${money(low.price)}; ${rest.map((r) => `${r.sub} is ${money(r.price)}, ${money(r.price - low.price)} more`).join("; ")}.`;
+  const ex = low.exclusions?.length ? `${low.sub} excludes ${low.exclusions.slice(0, 2).join(" and ").toLowerCase()}` : `${low.sub} lists no exclusions`;
+  const over = qs.filter((q) => (q.overBudgetBy ?? 0) > 0);
+  const budget = data.budgetShare != null ? (over.length ? `; ${over.map((q) => q.sub).join(" and ")} ${over.length === 1 ? "is" : "are"} over the ${money(data.budgetShare)} share` : `; all are within the ${money(data.budgetShare)} share`) : "";
+  return { words: `${first} ${ex}${budget}.` };
+}
+
+/** THE STATE REGISTER'S FAKE (2026-11-08, the subcontractors plan, part 3; lib/subFinder/register): a handful of
+ *  Kirkland contractors in L&I's three files, filtered by the pieces of the SoQL $where the app sends — the city, the
+ *  ZIP, "active only", the specialty list, the name words, the license list. */
+const FAKE_REGISTER: Array<Record<string, string>> = [
+  { businessname: "XYZ ELECTRIC LLC", contractorlicensenumber: "XYZELEL902KD", contractorlicensetypecode: "CC", address1: "4410 RAINIER AVE S", city: "KIRKLAND", state: "WA", zip: "98034", phonenumber: "2065550144", licenseeffectivedate: "2019-03-01T00:00:00.000", licenseexpirationdate: "2028-03-01T00:00:00.000", specialtycode1desc: "GENERAL", specialtycode2desc: "LIMITED ENERGY", ubi: "603111222", primaryprincipalname: "RUIZ, DANA", statuscode: "A", contractorlicensestatus: "ACTIVE" },
+  { businessname: "CASCADE ELECTRIC INC", contractorlicensenumber: "CASCAEI884MN", contractorlicensetypecode: "CC", address1: "120 CENTRAL WAY", city: "KIRKLAND", state: "WA", zip: "98033", phonenumber: "4255550133", licenseeffectivedate: "2015-06-10T00:00:00.000", licenseexpirationdate: "2027-06-10T00:00:00.000", specialtycode1desc: "GENERAL", ubi: "602555333", primaryprincipalname: "NGUYEN, MINH", statuscode: "A", contractorlicensestatus: "ACTIVE" },
+  { businessname: "ABC ELECTRICAL LLC", contractorlicensenumber: "ABCELEL123AA", contractorlicensetypecode: "CC", address1: "900 6TH ST S", city: "KIRKLAND", state: "WA", zip: "98033", phonenumber: "4255550199", licenseeffectivedate: "2016-01-04T00:00:00.000", licenseexpirationdate: "2027-01-04T00:00:00.000", specialtycode1desc: "GENERAL", ubi: "602777888", primaryprincipalname: "BROOKS, ANA", statuscode: "S", contractorlicensestatus: "SUSPENDED", contractorlicensesuspenddate: "2026-09-01T00:00:00.000" },
+  { businessname: "RIDGE FRAMING LLC", contractorlicensenumber: "RIDGEFL901PQ", contractorlicensetypecode: "CC", address1: "77 LAKEVIEW DR", city: "KIRKLAND", state: "WA", zip: "98034", phonenumber: "4255550111", licenseeffectivedate: "2018-09-15T00:00:00.000", licenseexpirationdate: "2027-09-15T00:00:00.000", specialtycode1desc: "Framing and Rough Carpentry", ubi: "603444555", primaryprincipalname: "OKAFOR, SAM", statuscode: "A", contractorlicensestatus: "ACTIVE" },
+  { businessname: "NORTHWEST PLUMBING", contractorlicensenumber: "NORTHPL777KD", contractorlicensetypecode: "CC", address1: "15 MAIN ST", city: "BELLEVUE", state: "WA", zip: "98004", phonenumber: "4255550122", licenseeffectivedate: "2014-02-02T00:00:00.000", licenseexpirationdate: "2027-02-02T00:00:00.000", specialtycode1desc: "PLUMBING", ubi: "602999111", primaryprincipalname: "LEE, JUNE", statuscode: "A", contractorlicensestatus: "ACTIVE" },
+  { businessname: "LEE CARPENTRY", contractorlicensenumber: "LEECAC555RT", contractorlicensetypecode: "CC", address1: "3 PINE ST", city: "SEATTLE", state: "WA", zip: "98101", phonenumber: "2065550177", licenseeffectivedate: "2012-05-05T00:00:00.000", licenseexpirationdate: "2025-05-05T00:00:00.000", specialtycode1desc: "Cabinets, Millwork and Finish Carpentry", ubi: "601222333", primaryprincipalname: "LEE, MARK", statuscode: "E", contractorlicensestatus: "EXPIRED" },
+];
+const FAKE_INSURANCE: Array<Record<string, string>> = [
+  { contractorlicensenumber: "XYZELEL902KD", businessname: "XYZ ELECTRIC LLC", insurancecompany: "Northwest Mutual Ins Co", insurancepolicyno: "NWM-7781", insuranceamt: "1000000.0000", effectivedate: "2025-11-20T00:00:00.000", expirationdate: "2027-11-20T00:00:00.000" },
+  { contractorlicensenumber: "CASCAEI884MN", businessname: "CASCADE ELECTRIC INC", insurancecompany: "Travelers Cas Insurance Co", insurancepolicyno: "6809M1", insuranceamt: "1000000.0000", effectivedate: "2025-01-01T00:00:00.000", expirationdate: "2027-01-01T00:00:00.000" },
+  { contractorlicensenumber: "ABCELEL123AA", businessname: "ABC ELECTRICAL LLC", insurancecompany: "Old Line Ins Co", insurancepolicyno: "OL-22", insuranceamt: "500000.0000", effectivedate: "2025-12-31T00:00:00.000", expirationdate: "2026-12-31T00:00:00.000", canceldate: "2026-08-15T00:00:00.000" },
+  { contractorlicensenumber: "RIDGEFL901PQ", businessname: "RIDGE FRAMING LLC", insurancecompany: "Liberty Mutual", insurancepolicyno: "LM-3390", insuranceamt: "2000000.0000", effectivedate: "2026-03-01T00:00:00.000", expirationdate: "2027-03-01T00:00:00.000" },
+];
+const FAKE_BOND: Array<Record<string, string>> = [
+  { contractorlicensenumber: "XYZELEL902KD", businessname: "XYZ ELECTRIC LLC", bondfirmname: "RLI Ins Co", bondamt: "12000.0000", bondeffectivedate: "2019-03-01T00:00:00.000", bondexpirationdate: "Until Canceled", bondimpaired: "N" },
+  { contractorlicensenumber: "ABCELEL123AA", businessname: "ABC ELECTRICAL LLC", bondfirmname: "Western Surety", bondamt: "12000.0000", bondeffectivedate: "2016-01-04T00:00:00.000", bondexpirationdate: "Until Canceled", bondimpaired: "Y", bondimpaireddate: "2026-09-01T00:00:00.000" },
+  { contractorlicensenumber: "RIDGEFL901PQ", businessname: "RIDGE FRAMING LLC", bondfirmname: "Hartford", bondamt: "6000.0000", bondeffectivedate: "2018-09-15T00:00:00.000", bondexpirationdate: "Until Canceled", bondimpaired: "N" },
+];
+function fakeRegister(dataset: string, where: string): Array<Record<string, string>> {
+  const w = where.toUpperCase();
+  const unq = (s: string) => s.split(",").map((x) => x.trim().replace(/^'|'$/g, ""));
+  const likes = [...w.matchAll(/LIKE '%([^%']+)%'/g)].map((m) => m[1]);
+  const city = /UPPER\(CITY\) = '([^']+)'/.exec(w)?.[1] ?? null;
+  const zip = /\bZIP = '([^']+)'/.exec(w)?.[1] ?? null;
+  const activeOnly = /CONTRACTORLICENSESTATUS IN/.test(w);
+  const licenseIn = /CONTRACTORLICENSENUMBER\) IN \(([^)]+)\)/.exec(w)?.[1];
+  const licenses = licenseIn ? unq(licenseIn) : null;
+  const specIn = /specialtycode1desc in \(([^)]+)\)/i.exec(where)?.[1];
+  const specialties = specIn ? unq(specIn) : null;
+  const rows = dataset === "ciwg-agsx" ? FAKE_INSURANCE : dataset === "bzff-4fmt" ? FAKE_BOND : FAKE_REGISTER;
+  return rows.filter((r) => {
+    if (licenses && !licenses.includes(r.contractorlicensenumber.toUpperCase())) return false;
+    if (dataset !== "m8qx-ubtq") return true;
+    if (city && r.city.toUpperCase() !== city) return false;
+    if (zip && r.zip !== zip) return false;
+    if (activeOnly && !["ACTIVE", "RE-LICENSED"].includes(r.contractorlicensestatus)) return false;
+    if (specialties && !specialties.includes(r.specialtycode1desc) && !specialties.includes(r.specialtycode2desc ?? "")) return false;
+    if (likes.length && !likes.some((l) => r.businessname.toUpperCase().includes(l))) return false;
+    return true;
+  });
+}
+/** GOOGLE'S FAKE (part 3): three electricians near Kirkland — two the register knows, one it does not. */
+function fakePlaces(body: { textQuery?: string }) {
+  const electric = /electric/i.test(body.textQuery ?? "");
+  const place = (id: string, name: string, address: string, phone: string, website: string | null, rating: number, count: number, lat: number, lng: number) => ({ id, displayName: { text: name, languageCode: "en" }, formattedAddress: address, nationalPhoneNumber: phone, ...(website ? { websiteUri: website } : {}), rating, userRatingCount: count, businessStatus: "OPERATIONAL", location: { latitude: lat, longitude: lng } });
+  return {
+    places: electric
+      ? [place("pl_xyz", "XYZ Electric LLC", "4410 Rainier Ave S, Kirkland, WA 98034", "(206) 555-0144", "https://xyzelectric.example", 4.8, 57, 47.6815, -122.2087), place("pl_cascade", "Cascade Electric", "120 Central Way, Kirkland, WA 98033", "(425) 555-0133", "https://cascade-electric.example", 4.5, 21, 47.6768, -122.2059), place("pl_bright", "Brightline Electric Co", "8 Market St, Kirkland, WA 98033", "(425) 555-0188", null, 4.9, 12, 47.6792, -122.2101)]
+      : [place("pl_ridge", "Ridge Framing LLC", "77 Lakeview Dr, Kirkland, WA 98034", "(425) 555-0111", null, 4.6, 9, 47.69, -122.21), place("pl_nwp", "Northwest Plumbing", "15 Main St, Bellevue, WA 98004", "(425) 555-0122", "https://nwplumbing.example", 4.2, 33, 47.61, -122.2)],
+  };
+}
+
 http
   .createServer((req, res) => {
     let raw = "";
@@ -625,10 +1132,60 @@ http
         return;
       }
       res.setHeader("content-type", "application/json");
+      // Ramp's Bill Pay (part 5a).
+      if (req.url?.startsWith("/developer/v1") || req.url?.startsWith("/__fake/ramp/")) {
+        const out = fakeRampRoute(req.method ?? "GET", req.url, raw);
+        res.statusCode = out.status;
+        res.end(JSON.stringify(out.body));
+        return;
+      }
+      // The state register (data.wa.gov) and Google Places, for Find (the subcontractors plan, part 3).
+      if (req.url?.includes("/resource/")) {
+        const u = new URL(req.url, "http://127.0.0.1");
+        const dataset = (u.pathname.split("/").pop() ?? "").replace(/\.json$/, "");
+        res.end(JSON.stringify(fakeRegister(dataset, u.searchParams.get("$where") ?? "")));
+        return;
+      }
+      if (req.url?.includes("/v1/places:searchText")) {
+        let body: { textQuery?: string } = {};
+        try {
+          body = JSON.parse(raw || "{}") as { textQuery?: string };
+        } catch {
+          body = {};
+        }
+        res.end(JSON.stringify(fakePlaces(body)));
+        return;
+      }
+      // The permit set's "Find them for me" (2026-11-09): the Responses API with web search.
+      if (req.url?.includes("/responses") && (req.method ?? "GET").toUpperCase() === "POST" && /web_search/.test(raw)) {
+        res.end(JSON.stringify(fakeWebSearch()));
+        return;
+      }
       if (req.url?.includes("/chat/completions")) {
         try {
           const body = JSON.parse(raw || "{}") as { messages?: Msg[]; tools?: unknown[]; response_format?: { type?: string; json_schema?: { name?: string } } };
+          // The estimate reader and the comparer (the subcontractors plan, part 2).
+          if (body.response_format?.type === "json_schema" && body.response_format.json_schema?.name === "quote_read") {
+            res.end(JSON.stringify(reply(JSON.stringify(fakeQuoteRead(body.messages ?? [])))));
+            return;
+          }
+          if (body.response_format?.type === "json_schema" && body.response_format.json_schema?.name === "invoice_read") {
+            res.end(JSON.stringify(reply(JSON.stringify(fakeInvoiceRead(body.messages ?? [])))));
+            return;
+          }
+          if (body.response_format?.type === "json_schema" && body.response_format.json_schema?.name === "overview_line") {
+            res.end(JSON.stringify(reply(JSON.stringify(fakeOverviewLine(body.messages ?? [])))));
+            return;
+          }
+          if (body.response_format?.type === "json_schema" && body.response_format.json_schema?.name === "compare_words") {
+            res.end(JSON.stringify(reply(JSON.stringify(fakeCompareWords(body.messages ?? [])))));
+            return;
+          }
           // The Budget card's read: a lender's page for a picture, the rules' rows for words.
+          if (body.response_format?.type === "json_schema" && body.response_format.json_schema?.name === "permit_requirements") {
+            res.end(JSON.stringify(reply(JSON.stringify(fakePermitRequirements(body.messages ?? [])))));
+            return;
+          }
           if (body.response_format?.type === "json_schema" && body.response_format.json_schema?.name === "budget_read") {
             res.end(JSON.stringify(reply(JSON.stringify(fakeBudgetRead(body.messages ?? [])))));
             return;
@@ -636,6 +1193,53 @@ http
           // Smart Proposal's run: JSON out, no tools — the estimate itself.
           if (body.response_format?.type === "json_object" && !body.tools?.length) {
             const prompt = (body.messages ?? []).map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? ""))).join("\n");
+            // The client brief (lib/clientMemory, 2026-11-08): where they stand + facts. Deterministic: the name is
+            // read off the prompt; a known cedar decking fact is superseded by composite, the way a changed mind is.
+            // The inbox (lib/inbox/reader, lib/inbox/drafts, 2026-11-08): a deterministic reading of the message —
+            // composite/cedar, Thanksgiving, "pay Friday" and "broken"/"crack" are the words it answers to.
+            if (prompt.includes("CLIENT MESSAGE READ")) {
+              const msg = prompt.split("MESSAGE:").pop() ?? "";
+              const lower = msg.toLowerCase();
+              const cedar = /- \[([a-z0-9]+)\] \(DECISION\) Decking: cedar/i.exec(prompt);
+              const complaint = /crack|broken|leak|unhappy/.test(lower);
+              res.end(JSON.stringify(reply(JSON.stringify({
+                intent: complaint ? "complaint" : /composite|go ahead|like the estimate/.test(lower) ? "ready to proceed" : "asking a question",
+                urgent: complaint,
+                needsReply: !/^\s*(thanks|thank you)[.! ]*$/i.test(msg.trim()),
+                summary: complaint ? "Reports a problem with the finished work." : "Likes the estimate and asks for a change.",
+                requests: /update/.test(lower) ? ["Update the proposal"] : [],
+                changes: /composite/.test(lower) ? ["Deck: composite instead of cedar"] : [],
+                deadlines: /thanksgiving/.test(lower) ? [{ what: "Finished before Thanksgiving", date: "2026-11-26" }] : [],
+                questions: /\?/.test(msg) ? ["Can you update the proposal?"] : [],
+                money: [],
+                complaints: complaint ? ["Crack in the work"] : [],
+                promises: /pay (on )?friday/.test(lower) ? [{ text: "Pay the deposit Friday", due: "2026-11-13" }] : [],
+                facts: /composite/.test(lower) ? [{ category: "DECISION", fact: "Decking: composite", supersedesId: cedar ? cedar[1] : null }] : [],
+                suggested: complaint ? "Call them today about the crack" : "Send the updated deck proposal",
+              }))));
+              return;
+            }
+            if (prompt.includes("INBOX DRAFTS")) {
+              res.end(JSON.stringify(reply(JSON.stringify({ drafts: [
+                { label: "Confirm and move", text: "Thanks — I'll switch the deck to composite and send the updated proposal today, with a start date that finishes before Thanksgiving." },
+                { label: "Ask one thing", text: "Happy to switch to composite. Do you want the same color as the railing, or should I bring samples?" },
+                { label: "Offer a call", text: "Composite works. Can I call you this afternoon to walk through the new price and the schedule?" },
+              ] }))));
+              return;
+            }
+            if (prompt.includes("CLIENT BRIEF")) {
+              const name = /CLIENT: ([^·\n]+)/.exec(prompt)?.[1]?.trim() ?? "the client";
+              const cedar = /- \[([a-z0-9]+)\] \(DECISION\) Decking: cedar/i.exec(prompt);
+              const newFacts: Array<Record<string, unknown>> = [];
+              if (!prompt.includes("Prefers texts in the morning")) newFacts.push({ category: "PREFERENCE", fact: "Prefers texts in the morning", sourceKind: "TEXT", sourceId: null, supersedesId: null });
+              if (cedar) newFacts.push({ category: "DECISION", fact: "Decking: composite (changed from cedar)", sourceKind: "EMAIL", sourceId: null, supersedesId: cedar[1] });
+              res.end(JSON.stringify(reply(JSON.stringify({
+                summary: `${name} signed the epoxy garage job and paid the deposit; the deck proposal is out and they asked for composite instead of cedar. Waiting on the updated proposal and a start date.`,
+                nextAction: "Send the updated deck proposal",
+                newFacts,
+              }))));
+              return;
+            }
             res.end(JSON.stringify(reply(JSON.stringify(fakeEstimate(prompt)))));
             return;
           }

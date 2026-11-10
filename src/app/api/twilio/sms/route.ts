@@ -174,6 +174,16 @@ export async function POST(req: Request) {
       meta: JSON.stringify({ href: who.href, from, sid }),
     },
   }).catch(() => null);
+  // THE INBOX (Smart CRM part 2, 2026-11-08): a client's text — or an unknown number's — moves its thread and is
+  // read by the AI after the answer is out. Crew and office texts are not client threads.
+  if (who.what === "client" || who.what === "") {
+    const orgIdHere = organizationId;
+    const sidHere = sid;
+    after(async () => {
+      const { fileInboundText } = await import("@/lib/inbox/server");
+      await fileInboundText(orgIdHere, { clientId: clientExact?.id ?? null, name: clientExact?.name ?? from, phone: from }, body, sidHere).catch((err) => console.warn("[inbox] text not filed:", err instanceof Error ? err.message : err));
+    });
+  }
   // The office hears it now; the sender is not texted their own words back.
   if (who.what !== "office") await textOfficeNow(organizationId, replyForwardLine(who.name, who.what, body), { excludePhones: [from], kind: "reply-forward" });
   return twiml();

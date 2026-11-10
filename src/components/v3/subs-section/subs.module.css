@@ -230,7 +230,34 @@
   grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
+/* Part 4: the Contracts tab's rows — the number and sub, the total, the state, Open; the awarded quotes waiting for a
+   contract above them. Their mono lines (the title, "awarded Nov 8") wrap, unlike the directory's short ones. On a
+   phone: the name and the total side by side, the state and the button under them. */
+.contractRow {
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.2fr) auto;
+}
+.waitRow {
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) auto;
+}
+.contractRow .linkBtn,
+.waitRow .linkBtn {
+  text-align: left;
+}
+.contractRow .mono,
+.waitRow .mono {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 @media (max-width: 640px) {
+  .contractRow,
+  .waitRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .contractRow > :nth-child(n + 3),
+  .waitRow > :nth-child(n + 3) {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
   .sheetGrid {
     grid-template-columns: 1fr;
   }
@@ -245,3 +272,21 @@
 .fact { display: grid; gap: 2px; min-width: 0; }
 .factLbl { font: 700 10px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-muted); }
 .factVal { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; margin: 0; }
+
+/* COMPARE AND BUDGET (2026-11-08, the subcontractors plan, part 2): a real table for fields × subs, and the budget's
+   rows; the AI's two sentences in a quiet box. */
+.grid { width: 100%; border-collapse: collapse; font-size: 13px; background: #fff; }
+.grid th, .grid td { padding: 7px 9px; border-bottom: 1px solid var(--ink-line, #ddd); vertical-align: top; text-align: left; }
+.grid th { font: 700 10px/1.2 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-muted, #666); white-space: nowrap; }
+.grid td.n, .grid th.n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.grid td.k { font: 700 10px/1.3 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-muted, #666); white-space: nowrap; }
+.grid tr.total td { border-top: 2px solid var(--ink, #111); border-bottom: 0; font-weight: 800; }
+.gridWrap { overflow-x: auto; border: 2px solid var(--ink, #111); }
+.best { background: #e6f4ea; }
+.overCell { color: #7a1a14; font-weight: 700; }
+.words { margin: 0; padding: 10px 12px; border-left: 3px solid var(--ink, #111); background: #fff; font-size: 13.5px; line-height: 1.5; }
+.wordsBy { font: 600 10.5px/1 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-muted, #666); }
+.inbox { display: grid; gap: 8px; }
+.inboxRow { display: grid; gap: 4px; padding: 10px 12px; background: #fff; border: 1.5px solid var(--ink, #111); }
+.inboxActs { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
+.inboxActs select { min-height: 32px; border: 1.5px solid var(--ink, #111); background: #fff; font: inherit; font-size: 13px; padding: 0 8px; max-width: 100%; }

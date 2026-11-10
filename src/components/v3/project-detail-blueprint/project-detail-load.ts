@@ -22,6 +22,11 @@ import { lotOf, phasesOf } from "@/lib/projectPhases/server";
 import { drawsOf } from "@/lib/projectDraws/server";
 import { moneyPlanOf } from "@/lib/projectMoneyPlan/server";
 import { answersWords, type BuildAnswers } from "@/lib/projectPhases/shared";
+import { invoicesOf } from "@/lib/subInvoices/server";
+import { finishFlags } from "@/lib/projectFinish/shared";
+import { overviewOf, type Overview, type OverviewInput } from "@/lib/projectOverview/shared";
+import { readSummary } from "@/lib/projectOverview/summary";
+import { spaceOf, type SpaceId } from "@/lib/projectSpaces";
 import type { PdAvailProposal, PdBudget, PdBuying, PdSubs, PdField, PdFinish, PdJob, PdLooseProposal, PdDraws, PdLot, PdMoneyPlan, PdPayments, PdPhases, PdProject, PdProposal, PdSelections, PdShare, PdStages, PdTimeline, PdWorker } from "./project-detail-data";
 
 export type ProjectDetailProps = {
@@ -62,9 +67,25 @@ export type ProjectDetailProps = {
   payments: PdPayments;
   /** The company's crew, for Schedule & crew. */
   roster: PdWorker[];
+  /** The Overview at the top (2026-11-09, lib/projectOverview): the status line, Do now, the next 14 days, the people,
+   *  the money, the road and what happened last. */
+  overview: Overview;
+  /** The workspace the project lives in (lib/projectSpaces): its colour, its name, the way back. */
+  space: SpaceId;
 };
 
 export async function loadProjectDetail(id: string, organizationId: string): Promise<ProjectDetailProps | null> {
+  const r = await readProject(id, organizationId);
+  return r ? r.props : null;
+}
+
+/** The page's read and the Overview's own input — for the Operator's "what's holding up framing?" (part 3), which asks
+ *  the rules about one stage. Server-only; the input never goes to a browser. */
+export async function loadProjectRules(id: string, organizationId: string): Promise<{ props: ProjectDetailProps; input: OverviewInput } | null> {
+  return readProject(id, organizationId);
+}
+
+async function readProject(id: string, organizationId: string): Promise<{ props: ProjectDetailProps; input: OverviewInput } | null> {
   const project = await db.project.findUnique({
     where: { id },
     include: {
@@ -155,7 +176,7 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
     at: e.spentAt.toISOString(),
   }));
   // The money — the same read as the Projects list and Financials (lib/projectMoney): before tax, crew and stock in.
-  const [moneyAll, stageRead, buying, field, timeline, finish, share, subs, selections, phases, lot, moneyPlan, draws] = await Promise.all([
+  const [moneyAll, stageRead, buying, field, timeline, finish, share, subs, selections, phases, lot, moneyPlan, draws, subInvoices] = await Promise.all([
     projectMoney(organizationId, [project.id]),
     stagesOf(project.id),
     buyingOf(organizationId, project.id),
@@ -169,6 +190,8 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
     lotOf(project.id),
     moneyPlanOf(organizationId, project.id),
     drawsOf(organizationId, project.id),
+    // The subs' invoices waiting on the office, for the Overview (2026-11-09); the page does without them on a failure.
+    invoicesOf(organizationId, project.id).catch(() => null),
   ]);
   const answers = parseAnswers(project.answersJson);
   const build = project.kind === "NEW_BUILD" ? (answers.build ?? {}) : null;
@@ -181,7 +204,7 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
     expenses: [...projectSpends, ...jobSpends].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 60),
   };
 
-  return {
+  const props: Omit<ProjectDetailProps, "overview" | "space"> = {
     budget,
     stages: { ...stageRead, draftedByAi: Boolean(project.stagesDraftedAt) },
     buying,
@@ -311,6 +334,35 @@ export async function loadProjectDetail(id: string, organizationId: string): Pro
       })
     ).map((w) => ({ id: w.id, name: w.displayName, trade: firstTrade(w.specialties) })),
   };
+  const iso = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
+  const input: OverviewInput = {
+    today: timeline.today,
+    project: { id: project.id, kind: project.kind, status: project.status, endsAt: iso(project.endsAt), clientName: project.client?.name ?? null, clientPhone: null, clientEmail: null, budget: project.budget },
+    stages: stageRead.stages,
+    done: stageRead.done,
+    phases,
+    field,
+    timeline,
+    buying,
+    selections,
+    subs,
+    invoices: subInvoices,
+    money: moneyPlan,
+    payments: props.payments,
+    draws,
+    share,
+    finish: finishFlags(finish),
+    jobs: props.jobs.map((j) => ({ title: j.title, status: j.status, startsAt: j.startsAt ? j.startsAt.toISOString() : null, endsAt: j.endsAt ? j.endsAt.toISOString() : null, crew: (j.crew ?? []).map((c) => ({ name: c.name, status: c.status })) })),
+    collected: money.collected,
+    owed: money.owed,
+    subsHref: `/dashboard/projects/${project.id}/subs`,
+  };
+  const overview = overviewOf(input);
+  // The sentence at its top (part 3): today's, when it still stands on today's facts; the page writes a new one after
+  // it is sent when not (summaryFresh false — lib/projectOverview/summary).
+  const summary = await readSummary(project.id, timeline.today, project.name, overview).catch(() => null);
+  const withSummary: Overview = summary ? { ...overview, summary: summary.text, summaryBy: summary.by, summaryFresh: summary.fresh } : overview;
+  return { props: { ...props, overview: withSummary, space: spaceOf(project.kind, project.answersJson) }, input };
 }
 
 const SOLD = new Set(["ACCEPTED", "COMPLETED", "PAID"]);

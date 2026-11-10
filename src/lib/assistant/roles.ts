@@ -21,6 +21,7 @@ export const CAPABILITIES = [
   // Batches 1–2 (2026-11-05): the Clients, Leads and calendar pages' writes (requireSalesOrManager: never ESTIMATOR),
   // a reminder to oneself (anyone with the Operator), and money — invoices and financing links — managers only.
   "clients.write",
+  "clients.read", // the client's story and page (Smart CRM part 1, 2026-11-08): whoever may open /dashboard/clients
   "leads.write",
   "visits.write",
   "reminders",
@@ -29,6 +30,9 @@ export const CAPABILITIES = [
   // The stages build (2026-11-05): projects are estimators' and managers' (requireEstimatorOrManager), never SALES'.
   "projects.read",
   "projects.write",
+  // The subcontractors plan, part 6 (2026-11-09): recording a payment to a sub — owners and managers (requireManager),
+  // like the Invoices tab's Record the payment.
+  "subs.pay",
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
@@ -62,6 +66,8 @@ export function roleAllows(role: string, need: Capability): boolean {
       return role !== "SALES";
     case "clients.write":
       return role !== "ESTIMATOR";
+    case "clients.read":
+      return mayOpen(role, "/dashboard/clients");
     case "leads.write":
       return role !== "ESTIMATOR" && mayOpen(role, "/dashboard/leads");
     case "visits.write":
@@ -75,6 +81,8 @@ export function roleAllows(role: string, need: Capability): boolean {
       return mayOpen(role, "/dashboard/projects");
     case "projects.write":
       return role !== "SALES" && mayOpen(role, "/dashboard/projects");
+    case "subs.pay":
+      return manager && mayOpen(role, "/dashboard/projects");
   }
 }
 

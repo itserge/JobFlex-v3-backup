@@ -127,7 +127,7 @@ export async function setAssistantPrefs(raw: unknown): Promise<AssistantPhoneVie
   const { BRIEFING_TIMES, dayOf, timeOf } = await import("@/lib/assistant/shared");
   const input = z
     .object({
-      briefing: z.object({ on: z.boolean(), time: z.string().refine((t) => BRIEFING_TIMES.includes(t), "Pick a time from the list.") }),
+      briefing: z.object({ on: z.boolean(), time: z.string().refine((t) => BRIEFING_TIMES.includes(t), "Pick a time from the list."), projects: z.boolean().optional() }),
       alerts: z.object({ proposalOpened: z.boolean(), newLead: z.boolean() }),
       // The language they speak to it in (2026-11-06); a page that doesn't know the setting yet keeps what was set.
       lang: z.enum(SPEECH_LANGS.map((l) => l.code) as [SpeechLang, ...SpeechLang[]]).optional(),
@@ -136,7 +136,8 @@ export async function setAssistantPrefs(raw: unknown): Promise<AssistantPhoneVie
   const actor = await actorForSession();
   const { readPrefs, writePrefs } = await import("@/lib/assistant/prefs");
   const before = await readPrefs(actor.organizationId, actor.userId);
-  await writePrefs(actor.organizationId, actor.userId, { ...input, lang: input.lang ?? before.lang });
+  // A page that doesn't know the projects switch yet (part 2) keeps what was set.
+  await writePrefs(actor.organizationId, actor.userId, { ...input, briefing: { ...input.briefing, projects: input.briefing.projects ?? before.briefing.projects }, lang: input.lang ?? before.lang });
   if (input.briefing.on && (!before.briefing.on || before.briefing.time !== input.briefing.time)) {
     const now = new Date();
     if (timeOf(now, actor.timezone) >= input.briefing.time) {

@@ -38,7 +38,6 @@
 // code, and a caveat pinned beside the actions reads as part of the actions.
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Who } from "@/components/v3/who/who";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { type ProposalFilter, bucketOf, money } from "./client-detail-data";
@@ -48,7 +47,6 @@ import {
   ClampedName,
   EmptyNote,
   Fact,
-  Ic,
   Panel,
   PaymentBadge,
   ProposalBadge,
@@ -65,8 +63,10 @@ import styles from "./client-detail.module.css";
 import { AddToProjectSheet } from "@/components/v3/project-links/add-to-project-sheet";
 import { openAddToProject } from "@/components/v3/project-links/open-add-to-project";
 import { useReveal } from "./use-reveal";
+import { BriefBand, MemoryPanel, MergeBanner, PromisesPanel, StoryPanel } from "./client-360";
 import { activateServicePlan, cancelServicePlan, enrollClientInPlan, renewServicePlan, sendServicePlan } from "@/actions/servicePlans";
 import { EquipmentPanel } from "./equipment-panel";
+import { openRepairSheet } from "@/components/v3/repairs/repair-sheet";
 
 const FILTERS: { value: ProposalFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -133,7 +133,7 @@ function ClientMissing({ view }: { view: ClientDetailMiss }) {
 }
 
 function ClientRecordPage({ view }: { view: ClientDetailRecord }) {
-  const { clientId, client: CLIENT, proposals: PROPOSALS, payments: PAYMENTS, activity: ACTIVITY } = view;
+  const { clientId, client: CLIENT, proposals: PROPOSALS, payments: PAYMENTS } = view;
   // The membership (2026-09-22): the live plan, else the one waiting to be signed.
   const PLAN = view.plans.find((p) => p.status === "ACTIVE") ?? view.plans.find((p) => p.status === "SENT" || p.status === "DRAFT") ?? null;
   const PLAN_LABEL: Record<string, string> = { draft: "Draft — not sent", sent: "Sent — waiting to be signed", active: "Member", expiring: "Member · expiring", lapsed: "Ended — renew", expired: "Expired", canceled: "Canceled" };
@@ -235,6 +235,12 @@ function ClientRecordPage({ view }: { view: ClientDetailRecord }) {
             <Btn icon="msg" onClick={() => messageRef.current?.open()}>
               Message
             </Btn>
+            {/* Send someone back to this client's house (2026-11-09) — the office's, when there's work to go back to. */}
+            {view.repairJobs > 0 ? (
+              <Btn icon="wrench" onClick={() => openRepairSheet({ clientId })}>
+                Repair
+              </Btn>
+            ) : null}
             <Btn tone="primary" icon="plus" onClick={newProposal}>
               New proposal
             </Btn>
@@ -243,6 +249,9 @@ function ClientRecordPage({ view }: { view: ClientDetailRecord }) {
       </div>
 
       <div className={styles.stack}>
+        {/* THE SAME PERSON TWICE (2026-11-08): shown only when another live record shares this one's email or phone. */}
+        <MergeBanner clientId={clientId} duplicates={view.duplicates} />
+
         {/* PARTICULARS ---------------------------------------------- */}
         <section data-rv="" className={styles.card} aria-label="Client particulars">
           <div className={styles.bandGrid}>
@@ -280,6 +289,9 @@ function ClientRecordPage({ view }: { view: ClientDetailRecord }) {
           </div>
         </section>
 
+        {/* WHERE THEY STAND (2026-11-08): the saved AI brief, rebuilt when the timeline moves. */}
+        <BriefBand clientId={clientId} brief={view.brief} />
+
         {/* FIGURES --------------------------------------------------- */}
         <div data-rv="" className={styles.kpis}>
           <div className={styles.kpi} data-rv-cell="">
@@ -300,6 +312,12 @@ function ClientRecordPage({ view }: { view: ClientDetailRecord }) {
               {money(figures.due)}
             </div>
           </div>
+        </div>
+
+        {/* MEMORY AND PROMISES (2026-11-08): the source-linked facts, and what either side owes. */}
+        <div className={styles.duo}>
+          <MemoryPanel clientId={clientId} facts={view.facts} />
+          <PromisesPanel clientId={clientId} promises={view.promises} />
         </div>
 
         {/* THE PLAN (2026-09-22): the client's membership, or the way in. */}
@@ -442,28 +460,9 @@ function ClientRecordPage({ view }: { view: ClientDetailRecord }) {
             )}
           </Panel>
 
-          <Panel title="Activity" bodyClass={styles.scroll}>
-            {ACTIVITY.length === 0 ? (
-              <EmptyNote kicker="Nothing recorded">
-                No signals from this client yet.
-              </EmptyNote>
-            ) : (
-              ACTIVITY.map((a) => (
-                <div key={a.id} className={styles.aRow}>
-                  <span className={styles.aIcon} aria-hidden="true">
-                    <Ic name={a.icon} />
-                  </span>
-                  <span className={styles.aBody}>
-                    <span className={styles.aText}>{a.text}</span>
-                    <span className={styles.aFoot}>
-                      <Who who={a.who} compact />
-                      <span className={styles.aStamp}>{a.stamp}</span>
-                    </span>
-                  </span>
-                </div>
-              ))
-            )}
-          </Panel>
+          {/* THE STORY (2026-11-08): the full timeline took the Activity panel's chair — the trail lines it showed
+              ride inside it, with everything the trail never saw (emails, texts, desk calls, invoices, reviews). */}
+          <StoryPanel story={view.story} />
         </div>
       </div>
 

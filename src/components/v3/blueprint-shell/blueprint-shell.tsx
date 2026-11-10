@@ -21,6 +21,9 @@ import { usePathname } from "next/navigation";
 import { initBlueprintShell, type ShellHandle } from "./shell-behavior";
 import { CommandPalette } from "./command-palette";
 import { EstimatorPicker } from "@/components/v3/estimators-blueprint/estimator-picker";
+import { RepairSheet } from "@/components/v3/repairs/repair-sheet";
+import { PaymentsSheet } from "@/components/v3/payments-panel/payments-sheet";
+import { ProposalMoreSheet } from "@/components/v3/proposal-more/proposal-more-sheet";
 import { FilingChip } from "@/components/v3/filing-chip/filing-chip";
 import { PlanLimitDialog } from "@/components/billing/PlanLimitDialog";
 import { SupportWidget } from "@/components/v3/support-widget/support-widget";
@@ -193,6 +196,12 @@ export function BlueprintShell({
       <EstimatorPicker />
       {/* Where the estimate on screen will be filed, when the picker was opened from a project or a client (2026-09-18). */}
       <FilingChip />
+      {/* The repair sheet (2026-11-09): opened by `jf:repair` from a job, a sold proposal, a project or a client. */}
+      <RepairSheet />
+      {/* The payments panel (2026-11-09): opened by `jf:payments` from a sold proposal or a job. */}
+      <PaymentsSheet />
+      {/* A sold proposal's crew, sale, project and cancel (2026-11-10): `jf:proposal-more`. */}
+      <ProposalMoreSheet />
 
       {/* Same reasoning, and it closes a gap six separate pages hit
           independently: the create flows call `reportPlanLimit()` when the org

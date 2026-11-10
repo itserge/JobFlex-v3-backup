@@ -24,7 +24,8 @@
 
 import type { DeckFrame } from "./frame";
 import type { DeckSurface } from "./surface";
-import type { RoofMember, RoofPlane } from "./roof";
+import { FLASH_LEG_IN, type RoofMember, type RoofPlane } from "./roof";
+import { ftIn } from "./codeTables";
 import { ROOFING_LABEL, hasDeck, shapeOutline, sizeWords, structureWords, type DeckDesign, spaRectIn } from "./design";
 import { outsideRunOn, ringEdges } from "./ringEdges";
 import type { DeckStructure } from "./structure";
@@ -805,14 +806,59 @@ export function deckScene(s: DeckStructure): DeckScene {
     if (roof.ledger) {
       const led = roof.members.find((m) => m.role === "roof-ledger");
       if (led) {
-        box("hardware", led.cx, led.cy + 0.8, led.cz + led.sz / 2 + 0.2, led.sx + 6, 2, 0.3, tagFor("step flashing", "metal", 0, "Step and counter flashing where the roof meets the siding: the siding cut back, flashing up the wall 2 in. and out over the roofing."));
         const scr = tagFor("roof ledger screw", "SDWS-type", 0, "Two structural screws every 16 in., into the studs or the rim behind the siding.");
         for (let x = led.x0 + 8; x < led.x1 - 4; x += 16) {
           box("hardware", x, led.cy + 0.9, led.cz + 2.5, 1, 0.8, 1, scr);
           box("hardware", x + 2, led.cy + 0.9, led.cz - 2.5, 1, 0.8, 1, scr);
         }
-        callout(led.cx, led.cy, led.cz, "connection", "Roof ledger on the house", `${roof.ledger.nominal} ledger, ${roof.ledger.fasteners} structural screws (two every 16 in.) into the house framing; the rafters hang on it in hangers; step flashing tucked under the siding above.`);
+        callout(led.cx, led.cy, led.cz, "connection", "Roof ledger on the house", `${roof.ledger.nominal} ledger, ${roof.ledger.fasteners} structural screws (two every 16 in.) into the house framing; the rafters hang on it in hangers; flashed above where the roofing meets the siding.`);
       }
+    }
+    // AT THE HOUSE WALL (owner, 2026-11-07: "if it's a freestanding there is a gap for gutters and if it's attached then
+    // the proper flashing gets there"). On the wall: the flashing where the roofing meets the siding, in aluminum like
+    // the gutters — an L along a level top edge, step flashing up a sloped one, a kickout at its foot turning the water
+    // into the gutter. Standing free beside the house: a note at the gap the back gutter hangs in.
+    if (roof.wallFlashing.length) {
+      const FL = FLASH_LEG_IN;
+      const t = 0.14;
+      const apronTag = tagFor("apron flashing", "L-flashing 4 × 4 in.", 0, "Apron (L) flashing where the roof's top edge meets the house: 4 in. up the wall behind the house wrap, counter-flashed by the siding, and 4 in. over the roofing. Water at the wall is turned down the roof and off to the sides, to the gutters.");
+      const stepTag = tagFor("step flashing", "step flashing 4 × 4 in.", 0, "Step flashing up the sloped edge where the roof meets the house: an L-piece woven in with every course of roofing, 4 in. up the wall under the siding (counter-flashed) and 4 in. over the roofing. The water runs down along the wall to the eave — never behind the siding.");
+      const kickTag = tagFor("kickout flashing", "kickout diverter", 0, "Kickout flashing where the eave meets the wall: it turns the water running down the step flashing off the wall and into the gutter, instead of down the siding (IRC R903.2.1).");
+      for (const w of roof.wallFlashing) {
+        const dx = w.x1 - w.x0;
+        const dy = w.y1 - w.y0;
+        const plan = Math.hypot(dx, dy) || 1;
+        const yaw = Math.atan2(dy, dx);
+        const mx = (w.x0 + w.x1) / 2;
+        const my = (w.y0 + w.y1) / 2;
+        const mz = (w.z0 + w.z1) / 2;
+        if (w.kind === "kickout") {
+          // A fin on the wall from the eave out past it over the gutter, turned a little away from the wall.
+          const k = { x: (dx / plan) * 0.94 + w.ox * 0.34, y: (dy / plan) * 0.94 + w.oy * 0.34 };
+          box("gutter", w.x0 + k.x * 3.5 + w.ox * 0.3, w.y0 + k.y * 3.5 + w.oy * 0.3, w.z0 + 0.5, 7, t, 5, kickTag, 0, Math.atan2(k.y, k.x));
+          continue;
+        }
+        const tilt = Math.atan2(w.z1 - w.z0, plan);
+        // The leg up the wall, in the wall's plane along the line.
+        box("gutter", mx + w.ox * (t / 2 + 0.06), my + w.oy * (t / 2 + 0.06), mz + FL / 2, w.lengthIn + (w.kind === "apron" ? 4 : 0), t, FL, w.kind === "apron" ? apronTag : stepTag, 0, yaw, tilt);
+        if (w.kind === "step") {
+          // The leg over the roofing: level across the slope, so it lies on the shingles all the way up.
+          box("gutter", mx + (w.ox * FL) / 2, my + (w.oy * FL) / 2, mz + 0.12, w.lengthIn, FL, t, stepTag, 0, yaw, tilt);
+        } else {
+          // The apron's leg runs down the roof away from the wall.
+          const fall = Math.atan(roof.slope);
+          box("gutter", mx + (w.ox * FL) / 2, my + (w.oy * FL) / 2, mz - (FL / 2) * Math.tan(fall) + 0.12, FL / Math.cos(fall), w.lengthIn + 4, t, apronTag, 0, Math.atan2(w.oy, w.ox), -fall);
+        }
+      }
+      const steps = roof.wallFlashing.filter((w) => w.kind === "step").length;
+      const kicks = roof.wallFlashing.filter((w) => w.kind === "kickout").length;
+      const w0 = roof.wallFlashing.find((w) => w.kind === "kickout") ?? roof.wallFlashing[0];
+      callout(w0.x0, w0.y0, w0.z0 + 3, "connection", "Roof to the house wall", `Flashed where the roof meets the siding: ${[roof.wallFlashing.some((w) => w.kind === "apron") ? "apron (L) flashing along the top" : "", steps ? `step flashing up ${steps === 1 ? "the slope" : `both slopes`}` : ""].filter(Boolean).join(", ")}, counter-flashed by the siding${kicks ? `, and ${kicks === 1 ? "a kickout" : `${kicks} kickouts`} at the eave turning the water into the gutter` : ""}. Water at the wall runs off to the sides and down to the gutters.`);
+    }
+    if (roof.houseGap) {
+      const g = roof.houseGap;
+      const xs0 = roof.eaveRing.map((p) => p.x);
+      callout((Math.min(...xs0) + Math.max(...xs0)) / 2, g.eaveIn / 2, roof.headerTopIn, "connection", "The gap at the house", g.gutter ? `Free-standing on its own posts, ${ftIn(g.postsIn)} off the house: the back eave stops ${g.eaveIn < 12 ? `${g.eaveIn} in.` : ftIn(g.eaveIn)} from the wall and its gutter hangs in the gap, ${g.clearIn} in. clear of the siding. The back slope's water goes to that gutter and the downspouts — never down the wall.` : `Free-standing on its own posts, ${ftIn(g.postsIn)} off the house: the back eave stops ${g.eaveIn < 12 ? `${g.eaveIn} in.` : ftIn(g.eaveIn)} from the wall. With no gutter its water drips into that gap, beside the foundation — add gutters, or hang the roof on the house.`);
     }
     if (roof.headers[0] && roof.posts[0]) {
       const h = roof.headers[0];

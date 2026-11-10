@@ -46,6 +46,9 @@ export interface RampBillRecord {
   paidAt: string | null;
   lastCheckedAt: string | null;
   note: string | null;
+  /** A sub's invoice paid through this bill (the subcontractors plan, part 5a): when Ramp pays, the payment is
+   *  recorded on the invoice (lib/subInvoices) instead of a job expense; `held` is the retainage kept from it. */
+  sub?: { invoiceId: string; held: number } | null;
 }
 
 async function readBill(org: string, id: string): Promise<RampBillRecord | null> {
@@ -114,6 +117,8 @@ export interface RampBillInput {
   to: { kind: "job"; jobId: string } | { kind: "stock" } | { kind: "none" };
   /** The invoice file as a data URL (PDF reaches Ramp; a picture stays in JobFlex). */
   invoice: { dataUrl: string; filename: string } | null;
+  /** Part 5a: the sub's invoice this bill pays (lib/subInvoices sendInvoiceToRamp). */
+  sub?: { invoiceId: string; held: number } | null;
 }
 
 function decodeDataUrl(dataUrl: string): { bytes: Buffer; contentType: string } | null {
@@ -271,6 +276,7 @@ export async function createRampBill(organizationId: string, input: RampBillInpu
     paidAt: null,
     lastCheckedAt: new Date().toISOString(),
     note: warnings[0] ?? null,
+    sub: input.sub ?? null,
   };
   await writeBill(organizationId, rec);
   await logActivity({
@@ -291,6 +297,17 @@ export async function createRampBill(organizationId: string, input: RampBillInpu
 /** The paid bill written as the job's expense, with the invoice as its receipt; the trail says so. Once. */
 async function bookPaidBill(organizationId: string, conn: RampConnection, rec: RampBillRecord, bill: RampBill | null): Promise<RampBillRecord> {
   if (rec.expenseId) return rec;
+  if (rec.sub) {
+    // A sub's invoice: the payment is recorded on it (with the project's Subcontractors expense on the stage's phase),
+    // never a job expense too. A recording that fails leaves the bill unbooked, so the next sync tries again.
+    const { recordRampPayment } = await import("@/lib/subInvoices/server");
+    const paidAt = bill?.paid_at ? new Date(bill.paid_at).toISOString() : new Date().toISOString();
+    const r = await recordRampPayment(organizationId, { billId: rec.billId, amount: rec.amount, paidAt, invoiceNumber: rec.invoiceNumber, sub: rec.sub });
+    if (!r) return rec;
+    const booked: RampBillRecord = { ...rec, expenseId: r.expenseId ?? `sub:${rec.sub.invoiceId}`, paidAt, state: "paid", stateWords: BILL_STATE_WORDS.paid };
+    await writeBill(organizationId, booked);
+    return booked;
+  }
   const now = new Date();
   const paidAt = bill?.paid_at ? new Date(bill.paid_at) : now;
   const payWords = bill?.payment?.payment_method ?? rec.payBy;

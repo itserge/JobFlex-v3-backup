@@ -55,11 +55,32 @@ export interface OrgEmailTransports {
 
 export async function sendOrgEmail(
   org: OrgEmailSender,
-  opts: { to: string | string[]; subject: string; html: string; kind?: EmailKind },
+  opts: {
+    to: string | string[];
+    subject: string;
+    html: string;
+    kind?: EmailKind;
+    /** A Reply-To of the caller's own (2026-11-08, the subcontractors plan, part 2: a request's reply address,
+     *  rfq-<token>@<inbound domain>, so the sub's answer lands in JobFlex). Default: the org's reply-to. */
+    replyTo?: string;
+    /** Extra mail headers (the inbox's In-Reply-To / References). The Gmail transport does not carry them. */
+    headers?: Record<string, string>;
+    /** The client this letter is for (Smart CRM part 2): with the inbox receiving, the Reply-To becomes the
+     *  client's thread address, so their answer lands in JobFlex — unless the caller set replyTo itself. */
+    clientId?: string | null;
+    /** The company, for the thread lookup, when the org row the caller holds was selected without its id. */
+    organizationId?: string | null;
+  },
   transports: OrgEmailTransports = { gmail: sendViaGmail, platform: sendEmail },
 ): Promise<OrgEmailResult> {
   const settings = parseGmailSettings(org.gmailSettingsJson);
-  const replyTo = orgReplyTo(org);
+  let threadReplyTo: string | null = null;
+  const orgId = org.id ?? opts.organizationId ?? null;
+  if (!opts.replyTo?.trim() && opts.clientId && orgId) {
+    const { clientReplyTo } = await import("@/lib/inbox/server");
+    threadReplyTo = await clientReplyTo(orgId, opts.clientId).catch(() => null);
+  }
+  const replyTo = opts.replyTo?.trim() || threadReplyTo || orgReplyTo(org);
   let gmailFallback: OrgEmailResult["gmailFallback"];
 
   // Prefer the org's own Gmail when connected + opted in + OAuth configured.
@@ -90,7 +111,7 @@ export async function sendOrgEmail(
     }
   }
 
-  await transports.platform({ to: opts.to, subject: opts.subject, html: opts.html, replyTo, kind: opts.kind, organizationId: org.id ?? null });
+  await transports.platform({ to: opts.to, subject: opts.subject, html: opts.html, replyTo, headers: opts.headers, kind: opts.kind, organizationId: orgId });
   return gmailFallback ? { via: "resend", gmailFallback } : { via: "resend" };
 }
 

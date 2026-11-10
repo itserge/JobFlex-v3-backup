@@ -15,6 +15,8 @@ export const ALL_FEATURES = [
   "multi_org",
   "custom_domain",
   "white_label",
+  // Subcontractors plan, part 5a (2026-11-09): recording payments to subs, releasing retainage, paying through Ramp.
+  "sub_payments",
 ] as const;
 export type Feature = (typeof ALL_FEATURES)[number];
 
@@ -30,6 +32,7 @@ export const FEATURE_LABELS: Record<Feature, string> = {
   multi_org: "Multiple organizations",
   custom_domain: "Custom domain",
   white_label: "White-label client portal",
+  sub_payments: "Subcontractor payments",
 };
 
 // Minimum plan that unlocks each feature.
@@ -50,6 +53,8 @@ export const MINIMUM_PLAN_FOR: Record<Feature, Plan> = {
   multi_org: "FREE",
   custom_domain: "FREE",
   white_label: "FREE",
+  // The plan said paid plans; free with everything else under the 2026-08-14 call until the owner says otherwise.
+  sub_payments: "FREE",
 };
 
 /** Texts a company sends each calendar month (UTC) within its plan (2026-09-24).

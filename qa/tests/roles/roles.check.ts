@@ -48,6 +48,7 @@ import * as adminUsers from "../../../src/actions/adminUsers";
 import * as adminTasks from "../../../src/actions/adminTasks";
 import * as deck from "../../../src/actions/deckEstimator";
 import * as tasksChanges from "../../../src/app/api/admin/tasks/changes/route";
+import * as pipeline from "../../../src/actions/pipeline";
 
 // The handheld group's layout, by require so the harness's stand-ins (and its
 // stylesheet stub) are in place when it loads.
@@ -175,6 +176,20 @@ async function main() {
     await expectRefused("SALES", sales, "updateProposalStatus on the owner's proposal", () => proposals.updateProposalStatus(proposal.id, "ACCEPTED" as never));
     await expectRefused("ESTIMATOR", estimator, "duplicateProposal of the owner's proposal", () => proposals.duplicateProposal(proposal.id));
 
+    // ── the pipeline (Smart CRM part 3, 2026-11-08): a rep moves only their own cards; the spend is the office's ──
+    const repProposal = await db.proposal.create({ data: { organizationId: org.id, publicId: rid(), title: `Rep's proposal ${tag}`, clientId: client.id, status: "DRAFT", total: 4000, ownerId: sales.u.id } });
+    const ownerCard = { key: `proposal:${proposal.id}`, stage: "NEGOTIATION" };
+    await expectRefused("SALES", sales, "moveDealCard on the owner's proposal", () => pipeline.moveDealCard(ownerCard));
+    await expectRefused("SALES", sales, "setDealCardDetails on the owner's proposal", () => pipeline.setDealCardDetails({ key: ownerCard.key, expectedClose: "2026-12-01" }));
+    await expectRefused("ESTIMATOR", estimator, "moveDealCard (no pipeline page)", () => pipeline.moveDealCard(ownerCard));
+    await expectRefused("INSTALLER", installer, "moveDealCard", () => pipeline.moveDealCard(ownerCard));
+    await expectRefused("SALES", sales, "setSourceSpend (the office's report)", () => pipeline.setSourceSpend("facebook", 100));
+    await expectAllowed("SALES", sales, "moveDealCard on their own proposal", () => pipeline.moveDealCard({ key: `proposal:${repProposal.id}`, stage: "NEGOTIATION" }));
+    await expectAllowed("MANAGER", manager, "moveDealCard on the owner's proposal", () => pipeline.moveDealCard(ownerCard));
+    await expectAllowed("OWNER", owner, "setSourceSpend", () => pipeline.setSourceSpend("facebook", null));
+    check("SALES: the pipeline and inbox pages are open to a rep", mayOpen("SALES", "/dashboard/pipeline") && mayOpen("SALES", "/dashboard/inbox"));
+    check("ESTIMATOR: the pipeline page is closed", !mayOpen("ESTIMATOR", "/dashboard/pipeline"));
+
     // ── manager vs owner ──
     await expectRefused("MANAGER", manager, "updateMembershipRole(self → OWNER)", () => team.updateMembershipRole(manager.m.id, "OWNER"));
     await expectRefused("MANAGER", manager, "updateMembershipRole(owner → INSTALLER)", () => team.updateMembershipRole(owner.m.id, "INSTALLER"));
@@ -226,6 +241,7 @@ async function main() {
     await del(() => db.membership.deleteMany({ where: { organizationId: org.id } }));
     await del(() => db.phoneVerification.deleteMany({ where: { userId: { in: ROLES.map((r) => people[r].u.id) } } }));
     await del(() => db.user.deleteMany({ where: { id: { in: ROLES.map((r) => people[r].u.id) } } }));
+    await del(() => db.syncState.deleteMany({ where: { key: `crm:spend:${org.id}` } }));
     await del(() => db.organization.delete({ where: { id: org.id } }));
     await db.$disconnect();
   }

@@ -28,6 +28,10 @@ import { money, planPhase, planTermsLine } from "@/lib/servicePlans";
 import { equipmentAdvice, equipmentLine } from "@/lib/equipment";
 import { actorsOf, whoOfEvent } from "@/lib/activityLog";
 import type { EquipmentRow } from "./equipment-panel";
+import { readClientTimeline, type ClientRef } from "@/lib/clientTimeline/server";
+import { briefCurrent, readClientMemory, rebuildClientBrief } from "@/lib/clientMemory";
+import { duplicatesOf } from "@/lib/clientMerge";
+import type { BriefView, DuplicateRow, FactRow, PromiseRow, StoryRow } from "./client-360";
 import {
   splitAddress,
   type ActivityRow,
@@ -67,6 +71,8 @@ export type ClientDetailRecord = {
   /** The client's open projects (2026-09-18), newest first — the masthead
    *  links the first and "Add to project" files the rest. */
   projects: { id: string; name: string }[];
+  /** The jobs a repair could go back to (2026-11-09) — counted for the office only, 0 for anyone else. */
+  repairJobs: number;
   proposals: ProposalRow[];
   payments: PaymentRow[];
   activity: ActivityRow[];
@@ -75,6 +81,12 @@ export type ClientDetailRecord = {
   planTemplates: { id: string; name: string; terms: string }[];
   /** The units at the home (2026-09-23). */
   equipment: EquipmentRow[];
+  /** The 360 (Smart CRM part 1, 2026-11-08): the whole story, the brief, the memory, the promises, the duplicates. */
+  story: StoryRow[];
+  brief: BriefView;
+  facts: FactRow[];
+  promises: PromiseRow[];
+  duplicates: DuplicateRow[];
   /** The raw columns behind `client`, for the Edit dialog.
    *
    *  Carried SEPARATELY rather than parsed back out of the display strings.
@@ -213,6 +225,7 @@ const ACTIVITY_ICON: Record<string, string> = {
 export async function loadClientDetail(
   id: string | undefined,
   organizationId: string,
+  opts: { office?: boolean } = {},
 ): Promise<ClientDetailView> {
   if (!id) return { found: false, reason: "none" };
 
@@ -259,6 +272,28 @@ export async function loadClientDetail(
   const equipmentRows = await db.clientEquipment.findMany({ where: { clientId: row.id, organizationId }, orderBy: { createdAt: "asc" } });
   const equipment: EquipmentRow[] = equipmentRows.map((e) => ({ id: e.id, kind: e.kind, line: equipmentLine(e), advice: equipmentAdvice(e), filterSize: e.filterSize, location: e.location, serial: e.serial, source: e.source }));
 
+  // THE 360 (2026-11-08): the timeline, the memory and the look for duplicates ride the same load. The brief is
+  // rebuilt INLINE when the timeline holds something newer — rare (a 5-minute floor in briefCurrent), and the page
+  // is per-request anyway; a failed build keeps the old brief and never fails the page.
+  const ref: ClientRef = { id: row.id, organizationId, name: row.name, email: row.email, phone: row.phone };
+  const [story, memoryFirst, duplicates] = await Promise.all([
+    readClientTimeline(ref),
+    readClientMemory(organizationId, row.id),
+    duplicatesOf(ref).catch(() => []),
+  ]);
+  let memory = memoryFirst;
+  if (!briefCurrent(memory.brief, story)) {
+    const fresh = await rebuildClientBrief(ref, story).catch(() => null);
+    if (fresh) memory = await readClientMemory(organizationId, row.id);
+  }
+  const sourceWord = (kind: string | null, at: Date | null) => {
+    const k = kind ? kind.toLowerCase().replace(/_/g, " ") : null;
+    const d = at ? dateLong(at) : null;
+    if (k === "person") return d ? `typed in · ${d}` : "typed in";
+    return k && d ? `${k} · ${d}` : (k ?? d);
+  };
+  const now = Date.now();
+
   const lastActivity = row.activities[0]?.createdAt ?? row.updatedAt;
   const addr = splitAddress(row.address);
 
@@ -292,11 +327,14 @@ export async function loadClientDetail(
     notes: row.notes?.trim() || "—",
   };
 
+  const repairJobs = opts.office ? await db.job.count({ where: { organizationId, clientId: row.id, kind: { not: "REPAIR" }, status: { not: "CANCELED" } } }) : 0;
+
   return {
     found: true,
     clientId: row.id,
     client,
     projects: row.projects,
+    repairJobs,
     plans,
     planTemplates,
     equipment,
@@ -336,5 +374,10 @@ export async function loadClientDetail(
       stamp: stamp(a.createdAt),
       who: whoOfEvent(a, actors),
     })),
+    story: story.map((e) => ({ id: e.id, kind: e.kind, stamp: e.stamp, tone: e.tone, title: e.title, detail: e.detail ?? null, href: e.href ?? null, when: stamp(e.at) })),
+    brief: memory.brief ? { summary: memory.brief.summary, nextAction: memory.brief.nextAction, built: stamp(memory.brief.builtAt) } : null,
+    facts: memory.facts.map((fct) => ({ id: fct.id, category: fct.category, fact: fct.fact, source: sourceWord(fct.sourceKind, fct.sourceAt), byAi: fct.byAi, replaced: fct.supersededText })),
+    promises: memory.promises.map((p) => ({ id: p.id, direction: p.direction, text: p.text, status: p.status, due: p.dueAt ? dateLong(p.dueAt) : null, overdue: p.status === "OPEN" && !!p.dueAt && p.dueAt.getTime() < now })),
+    duplicates: duplicates.map((d) => ({ id: d.id, name: d.name, via: d.via, contact: [d.email, d.phone].filter(Boolean).join(" · ") })),
   };
 }

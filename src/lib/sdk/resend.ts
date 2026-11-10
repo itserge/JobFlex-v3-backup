@@ -21,6 +21,25 @@ export function getResend() {
   return client;
 }
 
+// INBOUND MAIL (2026-11-08, the subcontractors plan, part 2, lib/subInbound). Reading a received letter and its
+// attachments needs a Resend API key too — but `isResendEnabled()` above moves EVERY outgoing letter onto Resend
+// the moment RESEND_API_KEY is set, and production sends through Gmail SMTP (docs/email-dns.md). So the inbound side
+// reads its own key, RESEND_INBOUND_API_KEY (a key with receiving permissions), falling back to RESEND_API_KEY only
+// where that is already the sending transport. Sending stays exactly as it was.
+let inboundClient: Resend | null = null;
+export function inboundApiKey(): string | null {
+  return process.env.RESEND_INBOUND_API_KEY?.trim() || process.env.RESEND_API_KEY?.trim() || null;
+}
+export function isResendInboundEnabled() {
+  return Boolean(inboundApiKey());
+}
+export function getResendInbound() {
+  const key = inboundApiKey();
+  if (!key) throw new IntegrationDisabledError("Resend inbound", "RESEND_INBOUND_API_KEY");
+  if (!inboundClient) inboundClient = new Resend(key);
+  return inboundClient;
+}
+
 // Unified default sender. EMAIL_FROM wins; FROM_EMAIL is the SMTP-style alias
 // some environments set; otherwise the platform address.
 export const EMAIL_FROM =

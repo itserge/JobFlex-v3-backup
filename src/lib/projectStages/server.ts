@@ -17,7 +17,7 @@ import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { getOpenAI, isOpenAIEnabled, resolveOpenAIModel, samplingOptions } from "@/lib/sdk/openai";
 import { parseTradeTypes } from "@/lib/tradeTypes";
 import { BUDGET_CATEGORIES } from "@/lib/projectBudget";
-import { makesProject, parseProjectSettings, percentDone, proposalTrade, templateByKey, templateFor, type StageTemplate, type TemplateStage } from "./shared";
+import { kindForTemplate, templatesFor, makesProject, parseProjectSettings, percentDone, proposalTrade, templateByKey, templateFor, type StageTemplate, type TemplateStage } from "./shared";
 import { KIND_LABEL, kindOf, livingInPlaceTasks, onSiteStageIndex, parseAnswers, serializeAnswers } from "@/lib/projectKind";
 import { INSPECTION_NAME, gateHolds, gateWords } from "@/lib/projectGates";
 
@@ -117,7 +117,8 @@ export async function addTemplate(project: { id: string; kind: string; answersJs
   const tpl = templateByKey(key);
   if (!tpl) throw new Error("No such template");
   const kind = kindOf(project.kind);
-  if (tpl.kind !== kind) throw new Error(`${tpl.label} is a ${KIND_LABEL[tpl.kind].toLowerCase()} template; this project is a ${KIND_LABEL[kind].toLowerCase()}.`);
+  // A job project takes the trade templates; a remodel those and its own (2026-11-09, templatesFor).
+  if (!templatesFor(kind).some((x) => x.key === tpl.key)) throw new Error(`${tpl.label} is a ${KIND_LABEL[tpl.kind].toLowerCase()} template; this project is a ${KIND_LABEL[kind].toLowerCase()}.`);
   const answers = parseAnswers(project.answersJson);
   let stages: readonly TemplateStage[] = tpl.stages;
   if (kind === "REMODEL" && answers.occupied) {
@@ -280,13 +281,13 @@ export async function projectForJob(organizationId: string, jobId: string, actor
       return { id, created: true };
     }
   }
-  const project = await numbered(organizationId, (number) =>
-    db.project.create({ data: { organizationId, number, name: projectName({ title: job.title, client: job.client }), clientId: job.clientId, status: "ACTIVE" }, select: { id: true, number: true } }),
-  );
-  await db.job.update({ where: { id: job.id }, data: { projectId: project.id } });
   // A job with no proposal says only its title; the company's trade is not read for it (a gutter repair would
   // get a roofer's roof stages) — the owner picks a template or lets the AI draft.
   const tpl = templateFor({ title: job.title });
+  const project = await numbered(organizationId, (number) =>
+    db.project.create({ data: { organizationId, number, name: projectName({ title: job.title, client: job.client }), clientId: job.clientId, status: "ACTIVE", kind: kindForTemplate(tpl) }, select: { id: true, number: true } }),
+  );
+  await db.job.update({ where: { id: job.id }, data: { projectId: project.id } });
   if (tpl) await stagesFromTemplate(project.id, tpl.stages);
   await logActivity({ organizationId, actorId, kind: TRAIL_KINDS.PROJECT, summary: `Made the project ${projectName({ title: job.title, client: job.client })} from the job`, clientId: job.clientId, meta: { projectId: project.id, jobId: job.id } });
   return { id: project.id, created: true };
@@ -295,9 +296,12 @@ export async function projectForJob(organizationId: string, jobId: string, actor
 async function makeProject(p: SoldProposal, ctx: { actorId: string | null; orgTrades: string[]; trade: string | null }): Promise<string> {
   const name = projectName(p);
   const budget = costOf(p);
+  // The stages' template, read first so the project lands in its workspace (2026-11-09): a trade's sale is a job
+  // project, a kitchen or a bath a remodel.
+  const tpl = templateFor({ estimator: p.trade, title: p.title, scope: p.scopeOfWork, orgTrades: ctx.orgTrades });
   const project = await numbered(p.organizationId, (number) =>
     db.project.create({
-      data: { organizationId: p.organizationId, number, name, clientId: p.clientId, status: "ACTIVE", budget },
+      data: { organizationId: p.organizationId, number, name, clientId: p.clientId, status: "ACTIVE", budget, kind: kindForTemplate(tpl) },
       select: { id: true, number: true },
     }),
   );
@@ -316,7 +320,6 @@ async function makeProject(p: SoldProposal, ctx: { actorId: string | null; orgTr
   await db.proposal.update({ where: { id: p.id }, data: { projectId: project.id } });
   await db.job.updateMany({ where: { proposalId: p.id, organizationId: p.organizationId, projectId: null }, data: { projectId: project.id } });
   // The stages: a trade template, else the model's draft (kept as "drafted" until someone keeps or edits it).
-  const tpl = templateFor({ estimator: p.trade, title: p.title, scope: p.scopeOfWork, orgTrades: ctx.orgTrades });
   let how = "no stages yet";
   if (tpl) {
     await stagesFromTemplate(project.id, tpl.stages);

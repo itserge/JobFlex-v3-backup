@@ -29,6 +29,8 @@ import { loadCrewBoard } from "@/components/v3/crew-board/crew-board-load";
 import { contractRevenue, contractTotal } from "@/lib/contractTotal";
 import { projectMoney } from "@/lib/projectMoney";
 import { crewTotals, jobMoney } from "@/lib/jobCosting";
+import { repairFactsFor } from "@/lib/repairs/server";
+import { callFirstWords } from "@/lib/proposalRow/shared";
 import { jobCostOf, type JobCost } from "@/lib/jobCost";
 import { isTradeId, pickList } from "@/lib/inventory";
 import { inventoryLinkOf, linkedTradeOf } from "@/lib/inventoryPick";
@@ -281,6 +283,16 @@ const CHANGE_STATE: Record<string, JdChange["state"]> = {
   VOID: "void",
 };
 
+/** "Call Nelly first · (425) 555-0101" when the office set it on the job's proposal (2026-11-10, part 4): the crew
+ *  calls the rep before starting. Both the office's record and the crew's carry it. */
+async function callFirstOf(organizationId: string, proposalId: string | null): Promise<string | null> {
+  if (!proposalId) return null;
+  const p = await db.proposal.findFirst({ where: { id: proposalId, organizationId, callRepFirst: true }, select: { owner: { select: { id: true, name: true, phone: true } } } });
+  if (!p?.owner) return null;
+  const wp = await db.workerProfile.findFirst({ where: { organizationId, userId: p.owner.id }, select: { phone: true } });
+  return callFirstWords({ name: p.owner.name, phone: wp?.phone ?? p.owner.phone ?? null });
+}
+
 /**
  * The job behind `[id]`, scoped to the caller's org, shaped for the page.
  * Returns null when the id resolves to nothing this org owns — the page turns
@@ -401,6 +413,7 @@ export async function loadJobDetail(
     expenses: [cost.receipts],
     pendingExpenses: [cost.receiptsPending],
     stock: cost.stock,
+    repairs: cost.repairs,
   });
   const money: JdMoney = {
     contract: m.contract,
@@ -415,6 +428,8 @@ export async function loadJobDetail(
     expenses: m.expenses,
     expensesPending: m.expensesPending,
     stock: m.stock,
+    repairs: m.repairs,
+    repairsCount: cost.repairsCount,
     stockUnpriced: cost.unpriced,
     cost: m.cost,
     costIsPlanned: m.costIsPlanned,
@@ -537,6 +552,9 @@ export async function loadJobDetail(
     chrome: "dashboard",
     portal: null,
     field: await fieldOf(organizationId, job.id, { workerId: null, office: !isLimitedRole(role) }),
+    callFirst: await callFirstOf(organizationId, job.proposalId),
+    // What this repair is, and this job's come-backs (2026-11-09) — the office's; a sales seat reads no money.
+    ...(isOwnerOrManager(role) ? await repairFactsFor(organizationId, job.id) : {}),
   };
 }
 
@@ -634,6 +652,8 @@ async function loadWorkerScoped(
   return {
     id: job.id,
     title: job.title,
+    // The crew calls the rep first (2026-11-10) — the one office line the crew must read before starting.
+    callFirst: await callFirstOf(organizationId, job.proposalId),
     status: STATUS_TO_KEY[job.status] ?? "sch",
     dates: headDates(job.startsAt, job.endsAt),
     undated: !job.startsAt && !job.endsAt,

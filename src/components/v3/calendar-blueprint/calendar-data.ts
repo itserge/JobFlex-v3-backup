@@ -74,6 +74,12 @@ export type CalEvent = {
    * what keeps a stale hint harmless.
    */
   lane?: number;
+  /** Job events, managers only (calendar part 1, 2026-11-09): the job's value (its proposal's total) and what its
+   *  crew is paid — the chip reads "$14k → $2.1k". */
+  value?: number | null;
+  crewPay?: number | null;
+  /** A repair job (kind REPAIR, 2026-11-09) — the Repairs lane and the chip's wrench. */
+  repair?: boolean;
 };
 
 /** `userId`: the login behind the crew profile — reserved AI desk hours are kept by user (lib/deskHours). */
@@ -85,7 +91,27 @@ export type CalProject = { id: string; name: string; tone: number };
  *  workerId — PENDING | ACCEPTED | DECLINED | COMPLETED. Absent on fixture
  *  rows and non-job events. */
 export type CalAssignmentStatus = Record<string, string>;
-export type TrayJob = { id: string; title: string; client: string; city: string; duration: string };
+export type TrayJob = {
+  id: string;
+  title: string;
+  client: string;
+  city: string;
+  duration: string;
+  /** THE "TO PLACE" LIST (calendar part 1, 2026-11-09): "job" = sold work waiting for a day (the default); "visit" = a
+   *  lead waiting for a visit — `id` is then "lead:<leadId>" and a drop books an appointment, not a job. */
+  kind?: "job" | "visit";
+  /** A repair (a come-back, 2026-11-09): its own "Repairs to book" group, booked on whoever is already on it. */
+  repair?: boolean;
+  /** How long the booking takes, in minutes: the job's planned span, a visit's hour. Absent = 4 hours. */
+  durationMin?: number | null;
+  /** The job's value (its proposal's total) — managers only; the card and "First open times" show it. */
+  value?: number | null;
+  /** Who the work is for — two of one client's jobs sit together on the list. */
+  clientKey?: string | null;
+  leadId?: string;
+  /** The person a lead is already with (assigned / claimed) — their own calendar is offered first. */
+  ownerWorkerId?: string | null;
+};
 export type InboxItem = {
   id: string;
   title: string;

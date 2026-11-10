@@ -87,6 +87,8 @@ export type ProposalsContentOptions = {
   /** The org's real proposal book, read server-side. There is no fixture to
    *  fall back to any more — an omitted book renders the real empty states. */
   rows?: ProposalRow[];
+  /** An office seat (owner, admin, manager): a sold proposal's bar offers Repair (2026-11-09). */
+  office?: boolean;
 };
 
 type MaterialsSheetProps = Parameters<typeof MaterialsSheet>[0];
@@ -211,6 +213,28 @@ export function initProposalsContent(
   function fmtMoney(n: number) {
     return "$" + Math.round(n).toLocaleString("en-US");
   }
+  /** Crew and More on sold work (2026-11-10) — the office's; the sheet lives in the shell (`jf:proposal-more`). A
+   *  cancelled sale keeps More (to reopen it). */
+  function moreBtnsHtml(p: ProposalRow, cls: string): string {
+    if (!options.office) return "";
+    const sold = p.status === "ACCEPTED" || p.status === "COMPLETED" || p.status === "PAID";
+    if (!sold && !p.canceled) return "";
+    return (
+      (sold ? '<button class="' + cls + '" type="button" data-act="crew" title="Who is on the job, and their pay"><svg class="ic"><use href="#i-users"/></svg>Crew</button>' : "") +
+      '<button class="' + cls + '" type="button" data-act="more" title="Crew, who sold it and their commission, call the rep first, the project, cancel the sold job"><svg class="ic"><use href="#i-dots"/></svg>More</button>'
+    );
+  }
+  /** The Payments panel on sold work (2026-11-09) — the office's; the sheet lives in the shell (`jf:payments`). */
+  function paymentsBtnHtml(p: ProposalRow, cls: string): string {
+    if (!options.office || !(p.status === "ACCEPTED" || p.status === "COMPLETED" || p.status === "PAID")) return "";
+    const late = (p.inst ?? []).filter((it) => it.overdue && (it.status === "UNPAID" || it.status === "PENDING")).length;
+    return '<button class="' + cls + '" type="button" data-act="payments" title="Every payment: mark paid, invoice, remind, receipts, undo, add or remove a payment"><svg class="ic"><use href="#i-card"/></svg>Payments' + (late ? " · " + late + " late" : "") + "</button>";
+  }
+  /** Repair on sold work (2026-11-09) — the office's; the sheet lives in the shell and opens on `jf:repair`. */
+  function repairBtnHtml(p: ProposalRow, cls: string): string {
+    if (!options.office || !(p.status === "ACCEPTED" || p.status === "COMPLETED" || p.status === "PAID")) return "";
+    return '<button class="' + cls + '" type="button" data-act="repair" title="Send someone back — a come-back or a warranty repair"><svg class="ic"><use href="#i-wrench"/></svg>Repair</button>';
+  }
   // The All tab draws each proposal through the dossier card (cards/card-c.ts, owner's pick 2026-10-30); the kit
   // hands it this page's helpers so its figures and buttons are the classic card's.
   const cardKit: CardKit = {
@@ -225,6 +249,9 @@ export function initProposalsContent(
     paidCellHtml: (p) => paidCellHtml(p),
     payBarHtml: (p, withTotal) => payBarHtml(p, withTotal),
     sendCellHtml: (p) => sendCellHtml(p),
+    repairHtml: (p, cls) => repairBtnHtml(p, cls),
+    paymentsHtml: (p, cls) => paymentsBtnHtml(p, cls),
+    moreHtml: (p, cls) => moreBtnsHtml(p, cls),
     payActsHtml: (p, next) => payActsHtml(p, next),
     finHtml: (p) => finHtml(p),
     instDollars: (p, it) => instDollars(p, it),
@@ -783,6 +810,8 @@ export function initProposalsContent(
       send +
       '<a class="pbar-btn pbar-btn--view" href="/portal/q/' + encodeURIComponent(p.publicId) + '" target="_blank" rel="noopener noreferrer" title="Client view — the page the client gets, in a new tab"><svg class="ic"><use href="#i-eye"/></svg>Client view</a>' +
       '<button class="pbar-btn" type="button" data-act="change-order" title="Price extras, send for signature"><svg class="ic"><use href="#i-plus"/></svg>' + (p.co && p.co.count ? "Change orders · " + p.co.count : "Change order") + "</button>" +
+      // A repair goes back to sold work (2026-11-09) — the office's; the sheet lives in the shell (jf:repair).
+      repairBtnHtml(p, "pbar-btn") +
       zillow +
       '<button class="pbar-btn" type="button" data-act="copylink" title="Copy the client\'s link to paste into a text"><svg class="ic"><use href="#i-link"/></svg>Copy client link</button>' +
       "</div>" +
@@ -1070,6 +1099,9 @@ export function initProposalsContent(
       '<button class="btn btn-ghost btn--sm" type="button" data-act="change-order"><svg class="ic"><use href="#i-plus"/></svg>' +
       (p.co && p.co.count ? "Change orders · " + p.co.count : "Change order") +
       "</button>" +
+      repairBtnHtml(p, "btn btn-ghost btn--sm") +
+      paymentsBtnHtml(p, "btn btn-ghost btn--sm") +
+      moreBtnsHtml(p, "btn btn-ghost btn--sm") +
       // Real: the client-facing page for this proposal.
       '<a class="btn btn-ghost btn--sm" href="/portal/q/' +
       encodeURIComponent(p.publicId) +
@@ -1217,6 +1249,9 @@ export function initProposalsContent(
       '<button class="btn btn-ghost btn--sm" type="button" data-act="change-order"><svg class="ic"><use href="#i-plus"/></svg>' +
       (p.co && p.co.count ? "Change orders · " + p.co.count : "Change order") +
       "</button>" +
+      repairBtnHtml(p, "btn btn-ghost btn--sm") +
+      paymentsBtnHtml(p, "btn btn-ghost btn--sm") +
+      moreBtnsHtml(p, "btn btn-ghost btn--sm") +
       '</div><div class="psheet-foot-r">' +
       '<button class="btn btn-ghost btn--sm" type="button" data-act="unmark"><svg class="ic"><use href="#i-undo"/></svg>Reopen job</button>' +
       (p.owed > 0
@@ -1888,6 +1923,21 @@ export function initProposalsContent(
       }
       if (kind === "change-order" && p) {
         openChangeOrder(p);
+        return;
+      }
+      // A sold proposal's sheet (2026-11-10): Crew opens it on the crew.
+      if ((kind === "crew" || kind === "more") && p) {
+        document.dispatchEvent(new CustomEvent("jf:proposal-more", { detail: { proposalId: p.id, section: kind === "crew" ? "crew" : undefined } }));
+        return;
+      }
+      // The Payments panel (2026-11-09): the sheet lives in the shell.
+      if (kind === "payments" && p) {
+        document.dispatchEvent(new CustomEvent("jf:payments", { detail: { proposalId: p.id } }));
+        return;
+      }
+      // A repair on sold work (2026-11-09): the sheet lives in the shell.
+      if (kind === "repair" && p) {
+        document.dispatchEvent(new CustomEvent("jf:repair", { detail: { proposalId: p.id } }));
         return;
       }
       if (kind === "del" && p) {
@@ -2700,6 +2750,17 @@ export function initProposalsContent(
 
   // The sliding sidebar indicator lives in the shell — it survives navigation
   // and re-points at whichever item React marks `active`.
+
+  // The Payments panel changed money on a proposal (2026-11-09): re-read the book so every card shows it.
+  on(document, "jf:payments-changed", () => {
+    void loadProposalBook()
+      .then((rows) => {
+        proposalsData = cloneRows(rows);
+        renderAccepted();
+        repaintExcept("acc");
+      })
+      .catch(() => undefined);
+  });
 
   return () => {
     disposers.forEach((d) => d());

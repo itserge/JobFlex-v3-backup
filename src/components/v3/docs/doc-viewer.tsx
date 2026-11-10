@@ -217,7 +217,8 @@ function DocViewerPanel({ doc, onClose, side }: { doc: ViewerDoc; onClose: () =>
               <img className={s.picture} src={doc.href} alt={doc.name} style={{ width: `${Math.round(zoom * 100)}%` }} data-doc-picture />
             ) : null}
           </div>
-          {side ? <div className={s.side}>{side}</div> : null}
+          {/* `bps-tokens`: the side panel's Use these / Not right / Read again are the sheet's buttons (components/ui/blueprint-sheet.css). */}
+          {side ? <div className={`${s.side} bps-tokens`}>{side}</div> : null}
         </div>
       </div>
     </div>

@@ -1,0 +1,83 @@
+/* THE PAYMENTS PANEL (2026-11-09) — see payments-sheet.tsx. Global and prefixed `pps-`, like the sheet it sits in
+ * (blueprint-sheet.css): it portals to <body> and reads the `--bps-*` tokens the sheet restates. */
+
+.pps { display: flex; flex-direction: column; gap: 14px; }
+.pps-k { font-family: var(--bps-mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--bps-muted); }
+
+/* The figures */
+.pps-sum { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 22px; padding-bottom: 12px; border-bottom: 1.5px solid var(--bps-ink); }
+.pps-fig { display: flex; flex-direction: column; gap: 2px; }
+.pps-fig span { font-family: var(--bps-mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--bps-muted); }
+.pps-fig b { font-size: 22px; font-weight: 900; font-variant-numeric: tabular-nums; }
+.pps-ok { color: var(--bps-success); }
+.pps-late {
+  align-self: center; padding: 3px 8px; border: 1.5px solid var(--bps-danger); color: var(--bps-danger);
+  font-family: var(--bps-mono); font-size: 11px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+}
+.pps-bar { flex: 1 1 100%; height: 8px; border: 1.5px solid var(--bps-ink); background: #fff; overflow: hidden; }
+.pps-bar span { display: block; height: 100%; background: var(--bps-success); }
+
+/* The payments */
+.pps-stages { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.pps-st { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1.5px solid var(--bps-hair); border-left-width: 4px; }
+.pps-st--paid { border-left-color: var(--bps-success); }
+.pps-st--next { border-left-color: var(--bps-blue); }
+.pps-st--late { border-left-color: var(--bps-danger); background: #fff8f7; }
+.pps-st--closed { opacity: 0.7; }
+.pps-st-top { display: flex; align-items: baseline; gap: 10px; }
+.pps-st-mark { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--bps-ink); flex: 0 0 auto; transform: translateY(-1px); }
+.pps-st--paid .pps-st-mark { background: var(--bps-success); border-color: var(--bps-success); }
+.pps-st--late .pps-st-mark { background: var(--bps-danger); border-color: var(--bps-danger); }
+.pps-st--next .pps-st-mark { background: var(--bps-blue); border-color: var(--bps-blue); }
+.pps-st-name { flex: 1 1 auto; min-width: 0; font-size: 14px; font-weight: 800; overflow-wrap: anywhere; }
+.pps-st-name em { margin-left: 6px; font-style: normal; font-weight: 600; color: var(--bps-muted); }
+.pps-tag { margin-left: 6px; padding: 1px 6px; border: 1px solid var(--bps-hair); font-style: normal; font-family: var(--bps-mono); font-size: 10px; color: var(--bps-muted); }
+.pps-st-amt { font-size: 15px; font-weight: 900; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pps-st-facts { font-size: 12.5px; color: var(--bps-muted); }
+.pps-st--late .pps-st-facts { color: var(--bps-danger); }
+.pps-st-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pps-st-acts:empty { display: none; }
+.pps-hint { font-size: 12px; color: var(--bps-muted); }
+.pps-del { color: var(--bps-danger); }
+.pps-del-solid { background: var(--bps-danger); border-color: var(--bps-danger); color: #fff; }
+
+/* The inline forms */
+.pps-form { display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--bps-paper); border: 1px solid var(--bps-hair); }
+.pps-form.pps-row { flex-direction: row; }
+.pps-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.pps-row--end { justify-content: flex-end; }
+.pps-row--end .bps-hint { flex: 1 1 200px; }
+.pps-inline { display: flex; align-items: center; gap: 6px; font-size: 12.5px; }
+.pps-inline .bps-in { width: 150px; }
+.pps-confirm { flex-direction: row; flex-wrap: wrap; align-items: center; border-color: var(--bps-danger); background: #fff8f7; font-size: 13px; }
+.pps-confirm span { flex: 1 1 220px; }
+.pps-add .bps-in { flex: 1 1 140px; min-width: 0; }
+.pps-add .pps-amt { flex: 0 1 110px; }
+.pps-add-btn { align-self: flex-start; }
+.pps-cover { margin: 0; font-size: 12.5px; }
+.pps-cover--ok { color: var(--bps-muted); }
+.pps-cover--warn { color: var(--bps-warning); font-weight: 700; }
+.pps-ok-note { margin: 0; padding: 8px 10px; border: 1.5px solid var(--bps-success); color: var(--bps-success); font-weight: 700; font-size: 12.5px; }
+
+/* Reminders, the order notice, the log */
+.pps-sec { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--bps-hair); }
+.pps-sec p { margin: 0; font-size: 13px; }
+.pps-sec .bps-seg { align-self: flex-start; }
+.pps-check { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; cursor: pointer; }
+.pps-check input { margin-top: 2px; }
+.pps-log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
+.pps-log li { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 10px; }
+.pps-log-when { font-family: var(--bps-mono); font-size: 11px; color: var(--bps-muted); }
+.pps-log i { font-style: normal; color: var(--bps-muted); }
+
+/* The letter's preview */
+.pps-preview { display: flex; flex-direction: column; gap: 10px; }
+.pps-prev-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.pps-prev-subj { font-weight: 800; font-size: 14px; }
+.pps-frame { width: 100%; height: 520px; border: 1.5px solid var(--bps-hair); background: #fff; }
+
+@media (max-width: 768px) {
+  .pps-log li { grid-template-columns: 1fr; gap: 2px; }
+  .pps-inline .bps-in { width: 130px; }
+  .pps-frame { height: 420px; }
+}

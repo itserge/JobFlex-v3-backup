@@ -14,7 +14,7 @@
 
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
-import { NoOrgError, UnauthorizedError } from "@/lib/orgContext";
+import { NoOrgError, UnauthorizedError, isLimitedRole, requireOrg } from "@/lib/orgContext";
 import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
 import { ProposalsContent } from "@/components/v3/proposals-blueprint/proposals-content";
 import { readProposalBook } from "@/components/v3/proposals-blueprint/proposals-query";
@@ -29,8 +29,11 @@ export const metadata: Metadata = {
 
 export default async function ProposalsPage() {
   let rows: ProposalRow[];
+  // The office books repairs off a sold proposal (2026-11-09); sales and estimators don't see the button.
+  let office = false;
   try {
     rows = await readProposalBook();
+    office = !isLimitedRole((await requireOrg()).role);
   } catch (err) {
     if (err instanceof UnauthorizedError) redirect("/auth/login?next=%2Fdashboard%2Fproposals");
     if (err instanceof NoOrgError) redirect("/dashboard?error=forbidden");
@@ -43,7 +46,7 @@ export default async function ProposalsPage() {
           open. Desktop edition only — the handheld build is stamped by the
           responsive shell (HANDHELD_SEEN). */}
       <MarkNavSeen surface="proposals" />
-      <ProposalsContent rows={rows} />
+      <ProposalsContent rows={rows} office={office} />
     </>
   );
 }

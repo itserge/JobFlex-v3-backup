@@ -15,7 +15,8 @@ function check(name: string, ok: boolean, extra?: unknown) {
 }
 
 // ── the kind ──
-check("kind: the two kinds, labelled and tagged", PROJECT_KINDS.length === 2 && KIND_LABEL.NEW_BUILD === "New construction" && KIND_TAG.NEW_BUILD === "New build" && KIND_TAG.REMODEL === "Remodel");
+// A third since 2026-11-09: the job project (lib/projectSpaces' Job Projects workspace).
+check("kind: the three kinds, labelled and tagged", PROJECT_KINDS.length === 3 && KIND_LABEL.NEW_BUILD === "New construction" && KIND_TAG.NEW_BUILD === "New build" && KIND_TAG.REMODEL === "Remodel" && KIND_TAG.JOB === "Job");
 check("kind: a stored value is read tolerantly — anything odd is a remodel", kindOf("NEW_BUILD") === "NEW_BUILD" && kindOf("REMODEL") === "REMODEL" && kindOf(null) === "REMODEL" && kindOf("house") === "REMODEL" && isProjectKind("NEW_BUILD") && !isProjectKind("new_build"));
 
 // ── the questions at the start ──

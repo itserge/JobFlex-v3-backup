@@ -1,7 +1,7 @@
 "use client";
 // THE SUBCONTRACTORS SECTION (2026-11-08, the subcontractors plan, part 1): a page of its own inside a project,
-// reached from the project page's Subcontractors card. One tab strip — Overview · Subs · Requests · Quotes · History
-// (Find, Compare, Contracts, Invoices, Payments and Budget arrive with their parts) — each tab a hub card. Overview
+// reached from the project page's Subcontractors card. One tab strip — Overview · Find · My subs · Requests · Quotes ·
+// Compare · Contracts · Invoices · Payments · Budget · History — each tab a hub card. Overview
 // is the figures the prompt asks for and the last moves; Subs is the company's directory (add, edit, the paper on
 // file); Requests lists every request with its recipients and their state; Quotes is the project's Subcontractors
 // card itself (every version, the viewer, award, revision, mark paid); History is the project's trail filtered to
@@ -9,11 +9,15 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { cancelProjectRequest } from "@/actions/projectSubs";
+import { cancelProjectRequest, compareRequestWords } from "@/actions/projectSubs";
+import { COMPARE_FIELDS, REVIEW_LABEL, budgetRows, budgetTotals, compareTable, reviewStatusOf, type CompareIn } from "@/lib/subQuotes/shared";
 import { ProjectSubsCard } from "@/components/v3/project-links/project-subs-card";
 import { RequestSheet, newRequestDraft, type RequestDraft } from "@/components/v3/project-links/request-sheet";
 import type { ContractorRow, DocRow } from "@/lib/projectSubs/server";
-import { QUOTE_LABEL, contractorFlags, dollars, insuranceWords, quoteStatusOf, requestNo } from "@/lib/projectSubs/shared";
+import { QUOTE_LABEL, contractorFlags, dollars, insuranceWords, quoteStatusOf, requestNo, tradeForStage } from "@/lib/projectSubs/shared";
+import { SubsFind } from "./subs-find";
+import { SubsContracts } from "./subs-contracts";
+import { SubsInvoices, SubsPayments } from "./subs-invoices";
 import type { SubsSectionRead } from "./subs-section-load";
 import { ContractorSheet, draftOf, type ContractorDraft } from "./contractor-sheet";
 import { SUBS_TABS as TABS, type SubsTab } from "./subs-tabs";
@@ -24,7 +28,7 @@ const longDay = (iso: string) => new Date(iso).toLocaleDateString("en-US", { mon
 const isoShort = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 const money = (n: number) => dollars(n);
 
-export function SubsSection({ read, canManage, initialTab, hrefs }: { read: SubsSectionRead; canManage: boolean; initialTab: SubsTab; hrefs: { project: string; directory: string; quotes: string } }) {
+export function SubsSection({ read, canManage, initialTab, hrefs, signerName = "", initialContract = null }: { read: SubsSectionRead; canManage: boolean; initialTab: SubsTab; hrefs: { project: string; directory: string; quotes: string }; signerName?: string; initialContract?: string | null }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [tab, setTab] = useState<SubsTab>(initialTab);
@@ -34,6 +38,8 @@ export function SubsSection({ read, canManage, initialTab, hrefs }: { read: Subs
   const [docs, setDocs] = useState<DocRow[]>(read.subs.documents);
   const [editing, setEditing] = useState<ContractorDraft | null>(null);
   const [ask, setAsk] = useState<RequestDraft | null>(null);
+  const [compareReq, setCompareReq] = useState<string | null>(null);
+  const [openContract, setOpenContract] = useState<string | null>(initialContract);
   const m = read.metrics;
   const today = read.subs.today;
 
@@ -96,6 +102,8 @@ export function SubsSection({ read, canManage, initialTab, hrefs }: { read: Subs
             {t.label}
             {t.key === "requests" && m.requestsOpen ? <b>{m.requestsOpen}</b> : null}
             {t.key === "quotes" && m.awaitingApproval ? <b>{m.awaitingApproval}</b> : null}
+            {t.key === "contracts" && m.contractsOut ? <b>{m.contractsOut}</b> : null}
+            {t.key === "invoices" && read.invoices.totals.toReview ? <b>{read.invoices.totals.toReview}</b> : null}
           </button>
         ))}
       </nav>
@@ -111,11 +119,13 @@ export function SubsSection({ read, canManage, initialTab, hrefs }: { read: Subs
           <div className={s.tiles} data-subs-tiles>
             <Tile label="Subs" value={String(m.subs)} sub={`${m.subsActive} on this project`} />
             <Tile label="Requests open" value={String(m.requestsOpen)} sub={m.overdue ? `${m.overdue} overdue` : "none overdue"} warn={m.overdue > 0} />
-            <Tile label="Quotes in" value={String(m.quotesIn)} sub={`${m.awaitingApproval} awaiting approval`} />
+            <Tile label="Quotes in" value={String(m.quotesIn)} sub={`${m.awaitingApproval} awaiting approval${m.pending ? ` · ${money(m.pending)} pending` : ""}`} />
             <Tile label="Awarded" value={String(m.awarded)} sub={`${m.invoicesOpen} invoice${m.invoicesOpen === 1 ? "" : "s"} open`} />
-            <Tile label="Committed" value={money(m.committed)} sub="awarded and invoiced" />
-            <Tile label="Paid" value={money(m.paid)} sub="to subs on this project" />
-            <Tile label="Subs budget" value={m.subsBudget != null ? money(m.subsBudget) : "—"} sub={m.remaining != null ? `${money(m.remaining)} left after committed and paid` : "no Subcontractors line in the budget"} warn={m.remaining != null && m.remaining < 0} />
+            <Tile label="Contracts" value={String(m.contractsSigned)} sub={`signed${m.contractsOut ? ` · ${m.contractsOut} out for signature` : ""}`} />
+            <Tile label="Committed" value={money(m.committed)} sub="signed contracts and changes, else awarded" />
+            <Tile label="Paid" value={money(m.paid)} sub={read.invoices.totals.held ? `${money(read.invoices.totals.held)} retainage held` : "to subs on this project"} />
+            <Tile label="Invoices" value={String(read.invoices.totals.toReview)} sub={read.invoices.totals.owed ? `to review · ${money(read.invoices.totals.owed)} owed now` : "to review"} warn={read.invoices.totals.toReview > 0} />
+            <Tile label="Subs budget" value={m.subsBudget != null ? money(m.subsBudget) : "—"} sub={m.remaining != null ? `${money(m.remaining)} left after committed and paid${m.pending ? `; ${money(m.pending)} pending` : ""}` : "no Subcontractors line in the budget"} warn={m.remaining != null && m.remaining < 0} />
           </div>
           {read.subs.flags.length ? (
             <div className={s.table} data-subs-flags>
@@ -140,6 +150,25 @@ export function SubsSection({ read, canManage, initialTab, hrefs }: { read: Subs
             ))}
           </section>
         </>
+      ) : null}
+
+      {tab === "find" ? (
+        // Part 3: subs the company does not have yet; Request quote saves one and opens the request sheet with them ticked.
+        <SubsFind
+          projectId={read.project.id}
+          stages={read.stages}
+          siteAddress={read.siteAddress}
+          canManage={canManage}
+          onSaved={(row) => {
+            setContractors((cur) => (cur.some((c) => c.id === row.id) ? cur : [...cur, row].sort((a, b) => a.name.localeCompare(b.name))));
+            refresh();
+          }}
+          onRequest={(contractorId, trade) => {
+            const st = read.stages.find((x) => trade && tradeForStage(x.name) === trade) ?? read.stages[0];
+            setNote(null);
+            setAsk({ ...newRequestDraft(read.stages, st?.id ?? ""), picked: new Set([contractorId]) });
+          }}
+        />
       ) : null}
 
       {tab === "subs" ? (
@@ -260,7 +289,176 @@ export function SubsSection({ read, canManage, initialTab, hrefs }: { read: Subs
         </section>
       ) : null}
 
-      {tab === "quotes" ? <ProjectSubsCard projectId={read.project.id} subs={{ ...read.subs, contractors }} stages={read.stages} canManage={canManage} /> : null}
+      {tab === "quotes" ? <ProjectSubsCard projectId={read.project.id} subs={{ ...read.subs, contractors }} stages={read.stages} canManage={canManage} onOpenContract={(id) => { setOpenContract(id); setTab("contracts"); }} onOpenInvoices={() => setTab("invoices")} /> : null}
+
+      {tab === "invoices" ? (
+        // Part 5a: the subs' invoices, read and checked; payments recorded against them, retainage, waivers, Ramp.
+        <SubsInvoices read={read.invoices} quotes={read.subs.quotes} contracts={read.contracts} canManage={canManage} ramp={read.ramp} projectId={read.project.id} onNote={setNote} refresh={refresh} />
+      ) : null}
+
+      {tab === "payments" ? <SubsPayments read={read.invoices} canManage={canManage} projectId={read.project.id} onNote={setNote} refresh={refresh} /> : null}
+
+      {tab === "contracts" ? (
+        // Part 4: the subcontracts drafted from awarded quotes, signed on the sub's page, with their change orders.
+        <SubsContracts contracts={read.contracts} quotes={read.subs.quotes} documents={docs} canManage={canManage} signerName={signerName} initialContract={openContract} onNote={setNote} refresh={refresh} />
+      ) : null}
+
+      {tab === "compare"
+        ? (() => {
+            // Part 2: one request's quotes side by side, from the current versions' reads; the AI's two sentences under it.
+            const requests = read.subs.requests;
+            const picked = requests.find((r) => r.id === compareReq) ?? requests.find((r) => r.status === "SENT") ?? requests[0] ?? null;
+            const rowsIn: CompareIn[] = picked
+              ? read.subs.quotes
+                  .filter((q) => q.requestId === picked.id)
+                  .map((q) => {
+                    const v = q.versions.find((x) => x.id === q.currentVersionId) ?? q.versions[q.versions.length - 1] ?? null;
+                    return { quoteId: q.id, contractorName: q.contractorName, status: q.status, amount: q.amount, read: v?.read?.read ?? null, reviewStatus: v?.reviewStatus ?? "NONE", versionId: v?.id ?? null, version: v?.version ?? null, documentName: v?.document?.name ?? null };
+                  })
+              : [];
+            const line = picked ? (read.subs.quotes.find((q) => q.requestId === picked.id)?.line ?? null) : null;
+            const rows = compareTable(rowsIn, line);
+            return (
+              <section className={h.card} aria-label="Compare" data-subs-compare>
+                <div className={h.head}>
+                  <h3 className={h.title}>Compare</h3>
+                  <span className={h.headSub}>{picked ? `${requestNo(picked.number)} · ${picked.title}${line != null ? ` · budget share ${money(line)}` : " · no budget share"}` : "no requests yet"}</span>
+                  {requests.length > 1 ? (
+                    <select value={picked?.id ?? ""} onChange={(e) => setCompareReq(e.target.value)} aria-label="Request" style={{ marginLeft: "auto", minHeight: 32, border: "1.5px solid var(--ink)", background: "#fff", font: "inherit", fontSize: 13, padding: "0 8px" }} data-subs-compare-request>
+                      {requests.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {requestNo(r.number)} · {r.title}
+                          {r.status !== "SENT" ? ` (${r.status.toLowerCase()})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  ) : null}
+                </div>
+                {rows.length ? (
+                  <div className={s.gridWrap} style={{ marginTop: 12 }}>
+                    <table className={s.grid} data-subs-compare-table>
+                      <thead>
+                        <tr>
+                          <th />
+                          {rows.map((r) => (
+                            <th key={r.quoteId} className={r.lowest ? s.best : undefined} data-subs-compare-sub data-subs-compare-lowest={r.lowest ? "1" : undefined}>
+                              {r.contractorName}
+                              <div style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
+                                {QUOTE_LABEL[quoteStatusOf(r.status)]}
+                                {r.lowest ? " · lowest" : ""}
+                                {r.version ? ` · V${r.version}` : ""}
+                              </div>
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {COMPARE_FIELDS.map((f) => (
+                          <tr key={f.key} data-subs-compare-field={f.key}>
+                            <td className={s.k}>{f.label}</td>
+                            {rows.map((r) => (
+                              <td key={r.quoteId} className={`${r.lowest ? s.best : ""} ${f.key === "budget" && r.over ? s.overCell : ""}`}>
+                                {f.of(r, line)}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                        <tr data-subs-compare-field="read">
+                          <td className={s.k}>The read</td>
+                          {rows.map((r) => (
+                            <td key={r.quoteId} className={r.lowest ? s.best : undefined}>
+                              {r.read ? REVIEW_LABEL[reviewStatusOf(r.reviewStatus)] : r.documentName ? "not read yet" : "no document"}
+                            </td>
+                          ))}
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className={h.empty}>No quotes on this request yet.</p>
+                )}
+                <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+                  {picked?.compare ? (
+                    <p className={s.words} data-subs-compare-words>
+                      {picked.compare.words}
+                      <br />
+                      <span className={s.wordsBy}>
+                        {picked.compare.by === "model" ? "the AI, from the extracted fields only" : "the rules' words"} · {longDay(picked.compare.at)}
+                      </span>
+                    </p>
+                  ) : null}
+                  {canManage && picked && rows.some((r) => r.amount != null) ? (
+                    <div className={h.stageActs} style={{ justifyContent: "flex-start" }}>
+                      <button type="button" className={h.btnSm} disabled={busy !== null} onClick={() => void run(`compare:${picked.id}`, async () => { const r = await compareRequestWords(picked.id); return r.by === "model" ? "Compared — the AI's two sentences are above." : "Compared — the rules' words are above (one price, or AI is off)."; })} data-subs-compare-write>
+                        {busy === `compare:${picked.id}` ? "Comparing…" : picked.compare ? "Compare again" : "Write the comparison"}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+            );
+          })()
+        : null}
+
+      {tab === "budget"
+        ? (() => {
+            // Part 2: the Subcontractors line by stage — pending (quoted, not awarded) as its own column, never committed.
+            const rows = budgetRows(read.stages, read.subs.quotes);
+            const t = budgetTotals(rows);
+            return (
+              <section className={h.card} aria-label="Budget" data-subs-budget>
+                <div className={h.head}>
+                  <h3 className={h.title}>Budget</h3>
+                  <span className={h.headSub}>{m.subsBudget != null ? `the ${money(m.subsBudget)} Subcontractors line, by stage` : "no Subcontractors line in the budget — the shares are empty"}</span>
+                </div>
+                {rows.length ? (
+                  <div className={s.gridWrap} style={{ marginTop: 12 }}>
+                    <table className={s.grid} data-subs-budget-table>
+                      <thead>
+                        <tr>
+                          <th>Stage</th>
+                          <th className={s.n}>Share</th>
+                          <th className={s.n}>Pending</th>
+                          <th className={s.n}>Committed</th>
+                          <th className={s.n}>Paid</th>
+                          <th className={s.n}>Left</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((r) => (
+                          <tr key={r.stageId ?? "none"} data-subs-budget-row data-subs-budget-over={r.over ? "1" : undefined}>
+                            <td>
+                              {r.stageName}
+                              <span className={s.muted}> · {r.quotes} quote{r.quotes === 1 ? "" : "s"}</span>
+                            </td>
+                            <td className={s.n}>{r.line != null ? money(r.line) : "—"}</td>
+                            <td className={s.n} data-subs-budget-pending>{r.pending ? money(r.pending) : "—"}</td>
+                            <td className={s.n}>{r.committed ? money(r.committed) : "—"}</td>
+                            <td className={s.n}>{r.paid ? money(r.paid) : "—"}</td>
+                            <td className={`${s.n} ${r.over ? s.overCell : ""}`}>{r.left != null ? (r.over ? `${money(-r.left)} over` : money(r.left)) : "—"}</td>
+                          </tr>
+                        ))}
+                        <tr className={s.total}>
+                          <td>All stages</td>
+                          <td className={s.n}>{t.line != null ? money(t.line) : "—"}</td>
+                          <td className={s.n} data-subs-budget-pending-total>{t.pending ? money(t.pending) : "—"}</td>
+                          <td className={s.n}>{t.committed ? money(t.committed) : "—"}</td>
+                          <td className={s.n}>{t.paid ? money(t.paid) : "—"}</td>
+                          <td className={`${s.n} ${t.left != null && t.left < 0 ? s.overCell : ""}`}>{t.left != null ? (t.left < 0 ? `${money(-t.left)} over` : money(t.left)) : "—"}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className={h.empty}>No quotes yet — the Subcontractors line is untouched.</p>
+                )}
+                <p className={s.muted} style={{ marginTop: 10, fontSize: 12.5 }}>
+                  Pending is quoted but not awarded — it never counts as committed or spent. Committed is a signed contract with its approved change orders, else the awarded or invoiced amount, less what has been paid on it (retainage held stays committed); Paid is the recorded payments; Left is the share after committed and paid. Awarding over a share, or a change order that goes over it, asks once before it goes through.
+                </p>
+              </section>
+            );
+          })()
+        : null}
 
       {tab === "history" ? (
         <section className={h.card} aria-label="History" data-subs-history>

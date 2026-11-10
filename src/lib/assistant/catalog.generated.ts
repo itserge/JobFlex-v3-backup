@@ -124,6 +124,105 @@ export const CATALOG: Catalog = {
     "scheduled": false,
     "version": 1
   },
+  "find_subs": {
+    "label": "Find subs",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "sub_requests": {
+    "label": "Quote requests",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "compare_quotes": {
+    "label": "Compare quotes",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "subs_budget": {
+    "label": "Subs budget",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "sub_invoices": {
+    "label": "Sub invoices",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "sub_document": {
+    "label": "A sub's document",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "remind_subs": {
+    "label": "Remind subs",
+    "group": "projects",
+    "effect": "message",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "approve_sub_invoice": {
+    "label": "Approve a sub's invoice",
+    "group": "projects",
+    "effect": "record",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "pay_sub_invoice": {
+    "label": "Record a sub's payment",
+    "group": "money",
+    "effect": "money",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": true,
+    "scheduled": false,
+    "version": 1
+  },
   "crew": {
     "label": "Crew",
     "group": "lookups",
@@ -381,6 +480,83 @@ export const CATALOG: Catalog = {
     "scheduled": false,
     "version": 1
   },
+  "client_story": {
+    "label": "Client story",
+    "group": "lookups",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "merge_clients": {
+    "label": "Merge duplicates",
+    "group": "people",
+    "effect": "record",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "inbox": {
+    "label": "Inbox",
+    "group": "people",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "reply_client": {
+    "label": "Reply to a client",
+    "group": "people",
+    "effect": "message",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "pipeline": {
+    "label": "Pipeline",
+    "group": "proposals",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "lead_sources": {
+    "label": "Lead sources",
+    "group": "lookups",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "move_deal": {
+    "label": "Move a deal",
+    "group": "proposals",
+    "effect": "record",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
   "book_visit": {
     "label": "Book a visit",
     "group": "visits",
@@ -408,6 +584,50 @@ export const CATALOG: Catalog = {
     "group": "visits",
     "effect": "schedule",
     "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "open_times": {
+    "label": "First open times",
+    "group": "schedule",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "book_repair": {
+    "label": "Book a repair",
+    "group": "schedule",
+    "effect": "schedule",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "comebacks": {
+    "label": "Come-backs",
+    "group": "crew",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "sales_commission": {
+    "label": "Sales commission",
+    "group": "money",
+    "effect": "read",
+    "kind": "read",
     "build": false,
     "steps": null,
     "pin": false,
@@ -512,6 +732,28 @@ export const CATALOG: Catalog = {
     "pin": false,
     "scheduled": false,
     "version": 2
+  },
+  "project_overview": {
+    "label": "Project overview",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "projects_overview": {
+    "label": "Projects overview",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
   },
   "selections": {
     "label": "Selections",
