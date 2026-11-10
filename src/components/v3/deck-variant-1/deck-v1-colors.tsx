@@ -185,3 +185,43 @@ export function RailColorPicker({ type, color, onPick }: { type: RailTypeId; col
     </div>
   );
 }
+
+/**
+ * THE BORDER'S COLOUR (2026-11-10): a picture-frame border in a second colour of the same line — the deck's own
+ * colour first ("Same as the deck"), then every other colour the line is sold in. Bought apart, drawn apart.
+ */
+export function BorderColorPicker({ productId, deckColor, color, onPick }: { productId: string; deckColor: string; color: string; onPick: (id: string) => void }) {
+  const list = deckingColors(productId);
+  if (!list.length) return null;
+  const now = list.find((c) => c.id === color && c.id !== deckColor) ?? null;
+  return (
+    <div className="v1-colors" data-deck-border-colors={productId}>
+      <div className="v1-colors-head">
+        <span className="v1-h4">Border colour</span>
+        <span className="v1-colors-now" data-deck-border-color-now>{now ? now.name : "Same as the deck"}</span>
+      </div>
+      <div className="v1-planks" role="group" aria-label="Border colour">
+        <button type="button" className={cx("v1-plank", !now && "is-on")} aria-pressed={!now} onClick={() => onPick("")} data-deck-border-color="">
+          <span className="v1-plank-chip v1-plank-same" aria-hidden="true">
+            {!now ? <Check size={16} strokeWidth={3} /> : null}
+          </span>
+          <span className="v1-plank-name">Same as the deck</span>
+        </button>
+        {list
+          .filter((c) => c.id !== deckColor)
+          .map((c) => {
+            const on = now?.id === c.id;
+            return (
+              <button key={c.id} type="button" className={cx("v1-plank", on && "is-on")} aria-pressed={on} onClick={() => onPick(c.id)} data-deck-border-color={c.id}>
+                <span className="v1-plank-chip" style={swatchStyle(c.hex, c.hex2)} aria-hidden="true">
+                  {on ? <Check size={16} strokeWidth={3} /> : null}
+                </span>
+                <span className="v1-plank-name">{c.name}</span>
+              </button>
+            );
+          })}
+      </div>
+      <p className="v1-hint">A border in another colour is ordered apart from the deck&apos;s boards — it shows as its own line on the material list — and is drawn in its colour.</p>
+    </div>
+  );
+}

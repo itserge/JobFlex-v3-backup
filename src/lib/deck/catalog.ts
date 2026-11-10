@@ -141,6 +141,8 @@ export interface DeckingProduct {
   /** On a built frame: the picked colour's name, and the second tone of a streaked board. */
   colorName?: string;
   color2?: string;
+  /** On a built frame: a picture-frame border in a second colour of the line — its name, the board as the order names it, its look. */
+  border?: { name: string; label: string; color: string; color2?: string };
   labor: DeckingLaborClass;
   /** What the market tables price it on (lib/fence/market). */
   basis: MarketBasis;

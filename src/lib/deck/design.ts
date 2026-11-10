@@ -294,6 +294,8 @@ export interface RailDesign {
   color: string;
   /** Square balusters of the rail's own, or round black metal ones. */
   baluster: RailBaluster;
+  /** A deck board laid flat on top of a kit rail — a drink rail (2026-11-10). A wood rail has its own 2x6 `cap`. */
+  drink: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -517,6 +519,8 @@ export interface DeckDesign {
     color: string;
     /** A colour of the contractor's own — a stain, a line the list does not have: its name and how it looks. Wins over `color`. */
     ownColor: OwnColor | null;
+    /** A picture-frame border in a second colour of the same line (2026-11-10): an id in the line's list; "" = the deck's own colour. */
+    borderColor: string;
   };
   extras: {
     /** Feet of railing typed by hand; "auto" = every open edge less the stair openings, where a guard is required or a rail chosen. */
@@ -624,7 +628,7 @@ export function defaultRoofDesign(structure: Structure = "covered-deck"): RoofDe
 
 /** The railing a deck starts with: none chosen — the checks ask for one where the height requires it. */
 export function defaultRailDesign(): RailDesign {
-  return { type: "none", heightIn: 36, infill: "auto", postSpacingFt: 6, cap: true, lighting: "none", customPerFt: 0, customName: "", lowerLevel: true, color: "", baluster: "square" };
+  return { type: "none", heightIn: 36, infill: "auto", postSpacingFt: 6, cap: true, lighting: "none", customPerFt: 0, customName: "", lowerLevel: true, color: "", baluster: "square", drink: false };
 }
 
 /** A flight of stairs where a contractor usually puts one: down the front, in the middle, 4 ft wide, onto a new pad. */
@@ -678,7 +682,7 @@ export function defaultDeckDesign(opts: { state?: string | null; frostIn?: numbe
     },
     ledger: { fastener: "lag", lateral: "two" },
     footing: { type: "poured", aboveGradeIn: 3, frostAlways: false },
-    decking: { product: defaultDecking(opts.state), diagonal: false, pattern: "straight", border: 0, fastening: "auto", fascia: "auto", wastePct: 10, color: "", ownColor: null },
+    decking: { product: defaultDecking(opts.state), diagonal: false, pattern: "straight", border: 0, fastening: "auto", fascia: "auto", wastePct: 10, color: "", ownColor: null, borderColor: "" },
     extras: { railFt: "auto", demoSqFt: 0, stainless: false, underDeckDrain: false, items: [] },
     // The guard's height the state asks for (42 in. in California), from the start.
     rail: { ...defaultRailDesign(), heightIn: deckCodeFor(stateCode(opts.state)).guardIn },
@@ -863,6 +867,7 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
       // A colour belongs to its line: another board picked, and the colour is asked again.
       color: typeof dk.color === "string" && deckingColors(deckingProductId).some((c) => c.id === dk.color) ? dk.color : "",
       ownColor: normalizeOwnColor(dk.ownColor),
+      borderColor: typeof dk.borderColor === "string" && deckingColors(deckingProductId).some((c) => c.id === dk.borderColor) ? dk.borderColor : "",
     },
     extras: {
       railFt,
@@ -1079,6 +1084,7 @@ function normalizeRail(raw: unknown, legacyExtras: Record<string, unknown>): Rai
     // A colour belongs to its system: another system picked, and it starts on that system's usual one.
     color: typeof r.color === "string" && railColors(type).some((c) => c.id === r.color) ? r.color : "",
     baluster: oneOf(r.baluster, ["square", "round"] as const, d.baluster),
+    drink: r.drink === true,
   };
 }
 

@@ -957,3 +957,5 @@
   .jf-deck-v1 .v1-stage.is-full:has(.v1-pick.is-part) .v1-tools { display: none; }
   .jf-deck-v1 .v1-stage.is-full .v1-pick.is-part { max-height: 44vh; overflow-y: auto; }
 }
+.jf-deck-v1 .v1-plank-chip.v1-plank-same { background: repeating-linear-gradient(135deg, var(--paper-deep) 0 6px, color-mix(in srgb, var(--ink) 10%, var(--paper-deep)) 6px 12px); color: var(--ink); }
+.jf-deck-v1 .v1-plank-chip.v1-plank-same svg { filter: none; }

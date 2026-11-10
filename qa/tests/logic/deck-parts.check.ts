@@ -223,5 +223,39 @@ check("gutters, the fascia and a stair come out in one tap; the steps between tw
 check("nothing changed reads as nothing changed", structureChanges(sG, sG).length === 0 && structureChanges(sT, buildStructure(tall)).length === 0);
 check("a size the tables refuse is put straight back (the settle), so the card can say so", (() => { const c = partCard(sG, { kind: "rafter", id: "" }).choices.find((x) => x.id === "rafter-2x6"); if (!c) return false; const o = tryChoice(mk({ shape: { kind: "rect", widthFt: 30, depthFt: 14 } }, gable), c); return typeof o.delta === "number"; })());
 
+/* ── a border in a second colour; a deck board on a kit rail (2026-11-10) ── */
+console.log("── a border in a second colour");
+const framed = mk({ decking: { product: "trex-transcend-lineage", color: "jasper", border: 1, borderColor: "biscayne" } });
+const sBd = buildStructure(framed);
+const bis = deckingColors("trex-transcend-lineage").find((c) => c.id === "biscayne")!;
+const plainBorder = buildStructure(mk({ decking: { borderColor: "" } }, framed));
+check("the border takes a second colour of the same line, named as the order names it", sBd.frame!.decking.border?.name === "Biscayne" && sBd.frame!.decking.border.label === "Trex Transcend Lineage in Biscayne" && sBd.frame!.decking.border.color === bis.hex && sBd.frame!.decking.label === "Trex Transcend Lineage in Jasper", sBd.frame!.decking.border);
+check("it is bought apart: its own boards, off the deck's own count", sBd.surface!.borderStock.length === 1 && sBd.surface!.borderStock[0].count > 0 && plainBorder.surface!.borderStock.length === 0 && sBd.surface!.stock.reduce((a, x) => a + x.count * x.lengthFt, 0) < plainBorder.surface!.stock.reduce((a, x) => a + x.count * x.lengthFt, 0), [sBd.surface!.borderStock, sBd.surface!.stock, plainBorder.surface!.stock]);
+const scBd = deckScene(sBd);
+check("the 3D draws the border boards in it, the field in the deck's colour", scBd.colors.border === bis.hex && scBd.colors.border2 === bis.hex2 && scBd.colors.decking === jc.hex && scBd.boxes.some((_, i) => /border board$/.test(scBd.legend[scBd.tags[i]]?.role ?? "")) && deckScene(plainBorder).colors.border === undefined);
+const pkgBd = priceDeck(framed);
+const borderLine = pkgBd.bom.find((l) => l.id.startsWith("boards-border-"));
+check("the material list has the border as its own line, by its colour; the scope says it", !!borderLine && /^Trex Transcend Lineage in Biscayne × \d+ ft — border$/.test(borderLine.label) && borderLine.cost > 0 && pkgBd.bom.filter((l) => l.id.startsWith("boards-") && !l.id.startsWith("boards-border-")).every((l) => /in Jasper/.test(l.label)) && deckScope(pkgBd).some((t) => /picture-frame border in Biscayne/.test(t)), borderLine?.label);
+check("the same colour as the deck is no second colour; no border, no border colour", !buildStructure(mk({ decking: { borderColor: "jasper" } }, framed)).frame!.decking.border && !buildStructure(mk({ decking: { border: 0 } }, framed)).frame!.decking.border && deckScene(buildStructure(mk({ decking: { border: 0 } }, framed))).colors.border === undefined);
+check("a colour of another line is dropped; another board asks again", mk({ decking: { borderColor: "spiced-rum" } }, framed).decking.borderColor === "" && mk({ decking: { product: "trex-transcend" } }, framed).decking.borderColor === "");
+const clipped = buildStructure(mk({ shape: { kind: "rect", widthFt: 16, depthFt: 12, front: { kind: "clipped", bulgeFt: 2, clipFt: 3 } } }, framed));
+const scClip = deckScene(clipped);
+check("on a clipped front the border's cut pieces are told apart too, and the scene reads back with them", (scClip.diagonal?.border?.length ?? 0) > 0 && scClip.diagonal!.border!.every((i) => i < scClip.diagonal!.boards.length) && (() => { const b = parseDeckScene(JSON.parse(JSON.stringify(scClip))); return !!b && b.colors.border === bis.hex && b.diagonal?.border?.length === scClip.diagonal!.border!.length; })(), scClip.diagonal?.border?.length);
+check("the scene with a border colour reads back whole", (() => { const b = parseDeckScene(JSON.parse(JSON.stringify(scBd))); return !!b && b.colors.border === bis.hex && b.colors.border2 === bis.hex2; })());
+
+console.log("── a deck board on a kit rail");
+const drink = buildStructure(high({ rail: { type: "composite", drink: true }, decking: { product: "trex-transcend-lineage", color: "jasper" } }));
+const noDrink = buildStructure(high({ rail: { type: "composite" }, decking: { product: "trex-transcend-lineage", color: "jasper" } }));
+const caps = drink.rails.members.filter((m) => m.role === "rail-cap");
+check("a composite rail takes a deck board on top: as wide and thick as the deck's board, over every level run", drink.rails.drinkLf > 0 && caps.length === drink.rails.segments.length && caps.every((m) => m.sy === drink.frame!.decking.widthIn && m.sz === drink.frame!.decking.thickIn) && noDrink.rails.drinkLf === 0 && !noDrink.rails.members.some((m) => m.role === "rail-cap"), { lf: drink.rails.drinkLf, caps: caps.length });
+check("the board sits on the post tops (no post stands proud through it)", (() => { const top = Math.max(...drink.rails.members.filter((m) => m.role === "rail-post").map((m) => m.cz + m.sz / 2)); return caps.every((m) => m.cz - m.sz / 2 >= top - 0.01); })());
+const scDr = deckScene(drink);
+check("the 3D draws it in the deck's colour, the rail in its own", scDr.colors.railCap === jc.hex && scDr.colors.rail === "#f2f0ec" && deckScene(noDrink).colors.railCap === undefined && !!parseDeckScene(JSON.parse(JSON.stringify(scDr)))?.colors.railCap);
+const pkgDr = priceDeck(drink.design);
+const drinkLine = pkgDr.bom.find((l) => l.id === "rail-drink-boards");
+check("its boards are on the material list in the deck's board and colour, and in the price", !!drinkLine && /^Trex Transcend Lineage in Jasper × \d+ ft — drink rail on the railing$/.test(drinkLine.label) && drinkLine.cost > 0 && pkgDr.subtotal > priceDeck(noDrink.design).subtotal && pkgDr.lines.some((l) => /a deck board on top as a drink rail/.test(l.description ?? "")) && /deck-board drink rail/.test(railWords(drink.rails)), drinkLine?.label);
+check("never over glass; a wood rail keeps its own 2x6 cap", buildStructure(high({ rail: { type: "glass", drink: true } })).rails.drinkLf === 0 && (() => { const w = buildStructure(high({ rail: { type: "cedar", drink: true } })); return w.rails.drinkLf === 0 && w.rails.capLf > 0 && deckScene(w).colors.railCap === undefined; })());
+check("an older rail reads as no drink rail", normalizeDeckDesign({ ...base, rail: { type: "composite", cap: true } }).rail.drink === false);
+
 console.log(bad ? `\n${bad} deck parts check(s) FAILED.` : "\nAll deck parts checks passed.");
 process.exit(bad ? 1 : 0);

@@ -183,7 +183,7 @@ export interface DeckScene {
   /** Footings: [x, y, pad diameter, pad thickness, pier diameter, depth below the house-line ground, top above it], ft. */
   footings: number[][];
   /** Boards laid on the diagonal or cut to a shaped front: each a flat ring [x0, y0, x1, y1, …] at the walking surface (version 3: `z` per ring in `diagonal.zs`). */
-  diagonal: { thickFt: number; boards: number[][]; zs?: number[] } | null;
+  diagonal: { thickFt: number; boards: number[][]; zs?: number[]; /** The rings that are a border in a second colour (2026-11-10). */ border?: number[] } | null;
   /** Flat polygons in space: [layer, x, y, z, x, y, z, …], ft — the roof's faces, the ceiling, the soffit, a slab, glass, screens, walls. */
   polys: number[][];
   /** Per poly, its legend entry (−1 for none). Same length as `polys`, or empty. */
@@ -199,8 +199,9 @@ export interface DeckScene {
   /** Handles the 3D's edit mode drags (M3): what each one changes, where it sits (ft), along which axis, and the value it starts from. */
   handles: SceneHandle[];
   /** `decking2`: the second tone of a streaked board (2026-11-09) — the 3D lays the boards in both. `railInfill`: the
-   *  rail's infill where it is not the frame's colour — stainless cable, black metal balusters, a wire mesh. */
-  colors: { frame: string; decking: string; fascia: string; roofing: string; rail: string; decking2?: string; railInfill?: string };
+   *  rail's infill where it is not the frame's colour — stainless cable, black metal balusters, a wire mesh. `border`
+   *  (and `border2`): a picture-frame border in a second colour. `railCap`: a deck board on a kit rail, in the deck's colour. */
+  colors: { frame: string; decking: string; fascia: string; roofing: string; rail: string; decking2?: string; railInfill?: string; border?: string; border2?: string; railCap?: string };
   /** What the client reads under the picture. */
   facts: string;
 }
@@ -335,6 +336,9 @@ const STAIR_LAYER: Record<StairMember["role"], SceneLayer> = { stringer: "stair"
 const RAIL_LAYER: Record<RailMember["role"], SceneLayer> = { "rail-post": "rail", "rail-top": "rail", "rail-bottom": "rail", "rail-cap": "rail", baluster: "rail", cable: "rail", "rail-panel": "glass", mesh: "rail" };
 /** The rail parts a scene's `railInfill` colour is for: the infill, not the frame. */
 export const RAIL_INFILL_ROLE = /^(?:lower level )?(?:baluster|stair baluster|cable|mesh)$/;
+/** A rail's cap (a kit rail's deck-board drink rail is drawn in the scene's `railCap` colour), and a border board. */
+export const RAIL_CAP_ROLE = /^(?:lower level )?rail cap$/;
+export const BORDER_BOARD_ROLE = /^(?:lower level )?border board$/;
 
 /** The scene the whole structure stands up. */
 export function deckScene(s: DeckStructure): DeckScene {
@@ -399,6 +403,7 @@ export function deckScene(s: DeckStructure): DeckScene {
   let heightIn = 0;
   const shapedBoards: number[][] = [];
   const shapedZs: number[] = [];
+  const borderRings: number[] = [];
 
   /* ── The deck, level by level ──────────────────────────────────────── */
   for (const level of levels) {
@@ -522,12 +527,14 @@ export function deckScene(s: DeckStructure): DeckScene {
     // The boards on top.
     const boardZ = f.surfaceIn - surface.product.thickIn / 2;
     const boardTag = tagFor(`${lvl}deck board`, surface.product.nominal, 0, `${surface.product.label}, ${surface.product.gapIn}-in. gaps, ${surface.fastening === "hidden" ? "hidden clips in the grooves" : "two coated screws at every joist"}${surface.pattern !== "straight" ? `, laid ${surface.pattern === "diagonal" ? "on the diagonal" : "in a herringbone"}` : ""}.`);
-    const borderTag = tagFor(`${lvl}border board`, surface.product.nominal, 0, "Picture-frame border: mitred 45° at the corners, two screws or plugs at every joist.");
+    const borderTag = tagFor(`${lvl}border board`, surface.product.nominal, 0, `Picture-frame border${surface.product.border ? ` in ${surface.product.border.name}` : ""}: mitred 45° at the corners, two screws or plugs at every joist.`);
     for (const p of surface.pieces) box("decking", p.cx + ox, p.cy + oy, boardZ, p.sx, p.sy, surface.product.thickIn, p.border ? borderTag : boardTag, 0, p.yaw ?? 0, 0);
-    for (const ring of surface.shaped) {
+    surface.shaped.forEach((ring, ri) => {
+      // The border's own cut pieces, in a second colour: the 3D is told which rings they are.
+      if (surface.product.border && ri >= surface.shapedBorderFrom) borderRings.push(shapedBoards.length);
       shapedBoards.push(ring.map((v, i) => r3(v + (i % 2 === 0 ? ox : oy))));
       shapedZs.push(r3(f.surfaceIn));
-    }
+    });
     if (surface.pattern !== "straight") {
       for (const ring of diagonalBoards(f, surface, ox, oy)) {
         shapedBoards.push(ring);
@@ -623,7 +630,7 @@ export function deckScene(s: DeckStructure): DeckScene {
         case "rail-bottom":
           return "Bottom rail 3½ in. above the boards (a 4-in. gap at most).";
         case "rail-cap":
-          return "Flat 2x6 drink cap over the posts and the top rail, mitred at the corners.";
+          return rails.drinkLf ? "A deck board laid flat over the top rail and the post tops as a drink rail, on the rail maker's adapter or screwed up through the rail, mitred at the corners." : "Flat 2x6 drink cap over the posts and the top rail, mitred at the corners.";
         case "baluster":
           return rails.baluster === "metal" && rails.type !== "aluminum" ? "Round black aluminum baluster, ¾ in., about 4½ in. on centre (a gap under 4 in.), in connectors screwed to the rails." : rails.system === "wood" ? "2x2 baluster, 5 in. on centre (a 4-in. gap), two screws each end." : "Picket in the rail's own slots.";
         case "mesh":
@@ -952,7 +959,8 @@ export function deckScene(s: DeckStructure): DeckScene {
   const deckColor = s.surface?.product.color ?? "#a58a5c";
   const frameC = frameColor(design.framing.species, frame?.group ?? roof?.group ?? "SP");
   const deckColor2 = s.surface?.product.color2;
-  const colors: DeckScene["colors"] = { frame: frameC, decking: deckColor, fascia: deckColor, roofing: roofingColor(design.roof.roofing), rail: railColor(design.rail.type, deckColor, frameC, design.rail.color), ...(deckColor2 ? { decking2: deckColor2 } : {}), ...(rails.on && rails.infillColor ? { railInfill: rails.infillColor } : {}) };
+  const borderLook = s.surface?.border ? s.surface.product.border : undefined;
+  const colors: DeckScene["colors"] = { frame: frameC, decking: deckColor, fascia: deckColor, roofing: roofingColor(design.roof.roofing), rail: railColor(design.rail.type, deckColor, frameC, design.rail.color), ...(deckColor2 ? { decking2: deckColor2 } : {}), ...(rails.on && rails.infillColor ? { railInfill: rails.infillColor } : {}), ...(borderLook ? { border: borderLook.color, ...(borderLook.color2 ? { border2: borderLook.color2 } : {}) } : {}), ...(rails.on && rails.drinkLf ? { railCap: deckColor } : {}) };
   const slope = design.site.slope;
   const ground = slope.outDropIn || slope.acrossDropIn ? { outDropFt: r3(slope.outDropIn), acrossDropFt: r3(slope.acrossDropIn) } : null;
   // The handles (edit mode): the deck's width, depth and height at its front-right corner, the roof's eave, each stair along its edge, the lower level's depth.
@@ -1004,7 +1012,7 @@ export function deckScene(s: DeckStructure): DeckScene {
     legend,
     callouts,
     footings: footings.slice(0, SCENE_MAX_FOOTINGS),
-    diagonal: shapedBoards.length ? { thickFt: r3(s.surface?.product.thickIn ?? 1), boards: shapedBoards.slice(0, SCENE_MAX_DIAGONALS), zs: shapedZs.slice(0, SCENE_MAX_DIAGONALS) } : null,
+    diagonal: shapedBoards.length ? { thickFt: r3(s.surface?.product.thickIn ?? 1), boards: shapedBoards.slice(0, SCENE_MAX_DIAGONALS), zs: shapedZs.slice(0, SCENE_MAX_DIAGONALS), ...(borderRings.some((i) => i < SCENE_MAX_DIAGONALS) ? { border: borderRings.filter((i) => i < SCENE_MAX_DIAGONALS) } : {}) } : null,
     polys,
     polyTags,
     outline,
@@ -1086,7 +1094,9 @@ export function parseDeckScene(raw: unknown): DeckScene | null {
       boards.push(n);
     }
     const zs = Array.isArray(d.zs) && d.zs.length === boards.length ? numbers(d.zs, boards.length, -10, 120) ?? undefined : undefined;
-    diagonal = { thickFt: d.thickFt, boards, zs };
+    // The rings that are a border in a second colour: whole numbers inside the list, each once.
+    const border = Array.isArray(d.border) ? [...new Set(d.border.filter((i): i is number => Number.isInteger(i) && (i as number) >= 0 && (i as number) < boards.length))] : [];
+    diagonal = { thickFt: d.thickFt, boards, zs, ...(border.length ? { border } : {}) };
   }
   const polys: number[][] = [];
   if (v !== 1) {
@@ -1200,7 +1210,7 @@ export function parseDeckScene(raw: unknown): DeckScene | null {
     ground,
     glows,
     handles,
-    colors: { frame: color(c.frame, "#9d8c62"), decking: color(c.decking, "#a58a5c"), fascia: color(c.fascia, "#a58a5c"), roofing: color(c.roofing, "#565250"), rail: color(c.rail, "#9d8c62"), ...(typeof c.decking2 === "string" && HEX.test(c.decking2) ? { decking2: c.decking2 } : {}), ...(typeof c.railInfill === "string" && HEX.test(c.railInfill) ? { railInfill: c.railInfill } : {}) },
+    colors: { frame: color(c.frame, "#9d8c62"), decking: color(c.decking, "#a58a5c"), fascia: color(c.fascia, "#a58a5c"), roofing: color(c.roofing, "#565250"), rail: color(c.rail, "#9d8c62"), ...(typeof c.decking2 === "string" && HEX.test(c.decking2) ? { decking2: c.decking2 } : {}), ...(typeof c.railInfill === "string" && HEX.test(c.railInfill) ? { railInfill: c.railInfill } : {}), ...(typeof c.border === "string" && HEX.test(c.border) ? { border: c.border } : {}), ...(typeof c.border2 === "string" && HEX.test(c.border2) ? { border2: c.border2 } : {}), ...(typeof c.railCap === "string" && HEX.test(c.railCap) ? { railCap: c.railCap } : {}) },
     facts: typeof r.facts === "string" ? r.facts.slice(0, 200) : "",
   };
 }

@@ -110,7 +110,7 @@ import { DeckPlan, type PlanEdgeHit, nearestStairEdge } from "@/components/v3/de
 import { Answers, CUSTOM, CUSTOM_LABEL, CustomBox, Field, FieldScope, More, NameInput, NumberInput, Scope, Seg, Stepper, Toggle, ago, cx, feetText, intText, money, parseFeet, parseInches, priceShow, priceText, type FieldScopeValue } from "./deck-v1-parts";
 import { DeckV1Send, type SendPrefill } from "./deck-v1-send";
 import { PartCardView, PartDoneLine, TakenOutLine, usePartLight, type PartDone, type PickedPart } from "./deck-v1-pick";
-import { BoardColorPicker, RailColorPicker } from "./deck-v1-colors";
+import { BoardColorPicker, BorderColorPicker, RailColorPicker } from "./deck-v1-colors";
 import { partAt, takenOut, type TakenOut } from "@/lib/deck/parts";
 import { DeckAddonDialog, DeckPreviewBanner } from "@/components/v3/deck-addon/deck-addon";
 import type { AddonInterval } from "@/lib/deckAddon";
@@ -1975,6 +1975,9 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
           <Field label="Picture-frame border" wide>
             <Seg label="Picture-frame border" value={design.decking.border} onChange={(v) => patch({ decking: { border: v } })} options={[{ value: 0, label: "None" }, { value: 1, label: "One board" }, { value: 2, label: "Two boards" }]} />
           </Field>
+          {design.decking.border > 0 && design.shape.kind === "rect" && !design.custom.decking ? (
+            <BorderColorPicker productId={design.decking.product} deckColor={design.decking.ownColor ? "" : design.decking.color} color={design.decking.borderColor} onPick={(id) => patch({ decking: { borderColor: id } }, ["decking"])} />
+          ) : null}
           <div className="v1-grid2">
             <Field label="Fastened with">
               <select className="v1-sel" value={design.custom.fastening ? CUSTOM : design.decking.fastening} onChange={(e) => (e.target.value === CUSTOM ? pickCustom("fastening") : patch({ decking: { fastening: e.target.value as DeckDesign["decking"]["fastening"] }, custom: { fastening: undefined } }))} data-deck-pick="fastening">
@@ -2114,7 +2117,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
         </div>
       ) : null}
       {design.rail.type !== "none" ? (
-        <More title="Infill, posts and cap" now={[structure.rails.infill === "balusters" && structure.rails.baluster === "metal" && design.rail.type !== "aluminum" ? "Round black metal balusters" : RAIL_INFILL_LABEL[structure.rails.infill], `posts ${design.rail.postSpacingFt} ft apart`, woodRail && design.rail.cap ? "drink cap" : ""].filter(Boolean).join(" · ")} id="rail-more">
+        <More title="Infill, posts and cap" now={[structure.rails.infill === "balusters" && structure.rails.baluster === "metal" && design.rail.type !== "aluminum" ? "Round black metal balusters" : RAIL_INFILL_LABEL[structure.rails.infill], `posts ${design.rail.postSpacingFt} ft apart`, woodRail && design.rail.cap ? "drink cap" : "", structure.rails.drinkLf ? "drink rail" : ""].filter(Boolean).join(" · ")} id="rail-more">
           <div className="v1-grid2">
             <Field label="Infill" aside={design.rail.infill === "auto" ? `picked: ${RAIL_INFILL_LABEL[structure.rails.infill].toLowerCase()}` : undefined}>
               <select className="v1-sel" value={design.rail.infill} onChange={(e) => patch({ rail: { infill: e.target.value as DeckDesign["rail"]["infill"] } })}>
@@ -2134,6 +2137,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
           </div>
           <div className="v1-toggles">
             {woodRail ? <Toggle checked={design.rail.cap} onChange={(v) => patch({ rail: { cap: v } })}>A flat 2x6 drink cap</Toggle> : null}
+            {!woodRail && design.rail.type !== "glass" ? <Toggle checked={design.rail.drink} onChange={(v) => patch({ rail: { drink: v } })}>A deck board on top — a drink rail</Toggle> : null}
             {design.lower.on ? <Toggle checked={design.rail.lowerLevel} onChange={(v) => patch({ rail: { lowerLevel: v } })}>Rail on the lower level too</Toggle> : null}
           </div>
         </More>

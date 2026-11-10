@@ -20,7 +20,7 @@
 // (8 ft is a kit maker's own figure).
 
 import { GUARD_REQUIRED_ABOVE_IN } from "./codeTables";
-import { RAIL_METAL_BLACK, RAIL_STAINLESS, railColorOf, railType, type RailColor, type RailTypeId } from "./catalog";
+import { RAIL_METAL_BLACK, RAIL_STAINLESS, deckingProduct, railColorOf, railType, type RailColor, type RailTypeId } from "./catalog";
 import type { DeckDesign, RailDesign, RailInfill } from "./design";
 import type { StairBuild } from "./stairs";
 import { BALUSTER_SPACING_IN } from "./stairs";
@@ -124,6 +124,8 @@ export interface RailBuild {
   meshPanels: number;
   /** The infill's own colour where it is not the rail's: stainless cable, black metal balusters or mesh in a rail of another colour (null: the rail's). */
   infillColor: string | null;
+  /** Feet of kit rail capped with a deck board — a drink rail (2026-11-10); 0 for none. A wood rail's 2x6 cap is `capLf`. */
+  drinkLf: number;
 }
 
 const plural = (n: number, w: string) => `${n} ${n === 1 ? w : `${w}s`}`;
@@ -165,13 +167,17 @@ export function buildRails(input: RailInput): RailBuild {
   const metalBalusters = rail.type === "aluminum" || (rail.baluster === "round" && (system === "wood" || rail.type === "composite" || rail.type === "vinyl" || rail.type === "custom"));
   const balusterKind: RailBuild["baluster"] = metalBalusters ? "metal" : "square";
   const infillColor = infill === "cable" ? RAIL_STAINLESS : infill === "mesh" || (infill === "balusters" && metalBalusters && rail.type !== "aluminum") ? RAIL_METAL_BLACK : null;
+  // A DRINK RAIL ON A KIT SYSTEM (2026-11-10): a deck board laid flat over the top rail and the post tops, in the
+  // deck's own board. Level runs only (the stairs keep their graspable rail), and never over glass.
+  const drink = rail.drink && system !== "wood" && rail.type !== "glass";
+  const capBoard = deckingProduct(input.design.decking.product);
   let meshPanels = 0;
   let posts = 0;
   let lf = 0;
   let balusters = 0;
   let cableLf = 0;
   let panels = 0;
-  const empty: RailBuild = { on: false, required, type: rail.type, label: type.label, heightIn: H, infill, system, segments: [], lf: 0, stairLf: 0, totalLf: 0, posts: 0, stairPosts: 0, topRailLf: 0, bottomRailLf: 0, capLf: 0, balusters: 0, cableLf: 0, panels: 0, litCaps: 0, riserLights: 0, members: [], panelsOut: [], hardware, color: null, baluster: "square", meshPanels: 0, infillColor: null };
+  const empty: RailBuild = { on: false, required, type: rail.type, label: type.label, heightIn: H, infill, system, segments: [], lf: 0, stairLf: 0, totalLf: 0, posts: 0, stairPosts: 0, topRailLf: 0, bottomRailLf: 0, capLf: 0, balusters: 0, cableLf: 0, panels: 0, litCaps: 0, riserLights: 0, members: [], panelsOut: [], hardware, color: null, baluster: "square", meshPanels: 0, infillColor: null, drinkLf: 0 };
   if (rail.type === "none") return empty;
 
   /** Posts the other level set: two levels meeting at a corner would set two posts in one place (2026-10-11). */
@@ -248,7 +254,7 @@ export function buildRails(input: RailInput): RailBuild {
           posts += 1;
           // Drawn a quarter inch proud of the top rail where no cap covers them (flush, the post's top and the rail's lay
           // in one plane and flickered, 2026-10-11); the length bought is the post's.
-          const proud = rail.cap && system === "wood" ? 0 : 0.25;
+          const proud = (rail.cap && system === "wood") || drink ? 0 : 0.25;
           members.push({ role: "rail-post", nominal: system === "wood" ? RAIL_POST_NOMINAL : "post", lengthIn: postLen, cx, cy, cz: postBottom + (postLen + proud) / 2, sx: 3.5, sy: 3.5, sz: postLen + proud, yaw: 0, tilt: 0, of: `${level.id}-${side.side}` });
           hardware.postTies += 1;
           hardware.postCaps += 1;
@@ -259,6 +265,7 @@ export function buildRails(input: RailInput): RailBuild {
         members.push({ role: "rail-top", nominal: RAIL_TOP_NOMINAL, lengthIn: len, cx: mx, cy: my, cz: postTop - (rail.cap && system === "wood" ? 1.5 : 0) - 1.75, sx: len, sy: 1.5, sz: 3.5, yaw, tilt: 0, of: level.id });
         members.push({ role: "rail-bottom", nominal: RAIL_TOP_NOMINAL, lengthIn: len, cx: mx, cy: my, cz: level.surfaceIn + 3.5 + 1.75, sx: len, sy: 1.5, sz: 3.5, yaw, tilt: 0, of: level.id });
         if (rail.cap && system === "wood") members.push({ role: "rail-cap", nominal: RAIL_CAP_NOMINAL, lengthIn: len + 3.5, cx: mx, cy: my, cz: postTop + 0.75, sx: len + 3.5, sy: 5.5, sz: 1.5, yaw, tilt: 0, of: level.id });
+        if (drink) members.push({ role: "rail-cap", nominal: "deck board", lengthIn: len + 3.5, cx: mx, cy: my, cz: postTop + capBoard.thickIn / 2, sx: len + 3.5, sy: capBoard.widthIn, sz: capBoard.thickIn, yaw, tilt: 0, of: level.id });
         hardware.railBrackets += 4 * (n - 1);
         const capIn = rail.cap && system === "wood" ? 1.5 : 0;
         const infillH = H - 3.5 - 3.5 - capIn - 3.5;
@@ -385,6 +392,7 @@ export function buildRails(input: RailInput): RailBuild {
     baluster: balusterKind,
     meshPanels,
     infillColor,
+    drinkLf: drink ? Math.round(lf) : 0,
   };
 }
 
@@ -403,5 +411,5 @@ export function infillWords(r: Pick<RailBuild, "infill" | "baluster" | "type">):
 /** "42 ft of cedar railing, 36 in., balusters — 9 posts". */
 export function railWords(r: RailBuild): string {
   if (!r.on) return "No railing";
-  return `${Math.round(r.totalLf)} ft of ${railNamed(r).toLowerCase()} railing, ${r.heightIn} in., ${infillWords(r)} — ${plural(r.posts + r.stairPosts, "post")}`;
+  return `${Math.round(r.totalLf)} ft of ${railNamed(r).toLowerCase()} railing, ${r.heightIn} in., ${infillWords(r)}${r.drinkLf ? ", a deck-board drink rail on top" : ""} — ${plural(r.posts + r.stairPosts, "post")}`;
 }

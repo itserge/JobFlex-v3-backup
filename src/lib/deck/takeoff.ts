@@ -308,7 +308,11 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
 
     // Boards and what holds them down.
     for (const st of surface.stock) {
-      push({ id: `boards-${st.lengthFt}`, step: "decking", kind: "boards", label: `${surface.product.label} × ${st.lengthFt} ft`, qty: st.count, unit: "pcs", note: surface.border ? `${surface.border === 2 ? "double" : "single"} picture-frame border included` : surface.pattern !== "straight" ? `${surface.pattern}, bought by the foot` : undefined, rateKey: `deck.${surface.product.id}`, rateQty: st.count * st.lengthFt, factor: 1 });
+      push({ id: `boards-${st.lengthFt}`, step: "decking", kind: "boards", label: `${surface.product.label} × ${st.lengthFt} ft`, qty: st.count, unit: "pcs", note: surface.border ? (surface.borderStock.length ? `the ${surface.border === 2 ? "double" : "single"} picture-frame border is bought apart, in its own colour` : `${surface.border === 2 ? "double" : "single"} picture-frame border included`) : surface.pattern !== "straight" ? `${surface.pattern}, bought by the foot` : undefined, rateKey: `deck.${surface.product.id}`, rateQty: st.count * st.lengthFt, factor: 1 });
+    }
+    // A border in a second colour is its own order, named with its colour (2026-11-10).
+    for (const st of surface.borderStock) {
+      push({ id: `boards-border-${st.lengthFt}`, step: "decking", kind: "boards", label: `${surface.product.border?.label ?? surface.product.label} × ${st.lengthFt} ft — border`, qty: st.count, unit: "pcs", note: `${surface.border === 2 ? "double" : "single"} picture-frame border, ${Math.round(surface.borderLf)} ft of board`, rateKey: `deck.${surface.product.id}`, rateQty: st.count * st.lengthFt, factor: 1 });
     }
     hw("deck-fasteners", "decking", surface.fastening === "hidden" ? "Hidden clips and screws" : "Deck screws", Math.round(frame.areaSqFt), surface.fastening === "hidden" ? "fast.hidden" : "fast.screws", 1, "sq ft", surface.fastening === "hidden" ? `about ${surface.crossings} clips` : `about ${surface.crossings * 2} screws`);
     if (surface.fascia.on) {
@@ -400,6 +404,13 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
       push({ id: "rail-system", step: "rails", kind: "boards", label: `${railNamed(rails)} railing system, ${rails.heightIn} in., ${infillWords(rails)}`, qty: Math.ceil(rails.totalLf), unit: "ft", note: `${rails.posts + rails.stairPosts} posts, ${rails.infill === "cable" ? `${rails.cableLf} ft of cable` : rails.infill === "glass" || rails.infill === "panel" ? `${rails.panels} panels` : rails.infill === "mesh" ? `${rails.meshPanels} mesh panels` : rails.infill === "horizontal" ? "horizontal rails" : `${rails.balusters} ${rails.baluster === "metal" && rails.type !== "aluminum" ? "round black metal balusters" : "pickets"}`}`, rateKey: `rail.${rails.type}.material`, rateQty: Math.ceil(rails.totalLf), factor: 1 });
     } else if (rails.system === "custom") {
       push({ id: "rail-system", step: "rails", kind: "boards", label: "Custom railing — your price", qty: Math.ceil(rails.totalLf), unit: "ft", rateKey: "rail.custom.material", rateQty: Math.ceil(rails.totalLf), factor: 1 });
+    }
+    // A deck board on top of a kit rail (2026-11-10): the deck's own board, bought by the board.
+    if (rails.drinkLf && s.surface) {
+      const board = s.surface.product;
+      const stockFt = Math.max(...board.lengthsFt);
+      const boards = Math.ceil((rails.drinkLf * 1.05) / stockFt - 1e-9);
+      push({ id: "rail-drink-boards", step: "rails", kind: "boards", label: `${board.label} × ${stockFt} ft — drink rail on the railing`, qty: boards, unit: "pcs", note: `${rails.drinkLf} ft of rail capped with a deck board, mitred at the corners`, rateKey: `deck.${board.id}`, rateQty: boards * stockFt, factor: 1 });
     }
     hw("rail-post-ties", "rails", "Rail post tension ties with bolts", rails.hardware.postTies, "hw.railPostTie");
   }
@@ -654,7 +665,7 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
       l.factor = 1;
       if (label !== undefined) l.label = label;
     };
-    if (cu.decking && ((l.step === "decking" && l.id.startsWith("boards-")) || (l.step === "stairs" && l.id.startsWith("tread-boards-")))) own("decking");
+    if (cu.decking && ((l.step === "decking" && l.id.startsWith("boards-")) || (l.step === "stairs" && l.id.startsWith("tread-boards-")) || l.id === "rail-drink-boards")) own("decking");
     else if (cu.fastening && l.id === "deck-fasteners") own("fastening", cu.fastening.name);
     else if (cu.fascia && (l.id === "fascia" || l.id === "riser-boards")) own("fascia", `${cu.fascia.name} × 12 ft${l.id === "riser-boards" ? " — risers" : ""}`);
     else if (cu.roofing && roof && (l.id === "shingles" || l.id === "shakes" || l.id === "metal-panels")) {

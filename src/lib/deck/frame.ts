@@ -69,7 +69,7 @@ import {
 import { deckingProduct, framingSpecies, wallType, type DeckingProduct, type FramingSpecies, type WallType } from "./catalog";
 import { BUILT_UP_CHOICES, frontEdgeAt, isSolidBeam, normalizeDeckDesign, shapeAreaSqFt, shapeEdges, shapeOutline, shapeZones, type BeamKind, type BeamSize, type BeamStyle, type DeckDesign, type DeckEdge, type Zone, spaRectIn } from "./design";
 import { ringEdges } from "./ringEdges";
-import { deckingLook, deckingNamed } from "./deckingColors";
+import { deckingColor, deckingLook, deckingNamed } from "./deckingColors";
 import { deckRate, lumberKey, type DeckRateBook } from "./rates";
 import type { MarketSnapshot } from "../fence/market";
 
@@ -698,7 +698,10 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
   // 3D, the material list, the proposal and the permit set all say the same board. A board of the contractor's own has
   // no maker's list: only a colour typed in applies to it.
   const look = deckingLook(decking0, design.custom.decking ? { color: "", ownColor: design.decking.ownColor } : design.decking);
-  const decking: DeckingProduct = { ...decking0, label: deckingNamed(design.custom.decking ? design.custom.decking.name : decking0.label, look.name), color: look.hex, ...(look.name ? { colorName: look.name } : {}), ...(look.hex2 ? { color2: look.hex2 } : {}) };
+  // A PICTURE-FRAME BORDER IN A SECOND COLOUR (2026-11-10): another colour of the same line, bought and drawn apart.
+  const borderPick = !design.custom.decking && design.decking.border > 0 && design.shape.kind === "rect" ? deckingColor(decking0.id, design.decking.borderColor) : null;
+  const border = borderPick && (design.decking.ownColor || borderPick.id !== design.decking.color) ? { name: borderPick.name, label: deckingNamed(decking0.label, borderPick.name), color: borderPick.hex, ...(borderPick.hex2 ? { color2: borderPick.hex2 } : {}) } : null;
+  const decking: DeckingProduct = { ...decking0, label: deckingNamed(design.custom.decking ? design.custom.decking.name : decking0.label, look.name), color: look.hex, ...(look.name ? { colorName: look.name } : {}), ...(look.hex2 ? { color2: look.hex2 } : {}), ...(border ? { border } : {}) };
   const wall = wallType(design.wall);
   const group = species.group;
   const load = design.loadPsf;

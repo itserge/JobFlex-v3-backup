@@ -56,8 +56,12 @@ export interface DeckSurface {
   pieces: BoardPiece[];
   /** Pieces cut to the front's shape, as flat rings [x, y, x, y, …] inches, for the 3D. */
   shaped: number[][];
+  /** Where the border's own cut pieces start in `shaped` (its length when there are none): the 3D colours them apart. */
+  shapedBorderFrom: number;
   /** What to buy: boards per stock length, waste included. */
   stock: Array<{ lengthFt: number; count: number }>;
+  /** The border's boards, bought apart when it is in a second colour (empty when it is the deck's own). */
+  borderStock: Array<{ lengthFt: number; count: number }>;
   /** Feet of board the deck needs, and feet bought. */
   netLf: number;
   boughtLf: number;
@@ -307,6 +311,8 @@ export function deckSurface(frame: DeckFrame): DeckSurface {
   // corner: the longer edge's run through and the shorter one's stop against them. A clipped or bowed front's pieces
   // are cut to fit, as flat rings that follow the front straight down by the border's depth (as the field's cut does)
   // and start above a side's boards where those run up to the corner.
+  const shapedBorderFrom = shapedPieces.length;
+  const borderStock: DeckSurface["borderStock"] = [];
   if (borderBoards > 0) {
     const edges = ringEdges(outline);
     const n = edges.length;
@@ -370,7 +376,10 @@ export function deckSurface(frame: DeckFrame): DeckSurface {
     }
     const longest = Math.max(...product.lengthsFt);
     netIn += borderLf * 12;
-    buy.set(longest, (buy.get(longest) ?? 0) + Math.ceil((borderLf * 12 * 1.05) / (longest * 12) - 1e-9));
+    const borderCount = Math.ceil((borderLf * 12 * 1.05) / (longest * 12) - 1e-9);
+    // In a second colour the border is its own order: it cannot be cut from the field's offcuts.
+    if (product.border) borderStock.push({ lengthFt: longest, count: borderCount });
+    else buy.set(longest, (buy.get(longest) ?? 0) + borderCount);
   }
 
   // The waste allowance, in the length the job uses most.
@@ -397,9 +406,11 @@ export function deckSurface(frame: DeckFrame): DeckSurface {
     rows,
     pieces,
     shaped: shapedPieces,
+    shapedBorderFrom,
     stock,
+    borderStock,
     netLf: Math.round((netIn / 12) * 10) / 10,
-    boughtLf: stock.reduce((a, s) => a + s.lengthFt * s.count, 0),
+    boughtLf: [...stock, ...borderStock].reduce((a, s) => a + s.lengthFt * s.count, 0),
     wastePct,
     crossings,
     fastening,
