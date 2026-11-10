@@ -11,17 +11,18 @@ import { db } from "@/lib/db";
 import { clientHomeLink, replaceHomeLink } from "@/lib/clientHome/server";
 import { pageInvite } from "@/lib/clientHome/shared";
 import { messageClient } from "@/actions/clientMessage";
+import { withFeature } from "@/lib/customPageAccess";
 
 const ID = z.string().min(1).max(64);
 
 export async function getClientHomeLink(clientId: string): Promise<{ href: string; opened: string; canText: boolean; canEmail: boolean }> {
-  const { organizationId } = await requireSalesOrManager();
+  const { organizationId } = await withFeature(requireSalesOrManager(), "smart-crm");
   const r = await clientHomeLink(organizationId, ID.parse(clientId));
   return { href: r.href, opened: r.opened, canText: !!r.phone, canEmail: !!r.email };
 }
 
 export async function replaceClientHomeLink(clientId: string): Promise<{ href: string }> {
-  const { organizationId, user } = await requireManager();
+  const { organizationId, user } = await withFeature(requireManager(), "smart-crm");
   const r = await replaceHomeLink(organizationId, user.id, ID.parse(clientId));
   revalidatePath("/dashboard/client-detail");
   return r;
@@ -29,7 +30,7 @@ export async function replaceClientHomeLink(clientId: string): Promise<{ href: s
 
 /** Text or email the client their page. */
 export async function sendClientHomeLink(clientId: string, channel: "sms" | "email"): Promise<{ to: string; delivered: boolean } | { error: string }> {
-  const { organizationId } = await requireSalesOrManager();
+  const { organizationId } = await withFeature(requireSalesOrManager(), "smart-crm");
   const id = ID.parse(clientId);
   const link = await clientHomeLink(organizationId, id);
   const org = await db.organization.findUnique({ where: { id: organizationId }, select: { name: true } });

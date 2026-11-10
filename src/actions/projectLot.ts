@@ -14,6 +14,7 @@ import { geocode, isMapsEnabled } from "@/lib/maps";
 import { lookupParcelByPoint } from "@/lib/parcelLookup";
 import { logServerError } from "@/lib/server-events";
 import { saveLot, type LotRecord } from "@/lib/projectPhases/server";
+import { withFeature } from "@/lib/customPageAccess";
 
 const DAY = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -58,7 +59,7 @@ const lotInput = z.object({
 });
 
 export async function saveProjectLot(projectId: string, raw: unknown): Promise<LotRecord> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const d = lotInput.parse(raw);
   const r = await saveLot(organizationId, projectId, d as LotRecord, user.id);
   touched(projectId);
@@ -71,7 +72,7 @@ export async function saveProjectLot(projectId: string, raw: unknown): Promise<L
  * lookup itself; the words say what to do.
  */
 export async function lookupProjectLot(projectId: string, address: string): Promise<{ ok: true; lot: LotRecord; said: string } | { ok: false; error: string }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   await enforceRateLimit(`parcels:${organizationId}`, 30, HOUR, "property lookups");
   const text = (address ?? "").trim().slice(0, 300);
   if (text.length < 8) return { ok: false, error: "Type the lot's street address first." };

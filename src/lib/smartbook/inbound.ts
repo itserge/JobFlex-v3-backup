@@ -10,6 +10,8 @@ import { textOfficeNow } from "@/lib/sms/send";
 import { replyForwardLine } from "@/lib/sms/format";
 import { convByPhone, isLiveTest, listConvs } from "./store";
 import { onContractorText, onCustomerText } from "./engine";
+import { isPageLocked } from "@/lib/customPageAccess";
+import { notePausedOnFree } from "@/lib/pausedNotice";
 
 export type Claim = "customer" | "company";
 
@@ -34,6 +36,12 @@ export function isBareKeyword(body: string): boolean {
 }
 
 export async function smartBookReply(claim: Claim, organizationId: string, from: string, body: string): Promise<void> {
+  // On the Free plan SmartBook does not answer (owner, 2026-11-09): the text is already kept by the route; nothing goes
+  // back to the lead, and the owner hears once a day that SmartBook is paused.
+  if (await isPageLocked(organizationId, "smartbook", { as: null })) {
+    await notePausedOnFree(organizationId, "smartbook", "a lead's text was kept but not answered");
+    return;
+  }
   try {
     const handled = claim === "company" ? await onContractorText(organizationId, from, body) : await onCustomerText(organizationId, from, body);
     if (handled) return;

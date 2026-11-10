@@ -8,6 +8,7 @@ import { requireSalesOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { replyByEmail, replyByText, setThreadStatus, setThreadUrgent } from "@/lib/inbox/server";
 import { draftReplies, type ReplyDraft } from "@/lib/inbox/drafts";
+import { withFeature } from "@/lib/customPageAccess";
 
 const replyInput = z.object({
   threadId: z.string().min(1),
@@ -17,7 +18,7 @@ const replyInput = z.object({
 });
 
 export async function sendInboxReply(raw: unknown): Promise<{ ok: boolean; error?: string; note?: string }> {
-  const { organizationId, user } = await requireSalesOrManager();
+  const { organizationId, user } = await withFeature(requireSalesOrManager(), "smart-crm");
   const input = replyInput.parse(raw);
   if (input.channel === "EMAIL") {
     const r = await replyByEmail(input.threadId, organizationId, user.id, { body: input.body, subject: input.subject ?? null });
@@ -41,27 +42,27 @@ export async function sendInboxReply(raw: unknown): Promise<{ ok: boolean; error
 }
 
 export async function inboxDrafts(threadId: string): Promise<{ ok: boolean; drafts: ReplyDraft[] }> {
-  const { organizationId } = await requireSalesOrManager();
+  const { organizationId } = await withFeature(requireSalesOrManager(), "smart-crm");
   const drafts = await draftReplies(String(threadId), organizationId);
   return { ok: !!drafts, drafts: drafts ?? [] };
 }
 
 export async function setInboxStatus(threadId: string, status: "OPEN" | "CLOSED"): Promise<{ ok: boolean }> {
-  const { organizationId } = await requireSalesOrManager();
+  const { organizationId } = await withFeature(requireSalesOrManager(), "smart-crm");
   await setThreadStatus(String(threadId), organizationId, status === "CLOSED" ? "CLOSED" : "OPEN");
   revalidatePath("/dashboard/inbox");
   return { ok: true };
 }
 
 export async function setInboxUrgent(threadId: string, urgent: boolean): Promise<{ ok: boolean }> {
-  const { organizationId } = await requireSalesOrManager();
+  const { organizationId } = await withFeature(requireSalesOrManager(), "smart-crm");
   await setThreadUrgent(String(threadId), organizationId, !!urgent);
   revalidatePath("/dashboard/inbox");
   return { ok: true };
 }
 
 export async function takeInboxThread(threadId: string): Promise<{ ok: boolean }> {
-  const { organizationId, user } = await requireSalesOrManager();
+  const { organizationId, user } = await withFeature(requireSalesOrManager(), "smart-crm");
   await db.clientThread.updateMany({ where: { id: String(threadId), organizationId }, data: { assignedToId: user.id } });
   revalidatePath("/dashboard/inbox");
   return { ok: true };

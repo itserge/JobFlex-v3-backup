@@ -17,12 +17,13 @@ import { smsAllowanceUsed } from "@/lib/sms/send";
 import { getMetaConnection } from "@/lib/meta/connections";
 import { ensureMetaAutoImport, metaConsentSummary } from "@/lib/meta/autoImport";
 import { parseMetaSettings } from "@/lib/settings";
-import { decideRequest, offerTimesByHand, pauseSmartBook, readSmartBookSettings, restartSmartBook, saveSmartBookSettings, smartBookPreview, startSmartBookTest, type Decision, type SmartBookPreview } from "@/lib/smartbook/engine";
+import { decideRequest, offerTimesByHand, pauseSmartBook, readSmartBookSettings, restartSmartBook, saveSmartBookSettings, smartBookPreview, startSmartBookTest, smartBookCallOnPlan, SMARTBOOK_CALL_PLAN_WORDS, type Decision, type SmartBookPreview } from "@/lib/smartbook/engine";
 import { leadSmartBook, smartBookRequests, type LeadSmartBook, type RequestCard } from "@/lib/smartbook/office";
 import { FIRST_MESSAGE_MAX, type SmartBookSettings } from "@/lib/smartbook/settings";
 import { isTestLead, testLeadId } from "@/lib/smartbook/store";
 import { leadCallReadiness } from "@/lib/aiDesk/leadCalls";
 import { deskBalanceFor } from "@/lib/aiDesk/minutes";
+import { pageLockedResult } from "@/lib/customPageAccess";
 
 const DENIED = "You don't have access to SmartBook here.";
 
@@ -79,6 +80,8 @@ export interface SmartBookSettingsView {
 export async function loadSmartBookSettings(): Promise<{ ok: true; view: SmartBookSettingsView } | { ok: false; error: string }> {
   const ctx = await guard(requireManager);
   if (!ctx) return { ok: false, error: DENIED };
+  const paused = await pageLockedResult(ctx.organizationId, "smartbook");
+  if (paused) return paused;
   const [settings, preview, textsUsed, meta, consent, me, blocked, balance, org] = await Promise.all([
     readSmartBookSettings(ctx.organizationId),
     smartBookPreview(ctx.organizationId),
@@ -87,7 +90,8 @@ export async function loadSmartBookSettings(): Promise<{ ok: true; view: SmartBo
     metaConsentSummary(ctx.organizationId).catch(() => null),
     db.user.findUnique({ where: { id: ctx.user.id }, select: { email: true, smsPhone: true, smsVerifiedAt: true } }),
     // SmartBook's call is the desk's own call to a lead (lib/aiDesk/leadCalls): its readiness, in its words.
-    leadCallReadiness(ctx.organizationId).then((r) => (r.ok ? null : r.why)).catch(() => "The AI desk can't be checked right now."),
+    // The call is Advanced's (owner, 2026-11-09): on Starter and Professional the switch says so.
+    smartBookCallOnPlan(ctx.organizationId).then((onPlan) => (onPlan ? leadCallReadiness(ctx.organizationId).then((r) => (r.ok ? null : r.why)) : SMARTBOOK_CALL_PLAN_WORDS)).catch(() => "The AI desk can't be checked right now."),
     deskBalanceFor(ctx.organizationId).catch(() => null),
     db.organization.findUnique({ where: { id: ctx.organizationId }, select: { metaSettingsJson: true } }),
   ]);
@@ -120,6 +124,8 @@ const settingsInput = z.object({
 export async function saveSmartBook(raw: unknown): Promise<{ ok: true; settings: SmartBookSettings; facebookAuto: boolean } | { ok: false; error: string }> {
   const ctx = await guard(requireManager);
   if (!ctx) return { ok: false, error: DENIED };
+  const paused = await pageLockedResult(ctx.organizationId, "smartbook");
+  if (paused) return paused;
   const parsed = settingsInput.safeParse(raw);
   if (!parsed.success) return { ok: false, error: "Something in the form isn't right — check it and save again." };
   const v = parsed.data;
@@ -137,6 +143,8 @@ export async function saveSmartBook(raw: unknown): Promise<{ ok: true; settings:
 export async function sendSmartBookTest(): Promise<{ ok: true; line: string } | { ok: false; error: string }> {
   const ctx = await guard(requireManager);
   if (!ctx) return { ok: false, error: DENIED };
+  const paused = await pageLockedResult(ctx.organizationId, "smartbook");
+  if (paused) return paused;
   const user = await db.user.findUnique({ where: { id: ctx.user.id }, select: { id: true, name: true, email: true, smsPhone: true, smsVerifiedAt: true } });
   if (!user) return { ok: false, error: DENIED };
   const r = await startSmartBookTest(ctx.organizationId, user);
@@ -157,6 +165,8 @@ export async function sendSmartBookTest(): Promise<{ ok: true; line: string } | 
 export async function loadSmartBookRequests(): Promise<{ ok: true; requests: RequestCard[] } | { ok: false; error: string }> {
   const ctx = await guard(requireSalesOrManager);
   if (!ctx) return { ok: false, error: DENIED };
+  const paused = await pageLockedResult(ctx.organizationId, "smartbook");
+  if (paused) return paused;
   return { ok: true, requests: await smartBookRequests(ctx.organizationId, { userId: ctx.user.id, visible: (ids) => visibleLeads(ctx, ids) }) };
 }
 
@@ -170,6 +180,8 @@ const decisionInput = z.discriminatedUnion("decision", [
 export async function answerSmartBookRequest(leadId: string, raw: unknown): Promise<{ ok: true; line: string; booked: boolean } | { ok: false; error: string }> {
   const ctx = await guard(requireSalesOrManager);
   if (!ctx) return { ok: false, error: DENIED };
+  const paused = await pageLockedResult(ctx.organizationId, "smartbook");
+  if (paused) return paused;
   const id = String(leadId ?? "").slice(0, 80);
   const parsed = decisionInput.safeParse(raw);
   if (!parsed.success) return { ok: false, error: "Pick an answer, or a day and a time." };
@@ -183,6 +195,8 @@ export async function answerSmartBookRequest(leadId: string, raw: unknown): Prom
 export async function loadLeadSmartBook(leadId: string): Promise<{ ok: true; view: LeadSmartBook | null } | { ok: false; error: string }> {
   const ctx = await guard(requireSalesOrManager);
   if (!ctx) return { ok: false, error: DENIED };
+  const paused = await pageLockedResult(ctx.organizationId, "smartbook");
+  if (paused) return paused;
   const id = String(leadId ?? "").slice(0, 80);
   if (!(await mayTouch(ctx, id))) return { ok: false, error: DENIED };
   return { ok: true, view: await leadSmartBook(ctx.organizationId, id) };
@@ -190,9 +204,14 @@ export async function loadLeadSmartBook(leadId: string): Promise<{ ok: true; vie
 
 type Step = { ok: true; view: LeadSmartBook | null } | { ok: false; error: string };
 
-async function onLead(leadId: string, fn: (ctx: Ctx, id: string) => Promise<{ ok: true } | { ok: false; error: string }>): Promise<Step> {
+async function onLead(leadId: string, fn: (ctx: Ctx, id: string) => Promise<{ ok: true } | { ok: false; error: string }>, opts: { paid?: boolean } = {}): Promise<Step> {
   const ctx = await guard(requireSalesOrManager);
   if (!ctx) return { ok: false, error: DENIED };
+  // Starting SmartBook again or offering times is the paid feature (owner, 2026-11-09); pausing it never is.
+  if (opts.paid) {
+    const paused = await pageLockedResult(ctx.organizationId, "smartbook");
+    if (paused) return paused;
+  }
   const id = String(leadId ?? "").slice(0, 80);
   if (isTestLead(id) || !(await mayTouch(ctx, id))) return { ok: false, error: DENIED };
   const r = await fn(ctx, id);
@@ -206,9 +225,9 @@ export async function pauseLeadSmartBook(leadId: string): Promise<Step> {
 }
 
 export async function restartLeadSmartBook(leadId: string): Promise<Step> {
-  return onLead(leadId, (ctx, id) => restartSmartBook(ctx.organizationId, id, { actorId: ctx.user.id, who: who(ctx) }));
+  return onLead(leadId, (ctx, id) => restartSmartBook(ctx.organizationId, id, { actorId: ctx.user.id, who: who(ctx) }), { paid: true });
 }
 
 export async function offerLeadTimes(leadId: string): Promise<Step> {
-  return onLead(leadId, (ctx, id) => offerTimesByHand(id, { actorId: ctx.user.id, who: who(ctx) }));
+  return onLead(leadId, (ctx, id) => offerTimesByHand(id, { actorId: ctx.user.id, who: who(ctx) }), { paid: true });
 }

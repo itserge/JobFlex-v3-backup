@@ -18,6 +18,8 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { loadJobDetailForPortal } from "@/components/v3/job-detail-blueprint/job-detail-load";
 import { PortalJobFrame } from "@/components/v3/job-detail-blueprint/portal-job-frame";
+import { publicLinkPaused } from "@/lib/publicLinks";
+import { LinkPaused } from "@/components/v3/upgrade-gate/link-paused";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +34,7 @@ export default async function WorkerAssignmentPage({
   params: Promise<{ token: string; assignmentId: string }>;
 }) {
   const { token, assignmentId } = await params;
+  if (await publicLinkPaused("crew", token)) return <LinkPaused />;
   const record = await loadJobDetailForPortal(token, assignmentId);
   if (!record) notFound();
   return <PortalJobFrame key={record.id} record={record} />;

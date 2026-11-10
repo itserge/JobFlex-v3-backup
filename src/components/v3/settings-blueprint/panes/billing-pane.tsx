@@ -11,9 +11,9 @@
 // plan's teamSeats limit. Billing contact — Organization.billingEmail.
 // The button is owner-only (billing is fail-closed to OWNER); managers see
 // "Ask your owner". "Manage subscription" opens the manage window over the
-// pane (components/billing/FreeSwitch, owner 2026-10-17) — the one place a
-// plan is cancelled: Cancel → "Before you go" → the confirmation, then the
-// plan switches to Free at the end of the cycle.
+// pane (components/billing/FreeSwitch, owner 2026-10-17): the plan, its
+// price and date, the card. Cancelling is not here — since 2026-11-09 it is
+// on the Subscription page only (components/billing/CancelFlow).
 
 import { updateBusiness } from "@/actions/accountSettings";
 import {
@@ -98,7 +98,6 @@ export function BillingPane({ data, shown }: PaneProps) {
                   planName={b.planName}
                   status={b.planBadge}
                   view={b.manage}
-                  offer={b.cancel}
                   freeSwitch={b.freeSwitch}
                   changeHref={b.subscriptionHref}
                   shown={shown}
@@ -137,7 +136,7 @@ export function BillingPane({ data, shown }: PaneProps) {
 
       {/* ── The way back (lib/freePlan) ───────────────────────────────
           Once booked, the date it switches to Free and "Keep <plan>". The
-          way out is in the manage window only (owner, 2026-10-17). */}
+          way out is on the Subscription page only (owner, 2026-11-09). */}
       {b.freeSwitch ? (
         <FreeSwitchNotice planName={b.freeSwitch.planName} at={b.freeSwitch.at} canKeep={b.isOwner} />
       ) : null}

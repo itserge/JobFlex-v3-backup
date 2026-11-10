@@ -19,27 +19,21 @@
 // directory coexist. Node/TS extension resolution takes the FILE for
 // `@/lib/settings`, and this module is only ever reached by its full path.
 
-import { trialExtensionOffer } from "@/lib/trialExtensionServer";
 import { db } from "@/lib/db";
-import { readHeldDeckAddon } from "@/lib/deckAddonBilling";
-import { deckAddonHeldWords } from "@/lib/deckAddon";
 import { appBaseUrl } from "@/lib/appUrl";
 import { longDate } from "@/lib/format";
 import { isOwnerOrManager, isOwnerRole, type requireOrg } from "@/lib/orgContext";
 import { titleCaseSlug } from "@/lib/planCatalog";
 import { getOrgPlanContext } from "@/lib/planCatalogServer";
 import { getOrgLimitUsage } from "@/lib/limitsEngine";
-import { DEFAULT_FREE_LIMITS, isUnlimited, parsePlanLimits } from "@/lib/planLimits";
 import { readCustomPages } from "@/lib/customPageAccess";
-import { CUSTOM_PLAN_LIMITS_SLUG, CUSTOM_PLAN_SLUG, customPriceCents } from "@/lib/customPlan";
+import { CUSTOM_PLAN_SLUG, customPriceCents } from "@/lib/customPlan";
 import { planLapsed } from "@/lib/planStatus";
 import { planTermState } from "@/lib/planChange";
 import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
 import { subscriptionCard, trialCardLine } from "@/lib/trialCardLine";
 import {
   FREE_PLAN_NAME,
-  LIVE_STATUSES,
-  freePlanLosses,
   freeSwitchBooked,
   freeSwitchDate,
   onFreePlan,
@@ -167,20 +161,14 @@ export async function loadSettingsData(ctx: SettingsOrgContext, opts: { billingL
   // Nothing more is billed once the switch to Free is booked, or on Free.
   const nextBillAt = onFree || booked ? null : (sub?.currentPeriodEnd ?? sub?.trialEndsAt ?? null);
   const isOwnerHere = isOwnerRole(role);
-  // Lapsed access can still leave Stripe renewing: the window then cancels
-  // only the renewal (the subscription page's rule, moved here 2026-10-17).
+  // Lapsed access can still leave Stripe renewing (the manage window's price
+  // and date read it). Cancelling itself is on the Subscription page since
+  // 2026-11-09 (lib/cancelOfferServer) — Billing has no way out any more.
   const lapsed = planLapsed(sub);
   const stripeSub = sub?.provider === "STRIPE" && Boolean(sub.externalSubId) && isStripeEnabled();
-  const cancellable =
-    isOwnerHere && !granted && !booked && !!sub && (LIVE_STATUSES as readonly string[]).includes(sub.status) && (!lapsed || stripeSub);
-  const [offer, manage, extension] = await Promise.all([
-    cancellable && sub ? cancelOffer(organizationId, sub.plan, lapsed ? null : freeSwitchDate(sub), wasName, lapsed) : null,
-    isOwnerHere ? manageView(organizationId, sub, { planDto: planContext.plan, onFree, granted, booked, lapsed, stripeSub, live: opts.billingLive === true }) : null,
-    // "Request a trial extension" on Before you go (owner, 2026-10-20): on the
-    // trial, or within 14 days after it (lib/trialExtension).
-    cancellable && sub && !lapsed ? trialExtensionOffer(organizationId, sub) : null,
-  ]);
-  const cancel = offer ? { ...offer, extension } : null;
+  const manage = isOwnerHere
+    ? await manageView(organizationId, sub, { planDto: planContext.plan, onFree, granted, booked, lapsed, stripeSub, live: opts.billingLive === true })
+    : null;
 
   /* ── settings blobs ── */
   const payment = parsePaymentSettings(org.paymentSettingsJson);
@@ -237,8 +225,7 @@ export async function loadSettingsData(ctx: SettingsOrgContext, opts: { billingL
       subscriptionHref: "/dashboard/subscription",
       onFree,
       freeSwitch: booked ? { at: freeSwitchDate(sub)?.toISOString() ?? null, planName: wasName } : null,
-      cancel,
-      manage: manage ? { ...manage, noCancel: cancel || booked ? null : manage.noCancel } : null,
+      manage,
     },
     integrations: {
       gmail: {
@@ -505,40 +492,6 @@ async function loadRegistrationView(organizationId: string, myUserId: string | n
   }
 }
 
-/** What the owner's two cancel windows say (lib/freePlan): the plan's lines
- *  Free does not keep, and the company's own numbers (proposals sent, what
- *  they quoted, clients). */
-async function cancelOffer(organizationId: string, plan: string, keepsUntil: Date | null, planName: string, accessAlreadyFree: boolean): Promise<NonNullable<BillingData["cancel"]>> {
-  const slug = plan.toLowerCase();
-  const [pages, catalog, sent, clients, deck] = await Promise.all([
-    readCustomPages(organizationId, plan).catch(() => null),
-    db.pricingPlan.findMany({ select: { slug: true, limitsJson: true } }),
-    db.proposal.groupBy({ by: ["currency"], where: { organizationId, sentAt: { not: null } }, _count: { _all: true }, _sum: { total: true } }),
-    db.client.count({ where: { organizationId, deletedAt: null } }),
-    // The Deck Studio add-on on the subscription (lib/deckAddonBilling): the cancel ends it with the plan — named at
-    // the price its line bills ($49/mo for one bought before 2026-10-26).
-    readHeldDeckAddon(organizationId).catch(() => null),
-  ]);
-  const limitsOf = (s: string) => {
-    const row = catalog.find((p) => p.slug.toLowerCase() === s);
-    return row ? parsePlanLimits(row.limitsJson) : null;
-  };
-  const cap = (n: number | null | undefined) => (isUnlimited(n) ? null : (n as number));
-  const own = limitsOf(slug === CUSTOM_PLAN_SLUG ? CUSTOM_PLAN_LIMITS_SLUG : slug);
-  const free = limitsOf("free") ?? DEFAULT_FREE_LIMITS;
-  return {
-    planName,
-    keepsUntil: keepsUntil?.toISOString() ?? null,
-    losses: freePlanLosses({ pages, planProposals: cap(own?.proposalsCreated), freeProposals: cap(free.proposalsCreated), deckAddon: deck ? deckAddonHeldWords(deck.cents, deck.interval, { mark: false }) : null }),
-    tally: {
-      proposalsSent: sent.reduce((n, g) => n + g._count._all, 0),
-      quoted: sent.length === 1 ? { amount: sent[0]._sum.total ?? 0, currency: sent[0].currency.toUpperCase() } : null,
-      clients,
-    },
-    ...(accessAlreadyFree ? { accessAlreadyFree: true } : {}),
-  };
-}
-
 type SubRow = Awaited<ReturnType<typeof db.subscription.findUnique>>;
 
 /** Stripe gets this long per read in the manage window; past it, or on an
@@ -619,16 +572,7 @@ async function manageView(
   const canUpdateCard =
     s.stripeSub && !!sub?.externalCustomerId && ["ACTIVE", "TRIALING", "PAST_DUE", "UNPAID"].includes(sub.status) && !trialCard?.addHref;
 
-  // Why there is no cancel button (the subscription page's words, 2026-10-17).
-  const noCancel = s.granted
-    ? "Your plan is a complimentary grant from JobFlex — nothing is billed, so there is nothing to cancel."
-    : s.onFree
-      ? "You're on the Free plan — there is no paid subscription to cancel."
-      : s.lapsed || (sub && sub.status === "EXPIRED")
-        ? "Your plan has ended — there is nothing to cancel."
-        : "There is no paid subscription on this account to cancel. Plans set up by JobFlex are canceled through support.";
-
-  return { live: s.live, price, date, card, canUpdateCard: canUpdateCard && card !== null, noCancel };
+  return { live: s.live, price, date, card, canUpdateCard: canUpdateCard && card !== null };
 }
 
 /** The AI desk (2026-10-13, lib/aiDesk): who answers and what the desk knows. A missing piece costs the pane, never the page. */

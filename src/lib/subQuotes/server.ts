@@ -40,6 +40,7 @@ import {
   type StoredCompare,
   type StoredRead,
 } from "./shared";
+import { lapsedOrgIds } from "@/lib/customPageAccess";
 
 const MAX_READ_BYTES = 20 * 1024 * 1024;
 const MAX_TEXT_CHARS = 60_000;
@@ -169,7 +170,9 @@ export async function readVersion(versionId: string): Promise<ReadOutcome> {
 
 /** The queued reads, oldest first. */
 export async function runPendingReads(limit = 5): Promise<{ tried: number; read: number; failed: number }> {
-  const rows = await db.subQuoteVersion.findMany({ where: { reviewStatus: "PENDING", documentId: { not: null } }, orderBy: { submittedAt: "asc" }, take: limit, select: { id: true } });
+  // A company on the Free plan: its estimates wait unread (owner, 2026-11-09) — no model call is spent on them.
+  const paused = await lapsedOrgIds();
+  const rows = await db.subQuoteVersion.findMany({ where: { reviewStatus: "PENDING", documentId: { not: null }, organizationId: { notIn: paused } }, orderBy: { submittedAt: "asc" }, take: limit, select: { id: true } });
   let read = 0;
   let failed = 0;
   for (const r of rows) {

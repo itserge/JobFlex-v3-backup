@@ -16,8 +16,6 @@
  * five "use client" panes, so it must stay free of Prisma and "use server".
  */
 
-import type { FreeLoss, FreeTally } from "@/lib/freePlan";
-import type { TrialExtensionOffer } from "@/lib/trialExtension";
 
 /* ------------------------------------------------------------------ */
 /* Shared primitive types                                              */
@@ -563,7 +561,7 @@ export const PLAN_ASK_OWNER = {
   label: 'Ask your owner',
   desc: 'Only the organization owner can change the plan or billing.',
 } as const;
-export const PLAN_CARD_NOTE = 'Plans, payment method and invoices live on the subscription page.' as const;
+export const PLAN_CARD_NOTE = 'Plans, payment method, invoices and cancelling live on the Subscription page.' as const;
 /** The card's sub-line once the company is on Free, or is moving there. */
 export const PLAN_CARD_SUB_FREE = 'Free plan · nothing is billed';
 export const PLAN_CARD_SUB_SWITCHING = 'Switches to Free at the end of the cycle';
@@ -1401,25 +1399,9 @@ export interface BillingData {
   /** The switch to Free is booked (lib/freePlan): "Your plan switches to
    *  Free on <date>" and "Keep <plan>" stand where the cancel link was. */
   freeSwitch: { at: string | null; planName: string } | null;
-  /** The owner's "Cancel subscription" link and what its two windows say —
-   *  present only for the owner of a live, paid (not granted) subscription
-   *  with nothing booked yet. Null for every other role and state. */
-  cancel: {
-    planName: string;
-    /** ISO end of the paid cycle (or trial): what the plan is kept until. */
-    keepsUntil: string | null;
-    losses: FreeLoss[];
-    /** The company's own numbers (lib/freePlan freeTallyTiles draws them). */
-    tally: FreeTally;
-    /** Access already lapsed to Free while the Stripe subscription still renews. */
-    accessAlreadyFree?: boolean;
-    /** "Request a trial extension" on Before you go — present only on the
-     *  trial or within 14 days after it (lib/trialExtension). */
-    extension?: TrialExtensionOffer | null;
-  } | null;
-  /** The owner's manage window (owner, 2026-10-17 — the one place a plan is
-   *  cancelled): the plan's price, its date, the card and why there is no
-   *  cancel button when there is none. Null for every other role. */
+  /** The owner's manage window (owner, 2026-10-17): the plan's price, its
+   *  date and the card. Cancelling is on the Subscription page since
+   *  2026-11-09. Null for every other role. */
   manage: {
     /** Stripe was asked for the card (the page opened on Billing). False:
      *  the window shows what the database has, and the pane asks again. */
@@ -1432,9 +1414,6 @@ export interface BillingData {
     card: { value: string; addHref: string | null } | null;
     /** The existing Stripe card form (/api/billing/update-card) applies. */
     canUpdateCard: boolean;
-    /** One line on why there is nothing to cancel; null when `cancel` or
-     *  `freeSwitch` is there. */
-    noCancel: string | null;
   } | null;
 }
 

@@ -78,8 +78,10 @@ export interface AssistantPhoneView {
 export async function assistantVisible(): Promise<boolean> {
   try {
     const actor = await actorForSession();
-    const { refusal } = await import("@/lib/assistant/actor");
-    return (await refusal(actor, "today", false)) === null;
+    const { OPERATOR_PAUSED, refusal } = await import("@/lib/assistant/actor");
+    // On the Free plan the row stays (owner, 2026-11-09): the panel opens and says the Operator is paused.
+    const why = await refusal(actor, "today", false);
+    return why === null || why === OPERATOR_PAUSED;
   } catch {
     return false;
   }
@@ -134,6 +136,8 @@ export async function setAssistantPrefs(raw: unknown): Promise<AssistantPhoneVie
     })
     .parse(raw);
   const actor = await actorForSession();
+  const { requireOperator } = await import("@/lib/assistant/actor");
+  await requireOperator(actor);
   const { readPrefs, writePrefs } = await import("@/lib/assistant/prefs");
   const before = await readPrefs(actor.organizationId, actor.userId);
   // A page that doesn't know the projects switch yet (part 2) keeps what was set.
@@ -162,6 +166,8 @@ export async function setAssistantPin(raw: unknown): Promise<{ ok: true; view: A
   if (!PIN_RE.test(pin)) return { ok: false, error: "A PIN is four digits." };
   if (weakPin(pin)) return { ok: false, error: "Too easy to guess — not one digit four times, and not a run like 1234." };
   const actor = await actorForSession();
+  const { OPERATOR_PAUSED, operatorPaused } = await import("@/lib/assistant/actor");
+  if (await operatorPaused(actor)) return { ok: false, error: OPERATOR_PAUSED };
   await setPin(actor.organizationId, actor.userId, pin);
   return { ok: true, view: await loadAssistantPhone() };
 }
@@ -188,6 +194,10 @@ export async function startAssistantLink(): Promise<{ ok: true; code: string; ex
 export async function setAssistantPhoneOn(raw: unknown): Promise<AssistantPhoneView> {
   const on = z.boolean().parse(raw);
   const actor = await actorForSession();
+  if (on) {
+    const { requireOperator } = await import("@/lib/assistant/actor");
+    await requireOperator(actor);
+  }
   const { setMyPhoneActive } = await import("@/lib/assistant/phone");
   await setMyPhoneActive(actor.organizationId, actor.userId, on);
   return loadAssistantPhone();

@@ -1,7 +1,7 @@
 /* THE MOVE TO FREE — see FreeSwitch.tsx. Plain CSS, namespaced `jffs-`, for
    the reason the house dialog's is: it renders inside several pages' worlds
    (Settings desktop and handheld, the subscription page's two builds) and in
-   a portal on <body>. Tokens only (globals.css); selectors carry two classes
+   a portal on <body>. The cancel questions add cancel-flow.css on top. Tokens only (globals.css); selectors carry two classes
    because both hosts reset bare buttons at (0,1,1). */
 
 /* ── The notice: "Your plan switches to Free on <date>" + Keep ───────────
@@ -346,8 +346,8 @@
 /* ── The manage window (owner, 2026-10-17) ───────────────────────────────
    Settings → Billing → "Manage subscription". The plan's name and a status
    badge, three facts on hairline rows (mono keys, the house dialog's tile
-   voice), the way to the subscription page, and the way out at the foot —
-   a danger-outlined ghost, never the box's main button. */
+   voice), the way to the subscription page, and — once booked — the way
+   back at the foot. No way out here since 2026-11-09 (CancelFlow). */
 .jf-confirm.jffs-mng .jffs-mng-head {
   display: flex;
   align-items: center;

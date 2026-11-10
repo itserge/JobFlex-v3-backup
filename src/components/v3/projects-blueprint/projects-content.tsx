@@ -32,7 +32,10 @@ export function ProjectsContent({
   space,
   clients = [],
   canAddClient = false,
+  autoLocked = false,
 }: {
+  /** On the Free plan (owner, 2026-11-09): Automatic projects is a project tool — its button is not drawn. */
+  autoLocked?: boolean;
   projects: Project[];
   /** Every workspace's rows (the road's pins read only this workspace's; kept for the counts to come). */
   allProjects?: Project[];
@@ -63,7 +66,7 @@ export function ProjectsContent({
 
   return (
     <>
-      <AutoProjectsSheet open={autoOpen} onClose={() => setAutoOpen(false)} />
+      {!autoLocked ? <AutoProjectsSheet open={autoOpen} onClose={() => setAutoOpen(false)} /> : null}
       {/* PAGE HEAD — in a workspace, its own header and road (2026-11-09, ./project-spaces); the buttons are the same. */}
       {space ? (
         <SpaceHeader
@@ -71,9 +74,11 @@ export function ProjectsContent({
           rows={allProjects ?? projects}
           actions={
             <>
-              <button className="btn btn-ghost" type="button" onClick={() => setAutoOpen(true)} data-auto-projects>
-                Automatic projects
-              </button>
+              {!autoLocked ? (
+                <button className="btn btn-ghost" type="button" onClick={() => setAutoOpen(true)} data-auto-projects>
+                  Automatic projects
+                </button>
+              ) : null}
               <button className="btn btn-primary" id="newProjectBtn" style={{ background: SPACES[space].color, borderColor: SPACES[space].color }}>
                 <svg className="ic">
                   <use href="#i-plus" />
@@ -90,9 +95,11 @@ export function ProjectsContent({
             <h1 className="page-title">Projects</h1>
           </div>
           <div className="page-actions">
-            <button className="btn btn-ghost" type="button" onClick={() => setAutoOpen(true)} data-auto-projects>
-              Automatic projects
-            </button>
+            {!autoLocked ? (
+              <button className="btn btn-ghost" type="button" onClick={() => setAutoOpen(true)} data-auto-projects>
+                Automatic projects
+              </button>
+            ) : null}
             <button className="btn btn-primary" id="newProjectBtn">
               <svg className="ic">
                 <use href="#i-plus" />

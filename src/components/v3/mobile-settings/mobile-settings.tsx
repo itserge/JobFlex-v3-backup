@@ -890,7 +890,6 @@ function BillingPane({ data, shown }: { data: SettingsData; shown: boolean }) {
               planName={b.planName}
               status={b.planBadge}
               view={b.manage}
-              offer={b.cancel}
               freeSwitch={b.freeSwitch}
               changeHref={b.subscriptionHref}
               shown={shown}
@@ -929,7 +928,7 @@ function BillingPane({ data, shown }: { data: SettingsData; shown: boolean }) {
       </section>
 
       {/* The way back (lib/freePlan) — the desktop pane's foot. The way out
-          is in the manage window only (owner, 2026-10-17). */}
+          is on the Subscription page only (owner, 2026-11-09). */}
       {b.freeSwitch ? (
         <FreeSwitchNotice planName={b.freeSwitch.planName} at={b.freeSwitch.at} canKeep={b.isOwner} className="mst-freeSwitch" />
       ) : null}

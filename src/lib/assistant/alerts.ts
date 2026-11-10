@@ -7,6 +7,7 @@ import "server-only";
 // dozen an hour. Every word is the code's: these never ask the model anything.
 import { db } from "@/lib/db";
 import { actorFor } from "@/lib/assistant/actor";
+import { isPageLocked } from "@/lib/customPageAccess";
 import { ownProposalsOnly } from "@/lib/assistant/roles";
 import { allPrefs } from "@/lib/assistant/prefs";
 import { linkOf } from "@/lib/assistant/phone";
@@ -35,6 +36,8 @@ export async function alertProposalOpened(proposalId: string, now = new Date()):
     select: { organizationId: true, ownerId: true, title: true, total: true, currency: true, client: { select: { name: true } }, organization: { select: { timezone: true, deletedAt: true } } },
   });
   if (!p || p.organization.deletedAt) return 0;
+  // Paused on the Free plan (owner, 2026-11-09): no alert, nothing texted — the company's plan decides.
+  if (await isPageLocked(p.organizationId, "operator", { as: null })) return 0;
   const people = (await allPrefs(p.organizationId)).filter((x) => x.prefs.alerts.proposalOpened);
   if (!people.length) return 0;
   const who = p.client?.name ?? "The client";
@@ -57,6 +60,7 @@ export async function alertNewLead(leadId: string, now = new Date()): Promise<nu
     select: { organizationId: true, name: true, projectType: true, source: true, phone: true, city: true, state: true, assignedToId: true, organization: { select: { deletedAt: true } } },
   });
   if (!l || l.organization.deletedAt) return 0;
+  if (await isPageLocked(l.organizationId, "operator", { as: null })) return 0;
   if (!l.source || ["MANUAL", "IMPORT"].includes(l.source)) return 0;
   const people = (await allPrefs(l.organizationId)).filter((x) => x.prefs.alerts.newLead);
   if (!people.length) return 0;

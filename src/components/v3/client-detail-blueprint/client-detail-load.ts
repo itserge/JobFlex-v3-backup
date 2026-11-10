@@ -41,6 +41,7 @@ import {
   type ProposalRow,
   type ProposalStatus,
 } from "./client-detail-data";
+import { isPageLocked } from "@/lib/customPageAccess";
 
 /** The page has nothing to draw, and WHY decides the words on the empty state:
  *  `none` is the bare route with no id in the URL, `missing` is an id that
@@ -73,6 +74,9 @@ export type ClientDetailRecord = {
   projects: { id: string; name: string }[];
   /** The jobs a repair could go back to (2026-11-09) — counted for the office only, 0 for anyone else. */
   repairJobs: number;
+  /** The company is on the Free plan (owner, 2026-11-09): Smart CRM's parts — the client's page among them — are
+   *  not offered (lib/customPlan PAID_FEATURES "smart-crm"). */
+  crmLocked: boolean;
   proposals: ProposalRow[];
   payments: PaymentRow[];
   activity: ActivityRow[];
@@ -335,6 +339,7 @@ export async function loadClientDetail(
     client,
     projects: row.projects,
     repairJobs,
+    crmLocked: await isPageLocked(organizationId, "smart-crm"),
     plans,
     planTemplates,
     equipment,

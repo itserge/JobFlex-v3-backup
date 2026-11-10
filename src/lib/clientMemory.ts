@@ -22,6 +22,7 @@ import { clip } from "@/lib/clientTimeline/shared";
 export { briefCurrent, FACT_CATEGORIES, type FactCategory } from "@/lib/clientTimeline/shared";
 import { FACT_CATEGORIES, type FactCategory } from "@/lib/clientTimeline/shared";
 import type { TimelineEvent } from "@/lib/clientTimeline/shared";
+import { isPageLocked } from "@/lib/customPageAccess";
 
 
 const MAX_NEW_FACTS = 5;
@@ -64,6 +65,8 @@ interface BriefAnswer {
  *  Returns the saved brief, or null when the AI is off, the allowance is spent, or the model's answer was unusable —
  *  the page then shows the old brief or none, never an error. */
 export async function rebuildClientBrief(client: ClientRef, timeline: readonly TimelineEvent[]): Promise<{ summary: string; nextAction: string | null; builtAt: Date } | null> {
+  // Smart CRM is a paid feature (owner, 2026-11-09): on the Free plan the brief is not rebuilt — no model call.
+  if (await isPageLocked(client.organizationId, "smart-crm")) return null;
   if (!isOpenAIEnabled()) return null;
   const { id: clientId, organizationId } = client;
   const known = await db.clientFact.findMany({ where: { organizationId, clientId, status: "CURRENT" }, select: { id: true, category: true, fact: true }, take: 40 });

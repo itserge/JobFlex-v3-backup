@@ -8,6 +8,7 @@ import { z } from "zod";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { addFile, ensureLenderShare, ensureShare, projectPhotos, removeFile, sendUpdate, setFileVisible, setPhotosShared, type PhotoRow, type UpdateResult } from "@/lib/projectClient/server";
 import { FILE_KINDS } from "@/lib/projectClient/shared";
+import { withFeature } from "@/lib/customPageAccess";
 
 function touched(projectId: string) {
   revalidatePath(`/dashboard/projects/${projectId}`);
@@ -15,7 +16,7 @@ function touched(projectId: string) {
 }
 
 export async function shareProjectPage(projectId: string): Promise<{ href: string }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const r = await ensureShare(organizationId, projectId, user.id);
   touched(projectId);
   return { href: r.href };
@@ -23,26 +24,26 @@ export async function shareProjectPage(projectId: string): Promise<{ href: strin
 
 /** The lender's read-only page (part 7, 2026-11-08): made the first time, the same link after. */
 export async function shareLenderPage(projectId: string): Promise<{ href: string }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const r = await ensureLenderShare(organizationId, projectId, user.id);
   touched(projectId);
   return { href: r.href };
 }
 
 export async function sendClientUpdate(projectId: string, note: string | null): Promise<UpdateResult> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const r = await sendUpdate(organizationId, projectId, user.id, z.string().max(600).nullable().parse(note));
   touched(projectId);
   return r;
 }
 
 export async function loadProjectPhotos(projectId: string): Promise<PhotoRow[]> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   return projectPhotos(organizationId, projectId);
 }
 
 export async function setClientPhotos(projectId: string, photoIds: string[], shared: boolean): Promise<{ changed: number }> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const r = await setPhotosShared(organizationId, z.array(z.string().min(1)).max(200).parse(photoIds), shared);
   touched(projectId);
   return r;
@@ -57,20 +58,20 @@ const fileInput = z.object({
 });
 
 export async function addProjectFile(projectId: string, raw: unknown): Promise<{ id: string }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const r = await addFile(organizationId, projectId, fileInput.parse(raw), user.id);
   touched(projectId);
   return r;
 }
 
 export async function setProjectFileVisible(fileId: string, visible: boolean): Promise<void> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const r = await setFileVisible(organizationId, fileId, visible);
   touched(r.projectId);
 }
 
 export async function removeProjectFile(fileId: string): Promise<void> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const r = await removeFile(organizationId, fileId);
   touched(r.projectId);
 }

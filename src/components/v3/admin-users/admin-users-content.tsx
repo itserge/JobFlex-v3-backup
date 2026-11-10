@@ -101,7 +101,14 @@ export interface AdminUserDTO {
   orgInternal: boolean;
   /** The organization's latest cancellation and the reasons ticked on it
    *  (lib/cancelFeedback, 2026-10-20); null when it never cancelled. */
-  lastCancel: { at: string; reasons: string[]; otherText: string | null } | null;
+  lastCancel: {
+    at: string;
+    reasons: string[];
+    otherText: string | null;
+    /** The cancel questions' main reason and two lines of the answer (lib/cancelTree, 2026-11-09); null on older rows. */
+    path?: string | null;
+    brief?: [string, string] | null;
+  } | null;
   createdAt: string;
 }
 
@@ -650,9 +657,18 @@ function UserForm({
         )}
         {user.lastCancel ? (
           <p className={cx("au-cancel")} data-last-cancel="">
-            <span className={cx("au-cancel-k")}>{`Last cancellation · ${longDate(user.lastCancel.at)}`}</span>
-            <span>{user.lastCancel.reasons.join(" · ") || "No reason recorded"}</span>
-            {user.lastCancel.otherText ? <span className={cx("au-cancel-o")}>{`“${user.lastCancel.otherText}”`}</span> : null}
+            <span className={cx("au-cancel-k")}>{`Last cancellation · ${longDate(user.lastCancel.at)}${user.lastCancel.path ? ` · ${user.lastCancel.path}` : ""}`}</span>
+            {user.lastCancel.brief ? (
+              <>
+                <span data-last-cancel-line="1">{user.lastCancel.brief[0]}</span>
+                <span className={cx("au-cancel-o")} data-last-cancel-line="2">{user.lastCancel.brief[1]}</span>
+              </>
+            ) : (
+              <>
+                <span>{user.lastCancel.reasons.join(" · ") || "No reason recorded"}</span>
+                {user.lastCancel.otherText ? <span className={cx("au-cancel-o")}>{`“${user.lastCancel.otherText}”`}</span> : null}
+              </>
+            )}
           </p>
         ) : null}
       </div>

@@ -19,6 +19,7 @@ import { textJobScheduled } from "@/lib/sms/schedule";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { saveProposal } from "@/actions/proposals";
 import { assignWorker, unassignAssignment } from "@/actions/workers";
+import { withFeature } from "@/lib/customPageAccess";
 
 const OPEN = ["DRAFT", "SENT", "VIEWED"];
 const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -31,7 +32,7 @@ const combineInput = z.object({
 
 /** The project's open proposals as one new draft; returns its id for the builder. */
 export async function combineProjectProposals(raw: unknown): Promise<{ id: string }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const data = combineInput.parse(raw);
   const project = await db.project.findFirst({ where: { id: data.projectId, organizationId }, select: { id: true, name: true, clientId: true } });
   if (!project) throw new Error("Not found");
@@ -150,7 +151,7 @@ async function fillProjectWindow(organizationId: string, projectId: string, firs
 
 /** A project job's work days and crew in one step. */
 export async function scheduleProjectJob(raw: unknown): Promise<{ added: number; removed: number; kept: string[]; days: number; others: number }> {
-  const { organizationId, user } = await requireManager();
+  const { organizationId, user } = await withFeature(withFeature(requireManager(), "project-tools"), "calendar");
   const data = scheduleInput.parse(raw);
   const days = data.days
     .map((d) => ({ startsAt: new Date(d.startsAt), endsAt: new Date(d.endsAt) }))

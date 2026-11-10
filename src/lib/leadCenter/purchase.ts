@@ -43,6 +43,7 @@ import { refId } from "@/lib/stripeCompat";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { ExpensePaidBy, ExpenseStatus } from "@/lib/prismaEnums";
 import { acceptOfferTx, afterOfferAccepted, OfferUnavailableError } from "./accept";
+import { CARD_ONLY_CHECKOUT } from "@/lib/stripeCheckoutCard";
 
 /** `metadata.jf_purpose` on every PaymentIntent and Checkout session made here. */
 export const LEAD_PURPOSE = "lead-purchase";
@@ -260,7 +261,7 @@ async function checkoutUrl(
     mode: "payment",
     // Cards only: the lead opens the moment the payment is final, and a bank
     // debit or a pay-later method settles days later (a different event).
-    payment_method_types: ["card"],
+    ...CARD_ONLY_CHECKOUT,
     line_items: [
       {
         quantity: 1,

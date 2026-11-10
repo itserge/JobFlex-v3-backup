@@ -320,6 +320,14 @@
 }
 :global(.jf-blueprint) .page-actions { display: flex; gap: 12px; flex-shrink: 0; padding-bottom: 4px; }
 :global(.jf-blueprint) .page-actions .btn .ic { width: 20px; height: 20px; }
+/* The way out beside Upgrade plan (owner, 2026-11-09): the secondary outline —
+   white, a 1.5px ink frame, ink words; the house button's height, type and
+   hover, so the two sit level on one line. */
+:global(.jf-blueprint) .btn-line { background: #fff; color: var(--ink); border: 1.5px solid var(--ink); font-family: inherit; cursor: pointer; }
+:global(.jf-blueprint) .btn-line:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+/* Booked: the date where the button was. */
+:global(.jf-blueprint) .head-note { display: inline-flex; align-items: center; height: 40px; font-size: 13px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+:global(.jf-blueprint) .head-note b { margin-left: 4px; font-weight: 800; color: var(--ink); }
 
 /* ============================================================
    KPI STRIP
@@ -857,6 +865,7 @@
   color: var(--paper); text-decoration: underline; text-underline-offset: 3px; }
 :global(.jf-blueprint) .sub-hero-link:hover { color: #fff; }
 :global(.jf-blueprint) .sub-hero-link:focus-visible { outline: 2px solid var(--paper); outline-offset: 3px; }
+
 
 :global(.jf-blueprint) .spec { display: grid; grid-template-columns: repeat(4, 1fr); }
 :global(.jf-blueprint) .spec-cell { position: relative; padding: 20px 22px 22px; border-right: 1.5px solid var(--ink); }

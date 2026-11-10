@@ -14,6 +14,7 @@ import { ExpensePaidBy, ExpenseStatus } from "@/lib/prismaEnums";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { DESK_PACK, dollars, type DeskBalance, type DeskPackRecord, type DeskPackVia } from "./shared";
 import { addPackSeconds, deskBalanceFor, ownerOf, readDeskPacks, tellOwner } from "./minutes";
+import { CARD_ONLY_CHECKOUT } from "@/lib/stripeCheckoutCard";
 
 export const PACK_PURPOSE = "desk-pack";
 export const PACK_EXPENSE_CATEGORY = "AI desk minutes";
@@ -60,7 +61,7 @@ async function checkoutUrl(stripe: Stripe, buyer: PackBuyer, customerId: string 
   const metadata = metadataFor(buyer, "checkout");
   const params: Stripe.Checkout.SessionCreateParams = {
     mode: "payment",
-    payment_method_types: ["card"],
+    ...CARD_ONLY_CHECKOUT,
     line_items: [
       {
         quantity: 1,

@@ -8,6 +8,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { logHours, resolveFlag } from "@/lib/crewField/server";
+import { withFeature } from "@/lib/customPageAccess";
 
 const ID = z.string().min(1).max(64);
 
@@ -21,7 +22,7 @@ function touched(projectId: string | null, jobId?: string | null) {
 }
 
 export async function resolveProblem(flagId: string, resolution: string | null): Promise<void> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "crew-field");
   const f = await db.jobFlag.findFirst({ where: { id: flagId, organizationId }, select: { projectId: true, jobId: true } });
   if (!f) throw new Error("Not found");
   await resolveFlag(organizationId, flagId, resolution, user.id);
@@ -30,7 +31,7 @@ export async function resolveProblem(flagId: string, resolution: string | null):
 
 /** The office types a crew member's hours on a job for a day. */
 export async function logCrewHours(raw: unknown): Promise<{ hours: number }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "crew-field");
   const d = z.object({ jobId: ID, workerId: ID, date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), hours: z.number().min(0).max(24), note: z.string().max(300).nullable().optional() }).parse(raw);
   const r = await logHours({ organizationId, jobId: d.jobId, workerId: d.workerId, date: d.date, hours: d.hours, note: d.note ?? null, actorId: user.id });
   const job = await db.job.findFirst({ where: { id: d.jobId, organizationId }, select: { projectId: true } });
@@ -43,7 +44,7 @@ export async function logCrewHours(raw: unknown): Promise<{ hours: number }> {
 const subInput = z.object({ projectId: ID, vendor: z.string().trim().min(1).max(120), amount: z.number().min(0).max(100_000_000), note: z.string().trim().max(500).nullable().optional(), spentAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(), paid: z.boolean().optional() });
 
 export async function addSubBill(raw: unknown): Promise<{ id: string }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "crew-field");
   const d = subInput.parse(raw);
   const p = await db.project.findFirst({ where: { id: d.projectId, organizationId }, select: { id: true } });
   if (!p) throw new Error("Project not found");
@@ -65,7 +66,7 @@ export async function addSubBill(raw: unknown): Promise<{ id: string }> {
 }
 
 export async function setSubBillPaid(expenseId: string, paid: boolean): Promise<void> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "crew-field");
   const e = await db.projectExpense.findFirst({ where: { id: expenseId, project: { organizationId } }, select: { id: true, projectId: true } });
   if (!e) throw new Error("Not found");
   await db.projectExpense.update({ where: { id: e.id }, data: { paidAt: paid ? new Date() : null } });

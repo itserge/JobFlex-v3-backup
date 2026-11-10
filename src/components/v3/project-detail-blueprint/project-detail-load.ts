@@ -377,3 +377,13 @@ function firstTrade(raw: string | null): string | null {
     return null;
   }
 }
+
+/** THE PROJECT TOOLS ON THE FREE PLAN (owner, 2026-11-09; lib/customPlan PAID_FEATURES "project-tools"): the page
+ *  opens with its jobs, proposals, payments and budget, and the tools' reads are left out of what reaches the
+ *  browser — the content draws the plan's card in their place (toolsLocked). */
+const TOOL_PROPS = ["overview", "stages", "buying", "subs", "selections", "phases", "lot", "moneyPlan", "field", "timeline", "finish", "share"] as const;
+export function withoutProjectTools(props: ProjectDetailProps): ProjectDetailProps {
+  const out: Record<string, unknown> = { ...props, draws: null };
+  for (const k of TOOL_PROPS) delete out[k];
+  return out as ProjectDetailProps;
+}

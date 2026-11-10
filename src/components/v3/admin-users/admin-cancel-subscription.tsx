@@ -10,7 +10,7 @@
 // changes without a reload. Nothing renders for a grant (provider MANUAL) or
 // an organization without a Stripe subscription.
 //
-// The owner's own cancel is not this: it stays in Settings → Billing only
+// The owner's own cancel is not this: it stays on the Subscription page only
 // (owner-locked 2026-10-17).
 
 import { useEffect, useRef, useState } from "react";

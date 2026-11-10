@@ -368,6 +368,7 @@ export type JobDetailRecord = {
   /** The portal's own bar: whose portal, which company, where "All jobs" is. */
   portal: { workerName: string; orgName: string | null; backHref: string } | null;
   /** On site (the crew build, 2026-11-05): the project's tasks for this stage, the deliveries due, the problems
-   *  flagged, the reader's hours today and the weather — lib/crewField fieldOf. */
-  field: import("@/lib/crewField/server").FieldData;
+   *  flagged, the reader's hours today and the weather — lib/crewField fieldOf. Null on the Free plan (owner,
+   *  2026-11-09): the crew field tools are a paid feature and are not read. */
+  field: import("@/lib/crewField/server").FieldData | null;
 };

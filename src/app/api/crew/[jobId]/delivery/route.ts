@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { pageLockedResponse } from "@/lib/customPageAccess";
 import { crewActorForJob, jsonBody } from "@/lib/crewActor";
 import { receiveOrder } from "@/lib/projectBuying/server";
 import { touchWorkerActivity } from "@/lib/workerActivity";
@@ -13,6 +14,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ jobId: string 
   const body = await jsonBody<{ token: string; orderId: string; lines: Array<{ lineId: string; receivedQty: number }> }>(req);
   const actor = await crewActorForJob(jobId, body.token ?? null);
   if (!actor) return NextResponse.json({ error: "You can only work on a job you are on." }, { status: 403 });
+  // Crew field tools are a paid feature (owner, 2026-11-09): the company's plan decides for a crew link.
+  const planLock = await pageLockedResponse(actor.organizationId, "crew-field", { as: actor.viaToken ? null : undefined });
+  if (planLock) return planLock;
   if (typeof body.orderId !== "string" || !Array.isArray(body.lines)) return NextResponse.json({ error: "Which order?" }, { status: 400 });
   const job = await db.job.findFirst({ where: { id: jobId, organizationId: actor.organizationId }, select: { projectId: true } });
   const order = job?.projectId ? await db.projectOrder.findFirst({ where: { id: body.orderId, projectId: job.projectId }, select: { id: true } }) : null;

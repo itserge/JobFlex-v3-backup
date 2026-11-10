@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { pageLockedResponse } from "@/lib/customPageAccess";
 import { crewActorForJob, jsonBody } from "@/lib/crewActor";
 import { tickPunch } from "@/lib/projectFinish/server";
 import { touchWorkerActivity } from "@/lib/workerActivity";
@@ -13,6 +14,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ jobId: string 
   const body = await jsonBody<{ token: string; itemId: string; done: boolean; photoId: string | null }>(req);
   const actor = await crewActorForJob(jobId, body.token ?? null);
   if (!actor) return NextResponse.json({ error: "You can only work on a job you are on." }, { status: 403 });
+  // Crew field tools are a paid feature (owner, 2026-11-09): the company's plan decides for a crew link.
+  const planLock = await pageLockedResponse(actor.organizationId, "crew-field", { as: actor.viaToken ? null : undefined });
+  if (planLock) return planLock;
   if (typeof body.itemId !== "string" || !body.itemId) return NextResponse.json({ error: "Which item?" }, { status: 400 });
   try {
     const r = await tickPunch(actor.organizationId, body.itemId, body.done !== false, typeof body.photoId === "string" && body.photoId ? body.photoId : null, actor.userId, actor.name);

@@ -37,6 +37,10 @@ import { parseSmartBookSettings, smartBookSettingsKey, sourceAllowed, type Smart
 import { convByPhone, convByRequestToken, convByToken, createConv, dropConv, heldFor, hold, indexRequest, isLiveTest, isTestLead, listConvs, newToken, nextRequestNumber, readConv, release, saveConv, sweepHolds, testLeadId, withConvLock, type Conversation, type SmartRequest } from "./store";
 import { inLanguage, knowledgeOf, readContractor, readCustomer, type CustomerRead } from "./understand";
 import { againText, dayPartWords, emailProse, emailWords, firstNameOf, firstText, say, tell, timesList, visitNoun, whenWords, type CustomerWords, type RequestFacts } from "./words";
+import { isPageLocked } from "@/lib/customPageAccess";
+import { notePausedOnFree } from "@/lib/pausedNotice";
+import { hasFullAccess } from "@/lib/fullAccess";
+import { readAccessSubscription } from "@/lib/subscriptionAccess";
 
 const ORG_SELECT = { id: true, name: true, slug: true, timezone: true, logoUrl: true, phone: true, billingEmail: true, gmailSettingsJson: true, gmailTokensJson: true, tradeTypesJson: true, bookingSettingsJson: true, smsFromNumber: true } as const;
 const LEAD_SELECT = { id: true, organizationId: true, name: true, email: true, phone: true, address: true, city: true, state: true, zip: true, projectType: true, description: true, source: true, status: true, assignedToId: true, createdAt: true } as const;
@@ -269,7 +273,7 @@ function nextCallHour(now: Date, ok: (at: Date) => boolean): Date | null {
 
 // ── start ───────────────────────────────────────────────────────────────────
 
-export type StartResult = { started: true } | { started: false; why: "off" | "source" | "before" | "closed" | "exists" | "booked" | "no-contact" | "no-consent" | "booking-off" | "no-service" | "limit" | "no-lead" | "no-times" };
+export type StartResult = { started: true } | { started: false; why: "off" | "source" | "before" | "closed" | "exists" | "booked" | "no-contact" | "no-consent" | "booking-off" | "no-service" | "limit" | "no-lead" | "no-times" | "plan" };
 
 /**
  * A new lead. `group` is the path that made it (a lead typed in with "Phone" as its source is not a desk message).
@@ -282,6 +286,11 @@ export async function startSmartBook(leadId: string, group: keyof SmartBookSourc
   const now = opts.now ?? new Date();
   const found = await db.lead.findUnique({ where: { id: leadId }, select: { organizationId: true } });
   if (!found) return { started: false, why: "no-lead" };
+  // A paid feature (owner, 2026-11-09): on the Free plan the lead hears nothing from SmartBook; the owner is told once a day.
+  if (await isPageLocked(found.organizationId, "smartbook", { as: null })) {
+    await notePausedOnFree(found.organizationId, "smartbook", "a new lead was not sent times");
+    return { started: false, why: "plan" };
+  }
   const ctx = await contextOf(found.organizationId, leadId);
   if (!ctx) return { started: false, why: "no-service" };
   const { smart, lead, org } = ctx;
@@ -956,6 +965,18 @@ export async function restartSmartBook(organizationId: string, leadId: string, b
   return out ?? { ok: false, error: "Busy for a moment — try again." };
 }
 
+/** SMARTBOOK'S ONE AI CALL IS ADVANCED'S (owner, 2026-11-09): Starter and Professional get SmartBook by text and
+ *  email; the call step is the AI desk's, which is the Advanced plan's (or a Custom plan that bought the AI desk
+ *  page). A platform admin in the company has it, as everything (lib/fullAccess). */
+export const SMARTBOOK_CALL_PLAN_WORDS = "SmartBook's call is on the Advanced plan — on yours it books by text and email.";
+export async function smartBookCallOnPlan(organizationId: string): Promise<boolean> {
+  if (await hasFullAccess(organizationId)) return true;
+  const plan = ((await readAccessSubscription(organizationId))?.plan ?? "").toUpperCase();
+  if (plan === "ENTERPRISE") return true;
+  if (plan === "CUSTOM") return !(await isPageLocked(organizationId, "phone"));
+  return false;
+}
+
 const START_WORDS: Record<Exclude<StartResult, { started: true }>["why"], string> = {
   off: "SmartBook is off.",
   source: "SmartBook doesn't answer this kind of lead.",
@@ -970,6 +991,7 @@ const START_WORDS: Record<Exclude<StartResult, { started: true }>["why"], string
   limit: "SmartBook started 200 conversations today — try again tomorrow.",
   "no-lead": "This lead is gone.",
   "no-times": "Nothing is open on your calendar soon — add hours in Online booking.",
+  plan: "SmartBook isn't on the Free plan. Choose a plan on Subscription to turn it back on.",
 };
 
 /** "Offer times" on a lead SmartBook didn't start by itself (added by hand, imported, before it was on). */
@@ -1144,7 +1166,17 @@ export async function runSmartBook(now = new Date()): Promise<{ steps: number; s
   const swept = await sweepHolds(now).catch(() => 0);
   let steps = 0;
   const due = (await listConvs(null, 30)).filter((c) => c.next && Date.parse(c.next.at) <= now.getTime());
+  // A company on the Free plan: its conversations wait, quietly — nothing goes to the lead (owner, 2026-11-09).
+  const paused = new Map<string, Promise<boolean>>();
+  const pausedFor = (org: string) => {
+    if (!paused.has(org)) paused.set(org, isPageLocked(org, "smartbook", { as: null }).catch(() => true));
+    return paused.get(org)!;
+  };
   for (const c of due.slice(0, 200)) {
+    if (await pausedFor(c.organizationId)) {
+      await notePausedOnFree(c.organizationId, "smartbook", "its next text or reminder to a lead was held back", now);
+      continue;
+    }
     try {
       const ran = await withConvLock(c.organizationId, c.leadId, async () => {
         const conv = await readConv(c.organizationId, c.leadId);
@@ -1201,6 +1233,12 @@ async function step(ctx: Ctx, conv: Conversation, now: Date): Promise<void> {
       if (conv.status !== "offered" || !conv.phone || !ctx.smart.call) {
         conv.called = true;
         conv.next = nudge;
+        return;
+      }
+      if (!(await smartBookCallOnPlan(ctx.org.id))) {
+        conv.called = true;
+        conv.next = nudge;
+        await trail(ctx, `SmartBook didn't call ${conv.name} — the call is on the Advanced plan; the text and email carry on`, { dir: "none", channel: "call" });
         return;
       }
       const { callLead, inCallingHours } = await import("@/lib/aiDesk/leadCalls");

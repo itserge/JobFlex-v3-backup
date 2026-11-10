@@ -8,6 +8,7 @@ import { isOwnerOrManager, requireOrg, NoOrgError, UnauthorizedError } from "@/l
 import { companyQuotes } from "@/lib/projectSubs/server";
 import { inboundReview } from "@/lib/subInbound/server";
 import { QuotesPage } from "@/components/v3/subs-company/quotes-page";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,9 @@ export const metadata: Metadata = {
 export const viewport: Viewport = { width: "device-width", initialScale: 1, maximumScale: 1, viewportFit: "cover", themeColor: "#0a0a0a" };
 
 export default async function MobileQuotesPage() {
+  // A paid feature (owner, 2026-11-09): the Free plan sees the plan's card here, before anything is read.
+  const planGate = await customPageGate("subcontractors", { handheld: true });
+  if (planGate) return planGate;
   let organizationId: string;
   let role: string;
   try {

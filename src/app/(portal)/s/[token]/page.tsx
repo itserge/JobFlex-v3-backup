@@ -12,6 +12,8 @@ import { ContractSign } from "./contract-sign";
 import "../../buy/[token]/buy.css";
 import "../../q/[token]/quote.css";
 import "./contract.css";
+import { publicLinkPaused } from "@/lib/publicLinks";
+import { LinkPaused } from "@/components/v3/upgrade-gate/link-paused";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +26,8 @@ export const metadata: Metadata = {
 export default async function ContractPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   if (!/^[A-Za-z0-9_-]{10,80}$/.test(token)) notFound();
+  // Paused while the company that sent it is on the Free plan (owner, 2026-11-09; lib/publicLinks).
+  if (await publicLinkPaused("subcontract", token)) return <LinkPaused />;
   const view = await contractView(token);
   if (!view) notFound();
   return (

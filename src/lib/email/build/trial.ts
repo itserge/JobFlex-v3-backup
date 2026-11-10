@@ -125,7 +125,7 @@ export function buildTrialEndingSoon(i: TrialEndingSoonInput): EmailDoc {
     cta: { label: "Review my plan", href: i.href },
     after: [
       `Nothing to do if ${i.planName} fits — it carries on by itself on ${day}.`,
-      `Want a smaller or bigger plan? Change it any time on the same page. Not for you? Cancel in Settings → Billing before ${day} and nothing is charged.`,
+      `Want a smaller or bigger plan? Change it any time on the same page. Not for you? Cancel on the Subscription page before ${day} and nothing is charged.`,
       "Questions? Reply to this email and we'll help.",
     ],
     footer: PLATFORM_FOOTER,

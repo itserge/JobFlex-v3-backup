@@ -1,5 +1,6 @@
 import { contractDocumentForToken } from "@/lib/subContracts/server";
 import { streamStored } from "@/lib/subDocs/server";
+import { publicLinkResponse } from "@/lib/publicLinks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,6 +10,8 @@ export const dynamic = "force-dynamic";
 // only the files on that contract, never another of the company's. `?download=1` gets it as an attachment.
 export async function GET(req: Request, ctx: { params: Promise<{ token: string; id: string }> }) {
   const { token, id } = await ctx.params;
+  const paused = await publicLinkResponse("subcontract", token);
+  if (paused) return paused;
   if (!/^[A-Za-z0-9_-]{10,80}$/.test(token) || !/^[A-Za-z0-9_-]{1,64}$/.test(id)) return text("Not found", 404);
   const doc = await contractDocumentForToken(token, id);
   if (!doc) return text("Not found", 404);

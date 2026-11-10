@@ -748,31 +748,54 @@
 @keyframes upSpotIn { 0% { background-color: rgba(24, 84, 160, 0.3); } 100% { background-color: rgba(24, 84, 160, 0.09); } }
 @media (prefers-reduced-motion: reduce) { .jf-upgrade .jf-up-f.spot { animation: none; } }
 
-/* THE SUBSCRIPTION OVERVIEW'S CARDS (owner, 2026-10-17): the first rows of
-   every list in view, the rest behind one toggle that opens every card of the
-   row at once (upgrade-content PlanFeatures). The fold slides on
-   grid-template-rows 0fr -> 1fr with a fade, so it eases at any length. */
-.jf-upgrade.jf-up-compact .jf-up-features { display: flex; flex-direction: column; min-width: 0; align-self: stretch; }
-.jf-upgrade.jf-up-compact .jf-up-more { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 320ms var(--ease-out, cubic-bezier(0.22, 0.61, 0.36, 1)); }
-.jf-upgrade.jf-up-compact .jf-up-features[data-open="1"] .jf-up-more { grid-template-rows: 1fr; }
-.jf-upgrade.jf-up-compact .jf-up-more-in {
-  display: flex; flex-direction: column; min-height: 0; overflow: hidden;
-  opacity: 0; transition: opacity 220ms var(--ease-out, ease);
+/* EVERY ROW IN VIEW, ROW FOR ROW (owner, 2026-11-09) — Subscription and Upgrade alike: the fold
+   ("View all features · N more") is gone. The row's grid has a track per feature row (--up-rows, set by
+   upgrade-content from the longest list; --up-span = rows + the name, price, deal and action tracks), every
+   card spans them and its list is a subgrid of them, so "Roof estimator" stands at one height in every card
+   and a line that wraps in one card makes that row taller in all of them. A row the plan lacks prints grey
+   with a dash, as on the landing. Rows are compact — 13px on a 26px line, the --hair-soft rule between,
+   a 14px tick — and the card's padding and gaps are tight, so four cards and their head fit a 1440×900
+   window (the type stays 13px). */
+.jf-upgrade .jf-up-plans,
+.jf-upgrade .jf-up-plans.has-custom {
+  grid-template-rows: auto auto auto repeat(var(--up-rows, 1), auto) auto;
 }
-.jf-upgrade.jf-up-compact .jf-up-features[data-open="1"] .jf-up-more-in { opacity: 1; transition-delay: 60ms; }
-.jf-upgrade.jf-up-compact .jf-up-feat-toggle {
-  appearance: none; display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  width: 100%; min-height: 44px; margin: auto 0 0; padding: 8px 0; border: 0; border-top: 1px solid var(--ink-line, rgba(10, 10, 10, 0.12));
-  background: transparent; color: var(--ink, #0a0a0a); font: inherit; font-size: 13px; font-weight: 700; text-align: left; cursor: pointer;
+.jf-upgrade .jf-up-plan,
+.jf-upgrade .jf-up-plan.hero {
+  grid-row: span var(--up-span, 5);
+  padding: 12px 16px 10px;
+  row-gap: 6px;
 }
-.jf-upgrade.jf-up-compact .jf-up-feat-toggle:hover { color: var(--accent, #1854a0); }
-.jf-upgrade.jf-up-compact .jf-up-feat-toggle:focus-visible { outline: 2px solid var(--accent, #1854a0); outline-offset: 2px; }
-.jf-upgrade.jf-up-compact .jf-up-feat-toggle svg { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; transition: transform 240ms var(--ease-out, ease); }
-.jf-upgrade.jf-up-compact .jf-up-features[data-open="1"] .jf-up-feat-toggle svg { transform: rotate(180deg); }
+.jf-upgrade .jf-up-feats {
+  display: grid;
+  grid-row: span var(--up-rows, 1);
+  grid-template-rows: subgrid;
+  row-gap: 0;
+  min-width: 0;
+}
+.jf-upgrade .jf-up-f {
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 26px;
+  padding: 4px 0 3px;
+  font-size: 13px;
+  line-height: 18px;
+}
+.jf-upgrade .jf-up-fic { width: 14px; height: 14px; margin-top: 2px; }
+.jf-upgrade .jf-up-f.no { color: var(--muted, #555); font-weight: 500; }
+.jf-upgrade .jf-up-f.no .jf-up-fic { stroke: var(--muted-light, #888); }
+/* The list's last drawn row closes without a rule, also in a card whose list is shorter than the row's tracks. */
+.jf-upgrade .jf-up-f:last-child { border-bottom: none; }
+.jf-upgrade .jf-up-f.jf-up-f--base { align-items: center; line-height: 1.3; }
+/* The Custom card lists pages, not the plans' rows: its list is a plain column inside the same tracks, so its
+   two-line base line never makes the plans' first row taller. */
+.jf-upgrade .jf-up-plan.custom .jf-up-feats { display: flex; flex-direction: column; align-self: start; }
 /* The name stays on the row's top line in every card. "Build your plan" used
    to wrap its stamp onto a second line, which made the head row taller and
    centred every other card's name lower in it — the gap over the names. */
 .jf-upgrade.jf-up-compact .jf-card-head { align-items: flex-start; align-self: start; }
-@media (prefers-reduced-motion: reduce) {
-  .jf-upgrade.jf-up-compact .jf-up-more, .jf-upgrade.jf-up-compact .jf-up-more-in, .jf-upgrade.jf-up-compact .jf-up-feat-toggle svg { transition: none; }
-}
+/* The switch and "Add Deck Studio" on one line over the cards (2026-11-09): the line the box used to take is the
+   room four full cards need under the head in a 1440×900 window. */
+.jf-upgrade .jf-up-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 28px; }
+.jf-upgrade .jf-up-ctl label.jf-up-deckpick,
+.jf-upgrade .jf-up-ctl p.jf-up-deckpick { margin: 0; }

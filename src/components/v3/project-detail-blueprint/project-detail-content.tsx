@@ -97,6 +97,7 @@ import { openRepairSheet } from "@/components/v3/repairs/repair-sheet";
 import { ProjectOverviewCard } from "@/components/v3/project-links/project-overview-card";
 import type { Overview, Snoozes } from "@/lib/projectOverview/shared";
 import { SPACES, spaceHref, type SpaceId } from "@/lib/projectSpaces";
+import { BillingRecovery } from "@/components/v3/payment-ribbon/billing-recovery";
 
 /** "New proposal" on a project opens the estimator picker filed under it, so
  *  any engine — Smart Proposal, roof, fence, HVAC, video or manual — can make
@@ -167,7 +168,14 @@ export function ProjectDetailContent({
   overview,
   space = "remodel",
   snoozes = {},
+  toolsLocked = false,
+  isOwner = false,
 }: {
+  /** The company is on the Free plan (owner, 2026-11-09; lib/customPlan PAID_FEATURES "project-tools"): the stages,
+   *  buying, field, timeline, finish line, client page, selections, subs, money and Overview are not drawn (the page
+   *  left their reads out) — the plan's card stands in their place. The jobs, proposals and payments stay. */
+  toolsLocked?: boolean;
+  isOwner?: boolean;
   project: PdProject;
   /** The Overview at the top (2026-11-09, lib/projectOverview) and the workspace the project lives in (lib/projectSpaces);
    *  `snoozes`: the rows the signed-in person hid with "Not now". */
@@ -401,7 +409,12 @@ export function ProjectDetailContent({
         </div>
       </div>
 
-      {overview ? <ProjectOverviewCard projectId={project.id} projectName={project.name} overview={overview} space={space} snoozes={snoozes} canManage={canManage} /> : null}
+      {toolsLocked ? (
+        <div data-project-tools-locked="">
+          <BillingRecovery isOwner={isOwner} pageLabel="Project stages & buying" blocked />
+        </div>
+      ) : null}
+      {overview && !toolsLocked ? <ProjectOverviewCard projectId={project.id} projectName={project.name} overview={overview} space={space} snoozes={snoozes} canManage={canManage} /> : null}
 
       {/* KPI */}
       <div className={cx("kpi-grid", "kpi-grid--pd")}>
@@ -426,19 +439,19 @@ export function ProjectDetailContent({
 
       {phases && phases.phases.length ? <ProjectPhasesStrip phases={phases} answers={buildWords} /> : null}
       {kindOf(project.kind) === "NEW_BUILD" && lot && timeline ? <ProjectLotCard projectId={project.id} lot={lot} answers={build} clientAddress={lotAddress} today={timeline.today} canManage={canManage} /> : null}
-      <ProjectStagesCard projectId={project.id} stages={stages} canManage={canManage} kind={kindOf(project.kind)} />
+      {!toolsLocked ? <ProjectStagesCard projectId={project.id} stages={stages} canManage={canManage} kind={kindOf(project.kind)} /> : null}
       {timeline ? <ProjectTimelineCard projectId={project.id} timeline={timeline} canManage={canManage} /> : null}
       {share ? <ProjectClientCard projectId={project.id} share={share} canManage={canManage} /> : null}
       {field ? <ProjectFieldCard projectId={project.id} field={field} canManage={canManage} /> : null}
       {finish ? <ProjectFinishCard projectId={project.id} finish={finish} jobs={jobs.map((j) => ({ id: j.id, title: j.title }))} payments={payments} canManage={canManage} /> : null}
       <LooseProposalsStrip projectId={project.id} client={project.client} loose={looseProposals} />
       <ProposalsCard proposals={proposals} project={project} onAttach={openAttach} canManage={canManage} />
-      <ProjectCombine projectId={project.id} projectName={project.name} proposals={proposals} />
+      {!toolsLocked ? <ProjectCombine projectId={project.id} projectName={project.name} proposals={proposals} /> : null}
       {selections ? <ProjectSelectionsCard projectId={project.id} selections={selections} stages={stages.stages} canManage={canManage} /> : null}
       {buying ? <ProjectBuyingCard projectId={project.id} buying={buying} stages={stages.stages} canManage={canManage} /> : null}
       {subs ? <ProjectSubsCard projectId={project.id} subs={subs} stages={stages.stages} canManage={canManage} sectionHref={`/dashboard/projects/${project.id}/subs`} /> : null}
       {moneyPlan ? <ProjectMoneyCard projectId={project.id} money={moneyPlan} canManage={canManage} /> : null}
-      {budget ? <ProjectBudgetCard projectId={project.id} budget={budget} /> : null}
+      {budget ? <ProjectBudgetCard projectId={project.id} budget={budget} toolsLocked={toolsLocked} /> : null}
       <ProjectPaymentsCard payments={payments} canManage={canManage} draws={draws} projectId={project.id} />
 
       {/* ВИДЫ + ATTACH */}

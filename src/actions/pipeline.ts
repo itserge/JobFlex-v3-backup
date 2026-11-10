@@ -8,11 +8,12 @@ import { requireManager, requireSalesOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { cardRefusal, moveDeal, setDealDetails, setSpend } from "@/lib/pipeline/server";
 import { STAGE_KEYS, type Stage } from "@/lib/pipeline/shared";
+import { withFeature } from "@/lib/customPageAccess";
 
 const moveInput = z.object({ key: z.string().regex(/^(lead|proposal):[A-Za-z0-9_-]+$/), stage: z.enum(STAGE_KEYS as unknown as [Stage, ...Stage[]]), lostReason: z.string().max(200).nullable().optional() });
 
 export async function moveDealCard(raw: unknown): Promise<{ ok: boolean; error?: string }> {
-  const { organizationId, user, role } = await requireSalesOrManager();
+  const { organizationId, user, role } = await withFeature(requireSalesOrManager(), "smart-crm");
   const input = moveInput.parse(raw);
   // A rep moves their own proposals and their own or unclaimed leads; a manager any card.
   const no = await cardRefusal(organizationId, input.key, { userId: user.id, role });
@@ -29,7 +30,7 @@ const detailInput = z.object({
 });
 
 export async function setDealCardDetails(raw: unknown): Promise<{ ok: boolean; error?: string }> {
-  const { organizationId, user, role } = await requireSalesOrManager();
+  const { organizationId, user, role } = await withFeature(requireSalesOrManager(), "smart-crm");
   const input = detailInput.parse(raw);
   const no = await cardRefusal(organizationId, input.key, { userId: user.id, role });
   if (no) return { ok: false, error: no };
@@ -47,7 +48,7 @@ export async function setDealCardDetails(raw: unknown): Promise<{ ok: boolean; e
 
 // The source report is the company's money by source — the office's, never a limited role's (the page hides it too).
 export async function setSourceSpend(sourceKey: string, monthly: number | null): Promise<{ ok: boolean }> {
-  const { organizationId } = await requireManager();
+  const { organizationId } = await withFeature(requireManager(), "smart-crm");
   await setSpend(organizationId, String(sourceKey).slice(0, 40), monthly === null ? null : Number(monthly));
   revalidatePath("/dashboard/pipeline");
   return { ok: true };

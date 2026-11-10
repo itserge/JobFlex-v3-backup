@@ -39,6 +39,7 @@ import type {
 } from "@/components/v3/crm-blueprint/crm-data";
 import { STATUS_ORDER } from "@/components/v3/crm-blueprint/crm-data";
 import { readCrmBrief } from "@/lib/crm/briefServer";
+import { isPageLocked } from "@/lib/customPageAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -94,7 +95,8 @@ export default async function CrmPage() {
   // Today's checks and the office figures, read beside the rest.
   const briefP = readCrmBrief({ organizationId, userId, role, now });
   // The follow-ups waiting for a yes and the promise tracker (Smart CRM part 4) — the band on the Today tab.
-  const deskP = readCrmDesk({ organizationId, userId, role, now }).catch((err) => {
+  // On the Free plan the band is not drawn (owner, 2026-11-09; Smart CRM is a paid feature).
+  const deskP = (await isPageLocked(organizationId, "smart-crm")) ? Promise.resolve(null) : readCrmDesk({ organizationId, userId, role, now }).catch((err) => {
     console.warn("[crm] desk:", err instanceof Error ? err.message : err);
     return null;
   });

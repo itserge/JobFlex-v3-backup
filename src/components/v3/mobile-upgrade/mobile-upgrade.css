@@ -1107,32 +1107,14 @@ body:has(.jf-mobile-upgrade.mu-shell) .jf-blueprint > .jfsup {
 .jf-mobile-upgrade .mu-card-top.jf-card-head { align-items: flex-start; flex-wrap: nowrap; }
 .jf-mobile-upgrade .mu-card-top.jf-card-head > .mu-card-id { flex: 1 1 0; }
 
-/* Subscription cards reveal their full feature list on demand. */
-.jf-mobile-upgrade .mu-feature-details { min-width: 0; }
-.jf-mobile-upgrade .mu-feature-details summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 48px;
-  margin: 0 var(--card-pad);
-  padding: 8px 0;
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  list-style: none;
-}
-.jf-mobile-upgrade .mu-feature-details summary::-webkit-details-marker { display: none; }
-.jf-mobile-upgrade .mu-feature-details summary svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; }
-.jf-mobile-upgrade .mu-feature-details[open] summary svg { transform: rotate(180deg); }
-.jf-mobile-upgrade .mu-features-open,
-.jf-mobile-upgrade .mu-feature-details[open] .mu-features-closed { display: none; }
-.jf-mobile-upgrade .mu-feature-details[open] .mu-features-open { display: inline; }
 .jf-mobile-upgrade.mu-compact .mu-card-top.jf-card-head { flex-wrap: wrap; }
 .jf-mobile-upgrade.mu-compact .is-custom .mu-card-top.jf-card-head > .mu-card-id { flex-basis: 100%; }
 .jf-mobile-upgrade.mu-compact .is-custom .mu-name { white-space: nowrap; }
-.jf-mobile-upgrade.mu-compact .mu-rail { grid-template-rows: none; align-items: start; }
-.jf-mobile-upgrade.mu-compact .mu-rail > .mu-card { display: flex; grid-row: auto; }
-.jf-mobile-upgrade.mu-compact .mu-foot { align-self: stretch; }
 .jf-mobile-upgrade.mu-embed.mu-compact .mu-rail { width: 100%; margin-inline: 0; padding-inline: 0; }
+
+/* EVERY ROW IN VIEW (owner, 2026-11-09): the subscription page's cards are the upgrade page's — the same rail, one
+   height card to card, the action at the foot, the whole list open. Rows are compact, as on the desk: 13px on a
+   26px line, the --hair-soft rule between, a 14px tick; a row the plan lacks is grey with a dash. */
+.jf-mobile-upgrade .mu-f { gap: 8px; min-height: 26px; padding: 4px 0 3px; font-size: 13px; line-height: 18px; }
+.jf-mobile-upgrade .mu-fic { width: 14px; height: 14px; margin-top: 2px; }
+.jf-mobile-upgrade .mu-f.is-no .mu-fic { stroke: var(--muted-light, #888); }

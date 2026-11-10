@@ -6,6 +6,7 @@
 // (no key here): the sheet then shows no picture.
 import { db } from "@/lib/db";
 import { actorForSession, proposalScope } from "@/lib/assistant/actor";
+import { pageLockedResponse } from "@/lib/customPageAccess";
 import { geocode } from "@/lib/maps";
 import { satellitePhotoPng } from "@/lib/staticMapPhoto";
 import { loadRoofPicture } from "@/lib/roofPictureFetch";
@@ -22,6 +23,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ proposalId: st
   } catch {
     return new Response("Not signed in.", { status: 403 });
   }
+  // The AI Operator's own route: closed on the Free plan (owner, 2026-11-09).
+  const locked = await pageLockedResponse(actor.organizationId, "operator", { as: actor.userId });
+  if (locked) return locked;
   const p = await db.proposal.findFirst({ where: { id: proposalId.slice(0, 64), organizationId: actor.organizationId, ...proposalScope(actor) }, select: { id: true, address: true } });
   if (!p) return new Response("Not found", { status: 404 });
 

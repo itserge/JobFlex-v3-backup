@@ -270,7 +270,7 @@ async function main() {
     await db.subscription.create({ data: { organizationId: A.org.id, plan: "PROFESSIONAL", status: "ACTIVE", provider: "STRIPE", externalSubId: subA, externalCustomerId: `cus_${tag}`, currentPeriodEnd: new Date(endA * 1000) } });
     const kitA = await setup(A);
     as(A);
-    const booked = await cancelSubscription({ reasons: ["just_testing"] });
+    const booked = await cancelSubscription({ path: "A3", a3: { reasons: ["just_testing"] } });
     const rowBooked = await db.subscription.findUnique({ where: { organizationId: A.org.id } });
     check("the owner books the switch to Free: the row is still ACTIVE, the date is the end of the paid cycle", booked.ok && rowBooked?.status === "ACTIVE" && freeSwitchBooked(rowBooked) && rowBooked.currentPeriodEnd?.getTime() === endA * 1000, booked);
     const doorsBooked = await doors(A, kitA.est, kitA.photo);
@@ -335,7 +335,7 @@ async function main() {
     await db.subscription.create({ data: { organizationId: T.org.id, plan: "PROFESSIONAL", status: "TRIALING", provider: "STRIPE", externalSubId: subT, externalCustomerId: `cus_${tag}`, trialEndsAt: new Date(trialEnd * 1000), currentPeriodEnd: new Date(trialEnd * 1000) } });
     await db.syncState.create({ data: { key: `cardlessTrial:${T.org.id}`, cursor: JSON.stringify({ subId: subT, customerId: `cus_${tag}`, planSlug: "professional", interval: "MONTH", customPages: [], mode: "test", trialDays: 7, startedAt: new Date(Date.now() - 4 * DAY).toISOString(), endsAt: new Date(trialEnd * 1000).toISOString() }) } });
     as(T);
-    const tb = await cancelSubscription({ reasons: ["just_testing"] });
+    const tb = await cancelSubscription({ path: "A3", a3: { reasons: ["just_testing"] } });
     const tState = await cardlessTrialState(T.org.id);
     check("a card-less trial cancelled: booked, still trialing, no \"add a card\" reminders (toFree)", tb.ok && tState?.kind === "trialing" && tState.toFree === true, tState);
     const lapse = stripeSub(subT, T.org.id, { status: "canceled", cancel_at_period_end: true, canceled_at: now - 86400, ended_at: trialEnd, trial_end: trialEnd, metadata: { organizationId: T.org.id, jf_cardless: "1", jf_to_free: "1" }, periodEnd: trialEnd });

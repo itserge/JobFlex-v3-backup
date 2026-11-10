@@ -237,13 +237,15 @@ function ClientRecordPage({ view }: { view: ClientDetailRecord }) {
               Message
             </Btn>
             {/* Their one lasting page (2026-11-10, Smart CRM part 5): copy, open, text or email it. */}
-            <ClientPageLink clientId={clientId} clientName={view.client.name}>
-              {(open) => (
-                <Btn icon="link" onClick={open}>
-                  Client&apos;s page
-                </Btn>
-              )}
-            </ClientPageLink>
+            {!view.crmLocked ? (
+              <ClientPageLink clientId={clientId} clientName={view.client.name}>
+                {(open) => (
+                  <Btn icon="link" onClick={open}>
+                    Client&apos;s page
+                  </Btn>
+                )}
+              </ClientPageLink>
+            ) : null}
             {/* Send someone back to this client's house (2026-11-09) — the office's, when there's work to go back to. */}
             {view.repairJobs > 0 ? (
               <Btn icon="wrench" onClick={() => openRepairSheet({ clientId })}>

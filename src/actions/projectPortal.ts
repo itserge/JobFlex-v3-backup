@@ -7,12 +7,15 @@
 import { z } from "zod";
 import { clientChoose } from "@/lib/projectClient/server";
 import { clientIp, rateLimitShared } from "@/lib/rateLimit";
+import { publicLinkRefusal } from "@/lib/publicLinks";
 
 const TOKEN = /^[A-Za-z0-9_-]{10,80}$/;
 const HOUR = 60 * 60 * 1000;
 
 export async function portalChoose(token: string, raw: unknown): Promise<{ ok: true; words: string } | { ok: false; error: string }> {
   if (!TOKEN.test(token)) return { ok: false, error: "This link is not valid." };
+  const paused = await publicLinkRefusal("project", token);
+  if (paused) return paused;
   const d = z.object({ selectionId: z.string().min(1).max(64), chosen: z.string().trim().min(1).max(500) }).safeParse(raw);
   if (!d.success) return { ok: false, error: "Say what you chose — a few words." };
   const ip = await clientIp();

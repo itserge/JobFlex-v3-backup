@@ -52,6 +52,7 @@ import {
   type SubInvoiceInput,
   type WaiverKind,
 } from "./shared";
+import { lapsedOrgIds } from "@/lib/customPageAccess";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
@@ -534,7 +535,8 @@ export async function readInvoice(invoiceId: string): Promise<{ ok: boolean; sta
 
 /** The queued invoice reads, oldest first (the sweep, and the after() of a new invoice). */
 export async function runPendingInvoiceReads(limit = 5): Promise<{ tried: number; read: number; failed: number }> {
-  const rows = await db.subInvoice.findMany({ where: { reviewStatus: "PENDING", documentId: { not: null } }, orderBy: { receivedAt: "asc" }, take: limit, select: { id: true } });
+  const paused = await lapsedOrgIds();
+  const rows = await db.subInvoice.findMany({ where: { reviewStatus: "PENDING", documentId: { not: null }, organizationId: { notIn: paused } }, orderBy: { receivedAt: "asc" }, take: limit, select: { id: true } });
   let read = 0;
   let failed = 0;
   for (const r of rows) {
@@ -919,7 +921,7 @@ export async function openInvoices(organizationId: string): Promise<Array<Invoic
 /** Approved invoices due by tomorrow and not paid: the office is told once. */
 export async function invoicesDue(now = new Date()): Promise<number> {
   const soon = new Date(now.getTime() + 36 * 3_600_000);
-  const rows = await db.subInvoice.findMany({ where: { status: "APPROVED", dueAt: { lte: soon }, dueNotifiedAt: null }, take: 50, select: { id: true, organizationId: true, projectId: true, quoteId: true, contractId: true, number: true, amount: true, dueAt: true, contractor: { select: { name: true } }, project: { select: { name: true } } } });
+  const rows = await db.subInvoice.findMany({ where: { status: "APPROVED", dueAt: { lte: soon }, dueNotifiedAt: null, organizationId: { notIn: await lapsedOrgIds() } }, take: 50, select: { id: true, organizationId: true, projectId: true, quoteId: true, contractId: true, number: true, amount: true, dueAt: true, contractor: { select: { name: true } }, project: { select: { name: true } } } });
   for (const r of rows) {
     await db.subInvoice.update({ where: { id: r.id }, data: { dueNotifiedAt: now } });
     await tellOffice(r.organizationId, r.projectId, `${r.contractor.name}'s invoice ${invoiceNo(r.number)}${r.amount != null ? ` (${usd(r.amount)})` : ""} is due ${isoDay(r.dueAt)} on ${r.project.name} — not paid yet.`, { quoteId: r.quoteId, contractId: r.contractId, invoiceId: r.id }, `/dashboard/projects/${r.projectId}/subs?tab=invoices`);

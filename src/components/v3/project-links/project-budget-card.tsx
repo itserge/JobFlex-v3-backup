@@ -53,7 +53,7 @@ type Panel = null | "budget" | "expense";
 type Source = null | "import" | "preset";
 type Kind = { name: string; amount: string };
 
-export function ProjectBudgetCard({ projectId, budget }: { projectId: string; budget: PdBudget }) {
+export function ProjectBudgetCard({ projectId, budget, toolsLocked = false }: { projectId: string; budget: PdBudget; /** On the Free plan (owner, 2026-11-09): the budget's import, presets and "Fill it in for me" are project tools — not drawn. */ toolsLocked?: boolean }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [panel, setPanel] = useState<Panel>(null);
@@ -290,7 +290,7 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
               What this project should <b>cost you</b> — materials, labor, subs, permits, and any kind of your own. The price comes from the proposals
               you sell; the margin is the difference. Spending on the project and on its jobs (receipts, crew pay, stock) is tracked against it.
             </div>
-            {source === null ? (
+            {toolsLocked ? null : source === null ? (
               <div className={s.sources} data-budget-sources>
                 <button type="button" className={s.source} onClick={() => setSource("import")} data-budget-source="import">
                   <b>Paste or upload a budget</b>
@@ -516,12 +516,16 @@ export function ProjectBudgetCard({ projectId, budget }: { projectId: string; bu
               <button type="button" className={s.btnPrimary} onClick={() => open("budget")}>
                 Set budget
               </button>
-              <button type="button" className={s.btn} onClick={() => open("budget", "import")} data-empty-import>
-                Paste or upload
-              </button>
-              <button type="button" className={s.btn} onClick={() => open("budget", "preset")} data-empty-preset>
-                Use a preset
-              </button>
+              {!toolsLocked ? (
+                <>
+                  <button type="button" className={s.btn} onClick={() => open("budget", "import")} data-empty-import>
+                    Paste or upload
+                  </button>
+                  <button type="button" className={s.btn} onClick={() => open("budget", "preset")} data-empty-preset>
+                    Use a preset
+                  </button>
+                </>
+              ) : null}
             </span>
           </div>
         ) : null}

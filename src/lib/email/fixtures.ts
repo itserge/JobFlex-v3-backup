@@ -663,13 +663,13 @@ export const FIXTURES: { id: string; label: string; note?: string; doc: EmailDoc
   {
     id: "b-free-switch",
     label: "18h · buildFreeSwitchBooked()",
-    note: "The owner cancelled from Settings → Billing: the plan switches to Free at the end of the paid cycle (actions/billing cancelSubscription).",
-    doc: buildFreeSwitchBooked({ name: "Jordan Rivera", planName: "Professional", switchAt: new Date("2026-11-12T17:00:00Z"), href: "https://example.com/dashboard/settings?tab=billing" }),
+    note: "The owner cancelled from the Subscription page: the plan switches to Free at the end of the paid cycle (actions/billing cancelSubscription).",
+    doc: buildFreeSwitchBooked({ name: "Jordan Rivera", planName: "Professional", switchAt: new Date("2026-11-12T17:00:00Z"), href: "https://example.com/dashboard/subscription" }),
   },
   {
     id: "b-trial-extension-asked",
     label: "18i · buildTrialExtensionAsked()",
-    note: "To the platform admins: an owner on a trial asked for more days from \"Before you go\" (actions/trialExtension). Nothing was cancelled.",
+    note: "To the platform admins: an owner on a trial asked for more days from the cancel questions (actions/trialExtension). Nothing was cancelled.",
     doc: buildTrialExtensionAsked({ orgName: "Cedar & Oak Builders", ownerEmail: "rob@cedarandoak.com", planName: "Professional", trialEndsAt: new Date("2026-10-24T17:00:00Z"), ended: false, days: 7, note: "I want to send a roof estimate to two real clients before I decide.", href: "https://example.com/admin/trial-requests?request=fixture" }),
   },
   {
