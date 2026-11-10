@@ -119,7 +119,7 @@ const replyClient: WriteTool<ReplyArgs, z.infer<typeof replyPayload>> = {
       const r = await replyByEmail(p.threadId, actor.organizationId, actor.userId, { body: p.message });
       return { say: r.ok ? `Emailed ${p.name}. It's on their thread in the Inbox.` : `That email didn't go: ${r.error}` };
     }
-    const r = await replyByText(p.threadId, actor.organizationId, { body: p.message });
+    const r = await replyByText(p.threadId, actor.organizationId, { body: p.message, userId: actor.userId });
     if (!r.ok) return { say: `That text didn't go (${r.reason}).` };
     if (r.status === "SKIPPED") return { say: r.why === "no-number" ? "Your company has no texting number yet — I can email instead." : "Texts can't go out from here right now." };
     return { say: r.status === "HELD" ? `Held for the morning (quiet hours) — it texts ${p.name} on its own.` : `Texted ${p.name}.` };

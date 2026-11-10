@@ -548,6 +548,13 @@ model ClientPromise {
   sourceKind     String?
   sourceId       String?
   sourceAt       DateTime?
+  /// What was promised (Smart CRM part 4, lib/promises): PROPOSAL | INVOICE | CALL | SCHEDULE | INFO | PAY | SIGN |
+  /// DECIDE | OTHER — decides which later event counts as proof it was kept.
+  kind           String    @default("OTHER")
+  /// What closed it on its own ("Proposal sent Nov 12"); null when a person ticked it.
+  evidence       String?
+  /// The one reminder to its owner went out then.
+  remindedAt     DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -1726,6 +1733,11 @@ model FollowUpRule {
   isDefault      Boolean @default(false)
   /// Which starter rule this row is (DEFAULT_RULES key); null on the owner's own rules.
   defaultKey     String?
+  /// Who sends (Smart CRM part 4, lib/followUps/agent): AUTO = on its own · ASK = the draft waits for a person's
+  /// OK · SUGGEST = only a reminder to follow up. Existing rules stay AUTO.
+  mode           String  @default("AUTO")
+  /// STANDARD = the fixed copy (lib/followUps/copy) · AI = written for this client from their history.
+  words          String  @default("STANDARD")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
@@ -1740,6 +1752,19 @@ model FollowUp {
   completedAt    DateTime?
   note           String?
   templateId     String? // EmailTemplate chosen by the rule that scheduled this
+  /// Stamped from the rule when queued (Smart CRM part 4), so editing the rule never changes a queued row.
+  mode           String    @default("AUTO")
+  words          String    @default("STANDARD")
+  /// QUEUED = waiting for its time · READY = due, waiting for a person (ASK / SUGGEST).
+  state          String    @default("QUEUED")
+  draftSubject   String?
+  draftBody      String?
+  draftChannel   String?
+  /// "ai" | "rules" | "person" — who wrote the draft.
+  draftBy        String?
+  readyAt        DateTime?
+  /// Why it is held or was pushed back, in plain words (shown on the queue row).
+  reason         String?
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 

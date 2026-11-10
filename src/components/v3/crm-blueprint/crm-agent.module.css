@@ -1,0 +1,299 @@
+/* ============================================================
+   THE CRM DESK BAND — follow-ups waiting for a person + the
+   promise tracker (Smart CRM part 4). Mobile-first. One sheet for
+   the desktop Blueprint page and the phone CRM: every colour is a
+   Blueprint token with the house value as fallback (the pattern of
+   ./crm-brief.module.css). Selectors are nested under `.desk`
+   (0,2,0) so the shells' bare `button` / `a` / `input` rules never
+   win.
+   ============================================================ */
+
+.desk {
+  --d-ink: var(--ink, #0a0a0a);
+  --d-paper: var(--paper, #f2f0eb);
+  --d-white: #ffffff;
+  --d-bp: var(--blueprint, #1854a0);
+  --d-muted: var(--muted, #555);
+  --d-faint: var(--muted-light, #888);
+  --d-hair: var(--hair, rgba(10, 10, 10, 0.12));
+  --d-ok: var(--success, #3a7d44);
+  --d-ok-soft: var(--success-soft, rgba(58, 125, 68, 0.08));
+  --d-warn: var(--warning, #b88420);
+  --d-warn-soft: var(--warning-soft, rgba(184, 132, 32, 0.09));
+  --d-danger: var(--danger, #a83232);
+  --d-danger-soft: var(--danger-soft, rgba(168, 50, 50, 0.08));
+  --d-info: var(--blueprint, #1854a0);
+  --d-info-soft: rgba(24, 84, 160, 0.07);
+  --d-mono: var(--font-mono, var(--font-jbmono), "JetBrains Mono", ui-monospace, monospace);
+  --d-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --d-shadow: 3px 3px 0 rgba(10, 10, 10, 0.06);
+  color: var(--d-ink);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+.desk * { box-sizing: border-box; }
+.desk .ic { width: 16px; height: 16px; flex-shrink: 0; }
+.desk .icSm { width: 13px; height: 13px; flex-shrink: 0; }
+
+.desk .tDanger { --tone: var(--d-danger); --tone-soft: var(--d-danger-soft); }
+.desk .tWarn { --tone: var(--d-warn); --tone-soft: var(--d-warn-soft); }
+.desk .tOk { --tone: var(--d-ok); --tone-soft: var(--d-ok-soft); }
+.desk .tInfo { --tone: var(--d-info); --tone-soft: var(--d-info-soft); }
+
+.desk .err,
+.desk .flash {
+  padding: 10px 12px;
+  border: 1.5px solid var(--d-danger); border-radius: 2px;
+  background: var(--d-danger-soft);
+  color: var(--d-danger);
+  font-size: 13px; font-weight: 600; line-height: 1.4;
+}
+.desk .flash { border-color: var(--d-ok); background: var(--d-ok-soft); color: var(--d-ok); }
+
+/* ---------- a section ---------- */
+.desk .sec { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.desk .secH {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0;
+  font-size: 13px; font-weight: 900;
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+.desk .secN {
+  font-family: var(--d-mono);
+  font-size: 11px; font-weight: 600;
+  color: var(--d-faint);
+  letter-spacing: 0; text-transform: none;
+}
+.desk .secSub { margin: -4px 0 0; font-size: 13px; color: var(--d-muted); line-height: 1.45; }
+
+/* ---------- follow-up cards ---------- */
+.desk .cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.desk .card {
+  position: relative;
+  display: flex; flex-direction: column; gap: 10px;
+  border: 2px solid var(--d-ink); border-radius: 2px;
+  background: var(--d-white);
+  box-shadow: var(--d-shadow);
+  padding: 12px 12px 12px 18px;
+  min-width: 0;
+  animation: deskIn 0.42s var(--d-ease) both;
+}
+.desk .card::before {
+  content: "";
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 6px;
+  background: var(--tone, var(--d-info));
+}
+@keyframes deskIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+.desk .cardTop { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: start; }
+.desk .cardTxt { min-width: 0; }
+.desk .cardT { font-size: 15px; font-weight: 900; line-height: 1.25; letter-spacing: -0.005em; overflow-wrap: anywhere; }
+.desk .cardWhy { margin-top: 3px; font-size: 13px; color: var(--d-muted); line-height: 1.45; overflow-wrap: anywhere; }
+.desk .amt {
+  font-family: var(--d-mono);
+  font-size: 14px; font-weight: 700;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.desk .name { color: inherit; text-decoration: none; border-bottom: 1.5px solid var(--d-hair); }
+.desk .name:hover { border-bottom-color: var(--d-ink); }
+.desk .quiet { color: inherit; text-decoration: none; }
+.desk .quiet:hover { text-decoration: underline; }
+
+.desk .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.desk .chip {
+  display: inline-flex; align-items: center;
+  min-height: 22px; padding: 0 8px;
+  border: 1.5px solid var(--d-ink); border-radius: 2px;
+  background: var(--d-paper);
+  font-family: var(--d-mono);
+  font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase;
+}
+.desk .chipAi { border-color: var(--d-bp); color: var(--d-bp); background: var(--d-info-soft); }
+
+.desk .remind { margin: 0; font-size: 13.5px; color: var(--d-muted); line-height: 1.5; }
+
+.desk .draft {
+  padding: 10px 12px;
+  border: 1.5px solid var(--d-hair); border-radius: 2px;
+  background: var(--d-paper);
+  min-width: 0;
+}
+.desk .subj { font-size: 13.5px; font-weight: 800; line-height: 1.35; margin-bottom: 6px; overflow-wrap: anywhere; }
+.desk .body { font-size: 14px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.desk .fine { margin-top: 8px; font-family: var(--d-mono); font-size: 10.5px; color: var(--d-faint); line-height: 1.4; }
+
+.desk .edit { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.desk .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.desk .field > span {
+  font-family: var(--d-mono);
+  font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--d-muted);
+}
+.desk .field input,
+.desk .field textarea,
+.desk .move input {
+  width: 100%; min-width: 0;
+  padding: 9px 10px;
+  border: 2px solid var(--d-ink); border-radius: 2px;
+  background: var(--d-white); color: var(--d-ink);
+  font: inherit; font-size: 16px; line-height: 1.5;
+}
+.desk .field textarea { resize: vertical; min-height: 96px; }
+.desk .field input:focus-visible,
+.desk .field textarea:focus-visible,
+.desk .move input:focus-visible { outline: 3px solid var(--d-bp); outline-offset: 1px; }
+
+.desk .foot { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.desk .cta {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 40px; padding: 0 14px;
+  border: 2px solid var(--d-ink); border-radius: 2px;
+  background: var(--d-ink); color: var(--d-paper);
+  font: inherit; font-size: 13px; font-weight: 800; letter-spacing: 0.02em;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 rgba(10, 10, 10, 0.18);
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+.desk .cta:hover:not(:disabled) { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 rgba(10, 10, 10, 0.22); }
+.desk .cta:active:not(:disabled) { transform: translate(1px, 1px); box-shadow: none; }
+.desk .ghost {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 40px; padding: 0 12px;
+  border: 1.5px solid var(--d-hair); border-radius: 2px;
+  background: transparent; color: var(--d-muted);
+  font: inherit; font-size: 13px; font-weight: 700;
+  cursor: pointer;
+}
+.desk .ghost:hover:not(:disabled) { border-color: var(--d-ink); color: var(--d-ink); }
+.desk .cta:disabled,
+.desk .ghost:disabled,
+.desk .mini:disabled,
+.desk .tick:disabled { opacity: 0.55; cursor: wait; }
+.desk .cta:focus-visible,
+.desk .ghost:focus-visible,
+.desk .mini:focus-visible,
+.desk .tick:focus-visible,
+.desk .railBtn:focus-visible,
+.desk .name:focus-visible { outline: 3px solid var(--d-bp); outline-offset: 2px; }
+
+/* ---------- the promise tracker ---------- */
+.desk .rail { display: flex; flex-wrap: wrap; gap: 6px; }
+.desk .railChip {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 40px; padding: 0 10px;
+  border: 1.5px solid var(--tone, var(--d-ink)); border-radius: 2px;
+  background: var(--tone-soft, var(--d-paper));
+  color: var(--tone, var(--d-ink));
+  font: inherit; font-size: 12px; font-weight: 800;
+}
+.desk .railChip b { font-family: var(--d-mono); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.desk .railZero { border-color: var(--d-hair); background: transparent; color: var(--d-faint); }
+.desk .railBtn { cursor: pointer; }
+.desk .railBtn:disabled { cursor: default; }
+.desk .railBtn[aria-expanded="true"] { background: var(--d-ok); border-color: var(--d-ok); color: #fff; }
+
+.desk .none {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 18px 16px;
+  border: 2px dashed var(--d-hair); border-radius: 2px;
+}
+.desk .none b { font-size: 15px; font-weight: 900; }
+.desk .none span { font-size: 13.5px; color: var(--d-muted); line-height: 1.5; max-width: 62ch; }
+
+.desk .group { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.desk .groupH {
+  margin: 4px 0 0;
+  font-family: var(--d-mono);
+  font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--tone, var(--d-muted));
+}
+.desk .rows {
+  list-style: none; margin: 0; padding: 0;
+  border: 2px solid var(--d-ink); border-radius: 2px;
+  background: var(--d-white);
+  box-shadow: var(--d-shadow);
+}
+.desk .row {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas: "tick txt" "tick end";
+  gap: 6px 10px;
+  align-items: start;
+  padding: 10px 10px 10px 16px;
+  border-bottom: 1px solid var(--d-hair);
+  min-width: 0;
+}
+.desk .row:last-child { border-bottom: 0; }
+.desk .row::before {
+  content: "";
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 5px;
+  background: var(--tone, var(--d-info));
+}
+.desk .tick {
+  grid-area: tick;
+  width: 40px; height: 40px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 2px solid var(--d-ink); border-radius: 2px;
+  background: var(--d-white);
+  color: transparent;
+  cursor: pointer;
+  padding: 0; margin: 0;
+  transition: background 0.15s, color 0.15s, transform 0.12s;
+}
+.desk button.tick:hover:not(:disabled) { background: var(--d-ok-soft); color: var(--d-ok); border-color: var(--d-ok); }
+.desk button.tick:active:not(:disabled) { transform: scale(0.94); }
+.desk .tickOn { background: var(--d-ok); border-color: var(--d-ok); color: #fff; cursor: default; }
+.desk .tickIc { width: 18px; height: 18px; stroke-width: 3; }
+
+.desk .rowTxt { grid-area: txt; min-width: 0; }
+.desk .rowT { font-size: 14.5px; font-weight: 800; line-height: 1.35; overflow-wrap: anywhere; }
+.desk .rowS { margin-top: 3px; font-size: 12.5px; color: var(--d-muted); line-height: 1.45; overflow-wrap: anywhere; }
+.desk .rowKept .rowT { font-weight: 700; color: var(--d-muted); }
+
+.desk .rowEnd { grid-area: end; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.desk .due {
+  font-family: var(--d-mono);
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--tone, var(--d-muted));
+}
+.desk .rowAct { display: flex; gap: 4px; flex-shrink: 0; }
+.desk .mini {
+  width: 40px; height: 40px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--d-hair); border-radius: 2px;
+  background: transparent; color: var(--d-muted);
+  cursor: pointer; padding: 0;
+  text-decoration: none;
+}
+.desk .mini:hover:not(:disabled) { border-color: var(--d-ink); color: var(--d-ink); }
+
+.desk .move { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.desk .move input { width: auto; flex: 1 1 150px; min-height: 40px; padding: 6px 10px; }
+
+@media (min-width: 720px) {
+  .desk .row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "tick txt end";
+    align-items: center;
+  }
+  .desk .rowEnd { justify-content: flex-end; gap: 12px; }
+  .desk .card { padding: 14px 14px 14px 20px; }
+  /* A mouse needs less than a thumb: the phone's 40px targets go back to the desk's size. */
+  .desk .railChip { min-height: 30px; }
+  .desk .tick { width: 34px; height: 34px; }
+  .desk .mini { width: 36px; height: 36px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .desk .card { animation: none; }
+  .desk .cta, .desk .tick { transition: none; }
+}

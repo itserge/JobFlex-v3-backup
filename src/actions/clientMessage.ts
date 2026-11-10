@@ -164,6 +164,12 @@ export async function messageClient(input: {
     },
   });
 
+  // THE PROMISE TRACKER (Smart CRM part 4): "I'll send the revised quote Friday" is written down, after the response.
+  if (delivered) {
+    const { catchPromisesLater } = await import("@/lib/promises/server");
+    catchPromisesLater({ organizationId, clientId: client.id, userId: user.id, body, channel: input.channel === "email" ? "EMAIL" : "SMS" });
+  }
+
   // A person wrote to them: SmartBook steps back on that conversation (it would otherwise answer their reply).
   await pauseForPerson(organizationId, input.channel === "sms" ? { phone: to } : { email: to }, { actorId: user.id, who: user.name?.trim() || user.email || "Someone on your team" }).catch(() => null);
 

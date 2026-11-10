@@ -349,6 +349,24 @@ export function AssistantSettings({ mobile = false }: { mobile?: boolean }) {
                   </button>
                 </div>
               </li>
+              <li>
+                <div className={s.prefText}>
+                  <p className={s.rowMain}>When a promise to a client is due</p>
+                  <p className={s.rowSub}>The morning it is due, and once more if it runs late. Promises are caught from what you write to clients — CRM → Today shows them all.</p>
+                </div>
+                <div className={s.prefCtl}>
+                  <button
+                    type="button"
+                    className={view.prefs.alerts.promises ? s.secondary : s.primary}
+                    disabled={busy}
+                    aria-pressed={view.prefs.alerts.promises}
+                    data-alert-promises=""
+                    onClick={() => savePrefs({ ...view.prefs, briefing: { ...view.prefs.briefing, time: briefTime }, alerts: { ...view.prefs.alerts, promises: !view.prefs.alerts.promises } })}
+                  >
+                    {view.prefs.alerts.promises ? "Turn off" : "Turn on"}
+                  </button>
+                </div>
+              </li>
             </ul>
           </div>
         ) : null}

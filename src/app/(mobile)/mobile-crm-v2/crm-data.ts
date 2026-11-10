@@ -13,6 +13,7 @@
 //   leads   src/actions/leads.ts     — claimLead / deleteLead
 
 import type { FollowUpChannel } from "@/lib/followUps/copy";
+import type { FollowUpMode, FollowUpWords } from "@/lib/followUps/agent";
 import type { WhoLike } from "@/lib/team/who";
 
 /** A pipeline lead. `id` is the real Lead row id — every action needs it. */
@@ -53,6 +54,10 @@ export type FollowUpRule = {
   /** A starter rule (lib/followUps/defaults): deleting it turns it off, and
    *  the row stays, reading "Turned off". */
   isDefault?: boolean;
+  /** Who sends it — on its own, after a yes, or a person (lib/followUps/agent). */
+  mode?: FollowUpMode;
+  /** The standard words, or written for each client. */
+  words?: FollowUpWords;
 };
 
 /** The sender the preview renders as — the org's own lockup and footer. */
@@ -71,6 +76,10 @@ export type QueueItem = {
   days: number;
   /** When it goes (epoch ms) — the Workflows status line's "next send". */
   runAt: number;
+  /** Handed to a person: its draft (or reminder) is on the Today tab. */
+  waiting?: boolean;
+  /** Why the agent is holding it, in words. */
+  reason?: string | null;
 };
 
 export type CrmStats = {
@@ -208,6 +217,8 @@ export function triggerLabel(value: string): string {
  * vocabulary and was removed on the desktop for the same reason.
  */
 export function severity(q: QueueItem): { cls: string; label: string } {
+  // The agent prepared it and is holding it for a yes (the rule says "ask me first").
+  if (q.waiting) return { cls: 'sevSoon', label: 'waiting for you' };
   if (!q.overdue) return { cls: 'sevSched', label: q.rel };
   if (q.days <= 0) return { cls: 'sevSoon', label: 'due today' };
   if (q.days >= 7) return { cls: 'sevVlate', label: `${q.days}d late` };

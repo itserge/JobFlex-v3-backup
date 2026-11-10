@@ -1219,6 +1219,41 @@ http
               }))));
               return;
             }
+            // The follow-up agent (lib/followUps/writer, Smart CRM part 4, 2026-11-10): a follow-up written for this
+            // client. Deterministic: the first name and the proposal come off FACTS; a remembered "composite" is the
+            // one detail it uses; "WE PROMISED" turns it from a chase into "it is coming". A proposal titled
+            // "…(guard)" gets an invented discount, the draft the code must refuse.
+            if (prompt.includes("FOLLOW-UP DRAFT")) {
+              const first = (/- Client: ([^\n]+)/.exec(prompt)?.[1] ?? "there").trim().split(/\s+/)[0];
+              const title = (/- Proposal: (.+?) — \$/.exec(prompt)?.[1] ?? "your project").trim();
+              const text = prompt.includes("This is a TEXT MESSAGE");
+              const detail = /composite/i.test(prompt) ? " with the composite decking you asked about" : "";
+              const owed = /- WE PROMISED: ([^\n]+)/.exec(prompt)?.[1];
+              let body = owed
+                ? `Hi ${first} — a quick note on ${title}: what I owe you is coming. I have not forgotten.`
+                : text
+                  ? `Hi ${first} — checking in on ${title}${detail}. Any questions I can answer?`
+                  : `Hi ${first} — I wanted to check in on ${title}${detail}.\n\nIf anything in it needs changing, tell me and I will rework it. Happy to walk through it by phone.`;
+              if (/\(guard\)/i.test(title)) body = `Hi ${first} — take $999 off if you sign this week.`;
+              res.end(JSON.stringify(reply(JSON.stringify({ subject: text ? null : `About ${title}`.slice(0, 58), body }))));
+              return;
+            }
+            // The promise tracker (lib/promises/server): what did the sender commit to? Deterministic: "I'll send
+            // the revised quote Friday" → PROPOSAL due the next Friday from TODAY; "call you tomorrow" → CALL due
+            // tomorrow; "I'll check with the inspector" → INFO, no day. Anything else → nothing.
+            if (prompt.includes("PROMISE READ")) {
+              const today = /TODAY: (\d{4}-\d{2}-\d{2})/.exec(prompt)?.[1] ?? new Date().toISOString().slice(0, 10);
+              const msg = (prompt.split("MESSAGE:").pop() ?? "").toLowerCase();
+              const plus = (n: number) => new Date(Date.parse(`${today}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+              const dow = new Date(`${today}T12:00:00Z`).getUTCDay();
+              const friday = plus((5 - dow + 7) % 7 || 7);
+              const found: Array<{ text: string; due: string | null; kind: string }> = [];
+              if (/(i'll|i will|we'll|we will) send (you )?(the |a |an )?(revised|updated|new) (quote|proposal|estimate)/.test(msg)) found.push({ text: "Send the revised quote", due: /friday/.test(msg) ? friday : /tomorrow/.test(msg) ? plus(1) : /today/.test(msg) ? today : null, kind: "PROPOSAL" });
+              if (/(i'll|i will|we'll|we will) call you/.test(msg)) found.push({ text: "Call them back", due: /tomorrow/.test(msg) ? plus(1) : /today/.test(msg) ? today : null, kind: "CALL" });
+              if (/(i'll|i will|we'll|we will) check with/.test(msg)) found.push({ text: "Check with the inspector", due: null, kind: "INFO" });
+              res.end(JSON.stringify(reply(JSON.stringify({ promises: found }))));
+              return;
+            }
             if (prompt.includes("INBOX DRAFTS")) {
               res.end(JSON.stringify(reply(JSON.stringify({ drafts: [
                 { label: "Confirm and move", text: "Thanks — I'll switch the deck to composite and send the updated proposal today, with a start date that finishes before Thanksgiving." },
