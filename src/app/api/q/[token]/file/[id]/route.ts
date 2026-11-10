@@ -1,5 +1,6 @@
 import { documentForToken } from "@/lib/projectSubs/server";
 import { streamStored } from "@/lib/subDocs/server";
+import { publicLinkResponse } from "@/lib/publicLinks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,6 +11,8 @@ export const dynamic = "force-dynamic";
 // attachment; otherwise it streams inline for the page's viewer.
 export async function GET(req: Request, ctx: { params: Promise<{ token: string; id: string }> }) {
   const { token, id } = await ctx.params;
+  const paused = await publicLinkResponse("sub-quote", token);
+  if (paused) return paused;
   if (!/^[A-Za-z0-9_-]{10,80}$/.test(token) || !/^[A-Za-z0-9_-]{1,64}$/.test(id)) return text("Not found", 404);
   const doc = await documentForToken(token, id);
   if (!doc) return text("Not found", 404);

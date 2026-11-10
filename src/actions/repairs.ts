@@ -1,4 +1,5 @@
 "use server";
+// A repair is booked onto the calendar (2026-11-09): it asks the Calendar page's gate, so the Free plan books none.
 // REPAIRS AND COME-BACKS — the repair sheet's actions (2026-11-09, the ProSmart gaps plan, part 2). The office books
 // a repair (owner, admin, manager): sales and the crew don't send a van. The work is lib/repairs/server.
 
@@ -7,17 +8,18 @@ import { z } from "zod";
 import { requireManager } from "@/lib/orgContext";
 import { bookRepair, repairOpenTimes, repairSheetData, setRepairCause, type BookRepairResult, type RepairSheetData } from "@/lib/repairs/server";
 import { isCause } from "@/lib/repairs/shared";
+import { withFeature } from "@/lib/customPageAccess";
 
 const ID = z.string().min(1).max(64);
 
 export async function getRepairSheet(raw: unknown): Promise<RepairSheetData> {
-  const { organizationId } = await requireManager();
+  const { organizationId } = await withFeature(requireManager(), "calendar");
   const ref = z.object({ jobId: ID.nullish(), proposalId: ID.nullish(), projectId: ID.nullish(), clientId: ID.nullish() }).parse(raw);
   return repairSheetData(organizationId, ref);
 }
 
 export async function getRepairOpenTimes(raw: unknown): Promise<Array<{ workerId: string; who: string; day: string; start: string; words: string }>> {
-  const { organizationId } = await requireManager();
+  const { organizationId } = await withFeature(requireManager(), "calendar");
   const input = z.object({ workerId: ID.nullable(), hours: z.number().min(0.5).max(12) }).parse(raw);
   const offers = await repairOpenTimes(organizationId, input);
   return offers.map((o) => ({ workerId: o.workerId, who: o.who, day: o.day, start: o.start, words: o.words }));
@@ -41,7 +43,7 @@ const bookSchema = z.object({
 });
 
 export async function bookRepairFromSheet(raw: unknown): Promise<BookRepairResult> {
-  const { organizationId, user } = await requireManager();
+  const { organizationId, user } = await withFeature(requireManager(), "calendar");
   const d = bookSchema.parse(raw);
   const r = await bookRepair({ organizationId, userId: user.id }, { ...d, cause: isCause(d.cause) ? d.cause : null, via: "sheet" });
   if (r.ok) {
@@ -51,7 +53,7 @@ export async function bookRepairFromSheet(raw: unknown): Promise<BookRepairResul
 }
 
 export async function setRepairCauseAction(jobId: string, cause: string | null): Promise<{ cause: string | null }> {
-  const { organizationId, user } = await requireManager();
+  const { organizationId, user } = await withFeature(requireManager(), "calendar");
   const r = await setRepairCause(organizationId, user.id, ID.parse(jobId), isCause(cause) ? cause : null);
   revalidatePath(`/dashboard/jobs/${jobId}`);
   revalidatePath("/dashboard/workers");

@@ -15,6 +15,8 @@ import { localDayKey } from "@/lib/jobProgressShared";
 import { longDate, shortDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { ChevronRight } from "lucide-react";
+import { publicLinkPaused } from "@/lib/publicLinks";
+import { LinkPaused } from "@/components/v3/upgrade-gate/link-paused";
 
 export default async function WorkerDashboard({
   params,
@@ -22,6 +24,7 @@ export default async function WorkerDashboard({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
+  if (await publicLinkPaused("crew", token)) return <LinkPaused />;
   const worker = await db.workerProfile.findUnique({
     where: { token },
     include: {

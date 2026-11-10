@@ -12,6 +12,7 @@ import { isOwnerOrManager, requireOrg, NoOrgError, UnauthorizedError } from "@/l
 import { loadSubsSection } from "@/components/v3/subs-section/subs-section-load";
 import { SubsSection } from "@/components/v3/subs-section/subs-section";
 import { tabOf } from "@/components/v3/subs-section/subs-tabs";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,9 @@ export const viewport: Viewport = {
 };
 
 export default async function MobileProjectSubsPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  // A paid feature (owner, 2026-11-09): the Free plan sees the plan's card here, before anything is read.
+  const planGate = await customPageGate("subcontractors", { handheld: true });
+  if (planGate) return planGate;
   const { id } = await params;
   const { tab, contract } = await searchParams;
   let organizationId: string;

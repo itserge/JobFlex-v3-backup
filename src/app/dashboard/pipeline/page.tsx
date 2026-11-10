@@ -7,6 +7,7 @@ import type { Metadata } from "next";
 import { NoOrgError, UnauthorizedError, requireOrg } from "@/lib/orgContext";
 import { loadPipeline } from "@/components/v3/pipeline-blueprint/pipeline-load";
 import { PipelineViewportSwitch } from "@/components/v3/pipeline-blueprint/pipeline-viewport-switch";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,9 @@ export const metadata: Metadata = {
 };
 
 export default async function PipelinePage({ searchParams }: { searchParams: Promise<{ view?: string; mine?: string; days?: string }> }) {
+  // A paid feature (owner, 2026-11-09): the Free plan sees the plan's card here, before anything is read.
+  const planGate = await customPageGate("smart-crm");
+  if (planGate) return planGate;
   const q = await searchParams;
   let organizationId: string;
   let userId: string;

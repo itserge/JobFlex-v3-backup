@@ -46,6 +46,8 @@ import { acceptInvoiceRead, approveInvoice, attachWaiver, createInvoice, dispute
 import { MANUAL_METHODS, WAIVER_KINDS, subInvoiceInput, type PayMethod } from "@/lib/subInvoices/shared";
 import { requireFeatureOrThrow } from "@/lib/entitlements";
 import { getOrgPlanById } from "@/lib/orgPlan";
+import { withFeature } from "@/lib/customPageAccess";
+import { publicLinkRefusal } from "@/lib/publicLinks";
 
 const ID = z.string().min(1).max(64);
 const DAY = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -92,7 +94,7 @@ const contractorInput = z.object({
 // ── the directory ────────────────────────────────────────────────────────────
 
 export async function addProjectContractor(raw: unknown): Promise<ContractorRow> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const d = contractorInput.parse(raw);
   const r = await addContractor(organizationId, user.id, d);
   touched(null);
@@ -100,7 +102,7 @@ export async function addProjectContractor(raw: unknown): Promise<ContractorRow>
 }
 
 export async function updateProjectContractor(raw: unknown): Promise<ContractorRow> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const d = contractorInput.partial().extend({ id: ID }).parse(raw);
   const { id, ...patch } = d;
   const r = await updateContractor(organizationId, id, patch);
@@ -110,7 +112,7 @@ export async function updateProjectContractor(raw: unknown): Promise<ContractorR
 
 /** A sub's W-9 or insurance certificate, after the browser put the file in the store (lib/subDocs/client). */
 export async function keepContractorDocument(raw: unknown): Promise<DocRow> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const d = z.object({ contractorId: ID, kind: z.enum(["W9", "INSURANCE"]), file: fileIn }).parse(raw);
   const r = await attachContractorDocument(organizationId, d.contractorId, d.kind, d.file, user.id);
   touched(null);
@@ -140,7 +142,7 @@ const askInput = z.object({
 /** Send a request for quotes to one or several contractors: each gets an email (and a text where allowed) with
  *  their own link; the drawings uploaded for it ride along. */
 export async function askProjectQuotes(raw: unknown): Promise<AskResult> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const d = askInput.parse(raw);
   const r = await askQuotes(organizationId, user.id, d);
   touched(d.projectId);
@@ -150,14 +152,14 @@ export async function askProjectQuotes(raw: unknown): Promise<AskResult> {
 /** A drawing for a request, uploaded before the request is sent: recorded now (kind PLAN, no request yet), tied to
  *  the request when it goes out. */
 export async function keepRequestDrawing(raw: unknown): Promise<DocRow> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const d = z.object({ projectId: ID, file: fileIn }).parse(raw);
   const r = await recordDocument({ organizationId, projectId: d.projectId, contractorId: null, requestId: null, kind: "PLAN", name: d.file.name, url: d.file.url, contentType: d.file.contentType, bytes: d.file.bytes, uploadedVia: "OFFICE", uploadedById: user.id });
   return r;
 }
 
 export async function cancelProjectRequest(requestId: string): Promise<void> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const r = await cancelRequest(organizationId, ID.parse(requestId), user.id);
   touched(r.projectId);
 }
@@ -165,20 +167,20 @@ export async function cancelProjectRequest(requestId: string): Promise<void> {
 // ── the quotes ───────────────────────────────────────────────────────────────
 
 export async function awardProjectQuote(quoteId: string): Promise<void> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const r = await awardQuote(organizationId, ID.parse(quoteId), user.id);
   touched(r.projectId);
 }
 
 export async function declineProjectQuote(quoteId: string, reason: string | null = null): Promise<void> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const r = await declineQuote(organizationId, ID.parse(quoteId), user.id, z.string().max(300).nullable().parse(reason));
   touched(r.projectId);
 }
 
 /** Send a quote back for a revised price, with a word on what to change. */
 export async function requestQuoteRevision(raw: unknown): Promise<{ email: "sent" | "none" | "failed"; text: "sent" | "none" | "failed" }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const d = z.object({ quoteId: ID, note: z.string().trim().max(1000).nullable() }).parse(raw);
   const r = await requestRevision(organizationId, d.quoteId, d.note, user.id);
   touched(r.projectId);
@@ -187,7 +189,7 @@ export async function requestQuoteRevision(raw: unknown): Promise<{ email: "sent
 
 /** The office puts a sub's estimate on the row for them — the file (already in the store) and the price. */
 export async function addQuoteVersion(raw: unknown): Promise<VersionRow> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const d = z.object({ quoteId: ID, amount: z.number().min(0).max(100_000_000).nullable(), note: z.string().trim().max(1000).nullable(), file: fileIn.nullable() }).parse(raw);
   const r = await addVersionByOffice(organizationId, d.quoteId, d, user.id);
   touched(r.projectId);
@@ -196,7 +198,7 @@ export async function addQuoteVersion(raw: unknown): Promise<VersionRow> {
 
 /** The contractor is paid: a Subcontractors expense on the project for the invoice (or the amount typed). */
 export async function markProjectQuotePaid(raw: unknown): Promise<{ expenseId: string }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const d = z.object({ quoteId: ID, amount: z.number().min(0).max(100_000_000).nullable() }).parse(raw);
   const r = await markQuotePaid(organizationId, d.quoteId, d.amount, user.id);
   touched(r.projectId);
@@ -204,7 +206,7 @@ export async function markProjectQuotePaid(raw: unknown): Promise<{ expenseId: s
 }
 
 export async function resendProjectQuote(quoteId: string): Promise<{ email: "sent" | "none" | "failed"; text: "sent" | "none" | "failed" }> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const r = await resendQuote(organizationId, ID.parse(quoteId));
   touched(r.projectId);
   return { email: r.email, text: r.text };
@@ -214,6 +216,9 @@ export async function resendProjectQuote(quoteId: string): Promise<{ email: "sen
 
 async function publicGate(token: string, what: string): Promise<{ ok: false; error: string } | null> {
   if (!TOKEN.test(token)) return { ok: false, error: "This link is not valid." };
+  // A sub's quote or subcontract link is paused while the company is on the Free plan (lib/publicLinks).
+  const paused = (await publicLinkRefusal("sub-quote", token)) ?? (await publicLinkRefusal("subcontract", token));
+  if (paused) return paused;
   const rl = await rateLimitShared(`sub-${what}:${await clientIp()}`, 30, HOUR);
   if (!rl.ok) return { ok: false, error: "Too many tries at once — wait a few minutes and try again." };
   return null;
@@ -242,7 +247,7 @@ export async function invoiceSave(token: string, raw: unknown): Promise<{ ok: tr
 
 /** Read a version's document again, now — a version whose read failed, or one the office doubts. */
 export async function readQuoteVersionNow(versionId: string): Promise<{ ok: boolean; status: string; error: string | null }> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const r = await requeueRead(organizationId, ID.parse(versionId));
   touched(r.projectId);
   return { ok: r.outcome.ok, status: r.outcome.status, error: r.outcome.error };
@@ -250,7 +255,7 @@ export async function readQuoteVersionNow(versionId: string): Promise<{ ok: bool
 
 /** "Use these": the read's total becomes the version's price (and the quote's, when it is the current version). */
 export async function acceptQuoteRead(versionId: string): Promise<{ amount: number | null }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const r = await acceptRead(organizationId, ID.parse(versionId), user.id);
   touched(r.projectId);
   return { amount: r.amount };
@@ -258,14 +263,14 @@ export async function acceptQuoteRead(versionId: string): Promise<{ amount: numb
 
 /** The person says the read is wrong: set aside, the figures stay stored. */
 export async function rejectQuoteRead(versionId: string): Promise<void> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const r = await rejectRead(organizationId, ID.parse(versionId), user.id);
   touched(r.projectId);
 }
 
 /** The two sentences on how a request's quotes differ, written now and kept on the request. */
 export async function compareRequestWords(requestId: string): Promise<{ words: string; by: "model" | "rules"; at: string }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const r = await compareWords(organizationId, ID.parse(requestId), user.id);
   touched(r.projectId);
   return { words: r.words.words, by: r.words.by, at: r.words.at };
@@ -273,7 +278,7 @@ export async function compareRequestWords(requestId: string): Promise<{ words: s
 
 /** A held letter matched to a quote by hand: its document becomes a version. */
 export async function attachInboundEmail(raw: unknown): Promise<{ versionId: string | null }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const d = z.object({ inboundId: ID, quoteId: ID }).parse(raw);
   const r = await attachInbound(organizationId, d.inboundId, d.quoteId, user.id);
   touched(r.projectId);
@@ -282,7 +287,7 @@ export async function attachInboundEmail(raw: unknown): Promise<{ versionId: str
 
 /** A held letter set aside. */
 export async function ignoreInboundEmail(inboundId: string): Promise<void> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   await ignoreInbound(organizationId, ID.parse(inboundId), user.id);
   touched(null);
 }
@@ -310,7 +315,7 @@ const finderResult = z.object({
 
 /** One search near a project (or from the company page): sixty an hour per company. */
 export async function findProjectSubs(raw: unknown): Promise<FindRead> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const d = z.object({ projectId: ID.nullable(), trade: z.string().trim().max(60).nullable(), address: z.string().trim().max(300).nullable(), radiusMi: z.number().min(1).max(100), words: z.string().trim().max(80).nullable(), includeLapsed: z.boolean().optional() }).parse(raw);
   const gate = await rateLimitShared(`sub-find:${organizationId}`, 60, HOUR);
   if (!gate.ok) throw new Error("That is a lot of searches — try again in a few minutes.");
@@ -319,7 +324,7 @@ export async function findProjectSubs(raw: unknown): Promise<FindRead> {
 
 /** A found result saved to My subs (the same place, license or name is not saved twice). */
 export async function saveFoundSub(raw: unknown): Promise<{ row: ContractorRow; existed: boolean }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const d = z.object({ result: finderResult, trade: z.string().trim().max(60).nullable() }).parse(raw);
   const r = await saveFound(organizationId, user.id, d.result as FinderResult, d.trade);
   touched(null);
@@ -328,7 +333,7 @@ export async function saveFoundSub(raw: unknown): Promise<{ row: ContractorRow; 
 
 /** The state register's word on a saved sub, now. */
 export async function verifyContractorLicenseNow(contractorId: string): Promise<{ row: ContractorRow; words: string }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const r = await verifyContractor(organizationId, ID.parse(contractorId), user.id);
   touched(null);
   return r;
@@ -336,7 +341,7 @@ export async function verifyContractorLicenseNow(contractorId: string): Promise<
 
 /** The company's JobFlex Network listing (owners and managers). */
 export async function saveCompanyNetwork(raw: unknown): Promise<NetworkSettings> {
-  const { organizationId, user } = await requireManager();
+  const { organizationId, user } = await withFeature(requireManager(), "subcontractors");
   const d = z.object({ on: z.boolean(), trades: z.array(z.string().trim().min(1).max(60)).max(20), serviceAreas: z.string().trim().max(300), contact: z.object({ name: z.string().trim().max(120), phone: z.string().trim().max(40), email: z.string().trim().max(200) }), since: z.string().nullable().optional() }).parse(raw);
   const r = await saveNetworkSettings(organizationId, user.id, { ...d, since: d.since ?? null });
   touched(null);
@@ -364,14 +369,14 @@ const contractPatch = z.object({
 });
 
 export async function draftSubcontract(quoteId: string): Promise<ContractRow> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const row = await draftContract(organizationId, ID.parse(quoteId), user.id);
   touched(row.projectId);
   return row;
 }
 
 export async function saveSubcontract(raw: unknown): Promise<ContractRow> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const { contractId, ...patch } = contractPatch.parse(raw);
   const row = await updateContract(organizationId, contractId, patch);
   touched(row.projectId);
@@ -379,7 +384,7 @@ export async function saveSubcontract(raw: unknown): Promise<ContractRow> {
 }
 
 export async function sendSubcontract(raw: unknown): Promise<{ row: ContractRow; email: "sent" | "none" | "failed"; text: "sent" | "none" | "failed" }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const d = z.object({ contractId: ID, signerName: z.string().trim().min(2).max(120) }).parse(raw);
   const r = await sendContract(organizationId, d.contractId, { id: user.id }, d.signerName);
   touched(r.row.projectId);
@@ -387,12 +392,12 @@ export async function sendSubcontract(raw: unknown): Promise<{ row: ContractRow;
 }
 
 export async function resendSubcontract(contractId: string): Promise<{ email: "sent" | "none" | "failed"; text: "sent" | "none" | "failed" }> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   return resendContract(organizationId, ID.parse(contractId));
 }
 
 export async function cancelSubcontract(raw: unknown): Promise<ContractRow> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const d = z.object({ contractId: ID, reason: z.string().trim().max(300).nullable() }).parse(raw);
   const row = await cancelContract(organizationId, d.contractId, d.reason, user.id);
   touched(row.projectId);
@@ -401,14 +406,14 @@ export async function cancelSubcontract(raw: unknown): Promise<ContractRow> {
 
 /** The signed PDF made again (a failed first try, a lost file). */
 export async function rebuildSubcontractPdf(contractId: string): Promise<DocRow> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const doc = await buildContractPdf(organizationId, ID.parse(contractId));
   touched(doc.projectId);
   return doc;
 }
 
 export async function proposeSubcontractChange(raw: unknown): Promise<{ change: ChangeRow; email: "sent" | "none" | "failed"; text: "sent" | "none" | "failed" }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const d = z.object({ contractId: ID, amount: z.number().min(-100_000_000).max(100_000_000), scope: z.string().trim().min(1).max(4000), reason: z.string().trim().max(1000).nullable() }).parse(raw);
   const r = await proposeChange(organizationId, d.contractId, { amount: d.amount, scope: d.scope, reason: d.reason }, user.id);
   touched(null);
@@ -416,7 +421,7 @@ export async function proposeSubcontractChange(raw: unknown): Promise<{ change: 
 }
 
 export async function decideSubcontractChange(raw: unknown): Promise<ChangeRow> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const d = z.object({ changeId: ID, approve: z.boolean(), name: z.string().trim().max(120).nullable(), reason: z.string().trim().max(500).nullable() }).parse(raw);
   const row = await decideChangeInOffice(organizationId, d.changeId, { approve: d.approve, name: d.name, reason: d.reason }, user.id);
   touched(null);
@@ -466,7 +471,7 @@ const invoicePatch = z.object({
 });
 
 export async function enterSubInvoice(raw: unknown): Promise<InvoiceRow> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const d = z.object({ quoteId: ID, amount: z.number().min(0).max(100_000_000).nullable(), invoiceNumber: z.string().trim().max(60).nullable(), milestone: z.number().int().min(0).max(20).nullable(), issuedAt: DAY.nullable(), dueAt: DAY.nullable(), note: z.string().trim().max(1000).nullable(), file: fileIn.nullable() }).parse(raw);
   const row = await createInvoice({ organizationId, quoteId: d.quoteId, amount: d.amount, invoiceNumber: d.invoiceNumber, milestone: d.milestone, issuedAt: d.issuedAt, dueAt: d.dueAt, note: d.note, source: "OFFICE", file: d.file, actorId: user.id });
   if (d.file) after(() => runPendingInvoiceReads(2).then(() => undefined));
@@ -475,7 +480,7 @@ export async function enterSubInvoice(raw: unknown): Promise<InvoiceRow> {
 }
 
 export async function editSubInvoice(raw: unknown): Promise<InvoiceRow> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const { invoiceId, ...patch } = invoicePatch.parse(raw);
   const row = await editInvoice(organizationId, invoiceId, patch);
   touched(row.projectId);
@@ -483,14 +488,14 @@ export async function editSubInvoice(raw: unknown): Promise<InvoiceRow> {
 }
 
 export async function approveSubInvoice(invoiceId: string): Promise<InvoiceRow> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const row = await approveInvoice(organizationId, ID.parse(invoiceId), user.id);
   touched(row.projectId);
   return row;
 }
 
 export async function disputeSubInvoice(raw: unknown): Promise<InvoiceRow> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const d = z.object({ invoiceId: ID, reason: z.string().trim().min(1).max(500) }).parse(raw);
   const row = await disputeInvoice(organizationId, d.invoiceId, d.reason, user.id);
   touched(row.projectId);
@@ -498,7 +503,7 @@ export async function disputeSubInvoice(raw: unknown): Promise<InvoiceRow> {
 }
 
 export async function voidSubInvoice(raw: unknown): Promise<InvoiceRow> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const d = z.object({ invoiceId: ID, reason: z.string().trim().max(300).nullable() }).parse(raw);
   const row = await voidInvoice(organizationId, d.invoiceId, d.reason, user.id);
   touched(row.projectId);
@@ -506,20 +511,20 @@ export async function voidSubInvoice(raw: unknown): Promise<InvoiceRow> {
 }
 
 export async function adoptSubInvoiceRead(invoiceId: string): Promise<InvoiceRow> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const row = await acceptInvoiceRead(organizationId, ID.parse(invoiceId), user.id);
   touched(row.projectId);
   return row;
 }
 
 export async function setAsideSubInvoiceRead(invoiceId: string): Promise<void> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   await rejectInvoiceRead(organizationId, ID.parse(invoiceId));
   touched(null);
 }
 
 export async function readSubInvoiceNow(invoiceId: string): Promise<{ ok: boolean; status: string; error: string | null }> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const r = await readInvoiceAgain(organizationId, ID.parse(invoiceId));
   touched(null);
   return r;
@@ -531,7 +536,7 @@ async function paymentsAllowed(organizationId: string): Promise<void> {
 }
 
 export async function recordSubPayment(raw: unknown): Promise<{ payment: PaymentRow; duplicate: boolean; email: "sent" | "none" | "failed" }> {
-  const { organizationId, user } = await requireManager();
+  const { organizationId, user } = await withFeature(requireManager(), "subcontractors");
   await paymentsAllowed(organizationId);
   const d = z
     .object({ invoiceId: ID, amount: z.number().min(0).max(100_000_000), held: z.number().min(0).max(100_000_000), method: z.enum(MANUAL_METHODS as unknown as [PayMethod, ...PayMethod[]]), reference: z.string().trim().max(60).nullable(), paidAt: PAYDAY, waiverKind: z.enum(WAIVER_KINDS).nullable(), waiverFile: fileIn.nullable(), note: z.string().trim().max(500).nullable(), key: z.string().min(8).max(80) })
@@ -542,7 +547,7 @@ export async function recordSubPayment(raw: unknown): Promise<{ payment: Payment
 }
 
 export async function voidSubPayment(raw: unknown): Promise<PaymentRow> {
-  const { organizationId, user } = await requireManager();
+  const { organizationId, user } = await withFeature(requireManager(), "subcontractors");
   const d = z.object({ paymentId: ID, reason: z.string().trim().max(300).nullable() }).parse(raw);
   const row = await voidPayment(organizationId, d.paymentId, d.reason, user.id);
   touched(null);
@@ -550,7 +555,7 @@ export async function voidSubPayment(raw: unknown): Promise<PaymentRow> {
 }
 
 export async function keepSubWaiver(raw: unknown): Promise<PaymentRow> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "subcontractors");
   const d = z.object({ paymentId: ID, kind: z.enum(WAIVER_KINDS), file: fileIn }).parse(raw);
   const row = await attachWaiver(organizationId, d.paymentId, d.kind, d.file, user.id);
   touched(null);
@@ -558,7 +563,7 @@ export async function keepSubWaiver(raw: unknown): Promise<PaymentRow> {
 }
 
 export async function releaseSubRetainage(raw: unknown): Promise<{ payment: PaymentRow; duplicate: boolean }> {
-  const { organizationId, user } = await requireManager();
+  const { organizationId, user } = await withFeature(requireManager(), "subcontractors");
   await paymentsAllowed(organizationId);
   const d = z.object({ contractId: ID, amount: z.number().min(0.01).max(100_000_000).nullable(), method: z.enum(MANUAL_METHODS as unknown as [PayMethod, ...PayMethod[]]), reference: z.string().trim().max(60).nullable(), paidAt: PAYDAY, key: z.string().min(8).max(80) }).parse(raw);
   const r = await releaseRetainage(organizationId, d.contractId, { amount: d.amount, method: d.method, reference: d.reference, paidAt: d.paidAt, key: `office:${organizationId}:${d.key}` }, user.id);
@@ -567,7 +572,7 @@ export async function releaseSubRetainage(raw: unknown): Promise<{ payment: Paym
 }
 
 export async function sendSubInvoiceToRamp(invoiceId: string): Promise<{ ok: true; warning: string | null } | { ok: false; error: string }> {
-  const { organizationId, user } = await requireManager();
+  const { organizationId, user } = await withFeature(requireManager(), "subcontractors");
   await paymentsAllowed(organizationId);
   const r = await sendInvoiceToRamp(organizationId, ID.parse(invoiceId), { userId: user.id, name: user.name?.trim() || user.email || "JobFlex" });
   touched(null);

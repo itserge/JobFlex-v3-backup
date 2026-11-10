@@ -8,7 +8,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { requireOrg } from "@/lib/orgContext";
 import { accessRole, hasFullAccess } from "@/lib/fullAccess";
-import { isPageLocked } from "@/lib/customPageAccess";
+import { isPageLocked, requirePage } from "@/lib/customPageAccess";
 import { isTrialWriteLocked } from "@/lib/trialState";
 import { assistantOpenFor } from "@/lib/assistant/open";
 import type { AssistantChannel } from "@/lib/assistant/shared";
@@ -74,6 +74,20 @@ export const PAGE_OF: Partial<Record<Capability, "calendar" | "workers">> = {
 /** Who has the Assistant yet (lib/assistant/open), asked once per actor. */
 const openFor = new WeakMap<AssistantActor, Promise<boolean>>();
 
+/** THE AI OPERATOR IS A PAID FEATURE (owner, 2026-11-09; lib/customPlan PAID_FEATURES): every live plan and a
+ *  trial open it, the Free plan pauses it. Asked as the actor's own user, so a platform admin's linked phone is
+ *  open as their session is (lib/fullAccess), and a text or a cron with no session is answered by the plan. */
+export const OPERATOR_PAUSED = "The AI Operator isn't on the Free plan. Choose a plan on Subscription to turn it back on — your conversations and tasks are kept.";
+
+export async function operatorPaused(actor: Pick<AssistantActor, "organizationId" | "userId">): Promise<boolean> {
+  return isPageLocked(actor.organizationId, "operator", { as: actor.userId });
+}
+
+/** For an action that changes the Operator's own settings: throws the plan's refusal (lib/customPageAccess). */
+export async function requireOperator(actor: Pick<AssistantActor, "organizationId" | "userId">): Promise<void> {
+  await requirePage(actor.organizationId, "operator", { as: actor.userId });
+}
+
 /** Why this person may not do it, in their words — or null when they may. */
 export async function refusal(actor: AssistantActor, need: Capability, writes: boolean): Promise<string | null> {
   let open = openFor.get(actor);
@@ -87,8 +101,9 @@ export async function refusal(actor: AssistantActor, need: Capability, writes: b
       ? "The AI Operator is for the office. Your jobs and schedule are in your crew app."
       : "Your role in JobFlex doesn't allow that. Ask your owner or a manager.";
   }
+  if (await operatorPaused(actor)) return OPERATOR_PAUSED;
   const page = PAGE_OF[need];
-  if (page && (await isPageLocked(actor.organizationId, page))) {
+  if (page && (await isPageLocked(actor.organizationId, page, { as: actor.userId }))) {
     return `Your plan doesn't include the ${page === "calendar" ? "Calendar" : "Workers"} page.`;
   }
   if (writes && (await isTrialWriteLocked(actor.organizationId))) {

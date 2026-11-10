@@ -8,6 +8,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { addSelection, chooseSelection, deleteSelection, reopenSelection, updateSelection } from "@/lib/projectSelections/server";
+import { withFeature } from "@/lib/customPageAccess";
 
 const ID = z.string().min(1).max(64);
 const DAY = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -34,20 +35,20 @@ const pickInput = z.object({
 });
 
 export async function addProjectSelection(projectId: string, raw: unknown): Promise<{ id: string; name: string }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const r = await addSelection(organizationId, projectId, selectionInput.parse(raw), user.id);
   touched(projectId);
   return r;
 }
 
 export async function updateProjectSelection(projectId: string, selectionId: string, raw: unknown): Promise<void> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   await updateSelection(organizationId, selectionId, selectionInput.partial().parse(raw), user.id);
   touched(projectId);
 }
 
 export async function chooseProjectSelection(projectId: string, selectionId: string, raw: unknown): Promise<{ words: string }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const d = pickInput.parse(raw);
   const r = await chooseSelection(organizationId, selectionId, { chosen: d.chosen ?? null, vendor: d.vendor ?? null, price: d.price ?? null }, user.id);
   touched(projectId);
@@ -55,13 +56,13 @@ export async function chooseProjectSelection(projectId: string, selectionId: str
 }
 
 export async function reopenProjectSelection(projectId: string, selectionId: string): Promise<void> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   await reopenSelection(organizationId, selectionId, user.id);
   touched(projectId);
 }
 
 export async function deleteProjectSelection(projectId: string, selectionId: string): Promise<void> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   await deleteSelection(organizationId, selectionId);
   touched(projectId);
 }

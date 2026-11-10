@@ -20,6 +20,7 @@ import { BUDGET_CATEGORIES } from "@/lib/projectBudget";
 import { kindForTemplate, templatesFor, makesProject, parseProjectSettings, percentDone, proposalTrade, templateByKey, templateFor, type StageTemplate, type TemplateStage } from "./shared";
 import { KIND_LABEL, kindOf, livingInPlaceTasks, onSiteStageIndex, parseAnswers, serializeAnswers } from "@/lib/projectKind";
 import { INSPECTION_NAME, gateHolds, gateWords } from "@/lib/projectGates";
+import { isPageLocked } from "@/lib/customPageAccess";
 
 const FIRST_NUMBER = 1001;
 
@@ -256,6 +257,9 @@ export async function projectForSoldProposal(proposalId: string, actorId: string
     const orgTrades = parseTradeTypes(p.organization.tradeTypesJson);
     const trade = proposalTrade({ estimator: p.trade, title: p.title, scope: p.scopeOfWork, orgTrades });
     if (!makesProject(settings, trade)) return null;
+    // Automatic projects are a project tool (owner, 2026-11-09): none on the Free plan — the company's plan decides,
+    // whoever accepted the proposal (a client on the public page has no session).
+    if (await isPageLocked(p.organizationId, "project-tools", { as: null })) return null;
     return await makeProject(p, { actorId, orgTrades, trade });
   } catch (err) {
     console.warn(`[projectStages] automatic project for ${proposalId} failed: ${err instanceof Error ? err.message : String(err)}`);

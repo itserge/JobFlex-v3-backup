@@ -18,12 +18,12 @@
 
 import { requireOrg } from "@/lib/orgContext";
 import { getBlockedCustomPages, isPageLocked } from "@/lib/customPageAccess";
-import { CUSTOM_PAGES, type CustomPageId } from "@/lib/customPlan";
+import { gatedPage, type GatedPageId } from "@/lib/customPlan";
 import { UpgradeGate } from "./upgrade-gate";
 import { HandheldGate } from "./handheld-gate";
 
 export async function customPageGate(
-  page: CustomPageId,
+  page: GatedPageId,
   opts: { handheld?: boolean } = {},
 ): Promise<React.ReactElement | null> {
   let ctx: Awaited<ReturnType<typeof requireOrg>>;
@@ -33,7 +33,9 @@ export async function customPageGate(
     return null;
   }
   if (!(await isPageLocked(ctx.organizationId, page))) return null;
-  const href = CUSTOM_PAGES.find((p) => p.id === page)?.href ?? "/dashboard";
+  // A paid feature without a page of its own (lib/customPlan PAID_FEATURES) is named by its id: the gate reads
+  // the label from it and says the plan ended.
+  const href = gatedPage(page)?.href ?? `#feature:${page}`;
   const locked = (await getBlockedCustomPages(ctx.organizationId)) ?? [];
   const isOwner = ctx.role === "OWNER";
   // The standalone handheld URLs (/mobile-*) have no shell above them: the

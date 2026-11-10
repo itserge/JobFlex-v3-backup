@@ -8,6 +8,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { clientIp, enforceRateLimit, MINUTE, rateLimitShared } from "@/lib/rateLimit";
 import { pickAt, pickTimes, proposeAt, requestDecide, textMe, type Decision, type PickDay, type PickView } from "@/lib/smartbook/engine";
+import { LINK_PAUSED_REFUSAL, publicLinkPaused } from "@/lib/publicLinks";
 
 type Out = { ok: true; view: PickView } | { ok: false; error: string; view?: PickView };
 
@@ -24,6 +25,7 @@ function touched() {
 export async function smartBookTimes(token: string): Promise<{ ok: true; days: PickDay[] } | { ok: false; error: string }> {
   const g = await rateLimitShared(`smartbook-times:${await clientIp()}`, 60, MINUTE);
   if (!g.ok) return { ok: false, error: "Too many requests — try again in a minute." };
+  if (await publicLinkPaused("smartbook-pick", String(token ?? "").slice(0, 40))) return { ok: false, error: LINK_PAUSED_REFUSAL };
   const days = await pickTimes(String(token ?? "").slice(0, 40));
   return days ? { ok: true, days } : { ok: false, error: "This link is not active." };
 }
@@ -31,6 +33,7 @@ export async function smartBookTimes(token: string): Promise<{ ok: true; days: P
 export async function smartBookPick(token: string, iso: string): Promise<Out> {
   const g = await gate("pick", 12);
   if (g) return { ok: false, error: g };
+  if (await publicLinkPaused("smartbook-pick", String(token ?? "").slice(0, 40))) return { ok: false, error: LINK_PAUSED_REFUSAL };
   const r = await pickAt(String(token ?? "").slice(0, 40), String(iso ?? "").slice(0, 40));
   if (r.ok) touched();
   return r;
@@ -48,12 +51,14 @@ export async function smartBookPropose(token: string, raw: unknown): Promise<Out
   if (!parsed.success) return { ok: false, error: "Pick a day, and a time if you have one in mind." };
   const g = await gate("propose", 6);
   if (g) return { ok: false, error: g };
+  if (await publicLinkPaused("smartbook-pick", String(token ?? "").slice(0, 40))) return { ok: false, error: LINK_PAUSED_REFUSAL };
   return proposeAt(String(token ?? "").slice(0, 40), parsed.data);
 }
 
 export async function smartBookTextMe(token: string): Promise<Out> {
   const g = await gate("texts", 6);
   if (g) return { ok: false, error: g };
+  if (await publicLinkPaused("smartbook-pick", String(token ?? "").slice(0, 40))) return { ok: false, error: LINK_PAUSED_REFUSAL };
   return textMe(String(token ?? "").slice(0, 40));
 }
 
@@ -68,6 +73,7 @@ export async function smartBookDecide(token: string, raw: unknown): Promise<{ ok
   const parsed = decideInput.safeParse(raw);
   if (!parsed.success) return { ok: false, error: "Pick an answer, or a day and a time." };
   await enforceRateLimit(`smartbook-decide:${await clientIp()}`, 20, 10 * MINUTE, "answers");
+  if (await publicLinkPaused("smartbook-request", String(token ?? "").slice(0, 40))) return { ok: false, error: LINK_PAUSED_REFUSAL };
   const r = await requestDecide(String(token ?? "").slice(0, 40), parsed.data as Decision);
   if (r.ok) touched();
   return r;

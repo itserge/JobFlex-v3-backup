@@ -78,6 +78,58 @@ export const CUSTOM_PAGES: CustomPage[] = [
     aliases: ["/mobile-phone-v2"] },
 ];
 
+// ── PAID FEATURES (owner, 2026-11-09) ───────────────────────────────────────
+// What the other developers built in the two weeks to 2026-11-09 opens on every LIVE plan — Starter,
+// Professional, Advanced, a Custom plan, a trial, a grant — and the Free plan closes it, the way Free closes
+// the estimators. They are not sold page by page: no price, never in the Custom plan's picker, never in
+// blockedCustomHrefs (a Custom plan holds them all). The one gate is the add-on gate (lib/customPageAccess:
+// requirePage / pageLockedResponse / isPageLocked, customPageGate for a page), so a lapsed plan, a platform
+// admin (hasFullAccess) and a grant are answered exactly as they are for the estimators.
+//   href  — the feature's own page, gated at its URL by the layouts and marked in the nav; null when the
+//           feature lives inside an older page (a project's stages, a job's field tools, the booking page's
+//           SmartBook) and only its actions, routes and section are gated.
+export type PaidFeatureId =
+  | "operator"
+  | "subcontractors"
+  | "smart-crm"
+  | "project-tools"
+  | "crew-field"
+  | "smartbook"
+  | "smarthelp";
+
+export interface PaidFeature {
+  id: PaidFeatureId;
+  label: string;
+  note: string;
+  href: string | null;
+  aliases: string[];
+}
+
+export const PAID_FEATURES: PaidFeature[] = [
+  { id: "operator", label: "AI Operator", note: "Ask, approve and undo by voice or text", href: "/mobile-assistant-v1", aliases: [] },
+  { id: "subcontractors", label: "Subcontractors", note: "Requests, quotes, subcontracts and invoices", href: "/dashboard/subcontractors",
+    aliases: ["/dashboard/quotes", "/mobile-subcontractors-v1", "/mobile-quotes-v1", "/mobile-project-subs-v1"] },
+  { id: "smart-crm", label: "Smart CRM", note: "Inbox, pipeline and the client 360", href: "/dashboard/pipeline", aliases: ["/dashboard/inbox"] },
+  { id: "project-tools", label: "Project stages & buying", note: "Stages, tasks, buying and deliveries", href: null, aliases: [] },
+  { id: "crew-field", label: "Crew field tools", note: "Tasks, deliveries, hours and flags on the job", href: null, aliases: [] },
+  { id: "smartbook", label: "SmartBook", note: "New leads book a visit by text, email or call", href: null, aliases: [] },
+  { id: "smarthelp", label: "SmartHelp", note: "Guides and answers inside JobFlex", href: null, aliases: [] },
+];
+
+/** Every id the gate answers for: a sellable add-on page or a paid feature. */
+export type GatedPageId = CustomPageId | PaidFeatureId;
+export type GatedPage = CustomPage | PaidFeature;
+
+const PAID_IDS = new Set<string>(PAID_FEATURES.map((f) => f.id));
+export function isPaidFeature(id: string): id is PaidFeatureId {
+  return PAID_IDS.has(id);
+}
+
+/** The page or feature behind an id, for its label and its href. */
+export function gatedPage(id: GatedPageId): GatedPage | null {
+  return CUSTOM_PAGES.find((p) => p.id === id) ?? PAID_FEATURES.find((f) => f.id === id) ?? null;
+}
+
 /** Addresses under an add-on's prefix that belong to the BASE workspace: the
  *  old Company → Subscription link (a redirect to /dashboard/subscription) and
  *  the team list, which /dashboard/settings/team serves to every plan anyway.
@@ -98,15 +150,15 @@ function underPrefix(pathname: string, prefix: string): boolean {
 
 /** The add-on page a path opens, or null for the base workspace. Longest
  *  matching prefix wins across every page's href and aliases. */
-export function pageForPath(pathname: string): CustomPage | null {
+export function pageForPath(pathname: string): GatedPage | null {
   const path = pathname.split("?")[0];
-  let best: { page: CustomPage | null; len: number } = { page: null, len: -1 };
+  let best: { page: GatedPage | null; len: number } = { page: null, len: -1 };
   for (const ex of BASE_EXCEPTIONS) {
     if (underPrefix(path, ex) && ex.length > best.len) best = { page: null, len: ex.length };
   }
-  for (const page of CUSTOM_PAGES) {
+  for (const page of [...CUSTOM_PAGES, ...PAID_FEATURES]) {
     for (const prefix of [page.href, ...page.aliases]) {
-      if (underPrefix(path, prefix) && prefix.length > best.len) best = { page, len: prefix.length };
+      if (prefix && underPrefix(path, prefix) && prefix.length > best.len) best = { page, len: prefix.length };
     }
   }
   return best.page;
@@ -186,6 +238,12 @@ export function blockedCustomHrefs(bought: readonly string[] | null | undefined)
   return CUSTOM_PAGES.filter((p) => !have.has(p.id)).map((p) => p.href);
 }
 
+/** What a LAPSED plan blocks (lib/planStatus — the Free plan among them): every add-on page and every paid
+ *  feature that has a page of its own. The gate's list carries PLAN_ENDED_MARK beside these. */
+export function lapsedBlockedHrefs(): string[] {
+  return [...CUSTOM_PAGES.map((p) => p.href), ...PAID_FEATURES.flatMap((f) => (f.href ? [f.href] : []))];
+}
+
 /** Whether a path opens a page in the blocked list (the hrefs
  *  blockedCustomHrefs returns). The path is resolved to its page first —
  *  aliases and handheld URLs included, longest prefix wins — so an alias is
@@ -196,7 +254,7 @@ export function isCustomBlockedPath(
 ): boolean {
   if (!blocked?.length) return false;
   const page = pageForPath(pathname);
-  return Boolean(page && blocked.includes(page.href));
+  return Boolean(page?.href && blocked.includes(page.href));
 }
 
 /* WHAT THE CUSTOM PLAN TICKS on the compare matrix (subscription page).
@@ -211,6 +269,11 @@ const CUSTOM_BASE_ROWS = [
   "financials",
   "messages",
   "1 user",
+  // The paid features (2026-11-09, PAID_FEATURES): a Custom plan holds them all.
+  "ai operator",
+  "project stages & buying",
+  "crew field tools",
+  "smartbook",
 ];
 const CUSTOM_PAGE_ROWS: Record<string, string[]> = {
   "smart-proposal": ["smart proposal generation"],

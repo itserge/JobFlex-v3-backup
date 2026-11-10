@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { requestView } from "@/lib/smartbook/engine";
 import { AnswerRequest } from "./answer-request";
 import "../../../book/book-public.css";
+import { publicLinkPaused } from "@/lib/publicLinks";
+import { LinkPaused } from "@/components/v3/upgrade-gate/link-paused";
 
 // SMARTBOOK · THE COMPANY'S ANSWER PAGE (2026-10-31) — /b/r/<token>, the button in the request email: a new lead
 // asked for a time of their own; Yes books it, No offers them other open times, or another day and time goes back
@@ -11,6 +13,7 @@ export const metadata: Metadata = { title: "Answer the request", description: "A
 
 export default async function AnswerPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
+  if (await publicLinkPaused("smartbook-request", token)) return <LinkPaused />;
   const view = await requestView(token);
   return (
     <main className="jf-book">

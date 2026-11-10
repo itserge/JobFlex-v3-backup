@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { pickView } from "@/lib/smartbook/engine";
 import { PickVisit } from "./pick-visit";
 import "../../book/book-public.css";
+import { publicLinkPaused } from "@/lib/publicLinks";
+import { LinkPaused } from "@/components/v3/upgrade-gate/link-paused";
 
 // SMARTBOOK · THE CUSTOMER'S PAGE (2026-10-31) — /b/<token>, the link in SmartBook's first text and every email: the
 // times on offer, every open time, "none of these — here's mine", the company's other time to say yes to, the visit
@@ -12,6 +14,7 @@ export const metadata: Metadata = { title: "Pick a time", description: "Choose a
 
 export default async function PickPage({ params, searchParams }: { params: Promise<{ token: string }>; searchParams: Promise<{ t?: string }> }) {
   const [{ token }, { t }] = await Promise.all([params, searchParams]);
+  if (await publicLinkPaused("smartbook-pick", token)) return <LinkPaused />;
   const view = await pickView(token);
   const at = t && /^\d{10,14}$/.test(t) ? new Date(Number(t)).toISOString() : null;
   return (

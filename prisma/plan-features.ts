@@ -5,7 +5,9 @@
 // Display only: what a plan opens is read off the gates (lib/customPageAccess, lib/editions), not this text.
 
 export const PLAN_FEATURES: Record<"starter" | "professional" | "enterprise", string[]> = {
-  starter: ["Proposal management", "Client management", "CRM", "Calendar", "Workers management", "Financials", "Messages", "1 user"],
+  // The last four (owner, 2026-11-09): the paid features every live plan and the trial open and Free closes
+  // (lib/customPlan PAID_FEATURES). Listed on Starter, so Professional and Advanced carry them through "Everything in".
+  starter: ["Proposal management", "Client management", "CRM", "Calendar", "Workers management", "Financials", "Messages", "1 user", "AI Operator", "Project stages & buying", "Crew field tools", "SmartBook"],
   professional: [
     "Everything in Starter",
     "Smart proposal generation",

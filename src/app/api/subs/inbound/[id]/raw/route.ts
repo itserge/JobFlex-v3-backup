@@ -1,6 +1,7 @@
 import { requireOrg } from "@/lib/orgContext";
 import { inboundRawFor } from "@/lib/subInbound/server";
 import { streamStored } from "@/lib/subDocs/server";
+import { pageLockedResponse } from "@/lib/customPageAccess";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +18,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   } catch {
     return text("Not found", 404);
   }
+  // Subcontractors are a paid feature (owner, 2026-11-09): closed on the Free plan.
+  const planLock = await pageLockedResponse(organizationId, "subcontractors");
+  if (planLock) return planLock;
   const raw = await inboundRawFor(organizationId, id);
   if (!raw) return text("Not found", 404);
   try {

@@ -18,6 +18,7 @@ import type { Metadata, Viewport } from "next";
 import { NoOrgError, UnauthorizedError, requireOrg } from "@/lib/orgContext";
 import { MobileAssistant } from "@/components/v3/assistant/mobile-assistant";
 import { assistantOpenFor } from "@/lib/assistant/open";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -49,5 +50,8 @@ export default async function MobileAssistantV1Page() {
   }
   // Platform admins only until the owner opens it (lib/assistant/open).
   if (!(await assistantOpenFor(userId))) redirect("/mobile-v2");
+  // On the Free plan the page is the plan's card (owner, 2026-11-09; lib/customPlan PAID_FEATURES "operator").
+  const planGate = await customPageGate("operator", { handheld: true });
+  if (planGate) return planGate;
   return <MobileAssistant />;
 }

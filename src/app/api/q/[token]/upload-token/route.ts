@@ -4,6 +4,7 @@ import { tokenDoor } from "@/lib/projectSubs/server";
 import { docFolder } from "@/lib/subDocs/server";
 import { DOC_TYPES, MAX_DOC_BYTES } from "@/lib/subDocs/shared";
 import { privateToken } from "@/lib/media/privateStore";
+import { publicLinkResponse } from "@/lib/publicLinks";
 
 export const runtime = "nodejs";
 
@@ -15,6 +16,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   const storeToken = privateToken();
   if (!storeToken) return NextResponse.json({ error: "File storage is not set up on this server." }, { status: 503 });
   const { token } = await ctx.params;
+  const paused = await publicLinkResponse("sub-quote", token);
+  if (paused) return paused;
   if (!/^[A-Za-z0-9_-]{10,80}$/.test(token)) return NextResponse.json({ error: "This link is not valid." }, { status: 403 });
   let body: HandleUploadBody;
   try {

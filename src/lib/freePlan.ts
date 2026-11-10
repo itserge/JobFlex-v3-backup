@@ -121,6 +121,8 @@ export function freePlanLosses(opts: { pages: readonly string[] | null; planProp
         : "Smart Proposal",
     });
   }
+  // The paid features (owner, 2026-11-09; lib/customPlan PAID_FEATURES): every live plan holds them, Free closes them.
+  out.push({ icon: "i-cal", text: "The AI Operator, project stages & buying, crew field tools and SmartBook" });
   const free = opts.freeProposals;
   if (free !== null && (opts.planProposals === null || opts.planProposals > free)) {
     out.push({ icon: "i-file", text: `More than ${free} proposal${free === 1 ? "" : "s"} a month` });

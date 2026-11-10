@@ -1,0 +1,6 @@
+/* "This link is paused" — self-scoped under .jf-linkpause (a portal page has no shell); tokens with fallbacks. */
+.jf-linkpause.jf-linkpause { min-height: 100svh; display: grid; place-items: center; padding: 24px 16px; margin: 0; background: var(--paper, #f6f4ef); color: var(--ink, #0a0a0a); font-family: var(--font, var(--font-sans, system-ui)); box-sizing: border-box; }
+.jf-linkpause .jf-linkpause-card { width: min(440px, 100%); padding: 28px 24px; margin: 0; border: 2px solid var(--ink, #0a0a0a); border-radius: var(--radius, 2px); background: #fff; text-align: center; box-sizing: border-box; }
+.jf-linkpause .jf-linkpause-ic { width: 36px; height: 36px; margin: 0 auto 14px; display: block; fill: var(--muted, #555); }
+.jf-linkpause .jf-linkpause-h { margin: 0 0 10px; font-size: 22px; font-weight: 900; letter-spacing: -0.02em; line-height: 1.2; }
+.jf-linkpause .jf-linkpause-p { margin: 0; font-size: 15px; line-height: 1.5; color: var(--muted, #555); }

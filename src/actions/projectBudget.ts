@@ -38,6 +38,7 @@ import { rateLimitShared } from "@/lib/rateLimit";
 import { parseAnswers } from "@/lib/projectKind";
 import { proposalTrade } from "@/lib/projectStages/shared";
 import { parseTradeTypes } from "@/lib/tradeTypes";
+import { withFeature } from "@/lib/customPageAccess";
 
 const money = z.number().finite().min(0).max(100_000_000);
 /** One of the six, or a kind of the project's own ("Tile", "Dumpster") — 2026-11-06. */
@@ -100,14 +101,14 @@ const coCostInput = z.object({ projectId: z.string().min(1), changeOrderId: z.st
 
 /** The budget read from the estimate, or a rule of thumb for the trade — nothing saved until the card's Save. */
 export async function suggestProjectBudget(projectId: string): Promise<BudgetSuggestion> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   return suggestBudget(organizationId, projectId);
 }
 
 /** A budget's words, a file, or up to four pictures (a photo, a scanned PDF's pages) — read into rows. FormData:
  *  projectId, from (what the card calls it), text, file (.xlsx / .docx / .csv / .txt), image × 4 (JPEG). */
 export async function readProjectBudget(form: FormData): Promise<BudgetRead> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   await projectInOrg(String(form.get("projectId") ?? ""), organizationId);
   const from = String(form.get("from") ?? "").trim().slice(0, 80) || "what you pasted";
   let text = String(form.get("text") ?? "").slice(0, 60_000);
@@ -147,7 +148,7 @@ export type BudgetStart = {
 
 /** Where a budget can start from: the preset the project points at, and the shop's other budgets. */
 export async function budgetStartPoints(projectId: string): Promise<BudgetStart> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const p = await db.project.findFirst({
     where: { id: projectId, organizationId },
     select: {
@@ -178,7 +179,7 @@ export async function budgetStartPoints(projectId: string): Promise<BudgetStart>
 
 /** An approved change order's cost into the budget, as its own line under the order's label. */
 export async function addChangeOrderCost(raw: unknown): Promise<{ budget: number }> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const data = coCostInput.parse(raw);
   const projectId = await projectInOrg(data.projectId, organizationId);
   const co = await db.changeOrder.findFirst({
@@ -199,7 +200,7 @@ export async function addChangeOrderCost(raw: unknown): Promise<{ budget: number
 
 /** A change order's cost line taken back out of the budget. */
 export async function removeBudgetLine(raw: unknown): Promise<void> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const data = z.object({ projectId: z.string().min(1), lineId: z.string().min(1) }).parse(raw);
   const projectId = await projectInOrg(data.projectId, organizationId);
   const line = await db.projectBudgetLine.findFirst({ where: { id: data.lineId, projectId, NOT: { label: null } }, select: { id: true, amount: true } });

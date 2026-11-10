@@ -9,6 +9,7 @@ import { z } from "zod";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { busyWords, crewBusy, layoutStages, planShift, shiftRest, type BusyDay } from "@/lib/projectTimeline/server";
 import type { ShiftPlan } from "@/lib/projectTimeline/shared";
+import { withFeature } from "@/lib/customPageAccess";
 
 const DAY = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -22,12 +23,12 @@ function touched(projectId: string) {
 
 /** What a shift would move — the sheet shows it before the person says yes. */
 export async function previewShift(projectId: string, stageId: string, days: number): Promise<ShiftPlan | { error: string }> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   return planShift(organizationId, projectId, stageId, Math.round(days));
 }
 
 export async function shiftTheRest(projectId: string, stageId: string, days: number): Promise<{ words: string[] }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const r = await shiftRest(organizationId, projectId, stageId, Math.round(days), user.id);
   touched(projectId);
   return { words: r.words };
@@ -36,7 +37,7 @@ export async function shiftTheRest(projectId: string, stageId: string, days: num
 const layoutInput = z.object({ from: DAY, workDays: z.number().int().min(1).max(400).nullable().optional(), perWeight: z.number().min(0.5).max(30).nullable().optional() });
 
 export async function layOutStages(projectId: string, raw: unknown): Promise<{ dated: number }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const data = layoutInput.parse(raw);
   const r = await layoutStages(organizationId, projectId, data.from, { workDays: data.workDays ?? null, perWeight: data.perWeight ?? null }, user.id);
   touched(projectId);
@@ -51,7 +52,7 @@ const busyInput = z.object({
 
 /** Who of these workers is already somewhere else on these days (the sheet asks as the dates and crew change). */
 export async function crewAlreadyBooked(raw: unknown): Promise<{ rows: BusyDay[]; words: string[] }> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const data = busyInput.parse(raw);
   const rows = await crewBusy(
     organizationId,

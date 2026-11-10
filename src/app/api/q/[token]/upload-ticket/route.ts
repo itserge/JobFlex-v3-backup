@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { tokenDoor } from "@/lib/projectSubs/server";
 import { uploadPlan } from "@/lib/subDocs/server";
 import { rateLimitShared, ipFromRequest } from "@/lib/rateLimit";
+import { publicLinkResponse } from "@/lib/publicLinks";
 
 export const runtime = "nodejs";
 
@@ -11,6 +12,8 @@ export const runtime = "nodejs";
 // development. Twenty asks an hour per address.
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
+  const paused = await publicLinkResponse("sub-quote", token);
+  if (paused) return paused;
   if (!/^[A-Za-z0-9_-]{10,80}$/.test(token)) return NextResponse.json({ error: "This link is not valid." }, { status: 403 });
   const rl = await rateLimitShared(`sub-upload:${ipFromRequest(req)}`, 20, 60 * 60_000);
   if (!rl.ok) return NextResponse.json({ error: "Too many uploads at once — try again in a few minutes." }, { status: 429 });

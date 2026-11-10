@@ -55,6 +55,7 @@ import {
   type JdWorkerOption,
   type JobDetailRecord,
 } from "./job-detail-data";
+import { isPageLocked } from "@/lib/customPageAccess";
 
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -551,7 +552,7 @@ export async function loadJobDetail(
     door: { kind: "session" },
     chrome: "dashboard",
     portal: null,
-    field: await fieldOf(organizationId, job.id, { workerId: null, office: !isLimitedRole(role) }),
+    field: (await isPageLocked(organizationId, "crew-field")) ? null : await fieldOf(organizationId, job.id, { workerId: null, office: !isLimitedRole(role) }),
     callFirst: await callFirstOf(organizationId, job.proposalId),
     // What this repair is, and this job's come-backs (2026-11-09) — the office's; a sales seat reads no money.
     ...(isOwnerOrManager(role) ? await repairFactsFor(organizationId, job.id) : {}),
@@ -706,7 +707,7 @@ async function loadWorkerScoped(
     door: { kind: "session" },
     chrome: "dashboard",
     portal: null,
-    field: await fieldOf(organizationId, job.id, { workerId: wp.id, office: false }),
+    field: (await isPageLocked(organizationId, "crew-field", { as: null })) ? null : await fieldOf(organizationId, job.id, { workerId: wp.id, office: false }),
   };
 }
 
