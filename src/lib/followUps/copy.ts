@@ -33,9 +33,11 @@ export function channelLabel(c: FollowUpChannel): string {
   return c === "TEXT" ? "Text" : "Email";
 }
 
-/** Shown when Twilio is not configured — same sentence the client message
- *  dialog uses, so the two surfaces explain the gap identically. */
-export const TEXT_NEEDS_TWILIO = "Texting needs a Twilio number — set one up on the Phone page.";
+/** Shown when texting is not switched on (no Twilio settings on the platform) — same sentence the client message
+ *  dialog uses, so the two surfaces explain the gap identically. It names the Texting page (/dashboard/texting),
+ *  which says where texting stands and is where a company gets its number; it used to say "the Phone page", a
+ *  name no menu carries (2026-11-10). */
+export const TEXT_NEEDS_TWILIO = "Texting is not switched on yet — see the Texting page.";
 
 /** A rule's longest delay — a year, in minutes. actions/followUps refuses
  *  more, and every editor checks it before sending: an unbounded delay
