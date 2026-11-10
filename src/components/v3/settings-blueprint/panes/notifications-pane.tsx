@@ -29,8 +29,7 @@ import {
   EMAIL_COLUMN_INDEX,
   EMAIL_UNAVAILABLE_TAG,
   EMAIL_UNAVAILABLE_TITLE,
-  INAPP_UNAVAILABLE_TAG,
-  INAPP_UNAVAILABLE_TITLE,
+  inAppOff,
   NOTIFICATIONS_CARD,
   NOTIFICATION_CHANNELS,
   NOTIFICATION_COLUMN_LABEL,
@@ -175,8 +174,8 @@ export function NotificationsPane({ data }: PaneProps) {
                           ariaLabel={`${channel} — ${event.name}`}
                         />
                       ) : (
-                        <span className="ncell-off" title={ci === 0 ? INAPP_UNAVAILABLE_TITLE : EMAIL_UNAVAILABLE_TITLE}>
-                          {ci === 0 ? INAPP_UNAVAILABLE_TAG : EMAIL_UNAVAILABLE_TAG}
+                        <span className="ncell-off" title={ci === 0 ? inAppOff(PREF_EVENTS[ri].key).title : EMAIL_UNAVAILABLE_TITLE}>
+                          {ci === 0 ? inAppOff(PREF_EVENTS[ri].key).tag : EMAIL_UNAVAILABLE_TAG}
                         </span>
                       )}
                     </td>

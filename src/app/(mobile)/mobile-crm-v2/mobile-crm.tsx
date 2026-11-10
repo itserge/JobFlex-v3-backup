@@ -76,6 +76,7 @@ import { getCrmSnapshot } from "./crm-snapshot";
 import { getCrmBrief } from "@/actions/crmBrief";
 import { moneyShort, type CrmBrief } from "@/lib/crm/brief";
 import { OfficePanel, TodayPanel } from "@/components/v3/crm-blueprint/crm-brief";
+import { CompanyPulse } from "@/components/v3/crm-blueprint/company-pulse";
 import { AgentDesk } from "@/components/v3/crm-blueprint/crm-agent";
 import { WinBackPanel } from "@/components/v3/crm-blueprint/win-back";
 import { FOLLOW_UP_MODES, FOLLOW_UP_WORDS, modeLabel, type FollowUpMode, type FollowUpWords } from "@/lib/followUps/agent";
@@ -1126,6 +1127,18 @@ export function MobileCrm() {
   /* The Office and Win back tabs are the office's alone; a sales rep or an
      estimator never sees them (lib/crm/brief decides who is who). */
   const tabs = useMemo(() => TABS.filter((t) => (t.key !== "office" && t.key !== "back") || !!brief?.office), [brief?.office]);
+  /* A link may open the page on the Office tab (2026-11-10: the Monday report's button → ?tab=office) — once, when
+     the read says this person has one. */
+  const linkTab = useRef<string | null>(null);
+  useEffect(() => {
+    linkTab.current = new URLSearchParams(window.location.search).get("tab");
+  }, []);
+  const hasOffice = !!brief?.office;
+  useEffect(() => {
+    if (!hasOffice || linkTab.current !== "office") return;
+    linkTab.current = null;
+    setTab("office");
+  }, [hasOffice]);
   const tabIndex = Math.max(0, tabs.findIndex((t) => t.key === tab));
   const anyOverlay = Boolean(sheetView) || ruleOpen;
   /* Panels wait for the read. Rendering them first would print "Book is
@@ -1256,7 +1269,7 @@ export function MobileCrm() {
           )}
 
           {/* ============ TAB: OFFICE — how the company is doing ============ */}
-          {ready && tab === "office" && brief?.office && <OfficePanel office={brief.office} company={org.name} />}
+          {ready && tab === "office" && brief?.office && <OfficePanel office={brief.office} company={org.name} extra={<CompanyPulse />} />}
 
           {/* WIN BACK — bring past clients back (Smart CRM part 6); it reads its own numbers. */}
           {ready && tab === "back" && brief?.office && <WinBackPanel />}

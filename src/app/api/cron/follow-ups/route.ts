@@ -39,5 +39,13 @@ export async function GET(req: Request) {
       console.warn("[follow-ups] campaign drain failed:", err instanceof Error ? err.message : err);
       return null;
     });
-  return NextResponse.json({ ok: true, ...res, leadFollowUps: leads, orgTimezones: timezones, promises, campaigns });
+  // The Monday report (2026-11-10, lib/pulse): a company whose clock says Monday morning gets last week's leads,
+  // reply speed, win rate and best sources by mail — once, to its owners and admins who left it on.
+  const weekly = await import("@/lib/pulse/server")
+    .then((m) => m.runWeeklyReports())
+    .catch((err) => {
+      console.warn("[follow-ups] weekly report failed:", err instanceof Error ? err.message : err);
+      return null;
+    });
+  return NextResponse.json({ ok: true, ...res, leadFollowUps: leads, orgTimezones: timezones, promises, campaigns, weeklyReports: weekly });
 }

@@ -8,7 +8,8 @@ import {
   buildReviewRequest,
   buildReviewReminder,
 } from "./build/client";
-import { buildOwnerAccepted, buildNewLead, buildLeadOffer, buildSupportTicket } from "./build/operator";
+import { buildOwnerAccepted, buildNewLead, buildLeadOffer, buildSupportTicket, buildWeeklyReport } from "./build/operator";
+import { buildPulse, pulseWindow } from "@/lib/pulse/shared";
 import { buildTrialConfirm, buildTrialEndingSoon, buildTrialReminder } from "./build/trial";
 import { buildOtpCode, buildOtpNoAccount } from "./build/otp";
 import { buildPasswordSet } from "./build/accountPassword";
@@ -35,6 +36,44 @@ const ORG = { kind: "org" as const, name: "Cedar & Oak Builders", logoUrl: null 
 const FOOT = { name: "Cedar & Oak Builders", contact: "(503) 555-0142", ref: "Ref A-2481" };
 
 const BRAND = { name: "Cedar & Oak Builders", logoUrl: null, phone: "(503) 555-0142" };
+
+/** A made-up last week for the Monday report's preview (lib/pulse): nine leads, three salespeople, three sources. */
+function weeklyPulseFixture() {
+  const tz = "America/Los_Angeles";
+  const now = new Date("2026-11-09T16:00:00Z");
+  const w = pulseWindow("last-week", now, tz);
+  const at = (h: number) => new Date(w.from.getTime() + h * 3_600_000);
+  const before = (h: number) => new Date(w.prevFrom.getTime() + h * 3_600_000);
+  const lead = (id: number, h: number, replyMin: number | null, ownerId: string | null, prev = false) => {
+    const createdAt = prev ? before(h) : at(h);
+    return { id: `l${id}`, name: ["Priya Anand", "Tom Reyes", "Dana Whitlock", "Sam Okafor"][id % 4], createdAt, claimedAt: null, contactedAt: replyMin === null ? null : new Date(createdAt.getTime() + replyMin * 60_000), status: replyMin === null ? "NEW" : "CONTACTED", source: "WEBSITE", ownerId };
+  };
+  const prop = (id: number, ownerId: string, total: number, o: { sent?: Date; won?: Date; lost?: Date }) => ({ id: `p${id}`, ownerId, status: o.won ? "ACCEPTED" : o.lost ? "DECLINED" : "SENT", total, sentAt: o.sent ?? before(2), acceptedAt: o.won ?? null, declinedAt: o.lost ?? null, canceledAt: null, validUntil: null, createdAt: before(1) });
+  return buildPulse({
+    window: w,
+    now,
+    leads: [lead(1, 9, 4, "u1"), lead(2, 20, 11, "u1"), lead(3, 33, 18, "u2"), lead(4, 50, 35, "u2"), lead(5, 58, 9, "u1"), lead(6, 80, 140, "u3"), lead(7, 100, 22, "u2"), lead(8, 130, null, "u3"), lead(9, 150, null, null), lead(10, 10, 60, "u1", true), lead(11, 40, 95, "u2", true), lead(12, 70, 30, "u1", true), lead(13, 90, 45, "u3", true), lead(14, 120, 200, "u2", true), lead(15, 140, 20, "u1", true)],
+    proposals: [
+      prop(1, "u1", 18400, { sent: at(12), won: at(60) }),
+      prop(2, "u1", 9200, { sent: at(30), won: at(110) }),
+      prop(3, "u1", 6100, { sent: at(40), lost: at(120) }),
+      prop(4, "u2", 13600, { sent: at(52), won: at(140) }),
+      prop(5, "u2", 7700, { lost: at(66) }),
+      prop(6, "u2", 4300, { lost: at(90) }),
+      prop(7, "u3", 5200, { sent: at(101) }),
+      prop(8, "u1", 8800, { won: before(80) }),
+      prop(9, "u2", 3900, { lost: before(100) }),
+      prop(10, "u3", 2500, { sent: before(30), lost: before(130) }),
+    ],
+    payments: [{ amount: 12850, paidAt: at(30) }, { amount: 9200, paidAt: at(96) }, { amount: 6400.5, paidAt: at(150) }, { amount: 21000, paidAt: before(50) }],
+    members: [{ id: "u1", name: "Mike Ortiz", role: "SALES" }, { id: "u2", name: "Sara Lund", role: "SALES" }, { id: "u3", name: "Ben Walsh", role: "ESTIMATOR" }],
+    sources: [
+      { key: "GOOGLE", label: "Google", leads: 4, won: 2, wonValue: 27600, collected: 12850, medianReplyMin: 9, monthlySpend: 900, costPerJob: 105 },
+      { key: "REFERRAL", label: "Referral", leads: 3, won: 1, wonValue: 13600, collected: 9200, medianReplyMin: 18, monthlySpend: null, costPerJob: null },
+      { key: "FACEBOOK", label: "Facebook", leads: 2, won: 0, wonValue: 0, collected: 0, medianReplyMin: 140, monthlySpend: 400, costPerJob: null },
+    ],
+  });
+}
 
 /** The welcome's previews: [name, the landing's trade]. Painting stands for
  *  the eighteen trades Smart Proposal serves; "general" has no trade at all. */
@@ -402,6 +441,12 @@ export const FIXTURES: { id: string; label: string; note?: string; doc: EmailDoc
       ],
       href: "https://example.com/dashboard/leads/demo",
     }),
+  },
+  {
+    id: "b-weekly-report",
+    label: "12b · buildWeeklyReport() — the Monday report",
+    note: "Mondays, to owners and admins who left it on: last week against the week before. Every number is the company's own; the sentences under the first come from rules, not a model. A week with nothing in it sends nothing.",
+    doc: buildWeeklyReport({ org: BRAND, pulse: weeklyPulseFixture(), href: "https://example.com/dashboard/crm?tab=office" }),
   },
   {
     id: "b-lead-offer",
