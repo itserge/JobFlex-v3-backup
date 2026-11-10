@@ -40,7 +40,7 @@ export function shortText(s: string, max = 64): string {
   return `${(sp > max * 0.6 ? cut.slice(0, sp) : cut).replace(/[\s,;:·-]+$/, "")}…`;
 }
 
-type Ranked = { p: BriefProject; shown: OvItem[]; red: boolean; hidden: number };
+export type Ranked = { p: BriefProject; shown: OvItem[]; red: boolean; hidden: number };
 
 /** Worst first: a red row before amber, then the most urgent row's rank, then the days behind. */
 function worstFirst(a: Ranked, b: Ranked): number {
@@ -90,9 +90,9 @@ export function picksOf(ranked: readonly Ranked[]): BriefPick[] {
   return out;
 }
 
-/** The paragraph, or null when the company has no open project. */
-export function projectsBrief(list: readonly BriefProject[]): ProjectsBrief | null {
-  if (!list.length) return null;
+/** Each project's rows after "Not now", the ones needing the person worst first, and the quiet ones counted. Shared by
+ *  the briefing and the Operator's answers (lib/projectOverview/operator). */
+export function rankProjects(list: readonly BriefProject[]): { needing: Ranked[]; quiet: Ranked[]; hiddenOnly: number; onTrack: number } {
   const ranked: Ranked[] = list.map((p) => {
     const v = visibleItems(p.overview.doNow, p.snoozes);
     return { p, shown: v.shown, red: v.shown.some((i) => i.tone === "red"), hidden: v.hidden };
@@ -100,7 +100,20 @@ export function projectsBrief(list: readonly BriefProject[]): ProjectsBrief | nu
   const needing = ranked.filter((x) => x.shown.length > 0).sort(worstFirst);
   const quiet = ranked.filter((x) => x.shown.length === 0);
   const hiddenOnly = quiet.filter((x) => x.hidden > 0).length;
-  const onTrack = quiet.length - hiddenOnly;
+  return { needing, quiet, hiddenOnly, onTrack: quiet.length - hiddenOnly };
+}
+
+/** One row as a numbered reply: its Operator step, or — a row the Operator has no tool for — a question about it. */
+export function pickFor(n: number, p: { id: string; name: string }, i: OvItem): BriefPick {
+  const op = i.op;
+  if (op) return { n, label: op.label, projectId: p.id, projectName: p.name, tool: "tool" in op ? op.tool : null, args: "tool" in op ? op.args : null, ask: "ask" in op ? op.ask : null };
+  return { n, label: shortText(i.text, 48), projectId: p.id, projectName: p.name, tool: null, args: null, ask: `What can I do about this: ${i.text}` };
+}
+
+/** The paragraph, or null when the company has no open project. */
+export function projectsBrief(list: readonly BriefProject[]): ProjectsBrief | null {
+  if (!list.length) return null;
+  const { needing, hiddenOnly, onTrack } = rankProjects(list);
 
   if (!needing.length) {
     const tail = hiddenOnly ? `, ${hiddenOnly} hidden for now` : "";

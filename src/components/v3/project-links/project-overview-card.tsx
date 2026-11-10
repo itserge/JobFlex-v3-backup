@@ -149,6 +149,11 @@ export function ProjectOverviewCard({
             <span className={s.statusLine} data-ov-line>{overview.line}</span>
           </div>
           <div className={s.statusSub}>{overview.sub}</div>
+          {overview.summary ? (
+            <p className={s.summary} data-ov-summary={overview.summaryBy ?? "rules"}>
+              {overview.summary}
+            </p>
+          ) : null}
         </div>
 
         {/* ASK THE OPERATOR, about this project */}

@@ -410,7 +410,7 @@ export async function handleTurn(input: TurnInput): Promise<TurnResult> {
     if (picks.length) {
       const n = quick.n;
       const pick = picks.find((p) => p.n === n);
-      if (!pick) return say(`This morning's list goes to ${picks.length}. Reply ${numbersWords(picks.length)}, or say what you need.`);
+      if (!pick) return say(`That list goes to ${picks.length}. Reply ${numbersWords(picks.length)}, or say what you need.`);
       if (pick.tool) {
         const r = await planPick(actor, pick, now);
         if ("say" in r) return say(r.say);
@@ -440,18 +440,17 @@ export async function handleTurn(input: TurnInput): Promise<TurnResult> {
     // The tools this turn: the registry's live ones — not retired, not switched off, their services configured.
     modelTools(),
     isOpenAIEnabled() ? resolveOpenAIModel().catch(() => null) : Promise.resolve(null),
+    // The model speaks now: a digit after this may answer its own "1 or 2?", so the kept numbers go — before any tool
+    // runs, so a list a tool keeps this turn (project_overview, projects_overview) is the one that stays.
+    forgetPicks(actor.organizationId, actor.userId).catch(() => undefined),
   ]);
   if (!limit.allowed) {
     return say(`You've used this month's ${limit.limit ?? ""} AI Operator requests. A bigger plan raises the number (Settings → Billing).`.replace("  ", " "));
   }
   if (!isOpenAIEnabled()) return say("The AI Operator isn't switched on here yet (no AI key on this server).");
   // A digit answering the model's "1 or 2?" is part of the last request, not a new one.
-  // A briefing's numbered question is a request of its own; and once the model speaks, this morning's numbers are forgotten.
-  marked = Promise.all([
-    db.assistantMessage.update({ where: { id: inbound.id }, data: { countsAsCommand: quick?.kind !== "digit" || picked } }),
-    noteRequestOrg(actor.organizationId).catch(() => undefined),
-    forgetPicks(actor.organizationId, actor.userId).catch(() => undefined),
-  ]);
+  // A briefing's numbered question is a request of its own.
+  marked = Promise.all([db.assistantMessage.update({ where: { id: inbound.id }, data: { countsAsCommand: quick?.kind !== "digit" || picked } }), noteRequestOrg(actor.organizationId).catch(() => undefined)]);
   const records = worksetPrompt(workset);
   const messages: ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt(actor, now, awaiting?.readback ?? null, built, live, records, input.spoken === true) },

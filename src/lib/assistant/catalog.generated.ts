@@ -722,6 +722,28 @@ export const CATALOG: Catalog = {
     "scheduled": false,
     "version": 2
   },
+  "project_overview": {
+    "label": "Project overview",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "projects_overview": {
+    "label": "Projects overview",
+    "group": "projects",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
   "selections": {
     "label": "Selections",
     "group": "projects",
