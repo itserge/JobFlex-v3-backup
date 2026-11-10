@@ -1,5 +1,5 @@
 // Admin · Trial requests (owner, 2026-10-20) — the owners who asked for more
-// trial days from "Before you go" (lib/trialExtension). A table, newest first;
+// trial days from the cancel questions (lib/trialExtension, lib/cancelTree). A table, newest first;
 // a row opens the request with what the company did during its trial and the
 // two decisions, Approve 7/14 days and Deny with a reason
 // (actions/trialExtension). ?request=<id> opens one — the admins' email links there.
@@ -10,6 +10,17 @@ import { db } from "@/lib/db";
 import { getPlanNamesBySlug } from "@/lib/planCatalogServer";
 import { planDisplayName } from "@/lib/planCatalog";
 import { AdminTrialRequestsContent, type TrialRequestDTO } from "@/components/v3/admin-trial-requests/trial-requests-content";
+import { BLOCKERS, TRY_TOOLS, parseA1 } from "@/lib/cancelTree";
+
+/** Asked from the cancel questions (2026-11-09): screen B1 in words. */
+function a1View(json: string | null): { inTheWay: string; tryFirst: string } | null {
+  const a = parseA1(json);
+  if (!a) return null;
+  return {
+    inTheWay: a.blockers.map((k) => (k === "other" && a.blockerOther ? `Other: “${a.blockerOther}”` : (BLOCKERS.find((b) => b.key === k)?.label ?? k))).join(" · "),
+    tryFirst: a.tryFirst.map((k) => TRY_TOOLS.find((t) => t.key === k)?.short ?? k).join(" · "),
+  };
+}
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +74,7 @@ export default async function AdminTrialRequestsPage({ searchParams }: { searchP
           currentPeriodEnd: sub?.currentPeriodEnd?.toISOString() ?? null,
           requestedDays: r.requestedDays,
           note: r.note,
+          answers: a1View(r.answersJson),
           status: r.status,
           grantedDays: r.grantedDays,
           extendedUntil: r.extendedUntil?.toISOString() ?? null,

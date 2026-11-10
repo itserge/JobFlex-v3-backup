@@ -1,7 +1,9 @@
 import "server-only";
-// MORE TRIAL DAYS — the reads and writes behind "Request a trial extension"
-// (Settings → Billing → Manage subscription → Cancel subscription → "Before
-// you go") and /admin/trial-requests. The rule and the words: lib/trialExtension.
+// MORE TRIAL DAYS — the reads and writes behind "Request extension" (the
+// Subscription page → Cancel subscription → "I didn't have enough time" →
+// screen C1, lib/cancelTree, since 2026-11-09) and /admin/trial-requests. The
+// rule and the words: lib/trialExtension. A request asked from the questions
+// keeps their B1 answer (answersJson) for the admin's card.
 //
 //   · ask   — an owner whose plan is on its trial, or whose trial ended at most
 //             14 days ago; one PENDING request per organization. The trial's
@@ -36,6 +38,14 @@ import { sessionsOf } from "@/lib/trialWatch";
 import { screenWords } from "@/lib/trialBoardRead";
 import { extendedTrialEnd, extensionBase, trialExtensionEligible, type TrialExtensionOffer } from "@/lib/trialExtension";
 import { subscriptionPeriodEndDate } from "@/lib/stripeCompat";
+import { BLOCKERS, TRY_TOOLS, type A1Answers } from "@/lib/cancelTree";
+
+/** B1 in words, for the admins' email when the owner wrote no note. */
+function a1Words(a: A1Answers): string {
+  const got = a.blockers.map((k) => (k === "other" && a.blockerOther ? a.blockerOther : (BLOCKERS.find((b) => b.key === k)?.label ?? k)));
+  const wants = a.tryFirst.map((k) => TRY_TOOLS.find((t) => t.key === k)?.short ?? k);
+  return [`In the way: ${got.join("; ")}.`, wants.length ? `Wants to try: ${wants.join(", ")}.` : null].filter(Boolean).join(" ");
+}
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ENDED_STRIPE = new Set(["canceled", "incomplete_expired"]);
@@ -133,8 +143,9 @@ export type AskResult =
   | { ok: true; pending: true; days: number; at: string }
   | { ok: false; error: string };
 
-export async function askForTrialExtension(input: { organizationId: string; userId: string; days: number; note: string | null }): Promise<AskResult> {
+export async function askForTrialExtension(input: { organizationId: string; userId: string; days: number; note: string | null; answers?: A1Answers | null }): Promise<AskResult> {
   const { organizationId, userId, days, note } = input;
+  const answers = input.answers ?? null;
   const sub = await db.subscription.findUnique({ where: { organizationId } });
   if (!sub || sub.provider === "MANUAL" || !trialExtensionEligible(sub)) {
     return { ok: false, error: "A trial extension can be asked for during the trial, or within 14 days after it ends." };
@@ -146,7 +157,7 @@ export async function askForTrialExtension(input: { organizationId: string; user
   let row;
   try {
     row = await db.trialExtensionRequest.create({
-      data: { organizationId, userId, requestedDays: days, note, plan: sub.plan, trialStartedAt: dates.start, trialEndsAt: dates.end },
+      data: { organizationId, userId, requestedDays: days, note, plan: sub.plan, trialStartedAt: dates.start, trialEndsAt: dates.end, answersJson: answers ? JSON.stringify(answers) : null },
     });
   } catch (err) {
     logServerError("trial-extension.ask", err, { kind: "action", organizationId });
@@ -160,7 +171,7 @@ export async function askForTrialExtension(input: { organizationId: string; user
     if (to.length) {
       await mail(
         to,
-        buildTrialExtensionAsked({ orgName: owner.orgName, ownerEmail: owner.loginEmail ?? owner.email ?? "—", planName, trialEndsAt: dates.end, ended, days, note, href: `${root}/admin/trial-requests?request=${row.id}` }),
+        buildTrialExtensionAsked({ orgName: owner.orgName, ownerEmail: owner.loginEmail ?? owner.email ?? "—", planName, trialEndsAt: dates.end, ended, days, note: note ?? (answers ? a1Words(answers) : null), href: `${root}/admin/trial-requests?request=${row.id}` }),
       );
     } else {
       console.warn(`[trial-extension] request ${row.id} kept with nobody to email — set SUPPORT_NOTIFY_EMAIL or flag a platform admin.`);
@@ -168,7 +179,12 @@ export async function askForTrialExtension(input: { organizationId: string; user
   } catch (err) {
     console.warn("[trial-extension] the admins' email failed:", err);
   }
-  trackActivation("trial_extension_requested", organizationId, { requested_days: days, has_note: Boolean(note), trial_state: ended ? "ended" : "trialing" });
+  trackActivation("trial_extension_requested", organizationId, {
+    requested_days: days,
+    has_note: Boolean(note),
+    trial_state: ended ? "ended" : "trialing",
+    ...(answers ? { from: "cancel_flow", blockers: answers.blockers.join(","), try_first: answers.tryFirst.join(",") } : {}),
+  });
   refresh();
   return { ok: true, pending: false, id: row.id };
 }

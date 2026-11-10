@@ -4,6 +4,7 @@ import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { docFolder } from "@/lib/subDocs/server";
 import { DOC_TYPES, MAX_DOC_BYTES } from "@/lib/subDocs/shared";
 import { privateToken } from "@/lib/media/privateStore";
+import { pageLockedResponse } from "@/lib/customPageAccess";
 
 export const runtime = "nodejs";
 
@@ -19,6 +20,9 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
+  // Subcontractors are a paid feature (owner, 2026-11-09): closed on the Free plan.
+  const planLock = await pageLockedResponse(organizationId, "subcontractors");
+  if (planLock) return planLock;
   let body: HandleUploadBody;
   try {
     body = (await req.json()) as HandleUploadBody;

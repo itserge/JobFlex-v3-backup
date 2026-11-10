@@ -2600,7 +2600,7 @@ export function RegisterContent({
             {/* One disclosure below the promo field, matching the saved offer. */}
             <p className="pw-terms" id="pwTerms">
               {requiresCard
-                ? `Your ${trialDays}-day free trial renews automatically at the selected plan price and billing interval shown above, unless you cancel before it ends. No charge today. Cancel from Settings → Billing.`
+                ? `Your ${trialDays}-day free trial renews automatically at the selected plan price and billing interval shown above, unless you cancel before it ends. No charge today. Cancel from the Subscription page.`
                 : `No card needed: the trial is ${trialDays} days, and you add a card only if you keep the plan.`}
               {" "}By starting a trial, you agree to our{" "}
               <Link href="/terms" target="_blank" rel="noopener noreferrer"><u>Terms of service</u></Link>

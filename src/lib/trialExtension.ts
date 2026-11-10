@@ -1,7 +1,9 @@
-// MORE TRIAL DAYS, ASKED FROM "BEFORE YOU GO" (owner, 2026-10-20). Pure —
-// the rule and the words; lib/trialExtensionServer reads and writes.
+// MORE TRIAL DAYS, ASKED FROM THE CANCEL QUESTIONS (owner, 2026-10-20; screen
+// C1 of lib/cancelTree since 2026-11-09). Pure — the rule and the words;
+// lib/trialExtensionServer reads and writes.
 //
-// WHO SEES "Request a trial extension": an owner on the cancel path whose
+// WHO SEES "Want 7 or 14 more days?": an owner on the cancel path ("I didn't
+// have enough time") whose
 // plan is on its trial now, or whose trial ended at most 14 days ago — read
 // off the Subscription mirror (status TRIALING, or trialEndsAt within the last
 // 14 days; the mirror keeps trialEndsAt once the trial is over). Nobody else.

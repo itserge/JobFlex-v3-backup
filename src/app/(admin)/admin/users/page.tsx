@@ -13,6 +13,7 @@ import { requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { getAdminUsersData } from "@/actions/adminUsers";
 import { parseReasons, reasonLabel } from "@/lib/cancelFeedback";
+import { answersBrief, parseCancelAnswers } from "@/lib/cancelTree";
 import { AdminUsersContent, type AdminUserDTO } from "@/components/v3/admin-users/admin-users-content";
 
 export const dynamic = "force-dynamic";
@@ -33,8 +34,8 @@ export default async function AdminUsersPage() {
     // The latest cancellation's reasons per organization (2026-10-20); none
     // while the table is not in this database yet.
     db.cancellationFeedback
-      .findMany({ orderBy: { createdAt: "desc" }, distinct: ["organizationId"], select: { organizationId: true, reasons: true, otherText: true, createdAt: true } })
-      .catch(() => [] as { organizationId: string; reasons: string; otherText: string | null; createdAt: Date }[]),
+      .findMany({ orderBy: { createdAt: "desc" }, distinct: ["organizationId"], select: { organizationId: true, reasons: true, otherText: true, path: true, answersJson: true, createdAt: true } })
+      .catch(() => [] as { organizationId: string; reasons: string; otherText: string | null; path: string | null; answersJson: string | null; createdAt: Date }[]),
   ]);
   const internal = new Set(internalOrgs.map((o) => o.id));
   const lastCancel = new Map(lastCancels.map((c) => [c.organizationId, c]));
@@ -48,7 +49,10 @@ export default async function AdminUsersPage() {
     orgInternal: u.orgId ? internal.has(u.orgId) : false,
     lastCancel: (() => {
       const c = u.orgId ? lastCancel.get(u.orgId) : undefined;
-      return c ? { at: c.createdAt.toISOString(), reasons: parseReasons(c.reasons).map(reasonLabel), otherText: c.otherText } : null;
+      if (!c) return null;
+      // The question tree (2026-11-09, lib/cancelTree): the path and two lines of its answer.
+      const tree = parseCancelAnswers(c.answersJson);
+      return { at: c.createdAt.toISOString(), reasons: parseReasons(c.reasons).map(reasonLabel), otherText: c.otherText, path: tree?.path ?? null, brief: tree ? answersBrief(tree) : null };
     })(),
   }));
 

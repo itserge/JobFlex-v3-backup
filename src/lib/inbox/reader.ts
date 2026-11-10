@@ -13,6 +13,7 @@ import { takeTrialCap } from "@/lib/trialMeter";
 import { foldClientFacts, type RawFact } from "@/lib/clientMemory";
 import { clip } from "@/lib/clientTimeline/shared";
 import { parseMessageRead, type MessageRead } from "./shared";
+import { isPageLocked } from "@/lib/customPageAccess";
 import { guessKind } from "@/lib/promises/shared";
 
 export interface ReadInput {
@@ -30,6 +31,8 @@ export interface ReadInput {
  *  is already filed either way; the panel just shows nothing new. */
 export async function readInboundMessage(input: ReadInput): Promise<MessageRead | null> {
   if (!isOpenAIEnabled() || !input.body.trim()) return null;
+  // Smart CRM is a paid feature (owner, 2026-11-09): on the Free plan the message is filed, not read — no model call.
+  if (await isPageLocked(input.organizationId, "smart-crm")) return null;
   const trial = await takeTrialCap(input.organizationId, "aiCalls");
   if (!trial.ok) return null;
 

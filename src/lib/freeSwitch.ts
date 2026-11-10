@@ -1,6 +1,6 @@
 // THE MOVE TO FREE ON STRIPE — the booking, its undo and the owner's letter
 // (owner, 2026-09-20; lib/freePlan). Moved out of actions/billing on
-// 2026-11-01 so the owner's own cancel (Settings → Billing) and the platform
+// 2026-11-01 so the owner's own cancel (the Subscription page) and the platform
 // admin's (lib/adminCancel) book it the same way. Not a server action file:
 // nothing here is callable from a browser.
 
@@ -61,7 +61,7 @@ export async function rebookHeldSwitch(organizationId: string, subId: string, de
 }
 
 /** "Your plan switches to Free on <date>" — to the owner, after the booking,
- *  with the way back ("Keep <plan>") one tap away in Settings → Billing.
+ *  with the way back ("Keep <plan>") one tap away on the Subscription page.
  *  `byJobflex`: support cancelled it, not the owner; `endedNow`: it ended
  *  today (an admin's immediate cancel) and there is nothing left to keep. */
 export async function sendFreeSwitchEmail(
@@ -87,7 +87,7 @@ export async function sendFreeSwitchEmail(
   const base = (await appBaseUrl()).replace(/\/$/, "");
   const planName = await getPlanDisplayName(plan).catch(() => plan);
   const { subject, html } = renderEmail(
-    buildFreeSwitchBooked({ name: owner?.user.name ?? null, planName, switchAt: endsAt, href: `${base}/dashboard/settings?tab=billing`, ...opts }),
+    buildFreeSwitchBooked({ name: owner?.user.name ?? null, planName, switchAt: endsAt, href: `${base}/dashboard/subscription`, ...opts }),
   );
   await sendEmail({ to: email, subject, html });
 }

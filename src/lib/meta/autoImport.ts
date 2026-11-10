@@ -6,6 +6,7 @@ import { enforcePlanLimit } from "@/lib/limitsEngine";
 import { parseMetaSettings } from "@/lib/settings";
 import { getMetaConnection } from "./connections";
 import { consentKeysOf, MetaApiError, metaConfigured, metaFormLegalSchema, metaGraph, metaId, metaLeadFields, metaLeadSchema, tickedBoxes, type MetaLead } from "./graph";
+import { isPageLocked } from "@/lib/customPageAccess";
 
 // AUTOMATIC META LEADS (owner, 2026-10-30: "if a new lead comes to Meta it will automatically appear in JobFlex
 // leads, and you can turn the toggle on or off in the settings").
@@ -216,6 +217,9 @@ export async function sweepMetaAutoImport(budgetMs = 45_000) {
   for (const org of orgs) {
     if (Date.now() > until) break;
     if (!parseMetaSettings(org.metaSettingsJson).autoCreate) continue;
+    // The sweep (2026-10-30) files into Leads, which the Free plan closes — as importMetaLeads refuses by hand
+    // (requirePage "leads"), the cron leaves a company on Free alone (owner, 2026-11-09).
+    if (await isPageLocked(org.id, "leads", { as: null }).catch(() => true)) continue;
     workspaces++;
     try { imported += await importNewLeads(org.id); }
     catch (error) {

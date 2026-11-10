@@ -8,6 +8,7 @@ import { z } from "zod";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { applyAdvice, layoutBudget, setMoneySettings, setPhaseBudget } from "@/lib/projectMoneyPlan/server";
 import type { MoneySettings } from "@/lib/projectMoneyPlan/shared";
+import { withFeature } from "@/lib/customPageAccess";
 
 const ID = z.string().min(1).max(64);
 
@@ -18,14 +19,14 @@ function touched(projectId: string) {
 }
 
 export async function layoutProjectBudget(projectId: string, total: number | null): Promise<{ total: number; phases: Array<{ id: string; name: string; budget: number }> }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const r = await layoutBudget(organizationId, projectId, total != null ? z.number().min(0).max(100_000_000).parse(total) : null, user.id);
   touched(projectId);
   return r;
 }
 
 export async function setProjectPhaseBudget(projectId: string, phaseId: string, budget: number): Promise<void> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   await setPhaseBudget(organizationId, ID.parse(phaseId), z.number().min(0).max(100_000_000).parse(budget), user.id);
   touched(projectId);
 }
@@ -39,7 +40,7 @@ const moneyInput = z.object({
 });
 
 export async function setProjectMoney(projectId: string, raw: unknown): Promise<MoneySettings> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const r = await setMoneySettings(organizationId, projectId, moneyInput.parse(raw), user.id);
   touched(projectId);
   return r;
@@ -51,7 +52,7 @@ const adviceInput = z.object({
 });
 
 export async function applyProjectAdvice(projectId: string, raw: unknown): Promise<{ words: string }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const d = adviceInput.parse(raw);
   const words = await applyAdvice(organizationId, projectId, d.kind, d.ref, user.id);
   touched(projectId);

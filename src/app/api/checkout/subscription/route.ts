@@ -19,6 +19,7 @@ import { customLineItems, customMetadata } from "@/lib/customBilling";
 import { CUSTOM_PLAN_OFF_SALE, customPlanOffered } from "@/lib/customPlanFlag";
 import { deckAddonCheckoutItems, heldDeckAddonPrice } from "@/lib/deckAddonBilling";
 import { heldWebAddonPrices } from "@/lib/webAddonBilling";
+import { CARD_ONLY_CHECKOUT } from "@/lib/stripeCheckoutCard";
 
 // Real SaaS subscription checkout. A captured influencer promo (the org's
 // permanent signup stamp, falling back to the 30-day capture cookie) is
@@ -278,6 +279,8 @@ export async function POST(req: Request) {
   const keepWebPrices = replacesSubId ? await heldWebAddonPrices(stripe, replacesSubId, interval) : [];
   const baseParams = {
     mode: "subscription" as const,
+    // Cards only — the card form, not Link (lib/stripeCheckoutCard).
+    ...CARD_ONLY_CHECKOUT,
     line_items: [...lineItems, ...deck.lineItems, ...keepWebPrices.map((price) => ({ price, quantity: 1 }))],
     ...(deck.optionalItems.length ? { optional_items: deck.optionalItems } : {}),
     ...(sub?.externalCustomerId && mode === "live"

@@ -61,7 +61,7 @@ check("…a paying shop whose renewal failed keeps its paid month", !planLapsed(
 // Two days left (owner, 2026-10-16).
 const soon = buildTrialEndingSoon({ name: "Jordan Rivera", planName: "Professional", price: "$95/month", endsAt: new Date("2026-10-22T17:00:00Z"), href: "https://jobflex.app/dashboard/subscription", shop, tools });
 check("two days left: their first week leads, then the day and the price", soon.headline === "Here's your first week" && /6 · \$18,400 quoted/.test(boxText(soon)) && /From Oct 22: Professional · \$95\/month/.test(boxText(soon)) && !/\$/.test(soon.subject) && /continues Oct 22/.test(soon.subject));
-check("…nothing to do if it fits; another plan or cancel before the day and nothing is charged", /Nothing to do if Professional fits/.test(all(soon)) && /Cancel in Settings → Billing before Oct 22 and nothing is charged/.test(all(soon)) && soon.cta?.label === "Review my plan");
+check("…nothing to do if it fits; another plan or cancel before the day and nothing is charged", /Nothing to do if Professional fits/.test(all(soon)) && /Cancel on the Subscription page before Oct 22 and nothing is charged/.test(all(soon)) && soon.cta?.label === "Review my plan");
 const soonNew = buildTrialEndingSoon({ name: "Jordan", planName: "Professional", price: "$95/month", endsAt: new Date("2026-10-22T17:00:00Z"), href: "x", shop: { proposalsSent: 0, quotedCents: 0, clients: 0, jobsOpen: 0, leadsOffered: 0 }, tools });
 check("…nothing set up yet: the tools are ready whenever they are", soonNew.headline === "Professional continues on Oct 22" && /are ready whenever you are/.test(all(soonNew)));
 const now = new Date("2026-10-20T17:30:00Z");

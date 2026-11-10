@@ -9,6 +9,8 @@ import { clientHomeView } from "@/lib/clientHome/server";
 import { greeting } from "@/lib/clientHome/shared";
 import { MessageBox } from "./message-box";
 import "./home.css";
+import { publicLinkPaused } from "@/lib/publicLinks";
+import { LinkPaused } from "@/components/v3/upgrade-gate/link-paused";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +25,8 @@ const money = (n: number) => `$${(Math.round(n * 100) / 100).toLocaleString("en-
 export default async function ClientHomePage({ params, searchParams }: { params: Promise<{ token: string }>; searchParams: Promise<{ preview?: string }> }) {
   const { token } = await params;
   const { preview } = await searchParams;
+  // Paused while the company is on the Free plan (owner, 2026-11-09; lib/publicLinks) — nothing read, nothing stamped.
+  if (await publicLinkPaused("client-home", token)) return <LinkPaused />;
   const v = await clientHomeView(token, { stamp: preview !== "1" });
   if (!v) notFound();
   const sold = v.money.contract > 0;

@@ -28,7 +28,7 @@ import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { addCustomPages, previewCustomPagesChange } from "@/actions/billing";
 import { toast } from "@/components/ui/Toast";
-import { CUSTOM_PAGE_CENTS, CUSTOM_PAGES, PLAN_ENDED_MARK, pageForPath } from "@/lib/customPlan";
+import { CUSTOM_PAGE_CENTS, CUSTOM_PAGES, PLAN_ENDED_MARK, gatedPage, isPaidFeature, pageForPath, type GatedPage } from "@/lib/customPlan";
 import "./upgrade-gate.css";
 import { BillingRecovery } from "../payment-ribbon/billing-recovery";
 
@@ -52,8 +52,12 @@ export function UpgradeGate({
   isOwner?: boolean;
 }) {
   const router = useRouter();
-  const page = pageForPath(pathname);
-  const label = page?.label ?? "This page";
+  // "#feature:<id>" names a paid feature that has no page of its own (custom-page-gate).
+  const featureId = pathname.startsWith("#feature:") ? pathname.slice("#feature:".length) : null;
+  const gated: GatedPage | null = featureId ? (isPaidFeature(featureId) ? gatedPage(featureId) : null) : pageForPath(pathname);
+  // Only a sellable add-on page can be added on its own; a paid feature comes with any plan.
+  const page = gated && !isPaidFeature(gated.id) ? CUSTOM_PAGES.find((p) => p.id === gated.id) ?? null : null;
+  const label = gated?.label ?? "This page";
   const owned = CUSTOM_PAGES.filter((p) => !(locked ?? []).includes(p.href)).map((p) => p.id as string);
   // THE PLAN ENDED (owner, 2026-10-07): cancelled, unpaid, expired or a
   // card-less trial run out (lib/planStatus) — every add-on is closed for that

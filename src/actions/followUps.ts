@@ -12,6 +12,7 @@ import { isTwilioEnabled } from "@/lib/sdk/twilio";
 import { encodeChannel, MAX_DELAY_MINUTES, parseChannel, TEXT_NEEDS_TWILIO, type FollowUpChannel } from "@/lib/followUps/copy";
 import { ProposalStatus } from "@/lib/prismaEnums";
 import { refusal, refused, type ActionResult } from "@/lib/actionResult";
+import { withFeature } from "@/lib/customPageAccess";
 
 // A rule fires when a proposal's status becomes `triggerStatus`
 // (lib/followUps/engine scheduleFollowUpsFor), so the proposal statuses are the
@@ -164,7 +165,8 @@ const draftInput = z.object({
 
 /** The person changed the words: they go exactly as typed (the proposal link is still added to a text). */
 export async function saveFollowUpDraft(raw: unknown): Promise<ActionResult<{ id: string }>> {
-  const { organizationId } = await requireSalesOrManager();
+  // The follow-up agent's drafts are Smart CRM (part 4) — a paid feature (owner, 2026-11-09).
+  const { organizationId } = await withFeature(requireSalesOrManager(), "smart-crm");
   const parsed = draftInput.safeParse(raw);
   if (!parsed.success) return refused(parsed.error.issues[0]?.message ?? "Check the message.");
   const fu = await db.followUp.findUnique({ where: { id: parsed.data.id } });
@@ -177,7 +179,8 @@ export async function saveFollowUpDraft(raw: unknown): Promise<ActionResult<{ id
 
 /** "Write it for me" on a reminder: the words are prepared and wait for a yes like any other draft. */
 export async function writeFollowUpDraft(id: string): Promise<ActionResult<{ id: string }>> {
-  const { organizationId } = await requireSalesOrManager();
+  // The follow-up agent's drafts are Smart CRM (part 4) — a paid feature (owner, 2026-11-09).
+  const { organizationId } = await withFeature(requireSalesOrManager(), "smart-crm");
   const fu = await db.followUp.findUnique({ where: { id: String(id) } });
   if (!fu || fu.organizationId !== organizationId || fu.completedAt) return refused("This follow-up is gone — it was sent or closed. Reload the page.");
   const ok = await prepareDraft(fu.id);

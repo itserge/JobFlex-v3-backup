@@ -6,6 +6,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireOrg } from "@/lib/orgContext";
 import { clearSnoozes, snooze } from "@/lib/projectOverview/server";
+import { withFeature } from "@/lib/customPageAccess";
 
 const input = z.object({ projectId: z.string().min(1).max(64), key: z.string().min(1).max(120), tone: z.enum(["red", "amber"]) });
 
@@ -15,7 +16,7 @@ async function ownProject(organizationId: string, projectId: string) {
 }
 
 export async function snoozeOverviewItem(raw: unknown): Promise<void> {
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await withFeature(requireOrg(), "project-tools");
   const data = input.parse(raw);
   await ownProject(organizationId, data.projectId);
   await snooze(organizationId, user.id, data.projectId, data.key, data.tone);
@@ -23,7 +24,7 @@ export async function snoozeOverviewItem(raw: unknown): Promise<void> {
 }
 
 export async function showOverviewItems(projectId: string): Promise<void> {
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await withFeature(requireOrg(), "project-tools");
   await ownProject(organizationId, z.string().min(1).max(64).parse(projectId));
   await clearSnoozes(organizationId, user.id, projectId);
   revalidatePath(`/dashboard/projects/${projectId}`);

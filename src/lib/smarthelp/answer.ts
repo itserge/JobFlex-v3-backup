@@ -145,7 +145,8 @@ function samePage(home: string, open: string, nav: boolean): boolean {
  *  request, as personTopic files trial extensions). */
 const DELETE_BUTTONS = /\b(Delete my account|Delete account)\b/;
 const CANCEL_BUTTONS = /\b(Cancel subscription|Continue to cancel|Downgrade)\b/;
-const EXTENSION_BUTTON = /\bRequest a trial extension\b/;
+// "Request extension" since the cancel questions (2026-11-09); the older words stay for older answers.
+const EXTENSION_BUTTON = /\bRequest (a trial )?extension\b/;
 const DELETE_WORDS = /\b(delete|deleted|erase|erased|remove|removed) your (account|data|company)\b/i;
 
 /** What a guarded answer is about, if it commits money or data or names a person-only flow's button. */

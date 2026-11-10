@@ -114,6 +114,7 @@ import { ProjectClientCard } from "@/components/v3/project-links/project-client-
 import { ProjectOverviewCard } from "@/components/v3/project-links/project-overview-card";
 import type { Overview, Snoozes } from "@/lib/projectOverview/shared";
 import { SPACES, spaceHref, type SpaceId } from "@/lib/projectSpaces";
+import { BillingRecovery } from "@/components/v3/payment-ribbon/billing-recovery";
 
 const DAY_MS = 86400000;
 
@@ -336,7 +337,12 @@ export function MobileProjectDetail({
   overview,
   space = "remodel",
   snoozes = {},
+  toolsLocked = false,
+  isOwner = false,
 }: {
+  /** On the Free plan (owner, 2026-11-09): the project tools are not drawn — the plan's card stands in their place. */
+  toolsLocked?: boolean;
+  isOwner?: boolean;
   project: PdProject;
   jobs: PdJob[];
   proposals?: PdProposal[];
@@ -641,7 +647,12 @@ export function MobileProjectDetail({
           </div>
 
           {/* ============ THE OVERVIEW (2026-11-09): how it stands and what to do, first ============ */}
-          {overview ? (
+          {toolsLocked ? (
+            <div className="mpd-budget" data-project-tools-locked="">
+              <BillingRecovery isOwner={isOwner} pageLabel="Project stages & buying" blocked />
+            </div>
+          ) : null}
+          {overview && !toolsLocked ? (
             <div className="mpd-budget">
               <ProjectOverviewCard projectId={project.id} projectName={project.name} overview={overview} space={space} snoozes={snoozes} canManage={canManage} subsHref={`/mobile-project-subs-v1/${project.id}`} />
             </div>
@@ -685,9 +696,11 @@ export function MobileProjectDetail({
           ) : null}
 
           {/* ============ STAGES (2026-11-05) ============ */}
-          <div className="mpd-budget">
-            <ProjectStagesCard projectId={project.id} stages={stages} canManage={canManage} kind={kindOf(project.kind)} />
-          </div>
+          {!toolsLocked ? (
+            <div className="mpd-budget">
+              <ProjectStagesCard projectId={project.id} stages={stages} canManage={canManage} kind={kindOf(project.kind)} />
+            </div>
+          ) : null}
           {timeline ? (
             <div className="mpd-budget">
               <ProjectTimelineCard projectId={project.id} timeline={timeline} canManage={canManage} />
@@ -764,9 +777,11 @@ export function MobileProjectDetail({
           </section>
 
           {/* ============ ONE PROPOSAL FOR ALL OF IT (2026-11-04) ============ */}
-          <div className="mpd-budget">
-            <ProjectCombine projectId={project.id} projectName={project.name} proposals={proposals} />
-          </div>
+          {!toolsLocked ? (
+            <div className="mpd-budget">
+              <ProjectCombine projectId={project.id} projectName={project.name} proposals={proposals} />
+            </div>
+          ) : null}
 
           {/* ============ SELECTIONS (2026-11-07) ============ */}
           {selections ? (
@@ -797,7 +812,7 @@ export function MobileProjectDetail({
           {/* ============ BUDGET (2026-09-18) ============ */}
           {budget ? (
             <div className="mpd-budget">
-              <ProjectBudgetCard projectId={project.id} budget={budget} />
+              <ProjectBudgetCard projectId={project.id} budget={budget} toolsLocked={toolsLocked} />
             </div>
           ) : null}
 

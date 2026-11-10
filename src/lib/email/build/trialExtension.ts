@@ -1,5 +1,5 @@
 // MORE TRIAL DAYS (owner, 2026-10-20; lib/trialExtension). Three emails, pure, no I/O:
-//   · to the platform admins when an owner asks from "Before you go" — a work item, no greeting
+//   · to the platform admins when an owner asks from the cancel questions — a work item, no greeting
 //     (operator altitude, like build/operator.ts), with the one button to the request;
 //   · to the owner when an admin approves — the new trial end, the button to the app;
 //   · to the owner when an admin denies — the reason when there is one, the button to the plans.
@@ -40,7 +40,7 @@ export function buildTrialExtensionAsked(i: TrialExtensionAskedInput): EmailDoc 
     kicker: { text: "Trial extension", tone: "warn" },
     headline: `${i.orgName} asks for ${i.days} more trial days`,
     prose: [
-      `Asked from "Before you go", on the way to cancelling ${i.planName}. The subscription was not cancelled.`,
+      `Asked from the cancel questions ("I didn't have enough time"), on the way to cancelling ${i.planName}. The subscription was not cancelled.`,
       i.note ? `What they still want to try: “${truncate(i.note, NOTE_MAX)}”` : "They left no note.",
     ],
     box,

@@ -42,6 +42,7 @@ import { deskBalance, EMPTY_PACKS, EMPTY_USE, minutesOf, monthKey, parseDeskPack
 import { smsAllowanceFor } from "@/lib/entitlements";
 import { cardlessTrialState } from "@/lib/trialState";
 import { TRIAL_CAPS, TRIAL_CAP_KEYS, TRIAL_CAP_NOUN } from "@/lib/trialCaps";
+import { loadCancelOffer, type CancelOffer } from "@/lib/cancelOfferServer";
 
 // The result shape. These interfaces lived in ./subscription-view.tsx until
 // 2026-08-13, when that desktop view was superseded by the blueprint page at
@@ -117,6 +118,10 @@ export interface SubscriptionViewProps {
   trialCard?: TrialCardLine | null;
   /** Pages a CUSTOM-plan org owns (lib/customPlan ids); [] otherwise. */
   customPages?: string[];
+  /** "Cancel subscription" at the foot of the plan card and what its window
+   *  asks and says (lib/cancelOfferServer — the one place an owner cancels,
+   *  2026-11-09). Null: no button (a grant, nothing live, already booked). */
+  cancel?: CancelOffer | null;
   /** What the embedded plan cards need to offer checkout (owner-only page). */
   checkoutReady: boolean;
   /** CUSTOM_PLAN_ENABLED (lib/customPlanFlag): "Build your plan" on sale. */
@@ -476,6 +481,11 @@ export async function loadSubscriptionData(
     invoices: invoiceResult,
     nextCharge,
     customPages,
+    // Read off the stored row (not the access view): the same rule Settings used.
+    cancel: await db.subscription
+      .findUnique({ where: { organizationId } })
+      .then((row) => loadCancelOffer(organizationId, row, wasName))
+      .catch(() => null),
     spotlight: await orgSpotlight(organizationId),
     // The card line belongs to a running card-less trial, never to the Free plan.
     trialCard: accessBlocked || freePlan ? null : trialCard,

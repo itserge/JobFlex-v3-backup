@@ -1927,13 +1927,17 @@ model SupportTicket {
   @@index([lastMessageAt])
 }
 
-// ── Why a plan was cancelled (owner, 2026-10-20) ────────────────────────────
-// One row per cancellation booked from Settings → Billing → Manage
-// subscription → … → "Cancel <plan>?" (actions/billing cancelSubscription),
-// where the owner must tick at least one reason. `reasons` is a JSON array of
-// lib/cancelFeedback keys; `otherText` is the "Other" box (3–500 chars) and
-// null otherwise. `plan` and `periodEnd` are as they stood when it was booked.
-// Read by /admin/cancellations and the /admin/users sheet.
+// ── Why a plan was cancelled (owner, 2026-10-20; the question tree 2026-11-09) ──
+// One row per cancellation booked from the Subscription page → "Cancel
+// subscription" → the questions → Before you go → "Cancel <plan>?"
+// (actions/billing cancelSubscription), and per platform admin's cancel
+// (lib/adminCancel, reasons ["admin"]). `path` is the main reason (A1 no time,
+// A2 tools, A3 something else — lib/cancelTree) and `answersJson` the whole
+// answer; both null on rows from before 2026-11-09. `reasons` keeps the flat
+// lib/cancelFeedback keys, `otherText` the main "Other" box. `wantsFollowUp`
+// = "Yes — email me when it's fixed" with its box on; `followUpEmail` is the
+// owner's address then. `plan` and `periodEnd` are as they stood when it was
+// booked. Read by /admin/cancellations and the /admin/users sheet.
 model CancellationFeedback {
   id             String    @id @default(cuid())
   organizationId String
@@ -1941,6 +1945,10 @@ model CancellationFeedback {
   plan           String
   reasons        String    @default("[]")
   otherText      String?
+  path           String?
+  answersJson    String?
+  wantsFollowUp  Boolean   @default(false)
+  followUpEmail  String?
   periodEnd      DateTime?
   createdAt      DateTime  @default(now())
 
@@ -1951,7 +1959,7 @@ model CancellationFeedback {
   @@index([createdAt])
 }
 
-// ── More trial days, asked from "Before you go" (owner, 2026-10-20) ─────────
+// ── More trial days, asked from the cancel questions (owner, 2026-10-20) ─────
 // Offered only while the plan is on its trial or the trial ended at most 14
 // days ago (lib/trialExtension). One PENDING row per organization at a time.
 // status: PENDING | APPROVED | DENIED. A platform admin decides in
@@ -1975,6 +1983,9 @@ model TrialExtensionRequest {
   decisionNote   String?
   decidedBy      String?
   decidedAt      DateTime?
+  // Asked from the cancel questions (2026-11-09): what got in the way and
+  // what they wanted to try (lib/cancelTree A1); null otherwise.
+  answersJson    String?
   createdAt      DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)

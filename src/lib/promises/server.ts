@@ -30,6 +30,7 @@ import {
   type PromiseTracker,
   type TrackedPromise,
 } from "./shared";
+import { isPageLocked, lapsedOrgIds } from "@/lib/customPageAccess";
 
 const OFFICE_ROLES = ["OWNER", "ADMIN", "MANAGER"];
 
@@ -50,6 +51,8 @@ export interface CatchInput {
 /** Read one message a person wrote to a client for promises of ours. Returns how many were written down. */
 export async function catchPromises(input: CatchInput): Promise<number> {
   if (!input.clientId || !mayPromise(input.body) || !isOpenAIEnabled()) return 0;
+  // The promise tracker is Smart CRM (part 4) — on the Free plan the message is sent, not read (owner, 2026-11-09).
+  if (await isPageLocked(input.organizationId, "smart-crm")) return 0;
   const trial = await takeTrialCap(input.organizationId, "aiCalls");
   if (!trial.ok) return 0;
   const now = input.now ?? new Date();
@@ -289,7 +292,8 @@ async function remind(organizationId: string, userId: string, text: string, now:
  */
 export async function sweepPromises(now = new Date()): Promise<{ checked: number; kept: number; reminded: number }> {
   const open = await db.clientPromise.findMany({
-    where: { status: "OPEN", organization: { deletedAt: null }, client: { deletedAt: null } },
+    // A company on the Free plan: its promises are left alone — no proof read, no reminder (owner, 2026-11-09).
+    where: { status: "OPEN", organization: { deletedAt: null }, client: { deletedAt: null }, organizationId: { notIn: await lapsedOrgIds() } },
     orderBy: { createdAt: "desc" },
     take: 400,
     include: { client: { select: { id: true, name: true, phone: true } }, owner: { select: { id: true, name: true, email: true } }, organization: { select: { timezone: true } } },

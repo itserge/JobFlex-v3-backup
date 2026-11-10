@@ -42,7 +42,7 @@ export default function TermsPage() {
         plan until a paid plan is chosen.
       </p>
       <p>
-        Cancel through Settings → Billing or contact <LegalContact /> for help. Cancellation normally
+        Cancel through the Subscription page in your account or contact <LegalContact /> for help. Cancellation normally
         stops the next renewal and leaves access through the paid period, as shown in the cancellation
         confirmation. Canceling a subscription and deleting an account are separate actions. Save needed
         records before closing your account.

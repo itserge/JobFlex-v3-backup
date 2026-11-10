@@ -138,20 +138,24 @@ Press **Upgrade / Downgrade / Switch to annual / Switch to monthly** on a card, 
 - Admin price edits never change an existing subscriber's price.
 
 ### Cancel and keep
-1. Settings → Billing (/dashboard/settings?pane=billing) → **Manage subscription** (owner only; others see "Ask your owner") → **Cancel subscription** at the foot of that window. It is the only place a plan is cancelled; the window also shows the plan, its price and term, the next date and the card.
-2. "Before you go" → **Continue to cancel** (or **Keep <plan>**). On a trial, or within 14 days after it ended, a third button **Request a trial extension**: "How many more days would help?" (7 / 14) and "What do you still want to try?" (optional) → **Send request** → "Request sent — We'll answer by email within one business day." Nothing is cancelled. One open request per company; pressing it again shows "Request pending". A JobFlex admin approves (email "Your trial is extended until <date>") or declines (email "We couldn't extend your trial this time"). Support cannot promise an extension — the admins decide.
-3. "Cancel <plan>?" → tick at least one "Why are you cancelling?" reason (Other needs 3–500 characters of their own words; until then the button is off with a hint) → **Cancel subscription**.
+Since 2026-11-09 the only place a plan is cancelled is the **Subscription** page (/dashboard/subscription — the left menu on a computer; the menu behind the ☰ at the top left on a phone). Owner only; the page itself is the owner's. Settings → Billing → **Manage subscription** still shows the plan, price, date and card, but has no cancel button any more.
+1. At the top of the page, beside the blue **Upgrade plan**: **Cancel subscription** (a white outline button; on a phone it is under Upgrade plan). Once a cancel is booked it reads "Cancels on <date>" instead.
+2. "Before you cancel — what's the main reason?" — pick one: **I didn't have enough time to really try it** · **The tools or features didn't work for me** · **Something else** → **Continue** (or **Keep my plan**). Every screen has **Back** (top left) and keeps the answers; the cross or Esc closes the window and changes nothing.
+   - Not enough time → "What got in the way?" (pick at least one: Busy season, no time to set up · I didn't know where to start · Setup took longer than expected · Waiting on my team / partner · Other with their words) and, optional, "What would you try first if you had more time?" (the tools). Then, only on a trial or within 14 days after it ended: "Want 7 or 14 more days to try it properly?" → 7 / 14 → **Request extension** ("Request sent — We'll answer by email within one business day."; nothing is cancelled, the window closes) or **No, continue cancelling**. One open request per company ("Request pending"). A JobFlex admin approves (email "Your trial is extended until <date>") or declines (email "We couldn't extend your trial this time"). Support cannot promise an extension — the admins decide.
+   - Tools didn't work → "Which tools didn't work for you?" (at least one) → "What was wrong with <tool>?" for each, all optional → "What are you using instead?" and "If we fixed this, would you give JobFlex another try?" (Yes — email me when it's fixed · Maybe · No).
+   - Something else → "What's behind it?" (at least one: Too expensive · Not enough jobs right now · Switched to another tool · Just testing, not ready to buy · Business closed / changed · Other, which needs their words); a short optional follow-up opens under some.
+3. "Before you go" → **Continue to cancel** (the link under the big **Keep <plan>** button).
+4. "Cancel <plan>?" shows one line "Reason: …" with **Edit answers** → **Cancel subscription**.
 - Effect: "You keep <plan> until <date> — the cycle you've already paid for — and you won't be billed again. Then your account moves to the Free plan. Nothing is refunded for the days you don't use." Email: "Your plan switches to Free on <date>". Cancelling during a trial: no charge.
-- Undo before the date: **Keep <plan>** (Settings → Billing or Subscription). After: "Your plan has already switched to Free. Choose a plan to start again." — paid at once, no new trial.
-- Comp plans: "Your plan is complimentary — there's nothing to cancel."
-- Cancelling is NOT on the **Subscription** page in the left menu (plans, the card and invoices only — no cancel button there). On a computer the left menu has no word "Settings": it is the gear icon next to the person's name at its foot; on a phone, **Settings** is in the bar at the bottom.
+- Undo before the date: **Keep <plan>** (Subscription, or Settings → Billing). After: "Your plan has already switched to Free. Choose a plan to start again." — paid at once, no new trial.
+- Comp plans: no cancel button ("Your plan is complimentary — there's nothing to cancel.").
 
-**The steps to send the customer — word for word, only <plan> and <date> filled in** (walked on the app 2026-11-03, computer and phone; a customer told "follow the steps" missed the small **Continue to cancel** link):
-1. Open Settings → Billing: https://www.jobflex.app/dashboard/settings?pane=billing — or, on a computer, click the gear icon next to your name at the bottom of the left menu (on a phone, tap Settings in the bar at the bottom), then Billing.
-2. Click **Manage subscription**. Only the account owner has this button — anyone else sees "Ask your owner".
-3. At the bottom of the window that opens, click **Cancel subscription**.
+**The steps to send the customer — word for word, only <plan> and <date> filled in** (2026-11-09; a customer told "follow the steps" once missed the small **Continue to cancel** link):
+1. Open Subscription: https://www.jobflex.app/dashboard/subscription — or click **Subscription** in the left menu (on a phone, tap ☰ at the top left, then Subscription). Only the account owner sees this page.
+2. At the top of the page, next to **Upgrade plan** (on a phone, just under it), click **Cancel subscription**.
+3. Pick the main reason, answer the short questions on each screen, and click **Continue** each time.
 4. On "Before you go", click **Continue to cancel** — the link under the big **Keep <plan>** button.
-5. Tick at least one reason under "Why are you cancelling?", then click **Cancel subscription**.
+5. On "Cancel <plan>?", click **Cancel subscription**.
 After that you keep <plan> until <date> and won't be billed again; then your account moves to the Free plan, and your data stays. Nothing is refunded for the days you don't use (on a trial, nothing is charged).
 
 ### Failed payment
@@ -603,7 +607,7 @@ In production a server action's *thrown* error text is hidden; only *returned* e
 - **Roles:** Owner/Admin/Manager — everything. Installer — jobs (read-only), calendar, messages. Sales — leads, clients, proposals, CRM, calendar, phone, messages. Estimator — proposals, estimators, projects, messages. Owner only: subscription, card, Stripe/Square.
 - **JobFlex admins** see all accounts, subscriptions, member activity (incl. proposals) and tickets; there is no "sign in as customer".
 - **Deleting:** Settings → Account → "Delete account" (badge "Testing") reads: "Removes you and any company you are the only member of. Immediate, no undo." Companies with other members keep their data. A 30-day company soft-delete exists in code; no page offers it.
-- **Policies** (/privacy, /terms; Jobflex LLC, support@jobflex.app): privacy requests by email, subject "Privacy request" (Meta: "Meta data deletion"); charges are non-refundable except where the law requires it or JobFlex offers one in writing — refund requests go to the owner, never promised by support; cancel in Settings → Billing (separate from deleting).
+- **Policies** (/privacy, /terms; Jobflex LLC, support@jobflex.app): privacy requests by email, subject "Privacy request" (Meta: "Meta data deletion"); charges are non-refundable except where the law requires it or JobFlex offers one in writing — refund requests go to the owner, never promised by support; cancel on the Subscription page (separate from deleting).
 
 ### How support works
 

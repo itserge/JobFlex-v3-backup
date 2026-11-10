@@ -6,6 +6,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { actorForSession, proposalScope } from "@/lib/assistant/actor";
+import { pageLockedResponse } from "@/lib/customPageAccess";
 import { DECK_PLAN_EVENT } from "@/lib/deck/convertSchema";
 import { isoDrawing } from "@/lib/deck/iso";
 import type { DeckScene } from "@/lib/deck/scene";
@@ -23,6 +24,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ proposalId: st
   } catch {
     return NextResponse.json({ error: "Not signed in." }, { status: 403 });
   }
+  // The AI Operator's own route: closed on the Free plan (owner, 2026-11-09).
+  const locked = await pageLockedResponse(actor.organizationId, "operator", { as: actor.userId });
+  if (locked) return locked;
   const p = await db.proposal.findFirst({ where: { id: proposalId.slice(0, 64), organizationId: actor.organizationId, ...proposalScope(actor) }, select: { id: true } });
   if (!p) return NextResponse.json({ error: "Not found." }, { status: 404 });
   // A fence (2026-11-05): the plan the estimator filed as FENCE_PLAN, in feet about the pin — the lot, the house,

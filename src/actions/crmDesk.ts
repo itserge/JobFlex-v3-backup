@@ -6,6 +6,7 @@
 import { NoOrgError, UnauthorizedError, requireOrg, roleMayOpen } from "@/lib/orgContext";
 import { readCrmDesk } from "@/lib/crm/deskServer";
 import type { CrmDesk } from "@/lib/crm/desk";
+import { pageLockedResult } from "@/lib/customPageAccess";
 
 export type CrmDeskResult = { ok: true; data: CrmDesk } | { ok: false; error: string };
 
@@ -19,6 +20,9 @@ export async function getCrmDesk(): Promise<CrmDeskResult> {
     throw err;
   }
   if (!roleMayOpen(ctx.role, "/dashboard/crm")) return { ok: false, error: "Your role doesn't include the CRM." };
+  // The band is Smart CRM (part 4) — a paid feature (owner, 2026-11-09).
+  const paused = await pageLockedResult(ctx.organizationId, "smart-crm");
+  if (paused) return { ok: false, error: paused.error };
   const data = await readCrmDesk({ organizationId: ctx.organizationId, userId: ctx.user.id, role: ctx.role });
   return { ok: true, data };
 }

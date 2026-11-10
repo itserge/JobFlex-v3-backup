@@ -301,6 +301,36 @@ body:has(.jf-mobile-subscription) div:has(> nav[aria-label="Primary"]) { display
   line-height: 1.5;
   color: var(--muted);
 }
+/* The head's two actions (owner, 2026-11-09): Upgrade plan, then Cancel
+   subscription — the width, 44px each, 10px apart. Cancel is the secondary
+   outline: white, a 1.5px ink frame, ink words, no shadow. */
+.jf-mobile-subscription .jfms-headActs {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+.jf-mobile-subscription .jfms-headActs a.jfms-btn,
+.jf-mobile-subscription .jfms-headActs button.jfms-btn {
+  min-height: 44px;
+  margin: 0;
+}
+.jf-mobile-subscription .jfms-headActs button.jfms-btnLine {
+  border: 1.5px solid var(--ink);
+  background: #fff;
+  color: var(--ink);
+}
+.jf-mobile-subscription .jfms-headActs button.jfms-btnLine:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+.jf-mobile-subscription .jfms-headNote {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.jf-mobile-subscription .jfms-headNote b { margin-left: 4px; font-weight: 800; color: var(--ink); }
 
 /* ============================================================
    BUTTONS

@@ -88,6 +88,7 @@ import { BillingRecovery } from "../payment-ribbon/billing-recovery";
 import type { SubscriptionViewProps } from "@/app/(dashboard)/dashboard/subscription/subscription-load";
 import { nextChargeLines, usd } from "@/app/(dashboard)/dashboard/subscription/next-charge-lines";
 import { FreeSwitchNotice } from "@/components/billing/FreeSwitch";
+import { CancelFlow } from "@/components/billing/CancelFlow";
 import { UpdatePaymentCardButton } from "@/components/billing/PlanChangeNotes";
 import { MobileUpgradeContent } from "@/components/v3/mobile-upgrade/mobile-upgrade";
 import type { UpgradePlan } from "@/components/v3/upgrade-blueprint/upgrade-content";
@@ -193,6 +194,7 @@ export function MobileSubscription({
   sandbox,
   interval,
   scheduledSwitch,
+  cancel = null,
 }: MobileSubscriptionProps) {
 
   const scrollRef = useRef<HTMLElement>(null);
@@ -360,6 +362,22 @@ export function MobileSubscription({
             <div className="jfms-kicker">Account</div>
             <h1 className="jfms-pageTitle">Subscription</h1>
             <p className="jfms-pageSub">Your plan, what it bills, and what it has cost.</p>
+            {/* The head's two actions (owner, 2026-11-09): Upgrade plan, then the
+                way out — one over the other, the width, 44px. Once booked the
+                date stands in Cancel's place; on Free or a grant, nothing. */}
+            <div className="jfms-headActs">
+              <Link className="jfms-btn jfms-btnPrimary" href={"/dashboard/upgrade" as Route}>
+                <Icon id="i-arrow" className="jfms-ic" />
+                Upgrade plan
+              </Link>
+              {cancel ? (
+                <CancelFlow offer={cancel} className="jfms-btn jfms-btnLine" />
+              ) : freeSwitch && !complimentary ? (
+                <p className="jfms-headNote" data-cancels-on="">
+                  {freeSwitch.at ? <>Cancels on <b>{longDate(freeSwitch.at)}</b></> : "Cancels at the end of the cycle"}
+                </p>
+              ) : null}
+            </div>
           </div>
 
           <BillingRecovery isOwner status={status} blocked={accessBlocked} />
@@ -460,8 +478,8 @@ export function MobileSubscription({
           </section>
 
           {/* ============ THE SWITCH TO FREE, BOOKED ============
-              The date and the way back (lib/freePlan). Cancelling itself
-              lives in Settings → Billing. */}
+              The date and the way back (lib/freePlan). Cancelling itself is
+              the page head's second button. */}
           {freeSwitch && !complimentary ? (
             <FreeSwitchNotice planName={planName} at={freeSwitch.at} canKeep />
           ) : null}

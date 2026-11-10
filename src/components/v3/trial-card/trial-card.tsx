@@ -148,7 +148,7 @@ export function TrialRibbon({ view, isOwner, orgId, only }: { view: TrialView; i
   const action =
     toFree ? (
       isOwner ? (
-        <Link className={s.early} href={"/dashboard/settings?tab=billing" as Route}>
+        <Link className={s.early} href={"/dashboard/subscription" as Route}>
           {`Keep ${view.planName}`}
         </Link>
       ) : null
@@ -261,7 +261,7 @@ export function TrialSheet({
   const toFree = !ended && view.toFree;
   const title = ended ? "Your trial ended — you're on Free" : toFree ? "Your plan switches to Free" : view.hasCard ? "Your card is on file" : hit ? TRIAL_CAP_TITLE : "Add a card to keep access";
   const lede = toFree
-    ? `You cancelled during the trial. On ${when} your account moves to the Free plan and nothing is charged — your work stays. Changed your mind? Keep ${view.planName} from Settings → Billing.`
+    ? `You cancelled during the trial. On ${when} your account moves to the Free plan and nothing is charged — your work stays. Changed your mind? Keep ${view.planName} on the Subscription page.`
     : ended
     ? `Your trial ended on ${when} and your account moved to the Free plan: everything you made is still here, and you keep working within the Free plan's limits. Add a card and ${view.planName} is back today — no new trial — or pick another plan.`
     : view.hasCard
@@ -298,8 +298,8 @@ export function TrialSheet({
               {view.toFree && !ended
                 ? `Switches to Free on ${when} — nothing is charged.`
                 : ended
-                  ? "Charged today, then monthly. Cancel any time from Settings → Billing."
-                  : `First charge ${when}, then monthly. Cancel any time from Settings → Billing.`}
+                  ? "Charged today, then monthly. Cancel any time from the Subscription page."
+                  : `First charge ${when}, then monthly. Cancel any time from the Subscription page.`}
             </span>
           </div>
           {caps && !ended && !view.hasCard ? (

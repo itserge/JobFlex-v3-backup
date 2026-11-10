@@ -35,7 +35,7 @@ import { PlanConfetti } from "@/components/billing/PlanConfetti";
 import { annualDeal, dealDollars, offersYearly, planTerm, sharedDealWords, type BillingTerm } from "@/lib/planDeal";
 import { PlanCardHead, PlanDealSlot, PlanPrice, PlanTermSwitch } from "@/components/billing/PlanTermSwitch";
 import { DEV_EVENT, type DevUpgradeEvent } from "@/lib/devSimulation";
-import { Children, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { expandPlanFeatures } from "@/lib/planCatalog";
@@ -70,57 +70,11 @@ export type UpgradePlan = {
   highlight: boolean;
 };
 
-/** How many rows a compact card shows before "View all features". */
-const COMPACT_FEATURES = 4;
-
-/** A card's feature list. Compact (the subscription overview, owner 2026-10-17): the first few rows stay in view,
- *  the rest fold behind one toggle. Every card's toggle drives ONE state, so the row's cards open and close together
- *  — the subgrid gives them one height, and each now fills it with its own list. The fold slides on
- *  grid-template-rows (0fr → 1fr), so it eases at any length. */
-function PlanFeatures({
-  compact,
-  id,
-  name,
-  open = false,
-  onToggle,
-  children,
-}: {
-  compact: boolean;
-  id: string;
-  name: string;
-  open?: boolean;
-  onToggle?: () => void;
-  children: React.ReactNode;
-}) {
-  if (!compact) return <span className="jf-up-feats" data-plan-feats>{children}</span>;
-  const rows = Children.toArray(children);
-  const head = rows.slice(0, COMPACT_FEATURES);
-  const rest = rows.slice(COMPACT_FEATURES);
-  return (
-    <div className="jf-up-features" data-open={open ? "1" : "0"}>
-      <span className="jf-up-feats" data-plan-feats>
-        {head}
-        {rest.length ? (
-          <span className="jf-up-more" id={`jf-feats-${id}`} inert={!open}>
-            <span className="jf-up-more-in">{rest}</span>
-          </span>
-        ) : null}
-      </span>
-      {rest.length ? (
-        <button
-          type="button"
-          className="jf-up-feat-toggle"
-          aria-expanded={open}
-          aria-controls={`jf-feats-${id}`}
-          aria-label={open ? `Show fewer ${name} features` : `View all ${name} features`}
-          onClick={onToggle}
-        >
-          <span>{open ? "Show fewer" : `View all features · ${rest.length} more`}</span>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
-        </button>
-      ) : null}
-    </div>
-  );
+/** A card's feature list (owner, 2026-11-09): every row in view on every surface — no fold, no "View all features".
+ *  The list is a subgrid of the row's feature tracks (upgrade.css), so row N stands at one height in every card and a
+ *  line that wraps in one card makes that row taller in all of them. */
+function PlanFeatures({ children }: { children: React.ReactNode }) {
+  return <span className="jf-up-feats" data-plan-feats>{children}</span>;
 }
 
 /** Whole dollars when round, cents otherwise — a prorated charge rarely is. */
@@ -184,7 +138,7 @@ export function UpgradeContent({
   /** Rendered inside another page (the subscription page's plan section):
    *  no page head, no return-leg banners — just the cards and their dialogs. */
   embedded?: boolean;
-  /** Subscription overview: keep each full feature list behind a disclosure. */
+  /** Subscription overview: the quieter variant (no "Build your plan" note under the row). Every list is open. */
   compactFeatures?: boolean;
   /** TEMP (2026-09-19): the DEV ONLY block, handed in by the page behind the
    *  server gate; undefined everywhere else. */
@@ -212,9 +166,6 @@ export function UpgradeContent({
     [interval, plans],
   );
   const [busy, setBusy] = useState<string | null>(null);
-  // The compact cards' feature lists open and close together.
-  const [featsOpen, setFeatsOpen] = useState(false);
-  const toggleFeats = useCallback(() => setFeatsOpen((o) => !o), []);
   const [err, setErr] = useState<string | null>(null);
   /** "Card declined — update your card" after a change the card did not pay for. */
   const [declined, setDeclined] = useState<string | null>(null);
@@ -287,6 +238,15 @@ export function UpgradeContent({
   const featureRows = featureCard.rows;
   const included = expanded.included;
 
+
+  /* The row's feature tracks: as many as the longest list — the plans' shared rows, or the Custom card's base line and
+     its pages (only the held ones on the plan, or "No add-on pages yet"). */
+  const customOnShow = cur === CUSTOM_PLAN_SLUG || customOffered;
+  const featTracks = Math.max(
+    featureRows.length,
+    customOnShow ? 1 + (cur === CUSTOM_PLAN_SLUG ? Math.max(1, CUSTOM_PAGES.filter((pg) => owned.includes(pg.id)).length) : CUSTOM_PAGES.length) : 0,
+    1,
+  );
 
   const curCents = useMemo(() => {
     if (cur === CUSTOM_PLAN_SLUG) return customPriceCents(owned);
@@ -630,11 +590,17 @@ export function UpgradeContent({
         <ScheduledSwitchNote at={scheduledSwitch.at} planName={scheduledSwitch.planName} interval={scheduledSwitch.interval} />
       ) : null}
       {focusWords ? <p className="jf-up-focus" data-upgrade-focus-words>{focusWords}</p> : null}
-      {showTerms ? (
-        <PlanTermSwitch className="jf-up-termsw" value={interval} onChange={setInterval} tag={termTag} />
-      ) : null}
-      {isOwner && checkoutReady ? (
-        <DeckAddonPickBox className="jf-up-deckpick" checked={withDeck} onChange={setWithDeck} pick={deckPick} interval={interval} disabled={busy !== null} />
+      {/* The switch and "Add Deck Studio" share one line over the cards (2026-11-09), so the head and four full
+          cards fit a 1440×900 window; on a narrow desk the box wraps under the switch. */}
+      {showTerms || (isOwner && checkoutReady) ? (
+        <div className="jf-up-ctl">
+          {showTerms ? (
+            <PlanTermSwitch className="jf-up-termsw" value={interval} onChange={setInterval} tag={termTag} />
+          ) : null}
+          {isOwner && checkoutReady ? (
+            <DeckAddonPickBox className="jf-up-deckpick" checked={withDeck} onChange={setWithDeck} pick={deckPick} interval={interval} disabled={busy !== null} />
+          ) : null}
+        </div>
       ) : null}
       {spotlight ? (
         <p className="jf-up-spot" data-plan-spotlight={spotlight} data-plan-spotlight-row={spotRow ?? ""}>
@@ -642,7 +608,8 @@ export function UpgradeContent({
           {spotlightBanner(spotlight, plans)}
         </p>
       ) : null}
-      <div className="jf-up-plans has-custom">
+      {/* One track per feature row (upgrade.css): the deepest list sets the count, every card spans it. */}
+      <div className="jf-up-plans has-custom" style={{ "--up-rows": featTracks, "--up-span": featTracks + 4 } as React.CSSProperties}>
         {plans.map((p) => {
           const term = planTerm(interval, p.yearlyPriceCents);
           const isCur = cur === p.slug && (!currentInterval || currentInterval === term);
@@ -667,7 +634,7 @@ export function UpgradeContent({
               />
               <PlanPrice term={interval} monthlyCents={p.priceCents} yearlyCents={p.yearlyPriceCents} figureClassName="jf-up-price" />
               <PlanDealSlot term={interval} monthlyCents={p.priceCents} yearlyCents={p.yearlyPriceCents} />
-              <PlanFeatures compact={compactFeatures} id={p.slug} name={p.name} open={featsOpen} onToggle={toggleFeats}>
+              <PlanFeatures>
                 {featureRows.map((f) => {
                   const lit = spotRow !== null && f === spotRow;
                   // The tool the visitor came for is in the plan when its gate says so, whatever the line reads (lib/planSpotlight).
@@ -741,7 +708,7 @@ export function UpgradeContent({
             {/* ON THE PLAN: only the pages it holds — nothing when it holds
                 none (owner, 2026-09-04). OFF it: every page, ticked as picked.
                 The base and the page price head the list. */}
-            <PlanFeatures compact={compactFeatures} id={CUSTOM_PLAN_SLUG} name={onCustom ? "Custom" : "Build your plan"} open={featsOpen} onToggle={toggleFeats}>
+            <PlanFeatures>
               <span className="jf-up-f jf-up-f--base">
                 ${(CUSTOM_BASE_CENTS / 100).toFixed(0)} base · ${(CUSTOM_PAGE_CENTS / 100).toFixed(0)} per page a month
               </span>

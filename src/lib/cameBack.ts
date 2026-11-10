@@ -3,7 +3,7 @@
 //
 // Two records say so. A card-less trial that ended with no card (lib/trialState, SyncState cardlessTrial:<org>)
 // gets `restartedAt` the day a card restarts the plan (lib/cardlessTrial, the trial-restart checkout) — that is
-// "paid after the trial ran out", to the day. A cancellation booked from Settings → Billing is a CancellationFeedback
+// "paid after the trial ran out", to the day. A cancellation booked from the Subscription page is a CancellationFeedback
 // row; when that company's subscription is active again, it came back — the day is not recorded (the subscription
 // row is overwritten), so the next invoice date is shown instead. A cancel made outside the app (Stripe's own
 // dashboard) leaves no row here; the win-back mails (lib/trialWinback) say whether the 10% offer went out before

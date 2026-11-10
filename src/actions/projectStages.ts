@@ -13,6 +13,7 @@ import { draftStagesWithAi, markStage, markTask, projectForJob, stagesFromTempla
 import { addTemplateOrPhases } from "@/lib/projectPhases/server";
 import { PROJECT_TRADES_DEFAULT, parseProjectSettings, type ProjectSettings } from "@/lib/projectStages/shared";
 import { TRADE_TYPES, type TradeType } from "@/lib/tradeTypes";
+import { withFeature } from "@/lib/customPageAccess";
 
 const DAY = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable();
 
@@ -46,7 +47,7 @@ const dayOf = (s: string | null | undefined) => (s ? new Date(`${s}T00:00:00.000
 // ── stages from a template, or drafted ──────────────────────────────────────
 
 export async function addStagesFromTemplate(projectId: string, key: string): Promise<{ added: number }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const p = await projectOf(organizationId, projectId);
   // A new build's custom home comes as phases shaped by its start questions (part 4, lib/projectPhases).
   const { added, template: tpl, phases } = await addTemplateOrPhases({ ...p, organizationId }, key);
@@ -57,7 +58,7 @@ export async function addStagesFromTemplate(projectId: string, key: string): Pro
 }
 
 export async function draftStages(projectId: string): Promise<{ added: number } | { error: string }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const p = await db.project.findFirst({
     where: { id: projectId, organizationId },
     select: { id: true, name: true, description: true, clientId: true, proposals: { where: { status: { not: "ARCHIVED" } }, select: { scopeOfWork: true, trade: true, lineItems: { select: { name: true, quantity: true } } } } },
@@ -79,7 +80,7 @@ export async function draftStages(projectId: string): Promise<{ added: number } 
 
 /** "Keep these stages": the AI's draft stands as the owner's own. */
 export async function keepDraftedStages(projectId: string): Promise<void> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const p = await projectOf(organizationId, projectId);
   await db.project.update({ where: { id: p.id }, data: { stagesDraftedAt: null } });
   touched(p.id);
@@ -115,7 +116,7 @@ async function createStage(projectId: string, data: z.infer<typeof stageInput>, 
 }
 
 export async function addStage(projectId: string, raw: unknown): Promise<{ id: string }> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const p = await projectOf(organizationId, projectId);
   return createStage(p.id, stageInput.parse(raw));
 }
@@ -124,7 +125,7 @@ const stageWithTasksInput = stageInput.extend({ tasks: z.array(z.string().trim()
 
 /** "+ Stage" (2026-11-06): the stage and its tasks in one go — one line per task, typed or taken from the suggestions. */
 export async function addStageWithTasks(projectId: string, raw: unknown): Promise<{ id: string; tasks: number }> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const p = await projectOf(organizationId, projectId);
   const { tasks = [], ...data } = stageWithTasksInput.parse(raw);
   const seen = new Set<string>();
@@ -134,7 +135,7 @@ export async function addStageWithTasks(projectId: string, raw: unknown): Promis
 }
 
 export async function updateStage(stageId: string, raw: unknown): Promise<void> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const s = await stageOf(organizationId, stageId);
   const data = stageInput.partial().parse(raw);
   if (data.startsAt && data.endsAt && data.endsAt < data.startsAt) throw new Error("The stage ends before it starts");
@@ -153,14 +154,14 @@ export async function updateStage(stageId: string, raw: unknown): Promise<void> 
 
 /** Planned → in progress → done, and back (lib/projectStages/server markStage — the Operator's set_stage runs the same). */
 export async function setStageStatus(stageId: string, status: "PLANNED" | "ACTIVE" | "DONE"): Promise<void> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   if (!["PLANNED", "ACTIVE", "DONE"].includes(status)) throw new Error("Bad status");
   const r = await markStage(organizationId, stageId, status, user.id);
   touched(r.projectId);
 }
 
 export async function deleteStage(stageId: string): Promise<void> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const s = await stageOf(organizationId, stageId);
   await db.projectStage.delete({ where: { id: s.id } });
   await keptByEdit(s.projectId);
@@ -169,7 +170,7 @@ export async function deleteStage(stageId: string): Promise<void> {
 
 /** One step up or down the order. */
 export async function moveStage(stageId: string, dir: "up" | "down"): Promise<void> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const s = await stageOf(organizationId, stageId);
   const all = await db.projectStage.findMany({ where: { projectId: s.projectId }, orderBy: { position: "asc" }, select: { id: true } });
   const i = all.findIndex((x) => x.id === s.id);
@@ -186,7 +187,7 @@ export async function moveStage(stageId: string, dir: "up" | "down"): Promise<vo
 const taskInput = z.object({ title: z.string().trim().min(1).max(200), photoNeeded: z.boolean().optional() });
 
 export async function addTask(stageId: string, raw: unknown): Promise<{ id: string }> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const s = await stageOf(organizationId, stageId);
   const data = taskInput.parse(raw);
   const top = await db.projectTask.aggregate({ where: { stageId: s.id }, _max: { position: true } });
@@ -197,7 +198,7 @@ export async function addTask(stageId: string, raw: unknown): Promise<{ id: stri
 }
 
 export async function updateTask(taskId: string, raw: unknown): Promise<void> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const t = await db.projectTask.findFirst({ where: { id: taskId, project: { organizationId } }, select: { id: true, projectId: true } });
   if (!t) throw new Error("Task not found");
   const data = taskInput.partial().parse(raw);
@@ -208,13 +209,13 @@ export async function updateTask(taskId: string, raw: unknown): Promise<void> {
 
 /** Tick or untick (lib/projectStages/server markTask — the Operator's tick_task runs the same). */
 export async function setTaskDone(taskId: string, done: boolean): Promise<void> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const r = await markTask(organizationId, taskId, done, user.id);
   touched(r.projectId);
 }
 
 export async function deleteTask(taskId: string): Promise<void> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const t = await db.projectTask.findFirst({ where: { id: taskId, project: { organizationId } }, select: { id: true, projectId: true } });
   if (!t) throw new Error("Task not found");
   await db.projectTask.delete({ where: { id: t.id } });
@@ -225,7 +226,7 @@ export async function deleteTask(taskId: string): Promise<void> {
 // ── "Make it a project" on a job ─────────────────────────────────────────────
 
 export async function makeProjectFromJob(jobId: string): Promise<{ id: string; created: boolean }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const r = await projectForJob(organizationId, jobId, user.id);
   revalidatePath("/dashboard/projects");
   revalidatePath(`/dashboard/jobs/${jobId}`);
@@ -235,7 +236,7 @@ export async function makeProjectFromJob(jobId: string): Promise<{ id: string; c
 // ── Automatic projects (the switch) ──────────────────────────────────────────
 
 export async function readProjectSettings(): Promise<ProjectSettings & { allTrades: readonly TradeType[]; defaults: readonly TradeType[] }> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const org = await db.organization.findUnique({ where: { id: organizationId }, select: { projectSettingsJson: true } });
   return { ...parseProjectSettings(org?.projectSettingsJson), allTrades: TRADE_TYPES, defaults: PROJECT_TRADES_DEFAULT };
 }
@@ -243,7 +244,7 @@ export async function readProjectSettings(): Promise<ProjectSettings & { allTrad
 const settingsInput = z.object({ auto: z.boolean(), trades: z.array(z.string()).max(40) });
 
 export async function saveProjectSettings(raw: unknown): Promise<ProjectSettings> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const data = settingsInput.parse(raw);
   const trades = data.trades.filter((x): x is TradeType => (TRADE_TYPES as readonly string[]).includes(x));
   const next: ProjectSettings = { auto: data.auto, trades };

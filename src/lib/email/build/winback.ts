@@ -46,7 +46,7 @@ export function buildWinback(i: WinbackInput): EmailDoc {
       lockup: PLATFORM_LOCKUP, kicker: { text: "Free plan", tone: "warn" }, headline: "Nothing is lost",
       prose: [`Hi ${first} — your free trial of ${i.planName} ended yesterday with no card on file, so ${i.business} moved to the Free plan: your work is all there, and the estimators, leads, calendar and crews wait for ${i.planName}.`, `${madeLine} Add a card and ${i.planName} is back${price} from the next minute — no new set-up, nothing to redo.`],
       box, cta: { label: `Get ${i.planName} back`, href: i.href },
-      after: ["The first charge is taken when you add the card; cancel anytime from Settings → Billing. Reply to this email if anything is in the way — we read every one."],
+      after: ["The first charge is taken when you add the card; cancel anytime from the Subscription page. Reply to this email if anything is in the way — we read every one."],
       footer: PLATFORM_FOOTER,
     };
   }
@@ -66,7 +66,7 @@ export function buildWinback(i: WinbackInput): EmailDoc {
       lockup: PLATFORM_LOCKUP, kicker: { text: "An offer", tone: "ok" }, headline: `Come back with ${i.offer.pct}% off`,
       prose: [`Hi ${first} — it has been a few days since your trial ended and ${i.business} moved to the Free plan, so here is a reason to come back: ${i.offer.pct}% off ${i.planName} for your first ${i.offer.months} months.`, `Nothing to type: the discount is applied by itself at the card step. It stands until ${until}. ${madeLine}`],
       box, cta: { label: `Get ${i.planName} back with ${i.offer.pct}% off`, href: i.href },
-      after: [yearly ? "The discount is taken off your first yearly charge; cancel anytime from Settings → Billing." : "The discount is taken off each of the first three monthly charges; cancel anytime from Settings → Billing."],
+      after: [yearly ? "The discount is taken off your first yearly charge; cancel anytime from the Subscription page." : "The discount is taken off each of the first three monthly charges; cancel anytime from the Subscription page."],
       footer: PLATFORM_FOOTER,
     };
   }

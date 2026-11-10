@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { uploadPlan } from "@/lib/subDocs/server";
+import { pageLockedResponse } from "@/lib/customPageAccess";
 
 export const runtime = "nodejs";
 
@@ -15,6 +16,9 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
+  // Subcontractors are a paid feature (owner, 2026-11-09): closed on the Free plan.
+  const planLock = await pageLockedResponse(ctx.organizationId, "subcontractors");
+  if (planLock) return planLock;
   let body: { name?: string; contentType?: string; bytes?: number; projectId?: string | null };
   try {
     body = (await req.json()) as typeof body;

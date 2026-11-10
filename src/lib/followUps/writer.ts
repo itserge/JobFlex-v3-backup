@@ -13,6 +13,7 @@ import { formatUSD } from "@/lib/email/build/client";
 import { clip } from "@/lib/clientTimeline/shared";
 import { draftOk, numbersIn } from "./agent";
 import { voiceFor, type FollowUpChannel, type FollowUpContext } from "./copy";
+import { isPageLocked } from "@/lib/customPageAccess";
 
 export interface WriterInput {
   organizationId: string;
@@ -41,6 +42,8 @@ const PURPOSE: Record<string, string> = {
 
 export async function writeFollowUp(input: WriterInput): Promise<WrittenFollowUp | null> {
   if (!isOpenAIEnabled()) return null;
+  // Written-for-this-client words are Smart CRM (owner, 2026-11-09): on the Free plan the standard words go instead.
+  if (await isPageLocked(input.organizationId, "smart-crm")) return null;
   const trial = await takeTrialCap(input.organizationId, "aiCalls");
   if (!trial.ok) return null;
   const now = input.now ?? new Date();

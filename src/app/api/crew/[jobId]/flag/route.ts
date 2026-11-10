@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { pageLockedResponse } from "@/lib/customPageAccess";
 import { crewActorForJob, jsonBody } from "@/lib/crewActor";
 import { raiseFlag, resolveFlag } from "@/lib/crewField/server";
 import { touchWorkerActivity } from "@/lib/workerActivity";
@@ -12,6 +13,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ jobId: string 
   const body = await jsonBody<{ token: string; note: string; blocking: boolean }>(req);
   const actor = await crewActorForJob(jobId, body.token ?? null);
   if (!actor) return NextResponse.json({ error: "You can only work on a job you are on." }, { status: 403 });
+  // Crew field tools are a paid feature (owner, 2026-11-09): the company's plan decides for a crew link.
+  const planLock = await pageLockedResponse(actor.organizationId, "crew-field", { as: actor.viaToken ? null : undefined });
+  if (planLock) return planLock;
   try {
     const r = await raiseFlag({ organizationId: actor.organizationId, jobId, workerId: actor.workerId, raisedById: actor.userId, raisedByName: actor.name, note: typeof body.note === "string" ? body.note : "", blocking: body.blocking === true });
     if (actor.workerId && actor.viaToken) await touchWorkerActivity(actor.workerId);
@@ -26,6 +30,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ jobId: string
   const body = await jsonBody<{ token: string; flagId: string; resolution: string }>(req);
   const actor = await crewActorForJob(jobId, body.token ?? null);
   if (!actor) return NextResponse.json({ error: "You can only work on a job you are on." }, { status: 403 });
+  // Crew field tools are a paid feature (owner, 2026-11-09): the company's plan decides for a crew link.
+  const planLock = await pageLockedResponse(actor.organizationId, "crew-field", { as: actor.viaToken ? null : undefined });
+  if (planLock) return planLock;
   if (!actor.office) return NextResponse.json({ error: "The office resolves a problem." }, { status: 403 });
   if (typeof body.flagId !== "string" || !body.flagId) return NextResponse.json({ error: "Which problem?" }, { status: 400 });
   try {

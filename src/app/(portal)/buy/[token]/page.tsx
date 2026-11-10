@@ -8,6 +8,8 @@ import { notFound } from "next/navigation";
 import { buyerView } from "@/lib/projectBuying/server";
 import { BuyForm } from "./buy-form";
 import "./buy.css";
+import { publicLinkPaused } from "@/lib/publicLinks";
+import { LinkPaused } from "@/components/v3/upgrade-gate/link-paused";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +22,8 @@ export const metadata: Metadata = {
 export default async function BuyPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   if (!/^[A-Za-z0-9_-]{10,80}$/.test(token)) notFound();
+  // Paused while the company that sent it is on the Free plan (owner, 2026-11-09; lib/publicLinks).
+  if (await publicLinkPaused("buy", token)) return <LinkPaused />;
   const view = await buyerView(token);
   if (!view) notFound();
   return (

@@ -8,6 +8,7 @@ import { isOwnerOrManager, requireOrg, NoOrgError, UnauthorizedError } from "@/l
 import { companyQuotes } from "@/lib/projectSubs/server";
 import { inboundReview } from "@/lib/subInbound/server";
 import { QuotesPage } from "@/components/v3/subs-company/quotes-page";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,9 @@ export const metadata: Metadata = {
 };
 
 export default async function QuotesRoute() {
+  // A paid feature (owner, 2026-11-09): the Free plan sees the plan's card here, before anything is read.
+  const planGate = await customPageGate("subcontractors");
+  if (planGate) return planGate;
   let organizationId: string;
   let role: string;
   try {

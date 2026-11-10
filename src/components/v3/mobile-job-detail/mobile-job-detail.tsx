@@ -66,6 +66,7 @@ import { useRouter } from "next/navigation";
 import "./mobile-job-detail.css";
 import { openRepairSheet } from "@/components/v3/repairs/repair-sheet";
 import { openPaymentsPanel } from "@/components/v3/payments-panel/payments-sheet";
+import { BillingRecovery } from "@/components/v3/payment-ribbon/billing-recovery";
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -316,7 +317,7 @@ export function MobileJobDetail({ record }: { record: JobDetailRecord }) {
           <CrewPendingBanner data={record.board} door={record.door} />
 
           {/* On site (2026-11-05): the stage's tasks, deliveries due, problems from site, hours. */}
-          <CrewField data={record.field} jobId={record.id} door={record.door} office={!worker} canWork={record.board.canWork} />
+          {record.field ? <CrewField data={record.field} jobId={record.id} door={record.door} office={!worker} canWork={record.board.canWork} /> : <BillingRecovery isOwner={!worker} pageLabel="Crew field tools" blocked />}
 
           {/* ============ SECTIONS ============
               Every section in sight at 390, no sideways scroll (owner,

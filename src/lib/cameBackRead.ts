@@ -1,6 +1,6 @@
 import "server-only";
 // WHO CAME BACK — the read behind the "Came back" card on /admin/cancellations (2026-10-28). Every card-less trial
-// record (SyncState cardlessTrial:<org>, lib/trialState), every cancellation booked from Settings → Billing, the
+// record (SyncState cardlessTrial:<org>, lib/trialState), every cancellation booked from the Subscription page, the
 // companies behind them with their subscription row today, and the win-back mails sent to the restarted ones; then
 // lib/cameBack shapes it. Read-only.
 import { db } from "@/lib/db";

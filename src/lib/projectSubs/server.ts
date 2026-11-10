@@ -44,6 +44,7 @@ import {
   tradesOf,
   type QuoteLike,
 } from "./shared";
+import { lapsedOrgIds } from "@/lib/customPageAccess";
 
 /** The bell's kind for a sub's move (a quote in, revised, declined, an invoice) — not in the trail-only set, so it
  *  rings; its preference row is "sub-quote". */
@@ -787,7 +788,8 @@ export async function expireRequests(now = new Date()): Promise<number> {
  *  answered; stamped so it goes once. Returns how many were reminded. */
 export async function remindDue(now = new Date()): Promise<number> {
   const rows = await db.projectSubQuote.findMany({
-    where: { status: { in: ["ASKED", "VIEWED"] }, remindedAt: null, dueBy: { not: null } },
+    // No reminder goes to a sub for a company on the Free plan (owner, 2026-11-09).
+    where: { status: { in: ["ASKED", "VIEWED"] }, remindedAt: null, dueBy: { not: null }, organizationId: { notIn: await lapsedOrgIds() } },
     select: { id: true, dueBy: true, scope: true, publicToken: true, contractor: { select: { name: true, email: true, phone: true, textsOptOut: true } }, request: { select: { number: true, description: true, materials: true, labor: true, startsAt: true, endsAt: true, fileIdsJson: true, documents: { where: { kind: "PLAN" }, select: { id: true } } } }, project: { select: { id: true, name: true, number: true, organization: { select: ORG_SELECT } } } },
     take: 100,
   });

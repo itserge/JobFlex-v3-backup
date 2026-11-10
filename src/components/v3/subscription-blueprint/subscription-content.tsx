@@ -1,8 +1,9 @@
 "use client";
 
 // Subscription overview shares the live loader and plan actions with the
-// dedicated mobile composition (cancelling lives only in Settings → Billing —
-// owner, 2026-10-17). Secondary details use native disclosures.
+// dedicated mobile composition. Cancelling lives here, in the page head beside
+// Upgrade plan (owner, 2026-11-09 — components/billing/CancelFlow, the one place
+// an owner cancels). Secondary details use native disclosures.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -17,6 +18,7 @@ import { SubscriptionSprite } from "./subscription-sprite";
 import { BillingRecovery } from "../payment-ribbon/billing-recovery";
 import type { SubscriptionViewProps } from "@/app/(dashboard)/dashboard/subscription/subscription-load";
 import { FreeSwitchNotice } from "@/components/billing/FreeSwitch";
+import { CancelFlow } from "@/components/billing/CancelFlow";
 import { useUpdateCard } from "@/components/v3/payment-ribbon/payment-ribbon";
 import { nextChargeLines, usd } from "@/app/(dashboard)/dashboard/subscription/next-charge-lines";
 import styles from "./subscription.module.css";
@@ -203,6 +205,17 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
             </svg>
             Upgrade plan
           </Link>
+          {/* THE WAY OUT (owner, 2026-11-09): the secondary outline beside
+              Upgrade plan (lib/cancelOfferServer says when there is one).
+              Once booked, the date stands in its place; on Free or a grant,
+              nothing. */}
+          {props.cancel ? (
+            <CancelFlow offer={props.cancel} className={cx("btn", "btn-line")} />
+          ) : freeSwitch && !comp ? (
+            <span className={cx("head-note")} data-cancels-on="">
+              {freeSwitch.at ? <>Cancels on <b>{longDate(freeSwitch.at)}</b></> : "Cancels at the end of the cycle"}
+            </span>
+          ) : null}
         </div>
       </div>
 
@@ -318,7 +331,7 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
       </div>
 
       {/* THE SWITCH TO FREE, BOOKED (owner, 2026-10-13): the date and the
-          way back. Cancelling itself lives in Settings → Billing. */}
+          way back. Cancelling itself is the page head's second button. */}
       {freeSwitch && !comp ? (
         <FreeSwitchNotice className={cx(RV)} planName={props.planName} at={freeSwitch.at} canKeep />
       ) : null}

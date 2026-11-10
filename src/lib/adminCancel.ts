@@ -1,6 +1,6 @@
 // THE PLATFORM ADMIN'S CANCEL (2026-11-01) — from the organization's card in
 // /admin/users and /admin/subscribers. The owner's own cancel stays where the
-// owner put it (Settings → Billing → Before you go — owner-locked
+// owner put it (the Subscription page → the questions → Before you go — owner-locked
 // 2026-10-17); this is JobFlex support ending a paid Stripe subscription on
 // the company's behalf. Here, not in the action file, so the QA check can run
 // it through the real code with an explicit actor (actions/adminSubscription

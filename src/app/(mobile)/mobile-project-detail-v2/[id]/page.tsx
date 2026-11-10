@@ -22,7 +22,8 @@ import { after } from "next/server";
 import type { Metadata, Viewport } from "next";
 import { isOwnerOrManager, requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
-import { loadProjectDetail } from "@/components/v3/project-detail-blueprint/project-detail-load";
+import { loadProjectDetail, withoutProjectTools } from "@/components/v3/project-detail-blueprint/project-detail-load";
+import { isPageLocked } from "@/lib/customPageAccess";
 import { readSnoozes } from "@/lib/projectOverview/server";
 import { writeSummary } from "@/lib/projectOverview/summary";
 import { MobileProjectDetail } from "@/components/v3/mobile-project-detail/mobile-project-detail";
@@ -70,11 +71,13 @@ export default async function MobileProjectDetailV2Page({
   // The person's "Not now" rows on the Overview, as on the desk's page (2026-11-09).
   const [props, snoozes] = await Promise.all([loadProjectDetail(id, organizationId), readSnoozes(organizationId, userId, id).catch(() => ({}))]);
   if (!props) notFound();
-  if (props.overview.summaryFresh === false) after(() => writeSummary(organizationId, props.project.id, props.timeline.today, props.project.name, props.overview).then(() => undefined));
+  // The project tools are a paid feature (owner, 2026-11-09): on the Free plan the page opens without them.
+  const toolsLocked = await isPageLocked(organizationId, "project-tools");
+  if (!toolsLocked && props.overview.summaryFresh === false) after(() => writeSummary(organizationId, props.project.id, props.timeline.today, props.project.name, props.overview).then(() => undefined));
 
   // What this role may open from the page — an estimator runs projects but has no client record or job page
   // (lib/roleRoutes), so those read as plain text for them (2026-11-04).
   const gate = ROLE_ROUTE_GATES[role];
   const opens = (path: string) => !gate || isPathAllowed(gate, path);
-  return <MobileProjectDetail {...props} snoozes={snoozes} canManage={isOwnerOrManager(role)} opens={{ client: opens("/dashboard/client-detail"), jobs: opens("/dashboard/jobs") }} />;
+  return <MobileProjectDetail {...(toolsLocked ? withoutProjectTools(props) : props)} toolsLocked={toolsLocked} isOwner={role === "OWNER"} snoozes={snoozes} canManage={isOwnerOrManager(role)} opens={{ client: opens("/dashboard/client-detail"), jobs: opens("/dashboard/jobs") }} />;
 }

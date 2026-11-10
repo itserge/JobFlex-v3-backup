@@ -106,7 +106,7 @@ export interface WelcomeFirstEstimateInput {
 
 /** landing-e pass A (2026-09-11): the welcome for the test variant. One
  *  button — the trade's first estimate — and the trial's terms in the box:
- *  the assigned trial length, the date of the first charge, cancel from Settings → Billing. */
+ *  the assigned trial length, the date of the first charge, cancel from the Subscription page. */
 export function buildWelcomeFirstEstimate(i: WelcomeFirstEstimateInput): EmailDoc {
   const first = i.name.trim().split(/\s+/)[0] || "there";
   const job =
@@ -126,7 +126,7 @@ export function buildWelcomeFirstEstimate(i: WelcomeFirstEstimateInput): EmailDo
     : [
         { type: "field", label: "Trial", value: `${i.trialDays ?? 7} days free` },
         { type: "field", label: "First charge", value: i.firstChargeDate },
-        { type: "cond", label: "Cancel", chip: "Anytime, from Settings → Billing", tone: "ok" },
+        { type: "cond", label: "Cancel", chip: "Anytime, from the Subscription page", tone: "ok" },
       ];
   return {
     subject: "Your first estimate in 2 minutes",
@@ -139,7 +139,7 @@ export function buildWelcomeFirstEstimate(i: WelcomeFirstEstimateInput): EmailDo
     after: [
       i.cardless
         ? `No card needed. If you decide to stay after ${i.firstChargeDate}, you can add one any time from Subscription.`
-        : `Your card won't be charged until ${i.firstChargeDate}. Cancel before then from Settings → Billing and you pay nothing.`,
+        : `Your card won't be charged until ${i.firstChargeDate}. Cancel before then from the Subscription page and you pay nothing.`,
     ],
     footer: PLATFORM_FOOTER,
   };

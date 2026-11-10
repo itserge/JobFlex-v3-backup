@@ -29,6 +29,10 @@ export type ActivationEvent =
   // the reason keys and the days asked, never the owner's own words.
   | "subscription_cancel_reason"
   | "trial_extension_requested"
+  // The cancel questions (2026-11-09, lib/cancelTree): each screen shown, and
+  // the screen a window was closed on without cancelling — step and path only.
+  | "cancel_flow_step"
+  | "cancel_flow_abandoned"
   // The first-estimate tour (2026-10-26, actions/onboarding): the path and the
   // step's id (lib/onboarding/tour-paths), never what was typed.
   | "tour_started"

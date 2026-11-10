@@ -19,6 +19,8 @@ import {
   updateOrder,
   type PlaceOrderResult,
 } from "@/lib/projectBuying/server";
+import { withFeature } from "@/lib/customPageAccess";
+import { publicLinkRefusal } from "@/lib/publicLinks";
 
 const ID = z.string().min(1).max(64);
 const DAY = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable();
@@ -39,7 +41,7 @@ async function projectOf(organizationId: string, projectId: string) {
 
 /** The to-buy list from what was sold (only lines not on it yet). */
 export async function refreshMaterials(projectId: string): Promise<{ added: number }> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   await projectOf(organizationId, projectId);
   const added = await seedMaterials(organizationId, projectId);
   touched(projectId);
@@ -47,7 +49,7 @@ export async function refreshMaterials(projectId: string): Promise<{ added: numb
 }
 
 export async function addDeckMaterials(projectId: string): Promise<{ added: number; from: string | null }> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   await projectOf(organizationId, projectId);
   const r = await addDeckTakeoff(organizationId, projectId);
   touched(projectId);
@@ -65,7 +67,7 @@ const materialInput = z.object({
 });
 
 export async function addMaterial(projectId: string, raw: unknown): Promise<{ id: string }> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   await projectOf(organizationId, projectId);
   const d = materialInput.parse(raw);
   if (d.stageId && !(await db.projectStage.findFirst({ where: { id: d.stageId, projectId }, select: { id: true } }))) throw new Error("That stage is not on this project");
@@ -78,7 +80,7 @@ export async function addMaterial(projectId: string, raw: unknown): Promise<{ id
 }
 
 export async function updateMaterial(materialId: string, raw: unknown): Promise<void> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const m = await db.projectMaterial.findFirst({ where: { id: materialId, organizationId }, select: { id: true, projectId: true, orderedQty: true } });
   if (!m) throw new Error("Line not found");
   const d = materialInput.partial().parse(raw);
@@ -100,7 +102,7 @@ export async function updateMaterial(materialId: string, raw: unknown): Promise<
 }
 
 export async function deleteMaterial(materialId: string): Promise<void> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const m = await db.projectMaterial.findFirst({ where: { id: materialId, organizationId }, select: { id: true, projectId: true, orderedQty: true } });
   if (!m) throw new Error("Line not found");
   if (m.orderedQty > 0) throw new Error("It is on an order — cancel the order first");
@@ -124,7 +126,7 @@ const orderInput = z.object({
 });
 
 export async function placeProjectOrder(raw: unknown): Promise<PlaceOrderResult> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const d = orderInput.parse(raw);
   const r = await placeOrder(organizationId, user.id, d);
   touched(d.projectId);
@@ -149,7 +151,7 @@ async function orderProject(organizationId: string, orderId: string): Promise<st
 }
 
 export async function patchProjectOrder(orderId: string, raw: unknown): Promise<void> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const projectId = await orderProject(organizationId, orderId);
   await updateOrder(organizationId, orderId, patchInput.parse(raw), user.id);
   touched(projectId);
@@ -157,7 +159,7 @@ export async function patchProjectOrder(orderId: string, raw: unknown): Promise<
 
 /** What arrived, line by line — the rest goes back on the list. */
 export async function receiveProjectOrder(orderId: string, raw: unknown): Promise<{ missing: Array<{ name: string; short: number; unit: string }> }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const projectId = await orderProject(organizationId, orderId);
   const lines = z.array(z.object({ lineId: ID, receivedQty: z.number().min(0).max(1_000_000) })).min(1).parse(raw);
   const r = await receiveOrder(organizationId, orderId, lines, user.id);
@@ -166,14 +168,14 @@ export async function receiveProjectOrder(orderId: string, raw: unknown): Promis
 }
 
 export async function cancelProjectOrder(orderId: string): Promise<void> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const projectId = await orderProject(organizationId, orderId);
   await cancelOrder(organizationId, orderId, user.id);
   touched(projectId);
 }
 
 export async function logProjectOrderExpense(orderId: string, amount: number): Promise<{ expenseId: string }> {
-  const { organizationId, user } = await requireEstimatorOrManager();
+  const { organizationId, user } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const projectId = await orderProject(organizationId, orderId);
   // A blank or zero answer is no cost, not a $0 expense on the project (2026-11-06).
   const amt = z.number().gt(0, "Type what it cost").max(100_000_000).parse(amount);
@@ -185,7 +187,7 @@ export async function logProjectOrderExpense(orderId: string, amount: number): P
 // ── suppliers (the sheet adds one in place) ──────────────────────────────────
 
 export async function addSupplierQuick(raw: unknown): Promise<{ id: string; name: string; email: string | null; leadDays: number | null }> {
-  const { organizationId } = await requireEstimatorOrManager();
+  const { organizationId } = await withFeature(requireEstimatorOrManager(), "project-tools");
   const d = z.object({ name: z.string().trim().min(1).max(120), email: z.string().trim().email().max(200).nullable().optional(), leadDays: z.number().int().min(0).max(120).nullable().optional() }).parse(raw);
   const s = await db.supplier.create({ data: { organizationId, name: d.name, email: d.email || null, leadDays: d.leadDays ?? null }, select: { id: true, name: true, email: true, leadDays: true } });
   return s;
@@ -197,5 +199,7 @@ export async function buyerSave(token: string, raw: unknown): Promise<{ ok: true
   const d = z.object({ bought: z.array(ID).max(200), paidTotal: z.number().min(0).max(100_000_000).nullable(), note: z.string().trim().max(1000).nullable() }).safeParse(raw);
   if (!d.success) return { ok: false, error: "Check the amount — numbers only." };
   if (!/^[A-Za-z0-9_-]{10,80}$/.test(token)) return { ok: false, error: "This link is not valid." };
+  const paused = await publicLinkRefusal("buy", token);
+  if (paused) return paused;
   return buyerUpdate(token, d.data);
 }

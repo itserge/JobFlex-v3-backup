@@ -77,6 +77,7 @@ import { openRepairSheet } from "@/components/v3/repairs/repair-sheet";
 import { openPaymentsPanel } from "@/components/v3/payments-panel/payments-sheet";
 import { setRepairCauseAction } from "@/actions/repairs";
 import { REPAIR_CAUSES } from "@/lib/repairs/shared";
+import { BillingRecovery } from "@/components/v3/payment-ribbon/billing-recovery";
 
 /** Hashed module class, or the literal name when the module has none — which is
  *  how the fleet's global `rv` / `rv-in` / `pressed` pass through. */
@@ -204,7 +205,7 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
       <CrewPendingBanner data={record.board} door={record.door} />
 
       {/* On site (2026-11-05): the stage's tasks, deliveries due, problems from site, hours. */}
-      <CrewField data={record.field} jobId={record.id} door={record.door} office={!worker} canWork={record.board.canWork} />
+      {record.field ? <CrewField data={record.field} jobId={record.id} door={record.door} office={!worker} canWork={record.board.canWork} /> : <BillingRecovery isOwner={!worker} pageLabel="Crew field tools" blocked />}
 
       {/* ТАБЫ */}
       <div className={cx("jd-tabbar")}>
