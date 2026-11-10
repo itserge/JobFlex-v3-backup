@@ -24,7 +24,7 @@ export async function sendInboxReply(raw: unknown): Promise<{ ok: boolean; error
     revalidatePath("/dashboard/inbox");
     return r.ok ? { ok: true, note: r.via === "gmail" ? "Sent from your Gmail." : undefined } : { ok: false, error: r.error };
   }
-  const r = await replyByText(input.threadId, organizationId, { body: input.body });
+  const r = await replyByText(input.threadId, organizationId, { body: input.body, userId: user.id });
   revalidatePath("/dashboard/inbox");
   if (!r.ok) {
     const why: Record<string, string> = {

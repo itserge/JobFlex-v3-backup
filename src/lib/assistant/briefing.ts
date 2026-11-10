@@ -19,6 +19,10 @@ import { toolNamed } from "@/lib/assistant/tools";
 import { briefingDue, confirmPrompt, dayOf, money } from "@/lib/assistant/shared";
 import { readProjectsBrief, savePicks, type OrgOverviews } from "@/lib/assistant/projectsBrief";
 import { fitProjects, type BriefPick } from "@/lib/projectOverview/brief";
+import { ownProposalsOnly } from "@/lib/assistant/roles";
+import { readWaitingFollowUps } from "@/lib/followUps/server";
+import { readPromiseTracker } from "@/lib/promises/server";
+import { dueWords } from "@/lib/promises/shared";
 
 const sentKey = (organizationId: string, userId: string) => `assistant:briefed:${organizationId}:${userId}`;
 
@@ -75,6 +79,21 @@ export async function composeBriefing(actor: AssistantActor, now = new Date(), o
 
   const callBack = check("sales.call-back");
   if (callBack) lines.push(`Leads to call back: ${rows(callBack)}.`);
+
+  // The follow-up agent and the promise tracker (Smart CRM part 4, 2026-11-10): what is waiting for this person's
+  // yes, and what they told a client they'd do by today. The same readers as the CRM's Today tab.
+  if (!(await refusal(actor, "clients.read", false).catch(() => "no"))) {
+    const viewer = { userId: actor.userId, ownOnly: ownProposalsOnly(actor.role) };
+    const [held, tracker] = await Promise.all([readWaitingFollowUps(actor.organizationId, viewer, 12).catch(() => []), readPromiseTracker(actor.organizationId, viewer, now).catch(() => null)]);
+    if (held.length) lines.push(`${held.length} follow-up${held.length === 1 ? "" : "s"} waiting for your OK: ${held.slice(0, 3).map((w) => w.client).join("; ")}${held.length > 3 ? `; +${held.length - 3} more` : ""}. Say "read me the follow-ups".`);
+    if (tracker) {
+      // Their own first: a promise is the person's who made it. The office also hears the team's late ones.
+      const mine = (p: { ownerId: string | null }) => p.ownerId === actor.userId;
+      const due = [...tracker.overdue, ...tracker.today].filter((p) => viewer.ownOnly || mine(p) || Boolean(b.office));
+      const said = (p: (typeof due)[number]) => `${p.client} — ${p.text} (${dueWords(p.dueAt, now, tracker.tz)}${!mine(p) && p.owner ? `, ${p.owner}` : ""})`;
+      if (due.length) lines.push(`Promised: ${due.slice(0, 3).map(said).join("; ")}${due.length > 3 ? `; +${due.length - 3} more` : ""}.`);
+    }
+  }
 
   if (b.office && isMonday(now, tz)) {
     const r = await getFinancialsRollup(actor.organizationId).catch(() => null);
