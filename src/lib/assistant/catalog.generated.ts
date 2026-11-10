@@ -612,6 +612,17 @@ export const CATALOG: Catalog = {
     "scheduled": false,
     "version": 1
   },
+  "company_pulse": {
+    "label": "Company pulse",
+    "group": "lookups",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
   "book_visit": {
     "label": "Book a visit",
     "group": "visits",

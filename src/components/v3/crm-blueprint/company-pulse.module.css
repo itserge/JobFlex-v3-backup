@@ -1,0 +1,92 @@
+/* ============================================================
+   THE COMPANY PULSE (Smart CRM part 7) — lives inside the CRM
+   brief's `.brief`, so every colour is one of that sheet's
+   tokens (--b-*) and the tiles, tables and lists are its own
+   classes. Only what the sheet has no word for is here.
+   Selectors are nested under `.pulse` (0,2,0) so the shells'
+   bare `button` / `a` rules never win. Mobile first.
+   ============================================================ */
+
+.pulse { gap: 14px; }
+.pulse .headRow { display: flex; align-items: center; justify-content: space-between; gap: 10px 16px; flex-wrap: wrap; }
+
+/* the period switch */
+.pulse .seg { display: inline-flex; border: 2px solid var(--b-ink); border-radius: 2px; background: var(--b-white); overflow: hidden; max-width: 100%; }
+.pulse .segB {
+  min-height: 34px; padding: 0 11px;
+  border: 0; border-right: 1.5px solid var(--b-hair); border-radius: 0;
+  background: transparent; color: var(--b-muted);
+  font-size: 12.5px; font-weight: 800; white-space: nowrap; cursor: pointer;
+}
+.pulse .segB:last-child { border-right: 0; }
+/* A thumb, not a mouse: the four periods grow to a full-height target and share the row. */
+@media (pointer: coarse) {
+  .pulse .seg { width: 100%; }
+  .pulse .segB { min-height: 44px; flex: 1 1 0; padding-inline: 4px; }
+}
+.pulse .segB:hover { color: var(--b-ink); }
+.pulse .segB:focus-visible { outline: 2px solid var(--b-bp); outline-offset: -3px; }
+.pulse .segOn, .pulse .segOn:hover { background: var(--b-ink); color: var(--b-white); }
+
+.pulse .wait, .pulse .quiet {
+  padding: 16px; border: 2px dashed var(--b-hair); border-radius: 2px;
+  font-size: 13px; color: var(--b-muted);
+}
+.pulse .body { display: flex; flex-direction: column; gap: 16px; min-width: 0; transition: opacity 0.2s; }
+.pulse .dim { opacity: 0.55; }
+
+/* six numbers: two across on a phone, three on a tablet, all six on a wide desk */
+.pulse .tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.pulse .tileV { font-size: clamp(20px, 5.4vw, 26px); }
+
+/* worth a look */
+.pulse .notes { list-style: none; margin: 0; padding: 0; border: 2px solid var(--b-ink); border-radius: 2px; background: var(--b-white); box-shadow: var(--b-shadow); }
+.pulse .note { display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 10px; align-items: baseline; padding: 10px 12px; border-bottom: 1px solid var(--b-hair); font-size: 13.5px; line-height: 1.4; }
+.pulse .note:last-child { border-bottom: 0; }
+.pulse .noteDot { width: 8px; height: 8px; border-radius: 50%; background: var(--tone, var(--b-faint)); transform: translateY(-1px); }
+.pulse .noteLink { color: inherit; text-decoration: none; }
+.pulse .noteLink:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* how fast the first reply came */
+.pulse .buckets { list-style: none; margin: 0; padding: 12px; border: 2px solid var(--b-ink); border-radius: 2px; background: var(--b-white); box-shadow: var(--b-shadow); display: flex; flex-direction: column; gap: 8px; }
+.pulse .bucket { display: grid; grid-template-columns: 118px minmax(0, 1fr) 30px; gap: 8px; align-items: center; --k: var(--b-bp); }
+.pulse .bL { font-size: 12px; font-weight: 800; }
+.pulse .bWrap { height: 16px; background: var(--b-paper); border: 1px solid var(--b-hair); border-radius: 2px; overflow: hidden; }
+.pulse .bBar { display: block; height: 100%; background: var(--k); transition: width 0.5s var(--b-ease); }
+.pulse .bN { font-family: var(--b-mono); font-size: 13px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+.pulse .kFast { --k: var(--b-ok); }
+.pulse .kHour { --k: var(--b-bp); }
+.pulse .kDay { --k: var(--b-warn); }
+.pulse .kLater { --k: var(--b-danger); }
+/* Still waiting: the danger colour, hatched — no reply yet is a different thing from a slow one. */
+.pulse .kWaiting .bBar { background: repeating-linear-gradient(135deg, var(--b-danger) 0 5px, transparent 5px 8px); }
+.pulse .kWaiting .bN { color: var(--b-danger); }
+.pulse .kUntimed { --k: var(--b-faint); }
+.pulse .kUntimed .bL { color: var(--b-muted); font-weight: 600; }
+
+.pulse .waiting { display: flex; flex-direction: column; gap: 6px; }
+.pulse .waitingT { font-family: var(--b-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--b-danger); }
+.pulse .waitWho { font-style: normal; color: var(--b-faint); font-weight: 500; }
+.pulse .more { align-self: flex-start; font-size: 12.5px; font-weight: 700; color: var(--b-bp); text-decoration: none; }
+.pulse .more:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+.pulse .nobody { color: var(--b-muted); font-weight: 600; }
+.pulse .bad { color: var(--b-danger); font-weight: 800; }
+.pulse .totalRow td { border-top: 1.5px solid var(--b-ink); font-weight: 800; background: var(--b-paper); }
+.pulse .srcL { font-weight: 700; }
+/* the two money columns a phone has no room for */
+.pulse .wide { display: none; }
+
+.pulse .fine { margin: 0; max-width: 78ch; font-size: 11.5px; line-height: 1.5; color: var(--b-faint); }
+
+@media (min-width: 640px) {
+  .pulse .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pulse .wide { display: table-cell; }
+}
+@media (min-width: 1280px) {
+  .pulse .tiles { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .pulse .tileV { font-size: 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pulse .body, .pulse .bBar { transition: none; }
+}

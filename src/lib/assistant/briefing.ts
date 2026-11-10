@@ -23,6 +23,8 @@ import { ownProposalsOnly } from "@/lib/assistant/roles";
 import { readWaitingFollowUps } from "@/lib/followUps/server";
 import { readPromiseTracker } from "@/lib/promises/server";
 import { dueWords } from "@/lib/promises/shared";
+import { readPulse } from "@/lib/pulse/server";
+import { pulseLine, pulseShortLine } from "@/lib/pulse/shared";
 
 const sentKey = (organizationId: string, userId: string) => `assistant:briefed:${organizationId}:${userId}`;
 
@@ -93,6 +95,15 @@ export async function composeBriefing(actor: AssistantActor, now = new Date(), o
       const said = (p: (typeof due)[number]) => `${p.client} — ${p.text} (${dueWords(p.dueAt, now, tracker.tz)}${!mine(p) && p.owner ? `, ${p.owner}` : ""})`;
       if (due.length) lines.push(`Promised: ${due.slice(0, 3).map(said).join("; ")}${due.length > 3 ? `; +${due.length - 3} more` : ""}.`);
     }
+  }
+
+  // The company pulse (part 7, 2026-11-10), for the office: on Monday the whole of last week in one sentence; on
+  // the other days how fast this week's leads are hearing back.
+  if (b.office) {
+    const monday = isMonday(now, tz);
+    const pulse = await readPulse(actor.organizationId, { period: monday ? "last-week" : "week", now, tz }).catch(() => null);
+    const line = pulse ? (monday ? (pulse.quiet ? null : pulseLine(pulse)) : pulseShortLine(pulse)) : null;
+    if (line) lines.push(line);
   }
 
   if (b.office && isMonday(now, tz)) {
