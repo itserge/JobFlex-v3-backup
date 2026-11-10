@@ -58,6 +58,7 @@ import { SignOutButton } from "@/components/v3/blueprint-shell/sign-out";
 import { EstimatorPicker } from "@/components/v3/estimators-blueprint/estimator-picker";
 import { RepairSheet } from "@/components/v3/repairs/repair-sheet";
 import { PaymentsSheet } from "@/components/v3/payments-panel/payments-sheet";
+import { ProposalMoreSheet } from "@/components/v3/proposal-more/proposal-more-sheet";
 import { FilingChip } from "@/components/v3/filing-chip/filing-chip";
 import { SupportWidget } from "@/components/v3/support-widget/support-widget";
 import { ACTIVE_ENGINE_HREFS } from "@/components/v3/estimators-blueprint/estimators-data";
@@ -333,6 +334,7 @@ export function MobileNav() {
       <EstimatorPicker />
       <RepairSheet />
       <PaymentsSheet />
+      <ProposalMoreSheet />
       {/* Where the estimate on screen will be filed, when the picker was opened from a project or a client (2026-09-18). */}
       <FilingChip />
 

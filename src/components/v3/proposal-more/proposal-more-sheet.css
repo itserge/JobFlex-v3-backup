@@ -1,0 +1,35 @@
+/* THE "MORE" SHEET (2026-11-10) — see proposal-more-sheet.tsx. Global and prefixed `pms-`, like the sheet it sits in
+ * (blueprint-sheet.css): it portals to <body> and reads the `--bps-*` tokens the sheet restates. */
+
+.pms { display: flex; flex-direction: column; gap: 14px; }
+.pms-k { font-family: var(--bps-mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--bps-muted); }
+.pms-sec { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--bps-hair); }
+.pms-sec:first-of-type { border-top: 0; padding-top: 0; }
+.pms-sec p { margin: 0; font-size: 13px; }
+.pms-sec--danger .pms-k { color: var(--bps-danger); }
+.pms-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.pms-row .bps-in { flex: 1 1 180px; min-width: 0; }
+.pms-link { color: var(--bps-blue); font-weight: 700; text-decoration: none; font-size: 13px; }
+.pms-link:hover { text-decoration: underline; }
+.pms-ok { margin: 0; padding: 8px 10px; border: 1.5px solid var(--bps-success); color: var(--bps-success); font-weight: 700; font-size: 12.5px; }
+
+.pms-crew { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.pms-crew li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--bps-hair-soft); }
+.pms-crew-n { flex: 1 1 160px; min-width: 0; font-weight: 800; font-size: 13.5px; }
+.pms-crew-n i { margin-left: 8px; font-style: normal; font-weight: 600; font-size: 11.5px; color: var(--bps-muted); }
+.pms-pay { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; }
+.pms-pay .bps-in { width: 96px; flex: 0 0 auto; }
+.pms-del { color: var(--bps-danger); }
+.pms-del-solid { background: var(--bps-danger); border-color: var(--bps-danger); color: #fff; }
+
+.pms-comm { font-size: 13px; }
+.pms-check { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; cursor: pointer; }
+.pms-check input { margin-top: 2px; }
+
+.pms-cancelled {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 10px 12px; border: 1.5px solid var(--bps-danger); background: #fff8f7; font-size: 13px;
+}
+.pms-cancelled b { color: var(--bps-danger); }
+.pms-cancelled .bps-btn { margin-left: auto; }
+.pms-warn { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--bps-muted); }

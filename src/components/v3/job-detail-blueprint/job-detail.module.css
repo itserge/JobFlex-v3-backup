@@ -171,6 +171,10 @@
 :global(.jf-blueprint .content) .jd-vp { align-self: stretch; }
 /* The tab bar's right end: Repair beside View proposal (2026-11-09). */
 :global(.jf-blueprint .content) .jd-scope { white-space: pre-line; }
+/* "Call Nelly first" (2026-11-10): the office's line for the crew, before they start. */
+:global(.jf-blueprint .content) .jd-callfirst { display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; padding: 6px 11px;
+  border: 1.5px solid var(--warning); color: var(--warning); background: rgba(184,132,32,.07); font-size: 13px; font-weight: 800; }
+:global(.jf-blueprint .content) .jd-callfirst svg { width: 14px; height: 14px; }
 :global(.jf-blueprint .content) .jd-tabacts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; align-items: stretch; }
 /* A repair's line under its title (2026-11-09): of which job, why it came back (the office can change it), who pays. */
 :global(.jf-blueprint .content) .jd-repair { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px;
