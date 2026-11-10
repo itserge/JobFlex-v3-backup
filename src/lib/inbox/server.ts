@@ -211,6 +211,16 @@ export async function fileInboundText(organizationId: string, who: { clientId: s
   await readInboundMessage({ threadId: t.id, organizationId, clientId: t.clientId, channel: "SMS", subject: null, body, sourceId: smsId ?? undefined }).catch((err) => console.warn("[inbox] text read failed:", err instanceof Error ? err.message : err));
 }
 
+/** A message the client wrote on their own page (/c/<token>, Smart CRM part 5): on their thread as PORTAL, read like
+ *  any other inbound message. Returns the message's id. */
+export async function fileInboundPortal(organizationId: string, client: { id: string; name: string; email: string | null; phone: string | null }, body: string): Promise<string> {
+  const t = await ensureThread(organizationId, { clientId: client.id, name: client.name, email: client.email, phone: client.phone });
+  const m = await db.clientMessage.create({ data: { organizationId, threadId: t.id, direction: "IN", channel: "PORTAL", body, status: "RECEIVED" } });
+  await bump(t.id, { direction: "IN", channel: "PORTAL", preview: body });
+  await readInboundMessage({ threadId: t.id, organizationId, clientId: t.clientId, channel: "PORTAL", subject: null, body, sourceId: m.id }).catch((err) => console.warn("[inbox] portal read failed:", err instanceof Error ? err.message : err));
+  return m.id;
+}
+
 // ── replies ──────────────────────────────────────────────────────────────────
 
 /** A message sent to a client from outside the inbox (the client page's Message dialog): its words go on the

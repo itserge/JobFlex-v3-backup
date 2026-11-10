@@ -22,6 +22,7 @@ export type PrefKey =
   | "appointment-booked"
   | "booking-online"
   | "smartbook-request"
+  | "client-message"
   | "appointment-moved"
   | "service-reminder"
   | "job-scheduled"
@@ -107,6 +108,7 @@ export const PREF_EVENTS: readonly PrefEventMeta[] = [
   // A crew member's receipt waiting for approval (2026-09-30): the bell and mail, no text.
   { key: "expense-submitted", name: "Receipt on review", sub: "A crew member sent a receipt — it counts once you approve it", emailAvailable: true, smsAvailable: false, seed: [true, true, false] },
   { key: "worker-responded", name: "Worker responded", sub: "Accepted or declined an assignment", emailAvailable: true, smsAvailable: true, seed: [true, true, false], audience: { office: false }, example: "Marcus Bell accepted \"Standing-seam metal · 18412 92nd Ave NE\" on Mon Oct 13." },
+  { key: "client-message", name: "A client wrote on their page", sub: "A message from a client's own page (their proposals, project and payments) — it's in the Inbox", emailAvailable: true, smsAvailable: true, seed: [true, true, false], audience: { office: true, sales: true }, example: "Lee Walk wrote on their page: \"Can the crew come Friday instead?\"" },
   { key: "review-received", name: "Review received", sub: "A homeowner left a rating", emailAvailable: false, smsAvailable: false, seed: [true, false, false] },
   { key: "trade-reply", name: "Trade board reply", sub: "Someone answered your post", emailAvailable: true, smsAvailable: false, seed: [true, true, false] },
   // Subcontractors (2026-11-08, the subcontractors plan, part 1, lib/projectSubs): a sub sent a quote or a revised
@@ -175,7 +177,7 @@ export const SMS_URGENT_KEYS: readonly PrefKey[] = ["lead-assigned"];
 export type SmsGroupKey = "crew" | "sales" | "money";
 export const SMS_GROUPS: readonly { key: SmsGroupKey; label: string; sub: string; keys: readonly PrefKey[] }[] = [
   { key: "crew", label: "Crew on site", sub: "Started, back for another day, completed, photos and videos", keys: ["job-started", "job-completed", "job-photos", "worker-responded"] },
-  { key: "sales", label: "Sales & leads", sub: "A new lead, a SmartBook time to confirm, a proposal accepted or declined", keys: ["lead-assigned", "smartbook-request", "proposal-accepted", "proposal-declined"] },
+  { key: "sales", label: "Sales & leads", sub: "A new lead, a SmartBook time to confirm, a proposal accepted or declined, a client's message from their page", keys: ["lead-assigned", "smartbook-request", "proposal-accepted", "proposal-declined", "client-message"] },
   { key: "money", label: "Money", sub: "A payment, a change order answered, financing, a sub's quote or invoice", keys: ["payment-received", "change-order", "financing", "sub-quote", "sub-contract"] },
 ];
 /** Which groups a member's stored matrix has on: a group is on when any of

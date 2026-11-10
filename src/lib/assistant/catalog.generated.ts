@@ -689,6 +689,17 @@ export const CATALOG: Catalog = {
     "scheduled": false,
     "version": 1
   },
+  "send_client_page": {
+    "label": "Send a client their page",
+    "group": "people",
+    "effect": "message",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
   "remind_me": {
     "label": "Reminder",
     "group": "reminders",
