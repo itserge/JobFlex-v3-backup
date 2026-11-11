@@ -267,13 +267,19 @@ export function priceFencePackage(layout: FenceLayoutInput, opts: FencePriceOpti
 
   const spacingNote = spacingRatio !== 1 ? ` — ${effSpacing}' post spacing` : "";
   const grade = takesCedarGrade(t) && layout.boardGrade && layout.boardGrade !== "standard" ? BOARD_GRADES[layout.boardGrade] : null;
+  // WASTE ON THE PRICE (2026-11-10, the owner's call): offcuts are real where boards, rails and fabric are cut to
+  // fit — the catalog's per-foot material rate carries the waste setting there. Two places it did not belong: a
+  // rate the shop TYPED is the figure it charges, as typed (the row said $41/lf, the ticket priced $43.60); and a
+  // panel fence (vinyl, aluminum, steel, composite) is posts and whole panels — the takeoff gives it no waste, yet
+  // its price rose 6–7% at the default 10%.
+  const wasteOnRate = rates.source.materialPerLf !== "book" && t.build !== "panel" ? waste : 1;
   line({
     id: "fence-materials",
     name: `${resolved.label} — ${hFt}' fence package${grade ? ` · ${grade.label.toLowerCase()} cedar` : ""}`,
     description: `Posts, ${t.build === "mesh" ? "top rail, fabric & tension hardware" : t.build === "panel" ? "panels" : t.build === "rail" ? "rails" : "rails & pickets"}, concrete, caps & fasteners${spacingNote}`,
     quantity: lf,
     unit: "ln ft",
-    materialCost: rates.materialPerLf * hf * waste * spacingMatF * (grade ? grade.factor : 1),
+    materialCost: rates.materialPerLf * hf * wasteOnRate * spacingMatF * (grade ? grade.factor : 1),
     laborCost: 0,
     taxable: true,
   });
@@ -678,7 +684,9 @@ export function fenceChecks(pkg: FencePackage, layout: FenceLayoutInput, slope?:
     out.push({ level: "warn", text: `A sheer drop measured on ~${Math.round(slope.wallLikeLf)} LF — a retaining wall or cut bank? Posts on a wall are core-drilled and anchored, not dug; not priced here.` });
   }
   if (slope && slope.rackedExtraLf >= 1) {
-    out.push({ level: "info", text: `Racked bays follow the ground: the fabric runs about ${Math.round(slope.rackedExtraLf)} LF longer than the map length — inside the ${layout.wastePct ?? 10}% waste factor.` });
+    // Not "inside the waste factor": the studio bills the footage along the ground, and waste is no longer on every
+    // fence's price (2026-11-10).
+    out.push({ level: "info", text: `Racked bays follow the ground: the fence runs about ${Math.round(slope.rackedExtraLf)} LF longer than the map length.` });
   }
   const frostIn = layout.frostIn ?? marketFrostIn(pkg.market);
   if (frostIn > 0 && t.spec.setInConcrete) {

@@ -36,6 +36,7 @@ import { isTradeId, pickList } from "@/lib/inventory";
 import { inventoryLinkOf, linkedTradeOf } from "@/lib/inventoryPick";
 import { stockItemsOf } from "@/lib/inventoryPolicy";
 import { explodeLines } from "@/lib/inventoryBom";
+import { savedTakeoffsFor } from "@/lib/fence/savedTakeoffServer";
 import { actorsOf } from "@/lib/activityLog";
 import { fieldOf } from "@/lib/crewField/server";
 import {
@@ -444,7 +445,7 @@ export async function loadJobDetail(
   // proposal is placed by its materials or title (lib/inventoryPick).
   const linkChoice = job.proposalId ? ((await inventoryLinkOf(organizationId, [job.proposalId])).get(job.proposalId) ?? null) : null;
   const pickTrade = job.proposal ? linkedTradeOf({ ...job.proposal, inventoryLinked: linkChoice, lineItems: job.proposal.lineItems.filter((l) => l.materialCost > 0) }) : null;
-  const pick = await pickFor(organizationId, pickTrade, job.proposal?.lineItems.filter((l) => l.materialCost > 0) ?? []);
+  const pick = await pickFor(organizationId, pickTrade, job.proposal?.lineItems.filter((l) => l.materialCost > 0) ?? [], job.proposalId);
 
   // A change order amends the proposal (the contract) or, legacy, the job
   // itself; the job page shows both sets as one list, oldest first.
@@ -686,7 +687,7 @@ async function loadWorkerScoped(
     progress: await jobProgressInfo(organizationId, job.id),
     blobEnabled: storageMode() !== "inline",
     money: null,
-    pick: await pickFor(organizationId, pickTrade, job.proposal?.lineItems ?? []),
+    pick: await pickFor(organizationId, pickTrade, job.proposal?.lineItems ?? [], job.proposalId),
     pickTrade,
     loadedAt: job.materialsLoadedAt ? job.materialsLoadedAt.toISOString() : null,
     picked: pickedRows(await jobCostOf(organizationId, job.id)),
@@ -737,11 +738,13 @@ export async function loadJobDetailForPortal(token: string, assignmentId: string
  * warehouse's items for that trade. A job with no trade still lists its
  * materials — the crew still brings them — with nothing on the shelf to check.
  */
-async function pickFor(organizationId: string, trade: string | null, lines: Array<{ name: string; measurementType: string; quantity: number }>): Promise<JdPick[]> {
+async function pickFor(organizationId: string, trade: string | null, lines: Array<{ name: string; measurementType: string; quantity: number }>, proposalId?: string | null): Promise<JdPick[]> {
   if (!lines.length) return [];
   // The stock policy rides along (lib/inventoryPolicy): a per-job item is "ordered for this job", not "short".
   const items = isTradeId(trade) ? await stockItemsOf(organizationId, trade) : [];
-  return pickList(items, explodeLines(trade, lines.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType.toLowerCase().replace("_", " ") })))).map((r) => ({
+  // A fence's own material list, kept at convert (lib/fence/savedTakeoff), while the proposal still fits it.
+  const saved = trade === "fence" && proposalId ? (await savedTakeoffsFor(organizationId, [proposalId])).get(proposalId) : null;
+  return pickList(items, explodeLines(trade, lines.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType.toLowerCase().replace("_", " ") })), saved)).map((r) => ({
     name: r.name,
     unit: r.unit,
     quantity: r.quantity,
