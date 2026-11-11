@@ -310,7 +310,7 @@ const find: ReadTool<{ query: string; kind: "any" | "proposal" | "client" | "job
     ]
   },
   description:
-    "Find proposals, clients, jobs, leads, visits (appointments), projects or crew members by name, title, number or address. Returns ids to use in other tools. Use before any change that names a client, a proposal, a job, a visit, a project or a worker.",
+    "Find proposals, clients, jobs, leads, visits (appointments), projects or crew members by name, title, number or address. Returns ids to use in other tools. Use before any change that names a client, a lead, a proposal, a job, a visit, a project or a worker.",
   params: z.object({
     query: z.string().min(2).max(80).describe("the words to look for, e.g. 'Smith roof', 'Mike' or '#1042'"),
     kind: z.enum(["any", "proposal", "client", "job", "lead", "worker", "visit", "project"]),

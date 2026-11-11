@@ -233,7 +233,7 @@ export function MobileLeads() {
   const [landedId, setLandedId] = useState<string | null>(null);
 
   /* ---- add-leads form ---- */
-  const [form, setForm] = useState({ name: "", email: "", phone: "", project: "", source: "" });
+  const [form, setForm] = useState({ name: "", email: "", phone: "", address: "", project: "", source: "" });
   const [nameErr, setNameErr] = useState(false);
   const [paste, setPaste] = useState("");
   const [fileErr, setFileErr] = useState<string | null>(null);
@@ -767,6 +767,10 @@ export function MobileLeads() {
           name: row.name,
           email: row.email,
           phone: row.phone,
+          address: row.address ?? null,
+          city: row.city ?? null,
+          state: row.state ?? null,
+          zip: row.zip ?? null,
           projectType: row.project,
           description: row.description,
           source: row.source,
@@ -806,12 +810,14 @@ export function MobileLeads() {
         phone: form.phone.trim() || null,
         project: form.project.trim() || null,
         description: null,
+        // The job's address (2026-11-10): one line, split by importLeads when it reads as "street, city, ST 98101".
+        address: form.address.trim() || null,
         // Where it came from (2026-10-16): a call, a referral, Facebook, Angi…
         source: form.source || "MANUAL",
       });
       // The form is only cleared once the row is really in the pipeline — a
       // quota refusal must not also eat what was typed.
-      if (ok) setForm({ name: "", email: "", phone: "", project: "", source: "" });
+      if (ok) setForm({ name: "", email: "", phone: "", address: "", project: "", source: "" });
     })();
   };
 
@@ -858,6 +864,10 @@ export function MobileLeads() {
           name: r.name,
           email: r.email,
           phone: r.phone,
+          address: r.address ?? null,
+          city: r.city ?? null,
+          state: r.state ?? null,
+          zip: r.zip ?? null,
           projectType: r.project,
           description: r.description,
           source: r.source,
@@ -881,6 +891,9 @@ export function MobileLeads() {
     if (!l) return [];
     return [
       { act: "open", icon: "i-user", tone: styles.lmiBp, title: "Open lead", sub: "Full record and history" },
+      // Edit details (2026-11-10): the lead's own page, its edit sheet up — the address a Facebook lead came without.
+      ...(l.locked ? [] : [{ act: "edit", icon: "i-file", tone: styles.lmiBp, title: "Edit details",
+        sub: l.hasStreet ? "Name, phone, email, address, project" : "No address yet — add it here" }]),
       { act: "call", icon: "i-phone", tone: styles.lmiSky, title: "Call",
         sub: l.phone ?? "No phone on file", disabled: !l.phone },
       { act: "mail", icon: "i-mail", tone: styles.lmiOk, title: "Send email",
@@ -900,6 +913,7 @@ export function MobileLeads() {
     setSheetId(null);
     if (!l) return;
     if (act === "open") router.push(`/dashboard/leads/${l.id}`);
+    else if (act === "edit") router.push(`/dashboard/leads/${l.id}?edit=1`);
     else if (act === "call" && l.phone) window.location.assign(`tel:${l.phone.replace(/[^\d+]/g, "")}`);
     else if (act === "mail" && l.email) window.location.assign(`mailto:${l.email}`);
     else if (act === "move") setMoveId(l.id);
@@ -1537,6 +1551,13 @@ export function MobileLeads() {
               </div>
 
               <div className={styles.fld}>
+                <label className={styles.fldLbl} htmlFor="mlAddress">Job address</label>
+                <input className={styles.pinput} id="mlAddress" name="address" type="text"
+                  placeholder="1420 Maple St, Seattle, WA 98101" autoComplete="off" value={form.address}
+                  onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} />
+              </div>
+
+              <div className={styles.fld}>
                 <label className={styles.fldLbl} htmlFor="mlProject">Project type</label>
                 <input className={styles.pinput} id="mlProject" name="project" type="text"
                   placeholder="Metal roof repair" autoComplete="off" value={form.project}
@@ -1618,7 +1639,7 @@ export function MobileLeads() {
                   <div>
                     <div className={styles.stName}>{r.name}</div>
                     <div className={styles.stMeta}>
-                      {[r.email, r.phone, r.project].filter(Boolean).join(" · ") || srcLabel(r.source)}
+                      {[r.email, r.phone, [r.address, r.city, r.state, r.zip].filter(Boolean).join(", "), r.project].filter(Boolean).join(" · ") || srcLabel(r.source)}
                     </div>
                   </div>
                   <button className={styles.stX} type="button" aria-label={`Remove ${r.name}`}

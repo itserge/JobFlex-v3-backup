@@ -14,6 +14,7 @@ import { ESTIMATOR_LABEL, estimatorFor, looksLikeStreetAddress, type EstimatorId
 import { EstimateCardButton } from "./estimate-card-button";
 import { JobFolder, type JobFolderProps } from "./job-folder";
 import { LeadVisits, type LeadVisitsProps } from "./lead-visits";
+import { LeadEdit } from "./lead-edit";
 import styles from "./lead-detail.module.css";
 import { metaLeadPresentation } from "@/lib/meta/leadPresentation";
 import { leadSourceOf } from "@/lib/leads/sources";
@@ -110,9 +111,13 @@ export type LeadDetailProps = {
   /** SmartBook with this lead (2026-10-31): where it stands, the conversation, Pause / Restart / Offer times. Null
    *  for the roles that don't work leads (estimators, workers) and for a lead whose contacts are still locked. */
   smartbook?: SmartBookView | null;
+  /** Edit details (2026-11-10, lead-edit): the roles that work leads, once the contacts are open. */
+  canEdit?: boolean;
+  /** `?edit=1` — the phone's Leads list asked for the edit sheet straight away. */
+  editOpen?: boolean;
 };
 
-export function LeadDetailContent({ lead, canEstimate, scopeFailed, contactsLocked = false, paid = null, folder = null, website = null, visits = null, smartbook = null }: LeadDetailProps) {
+export function LeadDetailContent({ lead, canEstimate, scopeFailed, contactsLocked = false, paid = null, folder = null, website = null, visits = null, smartbook = null, canEdit = false, editOpen = false }: LeadDetailProps) {
   const primary = estimatorFor(lead.aiCategory, lead.description);
   const fullAddress = [lead.address, lead.city, [lead.state, lead.zip].filter(Boolean).join(" ")]
     .filter((s) => s && s.trim())
@@ -164,7 +169,12 @@ export function LeadDetailContent({ lead, canEstimate, scopeFailed, contactsLock
                 {contactsLocked ? (
                   <span className={cx("soft")}> — the street opens when you accept</span>
                 ) : (
-                  !hasStreet && <span className={cx("soft")}> — no street address yet; a roof or fence quote needs one</span>
+                  !hasStreet && (
+                    <span className={cx("soft")}>
+                      {" "}
+                      — no street address yet; a roof or fence quote needs one{canEdit ? ". Add it with Edit details." : ""}
+                    </span>
+                  )
                 )}
               </dd>
               <dt>Project</dt>
@@ -194,6 +204,13 @@ export function LeadDetailContent({ lead, canEstimate, scopeFailed, contactsLock
                 </>
               ) : null}
             </dl>
+            {canEdit && !contactsLocked ? (
+              <LeadEdit
+                leadId={lead.id}
+                autoOpen={editOpen}
+                initial={{ name: lead.name, phone: lead.phone, email: lead.email, address: lead.address, city: lead.city, state: lead.state, zip: lead.zip, projectType: lead.projectType }}
+              />
+            ) : null}
           </section>
           {visits && <LeadVisits {...visits} />}
           {smartbook && <LeadSmartBook leadId={lead.id} initial={smartbook} className={cx("card")} />}

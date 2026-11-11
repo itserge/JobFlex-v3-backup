@@ -284,6 +284,8 @@ export function LeadsContent({ leads: allLeads, offers: allOffers }: { leads: Le
               <label className="fld"><span className="fld-lbl">Name</span><input className="fld-in" id="mName" placeholder="J. Whitfield" /></label>
               <label className="fld"><span className="fld-lbl">Email</span><input className="fld-in" id="mEmail" placeholder="name@mail.com" /></label>
               <label className="fld"><span className="fld-lbl">Phone</span><input className="fld-in" id="mPhone" placeholder="(425) 555-0112" /></label>
+              {/* The job's address (2026-11-10): one line; importLeads splits "street, city, ST 98101" into its parts. */}
+              <label className="fld"><span className="fld-lbl">Job address</span><input className="fld-in" id="mAddress" placeholder="1420 Maple St, Seattle, WA 98101" autoComplete="off" /></label>
               <label className="fld"><span className="fld-lbl">Project type</span><input className="fld-in" id="mProject" placeholder="Metal roof repair" /></label>
               {/* Where it came from — so "Your own leads" can say which source pays. */}
               <label className="fld"><span className="fld-lbl">Where it came from</span>

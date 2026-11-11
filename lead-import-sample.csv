@@ -1,6 +1,6 @@
-name,email,phone,project,description
-Dana Whitfield,dana.whitfield@example.com,(425) 555-0112,Metal roof replacement,"Two-storey colonial, 2,400 sq ft roof. Wants standing seam, asking about a fall install."
-Marcus Ellery,m.ellery@example.com,(206) 555-0147,Cedar fence — 180 ft,"Replacing a failed pressure-treated fence along the north and east property lines. Two gates."
-Priya Raghavan,praghavan@example.com,(360) 555-0193,Kitchen remodel,"Full gut, moving the sink to the island. Has cabinet quotes already, needs the rest."
-Owen Castellanos,,(509) 555-0168,Deck rebuild,"Existing 16x20 deck is rotting at the ledger. Wants composite decking and new rails."
-Halvorsen Property Group,leases@example.com,(253) 555-0121,Gutter replacement — 6 units,"Small multifamily portfolio in Kent. Wants one quote covering all six buildings."
+name,email,phone,address,city,state,zip,project,description
+Dana Whitfield,dana.whitfield@example.com,(425) 555-0112,1420 Maple St,Bothell,WA,98011,Metal roof replacement,"Two-storey colonial, 2,400 sq ft roof. Wants standing seam, asking about a fall install."
+Marcus Ellery,m.ellery@example.com,(206) 555-0147,88 Ridge Ave N,Seattle,WA,98109,Cedar fence — 180 ft,"Replacing a failed pressure-treated fence along the north and east property lines. Two gates."
+Priya Raghavan,praghavan@example.com,(360) 555-0193,,Olympia,WA,,Kitchen remodel,"Full gut, moving the sink to the island. Has cabinet quotes already, needs the rest."
+Owen Castellanos,,(509) 555-0168,,,,,Deck rebuild,"Existing 16x20 deck is rotting at the ledger. Wants composite decking and new rails."
+Halvorsen Property Group,leases@example.com,(253) 555-0121,2210 Central Ave S,Kent,WA,98032,Gutter replacement — 6 units,"Small multifamily portfolio in Kent. Wants one quote covering all six buildings."

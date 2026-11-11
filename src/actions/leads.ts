@@ -15,6 +15,8 @@ import { requirePage } from "@/lib/customPageAccess";
 import { callLead } from "@/lib/aiDesk/leadCalls";
 import { salesCanTouchLead } from "@/lib/leads/salesAccess";
 import { markLeadContacted } from "@/lib/leads/contacted";
+import { editLeadAs } from "@/lib/leads/edit";
+import { splitLeadAddress } from "@/lib/leads/details";
 
 const statusSchema = z.enum([
   LeadStatus.NEW,
@@ -79,6 +81,54 @@ export async function callLeadWithDesk(id: string): Promise<{ ok: true; message:
   }
 }
 
+const leadDetailsInput = z.object({
+  name: z.string().max(400),
+  phone: z.string().max(400).nullable().optional(),
+  email: z.string().max(400).nullable().optional(),
+  address: z.string().max(400).nullable().optional(),
+  city: z.string().max(400).nullable().optional(),
+  state: z.string().max(400).nullable().optional(),
+  zip: z.string().max(400).nullable().optional(),
+  projectType: z.string().max(400).nullable().optional(),
+});
+
+/**
+ * Edit on the lead page (owner, 2026-11-10: a Facebook lead often comes with a phone and nothing else — once the
+ * office has the address and the rest, it is typed in here). The form sends every field; what differs from the
+ * record changes, an emptied field is cleared, and the client record the lead already is gets its blanks filled
+ * (lib/leads/edit). An envelope, never a throw — production redacts thrown messages, and the form must say why.
+ */
+export async function updateLeadDetails(
+  id: string,
+  raw: unknown,
+): Promise<{ ok: true; message: string; changed: number } | { ok: false; message: string }> {
+  try {
+    const { organizationId, user, role } = await requireSalesOrManager();
+    await requirePage(organizationId, "leads");
+    const parsed = leadDetailsInput.safeParse(raw);
+    if (!parsed.success) return { ok: false, message: "Those details couldn't be read. Check the fields and try again." };
+    const lead = await db.lead.findUnique({ where: { id }, select: { organizationId: true, assignedToId: true, claimedById: true, status: true } });
+    if (!lead || lead.organizationId !== organizationId) return { ok: false, message: "That lead isn't here any more." };
+    if (isSalesRole(role) && !salesCanTouchLead(lead, user.id)) return { ok: false, message: "You can only edit your own leads." };
+    const r = await editLeadAs({ organizationId, userId: user.id }, id, parsed.data);
+    if (!r.ok) return { ok: false, message: r.error };
+    if (!r.changed.length) return { ok: true, message: "Nothing changed.", changed: 0 };
+    revalidatePath(`/dashboard/leads/${id}`);
+    revalidatePath("/dashboard/leads");
+    revalidatePath("/dashboard/leads/kanban");
+    if (r.client) revalidatePath(`/dashboard/clients/${r.client.id}`);
+    const also = r.client ? ` Also added to ${r.client.name}'s client record: ${andWords(r.client.filled)}.` : "";
+    return { ok: true, message: `Saved.${also}`, changed: r.changed.length };
+  } catch (err) {
+    if (err instanceof UnauthorizedError) return { ok: false, message: "Your role can't edit leads." };
+    if (err instanceof Error && /locked|not on your plan|custom page/i.test(err.message)) return { ok: false, message: "Leads aren't on your plan." };
+    console.warn("[leads] edit failed:", err instanceof Error ? err.message : err);
+    return { ok: false, message: "The lead couldn't be saved just now. Check your connection and try again." };
+  }
+}
+
+const andWords = (xs: string[]) => (xs.length <= 1 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+
 // Accept an incoming lead: mark CLAIMED and record who took it + when.
 export async function claimLead(id: string) {
   const { organizationId, user, role } = await requireSalesOrManager();
@@ -133,6 +183,12 @@ const importLeadInput = z.object({
   phone: z.string().nullable().optional(),
   projectType: z.string().nullable().optional(),
   description: z.string().nullable().optional(),
+  // The job's address (2026-11-10): a CSV's address / city / state / ZIP columns, or the one "Job address" line typed
+  // by hand — split into its parts when it reads as "street, city, ST 98101" (lib/leads/details).
+  address: z.string().max(300).nullable().optional(),
+  city: z.string().max(120).nullable().optional(),
+  state: z.string().max(60).nullable().optional(),
+  zip: z.string().max(20).nullable().optional(),
   // Any of the contractor's own sources (lib/leads/sources) — picked by hand,
   // detected in a pasted email, or read off a CSV column. Never LEAD_CENTER:
   // only the platform says a lead came from JobFlex.
@@ -142,6 +198,18 @@ const importLeadInput = z.object({
     .transform((v) => storableSource(v, "IMPORT")),
 });
 const importLeadsInput = z.array(importLeadInput).min(1).max(500);
+
+const blank = (s: string | null | undefined) => {
+  const t = (s ?? "").replace(/\s+/g, " ").trim();
+  return t ? t : null;
+};
+
+/** An imported row's address as the lead keeps it: its own columns when it has them, else the one line split. */
+function addressOf(r: { address?: string | null; city?: string | null; state?: string | null; zip?: string | null }) {
+  const own = { address: blank(r.address), city: blank(r.city), state: blank(r.state), zip: blank(r.zip) };
+  if (own.address && !own.city && !own.state && !own.zip) return splitLeadAddress(own.address);
+  return own;
+}
 
 // Bring staged leads into the pipeline as real NEW-status rows, owner-notified.
 // Sales reps may import too — rows land as NEW, which is inside their slice.
@@ -161,6 +229,7 @@ export async function importLeads(raw: unknown) {
           name: r.name,
           email: r.email ?? null,
           phone: r.phone ?? null,
+          ...addressOf(r),
           projectType: r.projectType ?? null,
           description: r.description ?? null,
           source: r.source,

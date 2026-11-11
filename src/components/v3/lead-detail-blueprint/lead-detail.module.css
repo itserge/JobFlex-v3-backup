@@ -369,3 +369,19 @@
   :global(.bps) .pick-list { grid-template-columns: 1fr 1fr; }
   :global(.bps) .pick-row { min-height: 44px; }
 }
+
+/* Edit details (2026-11-10, lead-edit.tsx): the button under the contact card's facts, the saved line beside it. */
+:global(.jf-blueprint .content) .edit-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--hair); }
+:global(.jf-blueprint .content) .edit-btn { gap: 7px; }
+:global(.jf-blueprint .content) .edit-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+:global(.jf-blueprint .content) .edit-note { flex: 1 1 180px; margin: 0; }
+:global(.jf-blueprint .content) .edit-note:empty { display: none; }
+/* The address's city / state / ZIP share a row on the desk; on a phone the city has its own and the two short ones pair. */
+:global(.bps) .edit-city { flex: 2 1 40%; }
+:global(.bps) .edit-st { flex: 1 1 16%; }
+:global(.bps) .edit-zip { flex: 1 1 22%; }
+@media (max-width: 768px) {
+  :global(.jf-blueprint .content) .edit-btn { flex: 1 1 100%; min-height: 44px; }
+  :global(.bps) .edit-city { flex-basis: 100%; }
+  :global(.bps) .edit-st, :global(.bps) .edit-zip { flex: 1 1 40%; }
+}

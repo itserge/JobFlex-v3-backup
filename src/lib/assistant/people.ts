@@ -14,6 +14,11 @@ import { toE164 } from "@/lib/phone";
 import { createClientAs, patchClientAs } from "@/lib/clients/core";
 import { createLeadAs } from "@/lib/leads/create";
 import { isPageLocked } from "@/lib/customPageAccess";
+import { isSalesRole } from "@/lib/orgContext";
+import { salesCanTouchLead } from "@/lib/leads/salesAccess";
+import { contactsLocked } from "@/lib/leadCenter/contacts";
+import { editLeadAs } from "@/lib/leads/edit";
+import { cleanLeadPatch, splitLeadAddress } from "@/lib/leads/details";
 
 const ID = z.string().min(1).max(64);
 const NAME = z.string().trim().min(2).max(120);
@@ -234,7 +239,7 @@ const addLead: WriteTool<LeadArgs, LeadArgs> = {
     const c = got.c;
     const name = a.name.trim();
     const lead = (await findLeads(actor.organizationId, name)).find((l) => sameName(l.name, name));
-    if (lead) return { ok: false, say: `${lead.name} is already a lead (${lead.status.toLowerCase()}, came ${dayWords(lead.createdAt, actor.timezone)}).` };
+    if (lead) return { ok: false, say: `${lead.name} is already a lead (${lead.status.toLowerCase()}, came ${dayWords(lead.createdAt, actor.timezone)}). To add their address or other details, say "add … to ${lead.name.split(/\s+/)[0]}'s lead".` };
     const client = (await findClients(actor.organizationId, name)).find((x) => sameName(x.name, name));
     if (client) return { ok: false, say: `${client.name} is already a client, so there's no lead to add. Book a visit or build an estimate for them instead.` };
     const projectType = a.projectType?.trim() || null;
@@ -252,4 +257,96 @@ const addLead: WriteTool<LeadArgs, LeadArgs> = {
   },
 };
 
-export const PEOPLE_TOOLS = [addClient, updateClient, addLead];
+type LeadUpdateArgs = { leadId: string; name: string | null; projectType: string | null } & Contact;
+type LeadUpdatePayload = { leadId: string; name: string; changes: Record<string, string | null> };
+
+// A lead's details by voice or text (owner, 2026-11-10: a Facebook lead comes with a phone and nothing else; once the
+// office has the address, "add the address 1420 Maple St to Dana's lead"). Through the lead page's own core
+// (lib/leads/edit): only what is given changes, and the client record the lead already is gets its blanks filled.
+const updateLead: WriteTool<LeadUpdateArgs, LeadUpdatePayload> = {
+  kind: "write",
+  name: "update_lead",
+  need: "leads.write",
+  card: {
+    "label": "Update a lead",
+    "purpose": "A lead's address, phone, email, name or project, once you have them.",
+    "when": "'Add the address 1420 Maple St, Bothell to Dana's lead': find the lead first; give only what changes. Someone who is already a client is update_client.",
+    "objects": [
+      "lead"
+    ],
+    "effect": "record",
+    "group": "people",
+    "version": 1,
+    "since": "2026-11-10",
+    "samples": [
+      {
+        "say": "add the address 1420 Maple St, Bothell WA 98011 to Dana's lead",
+        "args": {
+          "leadId": "l_1",
+          "name": null,
+          "phone": null,
+          "email": null,
+          "address": "1420 Maple St",
+          "city": "Bothell",
+          "state": "WA",
+          "zip": "98011",
+          "projectType": null
+        }
+      }
+    ]
+  },
+  description:
+    "Change a lead's details — the job's street address (with city, state, zip as their own fields), a phone, an email, the name, or what they want (projectType). Give only what changes (null = leave as it is). Find the lead first (find, kind 'lead'). The client record with the same phone or email gets any blanks filled too.",
+  params: z.object({ leadId: ID, name: maybe(120), phone: maybe(40), email: maybe(200), address: maybe(200), city: maybe(80), state: maybe(40), zip: maybe(20), projectType: maybe(80) }),
+  payload: z.object({ leadId: ID, name: z.string(), changes: z.record(z.string(), z.string().nullable()) }),
+  async plan({ actor }, a) {
+    if (await isPageLocked(actor.organizationId, "leads")) return { ok: false, say: "Leads aren't in your plan yet (Settings → Billing)." };
+    const cur = await db.lead.findFirst({
+      where: { id: a.leadId, organizationId: actor.organizationId },
+      select: { id: true, name: true, phone: true, email: true, address: true, city: true, state: true, zip: true, projectType: true, source: true, status: true, assignedToId: true, claimedById: true },
+    });
+    if (!cur) return { ok: false, say: "I couldn't find that lead." };
+    if (contactsLocked(cur)) return { ok: false, say: `${cur.name} is a Lead Center lead you haven't accepted yet — accept it first, then its details can change.` };
+    if (isSalesRole(actor.role) && !salesCanTouchLead(cur, actor.userId)) return { ok: false, say: `${cur.name} is another rep's lead — only they or a manager can change it.` };
+    // An address spoken as one line ("1420 Maple St, Bothell WA 98011") lands in its parts when the parts weren't given.
+    const line = !a.city && !a.state && !a.zip && a.address ? splitLeadAddress(a.address) : null;
+    const got = contactOf({ ...a, ...(line ? { address: line.address, city: line.city, state: line.state, zip: line.zip } : {}) });
+    if (!got.ok) return got;
+    const next = got.c;
+    const changes: Record<string, string | null> = {};
+    const words: string[] = [];
+    const newName = a.name?.trim() || null;
+    if (newName && newName !== cur.name) {
+      changes.name = newName;
+      words.push(`rename them to ${newName}`);
+    }
+    if (next.phone && next.phone !== cur.phone) {
+      changes.phone = next.phone;
+      words.push(`phone ${phoneSay(next.phone)}`);
+    }
+    if (next.email && next.email.toLowerCase() !== (cur.email ?? "").toLowerCase()) {
+      changes.email = next.email;
+      words.push(`email ${next.email}`);
+    }
+    const place = (["address", "city", "state", "zip"] as const).filter((k) => next[k] && next[k] !== cur[k]);
+    for (const k of place) changes[k] = next[k];
+    if (place.length) words.push(`address ${[next.address ?? cur.address, next.city ?? cur.city, [next.state ?? cur.state, next.zip ?? cur.zip].filter(Boolean).join(" ")].filter(Boolean).join(", ")}`);
+    const projectType = a.projectType?.trim() || null;
+    if (projectType && projectType !== cur.projectType) {
+      changes.projectType = projectType;
+      words.push(`project ${projectType}`);
+    }
+    if (!Object.keys(changes).length) return { ok: false, say: `${cur.name}'s lead already has that on file — nothing to change.` };
+    const checked = cleanLeadPatch(changes);
+    if (!checked.ok) return { ok: false, say: checked.error };
+    return { ok: true, payload: { leadId: cur.id, name: cur.name, changes }, readback: `Change ${cur.name}'s lead: ${andList(words)}.` };
+  },
+  async execute({ actor }, p) {
+    const r = await editLeadAs({ organizationId: actor.organizationId, userId: actor.userId }, p.leadId, p.changes);
+    if (!r.ok) return { say: r.error, result: { leadId: p.leadId } };
+    const also = r.client ? ` ${r.client.name}'s client record got the ${andList(r.client.filled)} too.` : "";
+    return { say: r.changed.length ? `Done — ${r.lead.name}'s lead is updated.${also}` : `${r.lead.name}'s lead already had that — nothing changed.`, result: { leadId: r.lead.id } };
+  },
+};
+
+export const PEOPLE_TOOLS = [addClient, updateClient, addLead, updateLead];
