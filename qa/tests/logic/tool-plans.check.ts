@@ -1,4 +1,4 @@
-// BASE + TOOLS — the new plans' rules (2026-11-10, part 1), on the catalog as set. No database.
+// BASE + TOOLS — the new plans' rules (2026-11-10, parts 1–2), on the catalog as set. No database.
 //   NODE_PATH="" npx tsx --tsconfig tsconfig.json qa/tests/logic/tool-plans.check.ts
 
 import {
@@ -21,8 +21,20 @@ import {
   tryEndsAt,
   tryReminderAt,
   tryWords,
+  emptyToolsRecord,
+  isToolsExtraKind,
+  kindName,
+  parseToolsRecord,
+  planIdOfKind,
+  priceProblems,
+  shopFromRecord,
+  toolIdOfKind,
+  toolKind,
+  triesToBill,
+  withPrices,
 } from "@/lib/toolPlans/shared";
 import { SPOTLIGHT_TOOLS } from "@/lib/planSpotlight";
+import { isAddonLine, planLine } from "@/lib/deckAddon";
 
 let bad = 0;
 function check(label: string, ok: boolean, extra?: unknown) {
@@ -92,6 +104,44 @@ check("the reminder goes a day before the end", tryReminderAt(signup, trialEnd).
 const lastHours = new Date(Date.UTC(2026, 10, 17, 3));
 check("…or at once when less than a day is left", tryReminderAt(lastHours, trialEnd).getTime() === lastHours.getTime());
 check("the button says the date, the price and that it's billed", tryWords("roof", trialEnd, "UTC") === "Free until Nov 17, then $49/mo on your bill. Remove it any time before.");
+
+// ── part 2: prices set in Admin → Plans ──
+const raisedSeat = withPrices({ seats: { professional: 1299 } });
+check("a changed extra-person price is said on the card, never typed into it", cardLines("professional", null).at(-1) === "$9.99 for each person after 5" && cardLines("professional", null, raisedSeat).at(-1) === "$12.99 for each person after 5" && !cardLines("basic", null).some((l) => /each person/.test(l)));
+check("prices apply; nonsense keeps the default", withPrices({ tools: { roof: 5900, fence: 5 as number } }).tools.find((t) => t.id === "roof")!.cents === 5900 && withPrices({ tools: { fence: 5 } }).tools.find((t) => t.id === "fence")!.cents === 4900);
+check("a card priced with Admin's prices", cardCents("basic", "roof", withPrices({ tools: { roof: 5900 } })) === 3999 + 5900);
+check("a price set that breaks the rule is refused, in words", priceProblems({ plans: { professional: 11900 } }).some((p) => /Professional vs Basic \+ 4 more people/.test(p)));
+check("an out-of-range price is refused", priceProblems({ tools: { roof: 50 } }).length === 1 && priceProblems({ tools: { roof: 2_000_000 } }).length === 1);
+check("a sane change passes", priceProblems({ tools: { roof: 5900 }, seats: { professional: 899 } }).length === 0);
+
+// ── part 2: the lines on the Stripe subscription ──
+check("line kinds: a tool, the people, the plan", toolKind("roof") === "tool-roof" && toolIdOfKind("tool-roof") === "roof" && toolIdOfKind("tool-nope") === null && planIdOfKind("tools-professional") === "professional" && planIdOfKind("professional") === null);
+check("tool and people lines are add-ons; the plan's line and Classic lines aren't new-plan extras", isToolsExtraKind("seat") && isToolsExtraKind("tool-deck") && !isToolsExtraKind("tools-professional") && !isToolsExtraKind("deck-addon") && !isToolsExtraKind("professional") && !isToolsExtraKind(undefined));
+const line = (kind: string) => ({ price: { metadata: { jfKind: kind } } });
+check("the plan's line is found whatever order Stripe lists them in", planLine([line("seat"), line("tool-roof"), line("tools-professional")])?.price.metadata.jfKind === "tools-professional" && isAddonLine(line("seat")) && isAddonLine(line("tool-roof")) && !isAddonLine(line("tools-basic")));
+check("Classic lines read as before", planLine([line("deck-addon"), line("professional")])?.price.metadata.jfKind === "professional" && !isAddonLine(line("professional")) && !isAddonLine(line("custom-base")));
+check("product names", kindName("tools-professional") === "JobFlex Professional" && kindName("tool-roof") === "JobFlex Roof estimator" && kindName("seat") === "JobFlex extra person");
+
+// ── part 2: the shop's record ──
+check("a record that isn't one opens nothing", parseToolsRecord("{oops") === null && parseToolsRecord(JSON.stringify({ plan: "enterprise" })) === null && parseToolsRecord(null) === null);
+const stored = parseToolsRecord(JSON.stringify({ ...emptyToolsRecord("professional", "deck"), lines: { roof: { itemId: "si_1", cents: 4900, since: "2026-11-10" }, hacker: { itemId: "x" } } }));
+check("unknown tools in a stored record are dropped", !!stored && Object.keys(stored.lines).join() === "roof" && stored.main === "deck");
+const at = (d: number) => new Date(Date.UTC(2026, 10, d, 12));
+const rec = {
+  ...emptyToolsRecord("basic", "deck"),
+  lines: { texting: { itemId: "si_t", cents: 2900, since: "2026-11-01" } },
+  closing: { aidesk: at(20).toISOString() },
+  tries: {
+    roof: { startedAt: at(10).toISOString(), endsAt: at(13).toISOString(), onLine: false },
+    fence: { startedAt: at(10).toISOString(), endsAt: at(13).toISOString(), onLine: false, removedAt: at(11).toISOString() },
+    video: { startedAt: at(1).toISOString(), endsAt: at(4).toISOString(), onLine: false, billedAt: at(4).toISOString() },
+  },
+};
+const open12 = toolsOpen(shopFromRecord(rec, at(12)));
+check("open: main, on the bill, closing at the month's end, tries running (a removed one until its end)", ["deck", "texting", "aidesk", "roof", "fence"].every((t) => open12.has(t as never)) && !open12.has("video"));
+const open21 = toolsOpen(shopFromRecord(rec, at(21)));
+check("…after their dates: the closing tool and the tries are gone", !open21.has("aidesk") && !open21.has("roof") && !open21.has("fence") && open21.has("texting"));
+check("to bill when its time is up: only the try nobody removed", triesToBill(rec, at(12)).length === 0 && triesToBill(rec, at(14)).join() === "roof");
 
 // ── the ads ──
 check("today's ad links find their tool (Smart Proposal stays in every plan)", SPOTLIGHT_TOOLS.filter((k) => k !== "smart").every((k) => toolForAdKey(k) !== null) && toolForAdKey("smart") === null);

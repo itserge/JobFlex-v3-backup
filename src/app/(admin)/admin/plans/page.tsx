@@ -14,6 +14,8 @@ import { parseFeatures } from "@/lib/planCatalogServer";
 import { getCustomPlanTrialDays } from "@/lib/customPlanConfig";
 import { CUSTOM_BASE_CENTS, CUSTOM_PAGE_CENTS, CUSTOM_PAGES } from "@/lib/customPlan";
 import { describeCommission } from "@/lib/commission";
+import { readToolPrices } from "@/lib/toolPlans/prices";
+import { ToolPricesPanel } from "@/components/v3/admin-plans/tool-prices-panel";
 import {
   AdminPlansContent,
   type HydratedPlan,
@@ -30,7 +32,7 @@ export const metadata: Metadata = {
 
 export default async function AdminPlansPage() {
   await requirePlatformAdmin();
-  const [plans, planPrices, promoCodes, customTrialDays] = await Promise.all([
+  const [plans, planPrices, promoCodes, customTrialDays, toolPrices] = await Promise.all([
     db.pricingPlan.findMany({ orderBy: { order: "asc" } }),
     db.planPrice.findMany({ where: { active: true } }),
     db.promoCode.findMany({
@@ -38,6 +40,7 @@ export default async function AdminPlansPage() {
       include: { influencer: { select: { displayName: true } } },
     }),
     getCustomPlanTrialDays(),
+    readToolPrices({ fresh: true }),
   ]);
 
   const hydrated: HydratedPlan[] = plans.map((p) => ({
@@ -76,6 +79,7 @@ export default async function AdminPlansPage() {
   }));
 
   return (
+    <>
     <AdminPlansContent
       plans={hydrated}
       synced={synced}
@@ -90,5 +94,8 @@ export default async function AdminPlansPage() {
       stripeMode={await getStripeMode()}
       stripeModes={{ live: Boolean(stripeKeyFor("live")), test: Boolean(stripeKeyFor("test")) }}
     />
+      {/* The new plans' prices (Base + Tools, part 2, 2026-11-10) — used once the Plans switch on Trial watch is on. */}
+      <ToolPricesPanel initial={toolPrices} />
+    </>
   );
 }

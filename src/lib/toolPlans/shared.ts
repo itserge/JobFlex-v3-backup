@@ -179,7 +179,6 @@ export const TOOL_PLANS: readonly ToolPlanDef[] = [
       "Workers, the crew app and field tools",
       "Managers, office and sales roles, commission",
       "Team messages, Hire board, SmartBook",
-      "$9.99 for each person after 5",
     ],
   },
   {
@@ -199,7 +198,6 @@ export const TOOL_PLANS: readonly ToolPlanDef[] = [
       "Any 2 trade tools included",
       "Custom branding and domain, several companies",
       "Priority support and a setup call",
-      "$7.99 for each person after 10",
     ],
   },
   {
@@ -212,7 +210,7 @@ export const TOOL_PLANS: readonly ToolPlanDef[] = [
     includedTrade: "all",
     officeIncluded: true,
     features: [...TEAM, ...ADV_ONLY],
-    lines: ["Everything in Advanced", "Every tool, all twelve", "Up to 10 people, $7.99 each after"],
+    lines: ["Everything in Advanced", "Every tool, all twelve", "Up to 10 people"],
   },
 ];
 
@@ -263,9 +261,9 @@ export function tryReminderAt(now: Date, endsAt: Date): Date {
 }
 
 /** The words on the try button and in the reminder: "Free until Nov 17, then $49/mo on your bill." */
-export function tryWords(tool: ToolId, endsAt: Date, timeZone?: string): string {
+export function tryWords(tool: ToolId, endsAt: Date, timeZone?: string, cat: Catalog = DEFAULT_CATALOG): string {
   const day = endsAt.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(timeZone ? { timeZone } : {}) });
-  return `Free until ${day}, then ${money(toolById(tool).cents)}/mo on your bill. Remove it any time before.`;
+  return `Free until ${day}, then ${money(catTool(cat, tool).cents)}/mo on your bill. Remove it any time before.`;
 }
 
 // ── what a shop has ──────────────────────────────────────────────────────────
@@ -307,12 +305,12 @@ export function pagesOpen(shop: ShopTools): Set<string> {
 // ── prices ───────────────────────────────────────────────────────────────────
 
 /** The monthly bill, in cents: the size, extra people, and the tools on the bill that the size doesn't include. */
-export function monthlyCents(shop: ShopTools, people: number): number {
-  const plan = toolPlanById(shop.plan);
+export function monthlyCents(shop: ShopTools, people: number, cat: Catalog = DEFAULT_CATALOG): number {
+  const plan = catPlan(cat, shop.plan);
   const extra = plan.seatCents === null ? 0 : Math.max(0, people - plan.seats) * plan.seatCents;
   const included = toolsOpen({ ...shop, main: null, kept: [], trying: [] });
   const billed = new Set<ToolId>([...(shop.main ? [shop.main] : []), ...shop.kept].filter((id) => !included.has(id)));
-  return plan.cents + extra + [...billed].reduce((n, id) => n + toolById(id).cents, 0);
+  return plan.cents + extra + [...billed].reduce((n, id) => n + catTool(cat, id).cents, 0);
 }
 
 /** "$39.99" · "$75" · "$1,234.50". */
@@ -322,17 +320,19 @@ export function money(cents: number): string {
 }
 
 /** A plan card's price with the ad's tool: the size plus the tool, unless the size already includes it. */
-export function cardCents(planId: ToolPlanId, tool: ToolId | null): number {
-  return monthlyCents({ plan: planId, main: tool, kept: [], chosenTrade: tool ? [tool] : [] }, 1);
+export function cardCents(planId: ToolPlanId, tool: ToolId | null, cat: Catalog = DEFAULT_CATALOG): number {
+  return monthlyCents({ plan: planId, main: tool, kept: [], chosenTrade: tool ? [tool] : [] }, 1, cat);
 }
 
 /** A plan card's lines with the ad's tool first. */
-export function cardLines(planId: ToolPlanId, tool: ToolId | null): string[] {
-  const plan = toolPlanById(planId);
-  if (!tool) return [...plan.lines];
-  const t = toolById(tool);
+export function cardLines(planId: ToolPlanId, tool: ToolId | null, cat: Catalog = DEFAULT_CATALOG): string[] {
+  const plan = catPlan(cat, planId);
+  // The extra-person price is said from the price in force, never typed into a line (Admin → Plans can change it).
+  const seats = plan.seatCents ? [`${money(plan.seatCents)} for each person after ${plan.seats}`] : [];
+  if (!tool) return [...plan.lines, ...seats];
+  const t = catTool(cat, tool);
   const included = plan.includedTrade === "all" || (plan.officeIncluded && t.kind === "office") || (typeof plan.includedTrade === "number" && plan.includedTrade > 0 && t.kind === "trade");
-  return [included ? `${t.label} included` : `+ ${t.label} (${money(t.cents)}/mo)`, ...plan.lines];
+  return [included ? `${t.label} included` : `+ ${t.label} (${money(t.cents)}/mo)`, ...plan.lines, ...seats];
 }
 
 // ── the rule the prices keep ─────────────────────────────────────────────────
@@ -369,4 +369,193 @@ export function ladderChecks(plans: readonly ToolPlanDef[] = TOOL_PLANS, tools: 
     { label: "Complete vs everything on Professional", parts: proTo(complete.seats) + sum(tools), bundle: complete.cents, ok: false },
   ];
   return checks.map((c) => ({ ...c, ok: c.bundle < c.parts }));
+}
+
+// ── prices set in Admin → Plans ──────────────────────────────────────────────
+
+/** The plans and tools with the prices in force. The code's prices are the defaults; Admin → Plans can change them
+ *  (lib/toolPlans/prices, SyncState `toolPrices`). A shop keeps the price its Stripe line was bought at. */
+export interface Catalog {
+  plans: readonly ToolPlanDef[];
+  tools: readonly ToolDef[];
+}
+
+export const DEFAULT_CATALOG: Catalog = { plans: TOOL_PLANS, tools: TOOLS };
+
+function catTool(cat: Catalog, id: ToolId): ToolDef {
+  const t = cat.tools.find((x) => x.id === id);
+  if (!t) throw new Error(`Unknown tool: ${id}`);
+  return t;
+}
+
+function catPlan(cat: Catalog, id: ToolPlanId): ToolPlanDef {
+  const p = cat.plans.find((x) => x.id === id);
+  if (!p) throw new Error(`Unknown plan: ${id}`);
+  return p;
+}
+
+/** The sizes that sell extra people. */
+export type SeatPlanId = "professional" | "advanced" | "complete";
+
+/** What Admin → Plans stores: only the prices it changed, in cents. */
+export interface PriceSet {
+  plans?: Partial<Record<ToolPlanId, number>>;
+  seats?: Partial<Record<SeatPlanId, number>>;
+  tools?: Partial<Record<ToolId, number>>;
+}
+
+/** A sane monthly price in cents: $1 to $10,000, whole cents. */
+export function isPriceCents(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 100 && value <= 1_000_000;
+}
+
+/** The catalog with a price set applied (anything missing or not a sane price keeps the default). */
+export function withPrices(prices: PriceSet | null | undefined, base: Catalog = DEFAULT_CATALOG): Catalog {
+  if (!prices) return base;
+  return {
+    plans: base.plans.map((p) => {
+      const cents = prices.plans?.[p.id];
+      const seat = p.seatCents === null ? undefined : prices.seats?.[p.id as SeatPlanId];
+      return { ...p, cents: isPriceCents(cents) ? cents : p.cents, seatCents: p.seatCents === null ? null : isPriceCents(seat) ? seat : p.seatCents };
+    }),
+    tools: base.tools.map((t) => {
+      const cents = prices.tools?.[t.id];
+      return { ...t, cents: isPriceCents(cents) ? cents : t.cents };
+    }),
+  };
+}
+
+/** Why a price set can't be saved: a price out of range, or a bundle that would cost more than its parts. Empty = OK. */
+export function priceProblems(prices: PriceSet): string[] {
+  const out: string[] = [];
+  const all: Array<[string, unknown]> = [
+    ...Object.entries(prices.plans ?? {}).map(([k, v]) => [`the ${k} plan`, v] as [string, unknown]),
+    ...Object.entries(prices.seats ?? {}).map(([k, v]) => [`an extra person on ${k}`, v] as [string, unknown]),
+    ...Object.entries(prices.tools ?? {}).map(([k, v]) => [`the ${k} tool`, v] as [string, unknown]),
+  ];
+  for (const [what, v] of all) if (!isPriceCents(v)) out.push(`The price for ${what} must be between $1 and $10,000.`);
+  if (out.length) return out;
+  const cat = withPrices(prices);
+  for (const c of ladderChecks(cat.plans, cat.tools)) {
+    if (!c.ok) out.push(`${c.label}: the bundle (${money(c.bundle)}) must cost less than its parts (${money(c.parts)}).`);
+  }
+  return out;
+}
+
+// ── the lines on the Stripe subscription ─────────────────────────────────────
+// One subscription per shop, as Deck Studio's line already works: the plan's line ("tools-professional"), one line
+// per tool on the bill ("tool-roof"), and one line for the extra people ("seat", quantity = people past the plan's).
+// Each price names its kind in metadata.jfKind (lib/stripePriceCache), so a line is always told by its kind, never by
+// its amount, and keeps the price it was bought at.
+
+export const SEAT_KIND = "seat";
+export const TOOL_KIND_PREFIX = "tool-";
+
+export function toolKind(id: ToolId): string {
+  return `${TOOL_KIND_PREFIX}${id}`;
+}
+
+/** The tool a line's kind names, or null. */
+export function toolIdOfKind(kind: string | null | undefined): ToolId | null {
+  if (!kind || !kind.startsWith(TOOL_KIND_PREFIX)) return null;
+  const id = kind.slice(TOOL_KIND_PREFIX.length);
+  return isToolId(id) ? id : null;
+}
+
+/** The plan a line's kind names ("tools-professional" → professional), or null. */
+export function planIdOfKind(kind: string | null | undefined): ToolPlanId | null {
+  return toolPlanBySlug(kind)?.id ?? null;
+}
+
+/** A tool's line or the extra-people line — an add-on line, never the plan's own (lib/deckAddon isAddonLine). */
+export function isToolsExtraKind(kind: string | null | undefined): boolean {
+  return kind === SEAT_KIND || toolIdOfKind(kind) !== null;
+}
+
+/** The product name a kind's Stripe price is minted under. */
+export function kindName(kind: string): string {
+  const plan = toolPlanBySlug(kind);
+  if (plan) return `JobFlex ${plan.name}`;
+  if (kind === SEAT_KIND) return "JobFlex extra person";
+  const tool = toolIdOfKind(kind);
+  return tool ? `JobFlex ${toolById(tool).label}` : `JobFlex ${kind}`;
+}
+
+// ── what we keep per shop (SyncState `orgTools:<orgId>`, lib/toolPlans/billing) ──────────────────────────────
+
+export interface ToolTry {
+  startedAt: string;
+  endsAt: string;
+  /** Put on the subscription at once (inside the sign-up's free days: it rides the trial and is billed with it). */
+  onLine: boolean;
+  removedAt?: string;
+  billedAt?: string;
+  /** The card was declined when the try ended: nothing was added, the tool closed. */
+  failedAt?: string;
+}
+
+export interface ToolsRecord {
+  /** The Stripe subscription the lines live on; null before there is one (a card-less trial). */
+  subId: string | null;
+  plan: ToolPlanId;
+  main: ToolId | null;
+  chosenTrade: ToolId[];
+  /** Tools on the bill: their line, the price it bills, since when. */
+  lines: Partial<Record<ToolId, { itemId: string; cents: number; since: string }>>;
+  /** The extra-people line: its quantity is the people past the plan's. */
+  seat: { itemId: string; quantity: number; cents: number } | null;
+  tries: Partial<Record<ToolId, ToolTry>>;
+  /** Removed from the bill: open until the paid month ends (no refund — the owner's rule). */
+  closing: Partial<Record<ToolId, string>>;
+}
+
+export function emptyToolsRecord(plan: ToolPlanId, main: ToolId | null = null): ToolsRecord {
+  return { subId: null, plan, main, chosenTrade: [], lines: {}, seat: null, tries: {}, closing: {} };
+}
+
+/** A stored record, or null when it isn't one (a row edited by hand never opens a tool it doesn't name properly). */
+export function parseToolsRecord(raw: string | null | undefined): ToolsRecord | null {
+  if (!raw) return null;
+  try {
+    const r = JSON.parse(raw) as Partial<ToolsRecord>;
+    if (!r || !r.plan || !TOOL_PLANS.some((p) => p.id === r.plan)) return null;
+    const toolKeys = <T>(o: unknown): Partial<Record<ToolId, T>> => {
+      const out: Partial<Record<ToolId, T>> = {};
+      for (const [k, v] of Object.entries((o && typeof o === "object" ? o : {}) as Record<string, T>)) if (isToolId(k)) out[k] = v;
+      return out;
+    };
+    return {
+      subId: typeof r.subId === "string" ? r.subId : null,
+      plan: r.plan,
+      main: isToolId(r.main) ? r.main : null,
+      chosenTrade: Array.isArray(r.chosenTrade) ? r.chosenTrade.filter(isToolId) : [],
+      lines: toolKeys(r.lines),
+      seat: r.seat && typeof r.seat.itemId === "string" && Number.isInteger(r.seat.quantity) ? r.seat : null,
+      tries: toolKeys(r.tries),
+      closing: toolKeys(r.closing),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** What the shop can open right now: its plan, main tool, the tools on its bill, the ones closing at the month's end,
+ *  and the tries still running (a removed try stays open until its end: "remove it any time before"). */
+export function shopFromRecord(record: ToolsRecord, now: Date): ShopTools {
+  const t = now.getTime();
+  const kept = [
+    ...(Object.keys(record.lines) as ToolId[]),
+    ...(Object.entries(record.closing) as Array<[ToolId, string]>).filter(([, until]) => Date.parse(until) > t).map(([id]) => id),
+  ];
+  const trying = (Object.entries(record.tries) as Array<[ToolId, ToolTry]>)
+    .filter(([, x]) => !x.billedAt && !x.failedAt && Date.parse(x.endsAt) > t)
+    .map(([id]) => id);
+  return { plan: record.plan, main: record.main, kept, chosenTrade: record.chosenTrade, trying };
+}
+
+/** Tries whose time is up and that nobody removed: the sweep puts them on the bill (lib/toolPlans/billing). */
+export function triesToBill(record: ToolsRecord, now: Date): ToolId[] {
+  return (Object.entries(record.tries) as Array<[ToolId, ToolTry]>)
+    .filter(([id, x]) => !x.removedAt && !x.billedAt && !x.failedAt && Date.parse(x.endsAt) <= now.getTime() && !record.lines[id])
+    .map(([id]) => id);
 }

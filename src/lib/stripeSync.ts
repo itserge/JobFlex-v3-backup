@@ -29,6 +29,7 @@ import { mirrorSubAtKey, recordMirrorReference } from "@/lib/subscriptionRecord"
 import { patchCardlessRecord, readCardlessRecord } from "@/lib/trialState";
 import { mailChargeback, mailCommissionHeld } from "@/lib/influencerMail";
 import { planLine } from "@/lib/deckAddon";
+import { planIdOfKind } from "@/lib/toolPlans/shared";
 import {
   chargeIsInvoiceBacked,
   invoiceChargeId,
@@ -64,6 +65,9 @@ async function planSlugForPrice(price: Stripe.Price | null | undefined): Promise
      does on live (2026-10-12). Only a slug the catalog knows is taken. */
   const kind = price?.metadata?.jfKind ?? "";
   if (kind === "custom" || kind === "custom-base") return "CUSTOM";
+  // The new plans (lib/toolPlans, 2026-11-10) are priced by the app itself and are not catalog rows: the plan's line
+  // names it ("tools-professional"). Tool and extra-people lines are add-ons and never reach here (planLine).
+  if (planIdOfKind(kind)) return kind.toUpperCase();
   if (kind && (await db.pricingPlan.findUnique({ where: { slug: kind }, select: { slug: true } }))) return kind.toUpperCase();
   return null;
 }
@@ -405,6 +409,11 @@ export async function syncSubscriptionFromStripe(
     await import("@/lib/deckAddonBilling")
       .then((m) => m.mirrorDeckAddon(sub, false, organizationId))
       .catch((err) => console.warn("[stripe-sync] deck add-on mirror:", err));
+    // The new plans' lines (lib/toolPlans/billing), placed here for the same reason — a sign-up's subscription names
+    // no organization in its metadata. A Classic subscription is left alone.
+    await import("@/lib/toolPlans/billing")
+      .then((m) => m.mirrorToolLines(sub, false, organizationId))
+      .catch((err) => console.warn("[stripe-sync] tool lines mirror:", err));
 
     // The team's alert texts (lib/adminAlerts), best effort, never the sync's problem:
     //  · a trial that now pays — the mirror moved TRIALING → ACTIVE;

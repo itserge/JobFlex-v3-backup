@@ -10,6 +10,7 @@ import { confirmSyncingFromStripe } from "@/lib/planGrant";
 import { noteCardlessTrialEnded } from "@/lib/cardlessTrial";
 import { mirrorDeckAddon } from "@/lib/deckAddonBilling";
 import { mirrorWebAddons } from "@/lib/webAddonBilling";
+import { mirrorToolLines } from "@/lib/toolPlans/billing";
 
 /** customer.subscription.created / .updated — `sub` as Stripe holds it now. */
 export async function onSubscriptionUpdated(sub: Stripe.Subscription, stripe: Stripe): Promise<void> {
@@ -21,6 +22,8 @@ export async function onSubscriptionUpdated(sub: Stripe.Subscription, stripe: St
   await mirrorDeckAddon(sub).catch((err) => console.warn("[webhook] deck add-on mirror:", err));
   // The website estimators' lines (lib/webAddonBilling): the record follows what is on the subscription.
   await mirrorWebAddons(sub).catch((err) => console.warn("[webhook] website add-on mirror:", err));
+  // The new plans' tool and people lines (lib/toolPlans/billing) — a Classic subscription is left alone.
+  await mirrorToolLines(sub, false, undefined, stripe).catch((err) => console.warn("[webhook] tool lines mirror:", err));
 }
 
 /** customer.subscription.deleted — gone from Stripe altogether: this copy is
@@ -36,4 +39,5 @@ export async function onSubscriptionDeleted(sub: Stripe.Subscription, stripe: St
   }
   await mirrorDeckAddon(sub, true).catch((err) => console.warn("[webhook] deck add-on mirror:", err));
   await mirrorWebAddons(sub, true).catch((err) => console.warn("[webhook] website add-on mirror:", err));
+  await mirrorToolLines(sub, true, undefined, stripe).catch((err) => console.warn("[webhook] tool lines mirror:", err));
 }

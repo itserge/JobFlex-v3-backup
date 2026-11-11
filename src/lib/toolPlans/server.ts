@@ -19,7 +19,7 @@ export const TOOLS_PLANS_READY = false;
 /** What is built and what is still to come — the admin panel lists it beside the greyed button. */
 export const TOOLS_PLANS_PARTS: ReadonlyArray<{ part: number; what: string; done: boolean }> = [
   { part: 1, what: "The new plans and tools, the price check, and this switch", done: true },
-  { part: 2, what: "Plans, people and tools on the bill (Stripe lines, prices in Admin → Plans)", done: false },
+  { part: 2, what: "Plans, people and tools on the bill (Stripe lines, prices in Admin → Plans)", done: true },
   { part: 3, what: "A menu with only what the shop has, the Subscription page, the welcome page, 3-day tries", done: false },
   { part: 4, what: "Ads open their plan: the plan cards, Change tool at sign-up, Switch my main tool", done: false },
   { part: 5, what: "The numbers: MRR by tool, tries kept, Classic vs new", done: false },
