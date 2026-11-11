@@ -244,14 +244,21 @@ export function ProposalMoreSheet() {
                   </button>
                 </div>
               ) : (
-                <p className="bps-hint">The crew comes once it's sold.</p>
+                <p className="bps-hint">The crew comes once it&apos;s sold.</p>
               )}
             </section>
 
             {/* ── THE SALE ── */}
             <section className="pms-sec" data-more-sec="sale">
               <div className="pms-k">Sold by</div>
-              <div className="pms-row">
+              {/* No sales commission on the plan (a new-plan Basic shop — the server refuses the edits): who sold it,
+                  as words; no percent, no earnings. */}
+              {!d.commission ? (
+                <p className="pms-comm" data-more-seller-name>
+                  {d.rep ? d.rep.name : "Nobody"}
+                </p>
+              ) : null}
+              {d.commission ? <div className="pms-row">
                 <select
                   className="bps-in"
                   value={d.rep?.userId ?? ""}
@@ -270,8 +277,8 @@ export function ProposalMoreSheet() {
                     </option>
                   ))}
                 </select>
-              </div>
-              {d.rep ? (
+              </div> : null}
+              {d.rep && d.commission ? (
                 <>
                   <p className="pms-comm" data-more-commission>
                     {d.rep.pct ? (

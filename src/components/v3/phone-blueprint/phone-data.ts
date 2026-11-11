@@ -47,6 +47,9 @@ export type Call = {
   /** What the AI desk did on this call (2026-10-13) — null when the desk did
    *  not take it (forwarded, voicemail before the live desk, outbound). */
   desk: CallDesk | null;
+  /** The person on the other end (2026-11-11), from the lead the call is on — so the log reads "Mark Ellison",
+   *  not "+15095550173". Absent or null: the number is all we know. */
+  name?: string | null;
 };
 
 /** How the live desk handled a call: read from `SyncState callout:<sid>`
@@ -92,12 +95,17 @@ export type PhoneDeskStrip = {
   low: boolean;
   /** The live desk is wired (VOICE_SERVER_URL + secret) — else callers get the recording. */
   live: boolean;
+  /** The owner paused the desk (2026-11-11): calls ring the company phone, or take a message. */
+  paused?: boolean;
+  /** The company phone forwards every call to the desk, so a paused desk can't send calls back to it. */
+  forwardsAll?: boolean;
 };
 
 /** The strip's sentence. */
 export function deskStripWords(d: PhoneDeskStrip): string {
   if (!d.number) return "No number yet — the desk answers once your company has one.";
   if (!d.on) return `${d.number} — not taking calls yet.`;
+  if (d.paused) return `${d.number} — the desk is paused: calls ${d.companyPhone && !d.forwardsAll ? `ring ${d.companyPhone}` : "take a message"} until you turn it back on in AI desk setup.`;
   const live = d.live ? "" : " (the live desk is not connected yet — callers are asked to leave a message)";
   if (d.out && (d.go === "assistant" || d.go === "phone")) return `${d.number} — out of minutes: calls ${d.companyPhone ? `ring ${d.companyPhone}` : "take a message"} until you add minutes.`;
   if (d.go === "assistant") return `${d.number} — the desk answers every call${live}, in the ${d.voice} voice.`;

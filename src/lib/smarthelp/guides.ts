@@ -331,7 +331,7 @@ export const GUIDES: Guide[] = [
     icon: "CalendarCheck",
     steps: [
       {
-        text: "Open Settings → SmartBook. You’ll see Times for new leads, with the switch Off. SmartBook offers the open hours you set in Online booking, so turn that on first if it’s off.",
+        text: "Open Settings → SmartBook. You’ll see Times for new leads, with the switch Off. SmartBook offers the open hours the AI desk books from (AI desk → Booking → Change hours and visits), so turn booking on there first if it’s off.",
         open: SMARTBOOK,
         show: "smartbook:on",
       },

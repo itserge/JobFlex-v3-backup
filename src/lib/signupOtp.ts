@@ -1,5 +1,5 @@
 import "server-only";
-import type { SpotlightTool } from "@/lib/planSpotlight";
+import type { AdTool } from "@/lib/planSpotlight";
 // PASSWORDLESS SIGN-UP AND SIGN-IN BY EMAIL CODE (owner, 2026-10-10).
 //
 // Step 1 asks for a name and an email. The address is proven by a six-digit
@@ -71,8 +71,8 @@ export interface OtpDraft {
   name: string;
   createdAt: number;
   industry?: TradeType;
-  /** The tool the ad sold (lib/planSpotlight). */
-  tool?: SpotlightTool;
+  /** The tool the ad sold (lib/planSpotlight keptAdTool): a Classic key, or one of the new plans' keys. */
+  tool?: AdTool;
   utm?: Utm;
   attribution?: { kind: "promo" | "ref"; code: string } | null;
   /** The ad's click id (`?fbclid=`), back on the register address the emailed button opens. */

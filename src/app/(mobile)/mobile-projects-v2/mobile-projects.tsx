@@ -59,7 +59,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BUILD_DEFAULTS, BUILD_QUESTIONS, buildAnswersFromStrings } from "@/lib/projectPhases/shared";
 import { useRouter, useSearchParams } from "next/navigation";
 import { KIND_HINT, KIND_LABEL } from "@/lib/projectKind";
-import { SPACES, parseSpace } from "@/lib/projectSpaces";
+import { SPACES, parseSpace, type SpaceId } from "@/lib/projectSpaces";
 import { ProjectSpacesHome, SpaceHeader } from "@/components/v3/projects-blueprint/project-spaces";
 import { spaceOfRow } from "@/components/v3/projects-blueprint/project-spaces-data";
 import styles from "./mobile-projects.module.css";
@@ -67,7 +67,7 @@ import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
 import { createClient } from "@/actions/clients";
-import { archiveProject, createProject, listProjectClients, listProjects, updateProject } from "@/actions/projects";
+import { archiveProject, createProject, listClosedProjectSpaces, listProjectClients, listProjects, updateProject } from "@/actions/projects";
 import {
   FILTERS,
   ISO_DATE,
@@ -510,8 +510,12 @@ export function MobileProjects() {
   const nameAutoRef = useRef(false);
   const [draftStatus, setDraftStatus] = useState<string>(STATUSES[0]);
   // The kind and the remodel's question (2026-11-07, lib/projectKind).
-  // The workspace (2026-11-09): `?space=`, read on every render so the drawer's links switch it in place.
-  const space = parseSpace(useSearchParams().get("space"));
+  // The workspace (2026-11-09): `?space=`, read on every render so the drawer's links switch it in place. One the
+  // plan doesn't hold (the new plans' Remodeler / Home Builder — lib/projectSpacesServer) has no card and no switch
+  // link, and its address opens the chooser; the server refuses its work anyway. A Classic plan closes none.
+  const [closedSpaces, setClosedSpaces] = useState<readonly SpaceId[]>([]);
+  const askedSpace = parseSpace(useSearchParams().get("space"));
+  const space = askedSpace && !closedSpaces.includes(askedSpace) ? askedSpace : null;
   const [draftKind, setDraftKind] = useState<"REMODEL" | "NEW_BUILD" | "JOB">("REMODEL");
   const [draftOccupied, setDraftOccupied] = useState(false);
   // A new build's start questions (part 4, lib/projectPhases): the picks by question; unsaid = the usual.
@@ -564,6 +568,18 @@ export function MobileProjects() {
   useEffect(() => {
     void load();
   }, [load]);
+  useEffect(() => {
+    let live = true;
+    void listClosedProjectSpaces().then(
+      (c) => {
+        if (live) setClosedSpaces(c);
+      },
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
 
   /* ---------- viewport height ------------------------------------------
      Mandatory rule: viewport heights only via var(--app-h). A phone's URL bar
@@ -973,11 +989,12 @@ export function MobileProjects() {
         <div className={styles.content} ref={contentRef}>
           {/* THE WORKSPACES (2026-11-09, lib/projectSpaces): none chosen opens the three cards; one chosen, its own
               header and road, and the book is its projects. */}
-          {!space ? <ProjectSpacesHome rows={data ?? []} /> : null}
+          {!space ? <ProjectSpacesHome rows={data ?? []} closed={closedSpaces} /> : null}
           {space ? (
             <>
           <SpaceHeader
             space={space}
+            closed={closedSpaces}
             rows={data ?? []}
             actions={
               <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" onClick={openNew} style={{ background: SPACES[space].color, borderColor: SPACES[space].color }}>

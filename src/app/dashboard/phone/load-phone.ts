@@ -14,7 +14,7 @@ import { appBaseUrl } from "@/lib/appUrl";
 import { isTwilioEnabled } from "@/lib/sdk/twilio";
 import { relative } from "@/lib/format";
 import type { CallOutcome } from "@/lib/aiDesk/liveCall";
-import { DESK_OUTCOME_LABEL, deskOutcomeWord, minutesOf } from "@/lib/aiDesk/shared";
+import { DESK_OUTCOME_LABEL, deskOutcomeWord, minutesOf, prettyPhone } from "@/lib/aiDesk/shared";
 import { deskStripFor } from "@/lib/aiDesk/strip";
 import { readDeskUse } from "@/lib/aiDesk/usage";
 import type { PhoneContentProps } from "@/components/v3/phone-blueprint/phone-content";
@@ -105,6 +105,10 @@ export async function loadPhoneProps(nextPath: string): Promise<PhoneProps> {
       }
     }
   }
+  // Who was on the line: the lead the call is on (a call the desk took, or one turned into a lead).
+  const leadIds = Array.from(new Set(calls.map((c) => c.leadId).filter((x): x is string => !!x)));
+  const leads = leadIds.length ? await db.lead.findMany({ where: { id: { in: leadIds }, organizationId }, select: { id: true, name: true } }) : [];
+  const nameByLead = new Map(leads.map((l) => [l.id, l.name?.trim() || null]));
   const apptIds = Array.from(outcomes.values()).map((o) => o.appointmentId).filter((x): x is string => !!x);
   const appts = apptIds.length ? await db.appointment.findMany({ where: { id: { in: apptIds }, organizationId }, select: { id: true, startsAt: true } }) : [];
   const apptById = new Map(appts.map((a) => [a.id, a]));
@@ -125,8 +129,9 @@ export async function loadPhoneProps(nextPath: string): Promise<PhoneProps> {
 
   const entries: Call[] = calls.map((c) => ({
     id: c.id,
-    from: c.fromNumber,
-    to: c.toNumber,
+    // Numbers as people read them: "(509) 555-0173", not "+15095550173" (a non-US number stays as stored).
+    from: prettyPhone(c.fromNumber),
+    to: prettyPhone(c.toNumber),
     dir: c.direction,
     status: c.status,
     dur: c.durationSeconds,
@@ -137,6 +142,7 @@ export async function loadPhoneProps(nextPath: string): Promise<PhoneProps> {
     script: parseTranscript(c.transcript),
     transcript: c.transcript,
     desk: deskOf(c.callSid),
+    name: c.leadId ? (nameByLead.get(c.leadId) ?? null) : null,
   }));
 
   const appUrl = await appBaseUrl();

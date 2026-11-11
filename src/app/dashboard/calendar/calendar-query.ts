@@ -389,6 +389,9 @@ export async function buildCalendarSeed(): Promise<CalendarSeed> {
       end: a.endsAt,
       status: a.status,
       workers: a.assignments.map((x) => x.workerId),
+      // Booked by the desk or SmartBook in the hours of someone who isn't on the Workers list: lib/bookingBook keeps
+      // them as createdById (an assignment needs a worker profile) — the visit is theirs, so it says so.
+      forName: !a.assignments.length && (via === "ai-desk" || via === "smartbook" || via === "online") ? a.createdBy?.name ?? undefined : undefined,
       client: a.lead?.name ?? a.client?.name ?? a.proposal?.title ?? undefined,
       // A lead's visit used to show no phone and no address: only the client's
       // were read. The booking carries what the caller or the form gave.
@@ -551,6 +554,7 @@ export async function buildCalendarSeed(): Promise<CalendarSeed> {
       end: sp.endsAt,
       status: "SCHEDULED",
       workers: wid ? [wid] : [],
+      forName: wid ? undefined : sp.userId ? (nameByUser.get(sp.userId) ?? undefined) : "anyone",
       deskUserId: sp.userId ?? undefined,
       deskWeekly: sp.weekly || undefined,
     };

@@ -12,6 +12,7 @@ import { appBaseUrl } from "@/lib/appUrl";
 import { Role } from "@/lib/prismaEnums";
 import { hashToken } from "@/lib/tokens";
 import { enforceRateLimit, clientIp, HOUR } from "@/lib/rateLimit";
+import { requireTeamRoles } from "@/lib/toolPlans/gates";
 
 // Emails an invite magic link. The RAW token goes in the URL; only its hash is
 // stored (see createInvite / resendInvite), so a DB leak yields no usable links.
@@ -64,6 +65,8 @@ const inviteInput = z.object({
 
 export async function createInvite(raw: unknown) {
   const { organizationId, user, role: actorRole } = await requireManager();
+  // Team roles are a size's on the new plans (Professional and up — lib/toolPlans/gates); open on every Classic plan.
+  await requireTeamRoles(organizationId);
   const data = inviteInput.parse(raw);
   // Only an owner can mint another owner.
   if (data.role === "OWNER" && !isOwnerRole(actorRole)) {
@@ -222,6 +225,8 @@ export async function updateMembershipRole(membershipId: string, role: string) {
   const m = await db.membership.findUnique({ where: { id: membershipId }, include: { user: { select: { name: true, email: true } } } });
   if (!m || m.organizationId !== organizationId) throw new Error("Not found");
   if (!(TEAM_ROLES as readonly string[]).includes(role)) throw new Error("Invalid role");
+  // A role change is a size's on the new plans (Professional and up — lib/toolPlans/gates); open on every Classic plan.
+  if (m.role !== role) await requireTeamRoles(organizationId);
   // Owner seats are owner-managed: a manager can neither demote an owner nor
   // promote anyone into the owner role.
   if ((m.role === Role.OWNER || role === "OWNER") && !isOwnerRole(actorRole)) {

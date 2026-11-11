@@ -36,6 +36,8 @@ import { currentForwardCheck, deskNumberFor, noteForwardCheck, startForwardTest 
 import type { ForwardCheck } from "@/lib/aiDesk/forwardCheck";
 import { cleanPack, matchBusiness, PACK_SYSTEM, packPrompt, presetProfile, pruneReview, reviewAfterCompose, type DeskReviewItem, type TradePack } from "@/lib/aiDesk/tradePresets";
 import { openTimes } from "@/lib/aiDesk/liveCall";
+import { saveSettings as saveBookingSettings, settingsOf as bookingSettingsOf } from "@/lib/bookingBook";
+import type { BookingService, DayHours } from "@/lib/booking";
 import { DEFAULT_VOICE_MODEL, realtimeCallsUrl, TEST_NOTE, TEST_TOOL_NAMES, testSession, timeIdWords, type RealtimeApi } from "@/lib/aiDesk/testCall";
 import { noteDeskUse } from "@/lib/aiDesk/usage";
 
@@ -159,9 +161,12 @@ export async function presetDeskProfile(businessRaw: string): Promise<DeskAction
  * The profile as edited on the page. `stillToCheck` = the marked parts the owner has not looked at yet (their keys);
  * the page can only clear marks, never add one. Left out, the marks stay as they were.
  */
-export async function saveDeskProfile(raw: unknown, stillToCheck?: unknown): Promise<DeskActionResult<{ questions: string[]; review: DeskReviewItem[] }>> {
+export async function saveDeskProfile(raw: unknown, stillToCheck?: unknown, briefRaw?: unknown): Promise<DeskActionResult<{ questions: string[]; review: DeskReviewItem[] }>> {
   const { organizationId, user } = await requireManager();
-  const current = await readDeskSettings(organizationId);
+  const read = await readDeskSettings(organizationId);
+  // The description typed under "Describe your business" is kept with the instructions (2026-11-11) — it used to be
+  // saved only by Write it professionally, so leaving the page lost it.
+  const current = typeof briefRaw === "string" ? { ...read, brief: briefRaw.replace(/\r/g, "").trim().slice(0, 4000) } : read;
   const profile = cleanProfile(raw, current.profile ?? EMPTY_PROFILE);
   if (!profile.greeting.trim()) return { ok: false, error: "The desk needs a greeting." };
   const keep = Array.isArray(stillToCheck) ? new Set(stillToCheck.filter((k): k is string => typeof k === "string")) : null;
@@ -171,6 +176,21 @@ export async function saveDeskProfile(raw: unknown, stillToCheck?: unknown): Pro
   await logActivity({ organizationId, actorId: user.id, kind: TRAIL_KINDS.SETTINGS, summary: review.length ? `Edited the AI desk's instructions (${review.length} still to check)` : "Checked and saved the AI desk's instructions" });
   revalidatePath(SETTINGS_PATH);
   return { ok: true, questions, review, note: review.length ? `Saved. ${review.length} part${review.length === 1 ? "" : "s"} still to check.` : "Saved — everything checked." };
+}
+
+/**
+ * Pause the desk, or turn it back on (owner, 2026-11-11 — there was no off switch). Paused, calls go the way they do
+ * when the minutes are out (lib/aiDesk/calls): the company phone, else a message; the desk calls no leads.
+ */
+export async function setDeskPaused(pausedRaw: boolean): Promise<DeskActionResult<{ paused: boolean }>> {
+  const { organizationId, user } = await requireManager();
+  const paused = pausedRaw === true;
+  const current = await readDeskSettings(organizationId);
+  if (current.paused !== paused) await saveDeskSettings(organizationId, { ...current, paused });
+  await logActivity({ organizationId, actorId: user.id, kind: TRAIL_KINDS.SETTINGS, summary: paused ? "Paused the AI desk" : "Turned the AI desk back on" });
+  revalidatePath(SETTINGS_PATH);
+  revalidatePath("/dashboard/phone");
+  return { ok: true, paused, note: paused ? "Paused. Calls ring your phone or take a message until you turn the desk back on." : "The desk is back on." };
 }
 
 /** Who answers: the desk every call, or the company phone first. */
@@ -418,6 +438,67 @@ export async function setCompanyTimezone(tz: string): Promise<DeskActionResult<{
   revalidatePath(SETTINGS_PATH);
   revalidatePath("/dashboard/calendar");
   return { ok: true, timezone, note: "Saved." };
+}
+
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+const VISIT_MINUTES = [15, 30, 45, 60, 90, 120, 180, 240] as const;
+
+/**
+ * The hours the desk books in and the visits it offers (2026-11-11), saved into the same booking settings the
+ * calendar and the desk read (lib/booking). They used to be changed only on the Online booking page, which is early
+ * access — so customers could not change them at all. A visit kept from before keeps its questions and kind.
+ */
+export async function saveDeskBooking(raw: unknown): Promise<DeskActionResult<{ hours: Array<DayHours | null>; enabled: boolean }>> {
+  const { organizationId, user } = await requireManager();
+  const r = (raw && typeof raw === "object" ? raw : {}) as { enabled?: unknown; hours?: unknown; visits?: unknown };
+  if (!Array.isArray(r.hours) || r.hours.length !== 7) return { ok: false, error: "Check the hours, then save again." };
+  const hours: Array<DayHours | null> = [];
+  for (const h of r.hours as unknown[]) {
+    if (h === null) {
+      hours.push(null);
+      continue;
+    }
+    const o = h as { open?: unknown; close?: unknown };
+    const open = String(o?.open ?? ""), close = String(o?.close ?? "");
+    if (!HHMM.test(open) || !HHMM.test(close)) return { ok: false, error: "Each open day needs a start and an end time." };
+    if (open >= close) return { ok: false, error: "Each open day has to end after it starts." };
+    hours.push({ open, close });
+  }
+  const visitsIn = Array.isArray(r.visits) ? (r.visits as unknown[]) : [];
+  if (!visitsIn.length) return { ok: false, error: "Keep at least one visit the desk can book." };
+  if (visitsIn.length > 12) return { ok: false, error: "Up to 12 visits." };
+  const org = await db.organization.findUnique({ where: { id: organizationId }, select: { tradeTypesJson: true, bookingSettingsJson: true } });
+  if (!org) return { ok: false, error: "No company." };
+  const cur = bookingSettingsOf(org);
+  const byKey = new Map(cur.services.map((x) => [x.key, x]));
+  const used = new Set<string>();
+  const services: BookingService[] = [];
+  for (const v of visitsIn) {
+    const o = (v && typeof v === "object" ? v : {}) as { key?: unknown; label?: unknown; minutes?: unknown; priceText?: unknown };
+    const label = String(o.label ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
+    if (label.length < 2) return { ok: false, error: "Every visit needs a name." };
+    const minutes = Number(o.minutes);
+    if (!(VISIT_MINUTES as readonly number[]).includes(minutes)) return { ok: false, error: `Pick how long "${label}" takes.` };
+    const priceText = String(o.priceText ?? "").replace(/\s+/g, " ").trim().slice(0, 80) || "We'll confirm";
+    const old = typeof o.key === "string" ? byKey.get(o.key) : undefined;
+    if (old && !used.has(old.key)) {
+      used.add(old.key);
+      services.push({ ...old, label, minutes, priceText });
+      continue;
+    }
+    const base = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 36) || "visit";
+    let key = base;
+    for (let n = 2; used.has(key) || byKey.has(key); n++) key = `${base}-${n}`;
+    used.add(key);
+    services.push({ key, label, kind: /estimat|inspect|quote|consult|measure/i.test(label) ? "estimate" : "other", minutes, priceText, trade: cur.services[0]?.trade ?? "General" });
+  }
+  const enabled = r.enabled !== false;
+  await saveBookingSettings(organizationId, { ...cur, enabled, hours, services });
+  await logActivity({ organizationId, actorId: user.id, kind: TRAIL_KINDS.SETTINGS, summary: enabled ? "Changed the hours and visits the AI desk books" : "Turned off booking — the AI desk takes messages" });
+  revalidatePath(SETTINGS_PATH);
+  revalidatePath("/dashboard/phone");
+  revalidatePath("/dashboard/calendar");
+  return { ok: true, hours, enabled, note: enabled ? "Saved. The desk books from these hours and visits." : "Saved. Booking is off — the desk takes messages." };
 }
 
 /** The next open times the desk would offer a caller right now — the calendar's, in the company's zone. */

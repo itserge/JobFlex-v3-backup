@@ -15,7 +15,8 @@ import { db } from "@/lib/db";
 
 /** True since part 4 (2026-11-11): the new plans are buyable end to end — the plan cards, the sign-up's card page and
  *  its checkout, the menu, the Subscription and welcome pages. The switch itself stays where the owner leaves it
- *  (off until he turns it on in Admin → Trial watch). Part 5, the numbers, does not hold it back. */
+ *  (off until he turns it on in Admin → Trial watch). Part 5 (2026-11-11) added the numbers: Admin → Revenue's
+ *  "New plans (Base + Tools)" section (lib/toolPlans/numbers). */
 export const TOOLS_PLANS_READY = true;
 
 /** What is built and what is still to come — the admin panel lists it beside the greyed button. */
@@ -24,7 +25,7 @@ export const TOOLS_PLANS_PARTS: ReadonlyArray<{ part: number; what: string; done
   { part: 2, what: "Plans, people and tools on the bill (Stripe lines, prices in Admin → Plans)", done: true },
   { part: 3, what: "A menu with only what the shop has, the Subscription page, the welcome page, 3-day tries", done: true },
   { part: 4, what: "Ads open their plan: the plan cards, Change tool at sign-up, Switch my main tool", done: true },
-  { part: 5, what: "The numbers: MRR by tool, tries kept, Classic vs new", done: false },
+  { part: 5, what: "The numbers: MRR by tool, tries kept, Classic vs new (Admin → Revenue)", done: true },
 ];
 
 export type PricingModel = "classic" | "tools";

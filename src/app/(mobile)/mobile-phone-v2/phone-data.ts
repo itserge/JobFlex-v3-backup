@@ -96,7 +96,11 @@ export function matchesFilter(c: Call, f: string): boolean {
 export function matchesQuery(c: Call, query: string): boolean {
   if (!query) return true;
   const q = query.toLowerCase();
+  // Digits match digits: "5095550173" finds "(509) 555-0173".
+  const qd = q.replace(/\D/g, "");
   return (
+    (c.name ?? "").toLowerCase().includes(q) ||
+    (qd.length >= 3 && (c.from.replace(/\D/g, "").includes(qd) || c.to.replace(/\D/g, "").includes(qd))) ||
     c.from.toLowerCase().includes(q) ||
     c.to.toLowerCase().includes(q) ||
     (c.summary ?? "").toLowerCase().includes(q) ||
