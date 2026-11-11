@@ -127,7 +127,10 @@ export function Sidebar({
   const navHidden = useNavHidden();
   // The edition's view (lib/editions): the Deck Studio workspace keeps only its rows.
   const navView = useNavView();
-  const sections = navSectionsFor(navRole, navLocked, navHidden, navView);
+  // Rows the top bar draws as its own button (NavItem.topbar — Tutorials) are left out here; a section they empty goes.
+  const sections = navSectionsFor(navRole, navLocked, navHidden, navView)
+    .map((section) => ({ ...section, items: section.items.filter((item) => !item.topbar) }))
+    .filter((section) => section.items.length > 0);
   // Unread / pending counts by href, from the layout via the nav provider.
   // Empty outside it, so nothing is drawn — a stale zero beats a wrong number.
   const badges = useNavBadges();

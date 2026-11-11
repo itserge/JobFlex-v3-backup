@@ -163,7 +163,15 @@ export function initBlueprintShell(root: HTMLElement, opts: {
   const SLIDE_MS = 450;
   let slideUntil = 0;
   const moveIndicator = (link: HTMLElement | null, slide = false) => {
-    if (!link || !sbIndicator) return;
+    if (!sbIndicator) return;
+    // A page with no row of its own (Tutorials, in the top bar since 2026-11-11; Support; Settings) lights none: the
+    // plate used to stay on the row last lit — Overview, after the top bar's Tutorials button. It hides until a row
+    // is lit again, and slides from where it was.
+    if (!link) {
+      sbIndicator.style.visibility = "hidden";
+      return;
+    }
+    sbIndicator.style.visibility = "";
     if (slide) slideUntil = performance.now() + SLIDE_MS;
     const snap = performance.now() > slideUntil;
     // A folded subtree keeps the current page selected, with its parent
