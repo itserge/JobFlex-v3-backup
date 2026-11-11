@@ -325,6 +325,8 @@ const BLUEPRINT_HANDHELD = new Set([
   "/dashboard/blueprint-estimator",
   // Online booking (2026-10-28): one responsive page; its stylesheet restacks every section for a phone at <=768px.
   "/dashboard/booking",
+  // Tutorials (2026-11-11): one responsive page — the cards in one column, the player over its chapters at <=768px.
+  "/dashboard/tutorials",
 ]);
 
 export function ResponsiveDashboardShell({

@@ -16,7 +16,7 @@ const CSP_REPORT_ONLY = [
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com",
   "font-src 'self' data: https://fonts.gstatic.com",
   "img-src 'self' data: blob: https:",
-  "media-src 'self' blob: https://*.public.blob.vercel-storage.com",
+  "media-src 'self' blob: https://*.public.blob.vercel-storage.com https://*.private.blob.vercel-storage.com",
   "connect-src 'self' https://api.stripe.com https://checkout.stripe.com https://us.i.posthog.com https://us-assets.i.posthog.com https://maps.googleapis.com https://places.googleapis.com https://www.paypal.com https://www.sandbox.paypal.com https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com https://*.public.blob.vercel-storage.com https://vercel.live wss://ws-us3.pusher.com https://www.facebook.com https://connect.facebook.net https://accounts.google.com https://*.ingest.sentry.io https://*.ingest.us.sentry.io",
   "frame-src https://js.stripe.com https://hooks.stripe.com https://checkout.stripe.com https://www.paypal.com https://www.sandbox.paypal.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://www.google.com https://accounts.google.com https://vercel.live https://www.facebook.com",
   "worker-src 'self' blob:",

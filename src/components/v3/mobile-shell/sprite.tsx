@@ -23,6 +23,8 @@ export function MobileSprite() {
         <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9 15c-.2-1-.7-1.7-1.4-2.4A4.9 4.9 0 0 1 7.1 9.4a4.9 4.9 0 0 1 9.8 0c0 1.2-.5 2.3-1.5 3.2-.7.7-1.2 1.4-1.4 2.4" /><path d="M9.5 18h5" /><path d="M10.5 21h3" /><path d="M12 1.5V3" /><path d="m5.4 4.2 1.1 1.1" /><path d="m18.6 4.2-1.1 1.1" /><path d="M3 9.5h1.5" /><path d="M19.5 9.5H21" /></symbol>
         <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="1" /><path d="M16 2v4" /><path d="M8 2v4" /><path d="M3 10h18" /></symbol>
         <symbol id="i-card" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="1" /><path d="M2 10h20" /></symbol>
+        {/* Tutorials (2026-11-11): a screen with a play mark. */}
+        <symbol id="i-learn" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="14" rx="1" /><path d="M10 8.25v5.5L14.5 11z" /><path d="M8 21h8" /></symbol>
         <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18" /><path d="M18 17V9" /><path d="M13 17V5" /><path d="M8 17v-3" /></symbol>
         <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></symbol>
         <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></symbol>

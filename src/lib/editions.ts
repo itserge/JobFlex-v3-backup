@@ -58,6 +58,8 @@ const DECK_NAV: readonly string[] = [
   "/dashboard/texting",
   "/dashboard/messages",
   "/dashboard/reviews",
+  // The tutorials (2026-11-11): every workspace has them.
+  "/dashboard/tutorials",
   "/dashboard/referrals",
   "/dashboard/reports",
   "/dashboard/settings",

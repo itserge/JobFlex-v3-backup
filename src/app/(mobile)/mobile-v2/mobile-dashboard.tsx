@@ -1769,6 +1769,12 @@ function Sprite() {
           <rect x="2" y="5" width="20" height="14" rx="1" />
           <path d="M2 10h20" />
         </symbol>
+        {/* Tutorials (2026-11-11), the last row of the drawer — same paths as mobile-shell/sprite.tsx. */}
+        <symbol id="i-learn" viewBox="0 0 24 24">
+          <rect x="2" y="4" width="20" height="14" rx="1" />
+          <path d="M10 8.25v5.5L14.5 11z" />
+          <path d="M8 21h8" />
+        </symbol>
         {/* …and these three (2026-10-16): Blueprint, HVAC and Deck drew an
             empty icon square in this page's drawer. */}
         <symbol id="i-plans" viewBox="0 0 24 24">
