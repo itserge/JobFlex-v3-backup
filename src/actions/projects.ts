@@ -10,8 +10,9 @@ import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { loadProjectBook } from "@/components/v3/projects-blueprint/project-book-load";
 import type { Project } from "@/components/v3/projects-blueprint/projects-data";
 import { createProjectAs, requireProjectKind } from "@/lib/projectCore";
-import { closedProjectSpaces } from "@/lib/projectSpacesServer";
+import { closedProjectSpaces, spaceOffers } from "@/lib/projectSpacesServer";
 import type { SpaceId } from "@/lib/projectSpaces";
+import type { SpaceOffer } from "@/components/v3/projects-blueprint/project-spaces";
 import { PROJECT_KINDS, parseAnswers, serializeAnswers, kindOf, kindsSwap } from "@/lib/projectKind";
 
 /** A new build's start questions (part 4, lib/projectPhases), each optional — the defaults are the common lot. (Not
@@ -82,6 +83,14 @@ export async function listProjects(): Promise<ProjectBookRow[]> {
 export async function listClosedProjectSpaces(): Promise<SpaceId[]> {
   const { organizationId } = await requireRouteAccess("/dashboard/projects");
   return closedProjectSpaces(organizationId);
+}
+
+/** The same, with each closed workspace's tool and price for its preview card (owner, 2026-11-11: the cards stay as a
+ *  preview that opens Upgrade your plan). Read-only. */
+export async function listClosedProjectSpaceOffers(): Promise<{ closed: SpaceId[]; offers: Partial<Record<SpaceId, SpaceOffer>> }> {
+  const { organizationId } = await requireRouteAccess("/dashboard/projects");
+  const closed = await closedProjectSpaces(organizationId);
+  return { closed, offers: await spaceOffers(closed) };
 }
 
 /** The org's clients for a New Project form that loads its own data (the

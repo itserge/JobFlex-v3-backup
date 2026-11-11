@@ -60,14 +60,14 @@ import { BUILD_DEFAULTS, BUILD_QUESTIONS, buildAnswersFromStrings } from "@/lib/
 import { useRouter, useSearchParams } from "next/navigation";
 import { KIND_HINT, KIND_LABEL } from "@/lib/projectKind";
 import { SPACES, parseSpace, type SpaceId } from "@/lib/projectSpaces";
-import { ProjectSpacesHome, SpaceHeader } from "@/components/v3/projects-blueprint/project-spaces";
+import { ProjectSpacesHome, SpaceHeader, type SpaceOffer } from "@/components/v3/projects-blueprint/project-spaces";
 import { spaceOfRow } from "@/components/v3/projects-blueprint/project-spaces-data";
 import styles from "./mobile-projects.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
 import { lockScroll } from "@/lib/scrollLock";
 import { createClient } from "@/actions/clients";
-import { archiveProject, createProject, listClosedProjectSpaces, listProjectClients, listProjects, updateProject } from "@/actions/projects";
+import { archiveProject, createProject, listClosedProjectSpaceOffers, listProjectClients, listProjects, updateProject } from "@/actions/projects";
 import {
   FILTERS,
   ISO_DATE,
@@ -514,6 +514,8 @@ export function MobileProjects() {
   // plan doesn't hold (the new plans' Remodeler / Home Builder — lib/projectSpacesServer) has no card and no switch
   // link, and its address opens the chooser; the server refuses its work anyway. A Classic plan closes none.
   const [closedSpaces, setClosedSpaces] = useState<readonly SpaceId[]>([]);
+  // Their tool and price, for the preview cards (owner, 2026-11-11: the closed workspaces stay as previews).
+  const [spaceOffers, setSpaceOffers] = useState<Partial<Record<SpaceId, SpaceOffer>>>({});
   const askedSpace = parseSpace(useSearchParams().get("space"));
   const space = askedSpace && !closedSpaces.includes(askedSpace) ? askedSpace : null;
   const [draftKind, setDraftKind] = useState<"REMODEL" | "NEW_BUILD" | "JOB">("REMODEL");
@@ -570,9 +572,11 @@ export function MobileProjects() {
   }, [load]);
   useEffect(() => {
     let live = true;
-    void listClosedProjectSpaces().then(
+    void listClosedProjectSpaceOffers().then(
       (c) => {
-        if (live) setClosedSpaces(c);
+        if (!live) return;
+        setClosedSpaces(c.closed);
+        setSpaceOffers(c.offers);
       },
       () => {},
     );
@@ -989,7 +993,7 @@ export function MobileProjects() {
         <div className={styles.content} ref={contentRef}>
           {/* THE WORKSPACES (2026-11-09, lib/projectSpaces): none chosen opens the three cards; one chosen, its own
               header and road, and the book is its projects. */}
-          {!space ? <ProjectSpacesHome rows={data ?? []} closed={closedSpaces} /> : null}
+          {!space ? <ProjectSpacesHome rows={data ?? []} closed={closedSpaces} offers={spaceOffers} /> : null}
           {space ? (
             <>
           <SpaceHeader
