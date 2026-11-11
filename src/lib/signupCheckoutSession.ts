@@ -21,7 +21,6 @@ import { customMetadata } from "@/lib/customBilling";
 import { CUSTOM_PLAN_OFF_SALE, customPlanOffered } from "@/lib/customPlanFlag";
 import { trialOfferMetadata } from "@/lib/trialOffer";
 import { CUSTOM_PLAN_SLUG } from "@/lib/customPlan";
-import { CARD_ONLY_CHECKOUT } from "@/lib/stripeCheckoutCard";
 
 export const SIGNUP_CHECKOUT_DEADLINE_MS = 8_000;
 
@@ -100,8 +99,8 @@ async function open({ token, planSlug, interval, origin }: Parameters<typeof cre
   const session = await stripe.checkout.sessions.create(
     {
       mode: "subscription",
-      // Cards only — the card form, not Link (lib/stripeCheckoutCard).
-      ...CARD_ONLY_CHECKOUT,
+      // No payment_method_types (owner, 2026-11-11): the sign-up shows what the Stripe Dashboard turns on — the card
+      // and Link. Every other Checkout of ours stays card-only (lib/stripeCheckoutCard).
       ...(customer ? { customer } : { customer_email: pending.email }),
       client_reference_id: token,
       line_items: lineItems,
