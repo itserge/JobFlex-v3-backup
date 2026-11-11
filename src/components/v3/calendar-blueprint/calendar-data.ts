@@ -35,6 +35,10 @@ export type CalEvent = {
   end: Date;
   status: string;
   workers: string[];
+  /** Whose it is when no worker is on it (2026-11-11): a visit the AI desk or SmartBook booked in someone's reserved
+   *  hours who isn't on the Workers list, or a desk-hours block ("anyone" for the company's). The card and the sheet
+   *  name them instead of "Unassigned"; it counts as someone on it. */
+  forName?: string;
   client?: string;
   phone?: string;
   addr?: string;

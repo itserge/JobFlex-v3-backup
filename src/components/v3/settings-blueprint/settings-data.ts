@@ -1236,14 +1236,42 @@ export const DESK_COPY = {
   showDetails: 'Read and edit the instructions',
   hideDetails: 'Hide the instructions',
   step3: 'When it can book visits',
-  step3Sub: 'The desk offers the same open times as your online booking page — your hours, your visits, around what is already on the calendar.',
+  step3Sub: 'The desk offers open times inside your hours, for the visits below, around what is already on the calendar.',
   tzTitle: 'Your time zone',
   tzSub: 'The clock the desk tells callers and books by.',
   bookingOn: 'Online booking is on — the desk books from this calendar.',
-  bookingOff: 'Online booking is off — the desk takes messages instead of booking. Turn it on and set your hours on the Online booking page.',
+  bookingOff: 'Booking is off — the desk takes messages instead of booking. Turn it on under Change hours and visits.',
   bookingHours: 'Hours',
   bookingServices: 'Visits it can book',
   bookingEdit: 'Change hours and visits',
+  // the hours and visits, edited right here (2026-11-11 — the Online booking page that held them is early access)
+  editOn: 'The desk books visits',
+  editOnSub: 'Off: it takes a message instead of booking.',
+  editHours: 'Hours',
+  editHoursSub: 'The days and times the desk can book a visit in.',
+  editClosed: 'Closed',
+  editVisits: 'Visits it can book',
+  editVisitsSub: 'The name callers hear, how long it takes, and the price the desk tells them.',
+  editName: 'Visit',
+  editLength: 'Length',
+  editPrice: 'Price callers hear',
+  editPricePh: 'Free · $149 · We\u2019ll confirm',
+  editAdd: '+ Add a visit',
+  editRemove: 'Remove',
+  editSave: 'Save hours and visits',
+  editSaving: 'Saving…',
+  editCancel: 'Cancel',
+  // pause (2026-11-11)
+  pause: 'Pause the desk',
+  pauseSure: (to: string) => `Pause the desk? Calls ${to} until you turn it back on, and it calls no new leads.`,
+  pauseYes: 'Pause now',
+  resume: 'Turn the desk back on',
+  pausedWords: (to: string) => `Paused — calls ${to}`,
+  // check them all at once (2026-11-11)
+  allRight: 'Looks right to all',
+  allRightSure: (n: number) => `The desk will tell callers all ${n} highlighted part${n === 1 ? '' : 's'} as written now. Read them first if you can.`,
+  allRightYes: (n: number) => `Yes — all ${n} look right`,
+  leaveUnsaved: 'The desk\u2019s instructions have changes that aren\u2019t saved. Leave without saving?',
   previewTitle: 'The next times it would offer a caller',
   previewLoad: 'Show the next open times',
   previewLoading: 'Looking…',
@@ -1511,8 +1539,18 @@ export interface DeskSettingsData {
   /** The number customers call the company on (Organization.phone), as typed. */
   businessPhone: string | null;
   timezone: string;
-  /** The online-booking calendar the desk books from. */
-  booking: { enabled: boolean; hoursWords: string; services: string[]; url: string };
+  /** The booking calendar the desk books from — its hours and visits, changed right in the Booking step (2026-11-11). */
+  booking: {
+    enabled: boolean;
+    hoursWords: string;
+    services: string[];
+    /** 0 = Sunday … 6 = Saturday; null = closed (lib/booking DayHours). */
+    hours: Array<{ open: string; close: string } | null>;
+    /** The visits the desk can book: name, length, the price callers hear. */
+    visits: Array<{ key: string; label: string; minutes: number; priceText: string }>;
+  };
+  /** The owner paused the desk (2026-11-11): calls ring the company phone or take a message. */
+  paused: boolean;
   /** Which of the four setup steps are done. */
   steps: { number: boolean; profile: boolean; booking: boolean; tested: boolean };
   /** This month's minutes: the desk's calls and the owner's browser tests. */

@@ -10,13 +10,14 @@
 //   · Minutes, opened from the strip, as its own card under the checklist.
 // Every part stays mounted, so what is typed in one survives a look at another.
 import { useEffect, useState, type CSSProperties } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, ArrowRight, Building2, CalendarDays, Check, CheckCircle2, ChevronDown, Copy, Mic, Phone, Timer } from "lucide-react";
 
 import type { DeskFaq } from "@/lib/aiDesk/profile";
 import type { SmsRegistrationView } from "@/lib/sms/registrationShared";
 import { DESK_COPY as C, type DeskSettingsData } from "@/components/v3/settings-blueprint/settings-data";
-import { deskOverview, firstTab, SETUP_TABS, type DeskTab, type TabState } from "./desk-overview";
+import { setDeskPaused } from "@/actions/aiDesk";
+import { deskOverview, firstTab, pausedTo, SETUP_TABS, type DeskTab, type TabState } from "./desk-overview";
 import { DeskBooking } from "./desk-booking";
 import { DeskBrief } from "./desk-brief";
 import { DeskLeadCalls } from "./desk-lead-calls";
@@ -108,7 +109,29 @@ export function DeskSteps({
   const [samples, setSamples] = useState<DeskFaq[]>([]);
   // The preset's highlighted parts: "Your business" reads "3 to check" until they are looked at.
   const [toCheck, setToCheck] = useState(desk.profile ? desk.review.length : 0);
-  const o = deskOverview(desk, number, toCheck, written);
+  // Pause (2026-11-11): the owner's off switch, on the status line. Pausing asks first; turning back on doesn't.
+  const router = useRouter();
+  const [paused, setPaused] = useState(desk.paused);
+  const [pauseAsk, setPauseAsk] = useState(false);
+  const [pauseBusy, setPauseBusy] = useState(false);
+  const [pauseErr, setPauseErr] = useState("");
+  const togglePause = async (next: boolean) => {
+    setPauseBusy(true);
+    setPauseErr("");
+    try {
+      const r = await setDeskPaused(next);
+      if (r.ok) {
+        setPaused(r.paused);
+        setPauseAsk(false);
+        router.refresh();
+      } else setPauseErr(r.error);
+    } catch {
+      setPauseErr("Couldn't save. Try again.");
+    } finally {
+      setPauseBusy(false);
+    }
+  };
+  const o = deskOverview({ ...desk, paused }, number, toCheck, written);
   // A rebuild of the page (another width) keeps the tab picked since it loaded; a fresh load reads the address.
   const [tab, setTab] = useState<DeskTab>(() => rememberedTab() ?? firstTab(o, typeof window !== "undefined" ? window.location.search : search ? `?${search.toString()}` : ""));
   // Every step starts closed (owner, 2026-10-17) unless the address names one (?step=, back from a minutes purchase).
@@ -203,7 +226,7 @@ export function DeskSteps({
       {intro ? <p className={s.intro}>{intro}</p> : null}
 
       {/* the state: amber while something stands between the desk and the calls, green once it answers */}
-      {o.forwardingPending ? (
+      {o.forwardingPending && !paused ? (
         <div className={s.notice} data-tone="warn" role="note" data-desk-fwd-banner data-desk-live>
           <AlertTriangle size={18} strokeWidth={2.2} aria-hidden />
           <span>{C.fwdBanner(phone)}</span>
@@ -216,8 +239,37 @@ export function DeskSteps({
           {o.status.tone === "live" ? <CheckCircle2 size={18} strokeWidth={2.2} aria-hidden /> : <AlertTriangle size={18} strokeWidth={2.2} aria-hidden />}
           <span>{o.status.words}</span>
           {!number && desk.assistantOnPlan ? getNumber : null}
+          {number && desk.assistantOnPlan && desk.canManage ? (
+            paused ? (
+              <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={pauseBusy} onClick={() => void togglePause(false)} data-desk-resume>
+                {C.resume}
+              </button>
+            ) : pauseAsk ? null : (
+              <button type="button" className={s.btn} disabled={pauseBusy} onClick={() => setPauseAsk(true)} data-desk-pause>
+                {C.pause}
+              </button>
+            )
+          ) : null}
         </div>
       )}
+      {pauseAsk && !paused ? (
+        <div className={s.confirm} role="alertdialog" aria-label={C.pause} data-desk-pause-confirm>
+          <span>{C.pauseSure(pausedTo(desk))}</span>
+          <span className={s.acts}>
+            <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={pauseBusy} onClick={() => void togglePause(true)} data-desk-pause-yes>
+              {C.pauseYes}
+            </button>
+            <button type="button" className={s.btn} disabled={pauseBusy} onClick={() => setPauseAsk(false)}>
+              {C.cancel}
+            </button>
+          </span>
+        </div>
+      ) : null}
+      {pauseErr ? (
+        <p className={`${s.note} ${s.noteErr}`} role="alert">
+          {pauseErr}
+        </p>
+      ) : null}
 
       {/* the strip */}
       <dl className={s.strip} data-desk-overview aria-label={C.overviewLabel}>

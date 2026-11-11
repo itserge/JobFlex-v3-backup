@@ -651,8 +651,10 @@ async function loadDeskSettings(organizationId: string, role: string): Promise<D
       enabled: bookingSettings?.enabled ?? false,
       hoursWords: facts?.hoursWords ?? "",
       services: facts?.services ?? [],
-      url: "/dashboard/booking",
+      hours: (bookingSettings?.hours ?? []).map((h) => (h ? { open: h.open, close: h.close } : null)),
+      visits: (bookingSettings?.services ?? []).map((v) => ({ key: v.key, label: v.label, minutes: v.minutes, priceText: v.priceText })),
     },
+    paused: d.paused,
     steps: {
       number: Boolean(registration?.number || assignedNumbers[0]),
       profile: Boolean(d.profile),

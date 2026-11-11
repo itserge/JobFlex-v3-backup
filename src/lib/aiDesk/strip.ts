@@ -37,5 +37,8 @@ export async function deskStripFor(organizationId: string): Promise<PhoneDeskStr
     calls: use.calls,
     tests: use.tests,
     live: voiceServerConfigured(),
+    paused: settings.paused,
+    // A company phone that forwards every call to the desk can't be rung for it (the call would come straight back).
+    forwardsAll: settings.forwarding === "all",
   };
 }

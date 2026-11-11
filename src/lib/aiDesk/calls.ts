@@ -105,8 +105,9 @@ export async function inboundTwiml(input: { to: string; from: string; callSid: s
   const go = callsGo({ mode: desk.mode, assistantOnPlan: onPlan, companyPhone: phone });
   if (go === "phone" && phone) return forwardTwiml({ baseUrl: input.base, number: phone });
   if (go === "assistant") {
-    // Out of minutes: the company phone when there is one, else a message — never the live desk.
-    if (!minutes) return phone ? forwardTwiml({ baseUrl: input.base, number: phone }) : assistantTwiml(org, input, false);
+    // Out of minutes, or the owner paused the desk: the company phone when there is one, else a message — never the
+    // live desk.
+    if (!minutes || desk.paused) return phone ? forwardTwiml({ baseUrl: input.base, number: phone }) : assistantTwiml(org, input, false);
     return assistantTwiml(org, input);
   }
   return unavailableTwiml();
@@ -122,6 +123,7 @@ export async function afterDialTwiml(input: { to: string; from: string; callSid:
   if (input.dialStatus === "completed" || input.dialStatus === "answered") return hangupTwiml();
   const org = await companyForCall(input.to);
   if (!org || !(await assistantOnPlan(org.id))) return unavailableTwiml();
-  const [outcome, minutes] = await Promise.all([readCallOutcome(input.callSid), deskHasMinutes(org.id)]);
-  return assistantTwiml(org, input, outcome?.outcome !== "transfer" && minutes);
+  const [outcome, minutes, desk] = await Promise.all([readCallOutcome(input.callSid), deskHasMinutes(org.id), readDeskSettings(org.id)]);
+  // Paused: nobody picked up, so a message — not the live desk.
+  return assistantTwiml(org, input, outcome?.outcome !== "transfer" && minutes && !desk.paused);
 }

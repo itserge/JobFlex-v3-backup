@@ -2097,7 +2097,10 @@
   min-width: 0;
   border: var(--k-frame);
   border-radius: var(--k-r);
+  /* clip, not hidden (2026-11-11): hidden made the step a scroll box of its own, so a save bar inside it could never
+     stick to the bottom of the screen; clip cuts the corners the same and leaves the page's scroll to the sticky bar */
   overflow: hidden;
+  overflow: clip;
   background: var(--k-sheet);
 }
 .desk .step.step + .step {
@@ -2174,4 +2177,13 @@
   width: 6px;
   height: 6px;
   background: var(--k-ink);
+}
+
+/* the step's one save bar (2026-11-11): sticks to the bottom of the screen only while something is unsaved */
+.saveBar[data-sticky="0"] {
+  position: static;
+}
+/* "Looks right to all": its question takes the banner's full width */
+.checkBanner > .confirm {
+  grid-column: 1 / -1;
 }

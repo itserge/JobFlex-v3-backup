@@ -10,6 +10,7 @@ import { timezoneWords, US_TIMEZONES } from "@/lib/aiDesk/shared";
 import { DESK_COPY as C, type DeskSettingsData } from "@/components/v3/settings-blueprint/settings-data";
 import s from "./ai-desk.module.css";
 import { DeskHours } from "./desk-hours";
+import { DeskBookingEdit } from "./desk-booking-edit";
 
 export function DeskBooking({ desk }: { desk: DeskSettingsData }) {
   const router = useRouter();
@@ -19,6 +20,8 @@ export function DeskBooking({ desk }: { desk: DeskSettingsData }) {
   const [previewNote, setPreviewNote] = useState("");
   const [err, setErr] = useState("");
   const [note, setNote] = useState("");
+  // The hours and visits open right here (2026-11-11) — the Online booking page that held them is early access.
+  const [editing, setEditing] = useState(false);
   const zones = US_TIMEZONES.some((z) => z.id === tz) ? US_TIMEZONES : [{ id: tz, label: tz }, ...US_TIMEZONES];
 
   const pickTz = async (next: string) => {
@@ -142,12 +145,16 @@ export function DeskBooking({ desk }: { desk: DeskSettingsData }) {
         </p>
       ) : null}
 
+      {editing ? <DeskBookingEdit desk={desk} onDone={() => setEditing(false)} /> : null}
+
       {/* the card's foot: the two ways on, one size, at the right */}
       <div className={s.bookFoot}>
         <div className={s.bookActs}>
-          <a className={s.btn} href={desk.booking.url} data-desk-booking-link>
-            {C.bookingEdit}
-          </a>
+          {desk.canManage && !editing ? (
+            <button type="button" className={s.btn} onClick={() => setEditing(true)} aria-expanded={editing} data-desk-booking-link>
+              {C.bookingEdit}
+            </button>
+          ) : null}
           <button type="button" className={s.btn} disabled={busy !== null} onClick={() => void preview()} data-desk-preview>
             {busy === "preview" ? C.previewLoading : C.previewLoad}
           </button>

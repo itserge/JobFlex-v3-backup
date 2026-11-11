@@ -58,6 +58,8 @@ export type CalEvent = {
   end: Date;
   status: string;
   workers: string[];
+  /** Whose it is when no worker is on it — see the desktop CalEvent (2026-11-11). */
+  forName?: string;
   client?: string;
   phone?: string;
   addr?: string;
@@ -412,7 +414,7 @@ export function workerName(id: string): string {
 export function crewLabel(e: CalEvent): string {
   if (e.kind === "blocked" && e.orgWide) return "Everyone";
   if (e.kind === "blocked" && (e.selfOnly || !e.workers.length)) return "Just me";
-  if (!e.workers.length) return "Unassigned";
+  if (!e.workers.length) return e.forName ?? "Unassigned";
   const first = workerName(e.workers[0]);
   return e.workers.length > 1 ? `${first} +${e.workers.length - 1}` : first;
 }
