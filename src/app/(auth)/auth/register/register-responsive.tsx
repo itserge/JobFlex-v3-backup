@@ -30,6 +30,7 @@ import { RegisterSheet } from "@/components/v3/auth-register-mobile/register-she
 import type { InAppBrowser } from "@/lib/inAppBrowser";
 import type { TradeType } from "@/lib/tradeTypes";
 import type { SpotlightTool } from "@/lib/planSpotlight";
+import type { ToolId } from "@/lib/toolPlans/shared";
 import type { UtmParams } from "@/components/v3/landing-e/landing-variants";
 import type { SignupMode } from "@/lib/signupMode";
 import type { OtpRestore } from "@/lib/signupOtp";
@@ -80,6 +81,7 @@ function RegisterSwitch({
   spotlight = null,
   spotlightNarrow = false,
   spotlightUrl = null,
+  toolsMain = null,
   edition = null,
   utm,
   inAppBrowser,
@@ -108,6 +110,8 @@ function RegisterSwitch({
   spotlight?: SpotlightTool | null;
   spotlightNarrow?: boolean;
   spotlightUrl?: SpotlightTool | null;
+  /** The new plans (Plans switch on): the ad's tool the card page opens with. */
+  toolsMain?: ToolId | null;
   /** The door the visitor came in by (2026-10-11, lib/editions). */
   edition: EditionId | null;
   utm: UtmParams | null;
@@ -119,7 +123,7 @@ function RegisterSwitch({
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   return (
     <RegisterSheet live={isHandheld} backdrop={isHandheld ? <PhoneBackdrop trade={industry} /> : null}>
-      <RegisterContent setup={setup} google={google} industry={industry} spotlight={spotlight} spotlightNarrow={spotlightNarrow} spotlightUrl={spotlightUrl}
+      <RegisterContent setup={setup} google={google} industry={industry} spotlight={spotlight} spotlightNarrow={spotlightNarrow} spotlightUrl={spotlightUrl} toolsMain={toolsMain}
         edition={edition} utm={utm} inAppBrowser={inAppBrowser} requiresCard={requiresCard} initialError={initialError} prefill={prefill} offerCustom={offerCustom} steps={steps} mode={mode} autoPlan={autoPlan} otpRestore={otpRestore} appView={appView} />
     </RegisterSheet>
   );
@@ -138,6 +142,7 @@ export function RegisterResponsive({
   spotlight = null,
   spotlightNarrow = false,
   spotlightUrl = null,
+  toolsMain = null,
   edition = null,
   utm = null,
   inAppBrowser = null,
@@ -173,6 +178,8 @@ export function RegisterResponsive({
   spotlightNarrow?: boolean;
   /* The spotlight this page's URL carried, remembered for the browser session. */
   spotlightUrl?: SpotlightTool | null;
+  /** The new plans (Plans switch on): the ad's tool the card page opens with. */
+  toolsMain?: ToolId | null;
   /* The door the visitor came in by (2026-10-11, lib/editions). */
   edition?: EditionId | null;
   /** The visit's utm_*, resolved by the page the same way. */
@@ -187,7 +194,7 @@ export function RegisterResponsive({
   prefill?: { name: string; email: string } | null;
 }) {
   return (
-    <RegisterSwitch setup={setup} google={google} industry={industry} spotlight={spotlight} spotlightNarrow={spotlightNarrow} spotlightUrl={spotlightUrl}
+    <RegisterSwitch setup={setup} google={google} industry={industry} spotlight={spotlight} spotlightNarrow={spotlightNarrow} spotlightUrl={spotlightUrl} toolsMain={toolsMain}
         edition={edition} utm={utm} inAppBrowser={inAppBrowser} requiresCard={requiresCard} initialError={initialError} prefill={prefill} offerCustom={offerCustom} steps={steps} mode={mode} autoPlan={autoPlan} otpRestore={otpRestore} appView={appView} />
   );
 }

@@ -15,7 +15,6 @@ import { REFERRAL_DISCOUNT_PCT } from "@/lib/referralDiscount";
 //     the validated code rides along with the pending signup and is bound to
 //     the organization when that organization is created. One discount system,
 //     one binding path.
-import { getPlanCatalog } from "@/lib/planCatalogServer";
 import type { PlanLimits } from "@/lib/planLimits";
 import { signupTrialOffer } from "@/lib/trialOfferServer";
 import { readPendingSignup } from "@/actions/signupCheckout";
@@ -24,6 +23,10 @@ import { isStripeEnabled } from "@/lib/sdk/stripe";
 import { autoPlanOffer, type AutoPlanAsk } from "@/lib/signupAutoPlanServer";
 import { parseSpotlightTool } from "@/lib/planSpotlight";
 import type { AutoPlanOffer } from "@/lib/signupAutoPlan";
+import { readToolCatalog } from "@/lib/toolPlans/prices";
+import { getPublicPlans } from "@/lib/toolPlans/publicPlans";
+import { isToolsCatalog, mainToolFor, toolsPlanFromAsk } from "@/lib/toolPlans/cards";
+import { isToolId, type Catalog, type ToolId, type ToolPlanId } from "@/lib/toolPlans/shared";
 
 export interface SignupPlan {
   slug: string;
@@ -64,10 +67,41 @@ export async function signupPlans(token?: string, ask: AutoPlanAsk = {}): Promis
    *  card page for, or null for the plan cards — never the page's own copy from when it was drawn, nor anything a
    *  draft or intent kept from an earlier visit. */
   autoPlan: AutoPlanOffer | null;
+  /** THE NEW PLANS (the Plans switch on, Base + Tools part 4): the sign-up's card page — the prices in force (Admin →
+   *  Plans), the main tool it opens with (the ad's) and the size (the one asked for, else Professional). `plans` are
+   *  then the four sizes priced with that tool. Null: the Classic plan cards, exactly as before. */
+  tools: { catalog: Catalog; main: ToolId | null; plan: ToolPlanId } | null;
 }> {
-  const catalog = await getPlanCatalog();
   const pending = token ? await readPendingSignup(token) : null;
   const trialDays = (pending?.trialOffer ?? await signupTrialOffer()).days;
+  // The new plans' main tool: the page's own read of the ad (the link, the trade, the 30-day memory), else what the
+  // sign-up kept. Read by the cards only while the Plans switch is on (lib/toolPlans/publicPlans).
+  const main = isToolId(ask?.mainTool) ? ask.mainTool : mainToolFor({ tool: pending?.landingTool ?? null });
+  // The public cards' one read: the Classic catalog (switch off), or the new plans priced with the main tool.
+  const catalog = await getPublicPlans({ tool: main, trialDays });
+  if (isToolsCatalog(catalog)) {
+    const cat = await readToolCatalog();
+    const asked = typeof ask?.asked === "string" ? ask.asked.slice(0, 60) : null;
+    return {
+      plans: catalog.map((p) => ({
+        slug: p.slug,
+        name: p.name,
+        description: p.description,
+        priceCents: p.priceCents,
+        yearlyPriceCents: p.yearlyPriceCents,
+        trialDays,
+        features: p.features,
+        limits: p.limits,
+        highlight: p.highlight,
+      })),
+      promo: null,
+      checkoutReady: isStripeEnabled(),
+      customTrialDays: trialDays,
+      firstChargeAt: Date.now() + trialDays * 24 * 60 * 60 * 1000,
+      autoPlan: await autoPlanOffer({ asked, mainTool: main }),
+      tools: { catalog: cat, main, plan: toolsPlanFromAsk(asked) },
+    };
+  }
   // Whatever the visitor arrived with is carried in the client's attribution
   // pill and applied at account creation; there is no organization to read a
   // stamp from at this point in the flow.
@@ -102,6 +136,7 @@ export async function signupPlans(token?: string, ask: AutoPlanAsk = {}): Promis
       },
       catalog,
     ),
+    tools: null,
   };
 }
 

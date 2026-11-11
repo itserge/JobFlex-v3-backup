@@ -11,7 +11,9 @@
 //
 // WHAT IT KNOWS. The subset the subscription paths use — subscriptions
 // retrieve / update / cancel / list, invoices list / createPreview, customers,
-// prices, accounts; and the refunds and disputes lists the investor page reads
+// prices (retrieve / list / create) and products.create — the prices lib/stripePriceCache mints —, customers.create
+// and subscriptions.create (the card-less trial), a subscription-mode Checkout session that a harness completes with
+// completeMockCheckout (the sign-up's return); accounts; and the refunds and disputes lists the investor page reads
 // (lib/investorPayments), from rows a harness writes; the charges and invoice
 // payments lists Admin → Revenue reads (empty unless a harness writes them).
 // The lists page as the real client's do: awaited, one page; `for await`, every row. Anything else throws loudly ("not implemented"), which is
@@ -84,6 +86,11 @@ export interface MockCheckoutSession {
   cancel_url: string;
   livemode: false;
   created: number;
+  /** mode=subscription (the sign-up): what the session would subscribe to, kept for completeMockCheckout. */
+  status?: "open" | "complete";
+  subscription?: string | null;
+  mock_line_items?: Array<{ price: string; quantity: number }>;
+  mock_subscription_data?: { trial_period_days?: number; metadata?: Meta } | null;
 }
 
 export interface MockItem {
@@ -163,6 +170,8 @@ export interface MockStore {
   calls: MockCall[];
   paymentIntents: Record<string, MockPaymentIntent>;
   checkouts: Record<string, MockCheckoutSession>;
+  /** Products minted by lib/stripePriceCache (the sign-up's and the new plans' prices). */
+  products?: Record<string, { id: string; name: string; metadata: Meta }>;
   refunds?: MockMoneyBack[];
   disputes?: MockMoneyBack[];
   charges?: Array<{ id: string; created: number } & Record<string, unknown>>;
@@ -331,12 +340,82 @@ function addedLineCents(store: MockStore, sub: MockSubscription, price: MockPric
   return Math.round(((price.unit_amount ?? 0) * quantity * remaining) / total);
 }
 
+/** A subscription on these lines, trialing for `trialDays` (none: active), written into the store. */
+function mockSubscriptionFrom(store: MockStore, customer: string, items: Array<{ price: string; quantity: number }>, trialDays: number, metadata: Meta): MockSubscription {
+  const now = nowOf(store);
+  const id = `sub_mock_${Object.keys(store.subscriptions).length + 1}_${Date.now().toString(36)}`;
+  const data: MockItem[] = items.map((it, i) => {
+    const price = store.prices[it.price];
+    if (!price) throw new MockStripeError(`No such price: '${it.price}'`);
+    return { id: `si_mock_${Object.keys(store.subscriptions).length + 1}_${i + 1}`, price, quantity: it.quantity };
+  });
+  const trialEnd = trialDays > 0 ? now + trialDays * 86400 : null;
+  const periodEnd = trialEnd ?? now + (data[0] ? periodSeconds(data[0].price) : INTERVAL_SECONDS.month);
+  const sub: MockSubscription = {
+    id,
+    customer,
+    status: trialEnd ? "trialing" : "active",
+    created: now,
+    currency: "usd",
+    current_period_start: now,
+    current_period_end: periodEnd,
+    trial_start: trialEnd ? now : null,
+    trial_end: trialEnd,
+    cancel_at_period_end: false,
+    canceled_at: null,
+    ended_at: null,
+    metadata,
+    items: { data },
+    discount: null,
+    default_payment_method: null,
+    pause_collection: null,
+  };
+  store.subscriptions[id] = sub;
+  return sub;
+}
+
+/**
+ * WHAT A PERSON FINISHING STRIPE'S CARD PAGE DOES, for a harness: the subscription-mode session is completed — a
+ * customer for its email, a subscription on its lines (trialing for its trial days, with its subscription metadata) —
+ * and the URL Stripe would send the browser back to is returned.
+ */
+export function completeMockCheckout(file: string, sessionId: string): { successUrl: string; subscriptionId: string; customerId: string } {
+  const store = readMockStore(file);
+  const c = store.checkouts[sessionId];
+  if (!c || c.mode !== "subscription") throw new MockStripeError(`No subscription checkout.session: '${sessionId}'`);
+  const customerId = c.customer ?? `cus_mock_${Object.keys(store.customers).length + 1}_${Date.now().toString(36)}`;
+  if (!store.customers[customerId]) store.customers[customerId] = { id: customerId, email: c.customer_details?.email ?? null, metadata: {} };
+  const sub = mockSubscriptionFrom(store, customerId, c.mock_line_items ?? [], c.mock_subscription_data?.trial_period_days ?? 0, c.mock_subscription_data?.metadata ?? {});
+  c.status = "complete";
+  c.customer = customerId;
+  c.subscription = sub.id;
+  c.amount_total = 0;
+  store.calls.push({ at: nowOf(store), method: "harness.completeCheckout", args: [sessionId] });
+  writeMockStore(file, store);
+  return { successUrl: c.success_url.replace("{CHECKOUT_SESSION_ID}", sessionId), subscriptionId: sub.id, customerId };
+}
+
 /** Build the client. Every call reads the file, acts, and writes it back. */
 export function mockStripeClient(file: string): Stripe {
   const load = () => readMockStore(file);
   const save = (s: MockStore) => writeMockStore(file, s);
 
   const subscriptions = {
+    /** The card-less trial's subscription: its lines, trialing for trial_period_days (idempotent per key). */
+    async create(params: Params, opts?: Params) {
+      const s = load();
+      record(s, "subscriptions.create", [params, opts]);
+      const key = opts?.idempotencyKey as string | undefined;
+      const prior = key ? Object.values(s.subscriptions).find((x) => x.metadata?.__idem === key) : undefined;
+      if (prior) {
+        save(s);
+        return { ...prior, object: "subscription" };
+      }
+      const items = ((params.items as Array<{ price: string; quantity?: number }> | undefined) ?? []).map((it) => ({ price: it.price, quantity: it.quantity ?? 1 }));
+      const sub = mockSubscriptionFrom(s, String(params.customer ?? ""), items, Number(params.trial_period_days ?? 0), { ...((params.metadata as Meta | undefined) ?? {}), ...(key ? { __idem: key } : {}) });
+      save(s);
+      return { ...sub, object: "subscription" };
+    },
     async retrieve(id: string, params?: Params) {
       const s = load();
       record(s, "subscriptions.retrieve", [id, params]);
@@ -572,6 +651,21 @@ export function mockStripeClient(file: string): Stripe {
       const pm = c.card ? (expand.includes("invoice_settings.default_payment_method") ? { id: c.card.id, object: "payment_method", type: "card", card: { brand: c.card.brand, last4: c.card.last4 } } : c.card.id) : null;
       return { ...c, object: "customer", invoice_settings: { default_payment_method: pm } };
     },
+    /** The card-less trial's customer (idempotent per key, as Stripe's). */
+    async create(params: Params, opts?: Params) {
+      const s = load();
+      record(s, "customers.create", [params, opts]);
+      const key = opts?.idempotencyKey as string | undefined;
+      const prior = key ? Object.values(s.customers).find((c) => c.metadata?.__idem === key) : undefined;
+      if (prior) {
+        save(s);
+        return { ...prior, object: "customer" };
+      }
+      const id = `cus_mock_${Object.keys(s.customers).length + 1}_${Date.now().toString(36)}`;
+      s.customers[id] = { id, email: (params.email as string | undefined) ?? null, name: (params.name as string | undefined) ?? null, metadata: { ...((params.metadata as Meta | undefined) ?? {}), ...(key ? { __idem: key } : {}) } };
+      save(s);
+      return { ...s.customers[id], object: "customer" };
+    },
   };
 
   /** A charge to the card on file, confirmed at once: succeeded, or the card's refusal. */
@@ -661,18 +755,29 @@ export function mockStripeClient(file: string): Stripe {
           cancel_url: String(params.cancel_url ?? ""),
           livemode: false,
           created: s.clock ?? Math.floor(Date.now() / 1000),
+          ...(params.mode === "subscription"
+            ? {
+                status: "open" as const,
+                subscription: null,
+                mock_line_items: ((params.line_items as Array<{ price?: string; quantity?: number }> | undefined) ?? []).filter((it) => it.price).map((it) => ({ price: String(it.price), quantity: it.quantity ?? 1 })),
+                mock_subscription_data: (params.subscription_data as MockCheckoutSession["mock_subscription_data"]) ?? null,
+              }
+            : {}),
         };
         s.checkouts[id] = session;
         save(s);
         return session;
       },
-      async retrieve(id: string) {
+      async retrieve(id: string, params?: Params) {
         const s = load();
-        record(s, "checkout.sessions.retrieve", [id]);
+        record(s, "checkout.sessions.retrieve", [id, params]);
         save(s);
         const c = s.checkouts[id];
         if (!c) throw new MockStripeError(`No such checkout.session: '${id}'`);
-        return c;
+        // `expand: ["subscription"]`, as the sign-up's return asks: the subscription itself, as Stripe gives it.
+        const wants = ((params?.expand as string[] | undefined) ?? []).includes("subscription");
+        const sub = wants && c.subscription ? s.subscriptions[c.subscription] : undefined;
+        return sub ? { ...c, subscription: { ...sub, object: "subscription", items: { object: "list", has_more: false, data: sub.items.data } } } : c;
       },
     },
   };
@@ -691,6 +796,36 @@ export function mockStripeClient(file: string): Stripe {
       record(s, "prices.list", [params]);
       save(s);
       return { object: "list", data: Object.values(s.prices), has_more: false, url: "/v1/prices" };
+    },
+    /** lib/stripePriceCache: a recurring price under a product, its kind in metadata.jfKind. */
+    async create(params: Params) {
+      const s = load();
+      record(s, "prices.create", [params]);
+      const recurring = params.recurring as { interval?: "month" | "year" } | undefined;
+      const price: MockPrice = {
+        id: `price_mock_${Object.keys(s.prices).length + 1}_${Date.now().toString(36)}`,
+        unit_amount: Number(params.unit_amount ?? 0),
+        currency: String(params.currency ?? "usd"),
+        recurring: recurring?.interval ? { interval: recurring.interval, interval_count: 1 } : null,
+        metadata: (params.metadata as Meta | undefined) ?? {},
+        product: params.product as string | undefined,
+        active: true,
+      };
+      s.prices[price.id] = price;
+      save(s);
+      return { ...price, object: "price" };
+    },
+  };
+
+  const products = {
+    async create(params: Params) {
+      const s = load();
+      record(s, "products.create", [params]);
+      s.products ??= {};
+      const id = `prod_mock_${Object.keys(s.products).length + 1}_${Date.now().toString(36)}`;
+      s.products[id] = { id, name: String(params.name ?? ""), metadata: (params.metadata as Meta | undefined) ?? {} };
+      save(s);
+      return { ...s.products[id], object: "product" };
     },
   };
 
@@ -754,7 +889,7 @@ export function mockStripeClient(file: string): Stripe {
   };
   for (const r of [subscriptions, invoices, refunds, disputes, charges, invoicePayments] as Array<{ list: (params?: Params) => Promise<Page> }>) r.list = paged(r.list);
 
-  const implemented: Record<string, unknown> = { subscriptions, invoices, customers, prices, accounts, paymentIntents, checkout, refunds, disputes, charges, invoicePayments };
+  const implemented: Record<string, unknown> = { subscriptions, invoices, customers, prices, products, accounts, paymentIntents, checkout, refunds, disputes, charges, invoicePayments };
 
   const guard = (path: string, target: unknown): unknown =>
     new Proxy(target as object, {

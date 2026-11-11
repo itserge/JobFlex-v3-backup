@@ -7,21 +7,23 @@ import "server-only";
 //             Shops already on a plan stay Classic for good: their slugs are Classic slugs, and the rules follow the
 //             slug (isToolsSlug), never the switch.
 //
-// The switch can't be turned on until the build is finished: TOOLS_PLANS_READY flips to true in the part that makes
-// the new plans buyable end to end (checkout, the menu, the Subscription page, the cards). Until then the admin panel
-// shows the "Base + Tools" button greyed with the parts still to come, and setPricingModel refuses it.
+// The switch could not be turned on until the build was finished: TOOLS_PLANS_READY flipped to true in part 4, the part
+// that made the new plans buyable end to end (checkout, the menu, the Subscription page, the cards). Before that the
+// admin panel showed the "Base + Tools" button greyed with the parts still to come, and setPricingModel refused it.
 
 import { db } from "@/lib/db";
 
-/** Flips to true in the last part of the build. Until then nobody can turn the new plans on. */
-export const TOOLS_PLANS_READY = false;
+/** True since part 4 (2026-11-11): the new plans are buyable end to end — the plan cards, the sign-up's card page and
+ *  its checkout, the menu, the Subscription and welcome pages. The switch itself stays where the owner leaves it
+ *  (off until he turns it on in Admin → Trial watch). Part 5, the numbers, does not hold it back. */
+export const TOOLS_PLANS_READY = true;
 
 /** What is built and what is still to come — the admin panel lists it beside the greyed button. */
 export const TOOLS_PLANS_PARTS: ReadonlyArray<{ part: number; what: string; done: boolean }> = [
   { part: 1, what: "The new plans and tools, the price check, and this switch", done: true },
   { part: 2, what: "Plans, people and tools on the bill (Stripe lines, prices in Admin → Plans)", done: true },
   { part: 3, what: "A menu with only what the shop has, the Subscription page, the welcome page, 3-day tries", done: true },
-  { part: 4, what: "Ads open their plan: the plan cards, Change tool at sign-up, Switch my main tool", done: false },
+  { part: 4, what: "Ads open their plan: the plan cards, Change tool at sign-up, Switch my main tool", done: true },
   { part: 5, what: "The numbers: MRR by tool, tries kept, Classic vs new", done: false },
 ];
 

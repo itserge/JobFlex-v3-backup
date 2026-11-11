@@ -42,6 +42,8 @@ import { isDevSimulationEnabled } from "@/lib/devSimulation";
 import { DevPlanSimulator } from "./dev-plan-simulator";
 import { applyCheckoutReturn } from "@/lib/checkoutReturn";
 import { planTermState } from "@/lib/planChange";
+import { isToolsSlug } from "@/lib/toolPlans/shared";
+import { TOOLS_SUBSCRIPTION_HREF } from "@/lib/toolPlans/billing";
 
 export const metadata = { title: "Plans & upgrade — JobFlex" };
 export const dynamic = "force-dynamic";
@@ -63,6 +65,11 @@ export default async function UpgradePage({
   } catch {
     redirect("/auth/login?next=%2Fdashboard%2Fupgrade");
   }
+
+  /* A NEW-PLAN SHOP (Base + Tools, part 4 — owner, 2026-11-10) has no Classic plan cards to compare: its sizes and
+     tools live on the Subscription page's own section. A Classic shop goes on to this page exactly as before. */
+  const planRow = await db.subscription.findUnique({ where: { organizationId: ctx.organizationId }, select: { plan: true } }).catch(() => null);
+  if (isToolsSlug(planRow?.plan)) redirect(TOOLS_SUBSCRIPTION_HREF);
 
   const params = await searchParams;
   // TEMP (2026-09-19): ?simulated=&dir= is the dev simulator's return leg —

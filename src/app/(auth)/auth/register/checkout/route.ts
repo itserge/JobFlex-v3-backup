@@ -30,6 +30,7 @@ import { captureTrafficEvent, identityFromCookie } from "@/lib/traffic-capture-s
 import { TRAFFIC_EVENTS } from "@/lib/traffic-contract";
 import { SIGNUP_VIEW_COOKIE } from "@/lib/signupView";
 import { startQuickSignup } from "@/actions/signupOtp";
+import { toolsPlansOn } from "@/lib/toolPlans/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -61,7 +62,7 @@ async function handOff(
   req: Request,
   token: string,
   reason: Reason,
-  ask: { plan: string | null; interval: string | null; edition: string | null },
+  ask: { plan: string | null; interval: string | null; edition: string | null; tool?: string | null },
 ): Promise<NextResponse> {
   const pending = await pendingOf(token);
   // Nothing left to sell (the day ran out, or the account was made in another tab): step 1 again.
@@ -72,6 +73,10 @@ async function handOff(
   if (reason === "plan_pick" && ask.plan) {
     planSlug = ask.plan;
     interval = ask.interval === "YEAR" ? "YEAR" : "MONTH";
+  } else if (await toolsPlansOn()) {
+    /* THE NEW PLANS (Base + Tools, part 4 — owner, 2026-11-10): the sign-up opens its own card page first —
+       Professional + the ad's tool, "Working alone?", "Change tool" — so nothing goes to Stripe before it is pressed. */
+    return go(register({ signup: token, checkout: "pick", ...(ask.plan ? { plan: ask.plan } : {}), ...(ask.tool ? { tool: ask.tool } : {}) }));
   } else {
     const [rule, trial] = await Promise.all([readSignupPlan(), signupTrialMode()]);
     // The switch is off, or the trial takes no card: there is no card page to open by itself.
@@ -82,12 +87,13 @@ async function handOff(
     planSlug = offer.slug;
   }
 
-  const res = await createSignupCheckout({ token, planSlug, interval, origin: new URL(req.url).origin });
+  // The new plans' main tool rides with the pick; lib/signupPricing validates and prices it (a Classic plan ignores it).
+  const res = await createSignupCheckout({ token, planSlug, interval, origin: new URL(req.url).origin, mainTool: ask.tool ?? null });
   const identity = pending.analytics ?? identityFromCookie((await cookies()).get(`ph_${process.env.NEXT_PUBLIC_POSTHOG_KEY}_posthog`)?.value, new URL(req.url).hostname);
   const tracked = !isQaEmail(pending.email);
   if (!res.ok) {
     console.warn(`[signup] checkout did not open (${reason}, ${planSlug}): ${res.status} ${res.error}`);
-    return go(register({ signup: token, checkout: "failed", ...(reason === "plan_pick" ? { plan: planSlug } : {}) }));
+    return go(register({ signup: token, checkout: "failed", ...(reason === "plan_pick" ? { plan: planSlug } : {}), ...(reason === "plan_pick" && ask.tool ? { tool: ask.tool } : {}) }));
   }
   if (tracked) {
     // The sign-up screen this browser was drawn (lib/signupView): the browser's events carry it as a super property.
@@ -111,7 +117,7 @@ export async function GET(req: Request) {
   if (!token || token.length > 80) return go("/auth/register");
   const asked = sp.get("reason") ?? "";
   const reason: Reason = REASONS.has(asked) ? (asked as Reason) : "relogin";
-  return handOff(req, token, reason, { plan: sp.get("plan"), interval: sp.get("interval"), edition: sp.get("edition") });
+  return handOff(req, token, reason, { plan: sp.get("plan"), interval: sp.get("interval"), edition: sp.get("edition"), tool: sp.get("tool") });
 }
 
 /** Step 1 without JavaScript: the form posts here and the answer is Stripe's card page (or step 1 with the reason). */
@@ -149,5 +155,5 @@ export async function POST(req: Request) {
     const e1 = quick.taken ? "taken" : /temporary|throwaway|disposable/i.test(quick.error) ? "disposable" : /Too many/.test(quick.error) ? "busy" : /valid email|name/i.test(quick.error) ? "invalid" : "trouble";
     return go(register({ e1, ...(name ? { name } : {}), ...(email ? { email } : {}) }));
   }
-  return handOff(req, quick.signupToken, "step1", { plan: field("plan") ?? null, interval: null, edition: field("edition") ?? null });
+  return handOff(req, quick.signupToken, "step1", { plan: field("plan") ?? null, interval: null, edition: field("edition") ?? null, tool: field("tool") ?? null });
 }

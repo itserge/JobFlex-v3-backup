@@ -51,6 +51,42 @@ export const SPOTLIGHT: Record<SpotlightTool, SpotlightDef> = {
   deck: { label: "Deck Studio", the: "Deck Studio", who: "deck builders", match: /deck studio|\bdeck(s|ing)?\b/i, trades: ["decking"], aliases: ["decking", "deck-studio", "decks"] },
 };
 
+/* THE NEW PLANS' AD KEYS (Base + Tools, part 4 — owner, 2026-11-10). Six tools sold on the new plans get ads of their
+   own: video, texting, Smart CRM, AI Operator, Home Builder, Remodeler. They are NOT SpotlightTools: every Classic
+   surface parses `?tool=` with parseSpotlightTool below, which never returns them, so a Classic card, banner, sign-up
+   or Subscription page treats `?tool=video` exactly as it treats no tool at all. Only the new plans' surfaces read
+   them, through parseAdTool (lib/toolPlans/shared toolForAdKey turns a key into the main tool). */
+export type ToolsAdKey = "video" | "texting" | "crm" | "operator" | "home-builder" | "remodeler";
+/** Any ad's `?tool=` key: today's (Classic) or one of the new plans'. */
+export type AdTool = SpotlightTool | ToolsAdKey;
+
+export const TOOLS_AD_KEYS: readonly ToolsAdKey[] = ["video", "texting", "crm", "operator", "home-builder", "remodeler"];
+
+/** Labels and spellings. The spellings carry each tool's own id (smartcrm, builder), so `?tool=<id>` finds it too. */
+export const TOOLS_AD: Record<ToolsAdKey, { label: string; aliases: readonly string[] }> = {
+  video: { label: "Video estimator", aliases: ["video-estimator", "videos"] },
+  texting: { label: "Text messaging", aliases: ["text", "texts", "sms", "text-messaging"] },
+  crm: { label: "Smart CRM", aliases: ["smartcrm", "smart-crm"] },
+  operator: { label: "AI Operator", aliases: ["assistant", "ai-operator", "ai-assistant"] },
+  "home-builder": { label: "Home Builder", aliases: ["builder", "homebuilder", "new-construction"] },
+  remodeler: { label: "Remodeler", aliases: ["remodel", "remodeling"] },
+};
+
+/** `?tool=` for the new plans: a Classic key or spelling first (exactly as parseSpotlightTool reads it), then the new
+ *  plans' keys and spellings. Anything else is nothing. */
+export function parseAdTool(raw: string | string[] | null | undefined): AdTool | undefined {
+  const classic = parseSpotlightTool(raw);
+  if (classic) return classic;
+  const v = (Array.isArray(raw) ? raw[0] : raw)?.trim().toLowerCase();
+  if (!v) return undefined;
+  return TOOLS_AD_KEYS.find((key) => v === key || TOOLS_AD[key].aliases.includes(v));
+}
+
+/** The new plans' read of a visit: the link's `?tool=` (any ad key), else the landing trade's own tool. */
+export function adToolFor(input: { tool?: string | string[] | null; industry?: string | null }): AdTool | null {
+  return parseAdTool(input.tool) ?? spotlightFromTrade(input.industry) ?? null;
+}
+
 /** `?tool=` on a link: a key, or one of its spellings; anything else is nothing. */
 export function parseSpotlightTool(raw: string | string[] | null | undefined): SpotlightTool | undefined {
   const v = (Array.isArray(raw) ? raw[0] : raw)?.trim().toLowerCase();

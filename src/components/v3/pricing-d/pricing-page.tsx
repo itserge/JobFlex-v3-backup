@@ -28,6 +28,8 @@ import { PricingVisit } from "./pricing-visit";
 import { CustomPlanBlock } from "./custom-plan-block";
 import { DeckAddonPlate } from "./deck-addon-plate";
 import type { PlanDTO } from "@/lib/planCatalog";
+import { adKeyOf, toolsBanner, withPlanQuery } from "@/lib/toolPlans/cards";
+import type { ToolId } from "@/lib/toolPlans/shared";
 import "@/components/v3/landing-e/landing-e.css";
 import "./pricing.css";
 
@@ -37,7 +39,12 @@ export function PricingPage({
   spotlight = null,
   narrow = false,
   spotlightUrl = null,
+  tools: toolsIn,
 }: {
+  /** THE NEW PLANS (Plans switch on, lib/toolPlans/cards): the tool the cards are priced with and the sign-up link
+   *  their start buttons build on (plan and tool added per card). Deck Studio is a tool there, not the Classic add-on,
+   *  and the Classic custom plan is not sold beside them. Absent: today's page. */
+  tools?: { main: ToolId | null; registerHref: string };
   /** CUSTOM_PLAN_ENABLED (lib/customPlanFlag): false hides "Build your plan". */
   customOffered?: boolean;
   /** The tool the visitor came for (lib/planSpotlight), marked on every card. */
@@ -50,6 +57,13 @@ export function PricingPage({
 }) {
   // A $0 tier is what happens when somebody skips, not something to sell here.
   const sellable = plans.filter((p) => !p.isFree);
+  const tools = toolsIn
+    ? {
+        main: toolsIn.main,
+        banner: toolsIn.main ? toolsBanner(toolsIn.main) : null,
+        startHrefs: Object.fromEntries(sellable.map((p) => [p.slug, withPlanQuery(toolsIn.registerHref, p.slug, adKeyOf(toolsIn.main))])),
+      }
+    : undefined;
 
   return (
     <div className="jf-lp min-h-full bg-white">
@@ -79,11 +93,11 @@ export function PricingPage({
               {sellable.length > 0 ? (
                 <>
                   <Reveal className="pr-plans">
-                    <PricingPlans plans={sellable} registerHref={REGISTER} spotlight={spotlight} narrow={narrow} fromUrl={spotlightUrl} />
+                    <PricingPlans plans={sellable} registerHref={REGISTER} spotlight={spotlight} narrow={narrow} fromUrl={spotlightUrl} tools={tools} />
                   </Reveal>
                   {/* The Deck Studio add-on (owner, 2026-10-26): on any plan, in the trial. A trade estimator: hidden
                       while a roofer/fencer/HVAC ad visit narrows the cards (lib/planSpotlight, owner 2026-11-07). */}
-                  {showsTool("deck", narrow ? spotlight : null) ? (
+                  {!tools && showsTool("deck", narrow ? spotlight : null) ? (
                     <div className="mt-10 sm:mt-12">
                       <DeckAddonPlate registerHref={REGISTER} cta="pricing-deck" delay={120} />
                     </div>
@@ -100,7 +114,7 @@ export function PricingPage({
 
         {/* Build your own — the page that prices itself. Off sale unless
             CUSTOM_PLAN_ENABLED (lib/customPlanFlag). */}
-        {customOffered ? (
+        {customOffered && !tools ? (
           <section className="px-5 sm:px-6">
             <div className="mx-auto lp-wrap py-[8vmin]">
               <CustomPlanBlock registerHref={REGISTER} cta="pricing-custom" />
