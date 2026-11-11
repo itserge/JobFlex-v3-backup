@@ -14,6 +14,7 @@
 
 import { CUSTOM_YEAR_MULTIPLIER } from "@/lib/customPlan";
 import { isWebAddonLine } from "@/lib/webAddon";
+import { isToolsExtraKind } from "@/lib/toolPlans/shared";
 
 /** $79 a month (from 2026-10-26; $49 before — those lines keep $49). */
 export const DECK_ADDON_CENTS = 7900;
@@ -65,9 +66,10 @@ export function isDeckAddonLine(item: { price?: { metadata?: Record<string, stri
   return item?.price?.metadata?.jfKind === DECK_ADDON_KIND;
 }
 
-/** Any add-on line: the Deck Studio one, or a website estimator's (lib/webAddon, 2026-10-27). */
+/** Any add-on line: the Deck Studio one, a website estimator's (lib/webAddon, 2026-10-27), or — on the new plans
+ *  (lib/toolPlans, 2026-11-10) — a tool's line or the extra-people line. Never the plan's own line. */
 export function isAddonLine(item: { price?: { metadata?: Record<string, string> | null } | null } | null | undefined): boolean {
-  return isDeckAddonLine(item) || isWebAddonLine(item);
+  return isDeckAddonLine(item) || isWebAddonLine(item) || isToolsExtraKind(item?.price?.metadata?.jfKind);
 }
 
 /** The plan's own lines — every line but the add-ons. A subscription's plan is read off these, never an add-on. */
