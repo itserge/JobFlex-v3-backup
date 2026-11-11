@@ -97,6 +97,9 @@ export interface TrialEndingSoonInput {
   href: string;
   shop?: ShopOnJobflex | null;
   tools?: string[];
+  /** The new plans (Base + Tools, part 5 — lib/toolPlans/numbers toolsFirstBill): what the first bill is made of,
+   *  "Professional $75", "Deck Studio $79", "2 more people $19.98". A Classic plan's letter has none. */
+  bill?: string[];
 }
 
 const SHORT_DATE = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "America/Los_Angeles" });
@@ -109,6 +112,7 @@ export function buildTrialEndingSoon(i: TrialEndingSoonInput): EmailDoc {
   const hasNumbers = rows.length > 0;
   const box: BoxRow[] = [
     ...(hasNumbers ? rows : tools.length ? [{ type: "field" as const, label: `In ${i.planName}`, value: listWords(tools) }] : []),
+    ...(i.bill && i.bill.length > 1 ? [{ type: "field" as const, label: "Your first bill", value: i.bill.join(" + ") }] : []),
     { type: "cond", label: `From ${day}`, chip: `${i.planName} · ${i.price}`, tone: "neutral" },
   ];
   return {

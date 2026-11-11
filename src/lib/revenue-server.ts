@@ -7,6 +7,7 @@ import { invoiceSubscriptionId } from "@/lib/stripeCompat";
 import { CARD_EXPAND } from "@/lib/paymentCard";
 import { computeMetrics } from "@/components/v3/admin-subscribers/billing-metrics";
 import { revenueDate, type RevenueCustomer, type RevenuePoint, type RevenueReport } from "./revenue-contract";
+import { readToolPlansNumbers } from "@/lib/toolPlans/numbersServer";
 
 const idOf = (v: string | { id: string } | null | undefined) => typeof v === "string" ? v : v?.id ?? null;
 const CAP = 10000;
@@ -183,6 +184,12 @@ export async function readRevenueReport(): Promise<RevenueReport> {
     day = new Date(Date.parse(day + "T12:00:00Z") + 86400000).toISOString().slice(0, 10);
   }
   const last = points.at(-1)!;
+  // The new plans' numbers (Base + Tools, part 5), from these very rows — never a second Stripe read. A failure here
+  // leaves them out; it never costs the rest of the report.
+  const toolPlans = await readToolPlansNumbers(billing.rows, "stripe").catch((error: unknown) => {
+    console.error("[revenue] new plans' numbers failed", error instanceof Error ? `${error.name}: ${error.message}` : "UnknownError");
+    return undefined;
+  });
   console.info(`[revenue] read ${Date.now() - started}ms — ${subscriptions.length} subscriptions, ${invoices.length} invoices, ${charges.length} charges, ${points.length} days`);
-  return { asOf: new Date(now * 1000).toISOString(), currency, live: subscriptions[0]?.livemode ?? !process.env.STRIPE_SECRET_KEY_TEST, mrr, arr: mrr * 12, gross, refunds: refunded, collected, projectedMrr: last.forecastMrr ?? mrr, projectedCollected: last.forecastCollected ?? collected, eligibleTrials, excludedTrials, overdue, points, customers: [...customerBook.values()].sort((a, b) => b.collected - a.collected), warnings: [...warnings] };
+  return { asOf: new Date(now * 1000).toISOString(), currency, live: subscriptions[0]?.livemode ?? !process.env.STRIPE_SECRET_KEY_TEST, mrr, arr: mrr * 12, gross, refunds: refunded, collected, projectedMrr: last.forecastMrr ?? mrr, projectedCollected: last.forecastCollected ?? collected, eligibleTrials, excludedTrials, overdue, points, customers: [...customerBook.values()].sort((a, b) => b.collected - a.collected), warnings: [...warnings], ...(toolPlans ? { toolPlans } : {}) };
 }

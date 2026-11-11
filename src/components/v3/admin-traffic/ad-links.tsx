@@ -11,7 +11,7 @@
 // as the headline (`&hook=`), so the page continues the ad's sentence.
 import { useState } from "react";
 import { VARIANT_KEYS, VARIANT_TRADE, hooksOf, resolveLandingVariant, type LandingVariantKey } from "@/components/v3/landing-e/landing-variants";
-import { SPOTLIGHT, SPOTLIGHT_TOOLS, spotlightFromTrade } from "@/lib/planSpotlight";
+import { SPOTLIGHT, SPOTLIGHT_TOOLS, TOOLS_AD, TOOLS_AD_KEYS, spotlightFromTrade, type ToolsAdKey } from "@/lib/planSpotlight";
 import s from "./traffic.module.css";
 
 type Kind = "meta" | "tiktok" | "google" | "x" | "organic";
@@ -64,6 +64,11 @@ export function AdLinks({ origin = "https://www.jobflex.app" }: { origin?: strin
   // trade hero already means its own estimator; the picker is for the ads
   // for Smart Proposal, blueprints, the AI desk and Deck Studio.
   const [tool, setTool] = useState("");
+  // THE NEW PLANS' KEYS (Base + Tools, part 5): video, texting, crm, operator, home-builder, remodeler. They price the
+  // plan cards with their tool only while the Plans switch is on (Admin → Trial watch); a Classic card reads them as
+  // no tool (lib/planSpotlight parseAdTool).
+  const newKey = (TOOLS_AD_KEYS as readonly string[]).includes(tool) ? (tool as ToolsAdKey) : null;
+  const toolLabel = newKey ? TOOLS_AD[newKey].label : tool && tool in SPOTLIGHT ? SPOTLIGHT[tool as keyof typeof SPOTLIGHT].label : null;
   const [copied, setCopied] = useState<string | null>(null);
   const preset = PRESETS[kind];
   const params = preset.params(slug(campaign), platform);
@@ -87,7 +92,7 @@ export function AdLinks({ origin = "https://www.jobflex.app" }: { origin?: strin
         <div className={s.linksForm}>
           <label className={s.filterLabel}><span>Page it opens</span><div className={`bp-sel ${s.selectWrap}`}><select className="bp-sel-in" value={page} onChange={(e) => setPage(e.target.value)}>{PAGES.map(([p, name]) => <option key={p} value={p}>{name}</option>)}</select></div></label>
           {page === "/" && <label className={s.filterLabel}><span>Trade hero on the landing</span><div className={`bp-sel ${s.selectWrap}`}><select className="bp-sel-in" value={industry} onChange={(e) => setIndustry(e.target.value)}><option value="">Default (every trade)</option>{VARIANT_KEYS.map((k) => <option key={k} value={k}>{heroName(k)}</option>)}</select></div></label>}
-          <label className={s.filterLabel}><span>The tool the ad sells</span><div className={`bp-sel ${s.selectWrap}`}><select className="bp-sel-in" data-testid="ad-tool" value={tool} onChange={(e) => setTool(e.target.value)}><option value="">{industry && spotlightFromTrade(industry) ? `— the ${SPOTLIGHT[spotlightFromTrade(industry)!].label} (the trade hero's own) —` : "— none —"}</option>{SPOTLIGHT_TOOLS.map((k) => <option key={k} value={k}>{SPOTLIGHT[k].label}</option>)}</select></div></label>
+          <label className={s.filterLabel}><span>The tool the ad sells</span><div className={`bp-sel ${s.selectWrap}`}><select className="bp-sel-in" data-testid="ad-tool" value={tool} onChange={(e) => setTool(e.target.value)}><option value="">{industry && spotlightFromTrade(industry) ? `— the ${SPOTLIGHT[spotlightFromTrade(industry)!].label} (the trade hero's own) —` : "— none —"}</option><optgroup label="Today's plans and the new plans">{SPOTLIGHT_TOOLS.map((k) => <option key={k} value={k}>{SPOTLIGHT[k].label}</option>)}</optgroup><optgroup label="New plans only (Base + Tools)">{TOOLS_AD_KEYS.map((k) => <option key={k} value={k}>{TOOLS_AD[k].label}</option>)}</optgroup></select></div></label>
           {hooks.length > 0 && <label className={s.filterLabel}><span>Headline: the ad&apos;s opening line</span><div className={`bp-sel ${s.selectWrap}`}><select className="bp-sel-in" data-testid="ad-link-hook" value={hookOn?.key ?? ""} onChange={(e) => setHook(e.target.value)}><option value="">The trade&apos;s own headline</option>{hooks.map((x) => <option key={x.key} value={x.key}>{x.h1.join(" ")} — {x.ad}</option>)}</select></div></label>}
           {(kind === "x" || kind === "google" || kind === "organic") && <label className={s.filterLabel}><span>Campaign name</span><input className={s.linksInput} value={campaign} onChange={(e) => setCampaign(e.target.value)} placeholder="october-roofers"/></label>}
           {kind === "organic" && <label className={s.filterLabel}><span>Platform</span><div className={`bp-sel ${s.selectWrap}`}><select className="bp-sel-in" value={platform} onChange={(e) => setPlatform(e.target.value)}><option value="instagram">Instagram</option><option value="facebook">Facebook</option><option value="tiktok">TikTok</option><option value="x">X (Twitter)</option><option value="youtube">YouTube</option><option value="linkedin">LinkedIn</option><option value="nextdoor">Nextdoor</option></select></div></label>}
@@ -97,7 +102,7 @@ export function AdLinks({ origin = "https://www.jobflex.app" }: { origin?: strin
           <div className={s.linksRow}><span>URL parameters</span><code data-testid="ad-link-params">{params}</code><button type="button" className={s.primary} onClick={() => copy(params, "params")}>{copied === "params" ? "Copied" : "Copy"}</button></div>
         </>}
         <div className={s.linksRow}><span>{preset.fills ? "Or the full link in one" : "Link"}</span><code data-testid="ad-link-full">{full}</code><button type="button" className={preset.fills ? s.button : s.primary} onClick={() => copy(full, "full")}>{copied === "full" ? "Copied" : "Copy"}</button></div>
-        <p className={s.footnote}>{preset.note}{industry && page === "/" ? ` The link opens the landing on the ${heroName(industry)} hero; the signup remembers it as its landing trade.` : ""}{tool ? ` Every plan card marks the ${SPOTLIGHT[tool as keyof typeof SPOTLIGHT].label} for whoever clicks this link — on the landing, at sign-up and on the Subscription page.` : ""}{hookOn ? ` Its headline is the ad's own opening line — “${hookOn.h1.join(" ")}” — with the ad's next line under it; pick the line the ad really opens on.` : hooks.length ? " Pick the ad's opening line and the page's headline continues it." : ""}</p>
+        <p className={s.footnote}>{preset.note}{industry && page === "/" ? ` The link opens the landing on the ${heroName(industry)} hero; the signup remembers it as its landing trade.` : ""}{newKey ? ` With the Plans switch on, this link opens the new plans priced with the ${toolLabel} as the main tool, and the sign-up starts on Professional + ${toolLabel}. With it off, the plan cards show as they are, with no tool marked.` : toolLabel ? ` Every plan card marks the ${toolLabel} for whoever clicks this link — on the landing, at sign-up and on the Subscription page.` : ""}{hookOn ? ` Its headline is the ad's own opening line — “${hookOn.h1.join(" ")}” — with the ad's next line under it; pick the line the ad really opens on.` : hooks.length ? " Pick the ad's opening line and the page's headline continues it." : ""}</p>
       </div>
     </section>
   );

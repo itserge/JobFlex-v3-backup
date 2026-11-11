@@ -91,6 +91,9 @@ export type ProposalMore = {
   rep: { userId: string; name: string; phone: string | null; repPct: number | null; dealPct: number | null; pct: number | null; earned: number; full: number } | null;
   sellers: Array<{ userId: string; name: string; role: string; pct: number | null }>;
   callRepFirst: boolean;
+  /** Sales commission is on the plan (the new plans: Professional and up; every Classic plan). Without it the sheet
+   *  shows who sold it and no figure: the percents and the earnings come back empty. */
+  commission: boolean;
   project: { id: string; name: string } | null;
   projects: Array<{ id: string; name: string; clients: boolean }>;
   job: { id: string; title: string; status: string; crew: Array<{ assignmentId: string; workerId: string; name: string; pay: number; status: string }> } | null;
@@ -121,17 +124,20 @@ export async function proposalMore(organizationId: string, proposalId: string): 
   });
   if (!p) return null;
   const m = moneyOf(p);
-  const [members, workers, projects, invoices] = await Promise.all([
+  const [members, workers, projects, invoices, commissionLocked] = await Promise.all([
     db.membership.findMany({ where: { organizationId }, select: { userId: true, role: true, commissionPct: true, user: { select: { name: true, email: true } } } }),
     db.workerProfile.findMany({ where: { organizationId, inviteStatus: { not: "DECLINED" } }, orderBy: { displayName: "asc" }, select: { id: true, userId: true, displayName: true, phone: true } }),
     db.project.findMany({ where: { organizationId, status: { not: "ARCHIVED" } }, orderBy: { updatedAt: "desc" }, take: 40, select: { id: true, name: true, clientId: true } }),
     db.invoice.count({ where: { organizationId, proposalId: p.id, status: INVOICE_OPEN } }),
+    isPageLocked(organizationId, COMMISSION),
   ]);
+  const commission = !commissionLocked;
   const roleOf = new Map(members.map((x) => [x.userId, x.role]));
   const ownerMember = members.find((x) => x.userId === p.ownerId);
   const ownerWorker = workers.find((w) => w.userId === p.ownerId);
-  const pct = effectivePct(p.commissionPct, ownerMember?.commissionPct);
-  const c = commissionOf({ pct, ...m });
+  // No commission on the plan (a new-plan Basic shop): no percent, nothing earned — the figures aren't drawn.
+  const pct = commission ? effectivePct(p.commissionPct, ownerMember?.commissionPct) : null;
+  const c = commission ? commissionOf({ pct, ...m }) : { earned: 0, full: 0 };
   const job = p.jobs[0] ?? null;
   const installDays = job ? await db.jobEvent.count({ where: { jobId: job.id, startsAt: { gte: new Date() } } }) : 0;
   const sold = isSold(p.status) && !p.canceledAt;
@@ -144,13 +150,14 @@ export async function proposalMore(organizationId: string, proposalId: string): 
     client: p.client ? { id: p.client.id, name: p.client.name } : null,
     money: { contract: m.contract, collected: m.collected, left: Math.max(0, Math.round((m.contract - m.collected) * 100) / 100) },
     rep: p.owner
-      ? { userId: p.owner.id, name: p.owner.name || p.owner.email || "Someone", phone: ownerWorker?.phone ?? p.owner.phone ?? null, repPct: ownerMember?.commissionPct ?? null, dealPct: p.commissionPct, pct, earned: c.earned, full: c.full }
+      ? { userId: p.owner.id, name: p.owner.name || p.owner.email || "Someone", phone: ownerWorker?.phone ?? p.owner.phone ?? null, repPct: commission ? (ownerMember?.commissionPct ?? null) : null, dealPct: commission ? p.commissionPct : null, pct, earned: c.earned, full: c.full }
       : null,
     sellers: members
       .filter((x) => SELLER_ROLES.includes(x.role))
-      .map((x) => ({ userId: x.userId, name: x.user.name || x.user.email || "Someone", role: x.role, pct: x.commissionPct }))
+      .map((x) => ({ userId: x.userId, name: x.user.name || x.user.email || "Someone", role: x.role, pct: commission ? x.commissionPct : null }))
       .sort((a, b) => Number(b.role === "SALES") - Number(a.role === "SALES") || a.name.localeCompare(b.name)),
     callRepFirst: p.callRepFirst,
+    commission,
     project: p.project,
     projects: projects.map((x) => ({ id: x.id, name: x.name, clients: !!p.clientId && x.clientId === p.clientId })).sort((a, b) => Number(b.clients) - Number(a.clients)),
     job: job

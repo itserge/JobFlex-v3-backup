@@ -62,7 +62,7 @@ import { PasswordlessStep } from "./passwordless-step";
 import { autoPlanFor, type AutoPlanOffer } from "@/lib/signupAutoPlan";
 import { rememberOtpDraft, rememberSignupMode, type SignupMode } from "@/lib/signupMode";
 import { forgetOtpDraft, otpPendingState } from "@/actions/signupOtp";
-import { SPOTLIGHT, SPOTLIGHT_MISSING, SPOTLIGHT_TAG, spotlightInPlan, planCardRows, rememberSpotlightVisit, spotlightBanner, type SpotlightTool } from "@/lib/planSpotlight";
+import { SPOTLIGHT, SPOTLIGHT_MISSING, SPOTLIGHT_TAG, keptAdTool, spotlightInPlan, planCardRows, rememberSpotlightVisit, spotlightBanner, type SpotlightTool } from "@/lib/planSpotlight";
 import type { OtpRestore } from "@/lib/signupOtp";
 import {
   applySignupPromo,
@@ -394,6 +394,11 @@ export function RegisterContent({
      size and the main tool picked here go to the checkout as they are; it prices them again itself. */
   const [toolsCatalog, setToolsCatalog] = React.useState<Catalog | null>(null);
   const [toolsPick, setToolsPick] = React.useState<{ plan: ToolPlanId; main: ToolId | null }>({ plan: "professional", main: toolsMain });
+  /* THE AD KEY THE SIGN-UP KEEPS (Base + Tools, part 5 — lib/planSpotlight keptAdTool): the new plans' main tool
+     as its ad key ("video", "crm"), else the Classic spotlight — what the draft, the pending sign-up and the Google
+     button's cookie carry, so a new plans' ad survives a trip to Google and back. Switch off: toolsMain is null and
+     this is the spotlight, exactly as before. */
+  const adToolKept = keptAdTool(toolsPick.main ?? toolsMain, spotlight) ?? null;
   /** What the checkout is told about the main tool: the pick on a new plan, nothing on a Classic one. */
   const toolFor = (slug: string | null | undefined): string | undefined => (isToolsSlug(slug) ? (toolsPick.main ?? "") : undefined);
   /* Custom and catalog plans share the saved offer returned by signupPlans. */
@@ -1459,7 +1464,7 @@ export function RegisterContent({
           trades.includes("Other") && otherTrade.trim() ? otherTrade.trim() : undefined,
         attribution: attribution ?? undefined,
         landingIndustry: industry ?? undefined,
-        landingTool: spotlight ?? undefined,
+        landingTool: adToolKept ?? undefined,
         utm: utm ?? undefined,
         signupVariant: "e",
         signupMode: twoStep ? "2-step" : "3-step",
@@ -1498,7 +1503,7 @@ export function RegisterContent({
         // The return of a new address is built from cookies (lib/googleSignup):
         // the trade and the campaign this page came in on, and the mode — a
         // page handed over from an in-app browser has none of the landing's.
-        if (otp) writeLandingCookies(industry ? resolveLandingVariant(industry) : undefined, utm ?? undefined, spotlight);
+        if (otp) writeLandingCookies(industry ? resolveLandingVariant(industry) : undefined, utm ?? undefined, adToolKept);
       })
       .catch(() => {})
       .finally(() => {
@@ -1749,7 +1754,7 @@ export function RegisterContent({
                   planMode={planMode}
                   trialDays={offer.days}
                   industry={industry}
-                  tool={spotlight}
+                  tool={adToolKept}
                   utm={utm}
                   attribution={attribution}
                   analytics={trafficIdentity}

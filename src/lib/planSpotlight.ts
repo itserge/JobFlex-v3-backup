@@ -82,6 +82,22 @@ export function parseAdTool(raw: string | string[] | null | undefined): AdTool |
   return TOOLS_AD_KEYS.find((key) => v === key || TOOLS_AD[key].aliases.includes(v));
 }
 
+/**
+ * THE AD KEY A SIGN-UP KEEPS (Base + Tools, part 5): the first of the candidates that is any ad's key or spelling —
+ * a Classic key as parseSpotlightTool reads it, else one of the new plans' keys — as its key ("smartcrm" → "crm").
+ * What the sign-up stores and carries (the emailed-code draft, the pending sign-up's landingTool, the Google
+ * return's `?tool=`, the 30-day cookie the Google button leaves), so a new plans' ad survives the round trip and the
+ * card page opens on its tool (lib/toolPlans/cards mainToolFor). Every Classic reader parses the stored key with
+ * parseSpotlightTool, which never returns a new key: for a Classic surface a kept "video" is no tool at all.
+ */
+export function keptAdTool(...candidates: Array<string | null | undefined>): AdTool | undefined {
+  for (const c of candidates) {
+    const key = parseAdTool(c);
+    if (key) return key;
+  }
+  return undefined;
+}
+
 /** The new plans' read of a visit: the link's `?tool=` (any ad key), else the landing trade's own tool. */
 export function adToolFor(input: { tool?: string | string[] | null; industry?: string | null }): AdTool | null {
   return parseAdTool(input.tool) ?? spotlightFromTrade(input.industry) ?? null;
