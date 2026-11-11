@@ -32,6 +32,8 @@ import { MobileUpgradeContent } from "@/components/v3/mobile-upgrade/mobile-upgr
 import type { UpgradePlan } from "@/components/v3/upgrade-blueprint/upgrade-content";
 import { applyCheckoutReturn } from "@/lib/checkoutReturn";
 import { planTermState } from "@/lib/planChange";
+import { isToolsSlug } from "@/lib/toolPlans/shared";
+import { TOOLS_SUBSCRIPTION_HREF } from "@/lib/toolPlans/billing";
 
 export const dynamic = "force-dynamic";
 
@@ -67,6 +69,11 @@ export default async function MobileUpgradeV1Page({
   } catch {
     redirect("/auth/login?next=%2Fmobile-upgrade-v1");
   }
+
+  /* A NEW-PLAN SHOP (Base + Tools, part 4 — owner, 2026-11-10) has no Classic plan cards to compare: its sizes and
+     tools live on the Subscription page's own section. A Classic shop goes on to this page exactly as before. */
+  const planRow = await db.subscription.findUnique({ where: { organizationId: ctx.organizationId }, select: { plan: true } }).catch(() => null);
+  if (isToolsSlug(planRow?.plan)) redirect(TOOLS_SUBSCRIPTION_HREF);
 
   const params = await searchParams;
   const upgradedTo = params.session_id

@@ -1,9 +1,9 @@
 "use client";
 
 // THE PLANS SWITCH (owner, 2026-11-10), on Admin → Trial watch under the sign-up switches: which plans NEW sign-ups
-// get — Classic (today) or Base + Tools (lib/toolPlans). Off until the build is finished: the "Base + Tools" button
-// stays greyed, with the parts still to come listed, until lib/toolPlans/server TOOLS_PLANS_READY is true. Shops
-// already on a plan stay Classic whatever this says. Same clothes as the other switches.
+// get — Classic (today) or Base + Tools (lib/toolPlans). The "Base + Tools" button was greyed, with the parts still to
+// come listed, until lib/toolPlans/server TOOLS_PLANS_READY turned true (part 4); what is left is listed as not needed
+// for it. Shops already on a plan stay Classic whatever this says. Same clothes as the other switches.
 import { useState } from "react";
 import { setPricingModelAction } from "@/actions/trialPolicy";
 import { money, ladderChecks, TOOL_PLANS, TOOLS } from "@/lib/toolPlans/shared";
@@ -65,6 +65,17 @@ export function PricingModelPanel({ initial, ready, parts }: { initial: PricingM
         {!ready && todo.length > 0 && (
           <p className={t.why} data-pricing-todo>
             <b>Not ready to turn on yet.</b> Still to build:{" "}
+            {todo.map((p, i) => (
+              <span key={p.part}>
+                {i > 0 ? "; " : ""}part {p.part}, {p.what.charAt(0).toLowerCase() + p.what.slice(1)}
+              </span>
+            ))}
+            .
+          </p>
+        )}
+        {ready && todo.length > 0 && (
+          <p className={t.why} data-pricing-todo>
+            Ready to turn on. Still to come, and not needed for it:{" "}
             {todo.map((p, i) => (
               <span key={p.part}>
                 {i > 0 ? "; " : ""}part {p.part}, {p.what.charAt(0).toLowerCase() + p.what.slice(1)}

@@ -16,7 +16,7 @@ import "server-only";
 import type Stripe from "stripe";
 import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
 import { readPendingSignup } from "@/actions/signupCheckout";
-import { resolveSignupDiscount, resolveSignupPrice } from "@/lib/signupPricing";
+import { resolveSignupDiscount, resolveSignupPrice, signupPlanRefusal } from "@/lib/signupPricing";
 import { customMetadata } from "@/lib/customBilling";
 import { CUSTOM_PLAN_OFF_SALE, customPlanOffered } from "@/lib/customPlanFlag";
 import { trialOfferMetadata } from "@/lib/trialOffer";
@@ -33,6 +33,8 @@ export async function createSignupCheckout(input: {
   interval: "MONTH" | "YEAR";
   /** Where Stripe sends the visitor back: this request's own origin. */
   origin: string;
+  /** The new plans: the main tool picked on the card page (validated and priced by lib/signupPricing). */
+  mainTool?: string | null;
 }): Promise<SignupCheckoutResult> {
   if (!isStripeEnabled()) return { ok: false, error: "Stripe is not configured.", status: 503 };
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -49,9 +51,12 @@ export async function createSignupCheckout(input: {
   }
 }
 
-async function open({ token, planSlug, interval, origin }: Parameters<typeof createSignupCheckout>[0]): Promise<SignupCheckoutResult> {
+async function open({ token, planSlug, interval, origin, mainTool }: Parameters<typeof createSignupCheckout>[0]): Promise<SignupCheckoutResult> {
   // Off sale (CUSTOM_PLAN_ENABLED unset): a new shop cannot start on it.
   if (planSlug === CUSTOM_PLAN_SLUG && !customPlanOffered()) return { ok: false, error: CUSTOM_PLAN_OFF_SALE, status: 410 };
+  // The new plans only while the Plans switch is on, the Classic ones only while it is off (lib/signupPricing).
+  const refusal = await signupPlanRefusal(planSlug);
+  if (refusal) return { ok: false, error: refusal, status: 409 };
 
   const pending = await readPendingSignup(token);
   if (!pending) return { ok: false, error: "That signup expired. Start again.", status: 410 };
@@ -67,8 +72,12 @@ async function open({ token, planSlug, interval, origin }: Parameters<typeof cre
     interval,
     customPages: pending.customPages,
     trialOffer: pending.trialOffer,
+    mainTool,
   });
   if (!priced.ok) return { ok: false, error: priced.error, status: priced.status };
+  /* THE NEW PLANS' MARK (Base + Tools, part 4): the session and the subscription both carry the plan and the main
+     tool, so the account made on the return (actions/signupCheckout) writes the shop's record from what Stripe holds. */
+  const toolsMeta: Record<string, string> = priced.mainTool !== undefined ? { planSlug: priced.planLabel, mainTool: priced.mainTool ?? "" } : {};
   // The saved offer determines the duration; then Stripe charges the selected price.
   const { trialDays, planLabel, isCustom } = priced;
   /* NO DECK STUDIO HERE (owner, 2026-10-27): the add-on rode every sign-up's checkout from 2026-10-26 and sign-ups
@@ -96,7 +105,10 @@ async function open({ token, planSlug, interval, origin }: Parameters<typeof cre
     const clock = await stripe.testHelpers.testClocks.create({ frozen_time: Math.floor(Date.now() / 1000), name: `signup ${pending.email}`.slice(0, 300) });
     customer = (await stripe.customers.create({ email: pending.email, name: pending.businessName, test_clock: clock.id, metadata: { signupToken: token } })).id;
   }
-  const back = `${origin}/auth/register?signup=${encodeURIComponent(token)}`;
+  // The new plans come back to their own card page: the size and the tool picked (the link's `?tool=` is gone by then).
+  const back = `${origin}/auth/register?signup=${encodeURIComponent(token)}${
+    priced.mainTool !== undefined ? `&plan=${encodeURIComponent(priced.planLabel)}${priced.mainTool ? `&tool=${priced.mainTool}` : ""}` : ""
+  }`;
   const session = await stripe.checkout.sessions.create(
     {
       mode: "subscription",
@@ -108,10 +120,10 @@ async function open({ token, planSlug, interval, origin }: Parameters<typeof cre
       // The custom plan's pages ride the subscription too (lib/customBilling);
       // the organization is named on it once the account exists.
       subscription_data:
-        trialDays > 0 || isCustom
+        trialDays > 0 || isCustom || priced.mainTool !== undefined
           ? {
               ...(trialDays > 0 ? { trial_period_days: trialDays } : {}),
-              metadata: { ...(isCustom ? customMetadata(null, pending.customPages) : {}), ...trialOfferMetadata(pending.trialOffer) },
+              metadata: { ...(isCustom ? customMetadata(null, pending.customPages) : {}), ...trialOfferMetadata(pending.trialOffer), ...toolsMeta },
             }
           : undefined,
       // A yearly bill takes no code typed at Stripe: a percent "first month"
@@ -124,6 +136,7 @@ async function open({ token, planSlug, interval, origin }: Parameters<typeof cre
         planSlug: planLabel,
         interval: priced.interval,
         ...(isCustom ? { customPages: pending.customPages.join(",") } : {}),
+        ...toolsMeta,
       },
       success_url: `${back}&session_id={CHECKOUT_SESSION_ID}`,
       // Stripe's back arrow: the plan cards of this sign-up (app/(auth)/auth/register — `checkout=cancelled`).

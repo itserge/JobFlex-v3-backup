@@ -72,6 +72,10 @@ import { pendingSignupAlive } from "@/lib/pendingSignup";
 import { markUnclaimed } from "@/lib/accountClaim";
 import { autoPlanWelcomeKey } from "@/lib/autoPlanWelcome";
 import { timezoneFor } from "@/lib/usTimezone";
+import { signupPlanRefusal } from "@/lib/signupPricing";
+import { toolsChoice, toolsSignupPick } from "@/lib/toolPlans/cards";
+import { chosenTradeFor, emptyToolsRecord, isToolId, toolPlanBySlug, type ToolId } from "@/lib/toolPlans/shared";
+import { writeToolsRecord } from "@/lib/toolPlans/billing";
 
 const pendingSchema = z.object({
   analytics: trafficIdentitySchema.optional().catch(undefined),
@@ -131,7 +135,7 @@ export type PendingRecord = z.infer<typeof pendingSchema> extends infer T
       trialOffer?: TrialOffer;
       /** Set by requestCardlessTrial: the plan the card-less trial is for, and
        *  when the confirmation link went out (the intent then lives 24 hours). */
-      cardless?: { planSlug: string; interval?: "MONTH" | "YEAR"; requestedAt: number };
+      cardless?: { planSlug: string; interval?: "MONTH" | "YEAR"; requestedAt: number; /** The new plans' main tool ("" none). */ mainTool?: string | null };
       /** The passwordless sign-up (lib/signupOtp, 2026-10-10): when the address
        *  was proven — by the emailed code or link, or by Google — before this
        *  intent was written. Only that server code sets it; the card-less
@@ -232,6 +236,8 @@ export async function readPendingSignup(token: string): Promise<{
    *  after a trip to the card page and back. */
   name: string;
   landingIndustry: TradeType | null;
+  /** The ad's `?tool=` key as the sign-up kept it (the new plans' card page falls back to it for the main tool). */
+  landingTool: string | null;
   businessName: string;
   trialOffer: TrialOffer;
   customPages: string[];
@@ -243,6 +249,7 @@ export async function readPendingSignup(token: string): Promise<{
         email: rec.email,
         name: rec.name,
         landingIndustry: rec.landingIndustry ?? null,
+        landingTool: rec.landingTool ?? null,
         businessName: rec.businessName,
         trialOffer: storedTrialOffer(rec.trialOffer),
         customPages: normalizeCustomPages(rec.customPages),
@@ -404,6 +411,8 @@ export async function completePendingSignup(
   // client) rather than from the intent, which updatePendingSignupPages can
   // still rewrite after the session was priced.
   let paidCustomPages: string[] | null = null;
+  // The new plans' main tool, as the session was priced with it (lib/signupCheckoutSession) — Stripe's copy, not ours.
+  let mainTool: ToolId | null = null;
 
   if (sessionId) {
     if (!isStripeEnabled()) return { ok: false, error: "Checkout is not configured." };
@@ -435,6 +444,8 @@ export async function completePendingSignup(
         stripeSubscriptionId = sub;
       }
       planSlug = (session.metadata?.planSlug as string | undefined) ?? null;
+      const metaTool = session.metadata?.mainTool;
+      mainTool = isToolId(metaTool) ? metaTool : null;
       const metaPages = session.metadata?.customPages;
       if (typeof metaPages === "string") {
         paidCustomPages = normalizeCustomPages(metaPages.split(",").filter(Boolean));
@@ -457,7 +468,23 @@ export async function completePendingSignup(
     paidCustomPages,
     analyticsOutcome,
     analyticsLive,
+    mainTool,
   });
+}
+
+/**
+ * THE NEW PLANS AT THE CARD-LESS TRIAL'S START: which plans a sign-up may start now (lib/signupPricing
+ * signupPlanRefusal), and for a new plan its size and main tool, read again on the server (never the browser's
+ * price). `name` is what the confirmation email calls it ("Professional + Deck Studio").
+ */
+async function cardlessPlanCheck(planSlug: string, mainTool: string | null | undefined): Promise<{ ok: true; mainTool: ToolId | null; name: string | null } | { ok: false; error: string }> {
+  const refusal = await signupPlanRefusal(planSlug);
+  if (refusal) return { ok: false, error: refusal };
+  const tools = toolPlanBySlug(planSlug);
+  if (!tools) return { ok: true, mainTool: null, name: null };
+  const pick = toolsSignupPick({ plan: planSlug, tool: mainTool });
+  if (!pick) return { ok: false, error: "That plan is not available." };
+  return { ok: true, mainTool: pick.main, name: toolsChoice(pick.plan, pick.main).label };
 }
 
 /**
@@ -476,6 +503,8 @@ export async function requestCardlessTrial(
    *  trial, so a card added later starts the plan on it. Monthly when absent
    *  (a page loaded before the term was sent) or the plan has no yearly price. */
   interval: "MONTH" | "YEAR" = "MONTH",
+  /** The new plans: the main tool picked on the card page (checked again here and priced at the trial's start). */
+  mainTool?: string | null,
 ): Promise<{ ok: true; email: string; resendAt: number } | { ok: false; error: string; resendAt?: number; requiresCard?: true }> {
   // THE ONE ANSWER (lib/trialPolicyServer), read fresh: the switch, else the
   // deployment's default, and the day's ceiling on card-less trials. "card"
@@ -513,7 +542,10 @@ export async function requestCardlessTrial(
   const refusal = await cardlessTrialRefusal(rec.email);
   if (refusal) return { ok: false, error: refusal };
   let planName = "Custom";
-  if (planSlug !== CUSTOM_PLAN_SLUG) {
+  const toolsCheck = await cardlessPlanCheck(planSlug, mainTool);
+  if (!toolsCheck.ok) return { ok: false, error: toolsCheck.error };
+  if (toolsCheck.name) planName = toolsCheck.name;
+  else if (planSlug !== CUSTOM_PLAN_SLUG) {
     const plan = await getPlanBySlug(planSlug);
     if (!plan || !plan.active || plan.isFree) return { ok: false, error: "That plan is not available." };
     planName = plan.name;
@@ -525,7 +557,7 @@ export async function requestCardlessTrial(
   const hash = createHash("sha256").update(secret).digest("hex");
   const prev = await db.syncState.findUnique({ where: { key: confirmIndexKey(token) } }).catch(() => null);
   if (prev) await db.syncState.delete({ where: { key: confirmKey(prev.cursor) } }).catch(() => {});
-  const next: PendingRecord = { ...rec, cardless: { planSlug, interval: interval === "YEAR" ? "YEAR" : "MONTH", requestedAt: Date.now() } };
+  const next: PendingRecord = { ...rec, cardless: { planSlug, interval: interval === "YEAR" ? "YEAR" : "MONTH", requestedAt: Date.now(), ...(toolsCheck.name ? { mainTool: toolsCheck.mainTool ?? "" } : {}) } };
   await db.syncState.upsert({ where: { key: key(token) }, update: { cursor: JSON.stringify(next) }, create: { key: key(token), cursor: JSON.stringify(next) } });
   await db.syncState.upsert({ where: { key: confirmKey(hash) }, update: { cursor: token }, create: { key: confirmKey(hash), cursor: token } });
   await db.syncState.upsert({ where: { key: confirmIndexKey(token) }, update: { cursor: hash }, create: { key: confirmIndexKey(token), cursor: hash } });
@@ -564,6 +596,8 @@ export async function startVerifiedCardlessTrial(
   planSlug: string,
   /** The term picked on the plan step — see requestCardlessTrial. */
   interval: "MONTH" | "YEAR" = "MONTH",
+  /** The new plans' main tool — see requestCardlessTrial. */
+  mainTool?: string | null,
 ): Promise<
   | { ok: true; email: string; ticket: string | null; subscriptionId: string | null; signupMode: string | null }
   | { ok: false; error: string; requiresCard?: true; done?: boolean; email?: string }
@@ -586,11 +620,13 @@ export async function startVerifiedCardlessTrial(
     }
     const refusal = await cardlessTrialRefusal(rec.email);
     if (refusal) return { ok: false, error: refusal };
-    if (planSlug !== CUSTOM_PLAN_SLUG) {
+    const toolsCheck = await cardlessPlanCheck(planSlug, mainTool);
+    if (!toolsCheck.ok) return { ok: false, error: toolsCheck.error };
+    if (!toolsCheck.name && planSlug !== CUSTOM_PLAN_SLUG) {
       const plan = await getPlanBySlug(planSlug);
       if (!plan || !plan.active || plan.isFree) return { ok: false, error: "That plan is not available." };
     }
-    const next: PendingRecord = { ...rec, cardless: { planSlug, interval: interval === "YEAR" ? "YEAR" : "MONTH", requestedAt: Date.now() } };
+    const next: PendingRecord = { ...rec, cardless: { planSlug, interval: interval === "YEAR" ? "YEAR" : "MONTH", requestedAt: Date.now(), ...(toolsCheck.name ? { mainTool: toolsCheck.mainTool ?? "" } : {}) } };
     await db.syncState.upsert({ where: { key: key(token) }, update: { cursor: JSON.stringify(next) }, create: { key: key(token), cursor: JSON.stringify(next) } });
     const res = await finishCardlessTrial(token);
     if (!res.ok) return { ok: false, error: res.error, done: res.done, email: res.email, ...(res.cardHref ? { requiresCard: true as const } : {}) };
@@ -674,6 +710,7 @@ async function finishCardlessTrial(
     customPages,
     attribution: rec.attribution ?? null,
     trialOffer: rec.trialOffer,
+    mainTool: rec.cardless.mainTool ?? null,
   });
   if (!started.ok) return { ok: false, error: started.error };
   const sub = started.subscription;
@@ -691,6 +728,7 @@ async function finishCardlessTrial(
     paidCustomPages: started.customPages,
     analyticsOutcome: "trial_started",
     analyticsLive: sub.livemode,
+    mainTool: started.mainTool ?? null,
   });
   if (!created.ok) {
     // Stripe's per-token idempotency key makes overlapping confirmations share
@@ -742,6 +780,8 @@ type AccountBilling = {
   paidCustomPages: string[] | null;
   analyticsOutcome: string;
   analyticsLive: boolean;
+  /** The new plans: the main tool the subscription was priced with (null: none, or a Classic plan). */
+  mainTool?: ToolId | null;
 };
 
 /**
@@ -777,6 +817,10 @@ async function createAccountFromPending(
   // being typed.
   const taken = await db.user.findUnique({ where: { email: rec.email }, select: { id: true } });
   if (taken) return { ok: false, error: "That email is already registered. Try signing in." };
+  /* THE NEW PLANS (Base + Tools, part 4): the slug the subscription was priced with ("tools-professional") is the
+     plan — never the Classic fallback — and the main tool rides with it (billing.mainTool, from Stripe's copy). */
+  const toolsPlan = toolPlanBySlug(planSlug);
+  const toolsMain: ToolId | null = toolsPlan && isToolId(billing.mainTool) ? billing.mainTool : null;
 
   const slug = await uniqueSlug(slugify(rec.businessName));
   let orgId: string;
@@ -840,7 +884,8 @@ async function createAccountFromPending(
       }
 
       // Straight to Professional (lib/signupAutoPlan): the dashboard's welcome card says the plan can change any time.
-      if (rec.autoPlan) {
+      // Not on the new plans: their own welcome page says it (lib/toolPlans/view toolsWelcomeDue).
+      if (rec.autoPlan && !toolsPlan) {
         await tx.syncState.upsert({ where: { key: autoPlanWelcomeKey(org.id) }, create: { key: autoPlanWelcomeKey(org.id), cursor: JSON.stringify({ at: new Date().toISOString() }) }, update: {} });
       }
       // No code at sign-up: the address waits for a sign-in that proves it (lib/accountClaim).
@@ -887,7 +932,9 @@ async function createAccountFromPending(
   // creation there was no organization for the webhook's metadata to name.
   if (stripeSubscriptionId || stripeCustomerId) {
     const plan =
-      planSlug && planSlug !== CUSTOM_PLAN_SLUG ? await getPlanBySlug(planSlug) : null;
+      planSlug && planSlug !== CUSTOM_PLAN_SLUG && !toolsPlan ? await getPlanBySlug(planSlug) : null;
+    // The Classic fallback ("PRO") is for a Classic slug the catalog no longer knows — never for the new plans.
+    const storedPlan = planSlug === CUSTOM_PLAN_SLUG ? "CUSTOM" : toolsPlan ? toolsPlan.slug.toUpperCase() : (plan?.slug.toUpperCase() ?? "PRO");
     await db.subscription
       .upsert({
         where: { organizationId: orgId },
@@ -897,7 +944,7 @@ async function createAccountFromPending(
         // the webhook happened to overwrite the row). currentPeriodEnd makes
         // the row self-expiring if the webhook never arrives.
         update: {
-          plan: planSlug === CUSTOM_PLAN_SLUG ? "CUSTOM" : (plan?.slug.toUpperCase() ?? "PRO"),
+          plan: storedPlan,
           status: trialEnd ? SubscriptionStatus.TRIALING : SubscriptionStatus.ACTIVE,
           provider: "STRIPE",
           externalCustomerId: stripeCustomerId,
@@ -907,7 +954,7 @@ async function createAccountFromPending(
         },
         create: {
           organizationId: orgId,
-          plan: planSlug === CUSTOM_PLAN_SLUG ? "CUSTOM" : (plan?.slug.toUpperCase() ?? "PRO"),
+          plan: storedPlan,
           status: trialEnd ? SubscriptionStatus.TRIALING : SubscriptionStatus.ACTIVE,
           provider: "STRIPE",
           externalCustomerId: stripeCustomerId,
@@ -917,6 +964,14 @@ async function createAccountFromPending(
         },
       })
       .catch((err) => console.warn("[signup] subscription record failed:", err));
+    /* THE SHOP'S RECORD (SyncState `orgTools:<orgId>`, lib/toolPlans/billing): the size, the main tool, the
+       subscription its lines live on; Advanced's main trade tool is one of its two. Written before the mirror below
+       (syncSubscriptionFromStripe → mirrorToolLines) so the lines join this record, main tool kept. `toolsWelcome` is
+       left unset: the first Overview opens the welcome page. */
+    if (toolsPlan) {
+      const record = { ...emptyToolsRecord(toolsPlan.id, toolsMain), subId: stripeSubscriptionId, chosenTrade: chosenTradeFor(toolsPlan.id, toolsMain, []) };
+      await writeToolsRecord(orgId, record).catch((err) => console.warn("[signup] tools record failed:", err));
+    }
   }
 
   // LEAD CENTER ELIGIBILITY. The matcher hard-filters on a geocoded address

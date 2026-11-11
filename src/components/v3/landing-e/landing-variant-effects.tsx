@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { effectiveConsent } from "@/lib/consent";
 import { trackTraffic } from "@/lib/traffic-client";
-import { SPOTLIGHT_COOKIE, SPOTLIGHT_MAX_AGE_S, type SpotlightTool } from "@/lib/planSpotlight";
+import { SPOTLIGHT_COOKIE, SPOTLIGHT_MAX_AGE_S, type AdTool } from "@/lib/planSpotlight";
 import { TRAFFIC_EVENTS } from "@/lib/traffic-contract";
 import {
   FBCLID_COOKIE,
@@ -22,7 +22,7 @@ import {
  *  component and SYNCHRONOUSLY by the Google button before it leaves for
  *  Google, so the return from Google finds both even when the click beat the
  *  effect. */
-export function writeLandingCookies(industry: LandingVariantKey | undefined, utm: UtmParams | undefined, tool?: SpotlightTool | null) {
+export function writeLandingCookies(industry: LandingVariantKey | undefined, utm: UtmParams | undefined, tool?: AdTool | null) {
   try {
     if (industry) document.cookie = `${INDUSTRY_COOKIE}=${industry}; path=/; max-age=${INDUSTRY_MAX_AGE_S}; samesite=lax`;
     // The tool the ad sold (lib/planSpotlight), for the register and /pricing to keep marking.
@@ -73,8 +73,9 @@ export function LandingVariantEffects({
   utm: UtmParams;
   /** The key of the ad's opening line the headline showed (LANDING_HOOKS), if any. */
   hook?: string;
-  /** The tool this URL marks (`?tool=`, else the trade's own estimator; lib/planSpotlight) — remembered like the trade. */
-  tool?: SpotlightTool | null;
+  /** The tool this URL marks (`?tool=`, else the trade's own estimator; lib/planSpotlight) — remembered like the trade.
+   *  With the new plans on, any ad's key (parseAdTool); Classic surfaces read the cookie as a Classic key or nothing. */
+  tool?: AdTool | null;
 }) {
   useEffect(() => {
     writeLandingCookies(industry && remember ? industry : undefined, utm, tool);

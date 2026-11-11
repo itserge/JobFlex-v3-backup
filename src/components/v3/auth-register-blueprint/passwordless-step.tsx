@@ -654,9 +654,10 @@ export function PasswordlessStep({
               </svg>
             </span>
             <div className={css.priceBody}>
-              {/* Starter's price, typed in (owner, 2026-10-18) — when Starter's price changes, change it here. */}
+              {/* Starter's price, typed in (owner, 2026-10-18) — when Starter's price changes, change it here. The new
+                  plans (Plans switch on) say their own smallest card, priced with the ad's tool (lib/signupAutoPlan). */}
               <p className={css.priceHead}>
-                Plans start at <b>$45/month</b>
+                Plans start at <b>{auto.tools ? `${autoPlanAmount({ priceCents: auto.tools.fromCents })}/month` : "$45/month"}</b>
               </p>
               <ul className={css.perks}>
                 <li>

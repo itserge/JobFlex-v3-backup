@@ -33,6 +33,10 @@ import { CUSTOM_PLAN_SLUG, customPriceCents } from "@/lib/customPlan";
 import { getPlanBySlug } from "@/lib/planCatalogServer";
 import { currentTrialPlan } from "@/lib/trialPlan";
 import { CARD_ONLY_CHECKOUT } from "@/lib/stripeCheckoutCard";
+import { cardCents, isToolsSlug, toolPlanBySlug, YEAR_MONTHS, type ToolId } from "@/lib/toolPlans/shared";
+import { toolsChoice } from "@/lib/toolPlans/cards";
+import { readToolCatalog } from "@/lib/toolPlans/prices";
+import { readToolsRecord } from "@/lib/toolPlans/billing";
 
 export type CardlessStart =
   | {
@@ -43,6 +47,8 @@ export type CardlessStart =
       interval: SignupInterval;
       customPages: string[];
       mode: "live" | "test";
+      /** The new plans: the main tool on the subscription (null: none). Absent on a Classic plan. */
+      mainTool?: ToolId | null;
     }
   | { ok: false; error: string };
 
@@ -60,6 +66,8 @@ export async function createCardlessSubscription(opts: {
   customPages: string[];
   attribution: { kind: "promo" | "ref"; code: string } | null;
   trialOffer?: TrialOffer;
+  /** The new plans: the main tool picked on the card page — the same lines the card checkout bills (lib/signupPricing). */
+  mainTool?: string | null;
 }): Promise<CardlessStart> {
   const { stripe, mode } = await getStripeClient();
   const priced = await resolveSignupPrice({
@@ -69,6 +77,7 @@ export async function createCardlessSubscription(opts: {
     interval: opts.interval,
     customPages: opts.customPages,
     trialOffer: opts.trialOffer,
+    mainTool: opts.mainTool,
   });
   if (!priced.ok) return { ok: false, error: priced.error };
   const discount = await resolveSignupDiscount({
@@ -87,6 +96,8 @@ export async function createCardlessSubscription(opts: {
     jf_cardless: "1",
     ...trialOfferMetadata(opts.trialOffer),
     ...(priced.isCustom ? { customPages: opts.customPages.join(",") } : {}),
+    // The new plans: the main tool rides the subscription, as on the card checkout (lib/signupCheckoutSession).
+    ...(priced.mainTool !== undefined ? { mainTool: priced.mainTool ?? "" } : {}),
   };
   try {
     // REHEARSALS ONLY: STRIPE_TEST_CLOCKS=1 puts each new trial customer on a
@@ -127,6 +138,7 @@ export async function createCardlessSubscription(opts: {
       interval: priced.interval,
       customPages: priced.isCustom ? opts.customPages : [],
       mode,
+      ...(priced.mainTool !== undefined ? { mainTool: priced.mainTool } : {}),
     };
   } catch (err) {
     console.error("[cardless-trial] Stripe refused the trial:", err);
@@ -170,6 +182,14 @@ export async function trialPlanSummary(orgId: string, rec: CardlessRecord): Prom
   const { planSlug, interval, customPages } = await currentTrialPlan(orgId, rec);
   const per = interval === "YEAR" ? "/yr" : "/mo";
   if (planSlug === CUSTOM_PLAN_SLUG) return { name: "Custom", cents: customPriceCents(customPages, interval), per };
+  // The new plans: the size with the shop's main tool ("Professional + Deck Studio"), at the prices in force.
+  const tools = toolPlanBySlug(planSlug);
+  if (tools) {
+    const [catalog, record] = await Promise.all([readToolCatalog(), readToolsRecord(orgId).catch(() => null)]);
+    const main = record?.main ?? null;
+    const monthly = cardCents(tools.id, main, catalog);
+    return { name: toolsChoice(tools.id, main, catalog).label, cents: interval === "YEAR" ? monthly * YEAR_MONTHS : monthly, per };
+  }
   const plan = await getPlanBySlug(planSlug);
   const cents = interval === "YEAR" ? (plan?.yearlyPriceCents ?? plan?.priceCents ?? 0) : (plan?.priceCents ?? 0);
   return { name: plan?.name ?? planSlug, cents, per };
@@ -204,7 +224,9 @@ export async function openCardCheckout(orgId: string, origin: string): Promise<{
   // The plan on the subscription when it ended (and a custom plan's pages
   // now), not the signup pick (lib/trialPlan).
   const plan = await currentTrialPlan(orgId, rec);
-  const priced = await resolveSignupPrice({ stripe, mode, planSlug: plan.planSlug, interval: plan.interval, customPages: plan.customPages });
+  // The new plans restart on the size and the main tool the shop had (its record, lib/toolPlans/billing).
+  const mainTool = isToolsSlug(plan.planSlug) ? ((await readToolsRecord(orgId).catch(() => null))?.main ?? null) : undefined;
+  const priced = await resolveSignupPrice({ stripe, mode, planSlug: plan.planSlug, interval: plan.interval, customPages: plan.customPages, mainTool });
   if (!priced.ok) throw new Error(priced.error);
   // The win-back's 10% (lib/trialWinback), applied by itself while the offer stands.
   const { winbackOffer } = await import("@/lib/trialWinback");
@@ -223,6 +245,7 @@ export async function openCardCheckout(orgId: string, origin: string): Promise<{
         interval: priced.interval,
         jf_after_trial: "1",
         ...(priced.isCustom ? { customPages: plan.customPages.join(",") } : {}),
+        ...(priced.mainTool !== undefined ? { mainTool: priced.mainTool ?? "" } : {}),
       },
     },
     metadata: { organizationId: orgId, jf_purpose: "trial-restart", planSlug: priced.planLabel, ...(offer ? { jf_winback: `${offer.pct}` } : {}) },

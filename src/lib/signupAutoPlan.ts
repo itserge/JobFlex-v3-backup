@@ -9,6 +9,7 @@
 //      tool sold as an add-on on any plan, the Deck Studio, moves nothing — lib/planSpotlight isAddOnTool);
 //   3. Professional missing from the catalog: the highlighted plan, else the first.
 import { SPOTLIGHT, isAddOnTool, type SpotlightTool } from "./planSpotlight";
+import type { ToolId } from "./toolPlans/shared";
 
 export const AUTO_PLAN_SLUG = "professional";
 export type SignupPlanMode = "pick" | "auto";
@@ -24,7 +25,16 @@ export type AutoPlanPick = { slug: string; why: "asked" | "tool" | "default" | "
 
 /** What the register page hands the form when the rule is "auto": the plan the server picked, to say on step 1 and
  *  to open the card page for. */
-export type AutoPlanOffer = { slug: string; name: string; priceCents: number; why: AutoPlanPick["why"] };
+export type AutoPlanOffer = {
+  slug: string;
+  name: string;
+  priceCents: number;
+  why: AutoPlanPick["why"];
+  /** THE NEW PLANS (Plans switch on, Base + Tools part 4): the offer is Professional + the ad's tool (`priceCents` is
+   *  both), `fromCents` the smallest card (Basic + the tool) for step 1's "Plans start at". The sign-up then opens its
+   *  own card page (the tool and the size can change there) instead of handing straight off to Stripe. */
+  tools?: { main: ToolId | null; fromCents: number };
+};
 
 /** "$79" — the plan's monthly amount alone, for "then $79 (with this plan)". */
 export function autoPlanAmount(o: Pick<AutoPlanOffer, "priceCents">): string {

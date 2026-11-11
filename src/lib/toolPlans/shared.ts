@@ -50,8 +50,9 @@ export interface ToolDef {
   kind: ToolKind;
   /** The monthly price, in cents (an example until Admin → Plans sets it). */
   cents: number;
-  /** The ad link's `?tool=` key (lib/planSpotlight). Null: no ad link yet — part 4 adds it. */
-  adKey: string | null;
+  /** The ad link's `?tool=` key: today's ads' (lib/planSpotlight SPOTLIGHT) or the new plans' own (TOOLS_AD, part 4).
+   *  Its spellings (lib/planSpotlight parseAdTool) include the tool's own id, so `?tool=<id>` always finds it. */
+  adKey: string;
   /** The gated pages and features this tool opens (lib/customPlan CUSTOM_PAGES / PAID_FEATURES ids, and the new
    *  ids parts 2–3 add: blueprint-estimator, texting, home-builder, remodeler). */
   opens: readonly string[];
@@ -65,13 +66,13 @@ export const TOOLS: readonly ToolDef[] = [
   { id: "hvac", label: "HVAC estimator", note: "Load, unit and price for a replacement, plus HVAC services and memberships.", kind: "trade", cents: 4900, adKey: "hvac", opens: ["hvac-estimator"], pairs: ["aidesk", "texting", "smartcrm"] },
   { id: "deck", label: "Deck Studio", note: "3D deck design, permit set, materials and price.", kind: "trade", cents: 7900, adKey: "deck", opens: ["deck-estimator"], pairs: ["texting", "smartcrm", "operator"] },
   { id: "blueprint", label: "Blueprint estimator", note: "Upload the plans, ask for any job off them, measured and priced.", kind: "trade", cents: 5900, adKey: "blueprint", opens: ["blueprint-estimator"], pairs: ["builder", "remodeler", "smartcrm"] },
-  { id: "video", label: "Video estimator", note: "Walk the job on video, get the estimate.", kind: "trade", cents: 3900, adKey: null, opens: ["video-estimator"], pairs: ["smartcrm", "texting", "remodeler"] },
+  { id: "video", label: "Video estimator", note: "Walk the job on video, get the estimate.", kind: "trade", cents: 3900, adKey: "video", opens: ["video-estimator"], pairs: ["smartcrm", "texting", "remodeler"] },
   { id: "aidesk", label: "AI desk", note: "Answers calls, books visits, takes messages.", kind: "office", cents: 9900, adKey: "aidesk", opens: ["phone"], pairs: ["texting", "smartcrm", "operator"] },
-  { id: "texting", label: "Text messaging", note: "Texts to clients and leads, 1,000 a month.", kind: "office", cents: 2900, adKey: null, opens: ["texting"], pairs: ["smartcrm", "aidesk", "operator"] },
-  { id: "smartcrm", label: "Smart CRM", note: "One Inbox for every conversation; AI reads, drafts replies and follows up.", kind: "office", cents: 3900, adKey: null, opens: ["smart-crm"], pairs: ["texting", "operator", "aidesk"] },
-  { id: "operator", label: "AI Operator", note: "Run the business by voice or text: ask, approve, undo.", kind: "office", cents: 4900, adKey: null, opens: ["operator"], pairs: ["smartcrm", "aidesk", "texting"] },
-  { id: "builder", label: "Home Builder", note: "New-construction projects: phases, lot, draws, lender's page, subs.", kind: "trade", cents: 9900, adKey: null, opens: ["home-builder", "subcontractors", "project-tools"], pairs: ["blueprint", "remodeler", "smartcrm"] },
-  { id: "remodeler", label: "Remodeler", note: "Remodel projects: stages, selections, buying, subs, client page.", kind: "trade", cents: 7900, adKey: null, opens: ["remodeler", "subcontractors", "project-tools"], pairs: ["blueprint", "video", "smartcrm"] },
+  { id: "texting", label: "Text messaging", note: "Texts to clients and leads, 1,000 a month.", kind: "office", cents: 2900, adKey: "texting", opens: ["texting"], pairs: ["smartcrm", "aidesk", "operator"] },
+  { id: "smartcrm", label: "Smart CRM", note: "One Inbox for every conversation; AI reads, drafts replies and follows up.", kind: "office", cents: 3900, adKey: "crm", opens: ["smart-crm"], pairs: ["texting", "operator", "aidesk"] },
+  { id: "operator", label: "AI Operator", note: "Run the business by voice or text: ask, approve, undo.", kind: "office", cents: 4900, adKey: "operator", opens: ["operator"], pairs: ["smartcrm", "aidesk", "texting"] },
+  { id: "builder", label: "Home Builder", note: "New-construction projects: phases, lot, draws, lender's page, subs.", kind: "trade", cents: 9900, adKey: "home-builder", opens: ["home-builder", "subcontractors", "project-tools"], pairs: ["blueprint", "remodeler", "smartcrm"] },
+  { id: "remodeler", label: "Remodeler", note: "Remodel projects: stages, selections, buying, subs, client page.", kind: "trade", cents: 7900, adKey: "remodeler", opens: ["remodeler", "subcontractors", "project-tools"], pairs: ["blueprint", "video", "smartcrm"] },
 ];
 
 const TOOL_BY_ID = new Map<ToolId, ToolDef>(TOOLS.map((t) => [t.id, t]));
@@ -86,7 +87,8 @@ export function toolById(id: ToolId): ToolDef {
   return t;
 }
 
-/** The tool an ad's `?tool=` key sells (lib/planSpotlight's keys); null when no tool answers to it. */
+/** The tool an ad's `?tool=` key sells (lib/planSpotlight parseAdTool's keys); null when no tool answers to it (Smart
+ *  Proposal's "smart": every new plan has it). */
 export function toolForAdKey(key: string | null | undefined): ToolDef | null {
   if (!key) return null;
   return TOOLS.find((t) => t.adKey === key) ?? null;
