@@ -13,10 +13,40 @@
 // A button, not an input: the field never accepted typing, so presenting it as
 // something you type into was the lie. It opens the thing you type into.
 
+import { useSyncExternalStore } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { canOpen } from "./nav-map";
 import { useNavIdentity, useNavLocked } from "./nav-role";
 import { ACTIVE_ENGINE_HREFS } from "@/components/v3/estimators-blueprint/estimators-data";
 import { NotificationBell } from "./notification-bell";
+
+// TUTORIALS IN THE TOP BAR (owner, 2026-11-11: "move tutorial button … on the tab when I marked … different color, to
+// attract, to watch"). The sidebar's Learn row moved here (nav-map `topbar`), as an orange button in the bar's middle.
+// Until this browser has played any tutorial (the page's localStorage `jf_tutorials`, components/v3/tutorials) a small
+// dot pulses on it; the page's "jf-tutorials-changed" event takes the dot away the moment a film starts.
+const TUTORIALS = "/dashboard/tutorials";
+const SEEN_KEY = "jf_tutorials";
+function subscribeSeen(onChange: () => void) {
+  window.addEventListener("storage", onChange);
+  window.addEventListener("jf-tutorials-changed", onChange);
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener("jf-tutorials-changed", onChange);
+  };
+}
+function seenSnapshot(): boolean {
+  try {
+    const raw = window.localStorage.getItem(SEEN_KEY);
+    const v = raw ? (JSON.parse(raw) as unknown) : null;
+    return !!v && typeof v === "object" && Object.keys(v).length > 0;
+  } catch {
+    // No storage (a private window): no nagging dot either.
+    return true;
+  }
+}
+// The server and the first paint draw no dot, so it never flashes on someone who has watched.
+const seenServerSnapshot = () => true;
 
 export function Topbar() {
   const { role } = useNavIdentity();
@@ -27,6 +57,10 @@ export function Topbar() {
   // limited roles (components/layout/Topbar.tsx, `stripped`).
   const locked = useNavLocked();
   const canEstimate = ACTIVE_ENGINE_HREFS.some((href) => canOpen(role, href, locked));
+  const canLearn = canOpen(role, TUTORIALS, locked);
+  const pathname = usePathname();
+  const onTutorials = pathname === TUTORIALS || pathname?.startsWith(`${TUTORIALS}/`);
+  const seen = useSyncExternalStore(subscribeSeen, seenSnapshot, seenServerSnapshot);
 
   const openPalette = () => {
     document.dispatchEvent(new CustomEvent("jf:command-palette"));
@@ -53,6 +87,29 @@ export function Topbar() {
         </svg>
         <span className="search-ph">Search clients, proposals, leads…</span>
       </button>
+
+      {/* Watch tutorials — in the middle of the bar's free room (its auto margin and the right group's split it), in
+          safety orange so it reads apart from the blue New Estimate. "Tutorials" under 1000px, the play glyph alone
+          on a phone-width bar; the aria-label keeps the name. Pressed in while the Tutorials page is open. */}
+      {canLearn && (
+        <Link
+          href={TUTORIALS}
+          className={`tut-cta${onTutorials ? " on" : ""}`}
+          aria-label="Watch tutorials"
+          aria-current={onTutorials ? "page" : undefined}
+          data-tour={`nav:${TUTORIALS}`}
+          data-tut-cta=""
+        >
+          <span className="tut-cta-ic" aria-hidden="true">
+            <svg className="ic">
+              <use href="#i-learn" />
+            </svg>
+          </span>
+          <span className="tut-cta-long">Watch tutorials</span>
+          <span className="tut-cta-short">Tutorials</span>
+          {!seen && !onTutorials && <span className="tut-cta-new" aria-hidden="true" data-tut-new="" />}
+        </Link>
+      )}
 
       <div className="topbar-right">
         {/* The app's most prominent CTA was a bare <button> with no onClick,

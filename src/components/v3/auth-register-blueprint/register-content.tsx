@@ -93,6 +93,8 @@ import styles from "./auth-register.module.css";
 import { ProductMark } from "@/components/brand/ProductMark";
 import { markQaVisitor } from "@/lib/qaEmail";
 import { homeownerDoorFor } from "@/lib/home/homeownerDoor";
+import { ToolsCardPage } from "./tools-card-page";
+import { isToolsSlug, toolPlanById, type Catalog, type ToolId, type ToolPlanId } from "@/lib/toolPlans/shared";
 
 /* A PHONE (≤768px) — the plan step's cards are a two-column grid there
    (auth-register.module.css); a few behaviours follow the width too. A media
@@ -128,11 +130,13 @@ function recalledPlan(): string | null {
    when the page did not open. Nothing is kept in the browser to tell a back-out apart: Stripe's back arrow and the
    browser's Back both land on the plan cards (`checkout=cancelled`). */
 type HandOffReason = "step1" | "google" | "plan_pick";
-function checkoutHref(token: string, reason: HandOffReason, pick?: { slug: string; term: BillingTerm }): string {
+function checkoutHref(token: string, reason: HandOffReason, pick?: { slug: string; term: BillingTerm; tool?: string }): string {
   const q = new URLSearchParams({ signup: token, reason });
   if (pick) {
     q.set("plan", pick.slug);
     q.set("interval", pick.term);
+    // The new plans' main tool ("" none); the server prices it again (lib/signupPricing).
+    if (pick.tool !== undefined) q.set("tool", pick.tool);
   }
   return `/auth/register/checkout?${q.toString()}`;
 }
@@ -202,7 +206,11 @@ export function RegisterContent({
   autoPlan = null,
   prefill = null,
   appView = false,
+  toolsMain = null,
 }: {
+  /* THE NEW PLANS (Base + Tools, part 4 — the Plans switch on): the ad's tool the card page opens with (the register
+     page's read of the link, its trade, the 30-day memory). Null otherwise; the plan step asks the server again. */
+  toolsMain?: ToolId | null;
   /* Step 1's name and email, back after the server refused a step 1 sent without JavaScript (?e1=). */
   prefill?: { name: string; email: string } | null;
   /* THE SIGN-UP SCREEN "inside the app" (owner, 2026-10-22, lib/signupView): the page's paper and photo give way to
@@ -382,6 +390,12 @@ export function RegisterContent({
   const [plans, setPlans] = React.useState<SignupPlan[]>([]);
   /* Every plan as the catalog orders it — no plan is an edition's own (lib/editions: Deck Studio is an add-on). */
   const orderedPlans = plans;
+  /* THE NEW PLANS' CARD PAGE (Base + Tools, part 4): set when signupPlans answers `tools` (the Plans switch on). The
+     size and the main tool picked here go to the checkout as they are; it prices them again itself. */
+  const [toolsCatalog, setToolsCatalog] = React.useState<Catalog | null>(null);
+  const [toolsPick, setToolsPick] = React.useState<{ plan: ToolPlanId; main: ToolId | null }>({ plan: "professional", main: toolsMain });
+  /** What the checkout is told about the main tool: the pick on a new plan, nothing on a Classic one. */
+  const toolFor = (slug: string | null | undefined): string | undefined => (isToolsSlug(slug) ? (toolsPick.main ?? "") : undefined);
   /* Custom and catalog plans share the saved offer returned by signupPlans. */
   const [customTrialDays, setCustomTrialDays] = React.useState<number>(offer.days);
   /* The row of cards. On a phone it is a swiped row again (owner, 2026-10-14):
@@ -816,7 +830,7 @@ export function RegisterContent({
   React.useEffect(() => {
     if (step !== 3) return;
     let live = true;
-    void signupPlans(token ?? undefined, { asked: searchParams?.get("plan") ?? null, edition: edition === "deck" ? "deck" : null, tool: spotlight })
+    void signupPlans(token ?? undefined, { asked: searchParams?.get("plan") ?? null, edition: edition === "deck" ? "deck" : null, tool: spotlight, mainTool: toolsPick.main })
       .then((res) => {
         if (!live) return;
         setPlans(res.plans);
@@ -826,13 +840,19 @@ export function RegisterContent({
         setLiveAuto(nowAuto);
         // A tab drawn before the switch went on, its code typed after: the switch as it stands now — off to Stripe by
         // the server, as step 1 would have gone (no plan screen, no cards). Not a return: that one is the cards.
-        if (nowAuto && requiresCard && token && !(ret && !ret.sessionId)) {
+        if (nowAuto && requiresCard && token && !(ret && !ret.sessionId) && !res.tools) {
           leaveForCheckout(token, "step1");
           return;
         }
         // …and on Monthly: a remembered or linked Annual is not this tab's choice on this page (it can switch on the cards).
         if (nowAuto) setIntervalState(AUTO_TERM);
         if (nowAuto && res.plans.some((p) => p.slug === nowAuto.slug)) setPlanSlug(nowAuto.slug);
+        // The new plans: one card page, on the size asked for (else Professional) and the ad's tool.
+        if (res.tools) {
+          setToolsCatalog(res.tools.catalog);
+          setToolsPick({ plan: res.tools.plan, main: res.tools.main });
+          setPlanSlug(toolPlanById(res.tools.plan).slug);
+        } else setToolsCatalog(null);
         // A phone reopens on the plan named by the link (?plan=) or chosen before in this
         // tab — a cancelled Checkout comes back to it (2026-10-12); the desk as before.
         const asked = window.matchMedia(HANDHELD).matches ? (searchParams?.get("plan") ?? recalledPlan()) : null;
@@ -1001,7 +1021,7 @@ export function RegisterContent({
         await planRefused("That signup expired. Start again.");
         return;
       }
-      leaveForCheckout(token, "plan_pick", { slug, term });
+      leaveForCheckout(token, "plan_pick", { slug, term, ...(toolFor(slug) !== undefined ? { tool: toolFor(slug) } : {}) });
     } catch {
       trackTraffic(TRAFFIC_EVENTS.error, { step: 3, reason: "checkout_unavailable" }); signupProblem("checkout_unavailable");
       setPlansErr("Couldn't reach checkout — your account has not been created.");
@@ -1015,14 +1035,16 @@ export function RegisterContent({
 
   /** Off to ./checkout, whose 303 is Stripe's card page. The address becomes the plan cards' first, so Back from Stripe
    *  (the browser's, or a page restored later) lands on the cards, as Stripe's own back arrow does. */
-  function leaveForCheckout(t: string, reason: HandOffReason, pick?: { slug: string; term: BillingTerm }) {
+  function leaveForCheckout(t: string, reason: HandOffReason, pick?: { slug: string; term: BillingTerm; tool?: string }) {
     signupLeavingTo("checkout");
     leavingRef.current = true;
     // From the plan step without a press (a stale tab): it is not drawn on the way out.
     if (!pick) setLeaving(true);
     try {
       // window.history.state, not null: the router's own state is kept, so it does not re-read the address (and redraw).
-      window.history.replaceState(window.history.state, "", `/auth/register?${new URLSearchParams({ signup: t, checkout: "cancelled" }).toString()}`);
+      // The new plans' card page comes back on the size and the tool picked.
+      const back: Record<string, string> = { signup: t, checkout: "cancelled", ...(pick?.tool !== undefined ? { plan: pick.slug, ...(pick.tool ? { tool: pick.tool } : {}) } : {}) };
+      window.history.replaceState(window.history.state, "", `/auth/register?${new URLSearchParams(back).toString()}`);
     } catch {
       /* Back then reopens the page it left; the server still sends ?signup= on to the cards */
     }
@@ -1103,7 +1125,7 @@ export function RegisterContent({
         setPlansErr(stamped.error);
         return;
       }
-      const res = await requestCardlessTrial(token, slug, term);
+      const res = await requestCardlessTrial(token, slug, term, toolFor(slug));
       if (!res.ok) {
         trackTraffic(TRAFFIC_EVENTS.error, { step: 3, reason: res.requiresCard ? "trial_needs_card" : "trial_rejected" }); signupProblem(res.requiresCard ? "trial_needs_card" : "trial_rejected");
         // The day's card-less trials are taken: the same plan step now opens
@@ -1186,7 +1208,8 @@ export function RegisterContent({
   const returned = !!ret && !ret.sessionId;
   /* …WITHOUT A CARD (the trial switch at "no card"): the picked plan's trial starts as the step opens, and the done
      panel follows. The step stays blank meanwhile — no plan screen; a refusal shows the cards with its reason. */
-  const autoStart = !!auto && !requiresCard && step === 3 && !returned && !gate && !confirmSentTo && !plansErr;
+  // Not on the new plans: their card page is drawn first (the size and the tool can change there).
+  const autoStart = !!auto && !auto.tools && !toolsCatalog && !requiresCard && step === 3 && !returned && !gate && !confirmSentTo && !plansErr;
   const autoRan = React.useRef(false);
   React.useEffect(() => {
     if (!autoStart || autoRan.current || !autoSlug || !token) return;
@@ -1509,7 +1532,7 @@ export function RegisterContent({
         await planRefused(stamped.error);
         return;
       }
-      const res = await startVerifiedCardlessTrial(token, slug, term);
+      const res = await startVerifiedCardlessTrial(token, slug, term, toolFor(slug));
       if (!res.ok) {
         trackTraffic(TRAFFIC_EVENTS.error, { step: 3, reason: res.requiresCard ? "trial_needs_card" : "trial_rejected", mode: signupMode }); signupProblem(res.requiresCard ? "trial_needs_card" : "trial_rejected");
         if (res.requiresCard) setRequiresCard(true);
@@ -1565,7 +1588,7 @@ export function RegisterContent({
   function onOtpVerified(signupToken: string, via: "email" | "google" = "email") {
     /* Straight to Professional with a card: no plan step — the server opens Stripe's card page (./checkout). The
        analyst still hears the plan stage reached, as when its screen flashed by on the way (`screen` says how). */
-    if (auto && requiresCard) {
+    if (auto && requiresCard && !auto.tools) {
       setToken(signupToken);
       trackTraffic(TRAFFIC_EVENTS.step, { plan_mode: planMode, step: 3, flow: trafficFlow, variant: "e", steps: 2, mode: signupMode, screen: "checkout" });
       trackTraffic(TRAFFIC_EVENTS.attempt, { plan_mode: planMode, plan: auto.slug, interval: AUTO_TERM, intent: "trial", flow: trafficFlow });
@@ -2139,7 +2162,7 @@ export function RegisterContent({
             share one left and one right edge. */}
         <div
           className="plan-sheet-in"
-          style={{ "--pw-cols": Math.max(1, orderedPlans.length + (offerCustom && plans.length > 0 ? 1 : 0)) } as React.CSSProperties}
+          style={{ "--pw-cols": toolsCatalog ? 2 : Math.max(1, orderedPlans.length + (offerCustom && plans.length > 0 ? 1 : 0)) } as React.CSSProperties}
         >
           {brand}
           {stepper}
@@ -2183,19 +2206,23 @@ export function RegisterContent({
               <p className="pw-autonote" role="status" data-checkout-failed>
                 Secure checkout didn&apos;t open — pick a plan to try again
               </p>
+            ) : toolsCatalog && returned && ret?.cancelled && !gate ? (
+              <p className="pw-autonote" data-auto-plan-back>
+                No card yet, nothing charged. Your plan is below — start it, or change the plan or the tool.
+              </p>
             ) : auto && returned && ret?.cancelled && !gate ? (
               <p className="pw-autonote" data-auto-plan-back>
                 No card yet, nothing charged. <b>{auto.name}</b> is picked for you — start it below, or choose another plan.
               </p>
             ) : null}
-            {spotlight ? (
+            {spotlight && !toolsCatalog ? (
               <p className="pw-spot" data-plan-spotlight={spotlight} data-plan-spotlight-row={spotRow ?? ""}>
                 <span className="pw-spot-k">{SPOTLIGHT[spotlight].label}</span>
                 {spotlightBanner(spotlight, plans)}
               </p>
             ) : null}
             <div className="pw-head">
-              <h1 className="auth-h1">Pick a plan.</h1>
+              <h1 className="auth-h1">{toolsCatalog ? "Your plan." : "Pick a plan."}</h1>
               <div className="pw-head-r">
                 {/* The trial's promise (owner, 2026-10-01) — the stamp the landing carries, in the
                     words of signupTrialMode (lib/trialPolicyServer; words: lib/trialPolicy trialLine). */}
@@ -2292,8 +2319,44 @@ export function RegisterContent({
                 row's height. Nothing folds: every list is drawn whole. As many columns as cards
                 (`--pw-cols`, set on the sheet so every edge lines up with the row), the row centred,
                 a card no wider than the stylesheet's cap. */}
+            {/* THE NEW PLANS' CARD PAGE (Base + Tools, part 4): one card — the size with the main tool — "Working
+                alone?", Change tool and the four sizes, in place of the Classic cards. */}
+            {toolsCatalog && !confirmSentTo && !gate ? (
+              <ToolsCardPage
+                catalog={toolsCatalog}
+                plan={toolsPick.plan}
+                main={toolsPick.main}
+                term={interval}
+                onPlan={(id) => {
+                  setToolsPick((cur) => ({ ...cur, plan: id }));
+                  setPlanSlug(toolPlanById(id).slug);
+                }}
+                onMain={(tool) => setToolsPick((cur) => ({ ...cur, main: tool }))}
+                onStart={() => void onStartPlan(toolPlanById(toolsPick.plan).slug)}
+                when={(monthly, yearly) => (freeUntil ? whenLine(monthly, yearly) : null)}
+                codeLine={
+                  promo?.percentOff
+                    ? (monthly, yearly) => {
+                        const cents = interval === "YEAR" ? yearly : monthly;
+                        const v = firstBillCents(interval, cents, monthly, promo.percentOff ?? 0) / 100;
+                        return (
+                          <span className="pw-save pw-save--code">
+                            <s>{dealDollars(cents)}</s> {promo.percentOff}% off{interval === "YEAR" ? " your first month" : ""} · ${Number.isInteger(v) ? v.toFixed(0) : v.toFixed(2)}
+                            {interval === "YEAR" ? "/yr" : "/mo"}
+                          </span>
+                        );
+                      }
+                    : undefined
+                }
+                busy={startingSlug === toolPlanById(toolsPick.plan).slug}
+                disabled={payBusy || !checkoutReady}
+                startLabel={
+                  startingSlug === toolPlanById(toolsPick.plan).slug ? busyLabel : !checkoutReady ? "Checkout is not configured" : `Start ${trialDays}-day free trial`
+                }
+              />
+            ) : null}
             <div
-              className={"pw-plans" + (confirmSentTo || gate ? " is-hidden" : "")}
+              className={"pw-plans" + (confirmSentTo || gate || toolsCatalog ? " is-hidden" : "")}
               ref={plansRef}
               style={{ "--pw-rows": 5 + (freeUntil ? 1 : 0) + (promo?.percentOff ? 1 : 0) } as React.CSSProperties}
             >
@@ -2528,7 +2591,7 @@ export function RegisterContent({
 
             {/* THE DOTS under the phone's rail: one per card, the one in the middle filled; a
                 press brings that card to the middle (and the choice follows it there). */}
-            {handheld && cardCount > 1 && !confirmSentTo && !gate ? (
+            {handheld && cardCount > 1 && !confirmSentTo && !gate && !toolsCatalog ? (
               <div className="pw-dots" data-plan-dots>
                 {[...orderedPlans.map((p) => ({ slug: p.slug, name: p.name })), ...(cardCount > orderedPlans.length ? [{ slug: CUSTOM_PLAN_SLUG, name: "Custom" }] : [])].map((d, i) => {
                   const at = railAt ?? Math.max(0, [...orderedPlans.map((p) => p.slug), CUSTOM_PLAN_SLUG].indexOf(planSlug ?? ""));

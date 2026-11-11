@@ -17,6 +17,7 @@ import { NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { getHireViewer, getMyHirePosts, listOpenTradeJobs } from "@/actions/tradeServices";
 import { HireViewportSwitch } from "@/components/v3/hire-blueprint/hire-viewport-switch";
 import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,9 @@ export default async function HirePage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  // The Hire board is a size's on the new plans (Professional and up); open on every Classic plan (lib/customPlan).
+  const gate = await customPageGate("hire");
+  if (gate) return gate;
   let seed: Awaited<ReturnType<typeof load>>;
   try {
     seed = await load();

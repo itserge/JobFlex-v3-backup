@@ -45,6 +45,8 @@ import { customPlanOffered } from "@/lib/customPlanFlag";
 import type { AutoPlanOffer } from "@/lib/signupAutoPlan";
 import { autoPlanOffer } from "@/lib/signupAutoPlanServer";
 import { pageClockScript } from "@/lib/pageClock";
+import { toolsPlansOn } from "@/lib/toolPlans/server";
+import { mainToolFor } from "@/lib/toolPlans/cards";
 import { RegisterResponsive, type GooglePrefill, type SetupPrefill } from "./register-responsive";
 import {
   INDUSTRY_COOKIE,
@@ -134,6 +136,14 @@ export default async function RegisterPage({
   const spotlight = spotlightUrl ?? spotlightFor({ tool: jar.get(SPOTLIGHT_COOKIE)?.value, industry: industryKey });
   // The other trade estimators hide only during the ad visit: this URL, or the visit's session cookie (owner, 2026-11-07).
   const spotlightNarrow = spotlightNarrows(spotlight, spotlightUrl, jar.get(SPOTLIGHT_VISIT_COOKIE)?.value);
+  /* THE NEW PLANS (Base + Tools, part 4 — owner, 2026-11-10): with the Plans switch on, the sign-up opens its card
+     page on Professional + the ad's tool: the link's `?tool=` (any ad's key) or trade, else the 30-day memory, else
+     the tool the pending sign-up kept (read below). Off: null, and nothing here changes. */
+  const toolsOn = await toolsPlansOn();
+  const urlTool = toolsOn
+    ? (mainToolFor({ tool: sp.tool, industry: industryParam !== undefined ? resolveLandingVariant(industryParam) : undefined }) ??
+      mainToolFor({ tool: jar.get(SPOTLIGHT_COOKIE)?.value, industry: industryKey }))
+    : null;
   /* THE CAMPAIGN THE VISITOR CAME IN ON: utm_* from the register link, else
      the landing's memory cookie (the Google return, and an older link in a
      mail or an ad that carries no utm_*, arrive with no query). Stamped on
@@ -211,7 +221,7 @@ export default async function RegisterPage({
   // price; the plan step asks again as it opens (signupPlans), so this page's answer is never the last word.
   const autoPlan: AutoPlanOffer | null = setup
     ? null
-    : await autoPlanOffer({ asked: typeof sp.plan === "string" ? sp.plan : null, edition: sp.edition === "deck" ? "deck" : null, tool: spotlight });
+    : await autoPlanOffer({ asked: typeof sp.plan === "string" ? sp.plan : null, edition: sp.edition === "deck" ? "deck" : null, tool: spotlight, mainTool: urlTool });
   const mode = autoPlan ? "otp" : resolveSignupMode(sp.flow, jar.get(SIGNUP_MODE_COOKIE)?.value, signupFlow.passwordless);
   const otpRestore =
     mode === "otp" && !setup && !google && typeof sp.signup !== "string"
@@ -224,7 +234,8 @@ export default async function RegisterPage({
      303 to Stripe's card page. Stripe's back arrow (`checkout=cancelled`), a card page that did not open
      (`checkout=failed`) and the switch turned off (`checkout=pick`) draw the plan cards instead; a paid return
      (`session_id`) the done panel. */
-  if (autoPlan && requiresCard && !google) {
+  // The new plans have their own card page first (the size and the tool can change there): no hand-off by itself.
+  if (autoPlan && requiresCard && !google && !toolsOn) {
     const reopen =
       typeof sp.signup === "string" && !sp.checkout && !sp.session_id
         ? sp.signup
@@ -243,6 +254,7 @@ export default async function RegisterPage({
   const step1Prefill = e1 ? { name: typeof sp.name === "string" ? sp.name.slice(0, 120) : "", email: typeof sp.email === "string" ? sp.email.slice(0, 200) : "" } : null;
   const pendingToken = typeof sp.signup === "string" ? sp.signup : (otpRestore?.signupToken ?? null);
   const pending = pendingToken ? await readPendingSignup(pendingToken) : null;
+  const toolsMain = toolsOn ? (urlTool ?? mainToolFor({ tool: pending?.landingTool ?? null })) : null;
   /* THE SIGN-UP SCREEN (owner, 2026-10-22, lib/signupView): the page as built, or the same form in the middle of a
      picture of the app — the overview with sample work for the trade they came in on, nothing to click. The owner's
      switch, a `?view=` link, and under the half-and-half split the screen this browser was given. Only the drawing
@@ -274,6 +286,7 @@ export default async function RegisterPage({
         spotlightNarrow={spotlightNarrow}
         spotlightUrl={spotlightUrl}
         edition={sp.edition === "deck" ? "deck" : null}
+        toolsMain={toolsMain}
         utm={hasUtm(utm) ? utm : null}
         inAppBrowser={inAppBrowser}
       />

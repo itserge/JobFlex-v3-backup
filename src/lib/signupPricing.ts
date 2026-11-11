@@ -19,6 +19,11 @@ import { promotionCodeIdForMode } from "@/lib/influencerPromoMode";
 import { REFERRAL_DISCOUNT_PCT, ensureReferralCoupon, referralCouponMonths } from "@/lib/referralDiscount";
 import { ensureYearFirstMonthCoupon, promoPercentOff } from "@/lib/yearDiscount";
 import type { StripeMode } from "@/lib/stripeMode";
+import { toolsPlansOn } from "@/lib/toolPlans/server";
+import { readToolCatalog } from "@/lib/toolPlans/prices";
+import { toolsCheckoutItems } from "@/lib/toolPlans/billing";
+import { toolsSignupPick } from "@/lib/toolPlans/cards";
+import { cardCents, isToolsSlug, toolPlanById, YEAR_MONTHS, type ToolId } from "@/lib/toolPlans/shared";
 
 export type SignupInterval = "MONTH" | "YEAR";
 
@@ -41,6 +46,8 @@ export type SignupPrice =
       /** One month of the plan, in cents: what a first-month code is a
        *  percent of on a yearly bill (lib/firstMonthDiscount). */
       monthlyCents: number;
+      /** The new plans only: the main tool billed with the size (null: none). Absent on a Classic plan. */
+      mainTool?: ToolId | null;
     }
   | { ok: false; status: number; error: string };
 
@@ -65,9 +72,34 @@ export async function resolveSignupPrice(opts: {
   interval: SignupInterval;
   customPages: string[];
   trialOffer?: TrialOffer;
+  /** The new plans: the main tool picked on the card page ("tool-…" line unless the size includes it). Validated
+   *  here with the plan (lib/toolPlans/cards toolsSignupPick); ignored for a Classic plan. */
+  mainTool?: string | null;
 }): Promise<SignupPrice> {
   const { stripe, mode } = opts;
   const trialDays = storedTrialOffer(opts.trialOffer).days;
+  /* THE NEW PLANS (Base + Tools, part 4): the size's line, the main tool's line unless the size includes it — exactly
+     what the card page showed, priced here from the prices in force (Admin → Plans), never from the browser. A slug
+     or a tool that isn't one of ours is refused. One person: the sign-up is the owner alone. */
+  if (isToolsSlug(opts.planSlug)) {
+    const pick = toolsSignupPick({ plan: opts.planSlug, tool: opts.mainTool });
+    if (!pick) return { ok: false, status: 404, error: "That plan is not available." };
+    const catalog = await readToolCatalog();
+    const interval = opts.interval;
+    const lineItems = await toolsCheckoutItems({ deps: { stripe, mode }, plan: pick.plan, main: pick.main, interval, people: 1, catalog });
+    const monthly = cardCents(pick.plan, pick.main, catalog);
+    return {
+      ok: true,
+      lineItems,
+      trialDays,
+      planLabel: toolPlanById(pick.plan).slug,
+      isCustom: false,
+      cents: interval === "YEAR" ? monthly * YEAR_MONTHS : monthly,
+      interval,
+      monthlyCents: monthly,
+      mainTool: pick.main,
+    };
+  }
   if (opts.planSlug === CUSTOM_PLAN_SLUG) {
     const interval = opts.interval;
     const cents = customPriceCents(opts.customPages, interval);
@@ -104,6 +136,21 @@ export async function resolveSignupPrice(opts: {
     cents,
   });
   return { ok: true, lineItems: [{ price, quantity: 1 }], trialDays, planLabel: plan.slug, isCustom: false, cents, interval, monthlyCents: plan.priceCents };
+}
+
+/** What the sign-up says when the plans changed under an open page (the Plans switch flipped after it was drawn). */
+export const PLANS_CHANGED = "Our plans just changed. Reload the page to see them — nothing was charged.";
+
+/**
+ * WHICH PLANS A NEW SIGN-UP MAY START (owner, 2026-11-10): with the Plans switch on, only the new plans ("tools-…");
+ * with it off, only the Classic ones — the new plans can't be bought before the owner turns them on, and a page drawn
+ * under the other setting is told to reload rather than sold the wrong kind. Null: allowed. Asked where a sign-up
+ * starts (the card checkout, the card-less trial), never where a Classic shop restarts its own trial.
+ */
+export async function signupPlanRefusal(planSlug: string): Promise<string | null> {
+  const on = await toolsPlansOn();
+  if (isToolsSlug(planSlug)) return on ? null : "That plan is not available.";
+  return on ? PLANS_CHANGED : null;
 }
 
 /** The discount a signup's stored code earns: an influencer promo becomes its

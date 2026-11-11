@@ -1,0 +1,457 @@
+/* THE NEW PLANS ON SCREEN (Base + Tools, part 3b, 2026-11-10): the Subscription page's "Your plan / Your tools /
+   Upgrade your plan" section (desk and phone) and the welcome page (./tools-plan.tsx). Light theme only, the
+   blueprint's own tokens with plain fallbacks: the desk page re-declares them on its shell root, the phone page on
+   .jf-mobile-subscription, the welcome page reads the globals.
+
+   EVERY RULE HANGS OFF THE ROOT `.tp`, two classes at least: each blueprint page module ships a `.bp *` margin and
+   padding reset that ties a single class and wins on prod. Controls carry the root twice (`.tp.tp .btn`, 0,3,0):
+   the projects module's `.bp .content button` (0,2,1) strips borders and backgrounds off any button it reaches, and
+   it lingers in the document after a visit there. */
+
+.tp.tp {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+  color: var(--ink, #0a0a0a);
+  font-family: var(--font-sans, system-ui, sans-serif);
+}
+
+/* ── a block: one framed card ─────────────────────────────────────────────── */
+.tp .block {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  margin: 0;
+  padding: 20px 22px;
+  border: 1.5px solid var(--ink, #0a0a0a);
+  border-radius: var(--r-sm, 2px);
+  background: #fff;
+}
+.tp .kicker {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--blueprint, var(--accent, #1854a0));
+}
+.tp .h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  line-height: 1.2;
+}
+.tp .h3 {
+  margin: 4px 0 0;
+  padding: 0 0 8px;
+  border-bottom: 1px solid var(--hair, rgba(10, 10, 10, 0.12));
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft, #2a2a2a);
+}
+.tp .lead {
+  margin: 0;
+  max-width: 68ch;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--ink-soft, #2a2a2a);
+}
+.tp .note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted, var(--ink-muted, #555));
+}
+
+/* ── your plan ────────────────────────────────────────────────────────────── */
+.tp .planName {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 900;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+.tp .planBill {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+}
+.tp .facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 28px;
+  margin: 0;
+  padding: 0;
+}
+.tp .fact {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+}
+.tp .factK {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted, var(--ink-muted, #555));
+}
+.tp .factV {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── your tools: one row each ─────────────────────────────────────────────── */
+.tp .rows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tp .row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin: 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--hair, rgba(10, 10, 10, 0.12));
+}
+.tp .row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.tp .rowMain {
+  display: grid;
+  flex: 1 1 260px;
+  gap: 2px;
+  min-width: 0;
+}
+.tp .rowName {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+}
+.tp .rowState {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-soft, #2a2a2a);
+}
+.tp .tag {
+  display: inline-block;
+  margin: 0 8px 0 0;
+  padding: 1px 7px;
+  border: 1.5px solid currentColor;
+  border-radius: 3px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+.tp .tagMain {
+  color: var(--blueprint, var(--accent, #1854a0));
+}
+.tp .tagOn {
+  color: var(--success, var(--emerald, #3a7d44));
+}
+.tp .tagTry {
+  color: var(--warning-dark, #96691a);
+}
+.tp .tagQuiet {
+  color: var(--muted, var(--ink-muted, #555));
+}
+
+/* ── the tool cards ───────────────────────────────────────────────────────── */
+.tp .grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tp .card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 14px 14px 12px;
+  border: 1.5px solid var(--hair, rgba(10, 10, 10, 0.12));
+  border-radius: var(--r-sm, 2px);
+  background: #fff;
+}
+.tp .cardPair {
+  border-color: var(--ink, #0a0a0a);
+}
+.tp .cardTop {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0;
+}
+.tp .cardName {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+.tp .cardPrice {
+  flex: none;
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.tp .cardNote {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-soft, #2a2a2a);
+}
+.tp .cardFine {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted, var(--ink-muted, #555));
+}
+
+/* ── the bigger plans ─────────────────────────────────────────────────────── */
+.tp .plans {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tp .planCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 16px;
+  border: 1.5px solid var(--ink, #0a0a0a);
+  border-radius: var(--r-sm, 2px);
+  background: var(--accent-soft, rgba(24, 84, 160, 0.06));
+}
+.tp .planCardPrice {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+.tp .planCardPrice small {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink-soft, #2a2a2a);
+}
+.tp .planLines {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0 0 0 16px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.tp .planLines li {
+  margin: 0;
+  padding: 0;
+}
+.tp .smaller {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+  color: var(--muted, var(--ink-muted, #555));
+}
+
+/* ── people ───────────────────────────────────────────────────────────────── */
+.tp .peopleBox {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+}
+.tp .stepper {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin: 0;
+}
+.tp .count {
+  min-width: 2.5ch;
+  margin: 0;
+  font-size: 20px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+/* ── the main tool switch ─────────────────────────────────────────────────── */
+.tp .switch {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 16px 18px;
+  border: 1.5px dashed var(--ink, #0a0a0a);
+  border-radius: var(--r-sm, 2px);
+  background: #fff;
+}
+.tp .switchRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 0;
+}
+.tp.tp .select {
+  flex: 1 1 220px;
+  min-width: 0;
+  min-height: 42px;
+  margin: 0;
+  padding: 0 10px;
+  border: 1.5px solid var(--ink, #0a0a0a);
+  border-radius: var(--r-sm, 2px);
+  background: #fff;
+  color: var(--ink, #0a0a0a);
+  font: inherit;
+  font-size: 14px;
+}
+
+/* ── buttons, the confirm line, the answer ────────────────────────────────── */
+.tp .acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin: 0;
+}
+.tp.tp .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  margin: 0;
+  padding: 0 14px;
+  border: 1.5px solid var(--ink, #0a0a0a);
+  border-radius: var(--r-sm, 2px);
+  background: #fff;
+  color: var(--ink, #0a0a0a);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+.tp.tp .btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.tp.tp .btnPrimary {
+  border-color: var(--blueprint, var(--accent, #1854a0));
+  background: var(--blueprint, var(--accent, #1854a0));
+  color: #fff;
+}
+.tp.tp .btnQuiet {
+  min-height: 32px;
+  padding: 0 4px;
+  border-color: transparent;
+  background: transparent;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.tp.tp .btnSq {
+  width: 40px;
+  padding: 0;
+  font-size: 18px;
+}
+.tp.tp .btn:focus-visible,
+.tp.tp .select:focus-visible {
+  outline: 2px solid var(--blueprint, var(--accent, #1854a0));
+  outline-offset: 2px;
+}
+.tp .confirm {
+  display: grid;
+  gap: 8px;
+  flex: 1 1 100%;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1.5px solid var(--ink, #0a0a0a);
+  border-radius: var(--r-sm, 2px);
+  background: var(--paper, #f2f0eb);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.tp .msg {
+  flex: 1 1 100%;
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--success, var(--emerald, #3a7d44));
+  background: var(--success-soft, rgba(58, 125, 68, 0.07));
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.tp .msgBad {
+  border-left-color: var(--danger, var(--rose, #a83232));
+  background: var(--danger-soft, rgba(168, 50, 50, 0.08));
+}
+
+/* ── the welcome page ─────────────────────────────────────────────────────── */
+.tp.welcome {
+  gap: 20px;
+}
+.tp .foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+}
+
+@media (max-width: 768px) {
+  .tp .block {
+    padding: 16px 14px;
+  }
+  .tp .planName {
+    font-size: 20px;
+  }
+  .tp .grid,
+  .tp .plans {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .tp .row .acts,
+  .tp .card .acts,
+  .tp .planCard .acts,
+  .tp .foot {
+    flex: 1 1 100%;
+  }
+  .tp.tp .acts .btn:not(.btnQuiet):not(.btnSq),
+  .tp.tp .foot .btn {
+    flex: 1 1 100%;
+    min-height: 44px;
+  }
+  .tp.tp .btnSq {
+    width: 44px;
+    min-height: 44px;
+  }
+}

@@ -31,7 +31,8 @@ export async function POST(req: Request) {
 
   // `customPages` arrives in the body for symmetry with the client, but it is
   // NOT read: the selection that gets priced is the one stored with the intent.
-  const { token, planSlug, interval } = await req.json().catch(() => ({}));
+  // `mainTool`: the new plans' main tool, validated and priced on the server (lib/signupPricing) — never a price.
+  const { token, planSlug, interval, mainTool } = await req.json().catch(() => ({}));
   if (!token || !planSlug || !interval) {
     return NextResponse.json(
       { error: "token, planSlug and interval are required." },
@@ -44,6 +45,12 @@ export async function POST(req: Request) {
 
   // The session itself (and its eight-second deadline) is lib/signupCheckoutSession's — the register page's own
   // 303 to Stripe (app/(auth)/auth/register/checkout) makes the same one.
-  const res = await createSignupCheckout({ token: String(token), planSlug: String(planSlug), interval, origin: new URL(req.url).origin });
+  const res = await createSignupCheckout({
+    token: String(token),
+    planSlug: String(planSlug),
+    interval,
+    origin: new URL(req.url).origin,
+    mainTool: typeof mainTool === "string" ? mainTool : null,
+  });
   return res.ok ? NextResponse.json({ url: res.url }) : NextResponse.json({ error: res.error }, { status: res.status });
 }

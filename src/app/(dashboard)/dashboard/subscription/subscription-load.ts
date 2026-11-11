@@ -40,9 +40,12 @@ import { planTermState } from "@/lib/planChange";
 import { includedDeskMinutes } from "@/lib/aiDesk/minutes";
 import { deskBalance, EMPTY_PACKS, EMPTY_USE, minutesOf, monthKey, parseDeskPacks, parseDeskUse } from "@/lib/aiDesk/shared";
 import { smsAllowanceFor } from "@/lib/entitlements";
+import { toolsSmsAllowance } from "@/lib/toolPlans/allowances";
 import { cardlessTrialState } from "@/lib/trialState";
 import { TRIAL_CAPS, TRIAL_CAP_KEYS, TRIAL_CAP_NOUN } from "@/lib/trialCaps";
 import { loadCancelOffer, type CancelOffer } from "@/lib/cancelOfferServer";
+import { loadToolsModel } from "@/lib/toolPlans/view";
+import { YEAR_MONTHS, type ToolsSubscriptionModel } from "@/lib/toolPlans/shared";
 
 // The result shape. These interfaces lived in ./subscription-view.tsx until
 // 2026-08-13, when that desktop view was superseded by the blueprint page at
@@ -127,6 +130,9 @@ export interface SubscriptionViewProps {
   /** CUSTOM_PLAN_ENABLED (lib/customPlanFlag): "Build your plan" on sale. */
   customOffered: boolean;
   sandbox: boolean;
+  /** THE NEW PLANS (Base + Tools, part 3b): the plan, the shop's tools and what it can add (lib/toolPlans/view).
+   *  Only for a shop whose plan is a "tools-" slug; null (or absent) for every Classic shop, whose page is unchanged. */
+  tools?: (ToolsSubscriptionModel & { lapsed: boolean }) | null;
   referral: {
     code: string;
     rewardSummary: string;
@@ -329,7 +335,9 @@ export async function loadSubscriptionData(
     const texts = await db.smsMessage.count({ where: {
       organizationId, direction: "OUT", status: { in: ["SENT", "DELIVERED", "QUEUED"] }, createdAt: { gte: monthStart },
     } }).catch(() => null);
-    const row = { resource: "smsAllowance", label: "Text messages", scope: "monthly" as const, hint: "Included text allowance per calendar month", limit: smsAllowanceFor(planContext.tier) };
+    // The new plans' allowance (lib/toolPlans/allowances); null keeps the Classic tier's.
+    const toolsTexts = await toolsSmsAllowance(organizationId).catch(() => null);
+    const row = { resource: "smsAllowance", label: "Text messages", scope: "monthly" as const, hint: "Included text allowance per calendar month", limit: toolsTexts ?? smsAllowanceFor(planContext.tier) };
     if (texts === null) usageUnavailable.push(row);
     else usage.push({ ...row, used: texts, informational: true });
   }
@@ -452,9 +460,17 @@ export async function loadSubscriptionData(
     };
   }
 
+  // The new plans (part 3b): their size is not a catalog row, so the hero names it and prices it from the shop's own
+  // lines ("Basic + Deck Studio", the month's bill). A Classic shop reads exactly as before (tools is null).
+  const tools = await loadToolsModel(organizationId).catch((err) => {
+    console.warn("[subscription] the new plans' view failed:", err);
+    return null;
+  });
+  const toolsPrice = tools ? (yearly ? tools.plan.monthlyCents * YEAR_MONTHS : tools.plan.monthlyCents) : null;
+
   return {
-    planName: freePlan ? FREE_PLAN_NAME : wasName,
-    priceCents: freePlan ? 0 : accessBlocked ? null : priceCents,
+    planName: freePlan ? FREE_PLAN_NAME : tools ? tools.plan.label : wasName,
+    priceCents: freePlan ? 0 : accessBlocked ? null : (toolsPrice ?? priceCents),
     interval: accessBlocked || freePlan ? null : term.currentInterval,
     scheduledSwitch: accessBlocked || freePlan ? null : term.scheduledSwitch,
     // On Free no plan card is "current": every one is an upgrade, paid at once.
@@ -484,7 +500,7 @@ export async function loadSubscriptionData(
     // Read off the stored row (not the access view): the same rule Settings used.
     cancel: await db.subscription
       .findUnique({ where: { organizationId } })
-      .then((row) => loadCancelOffer(organizationId, row, wasName))
+      .then((row) => loadCancelOffer(organizationId, row, tools ? tools.plan.name : wasName))
       .catch(() => null),
     spotlight: await orgSpotlight(organizationId),
     // The card line belongs to a running card-less trial, never to the Free plan.
@@ -492,6 +508,7 @@ export async function loadSubscriptionData(
     checkoutReady: isStripeEnabled(),
     customOffered: customPlanOffered(),
     sandbox: stripeMode === "test",
+    tools,
     referral: {
       code: code.code,
       rewardSummary,

@@ -4,6 +4,13 @@ import { z } from "zod";
 import { requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
+import { withFeature } from "@/lib/customPageAccess";
+
+// TEAM MESSAGES ARE A SIZE'S (Base + Tools, 2026-11-10: Professional and up): every action here asks the page gate
+// for "team-messages" after the session — open on every Classic plan, as before (lib/customPlan classicEquivalent).
+function teamOrg() {
+  return withFeature(requireOrg(), "team-messages");
+}
 
 const createInput = z.object({
   title: z.string().optional(),
@@ -18,7 +25,7 @@ const createInput = z.object({
 // validated against THIS org's membership below, so the blast radius of any
 // role is limited to people already on the same team.
 export async function createConversation(raw: unknown) {
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await teamOrg();
   await enforcePlanLimit(organizationId, "conversationsStarted");
   const data = createInput.parse(raw ?? {});
 
@@ -63,7 +70,7 @@ function canAccess(
 
 export async function postMessage(conversationId: string, body: string) {
   // requireOrg (not requireManager) so limited roles can reply in their threads.
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await teamOrg();
   const conv = await db.conversation.findUnique({
     where: { id: conversationId },
     include: {
@@ -99,7 +106,7 @@ export async function postMessage(conversationId: string, body: string) {
 // lands, add a membership re-check here, or a removed author could still
 // rewrite history in a thread they can no longer see.
 export async function editMessage(messageId: string, body: string) {
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await teamOrg();
   const trimmed = body.trim();
   if (!trimmed) throw new Error("A message can't be edited to nothing.");
   const m = await db.message.findUnique({
@@ -122,7 +129,7 @@ export async function editMessage(messageId: string, body: string) {
 // rows) have no read state to report and return null. The messages page polls
 // this to flip Delivered → Read live.
 export async function getReadReceipts() {
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await teamOrg();
   const convs = await db.conversation.findMany({
     // Mirrors the visibility rule in the messages page.tsx and
     // clearAllConversations below — keep the three in sync.
@@ -162,7 +169,7 @@ export async function getReadReceipts() {
 // passes the newest message timestamp it knows; strictly-newer rows come
 // back, and the client dedupes by id (its own optimistic sends echo here).
 export async function pollMessages(afterTs: number) {
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await teamOrg();
   const since = new Date(Number.isFinite(afterTs) ? afterTs : Date.now());
   const convs = await db.conversation.findMany({
     // Same visibility rule as the messages page — keep in sync.
@@ -240,7 +247,7 @@ export async function pollMessages(afterTs: number) {
 // badge in the sidebar/tab bar. No revalidatePath: the badge recomputes on
 // the layout's next render, same as every other self-clearing surface.
 export async function markConversationRead(conversationId: string) {
-  const { user } = await requireOrg();
+  const { user } = await teamOrg();
   await db.conversationParticipant.updateMany({
     where: { conversationId, userId: user.id },
     data: { lastReadAt: new Date() },
@@ -255,7 +262,7 @@ export async function markConversationRead(conversationId: string) {
 // not to see. Legacy threads (no participant rows — membership unknowable)
 // keep the old hard wipe: there is no participant row to carry a watermark.
 export async function clearConversation(conversationId: string) {
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await teamOrg();
   const conv = await db.conversation.findUnique({
     where: { id: conversationId },
     include: {
@@ -283,7 +290,7 @@ export async function clearConversation(conversationId: string) {
 // legacy no-participant threads they authored in keep the hard wipe.
 // Mirrors the visibility rule on the messages page — keep the two in sync.
 export async function clearAllConversations() {
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await teamOrg();
   const convs = await db.conversation.findMany({
     where: {
       organizationId,
@@ -337,7 +344,7 @@ export async function getMessagesSeed(): Promise<SeedShape> {
     import("@/lib/badgeCounts"),
     import("@/lib/prismaEnums"),
   ]);
-  const { organizationId, user } = await requireOrg();
+  const { organizationId, user } = await teamOrg();
   const userId = user.id;
   const meName = user.name ?? user.email ?? "You";
 

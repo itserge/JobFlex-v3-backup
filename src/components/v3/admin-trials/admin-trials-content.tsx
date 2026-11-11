@@ -17,6 +17,8 @@ import { TrialPolicyPanel } from "./trial-policy-panel";
 import { SignupStepsPanel } from "./signup-steps-panel";
 import { SignupPlanPanel } from "./signup-plan-panel";
 import { SignupViewPanel } from "./signup-view-panel";
+import { PricingModelPanel } from "./pricing-model-panel";
+import type { PricingModelSetting } from "@/lib/toolPlans/server";
 import type { TrialLevel } from "@/lib/trialWatch";
 import { formatSpend, PAID_SERVICE_LABEL } from "@/lib/paidApiCosts";
 import { TRIAL_CAP_KEYS, TRIAL_CAP_NOUN } from "@/lib/trialCaps";
@@ -74,6 +76,9 @@ export function AdminTrialsContent({
   signup,
   plan,
   view,
+  pricing,
+  pricingReady,
+  pricingParts,
   payments,
 }: {
   data: TrialWatchData;
@@ -81,6 +86,9 @@ export function AdminTrialsContent({
   signup: SignupFlow;
   plan: SignupPlanSetting;
   view: SignupViewSetting;
+  pricing: PricingModelSetting;
+  pricingReady: boolean;
+  pricingParts: ReadonlyArray<{ part: number; what: string; done: boolean }>;
   payments: Promise<TrialPayments>;
 }) {
   const [level, setLevel] = useState<"" | TrialLevel>("");
@@ -130,6 +138,7 @@ export function AdminTrialsContent({
       <SignupStepsPanel initial={signup} />
       <SignupPlanPanel initial={plan} requiresCard={policy.mode === "card"} />
       <SignupViewPanel initial={view} />
+      <PricingModelPanel initial={pricing} ready={pricingReady} parts={pricingParts} />
 
       <div className="kpi-grid">
         <div className="kpi">

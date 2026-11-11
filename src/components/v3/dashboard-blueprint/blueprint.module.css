@@ -416,6 +416,63 @@
 
 .bp :global(.topbar-right) { margin-left: auto; display: flex; align-items: center; gap: 12px; }
 
+/* WATCH TUTORIALS (owner, 2026-11-11: moved from the sidebar to the top bar, "different color, to attract, to watch").
+   Safety orange with ink type — the one orange thing in the shell, so it reads apart from the blue New Estimate —
+   on the blueprint's 2px ink border and hard offset shadow. Its auto margin and .topbar-right's split the bar's free
+   room, so it sits midway between the search and the right group. Ink on #f26b1d is 6.2:1; on the hover #db5a10, 5:1. */
+.bp :global(.tut-cta) {
+  --tut: #f26b1d;
+  --tut-deep: #db5a10;
+  position: relative;
+  margin-left: auto;
+  display: inline-flex; align-items: center; gap: 10px;
+  height: 40px;
+  padding: 0 16px 0 5px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--tut);
+  color: var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+  font-size: 12px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+.bp :global(.tut-cta:hover) { background: var(--tut-deep); transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ink); }
+.bp :global(.tut-cta:active),
+.bp :global(.tut-cta.on) { transform: translate(3px, 3px); box-shadow: none; }
+.bp :global(.tut-cta:focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 3px; }
+.bp :global(.tut-cta-ic) {
+  display: grid; place-items: center;
+  width: 26px; height: 26px;
+  background: var(--ink);
+  color: var(--tut);
+  flex: none;
+}
+.bp :global(.tut-cta-ic .ic) { width: 17px; height: 17px; }
+.bp :global(.tut-cta-short) { display: none; }
+/* Never watched one yet: a blueprint-blue dot on the corner, its ring pulsing; still (no ring) for reduced motion. */
+.bp :global(.tut-cta-new) {
+  position: absolute; top: -6px; right: -6px;
+  width: 12px; height: 12px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: var(--sky);
+}
+.bp :global(.tut-cta-new)::after {
+  content: "";
+  position: absolute; inset: -5px;
+  border: 2px solid var(--sky);
+  border-radius: 50%;
+  opacity: 0;
+  animation: tutPing 2s var(--ease) infinite;
+}
+@keyframes tutPing { 0% { transform: scale(0.5); opacity: 0.9; } 80%, 100% { transform: scale(1.5); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .bp :global(.tut-cta-new)::after { animation: none; }
+}
+
 .bp :global(.icon-btn) {
   width: 40px; height: 40px;
   display: flex; align-items: center; justify-content: center;
@@ -1087,6 +1144,9 @@
   .bp :global(.grid-11) { grid-template-columns: 1fr; }
   .bp :global(.page-title) { font-size: 38px; }
   .bp :global(.search) { max-width: 240px; }
+  /* The tutorials button says "Tutorials" once the bar narrows. */
+  .bp :global(.tut-cta-long) { display: none; }
+  .bp :global(.tut-cta-short) { display: inline; }
 }
 @media (max-width: 860px) {
   .bp :global(.layout) { grid-template-columns: 1fr; }
@@ -1118,6 +1178,9 @@
   .bp :global(.content) { padding: 18px 14px 44px; }
   .bp :global(.topbar) { padding: 0 12px; gap: 10px; }
   .bp :global(.search) { max-width: none; flex: 1; }
+  /* The search takes the room now, so no middle to sit in; the New Estimate beside it is 36px here (.btn below). */
+  .bp :global(.tut-cta) { margin-left: 0; height: 36px; padding: 0 12px 0 4px; gap: 8px; font-size: 11px; box-shadow: 2px 2px 0 var(--ink); }
+  .bp :global(.tut-cta-ic) { width: 24px; height: 24px; }
   .bp :global(.page-head) { flex-wrap: wrap; gap: 14px; }
   .bp :global(.page-title) { font-size: 30px; }
   .bp :global(.btn) { height: 36px; padding: 0 12px; font-size: 11px; }
@@ -1194,6 +1257,11 @@
      padding alone left it a few px shorter than the 40px burger/bell row. */
   .bp :global(.topbar-right .btn-primary .cta-label) { display: none; }
   .bp :global(.topbar-right .btn-primary) { width: 40px; height: 40px; padding: 0; justify-content: center; }
+  /* Tutorials sheds its word too: the play glyph, ink on the orange plate, the size of the plus beside it. */
+  .bp :global(.tut-cta) { width: 40px; height: 40px; padding: 0; justify-content: center; }
+  .bp :global(.tut-cta-short) { display: none; }
+  .bp :global(.tut-cta-ic) { background: transparent; color: var(--ink); }
+  .bp :global(.tut-cta-ic .ic) { width: 19px; height: 19px; }
   /* The same 10px the topbar puts between burger, search and this group —
      one gap between every neighbour on the phone bar (owner, 2026-10-03). */
   .bp :global(.topbar-right) { gap: 10px; }

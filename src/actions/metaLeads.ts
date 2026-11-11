@@ -39,7 +39,8 @@ export async function disconnectMeta() {
 export async function importMetaLeads(restart: boolean = false) {
   try {
     const { organizationId, user } = await requireManager();
-    await requirePage(organizationId, "leads");
+    // Leads on a Classic plan; the automatic Meta leads of Professional and up on the new plans (lib/customPlan).
+    await requirePage(organizationId, "meta-leads");
     if (!metaAllowed(user.email)) return { ok: false as const, error: "Meta is not enabled for this account yet." };
     const result = await importMetaBatch(organizationId, user.id, restart === true);
     refresh();
@@ -50,7 +51,8 @@ export async function importMetaLeads(restart: boolean = false) {
 export async function setMetaLeadsAuto(on: boolean) {
   try {
     const { organizationId, user } = await requireManager();
-    await requirePage(organizationId, "leads");
+    // Leads on a Classic plan; the automatic Meta leads of Professional and up on the new plans (lib/customPlan).
+    await requirePage(organizationId, "meta-leads");
     if (!metaAllowed(user.email)) return { ok: false as const, error: "Meta is not enabled for this account yet." };
     await setMetaAutoImport(organizationId, on === true);
     refresh();

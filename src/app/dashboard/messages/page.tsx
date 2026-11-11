@@ -16,6 +16,7 @@ import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 import { getUnreadByConversation } from "@/lib/badgeCounts";
 import { roleLabel } from "@/lib/prismaEnums";
 import { MessagesContent } from "@/components/v3/messages-blueprint/messages-content";
@@ -34,6 +35,9 @@ export default async function MessagesPage({
   searchParams: Promise<{ c?: string }>;
 }) {
   const { c: requestedId } = await searchParams;
+  // Team messages are a size's on the new plans (Professional and up); open on every Classic plan (lib/customPlan).
+  const gate = await customPageGate("team-messages");
+  if (gate) return gate;
 
   let organizationId: string;
   let userId: string;

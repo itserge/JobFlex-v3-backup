@@ -23,6 +23,7 @@
 import type { Metadata, Viewport } from "next";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 import { MobileMessages } from "./mobile-messages";
 
 export const dynamic = "force-dynamic";
@@ -50,6 +51,9 @@ export default async function MobileMessagesV2Page() {
     // once every page in this batch has landed.
     redirect(`/auth/login?next=${encodeURIComponent("/mobile-messages-v2")}`);
   }
+  // Team messages are a size's on the new plans (Professional and up); open on every Classic plan (lib/customPlan).
+  const gate = await customPageGate("team-messages", { handheld: true });
+  if (gate) return gate;
 
   return <MobileMessages />;
 }

@@ -8,6 +8,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import type { ReadTool } from "@/lib/assistant/tools";
 import { repCommissions } from "@/lib/proposalRow/server";
+import { isPageLocked } from "@/lib/customPageAccess";
 
 type Args = { who: string | null };
 
@@ -34,6 +35,8 @@ const salesCommission: ReadTool<Args> = {
   params: z.object({ who: z.string().max(80).nullable() }),
   async run({ actor }, args) {
     const org = actor.organizationId;
+    // A size's on the new plans (Professional and up); every Classic plan holds it (lib/proposalRow/server).
+    if (await isPageLocked(org, "commission", { as: actor.userId })) return { say: "Sales commission isn't on your plan — add it under Upgrade your plan." };
     const [stats, members] = await Promise.all([
       repCommissions(org),
       db.membership.findMany({ where: { organizationId: org }, select: { userId: true, role: true, user: { select: { name: true, email: true } } } }),

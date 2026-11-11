@@ -106,6 +106,14 @@
   color: #555;
   overflow-wrap: anywhere;
 }
+/* THE NEW PLANS' FOUR CARDS (Base + Tools, part 4): narrower than the Classic three, so a name never breaks inside a
+   word ("PROFESSIONA / L") — the year's stamp goes under it instead when the two can't share the line. */
+.jf-lp .lp-pw-plans[data-tools-cards] .lp-pw-plan-n {
+  overflow-wrap: normal;
+}
+.jf-lp .lp-pw-plans[data-tools-cards] .jf-card-head {
+  flex-wrap: wrap;
+}
 .jf-lp .lp-pw-price {
   font-size: 44px;
   font-weight: 900;

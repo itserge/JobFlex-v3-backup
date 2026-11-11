@@ -106,5 +106,18 @@ check("flat ground is level, no rules needed", flat.segs[0].cls === "level" && !
 const shape = profileShape([0, 1, 2, 1, 0]);
 check("profileShape reads a hump: 2 ft off the line, 2 ft of travel back", Math.abs(shape.offLineFt - 2) < 1e-9 && Math.abs(shape.backFt - 2) < 1e-9);
 
+// ── judged where the fence meets it, two bays at a time (2026-11-10)
+// The test lot's real side (USGS lidar, 164.7 ft, samples every 9.7 ft): it only bends as it climbs — 1.7 ft off its
+// end-to-end line, no travel back, its biggest bump over 20 ft 0.46 ft. It stepped every bay (21 steps) before.
+const lawn = [359.3, 359.4, 359.5, 359.8, 360.2, 360.6, 361.2, 362.6, 363.2, 363.4, 364.4, 364.8, 366.0, 367.1, 368.2, 368.9, 369.1, 369.4];
+const lawnCedar = terrainFromProfile([seg(164.7, lawn.length)], lawn, { sectionFt: 8, rackMaxDeg: 20 });
+check("a smooth lawn that only bends as it climbs racks a cedar fence — no priced steps", lawnCedar.segs[0].cls === "racked" && !lawnCedar.segs[0].steps && !lawnCedar.segs[0].rolling, `${lawnCedar.segs[0].cls} ${lawnCedar.segs[0].steps ?? 0}`);
+// The lot's other long side: gentle on average (3.9°) with a steep middle (≈12° over 20 ft).
+const crest = [374.1, 374.4, 374.2, 373.9, 373.7, 373.5, 372.8, 370.8, 368.5, 366.5, 366.0, 365.1, 364.8, 364.1, 363.7, 363.2, 363.0, 362.7];
+const crestCedar = terrainFromProfile([seg(164.7, crest.length)], crest, { sectionFt: 8, rackMaxDeg: 20 });
+const crestVinyl = terrainFromProfile([seg(164.7, crest.length)], crest, { sectionFt: 8, rackMaxDeg: 4 });
+check("a steep middle inside a gentle side: cedar (racks 20°) follows it, a vinyl panel (4°) steps", crestCedar.segs[0].cls === "racked" && crestVinyl.segs[0].cls === "stepped" && (crestVinyl.segs[0].steps ?? 0) > 0, `${crestCedar.segs[0].cls} / ${crestVinyl.segs[0].cls}`);
+check("the shape reads the bump inside two bays and the steepest stretch", (() => { const s = profileShape(crest, 164.7 / 17, 2); return s.bumpFt < 1 && s.steepDeg > 10 && s.steepDeg < 15; })());
+
 console.log(bad ? `\n${bad} failing` : "\nall green");
 process.exit(bad ? 1 : 0);

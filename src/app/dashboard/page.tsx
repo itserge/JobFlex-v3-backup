@@ -22,6 +22,7 @@ import { DashboardContent } from "@/components/v3/dashboard-blueprint/dashboard-
 import { NoOrgNotice } from "@/components/v3/dashboard-blueprint/no-org-notice";
 import type { DashboardData } from "@/components/v3/dashboard-blueprint/blueprint-data";
 import { buildDashboardData } from "./dashboard-data";
+import { toolsWelcomeDue } from "@/lib/toolPlans/view";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,9 @@ export const metadata: Metadata = {
 
 // `searchParams` is optional: /dashboard/beige renders this page bare.
 export default async function DashboardPage({ searchParams }: { searchParams?: Promise<{ tour?: string | string[] }> }) {
+  // A new-plan shop's owner, the first time here: the welcome page first (Base + Tools, part 3b). It stamps itself
+  // shown, so this sends nobody twice; a Classic shop is answered without a query (lib/toolPlans/view).
+  if (await toolsWelcomeDue()) redirect("/dashboard/welcome");
   let data: DashboardData;
   try {
     data = await buildDashboardData({ showTour: (await searchParams)?.tour === "show" });

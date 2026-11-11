@@ -459,6 +459,9 @@ export function FenceEstimatorContent({ initialAddress, webFence: webFenceProp =
               <div className="kpi-lbl">Estimated total</div>
               <div className="tk-total" id="tkTotal" data-tour="fence-total">—</div>
               <div className="tk-sub" id="tkSub">—</div>
+              {/* Before tax, and what the proposal adds — the convert writes the job state's sales tax on top
+                  (lib/fence/proposalWrite), so the number here and the proposal's grand total differ by it. */}
+              <div className="tk-sub tk-tax is-hidden" id="tkTax"></div>
               {/* Good / Better / Best for the picked type — three totals from
                   the same engine; tapping one picks that fence. Hidden until
                   there is fence to price. */}

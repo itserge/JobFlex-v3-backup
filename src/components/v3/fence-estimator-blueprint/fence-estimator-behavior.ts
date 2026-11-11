@@ -83,6 +83,7 @@ import {
   effectiveSpacingFt,
   nearestHeight,
   spacingOptions,
+  takesCedarGrade,
   TERRAIN_FACTOR,
   TERRAIN_LABEL,
   TERRAINS,
@@ -120,6 +121,7 @@ import {
   type RoadLine,
 } from "@/lib/parcels";
 import { pointInRing } from "@/lib/parcel";
+import { stateFromAddress, stateTaxRate } from "@/lib/pricing/salesTax";
 import { convertFenceEstimateToProposal } from "@/actions/fenceEstimator";
 import { isPlanLimitError, isPlanLimitFailure, PLAN_LIMIT_MESSAGE } from "@/lib/planLimits";
 import { reportPlanLimitResult } from "@/stores/usePlanLimitStore";
@@ -303,6 +305,11 @@ export function initFenceEstimatorContent(
     runs: [],
     openings: []
   };
+  /** The height the contractor ASKED for (a height button, a reset, a hand-off). fs.height is what the picked type
+   *  allows, snapped from this — so a trip through a type that only comes in 3–4 ft (a picket, a ranch rail) does
+   *  not leave the next privacy fence at 4 ft: the height asked for comes back as soon as the type offers it
+   *  (2026-11-10, found walking the studio: cedar 6 ft → classic picket → cedar again read 4 ft). */
+  let heightAsked = fs.height;
 
   /** The shop's book, per tab: the organization's saved book loads on top of
    *  the catalog at mount, and every edit is kept here until "Save as company
@@ -390,26 +397,43 @@ export function initFenceEstimatorContent(
    * — three typed runs are a fence with two corners, not three loose pieces.
    * The grouping rule lives in lib/fence/layout so it has its own checks.
    */
+  /** Which run and side each traced segment became in the last layoutRuns() — to seat a gate on its side. */
+  let segLegs = new Map<number, { run: number; leg: number; ft: number }>();
+  function runLength(r: FenceRun) { return (r.ft || 0) * segFactor(r); }
   function layoutRuns(): FenceRunInput[] {
-    const lengthOf = function (r: FenceRun) { return (r.ft || 0) * segFactor(r); };
-    if (!mapOwnsRuns || mapPoints.length < 2) return typedRuns(fs.runs.map(lengthOf));
+    segLegs = new Map();
+    if (!mapOwnsRuns || mapPoints.length < 2) return typedRuns(fs.runs.map(runLength));
     return polylinesToRuns(mapPoints, function (i) {
       const r = fs.runs.find(function (x) { return x.id === 'm' + i; });
-      return r ? lengthOf(r) : null;
-    });
+      return r ? runLength(r) : null;
+    }, function (seg, run, leg, ft) { segLegs.set(seg, { run: run, leg: leg, ft: ft }); });
   }
+  /** The openings, each seated on its side where the page knows it (lib/fence/takeoff counts the bays either side
+   *  of it): a traced gate where it was dropped on its segment; a gate on a typed run in the middle of that run. */
   function layoutOpenings(): FenceOpeningInput[] {
+    const typed = !mapOwnsRuns || mapPoints.length < 2;
+    const typedSides: number[] = [];
+    if (typed) fs.runs.forEach(function (r, i) { if (runLength(r) > 0) typedSides.push(i); });
     return fs.openings.map(function (o) {
       const t = opType(o.type);
-      return { widthFt: t.width, kind: t.kind, label: t.label, variant: t.variant };
+      const base: FenceOpeningInput = { widthFt: t.width, kind: t.kind, label: t.label, variant: t.variant };
+      if (typed) {
+        const leg = typedSides.indexOf((o.run ?? 0) - 1);
+        if (leg >= 0) base.at = { run: 0, leg: leg, ft: runLength(fs.runs[typedSides[leg]]) / 2 };
+      } else if (typeof o.seg === 'number' && segLegs.has(o.seg)) {
+        const l = segLegs.get(o.seg) as { run: number; leg: number; ft: number };
+        base.at = { run: l.run, leg: l.leg, ft: Math.min(1, Math.max(0, o.t ?? 0.5)) * l.ft };
+      }
+      return base;
     });
   }
   function layoutInput(): FenceLayoutInput {
     const sl = slope();
+    const runs = layoutRuns(); // first: it seats the segments the openings are read against
     return {
       type: fs.material,
       heightFt: fs.height,
-      runs: layoutRuns(),
+      runs: runs,
       openings: layoutOpenings(),
       terrain: effTerrain(),
       wastePct: fs.wastePct,
@@ -554,19 +578,39 @@ export function initFenceEstimatorContent(
     if (!tkTotal || !tkSub || !tkLines) return;
     // Nothing measured is not "$0" — a zero total reads like a priced job that
     // came to nothing. The em-dash is the honest resting state.
+    const tkTax = $('#tkTax');
     if (p.ft <= 0 && !fs.openings.length) {
       tkTotal.textContent = '—';
       tkSub.textContent = 'Nothing measured yet';
+      tkTax?.classList.add('is-hidden');
       tkLines.innerHTML = '';
       renderTiers();
       renderNotes();
       return;
     }
     tkTotal.textContent = money(p.total);
-    // The ticket bills the along-grade footage; on level (or unmeasured)
-    // ground it IS the plan footage, so nothing changes shape.
-    tkSub.textContent = Math.round(p.gradeFt) + ' lf · ' + money(p.perAll) + '/lf' +
+    // The per-foot figure is the package's: the whole price ÷ the FENCE footage (gates and doors are not fence —
+    // lib/fence/pricing pricePerLf). So the footage beside it is that same fence footage, along grade, with the
+    // openings named after it: "488 lf of fence + 1 gate · $47/lf" multiplies back to the total, where the old
+    // "492 lf · $47/lf" (gates in the feet, not in the rate) did not — 150 lf with an 8-ft gate read "$44/lf" on
+    // a $6,289 job (2026-11-10).
+    const netLf = Math.round(p.pkg.netFenceLf);
+    const gateN = fs.openings.filter(function (o) { return opType(o.type).kind === 'gate'; }).length;
+    const doorN = fs.openings.length - gateN;
+    const opens = [gateN ? gateN + (gateN === 1 ? ' gate' : ' gates') : '', doorN ? doorN + (doorN === 1 ? ' door' : ' doors') : ''].filter(Boolean).join(' + ');
+    tkSub.textContent = (netLf > 0 ? netLf + ' lf of fence' + (opens ? ' + ' + opens : '') + ' · ' + money(p.perAll) + '/lf' : opens) +
       (p.pkg.market && p.pkg.market.resolution !== 'national' ? ' · ' + esc(p.pkg.market.label) + ' rates' : '');
+    // Before tax — and what the proposal adds. Convert writes the job state's sales tax on the whole job (else the
+    // company's default rate), so a $23,107 estimate became a $24,609 proposal with nothing here saying why.
+    if (tkTax) {
+      const where = sitePlace ? (sitePlace.formatted || sitePlace.address || '') : '';
+      const st = stateFromAddress(where);
+      const rate = stateTaxRate(st);
+      tkTax.classList.remove('is-hidden');
+      tkTax.textContent = rate && st
+        ? 'Before tax · the proposal adds ' + st + ' sales tax ' + (Math.round(rate * 10000) / 100) + '% (' + money(p.total * rate) + ') = ' + money(p.total * (1 + rate))
+        : 'Before tax · the proposal adds your sales tax';
+    }
     tkLines.innerHTML = p.pkg.lines.map(function (l) {
       const qty = l.unit === 'lot' ? '' : ' × ' + (l.unit === 'ln ft' ? Math.round(l.quantity) + ' lf' : l.unit === 'sqft' ? Math.round(l.quantity) + ' sq ft' : String(l.quantity));
       return '<li><span>' + esc(l.name) + qty + '</span><span>' + money(l.quantity * l.unitPrice) + '</span></li>';
@@ -826,7 +870,7 @@ export function initFenceEstimatorContent(
     const heights = $('#heights');
     if (!heights) return;
     const t = currentType().type;
-    if (!t.heightsFt.includes(fs.height)) fs.height = nearestHeight(t, fs.height);
+    fs.height = t.heightsFt.includes(heightAsked) ? heightAsked : nearestHeight(t, heightAsked);
     heights.innerHTML = t.heightsFt.map(function (h) {
       return '<button class="seg-btn' + (fs.height === h ? ' on' : '') + '" type="button" data-h="' + h + '">' + h + ' ft</button>';
     }).join('');
@@ -863,6 +907,8 @@ export function initFenceEstimatorContent(
     // Wood-only rows (2026-09-23): the board grade, the fasteners, steel gate posts.
     const wood = t.category === 'wood';
     $('#woodCard')?.classList.toggle('is-hidden', !wood);
+    // The cedar grade only where the boards are cedar (not pressure-treated pine).
+    $('#gradeRow')?.classList.toggle('is-hidden', !takesCedarGrade(t));
     const gradeSeg = $('#gradeRow .site-seg');
     if (gradeSeg) gradeSeg.innerHTML = (['standard', 'tight-knot-1', 'clear'] as BoardGrade[]).map(function (g) {
       return '<button class="seg-btn' + (fs.boardGrade === g ? ' on' : '') + '" type="button" data-grade="' + g + '">' + BOARD_GRADES[g].label + '</button>';
@@ -1331,6 +1377,7 @@ export function initFenceEstimatorContent(
     const h = target.closest<HTMLElement>('[data-h]');
     if (h) {
       fs.height = Number(h.dataset.h);
+      heightAsked = fs.height;
       $$('#heights [data-h]').forEach(function (b) { b.classList.toggle('on', b === h); });
       renderSite();
       renderPops();
@@ -1631,7 +1678,19 @@ export function initFenceEstimatorContent(
     if (delRun) {
       const li = delRun.closest<HTMLElement>('[data-run]');
       if (!li) return;
+      // A traced run IS a piece of the line on the map, and the price measures the line: dropping only its row
+      // left the run drawn, in 3D and in the price (a 50+100+50 U read 100 ft on the strip and priced 200 lf —
+      // 2026-11-10). So the piece comes off the map: the line breaks there (the point after it starts a new
+      // stretch), and every other run keeps its number.
+      const id = li.dataset.run || '';
+      const seg = mapOwnsRuns && /^m\d+$/.test(id) ? Number(id.slice(1)) : -1;
       leave(li, function () {
+        if (seg >= 0 && seg + 1 < mapPoints.length) {
+          const pts = mapPoints.map(function (pt) { return Object.assign({}, pt); });
+          pts[seg + 1].gap = true;
+          applyTracedPath(pts);
+          return;
+        }
         fs.runs = fs.runs.filter(function (r) { return r.id !== li.dataset.run; });
         renumberRuns();
         renderFigures();
@@ -1672,6 +1731,7 @@ export function initFenceEstimatorContent(
       fs.tier = 'better';
       rememberTier();
       fs.height = 6;
+      heightAsked = 6;
       clearFenceDone();
       // The rate card and any materials the shop added SURVIVE: they are the
       // shop's prices, not this property's geometry.
@@ -1797,6 +1857,8 @@ export function initFenceEstimatorContent(
       if (!li) return;
       const r = fs.runs.find(function (x) { return x.id === li.dataset.run; });
       if (r) { r.ft = Math.max(0, parseInt(t.value, 10) || 0); }
+      // A run can't be negative: the field said "-20" while the price counted 0.
+      if (parseInt(t.value, 10) < 0) t.value = '0';
       renderTicket();
       renderTakeoff();
       const strip = $('#statStrip');
@@ -1992,6 +2054,10 @@ export function initFenceEstimatorContent(
   /** Everything the measured ground repaints: the figures (billed footage),
    *  and the map's slope overlay. */
   function paintTerrain() {
+    // The Ground card reads the same profile as the price ("Measured: grade 6% avg … labor ×1.18"); it was only
+    // redrawn on a click, so it kept saying "flat until measured · labor ×1" beside a price that already carried
+    // the slope (2026-11-10).
+    renderSite();
     renderFigures();
     pushMap();
     renderModelNote();
@@ -3463,6 +3529,7 @@ export function initFenceEstimatorContent(
     initialFenceApplied = true;
     if (f.type && typeRows().some(function (r) { return r.id === f.type; })) { fs.material = f.type; fs.tierBase = f.type; fs.tier = 'better'; }
     fs.height = f.heightFt;
+    heightAsked = f.heightFt;
     renderHeights();
     if (f.points.length >= 2) {
       applyTracedPath(f.points);
@@ -4657,6 +4724,8 @@ export function initFenceEstimatorContent(
         lines: pk.lines.map(function (l) {
           return { name: l.name, description: l.description, quantity: l.quantity, unit: l.unit, materialCost: l.materialCost, laborCost: l.laborCost };
         }),
+        // The material list as the takeoff card shows it — the crew's pick list (lib/fence/savedTakeoff).
+        takeoff: tk.bom.slice(0, 80).map(function (b) { return { label: b.label.slice(0, 240), qty: b.qty, unit: b.unit }; }),
         materials: [],
         labor: [],
         assumptions: [

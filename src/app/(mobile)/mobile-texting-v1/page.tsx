@@ -19,6 +19,7 @@
 import { redirect } from "next/navigation";
 import type { Metadata, Viewport } from "next";
 import { NoOrgError, UnauthorizedError, requireOrg } from "@/lib/orgContext";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 import { loadTextingWorkspace } from "@/lib/settings/loadSettingsData";
 import { MobileTexting } from "@/components/v3/mobile-texting/mobile-texting";
 
@@ -40,6 +41,9 @@ export const viewport: Viewport = {
 };
 
 export default async function MobileTextingV1Page() {
+  // Text messaging is a tool on the new plans; open on every Classic plan (lib/customPlan).
+  const gate = await customPageGate("texting", { handheld: true });
+  if (gate) return gate;
   let ctx;
   try {
     ctx = await requireOrg();

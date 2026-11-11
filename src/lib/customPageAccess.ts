@@ -26,20 +26,30 @@
 // whatever the plan and its status — lib/fullAccess hasFullAccess, asked as
 // the session's user. With no session (a cron) the organization decides.
 
+//
+// THE NEW PLANS (Base + Tools, part 3a — owner, 2026-11-10). A shop whose Subscription.plan is a "tools-" slug
+// (lib/toolPlans/shared isToolsSlug) opens exactly what its size and tools hold (toolsPagesOpen over SyncState
+// `orgTools:<orgId>`): no paid-feature shortcut, and the ids only the new plans sell (lib/customPlan TOOLS_PAGES) are
+// closed unless held. A Classic shop answers those ids through classicEquivalent — the blueprint estimator as Smart
+// Proposal, the Meta import as Leads, everything else open as it is today — so nothing changes for it.
+
 import { db } from "@/lib/db";
 import {
   CUSTOM_DECK_PAGE,
   PLAN_ENDED_MARK,
   blockedCustomHrefs,
+  classicPageId,
   gatedPage,
   isPaidFeature,
   lapsedBlockedHrefs,
   normalizeCustomPages,
+  toolsBlockedHrefs,
   type GatedPageId,
 } from "@/lib/customPlan";
 import { planLapsed } from "@/lib/planStatus";
 import { readAccessSubscription } from "@/lib/subscriptionAccess";
 import { hasFullAccess } from "@/lib/fullAccess";
+import { isToolsSlug, parseToolsRecord, toolsPagesOpen } from "@/lib/toolPlans/shared";
 
 /** The error an add-on's server code throws for an org that did not buy it. */
 export class CustomPageLockedError extends Error {
@@ -48,12 +58,16 @@ export class CustomPageLockedError extends Error {
     readonly page: GatedPageId,
     /** "ended": the plan lapsed (lib/planStatus), not a page left unbought. */
     readonly reason: "not-included" | "ended" = "not-included",
+    /** The shop is on the new plans: the way in is the Subscription page's Upgrade your plan. */
+    readonly tools = false,
   ) {
     const label = gatedPage(page)?.label ?? "This page";
     super(
       reason === "ended"
         ? `Your plan has ended, so ${label} is closed. Choose a plan on Subscription to open it again.`
-        : `${label} isn't in your plan.`,
+        : tools
+          ? `${label} isn't on your plan — add it under Upgrade your plan.`
+          : `${label} isn't in your plan.`,
     );
     this.name = "CustomPageLockedError";
   }
@@ -64,14 +78,34 @@ export function isCustomPageLockedError(err: unknown): err is CustomPageLockedEr
 }
 
 /** The org's pages: null when the org is not on the custom plan, else the
- *  pages it holds; `lapsed` when its plan no longer opens anything. Throws
- *  when the plan cannot be read — callers that must fail closed (requirePage)
- *  let it propagate. */
-async function readPageAccess(organizationId: string, as?: string | null): Promise<{ lapsed: boolean; pages: string[] | null }> {
-  if (await hasFullAccess(organizationId, as)) return { lapsed: false, pages: null };
+ *  pages it holds; `lapsed` when its plan no longer opens anything; `tools`
+ *  when it is on the new plans (`pages` is then everything it can open).
+ *  Throws when the plan cannot be read — callers that must fail closed
+ *  (requirePage) let it propagate. */
+type PageAccess = { lapsed: boolean; pages: string[] | null; tools: boolean };
+
+async function readPageAccess(organizationId: string, as?: string | null): Promise<PageAccess> {
+  if (await hasFullAccess(organizationId, as)) return { lapsed: false, pages: null, tools: false };
   const sub = await readAccessSubscription(organizationId);
-  if (planLapsed(sub)) return { lapsed: true, pages: [] };
-  return { lapsed: false, pages: await readCustomPages(organizationId, sub?.plan ?? null) };
+  const tools = isToolsSlug(sub?.plan);
+  if (planLapsed(sub)) return { lapsed: true, pages: [], tools };
+  if (tools) return { lapsed: false, pages: [...(await readToolsPages(organizationId, sub?.plan ?? null))], tools };
+  return { lapsed: false, pages: await readCustomPages(organizationId, sub?.plan ?? null), tools };
+}
+
+/** What a new-plan shop can open now (lib/toolPlans/shared toolsPagesOpen) — its record read straight from
+ *  SyncState (lib/toolPlans/billing writes it; that module brings Stripe, so it is not imported here). A missing or
+ *  unreadable record opens the size alone. */
+async function readToolsPages(organizationId: string, plan: string | null): Promise<Set<string>> {
+  const row = await db.syncState.findUnique({ where: { key: `orgTools:${organizationId}` }, select: { cursor: true } });
+  return toolsPagesOpen(parseToolsRecord(row?.cursor), plan, new Date());
+}
+
+/** The organization is on the new plans (Base + Tools): its Subscription.plan is a "tools-" slug. Never throws: an
+ *  unreadable plan reads as Classic — the callers ask it only to pick a Classic-safe path. */
+export async function isToolsShop(organizationId: string): Promise<boolean> {
+  const sub = await readAccessSubscription(organizationId).catch(() => null);
+  return isToolsSlug(sub?.plan);
 }
 
 /** The organization is on the Custom plan and its bought pages include the Deck estimator — the Deck Studio
@@ -116,7 +150,9 @@ export async function getBlockedCustomPages(
     readPageAccess(organizationId).catch(() => null),
   );
   if (!access) return null;
-  if (access.lapsed) return [...lapsedBlockedHrefs(), PLAN_ENDED_MARK];
+  // A lapsed new-plan shop is answered as a lapsed Classic one (the plan-ended card), its own pages closed too.
+  if (access.lapsed) return [...lapsedBlockedHrefs(access.tools), PLAN_ENDED_MARK];
+  if (access.tools && access.pages) return toolsBlockedHrefs(access.pages);
   return access.pages === null ? null : blockedCustomHrefs(access.pages);
 }
 
@@ -127,28 +163,63 @@ export type GateAs = { as?: string | null };
 
 /** Why `pages` are closed to the org, or null when one of them is open:
  *  "ended" — its plan lapsed; "not-included" — on the custom plan without
- *  them. A paid feature (lib/customPlan PAID_FEATURES) is open on every live plan, a Custom plan too.
- *  Fails closed: an unreadable plan counts as not included (one retry). */
+ *  them, or on the new plans without them (`tools`). A paid feature (lib/customPlan PAID_FEATURES) is open on
+ *  every live Classic plan, a Custom plan too; on the new plans only when held. A new-plan id asked of a Classic
+ *  shop is answered as its Classic twin (classicPageId) — and one with no twin is not this gate's to close.
+ *  Fails closed: an unreadable plan counts as not included (one retry) — except for an id with no Classic twin. */
+type LockState = { reason: "ended" | "not-included" | null; tools: boolean };
+
+async function lockState(
+  organizationId: string,
+  pages: GatedPageId | readonly GatedPageId[],
+  as?: string | null,
+): Promise<LockState> {
+  const wanted = typeof pages === "string" ? [pages] : pages;
+  let access: PageAccess;
+  try {
+    access = await readPageAccess(organizationId, as).catch(() => readPageAccess(organizationId, as));
+  } catch {
+    // An id no Classic plan ever closed (team messages, Hire, a workspace…) stays open on an unreadable plan, as it
+    // was before the new plans: failing it closed would take it from a Classic shop on a database hiccup.
+    if (wanted.some((p) => classicPageId(p) === null)) return { reason: null, tools: false };
+    return { reason: "not-included", tools: false };
+  }
+  if (access.tools) {
+    if (access.lapsed) return { reason: "ended", tools: true };
+    const held = access.pages;
+    return { reason: held === null || wanted.some((p) => held.includes(p)) ? null : "not-included", tools: true };
+  }
+  // Classic: the new plans' ids by their Classic answer. One with none was never closed by a Classic plan (the Free
+  // plan included), so it stays open whatever the plan's status — exactly as before the new plans.
+  const classic = wanted.map(classicPageId);
+  if (classic.some((p) => p === null)) return { reason: null, tools: false };
+  if (access.lapsed) return { reason: "ended", tools: false };
+  const owned = access.pages;
+  if (owned === null) return { reason: null, tools: false };
+  return { reason: classic.some((p) => p !== null && (isPaidFeature(p) || owned.includes(p))) ? null : "not-included", tools: false };
+}
+
 async function lockReason(
   organizationId: string,
   pages: GatedPageId | readonly GatedPageId[],
   as?: string | null,
 ): Promise<"ended" | "not-included" | null> {
-  const wanted = typeof pages === "string" ? [pages] : pages;
-  let access: { lapsed: boolean; pages: string[] | null };
-  try {
-    access = await readPageAccess(organizationId, as).catch(() => readPageAccess(organizationId, as));
-  } catch {
-    return "not-included";
-  }
-  if (access.lapsed) return "ended";
-  const owned = access.pages;
-  if (owned === null) return null;
-  return wanted.some((p) => isPaidFeature(p) || owned.includes(p)) ? null : "not-included";
+  return (await lockState(organizationId, pages, as)).reason;
+}
+
+/** Why the org may not open `pages` and whether it is on the new plans — for a refusal worded per plan (the AI
+ *  Operator's). `reason` null = open. Fails closed, as isPageLocked. */
+export async function pageLock(
+  organizationId: string,
+  pages: GatedPageId | readonly GatedPageId[],
+  opts: GateAs = {},
+): Promise<LockState> {
+  return lockState(organizationId, pages, opts.as);
 }
 
 /** True when the org's plan has lapsed, or it is on the custom plan and holds
- *  NONE of `pages`. Fails closed: an unreadable plan counts as locked. */
+ *  NONE of `pages`, or on the new plans without them. Fails closed: an
+ *  unreadable plan counts as locked. */
 export async function isPageLocked(
   organizationId: string,
   pages: GatedPageId | readonly GatedPageId[],
@@ -169,8 +240,8 @@ export async function requirePage(
   pages: GatedPageId | readonly GatedPageId[],
   opts: GateAs = {},
 ): Promise<void> {
-  const reason = await lockReason(organizationId, pages, opts.as);
-  if (reason) throw new CustomPageLockedError(typeof pages === "string" ? pages : pages[0], reason);
+  const { reason, tools } = await lockState(organizationId, pages, opts.as);
+  if (reason) throw new CustomPageLockedError(typeof pages === "string" ? pages : pages[0], reason, tools);
 }
 
 /** For API routes: the 403 a locked add-on answers with, or null to go on. */
@@ -179,9 +250,9 @@ export async function pageLockedResponse(
   pages: GatedPageId | readonly GatedPageId[],
   opts: GateAs = {},
 ): Promise<Response | null> {
-  const reason = await lockReason(organizationId, pages, opts.as);
+  const { reason, tools } = await lockState(organizationId, pages, opts.as);
   if (!reason) return null;
-  const err = new CustomPageLockedError(typeof pages === "string" ? pages : pages[0], reason);
+  const err = new CustomPageLockedError(typeof pages === "string" ? pages : pages[0], reason, tools);
   return Response.json({ ok: false, error: err.message, code: err.code }, { status: 403 });
 }
 
@@ -191,9 +262,9 @@ export async function pageLockedResult(
   pages: GatedPageId | readonly GatedPageId[],
   opts: GateAs = {},
 ): Promise<{ ok: false; error: string; code: "CUSTOM_PAGE_LOCKED" } | null> {
-  const reason = await lockReason(organizationId, pages, opts.as);
+  const { reason, tools } = await lockState(organizationId, pages, opts.as);
   if (!reason) return null;
-  const err = new CustomPageLockedError(typeof pages === "string" ? pages : pages[0], reason);
+  const err = new CustomPageLockedError(typeof pages === "string" ? pages : pages[0], reason, tools);
   return { ok: false, error: err.message, code: err.code };
 }
 

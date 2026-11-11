@@ -16,7 +16,7 @@ import { addTemplateOrPhases } from "@/lib/projectPhases/server";
 import { answersWords, parseBuildAnswers, phasesFor, type BuildAnswers } from "@/lib/projectPhases/shared";
 import { currentStage, lateStages, lateWords, percentDone, projectNo, templatesFor, type StageTemplate } from "@/lib/projectStages/shared";
 import { KIND_LABEL, type ProjectKind } from "@/lib/projectKind";
-import { createProjectAs } from "@/lib/projectCore";
+import { createProjectAs, projectKindRefusal } from "@/lib/projectCore";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
 import { appBaseUrl } from "@/lib/appUrl";
 
@@ -336,6 +336,9 @@ const startProject: WriteTool<StartArgs, StartPayload> = {
     build: buildPayload.nullable(),
   }),
   async plan({ actor }, a) {
+    // A remodel needs Remodeler and a new build Home Builder on the new plans (lib/projectCore); Classic: open.
+    const kindClosed = await projectKindRefusal(actor.organizationId, a.kind, { as: actor.userId });
+    if (kindClosed) return { ok: false, say: kindClosed };
     try {
       await enforcePlanLimit(actor.organizationId, "projects", 1, { actorId: actor.userId });
     } catch (err) {

@@ -68,7 +68,7 @@ export async function proposalPickList(proposalId: string): Promise<{ ok: true; 
     });
     if (!p) return { ok: false, error: "Proposal not found" };
     const explicit = (await inventoryLinkOf(organizationId, [proposalId])).get(proposalId) ?? null;
-    const { trade, rows } = await pickForProposal(organizationId, { ...p, inventoryLinked: explicit });
+    const { trade, rows } = await pickForProposal(organizationId, { ...p, id: proposalId, inventoryLinked: explicit });
     return { ok: true, linked: !!trade, trade, explicit, rows: rows.map((r) => ({ name: r.name, unit: r.unit, quantity: r.quantity, tracked: !!r.itemId, onHand: r.onHand, enough: r.enough, perJob: r.perJob })) };
   } catch (err) {
     return fail(err);

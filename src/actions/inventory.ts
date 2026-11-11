@@ -20,6 +20,7 @@ import { sendOrgEmail } from "@/lib/email/orgSend";
 import { INVENTORY_PATHS, inventoryHref, isTradeId, issueFromShelf, pickList, purchaseOrderText, stockKey, type TradeId } from "@/lib/inventory";
 import { presetItems } from "@/lib/inventoryPresets";
 import { explodeLines } from "@/lib/inventoryBom";
+import { savedTakeoffsFor } from "@/lib/fence/savedTakeoffServer";
 import { recordStockPolicy, stockItemsOf, stockPolicyOf } from "@/lib/inventoryPolicy";
 import { defaultStocked } from "@/lib/inventoryStockDefaults";
 import { NoOrgError, requireManager, requireRouteAccess, UnauthorizedError, isWorkerRole } from "@/lib/orgContext";
@@ -294,7 +295,9 @@ export async function loadJobMaterials(jobId: string): Promise<{ ok: true; taken
       return { ok: true, taken: 0, untracked: job.proposal?.lineItems.length ?? 0 };
     }
     const stock = await stockItemsOf(organizationId, job.proposal.trade);
-    const rows = pickList(stock, explodeLines(job.proposal.trade, job.proposal.lineItems.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType }))));
+    // A fence's own material list, kept at convert (lib/fence/savedTakeoff), while the proposal still fits it.
+    const saved = job.proposal.trade === "fence" ? (await savedTakeoffsFor(organizationId, [job.proposal.id])).get(job.proposal.id) : null;
+    const rows = pickList(stock, explodeLines(job.proposal.trade, job.proposal.lineItems.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType })), saved));
     const tracked = rows.filter((r) => r.itemId);
     // Every item leaves the warehouse only as far as it was there (lib/inventory
     // issueFromShelf): the count never goes below zero, the rest is bought.

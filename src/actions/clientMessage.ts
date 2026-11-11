@@ -25,7 +25,7 @@ import { db } from "@/lib/db";
 import { requireSalesOrManager } from "@/lib/orgContext";
 import { sendOrgEmail } from "@/lib/email/orgSend";
 import { isTwilioEnabled } from "@/lib/sdk/twilio";
-import { PLAN_ENDED_TEXT_MESSAGE, sendText } from "@/lib/sms/send";
+import { PLAN_ENDED_TEXT_MESSAGE, sendText, TEXTING_NOT_ON_PLAN_MESSAGE } from "@/lib/sms/send";
 import { smsAllowanceFailure, type PlanLimitFailure } from "@/lib/planLimits";
 import { parseGmailSettings } from "@/lib/settings";
 import { enforceTrialCap } from "@/lib/trialMeter";
@@ -142,7 +142,7 @@ export async function messageClient(input: {
     const res = await sendText({ organizationId, to, body, kind: "client-message" });
     // The month's texts are used: returned, not thrown, so the plan dialog opens in production too.
     if (!res.ok && res.reason === "allowance") return smsAllowanceFailure();
-    if (!res.ok) throw new Error(res.reason === "opted-out" ? `${client.name} replied STOP — they get no texts` : res.reason === "invalid-number" ? `${client.name}'s phone is not a US or Canadian mobile` : res.reason === "duplicate" ? "That text just went to them" : res.reason === "plan-ended" ? PLAN_ENDED_TEXT_MESSAGE : "The text could not be sent. Try again.");
+    if (!res.ok) throw new Error(res.reason === "opted-out" ? `${client.name} replied STOP — they get no texts` : res.reason === "invalid-number" ? `${client.name}'s phone is not a US or Canadian mobile` : res.reason === "duplicate" ? "That text just went to them" : res.reason === "plan-ended" ? PLAN_ENDED_TEXT_MESSAGE : res.reason === "not-on-plan" ? TEXTING_NOT_ON_PLAN_MESSAGE : "The text could not be sent. Try again.");
     if (res.status === "SKIPPED" && res.why === "no-number") throw new Error("Texts go out from your company's own texting number — get one in Settings → Texting");
     if (res.status === "SKIPPED" && res.why === "no-consent") throw new Error(`${client.name} hasn't agreed to texts yet — clients agree when they book online`);
     delivered = res.status === "SENT" || res.status === "HELD";

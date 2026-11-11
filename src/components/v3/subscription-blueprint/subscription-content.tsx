@@ -24,6 +24,8 @@ import { nextChargeLines, usd } from "@/app/(dashboard)/dashboard/subscription/n
 import styles from "./subscription.module.css";
 import { DeckAddonCard } from "@/components/v3/deck-addon/deck-addon";
 import { WebAddonCard } from "@/components/v3/web-estimator/web-addon-card";
+import { ToolsSubscriptionSection } from "@/components/v3/tools-plan/tools-plan";
+import { money as toolsMoney } from "@/lib/toolPlans/shared";
 
 const UPGRADE = "/dashboard/upgrade" as Route;
 /** Usage rows in view before "View all usage". */
@@ -199,12 +201,22 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
           <h1 className={cx("page-title")}>Subscription</h1>
         </div>
         <div className={cx("page-actions")}>
-          <Link className={cx("btn", "btn-primary")} href={UPGRADE}>
-            <svg className={cx("ic")}>
-              <use href="#i-arrow" />
-            </svg>
-            Upgrade plan
-          </Link>
+          {/* The new plans (part 3b) upgrade on this page, in the tools section below; Classic on its plan cards. */}
+          {props.tools ? (
+            <a className={cx("btn", "btn-primary")} href="#tools">
+              <svg className={cx("ic")}>
+                <use href="#i-arrow" />
+              </svg>
+              Upgrade your plan
+            </a>
+          ) : (
+            <Link className={cx("btn", "btn-primary")} href={UPGRADE}>
+              <svg className={cx("ic")}>
+                <use href="#i-arrow" />
+              </svg>
+              Upgrade plan
+            </Link>
+          )}
           {/* THE WAY OUT (owner, 2026-11-09): the secondary outline beside
               Upgrade plan (lib/cancelOfferServer says when there is one).
               Once booked, the date stands in its place; on Free or a grant,
@@ -237,7 +249,8 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
                 "—"
               ) : (
                 <>
-                  {"$" + Math.round(props.priceCents / 100)}
+                  {/* A new plan's bill is its own lines' sum, cents and all ($118.99); Classic rounds as it did. */}
+                  {props.tools ? toolsMoney(props.priceCents) : "$" + Math.round(props.priceCents / 100)}
                   <i>{props.interval === "YEAR" ? "/ yr" : "/ mo"}</i>
                 </>
               )}
@@ -324,11 +337,19 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
         </div>
       </section>
 
-      {/* THE DECK STUDIO ADD-ON (owner, 2026-10-19): on the plan with Remove, or the way to add it — reads its own state. */}
-      <div className={cx(RV)}>
-        <DeckAddonCard />
-        <WebAddonCard />
-      </div>
+      {/* THE NEW PLANS (Base + Tools, part 3b): the plan, its tools and Upgrade your plan, in place of the Classic
+          add-on cards and plan cards. A Classic shop (tools null) gets exactly what it had. */}
+      {props.tools ? (
+        <div className={cx(RV)}>
+          <ToolsSubscriptionSection model={props.tools} />
+        </div>
+      ) : (
+        /* THE DECK STUDIO ADD-ON (owner, 2026-10-19): on the plan with Remove, or the way to add it — reads its own state. */
+        <div className={cx(RV)}>
+          <DeckAddonCard />
+          <WebAddonCard />
+        </div>
+      )}
 
       {/* THE SWITCH TO FREE, BOOKED (owner, 2026-10-13): the date and the
           way back. Cancelling itself is the page head's second button. */}
@@ -336,7 +357,8 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
         <FreeSwitchNotice className={cx(RV)} planName={props.planName} at={freeSwitch.at} canKeep />
       ) : null}
 
-      {/* PLANS — the upgrade page's cards, embedded */}
+      {/* PLANS — the upgrade page's cards, embedded (Classic only) */}
+      {props.tools ? null : (
       <section className={cx("plans-embed", RV)} id="plans">
         <UpgradeContent
           embedded
@@ -355,6 +377,7 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
           cancelled={false}
         />
       </section>
+      )}
 
       {/* USAGE + BILLING */}
       <div className={cx("row-ub", RV)}>

@@ -18,6 +18,7 @@
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { NoOrgError, UnauthorizedError, requireOrg } from "@/lib/orgContext";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 import { loadTextingWorkspace } from "@/lib/settings/loadSettingsData";
 import { TextingResponsive } from "./texting-responsive";
 
@@ -29,6 +30,10 @@ export const metadata: Metadata = {
 };
 
 export default async function TextingPage() {
+  // Text messaging is a tool on the new plans; open on every Classic plan (lib/customPlan). Texts to the team still
+  // go without it (lib/sms/send).
+  const gate = await customPageGate("texting");
+  if (gate) return gate;
   let ctx;
   try {
     ctx = await requireOrg();
