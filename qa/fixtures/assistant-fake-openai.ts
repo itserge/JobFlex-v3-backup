@@ -162,6 +162,14 @@ function answer(body: { messages: Msg[] }) {
   const aboutQ = /^What can I do about this: (.+?) on (.+?)\.?$/i.exec(user);
   if (aboutQ) return reply(`"${aboutQ[1]}" needs someone there — I can't fix it from here. Open ${aboutQ[2]} to see who flagged it, or tell me what to send them.`);
 
+  // The company pulse (Smart CRM part 7, 2026-11-10): "how was last week", "how fast do we answer new leads",
+  // "what's our win rate" — before the money rule, which would answer "how did we do" with the month's totals.
+  if (/\b(how was (last|this) week|company pulse|win rate|who closes best|how fast do we (answer|reply)|speed to lead)\b/.test(text)) {
+    const cp = done.get("company_pulse") as { summary: string; speedToLead?: { firstReply: string; stillWaiting: string[] }; winRate?: { bySalesperson: string[] }; worthALook?: string[] } | undefined;
+    if (!cp) return call("company_pulse", { period: /last week/.test(text) ? "last-week" : /this week/.test(text) ? "week" : /90|quarter/.test(text) ? "90d" : "30d" });
+    return reply([cp.summary, cp.winRate?.bySalesperson.length ? `By salesperson: ${cp.winRate.bySalesperson.join("; ")}.` : null, cp.speedToLead?.stillWaiting.length ? `Still waiting: ${cp.speedToLead.stillWaiting.join("; ")}.` : null, ...(cp.worthALook ?? [])].filter(Boolean).join(" "));
+  }
+
   // The estimators by voice (2026-11-05): a roof, HVAC or lawn care at an address — before the generic build rule,
   // which would price them with Smart Proposal. The address: "at 14 Oak St, Tacoma WA" / "address: …".
   // "14 Oak St, Tacoma WA" — up to the end, a sentence's end, or the next ", 2,400 …" / ", the lawn …" clause.
@@ -572,6 +580,18 @@ function answer(body: { messages: Msg[] }) {
     const name = named(/(?:client|customer):?\s+([A-Z][a-z]+(?: [A-Z][a-z]+)?)/) ?? "Someone";
     const address = /,\s*([^,]*\b(?:St|Ave|Rd|Dr|Ln|Blvd)\b[^,]*)/.exec(user)?.[1]?.trim() ?? null;
     return call("add_client", { name, phone: phoneIn, email: emailIn, address, city: null, state: null, zip: null, notes: null });
+  }
+  // update_lead (2026-11-10): "add the address 1420 Maple St, Bothell WA 98011 to Dana's lead" — one line; the tool splits it.
+  const toLead = /\badd (?:the )?(address|phone|email) (.+?) to (\w+)'?s lead\b/i.exec(user);
+  if (toLead) {
+    if (done.has("update_lead")) return reply("Planned — say yes to change the lead.");
+    const f = done.get("find") as Found | undefined;
+    if (!f) return call("find", { query: toLead[3], kind: "lead" });
+    const l = f.leads?.[0];
+    if (!l) return reply("I couldn't find that lead.");
+    const field = toLead[1].toLowerCase();
+    const v = toLead[2].trim();
+    return call("update_lead", { leadId: l.id, name: null, phone: field === "phone" ? v : null, email: field === "email" ? v : null, address: field === "address" ? v : null, city: null, state: null, zip: null, projectType: null });
   }
   const chg = /\b(?:change|update) (\w+)'?s (phone|email|address) to (.+)$/i.exec(user);
   if (chg) {
@@ -1252,6 +1272,40 @@ http
               if (/(i'll|i will|we'll|we will) call you/.test(msg)) found.push({ text: "Call them back", due: /tomorrow/.test(msg) ? plus(1) : /today/.test(msg) ? today : null, kind: "CALL" });
               if (/(i'll|i will|we'll|we will) check with/.test(msg)) found.push({ text: "Check with the inspector", due: null, kind: "INFO" });
               res.end(JSON.stringify(reply(JSON.stringify({ promises: found }))));
+              return;
+            }
+            // Bring clients back (lib/winback/understand, Smart CRM part 6, 2026-11-10). CLIENT LIST FILTER reads the
+            // contractor's words into a filter — deterministic: "deck"/"roof"/"fence" are the work, "two years"/"a
+            // year" the quiet months, "never bought" / "bought" who, "tacoma" the place; anything else → all null
+            // ("couldn't tell"). CAMPAIGN DRAFT writes the email; a note with "(guard)" gets an invented discount,
+            // the draft the code must refuse.
+            if (prompt.includes("CLIENT LIST FILTER.")) {
+              const said = (/THE WORDS: ([^\n]*)/.exec(prompt)?.[1] ?? "").toLowerCase();
+              const work = ["deck", "roof", "fence"].filter((k) => said.includes(k));
+              res.end(JSON.stringify(reply(JSON.stringify({
+                had: /never bought|didn't go ahead/.test(said) ? "lost" : /bought|past clients|deck clients|roof clients/.test(said) ? "won" : null,
+                quietMonths: /two years/.test(said) ? 24 : /a year|one year/.test(said) ? 12 : /six months/.test(said) ? 6 : null,
+                activeMonths: null, lastJobMinMonths: null, lastJobMaxMonths: null, minPaid: null, maxPaid: null,
+                work: work.length ? work : null,
+                places: /tacoma/.test(said) ? ["tacoma"] : null,
+                tag: null, plan: null, minRating: null, builtBefore: null, builtAfter: null, minSqft: null,
+              }))));
+              return;
+            }
+            if (prompt.includes("CAMPAIGN DRAFT.")) {
+              const company = (/COMPANY: ([^\n(]+)/.exec(prompt)?.[1] ?? "us").trim();
+              const about = /WHAT IT'S ABOUT: ([^\n]*)/.exec(prompt)?.[1]?.trim() ?? "";
+              const reason = /\(guard\)/i.test(about)
+                ? "Take $500 off any project you book this month."
+                : about
+                  ? `We wanted you to be the first to know: ${about.replace(/[.!]+$/, "")}.`
+                  : /WHO IS ON THE LIST: [^\n]*(never bought|quote still out|never sent a quote)/.test(prompt)
+                    ? /\(past work\)/i.test(prompt) ? "Thank you again for the project we did; it has been a while since we finished {last job}." : "A while back we put together a quote for you, and we wanted to check whether the project is still on your mind."
+                    : "It has been a while since we finished {last job}, and we wanted to see how it is holding up.";
+              res.end(JSON.stringify(reply(JSON.stringify({
+                subject: about && !/\(guard\)/i.test(about) ? "Something new from us" : "Checking in on your project",
+                body: `Hi {first name},\n\n${reason}\n\nIf there is anything around the house you have been meaning to get done, just reply to this email and we will set up a time to take a look.\n\n${company}`,
+              }))));
               return;
             }
             if (prompt.includes("INBOX DRAFTS")) {

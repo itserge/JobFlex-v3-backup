@@ -76,7 +76,9 @@ import { getCrmSnapshot } from "./crm-snapshot";
 import { getCrmBrief } from "@/actions/crmBrief";
 import { moneyShort, type CrmBrief } from "@/lib/crm/brief";
 import { OfficePanel, TodayPanel } from "@/components/v3/crm-blueprint/crm-brief";
+import { CompanyPulse } from "@/components/v3/crm-blueprint/company-pulse";
 import { AgentDesk } from "@/components/v3/crm-blueprint/crm-agent";
+import { WinBackPanel } from "@/components/v3/crm-blueprint/win-back";
 import { FOLLOW_UP_MODES, FOLLOW_UP_WORDS, modeLabel, type FollowUpMode, type FollowUpWords } from "@/lib/followUps/agent";
 import {
   LEAD_CLS,
@@ -683,6 +685,7 @@ export function MobileCrm() {
   );
   const ltvTotal = useMemo(() => customers.reduce((a, c) => a + c.ltv, 0), [customers]);
   const quotesTotal = useMemo(() => customers.reduce((a, c) => a + c.quotes, 0), [customers]);
+  const payers = useMemo(() => customers.filter((c) => c.ltv > 0).length, [customers]);
   const bookPages = Math.max(1, Math.ceil(bookVisible.length / PAGE_BOOK));
   const bookSafe = Math.min(bookPage, bookPages);
   const bookSlice = bookVisible.slice((bookSafe - 1) * PAGE_BOOK, bookSafe * PAGE_BOOK);
@@ -736,6 +739,17 @@ export function MobileCrm() {
         a2: { l: "Win rate · 90d", v: by("win")?.value ?? "—" },
       };
     }
+    if (tab === "back") {
+      return {
+        // Money, not a head count: the panel below counts the clients itself, by its own (wider) rule.
+        kicker: "Win back · paid by your clients, all time",
+        value: ltvTotal,
+        format: fmtMoney,
+        tone: "",
+        a1: { l: "Paying clients", v: String(payers) },
+        a2: { l: "Proposals", v: String(quotesTotal) },
+      };
+    }
     if (tab === "overview") {
       return {
         kicker: "Conversion · won rate",
@@ -775,7 +789,7 @@ export function MobileCrm() {
       a2: { l: "Oldest", v: oldest ? `${oldest}d` : "—" },
     };
   }, [
-    tab, brief, rate, won, lost, active, ltvTotal, customers.length, quotesTotal,
+    tab, brief, rate, won, lost, active, ltvTotal, customers.length, quotesTotal, payers,
     rulesOn.length, rules.length, fastest, dueNow.length, laterOn.length, oldest,
   ]);
 
@@ -1110,9 +1124,21 @@ export function MobileCrm() {
     setFilterOpen(false);
   };
 
-  /* The Office tab is the office's alone; a sales rep or an estimator never
-     sees it (lib/crm/brief decides who is who). */
-  const tabs = useMemo(() => TABS.filter((t) => t.key !== "office" || !!brief?.office), [brief?.office]);
+  /* The Office and Win back tabs are the office's alone; a sales rep or an
+     estimator never sees them (lib/crm/brief decides who is who). */
+  const tabs = useMemo(() => TABS.filter((t) => (t.key !== "office" && t.key !== "back") || !!brief?.office), [brief?.office]);
+  /* A link may open the page on the Office tab (2026-11-10: the Monday report's button → ?tab=office) — once, when
+     the read says this person has one. */
+  const linkTab = useRef<string | null>(null);
+  useEffect(() => {
+    linkTab.current = new URLSearchParams(window.location.search).get("tab");
+  }, []);
+  const hasOffice = !!brief?.office;
+  useEffect(() => {
+    if (!hasOffice || linkTab.current !== "office") return;
+    linkTab.current = null;
+    setTab("office");
+  }, [hasOffice]);
   const tabIndex = Math.max(0, tabs.findIndex((t) => t.key === tab));
   const anyOverlay = Boolean(sheetView) || ruleOpen;
   /* Panels wait for the read. Rendering them first would print "Book is
@@ -1183,7 +1209,11 @@ export function MobileCrm() {
                 className={`${styles.tab} ${tab === t.key ? styles.active : ""}`}
                 type="button"
                 aria-current={tab === t.key ? "page" : undefined}
-                onClick={() => goTab(t.key)}
+                onClick={(e) => {
+                  goTab(t.key);
+                  /* Seven tabs scroll sideways on a phone: keep the chosen one whole. */
+                  e.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" });
+                }}
               >
                 {t.label}
                 {t.key === "queue" ? <span className={styles.tabCount}>{dueNow.length}</span> : null}
@@ -1239,7 +1269,10 @@ export function MobileCrm() {
           )}
 
           {/* ============ TAB: OFFICE — how the company is doing ============ */}
-          {ready && tab === "office" && brief?.office && <OfficePanel office={brief.office} company={org.name} />}
+          {ready && tab === "office" && brief?.office && <OfficePanel office={brief.office} company={org.name} extra={<CompanyPulse />} />}
+
+          {/* WIN BACK — bring past clients back (Smart CRM part 6); it reads its own numbers. */}
+          {ready && tab === "back" && brief?.office && <WinBackPanel />}
 
           {/* ============ TAB: OVERVIEW ============ */}
           {ready && tab === "overview" && (

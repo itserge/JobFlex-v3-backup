@@ -27,7 +27,12 @@ export type LeadForClient = {
 
 export type LeadClient = { id: string; name: string; made: boolean };
 
-const digits = (s: string | null | undefined) => (s ?? "").replace(/\D+/g, "");
+// A phone's digits as one number reads them: "+1 425 555 0112" (a Facebook or Twilio lead) and "(425) 555-0112" (a
+// client typed by hand) are the same person — before 2026-11-10 the leading 1 kept them apart and no client matched.
+const digits = (s: string | null | undefined) => {
+  const d = (s ?? "").replace(/\D+/g, "");
+  return d.length === 11 && d.startsWith("1") ? d.slice(1) : d;
+};
 const clean = (s: string | null | undefined) => {
   const t = (s ?? "").trim();
   return t ? t : null;
@@ -54,6 +59,28 @@ export async function findClientForLead(organizationId: string, lead: Pick<LeadF
   return null;
 }
 
+type FoundClient = NonNullable<Awaited<ReturnType<typeof findClientForLead>>>;
+
+/**
+ * A found client's blanks filled from the lead — never a field it already has. The street comes with its city, state
+ * and ZIP, and only onto a record with no street (a half-written address is not finished with another one's parts).
+ * Returns the fields written.
+ */
+export async function fillClientBlanks(found: FoundClient, lead: Omit<LeadForClient, "name">): Promise<Array<"email" | "phone" | "address" | "city" | "state" | "zip">> {
+  const fill: Partial<Record<"email" | "phone" | "address" | "city" | "state" | "zip", string>> = {};
+  if (!found.email && clean(lead.email)) fill.email = clean(lead.email)!;
+  if (!found.phone && clean(lead.phone)) fill.phone = clean(lead.phone)!;
+  if (!found.address && clean(lead.address)) {
+    fill.address = clean(lead.address)!;
+    if (!found.city && clean(lead.city)) fill.city = clean(lead.city)!;
+    if (!found.state && clean(lead.state)) fill.state = clean(lead.state)!;
+    if (!found.zip && clean(lead.zip)) fill.zip = clean(lead.zip)!;
+  }
+  const keys = Object.keys(fill) as Array<keyof typeof fill>;
+  if (keys.length) await db.client.update({ where: { id: found.id }, data: fill });
+  return keys;
+}
+
 /**
  * The client record for a lead: found, with its blanks filled from the lead,
  * or made from the lead when `create` allows and the plan has room.
@@ -61,16 +88,7 @@ export async function findClientForLead(organizationId: string, lead: Pick<LeadF
 export async function ensureClientForLead(organizationId: string, lead: LeadForClient, opts: { create: boolean }): Promise<LeadClient | null> {
   const found = await findClientForLead(organizationId, lead);
   if (found) {
-    const fill: Record<string, string> = {};
-    if (!found.email && clean(lead.email)) fill.email = clean(lead.email)!;
-    if (!found.phone && clean(lead.phone)) fill.phone = clean(lead.phone)!;
-    if (!found.address && clean(lead.address)) {
-      fill.address = clean(lead.address)!;
-      if (!found.city && clean(lead.city)) fill.city = clean(lead.city)!;
-      if (!found.state && clean(lead.state)) fill.state = clean(lead.state)!;
-      if (!found.zip && clean(lead.zip)) fill.zip = clean(lead.zip)!;
-    }
-    if (Object.keys(fill).length) await db.client.update({ where: { id: found.id }, data: fill });
+    await fillClientBlanks(found, lead);
     return { id: found.id, name: found.name, made: false };
   }
   if (!opts.create) return null;

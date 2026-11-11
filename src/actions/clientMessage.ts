@@ -133,7 +133,7 @@ export async function messageClient(input: {
     await recordOutbound(organizationId, { id: client.id, name: client.name, email: client.email, phone: client.phone }, { channel: "EMAIL", subject, body, toAddr: to, userId: user.id }).catch(() => null);
   } else {
     if (!client.phone) throw new Error(`${client.name} has no phone number on file`);
-    if (!await isTwilioEnabled()) throw new Error("Texting needs a Twilio number — set one up on the Phone page");
+    if (!await isTwilioEnabled()) throw new Error("Texting is not switched on yet — see the Texting page");
     // The card-less trial sends no texts (lib/trialMeter): the refusal
     // redirects to the trial page, which says so and adds the card.
     await enforceTrialCap(organizationId, "smsOutbound");

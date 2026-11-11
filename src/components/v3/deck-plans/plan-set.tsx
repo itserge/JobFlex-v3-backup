@@ -598,9 +598,10 @@ function IsoPicture({ scene, structure, yawDeg, skip, label, className }: { scen
     const d = structure.design;
     const family = deckingProduct(d.decking.product).family;
     const decking: IsoMaterials["decking"] = family === "treated" || family === "softwood" ? "wood" : family === "hardwood" || family === "modified" ? "hardwood" : family;
-    // The joists stay out of the finished picture: under the boards they only fight them in the paint order (the kind
-    // picker drops them past its 2,400 solids for the same reason); the framing picture shows them without the boards.
-    const drawing = isoDrawing(scene, { materials: { decking, roofing: d.roof.roofing, rail: d.rail.type }, yawDeg, maxSolids: 6000, skip: (skip ?? ["wire", "hardware", "blocking", "footing", "joist"]) as never });
+    // The joists are IN the finished picture (2026-11-10): without them the deck's sides had no end joist — the boards
+    // read as a thin sheet and the beam's end stood out bare under the corner ("the beam sticks out", the owner). They
+    // used to be left out because they fought the boards in the paint order; lib/deck/isoOrder settles that now.
+    const drawing = isoDrawing(scene, { materials: { decking, roofing: d.roof.roofing, rail: d.rail.type }, yawDeg, maxSolids: 6000, skip: (skip ?? ["wire", "hardware", "blocking", "footing"]) as never });
     return { viewBox: drawing.viewBox, inner: `<style>path{stroke-width:.45;stroke-linejoin:round;vector-effect:non-scaling-stroke}</style>${isoMarkup(drawing, { prefix: `cov${uid}`, layerClass: "s" })}` };
   }, [scene, structure, yawDeg, skip, uid]);
   // On paper the picture is a JPEG: its soft shadows and grass are filters, which Chrome prints as 300-dpi pictures of

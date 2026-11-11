@@ -480,6 +480,17 @@ export const CATALOG: Catalog = {
     "scheduled": false,
     "version": 1
   },
+  "update_lead": {
+    "label": "Update a lead",
+    "group": "people",
+    "effect": "record",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
   "client_story": {
     "label": "Client story",
     "group": "lookups",
@@ -612,6 +623,17 @@ export const CATALOG: Catalog = {
     "scheduled": false,
     "version": 1
   },
+  "company_pulse": {
+    "label": "Company pulse",
+    "group": "lookups",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
   "book_visit": {
     "label": "Book a visit",
     "group": "visits",
@@ -693,6 +715,72 @@ export const CATALOG: Catalog = {
     "label": "Send a client their page",
     "group": "people",
     "effect": "message",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "client_list": {
+    "label": "A list of clients",
+    "group": "people",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "campaigns": {
+    "label": "Campaigns",
+    "group": "people",
+    "effect": "read",
+    "kind": "read",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "draft_campaign": {
+    "label": "Write a campaign",
+    "group": "people",
+    "effect": "draft",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "send_campaign": {
+    "label": "Send a campaign",
+    "group": "people",
+    "effect": "message",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "stop_campaign": {
+    "label": "Stop a campaign",
+    "group": "people",
+    "effect": "record",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
+  "set_house_facts": {
+    "label": "Note a client's house",
+    "group": "people",
+    "effect": "record",
     "kind": "write",
     "build": false,
     "steps": null,

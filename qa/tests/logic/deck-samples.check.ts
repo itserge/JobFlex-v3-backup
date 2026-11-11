@@ -43,7 +43,8 @@ for (const sample of DECK_SAMPLES) {
   check(`${sample.id}: the faces come in build order`, iso.faces.every((f, i) => i === 0 || f.rank >= -1) && iso.ranks.every((r, i) => i === 0 || r > iso.ranks[i - 1]));
   const attached = d.placement !== "detached" && !!scene.house;
   check(`${sample.id}: the house is behind it when attached (${attached})`, attached === iso.faces.some((f) => f.layer === "house") || d.placement === "detached");
-  check(`${sample.id}: every path is closed and finite`, iso.faces.every((f) => /^M[-\d.,L]+Z$/.test(f.d)));
+  // A face is a closed ring; the one exception is lines only (fill "none"): a long member's own edges over its strips.
+  check(`${sample.id}: every path is closed and finite`, iso.faces.every((f) => (f.fill === "none" ? /^M[-\d.,LM]+$/.test(f.d) && !!f.stroke : /^M[-\d.,L]+Z$/.test(f.d))));
 }
 
 // The picture's maths.

@@ -48,6 +48,7 @@ const KIND_LABEL: Record<EmailKind, string> = {
   support: "Support",
   inbox: "Inbox reply",
   "inbox-forward": "Inbox copy",
+  campaign: "Campaign",
   other: "Other",
 };
 const STATUS_LABEL: Record<EmailStatus, string> = { sent: "Sent", failed: "Failed", skipped: "Skipped" };

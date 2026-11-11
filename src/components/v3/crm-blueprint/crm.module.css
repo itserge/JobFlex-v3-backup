@@ -1389,6 +1389,10 @@
 .bp :global(.content .cb-n) { font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; opacity: 0.7; }
 .bp :global(.content .cb-caption) { margin-left: auto; font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--muted); }
 .bp :global(.content .cb-table .cb-name) { font-size: 13px; font-weight: 700; }
+/* A row opens the client's record: the name is the button (it takes the keyboard), the row takes the mouse. */
+.bp :global(.content .cb-table .cb-row) { cursor: pointer; }
+.bp :global(.content .cb-table button.cb-name) { display: block; padding: 0; border: 0; background: none; font-family: inherit; color: inherit; text-align: left; cursor: pointer; }
+.bp :global(.content .cb-table .cb-row:hover .cb-name), .bp :global(.content .cb-table button.cb-name:focus-visible) { text-decoration: underline; text-underline-offset: 3px; }
 .bp :global(.content .cb-table .cb-mail) { margin-top: 3px; font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
 .bp :global(.content .cb-ltv) { color: var(--success-dark); }
 .bp :global(.content .cb-none) { color: var(--muted-faint); }

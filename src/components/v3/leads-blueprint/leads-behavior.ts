@@ -952,7 +952,7 @@ export function initLeadsContent(
           esc(r.name) +
           "</div>" +
           '<div class="st-meta">' +
-          esc([r.email, r.phone, r.project].filter(Boolean).join(" · ")) +
+          esc([r.email, r.phone, [r.address, r.city, r.state, r.zip].filter(Boolean).join(", "), r.project].filter(Boolean).join(" · ")) +
           " · " +
           srcLabel(r.source) +
           "</div></div>" +
@@ -1331,10 +1331,12 @@ export function initLeadsContent(
       phone: root.querySelector<HTMLInputElement>("#mPhone")?.value.trim() || null,
       project: root.querySelector<HTMLInputElement>("#mProject")?.value.trim() || null,
       description: null,
+      // The job's address (2026-11-10): one line, split by importLeads when it reads as "street, city, ST 98101".
+      address: root.querySelector<HTMLInputElement>("#mAddress")?.value.trim() || null,
       // Where it came from (2026-10-16): a call, a referral, Facebook, Angi…
       source: root.querySelector<HTMLSelectElement>("#mSource")?.value || "MANUAL",
     });
-    ["mName", "mEmail", "mPhone", "mProject"].forEach(function (id) {
+    ["mName", "mEmail", "mPhone", "mAddress", "mProject"].forEach(function (id) {
       const el = root.querySelector<HTMLInputElement>("#" + id);
       if (el) el.value = "";
     });
@@ -1456,6 +1458,10 @@ export function initLeadsContent(
           name: r.name,
           email: r.email,
           phone: r.phone,
+          address: r.address ?? null,
+          city: r.city ?? null,
+          state: r.state ?? null,
+          zip: r.zip ?? null,
           projectType: r.project,
           description: r.description,
           source: r.source as "MANUAL" | "EMAIL" | "IMPORT",

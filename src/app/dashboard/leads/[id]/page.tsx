@@ -179,7 +179,10 @@ export default async function LeadDetailPage({
   const gate = await customPageGate("leads");
   if (gate) return gate;
   const { id } = await params;
-  const scopeFailed = (await searchParams)?.scope === "failed";
+  const query = await searchParams;
+  const scopeFailed = query?.scope === "failed";
+  // The phone's Leads list: "Edit details" opens the lead with its edit sheet up (2026-11-10, lead-edit).
+  const editOpen = query?.edit === "1";
   let organizationId: string;
   let role: string;
   let userId: string;
@@ -260,6 +263,10 @@ export default async function LeadDetailPage({
         created: longDate(lead.createdAt),
       }}
       canEstimate={!locked && !isSalesRole(role) && !isWorkerRole(role)}
+      // Edit details (2026-11-10): the roles that work leads (actions/leads requireSalesOrManager) — a sales rep
+      // only ever reaches a lead that is theirs or still in the pool (above) — once the contacts are open.
+      canEdit={!locked && !isWorkerRole(role) && !isEstimatorRole(role)}
+      editOpen={editOpen}
       contactsLocked={locked}
       paid={
         paidOffer?.priceCents && paidOffer.unlockedAt

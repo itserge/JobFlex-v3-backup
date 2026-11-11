@@ -33,7 +33,7 @@ import styles from "./client-detail.module.css";
 import { ensureCompanyName } from "@/components/company-name/company-name-gate";
 
 /** Where the two gates send the reader. Both are real routes. */
-const PHONE_ROUTE = "/dashboard/phone" as Route;
+const TEXTING_ROUTE = "/dashboard/texting" as Route;
 const GMAIL_ROUTE = "/dashboard/settings/gmail" as Route;
 
 /** Server actions reject with text written for the reader ("Name is required",
@@ -659,9 +659,9 @@ export function ClientMessageDialog({
 
               {channel === "sms" && reach?.phone && !reach.smsConfigured ? (
                 <div className="mf-note">
-                  Texting needs a Twilio number set up —{" "}
-                  <Link className={styles.noteLink} href={PHONE_ROUTE}>
-                    set one up on the Phone page
+                  Texting is not switched on yet —{" "}
+                  <Link className={styles.noteLink} href={TEXTING_ROUTE}>
+                    see the Texting page
                   </Link>
                   {handheld ? ". Meanwhile, Open in Messages hands this to your phone." : "."}
                 </div>

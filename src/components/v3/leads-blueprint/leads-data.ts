@@ -57,6 +57,11 @@ export type StagedRow = {
   phone: string | null;
   project: string | null;
   description: string | null;
+  /** The job's address (2026-11-10): a CSV's address / city / state / ZIP columns, or one typed line. */
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
   source: string;
 };
 
@@ -96,7 +101,11 @@ export function parseCsvRows(text: string): StagedRow[] {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length === 0) return [];
   const first = splitCsvLine(lines[0]).map((c) => c.toLowerCase());
-  const hasHeader = first.some((c) => /name|email|phone|project|description/.test(c));
+  const hasHeader = first.some((c) => /name|email|phone|project|description|address|street|city|zip/.test(c));
+  // The address columns (2026-11-10) are read by header only: "address" / "street" / "job address" (never "email
+  // address"), "city" / "town", "state" / "province", "zip" / "postal code". A file with one address column keeps
+  // the whole line there; importLeads splits it when it reads as "street, city, ST 98101" (lib/leads/details).
+  const col = (test: (c: string) => boolean) => (hasHeader ? first.findIndex(test) : -1);
   const idx = {
     name: hasHeader ? first.findIndex((c) => c.includes("name")) : 0,
     email: hasHeader ? first.findIndex((c) => c.includes("email")) : 1,
@@ -104,6 +113,10 @@ export function parseCsvRows(text: string): StagedRow[] {
     project: hasHeader ? first.findIndex((c) => c.includes("project")) : 3,
     description: hasHeader ? first.findIndex((c) => c.includes("desc")) : 4,
     source: hasHeader ? first.findIndex((c) => c.includes("source") || c.includes("channel") || c === "from" || c.includes("lead from")) : -1,
+    address: col((c) => (/address|street/.test(c) && !c.includes("email") && !c.includes("ip ")) || c === "addr"),
+    city: col((c) => /\bcity\b|\btown\b/.test(c)),
+    state: col((c) => /\bstate\b|province|\bregion\b/.test(c)),
+    zip: col((c) => /\bzip|postal|postcode/.test(c)),
   };
   const rows = hasHeader ? lines.slice(1) : lines;
   const pick = (cells: string[], i: number) => (i >= 0 && cells[i] ? cells[i] : null);
@@ -116,6 +129,10 @@ export function parseCsvRows(text: string): StagedRow[] {
       phone: pick(cells, idx.phone),
       project: pick(cells, idx.project),
       description: pick(cells, idx.description),
+      address: pick(cells, idx.address),
+      city: pick(cells, idx.city),
+      state: pick(cells, idx.state),
+      zip: pick(cells, idx.zip),
       source: sourceFromCell(pick(cells, idx.source)),
     }));
 }

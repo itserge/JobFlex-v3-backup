@@ -48,6 +48,7 @@ import { BUSINESS_TOOLS } from "@/lib/assistant/business";
 import { CLIENT_360_TOOLS } from "@/lib/assistant/clients360";
 import { INBOX_TOOLS } from "@/lib/assistant/inbox";
 import { PIPELINE_TOOLS } from "@/lib/assistant/pipeline";
+import { PULSE_TOOLS } from "@/lib/assistant/pulse";
 // The follow-up agent and the promise tracker (Smart CRM part 4, 2026-11-10).
 import { FOLLOW_UP_TOOLS } from "@/lib/assistant/followups";
 import { OPEN_TIME_TOOLS } from "@/lib/assistant/openTimes";
@@ -57,6 +58,7 @@ import { REPAIR_TOOLS } from "@/lib/assistant/repairs";
 import { COMMISSION_TOOLS } from "@/lib/assistant/commission";
 // The client's page (2026-11-10, Smart CRM part 5): send a client their one lasting link.
 import { CLIENT_HOME_TOOLS } from "@/lib/assistant/clientHome";
+import { WIN_BACK_TOOLS } from "@/lib/assistant/winback";
 import { CONTRACTOR_TOOLS } from "@/lib/assistant/contractors";
 // The subcontractors plan, part 6 (2026-11-09): find, requests, compare, the subs budget, invoices, documents, reminders,
 // approving and paying a sub's invoice.
@@ -308,7 +310,7 @@ const find: ReadTool<{ query: string; kind: "any" | "proposal" | "client" | "job
     ]
   },
   description:
-    "Find proposals, clients, jobs, leads, visits (appointments), projects or crew members by name, title, number or address. Returns ids to use in other tools. Use before any change that names a client, a proposal, a job, a visit, a project or a worker.",
+    "Find proposals, clients, jobs, leads, visits (appointments), projects or crew members by name, title, number or address. Returns ids to use in other tools. Use before any change that names a client, a lead, a proposal, a job, a visit, a project or a worker.",
   params: z.object({
     query: z.string().min(2).max(80).describe("the words to look for, e.g. 'Smith roof', 'Mike' or '#1042'"),
     kind: z.enum(["any", "proposal", "client", "job", "lead", "worker", "visit", "project"]),
@@ -1008,12 +1010,13 @@ export const TOOLS: readonly AnyTool[] = [
   textCrewEach,
   paymentReminder,
   remindOverdue,
-  ...PEOPLE_TOOLS, ...CLIENT_360_TOOLS, ...INBOX_TOOLS, ...PIPELINE_TOOLS, ...FOLLOW_UP_TOOLS,
+  ...PEOPLE_TOOLS, ...CLIENT_360_TOOLS, ...INBOX_TOOLS, ...PIPELINE_TOOLS, ...FOLLOW_UP_TOOLS, ...PULSE_TOOLS,
   ...VISIT_TOOLS,
   ...OPEN_TIME_TOOLS,
   ...REPAIR_TOOLS,
   ...COMMISSION_TOOLS,
   ...CLIENT_HOME_TOOLS,
+  ...WIN_BACK_TOOLS,
   ...REMIND_TOOLS,
   ...MONEY_TOOLS,
   ...PROJECT_TOOLS,

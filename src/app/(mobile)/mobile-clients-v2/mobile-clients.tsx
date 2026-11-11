@@ -96,7 +96,7 @@ function fullAddress(c: Client): string {
    always hands off to the phone's own messenger. */
 
 /** Where the two gates send the reader. Both are real routes. */
-const PHONE_ROUTE = "/dashboard/phone" as Route;
+const TEXTING_ROUTE = "/dashboard/texting" as Route;
 const GMAIL_ROUTE = "/dashboard/settings/gmail" as Route;
 
 /** Gmail's and Outlook's documented compose deep links. Everything is
@@ -1298,8 +1298,8 @@ export function MobileClients() {
 
               {channel === "sms" && reach?.phone && !reach.smsConfigured ? (
                 <span className={styles.msgNote}>
-                  Texting needs a Twilio number set up —{" "}
-                  <Link className={styles.msgLink} href={PHONE_ROUTE}>set one up on the Phone page</Link>
+                  Texting is not switched on yet —{" "}
+                  <Link className={styles.msgLink} href={TEXTING_ROUTE}>see the Texting page</Link>
                   . Meanwhile, Open in Messages hands this to your phone.
                 </span>
               ) : null}

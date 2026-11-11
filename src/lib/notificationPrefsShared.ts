@@ -35,6 +35,7 @@ export type PrefKey =
   | "trade-reply"
   | "sub-quote"
   | "sub-contract"
+  | "weekly-report"
   | "crew-assigned"
   | "crew-moved"
   | "crew-tomorrow"
@@ -117,6 +118,9 @@ export const PREF_EVENTS: readonly PrefEventMeta[] = [
   // Part 4 (2026-11-08): a sub signed the subcontract, or answered a change order — the bell (a SUB_CONTRACT row),
   // the office email and the text.
   { key: "sub-contract", name: "Subcontracts", sub: "A sub signed the subcontract, or agreed to or declined a change order", emailAvailable: true, smsAvailable: true, seed: [true, true, true], audience: { office: true }, example: "Ridge Framing signed Subcontract SC-1001 for Framing on the Lee house ($42,000). jobflex.app/…" },
+  // The Monday report (2026-11-10, Smart CRM part 7, lib/pulse): last week's leads, reply speed, win rate per
+  // salesperson and best sources, by email to owners and admins. Never in the bell, never a text.
+  { key: "weekly-report", name: "Weekly company report", sub: "Mondays: last week's leads, reply speed, win rate and best sources — owners and admins", emailAvailable: true, smsAvailable: false, inAppAvailable: false, seed: [false, true, false] },
 ];
 
 /** The crew's texts (2026-09-29): what a worker with a phone hears, one

@@ -22,7 +22,9 @@ import { initCrmContent } from "./crm-behavior";
 import type { CrmContentData } from "./crm-data";
 import type { CrmBrief } from "@/lib/crm/brief";
 import { OfficePanel, TodayPanel } from "./crm-brief";
+import { CompanyPulse } from "./company-pulse";
 import { AgentDesk } from "./crm-agent";
+import { WinBackPanel } from "./win-back";
 import { deskOpen, type CrmDesk } from "@/lib/crm/desk";
 
 /**
@@ -126,6 +128,15 @@ export function CrmContent({ data, brief, desk }: { data: CrmContentData; brief:
             Office
           </button>
         )}
+        {/* Bring clients back (Smart CRM part 6): lists, one email, what came of it. The office's, like Office. */}
+        {brief.office && (
+          <button className="crm-tab" type="button" data-tab="winback" data-crm-tab="winback">
+            <svg className="ic">
+              <use href="#i-megaphone" />
+            </svg>
+            Win back
+          </button>
+        )}
         <button className="crm-tab" type="button" data-tab="overview">
           <svg className="ic">
             <use href="#i-grid" />
@@ -157,7 +168,14 @@ export function CrmContent({ data, brief, desk }: { data: CrmContentData; brief:
       {/* ========== OFFICE — how the company is doing, right now ========== */}
       {brief.office && (
         <section className="ppanel is-hidden" data-panel="office">
-          <OfficePanel office={brief.office} company={data.org.name} />
+          <OfficePanel office={brief.office} company={data.org.name} extra={<CompanyPulse />} />
+        </section>
+      )}
+
+      {/* ========== WIN BACK — bring past clients back ========== */}
+      {brief.office && (
+        <section className="ppanel is-hidden" data-panel="winback">
+          <WinBackPanel />
         </section>
       )}
 
