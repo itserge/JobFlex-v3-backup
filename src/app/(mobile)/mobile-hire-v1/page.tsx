@@ -24,6 +24,7 @@ import type { Metadata, Viewport } from "next";
 import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { getHireViewer, getMyHirePosts, listOpenTradeJobs } from "@/actions/tradeServices";
 import { MobileHire } from "@/components/v3/mobile-hire/mobile-hire";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +48,9 @@ export default async function MobileHireV1Page({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  // The Hire board is a size's on the new plans (Professional and up); open on every Classic plan (lib/customPlan).
+  const gate = await customPageGate("hire", { handheld: true });
+  if (gate) return gate;
   let seed: Awaited<ReturnType<typeof load>>;
   try {
     seed = await load();

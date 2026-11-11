@@ -17,6 +17,12 @@ import { expireOpenCheckoutsForProposal } from "@/lib/payments/checkouts";
 import { INVOICE_OPEN, INVOICE_VOID } from "@/lib/payments/invoiceRecord";
 import { crewOfJobEvent, textCrewCancelled } from "@/lib/sms/crew";
 import { cancelWarnings, cleanPct, cleanReason, commissionOf, effectivePct, isSold } from "@/lib/proposalRow/shared";
+import { isPageLocked, requirePage } from "@/lib/customPageAccess";
+
+// SALES COMMISSION IS A SIZE'S on the new plans (Base + Tools, 2026-11-10: Professional and up, with the sales
+// roles): the edits are refused and the reads come back empty without it. Every Classic plan holds it, as before
+// (lib/customPlan classicEquivalent).
+const COMMISSION = "commission" as const;
 
 const PAID = ["PAID", "PARTIAL", "PARTIALLY_REFUNDED"];
 const SELLER_ROLES = ["SALES", "ESTIMATOR", "MANAGER", "OWNER", "ADMIN"];
@@ -40,6 +46,7 @@ const MONEY_SELECT = {
 export async function commissionByDeal(organizationId: string, proposalIds: string[]): Promise<Map<string, { pct: number; earned: number; full: number; repId: string }>> {
   const out = new Map<string, { pct: number; earned: number; full: number; repId: string }>();
   if (!proposalIds.length) return out;
+  if (await isPageLocked(organizationId, COMMISSION)) return out;
   const rows = await db.proposal.findMany({ where: { organizationId, id: { in: proposalIds }, ownerId: { not: null } }, select: { id: true, status: true, ownerId: true, commissionPct: true, ...MONEY_SELECT } });
   const owners = [...new Set(rows.map((r) => r.ownerId!))];
   const members = await db.membership.findMany({ where: { organizationId, userId: { in: owners } }, select: { userId: true, commissionPct: true } });
@@ -55,6 +62,7 @@ export async function commissionByDeal(organizationId: string, proposalIds: stri
 
 /** Per member: their percent and what they have earned on their sold deals (the Workers page). */
 export async function repCommissions(organizationId: string): Promise<Map<string, { pct: number | null; earned: number; full: number; deals: number }>> {
+  if (await isPageLocked(organizationId, COMMISSION)) return new Map();
   const members = await db.membership.findMany({ where: { organizationId }, select: { userId: true, commissionPct: true } });
   const out = new Map<string, { pct: number | null; earned: number; full: number; deals: number }>();
   for (const m of members) out.set(m.userId, { pct: m.commissionPct, earned: 0, full: 0, deals: 0 });
@@ -155,6 +163,7 @@ export async function proposalMore(organizationId: string, proposalId: string): 
 
 /** A member's own percent. Their sold deals with no percent of their own keep the old one first. */
 export async function setRepPct(organizationId: string, actorId: string, userId: string, pctIn: number | null): Promise<{ pct: number | null }> {
+  await requirePage(organizationId, COMMISSION);
   const pct = cleanPct(pctIn);
   const m = await db.membership.findFirst({ where: { organizationId, userId }, select: { id: true, commissionPct: true, user: { select: { name: true } } } });
   if (!m) throw new Error("Not on this team.");
@@ -168,6 +177,7 @@ export async function setRepPct(organizationId: string, actorId: string, userId:
 
 /** This deal's own percent (null = follow the rep's). */
 export async function setDealPct(organizationId: string, actorId: string, proposalId: string, pctIn: number | null): Promise<void> {
+  await requirePage(organizationId, COMMISSION);
   const pct = cleanPct(pctIn);
   const p = await db.proposal.findFirst({ where: { id: proposalId, organizationId }, select: { id: true, title: true, clientId: true } });
   if (!p) throw new Error("Not found");
@@ -177,6 +187,7 @@ export async function setDealPct(organizationId: string, actorId: string, propos
 
 /** Who sold it (gets the commission, owns the proposal). The deal's own percent goes back to the new rep's. */
 export async function setDealRep(organizationId: string, actorId: string, proposalId: string, userId: string): Promise<void> {
+  await requirePage(organizationId, COMMISSION);
   const [p, m] = await Promise.all([
     db.proposal.findFirst({ where: { id: proposalId, organizationId }, select: { id: true, title: true, clientId: true } }),
     db.membership.findFirst({ where: { organizationId, userId }, select: { role: true, user: { select: { name: true } } } }),

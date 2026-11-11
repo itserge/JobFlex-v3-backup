@@ -148,3 +148,16 @@
   line-height: 1.45;
   color: var(--danger, #b42318);
 }
+
+/* THE NEW PLANS' CARD (Base + Tools, part 3a, 2026-11-10): no padlock — the
+   heading takes the room the lock had, and the price stands on its own line. */
+.jf-upgate.jf-upgate .jf-upgate-h-gap {
+  margin-top: 18px;
+}
+.jf-upgate.jf-upgate .jf-upgate-price {
+  margin-top: 14px;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--ink, #101010);
+}

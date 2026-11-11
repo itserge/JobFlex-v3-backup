@@ -13,6 +13,7 @@ import { checkPlanLimit } from "@/lib/limitsEngine";
 import { getOrgPlanById } from "@/lib/orgPlan";
 import { readAccessSubscription } from "@/lib/subscriptionAccess";
 import { isPageLocked } from "@/lib/customPageAccess";
+import { toolsDeskMinutes } from "@/lib/toolPlans/allowances";
 import { sendEmail } from "@/lib/sdk/resend";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { DESK_MINUTES_CUSTOM_WITH_PHONE, DESK_MINUTES_DEFAULT, DESK_PACK, deskBalance, dollars, EMPTY_PACKS, parseDeskPacks, TOP_UP_AT_SECONDS, unsettledPackSeconds, type DeskBalance, type DeskPackRecord, type DeskPacks, type DeskPackVia } from "./shared";
@@ -24,6 +25,10 @@ const packsKey = (organizationId: string) => `deskpacks:${organizationId}`;
 export async function includedDeskMinutes(organizationId: string): Promise<number> {
   const status = await checkPlanLimit(organizationId, "deskMinutes", 0, { actorId: null }).catch(() => null);
   if (status && !status.exempt && status.limit !== null && Number.isFinite(status.limit) && status.limit >= 0) return status.limit;
+  // The new plans (Base + Tools): Advanced/Complete include the desk, a smaller size that adds it gets fewer, none
+  // without it (lib/toolPlans/allowances). Null for a Classic shop.
+  const tools = await toolsDeskMinutes(organizationId).catch(() => null);
+  if (tools !== null) return tools;
   const [plan, sub] = await Promise.all([getOrgPlanById(organizationId).catch(() => "FREE" as const), readAccessSubscription(organizationId).catch(() => null)]);
   if ((sub?.plan ?? "").toUpperCase() === "CUSTOM") return (await isPageLocked(organizationId, "phone").catch(() => true)) ? 0 : DESK_MINUTES_CUSTOM_WITH_PHONE;
   return DESK_MINUTES_DEFAULT[plan] ?? 0;

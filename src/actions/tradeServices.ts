@@ -2,7 +2,8 @@
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { z } from "zod";
-import { requireUser, requireManager, requireRouteAccess, isLimitedRole } from "@/lib/orgContext";
+import { requireUser, requireManager, requireOrg, requireRouteAccess, isLimitedRole } from "@/lib/orgContext";
+import { pageLockedResult, requirePage } from "@/lib/customPageAccess";
 import { db } from "@/lib/db";
 import type {
   TradeJob,
@@ -998,7 +999,23 @@ function hireMessage(err: unknown, fallback: string): string {
   return raw;
 }
 
+/** THE HIRE BOARD IS A SIZE'S on the new plans (Base + Tools, 2026-11-10: Professional and up): the refusal a
+ *  person reads, or null to go on — always null on a Classic plan (lib/customPlan classicEquivalent). The Trade
+ *  board's own actions above are not the Hire board's and stay open. A signed-out caller is left to the action's
+ *  own sign-in check. */
+async function hireRefusal(): Promise<string | null> {
+  let organizationId: string;
+  try {
+    ({ organizationId } = await requireOrg());
+  } catch {
+    return null;
+  }
+  return (await pageLockedResult(organizationId, "hire"))?.error ?? null;
+}
+
 export async function hireExpressInterest(jobId: string): Promise<HireResult<{ already: boolean }>> {
+  const locked = await hireRefusal();
+  if (locked) return { ok: false, message: locked };
   try {
     const r = await expressInterest(jobId);
     return { ok: true, data: { already: r.already } };
@@ -1010,6 +1027,8 @@ export async function hireExpressInterest(jobId: string): Promise<HireResult<{ a
 export async function hireCreatePost(
   raw: unknown,
 ): Promise<HireResult<{ id: string; broadcastCount: number }>> {
+  const locked = await hireRefusal();
+  if (locked) return { ok: false, message: locked };
   try {
     return { ok: true, data: await createTradeJob(raw) };
   } catch (err) {
@@ -1018,6 +1037,8 @@ export async function hireCreatePost(
 }
 
 export async function hireUpdatePost(jobId: string, raw: unknown): Promise<HireResult<OwnPost>> {
+  const locked = await hireRefusal();
+  if (locked) return { ok: false, message: locked };
   try {
     return { ok: true, data: await updateTradeJob(jobId, raw) };
   } catch (err) {
@@ -1026,6 +1047,8 @@ export async function hireUpdatePost(jobId: string, raw: unknown): Promise<HireR
 }
 
 export async function hireDeletePost(jobId: string): Promise<HireResult> {
+  const locked = await hireRefusal();
+  if (locked) return { ok: false, message: locked };
   try {
     await deleteTradeJob(jobId);
     return { ok: true, data: undefined };
@@ -1049,6 +1072,8 @@ export type InterestedPartyDTO = {
 };
 
 export async function getPostInterest(jobId: string): Promise<HireResult<InterestedPartyDTO[]>> {
+  const locked = await hireRefusal();
+  if (locked) return { ok: false, message: locked };
   try {
     const user = await requireUser();
     const job = await db.tradeJob.findUnique({
@@ -1121,6 +1146,7 @@ export type HireOwnPostDTO = OwnPost & {
 
 export async function getMyHirePosts(): Promise<HireOwnPostDTO[]> {
   const { user, organizationId } = await requireRouteAccess("/dashboard/hire", "/dashboard/trade");
+  await requirePage(organizationId, "hire");
   const jobs = await db.tradeJob.findMany({
     where: { authorId: user.id, ...NOT_DELETED },
     orderBy: { createdAt: "desc" },
@@ -1168,6 +1194,7 @@ export async function getMyHirePosts(): Promise<HireOwnPostDTO[]> {
 export async function markPostInterestSeen(jobId: string): Promise<HireResult> {
   try {
     const { user, organizationId } = await requireRouteAccess("/dashboard/hire", "/dashboard/trade");
+    await requirePage(organizationId, "hire");
     const job = await db.tradeJob.findUnique({
       where: { id: jobId },
       select: { authorId: true },

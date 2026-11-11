@@ -49,7 +49,8 @@ export async function startPlanSession(): Promise<{ ok: true; token: string } | 
   try {
     ({ organizationId } = await requireEstimatorOrManager());
     // The blueprint estimator, and the HVAC estimator's "from the plans" (2026-10-18): either page opens a session.
-    await requirePage(organizationId, ["smart-proposal", "hvac-estimator"]);
+    // "blueprint-estimator" is Smart Proposal's page on a Classic plan (lib/customPlan classicEquivalent).
+    await requirePage(organizationId, ["blueprint-estimator", "hvac-estimator"]);
     await enforceRateLimit(`ai-plans:${organizationId}`, 12, HOUR, "blueprint runs");
     const { requireFeatureOrThrow } = await import("@/lib/entitlements");
     const { getOrgPlanById } = await import("@/lib/orgPlan");

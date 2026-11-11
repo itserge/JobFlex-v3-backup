@@ -22,6 +22,7 @@ import { db } from "@/lib/db";
 import { readFilingContext } from "@/lib/filingContext";
 import { deckStudioAccess } from "@/lib/deck/access";
 import { editionFacts } from "@/lib/editionAccess";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 import { hasEdition, type EditionLevel } from "@/lib/editions";
 import { readAccessSubscription } from "@/lib/subscriptionAccess";
 import type { AddonInterval } from "@/lib/deckAddon";
@@ -44,6 +45,10 @@ export const metadata: Metadata = {
 };
 
 export default async function DeckEstimatorPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  // On the new plans Deck Studio is a tool: a shop without it sees the tool's card (lib/customPlan). A Classic shop is
+  // never gated here — its preview / trial / add-on rules below are lib/editions'.
+  const gate = await customPageGate("deck-estimator");
+  if (gate) return gate;
   let organizationId: string;
   let level: EditionLevel = "none";
   let viaEdition = false;

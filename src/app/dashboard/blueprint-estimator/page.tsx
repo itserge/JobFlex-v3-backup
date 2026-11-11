@@ -19,7 +19,8 @@ export const metadata: Metadata = {
 };
 
 export default async function BlueprintEstimatorPage() {
-  const gate = await customPageGate("smart-proposal");
+  // Its own page on the new plans (the Blueprint estimator tool); Smart Proposal's on a Classic plan (lib/customPlan).
+  const gate = await customPageGate("blueprint-estimator");
   if (gate) return gate;
   try {
     await requireOrg();

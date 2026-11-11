@@ -316,6 +316,9 @@ function prettyPhone(e164: string): string {
 async function loadSmsSettings(organizationId: string, smsPhone: string | null, smsVerifiedAt: Date | null, role: string, plan: string | null, myUserId: string | null = null): Promise<SmsSettingsData> {
   const { isTwilioEnabled } = await import("@/lib/sdk/twilio");
   const { smsAllowanceFor } = await import("@/lib/entitlements");
+  // The new plans' allowance (Text messaging held or not — lib/toolPlans/allowances); null keeps the Classic tier's.
+  const { toolsSmsAllowance } = await import("@/lib/toolPlans/allowances");
+  const toolsAllowance = await toolsSmsAllowance(organizationId).catch(() => null);
   const base: SmsSettingsData = {
     configured: await isTwilioEnabled(),
     phone: smsPhone ? prettyPhone(smsPhone) : null,
@@ -323,7 +326,7 @@ async function loadSmsSettings(organizationId: string, smsPhone: string | null, 
     stopped: false,
     extras: [],
     monthCount: 0,
-    allowance: smsAllowanceFor(plan),
+    allowance: toolsAllowance ?? smsAllowanceFor(plan),
     canManage: ["OWNER", "ADMIN", "MANAGER"].includes(role),
     clientsOn: true,
     ownNumber: null,

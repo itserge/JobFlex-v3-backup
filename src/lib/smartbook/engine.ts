@@ -38,6 +38,7 @@ import { convByPhone, convByRequestToken, convByToken, createConv, dropConv, hel
 import { inLanguage, knowledgeOf, readContractor, readCustomer, type CustomerRead } from "./understand";
 import { againText, dayPartWords, emailProse, emailWords, firstNameOf, firstText, say, tell, timesList, visitNoun, whenWords, type CustomerWords, type RequestFacts } from "./words";
 import { isPageLocked } from "@/lib/customPageAccess";
+import { isToolsSlug } from "@/lib/toolPlans/shared";
 import { notePausedOnFree } from "@/lib/pausedNotice";
 import { hasFullAccess } from "@/lib/fullAccess";
 import { readAccessSubscription } from "@/lib/subscriptionAccess";
@@ -972,6 +973,8 @@ export const SMARTBOOK_CALL_PLAN_WORDS = "SmartBook's call is on the Advanced pl
 export async function smartBookCallOnPlan(organizationId: string): Promise<boolean> {
   if (await hasFullAccess(organizationId)) return true;
   const plan = ((await readAccessSubscription(organizationId))?.plan ?? "").toUpperCase();
+  // The new plans (Base + Tools): the call is the AI desk's, so it follows the AI desk tool (the gate's "phone").
+  if (isToolsSlug(plan)) return !(await isPageLocked(organizationId, "phone", { as: null }));
   if (plan === "ENTERPRISE") return true;
   if (plan === "CUSTOM") return !(await isPageLocked(organizationId, "phone"));
   return false;

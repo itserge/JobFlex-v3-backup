@@ -1,4 +1,4 @@
-// BASE + TOOLS — the new plans' rules (2026-11-10, parts 1–2), on the catalog as set. No database.
+// BASE + TOOLS — the new plans' rules (2026-11-10, parts 1–3a), on the catalog as set. No database.
 //   NODE_PATH="" npx tsx --tsconfig tsconfig.json qa/tests/logic/tool-plans.check.ts
 
 import {
@@ -32,7 +32,34 @@ import {
   toolKind,
   triesToBill,
   withPrices,
+  TOOLS_BASE_PAGES,
+  TOOLS_ONLY_PAGE_IDS,
+  classicEquivalent,
+  isToolsOnlyPageId,
+  projectKindPage,
+  toolOffering,
+  toolsPagesOpen,
 } from "@/lib/toolPlans/shared";
+import {
+  CUSTOM_PAGES,
+  PAID_FEATURES,
+  PLAN_ENDED_MARK,
+  TOOLS_MARK,
+  TOOLS_PAGES,
+  blockedCustomHrefs,
+  classicPageId,
+  customPriceCents,
+  gatedPage,
+  isCustomBlockedPath,
+  isGatedPageId,
+  lapsedBlockedHrefs,
+  normalizeCustomPages,
+  pageForPath,
+  toolsBlockedHrefs,
+} from "@/lib/customPlan";
+import { flattenNavItems, navDropsBlocked, navSectionsFor, showsUpgradePlan, UPGRADE_PLAN_HREF } from "@/components/v3/blueprint-shell/nav-map";
+import { hasEdition } from "@/lib/editions";
+import { spaceOpen, spacePage, SPACE_IDS } from "@/lib/projectSpaces";
 import { SPOTLIGHT_TOOLS } from "@/lib/planSpotlight";
 import { isAddonLine, planLine } from "@/lib/deckAddon";
 
@@ -147,6 +174,76 @@ check("to bill when its time is up: only the try nobody removed", triesToBill(re
 check("today's ad links find their tool (Smart Proposal stays in every plan)", SPOTLIGHT_TOOLS.filter((k) => k !== "smart").every((k) => toolForAdKey(k) !== null) && toolForAdKey("smart") === null);
 check("the Deck Studio ad is the deck tool", toolForAdKey("deck")?.id === "deck" && toolById("deck").cents === 7900);
 check("money words", money(3999) === "$39.99" && money(7500) === "$75" && money(123450) === "$1,234.50");
+
+// ── part 3a: the gate ──
+check("every new plan opens Smart Proposal, Calendar, Leads and Company", TOOLS_BASE_PAGES.join() === "smart-proposal,calendar,leads,company");
+check("every id a tool or a size opens is a gated id", [...TOOLS.flatMap((t) => t.opens), ...TOOL_PLANS.flatMap((p) => p.features)].every((id) => isGatedPageId(id)));
+check("the new ids have entries; only they are new-plan ids", TOOLS_ONLY_PAGE_IDS.every((id) => TOOLS_PAGES.some((t) => t.id === id) && isToolsOnlyPageId(id)) && TOOLS_PAGES.length === TOOLS_ONLY_PAGE_IDS.length && !isToolsOnlyPageId("roof-estimator") && !isToolsOnlyPageId("operator"));
+const now = at(12);
+const basicDeckRec = { ...emptyToolsRecord("basic", "deck") };
+const bd = toolsPagesOpen(basicDeckRec, "TOOLS-BASIC", now);
+check("Basic + Deck Studio: the base and the deck, nothing else", [...TOOLS_BASE_PAGES, "deck-estimator"].every((id) => bd.has(id)) && bd.size === 5, [...bd]);
+check("…no roof, workers, Meta leads, texting, Operator, Smart CRM, Hire, team messages, commission, Remodeler", ["roof-estimator", "workers", "meta-leads", "texting", "operator", "smart-crm", "hire", "team-messages", "commission", "remodeler", "home-builder", "phone", "subcontractors", "project-tools"].every((id) => !bd.has(id)));
+const bdTry = toolsPagesOpen({ ...basicDeckRec, tries: { roof: { startedAt: at(10).toISOString(), endsAt: at(13).toISOString(), onLine: false } } }, "tools-basic", now);
+check("a running try opens its tool; an ended one doesn't", bdTry.has("roof-estimator") && !toolsPagesOpen({ ...basicDeckRec, tries: { roof: { startedAt: at(1).toISOString(), endsAt: at(4).toISOString(), onLine: false } } }, "tools-basic", now).has("roof-estimator"));
+const pr = toolsPagesOpen(null, "tools-professional", now);
+check("Professional (no record): the base and the team", ["workers", "meta-leads", "team-messages", "hire", "commission", "smartbook", "crew-field", "roles", ...TOOLS_BASE_PAGES].every((id) => pr.has(id)) && !pr.has("custom-domain") && !pr.has("phone") && !pr.has("texting"));
+const ad = toolsPagesOpen(emptyToolsRecord("advanced"), "tools-advanced", now);
+check("Advanced: the office tools and the Advanced lines", ["phone", "texting", "smart-crm", "operator", "custom-domain", "multi-org", "priority-support", "workers"].every((id) => ad.has(id)) && !ad.has("roof-estimator"));
+check("Complete: everything", [...TOOLS.flatMap((t) => t.opens)].every((id) => toolsPagesOpen(null, "tools-complete", now).has(id)));
+check("the slug's size wins over the record's", toolsPagesOpen(emptyToolsRecord("basic"), "tools-professional", now).has("workers") && !toolsPagesOpen(emptyToolsRecord("professional"), "tools-basic", now).has("workers"));
+check("an unknown tools- slug with no record opens the base alone", toolsPagesOpen(null, "tools-foo", now).size === TOOLS_BASE_PAGES.length);
+
+check("Classic answers: blueprint as Smart Proposal, Meta as Leads, the rest not closed", classicEquivalent("blueprint-estimator") === "smart-proposal" && classicEquivalent("meta-leads") === "leads" && TOOLS_ONLY_PAGE_IDS.filter((id) => id !== "blueprint-estimator" && id !== "meta-leads").every((id) => classicEquivalent(id) === null));
+check("classicPageId leaves the Classic ids alone", classicPageId("roof-estimator") === "roof-estimator" && classicPageId("operator") === "operator" && classicPageId("blueprint-estimator") === "smart-proposal" && classicPageId("hire") === null);
+
+check("toolOffering: a tool's page names the tool", (() => { const o = toolOffering("roof-estimator"); return o?.kind === "tool" && o.tool.id === "roof"; })());
+check("…the AI desk page names the AI desk, Smart CRM its tool", (() => { const a = toolOffering("phone"), c = toolOffering("smart-crm"); return a?.kind === "tool" && a.tool.id === "aidesk" && c?.kind === "tool" && c.tool.id === "smartcrm"; })());
+check("…subcontractors: Home Builder, also Remodeler", (() => { const o = toolOffering("subcontractors"); return o?.kind === "tool" && o.tool.id === "builder" && o.also.map((t) => t.id).join() === "remodeler"; })());
+check("…a size feature: On Professional / On Advanced", (() => { const w = toolOffering("workers"), d = toolOffering("custom-domain"); return w?.kind === "size" && w.plan.id === "professional" && d?.kind === "size" && d.plan.id === "advanced"; })());
+check("…a base page: nothing to sell", toolOffering("calendar") === null);
+check("project kinds: remodel → Remodeler, new build → Home Builder, a job → none", projectKindPage("REMODEL") === "remodeler" && projectKindPage("NEW_BUILD") === "home-builder" && projectKindPage("JOB") === null && projectKindPage(null) === null);
+check("workspaces: Job Projects is the base; a closed one is not open", spacePage("jobs") === null && spacePage("build") === "home-builder" && spacePage("remodel") === "remodeler" && SPACE_IDS.every((id) => spaceOpen(id)) && !spaceOpen("remodel", ["remodel"]) && spaceOpen("jobs", ["remodel", "build"]));
+
+// pageForPath for the new hrefs
+const pathId = (p: string) => pageForPath(p)?.id ?? null;
+check("pageForPath: the blueprint estimator is its own page now (desk and phone)", pathId("/dashboard/blueprint-estimator") === "blueprint-estimator" && pathId("/mobile-blueprint-estimator-v1") === "blueprint-estimator");
+check("pageForPath: Deck Studio and its Deck Lab", pathId("/dashboard/deck-estimator") === "deck-estimator" && pathId("/dashboard/deck-estimator/inventory") === "deck-estimator" && pathId("/dashboard/deck-v3") === "deck-estimator" && pathId("/dashboard/deck-lab") === "deck-estimator");
+check("pageForPath: texting, team messages, Hire (desk and phone)", pathId("/dashboard/texting") === "texting" && pathId("/mobile-texting-v1") === "texting" && pathId("/dashboard/messages") === "team-messages" && pathId("/mobile-messages-v2") === "team-messages" && pathId("/dashboard/hire") === "hire" && pathId("/mobile-hire-v1") === "hire");
+check("pageForPath: Smart Proposal and the base unchanged", pathId("/dashboard/advanced-ai") === "smart-proposal" && pathId("/dashboard/advanced-ai/roof") === "roof-estimator" && pathId("/dashboard/proposals") === null && pathId("/dashboard/subscription") === null && pathId("/dashboard/company/subscription") === null);
+check("gatedPage finds the new entries", gatedPage("hire")?.href === "/dashboard/hire" && gatedPage("commission")?.href === null && gatedPage("deck-estimator")?.label === "Deck Studio");
+
+// Classic must not move
+check("Custom plan's picker and price unchanged (10 pages, deck retired)", CUSTOM_PAGES.length === 10 && !CUSTOM_PAGES.some((p) => isToolsOnlyPageId(p.id)) && customPriceCents(["roof-estimator", "deck-estimator"]) === 2000 + 2 * 1000 && normalizeCustomPages(["hire", "texting", "roof-estimator"]).join() === "roof-estimator");
+const noSmart = blockedCustomHrefs(["roof-estimator"]);
+check("a Custom shop without Smart Proposal: the blueprint estimator still blocked, desk and phone", isCustomBlockedPath(noSmart, "/dashboard/blueprint-estimator") && isCustomBlockedPath(noSmart, "/mobile-blueprint-estimator-v1") && isCustomBlockedPath(noSmart, "/dashboard/advanced-ai"));
+const withSmart = blockedCustomHrefs(["smart-proposal"]);
+check("…with Smart Proposal: open; the new pages are never a Custom shop's to block", !isCustomBlockedPath(withSmart, "/dashboard/blueprint-estimator") && ["/dashboard/deck-estimator", "/dashboard/texting", "/dashboard/messages", "/dashboard/hire"].every((h) => !isCustomBlockedPath(noSmart, h)));
+check("the Custom list holds no marker and only Classic hrefs", !noSmart.includes(TOOLS_MARK) && noSmart.every((h) => CUSTOM_PAGES.some((p) => p.href === h) || h === "/dashboard/blueprint-estimator"));
+const lapsedClassic = lapsedBlockedHrefs();
+check("a lapsed Classic shop: the same pages as before (the blueprint estimator with Smart Proposal), nothing new", isCustomBlockedPath(lapsedClassic, "/dashboard/blueprint-estimator") && ["/dashboard/deck-estimator", "/dashboard/texting", "/dashboard/messages", "/dashboard/hire"].every((h) => !isCustomBlockedPath(lapsedClassic, h)) && PAID_FEATURES.every((f) => !f.href || lapsedClassic.includes(f.href)));
+check("a lapsed new-plan shop: its own pages close too", ["/dashboard/deck-estimator", "/dashboard/texting", "/dashboard/messages", "/dashboard/hire"].every((h) => isCustomBlockedPath(lapsedBlockedHrefs(true), h)));
+
+// the new plans' blocked list
+const bdBlocked = toolsBlockedHrefs(bd);
+check("a new-plan list carries the marker and the pages not held", bdBlocked.includes(TOOLS_MARK) && bdBlocked.includes("/dashboard/roof-estimator") && bdBlocked.includes("/dashboard/workers") && bdBlocked.includes("/dashboard/hire") && bdBlocked.includes("/dashboard/pipeline") && !bdBlocked.includes("/dashboard/deck-estimator") && !bdBlocked.includes("/dashboard/calendar") && !bdBlocked.includes(PLAN_ENDED_MARK));
+check("…and blocks the Smart CRM inbox and the quotes through their pages", isCustomBlockedPath(bdBlocked, "/dashboard/inbox") && isCustomBlockedPath(bdBlocked, "/dashboard/quotes") && !isCustomBlockedPath(bdBlocked, "/dashboard/proposals") && !isCustomBlockedPath(bdBlocked, "/dashboard/subscription"));
+
+// the menu
+const hrefsOf = (role: string, locked?: readonly string[]) => navSectionsFor(role, locked).flatMap((s) => flattenNavItems(s.items));
+const ownerTools = hrefsOf("OWNER", bdBlocked);
+check("new plans: the menu leaves out what the shop can't open (no locked rows)", !ownerTools.some((i) => i.locked) && !ownerTools.some((i) => ["/dashboard/roof-estimator", "/dashboard/workers", "/dashboard/hire", "/dashboard/texting", "/dashboard/messages", "/dashboard/phone", "/dashboard/inbox", "/dashboard/pipeline", "/dashboard/subcontractors", "/dashboard/quotes", "/dashboard/blueprint-estimator"].includes(i.href)));
+check("…and keeps what it can (deck, Smart Proposal, calendar, leads, company, projects, subscription)", ["/dashboard/deck-estimator", "/dashboard/advanced-ai", "/dashboard/calendar", "/dashboard/leads", "/dashboard/company", "/dashboard/projects", "/dashboard/subscription", "/dashboard/proposals"].every((h) => ownerTools.some((i) => i.href === h)));
+const salesTools = hrefsOf("SALES", bdBlocked);
+check("…a limited role's menu drops them too", !salesTools.some((i) => i.locked) && !salesTools.some((i) => i.href === "/dashboard/inbox" || i.href === "/dashboard/messages") && salesTools.some((i) => i.href === "/dashboard/leads"));
+const ownerCustom = hrefsOf("OWNER", noSmart);
+check("Classic Custom: the menu still MARKS the rows (padlock), drops nothing", ownerCustom.some((i) => i.href === "/dashboard/advanced-ai" && i.locked) && ownerCustom.some((i) => i.href === "/dashboard/blueprint-estimator" && i.locked) && ownerCustom.some((i) => i.href === "/dashboard/hire" && !i.locked));
+check("Classic, nothing blocked: the map as authored", navSectionsFor("OWNER", []).length === navSectionsFor("OWNER").length && !hrefsOf("OWNER", []).some((i) => i.locked));
+check("Upgrade your plan: the new plans' owner only", showsUpgradePlan("OWNER", bdBlocked) && !showsUpgradePlan("MANAGER", bdBlocked) && !showsUpgradePlan("OWNER", noSmart) && !showsUpgradePlan("OWNER", []) && !showsUpgradePlan("OWNER", undefined) && navDropsBlocked(bdBlocked) && !navDropsBlocked(lapsedClassic) && UPGRADE_PLAN_HREF === "/dashboard/subscription");
+
+// Deck Studio on the new plans
+check("Deck Studio on the new plans follows its tool, not the free days", hasEdition({ lapsed: false, trialing: true, tools: { deck: false } }) === false && hasEdition({ lapsed: false, tools: { deck: true } }) && hasEdition({ lapsed: false, tools: { deck: false }, fullAccess: true }) && hasEdition({ lapsed: false, tools: { deck: false }, granted: true }) && !hasEdition({ lapsed: true, tools: { deck: true } }));
+check("…Classic unchanged: the trial holds it, a paid plan needs the add-on", hasEdition({ lapsed: false, trialing: true }) && !hasEdition({ lapsed: false }) && hasEdition({ lapsed: false, addon: true }));
 
 console.log(bad ? `\n${bad} FAILED` : "\nall ok");
 process.exit(bad ? 1 : 0);

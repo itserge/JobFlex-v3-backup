@@ -120,6 +120,9 @@ export interface AccessFacts {
   granted?: boolean;
   /** The asking user sees everything in this organization (lib/fullAccess hasFullAccess — a platform admin). */
   fullAccess?: boolean;
+  /** A shop on the new plans (Base + Tools, lib/toolPlans/shared) — set only for one: `deck` is whether its plan and
+   *  tools open Deck Studio (the page gate's "deck-estimator"). Absent for every Classic shop. */
+  tools?: { deck: boolean };
 }
 
 /**
@@ -130,6 +133,9 @@ export interface AccessFacts {
  *      no feature line. A Custom plan whose pages include "deck-estimator" bought it as a page: that counts as the
  *      add-on (owner, 2026-10-20), with no second add-on line — the page is off sale; Lone Oak Fence holds it;
  *   3. a platform admin (hasFullAccess) and a complimentary grant, always.
+ * ON THE NEW PLANS (Base + Tools, 2026-11-10) Deck Studio is a tool like the others: open when the plan and tools
+ * hold it — the main tool, on the bill, a try, Complete — and the plan's own free days open nothing more (no trial
+ * shortcut, no Classic add-on line). An admin and a grant still win.
  */
 export function hasEdition(facts: AccessFacts, edition: EditionId = "deck", open: boolean = isEditionOpen(edition)): boolean {
   if (edition === "platform") return true;
@@ -137,6 +143,7 @@ export function hasEdition(facts: AccessFacts, edition: EditionId = "deck", open
   if (!open) return false;
   if (facts.granted) return true;
   if (facts.lapsed) return false;
+  if (facts.tools) return facts.tools.deck;
   return !!facts.trialing || !!facts.addon || !!facts.customDeckPage;
 }
 

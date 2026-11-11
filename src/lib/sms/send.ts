@@ -21,6 +21,10 @@
 //     once Twilio approved it (jobflexSender.ts). No number: a SKIPPED row
 //     "no-number". A company's number texts its team, and anyone else only
 //     after they said yes on the booking page (consent.ts), else "no-consent".
+//   - ON THE NEW PLANS (Base + Tools, 2026-11-10) texts to clients and leads are the Text messaging tool's: a shop
+//     without it texts only its own team (members, the crew, its extra numbers — isTeamPhone) and those texts count
+//     against no allowance; a text to anyone else is refused "not-on-plan" (a SKIPPED row says so). JobFlex's own
+//     texts (format isSystemText) always go. Classic shops are never asked (lib/toolPlans/allowances).
 // Every text is a row in SmsMessage: the usage counter, the delivery status
 // from Twilio's callback, the thing a support question is answered from.
 
@@ -45,6 +49,7 @@ import { houseLineFor } from "./houseLine";
 import { orgMayText } from "@/lib/paidCaps";
 import { smsAllowanceFor } from "@/lib/entitlements";
 import { getOrgPlanById } from "@/lib/orgPlan";
+import { toolsSmsAllowance, toolsTextingClosed } from "@/lib/toolPlans/allowances";
 import { activeCapture } from "@/lib/leadCenter/outboxContext";
 
 const CAP_PER_NUMBER_PER_DAY = 25;
@@ -66,10 +71,13 @@ export type SendTextResult =
   | { ok: true; id: string; status: "SENT" | "HELD" }
   /** `why`: "no-number" (the company has no registered number), "no-consent", "not-configured" (no Twilio here). */
   | { ok: true; id: string; status: "SKIPPED"; why: string }
-  | { ok: false; reason: "invalid-number" | "opted-out" | "duplicate" | "cap" | "trial" | "plan-ended" | "allowance" | "limiter-down" | "failed" };
+  | { ok: false; reason: "invalid-number" | "opted-out" | "duplicate" | "cap" | "trial" | "plan-ended" | "allowance" | "not-on-plan" | "limiter-down" | "failed" };
 
 /** What a member reads when the card-less trial held a text back (lib/trialCaps). */
 export const TRIAL_TEXT_MESSAGE = "The free trial without a card sends no texts except the verification code. Add a card to unlock full limits.";
+
+/** What a member reads when a new-plan shop without Text messaging texts a client or a lead. */
+export const TEXTING_NOT_ON_PLAN_MESSAGE = "Texts to clients and leads come with Text messaging — add it under Upgrade your plan.";
 
 /** What a member reads when the company's plan has ended (lib/paidCaps). */
 export const PLAN_ENDED_TEXT_MESSAGE = "Your plan has ended, so texts from your company's number are paused. Choose a plan on Subscription to send them again.";
@@ -131,9 +139,19 @@ async function dispatch(m: { organizationId: string | null; to: string; body: st
       await db.smsMessage.create({ data: { organizationId: m.organizationId, direction: "OUT", to: m.to, body: m.body, kind: m.kind, status: "SKIPPED", error: "plan-ended" } }).catch(() => null);
       return { ok: false, reason: "plan-ended" };
     }
+    // A new-plan shop without Text messaging (Base + Tools, 2026-11-10): its own team only, and those texts spend
+    // no allowance — the tool's 1,000 a month are for clients and leads. Classic: toolsTextingClosed is false.
+    let teamOnly = false;
+    if (!jobflexOwn && m.organizationId && own && !isSystemText(m.kind) && (await toolsTextingClosed(m.organizationId))) {
+      if (!(await isTeamPhone(m.organizationId, m.to))) {
+        await db.smsMessage.create({ data: { organizationId: m.organizationId, direction: "OUT", to: m.to, body: m.body, kind: m.kind, status: "SKIPPED", error: "not-on-plan" } }).catch(() => null);
+        return { ok: false, reason: "not-on-plan" };
+      }
+      teamOnly = true;
+    }
     // The month's allowance is used: a soft stop, nothing billed (2026-10-26). JobFlex's own texts — billing,
     // codes, HELP — always go (format isSystemText).
-    if (!jobflexOwn && m.organizationId && own && !isSystemText(m.kind) && (await smsAllowanceUsed(m.organizationId))) {
+    if (!jobflexOwn && m.organizationId && own && !teamOnly && !isSystemText(m.kind) && (await smsAllowanceUsed(m.organizationId))) {
       await db.smsMessage.create({ data: { organizationId: m.organizationId, direction: "OUT", to: m.to, body: m.body, kind: m.kind, status: "SKIPPED", error: "allowance" } }).catch(() => null);
       return { ok: false, reason: "allowance" };
     }
@@ -192,11 +210,13 @@ export async function smsAllowanceUsed(organizationId: string): Promise<boolean>
   const monthStart = new Date();
   monthStart.setUTCDate(1);
   monthStart.setUTCHours(0, 0, 0, 0);
-  const [tier, sent] = await Promise.all([
+  const [tier, sent, tools] = await Promise.all([
     getOrgPlanById(organizationId),
     db.smsMessage.count({ where: { organizationId, direction: "OUT", status: { in: ["SENT", "DELIVERED", "QUEUED"] }, createdAt: { gte: monthStart } } }),
+    // The new plans' allowance (lib/toolPlans/allowances); null for a Classic shop, which keeps its tier's.
+    toolsSmsAllowance(organizationId),
   ]);
-  return sent >= smsAllowanceFor(tier);
+  return sent >= (tools ?? smsAllowanceFor(tier));
 }
 
 function msg(err: unknown): string {

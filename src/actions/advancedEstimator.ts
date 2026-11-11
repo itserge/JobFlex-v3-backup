@@ -235,7 +235,8 @@ export async function pricePlanTrade(raw: unknown): Promise<EstimateRun> {
   let organizationId: string;
   try {
     ({ organizationId } = await requireEstimatorOrManager());
-    await requirePage(organizationId, ["smart-proposal"]);
+    // The blueprint estimator's page — Smart Proposal's on a Classic plan (lib/customPlan classicEquivalent).
+    await requirePage(organizationId, ["blueprint-estimator"]);
     const { requireFeatureOrThrow } = await import("@/lib/entitlements");
     const { getOrgPlanById } = await import("@/lib/orgPlan");
     requireFeatureOrThrow(await getOrgPlanById(organizationId), "advanced_estimator");

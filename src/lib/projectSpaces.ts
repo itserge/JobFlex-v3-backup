@@ -11,6 +11,7 @@
 
 import { kindOf, parseAnswers, type ProjectKind } from "@/lib/projectKind";
 import { JOB_TEMPLATE_KEYS } from "@/lib/projectStages/shared";
+import { projectKindPage } from "@/lib/toolPlans/shared";
 
 export const SPACE_IDS = ["build", "remodel", "jobs"] as const;
 export type SpaceId = (typeof SPACE_IDS)[number];
@@ -95,10 +96,16 @@ export function spaceOf(kind: unknown, answersJson?: string | null): SpaceId {
 
 export const spaceHref = (id: SpaceId) => `/dashboard/projects?space=${id}`;
 
-/** Whether the company may work in the workspace. Every workspace is open to everyone until the owner sells them
- *  separately; this is the one place that changes then. */
-export function spaceOpen(id: SpaceId): boolean {
-  return id in SPACES;
+/** Whether the company may work in the workspace. Every workspace is open on every Classic plan; on the new plans
+ *  (Base + Tools, 2026-11-10) New Home Builder is the Home Builder tool's and Remodeler the Remodeler's
+ *  (lib/toolPlans/shared projectKindPage) — `closed` is the list the page gate closed (spacePage of each). */
+export function spaceOpen(id: SpaceId, closed: readonly SpaceId[] = []): boolean {
+  return id in SPACES && !closed.includes(id);
+}
+
+/** The gated id a workspace needs on the new plans, or null for the base one (Job Projects). */
+export function spacePage(id: SpaceId): "home-builder" | "remodeler" | null {
+  return projectKindPage(SPACES[id].kind);
 }
 
 // ── the road ─────────────────────────────────────────────────────────────────

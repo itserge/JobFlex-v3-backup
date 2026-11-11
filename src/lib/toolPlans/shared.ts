@@ -553,6 +553,92 @@ export function shopFromRecord(record: ToolsRecord, now: Date): ShopTools {
   return { plan: record.plan, main: record.main, kept, chosenTrade: record.chosenTrade, trying };
 }
 
+// ── the gate (part 3a) ───────────────────────────────────────────────────────
+// What a new-plan shop may open, in the page gate's ids (lib/customPlan, lib/customPageAccess). Every new plan
+// opens the base pages; the size, the main tool, the tools on the bill and the tries open the rest. Everything
+// else is left out of the menu and refused on the server (owner, 2026-11-10: no locks, no grey rows).
+
+/** The gated ids every new plan opens: the office a contractor can't work without. */
+export const TOOLS_BASE_PAGES = ["smart-proposal", "calendar", "leads", "company"] as const;
+
+/** The ids the gate answers only on the new plans (lib/customPlan TOOLS_PAGES): a Classic shop answers them through
+ *  classicEquivalent, so nothing changes for it. TOOLS[].opens and SizeFeature use the same ids. */
+export const TOOLS_ONLY_PAGE_IDS = [
+  "deck-estimator",
+  "blueprint-estimator",
+  "texting",
+  "team-messages",
+  "hire",
+  "home-builder",
+  "remodeler",
+  "meta-leads",
+  "roles",
+  "commission",
+  "custom-domain",
+  "multi-org",
+  "priority-support",
+] as const;
+export type ToolsOnlyPageId = (typeof TOOLS_ONLY_PAGE_IDS)[number];
+
+const TOOLS_ONLY = new Set<string>(TOOLS_ONLY_PAGE_IDS);
+export function isToolsOnlyPageId(id: unknown): id is ToolsOnlyPageId {
+  return typeof id === "string" && TOOLS_ONLY.has(id);
+}
+
+/**
+ * How a CLASSIC shop answers one of the new ids — so a gate added for the new plans changes nothing for it:
+ *   "blueprint-estimator" → "smart-proposal" (it was Smart Proposal's page, and a Custom plan sells it as that);
+ *   "meta-leads"          → "leads" (the Meta import files into Leads, which a Custom plan sells);
+ *   everything else       → null: not decided by the page gate for a Classic shop — open, as it is today (Deck
+ *                           Studio stays with lib/editions; texting, team messages, Hire, commission, the project
+ *                           workspaces and the rest were never gated by a Classic plan, the Free plan included).
+ */
+export function classicEquivalent(id: ToolsOnlyPageId): "smart-proposal" | "leads" | null {
+  if (id === "blueprint-estimator") return "smart-proposal";
+  if (id === "meta-leads") return "leads";
+  return null;
+}
+
+/**
+ * The gated ids a new-plan shop can open now: the base pages, what its size opens, and what its tools open — the
+ * main tool, the tools on the bill, the ones closing at the month's end and the tries still running. The slug's size
+ * wins over the record's (Subscription.plan is what Stripe bills); with no record, the size alone.
+ */
+export function toolsPagesOpen(record: ToolsRecord | null, planSlug: string | null | undefined, now: Date): Set<string> {
+  const ids = new Set<string>(TOOLS_BASE_PAGES);
+  const size = toolPlanBySlug(planSlug);
+  const base = record ? (size && record.plan !== size.id ? { ...record, plan: size.id } : record) : size ? emptyToolsRecord(size.id) : null;
+  if (!base) return ids;
+  const shop = shopFromRecord(base, now);
+  pagesOpen(shop).forEach((id) => ids.add(id));
+  if (shop.main) toolById(shop.main).opens.forEach((id) => ids.add(id));
+  return ids;
+}
+
+/** What sells a gated id: the tools that open it (the first is the one to offer), else the first size that does. */
+export type ToolOffering = { kind: "tool"; tool: ToolDef; also: ToolDef[] } | { kind: "size"; plan: ToolPlanDef } | null;
+
+export function toolOffering(id: string, cat: Catalog = DEFAULT_CATALOG): ToolOffering {
+  const tools = cat.tools.filter((t) => t.opens.includes(id));
+  if (tools.length) return { kind: "tool", tool: tools[0], also: tools.slice(1) };
+  const plan = cat.plans.find((p) => (p.features as readonly string[]).includes(id));
+  return plan ? { kind: "size", plan } : null;
+}
+
+/** The workspace tool a project kind needs on a new plan (lib/projectKind): a remodel Remodeler, a new build Home
+ *  Builder; a job project (and any other kind) is the base workspace's. */
+export function projectKindPage(kind: string | null | undefined): "remodeler" | "home-builder" | null {
+  if (kind === "REMODEL") return "remodeler";
+  if (kind === "NEW_BUILD") return "home-builder";
+  return null;
+}
+
+/** Texts a month with Text messaging on a new plan; without it the shop texts only its own team (lib/sms/send). */
+export const TOOLS_TEXT_ALLOWANCE = 1000;
+/** AI desk minutes a month on a new plan: Advanced and Complete include the desk; a size that adds it gets fewer. */
+export const TOOLS_DESK_MINUTES_INCLUDED = 500;
+export const TOOLS_DESK_MINUTES_ADDED = 150;
+
 /** Tries whose time is up and that nobody removed: the sweep puts them on the bill (lib/toolPlans/billing). */
 export function triesToBill(record: ToolsRecord, now: Date): ToolId[] {
   return (Object.entries(record.tries) as Array<[ToolId, ToolTry]>)
