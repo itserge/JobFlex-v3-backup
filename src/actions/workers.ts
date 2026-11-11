@@ -15,6 +15,7 @@ import { sendText } from "@/lib/sms/send";
 import { welcomeText } from "@/lib/sms/format";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { requirePage } from "@/lib/customPageAccess";
+import { requireTeamRoles } from "@/lib/toolPlans/gates";
 
 const inviteInput = z.object({
   name: z.string().min(1),
@@ -67,6 +68,8 @@ async function inviteWorker(raw: unknown) {
   const { organizationId, user: inviter } = await requireManager();
   await requirePage(organizationId, "workers");
   const data = inviteInput.parse(raw);
+  // An office or sales seat (not a field worker) is a team role: a size's on the new plans, open on Classic.
+  if (data.role !== "INSTALLER") await requireTeamRoles(organizationId);
 
   // Manager seats are plan-metered (owner's call, 2026-08-31): the crew flow
   // writes the membership at invite time, so the seat is charged here.
@@ -397,6 +400,8 @@ export async function updateWorker(raw: unknown) {
   await requirePage(organizationId, "workers");
   let previousRole: string | null | undefined;
   const data = updateWorkerInput.parse(raw);
+  // An office or sales role is a team role: a size's on the new plans (lib/toolPlans/gates), open on Classic.
+  if (data.role && data.role !== "INSTALLER") await requireTeamRoles(organizationId);
   const w = await db.workerProfile.findUnique({ where: { id: data.id } });
   if (!w || w.organizationId !== organizationId) throw new Error("Not found");
   await db.workerProfile.update({

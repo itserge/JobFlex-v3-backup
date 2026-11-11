@@ -30,10 +30,13 @@ export function ProjectsContent({
   projects,
   allProjects,
   space,
+  closed = [],
   clients = [],
   canAddClient = false,
   autoLocked = false,
 }: {
+  /** The workspaces the plan doesn't hold (the new plans' tools — lib/projectSpacesServer): no switch link to them. */
+  closed?: readonly SpaceId[];
   /** On the Free plan (owner, 2026-11-09): Automatic projects is a project tool — its button is not drawn. */
   autoLocked?: boolean;
   projects: Project[];
@@ -71,6 +74,7 @@ export function ProjectsContent({
       {space ? (
         <SpaceHeader
           space={space}
+          closed={closed}
           rows={allProjects ?? projects}
           actions={
             <>

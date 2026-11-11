@@ -102,3 +102,39 @@
 .userCards article>a { color:var(--accent); font-size:13px; font-weight:700; display:inline-flex; align-items:center; min-height:44px; }
 .mobile .pagination { padding:16px; gap:8px; }
 .mobile .pagination .button { padding:8px 12px; }
+/* THE NEW PLANS (Base + Tools, part 5 — ./tool-plans-section). Two classes on every rule: the admin shell's reset
+   must not win on a production build. */
+.root .tools { margin-top:24px; }
+.root .toolsHead { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; padding:24px 24px 16px; }
+.root .toolsHead h2 { margin-top:6px; }
+.root .toolsSwitch { font-size:12px; font-weight:700; color:var(--ink-soft); border:1px solid var(--ink-line); padding:6px 10px; text-align:right; }
+.root .toolsEmpty { margin:0; padding:0 24px 24px; font-size:15px; font-weight:700; }
+.root .toolsTiles { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); border-top:1px solid var(--ink-line); border-bottom:1px solid var(--ink-line); }
+.root .toolsTile { padding:16px 20px; border-right:1px solid var(--ink-line); min-width:0; }
+.root .toolsTile:last-child { border-right:0; }
+.root .toolsTile>span { display:block; font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; }
+.root .toolsTile strong { display:block; font-size:clamp(22px,2vw,28px); font-weight:900; letter-spacing:-.03em; margin:6px 0; }
+.root .toolsTile small { display:block; font-size:12px; color:var(--ink-soft); }
+.root .toolsBlock { padding:20px 24px 4px; }
+.root .toolsBlock h3 { font-size:14px; font-weight:800; margin:0 0 8px; }
+.root .toolsBlock td { padding:12px 16px; }
+.root .toolsBlock th { padding:12px 16px; }
+.root .toolsNote { margin:0; font-size:13px; color:var(--ink-soft); }
+.root .toolsCards article { padding:12px 0; border-bottom:1px solid var(--ink-line); font-size:13px; }
+.root .toolsCards article:last-child { border-bottom:0; }
+.root .toolsCards article>div { display:flex; justify-content:space-between; gap:12px; align-items:baseline; }
+.root .toolsCards article strong { font-weight:900; }
+.root .toolsCards article p { margin:4px 0 0; color:var(--ink-soft); font-size:12px; overflow-wrap:anywhere; }
+.root .toolsLine { margin:0; padding:16px 24px; font-size:13px; border-top:1px solid var(--ink-line); }
+.root .toolsFoot { padding:0 24px 20px; font-size:12px; color:var(--ink-soft); line-height:1.6; }
+.root .toolsFoot p { margin:4px 0; max-width:900px; }
+.mobile .toolsHead { flex-direction:column; padding:20px 16px 12px; gap:10px; }
+.mobile .toolsSwitch { text-align:left; }
+.mobile .toolsEmpty { padding:0 16px 20px; }
+.mobile .toolsTiles { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.mobile .toolsTile { padding:12px 16px; border-bottom:1px solid var(--ink-line); }
+.mobile .toolsTile:nth-child(2n) { border-right:0; }
+.mobile .toolsTile:nth-last-child(-n+2) { border-bottom:0; }
+.mobile .toolsBlock { padding:16px 16px 4px; }
+.mobile .toolsLine { padding:12px 16px; }
+.mobile .toolsFoot { padding:0 16px 16px; }

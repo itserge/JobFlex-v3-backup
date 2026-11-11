@@ -26,6 +26,9 @@ import {
 import { customPriceCents, normalizeCustomPages } from "@/lib/customPlan";
 import { CARD_EXPAND, expandedCustomer, NO_CARD, paymentCardOf, paymentCardsFor, type PaymentCard } from "@/lib/paymentCard";
 import { planLine } from "@/lib/deckAddon";
+import { isToolsSlug, parseToolsRecord, planIdOfKind } from "@/lib/toolPlans/shared";
+import { catalogToolsLines, lineMonthlyCents, toolsRowLabel, type ToolsLine } from "@/lib/toolPlans/numbers";
+import { readToolCatalog } from "@/lib/toolPlans/prices";
 
 // The MRR rule itself lives in that module — see its header. This file only
 // establishes the FACTS each rule reads: which organization a subscription
@@ -65,6 +68,11 @@ export interface SubscriberRow extends BillingFacts {
    *  current subscription, ended. The page lists it as "Free (was <plan>)";
    *  any other ended subscription (one an upgrade replaced) stays hidden. */
   onFree: boolean;
+  /** THE NEW PLANS (Base + Tools, part 5): a "tools-" subscription's lines — the plan's, each tool's, the extra
+   *  people's — each told by its price's kind (lib/toolPlans/shared), for Admin → Revenue's "New plans" numbers
+   *  (lib/toolPlans/numbers). From Stripe's items when Stripe was read, else at the catalog's prices (fromRecord);
+   *  absent on a Classic row and on a row that bills nothing (a grant, an unconfirmed record). */
+  toolsLines?: ToolsLine[] | null;
 }
 
 export interface SubscribersData {
@@ -277,6 +285,10 @@ function lastEventOf(sub: Stripe.Subscription): { at: Date; kind: ChangeKind } {
  * a price the ledger has never seen falls through to the checkout metadata.
  */
 function planFor(sub: Stripe.Subscription, slugByPrice: ReadonlyMap<string, string>): string {
+  // The new plans (Base + Tools): the plan's line names its size by its own kind ("tools-professional"). Their prices
+  // are minted by lib/stripePriceCache and never reach the ledger, and the line is found by its kind, never its amount.
+  const toolsKind = sub.items.data.map((i) => i.price?.metadata?.jfKind).find((k) => planIdOfKind(k));
+  if (toolsKind) return toolsKind.toUpperCase();
   const priceId = planLine(sub.items.data)?.price?.id;
   const ledgerSlug = priceId ? slugByPrice.get(priceId) : undefined;
   if (ledgerSlug) return ledgerSlug;
@@ -545,6 +557,17 @@ async function fromStripe(withCards: boolean): Promise<SubscribersData> {
     const event = lastEventOf(sub);
 
     const plan = planFor(sub, slugByPrice);
+    // A new-plan subscription's lines, each with its own price and term (the gross above already counts every one of
+    // them with its quantity — these only say which is which).
+    const toolsLines: ToolsLine[] | null = isToolsSlug(plan)
+      ? priceable.map((i) => ({
+          kind: i.price?.metadata?.jfKind ?? "",
+          unitCents: i.price?.unit_amount ?? 0,
+          quantity: i.quantity ?? 1,
+          interval: i.price?.recurring?.interval ?? "month",
+          intervalCount: i.price?.recurring?.interval_count ?? 1,
+        }))
+      : null;
     return {
       id: sub.id,
       source: "stripe",
@@ -553,7 +576,7 @@ async function fromStripe(withCards: boolean): Promise<SubscribersData> {
       ownerEmail: org?.ownerEmail ?? org?.billingEmail ?? custEmail,
       customerEmail: custEmail,
       plan,
-      planName: plan === "—" ? "—" : planDisplayName(plan, planNames),
+      planName: plan === "—" ? "—" : toolsLines ? toolsRowLabel(plan, toolsLines) : planDisplayName(plan, planNames),
       status,
       paid: PAID_STATUSES.has(status) && !paused,
       paused,
@@ -578,6 +601,7 @@ async function fromStripe(withCards: boolean): Promise<SubscribersData> {
       changeKind: event.kind,
       card: cardBook ? (cardBook.has(sub.id) ? cardBook.get(sub.id)! : paymentCardOf(sub, cust)) : null,
       onFree: isFreeRecord(status, recordBySubId.get(sub.id), sub.id),
+      toolsLines,
     };
   });
 
@@ -614,7 +638,7 @@ async function fromStripe(withCards: boolean): Promise<SubscribersData> {
       ownerEmail: org.ownerEmail ?? org.billingEmail,
       customerEmail: null,
       plan: r.plan,
-      planName: planDisplayName(r.plan, planNames),
+      planName: isToolsSlug(r.plan) ? toolsRowLabel(r.plan) : planDisplayName(r.plan, planNames),
       status,
       // Stripe is the source on this path and it did not bill for this row.
       paid: false,
@@ -724,6 +748,17 @@ async function fromRecord(
   const attrBySub = new Map(attributions.map((a) => [a.stripeSubscriptionId, a]));
   const priceById = new Map(planPrices.map((p) => [p.stripePriceId, p]));
   const primaryCurrency = modalValue(planPrices.map((p) => p.currency)) ?? "usd";
+  // The new plans' shops (Base + Tools, part 5): priced from the new plans' catalog and each shop's record, as a
+  // Classic row is priced from the Classic catalog below. Read only when there is one — a Classic-only record reads
+  // nothing more than before.
+  const toolsOrgIds = records.filter((r) => isToolsSlug(r.plan)).map((r) => r.organizationId);
+  const [toolsCatalog, toolsRecords] = toolsOrgIds.length
+    ? await Promise.all([
+        readToolCatalog(),
+        db.syncState.findMany({ where: { key: { in: toolsOrgIds.map((id) => `orgTools:${id}`) } }, select: { key: true, cursor: true } }),
+      ])
+    : [null, []];
+  const toolsRecordByOrg = new Map(toolsRecords.map((row) => [row.key.slice("orgTools:".length), parseToolsRecord(row.cursor)]));
 
   const rows: SubscriberRow[] = records.map((r) => {
     const org = orgInfo(r.organization);
@@ -738,11 +773,18 @@ async function fromRecord(
     let amountCents = 0;
     let pricedBy: PricedBy = "none";
     let currency = primaryCurrency;
+    let toolsLines: ToolsLine[] | null = null;
     const priceRow = r.stripePriceId ? priceById.get(r.stripePriceId) : undefined;
     if (priceRow) {
       amountCents = monthlyCentsFromPlanPrice(priceRow.unitAmountCents, priceRow.interval);
       currency = priceRow.currency.toLowerCase();
       pricedBy = "price-row";
+    } else if (isToolsSlug(r.plan) && toolsCatalog) {
+      // The plan, the main tool, the tools on its bill and the extra people, at the prices in force — monthly list
+      // prices, so a yearly shop is overstated exactly as a yearly Classic row priced from the catalog is ("catalog").
+      toolsLines = catalogToolsLines(toolsRecordByOrg.get(r.organizationId) ?? null, r.plan, toolsCatalog);
+      amountCents = toolsLines.reduce((n, l) => n + lineMonthlyCents(l), 0);
+      pricedBy = "catalog";
     } else {
       const key = r.plan.toUpperCase();
       if (Object.prototype.hasOwnProperty.call(catalogCents, key)) {
@@ -754,6 +796,7 @@ async function fromRecord(
     if (comped) {
       amountCents = 0;
       pricedBy = "none";
+      toolsLines = null;
     }
 
     const mrrExcludedFor: MrrExclusion =
@@ -773,7 +816,7 @@ async function fromRecord(
       ownerEmail: org.ownerEmail ?? org.billingEmail,
       customerEmail: null,
       plan: r.plan,
-      planName: planDisplayName(r.plan, planNames),
+      planName: isToolsSlug(r.plan) ? toolsRowLabel(r.plan, toolsLines ?? []) : planDisplayName(r.plan, planNames),
       status,
       paid: PAID_STATUSES.has(status) && !comped,
       paused: false, // the record has no pause column; only Stripe knows
@@ -801,6 +844,7 @@ async function fromRecord(
       changeKind: "updated",
       card: null, // Stripe was not read
       onFree: onFreePlan(r),
+      toolsLines,
     };
   });
 

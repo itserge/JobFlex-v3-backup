@@ -3,7 +3,7 @@
 // holds the machine). Every refusal is RETURNED as words, never thrown: a
 // production build withholds a thrown server-action message (2026-10-07).
 import { cookies } from "next/headers";
-import { parseSpotlightTool } from "@/lib/planSpotlight";
+import { keptAdTool } from "@/lib/planSpotlight";
 import { z } from "zod";
 import { TRADE_TYPES } from "@/lib/tradeTypes";
 import { trafficIdentitySchema } from "@/lib/traffic-capture-server";
@@ -100,7 +100,7 @@ export async function startOtpSignup(raw: unknown): Promise<Sent | Refused> {
       name: data.name,
       createdAt: reuse && prev ? prev.createdAt : Date.now(),
       industry: data.industry,
-      tool: parseSpotlightTool(data.tool),
+      tool: keptAdTool(data.tool),
       utm: data.utm,
       attribution: data.attribution ?? null,
       fbclid: data.fbclid,
@@ -269,7 +269,7 @@ export async function startOtpGoogleSignup(raw: unknown): Promise<{ ok: true; si
         email: g.email,
         name: g.name || data.name || "",
         industry: data.industry,
-        tool: parseSpotlightTool(data.tool),
+        tool: keptAdTool(data.tool),
         utm: data.utm,
         attribution: data.attribution ?? null,
         analytics: data.analytics,
@@ -313,7 +313,7 @@ export async function startQuickSignup(raw: unknown): Promise<{ ok: true; signup
         email: data.email,
         name: data.name,
         industry: data.industry,
-        tool: parseSpotlightTool(data.tool),
+        tool: keptAdTool(data.tool),
         utm: data.utm,
         attribution: data.attribution ?? null,
         analytics: data.analytics,

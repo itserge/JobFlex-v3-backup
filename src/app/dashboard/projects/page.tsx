@@ -23,7 +23,8 @@ import { ProjectsContent } from "@/components/v3/projects-blueprint/projects-con
 import { loadProjectBook } from "@/components/v3/projects-blueprint/project-book-load";
 import { ProjectSpacesHome } from "@/components/v3/projects-blueprint/project-spaces";
 import { spaceOfRow } from "@/components/v3/projects-blueprint/project-spaces-data";
-import { SPACE_IDS, parseSpace, spacePage, type SpaceId } from "@/lib/projectSpaces";
+import { parseSpace, spacePage } from "@/lib/projectSpaces";
+import { closedProjectSpaces } from "@/lib/projectSpacesServer";
 import { isPageLocked } from "@/lib/customPageAccess";
 import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
@@ -53,11 +54,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   // THE WORKSPACE TOOLS (Base + Tools, 2026-11-10): on the new plans New Home Builder and Remodeler are tools — a
   // workspace the plan doesn't hold has no card, and its address shows the tool's card. Every Classic plan opens all
   // three (isPageLocked answers them open), so nothing changes there.
-  const closed: SpaceId[] = [];
-  for (const id of SPACE_IDS) {
-    const page = spacePage(id);
-    if (page && (await isPageLocked(organizationId, page))) closed.push(id);
-  }
+  const closed = await closedProjectSpaces(organizationId);
   if (!space) return <ProjectSpacesHome rows={await loadProjectBook(organizationId)} closed={closed} />;
   const spaceGate = closed.includes(space) ? spacePage(space) : null;
   if (spaceGate) {
@@ -78,5 +75,5 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   const clients = clientRows.map((c) => ({ id: c.id, name: c.name, street: (c.address ?? "").split("\n")[0]?.trim() ?? "" }));
 
   // "+ New client…" is createClient's door: sales and managers (an estimator is refused there).
-  return <ProjectsContent key={space} space={space} allProjects={rows} projects={rows.filter((p) => spaceOfRow(p) === space)} clients={clients} canAddClient={!isEstimatorRole(role) && !isWorkerRole(role)} autoLocked={await isPageLocked(organizationId, "project-tools")} />;
+  return <ProjectsContent key={space} space={space} closed={closed} allProjects={rows} projects={rows.filter((p) => spaceOfRow(p) === space)} clients={clients} canAddClient={!isEstimatorRole(role) && !isWorkerRole(role)} autoLocked={await isPageLocked(organizationId, "project-tools")} />;
 }

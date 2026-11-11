@@ -1,4 +1,4 @@
-// BASE + TOOLS — the new plans' rules (2026-11-10, parts 1–4), on the catalog as set. No database.
+// BASE + TOOLS — the new plans' rules (2026-11-10, parts 1–5), on the catalog as set. No database.
 //   NODE_PATH="" npx tsx --tsconfig tsconfig.json qa/tests/logic/tool-plans.check.ts
 
 import {
@@ -64,7 +64,8 @@ import {
 import { flattenNavItems, navDropsBlocked, navSectionsFor, showsUpgradePlan, UPGRADE_PLAN_HREF } from "@/components/v3/blueprint-shell/nav-map";
 import { hasEdition } from "@/lib/editions";
 import { spaceOpen, spacePage, SPACE_IDS } from "@/lib/projectSpaces";
-import { SPOTLIGHT_TOOLS, TOOLS_AD, TOOLS_AD_KEYS, adToolFor, parseAdTool, parseSpotlightTool, spotlightFor } from "@/lib/planSpotlight";
+import { SPOTLIGHT_TOOLS, TOOLS_AD, TOOLS_AD_KEYS, adToolFor, keptAdTool, parseAdTool, parseSpotlightTool, spotlightFor } from "@/lib/planSpotlight";
+import { catalogToolsLines, lineMonthlyCents, toolPlansNumbers, toolsFirstBill, toolsRowLabel, tryOutcome, type NumbersRow, type ToolsLine } from "@/lib/toolPlans/numbers";
 import { adKeyOf, isToolsCatalog, mainToolFor, toolsBanner, toolsChoice, toolsPlanDTOs, toolsPlanFromAsk, toolsSignupPick, toolsSizeSwitch, withPlanQuery } from "@/lib/toolPlans/cards";
 import { autoPlanFor } from "@/lib/signupAutoPlan";
 import { isAddonLine, planLine } from "@/lib/deckAddon";
@@ -368,6 +369,83 @@ check("the size a sign-up opens on: the card's ?plan=, else Professional", tools
 check("a real pick is read", JSON.stringify(toolsSignupPick({ plan: "tools-professional", tool: "deck" })) === '{"plan":"professional","main":"deck"}' && JSON.stringify(toolsSignupPick({ plan: "TOOLS-BASIC", tool: "Roof" })) === '{"plan":"basic","main":"roof"}');
 check("…no tool is the plan alone", toolsSignupPick({ plan: "tools-advanced", tool: "" })?.main === null && toolsSignupPick({ plan: "tools-advanced", tool: "none" })?.main === null && toolsSignupPick({ plan: "tools-advanced", tool: null })?.main === null && toolsSignupPick({ plan: "tools-advanced", tool: undefined })?.main === null);
 check("a forged pick is refused: a made-up size, a Classic slug, a tool that isn't ours, a price", toolsSignupPick({ plan: "tools-enterprise", tool: "deck" }) === null && toolsSignupPick({ plan: "professional", tool: "deck" }) === null && toolsSignupPick({ plan: "tools-professional", tool: "laser" }) === null && toolsSignupPick({ plan: "tools-professional", tool: "1" }) === null && toolsSignupPick({ plan: null, tool: "deck" }) === null && toolsSignupPick({ plan: "tools-", tool: null }) === null);
+
+// ── part 5: the ad key a sign-up keeps (the Google round trip) ──
+check("a new plans' key is kept as its key: video, crm from smartcrm, home-builder from builder", keptAdTool("video") === "video" && keptAdTool("smartcrm") === "crm" && keptAdTool("builder") === "home-builder" && keptAdTool(" Remodel ") === "remodeler");
+check("…a Classic key as it was, the first good candidate wins, nothing is nothing", keptAdTool("roofing") === "roof" && keptAdTool(null, "deck") === "deck" && keptAdTool("laser", "crm") === "crm" && keptAdTool("smartcrm", "roof") === "crm" && keptAdTool() === undefined && keptAdTool(null, undefined, "") === undefined);
+check("…switch off on the register page (no main tool): the spotlight, exactly as before", SPOTLIGHT_TOOLS.every((k) => keptAdTool(null, k) === k));
+check("…every tool's own id round-trips to the same main tool", TOOLS.every((t) => mainToolFor({ tool: keptAdTool(t.id) ?? null }) === t.id));
+check("…and a kept new key is no tool to every Classic reader", TOOLS_AD_KEYS.every((k) => parseSpotlightTool(keptAdTool(k)) === undefined));
+
+// ── part 5: the numbers ──
+const month = (kind: string, unitCents: number, quantity = 1): ToolsLine => ({ kind, unitCents, quantity, interval: "month", intervalCount: 1 });
+const year = (kind: string, unitCents: number, quantity = 1): ToolsLine => ({ kind, unitCents, quantity, interval: "year", intervalCount: 1 });
+check("a line's month: monthly as is, yearly ÷ 12, the quantity counted", lineMonthlyCents(month("tool-deck", 7900)) === 7900 && lineMonthlyCents(year("tool-deck", 79000)) === 6583 && lineMonthlyCents(month("seat", 999, 3)) === 2997 && lineMonthlyCents(year("seat", 9990, 2)) === 1665 && lineMonthlyCents({ ...month("x", 1200), intervalCount: 3 }) === 400);
+const nrow = (id: string, plan: string, status: string, amountCents: number, lines: ToolsLine[] | null, extra: Partial<NumbersRow> = {}): NumbersRow => ({ id, organizationId: `org_${id}`, plan, status, countsTowardMrr: status === "ACTIVE", amountCents, toolsLines: lines, ...extra });
+const nRows: NumbersRow[] = [
+  // Professional + Deck Studio + Roof, 2 extra people: 7500 + 7900 + 4900 + 1998 = 22298
+  nrow("a", "TOOLS-PROFESSIONAL", "ACTIVE", 22298, [month("tools-professional", 7500), month("tool-deck", 7900), month("tool-roof", 4900), month("seat", 999, 2)]),
+  // Basic + Deck Studio, yearly: (39990 + 79000) / 12 = 3333 + 6583 = 9916
+  nrow("b", "TOOLS-BASIC", "ACTIVE", 9916, [year("tools-basic", 39990), year("tool-deck", 79000)]),
+  // Advanced in its trial: a shop, not MRR
+  nrow("c", "TOOLS-ADVANCED", "TRIALING", 0, [month("tools-advanced", 24900)]),
+  // Professional with a 50% coupon: lines 7500 + 2900, MRR 5200
+  nrow("d", "TOOLS-PROFESSIONAL", "ACTIVE", 5200, [month("tools-professional", 7500), month("tool-texting", 2900)]),
+  // a canceled new-plan subscription and the Free plan's row: neither is a shop
+  nrow("e", "TOOLS-BASIC", "CANCELED", 0, [month("tools-basic", 3999)]),
+  nrow("f", "TOOLS-BASIC", "CANCELED", 0, null, { onFree: true }),
+  // Classic: two paying, one in trial
+  nrow("g", "PROFESSIONAL", "ACTIVE", 9500, null),
+  nrow("h", "STARTER", "ACTIVE", 4500, null),
+  nrow("i", "PROFESSIONAL", "TRIALING", 0, null),
+];
+const rec5 = (plan: "basic" | "professional" | "advanced" | "complete", main: ReturnType<typeof emptyToolsRecord>["main"], tries: ReturnType<typeof emptyToolsRecord>["tries"], chosenTrade: ReturnType<typeof emptyToolsRecord>["chosenTrade"] = []) => ({ ...emptyToolsRecord(plan, main), tries, chosenTrade });
+const T = (x: Partial<{ billedAt: string; removedAt: string; failedAt: string; remindedAt: string }> = {}, endsAt = "2026-11-18T12:00:00Z") => ({ startedAt: "2026-11-15T12:00:00Z", endsAt, onLine: false, ...x });
+const nRecords = [
+  { organizationId: "org_a", record: rec5("professional", "deck", { roof: T({ billedAt: "2026-11-18T13:00:00Z", remindedAt: "2026-11-17T12:00:00Z" }), texting: T({ removedAt: "2026-11-16T09:00:00Z" }), smartcrm: T({}, "2026-11-23T12:00:00Z") }) },
+  { organizationId: "org_b", record: rec5("basic", "deck", { roof: T({ failedAt: "2026-11-18T13:00:00Z", remindedAt: "2026-11-17T12:00:00Z" }), video: T({ removedAt: "2026-11-16T00:00:00Z" }) }) },
+  // Advanced: the office set is included — a texting try there was taken in by the size, so it's kept
+  { organizationId: "org_c", record: rec5("advanced", "hvac", { texting: T({}, "2026-11-25T12:00:00Z") }, ["hvac"]) },
+  { organizationId: "org_d", record: rec5("professional", null, {}) },
+];
+const n5 = toolPlansNumbers({ rows: nRows, records: nRecords });
+check("shops on the new plans: the live ones only (4 — not the canceled one, not the Free row)", n5.shops === 4 && n5.paying === 3 && n5.trialing === 1 && !n5.empty, { shops: n5.shops, paying: n5.paying, trialing: n5.trialing });
+const sz = (id: string) => n5.bySize.find((x) => x.plan === id)!;
+check("…by size: Basic 1, Professional 2, Advanced 1 (in trial), Complete 0", sz("basic").shops === 1 && sz("professional").shops === 2 && sz("advanced").shops === 1 && sz("advanced").trialing === 1 && sz("advanced").paying === 0 && sz("complete").shops === 0);
+check("MRR split: new plans 37,414 (22,298 + 9,916 + 5,200) vs Classic 14,000; trials count for nothing", n5.mrr.newCents === 37414 && n5.mrr.classicCents === 14000 && n5.mrr.newSubs === 3 && n5.mrr.classicSubs === 2 && Math.abs((n5.mrr.newShare ?? 0) - 37414 / 51414) < 1e-9, n5.mrr);
+check("by size is the plan line + the extra people: Professional 7,500 + 1,998 + 7,500, two extra people", sz("professional").mrrCents === 7500 + 1998 + 7500 && sz("professional").extraPeople === 2 && sz("professional").paying === 2, sz("professional"));
+check("…a yearly Basic line ÷ 12 (39,990 → 3,333)", sz("basic").mrrCents === 3333, sz("basic"));
+const tl = (id: string) => n5.byTool.find((x) => x.tool === id)!;
+check("by tool: Deck Studio 7,900 + 6,583 (yearly ÷ 12) on 2 bills; Roof 4,900; Text messaging 2,900 (before the coupon)", tl("deck").mrrCents === 14483 && tl("deck").paying === 2 && tl("roof").mrrCents === 4900 && tl("texting").mrrCents === 2900 && tl("video").mrrCents === 0, { deck: tl("deck"), roof: tl("roof") });
+check("…the coupon is said, not hidden: 1 shop, 5,200 a month", n5.coupons.rows === 1 && n5.coupons.gapCents === 5200, n5.coupons);
+check("…nothing double counted: every paying line adds up to MRR + the coupon gap", n5.bySize.reduce((a, x) => a + x.mrrCents, 0) + n5.byTool.reduce((a, x) => a + x.mrrCents, 0) === n5.mrr.newCents + n5.coupons.gapCents);
+check("main tools: Deck Studio for 2 live shops, HVAC 1; a record with none adds none", tl("deck").mainOf === 2 && tl("hvac").mainOf === 1 && n5.byTool.reduce((a, x) => a + x.mainOf, 0) === 3);
+check("tries: 6 started — kept 2 (billed; taken in by Advanced), removed 2, declined 1, open 1; 2 reminders", n5.tries.started === 6 && n5.tries.kept === 2 && n5.tries.removed === 2 && n5.tries.declined === 1 && n5.tries.open === 1 && n5.tries.reminded === 2, n5.tries);
+check("…keep rate: kept ÷ decided = 2 ÷ 5", n5.tries.keepRate === 2 / 5, n5.tries.keepRate);
+check("…per tool: Roof 1 of 2 kept (50%), Text messaging 1 of 2 (removed on Professional, kept on Advanced), Smart CRM still open (no rate)", tl("roof").tries.keepRate === 0.5 && tl("roof").tries.started === 2 && tl("texting").tries.kept === 1 && tl("texting").tries.removed === 1 && tl("smartcrm").tries.open === 1 && tl("smartcrm").tries.keepRate === null);
+check("…a try of the shop's own main tool counts as kept (switching stamps it removed, it is never billed twice)", tryOutcome("deck", T({ removedAt: "2026-11-16T00:00:00Z" }), { plan: "basic", main: "deck", chosenTrade: [] }) === "kept" && tryOutcome("roof", T({ removedAt: "2026-11-16T00:00:00Z" }), { plan: "basic", main: "deck", chosenTrade: [] }) === "removed");
+const n0 = toolPlansNumbers({ rows: nRows.filter((r) => !r.plan.startsWith("TOOLS")), records: [] });
+check("EMPTY: no shop on the new plans and no record — empty, zeros, Classic MRR still counted", n0.empty && n0.shops === 0 && n0.mrr.newCents === 0 && n0.mrr.classicCents === 14000 && n0.mrr.newShare === 0 && n0.tries.started === 0 && n0.tries.keepRate === null && n0.byTool.every((x) => x.mrrCents === 0));
+check("…and with nothing at all, no share to speak of", toolPlansNumbers({ rows: [], records: [] }).mrr.newShare === null && toolPlansNumbers({ rows: [], records: [] }).empty);
+const twice = toolPlansNumbers({ rows: [nrow("s1", "TOOLS-PROFESSIONAL", "ACTIVE", 7500, [month("tools-professional", 7500)], { organizationId: "org_x", source: "stripe" }), nrow("r1", "TOOLS-PROFESSIONAL", "ACTIVE", 0, null, { organizationId: "org_x", source: "record", countsTowardMrr: false })], records: [] });
+check("a shop listed twice (Stripe's subscription and an older record Stripe didn't return) is one shop; MRR once", twice.shops === 1 && twice.bySize.find((x) => x.plan === "professional")!.shops === 1 && twice.mrr.newCents === 7500 && twice.paying === 1, { shops: twice.shops, size: twice.bySize.find((x) => x.plan === "professional") });
+check("a paying row nobody could price is counted in MRR and said, never guessed", toolPlansNumbers({ rows: [nrow("z", "TOOLS-BASIC", "ACTIVE", 3999, null)], records: [] }).unpriced === 1 && toolPlansNumbers({ rows: [nrow("z", "TOOLS-BASIC", "ACTIVE", 3999, null)], records: [] }).mrr.newCents === 3999);
+
+// ── part 5: the subscribers list's name for a new-plan row ──
+check("row label: the size by the plan line's kind, then its tools and extra people", toolsRowLabel("TOOLS-PROFESSIONAL", [month("tools-professional", 7500), month("tool-roof", 4900), month("tool-deck", 7900), month("seat", 999, 2)]) === "Professional · new plans · Roof estimator + Deck Studio · +2 people", toolsRowLabel("TOOLS-PROFESSIONAL", [month("tools-professional", 7500), month("tool-roof", 4900), month("tool-deck", 7900), month("seat", 999, 2)]));
+check("…the line's kind wins over a stale slug; no lines is the size alone", toolsRowLabel("TOOLS-BASIC", [month("tools-advanced", 24900)]) === "Advanced · new plans" && toolsRowLabel("TOOLS-COMPLETE") === "Complete · new plans" && toolsRowLabel("TOOLS-BASIC", [month("tools-basic", 3999), month("seat", 999, 1)]) === "Basic · new plans · +1 person");
+
+// ── part 5: the record's lines at the catalog's prices, and the first bill ──
+const billRec = { ...emptyToolsRecord("professional", "deck"), lines: { deck: { itemId: "si_1", cents: 7900, since: "x" }, roof: { itemId: "si_2", cents: 4900, since: "x" } }, seat: { itemId: "si_3", quantity: 2, cents: 999 } };
+const billLines = catalogToolsLines(billRec, "tools-professional");
+check("catalog lines: plan, main + kept tools, extra people — their sum is the Subscription page's month", billLines.map((l) => `${l.kind}:${lineMonthlyCents(l)}`).join() === "tools-professional:7500,tool-deck:7900,tool-roof:4900,seat:1998" && billLines.reduce((a, l) => a + lineMonthlyCents(l), 0) === monthlyCents({ plan: "professional", main: "deck", kept: ["deck", "roof"] }, 7), billLines);
+check("…Advanced takes its two trade tools in (no line), the office set too", catalogToolsLines({ ...emptyToolsRecord("advanced", "deck"), chosenTrade: ["deck", "roof"], lines: { roof: { itemId: "s", cents: 4900, since: "x" }, texting: { itemId: "t", cents: 2900, since: "x" } } }, "tools-advanced").map((l) => l.kind).join() === "tools-advanced" && catalogToolsLines(null, "professional").length === 0);
+const fb = toolsFirstBill(billRec, "TOOLS-PROFESSIONAL")!;
+check("first bill: Professional + Deck Studio, $222.98/month, made of four parts", fb.name === "Professional + Deck Studio" && fb.cents === 22298 && fb.price === "$222.98/month" && fb.parts.join(" + ") === "Professional $75 + Deck Studio $79 + Roof estimator $49 + 2 more people $19.98", fb);
+check("…its tools are what the shop has (catalog order)", fb.tools.join() === "Roof estimator,Deck Studio", fb.tools);
+const fbY = toolsFirstBill(billRec, "tools-professional", undefined, true)!;
+check("…a yearly term: ten months for twelve, per year", fbY.cents === 222980 && fbY.price === "$2,229.80/year" && fbY.parts[0] === "Professional $750", fbY);
+check("…Advanced with the main tool included says the size alone; Classic is no tools bill", toolsFirstBill({ ...emptyToolsRecord("advanced", "deck"), chosenTrade: ["deck"] }, "tools-advanced")?.name === "Advanced" && toolsFirstBill({ ...emptyToolsRecord("advanced", "deck"), chosenTrade: ["deck"] }, "tools-advanced")?.cents === 24900 && toolsFirstBill(null, "PROFESSIONAL") === null && toolsFirstBill(null, "tools-basic")?.price === "$39.99/month");
 
 console.log(bad ? `\n${bad} FAILED` : "\nall ok");
 process.exit(bad ? 1 : 0);

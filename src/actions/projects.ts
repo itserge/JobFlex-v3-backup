@@ -10,6 +10,8 @@ import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { loadProjectBook } from "@/components/v3/projects-blueprint/project-book-load";
 import type { Project } from "@/components/v3/projects-blueprint/projects-data";
 import { createProjectAs, requireProjectKind } from "@/lib/projectCore";
+import { closedProjectSpaces } from "@/lib/projectSpacesServer";
+import type { SpaceId } from "@/lib/projectSpaces";
 import { PROJECT_KINDS, parseAnswers, serializeAnswers, kindOf, kindsSwap } from "@/lib/projectKind";
 
 /** A new build's start questions (part 4, lib/projectPhases), each optional — the defaults are the common lot. (Not
@@ -73,6 +75,13 @@ export type ProjectBookRow = Project;
 export async function listProjects(): Promise<ProjectBookRow[]> {
   const { organizationId } = await requireRouteAccess("/dashboard/projects");
   return loadProjectBook(organizationId);
+}
+
+/** The workspaces the plan doesn't hold (the new plans' Remodeler / Home Builder; none on a Classic plan), for the
+ *  handheld chooser and its switch links, which leave them out as the desktop page does. Read-only. */
+export async function listClosedProjectSpaces(): Promise<SpaceId[]> {
+  const { organizationId } = await requireRouteAccess("/dashboard/projects");
+  return closedProjectSpaces(organizationId);
 }
 
 /** The org's clients for a New Project form that loads its own data (the

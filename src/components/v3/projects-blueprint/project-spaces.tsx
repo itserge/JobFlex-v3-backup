@@ -152,7 +152,7 @@ export function ProjectSpacesHome({ rows, closed = [] }: { rows: Project[]; /** 
 }
 
 /** A workspace's own header: its brand and name in its colour, its drawing, the way to the other two, and its road. */
-export function SpaceHeader({ space, rows, actions }: { space: SpaceId; rows: Project[]; actions: ReactNode }) {
+export function SpaceHeader({ space, rows, actions, closed = [] }: { space: SpaceId; rows: Project[]; actions: ReactNode; /** Workspaces the plan doesn't hold (lib/projectSpaces spaceOpen): no switch link. */ closed?: readonly SpaceId[] }) {
   const sp = SPACES[space];
   const road = roadPins(space, rows);
   const mine = rows.filter((p) => spaceOfRow(p) === space && (p.status === "ACTIVE" || p.status === "ON_HOLD"));
@@ -164,7 +164,7 @@ export function SpaceHeader({ space, rows, actions }: { space: SpaceId; rows: Pr
             <Link href={"/dashboard/projects" as Route} className={s.switchAll}>
               ← All workspaces
             </Link>
-            {SPACE_IDS.filter((id) => id !== space).map((id) => (
+            {SPACE_IDS.filter((id) => id !== space && spaceOpen(id, closed)).map((id) => (
               <Link key={id} href={spaceHref(id) as Route} className={s.switchTo} style={styleOf(id)}>
                 {SPACES[id].name}
               </Link>
