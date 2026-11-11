@@ -1,5 +1,6 @@
 // THE TUTORIALS (owner, 2026-11-11: "add tutorials in a sidebar on the bottom … and upload their home builder,
-// remodelers, Deck Studio, CRM and Fence Studio tutorials"). Plain data, safe on the server and in the browser.
+// remodelers, Deck Studio, CRM and Fence Studio tutorials"; the AI desk film joined the same day). Plain data, safe on
+// the server and in the browser.
 //
 // The films are made outside this repository (the video kit on the owner's machine) and live in the PRIVATE Vercel
 // Blob store under fixed names — tutorials/<slug>-<version>.mp4 and .jpg — never in the repository, which is public.
@@ -192,6 +193,30 @@ export const TUTORIALS: readonly Tutorial[] = [
       { at: 354, title: "The fence in 3D", about: "Real ground · turn · zoom · walk through" },
       { at: 376, title: "The proposal", about: "Convert · the client · the lines · the link · payments" },
       { at: 415, title: "The client's page", about: "Their fence in 3D · the layout · the estimate · accept" },
+    ],
+  },
+  {
+    // Added 2026-11-11 (owner: "now we have AI desk new tutorial video added to the tutorials").
+    slug: "ai-desk",
+    tool: "AI desk",
+    title: "The AI desk: set it up, tune it, see it work",
+    audience: "Every company",
+    summary: "The phone line that answers for you: its number and forwarding, what it knows about your business, what it says, the hours it books, and a real call from ring to visit.",
+    toolHref: "/dashboard/phone",
+    duration: 328,
+    version: "v1",
+    chapters: [
+      { at: 0, title: "What the AI desk does", about: "It answers, books visits and takes messages, day and night" },
+      { at: 19, title: "Where it lives", about: "Automation · Calls · AI desk setup · the line at the top" },
+      { at: 48, title: "Phone and forwarding", about: "Its own number · your phone · forwarding · who answers" },
+      { at: 87, title: "Your business", about: "Preset the desk · what it knows · Check this · your own words" },
+      { at: 134, title: "Tuning what it says", about: "The greeting · prices · questions · never say · save" },
+      { at: 168, title: "Booking", about: "Time zone · hours and visits · reserved hours · the next open times" },
+      { at: 199, title: "Voice and test", about: "The voice · try it by text · call the desk · live" },
+      { at: 225, title: "Minutes and new leads", about: "Minutes · 300 for $29 · out of minutes · call new leads" },
+      { at: 244, title: "A call, start to finish", about: "The Calls tab · the call · the conversation · the visit" },
+      { at: 279, title: "Messages and hand-offs", about: "A message · a hand-off · the AI desk filter" },
+      { at: 297, title: "Keep it sharp", about: "Read the calls · add answers · never say · preset again" },
     ],
   },
 ];
