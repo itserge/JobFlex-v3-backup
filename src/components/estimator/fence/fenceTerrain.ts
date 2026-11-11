@@ -153,10 +153,13 @@ export interface FenceTerrainReport {
 }
 
 /** How far a profile strays from one straight line between its ends, and how
- *  far it travels back against its own net grade. Both in feet. */
-export function profileShape(z: readonly number[]): { offLineFt: number; backFt: number } {
+ *  far it travels back against its own net grade. Both in feet. With the
+ *  sample spacing `dsFt` and a window of `win` sample steps (about two bays),
+ *  also the ground's shape where a fence meets it: the biggest bump against
+ *  any window's own straight line (`bumpFt`) and the steepest window (`steepDeg`). */
+export function profileShape(z: readonly number[], dsFt = 0, win = 1): { offLineFt: number; backFt: number; bumpFt: number; steepDeg: number } {
   const n = z.length;
-  if (n < 2) return { offLineFt: 0, backFt: 0 };
+  if (n < 2) return { offLineFt: 0, backFt: 0, bumpFt: 0, steepDeg: 0 };
   const z0 = z[0];
   const rise = z[n - 1] - z0;
   const dir = rise >= 0 ? 1 : -1;
@@ -170,7 +173,17 @@ export function profileShape(z: readonly number[]): { offLineFt: number; backFt:
       if (dz * dir < 0) back += Math.abs(dz);
     }
   }
-  return { offLineFt: off, backFt: back };
+  let bump = 0;
+  let steep = 0;
+  const w = Math.max(1, Math.min(n - 1, Math.round(win)));
+  if (dsFt > 0) {
+    for (let a = 0; a + w < n; a++) {
+      const b = a + w;
+      steep = Math.max(steep, (Math.atan2(Math.abs(z[b] - z[a]), w * dsFt) * 180) / Math.PI);
+      for (let k = a + 1; k < b; k++) bump = Math.max(bump, Math.abs(z[k] - (z[a] + ((z[b] - z[a]) * (k - a)) / w)));
+    }
+  }
+  return { offLineFt: off, backFt: back, bumpFt: bump, steepDeg: steep };
 }
 
 /** Turn the profile the Elevation API answered into per-segment slope facts. */
@@ -199,13 +212,23 @@ export function terrainFromProfile(segs: SegSampling[], elevFt: number[], rules:
     }
     const riseFt = elevFt[s.start + s.count - 1] - elevFt[s.start];
     const thetaDeg = (Math.atan2(Math.abs(riseFt), s.planFt) * 180) / Math.PI;
-    const shape = profileShape(elevFt.slice(s.start, s.start + s.count));
-    const rolling = shape.offLineFt > ROLLING_FT || shape.backFt > ROLLING_FT;
+    // THE GROUND WHERE THE FENCE MEETS IT (2026-11-10). A racked bay is one straight line from post to post, so the
+    // ground is judged over about two bays at a time, not against the straight line from one end of a 165-ft side
+    // to the other: a side that only bends as it goes down (no up and down — the owner's "one line that follows
+    // the slope") stepped every bay before — 56 priced steps on a smooth 6% lawn whose biggest bump over 20 ft was
+    // 0.7 ft. It STEPS when the ground goes up and down (a bump over ROLLING_FT inside a window, or ROLLING_FT of
+    // travel back against the grade), or where any stretch is steeper than the fence can rack (a vinyl panel takes
+    // ~4°: the steep middle of a side steps even when the side's average grade is gentle). LEVEL only when every
+    // stretch is under LEVEL_MAX_DEG.
+    const win = Math.max(1, Math.round((2 * sectionFt) / Math.max(1e-6, ds)));
+    const shape = profileShape(elevFt.slice(s.start, s.start + s.count), ds, win);
+    const rolling = shape.bumpFt > ROLLING_FT || shape.backFt > ROLLING_FT;
+    const steepest = Math.max(thetaDeg, shape.steepDeg);
     const cls: SlopeClass = rolling
       ? "stepped"
-      : thetaDeg < LEVEL_MAX_DEG
+      : steepest < LEVEL_MAX_DEG
         ? "level"
-        : thetaDeg <= rackMax
+        : steepest <= rackMax
           ? "racked"
           : "stepped";
     const t: SegTerrain = {

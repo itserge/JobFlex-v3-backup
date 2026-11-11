@@ -22,6 +22,8 @@ import { db } from "@/lib/db";
 import { isStocked, isTradeId, jobBuyList, stockKey, stockRows, untrackedLines, type BuyJob, type StockItem, type StockLine, type StockRow, type TradeId } from "@/lib/inventory";
 import { presetItems } from "@/lib/inventoryPresets";
 import { explodeLines } from "@/lib/inventoryBom";
+import type { SavedFenceTakeoff } from "@/lib/fence/savedTakeoff";
+import { savedTakeoffsFor } from "@/lib/fence/savedTakeoffServer";
 import { itemCategory } from "@/lib/inventoryCategories";
 import { proposalTrade } from "@/lib/inventoryTrade";
 import { inventoryLinkOf } from "@/lib/inventoryPick";
@@ -120,7 +122,9 @@ async function tradeProposals(organizationId: string, wanted: readonly TradeId[]
   const roof = new Set(roofLinks.map((r) => r.proposalId));
   // The connect-or-not choice, an event per proposal; absent = connected.
   const links = await inventoryLinkOf(organizationId, rows.map((r) => r.id));
-  const out: Array<{ row: (typeof rows)[number]; trade: TradeId; inferred: boolean; linked: boolean }> = [];
+  // The fence studio's kept material lists (lib/fence/savedTakeoff): the pick list while the proposal still fits it.
+  const kept = wanted.includes("fence") ? await savedTakeoffsFor(organizationId, rows.map((r) => r.id)) : new Map<string, SavedFenceTakeoff>();
+  const out: Array<{ row: (typeof rows)[number]; trade: TradeId; inferred: boolean; linked: boolean; saved: SavedFenceTakeoff | null }> = [];
   for (const r of rows) {
     const t = proposalTrade({
       trade: r.trade,
@@ -130,7 +134,7 @@ async function tradeProposals(organizationId: string, wanted: readonly TradeId[]
       hvacEstimate: hvac.has(r.id),
       roofMeasurement: roof.has(r.id),
     });
-    if (t && wanted.includes(t)) out.push({ row: r, trade: t, inferred: !r.trade, linked: links.get(r.id) !== false });
+    if (t && wanted.includes(t)) out.push({ row: r, trade: t, inferred: !r.trade, linked: links.get(r.id) !== false, saved: kept.get(r.id) ?? null });
   }
   return out;
 }
@@ -151,7 +155,7 @@ export async function loadTradeBoard(organizationId: string, trade: string): Pro
       return { id: e.id, supplier: suppliers.find((s) => s.id === meta.supplierId)?.name ?? "Supplier", supplierId: meta.supplierId ?? null, sentAt: e.createdAt.toISOString(), jobId: meta.jobId ?? null, lines: meta.lines ?? [] };
     })
     .filter((o): o is BoardOrder => !!o);
-  const list: BoardProposal[] = proposals.map(({ row: p, inferred, linked }) => ({
+  const list: BoardProposal[] = proposals.map(({ row: p, inferred, linked, saved }) => ({
     id: p.id,
     title: p.title,
     client: p.client?.name ?? null,
@@ -164,7 +168,7 @@ export async function loadTradeBoard(organizationId: string, trade: string): Pro
     inferred,
     linked,
     // A fence package line becomes the posts, rails and pickets it was priced from.
-    lines: explodeLines(trade, p.lineItems.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType }))),
+    lines: explodeLines(trade, p.lineItems.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType })), saved),
   }));
   const stock: StockItem[] = withPolicy(items, policy);
   // Sold work still to load reserves the shelf; open work is the forecast.
@@ -231,9 +235,9 @@ export async function lowStockCounts(organizationId: string): Promise<Record<Tra
     if (!ofTradeItems.length) continue;
     // An item bought per job is never low (lib/inventory stockRows).
     const stock = withPolicy(ofTradeItems, await stockPolicyOf(organizationId, trade));
-    const ofTrade = proposals.filter((p) => p.trade === trade && p.linked).map((p) => p.row);
-    const sold = ofTrade.filter((p) => p.status === "ACCEPTED" && !p.jobs[0]?.materialsLoadedAt).map((p) => ({ lines: explodeLines(trade, p.lineItems) }));
-    const open = ofTrade.filter((p) => OPEN.includes(p.status)).map((p) => ({ lines: explodeLines(trade, p.lineItems) }));
+    const ofTrade = proposals.filter((p) => p.trade === trade && p.linked);
+    const sold = ofTrade.filter((p) => p.row.status === "ACCEPTED" && !p.row.jobs[0]?.materialsLoadedAt).map((p) => ({ lines: explodeLines(trade, p.row.lineItems, p.saved) }));
+    const open = ofTrade.filter((p) => OPEN.includes(p.row.status)).map((p) => ({ lines: explodeLines(trade, p.row.lineItems, p.saved) }));
     out[trade] = stockRows(stock, sold, open).filter((r) => r.low).length;
   }
   return out;

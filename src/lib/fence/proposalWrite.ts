@@ -15,6 +15,8 @@ import { uploadBlob, isBlobEnabled } from "@/lib/sdk/blob";
 import { ProposalStatus } from "@/lib/prismaEnums";
 import { PREVIEW_MAX_CHARS, type FenceConvertInput } from "@/lib/fence/convertSchema";
 import { FENCE_PLAN_EVENT } from "@/lib/fence/planSvg";
+import { FENCE_TAKEOFF_EVENT, savedTakeoffMeta } from "@/lib/fence/savedTakeoff";
+import { fenceTypeForLine } from "@/lib/inventoryBom";
 import { stateFromAddress, stateTaxRate } from "@/lib/pricing/salesTax";
 import { applyMemberDiscount } from "@/lib/servicePlanBook";
 
@@ -153,6 +155,21 @@ export async function writeFenceProposal(ctx: { organizationId: string; userId: 
   });
   // A member client (2026-09-22): the plan's discount rides on the new proposal (lib/servicePlanBook).
   await applyMemberDiscount(proposal.id).catch(() => {});
+  // The studio's own material list rides beside the proposal as the crew's pick list (lib/fence/savedTakeoff,
+  // 2026-11-10) — rebuilt from the price lines it lost the closed loop, the steps, the steel gate posts and the
+  // post system. Best effort: without it the list is rebuilt, as before.
+  if (data.takeoff?.length) {
+    try {
+      const forLf = lines.filter((l) => fenceTypeForLine(l.name)).reduce((a, l) => a + l.quantity, 0);
+      if (forLf > 0) {
+        await db.activityEvent.create({
+          data: { organizationId, actorId: user.id, proposalId: proposal.id, kind: FENCE_TAKEOFF_EVENT, summary: `Fence material list kept for the crew — ${data.takeoff.length} items`, meta: savedTakeoffMeta({ forLf, lines: lines.map((l) => l.name), bom: data.takeoff }) },
+        });
+      }
+    } catch {
+      /* the kept list is optional */
+    }
+  }
   // The connect-or-not choice, when one was made (lib/inventoryPick; null = the company's default).
   await recordInventoryLink(organizationId, proposal.id, data.inventoryLinked, user.id);
   // The traced layout rides with the proposal (2026-09-23): an activity

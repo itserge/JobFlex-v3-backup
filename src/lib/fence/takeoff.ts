@@ -28,6 +28,9 @@ export interface FenceRunInput {
   corners: number;
   /** A ring back to its own start has no ends. */
   closed?: boolean;
+  /** Its straight sides in order, ft (scaled to `lengthFt` when they do not add up to it). Given, the sections are
+   *  counted side by side — a bay never wraps a corner; absent, over the whole run. */
+  legsFt?: number[];
 }
 
 /** One gate or door in the fence. */
@@ -38,6 +41,10 @@ export interface FenceOpeningInput {
   label?: string;
   /** An arched top, a slatted door — the kit costs more, the posts do not. */
   variant?: string;
+  /** Where it sits, when known: the run (its index in `runs`), the side (its index in that run's `legsFt`) and its
+   *  centre's distance from the side's start, ft. It cuts that side in two; an opening without it is taken out of
+   *  the footage as a whole. */
+  at?: { run: number; leg: number; ft: number };
 }
 
 export interface FenceLayoutInput {
@@ -185,18 +192,66 @@ export function computeFenceTakeoff(input: FenceLayoutInput): FenceTakeoff {
   const gates = openingTotals(input.openings);
   const netFenceLf = Math.max(0, totalLf - gates.widthFt);
 
-  // Sections are counted PER RUN — three 40' runs need ceil(40/8)=5 sections
-  // each (15 total), not ceil(120/8)=15 by luck; 3×34' runs need 15, not 13.
-  // Gate openings are subtracted proportionally.
-  const netRatio = totalLf > 0 ? netFenceLf / totalLf : 0;
-  const sections = runs.reduce((acc, r) => acc + Math.max(1, Math.ceil((r.lengthFt * netRatio) / spacingFt)), 0);
   const corners = runs.reduce((a, r) => a + Math.max(0, Math.round(r.corners)), 0);
   const ends = runs.reduce((a, r) => a + (r.closed ? 0 : 2), 0);
-  // Posts: one per section boundary. An OPEN run with S sections has S+1
-  // boundary posts and contributes 2 ends; a CLOSED ring has exactly S and
-  // no ends. So boundaries = sections + ends/2, and the line posts are what
-  // is left after corners and ends claim theirs.
-  const linePosts = Math.max(0, Math.round(sections - corners - ends / 2));
+  // SECTIONS AND POSTS, PIECE BY PIECE (2026-11-10). A bay runs from post to post along ONE straight piece of fence —
+  // it never wraps a corner and never spans a gate — so where a run's sides are known it is counted side by side,
+  // each side cut where its gates sit: every piece has ceil(length / spacing) bays and one line post fewer, and its
+  // two ends are a corner, an end or a gate post. Counted over the whole line, 3 × 34' sides came to 13 sections
+  // where the crew builds 15 (the 3D drew 15), and every gate added a post the fence does not have. A run whose
+  // sides are not known is counted whole, as before; an opening that sits nowhere known comes out of the footage as
+  // a whole and splits a stretch somewhere (one line post fewer).
+  const real = input.openings.filter((o) => Number.isFinite(o.widthFt) && o.widthFt > 0);
+  const placed = new Set<FenceOpeningInput>();
+  const pieces: number[] = [];
+  const whole: FenceRunInput[] = [];
+  for (const r of runs) {
+    const ri = input.runs.indexOf(r);
+    const legs = (r.legsFt ?? []).map((x) => (Number.isFinite(x) && x > 0 ? x : 0));
+    const legSum = legs.reduce((a, b) => a + b, 0);
+    if (!legs.length || legSum <= 0) {
+      whole.push(r);
+      continue;
+    }
+    const k = r.lengthFt / legSum; // the sides, scaled to the run's footage along the ground
+    legs.forEach((raw, li) => {
+      const len = raw * k;
+      let start = 0;
+      const here = real.filter((o) => o.at && o.at.run === ri && o.at.leg === li).sort((a, b) => (a.at as { ft: number }).ft - (b.at as { ft: number }).ft);
+      for (const o of here) {
+        const c = Math.min(len, Math.max(0, (o.at as { ft: number }).ft * k));
+        const a = Math.max(start, c - o.widthFt / 2);
+        pieces.push(a - start);
+        start = Math.min(len, Math.max(a, c + o.widthFt / 2));
+        placed.add(o);
+      }
+      pieces.push(len - start);
+    });
+  }
+  const loose = real.filter((o) => !placed.has(o));
+  const looseFt = loose.reduce((a, o) => a + o.widthFt, 0);
+  const avail = pieces.reduce((a, p) => a + Math.max(0, p), 0) + whole.reduce((a, r) => a + r.lengthFt, 0);
+  const kLoose = avail > 0 ? Math.max(0, avail - looseFt) / avail : 0;
+  // A float hair over a whole bay (80.0000001 ft) is not another bay.
+  const bays = (ft: number) => Math.ceil(ft / spacingFt - 1e-6);
+  let sections = 0;
+  let lineCount = 0;
+  for (const p of pieces) {
+    const ft = p * kLoose;
+    if (ft < 0.5) continue; // a gate post against a corner leaves no fence between them
+    const s = Math.max(1, bays(ft));
+    sections += s;
+    lineCount += s - 1;
+  }
+  for (const r of whole) {
+    // Posts: one per section boundary. An OPEN run with S sections has S+1 boundary posts and contributes 2 ends; a
+    // CLOSED ring has exactly S and no ends. So boundaries = sections + ends/2, and the line posts are what is left
+    // after its corners and ends claim theirs.
+    const s = Math.max(1, bays(r.lengthFt * kLoose));
+    sections += s;
+    lineCount += s - Math.max(0, Math.round(r.corners)) - (r.closed ? 0 : 1);
+  }
+  const linePosts = Math.max(0, Math.round(lineCount - loose.length));
   const gatePosts = gates.posts;
   const totalPosts = linePosts + corners + ends + gatePosts;
 

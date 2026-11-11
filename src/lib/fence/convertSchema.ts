@@ -50,6 +50,12 @@ export const fenceConvertSchema = z.object({
     )
     .max(80)
     .optional(),
+  // The studio's material takeoff for these lines (lib/fence/takeoff BomLine), kept beside the proposal as the
+  // crew's pick list (lib/fence/savedTakeoff). Optional: without it the list is rebuilt from the lines.
+  takeoff: z
+    .array(z.object({ label: z.string().min(1).max(240), qty: z.number().finite().min(0).max(1_000_000), unit: z.string().max(20) }))
+    .max(80)
+    .optional(),
   // The job address: rides with the proposal and sets the state's sales tax.
   address: z.string().max(300).optional().nullable(),
   // Optional 3D snapshot (data URL) — uploaded to Blob and attached when present.

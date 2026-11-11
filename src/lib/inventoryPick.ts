@@ -11,6 +11,7 @@
 import { db } from "@/lib/db";
 import { pickList, type PickRow, type TradeId } from "@/lib/inventory";
 import { explodeLines } from "@/lib/inventoryBom";
+import { savedTakeoffsFor } from "@/lib/fence/savedTakeoffServer";
 import { stockItemsOf } from "@/lib/inventoryPolicy";
 import { proposalTrade } from "@/lib/inventoryTrade";
 
@@ -50,6 +51,8 @@ export async function recordInventoryLink(organizationId: string, proposalId: st
 }
 
 export type LinkedProposal = {
+  /** When known, the fence studio's kept material list is read for it (lib/fence/savedTakeoff). */
+  id?: string;
   trade: string | null;
   inventoryLinked: boolean | null;
   title: string;
@@ -68,5 +71,6 @@ export async function pickForProposal(organizationId: string, p: LinkedProposal)
   if (!trade || !p.lineItems.length) return { trade, rows: [] };
   // The stock policy rides along: a per-job item reads "ordered for this job", not "short".
   const items = await stockItemsOf(organizationId, trade);
-  return { trade, rows: pickList(items, explodeLines(trade, p.lineItems.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType.toLowerCase().replace("_", " ") })))) };
+  const saved = trade === "fence" && p.id ? (await savedTakeoffsFor(organizationId, [p.id])).get(p.id) : null;
+  return { trade, rows: pickList(items, explodeLines(trade, p.lineItems.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType.toLowerCase().replace("_", " ") })), saved)) };
 }

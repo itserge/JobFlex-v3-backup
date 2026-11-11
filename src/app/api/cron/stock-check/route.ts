@@ -4,6 +4,7 @@ import { isCronAuthorized } from "@/lib/cronAuth";
 import { lowStockCounts } from "@/lib/inventoryBoard";
 import { inventoryHref, isTradeId, pickList } from "@/lib/inventory";
 import { explodeLines } from "@/lib/inventoryBom";
+import { savedTakeoffsFor } from "@/lib/fence/savedTakeoffServer";
 import { stockItemsOf } from "@/lib/inventoryPolicy";
 
 export const runtime = "nodejs";
@@ -43,13 +44,15 @@ export async function GET(req: Request) {
       // 2) Jobs starting within two days whose pick list is short on the shelf.
       const jobs = await db.job.findMany({
         where: { organizationId, materialsLoadedAt: null, startsAt: { gte: new Date(), lte: soon }, proposal: { trade: { in: ["fence", "roof", "hvac", "deck"] } } },
-        select: { id: true, title: true, startsAt: true, proposal: { select: { trade: true, lineItems: { where: { materialCost: { gt: 0 } }, select: { name: true, quantity: true, measurementType: true } } } } },
+        select: { id: true, title: true, startsAt: true, proposal: { select: { id: true, trade: true, lineItems: { where: { materialCost: { gt: 0 } }, select: { name: true, quantity: true, measurementType: true } } } } },
       });
+      // The fence studio's kept material lists (lib/fence/savedTakeoff), one read for the whole batch.
+      const kept = await savedTakeoffsFor(organizationId, jobs.filter((j) => j.proposal?.trade === "fence").map((j) => j.proposal?.id));
       for (const job of jobs) {
         const trade = job.proposal?.trade;
         if (!isTradeId(trade) || !job.proposal) continue;
         const items = await stockItemsOf(organizationId, trade);
-        const pick = pickList(items, explodeLines(trade, job.proposal.lineItems.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType })))).filter((r) => r.itemId && !r.enough);
+        const pick = pickList(items, explodeLines(trade, job.proposal.lineItems.map((l) => ({ name: l.name, quantity: l.quantity, unit: l.measurementType })), kept.get(job.proposal.id))).filter((r) => r.itemId && !r.enough);
         const short = pick.filter((r) => !r.perJob);
         const toBuy = pick.filter((r) => r.perJob);
         if (!short.length && !toBuy.length) continue;

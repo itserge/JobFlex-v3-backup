@@ -327,6 +327,8 @@ const buildFence: WriteTool<FenceArgs, FenceArgs & { siteAddress: string }> = {
       labor: [],
       assumptions: [...placement, ...packageNotes(layout, pkg.resolved.type, pkg.takeoff)].slice(0, 20).map((n) => n.slice(0, 600)),
       lines: pkg.lines.map((l) => ({ name: l.name.slice(0, 200), description: l.description?.slice(0, 400), quantity: l.quantity, unit: l.unit, materialCost: l.materialCost, laborCost: l.laborCost })),
+      // The crew's pick list, as the studio would keep it (lib/fence/savedTakeoff).
+      takeoff: pkg.takeoff.bom.slice(0, 80).map((b) => ({ label: b.label.slice(0, 240), qty: b.qty, unit: b.unit })),
       address: site.address,
       clientId: p.clientId,
       plan: {

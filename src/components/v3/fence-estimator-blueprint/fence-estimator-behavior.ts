@@ -397,26 +397,43 @@ export function initFenceEstimatorContent(
    * — three typed runs are a fence with two corners, not three loose pieces.
    * The grouping rule lives in lib/fence/layout so it has its own checks.
    */
+  /** Which run and side each traced segment became in the last layoutRuns() — to seat a gate on its side. */
+  let segLegs = new Map<number, { run: number; leg: number; ft: number }>();
+  function runLength(r: FenceRun) { return (r.ft || 0) * segFactor(r); }
   function layoutRuns(): FenceRunInput[] {
-    const lengthOf = function (r: FenceRun) { return (r.ft || 0) * segFactor(r); };
-    if (!mapOwnsRuns || mapPoints.length < 2) return typedRuns(fs.runs.map(lengthOf));
+    segLegs = new Map();
+    if (!mapOwnsRuns || mapPoints.length < 2) return typedRuns(fs.runs.map(runLength));
     return polylinesToRuns(mapPoints, function (i) {
       const r = fs.runs.find(function (x) { return x.id === 'm' + i; });
-      return r ? lengthOf(r) : null;
-    });
+      return r ? runLength(r) : null;
+    }, function (seg, run, leg, ft) { segLegs.set(seg, { run: run, leg: leg, ft: ft }); });
   }
+  /** The openings, each seated on its side where the page knows it (lib/fence/takeoff counts the bays either side
+   *  of it): a traced gate where it was dropped on its segment; a gate on a typed run in the middle of that run. */
   function layoutOpenings(): FenceOpeningInput[] {
+    const typed = !mapOwnsRuns || mapPoints.length < 2;
+    const typedSides: number[] = [];
+    if (typed) fs.runs.forEach(function (r, i) { if (runLength(r) > 0) typedSides.push(i); });
     return fs.openings.map(function (o) {
       const t = opType(o.type);
-      return { widthFt: t.width, kind: t.kind, label: t.label, variant: t.variant };
+      const base: FenceOpeningInput = { widthFt: t.width, kind: t.kind, label: t.label, variant: t.variant };
+      if (typed) {
+        const leg = typedSides.indexOf((o.run ?? 0) - 1);
+        if (leg >= 0) base.at = { run: 0, leg: leg, ft: runLength(fs.runs[typedSides[leg]]) / 2 };
+      } else if (typeof o.seg === 'number' && segLegs.has(o.seg)) {
+        const l = segLegs.get(o.seg) as { run: number; leg: number; ft: number };
+        base.at = { run: l.run, leg: l.leg, ft: Math.min(1, Math.max(0, o.t ?? 0.5)) * l.ft };
+      }
+      return base;
     });
   }
   function layoutInput(): FenceLayoutInput {
     const sl = slope();
+    const runs = layoutRuns(); // first: it seats the segments the openings are read against
     return {
       type: fs.material,
       heightFt: fs.height,
-      runs: layoutRuns(),
+      runs: runs,
       openings: layoutOpenings(),
       terrain: effTerrain(),
       wastePct: fs.wastePct,
@@ -4707,6 +4724,8 @@ export function initFenceEstimatorContent(
         lines: pk.lines.map(function (l) {
           return { name: l.name, description: l.description, quantity: l.quantity, unit: l.unit, materialCost: l.materialCost, laborCost: l.laborCost };
         }),
+        // The material list as the takeoff card shows it — the crew's pick list (lib/fence/savedTakeoff).
+        takeoff: tk.bom.slice(0, 80).map(function (b) { return { label: b.label.slice(0, 240), qty: b.qty, unit: b.unit }; }),
         materials: [],
         labor: [],
         assumptions: [
