@@ -581,6 +581,18 @@ function answer(body: { messages: Msg[] }) {
     const address = /,\s*([^,]*\b(?:St|Ave|Rd|Dr|Ln|Blvd)\b[^,]*)/.exec(user)?.[1]?.trim() ?? null;
     return call("add_client", { name, phone: phoneIn, email: emailIn, address, city: null, state: null, zip: null, notes: null });
   }
+  // update_lead (2026-11-10): "add the address 1420 Maple St, Bothell WA 98011 to Dana's lead" — one line; the tool splits it.
+  const toLead = /\badd (?:the )?(address|phone|email) (.+?) to (\w+)'?s lead\b/i.exec(user);
+  if (toLead) {
+    if (done.has("update_lead")) return reply("Planned — say yes to change the lead.");
+    const f = done.get("find") as Found | undefined;
+    if (!f) return call("find", { query: toLead[3], kind: "lead" });
+    const l = f.leads?.[0];
+    if (!l) return reply("I couldn't find that lead.");
+    const field = toLead[1].toLowerCase();
+    const v = toLead[2].trim();
+    return call("update_lead", { leadId: l.id, name: null, phone: field === "phone" ? v : null, email: field === "email" ? v : null, address: field === "address" ? v : null, city: null, state: null, zip: null, projectType: null });
+  }
   const chg = /\b(?:change|update) (\w+)'?s (phone|email|address) to (.+)$/i.exec(user);
   if (chg) {
     const f = done.get("find") as Found | undefined;

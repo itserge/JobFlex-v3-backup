@@ -67,6 +67,8 @@ export async function loadMobileLeads(): Promise<MobileLeadsSnapshot> {
     email: contactsLocked(l) ? null : l.email,
     phone: contactsLocked(l) ? null : l.phone,
     city: placeLabel(l.city, l.state),
+    hasStreet: !contactsLocked(l) && !!(l.address ?? "").trim(),
+    locked: contactsLocked(l),
     project: l.projectType ?? "General inquiry",
     spec: l.aiCategory,
     conf: l.aiConfidence ?? 0,

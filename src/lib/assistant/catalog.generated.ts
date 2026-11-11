@@ -480,6 +480,17 @@ export const CATALOG: Catalog = {
     "scheduled": false,
     "version": 1
   },
+  "update_lead": {
+    "label": "Update a lead",
+    "group": "people",
+    "effect": "record",
+    "kind": "write",
+    "build": false,
+    "steps": null,
+    "pin": false,
+    "scheduled": false,
+    "version": 1
+  },
   "client_story": {
     "label": "Client story",
     "group": "lookups",

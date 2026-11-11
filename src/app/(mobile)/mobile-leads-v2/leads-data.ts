@@ -37,6 +37,10 @@ export type Lead = {
   desc: string;
   /** Where SmartBook stands with this lead (2026-10-31, lib/smartbook/status): "Needs you", "Booked" … */
   smart?: { label: string; tone: "accent" | "amber" | "emerald" | "muted" } | null;
+  /** The job's street is on file (2026-11-10): the row sheet's Edit details says "No address yet" when it isn't. */
+  hasStreet?: boolean;
+  /** A Lead Center lead whose contacts are still withheld (lib/leadCenter/contacts): nothing to edit yet. */
+  locked?: boolean;
 };
 
 export type Offer = {
@@ -65,6 +69,11 @@ export type StagedRow = {
   project: string | null;
   /** Carried through to importLeads, which stores it on the created row. */
   description: string | null;
+  /** The job's address (2026-11-10): one typed line, or a CSV's own columns — importLeads splits a line it can. */
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
   source: string;
 };
 
