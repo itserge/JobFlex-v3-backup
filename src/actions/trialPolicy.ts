@@ -3,6 +3,7 @@
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { resetTrialPolicy, setSignupPlan, setSignupSteps, setSignupView, setTrialRequiresCard, signupTrialState, type SignupFlow, type SignupPlanSetting, type SignupTrialState, type SignupViewSetting } from "@/lib/trialPolicyServer";
 import { isSignupViewMode } from "@/lib/signupView";
+import { isPricingModel, setPricingModel, TOOLS_PLANS_READY, type PricingModelSetting } from "@/lib/toolPlans/server";
 
 type Result = { ok: true; policy: SignupTrialState } | { ok: false; error: string };
 
@@ -54,6 +55,18 @@ export async function setSignupViewAction(input: Record<string, unknown> = {}): 
   if (!isSignupViewMode(input.mode)) return { ok: false, error: "Pick the sign-up screen." };
   try {
     return { ok: true, view: await setSignupView(input.mode, admin.name || admin.email || null) };
+  } catch {
+    return { ok: false, error: "The switch could not be saved. Try again." };
+  }
+}
+
+/** The plans for new sign-ups: Classic (today) or Base + Tools (lib/toolPlans/server). Refused until the build is done. */
+export async function setPricingModelAction(input: Record<string, unknown> = {}): Promise<{ ok: true; pricing: PricingModelSetting } | { ok: false; error: string }> {
+  const admin = await requirePlatformAdmin();
+  if (!isPricingModel(input.mode)) return { ok: false, error: "Pick which plans new sign-ups get." };
+  if (input.mode === "tools" && !TOOLS_PLANS_READY) return { ok: false, error: "The new plans aren't finished yet. This switch opens when the last part is built." };
+  try {
+    return { ok: true, pricing: await setPricingModel(input.mode, admin.name || admin.email || null) };
   } catch {
     return { ok: false, error: "The switch could not be saved. Try again." };
   }
