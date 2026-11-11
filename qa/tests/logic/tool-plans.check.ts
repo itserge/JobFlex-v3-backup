@@ -18,6 +18,9 @@ import {
   TOOLS,
   toolsInOfferOrder,
   toolsOpen,
+  tryEndsAt,
+  tryReminderAt,
+  tryWords,
 } from "@/lib/toolPlans/shared";
 import { SPOTLIGHT_TOOLS } from "@/lib/planSpotlight";
 
@@ -75,6 +78,20 @@ check("works-well-with first, then the rest, never the main tool", offer.slice(0
 check("tools already held are left out", toolsInOfferOrder("hvac", ["aidesk"]).every((t) => t.id !== "aidesk"));
 check("every pairing names a real tool, never itself", TOOLS.every((t) => t.pairs.length >= 2 && t.pairs.every((p) => isToolId(p) && p !== t.id)));
 check("every tool opens something", TOOLS.every((t) => t.opens.length > 0));
+
+// ── free tries (owner, 2026-11-10): with the 7 free days they end together; after them, 3 days; then billed ──
+const signup = new Date(Date.UTC(2026, 10, 10, 15));
+const trialEnd = new Date(Date.UTC(2026, 10, 17, 15));
+check("a try picked on the welcome page ends with the 7 free days", tryEndsAt(signup, trialEnd).getTime() === trialEnd.getTime());
+const day3 = new Date(Date.UTC(2026, 10, 13, 15));
+check("a try started on day 3 runs the 4 days left", (tryEndsAt(day3, trialEnd).getTime() - day3.getTime()) / 86_400_000 === 4);
+const after = new Date(Date.UTC(2026, 10, 20, 9));
+check("after the free days: 3 days", (tryEndsAt(after, trialEnd).getTime() - after.getTime()) / 86_400_000 === 3);
+check("no trial at all (a Classic shop): 3 days", (tryEndsAt(after, null).getTime() - after.getTime()) / 86_400_000 === 3);
+check("the reminder goes a day before the end", tryReminderAt(signup, trialEnd).getTime() === trialEnd.getTime() - 86_400_000);
+const lastHours = new Date(Date.UTC(2026, 10, 17, 3));
+check("…or at once when less than a day is left", tryReminderAt(lastHours, trialEnd).getTime() === lastHours.getTime());
+check("the button says the date, the price and that it's billed", tryWords("roof", trialEnd, "UTC") === "Free until Nov 17, then $49/mo on your bill. Remove it any time before.");
 
 // ── the ads ──
 check("today's ad links find their tool (Smart Proposal stays in every plan)", SPOTLIGHT_TOOLS.filter((k) => k !== "smart").every((k) => toolForAdKey(k) !== null) && toolForAdKey("smart") === null);

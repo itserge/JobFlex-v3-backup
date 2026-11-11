@@ -242,6 +242,32 @@ export const YEAR_MONTHS = 10;
 export const PLAN_TRIAL_DAYS = 7;
 export const TOOL_TRY_DAYS = 3;
 
+const DAY_MS = 86_400_000;
+
+/**
+ * When a free try ends (owner, 2026-11-10). Inside the sign-up's 7 free days it ends WITH them, so everything picked
+ * on the welcome page is billed on the same day as the plan: a try started on day 3 runs 4 days. After the free days
+ * (and for a Classic shop) it runs 3 days. Either way, at the end it goes on the bill AUTOMATICALLY unless the shop
+ * removed it — the owner's rule: "if they didn't cancel any add-ons, it should charge". The price and the date are on
+ * the button, a reminder goes a day before, and Remove is one click.
+ */
+export function tryEndsAt(now: Date, planTrialEndsAt: Date | null): Date {
+  if (planTrialEndsAt && planTrialEndsAt.getTime() > now.getTime()) return new Date(planTrialEndsAt.getTime());
+  return new Date(now.getTime() + TOOL_TRY_DAYS * DAY_MS);
+}
+
+/** When the "free until tomorrow" reminder goes: a day before the end, or at once when less than a day is left. */
+export function tryReminderAt(now: Date, endsAt: Date): Date {
+  const dayBefore = endsAt.getTime() - DAY_MS;
+  return new Date(Math.max(now.getTime(), dayBefore));
+}
+
+/** The words on the try button and in the reminder: "Free until Nov 17, then $49/mo on your bill." */
+export function tryWords(tool: ToolId, endsAt: Date, timeZone?: string): string {
+  const day = endsAt.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(timeZone ? { timeZone } : {}) });
+  return `Free until ${day}, then ${money(toolById(tool).cents)}/mo on your bill. Remove it any time before.`;
+}
+
 // ── what a shop has ──────────────────────────────────────────────────────────
 
 export interface ShopTools {
