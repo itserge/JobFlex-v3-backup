@@ -12,7 +12,11 @@
 .spaceCard.spaceCard { display: grid; align-content: start; gap: 8px; padding: 0 0 18px; border: 2px solid var(--ink, #0a0a0a); background: #fff; color: var(--ink, #0a0a0a); text-decoration: none; box-shadow: 5px 5px 0 var(--space); transition: transform 0.15s ease, box-shadow 0.15s ease; min-width: 0; }
 .spaceCard.spaceCard:hover, .spaceCard.spaceCard:focus-visible { transform: translate(-2px, -2px); box-shadow: 7px 7px 0 var(--space); outline: none; }
 .spaceCard.spaceCard > span:not(.artBox) { padding: 0 20px; }
-.artBox.artBox { display: block; padding: 16px 20px 6px; background: var(--space-wash); border-bottom: 2px solid var(--ink, #0a0a0a); }
+.artBox.artBox { display: block; position: relative; padding: 16px 20px 6px; background: var(--space-wash); border-bottom: 2px solid var(--ink, #0a0a0a); }
+/* A workspace the plan doesn't hold (Base + Tools, 2026-11-11): the same card as a preview — a tag on its drawing,
+   its price in words, and the button to Upgrade your plan. */
+.previewTag.previewTag { position: absolute; top: 10px; right: 12px; padding: 3px 9px; border: 1.5px solid var(--ink, #0a0a0a); background: #fff; font-family: var(--mono); font-size: 10.5px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--space); }
+.previewNote.previewNote { margin-top: 6px; padding-top: 10px !important; border-top: 1px dashed rgba(10, 10, 10, 0.16); font-size: 13.5px; line-height: 1.45; color: var(--ink, #0a0a0a); min-height: 2.8em; overflow-wrap: anywhere; }
 .art.art { display: block; width: 100%; max-width: 280px; height: auto; margin: 0 auto; }
 .brand.brand { margin-top: 8px; font-family: var(--mono); font-size: 10.5px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; color: var(--space); }
 .spaceName.spaceName { font-size: 24px; font-weight: 900; letter-spacing: -0.02em; text-transform: uppercase; line-height: 1; }

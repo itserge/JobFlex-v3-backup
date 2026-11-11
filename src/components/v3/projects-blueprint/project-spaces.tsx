@@ -9,6 +9,7 @@ import Link from "next/link";
 import type { Route } from "next";
 import type { CSSProperties, ReactNode } from "react";
 import { SPACES, SPACE_IDS, spaceHref, spaceOpen, type SpaceId } from "@/lib/projectSpaces";
+import { money } from "@/lib/toolPlans/shared";
 import { needsToday, roadPins, spaceOfRow, spaceSummaries } from "./project-spaces-data";
 import type { Project } from "./projects-data";
 import s from "./project-spaces.module.css";
@@ -78,8 +79,23 @@ export function SpaceArt({ id, className }: { id: SpaceId; className?: string })
   );
 }
 
-/** The three cards and what needs someone today. */
-export function ProjectSpacesHome({ rows, closed = [] }: { rows: Project[]; /** Workspaces the plan doesn't hold (the new plans' tools, lib/projectSpaces spaceOpen) — no card. */ closed?: readonly SpaceId[] }) {
+/** A workspace the plan doesn't hold, as its tool sells it (lib/projectSpacesServer spaceOffers). */
+export type SpaceOffer = { tool: string; label: string; cents: number };
+
+/** The three cards and what needs someone today. A workspace the plan doesn't hold (the new plans' Home Builder /
+ *  Remodeler tools) keeps its card as a PREVIEW (owner, 2026-11-11: "keep those two beautiful cards in Projects"):
+ *  the same drawing, name and what it adds, its price in words, and a tap goes to Upgrade your plan. */
+export function ProjectSpacesHome({
+  rows,
+  closed = [],
+  offers = {},
+}: {
+  rows: Project[];
+  /** Workspaces the plan doesn't hold (lib/projectSpaces spaceOpen) — drawn as a preview card. */
+  closed?: readonly SpaceId[];
+  /** Their tool and its price, for the preview card's words. */
+  offers?: Partial<Record<SpaceId, SpaceOffer>>;
+}) {
   const sum = spaceSummaries(rows);
   const today = needsToday(rows);
   return (
@@ -90,13 +106,23 @@ export function ProjectSpacesHome({ rows, closed = [] }: { rows: Project[]; /** 
         <p className={s.homeLead}>Each one is built for its kind of work: its own steps, its own checks, its own words.</p>
       </div>
       <div className={s.cards}>
-        {SPACE_IDS.filter((id) => spaceOpen(id, closed)).map((id) => {
+        {SPACE_IDS.map((id) => {
           const sp = SPACES[id];
           const n = sum[id];
+          const preview = !spaceOpen(id, closed);
+          const offer = offers[id];
           return (
-            <Link key={id} href={spaceHref(id) as Route} className={s.spaceCard} style={styleOf(id)} data-space-card={id}>
+            <Link
+              key={id}
+              href={(preview ? "/dashboard/subscription#tools" : spaceHref(id)) as Route}
+              className={`${s.spaceCard} ${preview ? s.spacePreview : ""}`}
+              style={styleOf(id)}
+              data-space-card={id}
+              data-space-preview={preview ? "" : undefined}
+            >
               <span className={s.artBox}>
                 <SpaceArt id={id} className={s.art} />
+                {preview ? <span className={s.previewTag}>Preview</span> : null}
               </span>
               <span className={s.brand}>{sp.brand}</span>
               <span className={s.spaceName}>{sp.name}</span>
@@ -108,19 +134,33 @@ export function ProjectSpacesHome({ rows, closed = [] }: { rows: Project[]; /** 
                   </span>
                 ))}
               </span>
-              <span className={s.stats} data-space-stats>
-                <span className={s.stat}>
-                  <b>{n.active}</b> active
+              {preview ? (
+                <span className={s.previewNote} data-space-offer>
+                  {offer ? (
+                    <>
+                      Try <b>{offer.label}</b> free, then {money(offer.cents)}/mo on your bill.
+                    </>
+                  ) : (
+                    "Add it to your plan to open it."
+                  )}
                 </span>
-                <span className={`${s.stat} ${n.atRisk ? s.statRisk : ""}`}>
-                  <b>{n.atRisk}</b> at risk
-                </span>
-                <span className={`${s.stat} ${n.needsYou ? s.statNeeds : ""}`}>
-                  <b>{n.needsYou}</b> need you
-                </span>
-              </span>
-              <span className={s.worst}>{n.worst ? <>{n.worst.risk ? "⚠ " : ""}<b>{n.worst.name}</b>: {n.worst.text}</> : n.active ? "Everything is on track." : `No ${sp.plural} yet.`}</span>
-              <span className={s.open}>Open {sp.name} →</span>
+              ) : (
+                <>
+                  <span className={s.stats} data-space-stats>
+                    <span className={s.stat}>
+                      <b>{n.active}</b> active
+                    </span>
+                    <span className={`${s.stat} ${n.atRisk ? s.statRisk : ""}`}>
+                      <b>{n.atRisk}</b> at risk
+                    </span>
+                    <span className={`${s.stat} ${n.needsYou ? s.statNeeds : ""}`}>
+                      <b>{n.needsYou}</b> need you
+                    </span>
+                  </span>
+                  <span className={s.worst}>{n.worst ? <>{n.worst.risk ? "⚠ " : ""}<b>{n.worst.name}</b>: {n.worst.text}</> : n.active ? "Everything is on track." : `No ${sp.plural} yet.`}</span>
+                </>
+              )}
+              <span className={s.open}>{preview ? "See it in Upgrade your plan →" : `Open ${sp.name} →`}</span>
             </Link>
           );
         })}

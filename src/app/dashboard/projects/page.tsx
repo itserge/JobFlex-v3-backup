@@ -24,7 +24,7 @@ import { loadProjectBook } from "@/components/v3/projects-blueprint/project-book
 import { ProjectSpacesHome } from "@/components/v3/projects-blueprint/project-spaces";
 import { spaceOfRow } from "@/components/v3/projects-blueprint/project-spaces-data";
 import { parseSpace, spacePage } from "@/lib/projectSpaces";
-import { closedProjectSpaces } from "@/lib/projectSpacesServer";
+import { closedProjectSpaces, spaceOffers } from "@/lib/projectSpacesServer";
 import { isPageLocked } from "@/lib/customPageAccess";
 import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
@@ -51,11 +51,11 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
     throw err;
   }
 
-  // THE WORKSPACE TOOLS (Base + Tools, 2026-11-10): on the new plans New Home Builder and Remodeler are tools — a
-  // workspace the plan doesn't hold has no card, and its address shows the tool's card. Every Classic plan opens all
-  // three (isPageLocked answers them open), so nothing changes there.
+  // THE WORKSPACE TOOLS (Base + Tools, 2026-11-10/11): on the new plans New Home Builder and Remodeler are tools — a
+  // workspace the plan doesn't hold keeps its card as a preview that opens Upgrade your plan, and its address shows
+  // the tool's card. Every Classic plan opens all three (isPageLocked answers them open), so nothing changes there.
   const closed = await closedProjectSpaces(organizationId);
-  if (!space) return <ProjectSpacesHome rows={await loadProjectBook(organizationId)} closed={closed} />;
+  if (!space) return <ProjectSpacesHome rows={await loadProjectBook(organizationId)} closed={closed} offers={await spaceOffers(closed)} />;
   const spaceGate = closed.includes(space) ? spacePage(space) : null;
   if (spaceGate) {
     const gate = await customPageGate(spaceGate);
