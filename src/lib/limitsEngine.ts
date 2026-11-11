@@ -69,6 +69,7 @@ import {
   type PlanLimits,
 } from "@/lib/planLimits";
 import { CUSTOM_PLAN_LIMITS_SLUG, CUSTOM_PLAN_SLUG } from "@/lib/customPlan";
+import { isToolsSlug, parseToolsRecord, toolPlanBySlug } from "@/lib/toolPlans/shared";
 
 /** lib/eagleview PD_PACK.ROOF_AREA — spelled here so the engine does not load the EagleView client. */
 const ROOF_AREA_PACK = "property_data_id_001";
@@ -218,6 +219,27 @@ export interface LimitActor {
  */
 const isLapsed = planLapsed;
 
+/** The keys the new plans meter as ONE pool of people (toolsPeopleLimits). */
+const PEOPLE_KEYS: readonly LimitKey[] = ["teamSeats", "workers"];
+
+/**
+ * THE NEW PLANS' LIMITS (Base + Tools, part 3a — owner, 2026-11-10). People are one pool: the plan's people (the
+ * owner counted) plus the extra-people line's quantity, less the owner — Basic is the owner alone (0), Professional
+ * 4 more plus the extra people. Office seats and workers both draw on it (countPeoplePool counts each person once).
+ * A role costs no seat — the person does — so "managers" is open wherever the size sells roles (Professional and
+ * up) and shut on Basic. Nothing else is capped (no monthly proposal caps), but the paid lookups (roof measurements,
+ * Manual J, AI Operator commands) keep the top tier's ceilings: each costs JobFlex money.
+ */
+async function toolsPeopleLimits(organizationId: string, slug: string): Promise<PlanLimits> {
+  const size = toolPlanBySlug(slug);
+  const row = await db.syncState.findUnique({ where: { key: `orgTools:${organizationId}` }, select: { cursor: true } });
+  const record = parseToolsRecord(row?.cursor);
+  const plan = size ?? (record ? toolPlanBySlug(`tools-${record.plan}`) : null);
+  const pool = Math.max(0, (plan?.seats ?? 1) + Math.max(0, record?.seat?.quantity ?? 0) - 1);
+  const roles = !!plan?.features.includes("roles");
+  return withPaidCallDefaults({ teamSeats: pool, workers: pool, ...(roles ? {} : { managers: 0 }) }, "enterprise");
+}
+
 /**
  * Resolve the org's effective limits + the start of the current monthly window.
  * The window is anchored to the subscription's billing day but always contains
@@ -228,7 +250,7 @@ const isLapsed = planLapsed;
 async function resolvePlan(
   organizationId: string,
   actor?: LimitActor,
-): Promise<{ limits: PlanLimits; cycleStart: Date; resets: UsageResetMarks; exempt: boolean }> {
+): Promise<{ limits: PlanLimits; cycleStart: Date; resets: UsageResetMarks; exempt: boolean; pool?: true }> {
   const [sub, resets, exempt] = await Promise.all([
     readAccessSubscription(organizationId),
     readUsageResetMarks(organizationId),
@@ -257,6 +279,8 @@ async function resolvePlan(
   // A platform admin in their organization: no caps, whatever the plan (lib/fullAccess).
   if (exempt) return { limits: {}, cycleStart, resets, exempt };
   if (lapsed && !plan) return { limits: { ...DEFAULT_FREE_LIMITS }, cycleStart, resets, exempt };
+  // A live shop on the new plans: one pool of people, no usage caps, the paid lookups' top ceilings.
+  if (!lapsed && isToolsSlug(sub?.plan)) return { limits: await toolsPeopleLimits(organizationId, sub?.plan ?? ""), cycleStart, resets, exempt, pool: true };
 
   // The paid lookups never fall open on a row that predates them (planLimits PAID_CALL_DEFAULTS).
   return { limits: withPaidCallDefaults(parsePlanLimits(plan?.limitsJson ?? null), planKey), cycleStart, resets, exempt };
@@ -440,6 +464,39 @@ async function countUsage(
   }
 }
 
+/**
+ * THE NEW PLANS' PEOPLE (toolsPeopleLimits): everyone but the owner, once — office members, the crew (a worker
+ * profile not declined) and the invites still in flight. A worker is also a member (the crew invite writes the
+ * membership), so people are counted by user, and an invite by its address unless that person is already counted.
+ */
+export async function countPeoplePool(organizationId: string): Promise<number> {
+  const now = new Date();
+  const [members, workers, invites] = await Promise.all([
+    db.membership.findMany({ where: { organizationId }, select: { userId: true, role: true, user: { select: { email: true } } } }),
+    db.workerProfile.findMany({ where: { organizationId, inviteStatus: { not: "DECLINED" } }, select: { userId: true, user: { select: { email: true } } } }),
+    db.invite.findMany({ where: { organizationId, acceptedAt: null, expiresAt: { gt: now } }, select: { email: true } }),
+  ]);
+  const owners = new Set(members.filter((m) => m.role === "OWNER").map((m) => m.userId));
+  const people = new Set<string>();
+  const emails = new Set<string>();
+  const add = (userId: string, email: string | null | undefined) => {
+    if (owners.has(userId)) return;
+    people.add(userId);
+    if (email) emails.add(email.trim().toLowerCase());
+  };
+  // An office seat: a member who isn't the owner nor crew (crew is counted by its worker profile, as Classic does).
+  for (const m of members) if (m.role !== "INSTALLER") add(m.userId, m.user?.email);
+  for (const w of workers) add(w.userId, w.user?.email);
+  let pending = 0;
+  for (const i of invites) {
+    const e = i.email.trim().toLowerCase();
+    if (emails.has(e)) continue;
+    emails.add(e);
+    pending++;
+  }
+  return people.size + pending;
+}
+
 // Cross-resource caps. A key here has its effective remaining bounded by the
 // remaining of its capping resource, because consuming one consumes the other
 // downstream. AI / roof / fence estimates (all metered as "estimatorUses") each
@@ -471,11 +528,13 @@ async function rawStatusFor(
   }
 
   const limit = cap as number;
-  const used = await countUsage(
-    resource,
-    organizationId,
-    scope === "absolute" ? new Date(0) : (resetAt ?? cycleStart),
-  );
+  const used = plan.pool && PEOPLE_KEYS.includes(resource)
+    ? await countPeoplePool(organizationId)
+    : await countUsage(
+        resource,
+        organizationId,
+        scope === "absolute" ? new Date(0) : (resetAt ?? cycleStart),
+      );
 
   return {
     resource,
@@ -626,7 +685,7 @@ export async function getOrgLimitOverview(
       const resetAt = def.scope === "absolute" ? null : usageResetInForce(plan.resets[def.key], plan.cycleStart);
       const configured = LIMITS_DISABLED ? undefined : plan.limits[def.key];
       const limit = isUnlimited(configured) ? null : configured as number;
-      const used = await countUsage(def.key, organizationId, resetAt ?? plan.cycleStart, true).catch(() => null);
+      const used = await (plan.pool && PEOPLE_KEYS.includes(def.key) ? countPeoplePool(organizationId) : countUsage(def.key, organizationId, resetAt ?? plan.cycleStart, true)).catch(() => null);
       return {
         resource: def.key,
         limit,

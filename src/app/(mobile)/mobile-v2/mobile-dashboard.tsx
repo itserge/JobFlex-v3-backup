@@ -85,6 +85,7 @@ import { Who } from "@/components/v3/who/who";
 import { TourChip } from "@/components/v3/onboarding-tour/tour-chip";
 import { SmartHelpRow } from "@/components/v3/smarthelp/smarthelp-row";
 import { AssistantRow } from "@/components/v3/assistant/assistant-row";
+import { UpgradePlanCard } from "@/components/v3/blueprint-shell/upgrade-plan-card";
 import { TourShowMe } from "@/components/v3/onboarding-tour/tour-show-me";
 
 const prefersReducedMotion = () =>
@@ -1540,6 +1541,9 @@ function DashboardView({ data, notice, sample }: { data: DashboardData; notice?:
               })}
             </div>
           ))}
+          {/* The new plans' "Upgrade your plan" (Base + Tools, owner 2026-11-10) — the same card as the drawer's on
+              every other phone page (mobile-shell/mobile-nav); owner only, never on a Classic shop. */}
+          <UpgradePlanCard variant="drawer" onPick={() => setNavOpen(false)} />
         </nav>
 
 

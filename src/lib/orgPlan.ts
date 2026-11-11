@@ -4,6 +4,7 @@ import { CUSTOM_PLAN_TIER } from "@/lib/customPlan";
 import { planLapsed } from "@/lib/planStatus";
 import { readAccessSubscription } from "@/lib/subscriptionAccess";
 import { hasFullAccess } from "@/lib/fullAccess";
+import { isToolsSlug } from "@/lib/toolPlans/shared";
 
 /**
  * Resolve an org's effective feature tier.
@@ -32,6 +33,9 @@ export async function getOrgPlanById(organizationId: string): Promise<Plan> {
   if ((PLAN_TIERS as readonly string[]).includes(upper)) return upper as Plan;
   // The custom plan rides on Professional (lib/customPlan CUSTOM_PLAN_TIER).
   if (upper === "CUSTOM") return CUSTOM_PLAN_TIER;
+  // The new plans (Base + Tools, lib/toolPlans/shared): every boolean feature on — the page gate
+  // (lib/customPageAccess) is what opens and closes their tools, and they have no PricingPlan row.
+  if (isToolsSlug(sub.plan)) return "ENTERPRISE";
 
   // Custom assigned plan: confirm it maps to a real PricingPlan (case-insensitive),
   // then grant full feature access. Quotas come from that plan's limits, not here.

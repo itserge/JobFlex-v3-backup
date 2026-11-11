@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { replyByEmail, replyByText, setThreadStatus, setThreadUrgent } from "@/lib/inbox/server";
 import { draftReplies, type ReplyDraft } from "@/lib/inbox/drafts";
 import { withFeature } from "@/lib/customPageAccess";
+import { TEXTING_NOT_ON_PLAN_MESSAGE } from "@/lib/sms/send";
 
 const replyInput = z.object({
   threadId: z.string().min(1),
@@ -34,6 +35,7 @@ export async function sendInboxReply(raw: unknown): Promise<{ ok: boolean; error
       cap: "Today's text limit is reached.",
       allowance: "The plan's text allowance is used up.",
       trial: "Texting opens when the trial becomes a plan.",
+      "not-on-plan": TEXTING_NOT_ON_PLAN_MESSAGE,
     };
     return { ok: false, error: why[r.reason] ?? "The text didn't go through." };
   }

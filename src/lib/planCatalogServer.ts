@@ -15,6 +15,7 @@ import { PLAN_TIERS, type Plan } from "@/lib/entitlements";
 import { parsePlanLimits } from "@/lib/planLimits";
 import { planDisplayName, type PlanDTO } from "@/lib/planCatalog";
 import { CUSTOM_PLAN_TIER } from "@/lib/customPlan";
+import { isToolsSlug } from "@/lib/toolPlans/shared";
 
 /** Canonical parser for the PricingPlan.features JSON column. */
 export function parseFeatures(raw: string | null | undefined): string[] {
@@ -168,7 +169,8 @@ export async function getOrgPlanContext(organizationId: string): Promise<{
     ? (upper as Plan)
     : upper === "CUSTOM"
       ? CUSTOM_PLAN_TIER
-      : plan
+      : // The new plans (lib/toolPlans/shared) have no catalog row: every boolean feature on, the page gate decides.
+      plan || isToolsSlug(rawPlan)
       ? "ENTERPRISE"
       : "FREE";
   return { tier, plan, rawPlan };

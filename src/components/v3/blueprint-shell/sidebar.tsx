@@ -28,6 +28,7 @@ import { foldShortcutLabel } from "./sidebar-fold";
 import { TourChip } from "@/components/v3/onboarding-tour/tour-chip";
 import { SmartHelpRow } from "@/components/v3/smarthelp/smarthelp-row";
 import { AssistantRow } from "@/components/v3/assistant/assistant-row";
+import { UpgradePlanCard } from "./upgrade-plan-card";
 
 export { NAV_SECTIONS };
 
@@ -339,6 +340,9 @@ export function Sidebar({
             </Fragment>
           );
         })}
+        {/* THE NEW PLANS (owner, 2026-11-10): the menu holds only what the shop can open, and this card at its
+            foot leads the owner to everything it can add. Nothing on a Classic plan (nav-map showsUpgradePlan). */}
+        <UpgradePlanCard variant="blueprint" />
       </nav>
 
       {/* The account block was a dead <button> showing the hardcoded literals

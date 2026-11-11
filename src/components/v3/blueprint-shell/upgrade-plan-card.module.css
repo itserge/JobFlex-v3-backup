@@ -1,0 +1,119 @@
+/* "UPGRADE YOUR PLAN" — the menu's last row on the new plans (upgrade-plan-card.tsx). It lives inside the shell's
+   sidebar and drawer, so its root carries data-nest and every rule here has two classes — the shell's margin/padding
+   reset ties a single class and wins on prod (the same rule as tour-chip and assistant-row). Flat, square, the
+   house's ink frame; the accent wash says "something to add" without shouting over the rows above it. */
+
+.wrap.wrap {
+  display: block;
+  margin: 14px 0 12px;
+  padding: 0;
+}
+.wrap.blueprint {
+  margin: 14px 12px 12px;
+}
+.wrap.drawer {
+  margin: 14px 14px 12px;
+}
+
+.wrap .card {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 12px 12px 12px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+.wrap .title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: var(--ink);
+}
+.wrap .line {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--ink-soft);
+}
+.wrap .go {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  margin: 0;
+  padding: 4px 10px 4px 4px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  transition: background-color 140ms var(--ease-out);
+}
+.wrap .go:hover {
+  background: var(--accent-ink);
+}
+.wrap .go:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.wrap .mark {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  border-radius: var(--r-sm);
+  background: #fff;
+  color: var(--accent);
+}
+.wrap .mark svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2.6;
+}
+.wrap .goTxt {
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The desk sidebar folded to its icon rail: the button's square alone (its title is the tooltip). */
+:global([data-sb="fold"]) .wrap.blueprint {
+  margin: 12px auto 10px;
+  width: max-content;
+}
+:global([data-sb="fold"]) .wrap.blueprint .card {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+:global([data-sb="fold"]) .wrap.blueprint .title,
+:global([data-sb="fold"]) .wrap.blueprint .line,
+:global([data-sb="fold"]) .wrap.blueprint .goTxt {
+  display: none;
+}
+:global([data-sb="fold"]) .wrap.blueprint .go {
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  justify-content: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wrap .go {
+    transition: none;
+  }
+}

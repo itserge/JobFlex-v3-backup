@@ -16,7 +16,7 @@
 
 import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
 import { navAllowed, type Workspace } from "@/lib/editions";
-import { isCustomBlockedPath } from "@/lib/customPlan";
+import { TOOLS_MARK, isCustomBlockedPath } from "@/lib/customPlan";
 import { isHiddenHref } from "@/lib/earlyAccess";
 
 export type NavItem = {
@@ -455,10 +455,15 @@ function navSectionsBase(
   // custom-plan lock only MARKS it — the page exists, the plan just does not
   // include it yet, and a dimmed padlocked row that opens the upgrade offer
   // sells the add-on where a missing row sells nothing.
+  // THE NEW PLANS DROP IT (owner, 2026-11-10: "no locks"): a shop on Base + Tools (TOOLS_MARK in the list) sees only
+  // what it can open; what it can add lives behind "Upgrade your plan" at the bottom of the menu.
+  const drop = navDropsBlocked(locked);
+  const blocked = (href: string) => !!locked && isCustomBlockedPath(locked, href.split("?")[0]);
+  const keep = (item: NavItem | null): item is NavItem => item !== null && !(drop && blocked(item.href));
   const mark = (item: NavItem): NavItem => {
-    const marked = locked && isCustomBlockedPath(locked, item.href.split("?")[0]) ? { ...item, locked: true } : item;
+    const marked = blocked(item.href) ? { ...item, locked: true } : item;
     // The rows folded under it follow the same rules.
-    return marked.children ? { ...marked, children: marked.children.filter((c) => canOpen(role, c.href, locked)).map((c) => (locked && isCustomBlockedPath(locked, c.href.split("?")[0]) ? { ...c, locked: true } : c)) } : marked;
+    return marked.children ? { ...marked, children: marked.children.filter((c) => canOpen(role, c.href, locked)).map((c) => (blocked(c.href) ? { ...c, locked: true } : c)) } : marked;
   };
 
   const plan = role ? ROLE_NAV[role] : undefined;
@@ -474,7 +479,7 @@ function navSectionsBase(
             if (!item) return null;
             return mark(labels[href] ? { ...item, label: labels[href] } : item);
           })
-          .filter((item): item is NavItem => item !== null),
+          .filter(keep),
       }))
       .filter((group) => group.items.length > 0);
   }
@@ -484,9 +489,24 @@ function navSectionsBase(
   if (role === "OWNER" && !locked?.length) return NAV_SECTIONS;
   return NAV_SECTIONS.map((section) => ({
     label: section.label,
-    items: section.items.filter((item) => canOpen(role, item.href)).map(mark),
+    items: section.items.filter((item) => canOpen(role, item.href)).map(mark).filter(keep),
   })).filter((section) => section.items.length > 0);
 }
+
+/** The blocked list is a new-plan shop's (lib/customPlan TOOLS_MARK): the menu leaves the blocked rows out instead
+ *  of drawing them locked, and the "Upgrade your plan" button is drawn at its foot for the owner. */
+export function navDropsBlocked(locked: readonly string[] | null | undefined): boolean {
+  return !!locked?.includes(TOOLS_MARK);
+}
+
+/** The menu's "Upgrade your plan" button (owner, 2026-11-10): a new-plan shop's owner only — the one person who
+ *  changes the plan (the Subscription page is owner-only, OWNER_ONLY_HREFS). */
+export function showsUpgradePlan(role: string | null | undefined, locked: readonly string[] | null | undefined): boolean {
+  return role === "OWNER" && navDropsBlocked(locked);
+}
+
+/** Where "Upgrade your plan" goes: the Subscription page, which lists what the shop can add. */
+export const UPGRADE_PLAN_HREF = "/dashboard/subscription";
 
 /** Surfaces deliberately left out of the nav (reached from the Help window, the letters'
  *  "Open conversation", Settings' Help Center) — no row is lit on them. */

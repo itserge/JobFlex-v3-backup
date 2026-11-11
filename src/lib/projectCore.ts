@@ -8,6 +8,22 @@ import { numbered } from "@/lib/projectStages/server";
 import { serializeAnswers, type ProjectKind } from "@/lib/projectKind";
 import type { BuildAnswers } from "@/lib/projectPhases/shared";
 import { parseMoneySettings, type ForWhom, type MoneyMode } from "@/lib/projectMoneyPlan/shared";
+import { pageLockedResult, requirePage, type GateAs } from "@/lib/customPageAccess";
+import { projectKindPage } from "@/lib/toolPlans/shared";
+
+/** THE WORKSPACE TOOLS (Base + Tools, 2026-11-10): on the new plans a remodel needs the Remodeler tool and a new
+ *  build the Home Builder; a job project is the base workspace's. Every Classic plan opens all three, as before
+ *  (lib/customPlan classicEquivalent). Throws the gate's refusal (lib/customPageAccess). */
+export async function requireProjectKind(organizationId: string, kind: string | null | undefined, opts: GateAs = {}): Promise<void> {
+  const page = projectKindPage(kind);
+  if (page) await requirePage(organizationId, page, opts);
+}
+
+/** The same, as the words a person reads, or null to go on (the AI Operator's start_project). */
+export async function projectKindRefusal(organizationId: string, kind: string | null | undefined, opts: GateAs = {}): Promise<string | null> {
+  const page = projectKindPage(kind);
+  return page ? ((await pageLockedResult(organizationId, page, opts))?.error ?? null) : null;
+}
 
 /** The money settings a new project is made with: as said, else a client build with no mode. */
 function moneyFields(data: Pick<NewProject, "forWhom" | "moneyMode" | "marginPct" | "feeAmount" | "salePrice">) {

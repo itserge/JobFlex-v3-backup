@@ -17,6 +17,12 @@
 // a trial — and the page opens on the refresh. Only the owner can; anyone
 // else is told who can. What it costs today is Stripe's own preview.
 //
+// THE NEW PLANS (Base + Tools, part 3a — owner, 2026-11-10: "no locks"). For a
+// shop on them (the blocked list carries TOOLS_MARK) the menu never draws the
+// page, so this is reached only by a pasted or old link: the card says which
+// tool (or which size) opens it and what it costs, with one button to the
+// Subscription page's Upgrade your plan — no padlock, no "not included".
+//
 // A PLAIN STYLESHEET, self-scoped under .jf-upgate, for the same reason the
 // support widget's is: this renders inside whichever shell owns the URL —
 // blueprint desktop, classic, or a handheld frame — so it can lean on none of
@@ -27,8 +33,21 @@ import Link from "next/link";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { addCustomPages, previewCustomPagesChange } from "@/actions/billing";
+import { toolGatePrices } from "@/actions/toolPlans";
 import { toast } from "@/components/ui/Toast";
-import { CUSTOM_PAGE_CENTS, CUSTOM_PAGES, PLAN_ENDED_MARK, gatedPage, isPaidFeature, pageForPath, type GatedPage } from "@/lib/customPlan";
+import {
+  CUSTOM_PAGE_CENTS,
+  CUSTOM_PAGES,
+  PLAN_ENDED_MARK,
+  TOOLS_MARK,
+  classicPageId,
+  gatedPage,
+  isGatedPageId,
+  isPaidFeature,
+  pageForPath,
+  type GatedPage,
+} from "@/lib/customPlan";
+import { DEFAULT_CATALOG, money as toolMoney, toolOffering, type ToolId, type ToolPlanId } from "@/lib/toolPlans/shared";
 import "./upgrade-gate.css";
 import { BillingRecovery } from "../payment-ribbon/billing-recovery";
 
@@ -52,9 +71,14 @@ export function UpgradeGate({
   isOwner?: boolean;
 }) {
   const router = useRouter();
-  // "#feature:<id>" names a paid feature that has no page of its own (custom-page-gate).
+  // "#feature:<id>" names a gated feature that has no page of its own (custom-page-gate).
   const featureId = pathname.startsWith("#feature:") ? pathname.slice("#feature:".length) : null;
-  const gated: GatedPage | null = featureId ? (isPaidFeature(featureId) ? gatedPage(featureId) : null) : pageForPath(pathname);
+  const found: GatedPage | null = featureId ? (isGatedPageId(featureId) ? gatedPage(featureId) : null) : pageForPath(pathname);
+  // A shop on the new plans (TOOLS_MARK): the tool's card below. A Classic shop reads a new-plan page as its Classic
+  // twin — the blueprint estimator is Smart Proposal's page there, offered and added as that.
+  const tools = Boolean(locked?.includes(TOOLS_MARK));
+  const twin = found && !tools ? classicPageId(found.id) : null;
+  const gated: GatedPage | null = found && twin && twin !== found.id ? gatedPage(twin) ?? found : found;
   // Only a sellable add-on page can be added on its own; a paid feature comes with any plan.
   const page = gated && !isPaidFeature(gated.id) ? CUSTOM_PAGES.find((p) => p.id === gated.id) ?? null : null;
   const label = gated?.label ?? "This page";
@@ -63,7 +87,7 @@ export function UpgradeGate({
   // card-less trial run out (lib/planStatus) — every add-on is closed for that
   // reason, and the way back is a plan, not one page.
   const ended = Boolean(locked?.includes(PLAN_ENDED_MARK));
-  const canAdd = Boolean(page && isOwner && locked && !ended);
+  const canAdd = Boolean(page && isOwner && locked && !ended && !tools);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -112,6 +136,8 @@ export function UpgradeGate({
     );
   }
 
+  if (tools) return <ToolsOffer id={gated?.id ?? null} label={label} isOwner={isOwner} />;
+
   return (
     <div className="jf-upgate" data-nest="">
       <div className="jf-upgate-card">
@@ -158,6 +184,72 @@ export function UpgradeGate({
           <Link className="jf-upgate-back" href={(canAdd ? "/dashboard/upgrade" : "/dashboard") as Route}>
             {canAdd ? "Compare plans" : "Back to overview"}
           </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type GatePrices = { tools: Partial<Record<ToolId, number>>; plans: Partial<Record<ToolPlanId, number>> };
+
+/** "Roof estimator · $49/mo" — what opens a page on the new plans, from the catalog's ids (lib/toolPlans/shared
+ *  toolOffering). The prices are the code's until the server answers with Admin → Plans' (actions/toolPlans). */
+function ToolsOffer({ id, label, isOwner }: { id: string | null; label: string; isOwner: boolean }) {
+  const [prices, setPrices] = useState<GatePrices | null>(null);
+  useEffect(() => {
+    let live = true;
+    toolGatePrices()
+      .then((p) => {
+        if (live && p) setPrices(p);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+  const offer = id ? toolOffering(id, DEFAULT_CATALOG) : null;
+  const toolCents = offer?.kind === "tool" ? prices?.tools[offer.tool.id] ?? offer.tool.cents : 0;
+  const planCents = offer?.kind === "size" ? prices?.plans[offer.plan.id] ?? offer.plan.cents : 0;
+  const lower = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
+  return (
+    <div className="jf-upgate" data-nest="" data-tools-offer={id ?? ""}>
+      <div className="jf-upgate-card">
+        <div className="jf-upgate-kick">{offer?.kind === "size" ? `On ${offer.plan.name}` : "Add it to your plan"}</div>
+        <h1 className="jf-upgate-h jf-upgate-h-gap">{label}</h1>
+        <p className="jf-upgate-p">
+          {offer?.kind === "tool" ? (
+            offer.tool.label === label ? (
+              offer.tool.note
+            ) : (
+              <>
+                {label} comes with <b>{offer.tool.label}</b>: {lower(offer.tool.note)}
+                {offer.also.length ? ` Also in ${offer.also.map((t) => t.label).join(" and ")}.` : null}
+              </>
+            )
+          ) : offer?.kind === "size" ? (
+            <>
+              {label} comes with the <b>{offer.plan.name}</b> plan.
+            </>
+          ) : (
+            "See what you can add to your plan."
+          )}
+        </p>
+        {offer ? (
+          <p className="jf-upgate-price">
+            {offer.kind === "tool" ? `${toolMoney(toolCents)}/mo on your bill` : `${offer.plan.name} is ${toolMoney(planCents)}/mo`}
+          </p>
+        ) : null}
+        {!isOwner ? <p className="jf-upgate-note">Ask the account owner to add it.</p> : null}
+        <div className="jf-upgate-row">
+          {isOwner ? (
+            <Link className="jf-upgate-go" href={"/dashboard/subscription" as Route}>
+              See it in Upgrade your plan
+            </Link>
+          ) : (
+            <Link className="jf-upgate-go" href={"/dashboard" as Route}>
+              Back to overview
+            </Link>
+          )}
         </div>
       </div>
     </div>

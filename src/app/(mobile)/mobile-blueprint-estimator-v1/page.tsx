@@ -24,7 +24,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = { width: "device-width", initialScale: 1, maximumScale: 1, viewportFit: "cover", themeColor: "#0a0a0a" };
 
 export default async function MobileBlueprintEstimatorPage() {
-  const gate = await customPageGate("smart-proposal", { handheld: true });
+  // Its own page on the new plans (the Blueprint estimator tool); Smart Proposal's on a Classic plan (lib/customPlan).
+  const gate = await customPageGate("blueprint-estimator", { handheld: true });
   if (gate) return gate;
   try {
     await requireOrg();

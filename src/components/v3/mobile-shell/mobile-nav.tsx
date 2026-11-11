@@ -69,6 +69,7 @@ import { TourChip } from "@/components/v3/onboarding-tour/tour-chip";
 import { SmartHelpRow } from "@/components/v3/smarthelp/smarthelp-row";
 import { AssistantRow } from "@/components/v3/assistant/assistant-row";
 import { OperatorFab } from "@/components/v3/assistant/operator-fab";
+import { UpgradePlanCard } from "@/components/v3/blueprint-shell/upgrade-plan-card";
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -501,6 +502,8 @@ export function MobileNav() {
               )}
             </div>
           ))}
+          {/* The new plans' "Upgrade your plan" (owner, 2026-11-10) — the desk sidebar's card, owner only. */}
+          <UpgradePlanCard variant="drawer" onPick={() => setOpen(false)} />
         </nav>
 
 

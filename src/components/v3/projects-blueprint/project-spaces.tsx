@@ -8,7 +8,7 @@
 import Link from "next/link";
 import type { Route } from "next";
 import type { CSSProperties, ReactNode } from "react";
-import { SPACES, SPACE_IDS, spaceHref, type SpaceId } from "@/lib/projectSpaces";
+import { SPACES, SPACE_IDS, spaceHref, spaceOpen, type SpaceId } from "@/lib/projectSpaces";
 import { needsToday, roadPins, spaceOfRow, spaceSummaries } from "./project-spaces-data";
 import type { Project } from "./projects-data";
 import s from "./project-spaces.module.css";
@@ -79,7 +79,7 @@ export function SpaceArt({ id, className }: { id: SpaceId; className?: string })
 }
 
 /** The three cards and what needs someone today. */
-export function ProjectSpacesHome({ rows }: { rows: Project[] }) {
+export function ProjectSpacesHome({ rows, closed = [] }: { rows: Project[]; /** Workspaces the plan doesn't hold (the new plans' tools, lib/projectSpaces spaceOpen) — no card. */ closed?: readonly SpaceId[] }) {
   const sum = spaceSummaries(rows);
   const today = needsToday(rows);
   return (
@@ -90,7 +90,7 @@ export function ProjectSpacesHome({ rows }: { rows: Project[] }) {
         <p className={s.homeLead}>Each one is built for its kind of work: its own steps, its own checks, its own words.</p>
       </div>
       <div className={s.cards}>
-        {SPACE_IDS.map((id) => {
+        {SPACE_IDS.filter((id) => spaceOpen(id, closed)).map((id) => {
           const sp = SPACES[id];
           const n = sum[id];
           return (

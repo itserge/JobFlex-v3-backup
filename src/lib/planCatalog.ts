@@ -11,6 +11,7 @@
 
 import { PLAN_TIERS, type Plan } from "@/lib/entitlements";
 import type { PlanLimits } from "@/lib/planLimits";
+import { isToolsSlug } from "@/lib/toolPlans/shared";
 
 export interface PlanDTO {
   id: string;
@@ -56,6 +57,8 @@ export function planCtaLabel(trialDays: number): string {
 export function featureTierForSlug(slug: string): Plan {
   const upper = slug.toUpperCase();
   if (upper === "CUSTOM") return "PROFESSIONAL"; // lib/customPlan CUSTOM_PLAN_TIER
+  // The new plans (Base + Tools): every boolean feature on — the page gate opens and closes their tools.
+  if (isToolsSlug(slug)) return "ENTERPRISE";
   return (PLAN_TIERS as readonly string[]).includes(upper) ? (upper as Plan) : "ENTERPRISE";
 }
 

@@ -8,7 +8,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { requireOrg } from "@/lib/orgContext";
 import { accessRole, hasFullAccess } from "@/lib/fullAccess";
-import { isPageLocked, requirePage } from "@/lib/customPageAccess";
+import { isPageLocked, pageLock, requirePage } from "@/lib/customPageAccess";
 import { isTrialWriteLocked } from "@/lib/trialState";
 import { assistantOpenFor } from "@/lib/assistant/open";
 import type { AssistantChannel } from "@/lib/assistant/shared";
@@ -79,8 +79,19 @@ const openFor = new WeakMap<AssistantActor, Promise<boolean>>();
  *  open as their session is (lib/fullAccess), and a text or a cron with no session is answered by the plan. */
 export const OPERATOR_PAUSED = "The AI Operator isn't on the Free plan. Choose a plan on Subscription to turn it back on — your conversations and tasks are kept.";
 
+/** ON THE NEW PLANS (Base + Tools, 2026-11-10) the Operator is a tool: a shop whose plan doesn't hold it is told so
+ *  (and has no Operator rows — actions/assistant assistantVisible). A Classic shop only ever hears OPERATOR_PAUSED. */
+export const OPERATOR_NOT_ON_PLAN = "The AI Operator isn't on your plan — add it under Upgrade your plan.";
+
 export async function operatorPaused(actor: Pick<AssistantActor, "organizationId" | "userId">): Promise<boolean> {
   return isPageLocked(actor.organizationId, "operator", { as: actor.userId });
+}
+
+/** Why the Operator is closed to this company, in its words — or null when it is open. */
+export async function operatorClosed(actor: Pick<AssistantActor, "organizationId" | "userId">): Promise<string | null> {
+  const lock = await pageLock(actor.organizationId, "operator", { as: actor.userId });
+  if (!lock.reason) return null;
+  return lock.tools && lock.reason === "not-included" ? OPERATOR_NOT_ON_PLAN : OPERATOR_PAUSED;
 }
 
 /** For an action that changes the Operator's own settings: throws the plan's refusal (lib/customPageAccess). */
@@ -101,7 +112,8 @@ export async function refusal(actor: AssistantActor, need: Capability, writes: b
       ? "The AI Operator is for the office. Your jobs and schedule are in your crew app."
       : "Your role in JobFlex doesn't allow that. Ask your owner or a manager.";
   }
-  if (await operatorPaused(actor)) return OPERATOR_PAUSED;
+  const closed = await operatorClosed(actor);
+  if (closed) return closed;
   const page = PAGE_OF[need];
   if (page && (await isPageLocked(actor.organizationId, page, { as: actor.userId }))) {
     return `Your plan doesn't include the ${page === "calendar" ? "Calendar" : "Workers"} page.`;

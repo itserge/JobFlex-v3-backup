@@ -218,8 +218,9 @@ export async function sweepMetaAutoImport(budgetMs = 45_000) {
     if (Date.now() > until) break;
     if (!parseMetaSettings(org.metaSettingsJson).autoCreate) continue;
     // The sweep (2026-10-30) files into Leads, which the Free plan closes — as importMetaLeads refuses by hand
-    // (requirePage "leads"), the cron leaves a company on Free alone (owner, 2026-11-09).
-    if (await isPageLocked(org.id, "leads", { as: null }).catch(() => true)) continue;
+    // (requirePage "meta-leads"), the cron leaves a company on Free alone (owner, 2026-11-09). "meta-leads" is
+    // Leads on a Classic plan, and the size's automatic Meta leads on the new ones (Professional and up).
+    if (await isPageLocked(org.id, "meta-leads", { as: null }).catch(() => true)) continue;
     workspaces++;
     try { imported += await importNewLeads(org.id); }
     catch (error) {

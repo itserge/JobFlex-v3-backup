@@ -9,7 +9,8 @@ import { getOrgPlanContext } from "@/lib/planCatalogServer";
 import { readAccessSubscription } from "@/lib/subscriptionAccess";
 import { deckAddonHeld } from "@/lib/deckAddonBilling";
 import { hasFullAccess } from "@/lib/fullAccess";
-import { customDeckPageHeld } from "@/lib/customPageAccess";
+import { customDeckPageHeld, isPageLocked } from "@/lib/customPageAccess";
+import { isToolsSlug } from "@/lib/toolPlans/shared";
 import { DOOR_COOKIE, canSwitch, editionLevel, hasEdition, homeFor, parseDoor, workspaceFor, type AccessFacts, type Door, type EditionLevel, type Workspace } from "@/lib/editions";
 
 /** `userId` undefined = the session's user (lib/fullAccess); null = nobody (the organization's own plan alone). */
@@ -21,6 +22,12 @@ export async function editionFacts(organizationId: string, userId?: string | nul
   ]);
   // A lapsed plan reads as FREE there whatever its name.
   const lapsed = ctx.tier === "FREE";
+  // A shop on the new plans (Base + Tools): Deck Studio is a tool its plan holds or not — the page gate's answer,
+  // asked of the organization alone (an admin's session is `fullAccess` above). Classic shops never get the fact.
+  if (isToolsSlug(sub?.plan)) {
+    const deck = !lapsed && !(await isPageLocked(organizationId, "deck-estimator", { as: null }).catch(() => true));
+    return { lapsed, trialing: !lapsed && sub?.status === "TRIALING", addon: false, customDeckPage: false, granted: !lapsed && sub?.provider === "MANUAL", fullAccess, tools: { deck } };
+  }
   const [addon, customDeckPage] = await Promise.all([
     // The Deck Studio add-on (lib/deckAddon): its line on the subscription the organization is on.
     sub?.externalSubId ? deckAddonHeld(organizationId, sub.externalSubId).catch(() => false) : Promise.resolve(false),

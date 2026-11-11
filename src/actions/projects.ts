@@ -9,7 +9,7 @@ import { enforcePlanLimit } from "@/lib/limitsEngine";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { loadProjectBook } from "@/components/v3/projects-blueprint/project-book-load";
 import type { Project } from "@/components/v3/projects-blueprint/projects-data";
-import { createProjectAs } from "@/lib/projectCore";
+import { createProjectAs, requireProjectKind } from "@/lib/projectCore";
 import { PROJECT_KINDS, parseAnswers, serializeAnswers, kindOf, kindsSwap } from "@/lib/projectKind";
 
 /** A new build's start questions (part 4, lib/projectPhases), each optional — the defaults are the common lot. (Not
@@ -92,6 +92,8 @@ export async function createProject(raw: unknown) {
   const { organizationId, user } = await requireEstimatorOrManager();
   await enforcePlanLimit(organizationId, "projects", 1, { actorId: user.id });
   const data = projectInput.parse(raw);
+  // A remodel needs Remodeler and a new build Home Builder on the new plans (lib/projectCore).
+  await requireProjectKind(organizationId, data.kind);
   const clientId = await clientInOrg(organizationId, data.clientId);
   const p = await createProjectAs({ organizationId, actorId: user.id }, { ...data, clientId });
   revalidatePath("/dashboard/projects");
@@ -108,6 +110,8 @@ export async function updateProject(raw: unknown) {
   const { id, ...rest } = data;
   // The kind can change until a stage is done: the templates, and soon the gates and the money, hang on it.
   // A remodel and a job project trade places at any time (2026-11-09): they work alike and differ only in workspace.
+  // Moving a project into a workspace the plan doesn't hold is refused on the new plans (lib/projectCore).
+  if (rest.kind !== undefined && rest.kind !== existing.kind) await requireProjectKind(organizationId, rest.kind);
   if (rest.kind !== undefined && rest.kind !== existing.kind && !kindsSwap(kindOf(existing.kind), rest.kind)) {
     const done = await db.projectStage.count({ where: { projectId: id, status: "DONE" } });
     if (done) throw new Error("The kind can't change once a stage is done.");

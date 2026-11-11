@@ -40,6 +40,7 @@ import { planTermState } from "@/lib/planChange";
 import { includedDeskMinutes } from "@/lib/aiDesk/minutes";
 import { deskBalance, EMPTY_PACKS, EMPTY_USE, minutesOf, monthKey, parseDeskPacks, parseDeskUse } from "@/lib/aiDesk/shared";
 import { smsAllowanceFor } from "@/lib/entitlements";
+import { toolsSmsAllowance } from "@/lib/toolPlans/allowances";
 import { cardlessTrialState } from "@/lib/trialState";
 import { TRIAL_CAPS, TRIAL_CAP_KEYS, TRIAL_CAP_NOUN } from "@/lib/trialCaps";
 import { loadCancelOffer, type CancelOffer } from "@/lib/cancelOfferServer";
@@ -329,7 +330,9 @@ export async function loadSubscriptionData(
     const texts = await db.smsMessage.count({ where: {
       organizationId, direction: "OUT", status: { in: ["SENT", "DELIVERED", "QUEUED"] }, createdAt: { gte: monthStart },
     } }).catch(() => null);
-    const row = { resource: "smsAllowance", label: "Text messages", scope: "monthly" as const, hint: "Included text allowance per calendar month", limit: smsAllowanceFor(planContext.tier) };
+    // The new plans' allowance (lib/toolPlans/allowances); null keeps the Classic tier's.
+    const toolsTexts = await toolsSmsAllowance(organizationId).catch(() => null);
+    const row = { resource: "smsAllowance", label: "Text messages", scope: "monthly" as const, hint: "Included text allowance per calendar month", limit: toolsTexts ?? smsAllowanceFor(planContext.tier) };
     if (texts === null) usageUnavailable.push(row);
     else usage.push({ ...row, used: texts, informational: true });
   }

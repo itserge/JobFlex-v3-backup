@@ -17,6 +17,8 @@
 // server NEVER prices from the client's number: it re-runs `customPriceCents`
 // over the stored selection, so a doctored request buys nothing cheaper.
 
+import { classicEquivalent, isToolsOnlyPageId, type ToolsOnlyPageId } from "@/lib/toolPlans/shared";
+
 /** Base price of the custom plan, per month, in cents. */
 export const CUSTOM_BASE_CENTS = 2000;
 /** Each add-on page, per month, in cents. */
@@ -56,8 +58,9 @@ export interface CustomPage {
 
 export const CUSTOM_PAGES: CustomPage[] = [
   { id: "smart-proposal", label: "Smart Proposal", note: "AI estimate from a prompt", href: "/dashboard/advanced-ai",
-    // The blueprint estimator is Smart Proposal's plan set as its own tool (2026-10-13).
-    aliases: ["/dashboard/proposals/ai", "/mobile-advanced-ai-v2", "/mobile-smart-estimate-v1", "/dashboard/blueprint-estimator"] },
+    // The blueprint estimator, Smart Proposal's plan set as its own tool (2026-10-13), is its own entry since
+    // 2026-11-10 (TOOLS_PAGES "blueprint-estimator"): a Classic shop still answers it as Smart Proposal (classicEquivalent).
+    aliases: ["/dashboard/proposals/ai", "/mobile-advanced-ai-v2", "/mobile-smart-estimate-v1"] },
   { id: "roof-estimator", label: "Roof estimator", note: "Aerial roof takeoff", href: "/dashboard/roof-estimator",
     aliases: ["/dashboard/advanced-ai/roof", "/mobile-roof-estimator-v2"] },
   { id: "fence-estimator", label: "Fence estimator", note: "Draw the fence on a map", href: "/dashboard/fence-estimator",
@@ -114,18 +117,70 @@ export const PAID_FEATURES: PaidFeature[] = [
   { id: "smartbook", label: "SmartBook", note: "New leads book a visit by text, email or call", href: null, aliases: [] },
 ];
 
-/** Every id the gate answers for: a sellable add-on page or a paid feature. */
-export type GatedPageId = CustomPageId | PaidFeatureId;
-export type GatedPage = CustomPage | PaidFeature;
+// ── THE NEW PLANS' PAGES (Base + Tools, part 3a — owner, 2026-11-10) ─────────
+// What the new plans sell page by page (lib/toolPlans/shared TOOLS[].opens and the sizes' features) that no Classic
+// plan ever sold: never in the Custom plan's picker or price, never in a Classic shop's blocked list except through
+// its Classic answer (classicEquivalent — the blueprint estimator is Smart Proposal's page there, the Meta import is
+// Leads'). For a new-plan shop the gate (lib/customPageAccess) opens exactly what its plan and tools hold.
+//   href  — the page of its own, so pageForPath resolves it and the menu leaves it out; null when the feature lives
+//           inside an older page (the project workspaces, commission on the proposals and Workers, the Meta import).
+export interface ToolsPage {
+  id: ToolsOnlyPageId;
+  label: string;
+  note: string;
+  href: string | null;
+  aliases: string[];
+}
+
+export const TOOLS_PAGES: ToolsPage[] = [
+  { id: "deck-estimator", label: "Deck Studio", note: "3D deck design, permit set, materials and price", href: "/dashboard/deck-estimator",
+    // The Deck Lab's five designs run the same studio (dashboard/deck-v1 … deck-v5).
+    aliases: ["/dashboard/deck-lab", "/dashboard/deck-v1", "/dashboard/deck-v2", "/dashboard/deck-v3", "/dashboard/deck-v4", "/dashboard/deck-v5"] },
+  { id: "blueprint-estimator", label: "Blueprint estimator", note: "Upload the plans, ask for any job off them", href: "/dashboard/blueprint-estimator",
+    aliases: ["/mobile-blueprint-estimator-v1"] },
+  { id: "texting", label: "Text messaging", note: "Texts to clients and leads", href: "/dashboard/texting", aliases: ["/mobile-texting-v1"] },
+  { id: "team-messages", label: "Team messages", note: "The team's threads, the crew's included", href: "/dashboard/messages", aliases: ["/mobile-messages-v2"] },
+  { id: "hire", label: "Hire board", note: "Find a tradesperson, or post yourself for hire", href: "/dashboard/hire", aliases: ["/mobile-hire-v1"] },
+  { id: "home-builder", label: "Home Builder", note: "New-construction projects: phases, lot, draws", href: null, aliases: [] },
+  { id: "remodeler", label: "Remodeler", note: "Remodel projects: stages, selections, client page", href: null, aliases: [] },
+  { id: "meta-leads", label: "Automatic Meta leads", note: "Facebook and Instagram leads come in by themselves", href: null, aliases: [] },
+  { id: "roles", label: "Team roles", note: "Managers, office and sales roles", href: null, aliases: [] },
+  { id: "commission", label: "Sales commission", note: "Each rep's percent, earned as the client pays", href: null, aliases: [] },
+  { id: "custom-domain", label: "Custom domain", note: "Your branding on your own domain", href: null, aliases: [] },
+  { id: "multi-org", label: "Several companies", note: "More than one company under one login", href: null, aliases: [] },
+  { id: "priority-support", label: "Priority support", note: "Priority support and a setup call", href: null, aliases: [] },
+];
+
+/** A marker the blocked list carries for a shop on the new plans (lib/customPageAccess): the menu LEAVES OUT the
+ *  blocked rows instead of drawing them locked, an "Upgrade your plan" button sits at its foot (owner only), and a
+ *  blocked URL shows the tool's card. Not a page href, so isCustomBlockedPath never matches it. A lapsed new-plan
+ *  shop's list carries PLAN_ENDED_MARK instead: it is answered as a lapsed Classic shop. */
+export const TOOLS_MARK = "#tools";
+
+/** Every id the gate answers for: a sellable add-on page, a paid feature, or a page the new plans sell. */
+export type GatedPageId = CustomPageId | PaidFeatureId | ToolsOnlyPageId;
+export type GatedPage = CustomPage | PaidFeature | ToolsPage;
 
 const PAID_IDS = new Set<string>(PAID_FEATURES.map((f) => f.id));
 export function isPaidFeature(id: string): id is PaidFeatureId {
   return PAID_IDS.has(id);
 }
 
-/** The page or feature behind an id, for its label and its href. */
+/** An id the gate answers for (any of the three lists). */
+export function isGatedPageId(id: string): id is GatedPageId {
+  return CUSTOM_PAGES.some((p) => p.id === id) || PAID_IDS.has(id) || isToolsOnlyPageId(id);
+}
+
+/** The page or feature behind an id, for its label and its href. A Classic sellable page wins over a new-plan
+ *  entry of the same id (only the retired deck page shares one, and it is not in CUSTOM_PAGES). */
 export function gatedPage(id: GatedPageId): GatedPage | null {
-  return CUSTOM_PAGES.find((p) => p.id === id) ?? PAID_FEATURES.find((f) => f.id === id) ?? null;
+  return CUSTOM_PAGES.find((p) => p.id === id) ?? PAID_FEATURES.find((f) => f.id === id) ?? TOOLS_PAGES.find((t) => t.id === id) ?? null;
+}
+
+/** How a Classic shop reads a gated id: a new-plan id through classicEquivalent (null = not this gate's to close),
+ *  any other id as itself. */
+export function classicPageId(id: GatedPageId): CustomPageId | PaidFeatureId | null {
+  return isToolsOnlyPageId(id) ? classicEquivalent(id) : (id as CustomPageId | PaidFeatureId);
 }
 
 /** Addresses under an add-on's prefix that belong to the BASE workspace: the
@@ -154,7 +209,7 @@ export function pageForPath(pathname: string): GatedPage | null {
   for (const ex of BASE_EXCEPTIONS) {
     if (underPrefix(path, ex) && ex.length > best.len) best = { page: null, len: ex.length };
   }
-  for (const page of [...CUSTOM_PAGES, ...PAID_FEATURES]) {
+  for (const page of [...CUSTOM_PAGES, ...PAID_FEATURES, ...TOOLS_PAGES]) {
     for (const prefix of [page.href, ...page.aliases]) {
       if (prefix && underPrefix(path, prefix) && prefix.length > best.len) best = { page, len: prefix.length };
     }
@@ -233,13 +288,38 @@ export const PLAN_ENDED_MARK = "#plan-ended";
 
 export function blockedCustomHrefs(bought: readonly string[] | null | undefined): string[] {
   const have = new Set(normalizeCustomPages(bought));
-  return CUSTOM_PAGES.filter((p) => !have.has(p.id)).map((p) => p.href);
+  return [
+    ...CUSTOM_PAGES.filter((p) => !have.has(p.id)).map((p) => p.href),
+    // A new-plan page with a Classic answer is blocked with it: the blueprint estimator with Smart Proposal.
+    ...classicTwinHrefs((id) => !have.has(id)),
+  ];
+}
+
+/** The hrefs of the new-plan pages a Classic shop answers through a page it may not hold (classicEquivalent). */
+function classicTwinHrefs(blocked: (id: string) => boolean): string[] {
+  return TOOLS_PAGES.flatMap((t) => {
+    const twin = classicEquivalent(t.id);
+    return t.href && twin && blocked(twin) ? [t.href] : [];
+  });
 }
 
 /** What a LAPSED plan blocks (lib/planStatus — the Free plan among them): every add-on page and every paid
- *  feature that has a page of its own. The gate's list carries PLAN_ENDED_MARK beside these. */
-export function lapsedBlockedHrefs(): string[] {
-  return [...CUSTOM_PAGES.map((p) => p.href), ...PAID_FEATURES.flatMap((f) => (f.href ? [f.href] : []))];
+ *  feature that has a page of its own (and the blueprint estimator, Smart Proposal's). The gate's list carries
+ *  PLAN_ENDED_MARK beside these. `tools`: a new-plan shop's — its own pages close too. */
+export function lapsedBlockedHrefs(tools = false): string[] {
+  return [
+    ...CUSTOM_PAGES.map((p) => p.href),
+    ...PAID_FEATURES.flatMap((f) => (f.href ? [f.href] : [])),
+    ...(tools ? TOOLS_PAGES.flatMap((t) => (t.href ? [t.href] : [])) : classicTwinHrefs(() => true)),
+  ];
+}
+
+/** The hrefs a new-plan shop may NOT open: every gated page with a page of its own that `owned` lacks, and the
+ *  TOOLS_MARK that tells the menu and the gate the shop is on the new plans. */
+export function toolsBlockedHrefs(owned: ReadonlySet<string> | readonly string[]): string[] {
+  const has = (id: string) => (Array.isArray(owned) ? (owned as readonly string[]).includes(id) : (owned as ReadonlySet<string>).has(id));
+  const all: Array<{ id: string; href: string | null }> = [...CUSTOM_PAGES, ...PAID_FEATURES, ...TOOLS_PAGES];
+  return [...new Set(all.filter((p) => p.href && !has(p.id)).map((p) => p.href as string)), TOOLS_MARK];
 }
 
 /** Whether a path opens a page in the blocked list (the hrefs
