@@ -106,7 +106,8 @@ console.log("── families");
   check("shadowbox pickets ≈ double a solid face", qty(shadow, "picket") > qty(solid, "picket") * 1.2);
   const cl = computeFenceTakeoff({ ...CEDAR_100, type: "chain-link-galv", heightFt: 4 });
   check("chain link: fabric, top rail, tension wire — no pickets", !bom(cl, "picket") && !!bom(cl, "mesh") && !!bom(cl, "top-rail") && !!bom(cl, "tension-wire"));
-  check("bands only on terminal posts (≤ 24)", qty(cl, "tension-band") <= 24 && qty(cl, "tension-band") > 0, String(qty(cl, "tension-band")));
+  // Bands go on every tension bar — terminal posts only, a corner's two faces each — never on the line posts.
+  check("bands only on terminal faces: one set per tension bar, none on line posts", qty(cl, "tension-band") === Math.ceil(qty(cl, "tension-bar") * (4 / 1.2)) && qty(cl, "tension-band") < cl.posts.total * (4 / 1.2), `${qty(cl, "tension-band")} bands on ${qty(cl, "tension-bar")} bars`);
   check("loop caps on line posts, domes on terminals", qty(cl, "cap-loop") === cl.posts.line && qty(cl, "cap-dome") === cl.posts.corner + cl.posts.end + cl.posts.gate);
   const vinyl = computeFenceTakeoff({ ...CEDAR_100, type: "vinyl-privacy" });
   check("vinyl: one panel per section, stiffeners, no brackets", qty(vinyl, "panel") === vinyl.sections && qty(vinyl, "rail-stiffener") === vinyl.sections && !bom(vinyl, "bracket"));
@@ -367,6 +368,44 @@ console.log("── the package after the Optima estimate (2026-09-23): post sys
   const deepNote = fenceChecks(deep, { ...CEDAR_100, steppedSections: 3, frostIn: 36 }).map((c) => c.text).join(" ");
   check("frost already makes every post as long as a step post: the check says the posts take the drop, not \"10' there, 10' elsewhere\"", deep.takeoff.postLengthFt.step === deep.takeoff.postLengthFt.base && /take the drop/.test(deepNote) && !/posts there/.test(deepNote), deepNote.match(/[^.]*steps? down the slope[^.]*/)?.[0]);
   check("every package carries its notes", base.notes.length >= 4 && base.notes[0].startsWith("Warranty:"));
+}
+
+console.log("── the studio walk-through (2026-11-10)");
+{
+  const postRows = (t: ReturnType<typeof computeFenceTakeoff>) => ["post-line", "post-corner", "post-end", "post-gate", "step-posts"].reduce((a, k) => a + (t.bom.find((b) => b.key === k)?.qty ?? 0), 0);
+  // The step posts are some of the posts, not more of them.
+  const loop = computeFenceTakeoff({ type: "cedar-privacy", heightFt: 6, runs: [{ lengthFt: 487.6, corners: 4, closed: true }], openings: [{ widthFt: 4, kind: "gate", label: "Single gate", variant: "single" }], terrain: "sloped", wastePct: 10, steppedSections: 56, steelGatePosts: true });
+  check("56 steps on a 63-post loop: 56 of the posts are the 10' stock, 7 the 8' — 63 posts on the list, not 119", qty(loop, "step-posts") === 56 && postRows(loop) === loop.posts.total && loop.posts.total === 63 && qty(loop, "post-line") === 1, `rows ${postRows(loop)} of ${loop.posts.total}, line ${qty(loop, "post-line")}`);
+  const split = computeFenceTakeoff({ type: "split-rail-2", heightFt: 3, runs: [{ lengthFt: 200, corners: 0 }], openings: [], terrain: "sloped", wastePct: 10, steppedSections: 12 });
+  check("split rail: the step post is no longer than the post (\"the 6' posts take the drop\") — no extended-post row", !bom(split, "step-posts") && split.postLengthFt.step === split.postLengthFt.base, `base ${split.postLengthFt.base}, step ${split.postLengthFt.step}`);
+  const steep = computeFenceTakeoff({ type: "vinyl-privacy", heightFt: 6, runs: [{ lengthFt: 80, corners: 0 }], openings: [], terrain: "steep", wastePct: 10, steppedSections: 22 });
+  check("more steps than posts: never more extended posts than posts", qty(steep, "step-posts") <= steep.posts.total - steep.posts.gate && postRows(steep) === steep.posts.total);
+  // Chain link: a corner terminates fabric, rail and brace on both sides.
+  const cl = computeFenceTakeoff({ type: "chain-link-galv", heightFt: 6, runs: [{ lengthFt: 487.6, corners: 4, closed: true }], openings: [{ widthFt: 4, kind: "gate", label: "Single gate", variant: "single" }], terrain: "flat", wastePct: 10 });
+  check("chain link, 4-corner loop + 1 gate: 10 bars, 50 bands, 10 end cups, 10 brace bands", qty(cl, "tension-bar") === 10 && qty(cl, "tension-band") === 50 && qty(cl, "rail-end") === 10 && qty(cl, "brace-band") === 10, `bars ${qty(cl, "tension-bar")} bands ${qty(cl, "tension-band")} cups ${qty(cl, "rail-end")} braces ${qty(cl, "brace-band")}`);
+  // A post system + steel gate posts: the gate posts are paid once.
+  for (const sys of ["6x6", "post-on-pipe", "cedar-post-on-pipe"] as const) {
+    const pk = priceFencePackage({ ...CEDAR_100, postUpgrade: sys, steelGatePosts: true });
+    const up = lineOf(pk, "fence-post-upgrade"), sg = lineOf(pk, "fence-gate-posts-steel");
+    check(`${sys} + steel gate posts: the upgrade leaves the steel gate posts out`, !!up && !!sg && up.quantity === pk.takeoff.posts.total - pk.takeoff.posts.gate && sg.quantity === pk.takeoff.posts.gate, `upgrade ${up?.quantity}, steel ${sg?.quantity}, posts ${pk.takeoff.posts.total}`);
+    if (sys !== "6x6") check(`${sys}: no pipe for the steel gate posts`, qty(pk.takeoff, "post-pipe") === pk.takeoff.posts.total - pk.takeoff.posts.gate);
+  }
+  const noSteel = priceFencePackage({ ...CEDAR_100, postUpgrade: "post-on-pipe" });
+  check("without steel gate posts the upgrade still covers every post", lineOf(noSteel, "fence-post-upgrade")?.quantity === noSteel.takeoff.posts.total);
+  // A tear-out rate typed as $0 is $0.
+  const free = priceFencePackage({ ...CEDAR_100, removalLf: 140 }, { removalPerLf: 0 });
+  const dflt = priceFencePackage({ ...CEDAR_100, removalLf: 140 });
+  check("tear-out typed at $0/lf bills $0; no rate given still bills the default", amount(free, "fence-removal") === 0 && amount(dflt, "fence-removal") > 0, `$0 → ${amount(free, "fence-removal")}, default → ${amount(dflt, "fence-removal")}`);
+  // Best never costs less than Better.
+  const cost = (id: Parameters<typeof fenceTiers>[0], h: number) => { const ft = fenceType(id); return (ft.materialPerLf + ft.laborPerLf) * heightFactor(ft, h); };
+  const cheapBest = FENCE_TYPES.flatMap((t) => t.heightsFt.map((h) => ({ t: t.id, h }))).filter(({ t, h }) => fenceTiers(t, h).some((x) => x.id === "best" && !x.stain && cost(x.type, h) <= cost(t, h)));
+  check("no Best card is cheaper than its Better (vinyl picket at 4' offered vinyl privacy as Best)", cheapBest.length === 0, cheapBest.map((x) => `${x.t}@${x.h}`).join(", "));
+  // The cedar grade only on cedar boards.
+  const pt = priceFencePackage({ ...CEDAR_100, type: "pt-pine-privacy", boardGrade: "clear" });
+  const ptStd = priceFencePackage({ ...CEDAR_100, type: "pt-pine-privacy" });
+  check("pressure-treated pine with 'clear' picked: no cedar grade in the name, the price or the list", !/cedar/i.test(lineOf(pt, "fence-materials")!.name) && amount(pt, "fence-materials") === amount(ptStd, "fence-materials") && !/^Clear /.test(bom(pt.takeoff, "picket")!.label));
+  const cedarClear = priceFencePackage({ ...CEDAR_100, boardGrade: "clear" });
+  check("cedar with 'clear' picked still prices and names the grade", /clear cedar/.test(lineOf(cedarClear, "fence-materials")!.name) && amount(cedarClear, "fence-materials") > amount(priceFencePackage(CEDAR_100), "fence-materials"));
 }
 
 console.log(bad ? `\n${bad} check(s) FAILED` : "\nall checks passed");
