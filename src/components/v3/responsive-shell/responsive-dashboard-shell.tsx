@@ -327,6 +327,8 @@ const BLUEPRINT_HANDHELD = new Set([
   "/dashboard/booking",
   // Tutorials (2026-11-11): one responsive page — the cards in one column, the player over its chapters at <=768px.
   "/dashboard/tutorials",
+  // The new plans' welcome page (Base + Tools, part 3b): one responsive page, its cards one column at <=768px.
+  "/dashboard/welcome",
 ]);
 
 export function ResponsiveDashboardShell({

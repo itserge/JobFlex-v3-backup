@@ -1,4 +1,4 @@
-// BASE + TOOLS — the new plans' rules (2026-11-10, parts 1–3a), on the catalog as set. No database.
+// BASE + TOOLS — the new plans' rules (2026-11-10, parts 1–3b), on the catalog as set. No database.
 //   NODE_PATH="" npx tsx --tsconfig tsconfig.json qa/tests/logic/tool-plans.check.ts
 
 import {
@@ -39,6 +39,10 @@ import {
   projectKindPage,
   toolOffering,
   toolsPagesOpen,
+  chosenTradeFor,
+  toolsSubscriptionModel,
+  tryDayWords,
+  tryReminderWords,
 } from "@/lib/toolPlans/shared";
 import {
   CUSTOM_PAGES,
@@ -244,6 +248,81 @@ check("Upgrade your plan: the new plans' owner only", showsUpgradePlan("OWNER", 
 // Deck Studio on the new plans
 check("Deck Studio on the new plans follows its tool, not the free days", hasEdition({ lapsed: false, trialing: true, tools: { deck: false } }) === false && hasEdition({ lapsed: false, tools: { deck: true } }) && hasEdition({ lapsed: false, tools: { deck: false }, fullAccess: true }) && hasEdition({ lapsed: false, tools: { deck: false }, granted: true }) && !hasEdition({ lapsed: true, tools: { deck: true } }));
 check("…Classic unchanged: the trial holds it, a paid plan needs the add-on", hasEdition({ lapsed: false, trialing: true }) && !hasEdition({ lapsed: false }) && hasEdition({ lapsed: false, addon: true }));
+
+// ── part 3b: the record's reminder stamp ──
+const withStamp = parseToolsRecord(JSON.stringify({ ...emptyToolsRecord("basic", "deck"), tries: {
+  roof: { startedAt: at(10).toISOString(), endsAt: at(13).toISOString(), onLine: false, remindedAt: at(12).toISOString() },
+  fence: { startedAt: at(10).toISOString(), onLine: false },
+  video: { startedAt: at(10).toISOString(), endsAt: at(13).toISOString(), onLine: "yes", billedAt: 5, remindedAt: { x: 1 } },
+} }));
+check("a try keeps its reminder stamp", withStamp?.tries.roof?.remindedAt === at(12).toISOString());
+check("…a try with no end is dropped; a stamp that isn't a date string is dropped", !!withStamp && !withStamp.tries.fence && !!withStamp.tries.video && withStamp.tries.video.remindedAt === undefined && withStamp.tries.video.billedAt === undefined && withStamp.tries.video.onLine === false, withStamp?.tries);
+const old2a = parseToolsRecord(JSON.stringify(rec));
+check("a record written before part 3b reads the same", !!old2a && JSON.stringify(old2a.tries) === JSON.stringify(rec.tries));
+
+// ── part 3b: what the sweep never bills ──
+const switched = { ...emptyToolsRecord("professional", "roof"), tries: { roof: { startedAt: at(10).toISOString(), endsAt: at(13).toISOString(), onLine: false } } };
+check("a try that became the main tool is never billed as a try", triesToBill(switched, at(14)).length === 0);
+const movedUp = { ...emptyToolsRecord("advanced", "deck"), chosenTrade: ["deck" as const], tries: { texting: { startedAt: at(10).toISOString(), endsAt: at(13).toISOString(), onLine: false }, fence: { startedAt: at(10).toISOString(), endsAt: at(13).toISOString(), onLine: false } } };
+check("…nor one the size now includes (moved up to Advanced mid-try); another tool still is", triesToBill(movedUp, at(14)).join() === "fence");
+
+// ── part 3b: Advanced's two trade tools on a move ──
+check("Advanced picks the main tool, then the dearest trade tools on the bill", chosenTradeFor("advanced", "fence", ["roof", "deck", "texting"]).join() === "fence,deck" && chosenTradeFor("advanced", "aidesk", ["roof", "deck", "fence"]).join() === "deck,roof");
+check("…a size that picks none: none", chosenTradeFor("professional", "deck", ["roof"]).length === 0 && chosenTradeFor("complete", "deck", ["roof"]).length === 0);
+
+// ── part 3b: the Subscription page's and the welcome page's view ──
+const nov = (d: number, h = 15) => new Date(Date.UTC(2026, 10, d, h));
+check("a Classic slug has no view", toolsSubscriptionModel({ record: null, planSlug: "PROFESSIONAL", people: 1, now: nov(10), status: "ACTIVE", trialEndsAt: null }) === null);
+const m1 = toolsSubscriptionModel({ record: emptyToolsRecord("basic", "deck"), planSlug: "TOOLS-BASIC", people: 1, now: nov(10), status: "TRIALING", trialEndsAt: nov(17), timeZone: "UTC" })!;
+check("Basic + Deck Studio in the free days: the name, $118.99, just you, free until Nov 17", m1.plan.label === "Basic + Deck Studio" && m1.plan.monthlyCents === 11899 && m1.plan.paidPeople === 1 && m1.plan.seatCents === null && m1.inTrial && m1.trialDay === "Nov 17", m1.plan);
+check("…its tools: Deck Studio, the main tool, billed on its own", m1.tools.length === 1 && m1.tools[0].id === "deck" && m1.tools[0].state === "main" && m1.tools[0].inPlan === false);
+check("…to add: works well with Deck Studio first (texting, Smart CRM, AI Operator), then the other 8", m1.offer.length === 11 && m1.offer.slice(0, 3).map((o) => `${o.id}:${o.pair}`).join() === "texting:true,smartcrm:true,operator:true" && m1.offer.slice(3).every((o) => !o.pair));
+check("…each a free try that ends with the free days, the date and the price said", m1.offer.every((o) => o.canTry && o.tryDay === "Nov 17") && m1.offer[0].tryWords === "Free until Nov 17, then $29/mo on your bill. Remove it any time before.");
+const p1 = Object.fromEntries(m1.plans.map((p) => [p.id, p]));
+check("…bigger plans priced with Deck Studio: Professional $154, Advanced $249 (deck included), Complete $449", m1.plans.length === 3 && m1.plans.every((p) => p.bigger && p.canMove) && p1.professional.cents === 15400 && p1.advanced.cents === 24900 && p1.complete.cents === 44900, m1.plans.map((p) => [p.id, p.cents]));
+check("…Advanced says Deck Studio comes included; Professional doesn't", p1.advanced.includes.join() === "Deck Studio" && p1.professional.includes.length === 0 && p1.professional.loses.length === 0);
+check("…the main tool can be switched to any of the other 11 in the free days", m1.switchTo.length === 11 && !m1.switchTo.some((t) => t.id === "deck"));
+const m1after = toolsSubscriptionModel({ record: emptyToolsRecord("basic", "deck"), planSlug: "TOOLS-BASIC", people: 1, now: nov(18), status: "ACTIVE", trialEndsAt: nov(17), timeZone: "UTC" })!;
+check("…after the free days: no switch, a try runs 3 days", !m1after.inTrial && m1after.switchTo.length === 0 && m1after.offer[0].tryDay === "Nov 21");
+
+const proRec = {
+  ...emptyToolsRecord("professional", "roof"),
+  subId: "sub_x",
+  lines: { roof: { itemId: "si_r", cents: 4900, since: nov(1).toISOString() }, texting: { itemId: "si_t", cents: 2900, since: nov(1).toISOString() } },
+  seat: { itemId: "si_s", quantity: 2, cents: 999 },
+  closing: { aidesk: new Date(Date.UTC(2026, 11, 3, 12)).toISOString() },
+  tries: {
+    texting: { startedAt: nov(1).toISOString(), endsAt: nov(4).toISOString(), onLine: false, billedAt: nov(4).toISOString() },
+    video: { startedAt: nov(1).toISOString(), endsAt: nov(4).toISOString(), onLine: false, removedAt: nov(2).toISOString() },
+    hvac: { startedAt: nov(19).toISOString(), endsAt: nov(22).toISOString(), onLine: false },
+  },
+};
+const m2 = toolsSubscriptionModel({ record: proRec, planSlug: "tools-professional", people: 6, now: nov(20), status: "ACTIVE", trialEndsAt: null, hasCard: true, timeZone: "UTC" })!;
+check("Professional, 6 on the team, 7 paid for: $75 + 2 × $9.99 + roof + texting = $172.98", m2.plan.people === 6 && m2.plan.paidPeople === 7 && m2.plan.extraPeople === 2 && m2.plan.monthlyCents === 17298 && m2.plan.label === "Professional + Roof estimator" && m2.hasCard, m2.plan);
+const st2 = Object.fromEntries(m2.tools.map((t) => [t.id, t]));
+check("…its tools: roof the main, texting on the bill, an HVAC try running, AI desk closing Dec 3", m2.tools.map((t) => `${t.id}:${t.state}`).join() === "roof:main,hvac:trying,texting:on-bill,aidesk:closing" && st2.texting.cents === 2900 && st2.hvac.day === "Nov 22" && st2.hvac.removed === false && st2.aidesk.day === "Dec 3", m2.tools);
+const o2 = Object.fromEntries(m2.offer.map((o) => [o.id, o]));
+check("…a used try can't be tried again (Add instead); one never tried can, for 3 days", o2.video.canTry === false && o2.video.tryWords === null && o2.smartcrm.canTry === true && o2.smartcrm.tryDay === "Nov 23" && !o2.hvac && !o2.aidesk && !o2.texting);
+check("…works well with the roof: only Smart CRM is left of its three", m2.offer.filter((o) => o.pair).map((o) => o.id).join() === "smartcrm" && m2.offer[0].id === "smartcrm");
+const p2 = Object.fromEntries(m2.plans.map((p) => [p.id, p]));
+check("…Advanced with its own tools: $249 (roof and texting included, 6 people inside 10)", p2.advanced.cents === 24900 && p2.advanced.bigger && p2.advanced.includes.join() === "Roof estimator,Text messaging", p2.advanced);
+check("…Complete $449; Basic can't take a team of 6, in words", p2.complete.cents === 44900 && !p2.basic.bigger && !p2.basic.canMove && p2.basic.why === "Basic is just you. Remove the other 5 people first.", p2.basic);
+check("…no switch after the free days", !m2.inTrial && m2.switchTo.length === 0);
+
+const advRec = { ...emptyToolsRecord("advanced", "deck"), chosenTrade: ["deck" as const, "roof" as const], lines: { fence: { itemId: "si_f", cents: 4900, since: nov(1).toISOString() } }, seat: { itemId: "si_s", quantity: 2, cents: 799 } };
+const m3 = toolsSubscriptionModel({ record: advRec, planSlug: "TOOLS-ADVANCED", people: 12, now: nov(20), status: "ACTIVE", trialEndsAt: null, timeZone: "UTC" })!;
+check("Advanced, 12 people: $249 + 2 × $7.99 + fence = $313.98, named Advanced (deck included)", m3.plan.monthlyCents === 31398 && m3.plan.label === "Advanced" && m3.plan.paidPeople === 12, m3.plan);
+check("…its tools: deck the main (in the plan), roof and the four office tools included, fence on the bill", m3.tools.map((t) => `${t.id}:${t.state}`).join() === "deck:main,roof:included,aidesk:included,texting:included,smartcrm:included,operator:included,fence:on-bill" && m3.tools[0].inPlan === true, m3.tools.map((t) => t.id));
+check("…to add: the five trade tools left, none of the office tools", m3.offer.map((o) => o.id).join() === "hvac,blueprint,video,builder,remodeler" && m3.offer.every((o) => !o.pair));
+const p3 = Object.fromEntries(m3.plans.map((p) => [p.id, p]));
+check("…Professional, smaller: $75 + 7 × $9.99 + deck + fence = $272.93, and what closes", p3.professional.cents === 27293 && !p3.professional.bigger && p3.professional.loses.join() === "Roof estimator,AI desk,Text messaging,Smart CRM,AI Operator", p3.professional);
+check("…Complete: $449 + 2 × $7.99, fence comes included", p3.complete.cents === 46498 && p3.complete.includes.join() === "Fence estimator");
+check("a Complete shop has nothing left to add", toolsSubscriptionModel({ record: emptyToolsRecord("complete", "deck"), planSlug: "tools-complete", people: 3, now: nov(20), status: "ACTIVE", trialEndsAt: null })!.offer.length === 0);
+
+// ── part 3b: the reminder's words ──
+check("one try: the owner's words", tryReminderWords([{ label: "Roof estimator", cents: 4900, day: "tomorrow" }]).line === "Your Roof estimator is free until tomorrow, then $49/mo on your bill. Nothing to do to keep it. Don't want it? Remove it on Subscription." && tryReminderWords([{ label: "Roof estimator", cents: 4900, day: "tomorrow" }]).subject === "Your Roof estimator is free until tomorrow");
+check("two on the same day: one sentence", tryReminderWords([{ label: "Roof estimator", cents: 4900, day: "tomorrow" }, { label: "Text messaging", cents: 2900, day: "tomorrow" }]).line === "Your Roof estimator and Text messaging are free until tomorrow, then $49/mo and $29/mo on your bill. Nothing to do to keep them. Don't want one? Remove it on Subscription.");
+check("the day in the shop's own zone: tomorrow, later today, or the date", tryDayWords(nov(17), nov(16, 16), "UTC") === "tomorrow" && tryDayWords(nov(17, 3), nov(16, 20), "America/Los_Angeles") === "later today" && tryDayWords(nov(17, 3), nov(16, 20), "UTC") === "tomorrow" && tryDayWords(nov(19), nov(16), "UTC") === "Nov 19");
 
 console.log(bad ? `\n${bad} FAILED` : "\nall ok");
 process.exit(bad ? 1 : 0);
