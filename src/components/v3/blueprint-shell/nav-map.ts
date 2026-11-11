@@ -45,6 +45,10 @@ export type NavItem = {
   /** AN ADMIN PREVIEW (2026-10-18): drawn only for an account the layout names in `view.tools` — fail-closed, so a
    *  nav drawn without that list (a handheld twin, a failed read) never shows it. */
   preview?: boolean;
+  /** DRAWN IN THE TOP BAR, NOT THE DESK SIDEBAR (2026-11-11, Tutorials): the desktop sidebar skips the row because
+   *  the top bar carries it as its own button (blueprint-shell/topbar). The phone drawer, whose bar has no room for
+   *  another button, and the ⌘K palette still list it, and the route gates read it as any other row. */
+  topbar?: boolean;
 };
 /** The tool colours (globals.css `--tool-*`, mapped by `[data-tone]`). One per tool. */
 export type ToolTone = "violet" | "blue" | "spruce" | "berry" | "teal" | "cedar" | "navy" | "olive" | "gold";
@@ -224,8 +228,11 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     // TUTORIALS (owner, 2026-11-11: "add tutorials in a sidebar on the bottom"): the videos that walk through each
     // tool, for every role and every workspace. The page puts the viewer's own tools first (components/v3/tutorials).
+    // Moved to the top bar the same day (owner: "move tutorial button … on the tab … different color, to attract, to
+    // watch"): an orange "Watch tutorials" button between the search and New Estimate. `topbar` keeps the row out of
+    // the desk sidebar only — the phone drawer and the palette still list it.
     label: "Learn",
-    items: [{ label: "Tutorials", icon: "i-learn", href: "/dashboard/tutorials" }],
+    items: [{ label: "Tutorials", icon: "i-learn", href: "/dashboard/tutorials", topbar: true }],
   },
 ];
 
