@@ -131,3 +131,36 @@ export function buildTrialEndingSoon(i: TrialEndingSoonInput): EmailDoc {
     footer: PLATFORM_FOOTER,
   };
 }
+
+/* A FREE TRY ENDS TOMORROW (Base + Tools, part 3b — owner, 2026-11-10: "a reminder a day before"). The new plans'
+   tool tries go on the bill by themselves when they end, unless removed; this says so the day before: the tool, the
+   day, the price, nothing to do to keep it, and the one place to remove it. One letter per shop, naming every try
+   that ends (lib/toolPlans/billing sendTryReminders, which also rings the owner's bell with the same line). */
+export interface ToolTryEndingInput {
+  name: string | null;
+  /** lib/toolPlans/shared tryReminderWords: "Your Roof estimator is free until tomorrow". */
+  subject: string;
+  /** The same function's sentence: the tools, the day, the price, "Nothing to do to keep it…". */
+  line: string;
+  items: ReadonlyArray<{ label: string; cents: number; day: string }>;
+  /** Absolute link to /dashboard/subscription#tools. */
+  href: string;
+}
+
+const usd = (cents: number) => `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: cents % 100 ? 2 : 0, maximumFractionDigits: 2 })}`;
+
+export function buildToolTryEnding(i: ToolTryEndingInput): EmailDoc {
+  const first = i.name?.trim().split(/\s+/)[0] || "there";
+  const box: BoxRow[] = i.items.map((t) => ({ type: "field" as const, label: t.label, value: `Free until ${t.day}, then ${usd(t.cents)}/mo` }));
+  return {
+    subject: i.subject,
+    lockup: PLATFORM_LOCKUP,
+    kicker: { text: i.items.length === 1 ? "Free try" : "Free tries", tone: "neutral" },
+    headline: i.subject,
+    prose: [`Hi ${first}. ${i.line}`],
+    box,
+    cta: { label: "Open Subscription", href: i.href },
+    after: ["Questions? Reply to this email and we'll help."],
+    footer: PLATFORM_FOOTER,
+  };
+}

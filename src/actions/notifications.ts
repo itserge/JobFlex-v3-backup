@@ -1,6 +1,6 @@
 "use server";
 import { db } from "@/lib/db";
-import { requireManager, requireOrg, requireRouteAccess } from "@/lib/orgContext";
+import { isOwnerRole, requireManager, requireOrg, requireRouteAccess } from "@/lib/orgContext";
 import { SEEN_SURFACES, countNewForSurface, type SeenKey } from "@/lib/badgeCounts";
 import { allowsInApp, loadPrefs, prefKeyForEvent } from "@/lib/notificationPrefs";
 import { ActivityKind } from "@/lib/prismaEnums";
@@ -9,6 +9,9 @@ import type { WhoLike } from "@/lib/team/who";
 import { isEmailEnabled, sendEmail } from "@/lib/sdk/resend";
 import { renderEmail } from "@/lib/email/renderEmail";
 import { buildTestEmail } from "@/lib/email/build/platform";
+
+/** lib/toolPlans/billing TRY_REMINDER_KIND — written out here: that module brings Stripe into this action file. */
+const TRY_REMINDER_KIND = "PLAN_TOOL_TRY";
 
 /**
  * Stamp a nav surface as seen for the current user — clears its badge until
@@ -177,7 +180,7 @@ export async function notificationFeed(): Promise<NotificationItem[]> {
  * ActivityEvent — there is no dedicated Notification model.
  */
 export async function recentNotifications(): Promise<NotificationItem[]> {
-  const { organizationId, user } = await requireManager();
+  const { organizationId, user, role } = await requireManager();
   const [events, prefs, actors] = await Promise.all([
     db.activityEvent.findMany({
       // The trail's own kinds (an expense, a photo, a stock count…) stay on
@@ -202,10 +205,16 @@ export async function recentNotifications(): Promise<NotificationItem[]> {
   ]);
 
   // The caller's own matrix decides what the bell shows. A TEST row is only
-  // ever for the person who pressed the button.
+  // ever for the person who pressed the button; a free try ending tomorrow
+  // (lib/toolPlans/billing sendTryReminders) only for the owner, who alone
+  // can remove it on Subscription.
   return events
     .filter((e) =>
-      e.kind === ActivityKind.TEST ? e.actorId === user.id : allowsInApp(prefs, prefKeyForEvent(e)),
+      e.kind === ActivityKind.TEST
+        ? e.actorId === user.id
+        : e.kind === TRY_REMINDER_KIND
+          ? isOwnerRole(role)
+          : allowsInApp(prefs, prefKeyForEvent(e)),
     )
     .slice(0, 12)
     .map((e) => ({

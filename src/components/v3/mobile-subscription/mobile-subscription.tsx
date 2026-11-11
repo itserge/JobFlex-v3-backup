@@ -95,6 +95,7 @@ import type { UpgradePlan } from "@/components/v3/upgrade-blueprint/upgrade-cont
 import "./mobile-subscription.css";
 import { DeckAddonCard } from "@/components/v3/deck-addon/deck-addon";
 import { WebAddonCard } from "@/components/v3/web-estimator/web-addon-card";
+import { ToolsSubscriptionSection } from "@/components/v3/tools-plan/tools-plan";
 
 /** One enforced-limit row from the limits engine (finite caps only). */
 export interface MobileUsageRow {
@@ -195,6 +196,7 @@ export function MobileSubscription({
   interval,
   scheduledSwitch,
   cancel = null,
+  tools = null,
 }: MobileSubscriptionProps) {
 
   const scrollRef = useRef<HTMLElement>(null);
@@ -366,10 +368,18 @@ export function MobileSubscription({
                 way out — one over the other, the width, 44px. Once booked the
                 date stands in Cancel's place; on Free or a grant, nothing. */}
             <div className="jfms-headActs">
-              <Link className="jfms-btn jfms-btnPrimary" href={"/dashboard/upgrade" as Route}>
-                <Icon id="i-arrow" className="jfms-ic" />
-                Upgrade plan
-              </Link>
+              {/* The new plans (part 3b) upgrade on this page, in the tools section below. */}
+              {tools ? (
+                <button type="button" className="jfms-btn jfms-btnPrimary" onClick={goToPlans}>
+                  <Icon id="i-arrow" className="jfms-ic" />
+                  Upgrade your plan
+                </button>
+              ) : (
+                <Link className="jfms-btn jfms-btnPrimary" href={"/dashboard/upgrade" as Route}>
+                  <Icon id="i-arrow" className="jfms-ic" />
+                  Upgrade plan
+                </Link>
+              )}
               {cancel ? (
                 <CancelFlow offer={cancel} className="jfms-btn jfms-btnLine" />
               ) : freeSwitch && !complimentary ? (
@@ -459,9 +469,19 @@ export function MobileSubscription({
             ) : null}
           </section>
 
-          {/* The Deck Studio add-on (2026-10-19) — reads its own state. */}
-          <DeckAddonCard />
-          <WebAddonCard />
+          {/* The new plans (Base + Tools, part 3b): the plan, its tools and Upgrade your plan, in place of the Classic
+              add-on cards and the plan cards below. A Classic shop (tools null) gets exactly what it had. */}
+          {tools ? (
+            <div ref={plansRef}>
+              <ToolsSubscriptionSection model={tools} />
+            </div>
+          ) : (
+            <>
+              {/* The Deck Studio add-on (2026-10-19) — reads its own state. */}
+              <DeckAddonCard />
+              <WebAddonCard />
+            </>
+          )}
 
           <section className="jfms-card" aria-labelledby="jfmsBillingInfoT">
             <div className="jfms-cardHead">
@@ -551,7 +571,8 @@ export function MobileSubscription({
             </div>
           </details>
 
-          {/* ============ PLANS — the upgrade page's cards, as a carousel ============ */}
+          {/* ============ PLANS — the upgrade page's cards, as a carousel (Classic only) ============ */}
+          {tools ? null : (
           <div className="jfms-plansEmbed" ref={plansRef}>
             <MobileUpgradeContent
               embedded
@@ -569,6 +590,7 @@ export function MobileSubscription({
               cancelled={false}
             />
           </div>
+          )}
 
           {/* ============ BILLING HISTORY ============ */}
           <section className="jfms-card" aria-labelledby="jfmsBillT">

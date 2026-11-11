@@ -492,6 +492,8 @@ export interface ToolTry {
   billedAt?: string;
   /** The card was declined when the try ended: nothing was added, the tool closed. */
   failedAt?: string;
+  /** The "free until tomorrow" email and bell went (lib/toolPlans/billing sendTryReminders) — once per try. */
+  remindedAt?: string;
 }
 
 export interface ToolsRecord {
@@ -531,12 +533,24 @@ export function parseToolsRecord(raw: string | null | undefined): ToolsRecord | 
       chosenTrade: Array.isArray(r.chosenTrade) ? r.chosenTrade.filter(isToolId) : [],
       lines: toolKeys(r.lines),
       seat: r.seat && typeof r.seat.itemId === "string" && Number.isInteger(r.seat.quantity) ? r.seat : null,
-      tries: toolKeys(r.tries),
+      tries: parseTries(toolKeys<unknown>(r.tries)),
       closing: toolKeys(r.closing),
     };
   } catch {
     return null;
   }
+}
+
+/** The tries as stored: a try needs its start and end; the stamps are kept only when they are strings. */
+function parseTries(raw: Partial<Record<ToolId, unknown>>): Partial<Record<ToolId, ToolTry>> {
+  const out: Partial<Record<ToolId, ToolTry>> = {};
+  for (const [id, v] of Object.entries(raw) as Array<[ToolId, unknown]>) {
+    const t = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+    if (typeof t.startedAt !== "string" || typeof t.endsAt !== "string") continue;
+    const stamp = (k: "removedAt" | "billedAt" | "failedAt" | "remindedAt") => (typeof t[k] === "string" ? { [k]: t[k] as string } : {});
+    out[id] = { startedAt: t.startedAt, endsAt: t.endsAt, onLine: t.onLine === true, ...stamp("removedAt"), ...stamp("billedAt"), ...stamp("failedAt"), ...stamp("remindedAt") };
+  }
+  return out;
 }
 
 /** What the shop can open right now: its plan, main tool, the tools on its bill, the ones closing at the month's end,
@@ -639,9 +653,299 @@ export const TOOLS_TEXT_ALLOWANCE = 1000;
 export const TOOLS_DESK_MINUTES_INCLUDED = 500;
 export const TOOLS_DESK_MINUTES_ADDED = 150;
 
-/** Tries whose time is up and that nobody removed: the sweep puts them on the bill (lib/toolPlans/billing). */
+/** Tries whose time is up and that nobody removed: the sweep puts them on the bill (lib/toolPlans/billing). Never the
+ *  main tool — a try that became the main tool (switched to in the free days) is billed as the main, not as a try —
+ *  and never a tool the size includes. */
 export function triesToBill(record: ToolsRecord, now: Date): ToolId[] {
+  // …nor a tool the size now includes (the shop moved up to a size that holds it while it was being tried).
+  const sizeHolds = toolsOpen({ plan: record.plan, main: null, kept: [], chosenTrade: record.chosenTrade });
   return (Object.entries(record.tries) as Array<[ToolId, ToolTry]>)
-    .filter(([id, x]) => !x.removedAt && !x.billedAt && !x.failedAt && Date.parse(x.endsAt) <= now.getTime() && !record.lines[id])
+    .filter(([id, x]) => id !== record.main && !sizeHolds.has(id) && !x.removedAt && !x.billedAt && !x.failedAt && Date.parse(x.endsAt) <= now.getTime() && !record.lines[id])
     .map(([id]) => id);
+}
+
+// ── the Subscription page and the welcome page (part 3b) ─────────────────────
+// One view of a new-plan shop, built from its record (pure — the loader reads the record, the people and the prices
+// and hands them in; lib/toolPlans/view). Both pages draw it: the plan and its bill, the shop's tools by state, the
+// tools to add (works-well-with first), and the other sizes priced with the shop's own tools.
+
+const SIZE_ORDER: readonly ToolPlanId[] = ["basic", "professional", "advanced", "complete"];
+
+/** Smaller sizes first: Basic 0 … Complete 3. */
+export function sizeRank(id: ToolPlanId): number {
+  return SIZE_ORDER.indexOf(id);
+}
+
+/**
+ * The trade tools a size includes by choice, for a shop moving onto it (Advanced: 2): the main tool if it is a trade
+ * tool, then the dearest trade tools on its bill — the most the move can save it. [] for a size that picks none.
+ */
+export function chosenTradeFor(planId: ToolPlanId, main: ToolId | null, kept: readonly ToolId[], cat: Catalog = DEFAULT_CATALOG): ToolId[] {
+  const n = catPlan(cat, planId).includedTrade;
+  if (typeof n !== "number" || n <= 0) return [];
+  const trade = (id: ToolId) => catTool(cat, id).kind === "trade";
+  const order = (id: ToolId) => TOOLS.findIndex((t) => t.id === id);
+  const rest = [...new Set(kept)]
+    .filter((id) => id !== main && trade(id))
+    .sort((a, b) => catTool(cat, b).cents - catTool(cat, a).cents || order(a) - order(b));
+  return [...(main && trade(main) ? [main] : []), ...rest].slice(0, n);
+}
+
+/** The short day on a button and in a line: "Nov 17". */
+export function shortDay(d: Date | string, timeZone?: string): string {
+  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", ...(timeZone ? { timeZone } : {}) });
+}
+
+/** "tomorrow", "later today" or "Nov 17" — for the reminder, in the shop's own time zone. */
+export function tryDayWords(endsAt: Date, now: Date, timeZone?: string): string {
+  const key = (d: Date) => d.toLocaleDateString("en-CA", { ...(timeZone ? { timeZone } : {}) });
+  if (key(endsAt) === key(now)) return "later today";
+  if (key(endsAt) === key(new Date(now.getTime() + DAY_MS))) return "tomorrow";
+  return shortDay(endsAt, timeZone);
+}
+
+export type ToolStateKind = "main" | "included" | "on-bill" | "trying" | "closing";
+
+export interface ToolsModelTool {
+  id: ToolId;
+  label: string;
+  note: string;
+  /** What it bills a month: the line's own price when it is on the bill, else the price in force. */
+  cents: number;
+  state: ToolStateKind;
+  /** trying: when the free try ends (and, unless removed, goes on the bill). */
+  endsAt?: string;
+  /** trying: removed — it stays open until endsAt and isn't billed. */
+  removed?: boolean;
+  /** closing: removed from the bill, open until the paid month ends. */
+  until?: string;
+  /** trying / closing: that day, "Nov 17", in the shop's time zone (said on the row). */
+  day?: string;
+  /** main: the size includes it, so it isn't a line of its own (Advanced's trade tools, everything on Complete). */
+  inPlan?: boolean;
+}
+
+export interface ToolsModelOffer {
+  id: ToolId;
+  label: string;
+  note: string;
+  cents: number;
+  /** Never tried: one free try per tool per company. */
+  canTry: boolean;
+  /** "Free until Nov 17, then $49/mo on your bill. Remove it any time before." — null once tried. */
+  tryWords: string | null;
+  tryEndsAt: string | null;
+  /** "Nov 17" for the button. */
+  tryDay: string | null;
+  /** One of the main tool's "works well with". */
+  pair: boolean;
+}
+
+export interface ToolsModelPlan {
+  id: ToolPlanId;
+  name: string;
+  /** The shop's monthly bill on this size, with its own main tool and the tools on its bill. */
+  cents: number;
+  seats: number;
+  seatCents: number | null;
+  bigger: boolean;
+  lines: string[];
+  canMove: boolean;
+  /** Why it can't move there (Basic with people on the team). */
+  why: string | null;
+  /** The shop's tools this size includes, so they come off the bill. */
+  includes: string[];
+  /** The shop's tools that close on this size (a smaller size's lost included tools). */
+  loses: string[];
+}
+
+export interface ToolsSubscriptionModel {
+  plan: {
+    id: ToolPlanId;
+    name: string;
+    /** "Basic + Deck Studio". */
+    label: string;
+    main: ToolId | null;
+    mainLabel: string | null;
+    cents: number;
+    seats: number;
+    /** People on the team now, the owner counted. */
+    people: number;
+    /** People paid for past the plan's own. */
+    extraPeople: number;
+    /** People the plan holds: its own plus the extra ones. */
+    paidPeople: number;
+    seatCents: number | null;
+    /** The month's bill: the size, the extra people, the tools on the bill the size doesn't include. */
+    monthlyCents: number;
+  };
+  /** In the sign-up's free days (the plan's trial): the main tool can be switched, tries end with them. */
+  inTrial: boolean;
+  trialEndsAt: string | null;
+  trialDay: string | null;
+  /** A card is on file (a Stripe subscription): buying a tool or people needs one. */
+  hasCard: boolean;
+  tools: ToolsModelTool[];
+  offer: ToolsModelOffer[];
+  plans: ToolsModelPlan[];
+  /** The tools the main tool can be switched to in the free days (none a size already includes). */
+  switchTo: Array<{ id: ToolId; label: string }>;
+}
+
+export interface ToolsModelInput {
+  record: ToolsRecord | null;
+  planSlug: string | null | undefined;
+  /** People on the team now, the owner counted (lib/limitsEngine countPeoplePool + 1). */
+  people: number;
+  catalog?: Catalog;
+  now: Date;
+  /** Subscription.status. */
+  status: string | null | undefined;
+  trialEndsAt: Date | string | null | undefined;
+  hasCard?: boolean;
+  timeZone?: string;
+}
+
+/** The Subscription page's and the welcome page's view of a new-plan shop; null for a Classic slug. */
+export function toolsSubscriptionModel(input: ToolsModelInput): ToolsSubscriptionModel | null {
+  const sizeDef = toolPlanBySlug(input.planSlug);
+  if (!isToolsSlug(input.planSlug) || !sizeDef) return null;
+  const cat = input.catalog ?? DEFAULT_CATALOG;
+  const size = catPlan(cat, sizeDef.id);
+  const record = input.record ?? emptyToolsRecord(size.id);
+  const now = input.now;
+  const t = now.getTime();
+  const tz = input.timeZone;
+  const trialEnd = input.trialEndsAt ? new Date(input.trialEndsAt) : null;
+  const inTrial = (input.status ?? "").toUpperCase() === "TRIALING" && !!trialEnd && trialEnd.getTime() > t;
+  const main = record.main;
+  const people = Math.max(1, Math.floor(input.people) || 1);
+  const ids = cat.tools.map((d) => d.id);
+  const lineIds = ids.filter((id) => record.lines[id]);
+  const picks = typeof size.includedTrade === "number" && size.includedTrade > 0;
+  const chosen = picks ? (record.chosenTrade.length ? record.chosenTrade : chosenTradeFor(size.id, main, lineIds, cat)) : [];
+  const included = toolsOpen({ plan: size.id, main: null, kept: [], chosenTrade: chosen });
+
+  const tools: ToolsModelTool[] = [];
+  const seen = new Set<ToolId>();
+  const push = (id: ToolId, state: ToolStateKind, extra: Partial<ToolsModelTool> = {}) => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    const d = catTool(cat, id);
+    tools.push({ id, label: d.label, note: d.note, cents: d.cents, state, ...extra });
+  };
+  if (main) push(main, "main", { inPlan: included.has(main) });
+  for (const id of ids) if (included.has(id)) push(id, "included");
+  for (const id of ids) {
+    const tr = record.tries[id];
+    if (tr && !tr.billedAt && !tr.failedAt && Date.parse(tr.endsAt) > t) push(id, "trying", { endsAt: tr.endsAt, removed: !!tr.removedAt, day: shortDay(tr.endsAt, tz) });
+  }
+  for (const id of lineIds) push(id, "on-bill", { cents: record.lines[id]!.cents || catTool(cat, id).cents });
+  for (const id of ids) {
+    const until = record.closing[id];
+    if (until && Date.parse(until) > t) push(id, "closing", { until, day: shortDay(until, tz) });
+  }
+
+  const tryEnd = tryEndsAt(now, inTrial ? trialEnd : null);
+  const pairs = new Set<ToolId>(main ? toolById(main).pairs : []);
+  const offer: ToolsModelOffer[] = toolsInOfferOrder(main, [...seen]).map((d0) => {
+    const d = catTool(cat, d0.id);
+    const canTry = !record.tries[d.id];
+    return {
+      id: d.id,
+      label: d.label,
+      note: d.note,
+      cents: d.cents,
+      canTry,
+      tryWords: canTry ? tryWords(d.id, tryEnd, tz, cat) : null,
+      tryEndsAt: canTry ? tryEnd.toISOString() : null,
+      tryDay: canTry ? shortDay(tryEnd, tz) : null,
+      pair: pairs.has(d.id),
+    };
+  });
+
+  const extraPeople = size.seatCents === null ? 0 : Math.max(0, record.seat?.quantity ?? 0);
+  const paidPeople = size.seatCents === null ? 1 : size.seats + extraPeople;
+  const held = tools.filter((x) => x.state === "main" || x.state === "included" || x.state === "on-bill");
+  const plans: ToolsModelPlan[] = cat.plans
+    .filter((p) => p.id !== size.id)
+    .map((p) => {
+      const pick = chosenTradeFor(p.id, main, lineIds, cat);
+      const shop: ShopTools = { plan: p.id, main, kept: lineIds, chosenTrade: pick };
+      const there = toolsOpen(shop);
+      const sizeHolds = toolsOpen({ plan: p.id, main: null, kept: [], chosenTrade: pick });
+      const others = people - 1;
+      const canMove = !(p.seatCents === null && people > 1);
+      return {
+        id: p.id,
+        name: p.name,
+        cents: monthlyCents(shop, people, cat),
+        seats: p.seats,
+        seatCents: p.seatCents,
+        bigger: sizeRank(p.id) > sizeRank(size.id),
+        lines: p.lines.filter((l) => !/^Everything in /.test(l)),
+        canMove,
+        why: canMove ? null : `Basic is just you. Remove the other ${others} ${others === 1 ? "person" : "people"} first.`,
+        includes: held.filter((x) => x.state !== "included" && !x.inPlan && sizeHolds.has(x.id)).map((x) => x.label),
+        loses: held.filter((x) => !there.has(x.id)).map((x) => x.label),
+      };
+    });
+
+  const sizeOnly = toolsOpen({ plan: size.id, main: null, kept: [], chosenTrade: [] });
+  const mainLabel = main ? catTool(cat, main).label : null;
+  return {
+    plan: {
+      id: size.id,
+      name: size.name,
+      label: mainLabel && !included.has(main!) ? `${size.name} + ${mainLabel}` : size.name,
+      main,
+      mainLabel,
+      cents: size.cents,
+      seats: size.seats,
+      people,
+      extraPeople,
+      paidPeople,
+      seatCents: size.seatCents,
+      monthlyCents: monthlyCents({ plan: size.id, main, kept: lineIds, chosenTrade: chosen }, paidPeople, cat),
+    },
+    inTrial,
+    trialEndsAt: inTrial && trialEnd ? trialEnd.toISOString() : null,
+    trialDay: inTrial && trialEnd ? shortDay(trialEnd, tz) : null,
+    hasCard: !!input.hasCard,
+    tools,
+    offer,
+    plans,
+    switchTo: inTrial ? cat.tools.filter((d) => d.id !== main && !sizeOnly.has(d.id)).map((d) => ({ id: d.id, label: d.label })) : [],
+  };
+}
+
+/** "a, b and c". */
+function listAnd(items: readonly string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/**
+ * The reminder a day before free tries end (owner, 2026-11-10: the date and the price, nothing to do to keep it, and
+ * where to remove it) — one per shop, for the email and the bell: "Your Roof estimator is free until tomorrow, then
+ * $49/mo on your bill. Nothing to do to keep it. Don't want it? Remove it on Subscription."
+ */
+export function tryReminderWords(items: ReadonlyArray<{ label: string; cents: number; day: string }>): { subject: string; line: string } {
+  if (!items.length) return { subject: "", line: "" };
+  if (items.length === 1) {
+    const [i] = items;
+    return {
+      subject: `Your ${i.label} is free until ${i.day}`,
+      line: `Your ${i.label} is free until ${i.day}, then ${money(i.cents)}/mo on your bill. Nothing to do to keep it. Don't want it? Remove it on Subscription.`,
+    };
+  }
+  const day = items[0].day;
+  const same = items.every((i) => i.day === day);
+  const lead = same
+    ? `Your ${listAnd(items.map((i) => i.label))} are free until ${day}, then ${listAnd(items.map((i) => `${money(i.cents)}/mo`))} on your bill.`
+    : items.map((i) => `Your ${i.label} is free until ${i.day}, then ${money(i.cents)}/mo on your bill.`).join(" ");
+  return {
+    subject: same ? `Your free tries end ${day === "later today" ? "today" : day}` : "Your free tries end soon",
+    line: `${lead} Nothing to do to keep them. Don't want one? Remove it on Subscription.`,
+  };
 }
