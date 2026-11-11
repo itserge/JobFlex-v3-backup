@@ -221,7 +221,12 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Subscription", icon: "i-card", href: "/dashboard/subscription" },
     ],
   },
-
+  {
+    // TUTORIALS (owner, 2026-11-11: "add tutorials in a sidebar on the bottom"): the videos that walk through each
+    // tool, for every role and every workspace. The page puts the viewer's own tools first (components/v3/tutorials).
+    label: "Learn",
+    items: [{ label: "Tutorials", icon: "i-learn", href: "/dashboard/tutorials" }],
+  },
 ];
 
 /**
@@ -302,6 +307,7 @@ const ROLE_NAV: Record<string, RoleNavPlan> = {
       label: "Your work",
       hrefs: ["/dashboard/jobs", "/dashboard/calendar", "/dashboard/messages"],
     },
+    { label: "Learn", hrefs: ["/dashboard/tutorials"] },
   ],
   // Sales reps: the pipeline slice.
   SALES: [
@@ -320,6 +326,7 @@ const ROLE_NAV: Record<string, RoleNavPlan> = {
       label: "Day to day",
       hrefs: ["/dashboard/calendar", "/dashboard/messages", "/dashboard/phone"],
     },
+    { label: "Learn", hrefs: ["/dashboard/tutorials"] },
   ],
   // Estimators: proposals plus the estimating engines.
   ESTIMATOR: [
@@ -344,6 +351,7 @@ const ROLE_NAV: Record<string, RoleNavPlan> = {
         "/dashboard/messages",
       ],
     },
+    { label: "Learn", hrefs: ["/dashboard/tutorials"] },
   ],
 };
 

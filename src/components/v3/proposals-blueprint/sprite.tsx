@@ -36,6 +36,8 @@ export function Sprite() {
             drawer from one list, and a symbol present in only one sprite
             renders as a blank slot on the other. */}
         <symbol id="i-card" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="1" /><path d="M2 10h20" /></symbol>
+        {/* Tutorials (2026-11-11): a screen with a play mark. */}
+        <symbol id="i-learn" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="14" rx="1" /><path d="M10 8.25v5.5L14.5 11z" /><path d="M8 21h8" /></symbol>
         <symbol id="i-roof" viewBox="0 0 24 24"><path d="m2 11 10-8 10 8" /><path d="M5 9v12h14V9" /></symbol>
         <symbol id="i-fence" viewBox="0 0 24 24"><path d="M4 21V8l2-3 2 3v13" /><path d="M10 21V8l2-3 2 3v13" /><path d="M16 21V8l2-3 2 3v13" /><path d="M2 12h20" /><path d="M2 17h20" /></symbol>
         {/* Added 2026-08-22 for the Video estimator port — the one symbol its

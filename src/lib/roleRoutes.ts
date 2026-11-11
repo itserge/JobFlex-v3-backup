@@ -45,10 +45,12 @@ export interface RoleRouteGate {
 // widget), so every role must be able to open its own and write in it. The
 // page lists only the viewer's own tickets — never a colleague's.
 const SUPPORT = "/dashboard/support";
+// AND ONE MORE, owner 2026-11-11: "/dashboard/tutorials" for all three — the how-to videos, nothing of the company's.
+const TUTORIALS = "/dashboard/tutorials";
 export const ROLE_ROUTE_GATES: Record<string, RoleRouteGate> = {
   // Field workers: read-only jobs + own schedule + messages.
   INSTALLER: {
-    allowed: ["/dashboard/jobs", "/dashboard/calendar", "/dashboard/messages", SUPPORT],
+    allowed: ["/dashboard/jobs", "/dashboard/calendar", "/dashboard/messages", SUPPORT, TUTORIALS],
     home: "/dashboard/jobs",
   },
   // Sales reps: the pipeline slice.
@@ -72,6 +74,7 @@ export const ROLE_ROUTE_GATES: Record<string, RoleRouteGate> = {
       "/dashboard/phone",
       "/dashboard/messages",
       SUPPORT,
+      TUTORIALS,
     ],
     home: "/dashboard/leads",
   },
@@ -101,6 +104,7 @@ export const ROLE_ROUTE_GATES: Record<string, RoleRouteGate> = {
       "/dashboard/deck-estimator",
       "/dashboard/messages",
       SUPPORT,
+      TUTORIALS,
     ],
     home: "/dashboard/proposals",
   },
