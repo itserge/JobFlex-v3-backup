@@ -8,6 +8,11 @@
 //
 // The link carries the account and an HMAC of it (the platform's
 // NEXTAUTH_SECRET), so nobody can unsubscribe somebody else by guessing.
+//
+// 2026-11-11: the link may also name the address the letter went to (`e`, signed with the account): pressing it then
+// puts that address on the do-not-email list (lib/mailBlock) as well. A link without `e` (sent before) lists the
+// account owner's address. Besides an account: `prospect_<id>` (lib/outreach, a contractor with no account) and
+// `home_<id>` (a homeowner's dashboard, lib/home).
 import "server-only";
 import { createHmac, timingSafeEqual } from "crypto";
 import { db } from "@/lib/db";
@@ -18,20 +23,23 @@ function secret(): string | null {
   return process.env.NEXTAUTH_SECRET ?? process.env.AUTH_SECRET ?? null;
 }
 
-export function unsubscribeToken(orgId: string): string | null {
+/** The signature: of the account alone (the first links), or of the account and the address. */
+export function unsubscribeToken(orgId: string, email?: string | null): string | null {
   const s = secret();
-  return s ? createHmac("sha256", s).update(`mailOptOut:${orgId}`).digest("hex").slice(0, 32) : null;
+  const what = email ? `mailOptOut:${orgId}:${email.trim().toLowerCase()}` : `mailOptOut:${orgId}`;
+  return s ? createHmac("sha256", s).update(what).digest("hex").slice(0, 32) : null;
 }
 
-export function verifyUnsubscribe(orgId: string, token: string): boolean {
-  const want = unsubscribeToken(orgId);
+export function verifyUnsubscribe(orgId: string, token: string, email?: string | null): boolean {
+  const want = unsubscribeToken(orgId, email);
   if (!want || typeof token !== "string" || token.length !== want.length) return false;
   try { return timingSafeEqual(Buffer.from(want), Buffer.from(token)); } catch { return false; }
 }
 
-/** The unsubscribe link for one account. */
-export function unsubscribeUrl(base: string, orgId: string): string {
-  return `${base.replace(/\/$/, "")}/api/email/unsubscribe?o=${encodeURIComponent(orgId)}&t=${unsubscribeToken(orgId) ?? ""}`;
+/** The unsubscribe link for one account — and, when given, the address the letter goes to. */
+export function unsubscribeUrl(base: string, orgId: string, email?: string | null): string {
+  const e = email?.trim().toLowerCase() || null;
+  return `${base.replace(/\/$/, "")}/api/email/unsubscribe?o=${encodeURIComponent(orgId)}${e ? `&e=${encodeURIComponent(e)}` : ""}&t=${unsubscribeToken(orgId, e) ?? ""}`;
 }
 
 /** The headers that put the mail client's own Unsubscribe button beside the sender. */
@@ -49,7 +57,13 @@ export async function readOptOut(orgId: string): Promise<{ at: string } | null> 
   }
 }
 
-export async function writeOptOut(orgId: string, via: "one-click" | "page"): Promise<void> {
+export async function writeOptOut(orgId: string, via: "one-click" | "page" | "reply" | "admin"): Promise<void> {
   const cursor = JSON.stringify({ at: new Date().toISOString(), via });
   await db.syncState.upsert({ where: { key: KEY(orgId) }, create: { key: KEY(orgId), cursor }, update: { cursor } });
+}
+
+/** The account's owners' addresses — who an account's link stands for when it names no address. */
+export async function ownerEmails(orgId: string): Promise<string[]> {
+  const rows = await db.membership.findMany({ where: { organizationId: orgId, role: "OWNER" }, select: { user: { select: { email: true } } } }).catch(() => []);
+  return [...new Set(rows.map((r) => r.user?.email?.trim().toLowerCase()).filter((e): e is string => !!e))];
 }

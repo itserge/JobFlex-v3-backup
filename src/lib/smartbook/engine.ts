@@ -43,10 +43,10 @@ import { notePausedOnFree } from "@/lib/pausedNotice";
 import { hasFullAccess } from "@/lib/fullAccess";
 import { readAccessSubscription } from "@/lib/subscriptionAccess";
 
-const ORG_SELECT = { id: true, name: true, slug: true, timezone: true, logoUrl: true, phone: true, billingEmail: true, gmailSettingsJson: true, gmailTokensJson: true, tradeTypesJson: true, bookingSettingsJson: true, smsFromNumber: true } as const;
+const ORG_SELECT = { id: true, name: true, address: true, slug: true, timezone: true, logoUrl: true, phone: true, billingEmail: true, gmailSettingsJson: true, gmailTokensJson: true, tradeTypesJson: true, bookingSettingsJson: true, smsFromNumber: true } as const;
 const LEAD_SELECT = { id: true, organizationId: true, name: true, email: true, phone: true, address: true, city: true, state: true, zip: true, projectType: true, description: true, source: true, status: true, assignedToId: true, createdAt: true } as const;
 
-type OrgRow = { id: string; name: string | null; slug: string; timezone: string; logoUrl: string | null; phone: string | null; billingEmail: string | null; gmailSettingsJson: string | null; gmailTokensJson: string | null; tradeTypesJson: string | null; bookingSettingsJson: string | null; smsFromNumber: string | null };
+type OrgRow = { id: string; name: string | null; address: string | null; slug: string; timezone: string; logoUrl: string | null; phone: string | null; billingEmail: string | null; gmailSettingsJson: string | null; gmailTokensJson: string | null; tradeTypesJson: string | null; bookingSettingsJson: string | null; smsFromNumber: string | null };
 type LeadRow = { id: string; organizationId: string; name: string; email: string | null; phone: string | null; address: string | null; city: string | null; state: string | null; zip: string | null; projectType: string | null; description: string | null; source: string | null; status: string; assignedToId: string | null; createdAt: Date };
 
 interface Ctx {
@@ -223,7 +223,7 @@ async function toCustomer(ctx: Ctx, conv: Conversation, text: string, opts: { su
       ...(choices.length ? { box: choices } : {}),
       ...(conv.status === "offered" || conv.status === "countered" || conv.status === "asked" ? { cta: { label: conv.status === "asked" ? "See your request" : "See all open times", href: link } } : {}),
       ...(offerTexts ? { after: ["Prefer texts? Open the page and tap \"Text me about this visit\" — answering is quicker that way."] } : {}),
-    });
+    }, { optOut: true });
     if (sent) {
       conv.lastOutAt = new Date().toISOString();
       await trail(ctx, `SmartBook emailed ${conv.name}: "${emailWords(body)}"`, { dir: "out", channel: "email", body: emailWords(body) });

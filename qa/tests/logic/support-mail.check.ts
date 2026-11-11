@@ -84,6 +84,7 @@ const check = (name: string, ok: boolean, extra = "") => {
     source: async (uid) => raw[uid],
     done: async (uid) => void done.add(uid),
     unmatched: async (uid) => void unmatched.add(uid),
+    stopped: async (uid) => void done.add(uid),
   };
   const deps: InboxDeps = {
     mailbox: box,

@@ -41,7 +41,11 @@ type Filters = { period: MailLogPeriod; status: EmailStatus | null; kind: EmailK
 
 const KIND_LABEL: Record<EmailKind, string> = {
   otp: "Sign-in code",
+  "password-reset": "Password reset",
+  security: "Security notice",
   dunning: "Billing",
+  invoice: "Invoice",
+  receipt: "Receipt",
   proposal: "Proposal",
   "follow-up": "Follow-up",
   welcome: "Welcome",
@@ -60,6 +64,7 @@ const SKIP_WHY: Record<string, string> = {
   preview: "Preview deployment — the address is outside PREVIEW_EMAIL_ALLOW",
   "dev-outbox": "Written to EMAIL_DEV_OUTBOX instead of sent (development)",
   disabled: "No mail transport configured (RESEND_API_KEY / SMTP_*)",
+  "mail-block": "The address is on the do-not-email list (Platform · Mail · Do not email)",
 };
 const skipWhy = (id: string | null) => (id ? (SKIP_WHY[id.split(":")[0]] ?? null) : null);
 

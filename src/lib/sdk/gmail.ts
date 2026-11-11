@@ -146,7 +146,7 @@ export async function getGmailClient(accessToken: string, refreshToken?: string)
 /** Send an HTML email through the connected Gmail account. */
 export async function sendViaGmail(
   tokens: Pick<GmailTokens, "accessToken" | "refreshToken" | "email">,
-  opts: { to: string; subject: string; html: string; fromName?: string; replyTo?: string },
+  opts: { to: string; subject: string; html: string; fromName?: string; replyTo?: string; headers?: Record<string, string> },
 ): Promise<void> {
   // Retry transient Gmail failures (429, 5xx, network) up to 3 attempts. A
   // permanent error (401/403 revoked token) is re-thrown at once so orgSend.ts
@@ -162,6 +162,10 @@ export async function sendViaGmail(
       `From: ${from}`,
       `To: ${hv(opts.to)}`,
       opts.replyTo ? `Reply-To: ${hv(opts.replyTo)}` : "",
+      // The letter's List-Unsubscribe and its one-click twin (2026-11-11) — only these two names are carried.
+      ...Object.entries(opts.headers ?? {})
+        .filter(([k]) => /^list-unsubscribe(-post)?$/i.test(k))
+        .map(([k, v]) => `${k}: ${hv(v)}`),
       // RFC 2047 encode the subject so non-ASCII survives.
       `Subject: =?UTF-8?B?${Buffer.from(opts.subject).toString("base64")}?=`,
       "MIME-Version: 1.0",

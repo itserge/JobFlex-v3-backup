@@ -199,6 +199,12 @@ export async function sendToContractor(input: {
   if (!acc) return { ok: false, error: "That account no longer exists." };
   if (!acc.ownerEmail) return { ok: false, error: "This account has no owner email to send to." };
   if (acc.profile.optedOut) return { ok: false, error: "They unsubscribed from our emails — nothing was sent." };
+  // The email law asks for a postal address in a letter like this (2026-11-11): none set, none sent.
+  if (!postalAddress()) return { ok: false, error: "JobFlex's postal address isn't set (JOBFLEX_POSTAL_ADDRESS) — the email law asks for it at the foot of this letter, so nothing was sent." };
+  {
+    const { readMailBlock } = await import("@/lib/mailBlock");
+    if (await readMailBlock(acc.ownerEmail)) return { ok: false, error: "This address is on the do-not-email list (Platform · Mail · Do not email) — nothing was sent." };
+  }
   if (input.offer && !acc.profile.offer.can) return { ok: false, error: `The 10% offer can't be attached: ${acc.profile.offer.reason}.` };
 
   let offer: string | null = null;
@@ -211,14 +217,17 @@ export async function sendToContractor(input: {
   }
 
   const { appBaseUrl } = await import("@/lib/appUrl");
-  const { sendEmail } = await import("@/lib/sdk/resend");
+  const { sendEmail, platformMailbox } = await import("@/lib/sdk/resend");
   const base = await appBaseUrl();
   const sender = senderName(input.admin);
-  const unsub = unsubscribeUrl(base, input.orgId);
+  const unsub = unsubscribeUrl(base, input.orgId, acc.ownerEmail);
   const { subject, html, text } = contractorLetter({ draft: input.draft, p: acc.profile, offer: input.offer, base, sender, unsubscribeUrl: unsub, postal: postalAddress() });
   try {
     // From the sender's own name at the platform address; replies to the admin who wrote it.
-    await sendEmail({ to: acc.ownerEmail, subject, html, text, from: fromLine(sender), replyTo: input.admin.email, headers: unsubscribeHeaders(unsub) });
+    // Replies reach the admin who wrote it and the platform mailbox, where a "stop" is read (lib/supportMail).
+    const box = platformMailbox();
+    const replyTo = box && box !== input.admin.email.toLowerCase() ? `${input.admin.email}, ${box}` : input.admin.email;
+    await sendEmail({ to: acc.ownerEmail, subject, html, text, from: fromLine(sender), replyTo, headers: unsubscribeHeaders(unsub) });
   } catch (err) {
     const why = err instanceof Error ? err.message : String(err);
     return { ok: false, error: offer ? `The discount was applied, but the email did not go out: ${why}` : `The email did not go out: ${why}`, ...(offer ? { offerApplied: offer } : {}) };

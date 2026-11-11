@@ -14,7 +14,7 @@ import { getPlanCatalog } from "@/lib/planCatalogServer";
 import { formatPlanPrice } from "@/lib/planCatalog";
 import { storedTrialOffer } from "@/lib/trialOffer";
 import { signCallToken, voiceServerConfigured, voiceStreamUrl, type CallToken } from "@/lib/aiDesk/voiceToken";
-import { isEmailEnabled, sendEmail } from "@/lib/sdk/resend";
+import { isEmailEnabled, platformMailbox, sendEmail } from "@/lib/sdk/resend";
 import { readOptOut, unsubscribeHeaders, unsubscribeUrl } from "@/lib/adminMail/optout";
 import { fromLine } from "@/lib/adminMail/server";
 import { logServerError } from "@/lib/server-events";
@@ -569,10 +569,19 @@ export async function emailProspects(n: number, base: string, admin: { name: str
     }
     const token = callMeToken(p.id);
     if (!token) return { sent, skipped, error: "The server has no signing secret (NEXTAUTH_SECRET)." };
-    const unsub = unsubscribeUrl(base, optOutId(p.id));
+    const unsub = unsubscribeUrl(base, optOutId(p.id), p.email);
     const letter = outreachLetter({ p, callMeUrl: `${base}/call-me/${token}`, siteUrl: `${base}/?utm_source=jobflex-email&utm_medium=outreach`, unsubscribeUrl: unsub, postal: addr });
     try {
-      await sendEmail({ to: p.email!, subject: letter.subject, html: letter.html, text: letter.text, from: fromLine(sender), replyTo: admin.email, headers: unsubscribeHeaders(unsub) });
+      // Replies reach the admin and the platform mailbox, where a "stop" is read (lib/supportMail, 2026-11-11).
+      const box = platformMailbox();
+      const replyTo = box && box !== admin.email.toLowerCase() ? `${admin.email}, ${box}` : admin.email;
+      const left = await sendEmail({ to: p.email!, subject: letter.subject, html: letter.html, text: letter.text, from: fromLine(sender), replyTo, headers: unsubscribeHeaders(unsub) });
+      // On the do-not-email list (lib/mailBlock): not sent, and never called either.
+      if (left.skipped && left.id.startsWith("mail-block")) {
+        await writeProspect({ ...p, dnc: p.dnc ?? { at: nowIso(), via: "email" } });
+        skipped++;
+        continue;
+      }
       await writeProspect({ ...p, emailedAt: nowIso() });
       sent++;
     } catch (err) {

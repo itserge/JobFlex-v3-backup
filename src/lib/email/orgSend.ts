@@ -3,7 +3,7 @@
 // (Resend/SMTP) with the contractor set as reply-to. Centralizes the decision so
 // follow-ups (and future senders) share one code path.
 import { db } from "@/lib/db";
-import { sendEmail } from "@/lib/sdk/resend";
+import { sendEmail, withoutBlocked } from "@/lib/sdk/resend";
 import { parseGmailSettings } from "@/lib/settings";
 import { gmailErrorText, isGmailGrantDead, isGmailOAuthConfigured, openGmailTokens, sendViaGmail } from "@/lib/sdk/gmail";
 import { ActivityKind } from "@/lib/prismaEnums";
@@ -30,6 +30,8 @@ export function orgReplyTo(org: {
 
 export interface OrgEmailResult {
   via: "gmail" | "resend";
+  /** Every recipient is on the do-not-email list (lib/mailBlock): nothing went, by either transport. */
+  blocked?: true;
   /** Set when the org meant to send from Gmail and the platform sent instead:
    *  "revoked" — Google refused the grant and it has been dropped (Settings
    *  now says so); "failed" — a passing error, the grant is kept. */
@@ -63,7 +65,8 @@ export async function sendOrgEmail(
     /** A Reply-To of the caller's own (2026-11-08, the subcontractors plan, part 2: a request's reply address,
      *  rfq-<token>@<inbound domain>, so the sub's answer lands in JobFlex). Default: the org's reply-to. */
     replyTo?: string;
-    /** Extra mail headers (the inbox's In-Reply-To / References). The Gmail transport does not carry them. */
+    /** Extra mail headers (the inbox's In-Reply-To / References; List-Unsubscribe). The Gmail transport carries only
+     *  the two List-Unsubscribe headers. */
     headers?: Record<string, string>;
     /** The client this letter is for (Smart CRM part 2): with the inbox receiving, the Reply-To becomes the
      *  client's thread address, so their answer lands in JobFlex — unless the caller set replyTo itself. */
@@ -74,6 +77,19 @@ export async function sendOrgEmail(
   transports: OrgEmailTransports = { gmail: sendViaGmail, platform: sendEmail },
 ): Promise<OrgEmailResult> {
   const settings = parseGmailSettings(org.gmailSettingsJson);
+  // THE DO-NOT-EMAIL LIST (lib/mailBlock, 2026-11-11), asked before either transport — the company's own Gmail too.
+  const all = Array.isArray(opts.to) ? opts.to : [opts.to];
+  const kept = await withoutBlocked(all, opts.kind);
+  if (!kept.length) {
+    try {
+      const { recordEmail } = await import("@/lib/emailLog");
+      await recordEmail({ to: all, subject: opts.subject, kind: opts.kind, transport: "skipped", status: "skipped", providerId: "mail-block:skipped", durationMs: 0, organizationId: org.id ?? opts.organizationId ?? null });
+    } catch {
+      /* the log never stops anything */
+    }
+    return { via: "resend", blocked: true };
+  }
+  if (kept.length < all.length) opts = { ...opts, to: kept };
   let threadReplyTo: string | null = null;
   const orgId = org.id ?? opts.organizationId ?? null;
   if (!opts.replyTo?.trim() && opts.clientId && orgId) {
@@ -95,6 +111,7 @@ export async function sendOrgEmail(
           html: opts.html,
           fromName: settings.displayName || org.name || undefined,
           replyTo,
+          headers: opts.headers,
         });
         return { via: "gmail" };
       }

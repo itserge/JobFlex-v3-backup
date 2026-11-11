@@ -113,6 +113,14 @@ export async function sendText(input: SendTextInput): Promise<SendTextResult> {
 }
 
 async function dispatch(m: { organizationId: string | null; to: string; body: string; kind: string }): Promise<SendTextResult> {
+  // STOP is asked again right before a text leaves (2026-11-11): a text held for the morning or for days (a rule's
+  // "3 days after the job") was checked when it was queued, and the person may have replied STOP since.
+  try {
+    if (await db.smsOptOut.findUnique({ where: { phone: m.to }, select: { phone: true } })) return { ok: false, reason: "opted-out" };
+  } catch (err) {
+    console.error(`[sms] opt-out check failed, text not sent: ${msg(err)}`);
+    return { ok: false, reason: "failed" };
+  }
   // The card-less trial sends nothing but the verification code (lib/trialMeter):
   // a SKIPPED row says so, and the per-number allowance is not spent on it.
   // A held text is checked here too, when the morning sends it.
@@ -192,6 +200,8 @@ async function dispatch(m: { organizationId: string | null; to: string; body: st
     return { ok: true, id: row.id, status: "SENT" };
   } catch (err) {
     await db.smsMessage.update({ where: { id: row.id }, data: { status: "FAILED", error: msg(err).slice(0, 200) } }).catch(() => null);
+    // Twilio's 21610: this number replied STOP on Twilio's side — kept here too, so nothing tries it again.
+    if (isTwilioStopError(err)) await noteTwilioStop(m.to);
     console.error(`[sms] send failed (${m.kind} → …${m.to.slice(-4)}): ${msg(err)}`);
     return { ok: false, reason: "failed" };
   }
@@ -217,6 +227,19 @@ export async function smsAllowanceUsed(organizationId: string): Promise<boolean>
     toolsSmsAllowance(organizationId),
   ]);
   return sent >= (tools ?? smsAllowanceFor(tier));
+}
+
+/** Twilio refused because the number opted out (error 21610). */
+export function isTwilioStopError(err: unknown): boolean {
+  const e = err as { code?: unknown; message?: unknown } | null;
+  return String(e?.code ?? "") === "21610" || /21610/.test(String(e?.message ?? ""));
+}
+
+/** Keep Twilio's word that a number opted out (21610) as an SmsOptOut row, the one every send asks. */
+export async function noteTwilioStop(rawPhone: string): Promise<void> {
+  const phone = toE164(rawPhone);
+  if (!phone) return;
+  await db.smsOptOut.upsert({ where: { phone }, create: { phone, body: "twilio:21610" }, update: {} }).catch(() => null);
 }
 
 function msg(err: unknown): string {
@@ -349,12 +372,20 @@ export async function textWorker(w: WorkerLike, body: string, kind: string, key?
  * The held rows are marked MERGED; the text that went out is its own row.
  */
 export async function flushHeldTexts(now = new Date()): Promise<number> {
-  const due = await db.smsMessage.findMany({
+  let due = await db.smsMessage.findMany({
     where: { status: "HELD", sendAfter: { lte: now } },
     orderBy: { createdAt: "asc" },
     select: { id: true, organizationId: true, to: true, body: true, kind: true },
   });
   if (!due.length) return 0;
+  // Asked again now (2026-11-11): a number that replied STOP while its texts waited gets none of them — the rows are
+  // taken off, SKIPPED "opted-out", and nothing is sent.
+  const stopped = new Set((await db.smsOptOut.findMany({ where: { phone: { in: [...new Set(due.map((r) => r.to))] } }, select: { phone: true } })).map((x) => x.phone));
+  if (stopped.size) {
+    await db.smsMessage.updateMany({ where: { id: { in: due.filter((r) => stopped.has(r.to)).map((r) => r.id) } }, data: { status: "SKIPPED", error: "opted-out" } });
+    due = due.filter((r) => !stopped.has(r.to));
+    if (!due.length) return 0;
+  }
   const orgIds = [...new Set(due.map((r) => r.organizationId).filter((x): x is string => Boolean(x)))];
   const orgs = new Map((await db.organization.findMany({ where: { id: { in: orgIds } }, select: { id: true, name: true } })).map((o) => [o.id, o.name]));
   const groups = new Map<string, typeof due>();

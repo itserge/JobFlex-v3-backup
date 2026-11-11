@@ -20,6 +20,7 @@ import { INBOX_FILTERS } from "@/lib/inbox/shared";
 import { inboxDrafts, sendInboxReply, setInboxStatus, setInboxUrgent, takeInboxThread } from "@/actions/inbox";
 import type { InboxOpen, InboxView } from "./inbox-load";
 import styles from "./inbox.module.css";
+import { ContactStops } from "@/components/v3/contact-stops/contact-stops";
 
 const cx = (...c: Array<string | false | null | undefined>) => c.filter(Boolean).join(" ");
 
@@ -154,6 +155,8 @@ function Thread({ open }: { open: InboxOpen }) {
           </button>
         </div>
       </div>
+      {/* "Don't email" · "Don't text" for the client behind the thread (2026-11-11). */}
+      {open.clientId ? <ContactStops key={open.clientId} clientId={open.clientId} variant="strip" /> : null}
 
       <div className={styles.talk} data-thread-talk="">
         {open.messages.length === 0 ? (

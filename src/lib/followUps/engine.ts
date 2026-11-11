@@ -13,6 +13,8 @@
 import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { sendOrgEmail } from "@/lib/email/orgSend";
+import { companyOptOut, withOptOut } from "@/lib/email/optOutFooter";
+import { companyOptedOut } from "@/lib/winback/optout";
 import { renderEmail } from "@/lib/email/renderEmail";
 import { isTwilioEnabled } from "@/lib/sdk/twilio";
 import { sendText } from "@/lib/sms/send";
@@ -139,7 +141,7 @@ async function loadRow(id: string) {
         where: { id: fu.proposalId },
         include: {
           client: true,
-          organization: { select: { name: true, gmailSettingsJson: true, gmailTokensJson: true, billingEmail: true, logoUrl: true, phone: true, timezone: true } },
+          organization: { select: { id: true, name: true, address: true, gmailSettingsJson: true, gmailTokensJson: true, billingEmail: true, logoUrl: true, phone: true, timezone: true } },
         },
       })
     : null;
@@ -275,6 +277,8 @@ async function send(fu: Loaded["fu"], proposal: LoadedProposal, ctx: FollowUpCon
   const trig = trigger ?? "SENT";
   /** What actually left the building, for the activity log. */
   let outcome: { kind: "EMAIL" | "TEXT"; to: string } | null = null;
+  /** Why no email went, when the client asked for none (lib/winback/optout, lib/mailBlock). */
+  let unsubscribed: string | null = null;
   const via = await channelFor((fu.draftChannel === "TEXT" || fu.draftChannel === "EMAIL" ? fu.draftChannel : channel) as FollowUpChannel, proposal);
 
   if (via === "TEXT" && proposal.client?.phone) {
@@ -284,20 +288,25 @@ async function send(fu: Loaded["fu"], proposal: LoadedProposal, ctx: FollowUpCon
     const res = await sendText({ organizationId: proposal.organizationId, to: proposal.client.phone, body, kind: "follow-up" });
     if (res.ok && res.status !== "SKIPPED") outcome = { kind: "TEXT", to: proposal.client.phone };
   }
-  if (!outcome && proposal.client?.email) {
+  if (!outcome && proposal.client?.email && (await companyOptedOut(proposal.organizationId, proposal.client.email))) unsubscribed = proposal.client.email;
+  if (!outcome && !unsubscribed && proposal.client?.email) {
     // Words written as a text that have to go by email after all: the link is the button's, not the prose's.
     const prose = own ? draftParagraphs(own.body.split(ctx.href).join("").trim()) : [];
-    const { subject: subj, html } = renderEmail(followUpEmailDoc(trig, ctx, own ? { subject: own.subject, prose } : undefined));
+    // The way out and the company's postal address at the foot, the one-click headers above (lib/email/optOutFooter).
+    const foot = companyOptOut(await appBaseUrl(), { id: proposal.organizationId, name: proposal.organization.name, address: proposal.organization.address }, proposal.client.email);
+    const { subject: subj, html } = renderEmail(withOptOut(followUpEmailDoc(trig, ctx, own ? { subject: own.subject, prose } : undefined), foot));
     // Sends via the org's connected Gmail when opted in, else Resend/SMTP with
     // the contractor as reply-to.
-    await sendOrgEmail(proposal.organization, {
+    const res = await sendOrgEmail(proposal.organization, {
       clientId: proposal.clientId,
       to: proposal.client.email,
       subject: subj,
       html,
       kind: "follow-up",
+      headers: foot.headers,
     });
-    outcome = { kind: "EMAIL", to: proposal.client.email };
+    if (res.blocked) unsubscribed = proposal.client.email;
+    else outcome = { kind: "EMAIL", to: proposal.client.email };
   }
 
   await db.followUp.update({ where: { id: fu.id }, data: { completedAt: new Date(), state: "QUEUED", reason: null, ...(own ? { draftBy: own.by, draftSubject: own.subject, draftBody: own.body } : {}) } });
@@ -308,7 +317,7 @@ async function send(fu: Loaded["fu"], proposal: LoadedProposal, ctx: FollowUpCon
       proposalId: fu.proposalId,
       actorId: byUserId,
       kind: outcome?.kind ?? "EMAIL",
-      summary: outcome ? `Follow-up ${outcome.kind === "TEXT" ? "texted" : "emailed"} to ${outcome.to}${whose}` : "Follow-up closed — no reachable contact",
+      summary: outcome ? `Follow-up ${outcome.kind === "TEXT" ? "texted" : "emailed"} to ${outcome.to}${whose}` : unsubscribed ? `Follow-up not emailed — ${unsubscribed} asked for no more emails` : "Follow-up closed — no reachable contact",
     },
   });
 }

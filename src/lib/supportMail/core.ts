@@ -26,10 +26,17 @@
 // A letter FROM our own box is only ever taken through a plus-address: the
 // app's own notices to the support inbox carry the ticket's ref too, and must
 // not come back as "the team said".
+//
+// A LETTER THAT SAYS STOP (2026-11-11). A letter that is not a ticket's, from someone outside the box and not a
+// machine, is read once for its first line (lib/mailBlockShared isStopReply: "stop", "unsubscribe", "remove me",
+// "opt out" and their close forms — the whole line, so "Thanks, stop by tomorrow at 3" is not). Such a letter puts
+// its sender on the do-not-email list (deps.unsubscribe) and is filed read under JobFlex/Unsubscribed; any other is
+// remembered as looked at (deps.checked) and left exactly as it was — unread, unlabelled, a person's.
 
 import PostalMime from "postal-mime";
 import { REPLY_LIMITS, checkReply } from "@/lib/supportReply";
 import { emailAddressOf, htmlToText, isAutoReply, isPlusTicketAddress, refFromSubject, ticketFromPlusAddress, trimQuoted } from "@/lib/supportInbound";
+import { isStopReply } from "@/lib/mailBlockShared";
 
 /** What the box says about a letter before its body is read. */
 export interface InboxLetter {
@@ -58,6 +65,8 @@ export interface InboxPort {
   done(uid: number): Promise<void>;
   /** JobFlex/Unmatched; stays unread. */
   unmatched(uid: number): Promise<void>;
+  /** Read + JobFlex/Unsubscribed: a letter that asked us to stop, already acted on. */
+  stopped(uid: number): Promise<void>;
 }
 
 export type Sender = { from: "customer" | "team"; authorUserId: string | null; authorName: string };
@@ -71,12 +80,19 @@ export interface InboxDeps {
   sender(ticketId: string, address: string): Promise<Sender | null>;
   alreadyHave(messageId: string): Promise<boolean>;
   post(input: { ticketId: string; from: "customer" | "team"; body: string; authorUserId: string | null; authorName: string; emailMessageId: string | null }): Promise<boolean>;
+  /** A letter that is not a ticket's: already read for a stop by an earlier run? (`key` = its Message-ID, else uid.) */
+  checked?(key: string): Promise<boolean>;
+  /** …and remember it as read for one. */
+  markChecked?(key: string): Promise<void>;
+  /** Put the sender on the do-not-email list (and stop JobFlex's letters to an account they own). */
+  unsubscribe?(address: string): Promise<void>;
 }
 
 export type LetterOutcome =
   | { uid: number; outcome: "added"; ticketId: string; from: "customer" | "team" }
   | { uid: number; outcome: "dropped"; why: "auto-reply" | "duplicate" }
   | { uid: number; outcome: "unmatched"; why: "bad-token" | "no-ticket" | "stranger" | "empty" | "ticket-gone" }
+  | { uid: number; outcome: "unsubscribed"; address: string }
   | { uid: number; outcome: "not-ours" };
 
 export interface InboxReport {
@@ -84,6 +100,8 @@ export interface InboxReport {
   added: number;
   dropped: number;
   unmatched: number;
+  /** Letters that asked to stop: their senders are on the do-not-email list now. */
+  unsubscribed: number;
   letters: LetterOutcome[];
 }
 
@@ -128,16 +146,34 @@ export async function wordsOf(raw: Uint8Array | string): Promise<{ body: string;
   return { body, attachments };
 }
 
+/** A letter that is nobody's ticket: does it ask to stop? Acted on when it does (true); remembered as looked at when
+ *  it doesn't, and otherwise not touched. Machines (out-of-office, bounces) are never read for one. */
+async function stopLetter(port: InboxPort, deps: InboxDeps, letter: InboxLetter, sender: string): Promise<boolean> {
+  if (!deps.unsubscribe || !deps.checked || !deps.markChecked) return false;
+  if (isAutoReply(letter.subject, letter.headers) || /^(mailer-daemon|postmaster|no-?reply)@/i.test(sender)) return false;
+  const key = letter.messageId ? bare(letter.messageId) : `uid:${letter.uid}`;
+  if (await deps.checked(key)) return false;
+  const parsed = await PostalMime.parse(await port.source(letter.uid));
+  const text = parsed.text?.trim() ? parsed.text : parsed.html ? htmlToText(parsed.html) : "";
+  const words = trimQuoted(text);
+  await deps.markChecked(key);
+  if (!isStopReply(words)) return false;
+  await deps.unsubscribe(sender);
+  await port.stopped(letter.uid);
+  return true;
+}
+
 /** One pass over the box. Never throws for one letter: a failure is logged and the letter left as it was. */
 export async function processInbox(port: InboxPort, deps: InboxDeps, opts: { limit?: number; log?: (line: string) => void } = {}): Promise<InboxReport> {
   const log = opts.log ?? (() => {});
   const letters = await port.unseen(opts.limit ?? 25);
-  const report: InboxReport = { checked: letters.length, added: 0, dropped: 0, unmatched: 0, letters: [] };
+  const report: InboxReport = { checked: letters.length, added: 0, dropped: 0, unmatched: 0, unsubscribed: 0, letters: [] };
   const record = (o: LetterOutcome) => {
     report.letters.push(o);
     if (o.outcome === "added") report.added += 1;
     else if (o.outcome === "dropped") report.dropped += 1;
     else if (o.outcome === "unmatched") report.unmatched += 1;
+    else if (o.outcome === "unsubscribed") report.unsubscribed += 1;
   };
   const park = async (uid: number, why: Extract<LetterOutcome, { outcome: "unmatched" }>["why"]) => {
     await port.unmatched(uid);
@@ -154,6 +190,10 @@ export async function processInbox(port: InboxPort, deps: InboxDeps, opts: { lim
       const fromUs = sender === deps.mailbox;
       const t = await ticketOf(letter, deps);
       if (t.via === "none" || (fromUs && t.via !== "plus" && t.via !== "bad-token")) {
+        if (t.via === "none" && !fromUs && sender && (await stopLetter(port, deps, letter, sender))) {
+          record({ uid: letter.uid, outcome: "unsubscribed", address: sender });
+          continue;
+        }
         record({ uid: letter.uid, outcome: "not-ours" });
         continue;
       }

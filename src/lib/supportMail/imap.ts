@@ -13,6 +13,8 @@ import type { SupportMailConfig } from "./config";
 
 export const PROCESSED_LABEL = "JobFlex/Processed";
 export const UNMATCHED_LABEL = "JobFlex/Unmatched";
+/** A letter that asked us to stop (lib/supportMail/core stopLetter): read, its sender on the do-not-email list. */
+export const UNSUBSCRIBED_LABEL = "JobFlex/Unsubscribed";
 const LOOKBACK_DAYS = 14;
 const HEADER_KEYS = ["delivered-to", "x-original-to", "references", "auto-submitted", "x-autoreply", "x-autorespond", "x-auto-response-suppress", "precedence"];
 
@@ -64,7 +66,7 @@ export async function withGmailInbox<T>(cfg: SupportMailConfig, run: (port: Inbo
   });
   await client.connect();
   try {
-    for (const label of [PROCESSED_LABEL, UNMATCHED_LABEL]) {
+    for (const label of [PROCESSED_LABEL, UNMATCHED_LABEL, UNSUBSCRIBED_LABEL]) {
       await client.mailboxCreate(label.split("/")).catch(() => undefined); // exists already: fine
     }
     const lock = await client.getMailboxLock("INBOX");
@@ -92,6 +94,10 @@ export async function withGmailInbox<T>(cfg: SupportMailConfig, run: (port: Inbo
         },
         async unmatched(uid) {
           await client.messageFlagsAdd(String(uid), [UNMATCHED_LABEL], { uid: true, useLabels: true });
+        },
+        async stopped(uid) {
+          await client.messageFlagsAdd(String(uid), ["\\Seen"], { uid: true });
+          await client.messageFlagsAdd(String(uid), [UNSUBSCRIBED_LABEL], { uid: true, useLabels: true });
         },
       };
       return await run(port);

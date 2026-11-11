@@ -68,6 +68,7 @@ import { activateServicePlan, cancelServicePlan, enrollClientInPlan, renewServic
 import { EquipmentPanel } from "./equipment-panel";
 import { openRepairSheet } from "@/components/v3/repairs/repair-sheet";
 import { ClientPageLink } from "./client-page-link";
+import { ContactStops } from "@/components/v3/contact-stops/contact-stops";
 
 const FILTERS: { value: ProposalFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -298,6 +299,8 @@ function ClientRecordPage({ view }: { view: ClientDetailRecord }) {
               <Fact label="Job address" icon="pin" value={CLIENT.address} wide />
             </div>
           </div>
+          {/* "Don't email" · "Don't text" (2026-11-11): the office stops a client hearing from the company by hand. */}
+          <ContactStops key={clientId} clientId={clientId} />
         </section>
 
         {/* WHERE THEY STAND (2026-11-08): the saved AI brief, rebuilt when the timeline moves. */}

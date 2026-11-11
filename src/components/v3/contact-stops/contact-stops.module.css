@@ -1,0 +1,44 @@
+/* "Don't email" · "Don't text" (2026-11-11, contact-stops.tsx). The root carries data-nest, so the dashboard shell's
+   margin/padding reset (blueprint.module.css) skips it, and every rule weighs two classes or more — a one-class rule
+   ties that reset and the production build emits the reset later (CLAUDE.md). The switch is the app's own (.tg of
+   company-pricing-form.module.css): square, 46 × 25 drawn, red off, green on, a 44px touch area. */
+
+.stops[data-nest] { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin: 0; padding: 0; border-top: 1.5px solid var(--ink, #0a0a0a); }
+.stops.band[data-nest] { margin-top: 18px; }
+.stops.strip[data-nest] { border-top: none; border-bottom: 1px solid var(--hair, rgba(10,10,10,.12)); background: #fff; }
+
+.stops .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; margin: 0; padding: 8px 16px; min-width: 0; }
+.stops .row + .row { border-left: 1px solid var(--hair, rgba(10,10,10,.12)); }
+.stops .rowOn { background: var(--paper, #f2f0eb); }
+.stops .words { display: grid; gap: 2px; min-width: 0; margin: 0; padding: 0; }
+.stops .label { font-size: 13px; font-weight: 850; letter-spacing: .06em; text-transform: uppercase; color: var(--ink, #0a0a0a); }
+.stops .sub { font-size: 13px; line-height: 1.35; color: var(--ink-muted, #5c5c5c); overflow-wrap: anywhere; }
+
+.stops .tg { position: relative; flex-shrink: 0; width: 46px; height: 25px; margin: 0; padding: 0;
+  border: 1.5px solid var(--ink, #0a0a0a); border-radius: var(--radius, 2px); background: rgba(168,50,50,.14);
+  cursor: pointer; -webkit-appearance: none; appearance: none;
+  transition: background .2s var(--ease, ease), border-color .2s var(--ease, ease); }
+.stops .tg::before { content: ""; position: absolute; inset: -11px -4px; }
+.stops .tg::after { content: ""; position: absolute; top: 50%; left: 2px; width: 17px; height: 17px; border-radius: 0;
+  background: var(--danger, #a83232); transform: translateY(-50%);
+  transition: transform .2s var(--ease-out, ease-out), background .2s var(--ease, ease); }
+.stops .tg[aria-checked="true"] { background: rgba(58,125,68,.16); }
+.stops .tg[aria-checked="true"]::after { transform: translate(22px, -50%); background: var(--success, #3a7d44); }
+.stops .tg:focus-visible { outline: 2px solid var(--blueprint, #1854a0); outline-offset: 2px; }
+.stops .tg:disabled { cursor: not-allowed; opacity: .55; }
+/* On and locked (they unsubscribed or replied STOP themselves): it still reads as on; the line beside it says why. */
+.stops .tg[aria-checked="true"]:disabled { opacity: 1; }
+
+@media (max-width: 768px) {
+  .stops[data-nest] { grid-template-columns: 1fr; }
+  .stops .row { min-height: 60px; padding: 10px 14px; }
+  .stops .row + .row { border-left: none; border-top: 1px solid var(--hair, rgba(10,10,10,.12)); }
+  .stops .tg { width: 52px; height: 30px; }
+  .stops .tg::before { inset: -7px 0; }
+  .stops .tg::after { left: 1.5px; width: 20px; height: 20px; }
+  .stops .tg[aria-checked="true"]::after { transform: translate(23px, -50%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stops .tg, .stops .tg::after { transition: none; }
+}

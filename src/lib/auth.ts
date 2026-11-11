@@ -219,6 +219,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                 await sendEmail({
                   to: email,
                   subject: "Google sign-in was used on your JobFlex account",
+                  kind: "security",
                   html: `<p>Someone signed in to your JobFlex account (${email}) with Google just now.</p><p>If that was you, nothing to do. If it wasn't, reset your password from the sign-in page right away — that signs every session out.</p>`,
                 });
               } catch (err) {

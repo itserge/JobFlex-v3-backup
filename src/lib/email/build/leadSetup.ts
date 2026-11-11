@@ -1,6 +1,6 @@
 // THE LEAD SET-UP REMINDER (owner, 2026-10-07: "remind them every day to set
-// up address and specialties for leads"). One mail a day while either is
-// missing, for the shop's first two weeks (lib/leadSetupReminders).
+// up address and specialties for leads"). Since 2026-11-11 at most three —
+// days 1, 3 and 7 — while either is missing (lib/leadSetupReminders).
 import type { BoxRow, EmailDoc, Lockup } from "../doc";
 
 const PLATFORM_LOCKUP: Lockup = { kind: "platform" };
@@ -40,7 +40,7 @@ export function buildLeadSetupReminder(i: LeadSetupReminderInput): EmailDoc {
     ],
     box,
     cta: { label: "Complete your profile", href: i.href },
-    after: ["This reminder stops as soon as both are set, or after two weeks. Reply to this email if anything is unclear."],
+    after: ["This reminder stops as soon as both are set — three at most. Reply to this email if anything is unclear."],
     footer: PLATFORM_FOOTER,
   };
 }

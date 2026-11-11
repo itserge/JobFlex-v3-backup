@@ -180,11 +180,20 @@ export async function runTrialWinbackSweep(now = new Date()): Promise<WinbackSwe
       const stage = due[due.length - 1];
       for (const earlier of due.slice(0, -1)) rec.sent[earlier.key] = `skipped:${now.toISOString()}`;
       // They pressed Unsubscribe on one of our emails (lib/adminMail/optout): no more win-back.
-      const { readOptOut, unsubscribeHeaders, unsubscribeUrl } = await import("@/lib/adminMail/optout");
+      const { readOptOut } = await import("@/lib/adminMail/optout");
       if (await readOptOut(orgId)) { out.skipped++; continue; }
       const org = await db.organization.findUnique({ where: { id: orgId }, select: { name: true, memberships: { where: { role: "OWNER" }, take: 1, select: { user: { select: { email: true, name: true } } } } } });
       const to = org?.memberships[0]?.user;
       if (!org || !to?.email) { out.skipped++; continue; }
+      // The way out in the letter itself and JobFlex's postal address (lib/email/optOutFooter, 2026-11-11): the email
+      // law asks for both in an offer like this, so without the address nothing is sent (and nothing is counted).
+      const { jobflexOptOut, withOptOut } = await import("@/lib/email/optOutFooter");
+      const foot = jobflexOptOut(base, orgId, to.email, `You're getting this because ${org.name} tried JobFlex.`);
+      if (!foot.postal) {
+        out.skipped++;
+        console.warn("[winback] not sent: set JOBFLEX_POSTAL_ADDRESS — the email law asks for a postal address in this letter");
+        continue;
+      }
       let offer: { pct: number; months: number; until: string } | null = null;
       if (stage.key === "offer" || stage.key === "last") {
         if (!rec.offerUntil) {
@@ -195,13 +204,20 @@ export async function runTrialWinbackSweep(now = new Date()): Promise<WinbackSwe
         offer = { pct: OFFER_PCT, months: OFFER_MONTHS, until: rec.offerUntil };
       }
       const plan = await trialPlanSummary(orgId, state.record).catch(() => ({ name: "your plan", cents: 0, per: "mo" }));
-      const doc = buildWinback({
+      const doc = withOptOut(buildWinback({
         stage: stage.key, name: to.name, business: org.name, planName: plan.name, price: plan.cents > 0 ? `$${(plan.cents / 100).toLocaleString("en-US", { maximumFractionDigits: 0 })}${plan.per}` : "",
         built: await built(orgId), offer, href: `${base}/dashboard/trial`,
-      });
+      }), foot);
       const { subject, html, text } = renderEmail(doc);
-      // The plain-text twin and the mail client's own Unsubscribe button (2026-10-08).
-      await sendEmail({ to: to.email, subject, html, text, headers: unsubscribeHeaders(unsubscribeUrl(base, orgId)) });
+      // The plain-text twin and the mail client's own Unsubscribe button (2026-10-08). On the do-not-email list
+      // (lib/mailBlock) the letter is left out — counted as skipped, and this stage is not tried again.
+      const left = await sendEmail({ to: to.email, subject, html, text, headers: foot.headers, organizationId: orgId });
+      if (left.skipped && left.id.startsWith("mail-block")) {
+        rec.sent[stage.key] = `skipped:${now.toISOString()}`;
+        await writeWinback(orgId, rec);
+        out.skipped++;
+        continue;
+      }
       rec.sent[stage.key] = now.toISOString();
       await writeWinback(orgId, rec);
       out.mailed[stage.key]++;

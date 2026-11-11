@@ -47,7 +47,7 @@ export async function setMyPassword(raw: unknown): Promise<{ ok: true; added: bo
     try {
       const base = (await appBaseUrl()).replace(/\/$/, "");
       const { subject, html, text } = renderEmail(buildPasswordSet({ name: user.name, email: user.email, added, at: new Date(), forgotHref: `${base}/auth/forgot` }));
-      await sendEmail({ to: user.email, subject, html, text, replyTo: "support@jobflex.app" });
+      await sendEmail({ to: user.email, subject, html, text, replyTo: "support@jobflex.app", kind: "password-reset" });
     } catch (err) {
       console.warn("[account] password notice not sent:", err instanceof Error ? err.message : err);
     }

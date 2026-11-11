@@ -74,6 +74,8 @@ export const ADMIN_NAV_SECTIONS: NavSection[] = [
       { label: "Support", icon: "i-msg", href: "/admin/support" },
       // Added 2026-10-21: every letter the platform sent, failed or skipped (lib/emailLog).
       { label: "Sent mail", icon: "i-send", href: "/admin/mail/log" },
+      // Added 2026-11-11: the do-not-email list (lib/mailBlock) — who asked us to stop, add or remove an address.
+      { label: "Do not email", icon: "i-ban", href: "/admin/mail/blocked" },
       // Added 2026-10-11: the platform team's own tasks, live between admins;
       // the badge is the open tasks given to whoever is signed in.
       { label: "Tasks", icon: "i-board", href: "/admin/tasks" },

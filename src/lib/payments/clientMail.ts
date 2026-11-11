@@ -112,7 +112,7 @@ export type LetterReport = { sent: boolean; to: string | null; why: string | nul
 async function sendLetter(letter: ClientLetter, log: { actorId: string | null; summary: string; meta: Record<string, unknown> }): Promise<LetterReport> {
   if (!letter.to) return { sent: false, to: null, why: "The client has no email on file — add one on the client's record." };
   try {
-    await sendOrgEmail(letter.org as OrgEmailSender, { to: letter.to, subject: letter.subject, html: letter.html, clientId: letter.clientId, organizationId: letter.organizationId });
+    await sendOrgEmail(letter.org as OrgEmailSender, { to: letter.to, subject: letter.subject, html: letter.html, clientId: letter.clientId, organizationId: letter.organizationId, kind: "receipt" });
   } catch (err) {
     console.warn("[clientMail] send failed", err);
     return { sent: false, to: letter.to, why: "The email didn't go out — try again in a minute." };

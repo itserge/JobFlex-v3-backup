@@ -40,7 +40,8 @@ export async function emailHomeLink(raw: unknown): Promise<HomeActionResult> {
   if (home) {
     try {
       const { subject, html } = renderEmail(buildHomeLink({ name: home.name, homeUrl: await homeUrl(home.accessToken), projects: home._count.leads }));
-      await sendEmail({ to: email, subject, html });
+      // Asked for by the person: their sign-in link (lib/mailBlockShared ESSENTIAL_KINDS).
+      await sendEmail({ to: email, subject, html, kind: "otp" });
     } catch (err) {
       console.error("[home] link email failed:", err instanceof Error ? err.message : err);
     }
@@ -57,7 +58,7 @@ export async function emailMyHomeLink(raw: unknown): Promise<HomeActionResult> {
   if (braked) return { ok: false, error: braked };
   try {
     const { subject, html } = renderEmail(buildHomeLink({ name: home.name, homeUrl: await homeUrl(home.accessToken), projects: home._count.leads }));
-    await sendEmail({ to: home.email, subject, html });
+    await sendEmail({ to: home.email, subject, html, kind: "otp" });
   } catch (err) {
     console.error("[home] link email failed:", err instanceof Error ? err.message : err);
     return { ok: false, error: "Couldn't send the email right now — try again in a minute." };

@@ -288,7 +288,7 @@ export async function requestPasswordReset(raw: unknown): Promise<{ ok: true }> 
       const link = `${await appBaseUrl()}/auth/reset?token=${rawToken}`;
       const { subject, html } = renderEmail(buildPasswordReset({ name: user.name, href: link }));
       // sendEmail retries transient provider failures internally (emailRetry.ts).
-      await sendEmail({ to: email, subject, html });
+      await sendEmail({ to: email, subject, html, kind: "password-reset" });
     } catch (err) {
       // SECURITY: never leak send failures to the caller — the response stays the
       // same generic { ok: true } whether or not the account exists, so this can't

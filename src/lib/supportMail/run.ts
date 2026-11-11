@@ -17,9 +17,14 @@ import { withGmailInbox } from "./imap";
 import { mockInboxDir, withMockInbox } from "./mockPort";
 import { senderOnTicket } from "@/lib/supportThread";
 import { acceptSupportMessage } from "@/lib/support/acceptMessage";
+import { writeMailBlock } from "@/lib/mailBlock";
+import { writeOptOut } from "@/lib/adminMail/optout";
 
 export const SUPPORT_MAIL_STATUS_KEY = "supportMail:status";
 const LEASE_KEY = "supportMail:lease";
+/** The letters that are nobody's ticket and were already read for a "stop" (lib/supportMail/core stopLetter). */
+const STOP_CHECKED_KEY = "supportMail:stopChecked";
+const STOP_CHECKED_KEEP = 1000;
 const LEASE_MS = 2 * 60_000;
 
 export interface SupportMailStatus {
@@ -28,7 +33,7 @@ export interface SupportMailStatus {
   lastError: string | null;
   lastErrorAt: string | null;
   /** The last run's counts. */
-  last?: { checked: number; added: number; dropped: number; unmatched: number };
+  last?: { checked: number; added: number; dropped: number; unmatched: number; unsubscribed?: number };
 }
 
 export async function readSupportMailStatus(): Promise<SupportMailStatus | null> {
@@ -77,6 +82,16 @@ function errorWords(err: unknown, pass: string): string {
   return e?.code ? `${text} (${e.code})` : text;
 }
 
+async function readStopChecked(): Promise<string[]> {
+  const row = await db.syncState.findUnique({ where: { key: STOP_CHECKED_KEY }, select: { cursor: true } }).catch(() => null);
+  try {
+    const v = JSON.parse(row?.cursor ?? "[]") as unknown;
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 function depsFor(mailbox: string, secret: string): InboxDeps {
   const variants = (id: string) => [id, `<${id}>`];
   return {
@@ -100,6 +115,22 @@ function depsFor(mailbox: string, secret: string): InboxDeps {
     async post(input) {
       const r = await acceptSupportMessage({ ...input, channel: "email" });
       return Boolean(r);
+    },
+    async checked(key) {
+      return (await readStopChecked()).includes(key);
+    },
+    async markChecked(key) {
+      const list = [key, ...(await readStopChecked()).filter((k) => k !== key)].slice(0, STOP_CHECKED_KEEP);
+      const cursor = JSON.stringify(list);
+      await db.syncState.upsert({ where: { key: STOP_CHECKED_KEY }, create: { key: STOP_CHECKED_KEY, cursor }, update: { cursor } });
+    },
+    async unsubscribe(address) {
+      // The do-not-email list (lib/mailBlock), and JobFlex's own letters to every account this address owns.
+      await writeMailBlock(address, { source: "reply", reason: "Replied “stop” to an email from JobFlex" });
+      // Accounts keep their address in lower case (the sign-up and the sign-in lower it), as emailAddressOf does.
+      const owned = await db.membership.findMany({ where: { role: "OWNER", user: { email: address.toLowerCase() } }, select: { organizationId: true } });
+      for (const m of owned) await writeOptOut(m.organizationId, "reply");
+      console.info(`[support-mail] a reply asked to stop: …@${address.split("@")[1] ?? ""} is on the do-not-email list${owned.length ? ` (owner of ${owned.length} account${owned.length === 1 ? "" : "s"})` : ""}`);
     },
   };
 }
@@ -126,8 +157,8 @@ export async function runSupportMail(): Promise<SupportMailRun> {
       : await withGmailInbox(config, (port) => processInbox(port, deps, { log }));
     const { letters, ...counts } = report;
     await writeStatus({ checkedAt: new Date().toISOString(), last: counts });
-    if (counts.added || counts.unmatched || counts.dropped) {
-      console.info(`[support-mail] ${counts.checked} unread · ${counts.added} added · ${counts.dropped} dropped · ${counts.unmatched} unmatched`);
+    if (counts.added || counts.unmatched || counts.dropped || counts.unsubscribed) {
+      console.info(`[support-mail] ${counts.checked} unread · ${counts.added} added · ${counts.dropped} dropped · ${counts.unmatched} unmatched · ${counts.unsubscribed} unsubscribed`);
     }
     return { ok: true, report: counts, letters };
   } catch (err) {

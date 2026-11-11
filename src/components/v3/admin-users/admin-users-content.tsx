@@ -43,6 +43,7 @@ import type { PlanGrant, SyncingMark } from "@/lib/planGrant";
 import { STRIPE_SCAN_CEILING_LABEL } from "@/components/v3/admin-subscribers/billing-metrics";
 import { SubscriptionEditor } from "./admin-subscription-editor";
 import { UsageReset } from "./admin-usage-reset";
+import { MailBlockControl } from "./admin-mail-block";
 import { CustomPagesEditor } from "./admin-custom-pages";
 import { setOrganizationInternal } from "@/actions/adminLeadCenter";
 import shared from "./admin-shared.module.css";
@@ -639,6 +640,8 @@ function UserForm({
         <Link className={cx("btn", "btn-ghost", "btn-sm", "au-mail-link")} href={`/admin/mail/log?period=30d&q=${encodeURIComponent(user.email.toLowerCase())}` as Route} data-mail-log-link>
           Emails to this address
         </Link>
+        {/* The do-not-email list (2026-11-11, lib/mailBlock): where this address stands, and the admin's own switch. */}
+        <MailBlockControl key={user.email} email={user.email} />
       </div>
 
       <div className={cx("sec")}>

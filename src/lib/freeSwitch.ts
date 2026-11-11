@@ -89,5 +89,6 @@ export async function sendFreeSwitchEmail(
   const { subject, html } = renderEmail(
     buildFreeSwitchBooked({ name: owner?.user.name ?? null, planName, switchAt: endsAt, href: `${base}/dashboard/subscription`, ...opts }),
   );
-  await sendEmail({ to: email, subject, html });
+  // The confirmation of their own cancel: a receipt, so it reaches an address on the do-not-email list too.
+  await sendEmail({ to: email, subject, html, kind: "receipt" });
 }

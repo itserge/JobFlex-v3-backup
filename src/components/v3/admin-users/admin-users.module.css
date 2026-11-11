@@ -275,3 +275,10 @@
 @media (max-width: 768px) {
   :global(.jf-blueprint .content) .au-cxl > button { flex: 1 1 100%; }
 }
+
+/* The do-not-email list on the account card (2026-11-11, admin-mail-block.tsx). */
+:global(.jf-blueprint .content) .au-mb { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--hair); }
+:global(.jf-blueprint .content) .au-mb .au-mb-state { margin: 0; display: grid; gap: 2px; font-size: 14px; font-weight: 600; color: var(--ink); }
+:global(.jf-blueprint .content) .au-mb .au-mb-why { font-weight: 400; font-size: 13px; color: var(--ink-muted); }
+:global(.jf-blueprint .content) .au-mb .au-mb-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+:global(.jf-blueprint .content) .au-mb .au-mb-fine { margin: 0; font-size: 12px; color: var(--ink-muted); }

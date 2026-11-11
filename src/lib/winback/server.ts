@@ -443,6 +443,11 @@ export async function sendBatch(organizationId: string, campaignId: string, base
         const left = await sendEmail({ to, subject, html: mail.html, text: mail.text, from: campaignFrom(org.name), replyTo, headers: stopHeaders(stop), kind: "campaign", organizationId });
         // "disabled" = no mail provider on this server: nothing left, so it must not read as sent.
         if (left.skipped && left.id === "disabled") throw new Error("Email sending isn't set up, so this one didn't go out.");
+        // On the do-not-email list (lib/mailBlock — they unsubscribed elsewhere, or asked by reply): left out, not sent.
+        if (left.skipped && left.id === "mail-block:skipped") {
+          await db.clientCampaignRecipient.update({ where: { id: r.id }, data: { status: "SKIPPED", reason: "opted-out", sentAt: null } });
+          continue;
+        }
         await db.clientCampaignRecipient.update({ where: { id: r.id }, data: { status: "SENT", sentAt: new Date(), email: to } });
         if (thread) {
           await db.clientMessage

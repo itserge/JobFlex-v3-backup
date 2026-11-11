@@ -86,6 +86,27 @@ async function logEmail(entry: Omit<EmailLogEntry, "durationMs">, started: numbe
   }
 }
 
+/** The platform's own mailbox (the one SMTP signs in as and support-mail reads); null when none is configured. */
+export function platformMailbox(): string | null {
+  const raw = (process.env.IMAP_USER || process.env.SMTP_USER || "").trim() || (EMAIL_FROM.match(/<([^>]+)>/)?.[1] ?? EMAIL_FROM).trim();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw) && !/@resend\.dev$/i.test(raw) ? raw.toLowerCase() : null;
+}
+
+/** The recipients not on the do-not-email list; all of them for an essential letter. Throws when the list can't be read. */
+export async function withoutBlocked(recipients: readonly string[], kind?: string | null): Promise<string[]> {
+  const { isEssentialKind } = await import("@/lib/mailBlockShared");
+  if (isEssentialKind(kind) || !recipients.length) return [...recipients];
+  const { blockedAmong } = await import("@/lib/mailBlock");
+  const { normalizeEmail } = await import("@/lib/mailBlockShared");
+  let blocked: Set<string>;
+  try {
+    blocked = await blockedAmong(recipients);
+  } catch (err) {
+    throw new Error(`The do-not-email list could not be read, so the letter was not sent: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  return recipients.filter((r) => !blocked.has(normalizeEmail(r) ?? r.trim().toLowerCase()));
+}
+
 export async function sendEmail(opts: {
   to: string | string[];
   subject: string;
@@ -122,6 +143,24 @@ export async function sendEmail(opts: {
   if (process.env.QA_TEST_MODE === "1" && !!process.env.QA_SECRET && process.env.VERCEL_ENV !== "production" && recipients.length > 0 && recipients.every((r) => isQaEmail(r))) {
     await log(recipients, { transport: "skipped", status: "skipped", providerId: "qa-test-mode:skipped" });
     return { id: "qa-test-mode:skipped", skipped: true as const };
+  }
+
+  // THE DO-NOT-EMAIL LIST (lib/mailBlock, 2026-11-11): a listed address is left out of every letter but the few a
+  // person asks for or is owed on money (lib/mailBlockShared ESSENTIAL_KINDS). A letter left with nobody is logged
+  // as skipped and returns a skip, never an error. A list that cannot be read stops the letter (it throws).
+  const kept = await withoutBlocked(recipients, opts.kind);
+  if (kept.length < recipients.length) {
+    if (!kept.length) {
+      await log(recipients, { transport: "skipped", status: "skipped", providerId: "mail-block:skipped" });
+      return { id: "mail-block:skipped", skipped: true as const };
+    }
+    await log(recipients.filter((r) => !kept.includes(r)), { transport: "skipped", status: "skipped", providerId: "mail-block:skipped" });
+    opts = { ...opts, to: kept };
+  }
+  // Replies to JobFlex's own letters come back to the platform mailbox, where /api/cron/support-mail reads a "stop".
+  if (!opts.replyTo && !opts.from) {
+    const box = platformMailbox();
+    if (box) opts = { ...opts, replyTo: box };
   }
 
   // A PREVIEW DEPLOYMENT (2026-10-18, lib/emailPreviewGuard): the same Gmail

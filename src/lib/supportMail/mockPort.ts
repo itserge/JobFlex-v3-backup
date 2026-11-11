@@ -10,7 +10,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import PostalMime from "postal-mime";
 import type { InboxLetter, InboxPort } from "./core";
-import { PROCESSED_LABEL, UNMATCHED_LABEL } from "./imap";
+import { PROCESSED_LABEL, UNMATCHED_LABEL, UNSUBSCRIBED_LABEL } from "./imap";
 
 type State = { seen: Record<string, boolean>; labels: Record<string, string[]> };
 
@@ -72,6 +72,11 @@ export async function withMockInbox<T>(dir: string, run: (port: InboxPort) => Pr
     },
     async unmatched(uid) {
       label(uid, UNMATCHED_LABEL);
+      await save();
+    },
+    async stopped(uid) {
+      state.seen[String(uid)] = true;
+      label(uid, UNSUBSCRIBED_LABEL);
       await save();
     },
   };

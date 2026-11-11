@@ -8,6 +8,8 @@ import { db } from "@/lib/db";
 import { sendOrgEmail } from "@/lib/email/orgSend";
 import { renderEmail } from "@/lib/email/renderEmail";
 import type { EmailDoc } from "@/lib/email/doc";
+import { companyOptOut, withOptOut, type OptOutFooter } from "@/lib/email/optOutFooter";
+import { companyOptedOut } from "@/lib/winback/optout";
 import { appBaseUrl } from "@/lib/appUrl";
 import { sendToMembersByPref } from "@/lib/notificationPrefs";
 import { buildBookedOnline } from "@/lib/email/build/operator";
@@ -19,8 +21,8 @@ import { aptSourceKey, bookingNoteHead, type AptSource } from "@/lib/calendar/vi
 import { deskHoursKey, parseDeskHours, reservedSlots, type DeskDaySlots, type DeskHours } from "@/lib/deskHours";
 import { availableSlots, bookingScope, parseBookingSettings, slotLabel, type BookingService, type BookingSettings, type Busy, type DaySlots } from "@/lib/booking";
 
-const ORG_SELECT = { id: true, name: true, slug: true, timezone: true, logoUrl: true, phone: true, billingEmail: true, gmailSettingsJson: true, gmailTokensJson: true, tradeTypesJson: true, bookingSettingsJson: true } as const;
-type OrgRow = { id: string; name: string | null; slug: string; timezone: string; logoUrl: string | null; phone: string | null; billingEmail: string | null; gmailSettingsJson: string | null; gmailTokensJson: string | null; tradeTypesJson: string | null; bookingSettingsJson: string | null };
+const ORG_SELECT = { id: true, name: true, address: true, slug: true, timezone: true, logoUrl: true, phone: true, billingEmail: true, gmailSettingsJson: true, gmailTokensJson: true, tradeTypesJson: true, bookingSettingsJson: true } as const;
+type OrgRow = { id: string; name: string | null; address?: string | null; slug: string; timezone: string; logoUrl: string | null; phone: string | null; billingEmail: string | null; gmailSettingsJson: string | null; gmailTokensJson: string | null; tradeTypesJson: string | null; bookingSettingsJson: string | null };
 const DAY = 86400000;
 
 export function settingsOf(org: { tradeTypesJson: string | null; bookingSettingsJson: string | null }): BookingSettings {
@@ -133,13 +135,22 @@ export async function deskAvailabilityFor(org: OrgRow, service: BookingService, 
   return { mode: "reserved", days };
 }
 
-export async function emailCustomer(org: OrgRow, to: string | null | undefined, doc: Omit<EmailDoc, "lockup" | "footer">): Promise<boolean> {
+/** One letter to the customer. `optOut` (SmartBook's repeat letters, 2026-11-11): nothing to someone who asked this company
+ *  for no more emails, and the Unsubscribe link, the one-click headers and the postal address on the ones that go
+ *  (lib/email/optOutFooter). A booking's own confirmation, move and cancel are about the visit they booked. */
+export async function emailCustomer(org: OrgRow, to: string | null | undefined, doc: Omit<EmailDoc, "lockup" | "footer">, opts: { optOut?: boolean } = {}): Promise<boolean> {
   if (!to) return false;
   try {
     const name = org.name ?? "Your contractor";
-    const { subject, html } = renderEmail({ ...doc, lockup: { kind: "org", name, logoUrl: org.logoUrl, orgId: org.id }, footer: { name, contact: org.phone ?? org.billingEmail ?? undefined } });
-    const r = await sendOrgEmail(org, { to, subject, html });
-    return !!r && (r as { ok?: boolean }).ok !== false;
+    let foot: OptOutFooter | null = null;
+    if (opts.optOut) {
+      if (await companyOptedOut(org.id, to)) return false;
+      foot = companyOptOut(await appBaseUrl(), org, to);
+    }
+    const full: EmailDoc = { ...doc, lockup: { kind: "org", name, logoUrl: org.logoUrl, orgId: org.id }, footer: { name, contact: org.phone ?? org.billingEmail ?? undefined } };
+    const { subject, html } = renderEmail(foot ? withOptOut(full, foot) : full);
+    const r = await sendOrgEmail(org, { to, subject, html, ...(foot ? { headers: foot.headers } : {}) });
+    return !!r && !r.blocked && (r as { ok?: boolean }).ok !== false;
   } catch (err) {
     console.warn(`[booking] email not sent: ${err instanceof Error ? err.message : String(err)}`);
     return false;

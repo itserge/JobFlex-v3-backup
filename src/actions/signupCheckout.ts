@@ -567,7 +567,7 @@ export async function requestCardlessTrial(
     buildTrialConfirm({ name: rec.name, planName, trialDays: storedTrialOffer(rec.trialOffer).days, href: `${base}/auth/register/confirm?t=${secret}` }),
   );
   try {
-    await sendEmail({ to: rec.email, subject, html });
+    await sendEmail({ to: rec.email, subject, html, kind: "otp" });
   } catch (err) {
     console.error("[signup] trial confirmation email failed:", err);
     return { ok: false, error: "Couldn't send the confirmation email. Try again." };
