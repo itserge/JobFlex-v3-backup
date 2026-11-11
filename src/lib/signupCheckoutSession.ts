@@ -99,8 +99,10 @@ async function open({ token, planSlug, interval, origin }: Parameters<typeof cre
   const session = await stripe.checkout.sessions.create(
     {
       mode: "subscription",
-      // No payment_method_types (owner, 2026-11-11): the sign-up shows what the Stripe Dashboard turns on — the card
-      // and Link. Every other Checkout of ours stays card-only (lib/stripeCheckoutCard).
+      // The card and Link, named here (owner, 2026-11-11) — nothing else the Dashboard turns on (Cash App, Klarna, Amazon
+      // Pay, bank). No wallet_options: Link shows as Stripe draws it. Every other Checkout of ours stays card-only
+      // (lib/stripeCheckoutCard).
+      payment_method_types: ["card", "link"],
       ...(customer ? { customer } : { customer_email: pending.email }),
       client_reference_id: token,
       line_items: lineItems,
