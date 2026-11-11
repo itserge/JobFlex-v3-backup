@@ -35,6 +35,8 @@ export function deskOverview(d: DeskSettingsData, number: string | null, toCheck
     ? { tone: "off", words: "Not on your plan — calls ring your phone" }
     : !number
       ? { tone: "warn", words: "No number yet — get one in Phone & forwarding" }
+      : d.paused
+        ? { tone: "off", words: `Paused — calls ${pausedTo(d)} until you turn the desk back on` }
       : b.out
         ? { tone: "warn", words: "Out of minutes — calls ring your phone or take a message" }
         : forwardingPending
@@ -51,6 +53,12 @@ export function deskOverview(d: DeskSettingsData, number: string | null, toCheck
     minutes: b.out ? { tone: "warn", words: "Out" } : b.low ? { tone: "check", words: minutesWords.replace(/ — running low$/, "") } : { tone: "info", words: minutesWords },
   };
   return { status, done, count, next, forwardingPending, tabs, minutesWords };
+}
+
+/** Where a call goes while the desk is paused (lib/aiDesk/calls): the company phone, unless it forwards every call to
+ *  the desk (that would loop) — else a message. */
+export function pausedTo(d: Pick<DeskSettingsData, "businessPhone" | "forwarding">): string {
+  return d.businessPhone && d.forwarding !== "all" ? `ring ${d.businessPhone}` : "take a message";
 }
 
 const ALL_TABS: readonly DeskTab[] = ["numbers", "business", "booking", "voice", "minutes"];

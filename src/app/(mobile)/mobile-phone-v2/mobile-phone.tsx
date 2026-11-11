@@ -787,7 +787,7 @@ export function MobilePhone({ entries, stats, webhookUrl, twilioConfigured, desk
                           style={{ animationDelay: `${i * 45}ms` }}
                           role="button"
                           tabIndex={0}
-                          aria-label={`${KIND_LABEL[kind]} call, ${other} — open detail`}
+                          aria-label={`${KIND_LABEL[kind]} call, ${c.name || other} — open detail`}
                           onClick={() => setOpenId(c.id)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || e.key === " ") {
@@ -801,11 +801,11 @@ export function MobilePhone({ entries, stats, webhookUrl, twilioConfigured, desk
                           >
                             <Icon id={KIND_ICON[kind]} />
                           </span>
-                          <div className={styles.cnum}>{other}</div>
+                          <div className={styles.cnum}>{c.name || other}</div>
                           <button
                             className={styles.copen}
                             type="button"
-                            aria-label={`Actions for the call with ${other}`}
+                            aria-label={`Actions for the call with ${c.name || other}`}
                             onClick={(e) => {
                               e.stopPropagation();
                               setActId(c.id);
@@ -814,6 +814,8 @@ export function MobilePhone({ entries, stats, webhookUrl, twilioConfigured, desk
                             <Icon id="i-dots" />
                           </button>
                           <div className={styles.cto}>
+                            {/* the caller's name above (2026-11-11): their number moves down here */}
+                            {c.name ? `${other} · ` : ""}
                             {c.dir === "OUTBOUND" ? `from ${c.from}` : `to ${c.to}`}
                           </div>
                           <div className={styles.cfoot}>
@@ -822,7 +824,7 @@ export function MobilePhone({ entries, stats, webhookUrl, twilioConfigured, desk
                                 {KIND_LABEL[kind]}
                               </span>
                               {c.lead ? (
-                                <span className={`${styles.badge} ${styles.isLead}`}>{c.lead}</span>
+                                <span className={`${styles.badge} ${styles.isLead}`}>Lead</span>
                               ) : (
                                 <span className={`${styles.badge} ${styles.isNoLead}`}>No lead</span>
                               )}
@@ -881,7 +883,7 @@ export function MobilePhone({ entries, stats, webhookUrl, twilioConfigured, desk
               ? `${KIND_LABEL[kindOf(detail)]} · ${detail.status.toLowerCase().replace("_", " ")} · ${detail.when}`
               : "Call · —"}
           </div>
-          <div className={styles.sheetTitle}>{detail ? counterparty(detail) : "Call"}</div>
+          <div className={styles.sheetTitle}>{detail ? detail.name || counterparty(detail) : "Call"}</div>
         </div>
         <div className={styles.sheetBody}>
           {detail ? (
@@ -892,7 +894,7 @@ export function MobilePhone({ entries, stats, webhookUrl, twilioConfigured, desk
                 </span>
                 <span className={styles.badge}>{fmtDur(detail.dur)}</span>
                 {detail.lead ? (
-                  <span className={`${styles.badge} ${styles.isLead}`}>Lead {detail.lead}</span>
+                  <span className={`${styles.badge} ${styles.isLead}`}>Lead</span>
                 ) : (
                   <span className={`${styles.badge} ${styles.isNoLead}`}>No lead</span>
                 )}
@@ -944,9 +946,10 @@ export function MobilePhone({ entries, stats, webhookUrl, twilioConfigured, desk
                     {detail.script.map((l, i) => (
                       <div
                         key={`${detail.id}-${i}`}
-                        className={`${styles.scriptLine} ${l[0] === "agent" ? styles.scriptAgent : ""}`}
+                        className={`${styles.scriptLine} ${l[0] === "agent" || l[0] === "desk" ? styles.scriptAgent : ""}`}
                       >
-                        <span className={styles.scriptWho}>{l[0] === "agent" ? "Shop" : "Caller"}</span>
+                        {/* the AI desk's own lines say so, as on the desktop sheet (they read "Caller" here before 2026-11-11) */}
+                        <span className={styles.scriptWho}>{l[0] === "desk" ? "AI desk" : l[0] === "agent" ? "Shop" : "Caller"}</span>
                         <span className={styles.scriptTxt}>{l[1]}</span>
                       </div>
                     ))}
@@ -1021,7 +1024,7 @@ export function MobilePhone({ entries, stats, webhookUrl, twilioConfigured, desk
               ? `${actCall.when} · ${fmtDur(actCall.dur)} · ${actCall.rec ? "recorded" : "no recording"}`
               : "Call · —"}
           </div>
-          <div className={styles.sheetTitle}>{actCall ? counterparty(actCall) : "Actions"}</div>
+          <div className={styles.sheetTitle}>{actCall ? actCall.name || counterparty(actCall) : "Actions"}</div>
         </div>
         <div className={styles.sheetBody}>
           {leadErr ? <div className={styles.actErr} role="alert">{leadErr}</div> : null}

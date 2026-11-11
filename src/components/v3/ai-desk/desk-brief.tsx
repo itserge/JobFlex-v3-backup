@@ -67,6 +67,11 @@ export function DeskBrief({ desk, onWritten, onReview }: { desk: DeskSettingsDat
   const briefRef = useRef<HTMLTextAreaElement>(null);
   const [confirmReplace, setConfirmReplace] = useState(false);
   const [dirty, setDirty] = useState(false);
+  // The description as last saved: typed but unsaved counts as a change too (2026-11-11 — it used to be lost).
+  const [briefSaved, setBriefSaved] = useState(desk.brief);
+  const unsaved = dirty || brief.trim() !== briefSaved.trim();
+  // "Looks right to all" asks once before it clears every highlighted part.
+  const [allAsk, setAllAsk] = useState(false);
   const [busy, setBusy] = useState<null | "preset" | "compose" | "save">(null);
   // The part on screen, lit in the tab's own menu: the last part whose top has passed under the menu.
   const [here, setHere] = useState<JumpId>("desk-kind");
@@ -87,6 +92,33 @@ export function DeskBrief({ desk, onWritten, onReview }: { desk: DeskSettingsDat
   }, []);
   const [note, setNote] = useState("");
   const [err, setErr] = useState("");
+
+  // Leaving with changes not saved asks first (2026-11-11): the tab closing or reloading (the browser's own question),
+  // and a link inside the app (the sidebar, the top bar) — those change pages without the browser noticing.
+  useEffect(() => {
+    if (!unsaved) return;
+    const onUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    const onClick = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!a || a.target === "_blank" || a.hasAttribute("download")) return;
+      const to = new URL(a.href, window.location.href);
+      if (to.origin !== window.location.origin || (to.pathname === window.location.pathname && to.search === window.location.search)) return;
+      if (!window.confirm(C.leaveUnsaved)) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    window.addEventListener("beforeunload", onUnload);
+    document.addEventListener("click", onClick, true);
+    return () => {
+      window.removeEventListener("beforeunload", onUnload);
+      document.removeEventListener("click", onClick, true);
+    };
+  }, [unsaved]);
 
   const setReview = (next: DeskReviewItem[]) => {
     setReviewState(next);
@@ -155,6 +187,7 @@ export function DeskBrief({ desk, onWritten, onReview }: { desk: DeskSettingsDat
         setDirty(false);
         if (r.review.length) setShowDetails(true);
         setNote(r.note ?? "Written.");
+        setBriefSaved(brief);
         setSamples(r.samples);
         onWritten?.(r.samples);
         router.refresh();
@@ -171,12 +204,14 @@ export function DeskBrief({ desk, onWritten, onReview }: { desk: DeskSettingsDat
     setNote("");
     setErr("");
     try {
-      const r = await saveDeskProfile(profile, review.map((x) => x.key));
+      const r = await saveDeskProfile(profile, review.map((x) => x.key), brief);
       if (r.ok) {
         setQuestions(r.questions);
         setReview(r.review);
         setWritten(true);
         setDirty(false);
+        setBriefSaved(brief);
+        setAllAsk(false);
         setNote(r.note ?? "Saved.");
         router.refresh();
       } else setErr(r.error);
@@ -352,14 +387,6 @@ export function DeskBrief({ desk, onWritten, onReview }: { desk: DeskSettingsDat
             />
           ) : null}
           <textarea id="desk-knowledge" className={`${s.area} ${s.knowArea}`} value={profile.knowledge} placeholder={C.knowEmpty} disabled={disabled} onChange={(e) => set("knowledge", e.target.value)} data-desk-knowledge />
-          {dirty ? (
-            <div className={s.saveBar}>
-              <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy !== null || disabled} onClick={() => void save()} data-desk-save-knowledge>
-                {busy === "save" ? C.saving : C.save}
-              </button>
-              <span className={s.note}>{C.unsaved}</span>
-            </div>
-          ) : null}
         </div>
 
         {samples.length ? (
@@ -384,9 +411,38 @@ export function DeskBrief({ desk, onWritten, onReview }: { desk: DeskSettingsDat
           <span>
             <b>{C.toCheck(review.length)}</b> {C.toCheckSub}
           </span>
-          <button type="button" className={s.btn} onClick={nextToCheck} data-desk-next-check>
-            {C.nextToCheck}
-          </button>
+          <span className={s.acts}>
+            <button type="button" className={s.btn} onClick={nextToCheck} data-desk-next-check>
+              {C.nextToCheck}
+            </button>
+            {!disabled && !allAsk ? (
+              <button type="button" className={s.btn} onClick={() => setAllAsk(true)} data-desk-all-right>
+                {C.allRight}
+              </button>
+            ) : null}
+          </span>
+          {allAsk ? (
+            <span className={s.confirm} role="alertdialog" aria-label={C.allRight} data-desk-all-right-confirm>
+              <span>{C.allRightSure(review.length)}</span>
+              <span className={s.acts}>
+                <button
+                  type="button"
+                  className={`${s.btn} ${s.btnPrimary}`}
+                  onClick={() => {
+                    setReview([]);
+                    setDirty(true);
+                    setAllAsk(false);
+                  }}
+                  data-desk-all-right-yes
+                >
+                  {C.allRightYes(review.length)}
+                </button>
+                <button type="button" className={s.btn} onClick={() => setAllAsk(false)}>
+                  {C.cancel}
+                </button>
+              </span>
+            </span>
+          ) : null}
         </div>
       ) : null}
 
@@ -523,13 +579,15 @@ export function DeskBrief({ desk, onWritten, onReview }: { desk: DeskSettingsDat
             );
           })}
         </div>
-        <div className={s.saveBar}>
-          <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy !== null || disabled || (!dirty && written)} onClick={() => void save()} data-desk-save>
-            {busy === "save" ? C.saving : review.length ? C.save : written ? C.saveChecked : C.save}
-          </button>
-          {dirty ? <span className={s.note}>{C.unsaved}</span> : null}
-          {review.length ? <span className={s.note}>{C.toCheck(review.length)}</span> : null}
-        </div>
+      </div>
+
+      {/* one save for the whole step: it stays on screen while anything here is unsaved (2026-11-11) */}
+      <div className={s.saveBar} data-sticky={unsaved ? "1" : "0"} data-desk-savebar>
+        <button type="button" className={`${s.btn} ${s.btnPrimary}`} disabled={busy !== null || disabled || (!unsaved && written)} onClick={() => void save()} data-desk-save>
+          {busy === "save" ? C.saving : review.length ? C.save : written ? C.saveChecked : C.save}
+        </button>
+        {unsaved ? <span className={s.note}>{C.unsaved}</span> : null}
+        {review.length ? <span className={s.note}>{C.toCheck(review.length)}</span> : null}
       </div>
 
     </div>

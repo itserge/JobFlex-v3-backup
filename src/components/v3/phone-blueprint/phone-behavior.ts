@@ -269,16 +269,22 @@ export function initPhoneContent(
     });
   }
 
+  /** The row's first cell: the caller's name when the call is on a lead, the number under it. */
+  function whoHtml(c: Call) {
+    const inbound = c.dir === "INBOUND";
+    if (!c.name) return '<div class="ph-num">' + esc(c.from) + '</div><div class="ph-to">to ' + esc(c.to) + "</div>";
+    return inbound
+      ? '<div class="ph-num">' + esc(c.name) + '</div><div class="ph-to">' + esc(c.from) + " · to " + esc(c.to) + "</div>"
+      : '<div class="ph-num">' + esc(c.from) + '</div><div class="ph-to">to ' + esc(c.name) + " · " + esc(c.to) + "</div>";
+  }
   function rowHtml(c: Call) {
     return (
       '<tr class="prow" data-call="' +
       esc(c.id) +
       '">' +
-      '<td><div class="ph-num">' +
-      esc(c.from) +
-      '</div><div class="ph-to">to ' +
-      esc(c.to) +
-      "</div></td>" +
+      "<td>" +
+      whoHtml(c) +
+      "</td>" +
       '<td data-cell="dir"><span class="pstatus dir--' +
       (c.dir === "INBOUND" ? "in" : "out") +
       '">' +
@@ -495,7 +501,7 @@ export function initPhoneContent(
     const sheet = $("#sheet");
     const bg = $("#sheetBg");
     if (!title || !body || !sheet || !bg) return;
-    title.textContent = "Call from " + c.from;
+    title.textContent = c.dir === "OUTBOUND" ? "Call to " + (c.name || c.to) : "Call from " + (c.name || c.from);
     body.innerHTML =
       '<div class="sh-badges" id="shBadges">' +
       badgesHtml(c) +

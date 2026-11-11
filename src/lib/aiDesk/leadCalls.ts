@@ -178,6 +178,7 @@ export async function leadCallReadiness(organizationId: string): Promise<LeadCal
   if (!twilio) return { ok: false, why: "Phone calls aren't connected yet." };
   if (locked || !quota) return { ok: false, why: "The AI desk isn't on your plan." };
   if (!quota.allowed) return { ok: false, why: "The AI desk has used this month's calls." };
+  if (desk.paused) return { ok: false, why: "The AI desk is paused — turn it back on at the top of AI desk setup." };
   if (!from) return { ok: false, why: "The desk needs its phone number first (AI desk → Phone & forwarding)." };
   if (!desk.profile) return { ok: false, why: "Set up what the desk knows about your business first (AI desk → Your business)." };
   if (balance?.out) return { ok: false, why: "The desk is out of minutes — add minutes on the AI desk page." };
@@ -529,7 +530,7 @@ export async function sweepLeadCalls(now = new Date(), budgetMs = 45_000): Promi
     if (Date.now() > until) break;
     const organizationId = row.key.slice("aidesk:".length);
     const desk = parseDeskSettings(row.cursor);
-    if (!desk.leadCalls.on) continue;
+    if (!desk.leadCalls.on || desk.paused) continue;
     out.companies++;
     const facts = await companyFacts(organizationId).catch(() => null);
     if (!facts || !inCallingHours(now, facts.timezone || "America/New_York", true)) continue;

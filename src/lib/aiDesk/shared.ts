@@ -63,6 +63,9 @@ export type DeskSettings = {
   /** The desk calls new leads (owner, 2026-10-31; lib/aiDesk/leadCalls): a lead with a phone that nobody reached
    *  `afterMinutes` after it came in gets one call, inside calling hours. Off until the owner turns it on. */
   leadCalls: DeskLeadCalls;
+  /** Paused by the owner (2026-11-11): calls go as when the minutes are out — the company phone, else a message —
+   *  and the desk calls no leads, until it is turned back on. Nothing else changes. */
+  paused: boolean;
 };
 
 export type DeskLeadCalls = { on: boolean; afterMinutes: number };
@@ -79,7 +82,7 @@ export function cleanLeadCalls(raw: unknown): DeskLeadCalls {
   };
 }
 
-export const DEFAULT_DESK: DeskSettings = { mode: "ANSWER", forwarding: "none", voice: "marin", brief: "", profile: null, profileUpdatedAt: null, questions: [], business: "", review: [], leadCalls: DEFAULT_LEAD_CALLS };
+export const DEFAULT_DESK: DeskSettings = { mode: "ANSWER", forwarding: "none", voice: "marin", brief: "", profile: null, profileUpdatedAt: null, questions: [], business: "", review: [], leadCalls: DEFAULT_LEAD_CALLS, paused: false };
 
 /** The zones a US/Canadian contractor picks from; any IANA zone is accepted on save. */
 export const US_TIMEZONES: ReadonlyArray<{ id: string; label: string }> = [
@@ -131,6 +134,7 @@ export function parseDeskSettings(json: string | null | undefined): DeskSettings
       business: typeof raw.business === "string" ? raw.business.replace(/\s+/g, " ").trim().slice(0, 200) : "",
       review: cleanReview(raw.review),
       leadCalls: cleanLeadCalls(raw.leadCalls),
+      paused: raw.paused === true,
     };
   } catch {
     return { ...DEFAULT_DESK };

@@ -546,7 +546,7 @@ export function initCalendarContent(
       if (!shownBy(e, cal.lane, cal.projects)) return false;
       if (cal.statuses.length && cal.statuses.indexOf(e.status) === -1) return false;
       if (cal.workers.length && !e.workers.some(function (w) { return cal.workers.indexOf(w) !== -1; })) return false;
-      if (cal.unassigned && (e.workers.length || (e.kind !== "job" && e.kind !== "appointment"))) return false;
+      if (cal.unassigned && (e.workers.length || e.forName || (e.kind !== "job" && e.kind !== "appointment"))) return false;
       if (!q) return true;
       // "ai desk", "online", "plan" find the visits booked that way.
       const via = e.kind === "appointment" ? " " + VISIT_VIA[e.via || "team"].tag + " " + (e.visitFor || "") : "";
@@ -805,7 +805,7 @@ export function initCalendarContent(
       '<span class="evc-t"><svg class="ic"><use href="#' + evIcon(e) + '"/></svg><span class="evc-txt">' + esc(e.title) + "</span></span>" +
       (compact
         ? (e.kind === "appointment" || proj ? '<span class="evc-time">' + viaTag(e) + proj + "</span>" : "")
-        : '<span class="evc-time">' + viaTag(e) + proj + (dayOf ? '<b class="evc-day">' + dayOf + "</b> · " : "") + (e.allDay ? "All day" : fmtTime(e.start)) + " · " + esc(workerNames(e).join(", ") || (e.orgWide ? "everyone" : "unassigned")) + "</span>" +
+        : '<span class="evc-time">' + viaTag(e) + proj + (dayOf ? '<b class="evc-day">' + dayOf + "</b> · " : "") + (e.allDay ? "All day" : fmtTime(e.start)) + " · " + esc(workerNames(e).join(", ") || e.forName || (e.orgWide ? "everyone" : "unassigned")) + "</span>" +
           (cash ? '<span class="evc-cash" title="Job value → crew pay">' + cash + "</span>" : "")) +
       "</button>";
   }
@@ -1509,7 +1509,7 @@ export function initCalendarContent(
     const crewDays = live.filter(function (e) { return e.kind === "job" && e.workers.length; }).length;
     const startToday = new Date(TODAY);
     const nobody = eventsData.filter(function (e) {
-      return (e.kind === "job" || e.kind === "appointment") && !e.workers.length && e.end >= startToday && e.status !== "CANCELED" && e.status !== "COMPLETED";
+      return (e.kind === "job" || e.kind === "appointment") && !e.workers.length && !e.forName && e.end >= startToday && e.status !== "CANCELED" && e.status !== "COMPLETED";
     }).length;
     const tile = (n: number, label: string, act: string, tone: string, on = false) =>
       '<button class="cal-stat' + (on ? " on" : "") + '" type="button" data-stat="' + act + '" data-tone="' + tone + '"><b>' + n + "</b><span>" + label + "</span></button>";
@@ -2168,7 +2168,9 @@ export function initCalendarContent(
               : "";
             return esc(w ? w.name : id) + chip;
           }).join(", ")
-        : "Unassigned";
+        : e.forName
+          ? esc(e.forName)
+          : "Unassigned";
     openSheet(e.kind === "appointment" && e.via && e.via !== "team" ? "Appointment · " + VISIT_VIA[e.via].tag : KIND_TITLE[e.kind] || "Job event",
       '<div class="sf-meta">' +
         visitMetaHtml(e) +
