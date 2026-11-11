@@ -1,6 +1,6 @@
 // THE TUTORIALS (owner, 2026-11-11: "add tutorials in a sidebar on the bottom … and upload their home builder,
-// remodelers, Deck Studio, CRM and Fence Studio tutorials"; the AI desk film joined the same day). Plain data, safe on
-// the server and in the browser.
+// remodelers, Deck Studio, CRM and Fence Studio tutorials"; the AI desk and Texting films joined the same day). Plain
+// data, safe on the server and in the browser.
 //
 // The films are made outside this repository (the video kit on the owner's machine) and live in the PRIVATE Vercel
 // Blob store under fixed names — tutorials/<slug>-<version>.mp4 and .jpg — never in the repository, which is public.
@@ -217,6 +217,31 @@ export const TUTORIALS: readonly Tutorial[] = [
       { at: 244, title: "A call, start to finish", about: "The Calls tab · the call · the conversation · the visit" },
       { at: 279, title: "Messages and hand-offs", about: "A message · a hand-off · the AI desk filter" },
       { at: 297, title: "Keep it sharp", about: "Read the calls · add answers · never say · preset again" },
+    ],
+  },
+  {
+    // Added 2026-11-11 (owner: "make professional tutorial for contractors for texting … now add it to tutorials").
+    slug: "texting",
+    tool: "Texting",
+    title: "Texting, set up and explained",
+    audience: "Every company",
+    summary: "Your own number in your company's name, your team's texts, texts to clients who said yes, texts of your own — and a text going out and its answer coming back.",
+    toolHref: "/dashboard/texting",
+    duration: 484,
+    version: "v1",
+    chapters: [
+      { at: 0, title: "What texting in JobFlex is", about: "Clients, team and crew, from one number in your name" },
+      { at: 20, title: "The Texting page", about: "What it's for · this month · four steps" },
+      { at: 51, title: "Your number", about: "Toll-free · your company's name · the carriers" },
+      { at: 125, title: "Your team", about: "Your mobile · their mobiles · what each one gets" },
+      { at: 196, title: "Texts to clients", about: "The proposal link · the reminder · only after a yes" },
+      { at: 235, title: "Your own texts", about: "When · who · the words · how it reads" },
+      { at: 295, title: "A text goes out", about: "Megan's proposal · the evening before" },
+      { at: 323, title: "The client answers", about: "To your phone · the Inbox · answer by text" },
+      { at: 360, title: "More ways to text", about: "Message · client's page · follow-ups · SmartBook" },
+      { at: 389, title: "The crew", about: "Put on a job · tomorrow's list · today's list" },
+      { at: 406, title: "Safe by design", about: "STOP · HELP · quiet nights · limits" },
+      { at: 438, title: "Setting it up", about: "Five steps" },
     ],
   },
 ];
