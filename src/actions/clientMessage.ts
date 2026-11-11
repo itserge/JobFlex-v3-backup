@@ -127,7 +127,7 @@ export async function messageClient(input: {
     });
     if (!org) throw new Error("Organization not found");
     const subject = (input.subject ?? "").trim() || `A message from ${org.name ?? "your contractor"}`;
-    await sendOrgEmail(org, { to, subject, html: textToHtml(body), clientId: client.id, organizationId });
+    await sendOrgEmail(org, { mailClass: "transactional", to, subject, html: textToHtml(body), clientId: client.id, organizationId });
     // THE INBOX (Smart CRM part 2): the words go on the client's thread — the mail log keeps only the subject.
     const { recordOutbound } = await import("@/lib/inbox/server");
     await recordOutbound(organizationId, { id: client.id, name: client.name, email: client.email, phone: client.phone }, { channel: "EMAIL", subject, body, toAddr: to, userId: user.id }).catch(() => null);

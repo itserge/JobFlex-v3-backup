@@ -478,7 +478,7 @@ export async function sendFinancingLinkFor(orgId: string, proposalId: string, vi
     if (!email) return { ok: false, error: "This client has no email on file." };
     const first = (p.client?.name ?? "").trim().split(/\s+/)[0];
     const html = `<p>${first ? `Hi ${escHtml(first)},` : "Hello,"}</p><p>You can pay for <b>${escHtml(p.title)}</b> over time with monthly payments through Wisetack. Checking your rate won't affect your credit score.</p><p><a href="${escHtml(link)}">Check your rate</a></p><p style="font-size:12px;color:#777">${escHtml(FIN.disclosure)}</p><p>${escHtml(org.name ?? "")}</p>`;
-    await sendOrgEmail(org, { to: email, subject: `Monthly payments for ${p.title}`, html });
+    await sendOrgEmail(org, { mailClass: "transactional", to: email, subject: `Monthly payments for ${p.title}`, html });
   }
   await logActivity({ organizationId: orgId, actorId, kind: TRAIL_KINDS.PAY, summary: `Sent ${p.client?.name ?? "the client"} the financing link for "${p.title}" by ${how}`, proposalId, clientId: p.clientId });
   return { ok: true, via: how };

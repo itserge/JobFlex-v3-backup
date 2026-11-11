@@ -166,7 +166,7 @@ export async function sendCampaignTest(raw: unknown): Promise<Yes<{ to: string }
   const base = await appBaseUrl();
   const mail = campaignEmail({ subject, body: fillWords(text.data.body, who), company: { id: org.id, name: org.name, phone: org.phone, address: org.address.trim() }, stopUrl: `${base.replace(/\/$/, "")}/api/email/stop?r=test&t=test` });
   try {
-    const left = await sendEmail({ to, subject: `[Test] ${subject}`, html: mail.html, text: mail.text, from: campaignFrom(org.name), kind: "campaign", organizationId: g.organizationId });
+    const left = await sendEmail({ mailClass: "transactional", to, subject: `[Test] ${subject}`, html: mail.html, text: mail.text, from: campaignFrom(org.name), kind: "campaign", organizationId: g.organizationId });
     if (left.skipped && left.id === "disabled") return { ok: false, error: "Email sending isn't set up, so the test didn't go out." };
   } catch (err) {
     return { ok: false, error: `The test didn't go out: ${err instanceof Error ? err.message : "the mail service refused it"}` };

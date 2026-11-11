@@ -407,7 +407,8 @@ export async function sendBatch(organizationId: string, campaignId: string, base
     const batch = await db.clientCampaignRecipient.findMany({ where: { campaignId, organizationId, status: "QUEUED" }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: room });
     const [clients, outs, threads] = await Promise.all([
       db.client.findMany({ where: { organizationId, deletedAt: null, id: { in: batch.map((b) => b.clientId) } }, select: { id: true, name: true, email: true, phone: true } }),
-      db.clientEmailOptOut.findMany({ where: { organizationId, email: { in: batch.map((b) => b.email ?? "").filter(Boolean) } }, select: { email: true } }),
+      // Asked in lower case, as ClientEmailOptOut keeps them (a row queued with "Jane@X.com" still matches).
+      db.clientEmailOptOut.findMany({ where: { organizationId, email: { in: batch.map((b) => emailKey(b.email)).filter(Boolean) } }, select: { email: true } }),
       db.clientThread.findMany({ where: { organizationId, clientId: { in: batch.map((b) => b.clientId) } }, select: { id: true, clientId: true, replyToken: true } }),
     ]);
     const clientOf = new Map(clients.map((c) => [c.id, c]));
@@ -440,7 +441,7 @@ export async function sendBatch(organizationId: string, campaignId: string, base
         const words = fillWords(campaign.body, who);
         const stop = stopUrl(base, r.id);
         const mail = campaignEmail({ subject, body: words, company: { id: org.id, name: org.name, phone: org.phone, address: org.address!.trim() }, stopUrl: stop });
-        const left = await sendEmail({ to, subject, html: mail.html, text: mail.text, from: campaignFrom(org.name), replyTo, headers: stopHeaders(stop), kind: "campaign", organizationId });
+        const left = await sendEmail({ mailClass: "marketing", to, subject, html: mail.html, text: mail.text, from: campaignFrom(org.name), replyTo, headers: stopHeaders(stop), kind: "campaign", organizationId });
         // "disabled" = no mail provider on this server: nothing left, so it must not read as sent.
         if (left.skipped && left.id === "disabled") throw new Error("Email sending isn't set up, so this one didn't go out.");
         // On the do-not-email list (lib/mailBlock — they unsubscribed elsewhere, or asked by reply): left out, not sent.

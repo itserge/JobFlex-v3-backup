@@ -240,7 +240,7 @@ async function inviteWorker(raw: unknown) {
         href: `${appUrl}/w/${profile.token}`,
       }),
     );
-    const res = await sendEmail({ to: data.email, subject, html });
+    const res = await sendEmail({ mailClass: "transactional", to: data.email, subject, html });
     if (res?.skipped) {
       // No transport at all — sendEmail logs and returns a stub. Name the exact
       // variables, because the person reading this message is the one who can

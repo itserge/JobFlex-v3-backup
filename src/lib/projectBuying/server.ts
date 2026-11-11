@@ -215,7 +215,7 @@ export async function placeOrder(organizationId: string, actorId: string | null,
   if (input.how === "SUPPLIER" && supplier) {
     if (supplier.email) {
       try {
-        await sendOrgEmail(project.organization, {
+        await sendOrgEmail(project.organization, { mailClass: "transactional",
           to: supplier.email,
           subject: `Purchase order ${order.number} — ${project.organization.name ?? "our company"} — ${project.name}`,
           html: poHtml({ company: project.organization.name ?? "Our company", to: supplier.name, project: label, lines: lineRows, note: input.note, needBy: stage?.startsAt ? `Needed on site by ${stage.startsAt.toISOString().slice(0, 10)}${stage ? ` (${stage.name})` : ""}.` : null, phone: project.organization.phone }),
@@ -231,7 +231,7 @@ export async function placeOrder(organizationId: string, actorId: string | null,
     const to = worker?.user?.email ?? input.buyer?.email?.trim();
     if (to) {
       try {
-        await sendOrgEmail(project.organization, {
+        await sendOrgEmail(project.organization, { mailClass: "transactional",
           to,
           subject: `Please buy these for ${project.name} — ${project.organization.name ?? "our company"}`,
           html: buyerHtml({ company: project.organization.name ?? "Our company", name: order.lines.length ? (worker?.displayName ?? input.buyer!.name) : "", project: label, lines: lineRows, link, note: input.note, needBy: stage?.startsAt ? stage.startsAt.toISOString().slice(0, 10) : null }),

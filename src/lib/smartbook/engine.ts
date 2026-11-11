@@ -754,7 +754,7 @@ async function askCompany(ctx: Ctx, conv: Conversation, req: Pick<SmartRequest, 
   const doc = buildSmartBookRequest({ org: { id: ctx.org.id, name: ctx.org.name ?? "Your company", logoUrl: ctx.org.logoUrl, phone: ctx.org.phone }, name: ctx.lead.name, asked: req.label, calendar: facts.calendar, source: facts.source, project: facts.project, phone: shown(conv.phone), words: words || null, href: `${await appBaseUrl()}/b/r/${token}` });
   const mailed = ctx.test
     ? ctx.lead.email
-      ? sendEmail({ to: ctx.lead.email, subject: `(Test) ${renderEmail(doc).subject}`, html: renderEmail(doc).html })
+      ? sendEmail({ mailClass: "transactional", to: ctx.lead.email, subject: `(Test) ${renderEmail(doc).subject}`, html: renderEmail(doc).html })
       : Promise.resolve(null)
     : sendToMembersByPref(ctx.org.id, "smartbook-request", doc);
   await mailed.catch((err: unknown) => console.warn(`[smartbook] request email: ${err instanceof Error ? err.message : String(err)}`));

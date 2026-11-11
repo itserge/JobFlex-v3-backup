@@ -167,7 +167,7 @@ export async function tellShopFilesAdded(pl: { id: string; matchedOrgId: string 
       const { subject, html } = renderEmail(
         buildHomeFilesAdded({ homeownerName: home.name, what, project, note, leadUrl: pl.matchedLeadId ? `${appUrl}/dashboard/leads/${pl.matchedLeadId}#folder` : `${appUrl}/dashboard/leads` }),
       );
-      await sendEmail({ to, subject, html, replyTo: home.email });
+      await sendEmail({ mailClass: "transactional", to, subject, html, replyTo: home.email });
     }
     if (pl.matchedLeadId) {
       await db.activityEvent.create({ data: { organizationId: org.id, leadId: pl.matchedLeadId, kind: "NOTE", summary: `${home.name} added ${what} to the job folder${note ? `: “${note.slice(0, 140)}”` : ""}` } }).catch(() => null);
@@ -182,7 +182,7 @@ export async function tellHomeownerFilesAsked(home: { name: string; email: strin
   try {
     const url = await homeUrl(home.accessToken);
     const { subject, html } = renderEmail(buildHomeFilesRequest({ name: home.name, orgName, project, note, href: `${url}#folder-${encodeURIComponent(token)}` }));
-    await sendEmail({ to: home.email, subject, html });
+    await sendEmail({ mailClass: "transactional", to: home.email, subject, html });
   } catch (err) {
     console.warn("[home/files] homeowner notify failed:", err instanceof Error ? err.message : err);
   }

@@ -41,7 +41,7 @@ export async function sendInfluencerPasswordResetEmail(opts: {
     const { renderEmail } = await import("@/lib/email/renderEmail");
     const { buildPartnerPasswordReset } = await import("@/lib/email/build/platform");
     const { subject, html } = renderEmail(buildPartnerPasswordReset({ name: opts.displayName, href: inviteUrl }));
-    await sendEmail({ to: opts.email, subject, html });
+    await sendEmail({ mailClass: "transactional", to: opts.email, subject, html });
   } catch (err) {
     console.warn("[influencerInvite] reset email failed:", err);
   }
@@ -65,7 +65,7 @@ export async function sendInfluencerInviteEmail(opts: {
     const { subject, html } = renderEmail(
       buildPartnerInvite({ name: opts.displayName, code: opts.code, href: inviteUrl }),
     );
-    await sendEmail({ to: opts.email, subject, html });
+    await sendEmail({ mailClass: "transactional", to: opts.email, subject, html });
   } catch (err) {
     console.warn("[influencerInvite] email failed:", err);
   }

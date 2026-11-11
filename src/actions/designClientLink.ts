@@ -243,7 +243,7 @@ export async function approveRoomClientDesign(token: string, input: { name: stri
     if (org && to) {
       const doc = approvedEmailDoc({ org: { id: l.orgId, name: org.name, logoUrl: org.logoUrl ?? null, phone: org.phone ?? null }, name, roomName: l.roomName, total, chosen, note, href: `${(await appBaseUrl()).replace(/\/$/, "")}${href}` });
       const { subject, html, text } = renderEmail(doc);
-      await sendEmail({ to, subject, html, text });
+      await sendEmail({ mailClass: "transactional", to, subject, html, text });
     }
   } catch (err) {
     logServerError("design-client-approve-email", err, { kind: "action", organizationId: l.orgId });

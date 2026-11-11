@@ -5,6 +5,7 @@ import { withEmailRetry, recipientLabel } from "./emailRetry";
 import { isQaEmail } from "@/lib/qaEmail";
 import { previewRecipients } from "@/lib/emailPreviewGuard";
 import type { EmailLogEntry, EmailKind } from "@/lib/emailLog";
+import type { MailClass } from "@/lib/mailBlockShared";
 import { activeCapture } from "@/lib/leadCenter/outboxContext";
 
 let client: Resend | null = null;
@@ -92,10 +93,10 @@ export function platformMailbox(): string | null {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw) && !/@resend\.dev$/i.test(raw) ? raw.toLowerCase() : null;
 }
 
-/** The recipients not on the do-not-email list; all of them for an essential letter. Throws when the list can't be read. */
-export async function withoutBlocked(recipients: readonly string[], kind?: string | null): Promise<string[]> {
-  const { isEssentialKind } = await import("@/lib/mailBlockShared");
-  if (isEssentialKind(kind) || !recipients.length) return [...recipients];
+/** The recipients not on the do-not-email list. A transactional letter never reads the list (a failed read must not
+ *  stop a code or an invoice); a marketing one — and one with no class — throws when the list can't be read. */
+export async function withoutBlocked(recipients: readonly string[], mailClass?: MailClass | null): Promise<string[]> {
+  if (mailClass === "transactional" || !recipients.length) return [...recipients];
   const { blockedAmong } = await import("@/lib/mailBlock");
   const { normalizeEmail } = await import("@/lib/mailBlockShared");
   let blocked: Set<string>;
@@ -119,6 +120,9 @@ export async function sendEmail(opts: {
   headers?: Record<string, string>;
   /** What the letter is, for the mail log (/admin/mail/log). Default "other". */
   kind?: EmailKind;
+  /** Marketing (stopped for an address on the do-not-email list) or transactional (always goes). Absent = marketing
+   *  (lib/mailBlockShared). */
+  mailClass?: MailClass;
   /** The company it is for, when the caller knows and the request does not
    *  (a cron). Otherwise the request's organization (requireOrg). */
   organizationId?: string | null;
@@ -145,10 +149,10 @@ export async function sendEmail(opts: {
     return { id: "qa-test-mode:skipped", skipped: true as const };
   }
 
-  // THE DO-NOT-EMAIL LIST (lib/mailBlock, 2026-11-11): a listed address is left out of every letter but the few a
-  // person asks for or is owed on money (lib/mailBlockShared ESSENTIAL_KINDS). A letter left with nobody is logged
-  // as skipped and returns a skip, never an error. A list that cannot be read stops the letter (it throws).
-  const kept = await withoutBlocked(recipients, opts.kind);
+  // THE DO-NOT-EMAIL LIST (lib/mailBlock, 2026-11-11): a listed address is left out of every marketing letter
+  // (lib/mailBlockShared). A letter left with nobody is logged as skipped and returns a skip, never an error. A list
+  // that cannot be read stops a marketing letter (it throws); a transactional one never reads it.
+  const kept = await withoutBlocked(recipients, opts.mailClass);
   if (kept.length < recipients.length) {
     if (!kept.length) {
       await log(recipients, { transport: "skipped", status: "skipped", providerId: "mail-block:skipped" });

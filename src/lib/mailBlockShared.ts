@@ -4,8 +4,20 @@
 // One row per address, SyncState `mailBlock:<address in lower case>`, whatever asked for it: the Unsubscribe link or
 // the mail app's one-click button in any of our letters ("link"), a reply that says stop ("reply"), an admin
 // ("admin"), a company's "Don't email" on a client ("office"). lib/sdk/resend sendEmail and lib/email/orgSend
-// sendOrgEmail (the company's own Gmail too) leave a listed address out of every letter, except the few a person
-// asks for themselves or must get about money they owe or paid (ESSENTIAL_KINDS).
+// sendOrgEmail (the company's own Gmail too) leave a listed address out of every MARKETING letter.
+//
+// WHAT IT STOPS (owner, 2026-11-11): every sender says what its letter is — `mailClass` on sendEmail / sendOrgEmail:
+//   · "marketing"     — campaigns, win-back, the lead set-up and homeowner reminders, follow-ups, review requests,
+//                       SmartBook's letters, the team's letters to contractors, welcome: stopped for a listed address,
+//                       and stopped too when the list cannot be read.
+//   · "transactional" — codes, password resets, security notices, support answers, proposals and their acceptance,
+//                       change orders, invoices, receipts, payment reminders, dunning, visit and booking letters, a
+//                       person's own letters from the Inbox or the client card, team invites, the team's event notices
+//                       (their own switches in Settings): always go — the list is not even read for them.
+// A letter with no mailClass counts as marketing, so a new sender can never slip past the list by accident.
+//
+// WHO WRITES IT: JobFlex's own Unsubscribe link, a "stop" reply to app@jobflex.app, an admin. A company's link and its
+// "Don't email" switch are that company's alone (ClientEmailOptOut, lib/winback/optout) and never land here.
 
 export const MAIL_BLOCK_PREFIX = "mailBlock:";
 
@@ -42,12 +54,8 @@ export function normalizeEmail(raw: string | null | undefined): string | null {
 
 export const mailBlockKey = (email: string): string => `${MAIL_BLOCK_PREFIX}${email.trim().toLowerCase()}`;
 
-/** The letters a listed address still gets: what the person asks for themselves (a sign-in code or link, a password
- *  reset, a security notice about their own account, an answer to their own support ticket) and what is owed on
- *  money (an invoice, a receipt, a failed or coming charge). Everything else — both streams, JobFlex to its users
- *  and a company to its clients — is left out. The kind is the caller's `kind` (lib/emailLogShared). */
-export const ESSENTIAL_KINDS = ["otp", "password-reset", "security", "support", "invoice", "receipt", "dunning"] as const;
-export const isEssentialKind = (kind: string | null | undefined): boolean => !!kind && (ESSENTIAL_KINDS as readonly string[]).includes(kind);
+/** What a letter is, for the list (see the head of this file). Absent = marketing. */
+export type MailClass = "marketing" | "transactional";
 
 export function parseMailBlock(email: string, cursor: string | null | undefined): MailBlock | null {
   try {

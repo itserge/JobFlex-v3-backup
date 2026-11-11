@@ -216,7 +216,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                   });
                 }
                 const { sendEmail } = await import("@/lib/sdk/resend");
-                await sendEmail({
+                await sendEmail({ mailClass: "transactional",
                   to: email,
                   subject: "Google sign-in was used on your JobFlex account",
                   kind: "security",

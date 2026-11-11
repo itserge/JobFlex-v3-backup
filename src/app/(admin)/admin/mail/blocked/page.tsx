@@ -1,6 +1,6 @@
 // Admin · Do not email (2026-11-11) — the do-not-email list (lib/mailBlock): every address that asked us to stop,
-// by a link, a reply, an admin or a company's "Don't email". Search by part of an address (?q=), add one by hand,
-// take one off. What a listed address still gets: sign-in codes, password resets, receipts, invoices, billing notices.
+// by JobFlex's own link, a "stop" reply or an admin (a company's "Don't email" is its own, never here). Search by part of an address (?q=), add one by hand,
+// take one off. It stops marketing and automatic letters only; transactional ones still go (lib/mailBlockShared).
 
 import type { Metadata } from "next";
 import { requirePlatformAdmin } from "@/lib/orgContext";
@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "JobFlex Admin · Do not email",
-  description: "Addresses that get no email from JobFlex except codes, receipts and billing notices.",
+  description: "Addresses that get no marketing or automatic email from JobFlex or the companies on it.",
 };
 
 export default async function AdminMailBlockPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {

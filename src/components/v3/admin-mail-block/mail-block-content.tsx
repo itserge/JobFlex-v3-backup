@@ -63,7 +63,7 @@ export function AdminMailBlockContent({ rows, total, q }: { rows: MailBlockRow[]
     try {
       const r = await adminBlockEmail({ email: addr, reason: why.trim() || null });
       if (!r.ok) throw new Error(r.error);
-      toast.success("Added", `${r.block.email} gets no more emails except codes, receipts and billing notices.`);
+      toast.success("Added", `${r.block.email} gets no more marketing or automatic emails.`);
       setAddr("");
       setWhy("");
       router.refresh();
@@ -111,7 +111,7 @@ export function AdminMailBlockContent({ rows, total, q }: { rows: MailBlockRow[]
         <div className={cx("card-head", ui.cardHead)}>
           <div className="card-titles">
             <div className="card-title">Add an address</div>
-            <div className="card-sub">No more emails to it from JobFlex or any company on it — sign-in codes, password resets, receipts, invoices and billing notices still go.</div>
+            <div className="card-sub">No marketing or automatic emails to it — campaigns, follow-ups, reminders, win-back — from JobFlex or any company on it. Proposals, invoices, receipts, sign-in codes, billing notices and replies still go.</div>
           </div>
         </div>
         <form className={styles.add} onSubmit={add}>

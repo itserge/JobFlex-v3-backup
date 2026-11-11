@@ -84,7 +84,7 @@ export async function sendChangeOrderToClient(coId: string): Promise<SendReport>
       );
       // The contractor's own sender (connected Gmail, else the platform with
       // the contractor as reply-to) — the same path the proposal itself took.
-      await sendOrgEmail(co.organization, { to: client.email, subject, html, clientId: client.id, organizationId: co.organizationId });
+      await sendOrgEmail(co.organization, { mailClass: "transactional", to: client.email, subject, html, clientId: client.id, organizationId: co.organizationId });
       report.email = "sent";
     } catch (err) {
       console.warn("[changeOrders] email failed:", err);

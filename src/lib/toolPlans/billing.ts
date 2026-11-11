@@ -628,7 +628,7 @@ export async function sendTryReminders(now = new Date()): Promise<ReminderResult
       if (to && !isQaEmail(to.email)) {
         const base = (await appBaseUrl()).replace(/\/$/, "");
         const { subject, html } = renderEmail(buildToolTryEnding({ name: to.name, subject: words.subject, line: words.line, items, href: `${base}${TOOLS_SUBSCRIPTION_HREF}` }));
-        await sendEmail({ to: to.email, subject, html, kind: "dunning", organizationId });
+        await sendEmail({ mailClass: "transactional", to: to.email, subject, html, kind: "dunning", organizationId });
       }
       out.sent++;
     } catch (err) {

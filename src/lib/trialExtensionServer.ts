@@ -117,7 +117,7 @@ async function ownerOf(organizationId: string) {
 async function mail(to: string | string[], doc: Parameters<typeof import("@/lib/email/renderEmail").renderEmail>[0]) {
   const [{ renderEmail }, { sendEmail }] = await Promise.all([import("@/lib/email/renderEmail"), import("@/lib/sdk/resend")]);
   const { subject, html } = renderEmail(doc);
-  for (const address of Array.isArray(to) ? to : [to]) await sendEmail({ to: address, subject, html });
+  for (const address of Array.isArray(to) ? to : [to]) await sendEmail({ mailClass: "transactional", to: address, subject, html });
 }
 
 async function base() {

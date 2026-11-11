@@ -90,7 +90,7 @@ export async function runTrafficDigest(opts: { now?: Date; force?: boolean; hour
         href: `${opts.origin ?? "https://www.jobflex.app"}/admin/traffic`, timezone: TRAFFIC_TZ,
       });
       const { subject, html } = renderEmail(doc);
-      const sent = await sendEmail({ to, subject, html });
+      const sent = await sendEmail({ mailClass: "transactional", to, subject, html });
       email = sent.skipped && sent.id === "disabled" ? { to, skipped: "no email transport configured" } : { to, sentAt: new Date().toISOString() };
     } catch (err) {
       email = { to, error: err instanceof Error ? err.message.slice(0, 200) : "The email failed." };

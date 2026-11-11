@@ -94,7 +94,7 @@ export async function runLeadSetupReminderSweep(now = new Date()): Promise<{ sca
         foot,
       );
       const { subject, html, text } = renderEmail(doc);
-      const sent = await sendEmail({ to: to.email, subject, html, text, headers: foot.headers, organizationId: org.id });
+      const sent = await sendEmail({ mailClass: "marketing", to: to.email, subject, html, text, headers: foot.headers, organizationId: org.id });
       if (sent.skipped && sent.id.startsWith("mail-block")) { out.skipped++; continue; }
       const cursor = JSON.stringify({ count: stage + 1, lastAt: now.toISOString() });
       await db.syncState.upsert({ where: { key }, create: { key, cursor }, update: { cursor } });

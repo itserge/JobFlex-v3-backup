@@ -5,8 +5,8 @@
 // on the user's card, or an address typed on /admin/mail/blocked), take it off. Putting an account owner on also
 // stops JobFlex's own letters to that account (mailOptOut, lib/adminMail/optout), the way their own link would.
 //
-// The company's side, on a client's card and in the Inbox: "Don't email" puts the client's address on the list and
-// on the company's own opt-outs (ClientEmailOptOut, via "office" — lib/winback/optout writeStop); "Don't text" puts
+// The company's side, on a client's card and in the Inbox: "Don't email" is this company's alone — ClientEmailOptOut,
+// via "office" (lib/winback/optout writeStop), never the JobFlex-wide list (owner, 2026-11-11); "Don't text" puts
 // the phone in SmsOptOut, which every text asks (lib/sms/send). Either can be taken back only when the company set
 // it — a person's own unsubscribe or STOP stays theirs (they text START, or press nothing at all).
 import { revalidatePath } from "next/cache";
@@ -71,7 +71,9 @@ export interface ClientContactStops {
   email: string | null;
   phone: string | null;
   /** "Don't email": on, and who set it — "office" (this company, may be taken back) or "them". */
-  noEmail: { on: boolean; by: "office" | "them" | null; at: string | null };
+  /** "Don't email" for this company (ClientEmailOptOut). `everywhere`: they are also on the JobFlex-wide list (their
+   *  JobFlex unsubscribe, a stop reply, an admin) — on and locked here. */
+  noEmail: { on: boolean; by: "office" | "them" | null; at: string | null; everywhere?: boolean };
   noText: { on: boolean; by: "office" | "them" | null; at: string | null };
 }
 
@@ -92,12 +94,13 @@ async function stopsOf(organizationId: string, emailRaw: string | null, phoneRaw
     email ? db.clientEmailOptOut.findUnique({ where: { organizationId_email: { organizationId, email } }, select: { via: true, createdAt: true } }) : null,
     phone ? db.smsOptOut.findUnique({ where: { phone }, select: { body: true, stoppedAt: true } }) : null,
   ]);
-  const emailOn = !!block || !!opt;
-  const emailByOffice = emailOn && (!block || (block.source === "office" && block.orgId === organizationId)) && (!opt || opt.via === "office");
+  // The company's own switch is ClientEmailOptOut alone (owner, 2026-11-11); the JobFlex-wide list shows as on and locked.
+  const emailOn = !!opt || !!block;
+  const emailByOffice = !!opt && opt.via === "office" && !block;
   return {
     email,
     phone,
-    noEmail: { on: emailOn, by: emailOn ? (emailByOffice ? "office" : "them") : null, at: block?.at ?? opt?.createdAt.toISOString() ?? null },
+    noEmail: { on: emailOn, by: emailOn ? (emailByOffice ? "office" : "them") : null, at: opt?.createdAt.toISOString() ?? block?.at ?? null, everywhere: !!block },
     noText: { on: !!sms, by: sms ? (sms.body === officeSms(organizationId) ? "office" : "them") : null, at: sms?.stoppedAt.toISOString() ?? null },
   };
 }
@@ -120,7 +123,7 @@ export async function setClientDoNotEmail(clientId: string, on: boolean): Promis
     if (r === "theirs") return { ok: false, error: "They unsubscribed themselves — only they can undo that, from a link in an email." };
   }
   await db.activityEvent
-    .create({ data: { organizationId: ctx.organizationId, clientId: client.id, actorId: ctx.user.id, kind: "CLIENT", summary: on ? `Marked “Don't email” — ${email} gets no more emails except invoices and receipts` : `“Don't email” taken off — ${email} gets emails again` } })
+    .create({ data: { organizationId: ctx.organizationId, clientId: client.id, actorId: ctx.user.id, kind: "CLIENT", summary: on ? `Marked “Don't email” — no more campaigns, follow-ups or reminders to ${email}` : `“Don't email” taken off — ${email} gets campaigns, follow-ups and reminders again` } })
     .catch(() => null);
   revalidatePath(`/dashboard/clients/${client.id}`);
   return { ok: true, stops: await stopsOf(ctx.organizationId, client.email, client.phone) };

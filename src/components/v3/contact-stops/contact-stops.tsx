@@ -2,9 +2,9 @@
 
 // "DON'T EMAIL" · "DON'T TEXT" (2026-11-11) — on a client's card and in the Inbox, one component for both and for
 // both viewports. Read on open (actions/mailBlock clientContactStops); each switch writes at once:
-//   · Don't email — the address on the do-not-email list (lib/mailBlock, source "office") and on this company's own
-//     opt-outs (ClientEmailOptOut via "office"): no follow-ups, review requests, SmartBook, campaigns or proposals by
-//     email; invoices and receipts still go.
+//   · Don't email — this company's own opt-out (ClientEmailOptOut via "office"; owner, 2026-11-11): no campaigns,
+//     follow-ups, review requests, SmartBook letters or payment reminders from it. Proposals, invoices and the
+//     office's own replies still send; other companies are not touched.
 //   · Don't text — the phone in SmsOptOut, which every text asks first (lib/sms/send).
 // A stop the person made themselves (an Unsubscribe link, a reply, STOP) shows on and locked: only they can undo it.
 // The app's switch (company-pricing-form's .tg): square, red off, green on — the colour carries the state.
@@ -48,7 +48,7 @@ export function ContactStops({ clientId, variant = "band" }: { clientId: string;
       setStops(r.stops);
       toast.success(
         which === "email" ? (next ? "No more emails" : "Emails can go again") : next ? "No more texts" : "Texts can go again",
-        which === "email" ? (next ? "Invoices and receipts still go." : undefined) : undefined,
+        which === "email" ? (next ? "Proposals, invoices and your own replies still send." : undefined) : undefined,
       );
     } catch (err) {
       toast.error("Couldn't change it", err instanceof Error ? err.message : "Please try again.");
@@ -68,9 +68,9 @@ export function ContactStops({ clientId, variant = "band" }: { clientId: string;
           ? "No email on file"
           : "No mobile number on file"
         : theirs
-          ? `${which === "email" ? "They unsubscribed" : "They replied STOP"}${s?.at ? ` · ${day(s.at)}` : ""} — only they can undo it`
+          ? `${which === "email" ? (stops.noEmail.everywhere ? "Unsubscribed from all JobFlex email" : "They unsubscribed") : "They replied STOP"}${s?.at ? ` · ${day(s.at)}` : ""} — only they can undo it`
           : s?.on
-            ? `${which === "email" ? "Only invoices and receipts go" : "No texts go"}${s?.at ? ` · since ${day(s.at)}` : ""}`
+            ? `${which === "email" ? "No campaigns or reminders from you" : "No texts go"}${s?.at ? ` · since ${day(s.at)}` : ""}`
             : which === "email"
               ? stops.email!
               : tail(stops.phone!);
@@ -80,6 +80,7 @@ export function ContactStops({ clientId, variant = "band" }: { clientId: string;
         <span className={styles.words}>
           <span className={styles.label}>{label}</span>
           <span className={styles.sub}>{sub}</span>
+          {which === "email" ? <span className={styles.hint}>Stops campaigns, follow-ups and reminders. Proposals, invoices and your own replies still send.</span> : null}
         </span>
         <button
           type="button"

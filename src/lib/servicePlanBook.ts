@@ -45,7 +45,7 @@ async function emailClient(org: OrgRow, to: string | null | undefined, doc: Plan
   try {
     const name = org.name ?? "Your contractor";
     const { subject, html } = renderEmail({ ...doc, lockup: { kind: "org", name, logoUrl: org.logoUrl, orgId: org.id }, footer: { name, contact: org.billingEmail ?? undefined } });
-    const r = await sendOrgEmail(org, { to, subject, html });
+    const r = await sendOrgEmail(org, { mailClass: "transactional", to, subject, html });
     return !!r && (r as { ok?: boolean }).ok !== false;
   } catch (err) {
     console.warn(`[servicePlans] email not sent: ${err instanceof Error ? err.message : String(err)}`);

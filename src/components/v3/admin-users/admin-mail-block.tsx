@@ -3,8 +3,8 @@
 // ADMIN · "Unsubscribe from emails" inside the account sheet (2026-11-11).
 //
 // Where the address stands on the do-not-email list (lib/mailBlock), read on open, and one button: put it on (an
-// account owner's JobFlex letters stop too — actions/mailBlock adminBlockEmail) or take it off. What still reaches a
-// listed address is said beside the button: sign-in codes, password resets, receipts, invoices, billing notices.
+// account owner's JobFlex letters stop too — actions/mailBlock adminBlockEmail) or take it off. It stops marketing and
+// automatic letters only (lib/mailBlockShared); what still goes is said beside the button.
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -43,7 +43,7 @@ export function MailBlockControl({ email }: { email: string }) {
         const r = await adminBlockEmail({ email, reason: "Unsubscribed from the account card by a JobFlex admin" });
         if (!r.ok) throw new Error(r.error);
         setBlock(r.block);
-        toast.success("Unsubscribed", `${email} gets only sign-in codes, receipts and billing notices now.`);
+        toast.success("Unsubscribed", `${email} gets no more marketing or automatic emails.`);
       }
     } catch (err) {
       toast.error("Couldn't change it", errorMessage(err, "Please try again."));
@@ -70,7 +70,7 @@ export function MailBlockControl({ email }: { email: string }) {
           Do-not-email list
         </Link>
       </div>
-      <p className={cx("au-mb-fine")}>Sign-in codes, password resets, receipts, invoices and billing notices still go.</p>
+      <p className={cx("au-mb-fine")}>Stops marketing and automatic emails. Proposals, invoices, receipts, sign-in codes, billing notices and replies still go.</p>
     </div>
   );
 }

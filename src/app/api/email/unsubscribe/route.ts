@@ -67,14 +67,14 @@ async function addressesOf(t: Target): Promise<string[]> {
 
 const BAD = () => page("This link doesn't work", `<p style="margin:0;">It may have been cut off by your mail app. Reply to any email from us with the word “unsubscribe” and we'll take you off the list.</p>`, 400);
 
-const KEEPS = "Sign-in codes, password resets, receipts and billing notices still arrive.";
+const KEEPS = "Sign-in codes, billing notices, receipts and letters about your own jobs still arrive.";
 
 export async function GET(req: Request) {
   const t = await target(new URL(req.url));
   if (!t) return BAD();
   const action = `/api/email/unsubscribe?o=${encodeURIComponent(t.orgId)}${t.email ? `&e=${encodeURIComponent(t.email)}` : ""}&t=${encodeURIComponent(t.token)}`;
   const who = t.email ? esc(t.email) : t.kind === "account" ? `the owner of ${esc(t.business)}` : "this address";
-  return page("Unsubscribe from JobFlex emails?", `<p style="margin:0 0 18px;">We'll stop sending emails to ${who} through JobFlex. ${KEEPS}</p>
+  return page("Unsubscribe from JobFlex emails?", `<p style="margin:0 0 18px;">We'll stop marketing emails and reminders to ${who} through JobFlex — ours and the businesses' on it. ${KEEPS}</p>
 <form method="post" action="${esc(action)}"><input type="hidden" name="from" value="page"><button type="submit" style="min-height:46px;padding:0 20px;border:2px solid #0a0a0a;background:#1854a0;color:#fff;font:700 15px/1 inherit;cursor:pointer;">Unsubscribe</button></form>`);
 }
 

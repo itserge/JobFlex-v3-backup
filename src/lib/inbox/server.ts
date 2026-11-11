@@ -184,7 +184,7 @@ export async function fileInboundEmail(d: ReceivedEmail, hint: Awaited<ReturnTyp
     const org = await db.organization.findUnique({ where: { id: organizationId }, select: { billingEmail: true, gmailSettingsJson: true } });
     const own = (org && (JSON.parse(org.gmailSettingsJson ?? "{}") as { replyTo?: string }).replyTo?.trim()) || org?.billingEmail || null;
     if (own && own.toLowerCase() !== fromAddr.toLowerCase()) {
-      await sendEmail({
+      await sendEmail({ mailClass: "transactional",
         to: own,
         subject: `Fwd: ${subject ?? "(no subject)"}`,
         html: `<p><b>${fromAddr}</b> wrote to you through JobFlex:</p><blockquote style="border-left:3px solid #ccc;margin:8px 0;padding:4px 12px;white-space:pre-wrap">${(words || "(no words)").replace(/</g, "&lt;").slice(0, 8000)}</blockquote><p>Answer it in JobFlex → CRM → Inbox so the thread stays whole.</p>`,
@@ -269,6 +269,8 @@ export async function replyByEmail(threadId: string, organizationId: string, use
       subject,
       html,
       kind: "inbox",
+      // A person's own reply from the Inbox (2026-11-11): it goes whatever any list says.
+      mailClass: "transactional",
       replyTo: cfg.enabled && cfg.domain ? threadAddress(thread.replyToken, cfg.domain) : undefined,
       headers: last?.emailMessageId ? { "In-Reply-To": last.emailMessageId, References: last.emailMessageId } : undefined,
     },

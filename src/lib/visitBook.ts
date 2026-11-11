@@ -155,7 +155,7 @@ export async function sendVisitReport(appointmentId: string, organizationId: str
         footer: { name: orgName, contact: org.billingEmail ?? org.phone ?? undefined },
       };
       const { subject, html } = renderEmail(doc);
-      const r = await sendOrgEmail(org, { to, subject, html });
+      const r = await sendOrgEmail(org, { mailClass: "transactional", to, subject, html });
       emailed = !!r && (r as { ok?: boolean }).ok !== false;
     } catch (err) {
       console.warn(`[visitBook] report not emailed: ${err instanceof Error ? err.message : String(err)}`);

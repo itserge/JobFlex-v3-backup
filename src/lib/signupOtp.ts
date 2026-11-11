@@ -202,7 +202,7 @@ export async function sendCode(
   // awaited — Continue waits for it — so its time is logged, without the address.
   const sentFrom = Date.now();
   try {
-    await sendEmail({ to: d.email, subject, html, text, replyTo: SUPPORT_REPLY_TO, kind: "otp" });
+    await sendEmail({ mailClass: "transactional", to: d.email, subject, html, text, replyTo: SUPPORT_REPLY_TO, kind: "otp" });
     console.info(`[otp] ${d.kind} ${next.noAccount ? "no-account" : "code"} email handed to the transport in ${Date.now() - sentFrom} ms`);
   } catch (err) {
     console.error("[otp] code email failed:", err);

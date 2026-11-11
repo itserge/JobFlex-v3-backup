@@ -565,7 +565,7 @@ export async function alertIfDown(report: HealthReport): Promise<"sent" | "alrea
     .join(" · ");
   try {
     if (to.length) {
-      await sendEmail({
+      await sendEmail({ mailClass: "transactional",
         to,
         subject: `JobFlex — ${down.length} integration${down.length === 1 ? "" : "s"} down`,
         html:

@@ -77,7 +77,7 @@ export async function runCardTrialReminders(now = new Date()): Promise<{ scanned
       const { subject, html } = renderEmail(
         buildTrialEndingSoon({ name: to.name, planName, price, endsAt: row.trialEndsAt!, href: `${base}/dashboard/subscription`, shop, tools }),
       );
-      await sendEmail({ to: to.email, subject, html, kind: "dunning" });
+      await sendEmail({ mailClass: "transactional", to: to.email, subject, html, kind: "dunning" });
       out.sent++;
     } catch (err) {
       console.warn(`[trial-ending] ${row.organizationId}:`, err instanceof Error ? err.message : err);

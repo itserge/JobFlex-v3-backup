@@ -250,7 +250,7 @@ async function emailAll(to: string[], doc: EmailDoc): Promise<number> {
   let delivered = 0;
   for (const address of to) {
     try {
-      await sendEmail({ to: address, subject, html });
+      await sendEmail({ mailClass: "transactional", to: address, subject, html });
       delivered += 1;
     } catch (err) {
       console.error(`[lead-alerts] email to ${address} failed:`, err instanceof Error ? err.message : err);

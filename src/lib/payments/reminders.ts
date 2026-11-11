@@ -16,6 +16,8 @@ import { appBaseUrl } from "@/lib/appUrl";
 import { renderEmail } from "@/lib/email/renderEmail";
 import { buildPaymentReminder } from "@/lib/email/build/client";
 import { sendOrgEmail } from "@/lib/email/orgSend";
+import { companyOptOut, withOptOut } from "@/lib/email/optOutFooter";
+import { companyOptedOut } from "@/lib/winback/optout";
 import { isTwilioEnabled } from "@/lib/sdk/twilio";
 import { sendText } from "@/lib/sms/send";
 import { toE164 } from "@/lib/phone";
@@ -32,7 +34,8 @@ const DAY_MS = 86_400_000;
 export type ReminderSource = "auto" | "manual";
 export interface ReminderReport {
   sent: boolean;
-  email: "sent" | "no-email" | "failed";
+  /** "opted-out": the client asked this company for no more emails (ClientEmailOptOut). */
+  email: "sent" | "no-email" | "failed" | "opted-out";
   sms: "sent" | "no-phone" | "failed" | "disabled";
   stageLabel: string;
   amount: number;
@@ -58,7 +61,7 @@ export async function sendPaymentReminder(input: { proposalId: string; installme
     where: { id: input.proposalId },
     include: {
       client: true,
-      organization: { select: { id: true, name: true, billingEmail: true, gmailSettingsJson: true, gmailTokensJson: true, logoUrl: true, phone: true } },
+      organization: { select: { id: true, name: true, address: true, billingEmail: true, gmailSettingsJson: true, gmailTokensJson: true, logoUrl: true, phone: true } },
       installments: { orderBy: { position: "asc" } },
       changeOrders: { where: { status: "APPROVED" }, select: { status: true, total: true } },
     },
@@ -80,10 +83,16 @@ export async function sendPaymentReminder(input: { proposalId: string; installme
   const org = proposal.organization;
   const report: ReminderReport = { sent: false, email: "no-email", sms: "no-phone", stageLabel: label, amount };
 
-  if (proposal.client?.email) {
+  // A reminder is about money owed, so it goes to an address on the JobFlex-wide list too (transactional); a client who
+  // asked THIS company for no more reminders (ClientEmailOptOut) gets none, and each one carries the way to ask
+  // (lib/email/optOutFooter; owner, 2026-11-11).
+  if (proposal.client?.email && (await companyOptedOut(proposal.organizationId, proposal.client.email))) {
+    report.email = "opted-out";
+  } else if (proposal.client?.email) {
     try {
+      const foot = companyOptOut(appUrl, { id: proposal.organizationId, name: org.name, address: org.address }, proposal.client.email);
       const { subject, html } = renderEmail(
-        buildPaymentReminder({
+        withOptOut(buildPaymentReminder({
           org: { id: proposal.organizationId, name: org.name, logoUrl: org.logoUrl, phone: org.phone },
           clientName: proposal.client.name,
           title: proposal.title,
@@ -93,9 +102,9 @@ export async function sendPaymentReminder(input: { proposalId: string; installme
           dueLabel: label,
           dueDate: stageRow?.dueDate ?? null,
           href,
-        }),
+        }), foot),
       );
-      await sendOrgEmail(org, { to: proposal.client.email, subject, html, clientId: proposal.clientId });
+      await sendOrgEmail(org, { mailClass: "transactional", to: proposal.client.email, subject, html, clientId: proposal.clientId, headers: foot.headers });
       report.email = "sent";
     } catch (err) {
       console.warn("[reminders] email failed:", err);

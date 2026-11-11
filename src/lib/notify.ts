@@ -195,7 +195,7 @@ export async function notifyProposalSent({ proposalId }: NotifyProposalSentInput
   // Customer-facing: goes out FROM the contractor's connected Gmail when they
   // opted in (Settings → Integrations → Gmail), else from the platform with
   // the contractor as reply-to. sendOrgEmail owns that decision.
-  const sent = await sendOrgEmail(proposal.organization, {
+  const sent = await sendOrgEmail(proposal.organization, { mailClass: "transactional",
     to: proposal.client.email,
     subject: subj,
     html,
@@ -270,7 +270,7 @@ export async function notifyProposalAccepted({ proposalId }: { proposalId: strin
         prose,
       }),
     );
-    await sendOrgEmail(proposal.organization, {
+    await sendOrgEmail(proposal.organization, { mailClass: "transactional",
       to: proposal.client.email,
       subject: acceptedSubject,
       html: acceptedHtml,
@@ -468,7 +468,7 @@ export async function notifyAppointmentAssigned(appointmentId: string, workerIds
         href: `${appUrl}/w/${w.token}`,
       }),
     );
-    await sendEmail({ to: email, subject, html });
+    await sendEmail({ mailClass: "transactional", to: email, subject, html });
     sent += 1;
   }
   // The crew's phones (2026-09-24): those with the schedule switch on.
@@ -522,7 +522,7 @@ export async function notifyAssignmentCreated(assignmentId: string) {
         href: `${appUrl}/w/${a.worker.token}`,
       }),
     );
-    await sendEmail({ to: email, subject, html });
+    await sendEmail({ mailClass: "transactional", to: email, subject, html });
   }
 
   // The crew text (2026-09-24): only with the worker's schedule switch on,
@@ -605,7 +605,7 @@ export async function notifyAssignmentResponded(
       href: `${appUrl}/dashboard/jobs/${a.job.id}`,
     }),
   );
-  await Promise.all(to.map((email) => sendEmail({ to: email, subject, html })));
+  await Promise.all(to.map((email) => sendEmail({ mailClass: "transactional", to: email, subject, html })));
   return { skipped: false as const };
 }
 
@@ -743,7 +743,7 @@ async function notifyHomeownerRequestReceivedNow(platformLeadId: string) {
       homeUrl: await homeUrlForLead(pl),
     }),
   );
-  await sendEmail({ to: pl.email, subject, html });
+  await sendEmail({ mailClass: "transactional", to: pl.email, subject, html });
 
   const sms = await sendLeadSms(
     pl.phone,
@@ -887,7 +887,7 @@ async function notifyHomeownerMatchedNow(platformLeadId: string) {
       homeUrl: await homeUrlForLead(pl),
     }),
   );
-  await sendEmail({
+  await sendEmail({ mailClass: "transactional",
     to: pl.email,
     subject,
     html,
@@ -947,7 +947,7 @@ async function notifyShopClientRequestedRerouteNow(
       reason,
     }),
   );
-  await sendEmail({ to, subject, html });
+  await sendEmail({ mailClass: "transactional", to, subject, html });
   return { skipped: false as const, enabled: isEmailEnabled() };
 }
 
@@ -967,7 +967,7 @@ async function notifyHomeownerReroutingNow(platformLeadId: string) {
       homeUrl: await homeUrlForLead(pl),
     }),
   );
-  await sendEmail({ to: pl.email, subject, html });
+  await sendEmail({ mailClass: "transactional", to: pl.email, subject, html });
 
   const sms = await sendLeadSms(
     pl.phone,
@@ -996,7 +996,7 @@ async function notifyHomeownerManualQueueNow(platformLeadId: string) {
       homeUrl: await homeUrlForLead(pl),
     }),
   );
-  await sendEmail({ to: pl.email, subject, html });
+  await sendEmail({ mailClass: "transactional", to: pl.email, subject, html });
   return { skipped: false as const, enabled: isEmailEnabled() };
 }
 
@@ -1130,7 +1130,7 @@ export async function notifySupportTicket(t: SupportTicketNotice): Promise<Suppo
     let delivered = 0;
     for (const address of to) {
       try {
-        await sendEmail({
+        await sendEmail({ mailClass: "transactional",
           to: address,
           subject,
           html,
@@ -1222,7 +1222,7 @@ export async function emailTalentContacted(
   if (!email) return { skipped: true as const };
   const who = tradeWho(from);
   const appUrl = await appBaseUrl();
-  await sendEmail({
+  await sendEmail({ mailClass: "transactional",
     to: email,
     subject: `${who} is interested in your services on JobFlex`,
     html:
@@ -1514,7 +1514,7 @@ export async function notifyPaymentIssue(input: {
         : `${appUrl}/dashboard/settings?tab=payments`,
     }),
   );
-  await sendEmail({ to: ownerEmail, subject, html }).catch((err) =>
+  await sendEmail({ mailClass: "transactional", to: ownerEmail, subject, html }).catch((err) =>
     console.warn("[notifyPaymentIssue] email failed", err),
   );
   return { skipped: false as const };

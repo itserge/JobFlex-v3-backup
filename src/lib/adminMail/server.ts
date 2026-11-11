@@ -227,7 +227,7 @@ export async function sendToContractor(input: {
     // Replies reach the admin who wrote it and the platform mailbox, where a "stop" is read (lib/supportMail).
     const box = platformMailbox();
     const replyTo = box && box !== input.admin.email.toLowerCase() ? `${input.admin.email}, ${box}` : input.admin.email;
-    await sendEmail({ to: acc.ownerEmail, subject, html, text, from: fromLine(sender), replyTo, headers: unsubscribeHeaders(unsub) });
+    await sendEmail({ mailClass: "marketing", to: acc.ownerEmail, subject, html, text, from: fromLine(sender), replyTo, headers: unsubscribeHeaders(unsub) });
   } catch (err) {
     const why = err instanceof Error ? err.message : String(err);
     return { ok: false, error: offer ? `The discount was applied, but the email did not go out: ${why}` : `The email did not go out: ${why}`, ...(offer ? { offerApplied: offer } : {}) };

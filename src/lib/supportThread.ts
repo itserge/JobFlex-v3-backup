@@ -268,7 +268,7 @@ async function tellOtherSide(
     let sent = 0;
     for (const address of to) {
       try {
-        await sendEmail({ to: address, subject: letter.subject, html: letter.html, text: letter.text, replyTo: own ?? t.user?.email ?? undefined, kind: "support" });
+        await sendEmail({ mailClass: "transactional", to: address, subject: letter.subject, html: letter.html, text: letter.text, replyTo: own ?? t.user?.email ?? undefined, kind: "support" });
         sent += 1;
       } catch (err) {
         console.error(`[support] ${ref}: the customer's message to ${address} failed:`, err instanceof Error ? err.message : err);
@@ -289,7 +289,7 @@ async function tellOtherSide(
     replyByEmail: Boolean(own),
   });
   try {
-    const r = await sendEmail({ to, subject: letter.subject, html: letter.html, text: letter.text, replyTo: own ?? SUPPORT_INBOX, kind: "support" });
+    const r = await sendEmail({ mailClass: "transactional", to, subject: letter.subject, html: letter.html, text: letter.text, replyTo: own ?? SUPPORT_INBOX, kind: "support" });
     const id = r && typeof r === "object" && "id" in r && typeof r.id === "string" && !("skipped" in r && r.skipped) ? r.id : null;
     return { emailed: true, sentTo: to, providerId: id };
   } catch (err) {

@@ -76,7 +76,7 @@ ${note ? `<p style="background:#f4f4f2;padding:10px 12px;border-radius:4px">${es
     const text = `${company} asks for a structural review${req.address ? ` at ${req.address}` : ""}.\n\n${note ? `${note}\n\n` : ""}${req.changes.map((c) => `${c.n}. ${c.title} — ${c.why}`).join("\n")}\n\nOpen the request (the plan, each change and its questions): ${url}`;
     let emailed = true;
     try {
-      await sendEmail({ to, subject: `Structural review request — ${req.address ?? req.title}`, html, text, ...(req.from.email ? { replyTo: req.from.email } : {}) });
+      await sendEmail({ mailClass: "transactional", to, subject: `Structural review request — ${req.address ?? req.title}`, html, text, ...(req.from.email ? { replyTo: req.from.email } : {}) });
     } catch (err) {
       emailed = false;
       logServerError("design-eng-email", err, { kind: "action", organizationId: g.organizationId });
@@ -132,7 +132,7 @@ export async function answerEngineeringRequest(token: string, raw: unknown): Pro
   if (req.from.email) {
     try {
       const url = `${await appBaseUrl()}/dashboard/design-studio${req.designId ? `?design=${encodeURIComponent(req.designId)}` : ""}`;
-      await sendEmail({
+      await sendEmail({ mailClass: "transactional",
         to: req.from.email,
         subject: `${answer.by} answered your structural review — ${req.address ?? req.title}`,
         html: `<div style="font-family:-apple-system,Segoe UI,Arial,sans-serif;font-size:15px;line-height:1.5;color:#111;max-width:620px"><p><b>${esc(answer.by)}</b>${answer.license ? ` (${esc(answer.license)})` : ""} answered.</p><ol style="padding-left:18px">${req.changes.map((c) => `<li style="margin:0 0 8px"><b>${esc(c.title)}</b><br>${esc(perChange[c.id] ?? "—")}</li>`).join("")}</ol>${answer.note ? `<p>${esc(answer.note)}</p>` : ""}<p><a href="${url}">Open the design</a></p></div>`,

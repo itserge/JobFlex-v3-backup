@@ -481,7 +481,7 @@ export async function sendUpdate(organizationId: string, projectId: string, acto
     };
     try {
       const r = renderEmail(doc);
-      await sendOrgEmail(org, { to, subject: r.subject, html: r.html });
+      await sendOrgEmail(org, { mailClass: "transactional", to, subject: r.subject, html: r.html });
       email = "sent";
     } catch (err) {
       console.warn(`[projectClient] update email failed: ${err instanceof Error ? err.message : String(err)}`);

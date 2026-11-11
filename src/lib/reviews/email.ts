@@ -63,6 +63,6 @@ export async function sendReviewRequestEmail(reviewRequestId: string, kind: Revi
   const foot = companyOptOut(appUrl, { id: rr.organizationId, name: org.name, address: org.address }, to);
   const doc = withOptOut(kind === "reminder" ? buildReviewReminder(input) : buildReviewRequest(input), foot);
   const { subject, html } = renderEmail(doc);
-  const res = await sendOrgEmail(org, { to, subject, html, clientId: rr.clientId, organizationId: rr.organizationId, headers: foot.headers });
+  const res = await sendOrgEmail(org, { mailClass: "marketing", to, subject, html, clientId: rr.clientId, organizationId: rr.organizationId, headers: foot.headers });
   return !res.blocked;
 }

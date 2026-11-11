@@ -29,7 +29,7 @@ async function deliver(to: string, doc: EmailDoc): Promise<boolean> {
     const { sendEmail } = await import("@/lib/sdk/resend");
     const { renderEmail } = await import("@/lib/email/renderEmail");
     const { subject, html } = renderEmail(doc);
-    await sendEmail({ to, subject, html });
+    await sendEmail({ mailClass: "transactional", to, subject, html });
     return true;
   } catch (err) {
     console.warn("[influencerMail] send failed:", err);

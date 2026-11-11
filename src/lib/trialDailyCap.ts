@@ -94,7 +94,7 @@ async function alertSupportOnce(count: number, cap: number, now: Date): Promise<
       .filter(Boolean);
     const { sendEmail } = await import("@/lib/sdk/resend");
     const pct = Math.round((count / cap) * 100);
-    await sendEmail({
+    await sendEmail({ mailClass: "transactional",
       to,
       subject: `JobFlex — ${count} of ${cap} card-less trials used in the last 24 hours`,
       html:

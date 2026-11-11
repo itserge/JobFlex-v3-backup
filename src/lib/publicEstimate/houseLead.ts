@@ -70,7 +70,7 @@ export async function createHouseLead(
   afterResponse(async () => {
     const m = homeownerEmail({ shop: HOUSE_NAME, trade: est.trade, band: est.band, show: est.show, summary: est.summary, choice: est.choice, phone: contact.phone, house: { url } });
     try {
-      await sendEmail({ to: contact.email, subject: m.subject, text: m.text, html: `<pre style="font:15px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;white-space:pre-wrap">${escapeHtml(m.text)}</pre>` });
+      await sendEmail({ mailClass: "transactional", to: contact.email, subject: m.subject, text: m.text, html: `<pre style="font:15px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;white-space:pre-wrap">${escapeHtml(m.text)}</pre>` });
     } catch (err) {
       console.error("[house] homeowner email failed:", err instanceof Error ? err.message : err);
     }

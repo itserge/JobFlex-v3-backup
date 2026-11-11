@@ -77,7 +77,7 @@ async function emailAlerts(alerts: SignupAlert[]): Promise<{ sent: number; error
   let sent = 0;
   for (const address of to) {
     try {
-      await sendEmail({ to: address, subject, html });
+      await sendEmail({ mailClass: "transactional", to: address, subject, html });
       sent += 1;
     } catch (err) {
       console.error("[signup-alerts] email failed:", err instanceof Error ? err.message : err);

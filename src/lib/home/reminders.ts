@@ -61,7 +61,7 @@ export async function sendPlanReminders(now = new Date()): Promise<{ reminded: n
           homeUrl: url,
         }), foot),
       );
-      const left = await sendEmail({ to: plan.home.email, subject, html, text, headers: foot.headers });
+      const left = await sendEmail({ mailClass: "marketing", to: plan.home.email, subject, html, text, headers: foot.headers });
       if (!(left.skipped && left.id.startsWith("mail-block"))) reminded += 1;
     } catch (err) {
       failed += 1;

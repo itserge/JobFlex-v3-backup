@@ -262,7 +262,7 @@ async function sendToTeam(mail: { subject: string; html: string; text: string },
   let sent = 0;
   for (const address of to) {
     try {
-      await sendEmail({ to: address, subject: mail.subject, html: mail.html, text: mail.text, replyTo: replyTo ?? undefined, kind: "support" });
+      await sendEmail({ mailClass: "transactional", to: address, subject: mail.subject, html: mail.html, text: mail.text, replyTo: replyTo ?? undefined, kind: "support" });
       sent += 1;
     } catch (err) {
       console.error(`[support-ai] copy to ${address} failed:`, err instanceof Error ? err.message : err);

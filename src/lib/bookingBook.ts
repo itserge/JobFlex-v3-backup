@@ -149,7 +149,8 @@ export async function emailCustomer(org: OrgRow, to: string | null | undefined, 
     }
     const full: EmailDoc = { ...doc, lockup: { kind: "org", name, logoUrl: org.logoUrl, orgId: org.id }, footer: { name, contact: org.phone ?? org.billingEmail ?? undefined } };
     const { subject, html } = renderEmail(foot ? withOptOut(full, foot) : full);
-    const r = await sendOrgEmail(org, { to, subject, html, ...(foot ? { headers: foot.headers } : {}) });
+    // SmartBook's repeat letters are marketing (a listed address gets none); the booking's own are about the visit.
+    const r = await sendOrgEmail(org, { mailClass: opts.optOut ? "marketing" : "transactional", to, subject, html, ...(foot ? { headers: foot.headers } : {}) });
     return !!r && !r.blocked && (r as { ok?: boolean }).ok !== false;
   } catch (err) {
     console.warn(`[booking] email not sent: ${err instanceof Error ? err.message : String(err)}`);

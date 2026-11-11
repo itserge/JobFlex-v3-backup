@@ -471,5 +471,5 @@ async function emailTheMaker(
     again: i.again,
   });
   const { subject, html, text } = renderEmail(doc);
-  await sendEmail({ to, subject, html, text });
+  await sendEmail({ mailClass: "transactional", to, subject, html, text });
 }

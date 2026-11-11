@@ -34,5 +34,5 @@ export async function sendWelcomeFirstEstimate(i: {
     cardless: i.cardless,
   });
   const { subject, html } = renderEmail(doc);
-  return sendEmail({ to: i.to, subject, html, kind: "welcome" });
+  return sendEmail({ mailClass: "marketing", to: i.to, subject, html, kind: "welcome" });
 }

@@ -40,8 +40,8 @@ export async function emailHomeLink(raw: unknown): Promise<HomeActionResult> {
   if (home) {
     try {
       const { subject, html } = renderEmail(buildHomeLink({ name: home.name, homeUrl: await homeUrl(home.accessToken), projects: home._count.leads }));
-      // Asked for by the person: their sign-in link (lib/mailBlockShared ESSENTIAL_KINDS).
-      await sendEmail({ to: email, subject, html, kind: "otp" });
+      // Asked for by the person: their sign-in link (transactional, lib/mailBlockShared).
+      await sendEmail({ mailClass: "transactional", to: email, subject, html, kind: "otp" });
     } catch (err) {
       console.error("[home] link email failed:", err instanceof Error ? err.message : err);
     }
@@ -58,7 +58,7 @@ export async function emailMyHomeLink(raw: unknown): Promise<HomeActionResult> {
   if (braked) return { ok: false, error: braked };
   try {
     const { subject, html } = renderEmail(buildHomeLink({ name: home.name, homeUrl: await homeUrl(home.accessToken), projects: home._count.leads }));
-    await sendEmail({ to: home.email, subject, html, kind: "otp" });
+    await sendEmail({ mailClass: "transactional", to: home.email, subject, html, kind: "otp" });
   } catch (err) {
     console.error("[home] link email failed:", err instanceof Error ? err.message : err);
     return { ok: false, error: "Couldn't send the email right now — try again in a minute." };
@@ -125,7 +125,7 @@ export async function addHomePlan(raw: unknown): Promise<HomeActionResult & { id
   const remindOn = remindOnWords(remindAt);
   try {
     const { subject, html } = renderEmail(buildHomePlanSaved({ name: home.name, title: data.title, when: planWhen(plannedFor, wholeMonth), remindOn, notes: data.notes || null, homeUrl: await homeUrl(home.accessToken) }));
-    await sendEmail({ to: home.email, subject, html });
+    await sendEmail({ mailClass: "transactional", to: home.email, subject, html });
   } catch (err) {
     console.warn("[home] plan-saved email failed:", err instanceof Error ? err.message : err);
   }
@@ -204,7 +204,7 @@ export async function sendHomeMessage(raw: unknown): Promise<HomeActionResult> {
       const { subject, html } = renderEmail(
         buildHomeownerMessage({ homeownerName: home.name, orgName: org.name, project, body: data.body, leadUrl: pl.matchedLeadId ? `${appUrl}/dashboard/leads/${pl.matchedLeadId}` : `${appUrl}/dashboard/leads` }),
       );
-      await sendEmail({ to, subject, html, replyTo: home.email });
+      await sendEmail({ mailClass: "transactional", to, subject, html, replyTo: home.email });
       emailed = true;
     } catch (err) {
       console.error("[home] message email failed:", err instanceof Error ? err.message : err);

@@ -6,12 +6,12 @@
 //
 // 2026-11-11: the company's other repeat letters to a client — follow-ups, review requests, SmartBook's — carry the
 // same link, naming the company and the address instead of a campaign row (`r` = "a." + base64url(orgId|address)).
-// Every stop (the link, the one-click button, the office's "Don't email") also puts the address on the
-// do-not-email list (lib/mailBlock), which every sender honours.
+// A stop here (the link, the one-click button, the office's "Don't email") is THIS company's alone (owner,
+// 2026-11-11): its marketing letters and reminders stop; other companies' letters, and the JobFlex-wide do-not-email
+// list (lib/mailBlock, written only by JobFlex's own link, a "stop" reply and an admin), are untouched.
 import "server-only";
 import { createHmac, timingSafeEqual } from "crypto";
 import { db } from "@/lib/db";
-import { writeMailBlock } from "@/lib/mailBlock";
 import { emailKey } from "./shared";
 
 const secret = (): string | null => process.env.NEXTAUTH_SECRET ?? process.env.AUTH_SECRET ?? null;
@@ -103,27 +103,15 @@ export async function writeStop(
   });
   if (t.recipientId) await db.clientCampaignRecipient.updateMany({ where: { id: t.recipientId, optedOutAt: null }, data: { optedOutAt: new Date() } });
   await db.clientCampaignRecipient.updateMany({ where: { organizationId: t.organizationId, email, status: "QUEUED" }, data: { status: "SKIPPED", reason: "opted-out" } });
-  const from = t.company ? ` from ${t.company}` : "";
-  await writeMailBlock(email, {
-    source: via === "office" ? "office" : "link",
-    reason: via === "office" ? `Marked “Don't email”${from ? ` by ${t.company}` : ""}` : `Unsubscribe link in an email${from}${via === "one-click" ? " (one-click)" : ""}`,
-    orgId: t.organizationId,
-    by: t.by ?? null,
-  });
 }
 
-/** The office takes its own "Don't email" back: the company's opt-out goes, and the do-not-email row when it was the
- *  company's own. A person's own unsubscribe stays. */
+/** The office takes its own "Don't email" back. A client's own unsubscribe from this company stays theirs. */
 export async function clearOfficeStop(organizationId: string, emailRaw: string): Promise<"cleared" | "theirs" | "absent"> {
   const email = emailKey(emailRaw);
   if (!email) return "absent";
-  const { removeMailBlock, readMailBlock } = await import("@/lib/mailBlock");
-  const block = await readMailBlock(email);
-  if (block && !(block.source === "office" && block.orgId === organizationId)) return "theirs";
   const opt = await db.clientEmailOptOut.findUnique({ where: { organizationId_email: { organizationId, email } }, select: { via: true } });
-  if (opt && opt.via !== "office") return "theirs";
-  if (!block && !opt) return "absent";
-  if (opt) await db.clientEmailOptOut.delete({ where: { organizationId_email: { organizationId, email } } });
-  if (block) await removeMailBlock(email, { asCompany: organizationId });
+  if (!opt) return "absent";
+  if (opt.via !== "office") return "theirs";
+  await db.clientEmailOptOut.delete({ where: { organizationId_email: { organizationId, email } } });
   return "cleared";
 }

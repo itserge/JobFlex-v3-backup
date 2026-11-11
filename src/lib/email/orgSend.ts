@@ -8,6 +8,7 @@ import { parseGmailSettings } from "@/lib/settings";
 import { gmailErrorText, isGmailGrantDead, isGmailOAuthConfigured, openGmailTokens, sendViaGmail } from "@/lib/sdk/gmail";
 import { ActivityKind } from "@/lib/prismaEnums";
 import type { EmailKind } from "@/lib/emailLog";
+import type { MailClass } from "@/lib/mailBlockShared";
 
 export interface OrgEmailSender {
   /** When known, a dead Gmail grant is marked on the row by id; without it
@@ -62,6 +63,8 @@ export async function sendOrgEmail(
     subject: string;
     html: string;
     kind?: EmailKind;
+    /** Marketing (stopped for a listed address) or transactional (always goes); absent = marketing (lib/mailBlockShared). */
+    mailClass?: MailClass;
     /** A Reply-To of the caller's own (2026-11-08, the subcontractors plan, part 2: a request's reply address,
      *  rfq-<token>@<inbound domain>, so the sub's answer lands in JobFlex). Default: the org's reply-to. */
     replyTo?: string;
@@ -79,7 +82,7 @@ export async function sendOrgEmail(
   const settings = parseGmailSettings(org.gmailSettingsJson);
   // THE DO-NOT-EMAIL LIST (lib/mailBlock, 2026-11-11), asked before either transport — the company's own Gmail too.
   const all = Array.isArray(opts.to) ? opts.to : [opts.to];
-  const kept = await withoutBlocked(all, opts.kind);
+  const kept = await withoutBlocked(all, opts.mailClass);
   if (!kept.length) {
     try {
       const { recordEmail } = await import("@/lib/emailLog");
@@ -128,7 +131,7 @@ export async function sendOrgEmail(
     }
   }
 
-  await transports.platform({ to: opts.to, subject: opts.subject, html: opts.html, replyTo, headers: opts.headers, kind: opts.kind, organizationId: orgId });
+  await transports.platform({ to: opts.to, subject: opts.subject, html: opts.html, replyTo, headers: opts.headers, kind: opts.kind, mailClass: opts.mailClass, organizationId: orgId });
   return gmailFallback ? { via: "resend", gmailFallback } : { via: "resend" };
 }
 

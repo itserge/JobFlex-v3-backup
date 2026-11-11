@@ -410,7 +410,7 @@ async function orgOf(organizationId: string) {
 async function mailSub(org: OrgRow, to: string | null, subject: string, html: string): Promise<SendState> {
   if (!to) return "none";
   try {
-    await sendOrgEmail(org, { to, subject, html });
+    await sendOrgEmail(org, { mailClass: "transactional", to, subject, html });
     return "sent";
   } catch (err) {
     console.warn(`[subContracts] email to ${to} failed: ${err instanceof Error ? err.message : String(err)}`);

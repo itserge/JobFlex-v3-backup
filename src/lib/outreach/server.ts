@@ -464,7 +464,7 @@ export async function outreachTool(t: CallToken, name: string, args: Record<stri
       const text = `${first ? `Hi ${first},` : "Hi,"}\n\nThanks for taking the call just now. Here is the link to start your free JobFlex trial:\n${link}\n\nIt takes a couple of minutes; the AI desk, the estimates and the proposals are all in it.\n\nJobFlex · jobflex.app`;
       const html = `<div style="max-width:560px;margin:0 auto;padding:24px 18px;font:15px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1a1a1a;"><p>${first ? `Hi ${xmlEsc(first)},` : "Hi,"}</p><p>Thanks for taking the call just now. Here is the link to start your free JobFlex trial:</p><p><a href="${xmlEsc(link)}" style="color:#1854a0;font-weight:600;">Start my JobFlex trial</a></p><p>It takes a couple of minutes; the AI desk, the estimates and the proposals are all in it.</p><p style="color:#6a6a6a;">JobFlex · jobflex.app</p></div>`;
       try {
-        await sendEmail({ to: email, subject: "Your JobFlex trial link", html, text, from: fromLine("JobFlex") });
+        await sendEmail({ mailClass: "transactional", to: email, subject: "Your JobFlex trial link", html, text, from: fromLine("JobFlex") });
       } catch (err) {
         logServerError("outreach-email-link", err, { kind: "action" });
         return { ok: false, error: "The email didn't go out — give them the site, jobflex.app, instead." };
@@ -575,7 +575,7 @@ export async function emailProspects(n: number, base: string, admin: { name: str
       // Replies reach the admin and the platform mailbox, where a "stop" is read (lib/supportMail, 2026-11-11).
       const box = platformMailbox();
       const replyTo = box && box !== admin.email.toLowerCase() ? `${admin.email}, ${box}` : admin.email;
-      const left = await sendEmail({ to: p.email!, subject: letter.subject, html: letter.html, text: letter.text, from: fromLine(sender), replyTo, headers: unsubscribeHeaders(unsub) });
+      const left = await sendEmail({ mailClass: "marketing", to: p.email!, subject: letter.subject, html: letter.html, text: letter.text, from: fromLine(sender), replyTo, headers: unsubscribeHeaders(unsub) });
       // On the do-not-email list (lib/mailBlock): not sent, and never called either.
       if (left.skipped && left.id.startsWith("mail-block")) {
         await writeProspect({ ...p, dnc: p.dnc ?? { at: nowIso(), via: "email" } });

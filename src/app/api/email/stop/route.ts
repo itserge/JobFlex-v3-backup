@@ -5,8 +5,8 @@
 // GET shows a page with one button and never unsubscribes by itself: mail security scanners open every link in a
 // message, and a GET that acted would unsubscribe people who never asked. POST does it — from that page's button,
 // or straight from the mail app's own Unsubscribe button (RFC 8058 one-click, body "List-Unsubscribe=One-Click").
-// A bad or missing token changes nothing. It stops that company's letters (ClientEmailOptOut) and puts the address on
-// the do-not-email list (lib/mailBlock); receipts, invoices and sign-in links still go.
+// A bad or missing token changes nothing. It stops that ONE company's marketing letters and reminders
+// (ClientEmailOptOut); other companies' letters, and its own proposals, invoices and replies, still go.
 import { stopTarget, writeStop } from "@/lib/winback/optout";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +31,7 @@ async function target(url: URL) {
 
 const BAD = () => page("This link doesn't work", `<p style="margin:0;">It may have been cut off by your mail app. Reply to the email and ask to be taken off the list.</p>`, 400);
 
-const KEEPS = "Invoices, receipts and sign-in links still arrive.";
+const KEEPS = "Proposals, invoices and replies about your own job still arrive.";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -41,7 +41,7 @@ export async function GET(req: Request) {
   const action = `/api/email/stop?r=${encodeURIComponent(t.ref)}&t=${encodeURIComponent(tokenOf(url))}`;
   return page(
     `Stop emails from ${t.company}?`,
-    `<p style="margin:0 0 18px;">${esc(t.company)} won't email ${esc(t.email)} any more — no news, offers, reminders or follow-ups — and no other business on JobFlex will either. ${KEEPS}</p>
+    `<p style="margin:0 0 18px;">You won't get marketing emails or reminders from ${esc(t.company)} at ${esc(t.email)}. ${KEEPS}</p>
 <form method="post" action="${esc(action)}"><input type="hidden" name="from" value="page"><button type="submit" style="min-height:46px;padding:0 20px;border:2px solid #0a0a0a;background:#1854a0;color:#fff;font:700 15px/1 inherit;cursor:pointer;">Unsubscribe</button></form>`,
   );
 }
@@ -53,5 +53,5 @@ export async function POST(req: Request) {
   const oneClick = form?.get("List-Unsubscribe") === "One-Click";
   await writeStop({ ...t, company: t.company }, oneClick ? "one-click" : "page");
   // The mail app's one-click needs only a 2xx; a person gets the page.
-  return oneClick ? new Response(null, { status: 200 }) : page("You're unsubscribed", `<p style="margin:0;">${esc(t.email)} won't get these emails again. ${KEEPS} If that was a mistake, reply to any of ${esc(t.company)}'s emails.</p>`);
+  return oneClick ? new Response(null, { status: 200 }) : page("You're unsubscribed", `<p style="margin:0;">You won't get marketing emails or reminders from ${esc(t.company)}. ${KEEPS} If that was a mistake, reply to any of ${esc(t.company)}'s emails.</p>`);
 }

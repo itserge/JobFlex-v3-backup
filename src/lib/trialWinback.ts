@@ -211,7 +211,7 @@ export async function runTrialWinbackSweep(now = new Date()): Promise<WinbackSwe
       const { subject, html, text } = renderEmail(doc);
       // The plain-text twin and the mail client's own Unsubscribe button (2026-10-08). On the do-not-email list
       // (lib/mailBlock) the letter is left out — counted as skipped, and this stage is not tried again.
-      const left = await sendEmail({ to: to.email, subject, html, text, headers: foot.headers, organizationId: orgId });
+      const left = await sendEmail({ mailClass: "marketing", to: to.email, subject, html, text, headers: foot.headers, organizationId: orgId });
       if (left.skipped && left.id.startsWith("mail-block")) {
         rec.sent[stage.key] = `skipped:${now.toISOString()}`;
         await writeWinback(orgId, rec);

@@ -435,7 +435,7 @@ async function sendAsk(org: OrgRow, project: { id: string; name: string; number:
             : what === "award"
               ? awardHtml({ company, to: c.name, project: label, scope: q.scope, amount: null, link, phone: org.phone })
               : revisionHtml({ company, to: c.name, project: label, note: q.revisionNote ?? null, link, phone: org.phone }) + hint;
-      await sendOrgEmail(org, {
+      await sendOrgEmail(org, { mailClass: "transactional",
         to: c.email,
         subject:
           what === "ask"
@@ -593,7 +593,7 @@ export async function awardQuote(organizationId: string, quoteId: string, actorI
   for (const o of others) {
     if (!o.contractor.email) continue;
     try {
-      await sendOrgEmail(q.project.organization, { to: o.contractor.email, subject: `About the quote for ${q.project.name} — ${company}`, html: declinedHtml({ company, to: o.contractor.name, project: q.project.name, phone: q.project.organization.phone }) });
+      await sendOrgEmail(q.project.organization, { mailClass: "transactional", to: o.contractor.email, subject: `About the quote for ${q.project.name} — ${company}`, html: declinedHtml({ company, to: o.contractor.name, project: q.project.name, phone: q.project.organization.phone }) });
     } catch (err) {
       console.warn(`[projectSubs] decline email to ${o.contractor.name} failed: ${err instanceof Error ? err.message : String(err)}`);
     }

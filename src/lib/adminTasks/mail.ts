@@ -21,7 +21,7 @@ export async function sendTaskNotices(notices: TaskNotice[], baseUrl: string): P
         : buildTaskClosed({ title: n.task.title, by: n.by, status: n.task.status, href, ref });
     try {
       const { subject, html, text } = renderEmail(doc);
-      await sendEmail({ to: n.to.email, subject, html, text, replyTo: "support@jobflex.app" });
+      await sendEmail({ mailClass: "transactional", to: n.to.email, subject, html, text, replyTo: "support@jobflex.app" });
     } catch (err) {
       console.warn(`[adminTasks] ${n.kind} notice to ${n.to.email} not sent:`, err instanceof Error ? err.message : err);
     }

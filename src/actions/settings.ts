@@ -132,7 +132,7 @@ export async function sendGmailTestEmail() {
   const { subject, html } = renderEmail(
     buildTestEmail({ org: { id: organizationId, name: org.name, logoUrl: org.logoUrl, phone: org.phone } }),
   );
-  const res = await sendOrgEmail(org, { to, subject, html });
+  const res = await sendOrgEmail(org, { mailClass: "transactional", to, subject, html });
   return { ok: true, via: res.via, to };
 }
 

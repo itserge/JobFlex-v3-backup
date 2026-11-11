@@ -241,7 +241,7 @@ export async function sendPurchaseOrder(input: { trade: string; supplierId: stri
       note: input.note ?? (job ? `For the job: ${job.title}.` : undefined),
       lines: items.map((it) => ({ name: it.name, sku: it.supplierSku, unit: it.unit, quantity: wanted.get(it.id) ?? 0 })),
     });
-    await sendOrgEmail(org, { to: supplier.email, subject: text.subject, html: text.html });
+    await sendOrgEmail(org, { mailClass: "transactional", to: supplier.email, subject: text.subject, html: text.html });
     await db.activityEvent.create({
       data: {
         organizationId,

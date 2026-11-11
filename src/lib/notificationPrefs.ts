@@ -72,7 +72,7 @@ export async function sendToMembersByPref(
   const to = await resolveEmailRecipients(organizationId, key, opts);
   if (to.length === 0) return { sent: 0, skipped: true };
   const { subject, html } = renderEmail(doc);
-  await Promise.all(to.map((email) => sendEmail({ to: email, subject, html }).catch(() => null)));
+  await Promise.all(to.map((email) => sendEmail({ mailClass: "transactional", to: email, subject, html }).catch(() => null)));
   return { sent: to.length, skipped: false };
 }
 
@@ -100,7 +100,7 @@ export async function sendToUserByPref(
   // still swallowed — a failed notification must never fail the write that
   // triggered it — but the failure is now logged and reported.
   try {
-    await sendEmail({ to: u.email, subject: message.subject, html: message.html });
+    await sendEmail({ mailClass: "transactional", to: u.email, subject: message.subject, html: message.html });
     return { sent: true };
   } catch (err) {
     console.error(`[notify] email "${key}" to ${u.email} failed:`, err);

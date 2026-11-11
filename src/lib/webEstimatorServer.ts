@@ -240,7 +240,7 @@ export async function createWebLead(shop: WebShop, est: WebEstimateRecord, conta
     if (contact.email) {
       const m = homeownerEmail({ shop: shop.name, trade, band: est.band, show: est.show, summary: est.summary, choice: est.choice, phone: contact.phone, note: tradeSettings.note || undefined });
       try {
-        await sendEmail({ to: contact.email, subject: m.subject, text: m.text, html: `<pre style="font:15px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;white-space:pre-wrap">${escapeHtml(m.text)}</pre>`, organizationId: shop.id });
+        await sendEmail({ mailClass: "transactional", to: contact.email, subject: m.subject, text: m.text, html: `<pre style="font:15px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;white-space:pre-wrap">${escapeHtml(m.text)}</pre>`, organizationId: shop.id });
       } catch (err) { console.error("[web-estimator] homeowner email failed:", err instanceof Error ? err.message : err); }
     }
   });
@@ -281,7 +281,7 @@ export async function createWebLeadUnpriced(shop: WebShop, trade: WebTrade, a: {
     if (contact.email) {
       const m = homeownerUnpricedEmail({ shop: shop.name, trade, address: where, phone: contact.phone });
       try {
-        await sendEmail({ to: contact.email, subject: m.subject, text: m.text, html: `<pre style="font:15px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;white-space:pre-wrap">${escapeHtml(m.text)}</pre>`, organizationId: shop.id });
+        await sendEmail({ mailClass: "transactional", to: contact.email, subject: m.subject, text: m.text, html: `<pre style="font:15px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;white-space:pre-wrap">${escapeHtml(m.text)}</pre>`, organizationId: shop.id });
       } catch (err) { console.error("[web-estimator] homeowner email failed:", err instanceof Error ? err.message : err); }
     }
   });

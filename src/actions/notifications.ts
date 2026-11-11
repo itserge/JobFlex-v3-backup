@@ -256,6 +256,6 @@ export async function sendTestNotification(): Promise<TestNotificationResult> {
   if (!isEmailEnabled()) return { inApp: true, email: "disabled" };
   if (!user.email) return { inApp: true, email: "no-address" };
   const { subject, html } = renderEmail(buildTestEmail({ org: { id: organizationId, name: org?.name ?? "JobFlex", logoUrl: org?.logoUrl ?? null } }));
-  await sendEmail({ to: user.email, subject, html }).catch(() => null);
+  await sendEmail({ mailClass: "transactional", to: user.email, subject, html }).catch(() => null);
   return { inApp: true, email: "sent" };
 }

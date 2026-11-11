@@ -394,7 +394,7 @@ export async function runCardlessTrialSweep(now = new Date()): Promise<{ scanned
           when,
         }),
       );
-      await sendEmail({ to: to.email, subject, html });
+      await sendEmail({ mailClass: "marketing", to: to.email, subject, html });
       // The "today" email stands for both when the trial was already inside
       // its last day at the first look: the two-day one is not sent late.
       await patchCardlessRecord(orgId, when === "today" ? { mailedTodayAt: now.toISOString(), mailedSoonAt: state.record.mailedSoonAt ?? now.toISOString() } : { mailedSoonAt: now.toISOString() });

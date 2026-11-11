@@ -627,7 +627,7 @@ async function mailSub(organizationId: string, to: string | null, subject: strin
   const org = await db.organization.findUnique({ where: { id: organizationId }, select: ORG_SELECT });
   if (!org) return "none";
   try {
-    await sendOrgEmail(org, { to, subject, html });
+    await sendOrgEmail(org, { mailClass: "transactional", to, subject, html });
     return "sent";
   } catch (err) {
     console.warn(`[subInvoices] email to ${to} failed: ${err instanceof Error ? err.message : String(err)}`);

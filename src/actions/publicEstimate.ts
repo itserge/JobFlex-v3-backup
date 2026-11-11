@@ -252,7 +252,7 @@ async function sendRangeEmail(to: string, name: string | null, site: { address: 
         fine: disclaimerFor(e.basis),
       }),
     );
-    await sendEmail({ to, subject, html });
+    await sendEmail({ mailClass: "transactional", to, subject, html });
   } catch (err) {
     console.error("[price] the range email did not go:", err);
   }

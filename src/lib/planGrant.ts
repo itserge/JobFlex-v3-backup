@@ -372,7 +372,7 @@ export async function runPlanGrantExpiry(now = new Date()): Promise<GrantExpiryR
             href: `${base}/dashboard/subscription`,
           });
           const { subject, html } = renderEmail(doc);
-          await sendEmail({ to, subject, html });
+          await sendEmail({ mailClass: "transactional", to, subject, html });
         } catch (err) {
           console.warn(`[planGrant] notice for ${organizationId} failed:`, err);
           continue;

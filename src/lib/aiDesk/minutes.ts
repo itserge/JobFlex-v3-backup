@@ -142,7 +142,7 @@ export async function tellOwner(organizationId: string, notice: OwnerNotice, det
     if (!owner.email) return;
     const text = `${l.lines.join("\n\n")}\n\n— JobFlex`;
     const html = `<div style="font-family:Inter,Arial,sans-serif;font-size:15px;line-height:1.55;color:#0a0a0a">${l.lines.map((x) => `<p>${x.replace(link, `<a href="${link}">${link}</a>`)}</p>`).join("")}<p>— JobFlex</p></div>`;
-    await sendEmail({ to: owner.email, subject: l.subject, html, text }).catch(() => null);
+    await sendEmail({ mailClass: "transactional", to: owner.email, subject: l.subject, html, text }).catch(() => null);
   } catch {
     /* a notice never breaks a call */
   }

@@ -40,7 +40,7 @@ async function sendInviteEmail(
         href: `${appUrl}/auth/invite/${rawToken}`,
       }),
     );
-    await sendEmail({ to: email, subject, html });
+    await sendEmail({ mailClass: "transactional", to: email, subject, html });
   } catch (err) {
     console.warn("[invite] email failed:", err);
   }

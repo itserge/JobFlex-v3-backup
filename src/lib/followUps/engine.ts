@@ -297,7 +297,7 @@ async function send(fu: Loaded["fu"], proposal: LoadedProposal, ctx: FollowUpCon
     const { subject: subj, html } = renderEmail(withOptOut(followUpEmailDoc(trig, ctx, own ? { subject: own.subject, prose } : undefined), foot));
     // Sends via the org's connected Gmail when opted in, else Resend/SMTP with
     // the contractor as reply-to.
-    const res = await sendOrgEmail(proposal.organization, {
+    const res = await sendOrgEmail(proposal.organization, { mailClass: "marketing",
       clientId: proposal.clientId,
       to: proposal.client.email,
       subject: subj,

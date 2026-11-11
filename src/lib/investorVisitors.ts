@@ -173,7 +173,7 @@ async function tellAdmins(subject: string, headline: string, rows: Array<{ label
   });
   for (const address of to) {
     try {
-      await sendEmail({ to: address, subject: subj, html, ...(replyTo ? { replyTo } : {}) });
+      await sendEmail({ mailClass: "transactional", to: address, subject: subj, html, ...(replyTo ? { replyTo } : {}) });
     } catch (err) {
       console.error("[investors] admin email failed:", err instanceof Error ? err.message : err);
     }
@@ -273,7 +273,7 @@ async function sendOpenEmail(v: InvestorVisitor, token: string): Promise<void> {
     cta: { label: "Open the figures", href },
     footer: { name: "JobFlex" },
   });
-  await sendEmail({ to: v.email, subject, html });
+  await sendEmail({ mailClass: "transactional", to: v.email, subject, html });
 }
 
 /** An admin's decision on a reader: let in (they are emailed their open link), turned away, or a door closed again. */
