@@ -21,6 +21,7 @@ import {
   fenceType,
   heightFactor,
   nearestHeight,
+  takesCedarGrade,
   TERRAIN_FACTOR,
   TERRAIN_LABEL,
   type FenceType,
@@ -265,7 +266,7 @@ export function priceFencePackage(layout: FenceLayoutInput, opts: FencePriceOpti
   };
 
   const spacingNote = spacingRatio !== 1 ? ` — ${effSpacing}' post spacing` : "";
-  const grade = t.category === "wood" && layout.boardGrade && layout.boardGrade !== "standard" ? BOARD_GRADES[layout.boardGrade] : null;
+  const grade = takesCedarGrade(t) && layout.boardGrade && layout.boardGrade !== "standard" ? BOARD_GRADES[layout.boardGrade] : null;
   line({
     id: "fence-materials",
     name: `${resolved.label} — ${hFt}' fence package${grade ? ` · ${grade.label.toLowerCase()} cedar` : ""}`,
@@ -310,10 +311,13 @@ export function priceFencePackage(layout: FenceLayoutInput, opts: FencePriceOpti
   // steel, vinyl rails route through vinyl posts, split rail is mortised —
   // and horizontal-modern ships on 6×6 stock.
   const upgradeApplies = !!layout.postUpgrade && t.category === "wood" && !(layout.postUpgrade === "6x6" && t.spec.postWidthIn >= 5.5);
-  if (upgradeApplies) {
+  // The black steel gate posts below are their own line; with a post system on (6×6, post-on-pipe, cedar on pipe)
+  // the gate posts were ALSO in the upgrade's count — paid for twice (2026-11-10).
+  const steelGateLine = !!layout.steelGatePosts && t.category === "wood" && takeoff.posts.gate > 0 && layout.postUpgrade !== "steel" && layout.postUpgrade !== "black-steel";
+  if (upgradeApplies && takeoff.posts.total - (steelGateLine ? takeoff.posts.gate : 0) > 0) {
     const up = layout.postUpgrade as PostSystem;
     const sys = POST_SYSTEMS[up];
-    const posts = takeoff.posts.total;
+    const posts = takeoff.posts.total - (steelGateLine ? takeoff.posts.gate : 0);
     line({
       id: "fence-post-upgrade",
       name: `${sys.label} — upgrade`,
@@ -328,7 +332,7 @@ export function priceFencePackage(layout: FenceLayoutInput, opts: FencePriceOpti
   // Gates hang on steel even when the fence posts are wood: a wood gate post
   // sags and the gate drags inside a year. Not needed when every post is steel.
   const gatePosts = takeoff.posts.gate;
-  if (layout.steelGatePosts && t.category === "wood" && gatePosts > 0 && layout.postUpgrade !== "steel" && layout.postUpgrade !== "black-steel") {
+  if (steelGateLine) {
     line({
       id: "fence-gate-posts-steel",
       name: "Black steel gate posts",
@@ -402,7 +406,10 @@ export function priceFencePackage(layout: FenceLayoutInput, opts: FencePriceOpti
       quantity: round1(removal),
       unit: "ln ft",
       materialCost: 0,
-      laborCost: Number.isFinite(opts.removalPerLf) && (opts.removalPerLf as number) > 0 ? (opts.removalPerLf as number) : REMOVAL_PER_LF * laborFactor(mk),
+      // The shop's own rate as typed — $0 too (an owner who does tear-out free, or bills it elsewhere). Only a
+      // rate never given falls back to the default; a typed 0 used to bill $4/lf × labor while the proposal's
+      // assumption said "at $0/lf" (2026-11-10).
+      laborCost: Number.isFinite(opts.removalPerLf) && (opts.removalPerLf as number) >= 0 ? (opts.removalPerLf as number) : REMOVAL_PER_LF * laborFactor(mk),
       taxable: false,
     });
   }
@@ -548,8 +555,9 @@ export function fenceTiers(base: FenceTypeId, heightFt?: number): FenceTier[] {
   const tiers: FenceTier[] = [];
   if (valueSibling) tiers.push({ id: "good", name: "Good", tagline: "Solid build, best price", type: valueSibling, stain: false });
   tiers.push({ id: "better", name: "Better", tagline: "The fence as designed", type: base, stain: false, recommended: true });
-  // Best is the stained fence or the premium line — never the same fence again.
-  if (t.stainable || bestType !== base) tiers.push({ id: "best", name: "Best", tagline: t.stainable ? "Stained & sealed" : "Premium line", type: bestType, stain: t.stainable });
+  // Best is the stained fence or the premium line — never the same fence again, and never one that costs LESS
+  // than Better (vinyl picket at 4' had vinyl privacy as Best, $1,000 under Better on 150 ft — 2026-11-10).
+  if (t.stainable || (bestType !== base && costPerLf(bestType) > costPerLf(base))) tiers.push({ id: "best", name: "Best", tagline: t.stainable ? "Stained & sealed" : "Premium line", type: bestType, stain: t.stainable });
   return tiers;
 }
 
@@ -595,7 +603,7 @@ export function fenceScope(pkg: FencePackage, layout: FenceLayoutInput, where?: 
     const sys = POST_SYSTEMS[layout.postUpgrade];
     out.push(`${sys.blurb.charAt(0).toUpperCase()}${sys.blurb.slice(1)}.${sys.warranty ? ` ${sys.warranty}.` : ""}`);
   }
-  if (t.category === "wood" && layout.boardGrade && layout.boardGrade !== "standard") out.push(`Boards in ${BOARD_GRADES[layout.boardGrade].label.toLowerCase()} cedar — ${BOARD_GRADES[layout.boardGrade].blurb}.`);
+  if (takesCedarGrade(t) && layout.boardGrade && layout.boardGrade !== "standard") out.push(`Boards in ${BOARD_GRADES[layout.boardGrade].label.toLowerCase()} cedar — ${BOARD_GRADES[layout.boardGrade].blurb}.`);
   if (t.category === "wood" && layout.fasteners === "stainless") out.push("Stainless steel fasteners throughout — no rust streaks down the boards.");
   if (t.category === "wood" && layout.steelGatePosts && layout.postUpgrade !== "steel" && layout.postUpgrade !== "black-steel" && openingTotals(layout.openings).count > 0) out.push("Gates hung on 4×4 black steel posts, so they never sag.");
   if (layout.gateHardware === "heavy-duty" && openingTotals(layout.openings).count > 0) out.push("Heavy-duty gate hardware: ball-bearing hinges, heavy latch, cane bolt on any double gate.");

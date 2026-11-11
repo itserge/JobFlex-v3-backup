@@ -626,6 +626,15 @@ export function nearestHeight(t: FenceType, heightFt: number): number {
   return best;
 }
 
+/**
+ * Does the cedar board grade (#2 & better / #1 tight-knot / clear) mean anything for this type? Only where the
+ * boards ARE cedar. Pressure-treated pine is graded otherwise, and a "clear" PT fence came out as "· clear cedar"
+ * at ×1.6 with "Clear 1×6 pressure-treated pine pickets" on the list (2026-11-10).
+ */
+export function takesCedarGrade(t: FenceType): boolean {
+  return t.category === "wood" && /cedar/i.test(t.spec.infillMaterial);
+}
+
 export type Terrain = "flat" | "sloped" | "steep" | "rocky";
 
 /** Labor multiplier by ground difficulty (digging + racking sections). */

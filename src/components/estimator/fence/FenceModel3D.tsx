@@ -44,7 +44,7 @@ import { cn } from "@/lib/cn";
 import { computeFenceLayout, railRowsFor, type BayClass, type FenceLayout, type GateUnit } from "./fenceGeometry";
 import { contourChains, elevationAt, pickTopoInterval, type TopoGridPlan } from "./fenceTopo";
 import { makeFenceTextures, makeChainLinkAlpha, type FenceMaterialTextures } from "./fenceTexture";
-import { isBuiltinMaterial, type PathPoint, type GateSpec, type BuildingFootprint } from "./fenceTypes";
+import { isBuiltinMaterial, MATERIAL_SWATCH, type PathPoint, type GateSpec, type BuildingFootprint } from "./fenceTypes";
 import { DEFAULT_FENCE_BUILD, fenceBuildForFamily, type FenceBuild } from "@/lib/fence/build";
 
 // Member authoring: every member is a UNIT box (or cylinder) scaled to the
@@ -419,19 +419,41 @@ export const FenceModel3D = React.forwardRef<
       none: null,
     };
 
-    // Cache keyed by material id. Built-in materials get authored textures; custom
+    // Cache keyed by material id AND the colour it is shown in. Built-in materials get authored textures; custom
     // materials render as a solid MeshStandardMaterial tinted to their swatch colour.
+    //
+    // The colour of the TYPE picked (2026-11-10). The host hands over the type's own swatch, and the studio says
+    // so ("the 3D fence is the colour of the type chip"), but a built-in look ignored it — black vinyl chain link
+    // stood up as bare galvanized silver and the wood-look composite as grey. Now chain link and composite take
+    // the type's colour, and vinyl's panel texture is tinted by it (white vinyl stays white). Wood keeps its
+    // authored grain (the wood types' chips are saturated markers), and ornamental metal its authored black: the
+    // aluminum chip's dark slate, lit by the sky, read as blue steel.
+    const tintOf = (id: string, color: string): string => {
+      if (!isBuiltinMaterial(id) || !/^#[0-9a-f]{6}$/i.test(color || "")) return "";
+      if (id === "cedar" || id === "aluminum") return "";
+      return color.toLowerCase() === MATERIAL_SWATCH[id].toLowerCase() ? "" : color.toLowerCase();
+    };
     const matCache = new Map<string, { mat: THREE.MeshStandardMaterial; tex: FenceMaterialTextures | null }>();
     const getMaterial = (id: string, color: string): THREE.MeshStandardMaterial => {
-      let entry = matCache.get(id);
+      const tint = tintOf(id, color);
+      const key = isBuiltinMaterial(id) ? id + "|" + tint : id + "|" + (color || "");
+      let entry = matCache.get(key);
       if (!entry) {
         if (isBuiltinMaterial(id)) {
           const tex = makeFenceTextures(id);
+          // A solid look takes the colour outright; a textured one (vinyl) is multiplied by the colour over its
+          // own base, so the texture's seams survive and white stays white.
+          let shade: THREE.Color | number = tex.color;
+          if (tint && !tex.map) shade = new THREE.Color(tint);
+          else if (tint && tex.map) {
+            const want = new THREE.Color(tint), base = new THREE.Color(MATERIAL_SWATCH[id]);
+            shade = new THREE.Color(Math.min(1, want.r / Math.max(0.05, base.r)), Math.min(1, want.g / Math.max(0.05, base.g)), Math.min(1, want.b / Math.max(0.05, base.b)));
+          }
           const mat = new THREE.MeshStandardMaterial({
             map: tex.map ?? undefined,
             bumpMap: tex.bump ?? undefined,
             bumpScale: 0.4,
-            color: tex.color,
+            color: shade,
             roughness: tex.roughness,
             metalness: tex.metalness,
             envMapIntensity: 0.55,
@@ -446,10 +468,12 @@ export const FenceModel3D = React.forwardRef<
           });
           entry = { mat, tex: null };
         }
-        matCache.set(id, entry);
+        matCache.set(key, entry);
       }
       return entry.mat;
     };
+    /** What the fence is drawn in: the look and the colour (a type change within one look is a change too). */
+    const matKey = (id: string, color: string) => id + "|" + (isBuiltinMaterial(id) ? tintOf(id, color) : color || "");
     const gatePostMat = new THREE.MeshStandardMaterial({ color: 0x3a3f45, roughness: 0.5, metalness: 0.4 });
     // Gates and doors read in their OWN colours so they stand apart from the fence
     // and from each other: gates a warm bronze, doors a cool slate blue.
@@ -517,7 +541,7 @@ export const FenceModel3D = React.forwardRef<
         fenceGroup.add(mm);
       }
       builtRows = rows;
-      curMaterial = m;
+      curMaterial = matKey(m, color);
     };
 
     /** Ground-plane point offset ACROSS a run (negative = the outside face). */
@@ -1033,7 +1057,7 @@ export const FenceModel3D = React.forwardRef<
       gateGroup.add(leaf);
     };
 
-    const rebuildChain = (l: FenceLayout, fenceH: number, isMesh: boolean, cx: number, cy: number) => {
+    const rebuildChain = (l: FenceLayout, fenceH: number, isMesh: boolean, cx: number, cy: number, meshColor = "") => {
       clearGroup(chainGroup, true);
       if (!isMesh || l.bayCount === 0) return;
       const tx = (x: number) => x - cx;
@@ -1073,7 +1097,8 @@ export const FenceModel3D = React.forwardRef<
       alpha.wrapS = THREE.RepeatWrapping;
       alpha.wrapT = THREE.RepeatWrapping;
       const mat = new THREE.MeshStandardMaterial({
-        color: 0xb8bcc0,
+        // Galvanized wire reads light; a coated mesh (black vinyl) is the type's own dark colour.
+        color: meshColor ? new THREE.Color(meshColor) : 0xb8bcc0,
         metalness: 0.55,
         roughness: 0.5,
         alphaMap: alpha,
@@ -1302,12 +1327,14 @@ export const FenceModel3D = React.forwardRef<
     let prevSteps: Record<number, number> | null = null;
     let prevMounts: PathPoint[] | null = null;
     let prevBuild: FenceBuild | null = null;
+    let prevMatKey: string | null = null;
     const applySpec = (next: ViewSpec) => {
       const geoChanged =
         next.points !== prevPts ||
         next.gates !== prevGates ||
         next.height !== prevH ||
         next.material !== prevMat ||
+        matKey(next.material, next.materialColor) !== prevMatKey ||
         next.terrain !== prevTerrain ||
         next.segClasses !== prevClasses ||
         next.segSteps !== prevSteps ||
@@ -1356,19 +1383,21 @@ export const FenceModel3D = React.forwardRef<
         if (countsChanged) {
           disposeInstances();
           buildInstances(l, next.material, next.materialColor, rows);
-        } else if (next.material !== curMaterial) {
+        } else if (matKey(next.material, next.materialColor) !== curMaterial) {
           const mat = getMaterial(next.material, next.materialColor);
           if (postMesh) postMesh.material = mat;
           if (picketMesh) picketMesh.material = mat;
           if (railMesh) railMesh.material = mat;
           if (capMesh && build.postCap !== "loop") capMesh.material = mat;
-          curMaterial = next.material;
+          curMaterial = matKey(next.material, next.materialColor);
         }
         const isMesh = build.infill === "mesh";
         writeMatrices(l, next.height, cx, cy);
         applyVisibility(isMesh);
         rebuildGates(l, next.height, cx, cy);
-        rebuildChain(l, next.height, isMesh, cx, cy);
+        // The wire takes a coated (dark) type's colour; a light chip is galvanized and keeps the bright wire.
+        const wire = next.material === "chain-link" ? tintOf("chain-link", next.materialColor) : "";
+        rebuildChain(l, next.height, isMesh, cx, cy, wire && new THREE.Color(wire).getHSL({ h: 0, s: 0, l: 0 }).l < 0.45 ? wire : "");
         rebuildMounts(l, next.height, next.material, next.materialColor, cx, cy);
         rebuildTerrain(cx, cy, Math.max(worldSpan, layoutSpan(l), reachOf(next.lots, cx, cy)));
         built = l;
@@ -1376,6 +1405,7 @@ export const FenceModel3D = React.forwardRef<
         prevGates = next.gates;
         prevH = next.height;
         prevMat = next.material;
+        prevMatKey = matKey(next.material, next.materialColor);
         prevTerrain = next.terrain;
         prevClasses = next.segClasses;
         prevSteps = next.segSteps;

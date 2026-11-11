@@ -17,7 +17,7 @@
 //   wire and the terminal hardware; caps per system; gate kits; stain by
 //   the square foot, two coats; tear-out by the foot.
 
-import { effectiveSpacingFt, fenceType, heightFactor, TERRAIN_FACTOR, type FenceType, type FenceTypeId, type Terrain } from "./catalog";
+import { effectiveSpacingFt, fenceType, heightFactor, takesCedarGrade, TERRAIN_FACTOR, type FenceType, type FenceTypeId, type Terrain } from "./catalog";
 import { burialFt } from "./slope";
 
 /** One drawn run: a polyline with corners inside it and ends where it stops. */
@@ -214,9 +214,20 @@ export function computeFenceTakeoff(input: FenceLayoutInput): FenceTakeoff {
   const upgraded = postUpgradeApplies(t, input.postUpgrade);
   const stock = postStock(t, input.postUpgrade);
   const named = upgraded ? ` · ${stock}` : "";
-  add("post-line", `Line posts · ${stock} · ${basePost}' (${spacingFt}' o.c.)`, linePosts, "ea");
-  add("post-corner", `Corner posts${named} · ${basePost}'`, corners, "ea");
-  add("post-end", `End posts${named} · ${basePost}'`, ends, "ea");
+  // The posts at the steps of a stepped fence are the taller stock (the panel steps DOWN past them). They are
+  // some of the posts counted above, not more of them: the note says "10' posts there, 8' elsewhere", and holes,
+  // concrete and caps were always counted on the posts alone — yet the list ordered 63 × 8' AND 56 × 10' for a
+  // 63-post fence (2026-11-10). Line posts are swapped first, then corners and ends; and where the step post is
+  // no longer than the base post (split rail: "the 6' posts take the drop") nothing is swapped at all.
+  const stepped = Math.max(0, Math.round(input.steppedSections ?? 0));
+  const stepPost = roundPost(heightFt + burial + 1);
+  const stepSwap = stepPost > basePost ? Math.min(stepped, linePosts + corners + ends) : 0;
+  const swapLine = Math.min(stepSwap, linePosts);
+  const swapCorner = Math.min(stepSwap - swapLine, corners);
+  const swapEnd = stepSwap - swapLine - swapCorner;
+  add("post-line", `Line posts · ${stock} · ${basePost}' (${spacingFt}' o.c.)`, linePosts - swapLine, "ea");
+  add("post-corner", `Corner posts${named} · ${basePost}'`, corners - swapCorner, "ea");
+  add("post-end", `End posts${named} · ${basePost}'`, ends - swapEnd, "ea");
   const steelGate = !!input.steelGatePosts && t.category === "wood" && input.postUpgrade !== "steel" && input.postUpgrade !== "black-steel";
   add("post-gate", steelGate ? `Gate posts · 4×4 black steel · ${basePost}'` : `Gate posts · heavy-set${named} · ${basePost}'`, gatePosts, "ea");
   if (t.spec.setInConcrete) {
@@ -242,7 +253,7 @@ export function computeFenceTakeoff(input: FenceLayoutInput): FenceTakeoff {
       // course. Height is what grows the count here.
       const courses = Math.ceil((heightFt * 12) / pitch);
       const slats = courses * sections;
-      add("picket", `${gradeWords(input.boardGrade)}${t.spec.infillMaterial} (${spacingFt}' bays × ${courses} courses)`, slats * waste, "ea");
+      add("picket", `${gradeWords(takesCedarGrade(t) ? input.boardGrade : null)}${t.spec.infillMaterial} (${spacingFt}' bays × ${courses} courses)`, slats * waste, "ea");
       // A horizontal fence carries its boards on a vertical 2×2 mid-bay
       // support (two past 6' bays) so they cannot bow, and the posts are
       // dressed with 1×4 trim on both faces — the stock a picket fence never needs.
@@ -255,7 +266,7 @@ export function computeFenceTakeoff(input: FenceLayoutInput): FenceTakeoff {
       if (t.id === "shadowbox") pickets *= 2; // both faces
       // Picket COUNT does not grow with height — taller fences use longer
       // pickets (priced via the height factor), not more.
-      add("picket", `${gradeWords(input.boardGrade)}${t.spec.infillMaterial} · ${heightFt}'`, pickets * waste, "ea");
+      add("picket", `${gradeWords(takesCedarGrade(t) ? input.boardGrade : null)}${t.spec.infillMaterial} · ${heightFt}'`, pickets * waste, "ea");
       // Two nails per picket per rail (plus 10% bend / misfire); a 5 lb box
       // of ring-shank runs ~500.
       add("fasteners", input.fasteners === "stainless" ? "Stainless ring-shank nails · 5 lb boxes" : "Ring-shank nails · 5 lb boxes", (pickets * Math.max(1, railsPer) * 2 * 1.1) / 500, "box");
@@ -278,25 +289,26 @@ export function computeFenceTakeoff(input: FenceLayoutInput): FenceTakeoff {
     // Residential chain link has no bottom rail — a 7-ga tension wire runs
     // the base to stop the fabric being pushed up.
     add("tension-wire", "Bottom tension wire · 7-ga", netFenceLf * waste, "lf");
-    // A corner terminates fabric on BOTH faces — two bars where an end or
-    // gate post takes one.
-    const terminals = ends + corners + gatePosts;
-    add("tension-bar", "Tension bars", ends + corners * 2 + gatePosts, "ea");
-    // Bands only wrap TERMINAL posts — line posts carry the fabric on the top rail and ties.
-    add("tension-band", "Tension bands", terminals * (heightFt / 1.2), "ea");
-    add("rail-end", "Rail end cups", terminals, "ea");
-    add("brace-band", "Brace bands", terminals, "ea");
+    // A corner terminates the fabric, the top rail and the brace on BOTH sides — two of each where an end or a
+    // gate post takes one. The bars always counted it so; the bands, cups and brace bands that go with each bar
+    // counted a corner once (a 4-corner loop with a gate: 10 bars but 30 bands, 6 cups — 2026-11-10).
+    const terminalFaces = ends + corners * 2 + gatePosts;
+    add("tension-bar", "Tension bars", terminalFaces, "ea");
+    // Bands only wrap TERMINAL posts — line posts carry the fabric on the top rail and ties. One per foot-and-a-bit
+    // of height, on every bar.
+    add("tension-band", "Tension bands", terminalFaces * (heightFt / 1.2), "ea");
+    add("rail-end", "Rail end cups", terminalFaces, "ea");
+    add("brace-band", "Brace bands", terminalFaces, "ea");
     add("tie-wire", "Aluminum ties · 100 ct bags", netFenceLf / 60, "box");
   } else if (t.build === "rail") {
     const rails = sections * t.railsPerSection(heightFt);
     add("rail", `${t.spec.railMaterial} (${spacingFt}' bays)`, rails * waste, "ea");
   }
 
-  const stepped = Math.max(0, Math.round(input.steppedSections ?? 0));
-  const stepPost = roundPost(heightFt + burial + 1);
-  if (stepped > 0) add("step-posts", `Extended posts for stepped sections${named} · ${stepPost}' (slope)`, stepped, "ea");
+  if (stepSwap > 0) add("step-posts", `Extended posts for stepped sections${named} · ${stepPost}' (slope)`, stepSwap, "ea");
   // The pipe a post-on-pipe system sleeves over is its own stock line.
-  if (upgraded && (input.postUpgrade === "post-on-pipe" || input.postUpgrade === "cedar-post-on-pipe")) add("post-pipe", `Galvanized pipe · 2⅜″ × ${basePost}' (post-on-pipe)`, totalPosts, "ea");
+  // Black steel gate posts are steel already — no pipe to sleeve.
+  if (upgraded && (input.postUpgrade === "post-on-pipe" || input.postUpgrade === "cedar-post-on-pipe")) add("post-pipe", `Galvanized pipe · 2⅜″ × ${basePost}' (post-on-pipe)`, totalPosts - (steelGate ? gatePosts : 0), "ea");
   // Caps are per-system hardware, not a generic line: chain-link line posts
   // take loop caps that the top rail threads through while their terminals
   // take solid domes, and split rail is capped with nothing.
