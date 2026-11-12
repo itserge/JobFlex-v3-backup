@@ -25,7 +25,7 @@ check("the Deck Studio workspace keeps the row", navAllowed("deck", PAGE) && hre
 check("a custom plan's lock never covers it", hrefsOf("OWNER").includes(PAGE) && !navSectionsFor("OWNER", ["/dashboard/crm", "/dashboard/fence-estimator"]).flatMap((s) => s.items).find((i) => i.href === PAGE)?.locked);
 
 // ── the films
-check("seven tutorials, the owner's five, the AI desk and Texting", TUTORIALS.map((t) => t.slug).join(",") === "new-home,remodel,deck-studio,crm,fence-studio,ai-desk,texting");
+check("eight tutorials, the owner's five, the AI desk, Texting and Smart Proposal", TUTORIALS.map((t) => t.slug).join(",") === "new-home,remodel,deck-studio,crm,fence-studio,ai-desk,texting,smart-proposal");
 check("slugs are unique", new Set(TUTORIALS.map((t) => t.slug)).size === TUTORIALS.length);
 for (const t of TUTORIALS) {
   const at = t.chapters.map((c) => c.at);
