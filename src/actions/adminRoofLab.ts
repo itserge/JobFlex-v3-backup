@@ -43,7 +43,7 @@ export async function listRoofLab(query?: string): Promise<RoofLabRow[]> {
   // "12103 202nd St SE, Snohomish, WA" is typed as one line but kept as street, city, state and zip — and on older rows
   // the whole line sits in the street column. So every word has to be found somewhere, not the line in one place.
   const words = (query ?? "").replace(/[,;]+/g, " ").split(/\s+/).map((w) => w.trim()).filter(Boolean).slice(0, 8).map((w) => w.slice(0, 40));
-  // Google-only estimates are listed too (2026-11-12): they are drawn inside Google's own outline of the building.
+  // Google-only estimates are listed too (2026-11-12): they are drawn inside the roof's outline as read off Google's height map (lib/roofFacets/roofOutline).
   const base = { instantJson: { not: null } };
   const read = (insensitive: boolean) => {
     const has = (w: string) => (insensitive ? { contains: w, mode: "insensitive" as const } : { contains: w });

@@ -213,6 +213,18 @@ function Diagram({ model, pts, paths, mode, hot, setHot }: { model: FacetModel; 
  * for the roof picked from its list; the roof estimator mounts it under a measurement for platform admins
  * (./roof-diagram-preview), opening on the facets diagram.
  */
+/** What the outline step left out, in words; nothing under 20 sq ft is worth a line. */
+function leftOutParts(lo: RoofLabDrawing["model"]["leftOut"]): string[] {
+  if (!lo) return [];
+  const n = (v: number) => `${Math.round(v).toLocaleString("en-US")} sq ft`;
+  const out: string[] = [];
+  if (lo.deckSqft >= 20) out.push(`${n(lo.deckSqft)} of deck (flat, a storey under the eave)`);
+  if (lo.lowSqft >= 20) out.push(`${n(lo.lowSqft)} lower than 5 ft above the ground (driveway, patio, low deck)`);
+  if (lo.besideWallSqft >= 20) out.push(`${n(lo.besideWallSqft)} beside the walls (a wall or hedge seen from above)`);
+  if (lo.pastEdgeSqft >= 40) out.push(`${n(lo.pastEdgeSqft)} past the roof's edge`);
+  return out;
+}
+
 export function RoofLabStage({ id, drawing, startView }: { id: string; drawing: RoofLabDrawing; startView?: View }) {
   const { model, window: win } = drawing;
   const [view, setView] = useState<View>(startView ?? (drawing.photo ? "photo" : "relief"));
@@ -480,13 +492,21 @@ export function RoofLabStage({ id, drawing, startView }: { id: string; drawing: 
           </ul>
           <p className={r.note}>
             {model.outlineFrom === "google"
-              ? "The outline is Google's own outline of the building (EagleView gave none for this roof). "
+              ? model.leftOut
+                ? "EagleView gave no outline for this roof, so the outline is read off Google's height map and squared to the building. "
+                : "The outline is Google's own outline of the building (EagleView gave none for this roof). "
               : `EagleView's outline was moved ${Math.abs(model.shiftFt.east)} ft ${model.shiftFt.east >= 0 ? "east" : "west"} and ${Math.abs(model.shiftFt.north)} ft ${model.shiftFt.north >= 0 ? "north" : "south"} to sit on Google's height map. `}
             Imagery: {drawing.imagery.quality ?? "unknown quality"}
             {drawing.imagery.date ? `, flown ${drawing.imagery.date}` : ""}.
           </p>
         </div>
       </div>
+
+      {leftOutParts(model.leftOut).length ? (
+        <p className={r.note} data-roof-left-out>
+          <b>Not drawn, because it is not roof:</b> {leftOutParts(model.leftOut).join(" · ")}. Google&apos;s own estimate still counts these.
+        </p>
+      ) : null}
 
       {model.notes.length ? (
         <details className={r.notes}>

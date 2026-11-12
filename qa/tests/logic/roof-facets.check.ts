@@ -10,6 +10,8 @@ import { buildFacets, type EngineResult, type FacetEdgeType } from "../../../src
 import { fromUtm, latLngToPixel, pixelToUtm, toUtm, type RasterFrame } from "../../../src/lib/roofFacets/geo";
 import { facetLetter, facingWord, pitchLabel, toFacetModel } from "../../../src/lib/roofFacets/model";
 import { sharpenCorners } from "../../../src/lib/roofFacets/raster";
+import { roofOutline } from "../../../src/lib/roofFacets/roofOutline";
+import { buildStructureFootprints } from "../../../src/lib/roofRecon/footprint";
 
 let bad = 0;
 const check = (name: string, ok: boolean, extra = "") => {
@@ -187,6 +189,95 @@ check("an outline of two points draws nothing", buildFacets({ ...raster(gable), 
   check("…and south of the equator too", near(sb.lat, -33.87, 1e-8) && near(sb.lng, 151.21, 1e-8) && s.n > 6_000_000);
   check("letters run past Z", facetLetter(0) === "A" && facetLetter(25) === "Z" && facetLetter(26) === "AA" && facetLetter(27) === "AB");
   check("a facing is a compass word, a pitch a rise over 12", facingWord(0) === "N" && facingWord(135) === "SE" && facingWord(350) === "N" && facingWord(null) === null && pitchLabel(6.2) === "6/12" && pitchLabel(0.1) === "flat" && pitchLabel(0.4) === "low slope");
+}
+
+// ── a roof measured from Google alone: the outline is read off the height map (owner, 2026-11-12: "should draw only
+//    roof … no garden on the side of the house … angles not 90"). Google's building mask is generous here on purpose:
+//    it takes in a deck a storey under the eave, a driveway at ground level, and a strip of ground past the east wall;
+//    and the height map is blurred the way a real one is, so every wall is a ramp. The house is a 12 m x 8 m gable.
+{
+  type Part = { box: [number, number, number, number]; height: (u: number, v: number) => number };
+  const scene = (parts: Part[], maskOnly: Array<[number, number, number, number]>, turnDeg: number) => {
+    const t = (turnDeg * Math.PI) / 180, cos = Math.cos(t), sin = Math.sin(t);
+    const sharp = new Float32Array(W * H), mask = new Float32Array(W * H);
+    for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
+      // the building's own coordinates: the picture turned back about its middle
+      const x = (c + 0.5) * PX - 15, y = (r + 0.5) * PX - 15;
+      const u = x * cos + y * sin + 15, v = -x * sin + y * cos + 15;
+      let z = 0;
+      for (const p of parts) if (inRect(u, v, p.box)) { z = Math.max(z, p.height(u, v)); mask[r * W + c] = 1; }
+      for (const b of maskOnly) if (inRect(u, v, b)) mask[r * W + c] = 1;
+      sharp[r * W + c] = GROUND + z;
+    }
+    // a 0.5 m blur: what photogrammetry does to a wall
+    const data = new Float32Array(W * H);
+    for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
+      let sum = 0, n = 0;
+      for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) {
+        const rr = r + dr, cc = c + dc;
+        if (rr < 0 || cc < 0 || rr >= H || cc >= W) continue;
+        sum += sharp[rr * W + cc]; n++;
+      }
+      data[r * W + c] = sum / n;
+    }
+    const found = buildStructureFootprints({ width: W, height: H, data: mask, pixelSizeM: PX, originX: 0, originY: 0, epsg: null }, { rawFallback: true }).structures.filter((x) => x.ring);
+    const pick = found.find((x) => x.onParcel) ?? found[0];
+    const stepFt = PX * 3.28084;
+    const seed = (pick?.ring ?? []).map((p) => ({ x: p.x / stepFt + W / 2, y: H / 2 - p.y / stepFt }));
+    return { dsm: { width: W, height: H, data, pixelSizeM: PX }, mask: { width: W, height: H, data: mask }, seed, turnDeg };
+  };
+  const ringM2 = (ring: Array<{ x: number; y: number }>) => Math.abs(ring.reduce((a, p, i) => { const q = ring[(i + 1) % ring.length]; return a + p.x * q.y - q.x * p.y; }, 0) / 2) * PX * PX;
+  /** the furthest any wall of the ring turns from the building's two directions, degrees */
+  const offSquare = (ring: Array<{ x: number; y: number }>, turnDeg: number) => Math.max(...ring.map((p, i) => {
+    const q = ring[(i + 1) % ring.length];
+    const d = ((((Math.atan2(q.y - p.y, q.x - p.x) * 180) / Math.PI - turnDeg) % 90) + 90) % 90;
+    return Math.min(d, 90 - d);
+  }));
+  const tall = (u: number, v: number) => 5.5 + S * (4 - Math.abs(v - 15)); // eaves 5.5 m up: two storeys
+  const house: Part = { box: [9, 11, 21, 19], height: tall };
+  const deck: Part = { box: [12, 19, 17, 22], height: () => 2.8 };
+  const driveway: Part = { box: [3, 13, 9, 17], height: () => 0.05 };
+  const strip: [number, number, number, number] = [21, 11, 22.2, 19];
+  for (const turn of [0, 20]) {
+    const sc = scene([house, deck, driveway], [strip], turn);
+    const notes: string[] = [];
+    const out = roofOutline({ dsm: sc.dsm, mask: sc.mask, seed: sc.seed, priors: [], trace: notes });
+    const tag = turn ? `turned ${turn} degrees` : "square to the map";
+    check(`Google-only, ${tag}: Google's outline takes in the deck, the driveway and the strip`, ringM2(sc.seed) > 96 + 15 + 24, `${ringM2(sc.seed).toFixed(1)} m2`);
+    check(`Google-only, ${tag}: the roof's outline is the house and nothing else`, out != null && near(ringM2(out.ring), 96, 5), out ? `${ringM2(out.ring).toFixed(1)} m2` : "no outline");
+    check(`Google-only, ${tag}: four corners, every wall along the building`, out != null && out.ring.length === 4 && offSquare(out.ring, turn) < 1, out ? `${out.ring.length} corners, ${offSquare(out.ring, turn).toFixed(2)} degrees off` : "");
+    check(`Google-only, ${tag}: the deck is left out as a deck, the driveway as too low`, out != null && near(out.leftOut.deck, 15, 4) && out.leftOut.ground >= 24 * 0.8 && out.leftOut.ground <= 24 + 9.6 + 4, out ? JSON.stringify(out.leftOut) : "");
+    check(`Google-only, ${tag}: and the notes say so in feet`, notes.some((x) => /deck/.test(x) && /sq ft/.test(x)) && notes.some((x) => /lower than 5 ft/.test(x)), notes.join(" | "));
+    if (out) {
+      const res = buildFacets({ dsm: sc.dsm, mask: sc.mask, outline: out.ring, priors: [], register: false });
+      check(`Google-only, ${tag}: the facets drawn inside are the gable's two`, res != null && res.facets.length === 2 && near(area(res), 96 * SL, 96 * SL * 0.06), res ? `${res.facets.length} facets, ${area(res).toFixed(1)} m2` : "nothing");
+    }
+  }
+  {
+    // a flat patio cover hanging just under the eave of a one-storey house is a roof, and stays
+    const low = (u: number, v: number) => EAVE + S * (4 - Math.abs(v - 15));
+    const sc = scene([{ box: [9, 11, 21, 19], height: low }, { box: [12, 19, 17, 22], height: () => EAVE - 0.5 }], [], 0);
+    const out = roofOutline({ dsm: sc.dsm, mask: sc.mask, seed: sc.seed, priors: [] });
+    check("Google-only: a flat cover just under the eave is kept as roof", out != null && near(ringM2(out.ring), 96 + 15, 6) && out.leftOut.deck < 1, out ? `${ringM2(out.ring).toFixed(1)} m2 ${JSON.stringify(out.leftOut)}` : "no outline");
+  }
+  {
+    // a two-foot jog in the north wall is a jog, not noise; a half-foot one is the height map's wobble
+    const jog = (d: number) => scene([{ box: [9, 11, 15, 19], height: tall }, { box: [15, 11 + d, 21, 19], height: tall }], [], 0);
+    const two = roofOutline({ ...jog(0.7), priors: [] }), half = roofOutline({ ...jog(0.15), priors: [] });
+    check("Google-only: a two-foot jog in a wall stays (six corners, all square)", two != null && two.ring.length === 6 && offSquare(two.ring, 0) < 1 && near(ringM2(two.ring), 96 - 6 * 0.7, 5), two ? `${two.ring.length} corners ${ringM2(two.ring).toFixed(1)} m2 ${offSquare(two.ring, 0).toFixed(2)} off ${two.ring.map((p) => `${p.x.toFixed(0)},${p.y.toFixed(0)}`).join(" ")}` : "");
+    check("Google-only: a half-foot wobble is one straight wall (four corners)", half != null && half.ring.length === 4, half ? `${half.ring.length} corners` : "");
+  }
+  {
+    // a wing set at 45 degrees keeps its slanted walls
+    const t = Math.SQRT1_2;
+    const wing: Part = { box: [-99, -99, 99, 99], height: (u, v) => { const a = (u - 21) * t + (v - 19) * t, b = -(u - 21) * t + (v - 19) * t; return a >= -1 && a <= 7 && Math.abs(b) <= 3 ? 5.5 + S * (3 - Math.abs(b)) : 0; } };
+    const sc = scene([house, { box: [14, 12, 29, 27], height: (u, v) => wing.height(u, v) }], [], 0);
+    // the wing's box is generous: only where it stands does the mask count
+    for (let i = 0; i < sc.mask.data.length; i++) if (sc.dsm.data[i] < GROUND + 1.5) sc.mask.data[i] = 0;
+    const out = roofOutline({ dsm: sc.dsm, mask: sc.mask, seed: sc.seed, priors: [] });
+    const slants = out ? out.ring.filter((p, i) => { const q = out.ring[(i + 1) % out.ring.length]; const d = ((((Math.atan2(q.y - p.y, q.x - p.x) * 180) / Math.PI) % 90) + 90) % 90; return Math.abs(d - 45) < 4 && Math.hypot(q.x - p.x, q.y - p.y) * PX > 2; }).length : 0;
+    check("Google-only: a wing set at 45 degrees keeps its slanted walls", out != null && slants >= 2, out ? `${out.ring.length} corners, ${slants} slanted walls` : "no outline");
+  }
 }
 
 console.log(bad ? `\n${bad} FAILED` : "\nall passed");

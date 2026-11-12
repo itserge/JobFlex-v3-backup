@@ -10,8 +10,8 @@ import "server-only";
 //
 // A roof measured from Google alone (no EagleView answer — the account's roof-area pack was being refused when this
 // was written, 2026-11-12) has no EagleView outline and no saved height map. For those the height map is fetched once
-// (one dataLayers answer and two rasters, then frozen in SolarCache like every other) and the outline is Google's own:
-// the building under the pin in its mask (lib/roofRecon/footprint), which needs no sliding onto the height map.
+// (one dataLayers answer and two rasters, then frozen in SolarCache like every other) and the outline is read off that
+// height map inside the building Google's mask shows under the pin (./roofOutline), which needs no sliding onto it.
 //
 // The callers gate on requirePlatformAdmin; nothing here checks who is asking.
 
@@ -25,6 +25,7 @@ import { solarCacheKey, writeSolarCache } from "@/lib/solarCache";
 import { buildFacets } from "./engine";
 import { isUtm, latLngToPixel, type RasterFrame } from "./geo";
 import { toFacetModel, type FacetModel } from "./model";
+import { roofOutline } from "./roofOutline";
 import { encodePng } from "./png";
 
 /** The patch of ground a lab picture shows: the UTM corner of its top-left pixel and its size. East grows right, north falls. */
@@ -125,7 +126,7 @@ async function load(measurementId: string): Promise<{ ok: true; v: Loaded } | Fa
       }
     }
   }
-  // No EagleView outline anywhere: the roof is drawn inside Google's own outline of the building instead.
+  // No EagleView outline anywhere: the roof is drawn inside an outline read off Google's own data instead.
   const fromGoogle = !hasOutline(structure);
 
   // The height map: the SolarCache row(s) of the same address, else the nearest one to the pin — else, fetched now.
@@ -177,32 +178,39 @@ async function load(measurementId: string): Promise<{ ok: true; v: Loaded } | Fa
   const frame: RasterFrame = { originX: dsm.originX, originY: dsm.originY, pixelSizeM: dsm.pixelSizeM, epsg: dsm.epsg };
 
   const sameGrid = mask.width === dsm.width && mask.height === dsm.height;
+  const priors = (insights?.segments ?? []).map((s) => {
+    const c = latLngToPixel(frame, s.centerLat, s.centerLng);
+    return { pitchDeg: s.pitchDegrees, azimuthDeg: s.azimuthDegrees, cx: c.x, cy: c.y, zc: s.planeHeightAtCenterMeters, areaM2: s.areaMeters2 };
+  });
   let outline: Array<{ x: number; y: number }>;
+  let leftOut: FacetModel["leftOut"] = null;
   if (hasOutline(structure)) {
     outline = structure.outline.map((p) => latLngToPixel(frame, p.lat, p.lng));
   } else {
-    // Google's own outline: the building under the pin in its mask, squared up the way the fence map squares houses.
+    // No EagleView outline. Google's building mask says where to look (the building under the pin); the roof's own
+    // outline is then read off the height map inside it (./roofOutline) — the mask alone takes in decks, driveways
+    // and the strip beside a wall, and its traced edges run off square (owner, 2026-11-12: "should draw only roof").
     if (!sameGrid) return { ok: false, reason: "Google's building mask does not line up with its height map here, so there is no outline to draw inside." };
     const found = buildStructureFootprints(mask, { rawFallback: true }).structures.filter((x) => x.ring && x.ring.length >= 3);
     const pick = found.find((x) => x.onParcel) ?? [...found].sort((a, b) => b.maskAreaSqft - a.maskAreaSqft)[0];
     if (!pick?.ring) return { ok: false, reason: "Google's mask shows no building at this measurement's pin, and EagleView gave no outline, so there is nothing to draw inside." };
     // the footprint's frame is feet from the tile's centre, north up
     const stepFt = mask.pixelSizeM * 3.28084;
-    outline = pick.ring.map((p) => ({ x: p.x / stepFt + mask.width / 2, y: mask.height / 2 - p.y / stepFt }));
-    notes.push("EagleView gave no outline for this roof; Google's own outline of the building is used");
+    const seed = pick.ring.map((p) => ({ x: p.x / stepFt + mask.width / 2, y: mask.height / 2 - p.y / stepFt }));
+    const found2: string[] = [];
+    const roof = roofOutline({ dsm, mask, seed, priors, trace: found2 });
+    if (roof) {
+      outline = roof.ring;
+      const sqft = (m2: number) => Math.round(m2 * 10.7639);
+      leftOut = { lowSqft: sqft(roof.leftOut.ground), deckSqft: sqft(roof.leftOut.deck), besideWallSqft: sqft(roof.leftOut.side), pastEdgeSqft: sqft(roof.leftOut.offPlane) };
+      notes.push("EagleView gave no outline for this roof; the outline is read off Google's height map — what stands as high as a roof and lies on its planes — and squared to the building", ...found2);
+    } else {
+      outline = seed;
+      notes.push("EagleView gave no outline for this roof; Google's own outline of the building is used as it came (the roof's edge could not be read off the height map)");
+    }
   }
 
-  const result = buildFacets({
-    dsm,
-    mask: sameGrid ? mask : null,
-    outline,
-    register: !fromGoogle,
-    priors: (insights?.segments ?? []).map((s) => {
-      const c = latLngToPixel(frame, s.centerLat, s.centerLng);
-      return { pitchDeg: s.pitchDegrees, azimuthDeg: s.azimuthDegrees, cx: c.x, cy: c.y, zc: s.planeHeightAtCenterMeters, areaM2: s.areaMeters2 };
-    }),
-    trace: notes,
-  });
+  const result = buildFacets({ dsm, mask: sameGrid ? mask : null, outline, register: !fromGoogle, priors, trace: notes });
   if (!result || !result.facets.length) return { ok: false, reason: "The height map shows no roof planes inside the roof's outline here (the outline may fall off the saved tile)." };
   // Google's elevation can be years older than the house. Where it shows no building under the outline there are no
   // facets to read, and a drawing made of the ground and the trees would be worse than none.
@@ -218,7 +226,7 @@ async function load(measurementId: string): Promise<{ ok: true; v: Loaded } | Fa
   const googleSegments = (provenance.solar as { segmentCount?: number } | undefined)?.segmentCount ?? null;
   const model = hasOutline(structure) && structure.areaSqft != null
     ? toFacetModel({ result, frame, eagleView: { areaSqft: structure.areaSqft, facetCount: structure.facetCount, pitch: structure.pitch }, reference: "EagleView", outlineFrom: fromGoogle ? "google" : "eagleview", notes })
-    : toFacetModel({ result, frame, eagleView: { areaSqft: row.areaSqft, facetCount: googleSegments, pitch: row.predominantPitch?.split(" ")[0] ?? null }, reference: row.source === "solar" ? "Google" : "EagleView", outlineFrom: fromGoogle ? "google" : "eagleview", notes });
+    : toFacetModel({ result, frame, eagleView: { areaSqft: row.areaSqft, facetCount: googleSegments, pitch: row.predominantPitch?.split(" ")[0] ?? null }, reference: row.source === "solar" ? "Google" : "EagleView", outlineFrom: fromGoogle ? "google" : "eagleview", leftOut, notes });
 
   // The picture: the drawing plus 5 m all round, on whole pixels, inside the tile.
   const px = dsm.pixelSizeM;

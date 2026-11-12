@@ -20,7 +20,7 @@
 // [c, c+1)) and metres of height; ./build turns the result into feet, compass bearings and lat/lng.
 
 import { buildGraph, collapseShort, pruneDangling, straightenChains, traceFaces, type Face, type Graph, type Seg } from "./arrange";
-import { findPlanes, outlineAxesDeg, type Plane, type PlanePrior } from "./planes";
+import { findPlanes, outlineAxesDeg, priorsInWindow, type Plane, type RoofSegmentPx } from "./planes";
 import { fillRings, pointInRing, registerOutline, ringArea, sharpenCorners, type Pt } from "./raster";
 
 /**
@@ -44,7 +44,7 @@ export interface EngineInput {
   /** the roof outline in raster pixels, as its source placed it */
   outline: ReadonlyArray<Pt>;
   /** Google's roof segments, centres in raster pixels */
-  priors: ReadonlyArray<{ pitchDeg: number; azimuthDeg: number; cx: number; cy: number; zc: number; areaM2: number }>;
+  priors: ReadonlyArray<RoofSegmentPx>;
   /** false when the outline already comes from this raster (Google's own mask): it is not moved */
   register?: boolean;
   trace?: string[];
@@ -159,11 +159,7 @@ export function buildFacets(input: EngineInput): EngineResult | null {
   const axesDeg = outlineAxesDeg(ring);
   const axisDeg = axesDeg[0];
   if (axesDeg.length > 1) input.trace?.push(`the building runs in ${axesDeg.length} directions (${axesDeg.map((d) => Math.round(d)).join(" and ")} degrees off the grid)`);
-  const priors: PlanePrior[] = input.priors.map((s) => {
-    const t = Math.tan((s.pitchDeg * Math.PI) / 180) * px, az = (s.azimuthDeg * Math.PI) / 180;
-    // the plane RISES opposite to the way it faces; y runs south
-    return { gx: -t * Math.sin(az), gy: t * Math.cos(az), cx: s.cx - x0 - 0.5, cy: s.cy - y0 - 0.5, zc: s.zc, areaM2: s.areaM2 };
-  });
+  const priors = priorsInWindow(input.priors, x0, y0, px);
   // What Google's own mask does not call roof inside the outline — a tree over it, mostly — is kept out of the plane
   // finding. Only while it is a modest part: a mask that misses a third of the building is the mask's mistake.
   let ignore: Uint8Array | undefined;
