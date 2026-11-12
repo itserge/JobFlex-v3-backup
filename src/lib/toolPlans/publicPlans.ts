@@ -5,8 +5,9 @@ import "server-only";
 // shop's Subscription and Upgrade pages keep reading the Classic catalog themselves (lib/planCatalogServer).
 //
 //   switch off — getPlanCatalog(), untouched: the same rows, the same order, the same errors.
-//   switch on  — the four new plans as PlanDTOs, priced with the visit's main tool at the prices in force
-//                (Admin → Plans, lib/toolPlans/prices) — lib/toolPlans/cards toolsPlanDTOs.
+//   switch on  — the four new plans as PlanDTOs, each size at its own price in force (Admin → Plans,
+//                lib/toolPlans/prices) — lib/toolPlans/cards toolsPlanDTOs. Tools are ticked on top in the builder
+//                (owner, 2026-11-12), never folded into a size's price; `tool` is kept for the callers and unused.
 
 import { getPlanCatalog } from "@/lib/planCatalogServer";
 import type { PlanDTO } from "@/lib/planCatalog";
@@ -17,5 +18,5 @@ import type { ToolId } from "./shared";
 
 export async function getPublicPlans(opts: { tool?: ToolId | null; trialDays?: number } = {}): Promise<PlanDTO[]> {
   if (!(await toolsPlansOn())) return getPlanCatalog();
-  return toolsPlanDTOs(opts.tool ?? null, await readToolCatalog(), opts.trialDays);
+  return toolsPlanDTOs(await readToolCatalog(), opts.trialDays);
 }

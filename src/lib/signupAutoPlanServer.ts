@@ -10,8 +10,7 @@ import { autoPlanFor, type AutoPlanOffer } from "@/lib/signupAutoPlan";
 import type { SpotlightTool } from "@/lib/planSpotlight";
 import { toolsPlansOn } from "@/lib/toolPlans/server";
 import { getPublicPlans } from "@/lib/toolPlans/publicPlans";
-import { isToolsCatalog } from "@/lib/toolPlans/cards";
-import { isToolId } from "@/lib/toolPlans/shared";
+import { isToolsCatalog, parseToolPicks } from "@/lib/toolPlans/cards";
 
 export type AutoPlanAsk = {
   /** ?plan= — a plan the visitor chose on a pricing page, this visit. */
@@ -19,7 +18,8 @@ export type AutoPlanAsk = {
   edition?: "deck" | null;
   /** The tool the ad sold (lib/planSpotlight). */
   tool?: SpotlightTool | null;
-  /** The new plans' main tool (lib/toolPlans/cards mainToolFor) — read only while the Plans switch is on. */
+  /** The new plans' pick (tool ids, comma-separated; the first is the main tool — lib/toolPlans/cards) — read only
+   *  while the Plans switch is on. */
   mainTool?: string | null;
 };
 
@@ -30,7 +30,7 @@ export async function autoPlanOffer(ask: AutoPlanAsk, catalog?: Catalog): Promis
   /* THE NEW PLANS (owner, 2026-11-10): Professional + the ad's tool — every tool is sold on every size, so the tool
      never moves the plan; a plan asked for (?plan=tools-basic from a card) wins. The public cards' one read
      (lib/toolPlans/publicPlans); a Classic catalog handed in is used only while the switch is off, as before. */
-  const main = isToolId(ask.mainTool) ? ask.mainTool : null;
+  const main = parseToolPicks(ask.mainTool)[0] ?? null;
   const cards = catalog && !(await toolsPlansOn()) ? catalog : await getPublicPlans({ tool: main }).catch(() => []);
   if (isToolsCatalog(cards)) {
     const pick = autoPlanFor({ plans: cards, tool: null, asked: ask.asked ?? null, preferred: "tools-professional" });

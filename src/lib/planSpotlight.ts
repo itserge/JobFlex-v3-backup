@@ -51,23 +51,23 @@ export const SPOTLIGHT: Record<SpotlightTool, SpotlightDef> = {
   deck: { label: "Deck Studio", the: "Deck Studio", who: "deck builders", match: /deck studio|\bdeck(s|ing)?\b/i, trades: ["decking"], aliases: ["decking", "deck-studio", "decks"] },
 };
 
-/* THE NEW PLANS' AD KEYS (Base + Tools, part 4 — owner, 2026-11-10). Six tools sold on the new plans get ads of their
-   own: video, texting, Smart CRM, AI Operator, Home Builder, Remodeler. They are NOT SpotlightTools: every Classic
+/* THE NEW PLANS' AD KEYS (Base + Tools, part 4 — owner, 2026-11-10). Five tools sold on the new plans get ads of their
+   own: video, texting, Smart CRM, Home Builder, Remodeler (AI Operator's key went with it, owner 2026-11-12: not launched
+   yet — `?tool=operator` is no tool). They are NOT SpotlightTools: every Classic
    surface parses `?tool=` with parseSpotlightTool below, which never returns them, so a Classic card, banner, sign-up
    or Subscription page treats `?tool=video` exactly as it treats no tool at all. Only the new plans' surfaces read
    them, through parseAdTool (lib/toolPlans/shared toolForAdKey turns a key into the main tool). */
-export type ToolsAdKey = "video" | "texting" | "crm" | "operator" | "home-builder" | "remodeler";
+export type ToolsAdKey = "video" | "texting" | "crm" | "home-builder" | "remodeler";
 /** Any ad's `?tool=` key: today's (Classic) or one of the new plans'. */
 export type AdTool = SpotlightTool | ToolsAdKey;
 
-export const TOOLS_AD_KEYS: readonly ToolsAdKey[] = ["video", "texting", "crm", "operator", "home-builder", "remodeler"];
+export const TOOLS_AD_KEYS: readonly ToolsAdKey[] = ["video", "texting", "crm", "home-builder", "remodeler"];
 
 /** Labels and spellings. The spellings carry each tool's own id (smartcrm, builder), so `?tool=<id>` finds it too. */
 export const TOOLS_AD: Record<ToolsAdKey, { label: string; aliases: readonly string[] }> = {
   video: { label: "Video estimator", aliases: ["video-estimator", "videos"] },
   texting: { label: "Text messaging", aliases: ["text", "texts", "sms", "text-messaging"] },
   crm: { label: "Smart CRM", aliases: ["smartcrm", "smart-crm"] },
-  operator: { label: "AI Operator", aliases: ["assistant", "ai-operator", "ai-assistant"] },
   "home-builder": { label: "Home Builder", aliases: ["builder", "homebuilder", "new-construction"] },
   remodeler: { label: "Remodeler", aliases: ["remodel", "remodeling"] },
 };

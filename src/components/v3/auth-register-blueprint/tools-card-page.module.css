@@ -1,179 +1,25 @@
-/* THE NEW PLANS' CARD PAGE (tools-card-page.tsx). The card is the plan step's own (.pw-plan in
-   auth-register.module.css, under the page's .bp root); this sheet only lays the card and its controls side by side
-   on a desk, one above the other on a phone, in the page's tokens (ink frame, hard offset, mono labels). */
-
+/* THE NEW PLANS' PLAN STEP (tools-card-page.tsx): the plan builder (components/v3/tools-plan/tools-builder) inside the
+   sign-up's sheet. The builder draws itself; this sheet only gives it the step's width and sets the step's own lines
+   (the "free until" line, a promo code's price) inside the builder's summary. */
 .page {
-  display: grid;
-  grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
-  gap: 22px;
-  align-items: start;
   padding-top: 4px;
   min-width: 0;
-}
-
-/* The one card: not a button here — nothing to pick, so no pointer and no lift. It stands alone, so it is a plain
-   column, not a subgrid of the Classic row (which would span this page's own rows and open a gap under the name). */
-.page .card.card.card {
-  cursor: default;
-  transform: none;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  grid-row: auto;
-  grid-template-rows: none;
-}
-
-/* Every line drawn (the phone's Classic carousel caps a card's list at 250px with !important). */
-.page .feats.feats.feats {
-  max-height: none !important;
-  overflow: visible !important;
-  -webkit-mask-image: none;
-  mask-image: none;
-}
-
-.side {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  min-width: 0;
-}
-
-/* "Working alone? Basic + Deck Studio, $118.99" — smaller than the start button, a link-weight control. */
-.flip {
-  align-self: flex-start;
-  max-width: 100%;
-  padding: 10px 14px;
-  border: 2px solid var(--ink, #0a0a0a);
-  border-radius: var(--radius, 2px);
-  background: var(--paper, #fbfaf7);
-  color: var(--ink, #0a0a0a);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.35;
   text-align: left;
-  cursor: pointer;
-  box-shadow: 2px 2px 0 var(--ink, #0a0a0a);
 }
-.flip b {
-  font-weight: 800;
-}
-/* Under a real pointer only: a finger leaves :hover stuck on what it last touched. */
-@media (hover: hover) and (pointer: fine) {
-  .flip:hover:not(:disabled) {
-    background: var(--ink, #0a0a0a);
-    color: var(--paper, #fbfaf7);
-  }
-  .size:hover:not(:disabled):not([aria-checked="true"]) {
-    background: var(--paper-deep, #f1efe9);
-  }
-}
-.flip:focus-visible {
-  outline: 3px solid var(--blueprint, #1854a0);
-  outline-offset: 2px;
-}
-.flipAsk {
-  color: inherit;
-  opacity: 0.75;
-}
-
-.field {
+.when {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
-}
-.label {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--muted, #5b5b5b);
-}
-.hint {
-  margin: 0;
   font-size: 13px;
-  line-height: 1.4;
-  color: var(--ink-soft, var(--muted, #5b5b5b));
-}
-
-.selWrap {
-  display: block;
-  min-width: 0;
-}
-.select {
-  width: 100%;
-  max-width: 100%;
-  min-height: 44px;
-  padding: 0 12px;
-  border: 2px solid var(--ink, #0a0a0a);
-  border-radius: var(--radius, 2px);
-  background: var(--sheet, #fff);
-  color: var(--ink, #0a0a0a);
-  font: inherit;
-  font-size: 15px;
   font-weight: 600;
+  line-height: 1.4;
 }
-.select:focus-visible {
-  outline: 3px solid var(--blueprint, #1854a0);
-  outline-offset: 2px;
-}
-
-.sizes {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-.size {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  min-height: 44px;
-  padding: 9px 11px;
-  border: 2px solid var(--ink, #0a0a0a);
-  border-radius: var(--radius, 2px);
-  background: var(--sheet, #fff);
-  color: var(--ink, #0a0a0a);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.size[aria-checked="true"] {
-  border-color: var(--blueprint, #1854a0);
-  box-shadow: inset 0 0 0 2px var(--blueprint, #1854a0);
-}
-.size:focus-visible {
-  outline: 3px solid var(--blueprint, #1854a0);
-  outline-offset: 2px;
-}
-.sizeN {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-.sizeP {
-  font-size: 17px;
-  font-weight: 900;
-  font-variant-numeric: tabular-nums;
-}
-.sizeW {
-  font-size: 12px;
-  color: var(--muted, #5b5b5b);
-}
+.when:empty { display: none; }
 
 @media (max-width: 768px) {
   /* The sheet has no side padding on a phone: each block keeps the page's 18px gutter (as the head above). */
   .page {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 16px;
     margin: 0 18px;
-  }
-  .flip {
-    align-self: stretch;
-    min-height: 44px;
   }
 }

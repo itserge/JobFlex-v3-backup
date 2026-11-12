@@ -33,8 +33,8 @@ import { CUSTOM_PLAN_SLUG, customPriceCents } from "@/lib/customPlan";
 import { getPlanBySlug } from "@/lib/planCatalogServer";
 import { currentTrialPlan } from "@/lib/trialPlan";
 import { CARD_ONLY_CHECKOUT } from "@/lib/stripeCheckoutCard";
-import { cardCents, isToolsSlug, toolPlanBySlug, YEAR_MONTHS, type ToolId } from "@/lib/toolPlans/shared";
-import { toolsChoice } from "@/lib/toolPlans/cards";
+import { emptyToolsRecord, isToolsSlug, toolPlanBySlug, YEAR_MONTHS, type ToolId } from "@/lib/toolPlans/shared";
+import { recordBill } from "@/lib/toolPlans/cards";
 import { readToolCatalog } from "@/lib/toolPlans/prices";
 import { readToolsRecord } from "@/lib/toolPlans/billing";
 
@@ -49,6 +49,8 @@ export type CardlessStart =
       mode: "live" | "test";
       /** The new plans: the main tool on the subscription (null: none). Absent on a Classic plan. */
       mainTool?: ToolId | null;
+      /** The new plans: the other tools ticked, each a line riding the trial. */
+      extraTools?: ToolId[];
     }
   | { ok: false; error: string };
 
@@ -66,7 +68,8 @@ export async function createCardlessSubscription(opts: {
   customPages: string[];
   attribution: { kind: "promo" | "ref"; code: string } | null;
   trialOffer?: TrialOffer;
-  /** The new plans: the main tool picked on the card page — the same lines the card checkout bills (lib/signupPricing). */
+  /** The new plans: the pick — tool ids, comma-separated, the first the main tool — the same lines the card checkout
+   *  bills (lib/signupPricing). */
   mainTool?: string | null;
 }): Promise<CardlessStart> {
   const { stripe, mode } = await getStripeClient();
@@ -97,7 +100,7 @@ export async function createCardlessSubscription(opts: {
     ...trialOfferMetadata(opts.trialOffer),
     ...(priced.isCustom ? { customPages: opts.customPages.join(",") } : {}),
     // The new plans: the main tool rides the subscription, as on the card checkout (lib/signupCheckoutSession).
-    ...(priced.mainTool !== undefined ? { mainTool: priced.mainTool ?? "" } : {}),
+    ...(priced.mainTool !== undefined ? { mainTool: priced.mainTool ?? "", extraTools: (priced.extraTools ?? []).join(",") } : {}),
   };
   try {
     // REHEARSALS ONLY: STRIPE_TEST_CLOCKS=1 puts each new trial customer on a
@@ -138,7 +141,7 @@ export async function createCardlessSubscription(opts: {
       interval: priced.interval,
       customPages: priced.isCustom ? opts.customPages : [],
       mode,
-      ...(priced.mainTool !== undefined ? { mainTool: priced.mainTool } : {}),
+      ...(priced.mainTool !== undefined ? { mainTool: priced.mainTool, extraTools: priced.extraTools ?? [] } : {}),
     };
   } catch (err) {
     console.error("[cardless-trial] Stripe refused the trial:", err);
@@ -182,13 +185,13 @@ export async function trialPlanSummary(orgId: string, rec: CardlessRecord): Prom
   const { planSlug, interval, customPages } = await currentTrialPlan(orgId, rec);
   const per = interval === "YEAR" ? "/yr" : "/mo";
   if (planSlug === CUSTOM_PLAN_SLUG) return { name: "Custom", cents: customPriceCents(customPages, interval), per };
-  // The new plans: the size with the shop's main tool ("Professional + Deck Studio"), at the prices in force.
+  // The new plans: the size with the shop's main tool and the tools still on its bill ("Professional + Deck Studio +
+  // Fence estimator" — a try removed in the free days is not), at the prices in force.
   const tools = toolPlanBySlug(planSlug);
   if (tools) {
     const [catalog, record] = await Promise.all([readToolCatalog(), readToolsRecord(orgId).catch(() => null)]);
-    const main = record?.main ?? null;
-    const monthly = cardCents(tools.id, main, catalog);
-    return { name: toolsChoice(tools.id, main, catalog).label, cents: interval === "YEAR" ? monthly * YEAR_MONTHS : monthly, per };
+    const bill = recordBill(record ? { ...record, plan: tools.id } : emptyToolsRecord(tools.id), catalog);
+    return { name: bill.label, cents: interval === "YEAR" ? bill.cents * YEAR_MONTHS : bill.cents, per };
   }
   const plan = await getPlanBySlug(planSlug);
   const cents = interval === "YEAR" ? (plan?.yearlyPriceCents ?? plan?.priceCents ?? 0) : (plan?.priceCents ?? 0);

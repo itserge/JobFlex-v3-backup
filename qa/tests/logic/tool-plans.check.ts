@@ -66,7 +66,7 @@ import { hasEdition } from "@/lib/editions";
 import { spaceOpen, spacePage, SPACE_IDS } from "@/lib/projectSpaces";
 import { SPOTLIGHT_TOOLS, TOOLS_AD, TOOLS_AD_KEYS, adToolFor, keptAdTool, parseAdTool, parseSpotlightTool, spotlightFor } from "@/lib/planSpotlight";
 import { catalogToolsLines, lineMonthlyCents, toolPlansNumbers, toolsFirstBill, toolsRowLabel, tryOutcome, type NumbersRow, type ToolsLine } from "@/lib/toolPlans/numbers";
-import { adKeyOf, isToolsCatalog, mainToolFor, toolsBanner, toolsChoice, toolsPlanDTOs, toolsPlanFromAsk, toolsSignupPick, toolsSizeSwitch, withPlanQuery } from "@/lib/toolPlans/cards";
+import { adKeyOf, BETTER_SIZE_MARGIN_CENTS, firstToolsRecord, isToolsCatalog, mainToolFor, parseToolPicks, pickWire, recordBill, toolsBuild, toolsPlanDTOs, toolsPlanFromAsk, toolsSignupPick, withPlanQuery } from "@/lib/toolPlans/cards";
 import { autoPlanFor } from "@/lib/signupAutoPlan";
 import { isAddonLine, planLine } from "@/lib/deckAddon";
 
@@ -79,7 +79,7 @@ function check(label: string, ok: boolean, extra?: unknown) {
 // ── the owner's prices (2026-11-10) ──
 check("Basic $39.99, the owner alone, no extra people", toolPlanById("basic").cents === 3999 && toolPlanById("basic").seats === 1 && toolPlanById("basic").seatCents === null);
 check("Professional $75, 5 people, $9.99 each after", toolPlanById("professional").cents === 7500 && toolPlanById("professional").seats === 5 && toolPlanById("professional").seatCents === 999);
-check("twelve tools", TOOLS.length === 12 && new Set(TOOLS.map((t) => t.id)).size === 12);
+check("eleven tools (no AI Operator: not launched)", TOOLS.length === 11 && new Set(TOOLS.map((t) => t.id)).size === 11 && !TOOLS.some((t) => (t.id as string) === "operator" || /operator/i.test(t.label)) && TOOLS.every((t) => t.pairs.every((id) => TOOLS.some((x) => x.id === id) && id !== t.id)) && !TOOL_PLANS.some((p) => p.lines.some((l) => /operator/i.test(l))));
 
 // ── a bundle always costs less than its parts ──
 const ladder = ladderChecks();
@@ -112,7 +112,7 @@ check("Advanced, 12 people: $7.99 each after 10", monthlyCents({ plan: "advanced
 
 // ── what a shop can open ──
 const adv = toolsOpen({ plan: "advanced", main: null, kept: [], chosenTrade: ["roof", "deck", "fence"] });
-check("Advanced: the office set and only 2 chosen trade tools", ["aidesk", "texting", "smartcrm", "operator", "roof", "deck"].every((id) => adv.has(id as never)) && !adv.has("fence"));
+check("Advanced: the office set and only 2 chosen trade tools", ["aidesk", "texting", "smartcrm", "roof", "deck"].every((id) => adv.has(id as never)) && !adv.has("fence"));
 const basicDeck = pagesOpen({ plan: "basic", main: "deck", kept: [], trying: ["roof"] });
 check("Basic + Deck Studio + a Roof try opens those two and nothing of the team", basicDeck.has("deck-estimator") && basicDeck.has("roof-estimator") && !basicDeck.has("workers") && !basicDeck.has("meta-leads") && !basicDeck.has("phone"));
 const pro = pagesOpen({ plan: "professional", main: "roof", kept: [] });
@@ -120,7 +120,7 @@ check("Professional opens Meta leads and the team pages", ["meta-leads", "worker
 
 // ── the offer order ──
 const offer = toolsInOfferOrder("hvac");
-check("works-well-with first, then the rest, never the main tool", offer.slice(0, 3).map((t) => t.id).join() === "aidesk,texting,smartcrm" && offer.length === 11 && !offer.some((t) => t.id === "hvac"));
+check("works-well-with first, then the rest, never the main tool", offer.slice(0, 3).map((t) => t.id).join() === "aidesk,texting,smartcrm" && offer.length === 10 && !offer.some((t) => t.id === "hvac"));
 check("tools already held are left out", toolsInOfferOrder("hvac", ["aidesk"]).every((t) => t.id !== "aidesk"));
 check("every pairing names a real tool, never itself", TOOLS.every((t) => t.pairs.length >= 2 && t.pairs.every((p) => isToolId(p) && p !== t.id)));
 check("every tool opens something", TOOLS.every((t) => t.opens.length > 0));
@@ -196,7 +196,7 @@ check("a running try opens its tool; an ended one doesn't", bdTry.has("roof-esti
 const pr = toolsPagesOpen(null, "tools-professional", now);
 check("Professional (no record): the base and the team", ["workers", "meta-leads", "team-messages", "hire", "commission", "smartbook", "crew-field", "roles", ...TOOLS_BASE_PAGES].every((id) => pr.has(id)) && !pr.has("custom-domain") && !pr.has("phone") && !pr.has("texting"));
 const ad = toolsPagesOpen(emptyToolsRecord("advanced"), "tools-advanced", now);
-check("Advanced: the office tools and the Advanced lines", ["phone", "texting", "smart-crm", "operator", "custom-domain", "multi-org", "priority-support", "workers"].every((id) => ad.has(id)) && !ad.has("roof-estimator"));
+check("Advanced: the office tools and the Advanced lines (AI Operator opened by no plan)", ["phone", "texting", "smart-crm", "custom-domain", "multi-org", "priority-support", "workers"].every((id) => ad.has(id)) && !ad.has("roof-estimator") && !ad.has("operator"));
 check("Complete: everything", [...TOOLS.flatMap((t) => t.opens)].every((id) => toolsPagesOpen(null, "tools-complete", now).has(id)));
 check("the slug's size wins over the record's", toolsPagesOpen(emptyToolsRecord("basic"), "tools-professional", now).has("workers") && !toolsPagesOpen(emptyToolsRecord("professional"), "tools-basic", now).has("workers"));
 check("an unknown tools- slug with no record opens the base alone", toolsPagesOpen(null, "tools-foo", now).size === TOOLS_BASE_PAGES.length);
@@ -279,12 +279,12 @@ check("a Classic slug has no view", toolsSubscriptionModel({ record: null, planS
 const m1 = toolsSubscriptionModel({ record: emptyToolsRecord("basic", "deck"), planSlug: "TOOLS-BASIC", people: 1, now: nov(10), status: "TRIALING", trialEndsAt: nov(17), timeZone: "UTC" })!;
 check("Basic + Deck Studio in the free days: the name, $118.99, just you, free until Nov 17", m1.plan.label === "Basic + Deck Studio" && m1.plan.monthlyCents === 11899 && m1.plan.paidPeople === 1 && m1.plan.seatCents === null && m1.inTrial && m1.trialDay === "Nov 17", m1.plan);
 check("…its tools: Deck Studio, the main tool, billed on its own", m1.tools.length === 1 && m1.tools[0].id === "deck" && m1.tools[0].state === "main" && m1.tools[0].inPlan === false);
-check("…to add: works well with Deck Studio first (texting, Smart CRM, AI Operator), then the other 8", m1.offer.length === 11 && m1.offer.slice(0, 3).map((o) => `${o.id}:${o.pair}`).join() === "texting:true,smartcrm:true,operator:true" && m1.offer.slice(3).every((o) => !o.pair));
+check("…to add: works well with Deck Studio first (texting, Smart CRM, the fence estimator), then the other 7", m1.offer.length === 10 && m1.offer.slice(0, 3).map((o) => `${o.id}:${o.pair}`).join() === "texting:true,smartcrm:true,fence:true" && m1.offer.slice(3).every((o) => !o.pair));
 check("…each a free try that ends with the free days, the date and the price said", m1.offer.every((o) => o.canTry && o.tryDay === "Nov 17") && m1.offer[0].tryWords === "Free until Nov 17, then $29/mo on your bill. Remove it any time before.");
 const p1 = Object.fromEntries(m1.plans.map((p) => [p.id, p]));
 check("…bigger plans priced with Deck Studio: Professional $154, Advanced $249 (deck included), Complete $449", m1.plans.length === 3 && m1.plans.every((p) => p.bigger && p.canMove) && p1.professional.cents === 15400 && p1.advanced.cents === 24900 && p1.complete.cents === 44900, m1.plans.map((p) => [p.id, p.cents]));
 check("…Advanced says Deck Studio comes included; Professional doesn't", p1.advanced.includes.join() === "Deck Studio" && p1.professional.includes.length === 0 && p1.professional.loses.length === 0);
-check("…the main tool can be switched to any of the other 11 in the free days", m1.switchTo.length === 11 && !m1.switchTo.some((t) => t.id === "deck"));
+check("…the main tool can be switched to any of the other 10 in the free days", m1.switchTo.length === 10 && !m1.switchTo.some((t) => t.id === "deck"));
 const m1after = toolsSubscriptionModel({ record: emptyToolsRecord("basic", "deck"), planSlug: "TOOLS-BASIC", people: 1, now: nov(18), status: "ACTIVE", trialEndsAt: nov(17), timeZone: "UTC" })!;
 check("…after the free days: no switch, a try runs 3 days", !m1after.inTrial && m1after.switchTo.length === 0 && m1after.offer[0].tryDay === "Nov 21");
 
@@ -315,10 +315,10 @@ check("…no switch after the free days", !m2.inTrial && m2.switchTo.length === 
 const advRec = { ...emptyToolsRecord("advanced", "deck"), chosenTrade: ["deck" as const, "roof" as const], lines: { fence: { itemId: "si_f", cents: 4900, since: nov(1).toISOString() } }, seat: { itemId: "si_s", quantity: 2, cents: 799 } };
 const m3 = toolsSubscriptionModel({ record: advRec, planSlug: "TOOLS-ADVANCED", people: 12, now: nov(20), status: "ACTIVE", trialEndsAt: null, timeZone: "UTC" })!;
 check("Advanced, 12 people: $249 + 2 × $7.99 + fence = $313.98, named Advanced (deck included)", m3.plan.monthlyCents === 31398 && m3.plan.label === "Advanced" && m3.plan.paidPeople === 12, m3.plan);
-check("…its tools: deck the main (in the plan), roof and the four office tools included, fence on the bill", m3.tools.map((t) => `${t.id}:${t.state}`).join() === "deck:main,roof:included,aidesk:included,texting:included,smartcrm:included,operator:included,fence:on-bill" && m3.tools[0].inPlan === true, m3.tools.map((t) => t.id));
+check("…its tools: deck the main (in the plan), roof and the three office tools included, fence on the bill", m3.tools.map((t) => `${t.id}:${t.state}`).join() === "deck:main,roof:included,aidesk:included,texting:included,smartcrm:included,fence:on-bill" && m3.tools[0].inPlan === true && m3.tools[0].removable === false, m3.tools.map((t) => t.id));
 check("…to add: the five trade tools left, none of the office tools", m3.offer.map((o) => o.id).join() === "hvac,blueprint,video,builder,remodeler" && m3.offer.every((o) => !o.pair));
 const p3 = Object.fromEntries(m3.plans.map((p) => [p.id, p]));
-check("…Professional, smaller: $75 + 7 × $9.99 + deck + fence = $272.93, and what closes", p3.professional.cents === 27293 && !p3.professional.bigger && p3.professional.loses.join() === "Roof estimator,AI desk,Text messaging,Smart CRM,AI Operator", p3.professional);
+check("…Professional, smaller: $75 + 7 × $9.99 + deck + fence = $272.93, and what closes", p3.professional.cents === 27293 && !p3.professional.bigger && p3.professional.loses.join() === "Roof estimator,AI desk,Text messaging,Smart CRM", p3.professional);
 check("…Complete: $449 + 2 × $7.99, fence comes included", p3.complete.cents === 46498 && p3.complete.includes.join() === "Fence estimator");
 check("a Complete shop has nothing left to add", toolsSubscriptionModel({ record: emptyToolsRecord("complete", "deck"), planSlug: "tools-complete", people: 3, now: nov(20), status: "ACTIVE", trialEndsAt: null })!.offer.length === 0);
 
@@ -328,47 +328,72 @@ check("two on the same day: one sentence", tryReminderWords([{ label: "Roof esti
 check("the day in the shop's own zone: tomorrow, later today, or the date", tryDayWords(nov(17), nov(16, 16), "UTC") === "tomorrow" && tryDayWords(nov(17, 3), nov(16, 20), "America/Los_Angeles") === "later today" && tryDayWords(nov(17, 3), nov(16, 20), "UTC") === "tomorrow" && tryDayWords(nov(19), nov(16), "UTC") === "Nov 19");
 
 // ── part 4: the public plan cards (the Plans switch on) ──
-const deckCards = toolsPlanDTOs("deck");
-check("four cards, the new plans' slugs, in size order", deckCards.map((p) => p.slug).join() === "tools-basic,tools-professional,tools-advanced,tools-complete" && isToolsCatalog(deckCards), deckCards.map((p) => p.slug));
-check("a Deck Studio ad prices them: $118.99 · $154 · $249 · $449", deckCards.map((p) => p.priceCents).join() === "11899,15400,24900,44900", deckCards.map((p) => p.priceCents));
-check("…a year is ten months", deckCards.every((p) => p.yearlyPriceCents === p.priceCents * 10));
-check("…the tool is each card's first line: added on Basic and Professional, included on Advanced and Complete", deckCards.map((p) => p.features[0]).join("|") === "+ Deck Studio ($79/mo)|+ Deck Studio ($79/mo)|Deck Studio included|Deck Studio included", deckCards.map((p) => p.features[0]));
-check("…Professional is the one marked Most picked, nothing is free, the 7-day trial", deckCards.filter((p) => p.highlight).map((p) => p.slug).join() === "tools-professional" && deckCards.every((p) => !p.isFree && p.active && p.trialDays === 7));
-check("…the cards' own lines follow, with the extra-person price said", deckCards[1].features[1] === "Everything in Basic" && deckCards[1].features.at(-1) === "$9.99 for each person after 5" && deckCards[0].features.at(-1) === "Reviews, reports and financials");
-const plainCards = toolsPlanDTOs(null);
-check("no tool: the sizes alone ($39.99 · $75 · $249 · $449), the plan's own first line", plainCards.map((p) => p.priceCents).join() === "3999,7500,24900,44900" && plainCards[0].features[0] === "Just you: 1 user, the owner", plainCards.map((p) => p.priceCents));
-const deskCards = toolsPlanDTOs("aidesk");
-check("an AI desk ad: Basic $138.99, Professional $174, the desk included from Advanced", deskCards.map((p) => p.priceCents).join() === "13899,17400,24900,44900" && deskCards[2].features[0] === "AI desk included", deskCards.map((p) => p.priceCents));
-const pricedCards = toolsPlanDTOs("deck", withPrices({ tools: { deck: 8900 }, plans: { professional: 7900 } }));
-check("prices set in Admin → Plans reach the cards", pricedCards[1].priceCents === 16800 && pricedCards[1].features[0] === "+ Deck Studio ($89/mo)" && pricedCards[1].yearlyPriceCents === 168000, pricedCards[1]);
+const sizeCards = toolsPlanDTOs();
+check("four cards, the new plans' slugs, in size order", sizeCards.map((p) => p.slug).join() === "tools-basic,tools-professional,tools-advanced,tools-complete" && isToolsCatalog(sizeCards), sizeCards.map((p) => p.slug));
+check("each size at its own price, never with a tool folded in: $39.99 · $75 · $249 · $449", sizeCards.map((p) => p.priceCents).join() === "3999,7500,24900,44900", sizeCards.map((p) => p.priceCents));
+check("…a year is ten months", sizeCards.every((p) => p.yearlyPriceCents === p.priceCents * 10));
+check("…Basic shows what is in Basic: its own first line, no tool line on any card", sizeCards[0].features[0] === "Just you: 1 user, the owner" && sizeCards.every((p) => !p.features.some((f) => /^\+ |Deck Studio/.test(f))), sizeCards.map((p) => p.features[0]));
+check("…Professional is the one marked Most picked, nothing is free, the 7-day trial", sizeCards.filter((p) => p.highlight).map((p) => p.slug).join() === "tools-professional" && sizeCards.every((p) => !p.isFree && p.active && p.trialDays === 7));
+check("…the cards' own lines, with the extra-person price said", sizeCards[1].features[0] === "Everything in Basic" && sizeCards[1].features.at(-1) === "$9.99 for each person after 5" && sizeCards[0].features.at(-1) === "Reviews, reports and financials");
+const pricedCards = toolsPlanDTOs(withPrices({ tools: { deck: 8900 }, plans: { professional: 7900 } }));
+check("prices set in Admin → Plans reach the cards", pricedCards[1].priceCents === 7900 && pricedCards[1].yearlyPriceCents === 79000, pricedCards[1]);
+const deckCards = sizeCards;
 check("a Classic catalog is not the new plans' (the Classic cards draw it as before)", !isToolsCatalog([{ slug: "starter" }, { slug: "professional" }]) && !isToolsCatalog([]) && !isToolsCatalog([{ slug: "tools-basic" }, { slug: "enterprise" }]));
 check("the sign-up rule on these cards: Professional by default, a card's ?plan= wins", autoPlanFor({ plans: deckCards, tool: null, preferred: "tools-professional" })?.slug === "tools-professional" && autoPlanFor({ plans: deckCards, tool: null, preferred: "tools-professional" })?.why === "default" && autoPlanFor({ plans: deckCards, tool: null, asked: "tools-basic", preferred: "tools-professional" })?.why === "asked");
-check("the banner over the cards", toolsBanner("deck") === "Every plan is priced with Deck Studio: $79/mo on Basic and Professional, included in Advanced and Complete." && toolsBanner("texting") === "Every plan is priced with Text messaging: $29/mo on Basic and Professional, included in Advanced and Complete.", toolsBanner("deck"));
-check("a card's start button opens the sign-up on its plan and tool, the rest of the link kept", withPlanQuery("/auth/register?industry=decking&utm_source=fb#x", "tools-basic", "deck") === "/auth/register?industry=decking&utm_source=fb&plan=tools-basic&tool=deck#x" && withPlanQuery("/auth/register", "tools-complete") === "/auth/register?plan=tools-complete");
+check("the builder's start button opens the sign-up on its plan and its tools, the rest of the link kept", withPlanQuery("/auth/register?industry=decking&utm_source=fb&tool=deck#x", "tools-basic", ["deck", "fence"]) === "/auth/register?industry=decking&utm_source=fb&tool=deck&plan=tools-basic&tools=deck,fence#x" && withPlanQuery("/auth/register", "tools-complete", []) === "/auth/register?plan=tools-complete&tools=none" && withPlanQuery("/auth/register?tools=roof", "tools-basic") === "/auth/register?tools=roof&plan=tools-basic");
 
 // ── part 4: the new ad keys ──
-check("six new ad keys, one per tool that had none", TOOLS_AD_KEYS.join() === "video,texting,crm,operator,home-builder,remodeler" && TOOLS.every((t) => typeof t.adKey === "string" && t.adKey.length > 0));
+check("five new ad keys, one per tool that had none (AI Operator's went with the tool)", TOOLS_AD_KEYS.join() === "video,texting,crm,home-builder,remodeler" && TOOLS.every((t) => typeof t.adKey === "string" && t.adKey.length > 0) && parseAdTool("operator") === undefined && parseAdTool("assistant") === undefined);
 check("every tool's ad key finds it, and so does its own id", TOOLS.every((t) => toolForAdKey(parseAdTool(t.adKey))?.id === t.id && toolForAdKey(parseAdTool(t.id))?.id === t.id), TOOLS.filter((t) => toolForAdKey(parseAdTool(t.id))?.id !== t.id).map((t) => t.id));
-check("…and their spellings: crm, assistant, builder, remodel", toolForAdKey(parseAdTool("crm"))?.id === "smartcrm" && toolForAdKey(parseAdTool("assistant"))?.id === "operator" && toolForAdKey(parseAdTool("Builder"))?.id === "builder" && toolForAdKey(parseAdTool("home-builder"))?.id === "builder" && toolForAdKey(parseAdTool(" remodel "))?.id === "remodeler" && toolForAdKey(parseAdTool("video"))?.id === "video" && toolForAdKey(parseAdTool("sms"))?.id === "texting");
+check("…and their spellings: crm, builder, remodel", toolForAdKey(parseAdTool("crm"))?.id === "smartcrm" && toolForAdKey(parseAdTool("Builder"))?.id === "builder" && toolForAdKey(parseAdTool("home-builder"))?.id === "builder" && toolForAdKey(parseAdTool(" remodel "))?.id === "remodeler" && toolForAdKey(parseAdTool("video"))?.id === "video" && toolForAdKey(parseAdTool("sms"))?.id === "texting");
 check("CLASSIC IS UNTOUCHED: no new key is a Classic spotlight — a Classic card treats ?tool=video as no tool", SPOTLIGHT_TOOLS.join() === "roof,hvac,fence,smart,blueprint,aidesk,deck" && TOOLS_AD_KEYS.every((k) => parseSpotlightTool(k) === undefined && TOOLS_AD[k].aliases.every((a) => parseSpotlightTool(a) === undefined)) && spotlightFor({ tool: "video" }) === null && spotlightFor({ tool: "crm", industry: "roofing" }) === "roof");
 check("today's keys read the same through the new plans' reader", SPOTLIGHT_TOOLS.every((k) => parseAdTool(k) === k) && parseAdTool("roofing") === "roof" && parseAdTool("deck-studio") === "deck" && parseAdTool("laser") === undefined && adToolFor({ industry: "decking" }) === "deck");
 check("the visit's main tool: the link, else the trade, else the 30-day cookie; Smart Proposal is no tool", mainToolFor({ tool: "crm", cookie: "roof" }) === "smartcrm" && mainToolFor({ industry: "roofing", cookie: "deck" }) === "roof" && mainToolFor({ cookie: "home-builder" }) === "builder" && mainToolFor({ tool: "smart" }) === null && mainToolFor({}) === null && adKeyOf("smartcrm") === "crm" && adKeyOf(null) === null);
 
-// ── part 4: the sign-up's card page ──
-const proDeck = toolsChoice("professional", "deck");
-check("the card page opens on Professional + Deck Studio, $154", proDeck.label === "Professional + Deck Studio" && proDeck.cents === 15400 && proDeck.yearlyCents === 154000 && proDeck.includedNote === null && proDeck.lines[0] === "+ Deck Studio ($79/mo)");
-check("…Working alone? Basic + Deck Studio, $118.99", toolsSizeSwitch("professional", "deck")?.words === "Working alone? Basic + Deck Studio, $118.99" && toolsSizeSwitch("professional", "deck")?.to === "basic", toolsSizeSwitch("professional", "deck"));
-check("…and back: Have a team? Professional + Deck Studio, $154", toolsSizeSwitch("basic", "deck")?.words === "Have a team? Professional + Deck Studio, $154" && toolsSizeSwitch("advanced", "deck") === null && toolsSizeSwitch("complete", null) === null);
-check("Change tool → Roof: Professional $124, Basic $88.99", toolsChoice("professional", "roof").cents === 12400 && toolsChoice("basic", "roof").cents === 8899 && toolsChoice("basic", "roof").label === "Basic + Roof estimator" && toolsSizeSwitch("professional", "roof")?.words === "Working alone? Basic + Roof estimator, $88.99");
-check("…no tool: Professional $75, the plan alone", toolsChoice("professional", null).label === "Professional" && toolsChoice("professional", null).cents === 7500 && toolsSizeSwitch("professional", null)?.words === "Working alone? Basic, $39.99");
-check("Advanced + Deck Studio: $249, the tool included (no line of its own); Complete the same", toolsChoice("advanced", "deck").label === "Advanced" && toolsChoice("advanced", "deck").includedNote === "Deck Studio included" && toolsChoice("advanced", "deck").cents === 24900 && toolsChoice("complete", "builder").cents === 44900);
-check("Advanced + an office tool is included too; a seventh tool on Basic is its price", toolsChoice("advanced", "aidesk").cents === 24900 && toolsChoice("basic", "builder").cents === 3999 + 9900);
+// ── the plan builder (owner, 2026-11-12): a size and the tools ticked on top ──
+const proDeck = toolsBuild("professional", ["deck"]);
+check("a Deck Studio ad opens the builder on Professional + Deck Studio, $154", proDeck.label === "Professional + Deck Studio" && proDeck.cents === 15400 && proDeck.yearlyCents === 154000 && proDeck.main === "deck" && proDeck.extras.length === 0 && proDeck.sizeCents === 7500 && proDeck.lines[0] === "Everything in Basic");
+const proThree = toolsBuild("professional", ["deck", "fence", "texting"]);
+check("three tools ticked: $75 + $79 + $49 + $29 = $232, the first the main tool, the others extras", proThree.cents === 23200 && proThree.main === "deck" && proThree.extras.join() === "fence,texting" && proThree.billed.map((b) => `${b.id}:${b.cents}`).join() === "deck:7900,fence:4900,texting:2900" && proThree.label === "Professional + Deck Studio + Fence estimator + Text messaging");
+check("…ticking order is kept, a tool named twice counts once, a word that is no tool is dropped", toolsBuild("basic", ["fence", "deck", "fence", "laser" as never]).picks.join() === "fence,deck" && toolsBuild("basic", ["fence", "deck"]).main === "fence" && toolsBuild("basic", ["fence", "deck"]).cents === 3999 + 4900 + 7900);
+check("nothing ticked: the size alone, at its own price", toolsBuild("basic", []).cents === 3999 && toolsBuild("basic", []).label === "Basic" && toolsBuild("professional", []).cents === 7500 && toolsBuild("professional", []).main === null && toolsBuild("professional", []).better === null);
+check("every tile knows its state: ticked, included by the size, or neither", proThree.tools.length === 11 && proThree.tools.filter((t) => t.picked).map((t) => t.id).join() === "fence,deck,texting" && proThree.tools.every((t) => !t.included));
+const advThree = toolsBuild("advanced", ["video", "deck", "builder", "texting"]);
+check("Advanced holds the office tools and the two DEAREST trade tools ticked: $249 + the video estimator", advThree.chosenTrade.join() === "builder,deck" && advThree.cents === 24900 + 3900 && advThree.billed.map((b) => b.id).join() === "video" && advThree.tools.filter((t) => t.included).map((t) => t.id).join() === "deck,aidesk,texting,smartcrm,builder" && advThree.label === "Advanced + Video estimator", advThree.billed);
+check("…one trade tool on Advanced is free, and a second would be too", toolsBuild("advanced", ["deck"]).cents === 24900 && toolsBuild("advanced", ["deck", "roof"]).cents === 24900 && toolsBuild("advanced", ["deck", "roof", "fence"]).cents === 24900 + 4900);
+check("Complete: everything included, whatever is ticked", toolsBuild("complete", ["deck", "builder", "aidesk"]).cents === 44900 && toolsBuild("complete", []).tools.every((t) => t.included) && toolsBuild("complete", ["deck"]).billed.length === 0);
+check("a bigger size is pointed at when it costs less: Professional + desk + deck + texting + CRM ($321) → Advanced $249", (() => { const b = toolsBuild("professional", ["aidesk", "deck", "texting", "smartcrm"]); return b.cents === 32100 && b.better?.plan === "advanced" && b.better.cents === 24900 && b.better.less === true && b.better.adds.join() === "up to 10 people"; })());
+check("…or the same tools for less with more in it: Professional + AI desk + Deck Studio ($253) → Advanced $249 with texting and CRM", (() => { const b = toolsBuild("professional", ["aidesk", "deck"]); return b.cents === 25300 && b.better?.plan === "advanced" && b.better.less === true && b.better.adds.join("|") === "Text messaging|Smart CRM|up to 10 people" && b.better.words.lead === "Advanced costs less for these tools:" && b.better.words.rest === "$249/mo, and it adds Text messaging, Smart CRM and up to 10 people."; })());
+check("…or very little more: Professional + fence + texting + Deck Studio ($232) → Advanced for $17 more", (() => { const b = toolsBuild("professional", ["fence", "texting", "deck"]); return b.cents === 23200 && b.better?.plan === "advanced" && b.better.less === false && b.better.words.lead === "For $17 more a month, Advanced:" && b.better.words.rest === "$249/mo, and it adds AI desk, Smart CRM and up to 10 people."; })());
+check("…never when the bigger size is far dearer: Professional + Deck Studio ($154) is left alone", proDeck.better === null && toolsBuild("basic", ["deck"]).better === null && BETTER_SIZE_MARGIN_CENTS === 3000);
+check("…Basic + nothing never points at Professional; Advanced + six trade tools points at Complete when it is cheaper", toolsBuild("basic", []).better === null && (() => { const b = toolsBuild("advanced", ["builder", "remodeler", "deck", "blueprint", "roof", "fence", "hvac"]); return b.cents === 24900 + 5900 + 4900 * 3 + 7900 && b.better?.plan === "complete" && b.better.less; })());
+check("prices set in Admin → Plans reach the builder", toolsBuild("professional", ["deck"], withPrices({ tools: { deck: 8900 }, plans: { professional: 7900 } })).cents === 16800);
+check("a link's pick is read leniently: ids or ad keys, commas or repeats, each once, junk dropped", parseToolPicks("deck,fence").join() === "deck,fence" && parseToolPicks("crm, home-builder ,DECK,deck").join() === "smartcrm,builder,deck" && parseToolPicks(["roof", "hvac,roof"]).join() === "roof,hvac" && parseToolPicks("none").length === 0 && parseToolPicks("operator,laser").length === 0 && parseToolPicks(null).length === 0 && parseToolPicks("smart").length === 0);
+check("…and written back for the wire", pickWire(["deck", "fence"]) === "deck,fence" && pickWire([]) === "");
 check("the size a sign-up opens on: the card's ?plan=, else Professional", toolsPlanFromAsk("tools-basic") === "basic" && toolsPlanFromAsk("TOOLS-COMPLETE") === "complete" && toolsPlanFromAsk("professional") === "professional" && toolsPlanFromAsk(null) === "professional" && toolsPlanFromAsk("tools-enterprise") === "professional");
 
 // ── part 4: the server's read of a pick (never the browser's price) ──
-check("a real pick is read", JSON.stringify(toolsSignupPick({ plan: "tools-professional", tool: "deck" })) === '{"plan":"professional","main":"deck"}' && JSON.stringify(toolsSignupPick({ plan: "TOOLS-BASIC", tool: "Roof" })) === '{"plan":"basic","main":"roof"}');
+check("a real pick is read: the size, the main tool, the others ticked", JSON.stringify(toolsSignupPick({ plan: "tools-professional", tool: "deck" })) === '{"plan":"professional","main":"deck","extras":[]}' && JSON.stringify(toolsSignupPick({ plan: "TOOLS-BASIC", tool: "Roof" })) === '{"plan":"basic","main":"roof","extras":[]}' && JSON.stringify(toolsSignupPick({ plan: "tools-professional", tool: "deck, fence,deck,texting" })) === '{"plan":"professional","main":"deck","extras":["fence","texting"]}');
 check("…no tool is the plan alone", toolsSignupPick({ plan: "tools-advanced", tool: "" })?.main === null && toolsSignupPick({ plan: "tools-advanced", tool: "none" })?.main === null && toolsSignupPick({ plan: "tools-advanced", tool: null })?.main === null && toolsSignupPick({ plan: "tools-advanced", tool: undefined })?.main === null);
-check("a forged pick is refused: a made-up size, a Classic slug, a tool that isn't ours, a price", toolsSignupPick({ plan: "tools-enterprise", tool: "deck" }) === null && toolsSignupPick({ plan: "professional", tool: "deck" }) === null && toolsSignupPick({ plan: "tools-professional", tool: "laser" }) === null && toolsSignupPick({ plan: "tools-professional", tool: "1" }) === null && toolsSignupPick({ plan: null, tool: "deck" }) === null && toolsSignupPick({ plan: "tools-", tool: null }) === null);
+check("a forged pick is refused: a made-up size, a Classic slug, a tool that isn't ours, a price", toolsSignupPick({ plan: "tools-enterprise", tool: "deck" }) === null && toolsSignupPick({ plan: "professional", tool: "deck" }) === null && toolsSignupPick({ plan: "tools-professional", tool: "laser" }) === null && toolsSignupPick({ plan: "tools-professional", tool: "1" }) === null && toolsSignupPick({ plan: null, tool: "deck" }) === null && toolsSignupPick({ plan: "tools-", tool: null }) === null && toolsSignupPick({ plan: "tools-professional", tool: "deck,laser" }) === null && toolsSignupPick({ plan: "tools-professional", tool: "deck,operator" }) === null && toolsSignupPick({ plan: "tools-professional", tool: "crm" }) === null);
+
+// ── the shop's first record: the main tool, and the others as free tries that end with the trial ──
+const builtEnd = nov(18);
+const first = firstToolsRecord({ plan: "professional", main: "deck", extras: ["fence", "texting"], subId: "sub_1", trialEnd: builtEnd, now: nov(11) });
+check("the first ticked is the main tool; the others are free tries riding the trial, ending with it", first.main === "deck" && first.subId === "sub_1" && Object.keys(first.tries).join() === "fence,texting" && first.tries.fence?.endsAt === builtEnd.toISOString() && first.tries.fence?.onLine === true && !first.tries.deck && first.chosenTrade.length === 0, first);
+const firstAdv = firstToolsRecord({ plan: "advanced", main: "video", extras: ["deck", "builder", "texting"], subId: "sub_2", trialEnd: builtEnd, now: nov(11) });
+check("Advanced: the two dearest trade tools are the plan's own, the office tool too — only the billed one is a try", firstAdv.chosenTrade.join() === "builder,deck" && firstAdv.main === "video" && Object.keys(firstAdv.tries).length === 0, firstAdv);
+const firstAdv2 = firstToolsRecord({ plan: "advanced", main: "deck", extras: ["builder", "video"], subId: "sub_3", trialEnd: builtEnd, now: nov(11) });
+check("…a third trade tool there is a try of its own", firstAdv2.chosenTrade.join() === "builder,deck" && Object.keys(firstAdv2.tries).join() === "video");
+check("no trial (bought outright): no tries — the tools are simply on the bill", Object.keys(firstToolsRecord({ plan: "professional", main: "deck", extras: ["fence"], subId: "sub_4", trialEnd: null, now: nov(11) }).tries).length === 0);
+check("no tools ticked: the size alone, no main tool", firstToolsRecord({ plan: "basic", main: null, extras: [], subId: "sub_5", trialEnd: builtEnd, now: nov(11) }).main === null);
+const builtRec = { ...first, lines: { deck: { itemId: "si_d", cents: 7900, since: nov(11).toISOString() }, fence: { itemId: "si_f", cents: 4900, since: nov(11).toISOString() }, texting: { itemId: "si_t", cents: 2900, since: nov(11).toISOString() } } };
+const mBuilt = toolsSubscriptionModel({ record: builtRec, planSlug: "tools-professional", people: 1, now: nov(12), status: "TRIALING", trialEndsAt: builtEnd, hasCard: true, timeZone: "UTC" })!;
+check("the Subscription page of a built plan: the main tool and two free tries, $232 after the free days", mBuilt.tools.map((t) => `${t.id}:${t.state}`).join() === "deck:main,fence:trying,texting:trying" && mBuilt.plan.monthlyCents === 23200 && mBuilt.inTrial && mBuilt.tools[1].day === "Nov 18" && mBuilt.tools[1].removed === false, mBuilt.tools);
+check("…in the free days the main tool can be removed too, and says until when it is free", mBuilt.tools[0].removable === true && mBuilt.tools[0].day === "Nov 18");
+const mPaid = toolsSubscriptionModel({ record: { ...builtRec, tries: {} }, planSlug: "tools-professional", people: 1, now: nov(25), status: "ACTIVE", trialEndsAt: null, hasCard: true, timeZone: "UTC" })!;
+check("…after them it is a tool on the bill like the others: removable, no day", mPaid.tools[0].state === "main" && mPaid.tools[0].removable === true && mPaid.tools[0].day === undefined && mPaid.tools.slice(1).every((t) => t.state === "on-bill"));
+check("what the trial's end will bill: the size, the main tool and the tools still on the bill", JSON.stringify(recordBill(builtRec)) === '{"label":"Professional + Deck Studio + Fence estimator + Text messaging","cents":23200}' && recordBill({ ...builtRec, lines: { deck: builtRec.lines.deck } }).cents === 15400 && recordBill(emptyToolsRecord("basic")).label === "Basic");
 
 // ── part 5: the ad key a sign-up keeps (the Google round trip) ──
 check("a new plans' key is kept as its key: video, crm from smartcrm, home-builder from builder", keptAdTool("video") === "video" && keptAdTool("smartcrm") === "crm" && keptAdTool("builder") === "home-builder" && keptAdTool(" Remodel ") === "remodeler");
