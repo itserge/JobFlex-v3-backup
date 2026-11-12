@@ -6,6 +6,7 @@
 // (as EagleView's is against Google's), and on a roof under a tree. Then the page's side: letters by size, feet, the
 // comparison with EagleView's figures, the confidence in plain words, and the map coordinates there and back.
 //   NODE_PATH="" npx --no-install tsx --tsconfig tsconfig.json qa/tests/logic/roof-facets.check.ts
+import { buildGraph, collapseShort } from "../../../src/lib/roofFacets/arrange";
 import { buildFacets, type EngineResult, type FacetEdgeType } from "../../../src/lib/roofFacets/engine";
 import { fromUtm, latLngToPixel, pixelToUtm, toUtm, type RasterFrame } from "../../../src/lib/roofFacets/geo";
 import { facetLetter, facingWord, pitchLabel, toFacetModel } from "../../../src/lib/roofFacets/model";
@@ -278,6 +279,57 @@ check("an outline of two points draws nothing", buildFacets({ ...raster(gable), 
     const slants = out ? out.ring.filter((p, i) => { const q = out.ring[(i + 1) % out.ring.length]; const d = ((((Math.atan2(q.y - p.y, q.x - p.x) * 180) / Math.PI) % 90) + 90) % 90; return Math.abs(d - 45) < 4 && Math.hypot(q.x - p.x, q.y - p.y) * PX > 2; }).length : 0;
     check("Google-only: a wing set at 45 degrees keeps its slanted walls", out != null && slants >= 2, out ? `${out.ring.length} corners, ${slants} slanted walls` : "no outline");
   }
+  {
+    // "If it's not visible, logically we have to run the straight line" (owner, 2026-11-12): a small notch in the
+    // north wall, 2.2 m wide and 1.1 m deep. Where open ground shows in it, it is a notch and stays. Where something
+    // stands in it that is neither ground nor roof (a gap in shadow between two parts of a roof: high, rough, off the
+    // plane), the wall runs on straight across it.
+    const notch: [number, number, number, number] = [14, 11, 16.2, 12.1];
+    const withNotch = (inside: (u: number, v: number) => number): Part => ({ box: house.box, height: (u, v) => (inRect(u, v, notch) ? inside(u, v) : tall(u, v)) });
+    const open = scene([withNotch(() => 0)], [], 0);
+    for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) if (inRect((c + 0.5) * PX, (r + 0.5) * PX, notch)) open.mask.data[r * W + c] = 0;
+    const openSeed = buildStructureFootprints({ width: W, height: H, data: open.mask.data, pixelSizeM: PX, originX: 0, originY: 0, epsg: null }, { rawFallback: true }).structures.find((x) => x.onParcel)?.ring ?? [];
+    const stepFt = PX * 3.28084;
+    const seen = roofOutline({ dsm: open.dsm, mask: open.mask, seed: openSeed.map((p) => ({ x: p.x / stepFt + W / 2, y: H / 2 - p.y / stepFt })), priors: [] });
+    check("Google-only: a notch with open ground in it is a notch (eight corners)", seen != null && seen.ring.length === 8 && offSquare(seen.ring, 0) < 1, seen ? `${seen.ring.length} corners ${ringM2(seen.ring).toFixed(1)} m2` : "no outline");
+    const shade = scene([withNotch((u, v) => tall(u, v) - 2 + 0.7 * Math.sin(u * 23) * Math.cos(v * 19))], [], 0);
+    const hid = roofOutline({ dsm: shade.dsm, mask: shade.mask, seed: shade.seed, priors: [] });
+    check("Google-only: the same notch with nothing plain to see in it is closed, the wall runs on straight (four corners)", hid != null && hid.ring.length === 4 && near(ringM2(hid.ring), 96, 5), hid ? `${hid.ring.length} corners ${ringM2(hid.ring).toFixed(1)} m2` : "no outline");
+  }
+}
+
+// ── "logically it should be straight … assume it's a continuation" (owner, 2026-11-12, of a wall line drawn at a slant
+//    inside the roof). A lower roof stands against the east wall of a two-storey house and starts 2 m south of the
+//    house's corner, so the wall between the two roofs is the outside wall running on. It has to be drawn on that line.
+{
+  const upper = (x: number, y: number) => 5.5 + S * (4 - Math.abs(y - 15));
+  const two: Roof = {
+    name: "upper and lower",
+    outline: [{ x: 9, y: 11 }, { x: 17, y: 11 }, { x: 17, y: 13 }, { x: 21, y: 13 }, { x: 21, y: 19 }, { x: 9, y: 19 }],
+    height: (x, y) => (inRect(x, y, [9, 11, 17, 19]) ? upper(x, y) : inRect(x, y, [17, 13, 21, 19]) ? 3.4 - 0.3 * (x - 17) : null),
+  };
+  const { dsm, mask } = raster(two);
+  // blur it as a real height map is blurred: the wall becomes a ramp half a metre wide
+  const sharp = dsm.data.slice();
+  for (let r = 2; r < H - 2; r++) for (let c = 2; c < W - 2; c++) {
+    let sum = 0;
+    for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) sum += sharp[(r + dr) * W + c + dc];
+    dsm.data[r * W + c] = sum / 25;
+  }
+  const res = buildFacets({ dsm, mask, outline: toPx(two.outline), priors: [], register: false });
+  const wall = res ? res.edges.filter((e) => (e.type === "STEP" || e.type === "WALL") && e.planM > 0.5) : [];
+  const offLine = Math.max(0, ...wall.flatMap((e) => [res!.vertices[e.a].x, res!.vertices[e.b].x]).map((x) => Math.abs(x - 170)));
+  // exactly on it: a fitted line lands a fraction of a pixel to a foot beside the wall's line, and any of that shows as a kink
+  check("a wall between two roof levels that continues an outside wall is drawn on that wall's line", res != null && res.facets.length === 3 && wall.length >= 1 && near(wall.reduce((a, e) => a + e.planM, 0), 6, 0.7) && offLine <= 0.05, res ? `${res.facets.length} facets, ${wall.length} wall edge(s) ${wall.reduce((a, e) => a + e.planM, 0).toFixed(1)} m, ${offLine.toFixed(2)} px off the line` : "nothing");
+}
+{
+  // a line that meets a wall three pixels from the wall's corner meets it at the corner (and the outline is not touched)
+  const ring = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 60 }, { x: 60, y: 60 }, { x: 60, y: 100 }, { x: 0, y: 100 }];
+  const segs = ring.map((p, i) => ({ a: p, b: ring[(i + 1) % ring.length], outline: true, tag: -1 }));
+  const g = collapseShort(buildGraph([...segs, { a: { x: 20, y: 20 }, b: { x: 60, y: 63 }, outline: false, tag: 1 }, { a: { x: 20, y: 20 }, b: { x: 0, y: 20 }, outline: false, tag: 2 }], 1.2), 5);
+  const ends = g.edges.filter((e) => !e.outline).flatMap((e) => [g.verts[e.a], g.verts[e.b]]);
+  const corners = ring.every((c) => g.edges.some((e) => e.outline && [g.verts[e.a], g.verts[e.b]].some((v) => near(v.x, c.x, 1e-6) && near(v.y, c.y, 1e-6))));
+  check("a line that meets a wall just short of its corner meets it at the corner", ends.some((v) => near(v.x, 60, 1e-6) && near(v.y, 60, 1e-6)) && !g.verts.some((v, i) => near(v.x, 60, 1e-6) && near(v.y, 63, 1e-6) && g.edges.some((e) => e.a === i || e.b === i)) && corners, JSON.stringify(ends));
 }
 
 console.log(bad ? `\n${bad} FAILED` : "\nall passed");

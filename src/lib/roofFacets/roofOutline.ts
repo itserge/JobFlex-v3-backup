@@ -19,7 +19,8 @@
 //                 wall then runs along one of the two directions, and a jog under 0.8 m is taken out by moving one
 //                 of the two walls beside it onto the other's line — whichever move throws away less roof and takes
 //                 in less of what is not roof. What a tree hides counts for neither, so a wall half under a canopy
-//                 is placed by the half that shows. A wall truly set at an angle stays slanted.
+//                 is placed by the half that shows; and a small notch or bump that is not plain to see is taken out,
+//                 the wall running on straight. A wall truly set at an angle stays slanted.
 //
 // Pure: rasters and numbers in, a ring out. Raster pixels throughout (x east, y south).
 
@@ -180,7 +181,12 @@ function sums(bin: Uint8Array, w: number, h: number): Int32Array {
  * plane, what was seen not to be roof, and the two kinds of ground a tree hides — `under` it where Google calls it
  * building, `beside` the building where it does not.
  */
-function squareLoop(loop: Pt[], seen: Uint8Array, not: Uint8Array, under: Uint8Array, beside: Uint8Array, w: number, h: number, minEdge: number, hardEdge: number, softEdge: number): Pt[] {
+function squareLoop(
+  loop: Pt[], seen: Uint8Array, not: Uint8Array, under: Uint8Array, beside: Uint8Array, open: Uint8Array, w: number, h: number,
+  /** all in pixels (notch in square pixels): the slant yardstick, and the edge lengths the squaring goes by */
+  k: { yard: number; hard: number; jog: number; wall: number; soft: number; notch: number },
+): Pt[] {
+  const minEdge = k.yard, hardEdge = k.hard, softEdge = k.soft;
   let v = loop.map((p) => ({ x: p.x, y: p.y, diag: false }));
   const len = (i: number) => { const a = v[i], b = v[(i + 1) % v.length]; return Math.abs(b.x - a.x) + Math.abs(b.y - a.y); };
 
@@ -237,7 +243,7 @@ function squareLoop(loop: Pt[], seen: Uint8Array, not: Uint8Array, under: Uint8A
     }
   }
 
-  const seenT = sums(seen, w, h), notT = sums(not, w, h), underT = sums(under, w, h), besideT = sums(beside, w, h);
+  const seenT = sums(seen, w, h), notT = sums(not, w, h), underT = sums(under, w, h), besideT = sums(beside, w, h), openT = sums(open, w, h);
   const box = (t: Int32Array, xa: number, ya: number, xb: number, yb: number) => {
     const x0 = Math.max(0, Math.min(xa, xb)), x1 = Math.min(w, Math.max(xa, xb)), y0 = Math.max(0, Math.min(ya, yb)), y1 = Math.min(h, Math.max(ya, yb));
     if (x1 <= x0 || y1 <= y0) return 0;
@@ -253,7 +259,12 @@ function squareLoop(loop: Pt[], seen: Uint8Array, not: Uint8Array, under: Uint8A
     const dx = Math.sign(q.x - p.x), dy = Math.sign(q.y - p.y);
     const inward = mx * -dy + my * dx > 0;
     const xa = Math.min(p.x, q.x, p.x + mx, q.x + mx), ya = Math.min(p.y, q.y, p.y + my, q.y + my), xb = Math.max(p.x, q.x, p.x + mx, q.x + mx), yb = Math.max(p.y, q.y, p.y + my, q.y + my);
-    return inward ? box(seenT, xa, ya, xb, yb) + 0.5 * box(underT, xa, ya, xb, yb) : box(notT, xa, ya, xb, yb) + 0.5 * box(besideT, xa, ya, xb, yb);
+    return {
+      cost: inward ? box(seenT, xa, ya, xb, yb) + 0.5 * box(underT, xa, ya, xb, yb) : box(notT, xa, ya, xb, yb) + 0.5 * box(besideT, xa, ya, xb, yb),
+      // what would make the thing slid over REAL beyond doubt: roof seen on its plane in a bump, open ground in a notch
+      plain: inward ? box(seenT, xa, ya, xb, yb) : box(openT, xa, ya, xb, yb),
+      area: (xb - xa) * (yb - ya),
+    };
   };
   const tidy = () => {
     for (let again = true; again && v.length > 4; ) {
@@ -266,11 +277,18 @@ function squareLoop(loop: Pt[], seen: Uint8Array, not: Uint8Array, under: Uint8A
     }
   };
   tidy();
-  // An edge under `hardEdge` is the height map's wobble and always goes. One up to `softEdge` goes when taking it
-  // out is cheap — most of what the slide gives up or takes in is hidden under something — so a bite a tree took
-  // out of the eave is closed while a real two-foot jog between two walls stays a jog. A dear one under `minEdge`
-  // that does not sit between two real walls is raggedness (a canopy's edge) and goes as well.
+  // An edge under `hard` is the height map's wobble and always goes. One up to `soft` goes when taking it out is
+  // cheap — most of what the slide gives up or takes in is hidden under something — so a bite a tree took out of the
+  // eave is closed. A dear one stays when it is a real step in a wall: `jog` long or more, or shorter between two
+  // walls of `wall` each (a two-foot jog between two long walls is a jog; between two short ones it is raggedness).
+  //
+  // And where it cannot be seen well, a wall is taken to run on straight (owner, 2026-11-12: "if it's not visible,
+  // logically we have to run the straight line … assume it's a continuation"): a small notch or bump — under
+  // `notch` in area, its sides under `soft`, no wider than `wall` — is taken out whatever it costs, unless it is
+  // plain to see: open ground in the notch, roof seen on its plane in the bump. A gap in shadow between two parts
+  // of a roof is neither.
   const firm = new Set<object>();
+  const way = (i: number) => { const p = v[i], q = v[(i + 1) % v.length]; return { x: Math.sign(q.x - p.x), y: Math.sign(q.y - p.y) }; };
   for (let guard = 0; guard < 20000 && v.length > 4; guard++) {
     const n = v.length;
     let best = -1, bl = softEdge;
@@ -285,17 +303,28 @@ function squareLoop(loop: Pt[], seen: Uint8Array, not: Uint8Array, under: Uint8A
     // A: the wall after slides back onto the line of the wall before; B: the wall before slides forward
     const canA = !v[ipp].diag, canB = !v[imm].diag;
     if (!canA && !canB) { firm.add(v[i]); continue; }
-    const costA = canA ? slide(b, v[ipp], -sx, -sy) : Infinity, costB = canB ? slide(v[im], a, sx, sy) : Infinity;
-    const useA = costA < costB || (costA === costB && len(ip) <= len(im));
-    if (bl >= hardEdge) {
-      const dear = (useA ? costA : costB) > 0.3 * bl * (useA ? len(ip) : len(im));
-      // under `minEdge` a jog is real only between two walls that are walls (2.5 times its yardstick each)
-      const walls = bl >= minEdge || (len(im) >= 2.5 * minEdge && len(ip) >= 2.5 * minEdge);
-      if (dear && walls) { firm.add(v[i]); continue; }
+    const A = canA ? slide(b, v[ipp], -sx, -sy) : null, B = canB ? slide(v[im], a, sx, sy) : null;
+    // this edge and the one two on (or two back) run opposite ways: the two sides of a notch or a bump
+    const me = way(i), after = way(ipp), before = way(imm);
+    // (its end no longer than `wall`: a long shallow shelf is a wall standing a little back, not a notch)
+    const unclear = (o: { plain: number; area: number } | null, other: { x: number; y: number }, end: number) =>
+      o != null && other.x === -me.x && other.y === -me.y && end <= k.wall && o.area < k.notch && o.plain < 0.5 * o.area;
+    const uA = unclear(A, after, len(ip)), uB = unclear(B, before, len(im));
+    let useA: boolean;
+    if (uA || uB) {
+      useA = uA && (!uB || (A as { cost: number }).cost <= (B as { cost: number }).cost);
+    } else {
+      const costA = A ? A.cost : Infinity, costB = B ? B.cost : Infinity;
+      useA = costA < costB || (costA === costB && len(ip) <= len(im));
+      if (bl >= hardEdge) {
+        const dear = (useA ? costA : costB) > 0.3 * bl * (useA ? len(ip) : len(im));
+        const walls = bl >= k.jog || (len(im) >= k.wall && len(ip) >= k.wall);
+        if (dear && walls) { firm.add(v[i]); continue; }
+      }
     }
     if (useA) { v[ipp].x -= sx; v[ipp].y -= sy; } else { v[im].x += sx; v[im].y += sy; }
     // the short edge's two ends go (the higher index first)
-    for (const k of [i, ip].sort((p, q) => q - p)) v.splice(k, 1);
+    for (const q of [i, ip].sort((x, y) => y - x)) v.splice(q, 1);
     firm.clear();
     tidy();
   }
@@ -545,13 +574,15 @@ export function roofOutline(input: RoofOutlineInput): RoofOutline | null {
     // that was SEEN on its plane, what was seen not to be roof, and what a tree hides — under it where Google calls it
     // building, beside the building where it does not.
     let tRoof = new Uint8Array(tw * th);
-    const tSeen = new Uint8Array(tw * th), tNot = new Uint8Array(tw * th), tUnder = new Uint8Array(tw * th), tBeside = new Uint8Array(tw * th);
+    const tSeen = new Uint8Array(tw * th), tNot = new Uint8Array(tw * th), tUnder = new Uint8Array(tw * th), tBeside = new Uint8Array(tw * th), tOpen = new Uint8Array(tw * th);
     for (let r = 0; r < th; r++) for (let c = 0; c < tw; c++) {
       const k = r * tw + c, u = u0 + c + 0.5, v = v0 + r + 0.5;
       const x = Math.floor(u * cos - v * sin), y = Math.floor(u * sin + v * cos);
-      if (x < 0 || y < 0 || x >= w || y >= h) { tNot[k] = 1; continue; }
+      if (x < 0 || y < 0 || x >= w || y >= h) { tNot[k] = 1; tOpen[k] = 1; continue; }
       const i = y * w + x;
       if (roof[i]) tRoof[k] = 1;
+      // open ground: lower than a roof, or further from Google's building than an eave reaches
+      if (!reach[i]) tOpen[k] = 1;
       if (hidden[i]) { if (built[i]) tUnder[k] = 1; else tBeside[k] = 1; }
       else if (roof[i]) tSeen[k] = 1;
       else tNot[k] = 1;
@@ -559,7 +590,10 @@ export function roofOutline(input: RoofOutlineInput): RoofOutline | null {
     tRoof = largestPiece(fillHoles(shrink(spread(tRoof, tw, th, 1), tw, th, 1), tw, th), tw, th);
     const loop = traceLoop(tRoof, tw, th);
     if (!loop) return null;
-    const sq = squareLoop(loop, tSeen, tNot, tUnder, tBeside, tw, th, Math.max(3, Math.round(0.8 / px)), Math.max(2, Math.round(0.55 / px)), Math.max(4, Math.round(1.2 / px)));
+    const sq = squareLoop(loop, tSeen, tNot, tUnder, tBeside, tOpen, tw, th, {
+      yard: Math.max(3, Math.round(0.8 / px)), hard: Math.max(2, Math.round(0.55 / px)), jog: Math.max(3, Math.round(0.9 / px)),
+      wall: Math.round(3 / px), soft: Math.max(4, Math.round(1.2 / px)), notch: 3 / (px * px),
+    });
     if (sq.length < 4) return null;
     const filled = fillRings([sq], tw, th) as Uint8Array;
     let misfit = 0;
