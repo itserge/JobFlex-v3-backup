@@ -29,6 +29,8 @@ export const ADMIN_NAV_SECTIONS: NavSection[] = [
       // Added 2026-09-18: what each member did — proposals created and sent,
       // estimates made — counted per user, with the trail beneath.
       { label: "User activity", icon: "i-clock", href: "/admin/activity" },
+      // Added 2026-11-11: how many times each tutorial was watched, and by who.
+      { label: "Tutorials", icon: "i-eye", href: "/admin/tutorials" },
       { label: "Subscribers", icon: "i-card", href: "/admin/subscribers" },
       { label: "Revenue", icon: "i-chart", href: "/admin/revenue" },
       // Added 2026-10-21: why plan charges fail and how many come back — its own page under Revenue
