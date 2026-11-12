@@ -3,6 +3,7 @@ import { isCronAuthorized } from "@/lib/cronAuth";
 import { runCardlessTrialSweep } from "@/lib/cardlessTrial";
 import { runCardTrialReminders } from "@/lib/trialEndingMail";
 import { billEndedTries, sendTryReminders } from "@/lib/toolPlans/billing";
+import { sweepSignupCardHolds } from "@/lib/signupCardHold";
 
 export const runtime = "nodejs";
 
@@ -28,5 +29,11 @@ export async function GET(req: Request) {
     console.warn("[cron/trials] tool tries failed:", err instanceof Error ? err.message : err);
     return { failed: true };
   });
-  return NextResponse.json({ ok: true, ...res, cardTrials, toolReminders, toolTries });
+  // The sign-up's $1 card checks (lib/signupCardHold, 2026-11-11): a hold still open ten minutes on is cancelled, and a
+  // declined sign-up's subscription that is still standing is ended.
+  const cardHolds = await sweepSignupCardHolds().catch((err) => {
+    console.warn("[cron/trials] card holds sweep failed:", err instanceof Error ? err.message : err);
+    return { failed: true };
+  });
+  return NextResponse.json({ ok: true, ...res, cardTrials, toolReminders, toolTries, cardHolds });
 }
