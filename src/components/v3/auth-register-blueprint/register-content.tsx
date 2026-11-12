@@ -95,7 +95,9 @@ import { markQaVisitor } from "@/lib/qaEmail";
 import { homeownerDoorFor } from "@/lib/home/homeownerDoor";
 import { ToolsCardPage } from "./tools-card-page";
 import { CARD_DECLINED_LINE, CARD_HOLD_NOTICE } from "@/lib/signupCardHoldWords";
-import { isToolsSlug, toolPlanById, type Catalog, type ToolId, type ToolPlanId } from "@/lib/toolPlans/shared";
+import { isToolsSlug, toolPlanById, toolPlanBySlug, type Catalog, type ToolId, type ToolPlanId } from "@/lib/toolPlans/shared";
+import { parseToolPicks, pickWire } from "@/lib/toolPlans/cards";
+import { recalledToolsPick, rememberToolsPick } from "@/components/v3/tools-plan/tools-builder";
 
 /* A PHONE (≤768px) — the plan step's cards are a two-column grid there
    (auth-register.module.css); a few behaviours follow the width too. A media
@@ -210,7 +212,12 @@ export function RegisterContent({
   prefill = null,
   appView = false,
   toolsMain = null,
+  toolsPicks = null,
 }: {
+  /* THE PICK THE VISITOR BUILT on the landing's builder (owner, 2026-11-12): the tools the plan step opens ticked, the
+     first the main tool. Null: the link carried none — the ad's tool (toolsMain), or what this browser's builder
+     remembered. */
+  toolsPicks?: ToolId[] | null;
   /* THE NEW PLANS (Base + Tools, part 4 — the Plans switch on): the ad's tool the card page opens with (the register
      page's read of the link, its trade, the 30-day memory). Null otherwise; the plan step asks the server again. */
   toolsMain?: ToolId | null;
@@ -398,17 +405,33 @@ export function RegisterContent({
   const [plans, setPlans] = React.useState<SignupPlan[]>([]);
   /* Every plan as the catalog orders it — no plan is an edition's own (lib/editions: Deck Studio is an add-on). */
   const orderedPlans = plans;
-  /* THE NEW PLANS' CARD PAGE (Base + Tools, part 4): set when signupPlans answers `tools` (the Plans switch on). The
-     size and the main tool picked here go to the checkout as they are; it prices them again itself. */
+  /* THE NEW PLANS' BUILDER (Base + Tools, part 4; the builder 2026-11-12): set when signupPlans answers `tools` (the
+     Plans switch on). The size and the tools ticked here go to the checkout as they are (the first ticked is the main
+     tool); it prices them again itself. Opens on the pick the link carried, else on what this browser's builder
+     remembered from the landing (a Google round trip, the emailed code's button), else on the ad's tool. */
   const [toolsCatalog, setToolsCatalog] = React.useState<Catalog | null>(null);
-  const [toolsPick, setToolsPick] = React.useState<{ plan: ToolPlanId; main: ToolId | null }>({ plan: "professional", main: toolsMain });
+  const [toolsPick, setToolsPick] = React.useState<{ plan: ToolPlanId; tools: ToolId[] }>({ plan: "professional", tools: toolsPicks ?? (toolsMain ? [toolsMain] : []) });
+  const toolsPickRef = React.useRef(toolsPick);
+  toolsPickRef.current = toolsPick;
+  React.useEffect(() => {
+    if (toolsPicks) return;
+    const kept = recalledToolsPick(toolsMain);
+    if (!kept) return;
+    const next = { plan: toolPlanBySlug(`tools-${kept.plan}`)?.id ?? toolsPickRef.current.plan, tools: parseToolPicks(kept.picks) };
+    // The ref too: the plan step's read (below, in this same pass) must ask the server with the remembered pick.
+    toolsPickRef.current = next;
+    setToolsPick(next);
+    // Once, on mount: the link's own pick (toolsPicks) always wins over the memory.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   /* THE AD KEY THE SIGN-UP KEEPS (Base + Tools, part 5 — lib/planSpotlight keptAdTool): the new plans' main tool
      as its ad key ("video", "crm"), else the Classic spotlight — what the draft, the pending sign-up and the Google
      button's cookie carry, so a new plans' ad survives a trip to Google and back. Switch off: toolsMain is null and
      this is the spotlight, exactly as before. */
-  const adToolKept = keptAdTool(toolsPick.main ?? toolsMain, spotlight) ?? null;
-  /** What the checkout is told about the main tool: the pick on a new plan, nothing on a Classic one. */
-  const toolFor = (slug: string | null | undefined): string | undefined => (isToolsSlug(slug) ? (toolsPick.main ?? "") : undefined);
+  const adToolKept = keptAdTool(toolsPick.tools[0] ?? toolsMain, spotlight) ?? null;
+  /** What the checkout is told about the tools: the pick on a new plan ("deck,fence" — the first is the main tool),
+   *  nothing on a Classic one. */
+  const toolFor = (slug: string | null | undefined): string | undefined => (isToolsSlug(slug) ? pickWire(toolsPick.tools) : undefined);
   /* Custom and catalog plans share the saved offer returned by signupPlans. */
   const [customTrialDays, setCustomTrialDays] = React.useState<number>(offer.days);
   /* The row of cards. On a phone it is a swiped row again (owner, 2026-10-14):
@@ -847,7 +870,7 @@ export function RegisterContent({
   React.useEffect(() => {
     if (step !== 3) return;
     let live = true;
-    void signupPlans(token ?? undefined, { asked: searchParams?.get("plan") ?? null, edition: edition === "deck" ? "deck" : null, tool: spotlight, mainTool: toolsPick.main })
+    void signupPlans(token ?? undefined, { asked: searchParams?.get("plan") ?? null, edition: edition === "deck" ? "deck" : null, tool: spotlight, mainTool: pickWire(toolsPickRef.current.tools) })
       .then((res) => {
         if (!live) return;
         setPlans(res.plans);
@@ -868,8 +891,10 @@ export function RegisterContent({
         // The new plans: one card page, on the size asked for (else Professional) and the ad's tool.
         if (res.tools) {
           setToolsCatalog(res.tools.catalog);
-          setToolsPick({ plan: res.tools.plan, main: res.tools.main });
-          setPlanSlug(toolPlanById(res.tools.plan).slug);
+          // The size: the link's own (?plan=), else the one this browser's builder remembered, else the server's.
+          const size = searchParams?.get("plan") ? res.tools.plan : toolsPickRef.current.plan;
+          setToolsPick({ plan: size, tools: res.tools.picks ?? (res.tools.main ? [res.tools.main] : []) });
+          setPlanSlug(toolPlanById(size).slug);
         } else setToolsCatalog(null);
         // A phone reopens on the plan named by the link (?plan=) or chosen before in this
         // tab — a cancelled Checkout comes back to it (2026-10-12); the desk as before.
@@ -2370,19 +2395,25 @@ export function RegisterContent({
                 row's height. Nothing folds: every list is drawn whole. As many columns as cards
                 (`--pw-cols`, set on the sheet so every edge lines up with the row), the row centred,
                 a card no wider than the stylesheet's cap. */}
-            {/* THE NEW PLANS' CARD PAGE (Base + Tools, part 4): one card — the size with the main tool — "Working
-                alone?", Change tool and the four sizes, in place of the Classic cards. */}
+            {/* THE NEW PLANS' BUILDER (Base + Tools, part 4; owner 2026-11-12): the size and the tools to try, as the
+                visitor built them on the landing — every tick still theirs to change — in place of the Classic cards. */}
             {toolsCatalog && !confirmSentTo && !gate ? (
               <ToolsCardPage
                 catalog={toolsCatalog}
                 plan={toolsPick.plan}
-                main={toolsPick.main}
+                picks={toolsPick.tools}
+                adTool={toolsMain}
                 term={interval}
+                trialDays={trialDays}
                 onPlan={(id) => {
                   setToolsPick((cur) => ({ ...cur, plan: id }));
                   setPlanSlug(toolPlanById(id).slug);
+                  rememberToolsPick(id, toolsPick.tools, toolsMain);
                 }}
-                onMain={(tool) => setToolsPick((cur) => ({ ...cur, main: tool }))}
+                onPicks={(tools) => {
+                  setToolsPick((cur) => ({ ...cur, tools }));
+                  rememberToolsPick(toolsPick.plan, tools, toolsMain);
+                }}
                 onStart={() => void onStartPlan(toolPlanById(toolsPick.plan).slug)}
                 when={(monthly, yearly) => (freeUntil ? whenLine(monthly, yearly) : null)}
                 codeLine={

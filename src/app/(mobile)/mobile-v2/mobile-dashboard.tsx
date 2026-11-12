@@ -260,6 +260,11 @@ export function MobileDashboard({ data: seed, notice, sample = false }: { data?:
           setData(res.data);
           return;
         }
+        // A new-plan shop's first visit: its welcome page first (app/dashboard/dashboard-actions).
+        if (res.reason === "welcome") {
+          window.location.replace("/dashboard/welcome");
+          return;
+        }
         // Not a fault: a signed-in login with no company, or a session that has
         // lapsed. Both used to arrive here as a 500 from the action.
         setLoadError(

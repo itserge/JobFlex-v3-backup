@@ -7,7 +7,6 @@ import { annualDeal, offersYearly, sharedDealWords, withBillingTerm, type Billin
 import { PlanCardHead, PlanDealSlot, PlanPrice, PlanTermSwitch } from "@/components/billing/PlanTermSwitch";
 import { SPOTLIGHT, SPOTLIGHT_MISSING, SPOTLIGHT_TAG, planCardRows, rememberSpotlightVisit, showsTool, spotlightBanner, spotlightInPlan, type SpotlightTool } from "@/lib/planSpotlight";
 import { deckAddonShortWords } from "@/lib/deckAddon";
-import { toolById, type ToolId } from "@/lib/toolPlans/shared";
 import "./pricing-faq.css";
 
 /* THE REGISTER'S PLAN CARDS ON THE LANDING (owner, 2026-09-26). A port of
@@ -67,13 +66,10 @@ export function PricingPlans({
   spotlight = null,
   narrow = false,
   fromUrl = null,
-  tools,
 }: {
+  /** The Classic catalog's cards. The new plans (the Plans switch on) are not cards: the pages draw the plan builder
+   *  instead (components/v3/tools-plan/tools-builder, owner 2026-11-12). */
   plans: PlanDTO[];
-  /** THE NEW PLANS (Base + Tools, part 4 — the Plans switch on, lib/toolPlans/cards): each card lists its own lines
-   *  (the ad's tool first, marked), the banner says how the tool is priced on each size, and each start button opens
-   *  the sign-up on its own plan. Absent: the Classic cards, exactly as before. */
-  tools?: { main: ToolId | null; banner: string | null; startHrefs: Record<string, string> };
   registerHref: string;
   /** THE TOOL THE VISITOR CAME FOR (lib/planSpotlight, owner 2026-10-14): its
    *  feature line is pinned first and marked on every card, and a card that
@@ -207,33 +203,9 @@ export function PricingPlans({
     </li>
   );
 
-  /* The new plans' card: its own lines, every one ticked, the tool's line first and marked (no shared grid — a
-     Professional card must not tick Basic's "Just you"). */
-  const toolsRows = (p: PlanDTO) =>
-    p.features.map((f, i) => {
-      const lit = !!tools?.main && i === 0;
-      return (
-        <li key={f} className={"lp-pw-f" + (lit ? " lp-pw-f--spot" : "")} data-plan-spot-row={lit ? "in" : undefined}>
-          <Check />
-          <span className="sr-only">Included: </span>
-          <span className="lp-pw-ft">
-            <span className="lp-pw-fn">{f}</span>
-            {lit ? <span className="lp-pw-spot-tag">{SPOTLIGHT_TAG}</span> : null}
-          </span>
-        </li>
-      );
-    });
-
   return (
     <>
-      {tools ? (
-        tools.main && tools.banner ? (
-          <p className={"lp-pw-spot" + (tone === "ink" ? " lp-pw-spot--ink" : "")} data-plan-spotlight={tools.main} data-tools-banner>
-            <span className="lp-pw-spot-k">{toolById(tools.main).label}</span>
-            {tools.banner}
-          </p>
-        ) : null
-      ) : spotlight ? (
+      {spotlight ? (
         <p className={"lp-pw-spot" + (tone === "ink" ? " lp-pw-spot--ink" : "")} data-plan-spotlight={spotlight} data-plan-spotlight-row={spot ?? ""}>
           <span className="lp-pw-spot-k">{SPOTLIGHT[spotlight].label}</span>
           {spotlightBanner(spotlight, plans)}
@@ -244,7 +216,7 @@ export function PricingPlans({
           <PlanTermSwitch value={term} onChange={setTerm} tag={tag} tone={tone} />
         </div>
       ) : null}
-      <div className="lp-pw-plans" ref={railRef} data-tools-cards={tools ? "" : undefined}>
+      <div className="lp-pw-plans" ref={railRef}>
         {plans.map((p) => {
           const has = included.get(p.slug) ?? new Set<string>();
           return (
@@ -266,9 +238,8 @@ export function PricingPlans({
               <PlanPrice term={term} monthlyCents={p.priceCents} yearlyCents={p.yearlyPriceCents} figureClassName="lp-pw-price" />
               <PlanDealSlot term={term} monthlyCents={p.priceCents} yearlyCents={p.yearlyPriceCents} />
               <ul className="lp-pw-feats" data-plan-feats>
-                {tools ? toolsRows(p) : null}
-                {!tools && deckSpot ? deckRow(p) : null}
-                {(tools ? [] : rows).map((f) => {
+                {deckSpot ? deckRow(p) : null}
+                {rows.map((f) => {
                   const lit = spot !== null && f === spot;
                   // The tool the visitor came for is in the plan when its gate says so, whatever the line reads (lib/planSpotlight).
                   const on = lit && spotlight ? spotlightInPlan(spotlight, p) : has.has(f.toLowerCase());
@@ -291,10 +262,10 @@ export function PricingPlans({
                 {/* DECK STUDIO (owner, 2026-10-26): on no plan — the same add-on on every one (lib/deckAddon).
                     A trade estimator, so hidden during a roofer/fencer/HVAC ad visit; pinned first for a deck visitor
                     (owner, 2026-11-07). */}
-                {!tools && deckLine && !deckSpot ? deckRow(p) : null}
+                {deckLine && !deckSpot ? deckRow(p) : null}
               </ul>
               <a
-                href={tools ? withBillingTerm(tools.startHrefs[p.slug] ?? registerHref, yearly ? term : "MONTH") : startHref}
+                href={startHref}
                 className="lp-pw-go"
                 data-cta="pricing"
                 data-cta-button={`plan-${p.slug}`}

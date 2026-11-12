@@ -1,7 +1,7 @@
 "use client";
 
 // THE NEW PLANS' PRICES on Admin → Plans (Base + Tools, part 2 — owner, 2026-11-10: "prices live in Admin → Plans").
-// The four sizes, the extra-person price on each size that sells people, and the twelve tools. The price rule is
+// The four sizes, the extra-person price on each size that sells people, and the eleven tools (no AI Operator until it launches). The price rule is
 // checked as you type and on save (lib/toolPlans/shared priceProblems): a bundle always costs less than its parts.
 // Only what differs from the code's prices is stored; a shop keeps the price its line was bought at.
 import { useMemo, useState } from "react";

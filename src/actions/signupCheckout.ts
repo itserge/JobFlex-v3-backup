@@ -77,8 +77,8 @@ import { markUnclaimed } from "@/lib/accountClaim";
 import { autoPlanWelcomeKey } from "@/lib/autoPlanWelcome";
 import { timezoneFor } from "@/lib/usTimezone";
 import { signupPlanRefusal } from "@/lib/signupPricing";
-import { toolsChoice, toolsSignupPick } from "@/lib/toolPlans/cards";
-import { chosenTradeFor, emptyToolsRecord, isToolId, toolPlanBySlug, type ToolId } from "@/lib/toolPlans/shared";
+import { firstToolsRecord, pickWire, toolsBuild, toolsSignupPick } from "@/lib/toolPlans/cards";
+import { isToolId, toolPlanBySlug, type ToolId } from "@/lib/toolPlans/shared";
 import { writeToolsRecord } from "@/lib/toolPlans/billing";
 
 const pendingSchema = z.object({
@@ -139,7 +139,7 @@ export type PendingRecord = z.infer<typeof pendingSchema> extends infer T
       trialOffer?: TrialOffer;
       /** Set by requestCardlessTrial: the plan the card-less trial is for, and
        *  when the confirmation link went out (the intent then lives 24 hours). */
-      cardless?: { planSlug: string; interval?: "MONTH" | "YEAR"; requestedAt: number; /** The new plans' main tool ("" none). */ mainTool?: string | null };
+      cardless?: { planSlug: string; interval?: "MONTH" | "YEAR"; requestedAt: number; /** The new plans' pick: tool ids, comma-separated, the first the main tool ("" none). */ mainTool?: string | null };
       /** The passwordless sign-up (lib/signupOtp, 2026-10-10): when the address
        *  was proven — by the emailed code or link, or by Google — before this
        *  intent was written. Only that server code sets it; the card-less
@@ -415,8 +415,10 @@ export async function completePendingSignup(
   // client) rather than from the intent, which updatePendingSignupPages can
   // still rewrite after the session was priced.
   let paidCustomPages: string[] | null = null;
-  // The new plans' main tool, as the session was priced with it (lib/signupCheckoutSession) — Stripe's copy, not ours.
+  // The new plans' main tool and the other tools ticked, as the session was priced with them (lib/signupCheckoutSession)
+  // — Stripe's copy, not ours.
   let mainTool: ToolId | null = null;
+  let extraTools: ToolId[] = [];
 
   if (sessionId) {
     if (!isStripeEnabled()) return { ok: false, error: "Checkout is not configured." };
@@ -450,6 +452,7 @@ export async function completePendingSignup(
       planSlug = (session.metadata?.planSlug as string | undefined) ?? null;
       const metaTool = session.metadata?.mainTool;
       mainTool = isToolId(metaTool) ? metaTool : null;
+      extraTools = extrasOf(session.metadata?.extraTools, mainTool);
       const metaPages = session.metadata?.customPages;
       if (typeof metaPages === "string") {
         paidCustomPages = normalizeCustomPages(metaPages.split(",").filter(Boolean));
@@ -484,7 +487,11 @@ export async function completePendingSignup(
         return {
           ok: false,
           error: CARD_DECLINED_LINE,
-          declined: { plan: planSlug, interval: (session.metadata?.interval as string | undefined) ?? null, tool: (session.metadata?.mainTool as string | undefined) ?? null },
+          declined: {
+            plan: planSlug,
+            interval: (session.metadata?.interval as string | undefined) ?? null,
+            tool: session.metadata?.mainTool !== undefined ? [session.metadata.mainTool, session.metadata.extraTools].filter(Boolean).join(",") : null,
+          },
         };
       }
     } catch (err) {
@@ -506,6 +513,7 @@ export async function completePendingSignup(
     analyticsOutcome,
     analyticsLive,
     mainTool,
+    extraTools,
   });
   // Admin → Trial watch: the shop this card check let in.
   if (made.ok && sessionId) await noteCardHoldAccount(sessionId, made.orgId).catch(() => {});
@@ -514,17 +522,19 @@ export async function completePendingSignup(
 
 /**
  * THE NEW PLANS AT THE CARD-LESS TRIAL'S START: which plans a sign-up may start now (lib/signupPricing
- * signupPlanRefusal), and for a new plan its size and main tool, read again on the server (never the browser's
- * price). `name` is what the confirmation email calls it ("Professional + Deck Studio").
+ * signupPlanRefusal), and for a new plan its size and its pick, read again on the server (never the browser's price).
+ * `mainTool` is the pick as it goes on (ids, comma-separated, the first the main tool); `name` is what the confirmation
+ * email calls it ("Professional + Deck Studio + Fence estimator").
  */
-async function cardlessPlanCheck(planSlug: string, mainTool: string | null | undefined): Promise<{ ok: true; mainTool: ToolId | null; name: string | null } | { ok: false; error: string }> {
+async function cardlessPlanCheck(planSlug: string, mainTool: string | null | undefined): Promise<{ ok: true; mainTool: string | null; name: string | null } | { ok: false; error: string }> {
   const refusal = await signupPlanRefusal(planSlug);
   if (refusal) return { ok: false, error: refusal };
   const tools = toolPlanBySlug(planSlug);
   if (!tools) return { ok: true, mainTool: null, name: null };
   const pick = toolsSignupPick({ plan: planSlug, tool: mainTool });
   if (!pick) return { ok: false, error: "That plan is not available." };
-  return { ok: true, mainTool: pick.main, name: toolsChoice(pick.plan, pick.main).label };
+  const picks = [...(pick.main ? [pick.main] : []), ...pick.extras];
+  return { ok: true, mainTool: picks.length ? pickWire(picks) : null, name: toolsBuild(pick.plan, picks).label };
 }
 
 /**
@@ -769,6 +779,7 @@ async function finishCardlessTrial(
     analyticsOutcome: "trial_started",
     analyticsLive: sub.livemode,
     mainTool: started.mainTool ?? null,
+    extraTools: started.extraTools ?? [],
   });
   if (!created.ok) {
     // Stripe's per-token idempotency key makes overlapping confirmations share
@@ -822,7 +833,16 @@ type AccountBilling = {
   analyticsLive: boolean;
   /** The new plans: the main tool the subscription was priced with (null: none, or a Classic plan). */
   mainTool?: ToolId | null;
+  /** The new plans: the other tools ticked in the builder — lines riding the trial, written as its free tries. */
+  extraTools?: ToolId[];
 };
+
+/** The other tools ticked, from Stripe's metadata ("fence,roof"): our tool ids only, each once, never the main tool. */
+function extrasOf(raw: unknown, main: ToolId | null): ToolId[] {
+  if (typeof raw !== "string") return [];
+  return [...new Set(raw.split(",").map((w) => w.trim()).filter(isToolId))].filter((id) => id !== main);
+}
+
 
 /**
  * The account itself: Organization + owner User + Membership, the
@@ -861,6 +881,7 @@ async function createAccountFromPending(
      plan — never the Classic fallback — and the main tool rides with it (billing.mainTool, from Stripe's copy). */
   const toolsPlan = toolPlanBySlug(planSlug);
   const toolsMain: ToolId | null = toolsPlan && isToolId(billing.mainTool) ? billing.mainTool : null;
+  const toolsExtras: ToolId[] = toolsPlan ? (billing.extraTools ?? []).filter((id) => isToolId(id) && id !== toolsMain) : [];
 
   const slug = await uniqueSlug(slugify(rec.businessName));
   let orgId: string;
@@ -1009,7 +1030,7 @@ async function createAccountFromPending(
        (syncSubscriptionFromStripe → mirrorToolLines) so the lines join this record, main tool kept. `toolsWelcome` is
        left unset: the first Overview opens the welcome page. */
     if (toolsPlan) {
-      const record = { ...emptyToolsRecord(toolsPlan.id, toolsMain), subId: stripeSubscriptionId, chosenTrade: chosenTradeFor(toolsPlan.id, toolsMain, []) };
+      const record = firstToolsRecord({ plan: toolsPlan.id, main: toolsMain, extras: toolsExtras, subId: stripeSubscriptionId, trialEnd, now: new Date() });
       await writeToolsRecord(orgId, record).catch((err) => console.warn("[signup] tools record failed:", err));
     }
   }

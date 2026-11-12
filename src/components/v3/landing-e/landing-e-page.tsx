@@ -54,6 +54,7 @@ import { LandingVariantEffects } from "./landing-variant-effects";
 import { parseSpotlightTool, spotlightFor, spotlightNarrows, type SpotlightTool } from "@/lib/planSpotlight";
 import { adToolFor, type AdTool } from "@/lib/planSpotlight";
 import { getPublicPlans } from "@/lib/toolPlans/publicPlans";
+import { readToolCatalog } from "@/lib/toolPlans/prices";
 import { toolsPlansOn } from "@/lib/toolPlans/server";
 import { mainToolFor } from "@/lib/toolPlans/cards";
 
@@ -164,6 +165,8 @@ export async function LandingE({ variant, explicitVariant = false, utm = {}, fbc
   // page down.
   // The switch off: the Classic catalog, exactly as before (lib/toolPlans/publicPlans).
   const plans = await getPublicPlans({ tool: mainTool }).catch(() => []);
+  // The new plans' builder draws from the sizes and tools at the prices in force (owner, 2026-11-12).
+  const toolsCatalog = toolsOn ? await readToolCatalog().catch(() => null) : null;
   // The trade group's data for the sections under the hero (CRO stage 3):
   // undefined for the default page and the interior trades, which keep the
   // sections' own built-in kitchen.
@@ -233,7 +236,7 @@ export async function LandingE({ variant, explicitVariant = false, utm = {}, fbc
     integrations: <div className="lp-cv lp-cv--integrations"><Integrations registerHref={register} /></div>,
     stats: <div className="lp-cv lp-cv--stats"><StatsSection rows={g?.stats} /></div>,
     built: <div className="lp-cv lp-cv--built"><BuiltSection jobs={g?.jobs} phoneJobs={g?.phoneJobs} /></div>,
-    pricing: <div className="lp-cv lp-cv--pricing"><LandingPricing plans={plans} registerHref={register} cta={low} customOffered={customPlanOffered()} spotlight={spotlight} narrow={narrow} fromUrl={spotlightUrl} mainTool={mainTool} /></div>,
+    pricing: <div className="lp-cv lp-cv--pricing"><LandingPricing plans={plans} registerHref={register} cta={low} customOffered={customPlanOffered()} spotlight={spotlight} narrow={narrow} fromUrl={spotlightUrl} mainTool={mainTool} toolsCatalog={toolsCatalog} /></div>,
     faq: <div className="lp-cv lp-cv--faq"><LandingFaq variant={variant} registerHref={register} cta={faqCta} requiresCard={requiresCard} /></div>,
     final: <CtaFooter registerHref={register} cta={low} />,
   };

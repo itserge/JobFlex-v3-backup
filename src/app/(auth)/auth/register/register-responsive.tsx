@@ -82,6 +82,7 @@ function RegisterSwitch({
   spotlightNarrow = false,
   spotlightUrl = null,
   toolsMain = null,
+  toolsPicks = null,
   edition = null,
   utm,
   inAppBrowser,
@@ -112,6 +113,7 @@ function RegisterSwitch({
   spotlightUrl?: SpotlightTool | null;
   /** The new plans (Plans switch on): the ad's tool the card page opens with. */
   toolsMain?: ToolId | null;
+  toolsPicks?: ToolId[] | null;
   /** The door the visitor came in by (2026-10-11, lib/editions). */
   edition: EditionId | null;
   utm: UtmParams | null;
@@ -123,7 +125,7 @@ function RegisterSwitch({
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   return (
     <RegisterSheet live={isHandheld} backdrop={isHandheld ? <PhoneBackdrop trade={industry} /> : null}>
-      <RegisterContent setup={setup} google={google} industry={industry} spotlight={spotlight} spotlightNarrow={spotlightNarrow} spotlightUrl={spotlightUrl} toolsMain={toolsMain}
+      <RegisterContent setup={setup} google={google} industry={industry} spotlight={spotlight} spotlightNarrow={spotlightNarrow} spotlightUrl={spotlightUrl} toolsMain={toolsMain} toolsPicks={toolsPicks}
         edition={edition} utm={utm} inAppBrowser={inAppBrowser} requiresCard={requiresCard} initialError={initialError} prefill={prefill} offerCustom={offerCustom} steps={steps} mode={mode} autoPlan={autoPlan} otpRestore={otpRestore} appView={appView} />
     </RegisterSheet>
   );
@@ -143,6 +145,7 @@ export function RegisterResponsive({
   spotlightNarrow = false,
   spotlightUrl = null,
   toolsMain = null,
+  toolsPicks = null,
   edition = null,
   utm = null,
   inAppBrowser = null,
@@ -180,6 +183,7 @@ export function RegisterResponsive({
   spotlightUrl?: SpotlightTool | null;
   /** The new plans (Plans switch on): the ad's tool the card page opens with. */
   toolsMain?: ToolId | null;
+  toolsPicks?: ToolId[] | null;
   /* The door the visitor came in by (2026-10-11, lib/editions). */
   edition?: EditionId | null;
   /** The visit's utm_*, resolved by the page the same way. */
@@ -194,7 +198,7 @@ export function RegisterResponsive({
   prefill?: { name: string; email: string } | null;
 }) {
   return (
-    <RegisterSwitch setup={setup} google={google} industry={industry} spotlight={spotlight} spotlightNarrow={spotlightNarrow} spotlightUrl={spotlightUrl} toolsMain={toolsMain}
+    <RegisterSwitch setup={setup} google={google} industry={industry} spotlight={spotlight} spotlightNarrow={spotlightNarrow} spotlightUrl={spotlightUrl} toolsMain={toolsMain} toolsPicks={toolsPicks}
         edition={edition} utm={utm} inAppBrowser={inAppBrowser} requiresCard={requiresCard} initialError={initialError} prefill={prefill} offerCustom={offerCustom} steps={steps} mode={mode} autoPlan={autoPlan} otpRestore={otpRestore} appView={appView} />
   );
 }

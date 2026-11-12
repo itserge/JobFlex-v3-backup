@@ -151,7 +151,8 @@ export async function checkSignupCard(input: {
     email,
     plan: (session.metadata?.planSlug as string | undefined) ?? null,
     interval: (session.metadata?.interval as string | undefined) ?? null,
-    tool: (session.metadata?.mainTool as string | undefined) ?? null,
+    // The new plans' whole pick ("deck,fence"), so a second card retries exactly what the builder showed.
+    tool: session.metadata?.mainTool !== undefined ? [session.metadata.mainTool, session.metadata.extraTools].filter(Boolean).join(",") : null,
     subId: sub?.id ?? idOf(session.subscription as string | { id: string } | null),
     livemode: session.livemode,
   };

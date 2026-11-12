@@ -25,8 +25,8 @@ import { parseSpotlightTool } from "@/lib/planSpotlight";
 import type { AutoPlanOffer } from "@/lib/signupAutoPlan";
 import { readToolCatalog } from "@/lib/toolPlans/prices";
 import { getPublicPlans } from "@/lib/toolPlans/publicPlans";
-import { isToolsCatalog, mainToolFor, toolsPlanFromAsk } from "@/lib/toolPlans/cards";
-import { isToolId, type Catalog, type ToolId, type ToolPlanId } from "@/lib/toolPlans/shared";
+import { isToolsCatalog, mainToolFor, parseToolPicks, toolsPlanFromAsk } from "@/lib/toolPlans/cards";
+import type { Catalog, ToolId, ToolPlanId } from "@/lib/toolPlans/shared";
 
 export interface SignupPlan {
   slug: string;
@@ -67,16 +67,19 @@ export async function signupPlans(token?: string, ask: AutoPlanAsk = {}): Promis
    *  card page for, or null for the plan cards — never the page's own copy from when it was drawn, nor anything a
    *  draft or intent kept from an earlier visit. */
   autoPlan: AutoPlanOffer | null;
-  /** THE NEW PLANS (the Plans switch on, Base + Tools part 4): the sign-up's card page — the prices in force (Admin →
-   *  Plans), the main tool it opens with (the ad's) and the size (the one asked for, else Professional). `plans` are
-   *  then the four sizes priced with that tool. Null: the Classic plan cards, exactly as before. */
-  tools: { catalog: Catalog; main: ToolId | null; plan: ToolPlanId } | null;
+  /** THE NEW PLANS (the Plans switch on, Base + Tools part 4; the builder 2026-11-12): the sign-up's plan builder —
+   *  the prices in force (Admin → Plans), the tools it opens ticked (the pick the page sent, else the ad's tool; the
+   *  first is the main tool) and the size (the one asked for, else Professional). `plans` are then the four sizes at
+   *  their own prices. Null: the Classic plan cards, exactly as before. */
+  tools: { catalog: Catalog; main: ToolId | null; picks: ToolId[]; plan: ToolPlanId } | null;
 }> {
   const pending = token ? await readPendingSignup(token) : null;
   const trialDays = (pending?.trialOffer ?? await signupTrialOffer()).days;
-  // The new plans' main tool: the page's own read of the ad (the link, the trade, the 30-day memory), else what the
-  // sign-up kept. Read by the cards only while the Plans switch is on (lib/toolPlans/publicPlans).
-  const main = isToolId(ask?.mainTool) ? ask.mainTool : mainToolFor({ tool: pending?.landingTool ?? null });
+  // The new plans' pick: what the page's builder holds (tool ids, comma-separated — "" when the visitor ticked none),
+  // else the ad's tool the sign-up kept. Read only while the Plans switch is on (lib/toolPlans/publicPlans).
+  const kept = mainToolFor({ tool: pending?.landingTool ?? null });
+  const picks = typeof ask?.mainTool === "string" ? parseToolPicks(ask.mainTool) : kept ? [kept] : [];
+  const main = picks[0] ?? null;
   // The public cards' one read: the Classic catalog (switch off), or the new plans priced with the main tool.
   const catalog = await getPublicPlans({ tool: main, trialDays });
   if (isToolsCatalog(catalog)) {
@@ -99,7 +102,7 @@ export async function signupPlans(token?: string, ask: AutoPlanAsk = {}): Promis
       customTrialDays: trialDays,
       firstChargeAt: Date.now() + trialDays * 24 * 60 * 60 * 1000,
       autoPlan: await autoPlanOffer({ asked, mainTool: main }),
-      tools: { catalog: cat, main, plan: toolsPlanFromAsk(asked) },
+      tools: { catalog: cat, main, picks, plan: toolsPlanFromAsk(asked) },
     };
   }
   // Whatever the visitor arrived with is carried in the client's attribution

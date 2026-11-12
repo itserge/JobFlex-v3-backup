@@ -7,10 +7,10 @@
 // with "tools-", so a stored Subscription.plan says by itself which rules it lives by (isToolsSlug) — no stamp, no
 // migration, nothing changes for a Classic shop.
 //
-// THE SHAPE. Three sizes and a top bundle, and twelve tools sold one by one on top of any size:
+// THE SHAPE. Three sizes and a top bundle, and eleven tools sold one by one on top of any size:
 //   Basic         $39.99  the owner alone — no workers, no managers; leads by hand, pasted text or a CSV file
 //   Professional  $75     up to 5 people, workers included, then $9.99 each; automatic Meta leads; the team pages
-//   Advanced      $249    up to 10 people, then $7.99 each; the four office tools and any 2 trade tools included
+//   Advanced      $249    up to 10 people, then $7.99 each; the three office tools and any 2 trade tools included
 //   Complete      $449    Advanced and every tool
 // Each tool is a line on the shop's one subscription (the way Deck Studio's line already works). The ad a shop came
 // from picks its MAIN tool; the card page prices the size with that tool ("Professional + Deck Studio · $154").
@@ -18,6 +18,10 @@
 // THE RULE THE PRICES KEEP (owner, 2026-11-10): a bundle always costs less than its parts — Professional less than
 // Basic plus 4 people, Advanced less than the same on Professional, Complete less than Advanced plus the rest.
 // ladderChecks() proves it for whatever prices are set; qa/tests/logic/tool-plans.check.ts runs it.
+//
+// NO AI OPERATOR (owner, 2026-11-12: "remove from everywhere AI Operator — it's not launched yet"): it is no tool of
+// the new plans, sold on no size and opened by none (its page id "operator" stays closed for a new-plan shop; a
+// Classic shop answers it as before). It comes back as a tool here when it launches.
 //
 // NO LOCKS (owner, 2026-11-10): the menu shows only what the shop has. Everything else lives on the Subscription
 // page, reached from an "Upgrade your plan" button at the bottom of the menu, where one click starts a 3-day try or
@@ -35,7 +39,6 @@ export type ToolId =
   | "aidesk"
   | "texting"
   | "smartcrm"
-  | "operator"
   | "builder"
   | "remodeler";
 
@@ -64,13 +67,12 @@ export const TOOLS: readonly ToolDef[] = [
   { id: "roof", label: "Roof estimator", note: "Measure any roof from the sky and price it with your materials.", kind: "trade", cents: 4900, adKey: "roof", opens: ["roof-estimator"], pairs: ["aidesk", "texting", "smartcrm"] },
   { id: "fence", label: "Fence estimator", note: "Draw the fence on a map, get the bill of materials.", kind: "trade", cents: 4900, adKey: "fence", opens: ["fence-estimator"], pairs: ["texting", "smartcrm", "video"] },
   { id: "hvac", label: "HVAC estimator", note: "Load, unit and price for a replacement, plus HVAC services and memberships.", kind: "trade", cents: 4900, adKey: "hvac", opens: ["hvac-estimator"], pairs: ["aidesk", "texting", "smartcrm"] },
-  { id: "deck", label: "Deck Studio", note: "3D deck design, permit set, materials and price.", kind: "trade", cents: 7900, adKey: "deck", opens: ["deck-estimator"], pairs: ["texting", "smartcrm", "operator"] },
+  { id: "deck", label: "Deck Studio", note: "3D deck design, permit set, materials and price.", kind: "trade", cents: 7900, adKey: "deck", opens: ["deck-estimator"], pairs: ["texting", "smartcrm", "fence"] },
   { id: "blueprint", label: "Blueprint estimator", note: "Upload the plans, ask for any job off them, measured and priced.", kind: "trade", cents: 5900, adKey: "blueprint", opens: ["blueprint-estimator"], pairs: ["builder", "remodeler", "smartcrm"] },
   { id: "video", label: "Video estimator", note: "Walk the job on video, get the estimate.", kind: "trade", cents: 3900, adKey: "video", opens: ["video-estimator"], pairs: ["smartcrm", "texting", "remodeler"] },
-  { id: "aidesk", label: "AI desk", note: "Answers calls, books visits, takes messages.", kind: "office", cents: 9900, adKey: "aidesk", opens: ["phone"], pairs: ["texting", "smartcrm", "operator"] },
-  { id: "texting", label: "Text messaging", note: "Texts to clients and leads, 1,000 a month.", kind: "office", cents: 2900, adKey: "texting", opens: ["texting"], pairs: ["smartcrm", "aidesk", "operator"] },
-  { id: "smartcrm", label: "Smart CRM", note: "One Inbox for every conversation; AI reads, drafts replies and follows up.", kind: "office", cents: 3900, adKey: "crm", opens: ["smart-crm"], pairs: ["texting", "operator", "aidesk"] },
-  { id: "operator", label: "AI Operator", note: "Run the business by voice or text: ask, approve, undo.", kind: "office", cents: 4900, adKey: "operator", opens: ["operator"], pairs: ["smartcrm", "aidesk", "texting"] },
+  { id: "aidesk", label: "AI desk", note: "Answers calls, books visits, takes messages.", kind: "office", cents: 9900, adKey: "aidesk", opens: ["phone"], pairs: ["texting", "smartcrm", "video"] },
+  { id: "texting", label: "Text messaging", note: "Texts to clients and leads, 1,000 a month.", kind: "office", cents: 2900, adKey: "texting", opens: ["texting"], pairs: ["smartcrm", "aidesk", "video"] },
+  { id: "smartcrm", label: "Smart CRM", note: "One Inbox for every conversation; AI reads, drafts replies and follows up.", kind: "office", cents: 3900, adKey: "crm", opens: ["smart-crm"], pairs: ["texting", "aidesk", "video"] },
   { id: "builder", label: "Home Builder", note: "New-construction projects: phases, lot, draws, lender's page, subs.", kind: "trade", cents: 9900, adKey: "home-builder", opens: ["home-builder", "subcontractors", "project-tools"], pairs: ["blueprint", "remodeler", "smartcrm"] },
   { id: "remodeler", label: "Remodeler", note: "Remodel projects: stages, selections, buying, subs, client page.", kind: "trade", cents: 7900, adKey: "remodeler", opens: ["remodeler", "subcontractors", "project-tools"], pairs: ["blueprint", "video", "smartcrm"] },
 ];
@@ -133,7 +135,7 @@ export interface ToolPlanDef {
   seatCents: number | null;
   /** Trade tools included by choice (Advanced: 2). "all" = every tool (Complete). */
   includedTrade: number | "all";
-  /** The office set (AI desk, Texting, Smart CRM, Operator) included. */
+  /** The office set (AI desk, Texting, Smart CRM) included. */
   officeIncluded: boolean;
   features: readonly SizeFeature[];
   /** The card's own lines (the plan cards render them as they render the Classic plans' lines). */
@@ -196,7 +198,7 @@ export const TOOL_PLANS: readonly ToolPlanDef[] = [
     lines: [
       "Everything in Professional",
       "Up to 10 people",
-      "AI desk, Text messaging, Smart CRM and AI Operator included",
+      "AI desk, Text messaging and Smart CRM included",
       "Any 2 trade tools included",
       "Custom branding and domain, several companies",
       "Priority support and a setup call",
@@ -212,7 +214,7 @@ export const TOOL_PLANS: readonly ToolPlanDef[] = [
     includedTrade: "all",
     officeIncluded: true,
     features: [...TEAM, ...ADV_ONLY],
-    lines: ["Everything in Advanced", "Every tool, all twelve", "Up to 10 people"],
+    lines: ["Everything in Advanced", "Every tool, all eleven", "Up to 10 people"],
   },
 ];
 
@@ -725,6 +727,9 @@ export interface ToolsModelTool {
   day?: string;
   /** main: the size includes it, so it isn't a line of its own (Advanced's trade tools, everything on Complete). */
   inPlan?: boolean;
+  /** main: it can be removed (owner, 2026-11-12) — in the free days nothing was paid, so it comes off like a try;
+   *  after them it is a tool on the bill. Never when the size includes it. */
+  removable?: boolean;
 }
 
 export interface ToolsModelOffer {
@@ -836,7 +841,7 @@ export function toolsSubscriptionModel(input: ToolsModelInput): ToolsSubscriptio
     const d = catTool(cat, id);
     tools.push({ id, label: d.label, note: d.note, cents: d.cents, state, ...extra });
   };
-  if (main) push(main, "main", { inPlan: included.has(main) });
+  if (main) push(main, "main", { inPlan: included.has(main), removable: !included.has(main) && (inTrial || !!record.lines[main]), ...(inTrial && trialEnd ? { day: shortDay(trialEnd, tz) } : {}) });
   for (const id of ids) if (included.has(id)) push(id, "included");
   for (const id of ids) {
     const tr = record.tries[id];

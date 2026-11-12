@@ -112,6 +112,8 @@ export async function toolsCheckoutItems(opts: {
   deps: Deps;
   plan: ToolPlanId;
   main: ToolId | null;
+  /** The other tools ticked in the builder (owner, 2026-11-12): each its own line, riding the trial with the plan. */
+  extras?: readonly ToolId[];
   interval: Interval;
   people?: number;
   catalog?: Catalog;
@@ -119,8 +121,10 @@ export async function toolsCheckoutItems(opts: {
   const cat = opts.catalog ?? (await readToolCatalog());
   const plan = cat.plans.find((p) => p.id === opts.plan)!;
   const items: Array<{ price: string; quantity: number }> = [{ price: await priceFor(opts.deps, cat, plan.slug, opts.interval), quantity: 1 }];
-  const included = toolsOpen({ plan: opts.plan, main: null, kept: [], chosenTrade: opts.main ? [opts.main] : [] });
-  if (opts.main && !included.has(opts.main)) items.push({ price: await priceFor(opts.deps, cat, toolKind(opts.main), opts.interval), quantity: 1 });
+  // The same tools the builder priced (lib/toolPlans/cards toolsBuild): Advanced holds the dearest two trade tools ticked.
+  const picks = [...new Set([...(opts.main ? [opts.main] : []), ...(opts.extras ?? [])])];
+  const included = toolsOpen({ plan: opts.plan, main: null, kept: [], chosenTrade: chosenTradeFor(opts.plan, null, picks, cat) });
+  for (const id of picks) if (!included.has(id)) items.push({ price: await priceFor(opts.deps, cat, toolKind(id), opts.interval), quantity: 1 });
   const extra = plan.seatCents === null ? 0 : Math.max(0, (opts.people ?? 1) - plan.seats);
   if (extra > 0) items.push({ price: await priceFor(opts.deps, cat, SEAT_KIND, opts.interval, opts.plan), quantity: extra });
   return items;
@@ -230,12 +234,21 @@ export async function startToolTry(organizationId: string, tool: ToolId, now = n
 }
 
 /** REMOVE A TOOL. A try: it won't be billed and stays open until its end. On the bill: the line goes now, no refund,
- *  and the tool stays open until the paid period ends. The main tool is switched, not removed (part 4). */
+ *  and the tool stays open until the paid period ends. THE MAIN TOOL (owner, 2026-11-12: "during the trial they can
+ *  remove and leave what they needed"): in the sign-up's free days it comes off like a try — its line goes, nothing was
+ *  paid, it stays open until the free days end and can be added back; the shop is left with no main tool (the other
+ *  tools it ticked stay as they are). After the free days the main tool is a tool on the bill like any other. */
 export async function removeTool(organizationId: string, tool: ToolId, now = new Date(), deps?: Deps): Promise<{ ok: true; openUntil: string | null; wasTry: boolean } | Fail> {
   const r = await ready(organizationId, deps, { allowCardless: true });
   if (!r.ok) return r;
   const record = r.record;
-  if (record.main === tool) return { ok: false, code: "main", error: "That's your main tool. Switch it on Subscription instead." };
+  const freeDays = r.row.status === "TRIALING" && !!r.row.trialEndsAt && r.row.trialEndsAt.getTime() > now.getTime();
+  const isMain = record.main === tool;
+  if (isMain && sizeHolds(record).has(tool)) return { ok: false, code: "included", error: "Your plan includes it, so there's nothing to remove." };
+  if (isMain && freeDays && !record.tries[tool]) {
+    // In the free days the main tool is free like a try that ends with them: removed below as one.
+    record.tries[tool] = { startedAt: now.toISOString(), endsAt: r.row.trialEndsAt!.toISOString(), onLine: !!record.lines[tool] };
+  }
   const tr = record.tries[tool];
   const trying = !!tr && !tr.billedAt && !tr.failedAt && !tr.removedAt && Date.parse(tr.endsAt) > now.getTime();
   const line = record.lines[tool];
@@ -260,6 +273,8 @@ export async function removeTool(organizationId: string, tool: ToolId, now = new
     tr.removedAt = now.toISOString();
     openUntil = tr.endsAt;
   }
+  // The main tool removed: the shop has none now (it is open through its try or its paid month, as any removed tool).
+  if (isMain) record.main = null;
   await writeToolsRecord(organizationId, record);
   return { ok: true, openUntil, wasTry: trying };
 }
@@ -730,8 +745,20 @@ export async function mirrorToolLines(sub: Stripe.Subscription, ended = false, k
   const existing = await readToolsRecord(organizationId);
   const over = ended || sub.status === "canceled" || sub.status === "incomplete_expired";
   if (over) {
-    if (existing && existing.subId === sub.id && (Object.keys(existing.lines).length || existing.seat)) {
-      await writeToolsRecord(organizationId, { ...existing, lines: {}, seat: null });
+    if (existing && existing.subId === sub.id) {
+      /* THE PLAN ENDED (a trial that ran out with no card, a cancellation): its lines are gone, and so is every free try
+         still waiting to be billed — marked removed, so a plan started again later (lib/cardlessTrial's restart bills
+         the size and the main tool it shows) is never charged, a day on, for tools ticked in a trial that lapsed
+         (owner, 2026-11-12: the builder makes several tools on a trial the usual case). */
+      const stamp = new Date().toISOString();
+      let closed = false;
+      for (const tr of Object.values(existing.tries)) {
+        if (tr && !tr.billedAt && !tr.failedAt && !tr.removedAt) {
+          tr.removedAt = stamp;
+          closed = true;
+        }
+      }
+      if (closed || Object.keys(existing.lines).length || existing.seat) await writeToolsRecord(organizationId, { ...existing, lines: {}, seat: null });
     }
     return;
   }

@@ -28,8 +28,8 @@ import { PricingVisit } from "./pricing-visit";
 import { CustomPlanBlock } from "./custom-plan-block";
 import { DeckAddonPlate } from "./deck-addon-plate";
 import type { PlanDTO } from "@/lib/planCatalog";
-import { adKeyOf, toolsBanner, withPlanQuery } from "@/lib/toolPlans/cards";
-import type { ToolId } from "@/lib/toolPlans/shared";
+import { VisitorToolsBuilder } from "@/components/v3/tools-plan/tools-builder";
+import type { Catalog, ToolId } from "@/lib/toolPlans/shared";
 import "@/components/v3/landing-e/landing-e.css";
 import "./pricing.css";
 
@@ -39,12 +39,13 @@ export function PricingPage({
   spotlight = null,
   narrow = false,
   spotlightUrl = null,
-  tools: toolsIn,
+  tools,
 }: {
-  /** THE NEW PLANS (Plans switch on, lib/toolPlans/cards): the tool the cards are priced with and the sign-up link
-   *  their start buttons build on (plan and tool added per card). Deck Studio is a tool there, not the Classic add-on,
-   *  and the Classic custom plan is not sold beside them. Absent: today's page. */
-  tools?: { main: ToolId | null; registerHref: string };
+  /** THE NEW PLANS (Plans switch on, lib/toolPlans/cards): the plan builder (owner, 2026-11-12) in place of the cards
+   *  — the sizes and tools at the prices in force, the ad's tool (ticked), and the sign-up link its start button
+   *  builds on. Deck Studio is a tool there, not the Classic add-on, and the Classic custom plan is not sold beside
+   *  them. Absent: today's page. */
+  tools?: { main: ToolId | null; registerHref: string; catalog: Catalog };
   /** CUSTOM_PLAN_ENABLED (lib/customPlanFlag): false hides "Build your plan". */
   customOffered?: boolean;
   /** The tool the visitor came for (lib/planSpotlight), marked on every card. */
@@ -57,13 +58,6 @@ export function PricingPage({
 }) {
   // A $0 tier is what happens when somebody skips, not something to sell here.
   const sellable = plans.filter((p) => !p.isFree);
-  const tools = toolsIn
-    ? {
-        main: toolsIn.main,
-        banner: toolsIn.main ? toolsBanner(toolsIn.main) : null,
-        startHrefs: Object.fromEntries(sellable.map((p) => [p.slug, withPlanQuery(toolsIn.registerHref, p.slug, adKeyOf(toolsIn.main))])),
-      }
-    : undefined;
 
   return (
     <div className="jf-lp min-h-full bg-white">
@@ -79,8 +73,9 @@ export function PricingPage({
                 Pay for the shop you run.
               </h1>
               <p className="mt-6 max-w-[52ch] text-[16px] leading-[1.65] text-slate-500 sm:text-[17px]">
-                Every plan carries unlimited clients and the client portal. Move up, move down, or
-                build your own from the pages you actually open. No setup fee, cancel whenever.
+                {tools
+                  ? "Pick a plan, tick the tools you want to try, and start free. Every plan carries unlimited clients and the client portal. Remove what you don't use before the trial ends. No setup fee, cancel whenever."
+                  : "Every plan carries unlimited clients and the client portal. Move up, move down, or build your own from the pages you actually open. No setup fee, cancel whenever."}
               </p>
             </Reveal>
           </div>
@@ -93,7 +88,11 @@ export function PricingPage({
               {sellable.length > 0 ? (
                 <>
                   <Reveal className="pr-plans">
-                    <PricingPlans plans={sellable} registerHref={REGISTER} spotlight={spotlight} narrow={narrow} fromUrl={spotlightUrl} tools={tools} />
+                    {tools ? (
+                      <VisitorToolsBuilder catalog={tools.catalog} adTool={tools.main} registerHref={tools.registerHref} narrow={narrow} />
+                    ) : (
+                      <PricingPlans plans={sellable} registerHref={REGISTER} spotlight={spotlight} narrow={narrow} fromUrl={spotlightUrl} />
+                    )}
                   </Reveal>
                   {/* The Deck Studio add-on (owner, 2026-10-26): on any plan, in the trial. A trade estimator: hidden
                       while a roofer/fencer/HVAC ad visit narrows the cards (lib/planSpotlight, owner 2026-11-07). */}

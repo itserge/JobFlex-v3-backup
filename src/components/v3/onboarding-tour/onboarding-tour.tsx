@@ -117,6 +117,9 @@ function dockBox(handheld: boolean, w: number, h: number): Box {
   return { top: vh - DOCK_DESK - h, left: vw - DOCK_DESK - w, width: w, height: h };
 }
 
+/** The new plans' welcome page (app/dashboard/welcome): the tour's offer waits while it is open. */
+const WELCOME_PAGE = "/dashboard/welcome";
+
 function overlaps(a: Box, b: Box): boolean {
   return a.left < b.left + b.width && a.left + a.width > b.left && a.top < b.top + b.height && a.top + a.height > b.top;
 }
@@ -453,7 +456,11 @@ export function OnboardingTour({ view }: { view: TourView }) {
   }, [mounted, mode, nextOpen, nextSpot, showing, blocked, handheld, status]);
 
   // ── Focus and Escape ───────────────────────────────────────────────────
-  const modalOpen = mode === "welcome" || nextOpen;
+  /* THE NEW PLANS' WELCOME PAGE COMES FIRST (owner, 2026-11-12): a new shop lands on /dashboard/welcome — its plan, the
+     tools it picked, what the free days allow. The offer of this tour waits there (not drawn, not dismissed by Escape)
+     and opens on the first page after it. */
+  const offerHeld = mode === "welcome" && pathname === WELCOME_PAGE;
+  const modalOpen = (mode === "welcome" && !offerHeld) || nextOpen;
   const anyCard = modalOpen || mode === "resume" || showing;
   useEffect(() => {
     if (!anyCard || blocked) return;
@@ -518,7 +525,7 @@ export function OnboardingTour({ view }: { view: TourView }) {
   const title = tourTitle(view.path);
   let card: React.ReactNode = null;
 
-  if (mode === "welcome" && status === "offer") {
+  if (mode === "welcome" && status === "offer" && !offerHeld) {
     const list = steps.slice(0, -1).filter((s) => !s.when || s.counted);
     card = (
       <>
@@ -629,7 +636,7 @@ export function OnboardingTour({ view }: { view: TourView }) {
   // A phone, a field in the frame being typed in: the keyboard and the field's own list need the screen.
   const stepAside = handheld && showing && focusIn;
 
-  const modal = mode === "welcome" || nextOpen;
+  const modal = modalOpen;
   const dim = lit && !focusIn;
   // The welcome and the next steps: centred on the desk, the handheld sheet on a phone.
   // Every other card: docked bottom-right on the desk, across the foot on a phone.

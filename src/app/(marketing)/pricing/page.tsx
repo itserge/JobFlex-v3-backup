@@ -8,6 +8,7 @@ import { signupTrialOffer } from "@/lib/trialOfferServer";
 import { TrialOfferProvider } from "@/components/providers/trial-offer";
 import type { Metadata } from "next";
 import { getPublicPlans } from "@/lib/toolPlans/publicPlans";
+import { readToolCatalog } from "@/lib/toolPlans/prices";
 import { toolsPlansOn } from "@/lib/toolPlans/server";
 import { isToolsCatalog, mainToolFor } from "@/lib/toolPlans/cards";
 import { REGISTER } from "@/components/v3/landing-e/routes";
@@ -36,9 +37,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   // `?industry=`, else the landing's 30-day memory of either.
   const sp = await searchParams;
   const jar = await cookies();
-  /* THE NEW PLANS (Base + Tools, part 4): with the Plans switch on, the cards are the four sizes priced with the
-     visit's tool (any ad's key: the link, its trade, else the 30-day memory), and each start button carries the plan,
-     the tool, the trade and the campaign on to the sign-up. Off: the Classic catalog, exactly as before. */
+  /* THE NEW PLANS (Base + Tools, part 4; the builder 2026-11-12): with the Plans switch on, the page is the plan
+     builder — the four sizes at their own prices, the tools ticked on top, the visit's tool ticked already (any ad's
+     key: the link, its trade, else the 30-day memory) — and its start button carries the plan, the tools, the trade
+     and the campaign on to the sign-up. Off: the Classic catalog, exactly as before. */
   const toolsOn = await toolsPlansOn();
   const trade = resolveLandingVariant(sp.industry ?? sp.trade);
   const mainTool = toolsOn
@@ -49,6 +51,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
     toolsOn && isToolsCatalog(plans)
       ? signupHref(REGISTER, { industry: trade, utm: pickUtm(sp), fbclid: pickFbclid(sp), tool: parseAdTool(sp.tool) })
       : null;
+  // The builder draws from the sizes and tools at the prices in force (owner, 2026-11-12).
+  const toolsCatalog = toolsRegister ? await readToolCatalog().catch(() => null) : null;
   // The link wins over the memory: a fencing link marks the fence estimator
   // even for a visitor who clicked an AI desk ad last week.
   const spotlightUrl = spotlightFor({ tool: sp.tool, industry: resolveLandingVariant(sp.industry ?? sp.trade) });
@@ -64,7 +68,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
       narrow={narrow}
       spotlightUrl={spotlightUrl}
       customOffered={customPlanOffered()}
-      tools={toolsRegister ? { main: mainTool, registerHref: toolsRegister } : undefined}
+      tools={toolsRegister && toolsCatalog ? { main: mainTool, registerHref: toolsRegister, catalog: toolsCatalog } : undefined}
     />
     </TrialOfferProvider>
   );
