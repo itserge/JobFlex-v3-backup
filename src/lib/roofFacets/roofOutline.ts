@@ -36,6 +36,12 @@ export interface RoofOutlineInput {
   seed: ReadonlyArray<Pt>;
   /** Google's roof segments, centres in raster pixels */
   priors: ReadonlyArray<RoofSegmentPx>;
+  /**
+   * The seed is EagleView's outline, already set on the height map: what is roof is theirs to say, and nothing is
+   * left out. Only the walls are squared — to the building's directions, each set where the roof seen in the height
+   * map says it stands, within the reach of the squaring (about a metre).
+   */
+  asGiven?: boolean;
   trace?: string[];
   /** the lab's look inside: per window pixel 1 roof, 2 hidden under something, 3 too low, 4 deck, 5 beside a wall, 6 past the edge */
   inspect?: (view: { x0: number; y0: number; w: number; h: number; kind: Uint8Array; ground: Float32Array }) => void;
@@ -534,8 +540,13 @@ export function roofOutline(input: RoofOutlineInput): RoofOutline | null {
   }
   // ── 6. clean, turn to the building's directions, trace, square ──
   const r3 = Math.max(1, Math.round(0.3 / px)), r4 = Math.max(1, Math.round(0.4 / px));
-  roof = fillHoles(shrink(spread(roof, w, h, r3), w, h, r3), w, h);
-  roof = largestPiece(spread(shrink(roof, w, h, r4), w, h, r4), w, h);
+  // what the height map itself shows as roof — the evidence, whoever drew the outline
+  const shown = roof;
+  if (input.asGiven) roof = seed.slice();
+  else {
+    roof = fillHoles(shrink(spread(roof, w, h, r3), w, h, r3), w, h);
+    roof = largestPiece(spread(shrink(roof, w, h, r4), w, h, r4), w, h);
+  }
   let roofPx = 0;
   for (let i = 0; i < N; i++) roofPx += roof[i];
   if (roofPx < seedPx * 0.3 || m2(roofPx) < 9) return null;
@@ -583,7 +594,17 @@ export function roofOutline(input: RoofOutlineInput): RoofOutline | null {
       if (roof[i]) tRoof[k] = 1;
       // open ground: lower than a roof, or further from Google's building than an eave reaches
       if (!reach[i]) tOpen[k] = 1;
-      if (hidden[i]) { if (built[i]) tUnder[k] = 1; else tBeside[k] = 1; }
+      if (input.asGiven) {
+        // EagleView's outline: inside it, roof the height map shows is roof seen; what a tree hides is theirs on
+        // trust (half weight); what the height map shows NOT to be roof may be given up for nothing. Outside it the
+        // same the other way round: roof the height map shows may be taken in for nothing, a tree counts half, and
+        // the rest is not roof. So a wall is set by what can be seen either side of it, and by their line where
+        // nothing can.
+        if (seed[i]) { if (shown[i] && !hidden[i]) tSeen[k] = 1; else if (hidden[i]) tUnder[k] = 1; }
+        else if (shown[i]) { /* the eave may stand a little past their line */ }
+        else if (hidden[i]) tBeside[k] = 1;
+        else tNot[k] = 1;
+      } else if (hidden[i]) { if (built[i]) tUnder[k] = 1; else tBeside[k] = 1; }
       else if (roof[i]) tSeen[k] = 1;
       else tNot[k] = 1;
     }
@@ -614,6 +635,12 @@ export function roofOutline(input: RoofOutlineInput): RoofOutline | null {
       const got = squareAt(baseDeg + (sign * k) / 2);
       if (got && got.misfit < best && got.misfit < bar) { best = got.misfit; ring = got.ring; }
     }
+  }
+  if (input.asGiven) {
+    // their outline squared, or their outline as it came: never a different roof
+    if (!ring || Math.abs(Math.abs(ringArea(ring)) - seedPx) > seedPx * 0.04) return null;
+    input.trace?.push(`EagleView's outline was squared to the building (${input.seed.length} corners, now ${ring.length}; its area changed by ${(((Math.abs(ringArea(ring)) - seedPx) / seedPx) * 100).toFixed(1)}%)`);
+    return { ring, seedM2: m2(seedPx), roofM2: m2(roofPx), leftOut: { ground: 0, deck: 0, side: 0, offPlane: 0 } };
   }
   if (!ring) {
     // the squaring above gave nothing usable: the pass that squares every other outline here

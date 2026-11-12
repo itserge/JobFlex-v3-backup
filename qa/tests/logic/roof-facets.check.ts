@@ -332,5 +332,48 @@ check("an outline of two points draws nothing", buildFacets({ ...raster(gable), 
   check("a line that meets a wall just short of its corner meets it at the corner", ends.some((v) => near(v.x, 60, 1e-6) && near(v.y, 60, 1e-6)) && !g.verts.some((v, i) => near(v.x, 60, 1e-6) && near(v.y, 63, 1e-6) && g.edges.some((e) => e.a === i || e.b === i)) && corners, JSON.stringify(ends));
 }
 
+// ── EagleView's outline comes with corners a few degrees off square, and was used as it came (owner, 2026-11-12, of two
+//    EagleView roofs: "find what to fix to make right"). Their outline now goes through the same squaring as a roof
+//    read off Google's data: still their roof, its walls along the building.
+{
+  const { dsm, mask } = raster(gable);
+  // the gable's outline as EagleView might hand it over: every corner off by up to half a metre, one wall in two pieces
+  const crooked = [{ x: 9.2, y: 11.3 }, { x: 15, y: 10.8 }, { x: 21.1, y: 11.2 }, { x: 20.7, y: 19.2 }, { x: 8.8, y: 18.7 }];
+  const res = buildFacets({ dsm, mask, outline: toPx(crooked), priors: [] });
+  const outer = res ? res.edges.filter((e) => e.left < 0 || e.right < 0) : [];
+  const worst = Math.max(0, ...outer.filter((e) => e.planM > 0.5).map((e) => {
+    const a = res!.vertices[e.a], b = res!.vertices[e.b];
+    const d = ((((Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI) % 90) + 90) % 90;
+    return Math.min(d, 90 - d);
+  }));
+  const plan = res ? res.facets.reduce((t, f) => t + f.planM2, 0) : 0;
+  check("EagleView's outline with crooked corners is squared to the building, and stays their roof", res != null && res.facets.length === 2 && worst < 1 && near(plan, 96, 5), res ? `${res.facets.length} facets, worst wall ${worst.toFixed(2)} degrees off, ${plan.toFixed(1)} m2` : "nothing");
+  const asIs = buildFacets({ dsm, mask, outline: toPx(crooked), priors: [], squareOutline: false });
+  const worstAsIs = asIs ? Math.max(0, ...asIs.edges.filter((e) => (e.left < 0 || e.right < 0) && e.planM > 0.5).map((e) => {
+    const a = asIs.vertices[e.a], b = asIs.vertices[e.b];
+    const d = ((((Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI) % 90) + 90) % 90;
+    return Math.min(d, 90 - d);
+  })) : 0;
+  check("…and it is the squaring that does it (left off, the walls keep their slant)", worstAsIs > 2, `${worstAsIs.toFixed(2)} degrees`);
+}
+{
+  // A 14/12 gable, blurred as a height map is: the ridge must come out a ridge. (On the real roof this went wrong —
+  // the seam between the two faces lay two pixels off the true ridge, which on a roof this steep reads as a step of
+  // a foot and more, and the ridge was drawn as a wall. A made-up roof this clean puts the seam on the ridge, so
+  // this check holds the steep case in place without reproducing that fault; the fix itself was checked on the real
+  // roof.)
+  const steep: Roof = { name: "steep gable", outline: gable.outline, height: (x, y) => (inRect(x, y, [9, 11, 21, 19]) ? EAVE + (14 / 12) * (4 - Math.abs(y - 15.15)) : null) };
+  const { dsm, mask } = raster(steep);
+  const sharp = dsm.data.slice();
+  for (let r = 2; r < H - 2; r++) for (let c = 2; c < W - 2; c++) {
+    let sum = 0;
+    for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) sum += sharp[(r + dr) * W + c + dc];
+    dsm.data[r * W + c] = sum / 25;
+  }
+  const res = buildFacets({ dsm, mask, outline: toPx(steep.outline), priors: [], squareOutline: false });
+  const f = res ? feetOf(res) : ({} as Record<FacetEdgeType, number>);
+  check("a very steep ridge is a ridge, not a wall between two roofs", res != null && res.facets.length === 2 && near(planOf(res, "RIDGE"), 12, 0.6) && !(f.WALL > 0) && !(f.STEP > 0), res ? `${res.facets.length} facets ${JSON.stringify(Object.fromEntries(Object.entries(f).map(([k, v]) => [k, Math.round(v as number)])))}` : "nothing");
+}
+
 console.log(bad ? `\n${bad} FAILED` : "\nall passed");
 process.exit(bad ? 1 : 0);

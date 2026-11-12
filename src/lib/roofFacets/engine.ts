@@ -22,6 +22,7 @@
 import { buildGraph, collapseShort, pruneDangling, straightenChains, traceFaces, type Face, type Graph, type Seg } from "./arrange";
 import { findPlanes, outlineAxesDeg, priorsInWindow, type Plane, type RoofSegmentPx } from "./planes";
 import { fillRings, pointInRing, registerOutline, ringArea, sharpenCorners, type Pt } from "./raster";
+import { roofOutline } from "./roofOutline";
 
 /**
  * What an edge is. STEP and WALL are both a roof meeting a wall between two roof levels: STEP where the line climbs
@@ -47,6 +48,12 @@ export interface EngineInput {
   priors: ReadonlyArray<RoofSegmentPx>;
   /** false when the outline already comes from this raster (Google's own mask): it is not moved */
   register?: boolean;
+  /**
+   * Square the outline's walls to the building once it sits on the height map (./roofOutline, `asGiven`). On unless
+   * said otherwise for an outline that is registered — EagleView's, whose corners come a few degrees off square
+   * (owner, 2026-11-12, of two EagleView roofs: "find what to fix to make right"). Needs Google's mask.
+   */
+  squareOutline?: boolean;
   trace?: string[];
 }
 
@@ -147,6 +154,10 @@ export function buildFacets(input: EngineInput): EngineResult | null {
     shift = { dx: reg.dx, dy: reg.dy };
     ring = ring.map((p) => ({ x: p.x + reg.dx, y: p.y + reg.dy }));
     input.trace?.push(`outline moved ${(reg.dx * px).toFixed(1)} m east, ${(-reg.dy * px).toFixed(1)} m north to sit on the height map`);
+  }
+  if ((input.squareOutline ?? input.register !== false) && input.mask && input.mask.width === dsm.width && input.mask.height === dsm.height) {
+    const squared = roofOutline({ dsm, mask: input.mask, seed: ring.map((p) => ({ x: p.x + x0, y: p.y + y0 })), priors: input.priors, asGiven: true, trace: input.trace });
+    if (squared) ring = squared.ring.map((p) => ({ x: p.x - x0, y: p.y - y0 }));
   }
   if (ringArea(ring) < 0) ring.reverse();
   const inside = fillRings([ring], w, h) as Uint8Array;
@@ -498,10 +509,20 @@ function linesBetween(planes: ReadonlyArray<Plane>, label: Int16Array, z: Float3
       const gaps = pts.map((p) => B.gx * p.x + B.gy * p.y + B.c - (A.gx * p.x + A.gy * p.y + A.c)).sort((p, q) => p - q);
       step = gaps[gaps.length >> 1];
     }
-    const crease = Math.abs(step) < WALL_STEP_M;
+    const dgx = A.gx - B.gx, dgy = A.gy - B.gy, dg = Math.hypot(dgx, dgy);
+    // A seam that lies where its two planes cross is a crease, whatever the reading across it says. The reading is
+    // taken half a metre either side of the SEAM, and a seam drawn a couple of pixels off the true ridge of a steep
+    // roof reads as a step (two inches off a 14/12 ridge is 16 inches of "step"): on the first steep roof the owner
+    // opened (2026-11-12) the main ridge came out as a wall. Two planes that really stand a step apart cross far
+    // from their seam, or not at all.
+    let onCrossing2 = false;
+    if (dg / px >= 0.15) {
+      const ds = pts.map((p) => Math.abs((dgx * p.x + dgy * p.y + (A.c - B.c)) / dg)).sort((p, q) => p - q);
+      onCrossing2 = ds[ds.length >> 1] <= 0.5 / px;
+    }
+    const crease = Math.abs(step) < WALL_STEP_M || onCrossing2;
     seams.set(k, { step, crease });
 
-    const dgx = A.gx - B.gx, dgy = A.gy - B.gy, dg = Math.hypot(dgx, dgy);
     let rest = pts;
     // The crossing of two planes that lie nearly alike points wherever the noise in their fits sends it, and a short
     // seam cannot say otherwise. Where such a crossing comes out a few degrees off the way the building runs (not
