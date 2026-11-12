@@ -222,6 +222,32 @@ export function collapseShort(g: Graph, minLen: number): Graph {
   const size = g.verts.map(() => 1);
   const anchor = g.verts.map((_, i) => (fixed.has(i) ? i : -1));
   const len = (e: GEdge) => Math.hypot(g.verts[e.a].x - g.verts[e.b].x, g.verts[e.a].y - g.verts[e.b].y);
+  // A line that meets a wall within `minLen` of the wall's corner meets it AT the corner. The point where it cut the
+  // wall is not a corner of the outline (the wall runs straight through it), so moving it along the wall to the
+  // real corner changes nothing of the outline — and left where it was, the stub of wall between the two made the
+  // straightening take the real corner for a wobble and draw the wall's end at a slant.
+  {
+    const walls = new Map<number, number[]>();
+    for (const e of g.edges) if (e.outline) { (walls.get(e.a) ?? walls.set(e.a, []).get(e.a)!).push(e.b); (walls.get(e.b) ?? walls.set(e.b, []).get(e.b)!).push(e.a); }
+    const corner = (i: number) => {
+      const nb = walls.get(i) ?? [];
+      if (nb.length !== 2) return true;
+      const p = g.verts[i], a = g.verts[nb[0]], b = g.verts[nb[1]];
+      const la = Math.hypot(a.x - p.x, a.y - p.y), lb = Math.hypot(b.x - p.x, b.y - p.y);
+      // straight through within 3 degrees: a point on a wall
+      return Math.abs(cross(a.x - p.x, a.y - p.y, b.x - p.x, b.y - p.y)) > 0.052 * la * lb || (a.x - p.x) * (b.x - p.x) + (a.y - p.y) * (b.y - p.y) > 0;
+    };
+    for (const e of [...g.edges].filter((x) => x.outline).sort((p, q) => len(p) - len(q))) {
+      if (len(e) >= minLen) break;
+      const ca = corner(e.a), cb = corner(e.b);
+      if (ca === cb) continue;
+      const keep = find(ca ? e.a : e.b), go = find(ca ? e.b : e.a);
+      if (keep === go || size[keep] + size[go] > 3) continue;
+      parent[go] = keep;
+      size[keep] += size[go];
+      anchor[keep] = ca ? e.a : e.b;
+    }
+  }
   for (const e of [...g.edges].filter((x) => !x.outline).sort((p, q) => len(p) - len(q))) {
     if (len(e) >= minLen) break;
     const ra = find(e.a), rb = find(e.b);

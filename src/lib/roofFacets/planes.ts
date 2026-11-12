@@ -51,6 +51,24 @@ export interface PlanePrior {
   areaM2: number;
 }
 
+/** One of Google's roof segments as the callers hold it: its centre in raster pixels, its pitch and facing in degrees. */
+export interface RoofSegmentPx {
+  pitchDeg: number;
+  azimuthDeg: number;
+  cx: number;
+  cy: number;
+  zc: number;
+  areaM2: number;
+}
+
+/** Google's segments as plane priors over a window whose corner is (x0, y0): the plane RISES opposite to the way it faces; y runs south. */
+export function priorsInWindow(segments: ReadonlyArray<RoofSegmentPx>, x0: number, y0: number, pixelSizeM: number): PlanePrior[] {
+  return segments.map((s) => {
+    const t = Math.tan((s.pitchDeg * Math.PI) / 180) * pixelSizeM, az = (s.azimuthDeg * Math.PI) / 180;
+    return { gx: -t * Math.sin(az), gy: t * Math.cos(az), cx: s.cx - x0 - 0.5, cy: s.cy - y0 - 0.5, zc: s.zc, areaM2: s.areaM2 };
+  });
+}
+
 export interface PlaneOptions {
   /** half-width of the gradient window, pixels (3 = 7x7) */
   window: number;

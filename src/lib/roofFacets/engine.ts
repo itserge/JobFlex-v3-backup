@@ -20,7 +20,7 @@
 // [c, c+1)) and metres of height; ./build turns the result into feet, compass bearings and lat/lng.
 
 import { buildGraph, collapseShort, pruneDangling, straightenChains, traceFaces, type Face, type Graph, type Seg } from "./arrange";
-import { findPlanes, outlineAxesDeg, type Plane, type PlanePrior } from "./planes";
+import { findPlanes, outlineAxesDeg, priorsInWindow, type Plane, type RoofSegmentPx } from "./planes";
 import { fillRings, pointInRing, registerOutline, ringArea, sharpenCorners, type Pt } from "./raster";
 
 /**
@@ -44,7 +44,7 @@ export interface EngineInput {
   /** the roof outline in raster pixels, as its source placed it */
   outline: ReadonlyArray<Pt>;
   /** Google's roof segments, centres in raster pixels */
-  priors: ReadonlyArray<{ pitchDeg: number; azimuthDeg: number; cx: number; cy: number; zc: number; areaM2: number }>;
+  priors: ReadonlyArray<RoofSegmentPx>;
   /** false when the outline already comes from this raster (Google's own mask): it is not moved */
   register?: boolean;
   trace?: string[];
@@ -159,11 +159,7 @@ export function buildFacets(input: EngineInput): EngineResult | null {
   const axesDeg = outlineAxesDeg(ring);
   const axisDeg = axesDeg[0];
   if (axesDeg.length > 1) input.trace?.push(`the building runs in ${axesDeg.length} directions (${axesDeg.map((d) => Math.round(d)).join(" and ")} degrees off the grid)`);
-  const priors: PlanePrior[] = input.priors.map((s) => {
-    const t = Math.tan((s.pitchDeg * Math.PI) / 180) * px, az = (s.azimuthDeg * Math.PI) / 180;
-    // the plane RISES opposite to the way it faces; y runs south
-    return { gx: -t * Math.sin(az), gy: t * Math.cos(az), cx: s.cx - x0 - 0.5, cy: s.cy - y0 - 0.5, zc: s.zc, areaM2: s.areaM2 };
-  });
+  const priors = priorsInWindow(input.priors, x0, y0, px);
   // What Google's own mask does not call roof inside the outline — a tree over it, mostly — is kept out of the plane
   // finding. Only while it is a modest part: a mask that misses a third of the building is the mask's mistake.
   let ignore: Uint8Array | undefined;
@@ -186,7 +182,14 @@ export function buildFacets(input: EngineInput): EngineResult | null {
   const label = field.label;
 
   // ── 4. lines ──
-  const { segs: lines, seams } = linesBetween(planes, label, z, w, h, px, axesDeg, input.trace);
+  const { segs: lines, seams, placed } = linesBetween(planes, label, z, w, h, px, axesDeg, input.trace);
+  {
+    const onWall = new Set<Seg>();
+    const moved = continueWalls(lines, ring, px, placed, onWall);
+    if (moved) input.trace?.push(`${moved} wall line(s) inside the roof were set on the line of the outside wall they continue`);
+    const joined = alignRuns(lines, px, onWall);
+    if (joined) input.trace?.push(`${joined} line(s) that ran on from another within a foot of its line were set on that line`);
+  }
 
   // ── 5. arrange ──
   const outlineSegs: Seg[] = ring.map((p, i) => ({ a: p, b: ring[(i + 1) % ring.length], outline: true, tag: -1 }));
@@ -237,6 +240,7 @@ export function buildFacets(input: EngineInput): EngineResult | null {
       }
     });
     if (!add.length) break;
+    continueWalls(add, ring, px, null);
     input.trace?.push(`${add.length} boundary line(s) were missing and were fitted from the planes' own boundary`);
     extra = [...extra, ...add];
     g = build(extra);
@@ -445,7 +449,7 @@ const WALL_STEP_M = 0.4;
  * in the direction the two planes' crossing must have, placed on the planes' own crossing when the seam is there and
  * on the seam itself when it is not; for a wall a line is fitted to the seam along the building's directions.
  */
-function linesBetween(planes: ReadonlyArray<Plane>, label: Int16Array, z: Float32Array, w: number, h: number, px: number, axesDeg: ReadonlyArray<number>, trace?: string[]): { segs: Seg[]; seams: Map<number, Seam> } {
+function linesBetween(planes: ReadonlyArray<Plane>, label: Int16Array, z: Float32Array, w: number, h: number, px: number, axesDeg: ReadonlyArray<number>, trace?: string[]): { segs: Seg[]; seams: Map<number, Seam>; placed: Set<Seg> } {
   // per pair (lower id first): the seam's points, and at each the unit step from the lower-id plane to the other
   const pairs = new Map<number, { pts: Pt[]; nx: number[]; ny: number[] }>();
   const push = (la: number, lb: number, p: Pt, nx: number, ny: number) => {
@@ -464,9 +468,11 @@ function linesBetween(planes: ReadonlyArray<Plane>, label: Int16Array, z: Float3
   }
   const segs: Seg[] = [];
   const seams = new Map<number, Seam>();
+  /** creases drawn along the building rather than on their planes' crossing: free to be set on a wall's line */
+  const placed = new Set<Seg>();
   const EXT = 3 / px; // creases run on 3 m past where the two planes were seen to touch
   const D = 5.5; // pixels from the seam to the two readings
-  let onCrossing = 0, onSeam = 0, walls = 0;
+  let onCrossing = 0, onSeam = 0, walls = 0, bent = 0;
   for (const [k, e] of pairs) {
     const { pts } = e;
     if (pts.length < 8) continue;
@@ -497,7 +503,53 @@ function linesBetween(planes: ReadonlyArray<Plane>, label: Int16Array, z: Float3
 
     const dgx = A.gx - B.gx, dgy = A.gy - B.gy, dg = Math.hypot(dgx, dgy);
     let rest = pts;
+    // The crossing of two planes that lie nearly alike points wherever the noise in their fits sends it, and a short
+    // seam cannot say otherwise. Where such a crossing comes out a few degrees off the way the building runs (not
+    // on it, and not a real diagonal), it is not believed: the seam gets a line fitted along the building instead
+    // (owner, 2026-11-12: "this line goes a little bit in angle; logically it should be straight").
+    let believed = true;
     if (crease && dg / px >= 0.04) {
+      const dir = (Math.atan2(dgx, -dgy) * 180) / Math.PI;
+      // the building direction the crossing runs nearest to, and how far off it
+      let off = 90, along = 0;
+      for (const a of axesDeg) for (const q of [a, a + 90]) {
+        const m = (((dir - q) % 180) + 180) % 180, d = Math.min(m, 180 - m);
+        if (d < off) { off = d; along = q; }
+      }
+      if (off > 0.3 && off < 12) {
+        const ts = pts.map((p) => (p.x * -dgy + p.y * dgx) / dg).sort((p, q) => p - q);
+        const run = ts[Math.ceil(ts.length * 0.97) - 1] - ts[Math.floor(ts.length * 0.03)];
+        if (dg / px < 0.15 || run < 3 / px) believed = false;
+        else {
+          // long and marked: the seam's own points decide. Within 3 px of the crossing (set on the seam), against
+          // within 3 px of a line along the building: the slant has to hold clearly more of them to be drawn.
+          const ds = pts.map((p) => (dgx * p.x + dgy * p.y + (A.c - B.c)) / dg).sort((p, q) => p - q);
+          const dm = Math.abs(ds[ds.length >> 1]) <= 0.7 / px ? 0 : ds[ds.length >> 1];
+          const onSlant = ds.filter((d) => Math.abs(d - dm) <= 3).length;
+          const ar = (along * Math.PI) / 180, nx = -Math.sin(ar), ny = Math.cos(ar);
+          const us = pts.map((p) => p.x * nx + p.y * ny).sort((p, q) => p - q);
+          const um = us[us.length >> 1];
+          if (us.filter((u) => Math.abs(u - um) <= 3).length >= onSlant * 0.9) believed = false;
+        }
+        if (!believed) {
+          // along the building, through the middle of the seam
+          const ar = (along * Math.PI) / 180, d = { x: Math.cos(ar), y: Math.sin(ar) }, nn = { x: -d.y, y: d.x };
+          const us = pts.map((p) => p.x * nn.x + p.y * nn.y).sort((p, q) => p - q);
+          const um = us[us.length >> 1], BAND = 0.7 / px;
+          const held = pts.filter((p) => Math.abs(p.x * nn.x + p.y * nn.y - um) <= BAND);
+          if (held.length >= Math.max(8, pts.length * 0.5)) {
+            const hs = held.map((p) => p.x * d.x + p.y * d.y).sort((p, q) => p - q);
+            const t0 = hs[Math.floor(hs.length * 0.03)] - EXT, t1 = hs[Math.ceil(hs.length * 0.97) - 1] + EXT;
+            const sg: Seg = { a: { x: nn.x * um + d.x * t0, y: nn.y * um + d.y * t0 }, b: { x: nn.x * um + d.x * t1, y: nn.y * um + d.y * t1 }, outline: false, tag: k };
+            segs.push(sg);
+            placed.add(sg);
+            rest = pts.filter((p) => Math.abs(p.x * nn.x + p.y * nn.y - um) > BAND);
+          }
+          bent++;
+        }
+      }
+    }
+    if (believed && crease && dg / px >= 0.04) {
       const dc = A.c - B.c;
       const dist = (p: Pt) => (dgx * p.x + dgy * p.y + dc) / dg; // pixels from the planes' own crossing
       const BAND = 0.7 / px;
@@ -526,7 +578,104 @@ function linesBetween(planes: ReadonlyArray<Plane>, label: Int16Array, z: Float3
   }
   const nWalls = [...seams.values()].filter((sm) => !sm.crease).length;
   trace?.push(`${seams.size} seams between planes: ${seams.size - nWalls} creases (${onCrossing} lines on the planes' own crossing, ${onSeam} placed on the seam), ${nWalls} real steps in height; ${walls} line(s) fitted`);
-  return { segs, seams };
+  if (bent) trace?.push(`${bent} crease(s) whose planes cross a few degrees off the building's direction, with nothing in the seam to show the slant is real, were drawn along the building instead`);
+  return { segs, seams, placed };
+}
+
+/**
+ * A wall between two roof levels mostly stands on the line of an outside wall: the house's wall runs on under the
+ * upper roof. A line fitted to such a seam lands a foot or so beside that line (the height map blurs a wall half a
+ * metre wide), and the tidying then pulled its end onto the outline's corner and left it at a slant (owner,
+ * 2026-11-12: "this line goes a little bit in angle; logically it should be straight … assume it's a continuation").
+ * So a fitted line that runs the way an outside wall runs, within 0.75 m of its line, and lies past that wall's end
+ * rather than beside it, is set on the wall's line. Only fitted lines (tag under 0) and the creases that were drawn
+ * along the building for want of a crossing to believe (`placed`): a crease on its planes' own crossing is where it
+ * is and is not moved. `onWall` collects every line found standing on a wall's line. Returns how many were moved.
+ */
+function continueWalls(lines: Seg[], ring: ReadonlyArray<Pt>, px: number, placed: ReadonlySet<Seg> | null, onWall?: Set<Seg>): number {
+  const NEAR = 0.75 / px, GAP = 2 / px;
+  let moved = 0;
+  for (const s of lines) {
+    if (s.outline || (s.tag >= 0 && !placed?.has(s))) continue;
+    const L = Math.hypot(s.b.x - s.a.x, s.b.y - s.a.y);
+    if (L < 1e-6) continue;
+    const dx = (s.b.x - s.a.x) / L, dy = (s.b.y - s.a.y) / L;
+    const ext = Math.min(runOn(s, px), L * 0.45);
+    let best: { off: number; nx: number; ny: number } | null = null;
+    for (let i = 0; i < ring.length; i++) {
+      const p = ring[i], q = ring[(i + 1) % ring.length];
+      const EL = Math.hypot(q.x - p.x, q.y - p.y);
+      if (EL < 1 / px) continue; // a metre of wall at least
+      const ex = (q.x - p.x) / EL, ey = (q.y - p.y) / EL;
+      if (Math.abs(dx * ey - dy * ex) > 0.052) continue; // the same way within 3 degrees
+      const off = ((s.a.x + s.b.x) / 2 - p.x) * -ey + ((s.a.y + s.b.y) / 2 - p.y) * ex;
+      if (Math.abs(off) > NEAR) continue;
+      const ta = (s.a.x - p.x) * ex + (s.a.y - p.y) * ey, tb = (s.b.x - p.x) * ex + (s.b.y - p.y) * ey;
+      const lo = Math.min(ta, tb) + ext, hi = Math.max(ta, tb) - ext;
+      const beside = Math.max(0, Math.min(hi, EL) - Math.max(lo, 0));
+      const gap = lo >= EL ? lo - EL : hi <= 0 ? -hi : 0;
+      // (a line within 0.3 m of the wall's own line IS that wall's line, beside it or past it)
+      if ((beside > (hi - lo) * 0.4 && Math.abs(off) > 0.3 / px) || gap > GAP) continue;
+      if (!best || Math.abs(off) < Math.abs(best.off)) best = { off, nx: -ey, ny: ex };
+    }
+    if (!best) continue;
+    onWall?.add(s);
+    if (Math.abs(best.off) > 0.05) {
+      s.a = { x: s.a.x - best.off * best.nx, y: s.a.y - best.off * best.ny };
+      s.b = { x: s.b.x - best.off * best.nx, y: s.b.y - best.off * best.ny };
+      moved++;
+    }
+  }
+  return moved;
+}
+
+/** How far a line was run on past its seam at each end when it was made: a crease 3 m, a fitted wall line 1.5 m, a missing-boundary line 12 px. */
+const runOn = (s: Seg, px: number) => (s.tag >= 0 ? 3 / px : s.tag === -2 ? 1.5 / px : 12);
+
+/**
+ * One line, drawn once. Two ridges of two parts of a roof that stand in line (a lower gable carrying the upper one's
+ * ridge on), or a wall line picked up in two pieces, come out of the planes a few inches apart, and where they meet
+ * the drawing gets a kink (owner, 2026-11-12: "logically it's a continuation … straight"). Lines that run the same
+ * way within 2 degrees, lie within 0.3 m of one line along their whole length, and follow one another within 1.5 m
+ * are set on one line: the line of the one already standing on an outside wall's line, else of the longest.
+ * Returns how many were moved.
+ */
+function alignRuns(lines: Seg[], px: number, onWall: ReadonlySet<Seg>): number {
+  const inner = lines.filter((s) => !s.outline);
+  const info = inner.map((s) => {
+    const L = Math.hypot(s.b.x - s.a.x, s.b.y - s.a.y), ext = Math.min(runOn(s, px), L * 0.45);
+    return { s, L, ext, own: L - 2 * ext };
+  }).filter((q) => q.L > 1e-6);
+  info.sort((p, q) => Number(onWall.has(q.s)) - Number(onWall.has(p.s)) || q.own - p.own);
+  const NEAR = 0.3 / px, GAP = 1.5 / px;
+  const done = new Set<Seg>();
+  let moved = 0;
+  for (const r of info) {
+    if (done.has(r.s)) continue;
+    done.add(r.s);
+    const p0 = r.s.a, dx = (r.s.b.x - r.s.a.x) / r.L, dy = (r.s.b.y - r.s.a.y) / r.L;
+    let from = r.ext, to = r.L - r.ext;
+    for (let again = true; again; ) {
+      again = false;
+      for (const q of info) {
+        if (done.has(q.s) || onWall.has(q.s)) continue;
+        const ex = (q.s.b.x - q.s.a.x) / q.L, ey = (q.s.b.y - q.s.a.y) / q.L;
+        if (Math.abs(dx * ey - dy * ex) > 0.035) continue;
+        const offA = (q.s.a.x - p0.x) * -dy + (q.s.a.y - p0.y) * dx, offB = (q.s.b.x - p0.x) * -dy + (q.s.b.y - p0.y) * dx;
+        if (Math.max(Math.abs(offA), Math.abs(offB)) > NEAR) continue;
+        const ta = (q.s.a.x - p0.x) * dx + (q.s.a.y - p0.y) * dy, tb = (q.s.b.x - p0.x) * dx + (q.s.b.y - p0.y) * dy;
+        const lo = Math.min(ta, tb) + q.ext, hi = Math.max(ta, tb) - q.ext;
+        if ((lo > to ? lo - to : hi < from ? from - hi : 0) > GAP) continue;
+        q.s.a = { x: q.s.a.x + offA * dy, y: q.s.a.y - offA * dx };
+        q.s.b = { x: q.s.b.x + offB * dy, y: q.s.b.y - offB * dx };
+        done.add(q.s);
+        if (Math.max(Math.abs(offA), Math.abs(offB)) > 0.05) moved++;
+        from = Math.min(from, lo); to = Math.max(to, hi);
+        again = true;
+      }
+    }
+  }
+  return moved;
 }
 
 /**
@@ -546,11 +695,14 @@ function fitLines(points: ReadonlyArray<Pt>, axesDeg: ReadonlyArray<number>, ext
     for (const p of rest) { sxx += (p.x - mx) ** 2; sxy += (p.x - mx) * (p.y - my); syy += (p.y - my) ** 2; }
     const own = 0.5 * Math.atan2(2 * sxy, sxx - syy);
     const ax = (axesDeg[0] * Math.PI) / 180;
-    const tries: Array<[number, number]> = [];
-    for (const d of axesDeg) { const a = (d * Math.PI) / 180; tries.push([a, 1.3], [a + Math.PI / 2, 1.3]); }
-    tries.push([ax + Math.PI / 4, 1.1], [ax - Math.PI / 4, 1.1], [own, 1]);
+    // [direction, weight, the least run of wall (pixels) that may claim it]: a short seam says too little about its
+    // own direction, so under 2 m it runs the way the building runs, and only 3 m of it may run its own way (owner,
+    // 2026-11-12, of a 5 ft wall line drawn 13 degrees off: "logically it should be straight")
+    const tries: Array<[number, number, number]> = [];
+    for (const d of axesDeg) { const a = (d * Math.PI) / 180; tries.push([a, 1.3, 0], [a + Math.PI / 2, 1.3, 0]); }
+    tries.push([ax + Math.PI / 4, 1.1, 20], [ax - Math.PI / 4, 1.1, 20], [own, 1, 30]);
     let best: { dir: number; u0: number; n: number; score: number } | null = null;
-    for (const [dir, weight] of tries) {
+    for (const [dir, weight, least] of tries) {
       const nx = -Math.sin(dir), ny = Math.cos(dir);
       const us = rest.map((p) => p.x * nx + p.y * ny).sort((a, b) => a - b);
       // the densest 5-pixel band
@@ -558,6 +710,10 @@ function fitLines(points: ReadonlyArray<Pt>, axesDeg: ReadonlyArray<number>, ext
       for (let i = 0, j = 0; i < us.length; i++) {
         while (us[i] - us[j] > 5) j++;
         if (i - j + 1 > bn) { bn = i - j + 1; bu = us[(i + j) >> 1]; }
+      }
+      if (least > 0) {
+        const along = rest.filter((p) => Math.abs(p.x * nx + p.y * ny - bu) <= 3).map((p) => p.x * Math.cos(dir) + p.y * Math.sin(dir)).sort((a, b) => a - b);
+        if (!along.length || along[Math.ceil(along.length * 0.97) - 1] - along[Math.floor(along.length * 0.03)] < least) continue;
       }
       if (!best || bn * weight > best.score) best = { dir, u0: bu, n: bn, score: bn * weight };
     }

@@ -83,6 +83,12 @@ export interface FacetModel {
   };
   /** whose outline the facets were drawn inside: EagleView's, or (a roof measured from Google alone) Google's own */
   outlineFrom: "eagleview" | "google";
+  /**
+   * What lay inside Google's building outline and is not drawn, plan square feet: lower than a roof (a driveway, a
+   * patio), a deck a storey under the eave, the strip beside a wall, and what falls away past the roof's edge.
+   * Null when the outline was not read off the height map.
+   */
+  leftOut: { lowSqft: number; deckSqft: number; besideWallSqft: number; pastEdgeSqft: number } | null;
   compare: {
     /** whose figures these are: "EagleView", or "Google" for a roof measured from Google alone (its own estimate) */
     reference: string;
@@ -122,6 +128,11 @@ export function toFacetModel(input: {
   /** whose figures `eagleView` holds — "EagleView" unless said otherwise ("Google" for a Google-only estimate) */
   reference?: string;
   outlineFrom?: "eagleview" | "google";
+  /**
+   * Plan square feet that lay inside the reference's own outline and that the drawing leaves out as not roof (a deck,
+   * a driveway, the strip beside a wall — ./roofOutline). The reference's area still counts them.
+   */
+  leftOut?: FacetModel["leftOut"];
   notes?: string[];
 }): FacetModel {
   const ref = input.reference ?? "EagleView";
@@ -186,8 +197,15 @@ export function toFacetModel(input: {
     score -= 10;
     reasons.push(`${ref} gave no area for this roof, so the drawing's total has nothing to be checked against.`);
   } else if (Math.abs(areaDeltaPct) > 2) {
-    score -= Math.min(30, (Math.abs(areaDeltaPct) - 2) * 2.5);
-    reasons.push(`The facets add up to ${Math.abs(areaDeltaPct)}% ${areaDeltaPct > 0 ? "more" : "less"} than ${refs} area.`);
+    // What the drawing left out on purpose is not a disagreement about the roof: the gap is judged without it.
+    const lo = input.leftOut;
+    const left = lo ? Math.max(0, Math.round(lo.lowSqft + lo.deckSqft + lo.besideWallSqft + lo.pastEdgeSqft)) : 0;
+    const fair = left >= 20 && ev.areaSqft ? r1(((areaSqft + left - ev.areaSqft) / ev.areaSqft) * 100) : areaDeltaPct;
+    score -= Math.min(30, Math.max(0, Math.abs(fair) - 2) * 2.5);
+    reasons.push(
+      `The facets add up to ${Math.abs(areaDeltaPct)}% ${areaDeltaPct > 0 ? "more" : "less"} than ${refs} area.` +
+        (left >= 20 && areaDeltaPct < 0 ? ` ${left.toLocaleString("en-US")} sq ft of that is what ${ref} counted and the drawing leaves out as not roof (see the notes).` : ""),
+    );
   } else {
     reasons.push(`The facets add up to within ${Math.abs(areaDeltaPct)}% of ${refs} area.`);
   }
@@ -221,6 +239,7 @@ export function toFacetModel(input: {
     edges,
     totals: { areaSqft, squares: r1(areaSqft / 100), facets: facets.length, predominantPitch, feet, count },
     outlineFrom: input.outlineFrom ?? "eagleview",
+    leftOut: input.leftOut ?? null,
     compare: { reference: ref, eagleViewSqft: ev.areaSqft, eagleViewFacets: ev.facetCount, eagleViewPitch: ev.pitch, googleSegments: result.quality.googleSegments, areaDeltaPct },
     confidence: { level: score >= 80 ? "high" : score >= 60 ? "medium" : "low", score, reasons },
     shiftFt: { east: r1(result.shift.dx * frame.pixelSizeM * FT_PER_M), north: r1(-result.shift.dy * frame.pixelSizeM * FT_PER_M) },
