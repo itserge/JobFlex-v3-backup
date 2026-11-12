@@ -25,6 +25,7 @@ import { alertDisputeClosed, alertDisputeOpened, alertInvoiceFailed, alertInvoic
 import { onSubscriptionDeleted, onSubscriptionUpdated } from "@/lib/subscriptionEvents";
 import { markFailuresRecovered, noteInvoiceFailure } from "@/lib/paymentFailures";
 import { textOwnerPaymentFailed } from "@/lib/billingProblemText";
+import { isSignupCardHoldObject } from "@/lib/signupCardHold";
 
 export const runtime = "nodejs";
 
@@ -56,6 +57,12 @@ export async function POST(req: Request) {
 }
 
 async function dispatch(event: Stripe.Event, stripe: Stripe) {
+  /* THE SIGN-UP'S $1 CARD CHECK (lib/signupCardHold): its PaymentIntent and charge (created, authorized, refused,
+     cancelled) belong to no lead, invoice, commission or letter — nothing here acts on them. The charge carries the
+     PaymentIntent's metadata, so one mark covers both. */
+  if ((event.type.startsWith("payment_intent.") || event.type.startsWith("charge.")) && isSignupCardHoldObject(event.data.object as { metadata?: Stripe.Metadata | null })) {
+    return;
+  }
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;

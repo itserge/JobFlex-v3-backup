@@ -230,6 +230,10 @@ export const TRAFFIC_EVENTS = {
   // card page — `reason` step1 (the email step), google (back from Google), relogin (a sign-up reopened later),
   // plan_pick (a plan card pressed); `plan`, `interval`. Sent from the server (lib/traffic-capture-server).
   checkoutRedirect: "signup_checkout_redirect",
+  // THE $1 CARD CHECK REFUSED (owner, 2026-11-11, lib/signupCardHold): the bank declined the hold on the card the
+  // sign-up's Checkout saved — no account made. `code` (insufficient_funds, generic_decline, do_not_honor …), `plan`,
+  // `interval`, `livemode`. Once per Checkout Session, from the server (actions/signupCheckout).
+  cardDeclined: "signup_card_declined",
   // The plan cards drawn without a press (2026-10-19): `reason` returned (Stripe's back arrow, or Back) or
   // checkout_failed (the card page did not open). Fired by auth-register-blueprint/register-content.tsx.
   plansShown: "signup_plans_shown",

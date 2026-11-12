@@ -1,0 +1,13 @@
+/* Admin → Tutorials (2026-11-11). Scoped like the other admin modules; the table rows are the shared admin kit's
+   (admin-influencers/admin-ui .tbl/.tr), these only set their columns and the small bits. */
+:global(.jf-blueprint .content) .root { display: grid; gap: 18px; }
+:global(.jf-blueprint .content) .filmCols { grid-template-columns: minmax(0, 2fr) 80px 80px 90px minmax(0, 1.2fr); align-items: center; }
+:global(.jf-blueprint .content) .whoCols { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.1fr) minmax(0, 1.4fr) 64px minmax(0, 1.1fr) 90px 110px; align-items: center; }
+:global(.jf-blueprint .content) .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 700; }
+:global(.jf-blueprint .content) .bar { display: flex; align-items: center; gap: 8px; min-width: 0; }
+:global(.jf-blueprint .content) .bar > i { display: block; flex: 1; height: 6px; background: var(--paper-deep, #eee); border: 1px solid var(--line, #ccc); position: relative; min-width: 40px; }
+:global(.jf-blueprint .content) .bar > i > b { position: absolute; inset: 0 auto 0 0; background: var(--blueprint, #1c59b5); }
+:global(.jf-blueprint .content) .bar > span { font-family: var(--font-mono); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+:global(.jf-blueprint .content) .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+:global(.jf-blueprint .content) .filters select { min-height: 36px; padding: 0 10px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: var(--paper); font-size: 13px; }
+:global(.jf-blueprint .content) .note { margin: 0; font-size: 12.5px; color: var(--muted); max-width: 90ch; }

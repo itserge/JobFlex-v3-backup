@@ -94,6 +94,7 @@ import { ProductMark } from "@/components/brand/ProductMark";
 import { markQaVisitor } from "@/lib/qaEmail";
 import { homeownerDoorFor } from "@/lib/home/homeownerDoor";
 import { ToolsCardPage } from "./tools-card-page";
+import { CARD_DECLINED_LINE, CARD_HOLD_NOTICE } from "@/lib/signupCardHoldWords";
 import { isToolsSlug, toolPlanById, type Catalog, type ToolId, type ToolPlanId } from "@/lib/toolPlans/shared";
 
 /* A PHONE (≤768px) — the plan step's cards are a two-column grid there
@@ -129,7 +130,9 @@ function recalledPlan(): string | null {
    (app/(auth)/auth/register/checkout) and the answer is a 303 to Stripe's card page — or to the plan cards with a line
    when the page did not open. Nothing is kept in the browser to tell a back-out apart: Stripe's back arrow and the
    browser's Back both land on the plan cards (`checkout=cancelled`). */
-type HandOffReason = "step1" | "google" | "plan_pick";
+type HandOffReason = "step1" | "google" | "plan_pick" | "card_declined";
+/** The bank refused the $1 card check (lib/signupCardHold): the plan that Checkout was for, to open it again. */
+type DeclinedPick = { plan: string | null; interval: string | null; tool: string | null };
 function checkoutHref(token: string, reason: HandOffReason, pick?: { slug: string; term: BillingTerm; tool?: string }): string {
   const q = new URLSearchParams({ signup: token, reason });
   if (pick) {
@@ -320,7 +323,7 @@ export function RegisterContent({
      2026-08-31). useSearchParams gives both renders the same answer; the
      page is dynamic, so it needs no Suspense boundary (register-responsive). */
   const searchParams = useSearchParams();
-  const ret = React.useMemo<{ token: string; sessionId: string | null; cancelled: boolean; failed: boolean } | null>(() => {
+  const ret = React.useMemo<{ token: string; sessionId: string | null; cancelled: boolean; failed: boolean; declined: DeclinedPick | null } | null>(() => {
     const t = searchParams?.get("signup");
     if (!t) return null;
     return {
@@ -329,6 +332,11 @@ export function RegisterContent({
       cancelled: searchParams.get("checkout") === "cancelled",
       // ./checkout could not open Stripe's card page (an error, or nothing within eight seconds).
       failed: searchParams.get("checkout") === "failed",
+      // The bank refused the $1 card check (a reload of that answer — the address the return wrote, below).
+      declined:
+        searchParams.get("checkout") === "declined"
+          ? { plan: searchParams.get("plan"), interval: searchParams.get("interval"), tool: searchParams.get("tool") }
+          : null,
     };
     // Read once: the params only change via full navigations on this page.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -443,6 +451,10 @@ export function RegisterContent({
     // Straight-to-Professional says it calmly in its own note over the cards (data-auto-plan-back), not as an error.
     ret?.cancelled && !auto ? "Checkout was cancelled — your account has not been created yet." : null,
   );
+  /* THE BANK SAID NO TO THE $1 CARD CHECK (owner, 2026-11-11 — lib/signupCardHold): no account, the subscription of
+     that Checkout cancelled. The plan step opens with one line and one button, which opens a new Checkout for the same
+     plan; the name and the email stay on the pending sign-up, nothing is typed again. */
+  const [declined, setDeclined] = React.useState<DeclinedPick | null>(ret?.declined ?? null);
   /* THE PLAN STEP WITH NOTHING TO SELL (passwordless, 2026-10-14): the
      address has an account by now ("taken" — the plan step offers sign-in),
      or the pending signup ran out ("expired" — back to step 1, the fields
@@ -845,7 +857,8 @@ export function RegisterContent({
         setLiveAuto(nowAuto);
         // A tab drawn before the switch went on, its code typed after: the switch as it stands now — off to Stripe by
         // the server, as step 1 would have gone (no plan screen, no cards). Not a return: that one is the cards.
-        if (nowAuto && requiresCard && token && !(ret && !ret.sessionId) && !res.tools) {
+        // Nor a declined card: that one waits on the line and its button.
+        if (nowAuto && requiresCard && token && !(ret && !ret.sessionId) && !declined && !res.tools) {
           leaveForCheckout(token, "step1");
           return;
         }
@@ -1063,6 +1076,15 @@ export function RegisterContent({
     }, 20000);
   }
 
+  /* "Try another card" (the $1 card check refused): a new Checkout for the plan the refused one was for. */
+  function onTryAnotherCard() {
+    if (!token || leavingRef.current) return;
+    const d = declined;
+    setPayBusy(true);
+    if (d?.plan) leaveForCheckout(token, "card_declined", { slug: d.plan, term: d.interval === "YEAR" ? "YEAR" : "MONTH", ...(d.tool !== null ? { tool: d.tool } : {}) });
+    else leaveForCheckout(token, "step1");
+  }
+
   /* TESTING EXIT (owner's call, while the product is in testing). It creates
      the workspace WITHOUT a subscription — the only path that does. Everything
      else about it is the same as the paid return: the pending intent is spent,
@@ -1262,6 +1284,20 @@ export function RegisterContent({
                 ? `Your subscription is active and your workspace is ready for ${res.email}.`
                 : `Your shop is already set up for ${res.email}. Sign in to open it.`,
             );
+            return;
+          }
+          /* The bank refused the $1 card check: the card page again, one line and its button. The address is written
+             so a reload draws the same (and never runs this Checkout's return a second time). */
+          if (res.declined) {
+            const d = res.declined;
+            try {
+              const q: Record<string, string> = { signup: ret.token, checkout: "declined", ...(d.plan ? { plan: d.plan } : {}), ...(d.interval ? { interval: d.interval } : {}), ...(d.tool !== null ? { tool: d.tool } : {}) };
+              window.history.replaceState(window.history.state, "", `/auth/register?${new URLSearchParams(q).toString()}`);
+            } catch {
+              /* a reload then runs the return again, and the kept answer says "declined" again */
+            }
+            setDeclined(d);
+            setStep(3);
             return;
           }
           // Back to the plan page, with the reason on it.
@@ -2190,7 +2226,7 @@ export function RegisterContent({
           <div
             className={step === 3 ? "step" : "step is-hidden"}
             id="stepPlan"
-            style={autoStart || leaving || (otp && !returned && plans.length === 0 && !plansErr && !gate) ? { visibility: "hidden" } : undefined}
+            style={autoStart || leaving || (otp && !returned && plans.length === 0 && !plansErr && !gate && !declined) ? { visibility: "hidden" } : undefined}
           >
             {/* Title and the billing switch on ONE line: the switch is the
                 control that rewrites every price under it, so it belongs beside
@@ -2207,7 +2243,17 @@ export function RegisterContent({
                 takes one row (two when the window is narrow) and the cards fit the screen. */}
             {/* THE ONE LINE OVER THE CARDS (owner, 2026-10-19): Stripe's card page did not open — the only time the cards
                 come up without being asked for; or, back from it, the plan that was picked. */}
-            {returned && ret?.failed && !gate ? (
+            {/* The bank refused the $1 card check (lib/signupCardHold): one line and the button to a new Checkout. */}
+            {declined && !gate ? (
+              <div className="pw-confirm" role="alert" id="cardDeclined" data-card-declined>
+                <p className="pw-confirm-h">{CARD_DECLINED_LINE}</p>
+                <div className="pw-confirm-row">
+                  <button type="button" className="btn pw-go" id="tryAnotherCard" onClick={onTryAnotherCard} disabled={payBusy}>
+                    {payBusy ? "Opening checkout…" : "Try another card"}
+                  </button>
+                </div>
+              </div>
+            ) : returned && ret?.failed && !gate ? (
               <p className="pw-autonote" role="status" data-checkout-failed>
                 Secure checkout didn&apos;t open — pick a plan to try again
               </p>
@@ -2670,6 +2716,13 @@ export function RegisterContent({
               {requiresCard
                 ? `Your ${trialDays}-day free trial renews automatically at the selected plan price and billing interval shown above, unless you cancel before it ends. No charge today. Cancel from the Subscription page.`
                 : `No card needed: the trial is ${trialDays} days, and you add a card only if you keep the plan.`}
+              {/* The $1 card check on the return from Stripe (lib/signupCardHold), said before the card is asked for. */}
+              {requiresCard ? (
+                <>
+                  {" "}
+                  <span id="cardHoldNoticePlan">{CARD_HOLD_NOTICE}</span>
+                </>
+              ) : null}
               {" "}By starting a trial, you agree to our{" "}
               <Link href="/terms" target="_blank" rel="noopener noreferrer"><u>Terms of service</u></Link>
               {" "}and acknowledge our{" "}

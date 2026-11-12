@@ -9,6 +9,8 @@
 //   GET  ?signup=<token>&reason=step1|google|relogin            the plan the sign-up rule picks (lib/signupAutoPlan:
 //                                                                Professional, monthly), with the 7-day trial
 //   GET  ?signup=<token>&plan=<slug>&interval=MONTH|YEAR&reason=plan_pick   a plan card pressed
+//   GET  … the same, &reason=card_declined                       "Try another card": the bank refused the $1 card
+//                                                                check (lib/signupCardHold) — the same plan again
 //   POST name, email (+ the landing's trade, tool, utm_*)        step 1 sent without JavaScript: the short sign-up
 //                                                                (actions/signupOtp startQuickSignup), then as step1
 //
@@ -35,8 +37,10 @@ import { toolsPlansOn } from "@/lib/toolPlans/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type Reason = "step1" | "google" | "relogin" | "plan_pick";
-const REASONS: ReadonlySet<string> = new Set(["step1", "google", "relogin", "plan_pick"]);
+type Reason = "step1" | "google" | "relogin" | "plan_pick" | "card_declined";
+const REASONS: ReadonlySet<string> = new Set(["step1", "google", "relogin", "plan_pick", "card_declined"]);
+/** The plan is named by the request: a card pressed, or the same plan again after a declined card. */
+const named = (r: Reason) => r === "plan_pick" || r === "card_declined";
 
 /** A 303 — never cached, never a page. A path of this site goes as it is (the browser resolves it against the address
  *  it asked for, whatever host the server was started on); Stripe's page as its full URL. */
@@ -70,7 +74,7 @@ async function handOff(
 
   let planSlug: string;
   let interval: "MONTH" | "YEAR" = "MONTH";
-  if (reason === "plan_pick" && ask.plan) {
+  if (named(reason) && ask.plan) {
     planSlug = ask.plan;
     interval = ask.interval === "YEAR" ? "YEAR" : "MONTH";
   } else if (await toolsPlansOn()) {
@@ -93,14 +97,14 @@ async function handOff(
   const tracked = !isQaEmail(pending.email);
   if (!res.ok) {
     console.warn(`[signup] checkout did not open (${reason}, ${planSlug}): ${res.status} ${res.error}`);
-    return go(register({ signup: token, checkout: "failed", ...(reason === "plan_pick" ? { plan: planSlug } : {}), ...(reason === "plan_pick" && ask.tool ? { tool: ask.tool } : {}) }));
+    return go(register({ signup: token, checkout: "failed", ...(named(reason) ? { plan: planSlug } : {}), ...(named(reason) && ask.tool ? { tool: ask.tool } : {}) }));
   }
   if (tracked) {
     // The sign-up screen this browser was drawn (lib/signupView): the browser's events carry it as a super property.
     const view = (await cookies()).get(SIGNUP_VIEW_COOKIE)?.value?.replace(/!$/, "");
     const signupView = view === "app" || view === "page" ? view : null;
     after(async () => {
-      const props = { reason, plan: planSlug, interval, plan_mode: reason === "plan_pick" ? "pick" : "auto", signup_view: signupView };
+      const props = { reason, plan: planSlug, interval, plan_mode: named(reason) ? "pick" : "auto", signup_view: signupView };
       await Promise.all([
         captureTrafficEvent(identity, TRAFFIC_EVENTS.checkoutRedirect, props),
         // The funnel's own step, as the browser used to send it when it had the URL in hand.

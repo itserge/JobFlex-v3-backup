@@ -59,6 +59,7 @@ import css from "./passwordless.module.css";
 import { markQaVisitor } from "@/lib/qaEmail";
 import { trackMetaLeadOnce } from "@/lib/metaLead";
 import { autoPlanAmount, type AutoPlanOffer } from "@/lib/signupAutoPlan";
+import { CARD_HOLD_NOTICE } from "@/lib/signupCardHoldWords";
 
 type Screen = "form" | "code" | "google" | "done";
 const STORE_KEY = "jf_otp_signup";
@@ -757,6 +758,12 @@ export function PasswordlessStep({
           {auto && requiresCard ? (
             <p className={css.anytime} id="otpAnytime">
               Upgrade / downgrade or cancel anytime
+            </p>
+          ) : null}
+          {/* The $1 card check on the return from Stripe (lib/signupCardHold) — this step hands straight to Stripe. */}
+          {quick ? (
+            <p className={css.hold} id="cardHoldNotice">
+              {CARD_HOLD_NOTICE}
             </p>
           ) : null}
           <div className={err ? "err" : "err is-hidden"} id="err1" role="alert">

@@ -28,6 +28,7 @@ import t from "./admin-trials.module.css";
 import type { PaymentCard } from "@/lib/paymentCard";
 import { PaymentCardLabel } from "@/components/v3/admin-subscribers/payment-card";
 import pc from "@/components/v3/admin-subscribers/payment-card.module.css";
+import { CardHoldsPanel, cardHoldWords, type CardHoldRow } from "./card-holds-panel";
 
 const LEVEL_LABEL: Record<TrialLevel, string> = { suspicious: "Look at this", watch: "Watch", clear: "Clear" };
 /** The card-less trial's card, as the row's second line says it. */
@@ -80,6 +81,7 @@ export function AdminTrialsContent({
   pricingReady,
   pricingParts,
   payments,
+  cardHolds,
 }: {
   data: TrialWatchData;
   policy: SignupTrialState;
@@ -90,7 +92,10 @@ export function AdminTrialsContent({
   pricingReady: boolean;
   pricingParts: ReadonlyArray<{ part: number; what: string; done: boolean }>;
   payments: Promise<TrialPayments>;
+  /** The sign-up's $1 card checks (lib/signupCardHold), newest first. */
+  cardHolds: CardHoldRow[];
 }) {
+  const holdByOrg = useMemo(() => new Map(cardHolds.filter((h) => h.orgId).map((h) => [h.orgId as string, h])), [cardHolds]);
   const [level, setLevel] = useState<"" | TrialLevel>("");
   // Card-less trials apart (owner, 2026-10-01): "no-card" is every trial that
   // started without one, whatever has happened since; the rest narrow it.
@@ -139,6 +144,8 @@ export function AdminTrialsContent({
       <SignupPlanPanel initial={plan} requiresCard={policy.mode === "card"} />
       <SignupViewPanel initial={view} />
       <PricingModelPanel initial={pricing} ready={pricingReady} parts={pricingParts} />
+
+      <CardHoldsPanel rows={cardHolds} now={data.now} />
 
       <div className="kpi-grid">
         <div className="kpi">
@@ -251,6 +258,11 @@ export function AdminTrialsContent({
                         <Suspense fallback={<CardLine card={r.card} payment={null} winback={r.winback} />}>
                           <StreamedCardLine id={r.id} card={r.card} payments={payments} winback={r.winback} />
                         </Suspense>
+                        {holdByOrg.get(r.id) ? (
+                          <div className={s.sub} data-card-hold-line={holdByOrg.get(r.id)!.result}>
+                            {cardHoldWords(holdByOrg.get(r.id)!)}
+                          </div>
+                        ) : null}
                       </div>
                     </td>
                     <td data-l="Screens" className={s.num}>

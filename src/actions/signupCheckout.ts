@@ -50,7 +50,11 @@ import { readGoogleSignup } from "@/lib/googleSignup";
 import { settleReferralsForSignupOrg } from "@/lib/referralRewards";
 import { after } from "next/server";
 import { isQaEmail } from "@/lib/qaEmail";
-import { captureSignupOutcome, trafficIdentitySchema } from "@/lib/traffic-capture-server";
+import { captureSignupOutcome, captureTrafficEvent, identityFromCookie, trafficIdentitySchema } from "@/lib/traffic-capture-server";
+import { cookies, headers } from "next/headers";
+import { TRAFFIC_EVENTS } from "@/lib/traffic-contract";
+import { cancelDeclinedSubscription, checkSignupCard, noteCardHoldAccount, readCardHold } from "@/lib/signupCardHold";
+import { CARD_DECLINED_LINE } from "@/lib/signupCardHoldWords";
 import { orgNameUnsetKey } from "@/lib/orgName";
 import { signupNetworkBrake } from "@/lib/signupBrake";
 import type { SignupModeLabel } from "@/lib/signupMode";
@@ -367,7 +371,7 @@ export async function completePendingSignup(
   sessionId: string | null,
 ): Promise<
   | { ok: true; email: string; ticket: string | null }
-  | { ok: false; error: string; done?: boolean; email?: string }
+  | { ok: false; error: string; done?: boolean; email?: string; declined?: { plan: string | null; interval: string | null; tool: string | null } }
 > {
   const rec = await loadPending(token);
   if (!rec) {
@@ -420,7 +424,7 @@ export async function completePendingSignup(
       // Same mode the session was created under, as long as the admin switch
       // has not been flipped mid-checkout; a cross-mode session id simply
       // fails to retrieve, which reads as "couldn't verify" — correct.
-      const { stripe } = await getStripeClient();
+      const { stripe, mode } = await getStripeClient();
       const session = await stripe.checkout.sessions.retrieve(sessionId, {
         expand: ["subscription"],
       });
@@ -450,13 +454,46 @@ export async function completePendingSignup(
       if (typeof metaPages === "string") {
         paidCustomPages = normalizeCustomPages(metaPages.split(",").filter(Boolean));
       }
+      /* THE $1 CARD CHECK (owner, 2026-11-11 — lib/signupCardHold): the trial took the card without charging it, so
+         the bank is asked for a $1 hold, released at once. A refusal of the card: no account, this Checkout's
+         subscription cancelled, the card page again with one line. Anything else that goes wrong with the check lets
+         the sign-up through (it never throws). Once per Checkout Session, however often this runs. */
+      // A Checkout already checked is read back whatever its subscription says now: a declined card's subscription is
+      // cancelled by then, and that return must still make no account.
+      if (stripeSubscription?.status === "trialing" || (await readCardHold(session.id))) {
+        const { fresh, ...hold } = await checkSignupCard({ stripe, mode, session, sub: stripeSubscription, token, email: rec.email });
+        if (hold.result === "declined") {
+          if (!hold.subCanceled && !(await cancelDeclinedSubscription(stripe, hold))) {
+            console.warn(`[signup] declined sign-up's subscription ${hold.subId} still standing — the trials cron cancels it`);
+          }
+          // Told to the analyst once: by the call that met the refusal, not by a reload reading it back.
+          if (fresh && !isQaEmail(rec.email)) {
+            const props = { code: hold.code ?? "card_declined", plan: hold.plan, interval: hold.interval, livemode: session.livemode };
+            // The sign-up's own identity, else this browser's PostHog cookie (as the hand-off to Stripe reads it).
+            const identity =
+              rec.analytics ??
+              identityFromCookie((await cookies()).get(`ph_${process.env.NEXT_PUBLIC_POSTHOG_KEY}_posthog`)?.value, (await headers()).get("host")?.split(":")[0] ?? "");
+            after(() => captureTrafficEvent(identity, TRAFFIC_EVENTS.cardDeclined, props));
+          }
+          return { ok: false, error: CARD_DECLINED_LINE, declined: { plan: hold.plan, interval: hold.interval, tool: hold.tool ?? null } };
+        }
+      } else if (stripeSubscription && (stripeSubscription.status === "canceled" || stripeSubscription.status === "incomplete_expired")) {
+        // A trial sign-up whose subscription is already gone (its decline's record unwritten, or cancelled at Stripe
+        // in the meantime): no account on a dead subscription — the card page again, as a declined card would.
+        console.warn(`[signup] ${session.id}: subscription ${stripeSubscription.id} is ${stripeSubscription.status} — no account`);
+        return {
+          ok: false,
+          error: CARD_DECLINED_LINE,
+          declined: { plan: planSlug, interval: (session.metadata?.interval as string | undefined) ?? null, tool: (session.metadata?.mainTool as string | undefined) ?? null },
+        };
+      }
     } catch (err) {
       console.warn("[signup] checkout verify failed:", err);
       return { ok: false, error: "Couldn't verify the payment. Try again." };
     }
   }
 
-  return createAccountFromPending(token, rec, {
+  const made = await createAccountFromPending(token, rec, {
     flow: sessionId ? "checkout" : "skip",
     sessionId,
     stripeCustomerId,
@@ -470,6 +507,9 @@ export async function completePendingSignup(
     analyticsLive,
     mainTool,
   });
+  // Admin → Trial watch: the shop this card check let in.
+  if (made.ok && sessionId) await noteCardHoldAccount(sessionId, made.orgId).catch(() => {});
+  return made;
 }
 
 /**

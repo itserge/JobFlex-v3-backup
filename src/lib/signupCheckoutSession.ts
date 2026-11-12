@@ -21,6 +21,7 @@ import { customMetadata } from "@/lib/customBilling";
 import { CUSTOM_PLAN_OFF_SALE, customPlanOffered } from "@/lib/customPlanFlag";
 import { trialOfferMetadata } from "@/lib/trialOffer";
 import { CUSTOM_PLAN_SLUG } from "@/lib/customPlan";
+import { CARD_HOLD_NOTICE } from "@/lib/signupCardHoldWords";
 
 export const SIGNUP_CHECKOUT_DEADLINE_MS = 8_000;
 
@@ -139,6 +140,9 @@ async function open({ token, planSlug, interval, origin, mainTool }: Parameters<
         ...(isCustom ? { customPages: pending.customPages.join(",") } : {}),
         ...toolsMeta,
       },
+      // THE $1 CARD CHECK, said on Stripe's page beside its button (owner, 2026-11-11 — lib/signupCardHold): the trial's
+      // return asks the bank for a $1 hold and releases it at once.
+      ...(trialDays > 0 ? { custom_text: { submit: { message: CARD_HOLD_NOTICE } } } : {}),
       success_url: `${back}&session_id={CHECKOUT_SESSION_ID}`,
       // Stripe's back arrow: the plan cards of this sign-up (app/(auth)/auth/register — `checkout=cancelled`).
       cancel_url: `${back}&checkout=cancelled`,
