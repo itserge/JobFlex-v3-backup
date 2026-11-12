@@ -97,3 +97,37 @@ export function registerOutline(ring: ReadonlyArray<Pt>, building: Uint8Array, w
   }
   return { ...best, unshiftedScore: scoreAt(0, 0, 1) };
 }
+
+/**
+ * Square off a traced outline's clipped corners. EagleView's outline often cuts a corner with a stub a foot or two
+ * long; on the drawing each stub is an edge of its own (a 2-foot "rake" at the end of an eave). Where a stub shorter
+ * than `shortPx` joins two long edges whose lines meet close by, the two long edges are run on to that meeting point.
+ * A jog between two parallel walls has no such point and is left alone.
+ */
+export function sharpenCorners(ring: ReadonlyArray<Pt>, shortPx: number, longPx: number): Pt[] {
+  let out = [...ring];
+  for (let guard = 0; guard < 40; guard++) {
+    const n = out.length;
+    if (n < 5) break;
+    let done = false;
+    for (let i = 0; i < n && !done; i++) {
+      const p0 = out[(i - 1 + n) % n], a = out[i], b = out[(i + 1) % n], p3 = out[(i + 2) % n];
+      if (Math.hypot(b.x - a.x, b.y - a.y) >= shortPx) continue;
+      const d1 = { x: a.x - p0.x, y: a.y - p0.y }, d2 = { x: p3.x - b.x, y: p3.y - b.y };
+      const l1 = Math.hypot(d1.x, d1.y), l2 = Math.hypot(d2.x, d2.y);
+      if (l1 < longPx || l2 < longPx) continue;
+      const den = d1.x * d2.y - d1.y * d2.x;
+      if (Math.abs(den) < Math.sin((25 * Math.PI) / 180) * l1 * l2) continue; // the two walls run (nearly) the same way
+      const t = ((b.x - p0.x) * d2.y - (b.y - p0.y) * d2.x) / den;
+      const m = { x: p0.x + d1.x * t, y: p0.y + d1.y * t };
+      // the corner must be where the stub is, not somewhere across the yard
+      if (Math.hypot(m.x - (a.x + b.x) / 2, m.y - (a.y + b.y) / 2) > shortPx * 1.5) continue;
+      const next = out.filter((_, k) => k !== i && k !== (i + 1) % n);
+      next.splice(i > (i + 1) % n ? 0 : i, 0, m);
+      out = next;
+      done = true;
+    }
+    if (!done) break;
+  }
+  return out;
+}

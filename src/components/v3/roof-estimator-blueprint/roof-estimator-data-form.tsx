@@ -61,6 +61,7 @@ import { familyOfMaterial, WASTE_OPTIONS } from "@/lib/roofPackage/catalog";
 import { isFlatRoof } from "@/lib/roofPackage/flatRule";
 import { joinClauses, readBuilding } from "@/lib/roofPackage/commercial";
 import { InventoryLinkChoice } from "@/components/v3/inventory-link/inventory-link-choice";
+import { RoofDiagramPreview } from "@/components/v3/admin-roof-lab/roof-diagram-preview";
 
 /** How the contractor said each measured building is used, by measurement id.
  *  Browser-local on purpose: it is a pricing choice for this contractor, it
@@ -435,7 +436,7 @@ function StructureRow(p: {
   );
 }
 
-export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, measurementEnabled = false, initialAddress, leadEstimateId, webRoof, proposalId, homeState = null }: { aiEnabled?: boolean; evEnabled?: boolean; measurementEnabled?: boolean; initialAddress?: string; leadEstimateId?: string; webRoof?: WebRoofSeed; proposalId?: string; homeState?: string | null } = {}) {
+export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, measurementEnabled = false, initialAddress, leadEstimateId, webRoof, proposalId, homeState = null, roofDiagramPreview = false }: { aiEnabled?: boolean; evEnabled?: boolean; measurementEnabled?: boolean; initialAddress?: string; leadEstimateId?: string; webRoof?: WebRoofSeed; proposalId?: string; homeState?: string | null; /** A platform admin is looking (page.tsx): the roof diagram card is shown under a saved measurement. */ roofDiagramPreview?: boolean } = {}) {
   const router = useRouter();
 
   // ── Screen ──
@@ -2931,6 +2932,10 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
               </div>
             </div>
             )}
+
+            {/* Admin preview (owner, 2026-11-12: "add to roof estimator diagram … only at admin account"): the roof's
+                facets and lines as lib/roofFacets draws them. Platform admins only — a contractor gets no card. */}
+            {roofDiagramPreview && measurement && savedId ? <RoofDiagramPreview key={savedId} measurementId={savedId} /> : null}
 
             <BuildEstimateCardSwitch
               isRecon={isRecon}

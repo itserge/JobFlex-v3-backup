@@ -66,7 +66,7 @@ export interface PlaneOptions {
   mergeSlope: number;
   /** ...and their heights by less than this where either sits, metres */
   mergeDistM: number;
-  /** a plane facing this close to a building axis is turned onto it, degrees */
+  /** a plane facing this close to a direction the building runs in is offered that direction (the fit decides), degrees */
   axisSnapDeg: number;
   /** a pixel may be assigned to a plane it misses by up to this, metres */
   assignDistM: number;
@@ -86,7 +86,7 @@ export const PLANE_DEFAULTS: PlaneOptions = {
   minRegionM2: 1.6,
   mergeSlope: 0.07,
   mergeDistM: 0.14,
-  axisSnapDeg: 9,
+  axisSnapDeg: 16,
   assignDistM: 0.32,
   minWidthM: 1.1,
   earnDistM: 0.16,
@@ -136,6 +136,51 @@ export function dominantAxisDeg(ring: ReadonlyArray<{ x: number; y: number }>): 
   return ((deg % 90) + 90) % 90;
 }
 
+/**
+ * Every direction the building runs in, degrees in [0, 90), strongest first. A house with a wing set at an angle (the
+ * first real roof the owner opened had one at 45 degrees) has two, and that wing's facets face along ITS walls — with
+ * only the main direction known they were left crooked and the lines between them came out bent.
+ */
+export function outlineAxesDeg(ring: ReadonlyArray<{ x: number; y: number }>): number[] {
+  const bins = new Float64Array(90);
+  const edges: Array<{ deg: number; len: number }> = [];
+  let total = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len < 1e-6) continue;
+    const deg = ((((Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI) % 90) + 90) % 90;
+    edges.push({ deg, len });
+    bins[Math.floor(deg) % 90] += len;
+    total += len;
+  }
+  const out: number[] = [];
+  const taken = new Uint8Array(90);
+  for (let round = 0; round < 3; round++) {
+    let best = -1, bw = 0;
+    for (let d = 0; d < 90; d++) {
+      if (taken[d]) continue;
+      let wsum = 0;
+      for (let k = -3; k <= 3; k++) wsum += bins[(d + k + 90) % 90];
+      if (wsum > bw) { bw = wsum; best = d; }
+    }
+    // a second direction has to carry a real share of the walls
+    if (best === -1 || bw < total * (round === 0 ? 0 : 0.12)) break;
+    let sx = 0, sy = 0;
+    for (const e of edges) {
+      let diff = Math.abs(e.deg - (best + 0.5));
+      if (diff > 45) diff = 90 - diff;
+      if (diff > 6) continue;
+      const t = (e.deg * 4 * Math.PI) / 180;
+      sx += Math.cos(t) * e.len; sy += Math.sin(t) * e.len;
+    }
+    const deg = ((((Math.atan2(sy, sx) / 4) * 180) / Math.PI) % 90 + 90) % 90;
+    out.push(deg);
+    for (let k = -15; k <= 15; k++) taken[(best + k + 90) % 90] = 1;
+  }
+  return out.length ? out : [dominantAxisDeg(ring)];
+}
+
 export function findPlanes(input: {
   w: number;
   h: number;
@@ -143,14 +188,29 @@ export function findPlanes(input: {
   inside: Uint8Array;
   pixelSizeM: number;
   axisDeg: number;
+  /** every direction the building runs in (outlineAxesDeg); `axisDeg` alone when not given */
+  axesDeg?: ReadonlyArray<number>;
   priors?: ReadonlyArray<PlanePrior>;
+  /**
+   * 1 where the outline's inside is NOT roof in Google's own building mask — a tree standing over the roof, mostly.
+   * Those pixels take no part in finding the planes (a canopy fits planes of its own, and they are not the roof's);
+   * at the end they take the plane of the roof next to them, as if the roof ran on underneath.
+   */
+  ignore?: Uint8Array;
   options?: Partial<PlaneOptions>;
   /** when given, the engine writes down what it decided and why (the lab reads it) */
   trace?: string[];
 }): PlaneField {
   const o = { ...PLANE_DEFAULTS, ...input.options };
-  const { w, h, z, inside, pixelSizeM: px } = input;
+  const { w, h, z, pixelSizeM: px } = input;
   const N = w * h;
+  // `inside` is where planes are looked for; `whole` is the whole outline, filled at the end
+  const whole = input.inside;
+  let inside = whole;
+  if (input.ignore) {
+    inside = new Uint8Array(N);
+    for (let i = 0; i < N; i++) inside[i] = whole[i] && !input.ignore[i] ? 1 : 0;
+  }
   const W = o.window;
 
   // ── 1. gradients ──
@@ -314,7 +374,7 @@ export function findPlanes(input: {
   }
 
   // ── 4. regularize ──
-  const axis = (input.axisDeg * Math.PI) / 180;
+  const axes = (input.axesDeg?.length ? input.axesDeg : [input.axisDeg]).map((d) => (d * Math.PI) / 180);
   let planes: Plane[] = [];
   const remap = new Int16Array(regions.length).fill(-1);
   type Pre = { members: number[]; prior: boolean; sums: Float64Array; fit: { gx: number; gy: number; c: number }; pixels: number[] };
@@ -362,9 +422,12 @@ export function findPlanes(input: {
     if (slope > 0.05) {
       // the direction the plane RISES, in window pixels (y south)
       const own = Math.atan2(g.gy, g.gx);
-      const k = Math.round((own - axis) / (Math.PI / 2));
-      const onAxis = axis + (k * Math.PI) / 2;
-      const turned = Math.abs(own - onAxis) < (o.axisSnapDeg * Math.PI) / 180 ? onAxis : null;
+      // the nearest direction any part of the building runs in
+      let turned: number | null = null, off = (o.axisSnapDeg * Math.PI) / 180;
+      for (const axis of axes) {
+        const onAxis = axis + (Math.round((own - axis) / (Math.PI / 2)) * Math.PI) / 2;
+        if (Math.abs(own - onAxis) < off) { off = Math.abs(own - onAxis); turned = onAxis; }
+      }
       const rise12 = slope * 12;
       const at = (dir: number, s12: number) => ({ gx: Math.cos(dir) * (s12 / 12) * px, gy: Math.sin(dir) * (s12 / 12) * px });
       const tries: Array<{ gx: number; gy: number }> = [];
@@ -456,46 +519,104 @@ export function findPlanes(input: {
   // ── 6. select: a plane found without Google must earn its place ──
   const alive = planes.map(() => true);
   let out = assign(alive);
+  let frontierBase = 0;
+  for (let i = 0; i < N; i++) if (inside[i]) { frontierBase = i; break; }
   for (let iter = 0; iter < 14; iter++) {
     const area = planes.map(() => 0);
     const adj = planes.map(() => new Set<number>());
     // per pair of neighbours: how many boundary pixels, and how far apart the two planes are there
-    const seam = new Map<number, { n: number; gap: number }>();
+    const seam = new Map<number, { n: number; gap: number; steps: number[]; sx: number; sy: number; sxx: number; sxy: number; syy: number }>();
     const zOf = (p: Plane, i: number) => p.gx * (i % w) + p.gy * ((i / w) | 0) + p.c;
-    const touch = (a: number, b: number, i: number) => {
+    const REACH = 5; // pixels either side of a seam where the height map is read
+    // pixel i (plane a) and its neighbour one step (dx, dy) on (plane b)
+    const touch = (a: number, b: number, i: number, dx: number, dy: number) => {
       adj[a].add(b); adj[b].add(a);
       const k = a < b ? a * 4096 + b : b * 4096 + a;
-      const sm = seam.get(k) ?? { n: 0, gap: 0 };
+      const sm = seam.get(k) ?? { n: 0, gap: 0, steps: [], sx: 0, sy: 0, sxx: 0, sxy: 0, syy: 0 };
+      const x = i % w, y = (i / w) | 0;
       sm.n++; sm.gap += Math.abs(zOf(planes[a], i) - zOf(planes[b], i));
+      sm.sx += x; sm.sy += y; sm.sxx += x * x; sm.sxy += x * y; sm.syy += y * y;
+      // the real step across the seam: the height read REACH pixels into each plane, less what the two slopes alone
+      // would make of those two readings were the surface unbroken
+      const ax = x - dx * REACH, ay = y - dy * REACH, bx = x + dx * (REACH + 1), by = y + dy * (REACH + 1);
+      if (ax >= 0 && ay >= 0 && bx < w && by < h && out[ay * w + ax] === a && out[by * w + bx] === b) {
+        const A = planes[a], B = planes[b];
+        const unbroken = (REACH + 0.5) * (B.gx * dx + B.gy * dy) + (REACH + 0.5) * (A.gx * dx + A.gy * dy);
+        sm.steps.push(Math.abs(z[by * w + bx] - z[ay * w + ax] - unbroken));
+      }
       seam.set(k, sm);
     };
+    // running sums per plane over what it holds now (the tenth is the sum of squared heights, for the fit's miss)
+    const zBase = z[frontierBase];
+    const sumsOf = planes.map(() => new Float64Array(10));
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       const i = y * w + x, a = out[i];
       if (a === -1) continue;
       area[a]++;
-      if (x + 1 < w) { const b = out[i + 1]; if (b !== -1 && b !== a) touch(a, b, i); }
-      if (y + 1 < h) { const b = out[i + w]; if (b !== -1 && b !== a) touch(a, b, i); }
+      const zz = z[i] - zBase, sm = sumsOf[a];
+      sm[0]++; sm[1] += x; sm[2] += y; sm[3] += zz; sm[4] += x * x; sm[5] += x * y; sm[6] += y * y; sm[7] += x * zz; sm[8] += y * zz; sm[9] += zz * zz;
+      if (x + 1 < w) { const b = out[i + 1]; if (b !== -1 && b !== a) touch(a, b, i, 1, 0); }
+      if (y + 1 < h) { const b = out[i + w]; if (b !== -1 && b !== a) touch(a, b, i, 0, 1); }
     }
+    // how badly a set of pixels misses the one plane that fits it best, metres (rms)
+    const missOf = (sm: Float64Array): number => {
+      const n = sm[0];
+      if (n < 6) return Infinity;
+      const mx = sm[1] / n, my = sm[2] / n, mz = sm[3] / n;
+      const sxx = sm[4] - n * mx * mx, sxy = sm[5] - n * mx * my, syy = sm[6] - n * my * my;
+      const sxz = sm[7] - n * mx * mz, syz = sm[8] - n * my * mz, szz = sm[9] - n * mz * mz;
+      const det = sxx * syy - sxy * sxy;
+      if (Math.abs(det) < 1e-9 * Math.max(1, sxx * syy)) return Infinity;
+      const gx1 = (sxz * syy - syz * sxy) / det, gy1 = (syz * sxx - sxz * sxy) / det;
+      return Math.sqrt(Math.max(0, szz - gx1 * sxz - gy1 * syz) / n);
+    };
     // One surface: two neighbours facing the same way at nearly the same pitch, with no step where they touch, are
     // one facet that the height map bent a little — the smaller joins the larger. (A real pitch change keeps its
     // line: it differs by more than a rise of 1.25 in 12, or 1.75 for a small patch on a big face.)
     const fused = new Set<number>();
     for (const [k, sm] of [...seam].sort((p, q) => p[1].gap / p[1].n - q[1].gap / q[1].n)) {
       const a = Math.floor(k / 4096), b = k % 4096;
-      if (sm.n < 8 || sm.gap / sm.n > 0.2 || fused.has(a) || fused.has(b)) continue;
+      if (sm.n < 8 || fused.has(a) || fused.has(b)) continue;
       const A = planes[a], B = planes[b];
       const sa = Math.hypot(A.gx, A.gy) / px, sb = Math.hypot(B.gx, B.gy) / px;
-      // a small patch on a big face may differ a little more before it is believed to be a facet of its own
-      const ratio = Math.min(area[a], area[b]) / Math.max(1, Math.max(area[a], area[b]));
-      if (Math.abs(sa - sb) * 12 > (ratio < 0.3 ? 1.75 : 1.25)) continue;
       const flat = sa < 0.06 && sb < 0.06;
       const cos = (A.gx * B.gx + A.gy * B.gy) / (Math.hypot(A.gx, A.gy) * Math.hypot(B.gx, B.gy) || 1);
-      if (!flat && cos < Math.cos((15 * Math.PI) / 180)) continue;
       const [big, small] = area[a] >= area[b] ? [a, b] : [b, a];
+      // how far apart the two surfaces really are at the seam: read off the height map where there is room to read
+      // it, else what the two fitted planes say
+      const gap = sm.steps.length >= 6 ? [...sm.steps].sort((p, q) => p - q)[sm.steps.length >> 1] : sm.gap / sm.n;
+      // a small patch on a big face may differ a little more before it is believed to be a facet of its own
+      const ratio = area[small] / Math.max(1, area[big]);
+      const alike = Math.abs(sa - sb) * 12 <= (ratio < 0.3 ? 1.75 : 1.25);
+      let one = gap <= 0.2 && alike && (flat || cos >= Math.cos((15 * Math.PI) / 180));
+      if (!one && !flat && gap <= 0.2 && cos >= Math.cos((40 * Math.PI) / 180)) {
+        // Two planes facing the same way at DIFFERENT pitches can only meet along a level line (the porch roof's
+        // break, the gambrel's knuckle). A seam between them that climbs the slope is not a pitch change — it is one
+        // face the height map read as two.
+        const mx = sm.sx / sm.n, my = sm.sy / sm.n;
+        const vxx = sm.sxx / sm.n - mx * mx, vxy = sm.sxy / sm.n - mx * my, vyy = sm.syy / sm.n - my * my;
+        const seamDir = 0.5 * Math.atan2(2 * vxy, vxx - vyy);
+        const long = (vxx + vyy) / 2 + Math.hypot((vxx - vyy) / 2, vxy), short = (vxx + vyy) / 2 - Math.hypot((vxx - vyy) / 2, vxy);
+        const G = planes[big];
+        const levelDir = Math.atan2(G.gx, -G.gy); // square to the way the big plane rises
+        let off = Math.abs(seamDir - levelDir) % Math.PI;
+        if (off > Math.PI / 2) off = Math.PI - off;
+        // only a seam that clearly runs somewhere (three times longer than wide) says anything about its direction
+        if (long > 9 * Math.max(short, 0.5) && off > (30 * Math.PI) / 180) one = true;
+      }
+      if (!one && !flat && cos >= Math.cos((40 * Math.PI) / 180)) {
+        // The plainest test of all: do the two together fit ONE plane about as well as each fits its own? Then the
+        // height map never showed two faces there, whatever the two fits happened to say about pitch and facing.
+        const both = new Float64Array(10);
+        for (let q = 0; q < 10; q++) both[q] = sumsOf[a][q] + sumsOf[b][q];
+        const together = missOf(both), apart = Math.max(missOf(sumsOf[a]), missOf(sumsOf[b]));
+        if (together <= 0.11 && together <= apart * 1.3 + 0.015) one = true;
+      }
+      if (!one) continue;
       alive[small] = false;
       for (let i = 0; i < N; i++) if (label[i] === small) label[i] = big;
       fused.add(a); fused.add(b);
-      input.trace?.push(`fused two planes facing the same way (${(area[small] * px * px).toFixed(1)} m2 into ${(area[big] * px * px).toFixed(1)} m2, ${(sm.gap / sm.n).toFixed(2)} m apart where they touch)`);
+      input.trace?.push(`fused two planes facing the same way (${(area[small] * px * px).toFixed(1)} m2 into ${(area[big] * px * px).toFixed(1)} m2, ${gap.toFixed(2)} m apart where they touch${alike ? "" : ", their seam climbed the slope"})`);
     }
     if (fused.size) { out = assign(alive); continue; }
     // how badly a plane's pixels would sit on its neighbours' planes
@@ -541,7 +662,7 @@ export function findPlanes(input: {
         const nx = x + (k === 0 ? 1 : k === 1 ? -1 : 0), ny = y + (k === 2 ? 1 : k === 3 ? -1 : 0);
         if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
         const j = ny * w + nx;
-        if (!inside[j] || out[j] !== -1) continue;
+        if (!whole[j] || out[j] !== -1) continue;
         out[j] = out[i];
         next.push(j);
       }
@@ -562,5 +683,5 @@ export function findPlanes(input: {
   }
   kept.forEach((p, k) => { if (sumN[k]) { p.n = sumN[k]; p.cx = sumX[k] / sumN[k]; p.cy = sumY[k] / sumN[k]; } });
   planes = kept;
-  return { w, h, inside, z, planes, label: out };
+  return { w, h, inside: whole, z, planes, label: out };
 }

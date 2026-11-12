@@ -8,13 +8,20 @@ import "server-only";
 // stored link is tried first, a fresh dataLayers answer second). Both share the height map's grid, so the lines land
 // on the roof without lining anything up.
 //
+// A roof measured from Google alone (no EagleView answer — the account's roof-area pack was being refused when this
+// was written, 2026-11-12) has no EagleView outline and no saved height map. For those the height map is fetched once
+// (one dataLayers answer and two rasters, then frozen in SolarCache like every other) and the outline is Google's own:
+// the building under the pin in its mask (lib/roofRecon/footprint), which needs no sliding onto the height map.
+//
 // The callers gate on requirePlatformAdmin; nothing here checks who is asking.
 
 import { gunzipSync } from "node:zlib";
 import { db } from "@/lib/db";
 import { instantAddressKey, type InstantRoofData } from "@/lib/eagleview";
 import { mainStructureOf } from "@/lib/roofDiagram/instantTotals";
-import { fetchRgbRaster, getDataLayers, isSolarEnabled, type BuildingInsights, type DataLayerUrls, type Raster, type RgbRaster } from "@/lib/solar";
+import { buildStructureFootprints } from "@/lib/roofRecon/footprint";
+import { SOLAR_DEFAULT_RADIUS_M, fetchRaster, fetchRgbRaster, getBuildingInsights, getDataLayers, isSolarEnabled, type BuildingInsights, type DataLayerUrls, type Raster, type RgbRaster } from "@/lib/solar";
+import { solarCacheKey, writeSolarCache } from "@/lib/solarCache";
 import { buildFacets } from "./engine";
 import { isUtm, latLngToPixel, type RasterFrame } from "./geo";
 import { toFacetModel, type FacetModel } from "./model";
@@ -45,6 +52,9 @@ interface Loaded {
   rgb?: RgbRaster | null;
 }
 
+/** Under this share of the outline showing a building in the height map, there is no roof there to read. */
+const NO_BUILDING_SHARE = 0.45;
+
 // What one look at a roof needs three times over (the drawing, then two pictures). Small and short-lived on purpose.
 const KEEP_MS = 10 * 60_000;
 const kept = new Map<string, Loaded>();
@@ -70,7 +80,7 @@ async function load(measurementId: string): Promise<{ ok: true; v: Loaded } | Fa
 
   const row = await db.roofMeasurement.findUnique({
     where: { id: measurementId },
-    select: { id: true, address: true, city: true, state: true, zip: true, lat: true, lng: true, instantJson: true, provenanceJson: true },
+    select: { id: true, source: true, address: true, city: true, state: true, zip: true, lat: true, lng: true, areaSqft: true, predominantPitch: true, instantJson: true, provenanceJson: true },
   });
   if (!row) return { ok: false, reason: "That measurement is gone." };
   let instant: InstantRoofData | null = null;
@@ -81,24 +91,75 @@ async function load(measurementId: string): Promise<{ ok: true; v: Loaded } | Fa
   } catch {
     /* an unreadable row is treated as one without the data */
   }
-  if (!instant?.structures?.length) return { ok: false, reason: "This measurement has no EagleView data to draw from." };
-  const pick = mainStructureOf({ structures: instant.structures, provenance, origin: { lat: row.lat, lng: row.lng } });
-  const structure = pick.index != null ? instant.structures[pick.index] : null;
-  if (!structure?.outline || structure.outline.length < 3) return { ok: false, reason: "EagleView gave no roof outline for this address, so there is nothing to draw inside." };
-
-  // The height map: the SolarCache row(s) of the same address, else the nearest one to the pin.
-  const place = instantAddressKey(row);
-  let candidates = place.replace(/\|/g, "")
-    ? await db.solarCache.findMany({ where: { addressKey: { startsWith: `${place}#r` } }, select: { id: true, addressKey: true, dsmMetaJson: true } })
-    : [];
-  if (!candidates.length && row.lat != null && row.lng != null) {
-    candidates = await db.solarCache.findMany({
-      where: { lat: { gte: row.lat - 0.0005, lte: row.lat + 0.0005 }, lng: { gte: row.lng - 0.0007, lte: row.lng + 0.0007 } },
-      select: { id: true, addressKey: true, dsmMetaJson: true },
-      take: 8,
+  const mainOf = (inst: InstantRoofData | null, prov: Record<string, unknown>, origin: { lat: number | null; lng: number | null }) => {
+    if (!inst?.structures?.length) return null;
+    const pick = mainStructureOf({ structures: inst.structures, provenance: prov, origin });
+    return pick.index != null ? (inst.structures[pick.index] ?? null) : null;
+  };
+  type Structure = InstantRoofData["structures"][number];
+  type Outlined = Structure & { outline: NonNullable<Structure["outline"]> };
+  const hasOutline = (st: Structure | null): st is Outlined => Boolean(st?.outline && st.outline.length >= 3);
+  let structure: Structure | null = mainOf(instant, provenance, { lat: row.lat, lng: row.lng });
+  const notes: string[] = [];
+  if (!hasOutline(structure) && row.lat != null && row.lng != null) {
+    // This measurement came without an outline (the outlines pack was not on that day, or the order failed). The same
+    // house measured another day has one — EagleView's outline of a building does not change between orders.
+    const others = await db.roofMeasurement.findMany({
+      where: { id: { not: row.id }, instantJson: { not: null }, lat: { gte: row.lat - 0.0003, lte: row.lat + 0.0003 }, lng: { gte: row.lng - 0.0004, lte: row.lng + 0.0004 } },
+      orderBy: { createdAt: "desc" },
+      take: 12,
+      select: { createdAt: true, lat: true, lng: true, instantJson: true, provenanceJson: true },
     });
+    for (const o of others) {
+      try {
+        const inst = JSON.parse(o.instantJson ?? "null") as InstantRoofData | null;
+        const prov = ((JSON.parse(o.provenanceJson ?? "{}") as { provenance?: Record<string, unknown> }).provenance ?? {}) as Record<string, unknown>;
+        const st = mainOf(inst, prov, { lat: o.lat, lng: o.lng });
+        if (hasOutline(st)) {
+          structure = st;
+          notes.push(`this measurement came without an outline; the outline and figures of the same address measured on ${o.createdAt.toISOString().slice(0, 10)} were used`);
+          break;
+        }
+      } catch {
+        /* an unreadable sibling is skipped */
+      }
+    }
   }
-  if (!candidates.length) return { ok: false, reason: "No height map was saved for this roof (it was measured before they were kept, or Google has none here)." };
+  // No EagleView outline anywhere: the roof is drawn inside Google's own outline of the building instead.
+  const fromGoogle = !hasOutline(structure);
+
+  // The height map: the SolarCache row(s) of the same address, else the nearest one to the pin — else, fetched now.
+  const place = instantAddressKey(row);
+  const find = async () => {
+    let c = place.replace(/\|/g, "")
+      ? await db.solarCache.findMany({ where: { addressKey: { startsWith: `${place}#r` } }, select: { id: true, addressKey: true, dsmMetaJson: true } })
+      : [];
+    if (!c.length && row.lat != null && row.lng != null) {
+      c = await db.solarCache.findMany({
+        where: { lat: { gte: row.lat - 0.0005, lte: row.lat + 0.0005 }, lng: { gte: row.lng - 0.0007, lte: row.lng + 0.0007 } },
+        select: { id: true, addressKey: true, dsmMetaJson: true },
+        take: 8,
+      });
+    }
+    return c;
+  };
+  let candidates = await find();
+  if (!candidates.length && row.lat != null && row.lng != null && isSolarEnabled()) {
+    // Never saved (a Google-only estimate keeps the segments, not the rasters): one dataLayers answer and its two
+    // rasters, frozen for next time exactly as a measurement would have frozen them.
+    try {
+      const layers = await getDataLayers(row.lat, row.lng, SOLAR_DEFAULT_RADIUS_M);
+      if (layers.dsmUrl && layers.maskUrl) {
+        const [dsm0, mask0, insights0] = await Promise.all([fetchRaster(layers.dsmUrl), fetchRaster(layers.maskUrl), getBuildingInsights(row.lat, row.lng).catch(() => null)]);
+        await writeSolarCache(solarCacheKey({ address: row.address ?? undefined, city: row.city ?? undefined, state: row.state ?? undefined, zip: row.zip ?? undefined, lat: row.lat, lng: row.lng }, SOLAR_DEFAULT_RADIUS_M), { lat: row.lat, lng: row.lng, layers, insights: insights0, dsm: dsm0, mask: mask0 });
+        candidates = await find();
+        if (candidates.length) notes.push("Google's height map of this roof was not saved with the measurement; it was fetched now and kept");
+      }
+    } catch (err) {
+      console.warn("[roof-lab] height map fetch failed:", err instanceof Error ? err.message : err);
+    }
+  }
+  if (!candidates.length) return { ok: false, reason: "Google has no height map of this roof (none was saved with the measurement, and none could be fetched now), so its facets cannot be read." };
   const widthOf = (c: { dsmMetaJson: string }) => { try { return (JSON.parse(c.dsmMetaJson) as { width?: number }).width ?? 0; } catch { return 0; } };
   const best = [...candidates].sort((a, b) => widthOf(b) - widthOf(a))[0];
   const solar = await db.solarCache.findUnique({ where: { id: best.id } });
@@ -115,19 +176,49 @@ async function load(measurementId: string): Promise<{ ok: true; v: Loaded } | Fa
   if (!isUtm(dsm.epsg)) return { ok: false, reason: "The saved height map is in a projection the facet engine does not read." };
   const frame: RasterFrame = { originX: dsm.originX, originY: dsm.originY, pixelSizeM: dsm.pixelSizeM, epsg: dsm.epsg };
 
-  const notes: string[] = [];
+  const sameGrid = mask.width === dsm.width && mask.height === dsm.height;
+  let outline: Array<{ x: number; y: number }>;
+  if (hasOutline(structure)) {
+    outline = structure.outline.map((p) => latLngToPixel(frame, p.lat, p.lng));
+  } else {
+    // Google's own outline: the building under the pin in its mask, squared up the way the fence map squares houses.
+    if (!sameGrid) return { ok: false, reason: "Google's building mask does not line up with its height map here, so there is no outline to draw inside." };
+    const found = buildStructureFootprints(mask, { rawFallback: true }).structures.filter((x) => x.ring && x.ring.length >= 3);
+    const pick = found.find((x) => x.onParcel) ?? [...found].sort((a, b) => b.maskAreaSqft - a.maskAreaSqft)[0];
+    if (!pick?.ring) return { ok: false, reason: "Google's mask shows no building at this measurement's pin, and EagleView gave no outline, so there is nothing to draw inside." };
+    // the footprint's frame is feet from the tile's centre, north up
+    const stepFt = mask.pixelSizeM * 3.28084;
+    outline = pick.ring.map((p) => ({ x: p.x / stepFt + mask.width / 2, y: mask.height / 2 - p.y / stepFt }));
+    notes.push("EagleView gave no outline for this roof; Google's own outline of the building is used");
+  }
+
   const result = buildFacets({
     dsm,
-    mask: mask.width === dsm.width && mask.height === dsm.height ? mask : null,
-    outline: structure.outline.map((p) => latLngToPixel(frame, p.lat, p.lng)),
+    mask: sameGrid ? mask : null,
+    outline,
+    register: !fromGoogle,
     priors: (insights?.segments ?? []).map((s) => {
       const c = latLngToPixel(frame, s.centerLat, s.centerLng);
       return { pitchDeg: s.pitchDegrees, azimuthDeg: s.azimuthDegrees, cx: c.x, cy: c.y, zc: s.planeHeightAtCenterMeters, areaM2: s.areaMeters2 };
     }),
     trace: notes,
   });
-  if (!result || !result.facets.length) return { ok: false, reason: "The height map shows no roof planes inside EagleView's outline here (the outline may fall off the saved tile)." };
-  const model = toFacetModel({ result, frame, eagleView: { areaSqft: structure.areaSqft, facetCount: structure.facetCount, pitch: structure.pitch }, notes });
+  if (!result || !result.facets.length) return { ok: false, reason: "The height map shows no roof planes inside the roof's outline here (the outline may fall off the saved tile)." };
+  // Google's elevation can be years older than the house. Where it shows no building under the outline there are no
+  // facets to read, and a drawing made of the ground and the trees would be worse than none.
+  if (!fromGoogle && result.quality.buildingShare < NO_BUILDING_SHARE) {
+    const year = /^(\d{4})/.exec(solar.imageryDate ?? "")?.[1];
+    return {
+      ok: false,
+      reason: `Google's height map of this spot${year ? ` is from ${year} and` : ""} shows a building under only ${Math.round(result.quality.buildingShare * 100)}% of EagleView's outline — the roof is newer than Google's data, or hidden from it. The facets are read off that height map, so this roof cannot be drawn yet.`,
+    };
+  }
+  // What the drawing is held against: EagleView's figures for the structure, or — measured from Google alone —
+  // Google's own estimate as the measurement saved it.
+  const googleSegments = (provenance.solar as { segmentCount?: number } | undefined)?.segmentCount ?? null;
+  const model = hasOutline(structure) && structure.areaSqft != null
+    ? toFacetModel({ result, frame, eagleView: { areaSqft: structure.areaSqft, facetCount: structure.facetCount, pitch: structure.pitch }, reference: "EagleView", outlineFrom: fromGoogle ? "google" : "eagleview", notes })
+    : toFacetModel({ result, frame, eagleView: { areaSqft: row.areaSqft, facetCount: googleSegments, pitch: row.predominantPitch?.split(" ")[0] ?? null }, reference: row.source === "solar" ? "Google" : "EagleView", outlineFrom: fromGoogle ? "google" : "eagleview", notes });
 
   // The picture: the drawing plus 5 m all round, on whole pixels, inside the tile.
   const px = dsm.pixelSizeM;
