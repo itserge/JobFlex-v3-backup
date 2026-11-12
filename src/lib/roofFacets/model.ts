@@ -9,21 +9,37 @@ import { fromUtm, pixelToUtm, type RasterFrame } from "./geo";
 
 export type { FacetEdgeType } from "./engine";
 
-export const FACET_EDGE_TYPES: FacetEdgeType[] = ["RIDGE", "HIP", "VALLEY", "EAVE", "RAKE", "STEP", "BREAK"];
+/** The kinds of edge in the order a roof report lists them. */
+export const FACET_EDGE_TYPES: FacetEdgeType[] = ["EAVE", "RAKE", "RIDGE", "HIP", "VALLEY", "STEP", "WALL", "BREAK"];
 
-/** What each kind of edge is called on the page. */
+/** What each kind of edge is called on the page (plural, as a report's legend has them). */
 export const FACET_EDGE_WORDS: Record<FacetEdgeType, string> = {
-  RIDGE: "Ridge",
-  HIP: "Hip",
-  VALLEY: "Valley",
-  EAVE: "Eave",
-  RAKE: "Rake",
-  STEP: "Wall / step",
-  BREAK: "Pitch change",
+  EAVE: "Eaves",
+  RAKE: "Rakes",
+  RIDGE: "Ridges",
+  HIP: "Hips",
+  VALLEY: "Valleys",
+  STEP: "Step flashing",
+  WALL: "Wall flashing",
+  BREAK: "Pitch changes",
+};
+
+/** What a roofer buys or does along each kind of edge. */
+export const FACET_EDGE_USE: Record<FacetEdgeType, string> = {
+  EAVE: "Drip edge, starter, ice and water",
+  RAKE: "Drip edge, starter",
+  RIDGE: "Ridge cap, ridge vent",
+  HIP: "Ridge cap",
+  VALLEY: "Ice and water, valley metal",
+  STEP: "Roof meets a side wall",
+  WALL: "Roof meets a wall above it",
+  BREAK: "One pitch changes to another",
 };
 
 export interface FacetModelFacet {
   letter: string;
+  /** which part of the roof it belongs to: facets joined by ridges, hips and valleys are one part ("Main roof", "Section 2", …) */
+  part: string;
   /** vertex indices round the outside, then round each hole */
   outer: number[];
   holes: number[][];
@@ -62,8 +78,14 @@ export interface FacetModel {
     /** the pitch most of the roof's area has */
     predominantPitch: string | null;
     feet: Record<FacetEdgeType, number>;
+    /** how many straight runs of each kind */
+    count: Record<FacetEdgeType, number>;
   };
+  /** whose outline the facets were drawn inside: EagleView's, or (a roof measured from Google alone) Google's own */
+  outlineFrom: "eagleview" | "google";
   compare: {
+    /** whose figures these are: "EagleView", or "Google" for a roof measured from Google alone (its own estimate) */
+    reference: string;
     eagleViewSqft: number | null;
     eagleViewFacets: number | null;
     eagleViewPitch: string | null;
@@ -97,8 +119,13 @@ export function toFacetModel(input: {
   result: EngineResult;
   frame: RasterFrame;
   eagleView: { areaSqft: number | null; facetCount: number | null; pitch: string | null };
+  /** whose figures `eagleView` holds — "EagleView" unless said otherwise ("Google" for a Google-only estimate) */
+  reference?: string;
+  outlineFrom?: "eagleview" | "google";
   notes?: string[];
 }): FacetModel {
+  const ref = input.reference ?? "EagleView";
+  const refs = `${ref}'s`;
   const { result, frame } = input;
   const vertices = result.vertices.map((p) => {
     const u = pixelToUtm(frame, p.x, p.y);
@@ -113,6 +140,7 @@ export function toFacetModel(input: {
     const rise = f.slope * 12;
     return {
       letter: facetLetter(i),
+      part: "Main roof",
       outer: f.outer,
       holes: f.holes,
       pitch12: r1(rise),
@@ -133,7 +161,16 @@ export function toFacetModel(input: {
     right: e.right < 0 ? -1 : (newIndex.get(e.right) ?? -1),
   }));
   const feet = Object.fromEntries(FACET_EDGE_TYPES.map((t) => [t, 0])) as Record<FacetEdgeType, number>;
-  for (const e of edges) feet[e.type] = r1(feet[e.type] + e.lengthFt);
+  const count = Object.fromEntries(FACET_EDGE_TYPES.map((t) => [t, 0])) as Record<FacetEdgeType, number>;
+  for (const e of edges) { feet[e.type] = r1(feet[e.type] + e.lengthFt); count[e.type]++; }
+  // Parts: facets joined by a ridge, hip, valley or pitch change are one roof; a wall between two levels parts them.
+  const root = facets.map((_, i) => i);
+  const find = (a: number): number => (root[a] === a ? a : (root[a] = find(root[a])));
+  for (const e of edges) if (e.left >= 0 && e.right >= 0 && e.type !== "STEP" && e.type !== "WALL") root[find(e.left)] = find(e.right);
+  const partArea = new Map<number, number>();
+  facets.forEach((f, i) => partArea.set(find(i), (partArea.get(find(i)) ?? 0) + f.areaSqft));
+  const partOrder = [...partArea].sort((a, b) => b[1] - a[1]).map(([k]) => k);
+  facets.forEach((f, i) => { const n = partOrder.indexOf(find(i)); f.part = n === 0 ? "Main roof" : `Section ${n + 1}`; });
   const areaSqft = r1(facets.reduce((s, f) => s + f.areaSqft, 0));
   const byPitch = new Map<string, number>();
   for (const f of facets) byPitch.set(f.pitchLabel, (byPitch.get(f.pitchLabel) ?? 0) + f.areaSqft);
@@ -147,12 +184,12 @@ export function toFacetModel(input: {
   const reasons: string[] = [];
   if (areaDeltaPct == null) {
     score -= 10;
-    reasons.push("EagleView gave no area for this roof, so the drawing's total has nothing to be checked against.");
+    reasons.push(`${ref} gave no area for this roof, so the drawing's total has nothing to be checked against.`);
   } else if (Math.abs(areaDeltaPct) > 2) {
     score -= Math.min(30, (Math.abs(areaDeltaPct) - 2) * 2.5);
-    reasons.push(`The facets add up to ${Math.abs(areaDeltaPct)}% ${areaDeltaPct > 0 ? "more" : "less"} than EagleView's area.`);
+    reasons.push(`The facets add up to ${Math.abs(areaDeltaPct)}% ${areaDeltaPct > 0 ? "more" : "less"} than ${refs} area.`);
   } else {
-    reasons.push(`The facets add up to within ${Math.abs(areaDeltaPct)}% of EagleView's area.`);
+    reasons.push(`The facets add up to within ${Math.abs(areaDeltaPct)}% of ${refs} area.`);
   }
   const agree = result.quality.agree;
   if (agree < 0.95) {
@@ -165,7 +202,7 @@ export function toFacetModel(input: {
   }
   const inner = edges.filter((e) => e.left >= 0 && e.right >= 0);
   const innerFt = inner.reduce((s, e) => s + e.lengthFt, 0);
-  const unsureFt = inner.filter((e) => e.type === "STEP" || e.type === "BREAK").reduce((s, e) => s + e.lengthFt, 0);
+  const unsureFt = inner.filter((e) => e.type === "STEP" || e.type === "WALL" || e.type === "BREAK").reduce((s, e) => s + e.lengthFt, 0);
   const unsure = innerFt > 0 ? unsureFt / innerFt : 0;
   if (unsure > 0.15) {
     score -= Math.min(16, (unsure - 0.15) * 45);
@@ -173,7 +210,7 @@ export function toFacetModel(input: {
   }
   if (ev.facetCount != null && Math.abs(facets.length - ev.facetCount) > Math.max(3, ev.facetCount * 0.3)) {
     score -= 8;
-    reasons.push(`EagleView counts ${ev.facetCount} facets and the drawing has ${facets.length}.`);
+    reasons.push(`${ref} counts ${ev.facetCount} facets and the drawing has ${facets.length}.`);
   }
   score = Math.max(0, Math.round(score));
 
@@ -182,8 +219,9 @@ export function toFacetModel(input: {
     epsg: frame.epsg,
     facets,
     edges,
-    totals: { areaSqft, squares: r1(areaSqft / 100), facets: facets.length, predominantPitch, feet },
-    compare: { eagleViewSqft: ev.areaSqft, eagleViewFacets: ev.facetCount, eagleViewPitch: ev.pitch, googleSegments: result.quality.googleSegments, areaDeltaPct },
+    totals: { areaSqft, squares: r1(areaSqft / 100), facets: facets.length, predominantPitch, feet, count },
+    outlineFrom: input.outlineFrom ?? "eagleview",
+    compare: { reference: ref, eagleViewSqft: ev.areaSqft, eagleViewFacets: ev.facetCount, eagleViewPitch: ev.pitch, googleSegments: result.quality.googleSegments, areaDeltaPct },
     confidence: { level: score >= 80 ? "high" : score >= 60 ? "medium" : "low", score, reasons },
     shiftFt: { east: r1(result.shift.dx * frame.pixelSizeM * FT_PER_M), north: r1(-result.shift.dy * frame.pixelSizeM * FT_PER_M) },
     quality: { agree: Math.round(agree * 1000) / 1000, rmsFt: Math.round(result.quality.rmsM * FT_PER_M * 100) / 100 },

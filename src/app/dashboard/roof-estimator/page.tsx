@@ -20,7 +20,7 @@ import { RoofEstimatorContent } from "@/components/v3/roof-estimator-blueprint/r
 import { readEstimateSeed } from "@/lib/estimateSeed";
 import { EstimateSeedStrip } from "@/components/v3/estimate-seed-strip";
 import { looksLikeStreetAddress } from "@/lib/leadRules";
-import { requireOrg } from "@/lib/orgContext";
+import { requireOrg, requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { parseStateZip } from "@/lib/fence/market";
 import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
@@ -101,10 +101,16 @@ export default async function RoofEstimatorPage({ searchParams }: { searchParams
     /* no company yet: the roof's own address decides */
   }
 
+  // The roof diagram card (2026-11-12, owner: "only at admin account"): platform admins see the facets and lines
+  // drawn under a measurement; everyone else gets the roof estimator exactly as before. The action and the picture
+  // route behind the card ask the same question again on their own.
+  const roofDiagramPreview = await requirePlatformAdmin().then(() => true, () => false);
+
   return (
     <>
       <EstimateSeedStrip seed={seed} />
       <RoofEstimatorContent
+        roofDiagramPreview={roofDiagramPreview}
         evEnabled={isEagleViewEnabled()}
         measurementEnabled={isRoofMeasurementEnabled()}
         aiEnabled={isOpenAIEnabled()}

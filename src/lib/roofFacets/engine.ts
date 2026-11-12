@@ -1,7 +1,7 @@
 // ROOF FACETS — THE ENGINE (2026-11-11, owner: "show all facets, ridges, like the other companies' pictures; admin
 // side only, for testing"). From what a saved roof measurement already holds — Google's height map and roof segments
 // (SolarCache) and EagleView's roof outline (the Instant row) — to a drawing of the roof's facets: clean polygons that
-// share their edges, every edge named (eave, rake, ridge, hip, valley, wall step, pitch change) and measured.
+// share their edges, every edge named (eave, rake, ridge, hip, valley, step or wall flashing, pitch change) and measured.
 //
 // EagleView's instant data carries the outline, the area, the pitch and a facet COUNT, never the facets themselves
 // (those come only in its ordered reports), so the facets are read off the height map:
@@ -20,10 +20,15 @@
 // [c, c+1)) and metres of height; ./build turns the result into feet, compass bearings and lat/lng.
 
 import { buildGraph, collapseShort, pruneDangling, straightenChains, traceFaces, type Face, type Graph, type Seg } from "./arrange";
-import { dominantAxisDeg, findPlanes, type Plane, type PlanePrior } from "./planes";
-import { fillRings, pointInRing, registerOutline, ringArea, type Pt } from "./raster";
+import { findPlanes, outlineAxesDeg, type Plane, type PlanePrior } from "./planes";
+import { fillRings, pointInRing, registerOutline, ringArea, sharpenCorners, type Pt } from "./raster";
 
-export type FacetEdgeType = "EAVE" | "RAKE" | "RIDGE" | "HIP" | "VALLEY" | "STEP" | "BREAK";
+/**
+ * What an edge is. STEP and WALL are both a roof meeting a wall between two roof levels: STEP where the line climbs
+ * the lower roof (the roof runs up alongside a side wall — step flashing), WALL where it runs level (the roof ends
+ * against a wall above it — wall, or headwall, flashing). BREAK is a change of pitch within one facing.
+ */
+export type FacetEdgeType = "EAVE" | "RAKE" | "RIDGE" | "HIP" | "VALLEY" | "STEP" | "WALL" | "BREAK";
 
 export interface EngineRaster {
   width: number;
@@ -90,6 +95,8 @@ export interface EngineResult {
     googleSegments: number;
     /** plan area of the outline, square metres */
     outlineM2: number;
+    /** share of the outline's inside where the height map shows a building at all (Google's mask, and well above the ground) */
+    buildingShare: number;
   };
 }
 
@@ -98,9 +105,11 @@ const MAX_SHIFT_M = 5;
 export function buildFacets(input: EngineInput): EngineResult | null {
   const { dsm } = input;
   const px = dsm.pixelSizeM;
-  const ring0 = [...input.outline];
+  let ring0 = [...input.outline];
   if (ring0.length > 3 && Math.hypot(ring0[0].x - ring0[ring0.length - 1].x, ring0[0].y - ring0[ring0.length - 1].y) < 0.5) ring0.pop();
   if (ring0.length < 3) return null;
+  // a corner the tracing clipped with a stub under 0.9 m is squared off (two walls of 2 m or more run on to meet)
+  ring0 = sharpenCorners(ring0, 0.9 / px, 2 / px);
 
   // ── 1. window ──
   const maxShift = input.register === false ? 0 : Math.round(MAX_SHIFT_M / px);
@@ -125,13 +134,15 @@ export function buildFacets(input: EngineInput): EngineResult | null {
   // ── 2. register ──
   let ring = ring0.map((p) => ({ x: p.x - x0, y: p.y - y0 }));
   let shift = { dx: 0, dy: 0 };
-  if (maxShift > 0) {
-    const building = new Uint8Array(w * h);
+  const building = new Uint8Array(w * h);
+  {
     const mask = input.mask;
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       const on = mask ? mask.data[(y + y0) * mask.width + x + x0] > 0 : true;
       building[y * w + x] = on && z[y * w + x] > ground + 1.8 ? 1 : 0;
     }
+  }
+  if (maxShift > 0) {
     const reg = registerOutline(ring, building, w, h, maxShift);
     shift = { dx: reg.dx, dy: reg.dy };
     ring = ring.map((p) => ({ x: p.x + reg.dx, y: p.y + reg.dy }));
@@ -139,25 +150,43 @@ export function buildFacets(input: EngineInput): EngineResult | null {
   }
   if (ringArea(ring) < 0) ring.reverse();
   const inside = fillRings([ring], w, h) as Uint8Array;
-  let roofPx = 0;
-  for (let i = 0; i < inside.length; i++) roofPx += inside[i];
+  let roofPx = 0, builtPx = 0;
+  for (let i = 0; i < inside.length; i++) if (inside[i]) { roofPx++; builtPx += building[i]; }
   if (roofPx < 200) return null;
+  const buildingShare = builtPx / roofPx;
 
   // ── 3. planes ──
-  const axisDeg = dominantAxisDeg(ring);
+  const axesDeg = outlineAxesDeg(ring);
+  const axisDeg = axesDeg[0];
+  if (axesDeg.length > 1) input.trace?.push(`the building runs in ${axesDeg.length} directions (${axesDeg.map((d) => Math.round(d)).join(" and ")} degrees off the grid)`);
   const priors: PlanePrior[] = input.priors.map((s) => {
     const t = Math.tan((s.pitchDeg * Math.PI) / 180) * px, az = (s.azimuthDeg * Math.PI) / 180;
     // the plane RISES opposite to the way it faces; y runs south
     return { gx: -t * Math.sin(az), gy: t * Math.cos(az), cx: s.cx - x0 - 0.5, cy: s.cy - y0 - 0.5, zc: s.zc, areaM2: s.areaM2 };
   });
-  const field = findPlanes({ w, h, z, inside, pixelSizeM: px, axisDeg, priors, trace: input.trace });
+  // What Google's own mask does not call roof inside the outline — a tree over it, mostly — is kept out of the plane
+  // finding. Only while it is a modest part: a mask that misses a third of the building is the mask's mistake.
+  let ignore: Uint8Array | undefined;
+  if (input.mask) {
+    const m = input.mask, off = new Uint8Array(w * h);
+    let n = 0;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (inside[i] && !(m.data[(y + y0) * m.width + x + x0] > 0)) { off[i] = 1; n++; }
+    }
+    if (n > roofPx * 0.02 && n < roofPx * 0.35) {
+      ignore = off;
+      input.trace?.push(`${Math.round((n / roofPx) * 100)}% of the outline is not roof in Google's mask (trees over it, mostly): the planes run on under it`);
+    }
+  }
+  const field = findPlanes({ w, h, z, inside, ignore, pixelSizeM: px, axisDeg, axesDeg, priors, trace: input.trace });
   if (!field.planes.length) return null;
   // planes over CONTINUOUS window pixels (a pixel's centre is its index + 0.5)
   const planes = field.planes.map((p) => ({ ...p, c: p.c - 0.5 * (p.gx + p.gy) }));
   const label = field.label;
 
   // ── 4. lines ──
-  const lines = linesBetween(planes, label, w, h, px, axisDeg, input.trace);
+  const { segs: lines, seams } = linesBetween(planes, label, z, w, h, px, axesDeg, input.trace);
 
   // ── 5. arrange ──
   const outlineSegs: Seg[] = ring.map((p, i) => ({ a: p, b: ring[(i + 1) % ring.length], outline: true, tag: -1 }));
@@ -204,7 +233,7 @@ export function buildFacets(input: EngineInput): EngineResult | null {
           if ((r === q || r === lab[k]) && r !== a && cellId[i + 1] === k + 1) pts.push({ x: x + 1, y: y + 0.5 });
           if ((d === q || d === lab[k]) && d !== a && cellId[i + w] === k + 1) pts.push({ x: x + 0.5, y: y + 1 });
         }
-        for (const s of fitLines(pts, axisDeg, 12)) add.push({ ...s, outline: false, tag: -3 });
+        for (const s of fitLines(pts, axesDeg, 12)) add.push({ ...s, outline: false, tag: -3 });
       }
     });
     if (!add.length) break;
@@ -283,19 +312,33 @@ export function buildFacets(input: EngineInput): EngineResult | null {
     if (pl && pr) {
       const zAt = (p: { gx: number; gy: number; c: number }, q: Pt) => p.gx * q.x + p.gy * q.y + p.c;
       const mid = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 };
-      const gap = Math.max(...[A, mid, B].map((q) => Math.abs(zAt(pl, q) - zAt(pr, q))));
+      const qa = lab[left], qb = lab[right];
+      const seam = seams.get(Math.min(qa, qb) * 4096 + Math.max(qa, qb));
+      // a wall where the roof was MEASURED to step; for two planes never seen touching, where the planes say so
+      const wall = seam ? !seam.crease : Math.max(...[A, mid, B].map((q) => Math.abs(zAt(pl, q) - zAt(pr, q)))) > 0.45;
       run = (along(pl) + along(pr)) / 2;
-      if (gap > 0.45) {
-        type = "STEP";
-        // the flashing follows the lower roof
+      const sl = Math.hypot(pl.gx, pl.gy) / px, sr = Math.hypot(pr.gx, pr.gy) / px;
+      if (wall) {
+        // the flashing follows the lower roof: climbing it, step flashing; level along it, wall flashing
         run = zAt(pl, mid) < zAt(pr, mid) ? along(pl) : along(pr);
+        type = Math.abs(run) >= 0.08 ? "STEP" : "WALL";
+      } else if (sl < 0.04 || sr < 0.04) {
+        type = "BREAK"; // a flat part meeting a sloped one
       } else {
-        const r1 = into(pl, nL), r2 = into(pr, { x: -nL.x, y: -nL.y });
-        // two faces looking away from each other meet in a ridge; two at a corner meet in a hip
-        const facing = (pl.gx * pr.gx + pl.gy * pr.gy) / (Math.hypot(pl.gx, pl.gy) * Math.hypot(pr.gx, pr.gy) || 1);
-        if (r1 < -0.03 && r2 < -0.03) type = facing < -0.5 || Math.abs(run) < 0.06 ? "RIDGE" : "HIP";
-        else if (r1 > 0.03 && r2 > 0.03) type = "VALLEY";
-        else type = "BREAK";
+        // What kind of crease is read off the two planes, not off how the line happens to lie:
+        const facing = (pl.gx * pr.gx + pl.gy * pr.gy) / (Math.hypot(pl.gx, pl.gy) * Math.hypot(pr.gx, pr.gy));
+        if (facing > 0.94) {
+          type = "BREAK"; // both face the same way (within 20 degrees): a change of pitch
+        } else {
+          // going into the left facet, does the right one's plane climb away above it (a ridge or hip) or dive under (a valley)?
+          const convex = (pr.gx - pl.gx) * nL.x + (pr.gy - pl.gy) * nL.y > 0;
+          if (!convex) type = "VALLEY";
+          else {
+            const dgx = pl.gx - pr.gx, dgy = pl.gy - pr.gy, dg = Math.hypot(dgx, dgy) || 1;
+            const level = Math.abs((pl.gx * -dgy + pl.gy * dgx) / dg) / px < 0.06; // the crossing line neither climbs nor falls
+            type = facing < -0.5 || level ? "RIDGE" : "HIP";
+          }
+        }
       }
     } else {
       const p = pl ?? pr;
@@ -377,52 +420,113 @@ export function buildFacets(input: EngineInput): EngineResult | null {
       googlePlanes: planes.filter((p) => p.prior).length,
       googleSegments: input.priors.length,
       outlineM2: Math.abs(ringArea(ring)) * px * px,
+      buildingShare,
     },
   };
 }
 
-/** The straight lines between neighbouring planes: the crossing line where they meet, a fitted line where they do not. */
-function linesBetween(planes: ReadonlyArray<Plane>, label: Int16Array, w: number, h: number, px: number, axisDeg: number, trace?: string[]): Seg[] {
-  const pairs = new Map<number, Pt[]>();
-  const push = (a: number, b: number, p: Pt) => {
-    const k = a < b ? a * 4096 + b : b * 4096 + a;
-    const list = pairs.get(k);
-    if (list) list.push(p); else pairs.set(k, [p]);
+/** What was measured where two planes touch: the real jump in height across the seam, and so whether it is a crease or a wall. */
+interface Seam {
+  /** metres the roof steps across the seam (signed, median over the seam); near zero where the surface runs on */
+  step: number;
+  crease: boolean;
+}
+
+/** A seam is a crease (ridge, hip, valley, pitch change) while the roof steps less than this across it, metres. */
+const WALL_STEP_M = 0.4;
+
+/**
+ * The straight lines between neighbouring planes, and what kind of seam each pair has.
+ *
+ * Whether two planes meet in a crease or at a wall is MEASURED, not inferred from the planes: the height map is read
+ * half a metre either side of the seam and compared with what the two slopes alone would give. (The first version
+ * asked whether the two fitted planes cross near the seam — but a fitted plane's height is only as good as its fit,
+ * and on the first real roofs half the ridges of a two-wing house came out as "walls".) For a crease the line runs
+ * in the direction the two planes' crossing must have, placed on the planes' own crossing when the seam is there and
+ * on the seam itself when it is not; for a wall a line is fitted to the seam along the building's directions.
+ */
+function linesBetween(planes: ReadonlyArray<Plane>, label: Int16Array, z: Float32Array, w: number, h: number, px: number, axesDeg: ReadonlyArray<number>, trace?: string[]): { segs: Seg[]; seams: Map<number, Seam> } {
+  // per pair (lower id first): the seam's points, and at each the unit step from the lower-id plane to the other
+  const pairs = new Map<number, { pts: Pt[]; nx: number[]; ny: number[] }>();
+  const push = (la: number, lb: number, p: Pt, nx: number, ny: number) => {
+    const lo = Math.min(la, lb), k = lo * 4096 + Math.max(la, lb);
+    let e = pairs.get(k);
+    if (!e) { e = { pts: [], nx: [], ny: [] }; pairs.set(k, e); }
+    e.pts.push(p);
+    const s = la === lo ? 1 : -1;
+    e.nx.push(nx * s); e.ny.push(ny * s);
   };
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const i = y * w + x, a = label[i];
     if (a < 0) continue;
-    if (x + 1 < w) { const b = label[i + 1]; if (b >= 0 && b !== a) push(a, b, { x: x + 1, y: y + 0.5 }); }
-    if (y + 1 < h) { const b = label[i + w]; if (b >= 0 && b !== a) push(a, b, { x: x + 0.5, y: y + 1 }); }
+    if (x + 1 < w) { const b = label[i + 1]; if (b >= 0 && b !== a) push(a, b, { x: x + 1, y: y + 0.5 }, 1, 0); }
+    if (y + 1 < h) { const b = label[i + w]; if (b >= 0 && b !== a) push(a, b, { x: x + 0.5, y: y + 1 }, 0, 1); }
   }
-  const out: Seg[] = [];
+  const segs: Seg[] = [];
+  const seams = new Map<number, Seam>();
   const EXT = 3 / px; // creases run on 3 m past where the two planes were seen to touch
-  let creases = 0, steps = 0;
-  for (const [k, pts] of pairs) {
+  const D = 5.5; // pixels from the seam to the two readings
+  let onCrossing = 0, onSeam = 0, walls = 0;
+  for (const [k, e] of pairs) {
+    const { pts } = e;
     if (pts.length < 8) continue;
-    const A = planes[Math.floor(k / 4096)], B = planes[k % 4096];
+    const ia = Math.floor(k / 4096), ib = k % 4096;
+    const A = planes[ia], B = planes[ib];
+    // the real step across the seam
+    const steps: number[] = [];
+    for (let q = 0; q < pts.length; q++) {
+      const p = pts[q], nx = e.nx[q], ny = e.ny[q];
+      const bx = Math.floor(p.x + nx * D), by = Math.floor(p.y + ny * D), ax = Math.floor(p.x - nx * D), ay = Math.floor(p.y - ny * D);
+      if (bx < 0 || by < 0 || bx >= w || by >= h || ax < 0 || ay < 0 || ax >= w || ay >= h) continue;
+      if (label[by * w + bx] !== ib || label[ay * w + ax] !== ia) continue;
+      // what the two slopes alone would make of the same two readings, were the surface unbroken at the seam
+      const unbroken = D * (B.gx * nx + B.gy * ny) + D * (A.gx * nx + A.gy * ny);
+      steps.push(z[by * w + bx] - z[ay * w + ax] - unbroken);
+    }
+    let step: number;
+    if (steps.length >= 6) {
+      steps.sort((p, q) => p - q);
+      step = steps[steps.length >> 1];
+    } else {
+      // too narrow to read either side: fall back on the planes themselves
+      const gaps = pts.map((p) => B.gx * p.x + B.gy * p.y + B.c - (A.gx * p.x + A.gy * p.y + A.c)).sort((p, q) => p - q);
+      step = gaps[gaps.length >> 1];
+    }
+    const crease = Math.abs(step) < WALL_STEP_M;
+    seams.set(k, { step, crease });
+
     const dgx = A.gx - B.gx, dgy = A.gy - B.gy, dg = Math.hypot(dgx, dgy);
-    let far = pts;
-    if (dg / px >= 0.04) {
+    let rest = pts;
+    if (crease && dg / px >= 0.04) {
       const dc = A.c - B.c;
-      const dist = (p: Pt) => (dgx * p.x + dgy * p.y + dc) / dg;
-      const near = pts.filter((p) => Math.abs(dist(p)) <= 0.7 / px);
-      if (near.length >= Math.max(8, pts.length * 0.4)) {
-        const d = { x: -dgy / dg, y: dgx / dg };
-        const p0 = { x: (-dc * dgx) / (dg * dg), y: (-dc * dgy) / (dg * dg) };
-        const ts = near.map((p) => (p.x - p0.x) * d.x + (p.y - p0.y) * d.y).sort((a, b) => a - b);
+      const dist = (p: Pt) => (dgx * p.x + dgy * p.y + dc) / dg; // pixels from the planes' own crossing
+      const BAND = 0.7 / px;
+      let shift = 0;
+      let held = pts.filter((p) => Math.abs(dist(p)) <= BAND);
+      if (held.length < Math.max(8, pts.length * 0.4)) {
+        // the planes cross somewhere else on paper: keep the crossing's direction, put the line on the seam
+        const ds = pts.map(dist).sort((p, q) => p - q);
+        shift = ds[ds.length >> 1];
+        held = pts.filter((p) => Math.abs(dist(p) - shift) <= BAND);
+        if (held.length < Math.max(8, pts.length * 0.5)) held = [];
+      }
+      if (held.length) {
+        const d = { x: -dgy / dg, y: dgx / dg }, n = { x: dgx / dg, y: dgy / dg };
+        const p0 = { x: (-dc * dgx) / (dg * dg) + n.x * shift, y: (-dc * dgy) / (dg * dg) + n.y * shift };
+        const ts = held.map((p) => (p.x - p0.x) * d.x + (p.y - p0.y) * d.y).sort((p, q) => p - q);
         const t0 = ts[Math.floor(ts.length * 0.03)] - EXT, t1 = ts[Math.ceil(ts.length * 0.97) - 1] + EXT;
-        out.push({ a: { x: p0.x + d.x * t0, y: p0.y + d.y * t0 }, b: { x: p0.x + d.x * t1, y: p0.y + d.y * t1 }, outline: false, tag: k });
-        creases++;
-        far = pts.filter((p) => Math.abs(dist(p)) > 0.7 / px);
+        segs.push({ a: { x: p0.x + d.x * t0, y: p0.y + d.y * t0 }, b: { x: p0.x + d.x * t1, y: p0.y + d.y * t1 }, outline: false, tag: k });
+        if (shift === 0) onCrossing++; else onSeam++;
+        rest = pts.filter((p) => Math.abs(dist(p) - shift) > BAND);
       }
     }
-    if (far.length >= 12) {
-      for (const s of fitLines(far, axisDeg, 1.5 / px)) { out.push({ ...s, outline: false, tag: -2 }); steps++; }
+    if (rest.length >= 12) {
+      for (const sg of fitLines(rest, axesDeg, 1.5 / px)) { segs.push({ ...sg, outline: false, tag: -2 }); walls++; }
     }
   }
-  trace?.push(`${creases} line(s) where planes cross, ${steps} fitted where they meet at a wall`);
-  return out;
+  const nWalls = [...seams.values()].filter((sm) => !sm.crease).length;
+  trace?.push(`${seams.size} seams between planes: ${seams.size - nWalls} creases (${onCrossing} lines on the planes' own crossing, ${onSeam} placed on the seam), ${nWalls} real steps in height; ${walls} line(s) fitted`);
+  return { segs, seams };
 }
 
 /**
@@ -430,7 +534,7 @@ function linesBetween(planes: ReadonlyArray<Plane>, label: Int16Array, w: number
  * building runs, so the building's two directions are tried first, its diagonals second, and the cloud's own long
  * direction is believed only when it clearly holds more of the points.
  */
-function fitLines(points: ReadonlyArray<Pt>, axisDeg: number, extendPx: number): Array<{ a: Pt; b: Pt }> {
+function fitLines(points: ReadonlyArray<Pt>, axesDeg: ReadonlyArray<number>, extendPx: number): Array<{ a: Pt; b: Pt }> {
   const out: Array<{ a: Pt; b: Pt }> = [];
   let rest = [...points];
   const MIN = 12;
@@ -441,9 +545,12 @@ function fitLines(points: ReadonlyArray<Pt>, axisDeg: number, extendPx: number):
     let sxx = 0, sxy = 0, syy = 0;
     for (const p of rest) { sxx += (p.x - mx) ** 2; sxy += (p.x - mx) * (p.y - my); syy += (p.y - my) ** 2; }
     const own = 0.5 * Math.atan2(2 * sxy, sxx - syy);
-    const ax = (axisDeg * Math.PI) / 180;
+    const ax = (axesDeg[0] * Math.PI) / 180;
+    const tries: Array<[number, number]> = [];
+    for (const d of axesDeg) { const a = (d * Math.PI) / 180; tries.push([a, 1.3], [a + Math.PI / 2, 1.3]); }
+    tries.push([ax + Math.PI / 4, 1.1], [ax - Math.PI / 4, 1.1], [own, 1]);
     let best: { dir: number; u0: number; n: number; score: number } | null = null;
-    for (const [dir, weight] of [[ax, 1.3], [ax + Math.PI / 2, 1.3], [ax + Math.PI / 4, 1.1], [ax - Math.PI / 4, 1.1], [own, 1]] as Array<[number, number]>) {
+    for (const [dir, weight] of tries) {
       const nx = -Math.sin(dir), ny = Math.cos(dir);
       const us = rest.map((p) => p.x * nx + p.y * ny).sort((a, b) => a - b);
       // the densest 5-pixel band

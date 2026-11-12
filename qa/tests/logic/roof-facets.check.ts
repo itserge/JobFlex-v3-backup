@@ -9,6 +9,7 @@
 import { buildFacets, type EngineResult, type FacetEdgeType } from "../../../src/lib/roofFacets/engine";
 import { fromUtm, latLngToPixel, pixelToUtm, toUtm, type RasterFrame } from "../../../src/lib/roofFacets/geo";
 import { facetLetter, facingWord, pitchLabel, toFacetModel } from "../../../src/lib/roofFacets/model";
+import { sharpenCorners } from "../../../src/lib/roofFacets/raster";
 
 let bad = 0;
 const check = (name: string, ok: boolean, extra = "") => {
@@ -75,11 +76,12 @@ const SL = Math.sqrt(1 + S * S); // a 6/12 slope's stretch
   const r = buildFacets({ dsm, mask, outline: toPx(gable.outline), priors: [] })!;
   const f = feetOf(r);
   check("gable: two facets, both 6/12, facing north and south", r.facets.length === 2 && r.facets.every((x) => near(x.slope * 12, 6, 0.05)) && r.facets.map((x) => Math.round(x.azimuthDeg ?? -1)).sort((a, b) => a - b).join() === "0,180", JSON.stringify(r.facets.map((x) => [x.slope * 12, x.azimuthDeg])));
-  check("gable: one 12 m ridge, 24 m of eave, four rakes of a sloped 4 m", near(f.RIDGE, 12, 0.15) && near(f.EAVE, 24, 0.15) && near(f.RAKE, 4 * 4 * SL, 0.2) && !f.HIP && !f.VALLEY && !f.STEP && !f.BREAK, JSON.stringify(f));
+  check("gable: one 12 m ridge, 24 m of eave, four rakes of a sloped 4 m", near(f.RIDGE, 12, 0.15) && near(f.EAVE, 24, 0.15) && near(f.RAKE, 4 * 4 * SL, 0.2) && !f.HIP && !f.VALLEY && !f.STEP && !f.WALL && !f.BREAK, JSON.stringify(f));
   check("gable: the area is the plan area stretched by the slope", near(area(r), 96 * SL, 0.6), String(area(r)));
   check("gable: no cracks — the facets fill the outline and every edge has a facet", watertight(r, 96));
   check("gable: the outline was where it belongs, so it is not moved", r.shift.dx === 0 && r.shift.dy === 0);
   check("gable: the roof sits on the planes drawn", r.quality.agree > 0.97 && r.quality.rmsM < 0.04, JSON.stringify(r.quality));
+  check("gable: the height map shows a building under the whole outline", r.quality.buildingShare > 0.97, String(r.quality.buildingShare));
 }
 
 // ── the hip ──
@@ -107,7 +109,7 @@ const SL = Math.sqrt(1 + S * S); // a 6/12 slope's stretch
   check("L: two valleys of 4.5 m", near(f.VALLEY, 2 * Math.sqrt(9 + 9 + 2.25), 0.3) && r.edges.filter((e) => e.type === "VALLEY").length === 2, String(f.VALLEY));
   // eaves: the wing's two long sides (9 m each), the main roof's south side (12 m) and what is left of its north (6 m)
   check("L: 36 m of eave and six rakes of a sloped 3 m", near(planOf(r, "EAVE"), 36, 0.3) && near(f.RAKE, 6 * 3 * SL, 0.3), JSON.stringify(f));
-  check("L: nothing unsure — no wall steps, no pitch changes, no hips", !f.STEP && !f.BREAK && !f.HIP);
+  check("L: nothing unsure — no wall or step flashing, no pitch changes, no hips", !f.STEP && !f.WALL && !f.BREAK && !f.HIP);
   check("L: the area is the plan area stretched by the slope", near(area(r), 126 * SL, 0.9), String(area(r)));
   check("L: no cracks", watertight(r, 126));
 }
@@ -132,12 +134,27 @@ const SL = Math.sqrt(1 + S * S); // a 6/12 slope's stretch
   check("…and the drawing says the roof does not all sit on its planes", r.quality.agree < 0.97 && r.quality.agree > 0.85, String(r.quality.agree));
 }
 
+// ── the outline's clipped corners ──
+{
+  // a 12 x 8 rectangle whose north-east corner the tracing cut with a 0.5 m stub, and a real 0.6 m jog in the south wall
+  const clipped = [{ x: 0, y: 0 }, { x: 11.6, y: 0 }, { x: 12, y: 0.3 }, { x: 12, y: 8 }, { x: 7, y: 8 }, { x: 7, y: 7.4 }, { x: 0, y: 7.4 }];
+  const sharp = sharpenCorners(clipped, 0.9, 2);
+  check("a corner clipped by a short stub is squared off", sharp.length === 6 && sharp.some((p) => near(p.x, 12, 1e-6) && near(p.y, 0, 1e-6)), JSON.stringify(sharp));
+  check("a jog between two parallel walls is left alone", sharp.some((p) => near(p.x, 7, 1e-9) && near(p.y, 8, 1e-9)) && sharp.some((p) => near(p.x, 7, 1e-9) && near(p.y, 7.4, 1e-9)));
+  const square = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+  check("an outline with no stubs comes back as it was", JSON.stringify(sharpenCorners(square, 0.9, 2)) === JSON.stringify(square));
+}
+
 // ── nothing to draw ──
 check("an outline of two points draws nothing", buildFacets({ ...raster(gable), outline: [{ x: 1, y: 1 }, { x: 5, y: 5 }], priors: [] }) === null);
 {
   const flat = { width: W, height: H, data: new Float32Array(W * H).fill(GROUND), pixelSizeM: PX };
   const r = buildFacets({ dsm: flat, mask: null, outline: toPx(gable.outline), priors: [], register: false });
   check("bare ground inside the outline is one flat facet, not a crash", r !== null && r.facets.length === 1 && r.facets[0].slope < 0.02);
+  check("…and the engine says there is no building there (a house newer than the height map)", r !== null && r.quality.buildingShare === 0);
+  // an outline 12 m east of the house: mostly ground, a sliver of roof
+  const off = buildFacets({ ...raster(gable), outline: toPx(gable.outline, 110, 0), priors: [], register: false });
+  check("an outline that sits mostly off the building shows a small share of building", off !== null && off.quality.buildingShare < 0.2, String(off?.quality.buildingShare));
 }
 
 // ── the page's side ──
@@ -152,6 +169,7 @@ check("an outline of two points draws nothing", buildFacets({ ...raster(gable), 
   check("facets are lettered A, B, C… largest first", m.facets.map((f) => f.letter).join("") === "ABCDE" && m.facets.every((f, i) => i === 0 || f.areaSqft <= m.facets[i - 1].areaSqft));
   check("each facet says its pitch and which way it faces", m.facets.every((f) => f.pitchLabel === "6/12" && ["N", "E", "S", "W"].includes(f.facing ?? "")));
   check("the totals are in feet and square feet", near(m.totals.areaSqft, sqft, 12) && near(m.totals.feet.RIDGE, 24 * 3.28084, 1.5) && m.totals.facets === 5 && m.totals.predominantPitch === "6/12", JSON.stringify(m.totals));
+  check("a roof with no wall between levels is one part, and every kind of line is counted", m.facets.every((f) => f.part === "Main roof") && m.totals.count.RIDGE === 3 && m.totals.count.VALLEY === 2 && m.totals.count.RAKE === 6 && m.totals.count.STEP === 0, JSON.stringify(m.totals.count));
   check("edges keep their facets by the new letters", m.edges.every((e) => e.left < m.facets.length && e.right < m.facets.length && (e.left >= 0 || e.right >= 0)));
   check("against EagleView: within a percent, high confidence, the reason said", m.compare.areaDeltaPct != null && Math.abs(m.compare.areaDeltaPct) <= 1 && m.confidence.level === "high" && /within .*% of EagleView/.test(m.confidence.reasons[0] ?? ""), JSON.stringify(m.confidence));
   const off = toFacetModel({ result, frame, eagleView: { areaSqft: Math.round(sqft * 1.3), facetCount: 12, pitch: "6/12" } });
