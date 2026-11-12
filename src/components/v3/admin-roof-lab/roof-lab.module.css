@@ -1,0 +1,195 @@
+/* ============================================================
+   ADMIN · ROOF FACETS (TEST) — /admin/roof-lab
+
+   The shell's .page-head / .card / .card-head / .chip / .btn / .empty and
+   the ledger table (.tbl) and .search come from the dashboard module and
+   admin-shared (imported, never re-derived). What this page invents: the
+   two-column bench (a list of roofs, the roof picked), the picture with
+   the drawing laid over it, the small controls above it and the legend
+   under it.
+
+   Hashed classes scoped `:global(.jf-blueprint .content) .cls` ⇒
+   (0,3,0), above the dashboard module's resets. Tokens only — the
+   drawing's own line colours are set in the component, because they sit
+   on a photograph and must not follow the page's theme.
+   ============================================================ */
+
+:global(.jf-blueprint .content) .lead {
+  margin: 0;
+  max-width: 78ch;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+:global(.jf-blueprint .content) .layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+:global(.jf-blueprint .content) .searchRow {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+:global(.jf-blueprint .content) .searchRow input {
+  flex: 1;
+  min-width: 0;
+}
+
+:global(.jf-blueprint .content) .list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 72vh;
+  overflow-y: auto;
+  border-top: 1px solid var(--hair-soft);
+}
+:global(.jf-blueprint .content) .rowBtn {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 10px 8px;
+  border: none;
+  border-bottom: 1px solid var(--hair-soft);
+  border-left: 3px solid transparent;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: var(--ink);
+}
+:global(.jf-blueprint .content) .rowBtn:hover { background: var(--grid-light); }
+:global(.jf-blueprint .content) .rowBtn:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -2px; }
+:global(.jf-blueprint .content) .rowOn {
+  border-left-color: var(--blueprint);
+  background: var(--chart-fill);
+}
+:global(.jf-blueprint .content) .rowTitle { font-size: 13.5px; font-weight: 700; overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .rowSub { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .rowMeta { font-family: var(--font-mono); font-size: 11px; color: var(--muted-light); }
+
+:global(.jf-blueprint .content) .tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin: 0 0 12px;
+}
+:global(.jf-blueprint .content) .seg {
+  display: inline-flex;
+  border: 1.5px solid var(--ink);
+}
+:global(.jf-blueprint .content) .seg button {
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+}
+:global(.jf-blueprint .content) .seg button + button { border-left: 1.5px solid var(--ink); }
+:global(.jf-blueprint .content) .seg button:disabled { color: var(--muted-faint); cursor: not-allowed; }
+:global(.jf-blueprint .content) .seg .segOn { background: var(--ink); color: var(--paper-deep); }
+:global(.jf-blueprint .content) .tick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+:global(.jf-blueprint .content) .stage {
+  position: relative;
+  width: 100%;
+  max-height: 78vh;
+  margin: 0 auto;
+  border: 1.5px solid var(--ink);
+  background: var(--grid-light);
+  overflow: hidden;
+}
+:global(.jf-blueprint .content) .pic,
+:global(.jf-blueprint .content) .draw {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+:global(.jf-blueprint .content) .pic { object-fit: fill; }
+
+:global(.jf-blueprint .content) .legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  font-size: 13px;
+  color: var(--ink);
+}
+:global(.jf-blueprint .content) .legend li { display: inline-flex; align-items: center; gap: 8px; }
+:global(.jf-blueprint .content) .swatch {
+  width: 22px;
+  height: 5px;
+  border: 1px solid var(--ink);
+}
+
+:global(.jf-blueprint .content) .cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+  margin-top: 20px;
+}
+:global(.jf-blueprint .content) .subHead {
+  margin: 0 0 8px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+:global(.jf-blueprint .content) .subHead:not(:first-child) { margin-top: 20px; }
+:global(.jf-blueprint .content) .tbl { width: 100%; }
+:global(.jf-blueprint .content) .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+:global(.jf-blueprint .content) .hot td { background: var(--chart-fill); }
+
+:global(.jf-blueprint .content) .note {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+:global(.jf-blueprint .content) .sure { margin: 0; display: flex; align-items: center; gap: 10px; }
+:global(.jf-blueprint .content) .score { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+:global(.jf-blueprint .content) .reasons {
+  margin: 8px 0 0;
+  padding: 0 0 0 18px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+:global(.jf-blueprint .content) .reasons li + li { margin-top: 4px; }
+
+:global(.jf-blueprint .content) .busy { margin: 0; font-size: 14px; color: var(--muted); }
+:global(.jf-blueprint .content) .fail { margin: 0; font-size: 14px; line-height: 1.5; color: var(--danger); }
+
+:global(.jf-blueprint .content) .notes { margin-top: 20px; font-size: 13px; color: var(--muted); }
+:global(.jf-blueprint .content) .notes summary { cursor: pointer; font-weight: 600; color: var(--ink); }
+:global(.jf-blueprint .content) .notes ol { margin: 8px 0 0; padding-left: 22px; line-height: 1.5; }
+
+@media (max-width: 1100px) {
+  :global(.jf-blueprint .content) .layout { grid-template-columns: minmax(0, 1fr); }
+  :global(.jf-blueprint .content) .list { max-height: 38vh; }
+}
+@media (max-width: 720px) {
+  :global(.jf-blueprint .content) .cols { grid-template-columns: minmax(0, 1fr); }
+}
