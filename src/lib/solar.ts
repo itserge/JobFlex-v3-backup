@@ -381,3 +381,43 @@ export async function fetchRaster(url: string): Promise<Raster> {
   };
 }
 
+/** The aerial photograph of a tile (the dataLayers `rgbUrl`): three bytes a pixel, on the same grid as the DSM. */
+export interface RgbRaster {
+  width: number;
+  height: number;
+  /** red, green, blue per pixel, row-major */
+  data: Uint8Array;
+  pixelSizeM: number;
+  originX: number;
+  originY: number;
+  epsg: number | null;
+}
+
+/**
+ * The tile's aerial photograph (2026-11-11, the roof facet lab). Same fetch as fetchRaster — the bare layer URL plus
+ * the key — but all three colour bands are kept. The photograph and the DSM of one dataLayers answer share a flight
+ * and a grid, which is what lets lines read off the height map be drawn on the picture without lining anything up.
+ */
+export async function fetchRgbRaster(url: string): Promise<RgbRaster> {
+  if (!isSolarEnabled()) throw new Error("Google Maps key is not configured");
+  const sep = url.includes("?") ? "&" : "?";
+  const res = await solarFetch(`${url}${sep}key=${process.env.GOOGLE_MAPS_API_KEY}`, "rgb");
+  const tiff = await fromArrayBuffer(await res.arrayBuffer());
+  const img = await tiff.getImage();
+  const [resX] = img.getResolution();
+  const [originX, originY] = img.getOrigin();
+  const bands = await img.readRasters();
+  const list = (Array.isArray(bands) ? bands : [bands]) as ArrayLike<number>[];
+  const width = img.getWidth(), height = img.getHeight();
+  const data = new Uint8Array(width * height * 3);
+  // a one-band answer (it has happened with masks) is shown grey rather than refused
+  const r = list[0], g = list[1] ?? list[0], b = list[2] ?? list[0];
+  for (let i = 0; i < width * height; i++) {
+    data[i * 3] = r[i];
+    data[i * 3 + 1] = g[i];
+    data[i * 3 + 2] = b[i];
+  }
+  const geoKeys = (img.getGeoKeys?.() ?? {}) as Record<string, number>;
+  return { width, height, data, pixelSizeM: Math.abs(resX), originX, originY, epsg: geoKeys.ProjectedCSTypeGeoKey ?? null };
+}
+

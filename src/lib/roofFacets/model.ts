@@ -1,0 +1,192 @@
+// ROOF FACETS — THE DRAWING AS THE PAGE READS IT (2026-11-11). The engine (./engine) answers in raster pixels and
+// metres; this turns that into what a person reads and a screen draws: facets lettered A, B, C… largest first, areas
+// in square feet, pitches as a rise over 12, the way each facet faces, every edge's length in feet, the totals per
+// kind of edge, how the drawing compares with EagleView's own figures for the same roof, and a plain-words
+// confidence. Pure, and safe to import from a client component (types and arithmetic only).
+
+import type { EngineResult, FacetEdgeType } from "./engine";
+import { fromUtm, pixelToUtm, type RasterFrame } from "./geo";
+
+export type { FacetEdgeType } from "./engine";
+
+export const FACET_EDGE_TYPES: FacetEdgeType[] = ["RIDGE", "HIP", "VALLEY", "EAVE", "RAKE", "STEP", "BREAK"];
+
+/** What each kind of edge is called on the page. */
+export const FACET_EDGE_WORDS: Record<FacetEdgeType, string> = {
+  RIDGE: "Ridge",
+  HIP: "Hip",
+  VALLEY: "Valley",
+  EAVE: "Eave",
+  RAKE: "Rake",
+  STEP: "Wall / step",
+  BREAK: "Pitch change",
+};
+
+export interface FacetModelFacet {
+  letter: string;
+  /** vertex indices round the outside, then round each hole */
+  outer: number[];
+  holes: number[][];
+  /** rise per 12, to one decimal; `pitchLabel` is what is printed ("6/12", "flat") */
+  pitch12: number;
+  pitchLabel: string;
+  /** compass bearing the water runs, and its word (N, NE, …); null when flat */
+  azimuthDeg: number | null;
+  facing: string | null;
+  planSqft: number;
+  areaSqft: number;
+  /** true when one of Google's roof segments stands behind the plane */
+  google: boolean;
+}
+
+export interface FacetModelEdge {
+  a: number;
+  b: number;
+  type: FacetEdgeType;
+  lengthFt: number;
+  /** facet indices either side; -1 is the outside */
+  left: number;
+  right: number;
+}
+
+export interface FacetModel {
+  /** UTM metres (e east, n north) — the picture is cut in the same frame — and lat/lng on Google's imagery */
+  vertices: Array<{ e: number; n: number; lat: number; lng: number }>;
+  epsg: number;
+  facets: FacetModelFacet[];
+  edges: FacetModelEdge[];
+  totals: {
+    areaSqft: number;
+    squares: number;
+    facets: number;
+    /** the pitch most of the roof's area has */
+    predominantPitch: string | null;
+    feet: Record<FacetEdgeType, number>;
+  };
+  compare: {
+    eagleViewSqft: number | null;
+    eagleViewFacets: number | null;
+    eagleViewPitch: string | null;
+    googleSegments: number;
+    /** the drawing's area against EagleView's, percent (positive = the drawing is larger) */
+    areaDeltaPct: number | null;
+  };
+  confidence: { level: "high" | "medium" | "low"; score: number; reasons: string[] };
+  /** how far EagleView's outline was moved to sit on Google's height map, feet */
+  shiftFt: { east: number; north: number };
+  quality: { agree: number; rmsFt: number };
+  /** what the engine decided and why, in its own words (the lab shows it on request) */
+  notes: string[];
+}
+
+const FT_PER_M = 3.28084;
+const SQFT_PER_M2 = 10.7639;
+const r1 = (n: number) => Math.round(n * 10) / 10;
+
+export const facetLetter = (i: number): string => (i < 26 ? String.fromCharCode(65 + i) : String.fromCharCode(64 + Math.floor(i / 26)) + String.fromCharCode(65 + (i % 26)));
+
+const COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+export const facingWord = (deg: number | null): string | null => (deg == null ? null : COMPASS[Math.round((((deg % 360) + 360) % 360) / 45) % 8]);
+
+export function pitchLabel(rise12: number): string {
+  const whole = Math.round(rise12);
+  return whole < 1 ? (rise12 < 0.35 ? "flat" : "low slope") : `${whole}/12`;
+}
+
+export function toFacetModel(input: {
+  result: EngineResult;
+  frame: RasterFrame;
+  eagleView: { areaSqft: number | null; facetCount: number | null; pitch: string | null };
+  notes?: string[];
+}): FacetModel {
+  const { result, frame } = input;
+  const vertices = result.vertices.map((p) => {
+    const u = pixelToUtm(frame, p.x, p.y);
+    return { ...u, ...fromUtm(u.e, u.n, frame.epsg) };
+  });
+  // letters go by size
+  const order = result.facets.map((_, i) => i).sort((a, b) => result.facets[b].areaM2 - result.facets[a].areaM2);
+  const newIndex = new Map<number, number>();
+  order.forEach((old, i) => newIndex.set(old, i));
+  const facets: FacetModelFacet[] = order.map((old, i) => {
+    const f = result.facets[old];
+    const rise = f.slope * 12;
+    return {
+      letter: facetLetter(i),
+      outer: f.outer,
+      holes: f.holes,
+      pitch12: r1(rise),
+      pitchLabel: pitchLabel(rise),
+      azimuthDeg: f.azimuthDeg == null ? null : Math.round(f.azimuthDeg),
+      facing: rise < 0.35 ? null : facingWord(f.azimuthDeg),
+      planSqft: r1(f.planM2 * SQFT_PER_M2),
+      areaSqft: r1(f.areaM2 * SQFT_PER_M2),
+      google: f.google,
+    };
+  });
+  const edges: FacetModelEdge[] = result.edges.map((e) => ({
+    a: e.a,
+    b: e.b,
+    type: e.type,
+    lengthFt: r1(e.lengthM * FT_PER_M),
+    left: e.left < 0 ? -1 : (newIndex.get(e.left) ?? -1),
+    right: e.right < 0 ? -1 : (newIndex.get(e.right) ?? -1),
+  }));
+  const feet = Object.fromEntries(FACET_EDGE_TYPES.map((t) => [t, 0])) as Record<FacetEdgeType, number>;
+  for (const e of edges) feet[e.type] = r1(feet[e.type] + e.lengthFt);
+  const areaSqft = r1(facets.reduce((s, f) => s + f.areaSqft, 0));
+  const byPitch = new Map<string, number>();
+  for (const f of facets) byPitch.set(f.pitchLabel, (byPitch.get(f.pitchLabel) ?? 0) + f.areaSqft);
+  const predominantPitch = [...byPitch].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+
+  const ev = input.eagleView;
+  const areaDeltaPct = ev.areaSqft && ev.areaSqft > 0 ? r1(((areaSqft - ev.areaSqft) / ev.areaSqft) * 100) : null;
+
+  // Confidence, in the open: every deduction has its sentence.
+  let score = 100;
+  const reasons: string[] = [];
+  if (areaDeltaPct == null) {
+    score -= 10;
+    reasons.push("EagleView gave no area for this roof, so the drawing's total has nothing to be checked against.");
+  } else if (Math.abs(areaDeltaPct) > 2) {
+    score -= Math.min(30, (Math.abs(areaDeltaPct) - 2) * 2.5);
+    reasons.push(`The facets add up to ${Math.abs(areaDeltaPct)}% ${areaDeltaPct > 0 ? "more" : "less"} than EagleView's area.`);
+  } else {
+    reasons.push(`The facets add up to within ${Math.abs(areaDeltaPct)}% of EagleView's area.`);
+  }
+  const agree = result.quality.agree;
+  if (agree < 0.95) {
+    score -= Math.min(30, (0.95 - agree) * 150);
+    reasons.push(`${Math.round((1 - agree) * 100)}% of the roof does not sit on the plane drawn over it — usually trees over the roof, or small parts the height map blurs.`);
+  }
+  if (result.quality.rmsM > 0.15) {
+    score -= Math.min(25, (result.quality.rmsM - 0.15) * 110);
+    reasons.push(`The height map misses the drawn planes by ${r1(result.quality.rmsM * FT_PER_M * 12)} inches on average.`);
+  }
+  const inner = edges.filter((e) => e.left >= 0 && e.right >= 0);
+  const innerFt = inner.reduce((s, e) => s + e.lengthFt, 0);
+  const unsureFt = inner.filter((e) => e.type === "STEP" || e.type === "BREAK").reduce((s, e) => s + e.lengthFt, 0);
+  const unsure = innerFt > 0 ? unsureFt / innerFt : 0;
+  if (unsure > 0.15) {
+    score -= Math.min(16, (unsure - 0.15) * 45);
+    reasons.push(`${Math.round(unsure * 100)}% of the inner lines are walls or pitch changes rather than ridges, hips and valleys — a roof on several levels, or places the height map reads poorly.`);
+  }
+  if (ev.facetCount != null && Math.abs(facets.length - ev.facetCount) > Math.max(3, ev.facetCount * 0.3)) {
+    score -= 8;
+    reasons.push(`EagleView counts ${ev.facetCount} facets and the drawing has ${facets.length}.`);
+  }
+  score = Math.max(0, Math.round(score));
+
+  return {
+    vertices,
+    epsg: frame.epsg,
+    facets,
+    edges,
+    totals: { areaSqft, squares: r1(areaSqft / 100), facets: facets.length, predominantPitch, feet },
+    compare: { eagleViewSqft: ev.areaSqft, eagleViewFacets: ev.facetCount, eagleViewPitch: ev.pitch, googleSegments: result.quality.googleSegments, areaDeltaPct },
+    confidence: { level: score >= 80 ? "high" : score >= 60 ? "medium" : "low", score, reasons },
+    shiftFt: { east: r1(result.shift.dx * frame.pixelSizeM * FT_PER_M), north: r1(-result.shift.dy * frame.pixelSizeM * FT_PER_M) },
+    quality: { agree: Math.round(agree * 1000) / 1000, rmsFt: Math.round(result.quality.rmsM * FT_PER_M * 100) / 100 },
+    notes: input.notes ?? [],
+  };
+}

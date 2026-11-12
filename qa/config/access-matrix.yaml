@@ -69,6 +69,14 @@ routes:
     worker: login
     admin: open
     homeowner: login
+  # 2026-11-11: the roof facet engine's test bench — platform admins only, contractors never see it.
+  /admin/roof-lab:
+    guest: login
+    owner: login
+    manager: login
+    worker: login
+    admin: open
+    homeowner: login
   /admin/influencers:
     guest: login
     owner: login
