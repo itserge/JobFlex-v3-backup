@@ -450,14 +450,16 @@ export function findPlanes(input: {
       const at = (dir: number, s12: number) => ({ gx: Math.cos(dir) * (s12 / 12) * px, gy: Math.sin(dir) * (s12 / 12) * px });
       const tries: Array<{ gx: number; gy: number }> = [];
       if (turned != null) {
-        if (housePitch != null && Math.abs(rise12 - housePitch) <= 1) tries.push(at(turned, housePitch));
+        // (within a rise of 1 in 12, or within 4 degrees of it: on a steep roof a degree is two inches of rise)
+        if (housePitch != null && (Math.abs(rise12 - housePitch) <= 1 || Math.abs(Math.atan(rise12 / 12) - Math.atan(housePitch / 12)) <= (4 * Math.PI) / 180)) tries.push(at(turned, housePitch));
         tries.push(at(turned, Math.round(rise12)), at(turned, rise12));
       }
       tries.push(at(own, Math.round(rise12)));
       for (const cg of tries) {
         const r = rmsOf(cg);
-        // Tidying may cost a little fit, never much: 3 cm, or a third more miss than the free plane had.
-        if (r.rms <= Math.max(base.rms * 1.35, base.rms + 0.03)) { g = cg; break; }
+        // Tidying may cost a little fit, never much: 3 cm square to the roof (the miss is measured in height, and on
+        // a steep plane 3 cm square to it is 4 or 5 cm of height), or a third more miss than the free plane had.
+        if (r.rms <= Math.max(base.rms * 1.35, base.rms + 0.03 * Math.sqrt(1 + slope * slope))) { g = cg; break; }
       }
     }
     const fin = rmsOf(g);
@@ -605,7 +607,10 @@ export function findPlanes(input: {
       const gap = sm.steps.length >= 6 ? [...sm.steps].sort((p, q) => p - q)[sm.steps.length >> 1] : sm.gap / sm.n;
       // a small patch on a big face may differ a little more before it is believed to be a facet of its own
       const ratio = area[small] / Math.max(1, area[big]);
-      const alike = Math.abs(sa - sb) * 12 <= (ratio < 0.3 ? 1.75 : 1.25);
+      // (…or by the same few degrees: 1.25 in 12 is 4.6 degrees on a 6/12 roof, and on a 14/12 roof 4.6 degrees is a
+      // rise of 2.5 — a steep face read as 14 here and 16 there is one face)
+      const tilt = Math.abs(Math.atan(sa) - Math.atan(sb)) * (180 / Math.PI);
+      const alike = Math.abs(sa - sb) * 12 <= (ratio < 0.3 ? 1.75 : 1.25) || tilt <= (ratio < 0.3 ? 6.2 : 4.6);
       let one = gap <= 0.2 && alike && (flat || cos >= Math.cos((15 * Math.PI) / 180));
       if (!one && !flat && gap <= 0.2 && cos >= Math.cos((40 * Math.PI) / 180)) {
         // Two planes facing the same way at DIFFERENT pitches can only meet along a level line (the porch roof's
