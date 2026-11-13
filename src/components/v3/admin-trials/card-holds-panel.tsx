@@ -59,7 +59,7 @@ export function CardHoldsPanel({ rows, now }: { rows: CardHoldRow[]; now: string
                     <span className={r.result === "passed" ? "chip ok" : r.result === "declined" ? `chip ${s.chipDanger}` : "chip"}>{WORD[r.result]}</span>
                     <div className={s.sub}>
                       {r.result === "declined"
-                        ? `${r.code ?? "card_declined"}${r.subCanceled === false ? " · subscription not cancelled yet" : ""}`
+                        ? `${r.code?.startsWith("email_") ? `sign-up by text: Stripe email refused (${r.code})` : (r.code ?? "card_declined")}${r.subCanceled === false ? " · subscription not cancelled yet" : ""}`
                         : r.result === "skipped"
                           ? (r.reason ?? "—")
                           : r.released === false

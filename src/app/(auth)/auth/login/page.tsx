@@ -142,6 +142,7 @@ function LoginInner() {
           <LoginForm
             nextPath={nextPath}
             initialEmail={emailParam ?? (isDev ? "owner@acme.test" : "")}
+            initialPhone={search.get("phone")?.trim().slice(0, 20) || ""}
             initialError={authErrorMessage(search.get("error"))}
           />
 

@@ -1,0 +1,56 @@
+/* Finish setting up your company (phone-setup-sheet.tsx) — the sign-up by text's one owed screen. Mounted outside the
+   dashboard shell, so it carries its own frame and reads the global Blueprint tokens; the same geometry as the
+   company-name prompt: a bottom sheet at ≤768px (the --msheet-* table), a framed panel above it. Two classes on every
+   rule that sets a margin or padding, so the shell's reset never outranks it in a production build. */
+
+.layer { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 1000; display: grid; align-items: end; justify-items: center; font-family: var(--font-sans); }
+.layer .scrim { position: absolute; inset: 0; background: var(--msheet-scrim); opacity: 0; transition: opacity 0.2s var(--ease-out); }
+.layer .box {
+  position: relative; box-sizing: border-box; width: 100%; max-height: var(--msheet-max-h); overflow: auto; overscroll-behavior: contain;
+  margin: 0; padding: 28px var(--msheet-pad-x) calc(var(--msheet-foot-pad-y) + var(--msheet-safe-b));
+  background: var(--paper-deep); border-top: 2px solid var(--ink); color: var(--ink);
+  transform: translateY(100%); transition: transform 0.26s var(--ease-out);
+}
+.on .scrim { opacity: 1; }
+.on .box { transform: none; }
+.layer .grab { position: absolute; top: var(--msheet-grab-top); left: 50%; width: var(--msheet-grab-w); height: var(--msheet-grab-h); margin-left: calc(var(--msheet-grab-w) / -2); background: var(--ink-line); }
+.layer .kick { margin: 0; font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+.layer .h { margin: 6px 0 0; font-size: 22px; font-weight: 900; line-height: 1.1; letter-spacing: -0.02em; text-transform: uppercase; overflow-wrap: anywhere; }
+.layer .p { margin: 8px 0 0; font-size: 14px; line-height: 1.5; color: var(--ink-soft); }
+.layer .fld { display: block; margin: 16px 0 0; }
+.layer .lbl { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 0 7px; font-family: var(--font-mono); font-size: 12px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink); }
+.layer .req { font-family: var(--font-sans); font-size: 12px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--ink-muted); }
+.layer .in {
+  display: block; box-sizing: border-box; width: 100%; height: 48px; margin: 0; padding: 0 13px;
+  border: 2px solid var(--ink); border-radius: var(--r-sm); background: var(--paper-deep);
+  font: inherit; font-size: 16px; color: var(--ink);
+  transition: box-shadow 0.14s var(--ease-out);
+}
+.layer .in:focus { outline: none; box-shadow: 4px 4px 0 var(--ink); }
+.layer .in[aria-invalid="true"] { border-color: var(--rose); }
+.layer .err { margin: 12px 0 0; font-size: 13px; font-weight: 700; line-height: 1.45; color: var(--rose); }
+.layer .errHidden { display: none; }
+.layer .go {
+  display: block; width: 100%; min-height: 48px; margin: 18px 0 0; padding: 0 18px;
+  border: 2px solid var(--ink); border-radius: var(--r-sm); background: var(--accent); color: var(--paper-deep);
+  font: inherit; font-size: 13px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;
+  box-shadow: 3px 3px 0 var(--ink); transition: background 0.14s var(--ease-out), transform 0.1s var(--ease-out), box-shadow 0.1s var(--ease-out);
+}
+.layer .go:hover:not([disabled]) { background: var(--accent-ink); }
+.layer .go:active:not([disabled]) { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); }
+.layer .go:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.layer .go[disabled] { opacity: 0.6; cursor: progress; }
+
+@media (min-width: 769px) {
+  .layer { align-items: center; }
+  .layer .box {
+    width: min(460px, calc(100vw - 48px)); max-height: calc(100% - 48px);
+    padding: 24px 24px 24px; border: 2px solid var(--ink); border-radius: var(--r-sm); box-shadow: 6px 6px 0 var(--ink);
+    transform: translateY(12px); opacity: 0; transition: transform 0.2s var(--ease-out), opacity 0.2s var(--ease-out);
+  }
+  .on .box { transform: none; opacity: 1; }
+  .layer .grab { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .layer .scrim, .layer .box { transition: none; }
+}

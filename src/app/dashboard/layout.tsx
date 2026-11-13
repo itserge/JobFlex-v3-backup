@@ -67,6 +67,8 @@ import { TrialRibbon } from "@/components/v3/trial-card/trial-card";
 import { PaymentRibbon } from "@/components/v3/payment-ribbon/payment-ribbon";
 import { tourView, type TourView } from "@/lib/onboarding/progress";
 import { OnboardingTour } from "@/components/v3/onboarding-tour/onboarding-tour";
+import { phoneSetupView, type PhoneSetupView } from "@/lib/phoneSetup";
+import { PhoneSetupSheet } from "@/components/company-setup/phone-setup-sheet";
 
 /** Membership.role is a raw enum-ish string ("OWNER", "INSTALLER"). The
  *  sidebar shows it to a human, so title-case it. */
@@ -140,6 +142,8 @@ export default async function DashboardBlueprintLayout({
   let registered: MetaCompleteRegistrationEvent | null = null;
   // The first-estimate tour (lib/onboarding/progress): its path, step and whether it offers itself.
   let tour: TourView | null = null;
+  // A sign-up by text owes "Finish setting up your company" (lib/phoneSetup) — the owner's, until it is saved.
+  let phoneSetup: PhoneSetupView | null = null;
   try {
     const ctx = await requireOrg();
     role = ctx.role;
@@ -159,6 +163,7 @@ export default async function DashboardBlueprintLayout({
       // Registered = the company step done; a Google sign-up still on its placeholder company is not yet.
       if (org && !needsSetup) registered = metaCompleteRegistrationEvent(org);
       autoWelcome = await autoPlanWelcomeView(ctx.organizationId);
+      phoneSetup = await phoneSetupView(ctx.organizationId, ctx.user.id);
     }
     user = { name, role: humanRole(ctx.role) };
     // SEPARATE awaits, each with its own failure story. Bundled in one
@@ -205,7 +210,8 @@ export default async function DashboardBlueprintLayout({
     plan = planRow === undefined ? null : (planRow?.plan ?? "FREE");
     paymentFailed = ["PAST_DUE", "UNPAID"].includes(planRow?.status ?? "");
     if (planRow?.status === "TRIALING") startTrial = await metaStartTrialEvent(ctx.organizationId);
-    tour = await tourView({ user: ctx.user, organizationId: ctx.organizationId, role: ctx.role }).catch(() => null);
+    // The tour waits for the company screen: one thing at a time.
+    tour = phoneSetup ? null : await tourView({ user: ctx.user, organizationId: ctx.organizationId, role: ctx.role }).catch(() => null);
   } catch {
     // Signed out, or no membership yet. The page decides what happens next.
   }
@@ -266,6 +272,7 @@ export default async function DashboardBlueprintLayout({
       {registered ? <MetaPixelOnce name="CompleteRegistration" organizationId={registered.organizationId} /> : null}
       {/* Outside the shell for the same reason: the desk and the handheld trees both carry the tour. */}
       {tour ? <OnboardingTour view={tour} /> : null}
+      {phoneSetup ? <PhoneSetupSheet view={phoneSetup} /> : null}
       <ResponsiveDashboardShell
         sidebarFolded={sidebarFolded}
         user={user}

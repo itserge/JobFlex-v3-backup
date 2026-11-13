@@ -14,6 +14,11 @@
 // webviews Google hands the page to Safari / Chrome with `google=1`, where
 // Google starts at once — the register page's rule (open-in-browser).
 //
+// BY TEXT (owner, 2026-11-12): an Email | Phone switch over the field. Phone
+// texts a code to the number an account signed up with (lib/signupOtp channel
+// "sms", lib/phoneLogin) — a number no account uses is told so and gets no
+// text. `?phone=` (step 1's "Sign in with this number") opens on it.
+//
 // The password field is always in the page, out of sight until asked for: a
 // browser only fills a saved password into a field that exists, and the fill
 // is how this form knows to show it (`:-webkit-autofill` / `:autofill` start a
@@ -28,7 +33,8 @@ import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { HandoffHelp, useBrowserHandoff } from "@/components/auth/open-in-browser";
 import { useInAppBrowser } from "@/components/auth/use-in-app-browser";
-import { resendOtpCode, startOtpLogin, verifyOtpCode } from "@/actions/signupOtp";
+import { resendOtpCode, startOtpLogin, startPhoneLogin, verifyOtpCode } from "@/actions/signupOtp";
+import { PHONE_CONSENT_LINE, PHONE_INVALID, prettyUsPhone, typingUsPhone, usMobileE164 } from "@/lib/phoneLoginShared";
 import { rememberOtpDraft } from "@/lib/signupMode";
 import { markQaVisitor } from "@/lib/qaEmail";
 import { KeyboardBridge, OtpCodeField, useKeepInView } from "@/components/auth/otp-code-field";
@@ -69,11 +75,14 @@ function EyeIcon({ off }: { off: boolean }) {
 export function LoginForm({
   nextPath,
   initialEmail,
+  initialPhone = "",
   initialPassword = "",
   initialError,
 }: {
   nextPath: string;
   initialEmail: string;
+  /** `?phone=`: the form opens on Phone with this number (step 1's "Sign in with this number"). */
+  initialPhone?: string;
   /** The development prefill only — it opens the form on the password. */
   initialPassword?: string;
   initialError: string | null;
@@ -83,6 +92,9 @@ export function LoginForm({
   const handoff = useBrowserHandoff(inApp ?? "instagram");
   const [usePassword, setUsePassword] = React.useState(Boolean(initialPassword));
   const [email, setEmail] = React.useState(initialEmail);
+  const [channel, setChannel] = React.useState<"email" | "sms">(initialPhone && !initialPassword ? "sms" : "email");
+  const [phone, setPhone] = React.useState(typingUsPhone(initialPhone));
+  const byText = channel === "sms" && !usePassword;
   const [password, setPassword] = React.useState(initialPassword);
   const [showPw, setShowPw] = React.useState(false);
   const [err, setErr] = React.useState<string | null>(initialError);
@@ -194,7 +206,42 @@ export function LoginForm({
     }
   }
 
+  async function askForText() {
+    const e164 = usMobileE164(phone);
+    if (!e164) {
+      setErr(PHONE_INVALID);
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    bridgeRef.current?.focus({ preventScroll: true });
+    const backToPhone = () => document.getElementById("loginPhone")?.focus({ preventScroll: true });
+    try {
+      markQaVisitor(e164);
+      const res = await startPhoneLogin({ phone: e164 });
+      if (!res.ok) {
+        setErr(res.error);
+        backToPhone();
+        return;
+      }
+      rememberOtpDraft(res.draft);
+      setDraft(res.draft);
+      setSentTo(prettyUsPhone(res.phone));
+      setResendAt(res.resendAt);
+      setNow(Date.now());
+      setCode("");
+      setNote(null);
+      window.setTimeout(() => codeRef.current?.focus(), 60);
+    } catch {
+      setErr(SERVER_TROUBLE);
+      backToPhone();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function askForCode() {
+    if (byText) return askForText();
     const em = email.trim();
     if (!EMAIL_RE.test(em)) {
       setErr("Enter your email address.");
@@ -278,7 +325,7 @@ export function LoginForm({
       setResendAt(res.resendAt);
       setNow(Date.now());
       setCode("");
-      setNote("A new code is on its way. The one before it no longer works.");
+      setNote(byText ? "A text with your code is on its way." : "A new code is on its way. The one before it no longer works.");
     } catch {
       setErr(SERVER_TROUBLE);
     } finally {
@@ -288,14 +335,26 @@ export function LoginForm({
 
   function switchTo(password: boolean) {
     setUsePassword(password);
+    if (password) setChannel("email");
     setErr(null);
     setDraft(null);
     setCode("");
     window.setTimeout(() => (password ? pwRef.current : document.getElementById("loginEmail"))?.focus(), 30);
   }
 
+  /* The Email | Phone switch: the field and its button change; what was typed in each is kept. */
+  function pickChannel(next: "email" | "sms") {
+    if (next === channel && !usePassword) return;
+    setChannel(next);
+    setUsePassword(false);
+    setErr(null);
+    setDraft(null);
+    setCode("");
+    window.setTimeout(() => document.getElementById(next === "sms" ? "loginPhone" : "loginEmail")?.focus(), 30);
+  }
+
   return (
-    <div className={s.lf} data-login-mode={usePassword ? "password" : draft ? "code-sent" : "code"}>
+    <div className={s.lf} data-login-mode={usePassword ? "password" : draft ? "code-sent" : "code"} data-login-channel={byText ? "sms" : "email"}>
       <button className={s.ghost} type="button" id="googleBtn" onClick={onGoogle} disabled={googleBusy}>
         <GoogleIcon />
         {googleBusy ? "Redirecting to Google…" : "Continue with Google"}
@@ -303,7 +362,17 @@ export function LoginForm({
       {inApp ? <HandoffHelp handoff={handoff} /> : null}
 
       <div className={s.divider}>
-        <span>or continue with email</span>
+        <span>or continue with email or phone</span>
+      </div>
+
+      {/* The Email | Phone switch (owner, 2026-11-12) — the sign-up's own, the filter bar's segmented plate. */}
+      <div className={s.chan} role="radiogroup" aria-label="Sign in with" id="loginSwitch">
+        <button type="button" role="radio" aria-checked={!byText} className={s.chanBtn} data-on={!byText || undefined} id="loginChanEmail" onClick={() => pickChannel("email")} disabled={Boolean(draft) && busy}>
+          Email
+        </button>
+        <button type="button" role="radio" aria-checked={byText} className={s.chanBtn} data-on={byText || undefined} id="loginChanPhone" onClick={() => pickChannel("sms")} disabled={Boolean(draft) && busy}>
+          Phone
+        </button>
       </div>
 
       <form
@@ -315,10 +384,34 @@ export function LoginForm({
           else void askForCode();
         }}
       >
-        <label className={s.fld}>
+        {byText ? (
+          <label className={s.fld}>
+            <span className={s.lbl}>Mobile number</span>
+            <input
+              className={s.in}
+              type="tel"
+              id="loginPhone"
+              name="phone"
+              placeholder="(555) 123-4567"
+              autoComplete="tel-national"
+              inputMode="tel"
+              value={phone}
+              readOnly={Boolean(draft)}
+              aria-describedby="loginPhoneConsent"
+              onChange={(e) => setPhone(typingUsPhone(e.target.value))}
+            />
+            {!draft ? (
+              <span className={s.consent} id="loginPhoneConsent">
+                {PHONE_CONSENT_LINE}
+              </span>
+            ) : null}
+          </label>
+        ) : null}
+        <label className={byText ? s.pwStash : s.fld} aria-hidden={byText || undefined}>
           <span className={s.lbl}>Email</span>
           <input
             className={s.in}
+            tabIndex={byText ? -1 : undefined}
             type="email"
             id="loginEmail"
             name="email"
@@ -372,7 +465,15 @@ export function LoginForm({
         {!usePassword && draft ? (
           <div className={s.codeBox}>
             <p className={s.lead} ref={leadRef}>
-              If <b>{sentTo}</b> has a JobFlex account, a 6-digit code is on its way.
+              {byText ? (
+                <>
+                  We texted a 6-digit code to <b>{sentTo}</b>.
+                </>
+              ) : (
+                <>
+                  If <b>{sentTo}</b> has a JobFlex account, a 6-digit code is on its way.
+                </>
+              )}
             </p>
             {/* The register page's six squares (OtpCodeField); its line under them carries this form's code errors. */}
             <OtpCodeField
@@ -390,7 +491,7 @@ export function LoginForm({
         ) : null}
 
         <button className={s.primary} ref={goRef} type="submit" id={usePassword ? "signInBtn" : draft ? "codeSignInBtn" : "emailCodeBtn"} disabled={busy || signedIn || (Boolean(draft) && !usePassword && code.length !== 6)}>
-          {signedIn ? "Signed in" : usePassword ? (busy ? "Signing in…" : "Sign in") : draft ? (busy && code.length === 6 ? "Checking…" : "Sign in") : busy ? "Sending…" : "Email me a code"}
+          {signedIn ? "Signed in" : usePassword ? (busy ? "Signing in…" : "Sign in") : draft ? (busy && code.length === 6 ? "Checking…" : "Sign in") : busy ? "Sending…" : byText ? "Text me a code" : "Email me a code"}
         </button>
         <KeyboardBridge ref={bridgeRef} />
 
@@ -405,7 +506,7 @@ export function LoginForm({
                 {resendIn > 0 ? `Resend code in ${resendIn} s` : "Resend code"}
               </button>
               <button type="button" className={s.quiet} onClick={() => switchTo(false)}>
-                Use a different email
+                {byText ? "Use a different number" : "Use a different email"}
               </button>
             </>
           ) : null}

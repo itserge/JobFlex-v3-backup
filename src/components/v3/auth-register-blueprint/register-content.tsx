@@ -95,6 +95,7 @@ import { markQaVisitor } from "@/lib/qaEmail";
 import { homeownerDoorFor } from "@/lib/home/homeownerDoor";
 import { ToolsCardPage } from "./tools-card-page";
 import { CARD_DECLINED_LINE, CARD_HOLD_NOTICE } from "@/lib/signupCardHoldWords";
+import { isStripeEmailCode, prettyUsPhone, STRIPE_EMAIL_LINES } from "@/lib/phoneLoginShared";
 import { isToolsSlug, toolPlanById, type Catalog, type ToolId, type ToolPlanId } from "@/lib/toolPlans/shared";
 
 /* A PHONE (≤768px) — the plan step's cards are a two-column grid there
@@ -132,7 +133,9 @@ function recalledPlan(): string | null {
    browser's Back both land on the plan cards (`checkout=cancelled`). */
 type HandOffReason = "step1" | "google" | "plan_pick" | "card_declined";
 /** The bank refused the $1 card check (lib/signupCardHold): the plan that Checkout was for, to open it again. */
-type DeclinedPick = { plan: string | null; interval: string | null; tool: string | null };
+/** `why`: absent for a card the bank refused; a code of lib/phoneLoginShared STRIPE_EMAIL_LINES when a sign-up by text
+ *  came back from Stripe with an email its account cannot take (owner, 2026-11-12). */
+type DeclinedPick = { plan: string | null; interval: string | null; tool: string | null; why?: string | null };
 function checkoutHref(token: string, reason: HandOffReason, pick?: { slug: string; term: BillingTerm; tool?: string }): string {
   const q = new URLSearchParams({ signup: token, reason });
   if (pick) {
@@ -335,7 +338,7 @@ export function RegisterContent({
       // The bank refused the $1 card check (a reload of that answer — the address the return wrote, below).
       declined:
         searchParams.get("checkout") === "declined"
-          ? { plan: searchParams.get("plan"), interval: searchParams.get("interval"), tool: searchParams.get("tool") }
+          ? { plan: searchParams.get("plan"), interval: searchParams.get("interval"), tool: searchParams.get("tool"), why: searchParams.get("why") }
           : null,
     };
     // Read once: the params only change via full navigations on this page.
@@ -460,8 +463,8 @@ export function RegisterContent({
      or the pending signup ran out ("expired" — back to step 1, the fields
      filled). Read as the page opens (lib/signupOtp draftRestore), before a
      plan is started and when one is refused (otpPendingState). */
-  const [gate, setGate] = React.useState<{ kind: "taken"; email: string } | { kind: "expired" } | null>(
-    otpRestore?.stage === "taken" ? { kind: "taken", email: otpRestore.email } : null,
+  const [gate, setGate] = React.useState<{ kind: "taken"; email: string; phone?: string } | { kind: "expired" } | null>(
+    otpRestore?.stage === "taken" ? { kind: "taken", email: otpRestore.email, phone: otpRestore.phone || undefined } : null,
   );
   const [checkoutReady, setCheckoutReady] = React.useState(true);
   const [promo, setPromo] = React.useState<SignupPromo | null>(null);
@@ -1205,7 +1208,7 @@ export function RegisterContent({
     trackTraffic(TRAFFIC_EVENTS.error, { step: 3, reason: st.state === "taken" ? "pending_taken" : "pending_expired", mode: signupMode }); signupProblem(st.state === "taken" ? "pending_taken" : "pending_expired");
     setPlansErr(null);
     if (st.state === "taken") {
-      setGate({ kind: "taken", email: st.email });
+      setGate({ kind: "taken", email: st.email, phone: st.phone });
       return true;
     }
     if (st.name) setName(st.name);
@@ -1291,7 +1294,7 @@ export function RegisterContent({
           if (res.declined) {
             const d = res.declined;
             try {
-              const q: Record<string, string> = { signup: ret.token, checkout: "declined", ...(d.plan ? { plan: d.plan } : {}), ...(d.interval ? { interval: d.interval } : {}), ...(d.tool !== null ? { tool: d.tool } : {}) };
+              const q: Record<string, string> = { signup: ret.token, checkout: "declined", ...(d.plan ? { plan: d.plan } : {}), ...(d.interval ? { interval: d.interval } : {}), ...(d.tool !== null ? { tool: d.tool } : {}), ...(d.why ? { why: d.why } : {}) };
               window.history.replaceState(window.history.state, "", `/auth/register?${new URLSearchParams(q).toString()}`);
             } catch {
               /* a reload then runs the return again, and the kept answer says "declined" again */
@@ -1626,7 +1629,7 @@ export function RegisterContent({
   /* The address is proven (code, link or Google) and the pending signup
      exists: the plan step, with the intent's token in the address so a
      reload opens it again. */
-  function onOtpVerified(signupToken: string, via: "email" | "google" = "email") {
+  function onOtpVerified(signupToken: string, via: "email" | "google" | "phone" = "email") {
     /* Straight to Professional with a card: no plan step — the server opens Stripe's card page (./checkout). The
        analyst still hears the plan stage reached, as when its screen flashed by on the way (`screen` says how). */
     if (auto && requiresCard && !auto.tools) {
@@ -2245,11 +2248,11 @@ export function RegisterContent({
                 come up without being asked for; or, back from it, the plan that was picked. */}
             {/* The bank refused the $1 card check (lib/signupCardHold): one line and the button to a new Checkout. */}
             {declined && !gate ? (
-              <div className="pw-confirm" role="alert" id="cardDeclined" data-card-declined>
-                <p className="pw-confirm-h">{CARD_DECLINED_LINE}</p>
+              <div className="pw-confirm" role="alert" id="cardDeclined" data-card-declined={declined.why || "card"}>
+                <p className="pw-confirm-h">{isStripeEmailCode(declined.why) ? STRIPE_EMAIL_LINES[declined.why as string] : CARD_DECLINED_LINE}</p>
                 <div className="pw-confirm-row">
                   <button type="button" className="btn pw-go" id="tryAnotherCard" onClick={onTryAnotherCard} disabled={payBusy}>
-                    {payBusy ? "Opening checkout…" : "Try another card"}
+                    {payBusy ? "Opening checkout…" : isStripeEmailCode(declined.why) ? "Back to the card page" : "Try another card"}
                   </button>
                 </div>
               </div>
@@ -2309,7 +2312,7 @@ export function RegisterContent({
                 <p className="pw-confirm-p">
                   {gate.kind === "taken" ? (
                     <>
-                      <b>{gate.email}</b> already has a JobFlex account. Sign in to open it — nothing was charged here.
+                      <b>{gate.phone ? prettyUsPhone(gate.phone) : gate.email}</b> already has a JobFlex account. Sign in to open it — nothing was charged here.
                     </>
                   ) : (
                     "Nothing was charged. Your name and email are kept — we'll send a new code, then pick your plan."
@@ -2321,12 +2324,12 @@ export function RegisterContent({
                       <Link
                         className="btn pw-go"
                         id="gateSignIn"
-                        href={`/auth/login?${new URLSearchParams({ email: gate.email, next: "/dashboard" }).toString()}` as Route}
+                        href={`/auth/login?${new URLSearchParams(gate.phone ? { phone: gate.phone, next: "/dashboard" } : { email: gate.email, next: "/dashboard" }).toString()}` as Route}
                       >
                         Sign in
                       </Link>
                       <button type="button" className="pw-confirm-back" onClick={() => otpStartAgain(false)}>
-                        Use a different email
+                        {gate.phone ? "Use a different number" : "Use a different email"}
                       </button>
                     </>
                   ) : (

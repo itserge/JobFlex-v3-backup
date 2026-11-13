@@ -8,7 +8,8 @@ import "server-only";
 // It is deliberately narrow:
 //   · the token must resolve to a live pending intent (a day — lib/pendingSignup) — no token, no
 //     session, so this cannot be used as an anonymous Stripe session factory;
-//   · the customer email is taken from the INTENT, never from the request;
+//   · the customer email is taken from the INTENT, never from the request — and a sign-up by text, which has none
+//     yet, sends none: Stripe's page asks for it, and the return makes it the account's (owner, 2026-11-12);
 //   · `client_reference_id` carries the token, which is what
 //     `completePendingSignup` checks the returned session against.
 // EIGHT SECONDS (owner, 2026-10-19): a session Stripe has not made by then is a failure — the sign-up shows the plan
@@ -102,8 +103,8 @@ async function open({ token, planSlug, interval, origin, mainTool }: Parameters<
   // lib/cardlessTrial). Never in production, never on the live account.
   let customer: string | null = null;
   if (mode === "test" && process.env.NODE_ENV !== "production" && process.env.STRIPE_TEST_CLOCKS === "1") {
-    const clock = await stripe.testHelpers.testClocks.create({ frozen_time: Math.floor(Date.now() / 1000), name: `signup ${pending.email}`.slice(0, 300) });
-    customer = (await stripe.customers.create({ email: pending.email, name: pending.businessName, test_clock: clock.id, metadata: { signupToken: token } })).id;
+    const clock = await stripe.testHelpers.testClocks.create({ frozen_time: Math.floor(Date.now() / 1000), name: `signup ${pending.email || pending.phone}`.slice(0, 300) });
+    customer = (await stripe.customers.create({ ...(pending.email ? { email: pending.email } : {}), name: pending.businessName, test_clock: clock.id, metadata: { signupToken: token } })).id;
   }
   // The new plans come back to their own card page: the size and the tool picked (the link's `?tool=` is gone by then).
   const back = `${origin}/auth/register?signup=${encodeURIComponent(token)}${
@@ -116,7 +117,7 @@ async function open({ token, planSlug, interval, origin, mainTool }: Parameters<
       // Pay, bank). No wallet_options: Link shows as Stripe draws it. Every other Checkout of ours stays card-only
       // (lib/stripeCheckoutCard).
       payment_method_types: ["card", "link"],
-      ...(customer ? { customer } : { customer_email: pending.email }),
+      ...(customer ? { customer } : pending.email ? { customer_email: pending.email } : {}),
       client_reference_id: token,
       line_items: lineItems,
       // The custom plan's pages ride the subscription too (lib/customBilling);

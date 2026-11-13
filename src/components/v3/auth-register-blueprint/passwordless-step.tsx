@@ -14,6 +14,14 @@
 //           heading, squares and Continue clear a phone's keyboard.
 //   google— back from Google: nothing left to ask, the plan step follows.
 //
+// BY TEXT (owner, 2026-11-12): under the name, one contact field with an
+// Email | Phone switch (Email first, as before). Phone takes a US mobile, says
+// "We'll text you a code. Msg & data rates may apply." under it, and the code
+// screen reads "We texted…" (lib/signupOtp channel "sms", Twilio Verify). A
+// number that already has an account gets no text: the step offers sign-in
+// with it. Offered only while the trial takes a card — Stripe's card page is
+// where a sign-up by text gives its email.
+//
 // NOTHING IS LOST on the way to the mail app and back (Meta's in-app browser
 // throws pages away): the draft lives on the server, its token in a cookie
 // and in the address (?d=), the name, email and screen in session- and
@@ -51,9 +59,11 @@ import {
   resendOtpCode,
   startOtpGoogleSignup,
   startOtpSignup,
+  startPhoneSignup,
   startQuickSignup,
   verifyOtpCode,
 } from "@/actions/signupOtp";
+import { PHONE_CONSENT_LINE, PHONE_INVALID, prettyUsPhone, typingUsPhone, usMobileE164 } from "@/lib/phoneLoginShared";
 import { KeyboardBridge, OtpCodeField, useKeepInView } from "@/components/auth/otp-code-field";
 import css from "./passwordless.module.css";
 import { markQaVisitor } from "@/lib/qaEmail";
@@ -62,6 +72,8 @@ import { autoPlanAmount, type AutoPlanOffer } from "@/lib/signupAutoPlan";
 import { CARD_HOLD_NOTICE } from "@/lib/signupCardHoldWords";
 
 type Screen = "form" | "code" | "google" | "done";
+/** How the code travels (lib/signupOtp): email, or a text to a US mobile. */
+type Channel = "email" | "sms";
 const STORE_KEY = "jf_otp_signup";
 const STORE_TTL_MS = 24 * 60 * 60 * 1000;
 const POLL_MS = 4000;
@@ -74,6 +86,9 @@ interface Stored {
   email: string;
   screen: "form" | "code";
   draft: string | null;
+  /** The sign-up by text: the switch and the number typed (absent on what was kept before 2026-11-12). */
+  channel?: Channel;
+  phone?: string;
 }
 function readStored(): Stored | null {
   for (const store of ["localStorage", "sessionStorage"] as const) {
@@ -161,11 +176,17 @@ export function PasswordlessStep({
   onGoogle: () => void;
   /** The address is proven and the pending signup exists: the plan step — or, straight to Professional with a card,
    *  the server's hand-off to Stripe (register-content leaveForCheckout). `via` names the door for the analyst. */
-  onVerified: (signupToken: string, via: "email" | "google") => void;
+  onVerified: (signupToken: string, via: "email" | "google" | "phone") => void;
 }) {
   const [screen, setScreen] = React.useState<Screen>(google ? "google" : restore?.stage === "code" ? "code" : "form");
   const [draft, setDraft] = React.useState<string | null>(restore && restore.stage !== "expired" ? restore.draft : null);
-  const [sentTo, setSentTo] = React.useState(restore?.email ?? "");
+  // The switch (Email first) and the number; the code screen speaks for the channel its draft went by.
+  const [channel, setChannel] = React.useState<Channel>(restore?.phone ? "sms" : "email");
+  const [phone, setPhone] = React.useState(restore?.phone ? typingUsPhone(restore.phone) : "");
+  const [sentBy, setSentBy] = React.useState<Channel>(restore?.phone ? "sms" : "email");
+  /** Step 1 with a number that has an account: no text went out; sign-in with it is offered. */
+  const [phoneTaken, setPhoneTaken] = React.useState<string | null>(null);
+  const [sentTo, setSentTo] = React.useState(restore?.phone ? prettyUsPhone(restore.phone) : (restore?.email ?? ""));
   const [resendAt, setResendAt] = React.useState(restore?.resendAt ?? 0);
   const [burned, setBurned] = React.useState(restore?.burned ?? false);
   const [err, setErr] = React.useState<string | null>(initialError);
@@ -189,8 +210,10 @@ export function PasswordlessStep({
   const params = useSearchParams();
   const plan = params?.get("plan") ?? null;
   const edition = params?.get("edition") === "deck" ? "deck" : null;
+  // By text the short sign-up still sends a code: `quick` is the email's alone.
+  const byText = channel === "sms";
   const track = (outcome: string, reason = "", message = "") => {
-    trackTraffic(TRAFFIC_EVENTS.signupStep1, { outcome, reason, variant: "e", steps: 2, mode: "otp", plan_mode: planMode, ...(quick ? { quick: true } : {}) });
+    trackTraffic(TRAFFIC_EVENTS.signupStep1, { outcome, reason, variant: "e", steps: 2, mode: "otp", plan_mode: planMode, channel, ...(quick && !byText ? { quick: true } : {}) });
     // The watcher's own reasons: a refusal the server answered in words is read from them (start_rejected).
     if (outcome === "error" || outcome === "code_error") signupProblem(reason === "start_rejected" ? reasonOfMessage(message) : reason, { message });
   };
@@ -198,22 +221,22 @@ export function PasswordlessStep({
   // Straight to Professional with a card, the "done" screen is the hand-off to Stripe's card page — not a finish:
   // the account is made only when the card goes through (2026-10-28).
   React.useEffect(() => {
-    setSignupPosition({ screen: screen === "form" ? "account" : screen === "done" && auto && requiresCard ? "checkout" : screen });
-  }, [screen, auto, requiresCard]);
+    setSignupPosition({ screen: screen === "form" ? "account" : screen === "done" && auto && requiresCard ? "checkout" : screen === "code" && sentBy === "sms" ? "sms_code" : screen });
+  }, [screen, auto, requiresCard, sentBy]);
 
   /* This browser's copy of the fields and the screen (never the code). */
   React.useEffect(() => {
     if (screen === "google" || screen === "done") return;
-    writeStored({ name, email, screen: screen === "code" ? "code" : "form", draft: screen === "code" ? draft : null });
-  }, [name, email, screen, draft]);
+    writeStored({ name, email, screen: screen === "code" ? "code" : "form", draft: screen === "code" ? draft : null, channel, phone });
+  }, [name, email, screen, draft, channel, phone]);
 
   /* Each screen once for the analyst: step 1 is register-content's event; the code screen is its own. */
   const codeSeen = React.useRef(false);
   React.useEffect(() => {
     if (screen !== "code" || codeSeen.current) return;
     codeSeen.current = true;
-    trackTraffic(TRAFFIC_EVENTS.step, { step: "code", flow: "otp", variant: "e", steps: 2, mode: "otp", plan_mode: planMode });
-  }, [screen, planMode]);
+    trackTraffic(TRAFFIC_EVENTS.step, { step: "code", flow: "otp", variant: "e", steps: 2, mode: "otp", plan_mode: planMode, channel: sentBy });
+  }, [screen, planMode, sentBy]);
 
   /* The resend countdown — on this browser's clock from the first effect on. */
   // eslint-disable-next-line react-hooks/set-state-in-effect -- the browser's clock, read once after hydration
@@ -227,7 +250,7 @@ export function PasswordlessStep({
 
   /* Proven: the plan step takes over, once — the code screen stops asking. */
   const proceeded = React.useRef(false);
-  function proceed(signupToken: string, via: "email" | "google" = "email") {
+  function proceed(signupToken: string, via: "email" | "google" | "phone" = "email") {
     if (proceeded.current) return;
     proceeded.current = true;
     setScreen("done");
@@ -244,14 +267,19 @@ export function PasswordlessStep({
         setScreen("form");
         setDraft(null);
         setDraftInUrl(null);
-        setErr("This sign-up timed out. Start again with your email.");
+        setErr(`This sign-up timed out. Start again with your ${sentBy === "sms" ? "number" : "email"}.`);
         signupProblem("gone");
       }
       return;
     }
     if (st.stage === "code") {
       setDraft(token);
-      setSentTo(st.email);
+      if (st.phone) {
+        setSentBy("sms");
+        setChannel("sms");
+        setPhone(typingUsPhone(st.phone));
+      }
+      setSentTo(st.phone ? prettyUsPhone(st.phone) : st.email);
       if (st.name && !name) setName(st.name);
       setResendAt(st.resendAt);
       setBurned(st.burned);
@@ -261,14 +289,14 @@ export function PasswordlessStep({
     }
     if (st.signupToken) {
       writeStored(null);
-      proceed(st.signupToken);
+      proceed(st.signupToken, st.phone ? "phone" : "email");
       return;
     }
     if (st.ticket) {
       await signInAndGo(st.ticket, st.next ?? "/dashboard");
       return;
     }
-    setNote(`${st.email} is confirmed in another browser — carry on there, or ask for a new code here.`);
+    setNote(`${st.phone ? prettyUsPhone(st.phone) : st.email} is confirmed in another browser — carry on there, or ask for a new code here.`);
   }
 
   React.useEffect(() => {
@@ -309,7 +337,10 @@ export function PasswordlessStep({
     if (!kept) return;
     if (kept.name && !name) setName(kept.name);
     if (kept.email && !email) setEmail(kept.email);
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- refresh sets state after the server answers, not synchronously
+    // This browser's copy, read once after hydration (the server never saw it): the number and the switch.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- storage is outside React, read once as the page opens
+    if (kept.phone) setPhone(kept.phone);
+    if (kept.channel === "sms" && requiresCard) setChannel("sms");
     if (kept.screen === "code" && kept.draft) void refresh(kept.draft);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, as the page opens
   }, []);
@@ -368,9 +399,82 @@ export function PasswordlessStep({
     onGoogle();
   }
 
+  /* BY TEXT: the number checked here, then the server texts the code (or offers sign-in for a number it knows). */
+  async function onContinueByText() {
+    const n = name.trim();
+    const e164 = usMobileE164(phone);
+    if (!n || !phone.trim()) {
+      setErr("Enter your name and mobile number.");
+      track("error", "missing");
+      return;
+    }
+    if (!e164) {
+      setErr(PHONE_INVALID);
+      track("error", "phone_invalid");
+      return;
+    }
+    setErr(null);
+    setPhoneTaken(null);
+    setBusy(true);
+    bridgeRef.current?.focus({ preventScroll: true });
+    const backToPhone = () => document.getElementById("mobile")?.focus({ preventScroll: true });
+    try {
+      markQaVisitor(e164); // a QA Lab number: no analytics from this browser (lib/qaEmail)
+      const res = await startPhoneSignup({
+        name: n,
+        phone: e164,
+        analytics: analytics(),
+        displayedTrialDays: trialDays === 3 || trialDays === 7 ? trialDays : undefined,
+        industry: industry ?? undefined,
+        tool: tool ?? undefined,
+        utm: utm ?? undefined,
+        attribution,
+        fbclid,
+      });
+      if (!res.ok) {
+        if (res.taken) {
+          setPhoneTaken(e164);
+          track("error", "phone_taken", res.error);
+          return;
+        }
+        if (res.emailOnly) setChannel("email");
+        setErr(res.error);
+        backToPhone();
+        track("error", /Too many/.test(res.error) ? "rate_limited" : /US mobile/.test(res.error) ? "phone_invalid" : "start_rejected", res.error);
+        return;
+      }
+      track("continue", "phone");
+      trackMetaLeadOnce(); // Meta Lead: the contact step passed (lib/metaLead) — by text as by email
+      rememberOtpDraft(res.draft);
+      setDraft(res.draft);
+      setSentBy("sms");
+      setSentTo(prettyUsPhone(res.phone));
+      setResendAt(res.resendAt);
+      setNow(Date.now());
+      setBurned(false);
+      setCode("");
+      setCodeErr(null);
+      setNote(null);
+      setSaid("");
+      setScreen("code");
+      setDraftInUrl(res.draft);
+      window.setTimeout(() => codeRef.current?.focus(), 60);
+    } catch {
+      setErr(SERVER_TROUBLE);
+      backToPhone();
+      track("error", "start_failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onContinue(e: React.FormEvent) {
     e.preventDefault();
     if (busy) return;
+    if (byText) {
+      await onContinueByText();
+      return;
+    }
     const n = name.trim();
     const em = email.trim();
     if (!n || !em) {
@@ -438,6 +542,7 @@ export function PasswordlessStep({
       trackMetaLeadOnce(); // Meta Lead: the email step passed (lib/metaLead)
       rememberOtpDraft(res.draft);
       setDraft(res.draft);
+      setSentBy("email");
       setSentTo(res.email);
       setResendAt(res.resendAt);
       setNow(Date.now());
@@ -491,7 +596,7 @@ export function PasswordlessStep({
         return;
       }
       writeStored(null);
-      proceed(res.signupToken);
+      proceed(res.signupToken, sentBy === "sms" ? "phone" : "email");
     } catch {
       setCodeErr(SERVER_TROUBLE);
       signupProblem("network", { message: SERVER_TROUBLE });
@@ -525,7 +630,7 @@ export function PasswordlessStep({
       setNow(Date.now());
       setBurned(false);
       setCode("");
-      setSaid(`A new code is on its way to ${sentTo}. The one before it no longer works.`);
+      setSaid(sentBy === "sms" ? `A text with your code is on its way to ${sentTo}.` : `A new code is on its way to ${sentTo}. The one before it no longer works.`);
       track("code_resent");
       window.setTimeout(() => codeRef.current?.focus(), 30);
     } catch {
@@ -534,6 +639,16 @@ export function PasswordlessStep({
     } finally {
       setBusy(false);
     }
+  }
+
+  /* The switch under the name: the field, its words and its error change; what was typed in each is kept. */
+  function pickChannel(next: Channel) {
+    if (next === channel) return;
+    setChannel(next);
+    setErr(null);
+    setPhoneTaken(null);
+    track("channel", next);
+    window.setTimeout(() => document.getElementById(next === "sms" ? "mobile" : "email")?.focus(), 30);
   }
 
   function onDifferentEmail() {
@@ -545,8 +660,8 @@ export function PasswordlessStep({
     setNote(null);
     setSaid("");
     setScreen("form");
-    track("change_email");
-    window.setTimeout(() => document.getElementById("email")?.focus(), 30);
+    track(sentBy === "sms" ? "change_phone" : "change_email");
+    window.setTimeout(() => document.getElementById(sentBy === "sms" ? "mobile" : "email")?.focus(), 30);
   }
 
   const gmailTyped = /@(gmail|googlemail)\.com\s*$/i.test(email.trim());
@@ -591,14 +706,14 @@ export function PasswordlessStep({
       return (
         <div className={css.otp} data-otp-screen="code">
           <h1 className="auth-h1" ref={headRef}>
-            We sent a 6-digit code to your email
+            {sentBy === "sms" ? "We texted a 6-digit code to your phone" : "We sent a 6-digit code to your email"}
           </h1>
           <p className={`auth-lede ${css.sentTo}`}>
             <b className={css.addr} id="otpAddr">
               {sentTo}
             </b>
             <button type="button" className={css.change} id="otpChange" onClick={onDifferentEmail} disabled={checking}>
-              Use a different email
+              {sentBy === "sms" ? "Use a different number" : "Use a different email"}
             </button>
           </p>
           <form
@@ -634,7 +749,7 @@ export function PasswordlessStep({
               {resendIn > 0 ? `Resend code in ${resendIn} s` : "Resend code"}
             </button>
             <span className={css.spam} id="otpSpam">
-              Didn&apos;t get it? Check spam.
+              {sentBy === "sms" ? "Didn't get it? Check the number." : "Didn't get it? Check spam."}
             </span>
           </div>
           <p className={css.srOnly} role="status">
@@ -696,7 +811,7 @@ export function PasswordlessStep({
             </button>
             {/* The lines naming the email providers under the Google button and the divider are gone (owner, 2026-10-21). */}
             <div className="divider">
-              <span className="kpi-lbl">No Google? Use any email</span>
+              <span className="kpi-lbl">{requiresCard ? "No Google? Use email or phone" : "No Google? Use any email"}</span>
             </div>
           </>
         )}
@@ -709,9 +824,9 @@ export function PasswordlessStep({
           className={css.form}
           noValidate
           onSubmit={(e) => void onContinue(e)}
-          {...(quick ? { method: "post", action: "/auth/register/checkout" } : {})}
+          {...(quick && !byText ? { method: "post", action: "/auth/register/checkout" } : {})}
         >
-          {quick ? (
+          {quick && !byText ? (
             <>
               <input type="hidden" name="trialDays" value={trialDays} />
               {industry ? <input type="hidden" name="industry" value={industry} /> : null}
@@ -726,13 +841,58 @@ export function PasswordlessStep({
             <span className="fld-lbl">Your name</span>
             <input className="fld-in" id="name" name="name" placeholder="First and last" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} />
           </label>
-          <label className="fld">
-            <span className="fld-lbl">Email</span>
-            <input className="fld-in" type="email" id="email" name="email" placeholder="you@yourshop.com" autoComplete="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          </label>
+          {/* ONE CONTACT FIELD, TWO WAYS (owner, 2026-11-12): Email first, as before; Phone texts the code. The switch is
+              offered only while the trial takes a card (Stripe's card page asks a sign-up by text for its email). */}
+          {requiresCard ? (
+            <div className={css.chan} role="radiogroup" aria-label="Get the code by" id="contactSwitch">
+              <button type="button" role="radio" aria-checked={!byText} className={css.chanBtn} data-on={!byText || undefined} id="chanEmail" onClick={() => pickChannel("email")}>
+                Email
+              </button>
+              <button type="button" role="radio" aria-checked={byText} className={css.chanBtn} data-on={byText || undefined} id="chanPhone" onClick={() => pickChannel("sms")}>
+                Phone
+              </button>
+            </div>
+          ) : null}
+          {byText ? (
+            <label className="fld">
+              <span className="fld-lbl">Mobile number</span>
+              <input
+                className="fld-in"
+                type="tel"
+                id="mobile"
+                name="mobile"
+                placeholder="(555) 123-4567"
+                autoComplete="tel-national"
+                inputMode="tel"
+                value={phone}
+                aria-describedby="phoneConsent"
+                onChange={(e) => {
+                  setPhone(typingUsPhone(e.target.value));
+                  if (phoneTaken) setPhoneTaken(null);
+                }}
+              />
+              <span className={css.consent} id="phoneConsent">
+                {PHONE_CONSENT_LINE}
+              </span>
+            </label>
+          ) : (
+            <label className="fld">
+              <span className="fld-lbl">Email</span>
+              <input className="fld-in" type="email" id="email" name="email" placeholder="you@yourshop.com" autoComplete="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            </label>
+          )}
+          {/* The number already signs in to an account: no text went out — one number, one account. */}
+          {byText && phoneTaken ? (
+            <div className={css.taken} role="alert" id="phoneTaken">
+              <p className={css.takenH}>That number already has a JobFlex account.</p>
+              <Link className={`btn ${css.takenGo}`} id="phoneTakenSignIn" href={`/auth/login?${new URLSearchParams({ phone: phoneTaken, next: "/dashboard" }).toString()}` as Route}>
+                Sign in with this number
+              </Link>
+            </div>
+          ) : null}
           {/* A Gmail address typed in: the Google button would have done it in one tap. Offered, never forced. Not in an
               in-app browser — Google refuses to sign in there. */}
-          {gmailTyped && !inApp && !busy ? (
+          {gmailTyped && !byText && !inApp && !busy ? (
             <p className={css.gmailHint} id="gmailHint" role="status">
               That&apos;s a Gmail address —{" "}
               <button
@@ -749,7 +909,7 @@ export function PasswordlessStep({
             </p>
           ) : null}
           <button className="btn" type="submit" id="nextBtn" disabled={busy}>
-            {busy ? (quick ? "One moment…" : "Sending code…") : quick ? `Start Your ${trialDays}-Day Free Trial` : "Continue"}
+            {byText ? (busy ? "Texting code…" : "Continue") : busy ? (quick ? "One moment…" : "Sending code…") : quick ? `Start Your ${trialDays}-Day Free Trial` : "Continue"}
             <svg className="ic" aria-hidden="true">
               <use href="#i-arrow-r" />
             </svg>

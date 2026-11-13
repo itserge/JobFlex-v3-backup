@@ -26,7 +26,7 @@ import { autoPlanOffer } from "@/lib/signupAutoPlanServer";
 import { createSignupCheckout } from "@/lib/signupCheckoutSession";
 import { pendingSignupAlive } from "@/lib/pendingSignup";
 import { parseSpotlightTool } from "@/lib/planSpotlight";
-import { isQaEmail } from "@/lib/qaEmail";
+import { isQaEmail, isQaPhone } from "@/lib/qaEmail";
 import { readAttributionCookie } from "@/lib/attribution";
 import { captureTrafficEvent, identityFromCookie } from "@/lib/traffic-capture-server";
 import { TRAFFIC_EVENTS } from "@/lib/traffic-contract";
@@ -50,13 +50,14 @@ function go(to: string): NextResponse {
 const register = (q: Record<string, string>) => `/auth/register?${new URLSearchParams(q).toString()}`;
 
 /** What the hand-off needs from the pending signup's row (actions/signupCheckout): alive, and whose it is. */
-async function pendingOf(token: string): Promise<{ email: string; tool: string | null; analytics: unknown } | null> {
+async function pendingOf(token: string): Promise<{ email: string; phone: string | null; tool: string | null; analytics: unknown } | null> {
   const row = await db.syncState.findUnique({ where: { key: `signup:${token}` } }).catch(() => null);
   if (!row) return null;
   try {
-    const rec = JSON.parse(row.cursor) as { email?: string; createdAt?: number; cardless?: { requestedAt: number }; landingTool?: string; analytics?: unknown };
-    if (!pendingSignupAlive(rec) || !rec.email) return null;
-    return { email: rec.email, tool: rec.landingTool ?? null, analytics: rec.analytics };
+    const rec = JSON.parse(row.cursor) as { email?: string; phone?: string; createdAt?: number; cardless?: { requestedAt: number }; landingTool?: string; analytics?: unknown };
+    // A sign-up by text has its number and no email yet (Stripe's page asks for it).
+    if (!pendingSignupAlive(rec) || (!rec.email && !rec.phone)) return null;
+    return { email: rec.email ?? "", phone: rec.phone ?? null, tool: rec.landingTool ?? null, analytics: rec.analytics };
   } catch {
     return null;
   }
@@ -94,7 +95,7 @@ async function handOff(
   // The new plans' main tool rides with the pick; lib/signupPricing validates and prices it (a Classic plan ignores it).
   const res = await createSignupCheckout({ token, planSlug, interval, origin: new URL(req.url).origin, mainTool: ask.tool ?? null });
   const identity = pending.analytics ?? identityFromCookie((await cookies()).get(`ph_${process.env.NEXT_PUBLIC_POSTHOG_KEY}_posthog`)?.value, new URL(req.url).hostname);
-  const tracked = !isQaEmail(pending.email);
+  const tracked = !isQaEmail(pending.email) && !isQaPhone(pending.phone);
   if (!res.ok) {
     console.warn(`[signup] checkout did not open (${reason}, ${planSlug}): ${res.status} ${res.error}`);
     return go(register({ signup: token, checkout: "failed", ...(named(reason) ? { plan: planSlug } : {}), ...(named(reason) && ask.tool ? { tool: ask.tool } : {}) }));

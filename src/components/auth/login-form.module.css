@@ -84,3 +84,23 @@
 @media (prefers-reduced-motion: reduce) {
   .lf.lf .ghost, .lf.lf .primary, .lf.lf .in { transition: none; }
 }
+
+/* BY TEXT (owner, 2026-11-12): the Email | Phone switch — the filter bar's segmented plate, as on the sign-up's step 1
+   (DESIGN.md, Filter bar): white, a 1.5px hair frame, a hair rule between the halves, the picked one a light blueprint
+   fill with blueprint type and a 2px foot bar; 44px inside the frame, Inter, no caps, no shadow. */
+.lf.lf .chan {
+  display: grid; grid-template-columns: 1fr 1fr; height: 47px; margin: 0 0 14px;
+  border: 1.5px solid var(--hair-soft, var(--ink-line)); border-radius: 0; background: #fff;
+}
+.lf.lf .chanBtn {
+  position: relative; display: flex; align-items: center; justify-content: center; min-width: 0; margin: 0; padding: 0 12px;
+  border: 0; border-radius: 0; background: transparent; cursor: pointer;
+  font-family: inherit; font-size: 14px; font-weight: 500; line-height: 1; letter-spacing: 0; text-transform: none; color: var(--ink);
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.lf.lf .chanBtn + .chanBtn { border-left: 1px solid var(--hair-soft, var(--ink-line)); }
+.lf.lf .chanBtn:hover { background: var(--accent-soft); }
+.lf.lf .chanBtn[data-on] { background: var(--accent-soft); color: var(--blueprint, var(--accent)); font-weight: 600; }
+.lf.lf .chanBtn[data-on]::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--blueprint, var(--accent)); }
+.lf.lf .chanBtn:focus-visible { outline: 2px solid var(--blueprint, var(--accent)); outline-offset: -2px; }
+.lf.lf .consent { display: block; margin: 7px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--ink-soft, var(--ink)); }

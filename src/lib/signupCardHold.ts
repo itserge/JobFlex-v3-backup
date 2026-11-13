@@ -236,6 +236,46 @@ export async function checkSignupCard(input: {
   return skip(`status:${pi.status}`, pi.id);
 }
 
+/**
+ * A SIGN-UP BY TEXT WHOSE STRIPE EMAIL CANNOT BE THE ACCOUNT'S (owner, 2026-11-12 — actions/signupCheckout): another
+ * account has it, a throwaway inbox, or none came back. No account is made and no hold is asked for; the Checkout's
+ * subscription is cancelled exactly as a declined card's is, under the same record — `declined` with the code
+ * ("email_taken" …, lib/phoneLoginShared STRIPE_EMAIL_LINES) — so a reload reads the same answer, Admin → Trial watch
+ * lists it, and the trials cron cancels a subscription whose cancel did not go through. Never throws.
+ */
+export async function refuseSignupCheckout(input: {
+  stripe: Stripe;
+  session: Stripe.Checkout.Session;
+  sub: Stripe.Subscription | null;
+  email: string;
+  code: string;
+}): Promise<CardHoldRecord> {
+  const { stripe, session, sub, email, code } = input;
+  const kept = await readCardHold(session.id);
+  const rec: CardHoldRecord =
+    kept && kept.result === "declined" && kept.code === code
+      ? kept
+      : {
+          at: new Date().toISOString(),
+          sessionId: session.id,
+          email,
+          plan: (session.metadata?.planSlug as string | undefined) ?? null,
+          interval: (session.metadata?.interval as string | undefined) ?? null,
+          tool: (session.metadata?.mainTool as string | undefined) ?? null,
+          subId: sub?.id ?? idOf(session.subscription as string | { id: string } | null),
+          livemode: session.livemode,
+          result: "declined",
+          code,
+          reason: "the email from Stripe's card page can't be this account's",
+          subCanceled: false,
+        };
+  if (rec !== kept) await writeCardHold(rec);
+  if (!rec.subCanceled && !(await cancelDeclinedSubscription(stripe, rec).catch(() => false))) {
+    console.warn(`[signup] refused sign-up's subscription ${rec.subId} still standing — the trials cron cancels it`);
+  }
+  return rec;
+}
+
 /** The declined sign-up's subscription: cancelled at Stripe at once (no account will ever pay it). Three tries. */
 export async function cancelDeclinedSubscription(stripe: Stripe, rec: CardHoldRecord): Promise<boolean> {
   if (!rec.subId) {

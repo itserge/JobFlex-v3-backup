@@ -13,6 +13,8 @@ import { readGoogleSignup } from "@/lib/googleSignup";
 import { mintSigninTicket } from "@/lib/signinTicket";
 import { readSignupPlan, signupTrialMode } from "@/lib/trialPolicyServer";
 import { db } from "@/lib/db";
+import { phoneAccountOf } from "@/lib/phoneLogin";
+import { PHONE_INVALID, PHONE_NO_ACCOUNT, PHONE_TAKEN, usMobileE164 } from "@/lib/phoneLoginShared";
 import {
   GONE,
   OTP_DRAFT_COOKIE,
@@ -65,6 +67,11 @@ const startSchema = carriedSchema.extend({
 
 type Sent = { ok: true; draft: string; email: string; resendAt: number; expiresAt: number };
 type Refused = { ok: false; error: string; resendAt?: number };
+/** A texted code went out: the number it went to (E.164). */
+type Texted = { ok: true; draft: string; phone: string; resendAt: number; expiresAt: number };
+/** `taken`: the number already has an account (sign-in is offered); `noAccount`: no account uses it (sign-in by
+ *  text); `emailOnly`: a sign-up by text is not open right now — the email is. */
+type TextRefused = Refused & { taken?: boolean; noAccount?: boolean; emailOnly?: boolean };
 
 async function draftCookie(): Promise<string | null> {
   try {
@@ -125,6 +132,86 @@ export async function startOtpSignup(raw: unknown): Promise<Sent | Refused> {
   }
 }
 
+/**
+ * STEP 1 BY TEXT (owner, 2026-11-12): the name and a US mobile; the code is texted by Twilio Verify (lib/signupOtp,
+ * channel "sms"). A number that already has an account gets no text — sign-in is offered instead (one number, one
+ * account: lib/phoneLogin). Only while the trial takes a card: the card page is where a sign-up by text gives the
+ * email its account needs.
+ */
+export async function startPhoneSignup(raw: unknown): Promise<Texted | TextRefused> {
+  try {
+    const parsed = carriedSchema
+      .extend({
+        name: z.string().trim().min(1, "Enter your name.").max(120, "That name is too long."),
+        phone: z.string().trim().max(40),
+      })
+      .safeParse(raw);
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message || "Check your name and number." };
+    const data = parsed.data;
+    const phone = usMobileE164(data.phone);
+    if (!phone) return { ok: false, error: PHONE_INVALID };
+    if ((await signupTrialMode()) !== "card") return { ok: false, emailOnly: true, error: "Sign up with your email for now — a sign-up by text isn't open at the moment." };
+    const offered = await signupTrialOffer();
+    if (data.displayedTrialDays !== undefined && data.displayedTrialDays > offered.days) {
+      return { ok: false, error: "Your trial offer changed. Reload this page to review the current offer before continuing." };
+    }
+    if (await phoneAccountOf(phone)) return { ok: false, taken: true, error: PHONE_TAKEN };
+    // The same number typed again (back from "Use a different number", a reload): the same draft, its clock holds.
+    const prevToken = await draftCookie();
+    const prev = await loadDraft(prevToken);
+    const reuse = prev && !prev.verifiedAt && prev.kind === "signup" && prev.channel === "sms" && prev.phone === phone;
+    const token = reuse && prevToken ? prevToken : newDraftToken();
+    const draft: OtpDraft = {
+      v: 1,
+      kind: "signup",
+      channel: "sms",
+      phone,
+      email: "",
+      name: data.name,
+      createdAt: reuse && prev ? prev.createdAt : Date.now(),
+      industry: data.industry,
+      tool: keptAdTool(data.tool),
+      utm: data.utm,
+      attribution: data.attribution ?? null,
+      fbclid: data.fbclid,
+      analytics: data.analytics,
+      trialOffer: offered,
+      code: reuse && prev ? prev.code : null,
+      lastSentAt: reuse && prev ? prev.lastSentAt : 0,
+      linkHash: null,
+    };
+    await saveDraft(token, draft);
+    if (reuse && draft.code && Date.now() - draft.lastSentAt < 30_000 && Date.now() < draft.code.exp) {
+      return { ok: true, draft: token, phone, ...draftClock(draft) };
+    }
+    const sent = await sendCode(token, draft);
+    if (!sent.ok) return sent;
+    return { ok: true, draft: token, phone, resendAt: sent.resendAt, expiresAt: sent.expiresAt };
+  } catch (err) {
+    console.error("[otp] phone start failed:", err);
+    return { ok: false, error: SERVER_TROUBLE };
+  }
+}
+
+/** "Text me a code" on the sign-in page: only for a number an account signed up with (no text otherwise). */
+export async function startPhoneLogin(raw: unknown): Promise<Texted | TextRefused> {
+  try {
+    const parsed = z.object({ phone: z.string().trim().max(40) }).safeParse(raw);
+    const phone = parsed.success ? usMobileE164(parsed.data.phone) : null;
+    if (!phone) return { ok: false, error: PHONE_INVALID };
+    if (!(await phoneAccountOf(phone))) return { ok: false, noAccount: true, error: PHONE_NO_ACCOUNT };
+    const token = newDraftToken();
+    const draft: OtpDraft = { v: 1, kind: "login", channel: "sms", phone, email: "", name: "", createdAt: Date.now(), code: null, lastSentAt: 0, linkHash: null };
+    await saveDraft(token, draft);
+    const sent = await sendCode(token, draft);
+    if (!sent.ok) return sent;
+    return { ok: true, draft: token, phone, resendAt: sent.resendAt, expiresAt: sent.expiresAt };
+  } catch (err) {
+    console.error("[otp] phone login start failed:", err);
+    return { ok: false, error: SERVER_TROUBLE };
+  }
+}
+
 /** "Email me a code" on the sign-in page. Same words whether or not the
  *  address has an account; the email tells the truth. */
 export async function startOtpLogin(raw: unknown): Promise<Sent | Refused> {
@@ -148,7 +235,7 @@ export async function resendOtpCode(draftToken: string): Promise<{ ok: true; res
   try {
     const d = await loadDraft(draftToken);
     if (!d) return { ok: false, error: GONE };
-    if (d.verifiedAt) return { ok: false, error: "This email is already confirmed." };
+    if (d.verifiedAt) return { ok: false, error: d.channel === "sms" ? "This number is already confirmed." : "This email is already confirmed." };
     return await sendCode(draftToken, d);
   } catch (err) {
     console.error("[otp] resend failed:", err);
@@ -183,16 +270,16 @@ export async function confirmOtpLink(secret: string): Promise<OtpOutcome & { que
  *  cookie: the address bar alone is not enough. */
 export async function otpDraftStatus(draftToken: string): Promise<
   | { stage: "gone" }
-  | { stage: "code"; email: string; name: string; resendAt: number; expiresAt: number; burned: boolean }
-  | { stage: "verified"; email: string; signupToken?: string; ticket?: string; next?: string }
+  | { stage: "code"; email: string; phone: string; name: string; resendAt: number; expiresAt: number; burned: boolean }
+  | { stage: "verified"; email: string; phone?: string; signupToken?: string; ticket?: string; next?: string }
 > {
   try {
     const d = await loadDraft(draftToken);
     if (!d) return { stage: "gone" };
-    if (!d.verifiedAt) return { stage: "code", email: d.email, name: d.name, ...draftClock(d), burned: !d.code };
+    if (!d.verifiedAt) return { stage: "code", email: d.email, phone: d.phone ?? "", name: d.name, ...draftClock(d), burned: !d.code };
     const own = (await draftCookie()) === draftToken;
-    if (!own) return { stage: "verified", email: d.email };
-    if (d.signupToken) return { stage: "verified", email: d.email, signupToken: d.signupToken };
+    if (!own) return { stage: "verified", email: d.email, phone: d.phone };
+    if (d.signupToken) return { stage: "verified", email: d.email, phone: d.phone, signupToken: d.signupToken };
     // Signed in from the email's button in another browser: this tab gets one
     // ticket of its own, once, within ten minutes.
     if (d.userId && !d.ticketHandedAt && Date.now() - d.verifiedAt < 10 * 60_000) {
@@ -213,17 +300,17 @@ export async function otpDraftStatus(draftToken: string): Promise<
  *  `?signup=`) learns only whether its own intent is still alive. An expired
  *  draft is deleted; the browser drops its cookie. */
 export async function otpPendingState(signupToken: string): Promise<
-  { state: "live" } | { state: "expired"; name: string; email: string } | { state: "taken"; email: string }
+  { state: "live" } | { state: "expired"; name: string; email: string; phone?: string } | { state: "taken"; email: string; phone?: string }
 > {
   try {
     const own = await draftCookie();
     const d = await loadDraft(own);
     if (own && d && d.kind === "signup" && d.verifiedAt && d.signupToken === signupToken) {
       const state = await pendingStateOf(d);
-      if (state === "taken") return { state, email: d.email };
+      if (state === "taken") return { state, email: d.email, phone: d.phone };
       if (state === "expired") {
         await deleteDraft(own);
-        return { state, name: d.name, email: d.email };
+        return { state, name: d.name, email: d.email, phone: d.phone };
       }
       return { state };
     }

@@ -50,10 +50,16 @@ import { readGoogleSignup } from "@/lib/googleSignup";
 import { settleReferralsForSignupOrg } from "@/lib/referralRewards";
 import { after } from "next/server";
 import { isQaEmail } from "@/lib/qaEmail";
+/** A QA Lab sign-up (its address, or its test number): no analytics. */
+const isQaSignup = (rec: { email?: string; phone?: string }) => isQaEmail(rec.email) || isQaPhone(rec.phone);
 import { captureSignupOutcome, captureTrafficEvent, identityFromCookie, trafficIdentitySchema } from "@/lib/traffic-capture-server";
 import { cookies, headers } from "next/headers";
 import { TRAFFIC_EVENTS } from "@/lib/traffic-contract";
-import { cancelDeclinedSubscription, checkSignupCard, noteCardHoldAccount, readCardHold } from "@/lib/signupCardHold";
+import { cancelDeclinedSubscription, checkSignupCard, noteCardHoldAccount, readCardHold, refuseSignupCheckout } from "@/lib/signupCardHold";
+import { isStripeEmailCode, prettyUsPhone, STRIPE_EMAIL_LINES } from "@/lib/phoneLoginShared";
+import { linkPhoneLogin, phoneAccountOf, releaseStalePhoneLogin } from "@/lib/phoneLogin";
+import { markPhoneSetupDue } from "@/lib/phoneSetup";
+import { isQaPhone } from "@/lib/qaEmail";
 import { CARD_DECLINED_LINE } from "@/lib/signupCardHoldWords";
 import { orgNameUnsetKey } from "@/lib/orgName";
 import { signupNetworkBrake } from "@/lib/signupBrake";
@@ -150,6 +156,11 @@ export type PendingRecord = z.infer<typeof pendingSchema> extends infer T
       nameUnset?: boolean;
       /** Which of the owner's three sign-ups this came through (lib/signupMode). */
       signupMode?: SignupModeLabel;
+      /** A SIGN-UP BY TEXT (owner, 2026-11-12, lib/signupOtp channel "sms"): the US mobile (E.164) a texted code
+       *  proved, and when. Its `email` is "" until the return from Stripe's card page fills it with the address typed
+       *  there (completePendingSignup); the account then signs in by this number too (lib/phoneLogin). */
+      phone?: string;
+      phoneVerifiedAt?: number;
       /** Straight to Professional (lib/signupAutoPlan): the org gets the welcome card that says the plan can change. */
       autoPlan?: boolean;
       /** The short sign-up with a card: no code, so the address is unproven until a sign-in proves it (lib/accountClaim). */
@@ -235,7 +246,10 @@ export async function startPendingSignup(raw: unknown): Promise<{ ok: true; toke
 
 /** Read a live intent, or null when it is missing or stale. */
 export async function readPendingSignup(token: string): Promise<{
+  /** "" for a sign-up by text until the card page gives the address. */
   email: string;
+  /** A sign-up by text: the proven number (E.164); null otherwise. */
+  phone: string | null;
   /** The person's name and the trade they arrived on: the app behind the sign-up (lib/signupView) keeps showing them
    *  after a trip to the card page and back. */
   name: string;
@@ -251,6 +265,7 @@ export async function readPendingSignup(token: string): Promise<{
   return rec
     ? {
         email: rec.email,
+        phone: rec.phone ?? null,
         name: rec.name,
         landingIndustry: rec.landingIndustry ?? null,
         landingTool: rec.landingTool ?? null,
@@ -371,9 +386,9 @@ export async function completePendingSignup(
   sessionId: string | null,
 ): Promise<
   | { ok: true; email: string; ticket: string | null }
-  | { ok: false; error: string; done?: boolean; email?: string; declined?: { plan: string | null; interval: string | null; tool: string | null } }
+  | { ok: false; error: string; done?: boolean; email?: string; declined?: { plan: string | null; interval: string | null; tool: string | null; why?: string | null } }
 > {
-  const rec = await loadPending(token);
+  let rec = await loadPending(token);
   if (!rec) {
     const done = await loadDone(token);
     if (done && sessionId && done.sessionId === sessionId) {
@@ -399,6 +414,8 @@ export async function completePendingSignup(
     const skipAllowed =
       process.env.NODE_ENV !== "production" && process.env.SIGNUP_ALLOW_SKIP === "true";
     if (!skipAllowed) return { ok: false, error: "Choose a plan to finish creating your account." };
+    // A sign-up by text has no email until Stripe's card page asks for one: the skip has nothing to make it with.
+    if (!rec.email) return { ok: false, error: "A sign-up by text finishes on the card page — it asks for your email." };
   }
 
   let stripeCustomerId: string | null = null;
@@ -448,6 +465,27 @@ export async function completePendingSignup(
         stripeSubscriptionId = sub;
       }
       planSlug = (session.metadata?.planSlug as string | undefined) ?? null;
+      /* A SIGN-UP BY TEXT TAKES STRIPE'S EMAIL (owner, 2026-11-12). The intent has the proven number and no address;
+         the card page asked for one (the session carried no customer_email). It becomes the account's address —
+         unless another account has it, it is a throwaway inbox, or none came back: then no account, no card check,
+         and this Checkout's subscription cancelled as a declined card's is (lib/signupCardHold refuseSignupCheckout);
+         the card page opens again with the reason, and the name and number stay on the intent. */
+      if (!rec.email) {
+        const picked = (session.customer_details?.email ?? session.customer_email ?? "").trim().toLowerCase();
+        const why = !picked || !z.string().email().safeParse(picked).success
+          ? "email_missing"
+          : isDisposableEmail(picked)
+            ? "email_disposable"
+            : (await db.user.findUnique({ where: { email: picked }, select: { id: true } }))
+              ? "email_taken"
+              : null;
+        if (why) {
+          const refused = await refuseSignupCheckout({ stripe, session, sub: stripeSubscription, email: picked, code: why });
+          console.warn(`[signup] ${session.id}: sign-up by text refused — ${why}`);
+          return { ok: false, error: STRIPE_EMAIL_LINES[why], declined: { plan: refused.plan, interval: refused.interval, tool: refused.tool ?? null, why } };
+        }
+        rec = { ...rec, email: picked };
+      }
       const metaTool = session.metadata?.mainTool;
       mainTool = isToolId(metaTool) ? metaTool : null;
       const metaPages = session.metadata?.customPages;
@@ -462,12 +500,18 @@ export async function completePendingSignup(
       // cancelled by then, and that return must still make no account.
       if (stripeSubscription?.status === "trialing" || (await readCardHold(session.id))) {
         const { fresh, ...hold } = await checkSignupCard({ stripe, mode, session, sub: stripeSubscription, token, email: rec.email });
+        // An earlier return of this Checkout refused its Stripe email (above): the same words again, whatever the
+        // address says now — that subscription is cancelled.
+        if (hold.result === "declined" && isStripeEmailCode(hold.code)) {
+          const why = hold.code as string;
+          return { ok: false, error: STRIPE_EMAIL_LINES[why], declined: { plan: hold.plan, interval: hold.interval, tool: hold.tool ?? null, why } };
+        }
         if (hold.result === "declined") {
           if (!hold.subCanceled && !(await cancelDeclinedSubscription(stripe, hold))) {
             console.warn(`[signup] declined sign-up's subscription ${hold.subId} still standing — the trials cron cancels it`);
           }
           // Told to the analyst once: by the call that met the refusal, not by a reload reading it back.
-          if (fresh && !isQaEmail(rec.email)) {
+          if (fresh && !isQaSignup(rec)) {
             const props = { code: hold.code ?? "card_declined", plan: hold.plan, interval: hold.interval, livemode: session.livemode };
             // The sign-up's own identity, else this browser's PostHog cookie (as the hand-off to Stripe reads it).
             const identity =
@@ -556,6 +600,8 @@ export async function requestCardlessTrial(
   if (planSlug === CUSTOM_PLAN_SLUG && !customPlanOffered()) return { ok: false, error: CUSTOM_PLAN_OFF_SALE };
   const rec = await loadPending(token);
   if (!rec) return { ok: false, error: "That signup expired. Start again." };
+  // A sign-up by text has no address to confirm: its trial starts with a card, at Stripe (which asks for the email).
+  if (!rec.email) return { ok: false, error: PHONE_TRIAL_TAKES_CARD, requiresCard: true };
   const taken = await db.user.findUnique({ where: { email: rec.email }, select: { id: true } });
   if (taken) return { ok: false, error: "That email is already registered. Try signing in." };
   // THE BRAKES. A first request counts against the network (trials per IP per
@@ -615,6 +661,10 @@ export async function requestCardlessTrial(
   return { ok: true, email: rec.email, resendAt: next.cardless!.requestedAt + RESEND_COOLDOWN_MS };
 }
 
+/** A sign-up by text on the plan step while the trial takes no card: the card page is the one way on — it asks for
+ *  the email the account needs (owner, 2026-11-12). */
+const PHONE_TRIAL_TAKES_CARD = "A sign-up by text starts its free trial with a card on file — nothing is charged until the trial ends. Press Start free trial again to continue.";
+
 /** What the plan step says when the switch went to "card" after the page loaded. */
 const TRIAL_NOW_TAKES_CARD =
   "The free trial now starts with a card on file — nothing is charged until your displayed trial ends. Press Start free trial again to continue.";
@@ -650,6 +700,7 @@ export async function startVerifiedCardlessTrial(
     if (planSlug === CUSTOM_PLAN_SLUG && !customPlanOffered()) return { ok: false, error: CUSTOM_PLAN_OFF_SALE };
     const rec = await loadPending(token);
     if (!rec) return { ok: false, error: "That signup expired. Start again." };
+    if (!rec.email) return { ok: false, error: PHONE_TRIAL_TAKES_CARD, requiresCard: true };
     if (!rec.emailVerifiedAt) return { ok: false, error: "Confirm your email first." };
     const taken = await db.user.findUnique({ where: { email: rec.email }, select: { id: true } });
     if (taken) return { ok: false, error: "That email is already registered. Try signing in." };
@@ -726,6 +777,7 @@ async function finishCardlessTrial(
     }
     return { ok: false, error: "This link has expired — links last 24 hours. Start the signup again." };
   }
+  if (!rec.email) return { ok: false, error: PHONE_TRIAL_TAKES_CARD, cardHref: `/auth/register?signup=${encodeURIComponent(token)}` };
   const taken = await db.user.findUnique({ where: { email: rec.email }, select: { id: true } });
   if (taken) return cardlessSignupAlreadyUsed(rec.email);
   const refusal = await cardlessTrialRefusal(rec.email);
@@ -853,10 +905,19 @@ async function createAccountFromPending(
     analyticsOutcome,
     analyticsLive,
   } = billing;
+  // A sign-up by text reaches here only with the address Stripe's card page gave (completePendingSignup).
+  if (!rec.email) return { ok: false, error: "That signup has no email yet. Start again." };
   // Re-check the address: somebody may have registered it while the card was
   // being typed.
   const taken = await db.user.findUnique({ where: { email: rec.email }, select: { id: true } });
   if (taken) return { ok: false, error: "That email is already registered. Try signing in." };
+  // ONE NUMBER, ONE ACCOUNT (lib/phoneLogin): a sign-up by text whose number found an account meanwhile makes none.
+  const phone = rec.phone ?? null;
+  if (phone) {
+    if (await phoneAccountOf(phone)) return { ok: false, error: PHONE_TAKEN_LATE };
+    await releaseStalePhoneLogin(phone);
+  }
+  const phoneShown = phone ? prettyUsPhone(phone) : null;
   /* THE NEW PLANS (Base + Tools, part 4): the slug the subscription was priced with ("tools-professional") is the
      plan — never the Classic fallback — and the main tool rides with it (billing.mainTool, from Stripe's copy). */
   const toolsPlan = toolPlanBySlug(planSlug);
@@ -873,9 +934,10 @@ async function createAccountFromPending(
           slug,
           billingEmail: rec.email,
           address: rec.companyAddress || null,
-          phone: rec.companyPhone || null,
+          // A sign-up by text: the proven number is the office phone until the owner changes it (owner, 2026-11-12).
+          phone: rec.companyPhone || phoneShown || null,
           // The zone the address or the phone says (lib/usTimezone, 2026-11-07); the default otherwise.
-          timezone: timezoneFor({ address: rec.companyAddress, phone: rec.companyPhone }) ?? undefined,
+          timezone: timezoneFor({ address: rec.companyAddress, phone: rec.companyPhone || phoneShown || undefined }) ?? undefined,
           tradeTypesJson: JSON.stringify(rec.tradeTypes ?? []),
           otherTrade:
             rec.otherTrade && rec.tradeTypes?.includes("Other") ? rec.otherTrade : null,
@@ -899,9 +961,17 @@ async function createAccountFromPending(
           activeOrgId: org.id,
           // The passwordless sign-up proved the address before the intent existed.
           ...(rec.emailVerifiedAt ? { emailVerified: new Date() } : {}),
+          // A sign-up by text: the person's phone (the address from Stripe stays unproven until a code from it).
+          ...(phoneShown ? { phone: phoneShown } : {}),
         },
         select: { id: true },
       });
+      // A sign-up by text: the number signs in to this account from now on, and the company screen asks for the
+      // company email before the app is theirs (lib/phoneLogin, lib/phoneSetup).
+      if (phone) {
+        await linkPhoneLogin(tx, user.id, phone);
+        await markPhoneSetupDue(tx, org.id);
+      }
       await tx.membership.create({
         data: { userId: user.id, organizationId: org.id, role: "OWNER" },
       });
@@ -945,6 +1015,7 @@ async function createAccountFromPending(
   } catch (e: unknown) {
     const code = (e as { code?: string })?.code;
     if (code === "P2002") {
+      if (phone && (await phoneAccountOf(phone).catch(() => null))) return { ok: false, error: PHONE_TAKEN_LATE };
       return { ok: false, error: "That email is already registered. Try signing in." };
     }
     throw e;
@@ -1098,7 +1169,7 @@ async function createAccountFromPending(
   // round-trip ago.
   const ticket = await mintSigninTicket(userId);
   // Not for the QA Lab's own accounts (@qa.jobflex.test, lib/qaTestMode).
-  if (sessionId && rec.analytics && !isQaEmail(rec.email)) {
+  if (sessionId && rec.analytics && !isQaSignup(rec)) {
     after(() => captureSignupOutcome(rec.analytics, billing.flow === "cardless" && stripeSubscriptionId ? stripeSubscriptionId : sessionId, analyticsOutcome, planSlug, analyticsLive, rec.landingIndustry ?? null, rec.utm ?? null, rec.signupVariant ?? null, rec.signupMode ?? null));
   }
   // The welcome email (landing-e pass A; every signup since 2026-09-16). Sent
@@ -1119,6 +1190,9 @@ async function createAccountFromPending(
   }
   return { ok: true, email: rec.email, ticket, orgId, userId };
 }
+
+/** A number that found an account between its code and the card page's return. */
+const PHONE_TAKEN_LATE = "That number already has a JobFlex account. Sign in with it — nothing was charged here.";
 
 /* ── local helpers (the auth action's, kept private to this file) ───────── */
 

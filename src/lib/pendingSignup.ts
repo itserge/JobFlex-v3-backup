@@ -16,9 +16,10 @@ export const PENDING_TTL_MS = 24 * HOUR_MS;
 export const CONFIRM_TTL_MS = 24 * HOUR_MS;
 
 export function pendingSignupAlive(
-  rec: { email?: string; createdAt?: number; cardless?: { requestedAt: number } } | null | undefined,
+  rec: { email?: string; phone?: string; createdAt?: number; cardless?: { requestedAt: number } } | null | undefined,
   now = Date.now(),
 ): boolean {
-  if (!rec?.email) return false;
+  // A sign-up by text (2026-11-12) has its number and no email until Stripe's card page gives one.
+  if (!rec?.email && !rec?.phone) return false;
   return rec.cardless ? now - rec.cardless.requestedAt <= CONFIRM_TTL_MS : now - (rec.createdAt ?? 0) <= PENDING_TTL_MS;
 }

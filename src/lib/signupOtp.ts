@@ -32,9 +32,21 @@ import type { AdTool } from "@/lib/planSpotlight";
 //     its own counter under the same rule);
 //   · nothing in any answer says whether an address has an account: the same
 //     "we sent a code" for both, and the email says what is true.
+//
+// BY TEXT (owner, 2026-11-12): the same machine with `channel: "sms"` — a US
+// mobile instead of an address, the code texted by Twilio Verify (lib/sms/verify,
+// which holds the code: the draft keeps only its clock and the tries). A new
+// number becomes a pending signup with no email — Stripe's card page asks for
+// one and the account takes it (actions/signupCheckout); a number with an
+// account is signed in (lib/phoneLogin). Unlike an address, a number's account
+// is said out loud (step 1 offers sign-in, the sign-in form says when no
+// account uses it), so no text is ever paid for that cannot lead anywhere. Its
+// own brakes, because a text costs money: five texts an hour and ten a day
+// per number, ten an hour and thirty a day per network, and a ceiling for the
+// whole platform a day (SIGNUP_SMS_PER_DAY, default 300).
 import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
-import { HOUR, clientIp, rateLimitShared, retryInWords } from "@/lib/rateLimit";
+import { DAY, HOUR, clientIp, rateLimitShared, retryInWords } from "@/lib/rateLimit";
 import { hashToken, tokensEqual } from "@/lib/tokens";
 import { mintSigninTicket } from "@/lib/signinTicket";
 import { signupNetworkBrake } from "@/lib/signupBrake";
@@ -49,6 +61,9 @@ import type { TradeType } from "@/lib/tradeTypes";
 import type { PendingRecord } from "@/actions/signupCheckout";
 import { pendingSignupAlive } from "@/lib/pendingSignup";
 import { keepQaCode, qaCaptures } from "@/lib/qaTestMode";
+import { checkVerifyCode, sendVerifyCode, type VerifySend } from "@/lib/sms/verify";
+import { phoneAccountOf } from "@/lib/phoneLogin";
+import { PHONE_NO_ACCOUNT } from "@/lib/phoneLoginShared";
 
 export const OTP_MINUTES = 10;
 const CODE_TTL_MS = OTP_MINUTES * 60_000;
@@ -61,12 +76,18 @@ export { OTP_DRAFT_COOKIE } from "@/lib/signupMode";
 export const SUPPORT_REPLY_TO = "support@jobflex.app";
 
 export type OtpKind = "signup" | "login";
+/** How the code travels: an email (the default — every draft before 2026-11-12), or a text. */
+export type OtpChannel = "email" | "sms";
 type Utm = Partial<Record<"utm_source" | "utm_medium" | "utm_campaign" | "utm_content" | "utm_term", string>>;
 
 export interface OtpDraft {
   v: 1;
   kind: OtpKind;
+  /** "" on a sign-up by text (the number is the proof; Stripe asks for the address later). */
   email: string;
+  channel?: OtpChannel;
+  /** The US mobile (E.164) a texted code proves. */
+  phone?: string;
   /** "" on a sign-in. */
   name: string;
   createdAt: number;
@@ -79,7 +100,8 @@ export interface OtpDraft {
   fbclid?: string;
   analytics?: unknown;
   trialOffer?: TrialOffer;
-  /** The salted hash of the live code; null once used, burned or replaced by nothing. */
+  /** The salted hash of the live code; null once used, burned or replaced by nothing. A texted code is Twilio's to
+   *  hold: its `hash` is "verify" and only the clock and the tries are kept here. */
   code: { salt: string; hash: string; exp: number; tries: number } | null;
   lastSentAt: number;
   /** sha256 of the emailed button's secret (row `otp-link:<hash>`). */
@@ -97,8 +119,8 @@ export interface OtpDraft {
 }
 
 export type OtpOutcome =
-  | { ok: true; kind: "signup"; signupToken: string; email: string }
-  | { ok: true; kind: "signin"; ticket: string; next: string; email: string }
+  | { ok: true; kind: "signup"; signupToken: string; email: string; phone?: string }
+  | { ok: true; kind: "signin"; ticket: string; next: string; email: string; phone?: string }
   | { ok: false; error: string; burned?: boolean; expired?: boolean; gone?: boolean };
 
 const draftKey = (token: string) => `otp:${token}`;
@@ -118,7 +140,7 @@ export async function loadDraft(token: string | null | undefined): Promise<OtpDr
   if (!row) return null;
   try {
     const d = JSON.parse(row.cursor) as OtpDraft;
-    if (d?.v !== 1 || !d.email || Date.now() - (d.createdAt ?? 0) > DRAFT_TTL_MS) return null;
+    if (d?.v !== 1 || (!d.email && !d.phone) || Date.now() - (d.createdAt ?? 0) > DRAFT_TTL_MS) return null;
     return d;
   } catch {
     return null;
@@ -143,6 +165,66 @@ export function draftClock(d: OtpDraft): { resendAt: number; expiresAt: number }
   return { resendAt: d.lastSentAt + OTP_RESEND_MS, expiresAt: d.code?.exp ?? 0 };
 }
 
+export const isSmsDraft = (d: Partial<Pick<OtpDraft, "channel" | "phone">>): boolean => d.channel === "sms" && !!d.phone;
+
+/* THE TEXTS' BRAKES (2026-11-12): a text costs money, so they are tighter than the emails' and have a daily floor. */
+const TEXTS_PER_NUMBER_HOUR = 5;
+const TEXTS_PER_NUMBER_DAY = 10;
+const TEXTS_PER_NETWORK_HOUR = 10;
+const TEXTS_PER_NETWORK_DAY = 30;
+/** Every sign-up and sign-in text of the platform in a day (SIGNUP_SMS_PER_DAY, default 300). */
+export function textsPerDay(): number {
+  const n = Number(process.env.SIGNUP_SMS_PER_DAY);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 300;
+}
+export const TEXTS_PAUSED = "Codes by text are paused for today. Use your email instead.";
+
+/** Twilio's refusal, in words a person can act on. */
+function textRefusal(sent: Extract<VerifySend, { ok: false }>): string {
+  if (sent.notConfigured) return "Codes by text aren't switched on here yet. Use your email instead.";
+  if (sent.code === 60205) return "That number can't get texts (a landline?). Use a mobile number, or your email.";
+  if (sent.code === 60203) return "Too many codes for this number. Wait ten minutes, or use your email.";
+  if (sent.code === 60200 || sent.code === 21211 || sent.code === 21614) return "That number can't get texts. Check it, or use your email.";
+  if (sent.code === 60410 || sent.code === 60605) return "We couldn't text that number. Use your email instead.";
+  return "Couldn't send the text. Check the number and try again.";
+}
+
+/** A texted code (Twilio Verify) for this draft, after the brakes. Twilio resends the code it holds while that one
+ *  is alive, so the clock keeps the first send's end; a code past it starts a new ten minutes. */
+async function sendText(
+  token: string,
+  d: OtpDraft,
+  now: number,
+): Promise<{ ok: true; resendAt: number; expiresAt: number } | { ok: false; error: string; resendAt?: number }> {
+  const phone = d.phone as string;
+  const ip = await clientIp();
+  const brakes: Array<[string, number, number, string]> = [
+    [`otp-sms:${phone}`, TEXTS_PER_NUMBER_HOUR, HOUR, "Too many codes for this number"],
+    [`otp-sms-day:${phone}`, TEXTS_PER_NUMBER_DAY, DAY, "Too many codes for this number today"],
+    [`otp-sms-ip:${ip}`, TEXTS_PER_NETWORK_HOUR, HOUR, "Too many codes from this network"],
+    [`otp-sms-ip-day:${ip}`, TEXTS_PER_NETWORK_DAY, DAY, "Too many codes from this network today"],
+  ];
+  for (const [key, max, win, words] of brakes) {
+    const v = await rateLimitShared(key, max, win);
+    if (!v.ok) return { ok: false, error: `${words}. Try again in ${retryInWords(v.retryAfterMs)}, or use your email.` };
+  }
+  if (!(await rateLimitShared("otp-sms-all-day", textsPerDay(), DAY)).ok) {
+    console.warn(`[otp] the day's ${textsPerDay()} texts are spent — texted codes paused`);
+    return { ok: false, error: TEXTS_PAUSED };
+  }
+  const sentFrom = Date.now();
+  const sent = await sendVerifyCode(phone);
+  if (!sent.ok) {
+    console.warn(`[otp] ${d.kind} text to …${phone.slice(-4)} refused: ${sent.error}`);
+    return { ok: false, error: textRefusal(sent) };
+  }
+  console.info(`[otp] ${d.kind} code texted to …${phone.slice(-4)} in ${Date.now() - sentFrom} ms`);
+  const live = d.code && now < d.code.exp && d.code.tries < OTP_MAX_TRIES ? d.code : null;
+  const next: OtpDraft = { ...d, code: { salt: "", hash: "verify", exp: live ? live.exp : now + CODE_TTL_MS, tries: live ? live.tries : 0 }, lastSentAt: now, linkHash: null };
+  await saveDraft(token, next);
+  return { ok: true, ...draftClock(next) };
+}
+
 /**
  * A fresh code (and button) for this draft, emailed. The old code and the old
  * button stop working. Returns the clock, or the brake's words.
@@ -156,6 +238,7 @@ export async function sendCode(
     const resendAt = d.lastSentAt + OTP_RESEND_MS;
     return { ok: false, error: `Wait ${Math.ceil((resendAt - now) / 1000)} s before sending another code.`, resendAt };
   }
+  if (isSmsDraft(d)) return sendText(token, d, now);
   const ip = await clientIp();
   const [byAddress, byNetwork] = await Promise.all([
     rateLimitShared(`otp-mail:${d.email}`, MAILS_PER_ADDRESS_HOUR, HOUR),
@@ -214,13 +297,28 @@ export async function sendCode(
 /** The six digits typed on the code screen. */
 export async function verifyCode(token: string, raw: string): Promise<OtpOutcome> {
   const code = String(raw ?? "").replace(/\D/g, "");
-  if (code.length !== 6) return { ok: false, error: "Enter the 6-digit code from the email." };
   const d = await loadDraft(token);
+  if (code.length !== 6) return { ok: false, error: `Enter the 6-digit code from the ${d && isSmsDraft(d) ? "text" : "email"}.` };
   if (!d) return { ok: false, error: GONE, gone: true };
   if (d.verifiedAt) return outcomeOf(d);
   if (!d.code) return { ok: false, error: "That code can't be used any more. Send a new code.", burned: true };
   if (Date.now() > d.code.exp) return { ok: false, error: `That code expired — codes last ${OTP_MINUTES} minutes. Send a new code.`, expired: true };
-  const right = !d.noAccount && tokensEqual(codeHash(d.code.salt, code), d.code.hash);
+  let right: boolean;
+  if (isSmsDraft(d)) {
+    // Twilio holds a texted code: it answers whether these six digits are it.
+    const check = await checkVerifyCode(d.phone as string, code);
+    if (!check.ok) {
+      if (check.expired) {
+        await saveDraft(token, { ...d, code: null });
+        return { ok: false, error: `That code expired — codes last ${OTP_MINUTES} minutes. Send a new code.`, expired: true };
+      }
+      console.warn("[otp] text code check failed:", check.error);
+      return { ok: false, error: SERVER_TROUBLE };
+    }
+    right = check.approved;
+  } else {
+    right = !d.noAccount && tokensEqual(codeHash(d.code.salt, code), d.code.hash);
+  }
   if (!right) {
     const tries = d.code.tries + 1;
     if (tries >= OTP_MAX_TRIES) {
@@ -260,12 +358,13 @@ function carriedQuery(d: OtpDraft): string {
 
 /** What a proven draft led to, again (a second press, a reload). */
 function outcomeOf(d: OtpDraft): OtpOutcome {
-  if (d.signupToken) return { ok: true, kind: "signup", signupToken: d.signupToken, email: d.email };
+  if (d.signupToken) return { ok: true, kind: "signup", signupToken: d.signupToken, email: d.email, ...(d.phone ? { phone: d.phone } : {}) };
   return { ok: false, error: "This code was already used. Sign in to continue.", burned: true };
 }
 
 /** The address is proven: a sign-in for an account, a pending signup for a new address. */
 async function finalize(token: string, d: OtpDraft, via: "code" | "link"): Promise<OtpOutcome> {
+  if (isSmsDraft(d)) return finalizeText(token, d);
   const user = await db.user.findUnique({ where: { email: d.email }, select: { id: true, emailVerified: true } });
   if (user) {
     if (d.linkHash) await db.syncState.deleteMany({ where: { key: linkKey(d.linkHash) } }).catch(() => {});
@@ -284,6 +383,27 @@ async function finalize(token: string, d: OtpDraft, via: "code" | "link"): Promi
   if (d.linkHash) await db.syncState.deleteMany({ where: { key: linkKey(d.linkHash) } }).catch(() => {});
   await saveDraft(token, { ...d, code: null, linkHash: null, verifiedAt: Date.now(), via, signupToken });
   return { ok: true, kind: "signup", signupToken, email: d.email };
+}
+
+/** The number is proven: its account signs in (never touching the address — a number proves no inbox), or a new
+ *  number becomes a pending signup with no email (Stripe's card page asks for one). */
+async function finalizeText(token: string, d: OtpDraft): Promise<OtpOutcome> {
+  const phone = d.phone as string;
+  const userId = await phoneAccountOf(phone);
+  if (userId) {
+    await saveDraft(token, { ...d, code: null, verifiedAt: Date.now(), via: "code", userId });
+    return { ok: true, kind: "signin", ticket: await mintSigninTicket(userId), next: await nextForUser(userId), email: "", phone };
+  }
+  if (d.kind === "login") {
+    await saveDraft(token, { ...d, code: null });
+    return { ok: false, error: PHONE_NO_ACCOUNT, burned: true };
+  }
+  // A new account from this network: the same brake as an address's.
+  const braked = await newAccountBrake();
+  if (braked) return { ok: false, error: braked };
+  const signupToken = await writeVerifiedPending(d, { viaGoogle: false, image: null, autoPlan: (await readSignupPlan()).mode === "auto" });
+  await saveDraft(token, { ...d, code: null, verifiedAt: Date.now(), via: "code", signupToken });
+  return { ok: true, kind: "signup", signupToken, email: "", phone };
 }
 
 /** Where a signed-in account goes: the plan picker when the owner's shop has
@@ -315,11 +435,13 @@ export async function nextForUser(userId: string): Promise<string> {
  * the one the landing was opened on, or none.
  */
 export async function writeVerifiedPending(
-  d: Pick<OtpDraft, "email" | "name" | "industry" | "tool" | "utm" | "attribution" | "analytics" | "trialOffer">,
+  d: Pick<OtpDraft, "email" | "name" | "industry" | "tool" | "utm" | "attribution" | "analytics" | "trialOffer"> & Partial<Pick<OtpDraft, "channel" | "phone">>,
   opts: { viaGoogle: boolean; image: string | null; autoPlan?: boolean; unproven?: boolean },
 ): Promise<string> {
   const token = randomUUID();
-  const name = d.name.trim() || d.email.split("@")[0];
+  const name = d.name.trim() || d.email.split("@")[0] || "My shop";
+  // A texted code proved a number, not an inbox: the intent has no email until Stripe's card page gives one.
+  const byText = isSmsDraft(d);
   const record: PendingRecord = {
     trialOffer: d.trialOffer ? storedTrialOffer(d.trialOffer) : { variant: "b", days: 7 },
     analytics: d.analytics as PendingRecord["analytics"],
@@ -337,8 +459,8 @@ export async function writeVerifiedPending(
     viaGoogle: opts.viaGoogle,
     image: opts.image,
     createdAt: Date.now(),
-    // The short sign-up with a card proves nothing about the address (lib/accountClaim).
-    ...(opts.unproven ? { quick: true } : { emailVerifiedAt: Date.now() }),
+    // The short sign-up with a card proves nothing about the address (lib/accountClaim); a texted code proves the number.
+    ...(byText ? { phone: d.phone, phoneVerifiedAt: Date.now() } : opts.unproven ? { quick: true } : { emailVerifiedAt: Date.now() }),
     nameUnset: true,
     signupMode: "passwordless",
     ...(opts.autoPlan ? { autoPlan: true } : {}),
@@ -371,6 +493,8 @@ export interface OtpRestore {
   draft: string;
   name: string;
   email: string;
+  /** A sign-up by text: the number (E.164) the code went to; "" otherwise. */
+  phone: string;
   stage: "code" | "verified" | "expired" | "taken";
   resendAt: number;
   expiresAt: number;
@@ -389,7 +513,7 @@ export async function draftRestore(token: string | null, cookieToken: string | n
   const own = cookieToken === t;
   if (d.verifiedAt) {
     if (!own || !d.signupToken) return null;
-    const at = { draft: t, name: d.name, email: d.email, resendAt: 0, expiresAt: 0, now: Date.now(), burned: true };
+    const at = { draft: t, name: d.name, email: d.email, phone: d.phone ?? "", resendAt: 0, expiresAt: 0, now: Date.now(), burned: true };
     const state = await pendingStateOf(d);
     if (state === "taken") return { ...at, stage: "taken", signupToken: null };
     if (state === "expired") {
@@ -398,7 +522,7 @@ export async function draftRestore(token: string | null, cookieToken: string | n
     }
     return { ...at, stage: "verified", signupToken: d.signupToken };
   }
-  return { draft: t, name: d.name, email: d.email, stage: "code", ...draftClock(d), now: Date.now(), burned: !d.code, signupToken: null };
+  return { draft: t, name: d.name, email: d.email, phone: d.phone ?? "", stage: "code", ...draftClock(d), now: Date.now(), burned: !d.code, signupToken: null };
 }
 
 /** How the pending signup a proven draft became stands: the address has an
@@ -406,7 +530,7 @@ export async function draftRestore(token: string | null, cookieToken: string | n
  *  ran out, or the plan step can sell. Callers check the draft is the
  *  browser's own before they say "taken". */
 export async function pendingStateOf(d: OtpDraft): Promise<"live" | "expired" | "taken"> {
-  if (await db.user.findUnique({ where: { email: d.email }, select: { id: true } })) return "taken";
+  if (isSmsDraft(d) ? await phoneAccountOf(d.phone) : await db.user.findUnique({ where: { email: d.email }, select: { id: true } })) return "taken";
   return d.signupToken && (await pendingSignupLive(d.signupToken)) ? "live" : "expired";
 }
 

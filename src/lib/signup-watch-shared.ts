@@ -72,6 +72,7 @@ export const SIGNUP_FIELDS: Readonly<Record<string, string>> = {
   biz2: "Business name",
   addr: "Address",
   phone: "Phone",
+  mobile: "Mobile number",
   otherTrade: "Other trade",
   otpCode: "Code",
   code: "Code",
@@ -94,6 +95,8 @@ export function fieldName(id: string): string | null {
 export const SIGNUP_SCREENS: Readonly<Record<string, string>> = {
   account: "Account",
   code: "Email code",
+  // The sign-up by text (2026-11-12): the six digits texted to a phone.
+  sms_code: "Text code",
   company: "Company",
   plan: "Plan",
   google: "Google sign-in",
@@ -118,6 +121,12 @@ export const SIGNUP_REASONS: Readonly<Record<string, { words: string; side: Sign
   addr_missing: { words: "No company address", side: "theirs" },
   trades_missing: { words: "No trade picked", side: "theirs" },
   wrong: { words: "Wrong code", side: "theirs" },
+  // the sign-up by text (2026-11-12)
+  phone_invalid: { words: "Number isn't a US mobile", side: "theirs" },
+  phone_taken: { words: "Number already has an account", side: "theirs" },
+  stripe_email_refused: { words: "Email typed at Stripe can't be used", side: "theirs" },
+  sms_send_failed: { words: "The code text didn't send", side: "ours" },
+  sms_paused: { words: "Texted codes paused for the day", side: "ours" },
   burned: { words: "Code used up — needs a new one", side: "theirs" },
   expired: { words: "Code expired", side: "theirs" },
   gone: { words: "Sign-up timed out", side: "theirs" },
@@ -162,6 +171,10 @@ export function reasonOfMessage(message: string): string {
   const m = message || "";
   if (/on our side|something went wrong/i.test(m)) return "server_error";
   if (/couldn.t send the email/i.test(m)) return "email_send_failed";
+  if (/paused for today/i.test(m)) return "sms_paused";
+  if (/couldn.t (send the text|text that number)|can.t get texts|aren.t switched on/i.test(m)) return "sms_send_failed";
+  if (/number already has/i.test(m)) return "phone_taken";
+  if (/US mobile number/i.test(m)) return "phone_invalid";
   if (/offer changed/i.test(m)) return "offer_changed";
   if (/too many/i.test(m)) return "rate_limited";
   if (/temporary|throwaway|disposable/i.test(m)) return "email_disposable";
@@ -177,6 +190,7 @@ export function reasonOfMessage(message: string): string {
 export function scrubWords(message: string): string {
   return String(message ?? "")
     .replace(/[^\s@"'<>,;]+@[^\s@"'<>,;]+\.[^\s@"'<>,;]+/g, "[email]")
+    .replace(/\+?1?[\s.-]*\(?\d{3}\)?[\s.-]*\d{3}[\s.-]*\d{4}/g, "[phone]")
     .replace(/\d{5,}/g, "[n]")
     .replace(/\s+/g, " ")
     .trim()
