@@ -64,6 +64,7 @@ import { keepQaCode, qaCaptures } from "@/lib/qaTestMode";
 import { checkVerifyCode, sendVerifyCode, type VerifySend } from "@/lib/sms/verify";
 import { phoneAccountOf } from "@/lib/phoneLogin";
 import { PHONE_NO_ACCOUNT } from "@/lib/phoneLoginShared";
+import { addressHolder } from "@/lib/emailProof";
 
 export const OTP_MINUTES = 10;
 const CODE_TTL_MS = OTP_MINUTES * 60_000;
@@ -75,7 +76,9 @@ const DRAFT_TTL_MS = 24 * HOUR;
 export { OTP_DRAFT_COOKIE } from "@/lib/signupMode";
 export const SUPPORT_REPLY_TO = "support@jobflex.app";
 
-export type OtpKind = "signup" | "login";
+/** "confirm" (2026-11-12): a signed-in account proving the address it holds unproven (lib/emailProof — the sign-up by
+ *  text's company email). Its draft names the account (`forUser`); only the setup screen's actions read it. */
+export type OtpKind = "signup" | "login" | "confirm";
 /** How the code travels: an email (the default — every draft before 2026-11-12), or a text. */
 export type OtpChannel = "email" | "sms";
 type Utm = Partial<Record<"utm_source" | "utm_medium" | "utm_campaign" | "utm_content" | "utm_term", string>>;
@@ -112,6 +115,8 @@ export interface OtpDraft {
   via?: "code" | "link";
   /** The pending signup a proven new address became. */
   signupToken?: string;
+  /** "confirm": the signed-in account the address is being proven for. */
+  forUser?: string;
   /** The account a proven address already had. */
   userId?: string;
   /** When the waiting tab was handed its sign-in ticket after the link was used elsewhere. */
@@ -247,11 +252,16 @@ export async function sendCode(
   if (!byAddress.ok) return { ok: false, error: `Too many codes for this address. Try again in ${retryInWords(byAddress.retryAfterMs)}.` };
   if (!byNetwork.ok) return { ok: false, error: `Too many codes from this network. Try again in ${retryInWords(byNetwork.retryAfterMs)}.` };
 
-  const user = await db.user.findUnique({ where: { email: d.email }, select: { id: true, name: true } });
+  // An address held unproven (a sign-up by text, lib/emailProof) is nobody's here: a sign-in gets the "no account"
+  // letter, a sign-up the code — and never the holder's name.
+  const found = await db.user.findUnique({ where: { email: d.email }, select: { id: true, name: true } });
+  const user = found && (await addressHolder(d.email))?.proven ? found : null;
   const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
   const salt = randomBytes(16).toString("hex");
   const secret = randomBytes(32).toString("base64url");
-  const linkHash = hashToken(secret);
+  // A "confirm" code is typed on the setup screen only: its letter's button opens the dashboard, no link to redeem.
+  const confirm = d.kind === "confirm";
+  const linkHash = confirm ? null : hashToken(secret);
   if (d.linkHash) await db.syncState.deleteMany({ where: { key: linkKey(d.linkHash) } }).catch(() => {});
   const next: OtpDraft = {
     ...d,
@@ -261,7 +271,7 @@ export async function sendCode(
     noAccount: d.kind === "login" && !user ? true : undefined,
   };
   await saveDraft(token, next);
-  await db.syncState.upsert({ where: { key: linkKey(linkHash) }, update: { cursor: token }, create: { key: linkKey(linkHash), cursor: token } });
+  if (linkHash) await db.syncState.upsert({ where: { key: linkKey(linkHash) }, update: { cursor: token }, create: { key: linkKey(linkHash), cursor: token } });
 
   // QA Lab test mode (lib/qaTestMode): a @qa.jobflex.test address gets no
   // email — the code (and the button's link) is kept for GET /api/qa/otp.
@@ -276,7 +286,7 @@ export async function sendCode(
   const base = (await appBaseUrl()).replace(/\/$/, "");
   const doc = next.noAccount
     ? buildOtpNoAccount({ email: d.email, href: `${base}/auth/register?flow=otp` })
-    : buildOtpCode({ code, email: d.email, name: d.name || user?.name || null, minutes: OTP_MINUTES, href: `${base}/auth/register/code?k=${secret}` });
+    : buildOtpCode({ code, email: d.email, name: d.name || user?.name || null, minutes: OTP_MINUTES, href: confirm ? `${base}/dashboard` : `${base}/auth/register/code?k=${secret}` });
   const { subject, html, text } = renderEmail(doc);
   // Local only: the code in the server's log, beside EMAIL_DEV_OUTBOX's copy.
   if (process.env.NODE_ENV !== "production") console.info(`[otp] ${d.kind} code for ${d.email}: ${next.noAccount ? "(no account — no code sent)" : code}`);
@@ -299,7 +309,8 @@ export async function verifyCode(token: string, raw: string): Promise<OtpOutcome
   const code = String(raw ?? "").replace(/\D/g, "");
   const d = await loadDraft(token);
   if (code.length !== 6) return { ok: false, error: `Enter the 6-digit code from the ${d && isSmsDraft(d) ? "text" : "email"}.` };
-  if (!d) return { ok: false, error: GONE, gone: true };
+  // A "confirm" draft is the setup screen's own (checkConfirmCode): never a sign-in or a sign-up.
+  if (!d || d.kind === "confirm") return { ok: false, error: GONE, gone: true };
   if (d.verifiedAt) return outcomeOf(d);
   if (!d.code) return { ok: false, error: "That code can't be used any more. Send a new code.", burned: true };
   if (Date.now() > d.code.exp) return { ok: false, error: `That code expired — codes last ${OTP_MINUTES} minutes. Send a new code.`, expired: true };
@@ -365,7 +376,10 @@ function outcomeOf(d: OtpDraft): OtpOutcome {
 /** The address is proven: a sign-in for an account, a pending signup for a new address. */
 async function finalize(token: string, d: OtpDraft, via: "code" | "link"): Promise<OtpOutcome> {
   if (isSmsDraft(d)) return finalizeText(token, d);
-  const user = await db.user.findUnique({ where: { email: d.email }, select: { id: true, emailVerified: true } });
+  // An address held unproven (lib/emailProof) signs nothing in: a sign-in finds no account, a sign-up goes on as a new
+  // address — and the account made from it takes the address over (actions/signupCheckout).
+  const found = await db.user.findUnique({ where: { email: d.email }, select: { id: true, emailVerified: true } });
+  const user = found && (await addressHolder(d.email))?.proven ? found : null;
   if (user) {
     if (d.linkHash) await db.syncState.deleteMany({ where: { key: linkKey(d.linkHash) } }).catch(() => {});
     await saveDraft(token, { ...d, code: null, linkHash: null, verifiedAt: Date.now(), via, userId: user.id });
@@ -404,6 +418,46 @@ async function finalizeText(token: string, d: OtpDraft): Promise<OtpOutcome> {
   const signupToken = await writeVerifiedPending(d, { viaGoogle: false, image: null, autoPlan: (await readSignupPlan()).mode === "auto" });
   await saveDraft(token, { ...d, code: null, verifiedAt: Date.now(), via: "code", signupToken });
   return { ok: true, kind: "signup", signupToken, email: "", phone };
+}
+
+/* PROVING AN ADDRESS AN ACCOUNT HOLDS (2026-11-12, lib/emailProof): the setup screen's code. The same letter, clock,
+   brakes (five an hour per address, sixty per network, thirty seconds apart) and five tries as a sign-up's code. */
+
+/** A code to `email` for the signed-in account `userId`. Returns the draft token the screen keeps. */
+export async function startEmailConfirm(userId: string, email: string, name: string): Promise<{ ok: true; draft: string; resendAt: number; expiresAt: number } | { ok: false; error: string; resendAt?: number }> {
+  const token = newDraftToken();
+  const draft: OtpDraft = { v: 1, kind: "confirm", email, name, forUser: userId, createdAt: Date.now(), code: null, lastSentAt: 0, linkHash: null };
+  await saveDraft(token, draft);
+  const sent = await sendCode(token, draft);
+  return sent.ok ? { ok: true, draft: token, resendAt: sent.resendAt, expiresAt: sent.expiresAt } : sent;
+}
+
+/** The account's own "confirm" draft, or null (another account's, another kind, gone). */
+export async function confirmDraftOf(token: string, userId: string): Promise<OtpDraft | null> {
+  const d = await loadDraft(token);
+  return d && d.kind === "confirm" && d.forUser === userId ? d : null;
+}
+
+/** The six digits for a "confirm" draft: the address on success (the draft is spent), the reason otherwise. */
+export async function checkConfirmCode(token: string, userId: string, raw: string): Promise<{ ok: true; email: string } | { ok: false; error: string; burned?: boolean; expired?: boolean; gone?: boolean }> {
+  const code = String(raw ?? "").replace(/\D/g, "");
+  if (code.length !== 6) return { ok: false, error: "Enter the 6-digit code from the email." };
+  const d = await confirmDraftOf(token, userId);
+  if (!d) return { ok: false, error: "That code timed out. Send a new one.", gone: true };
+  if (!d.code) return { ok: false, error: "That code can't be used any more. Send a new code.", burned: true };
+  if (Date.now() > d.code.exp) return { ok: false, error: `That code expired — codes last ${OTP_MINUTES} minutes. Send a new code.`, expired: true };
+  if (!tokensEqual(codeHash(d.code.salt, code), d.code.hash)) {
+    const tries = d.code.tries + 1;
+    if (tries >= OTP_MAX_TRIES) {
+      await saveDraft(token, { ...d, code: null });
+      return { ok: false, error: `That code is used up after ${OTP_MAX_TRIES} wrong tries. Send a new code.`, burned: true };
+    }
+    await saveDraft(token, { ...d, code: { ...d.code, tries } });
+    const left = OTP_MAX_TRIES - tries;
+    return { ok: false, error: `That code isn't right. ${left} ${left === 1 ? "try" : "tries"} left.` };
+  }
+  await deleteDraft(token);
+  return { ok: true, email: d.email };
 }
 
 /** Where a signed-in account goes: the plan picker when the owner's shop has
@@ -530,7 +584,7 @@ export async function draftRestore(token: string | null, cookieToken: string | n
  *  ran out, or the plan step can sell. Callers check the draft is the
  *  browser's own before they say "taken". */
 export async function pendingStateOf(d: OtpDraft): Promise<"live" | "expired" | "taken"> {
-  if (isSmsDraft(d) ? await phoneAccountOf(d.phone) : await db.user.findUnique({ where: { email: d.email }, select: { id: true } })) return "taken";
+  if (isSmsDraft(d) ? await phoneAccountOf(d.phone) : (await addressHolder(d.email))?.proven) return "taken";
   return d.signupToken && (await pendingSignupLive(d.signupToken)) ? "live" : "expired";
 }
 

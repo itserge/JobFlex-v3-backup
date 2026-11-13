@@ -174,10 +174,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (!user?.email) return false;
       if (account?.provider === "google") {
         const email = user.email;
-        const existing = await db.user.findUnique({
+        const found = await db.user.findUnique({
           where: { email },
           select: { id: true, hashedPassword: true },
         });
+        /* AN ADDRESS HELD UNPROVEN (a sign-up by text whose email code never came back, lib/emailProof) is nobody's
+           to sign in to: Google's owner of it goes the new-address way below, and that sign-up takes it over. */
+        const { isEmailUnproven } = await import("@/lib/emailProof");
+        const existing = found && !(await isEmailUnproven(found.id)) ? found : null;
         if (existing) {
           /* A password account already owns this address. Google may still
              sign it in when Google itself vouches for the address

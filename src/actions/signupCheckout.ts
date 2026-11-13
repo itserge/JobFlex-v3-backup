@@ -59,6 +59,7 @@ import { cancelDeclinedSubscription, checkSignupCard, noteCardHoldAccount, readC
 import { isStripeEmailCode, prettyUsPhone, STRIPE_EMAIL_LINES } from "@/lib/phoneLoginShared";
 import { linkPhoneLogin, phoneAccountOf, releaseStalePhoneLogin } from "@/lib/phoneLogin";
 import { markPhoneSetupDue } from "@/lib/phoneSetup";
+import { addressTaken, keepWelcomeLater, markEmailUnproven, releaseUnprovenEmail } from "@/lib/emailProof";
 import { isQaPhone } from "@/lib/qaEmail";
 import { CARD_DECLINED_LINE } from "@/lib/signupCardHoldWords";
 import { orgNameUnsetKey } from "@/lib/orgName";
@@ -602,8 +603,8 @@ export async function requestCardlessTrial(
   if (!rec) return { ok: false, error: "That signup expired. Start again." };
   // A sign-up by text has no address to confirm: its trial starts with a card, at Stripe (which asks for the email).
   if (!rec.email) return { ok: false, error: PHONE_TRIAL_TAKES_CARD, requiresCard: true };
-  const taken = await db.user.findUnique({ where: { email: rec.email }, select: { id: true } });
-  if (taken) return { ok: false, error: "That email is already registered. Try signing in." };
+  // An address another account holds unproven (a sign-up by text, lib/emailProof) blocks only an unproven sign-up.
+  if (await addressTaken(rec.email, Boolean(rec.emailVerifiedAt))) return { ok: false, error: "That email is already registered. Try signing in." };
   // THE BRAKES. A first request counts against the network (trials per IP per
   // hour); a resend counts against this signup only — RESEND_COOLDOWN_MS
   // between two links, RESEND_MAX in an hour — so asking for the email again
@@ -702,8 +703,7 @@ export async function startVerifiedCardlessTrial(
     if (!rec) return { ok: false, error: "That signup expired. Start again." };
     if (!rec.email) return { ok: false, error: PHONE_TRIAL_TAKES_CARD, requiresCard: true };
     if (!rec.emailVerifiedAt) return { ok: false, error: "Confirm your email first." };
-    const taken = await db.user.findUnique({ where: { email: rec.email }, select: { id: true } });
-    if (taken) return { ok: false, error: "That email is already registered. Try signing in." };
+    if (await addressTaken(rec.email, true)) return { ok: false, error: "That email is already registered. Try signing in." };
     try {
       await enforceRateLimit(`cardless-trial:${await clientIp()}`, trialRequestsPerIpHour(), HOUR, "free trials from this network");
     } catch (err) {
@@ -778,8 +778,7 @@ async function finishCardlessTrial(
     return { ok: false, error: "This link has expired — links last 24 hours. Start the signup again." };
   }
   if (!rec.email) return { ok: false, error: PHONE_TRIAL_TAKES_CARD, cardHref: `/auth/register?signup=${encodeURIComponent(token)}` };
-  const taken = await db.user.findUnique({ where: { email: rec.email }, select: { id: true } });
-  if (taken) return cardlessSignupAlreadyUsed(rec.email);
+  if (await addressTaken(rec.email, Boolean(rec.emailVerifiedAt))) return cardlessSignupAlreadyUsed(rec.email);
   const refusal = await cardlessTrialRefusal(rec.email);
   if (refusal) return { ok: false, error: refusal };
   // The day's ceiling filled while the link sat in the inbox: the same
@@ -908,9 +907,10 @@ async function createAccountFromPending(
   // A sign-up by text reaches here only with the address Stripe's card page gave (completePendingSignup).
   if (!rec.email) return { ok: false, error: "That signup has no email yet. Start again." };
   // Re-check the address: somebody may have registered it while the card was
-  // being typed.
-  const taken = await db.user.findUnique({ where: { email: rec.email }, select: { id: true } });
-  if (taken) return { ok: false, error: "That email is already registered. Try signing in." };
+  // being typed. An account that holds it UNPROVEN (a sign-up by text whose code never came back — lib/emailProof)
+  // gives it up to a sign-up that proved it (an email code, Google); an unproven sign-up is refused as ever.
+  const proven = Boolean(rec.emailVerifiedAt);
+  if (await addressTaken(rec.email, proven)) return { ok: false, error: "That email is already registered. Try signing in." };
   // ONE NUMBER, ONE ACCOUNT (lib/phoneLogin): a sign-up by text whose number found an account meanwhile makes none.
   const phone = rec.phone ?? null;
   if (phone) {
@@ -928,6 +928,7 @@ async function createAccountFromPending(
   let userId: string;
   try {
     const created = await db.$transaction(async (tx) => {
+      if (proven) await releaseUnprovenEmail(tx, rec.email);
       const org = await tx.organization.create({
         data: {
           name: rec.businessName,
@@ -968,9 +969,12 @@ async function createAccountFromPending(
       });
       // A sign-up by text: the number signs in to this account from now on, and the company screen asks for the
       // company email before the app is theirs (lib/phoneLogin, lib/phoneSetup).
+      // Its address is Stripe's, unproven until the code on that screen (lib/emailProof): it signs nothing in and gets
+      // no welcome or marketing until then.
       if (phone) {
         await linkPhoneLogin(tx, user.id, phone);
         await markPhoneSetupDue(tx, org.id);
+        await markEmailUnproven(tx, user.id, rec.email);
       }
       await tx.membership.create({
         data: { userId: user.id, organizationId: org.id, role: "OWNER" },
@@ -1186,7 +1190,12 @@ async function createAccountFromPending(
       cardless: billing.flow === "cardless",
       pages: planSlug === CUSTOM_PLAN_SLUG ? chosen : null,
     };
-    after(() => sendWelcomeFirstEstimate(welcome).catch((e) => console.warn("[signup] welcome email failed:", e)));
+    // A sign-up by text: the welcome waits for the address to be proven (actions/phoneSetup sends it then).
+    if (phone) {
+      const { to: _to, firstChargeAt, ...rest } = welcome;
+      void _to;
+      await keepWelcomeLater(db, userId, { ...rest, tradeTypes: [...rest.tradeTypes], pages: rest.pages ? [...rest.pages] : null, firstChargeAt: firstChargeAt.toISOString() }).catch((e) => console.warn("[signup] welcome not kept:", e));
+    } else after(() => sendWelcomeFirstEstimate(welcome).catch((e) => console.warn("[signup] welcome email failed:", e)));
   }
   return { ok: true, email: rec.email, ticket, orgId, userId };
 }

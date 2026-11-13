@@ -267,7 +267,10 @@ export async function requestPasswordReset(raw: unknown): Promise<{ ok: true }> 
   ]);
   if (!byIp.ok || !byEmail.ok) return { ok: true };
 
-  const user = await db.user.findUnique({ where: { email }, select: { id: true, name: true } });
+  const found = await db.user.findUnique({ where: { email }, select: { id: true, name: true } });
+  // An address held unproven (a sign-up by text, lib/emailProof) gets no reset link: it would sign that inbox in.
+  const { isEmailUnproven } = await import("@/lib/emailProof");
+  const user = found && !(await isEmailUnproven(found.id)) ? found : null;
   if (user) {
     // Invalidate any prior links for this email, then mint one fresh token.
     // Only the sha256 hash is stored; the raw token lives only in the email.

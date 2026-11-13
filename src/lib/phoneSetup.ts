@@ -1,9 +1,11 @@
 import "server-only";
 // FINISH SETTING UP YOUR COMPANY — FOR A SIGN-UP BY TEXT (owner, 2026-11-12). A shop that signed up with a phone
 // number owes one screen before the app is its own: the company email (required — the sign-up never asked for one;
-// Stripe's card page did, and it stands prefilled), the office phone (the proven number, prefilled) and the company
-// name (the owner's own name for now, lib/orgName). Shown to the owner on every dashboard page until it is saved
-// (components/company-setup/phone-setup-sheet, mounted by app/dashboard/layout); the save is actions/phoneSetup.
+// Stripe's card page did, and it stands prefilled), proven by a six-digit code emailed to it before the screen saves
+// (lib/emailProof), the office phone (the proven number, prefilled) and the company name (the owner's own name for
+// now, lib/orgName). Owed again when another sign-up proves the address this account held unproven.
+// Shown to the owner on every dashboard page until it is saved (components/company-setup/phone-setup-sheet, mounted
+// by app/dashboard/layout); the save is actions/phoneSetup.
 //
 // The mark is a SyncState row `phoneSetup:<orgId>`, written with the account (actions/signupCheckout) — no schema
 // change. Email and Google sign-ups never get one: their address was proven at sign-up.
@@ -27,9 +29,11 @@ export async function clearPhoneSetup(client: Pick<typeof db, "syncState">, orgI
 
 export interface PhoneSetupView {
   companyName: string;
-  /** The account's address (from Stripe's card page), else the company's billing email. */
+  /** The account's address (from Stripe's card page), else the company's billing email; "" after it was given up. */
   email: string;
   officePhone: string;
+  /** The address this account held unproven was proven by its owner on another account (lib/emailProof). */
+  released: boolean;
 }
 
 /** What the sheet opens with, or null when nothing is owed. Never throws: a failed read shows no sheet. */
@@ -41,10 +45,12 @@ export async function phoneSetupView(orgId: string, userId: string): Promise<Pho
       db.user.findUnique({ where: { id: userId }, select: { email: true, phone: true } }),
     ]);
     if (!org) return null;
+    const released = /@unproven\.jobflex\.invalid$/i.test(user?.email ?? "");
     return {
       companyName: org.name ?? "",
-      email: user?.email || org.billingEmail || "",
+      email: released ? org.billingEmail || "" : user?.email || org.billingEmail || "",
       officePhone: org.phone || prettyUsPhone(user?.phone) || "",
+      released,
     };
   } catch {
     return null;

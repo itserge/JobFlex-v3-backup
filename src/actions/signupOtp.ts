@@ -12,8 +12,8 @@ import { DISPOSABLE_EMAIL_MESSAGE, isDisposableEmail } from "@/lib/disposableEma
 import { readGoogleSignup } from "@/lib/googleSignup";
 import { mintSigninTicket } from "@/lib/signinTicket";
 import { readSignupPlan, signupTrialMode } from "@/lib/trialPolicyServer";
-import { db } from "@/lib/db";
 import { phoneAccountOf } from "@/lib/phoneLogin";
+import { addressHolder } from "@/lib/emailProof";
 import { PHONE_INVALID, PHONE_NO_ACCOUNT, PHONE_TAKEN, usMobileE164 } from "@/lib/phoneLoginShared";
 import {
   GONE,
@@ -342,7 +342,8 @@ export async function startOtpGoogleSignup(raw: unknown): Promise<{ ok: true; si
     const g = await readGoogleSignup(data.handle);
     if (!g) return { ok: false, error: "Your Google sign-in expired. Continue with Google again." };
     if (isDisposableEmail(g.email)) return { ok: false, error: DISPOSABLE_EMAIL_MESSAGE };
-    if (await db.user.findUnique({ where: { email: g.email }, select: { id: true } })) {
+    // Google proves the inbox: an account that only holds the address unproven (lib/emailProof) does not stop it.
+    if ((await addressHolder(g.email))?.proven) {
       return { ok: false, error: "That email already has an account. Sign in with Google.", taken: true };
     }
     const offered = await signupTrialOffer();
@@ -386,9 +387,13 @@ export async function startQuickSignup(raw: unknown): Promise<{ ok: true; signup
     const [plan, trial] = await Promise.all([readSignupPlan(), signupTrialMode()]);
     if (plan.mode !== "auto" || trial !== "card") return { ok: false, needsCode: true, error: "The sign-up just changed — we'll email you a code instead." };
     if (isDisposableEmail(data.email)) return { ok: false, error: DISPOSABLE_EMAIL_MESSAGE };
-    if (await db.user.findUnique({ where: { email: data.email }, select: { id: true } })) {
+    const holder = await addressHolder(data.email);
+    if (holder?.proven) {
       return { ok: false, error: "That email already has an account. Sign in instead.", taken: true };
     }
+    // Another account holds the address without having proven it (a sign-up by text, lib/emailProof): the short
+    // sign-up proves nothing, so this one goes by the emailed code — which, typed back, takes the address over.
+    if (holder) return { ok: false, needsCode: true, error: "We'll email you a code to confirm this address." };
     const offered = await signupTrialOffer();
     if (data.displayedTrialDays !== undefined && data.displayedTrialDays > offered.days) {
       return { ok: false, error: "Your trial offer changed. Reload this page to review the current offer before continuing." };

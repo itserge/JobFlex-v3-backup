@@ -94,9 +94,19 @@ export function platformMailbox(): string | null {
 }
 
 /** The recipients not on the do-not-email list. A transactional letter never reads the list (a failed read must not
- *  stop a code or an invoice); a marketing one — and one with no class — throws when the list can't be read. */
+ *  stop a code or an invoice); a marketing one — and one with no class — throws when the list can't be read.
+ *  THE UNPROVEN ADDRESS (2026-11-12, lib/emailProof): a stand-in (…@unproven.jobflex.invalid) gets no letter at all;
+ *  an address an account holds without having proven it gets the transactional ones (bills, payments, codes) and no
+ *  marketing — the welcome included, which is sent once the code comes back. */
 export async function withoutBlocked(recipients: readonly string[], mailClass?: MailClass | null): Promise<string[]> {
+  recipients = recipients.filter((r) => !/@unproven\.jobflex\.invalid\s*$/i.test(r));
   if (mailClass === "transactional" || !recipients.length) return [...recipients];
+  {
+    const { unprovenAmong } = await import("@/lib/emailProof");
+    const unproven = await unprovenAmong(recipients).catch(() => new Set<string>());
+    if (unproven.size) recipients = recipients.filter((r) => !unproven.has(r.trim().toLowerCase()));
+    if (!recipients.length) return [];
+  }
   const { blockedAmong } = await import("@/lib/mailBlock");
   const { normalizeEmail } = await import("@/lib/mailBlockShared");
   let blocked: Set<string>;
