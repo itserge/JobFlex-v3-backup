@@ -127,6 +127,25 @@ function PlanBlock({ model, act }: { model: ToolsView; act: Act }) {
   );
 }
 
+// ── the free days, said plainly ──────────────────────────────────────────────
+
+/** WHAT THE FREE DAYS ALLOW (owner, 2026-11-12: "during the trial they can switch or test something else, and it
+ *  should clearly say it"): on the welcome page and on Subscription while the sign-up's trial runs. */
+function FreeDaysNote({ model }: { model: ToolsView }) {
+  if (!model.inTrial || !model.trialDay || model.lapsed) return null;
+  return (
+    <div className={s.freeNote} data-tools-free-note="">
+      <p className={s.freeNoteH}>{`Your free days run until ${model.trialDay}`}</p>
+      <ul className={s.freeNoteList}>
+        <li>Everything on your plan is free until then, the tools you picked too.</li>
+        <li>Don’t need a tool? Remove it before then and you never pay for it.</li>
+        <li>Want to test something else? Try any other tool free, or change your plan.</li>
+        <li>{`On ${model.trialDay} you pay only for what’s still on your plan.`}</li>
+      </ul>
+    </div>
+  );
+}
+
 // ── your tools ───────────────────────────────────────────────────────────────
 
 function ToolRow({ t, model, act }: { t: ToolsModelTool; model: ToolsView; act: Act }) {
@@ -139,7 +158,8 @@ function ToolRow({ t, model, act }: { t: ToolsModelTool; model: ToolsView; act: 
   switch (t.state) {
     case "main":
       tag = <span className={cx(s.tag, s.tagMain)}>Main tool</span>;
-      state = t.inPlan ? `Included in ${model.plan.name}` : `${per(t.cents)}, on your plan`;
+      state = t.inPlan ? `Included in ${model.plan.name}` : model.inTrial && t.day ? `Free until ${t.day}, then ${per(t.cents)} on your bill.` : `${per(t.cents)}, on your plan`;
+      if (live && t.removable) button = <button type="button" className={cx(s.btn, s.btnQuiet)} onClick={() => act.ask(k)} data-tools-remove={t.id}>Remove</button>;
       break;
     case "included":
       tag = <span className={cx(s.tag, s.tagOn)}>Included</span>;
@@ -170,7 +190,9 @@ function ToolRow({ t, model, act }: { t: ToolsModelTool; model: ToolsView; act: 
   const removeWords =
     t.state === "trying"
       ? `Remove the ${t.label} try? It stays open until ${t.day} and won't be billed.`
-      : `Remove ${t.label}? It stays open until the end of the month you paid for. No refund.`;
+      : t.state === "main" && model.inTrial
+        ? `Remove ${t.label}? It stays open until ${t.day ?? "your free days end"} and won't be billed. You can add it back any time.`
+        : `Remove ${t.label}? It stays open until the end of the month you paid for. No refund.`;
   return (
     <li className={s.row} data-tool-row={t.id} data-tool-state={t.removed ? "removed" : t.state}>
       <div className={s.rowMain}>
@@ -487,6 +509,7 @@ export function ToolsSubscriptionSection({ model, className }: { model: ToolsVie
   return (
     <section id="tools" className={cx(s.tp, className)} aria-label="Your plan and tools" data-tools-section="">
       <PlanBlock model={model} act={act} />
+      <FreeDaysNote model={model} />
       <ToolsBlock model={model} act={act} />
       {model.inTrial && model.switchTo.length && !model.lapsed ? <SwitchBox model={model} act={act} /> : null}
       {model.lapsed ? null : <UpgradeBlock model={model} act={act} />}
@@ -512,6 +535,9 @@ export function ToolsWelcome({ model }: { model: ToolsView }) {
         {`Try any tool below free${day ? ` until ${day}` : ""}. It shows in your menu right away, and goes on your bill after that unless you remove it.`}
       </p>
       <PlanBlock model={model} act={act} />
+      <FreeDaysNote model={model} />
+      {/* The tools the shop built its plan with (owner, 2026-11-12): each with its Remove, here on day one. */}
+      {model.tools.length ? <ToolsBlock model={model} act={act} /> : null}
       {model.inTrial && model.switchTo.length ? <SwitchBox model={model} act={act} /> : null}
       {pairs.length ? (
         <div className={s.block} data-tools-pairs="">

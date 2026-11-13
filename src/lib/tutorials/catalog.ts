@@ -1,5 +1,6 @@
 // THE TUTORIALS (owner, 2026-11-11: "add tutorials in a sidebar on the bottom … and upload their home builder,
-// remodelers, Deck Studio, CRM and Fence Studio tutorials"; the AI desk and Texting films joined the same day). Plain
+// remodelers, Deck Studio, CRM and Fence Studio tutorials"; the AI desk, Texting and Smart Proposal films joined the
+// same day). Plain
 // data, safe on the server and in the browser.
 //
 // The films are made outside this repository (the video kit on the owner's machine) and live in the PRIVATE Vercel
@@ -242,6 +243,29 @@ export const TUTORIALS: readonly Tutorial[] = [
       { at: 389, title: "The crew", about: "Put on a job · tomorrow's list · today's list" },
       { at: 406, title: "Safe by design", about: "STOP · HELP · quiet nights · limits" },
       { at: 438, title: "Setting it up", about: "Five steps" },
+    ],
+  },
+  {
+    // Added 2026-11-11 (owner: "create me tutorial how to use Smart Proposal … add it to JobFlex tutorials").
+    slug: "smart-proposal",
+    tool: "Smart Proposal",
+    title: "Smart Proposal: from a few words to a signed job",
+    audience: "Every company",
+    summary: "Describe a job and add a few photos: a priced estimate, adjusted line by line, a proposal the client signs on their phone — and the same proposal runs the job.",
+    toolHref: "/dashboard/advanced-ai",
+    duration: 308,
+    version: "v1",
+    chapters: [
+      { at: 0, title: "What Smart Proposal does", about: "A few words and photos in, a priced estimate out, a signed job" },
+      { at: 24, title: "Where it lives", about: "Estimating tools · one tool for any job · the examples" },
+      { at: 41, title: "Describe the job", about: "The brief · what comes out, what goes in · Speak the brief" },
+      { at: 64, title: "Site photos", about: "Up to six · read to price what is there · nothing stored" },
+      { at: 83, title: "Location, then Generate", about: "Address and state · the questions that move the price" },
+      { at: 119, title: "The estimate", about: "Tasks in order · quantity, unit, material, labor · edit, remove, add" },
+      { at: 173, title: "From estimate to proposal", about: "The client · what they see · your margin · payments · send" },
+      { at: 218, title: "The client signs", about: "Their phone · their name · Accept proposal" },
+      { at: 231, title: "Run the job from it", about: "Contract and payments · change orders · the project it made" },
+      { at: 268, title: "Tips", about: "Sizes · what stays · the same brief · read every line" },
     ],
   },
 ];

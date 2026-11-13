@@ -22,8 +22,8 @@ import type { StripeMode } from "@/lib/stripeMode";
 import { toolsPlansOn } from "@/lib/toolPlans/server";
 import { readToolCatalog } from "@/lib/toolPlans/prices";
 import { toolsCheckoutItems } from "@/lib/toolPlans/billing";
-import { toolsSignupPick } from "@/lib/toolPlans/cards";
-import { cardCents, isToolsSlug, toolPlanById, YEAR_MONTHS, type ToolId } from "@/lib/toolPlans/shared";
+import { toolsBuild, toolsSignupPick } from "@/lib/toolPlans/cards";
+import { isToolsSlug, toolPlanById, YEAR_MONTHS, type ToolId } from "@/lib/toolPlans/shared";
 
 export type SignupInterval = "MONTH" | "YEAR";
 
@@ -48,6 +48,8 @@ export type SignupPrice =
       monthlyCents: number;
       /** The new plans only: the main tool billed with the size (null: none). Absent on a Classic plan. */
       mainTool?: ToolId | null;
+      /** The new plans only: the other tools ticked in the builder, each a line riding the trial. */
+      extraTools?: ToolId[];
     }
   | { ok: false; status: number; error: string };
 
@@ -72,22 +74,23 @@ export async function resolveSignupPrice(opts: {
   interval: SignupInterval;
   customPages: string[];
   trialOffer?: TrialOffer;
-  /** The new plans: the main tool picked on the card page ("tool-…" line unless the size includes it). Validated
-   *  here with the plan (lib/toolPlans/cards toolsSignupPick); ignored for a Classic plan. */
+  /** The new plans: the pick — tool ids, comma-separated, the first the main tool (lib/toolPlans/cards): a "tool-…"
+   *  line each unless the size includes it. Validated here with the plan (toolsSignupPick); ignored for a Classic plan. */
   mainTool?: string | null;
 }): Promise<SignupPrice> {
   const { stripe, mode } = opts;
   const trialDays = storedTrialOffer(opts.trialOffer).days;
-  /* THE NEW PLANS (Base + Tools, part 4): the size's line, the main tool's line unless the size includes it — exactly
-     what the card page showed, priced here from the prices in force (Admin → Plans), never from the browser. A slug
-     or a tool that isn't one of ours is refused. One person: the sign-up is the owner alone. */
+  /* THE NEW PLANS (Base + Tools, part 4; the builder 2026-11-12): the size's line and a line for each tool ticked that
+     the size doesn't include — exactly what the builder showed (lib/toolPlans/cards toolsBuild), priced here from the
+     prices in force (Admin → Plans), never from the browser. A slug or a tool that isn't one of ours is refused. One
+     person: the sign-up is the owner alone. */
   if (isToolsSlug(opts.planSlug)) {
     const pick = toolsSignupPick({ plan: opts.planSlug, tool: opts.mainTool });
     if (!pick) return { ok: false, status: 404, error: "That plan is not available." };
     const catalog = await readToolCatalog();
     const interval = opts.interval;
-    const lineItems = await toolsCheckoutItems({ deps: { stripe, mode }, plan: pick.plan, main: pick.main, interval, people: 1, catalog });
-    const monthly = cardCents(pick.plan, pick.main, catalog);
+    const lineItems = await toolsCheckoutItems({ deps: { stripe, mode }, plan: pick.plan, main: pick.main, extras: pick.extras, interval, people: 1, catalog });
+    const monthly = toolsBuild(pick.plan, [...(pick.main ? [pick.main] : []), ...pick.extras], catalog).cents;
     return {
       ok: true,
       lineItems,
@@ -98,6 +101,7 @@ export async function resolveSignupPrice(opts: {
       interval,
       monthlyCents: monthly,
       mainTool: pick.main,
+      extraTools: pick.extras,
     };
   }
   if (opts.planSlug === CUSTOM_PLAN_SLUG) {

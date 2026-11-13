@@ -34,7 +34,8 @@ export async function createSignupCheckout(input: {
   interval: "MONTH" | "YEAR";
   /** Where Stripe sends the visitor back: this request's own origin. */
   origin: string;
-  /** The new plans: the main tool picked on the card page (validated and priced by lib/signupPricing). */
+  /** The new plans: the pick — tool ids, comma-separated, the first the main tool (validated and priced by
+   *  lib/signupPricing). */
   mainTool?: string | null;
 }): Promise<SignupCheckoutResult> {
   if (!isStripeEnabled()) return { ok: false, error: "Stripe is not configured.", status: 503 };
@@ -78,7 +79,9 @@ async function open({ token, planSlug, interval, origin, mainTool }: Parameters<
   if (!priced.ok) return { ok: false, error: priced.error, status: priced.status };
   /* THE NEW PLANS' MARK (Base + Tools, part 4): the session and the subscription both carry the plan and the main
      tool, so the account made on the return (actions/signupCheckout) writes the shop's record from what Stripe holds. */
-  const toolsMeta: Record<string, string> = priced.mainTool !== undefined ? { planSlug: priced.planLabel, mainTool: priced.mainTool ?? "" } : {};
+  const toolsMeta: Record<string, string> =
+    priced.mainTool !== undefined ? { planSlug: priced.planLabel, mainTool: priced.mainTool ?? "", extraTools: (priced.extraTools ?? []).join(",") } : {};
+  const pickBack = priced.mainTool ? [priced.mainTool, ...(priced.extraTools ?? [])].join(",") : "";
   // The saved offer determines the duration; then Stripe charges the selected price.
   const { trialDays, planLabel, isCustom } = priced;
   /* NO DECK STUDIO HERE (owner, 2026-10-27): the add-on rode every sign-up's checkout from 2026-10-26 and sign-ups
@@ -106,9 +109,9 @@ async function open({ token, planSlug, interval, origin, mainTool }: Parameters<
     const clock = await stripe.testHelpers.testClocks.create({ frozen_time: Math.floor(Date.now() / 1000), name: `signup ${pending.email || pending.phone}`.slice(0, 300) });
     customer = (await stripe.customers.create({ ...(pending.email ? { email: pending.email } : {}), name: pending.businessName, test_clock: clock.id, metadata: { signupToken: token } })).id;
   }
-  // The new plans come back to their own card page: the size and the tool picked (the link's `?tool=` is gone by then).
+  // The new plans come back to their own builder: the size and the tools picked (the link's `?tool=` is gone by then).
   const back = `${origin}/auth/register?signup=${encodeURIComponent(token)}${
-    priced.mainTool !== undefined ? `&plan=${encodeURIComponent(priced.planLabel)}${priced.mainTool ? `&tool=${priced.mainTool}` : ""}` : ""
+    priced.mainTool !== undefined ? `&plan=${encodeURIComponent(priced.planLabel)}&tools=${pickBack || "none"}` : ""
   }`;
   const session = await stripe.checkout.sessions.create(
     {

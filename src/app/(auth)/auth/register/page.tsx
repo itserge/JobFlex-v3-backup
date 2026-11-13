@@ -46,7 +46,7 @@ import type { AutoPlanOffer } from "@/lib/signupAutoPlan";
 import { autoPlanOffer } from "@/lib/signupAutoPlanServer";
 import { pageClockScript } from "@/lib/pageClock";
 import { toolsPlansOn } from "@/lib/toolPlans/server";
-import { mainToolFor } from "@/lib/toolPlans/cards";
+import { mainToolFor, parseToolPicks } from "@/lib/toolPlans/cards";
 import { RegisterResponsive, type GooglePrefill, type SetupPrefill } from "./register-responsive";
 import {
   INDUSTRY_COOKIE,
@@ -255,6 +255,17 @@ export default async function RegisterPage({
   const pendingToken = typeof sp.signup === "string" ? sp.signup : (otpRestore?.signupToken ?? null);
   const pending = pendingToken ? await readPendingSignup(pendingToken) : null;
   const toolsMain = toolsOn ? (urlTool ?? mainToolFor({ tool: pending?.landingTool ?? null })) : null;
+  /* THE PICK THE VISITOR BUILT (owner, 2026-11-12 — lib/toolPlans/cards): the link's `?tools=` from the landing's
+     builder ("deck,fence"; "none": nothing ticked), or our own return's `?tool=` (the checkout that did not open, a
+     declined card, Stripe's back arrow) which carries the whole pick. Null: the link says nothing — the builder opens
+     on the ad's tool, or on what this browser's builder remembered (tools-builder recalledToolsPick). */
+  const toolsPicks = !toolsOn
+    ? null
+    : typeof sp.tools === "string"
+      ? parseToolPicks(sp.tools)
+      : typeof sp.tool === "string" && typeof sp.checkout === "string"
+        ? parseToolPicks(sp.tool)
+        : null;
   /* THE SIGN-UP SCREEN (owner, 2026-10-22, lib/signupView): the page as built, or the same form in the middle of a
      picture of the app — the overview with sample work for the trade they came in on, nothing to click. The owner's
      switch, a `?view=` link, and under the half-and-half split the screen this browser was given. Only the drawing
@@ -287,6 +298,7 @@ export default async function RegisterPage({
         spotlightUrl={spotlightUrl}
         edition={sp.edition === "deck" ? "deck" : null}
         toolsMain={toolsMain}
+        toolsPicks={toolsPicks}
         utm={hasUtm(utm) ? utm : null}
         inAppBrowser={inAppBrowser}
       />

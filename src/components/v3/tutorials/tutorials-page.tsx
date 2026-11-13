@@ -10,7 +10,8 @@
 //     there and the one playing is marked. &t=<seconds> starts it at a point.
 //
 // WHERE YOU LEFT OFF is this browser's (localStorage `jf_tutorials`): the second reached, and "watched" once the end
-// is reached. A film opened again picks up there. Nothing on the server tracks it yet.
+// is reached. A film opened again picks up there. Since 2026-11-11 the server is also told who played which film and
+// how far (actions/tutorials → lib/tutorials/views), for Admin → Tutorials.
 //
 // Styles: ./tutorials.css — plain CSS, every selector under `.jf-tutorials` at two classes or more (the shell's reset
 // ties single-class rules in production). The page head and buttons are the shell's shared classes.
@@ -22,6 +23,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { flattenNavItems, navSectionsFor } from "@/components/v3/blueprint-shell/nav-map";
 import { useNavHidden, useNavIdentity, useNavLocked, useNavView } from "@/components/v3/blueprint-shell/nav-role";
 import { TUTORIALS, chapterAt, clock, minutes, tutorialBySlug, type Tutorial, type TutorialLinks } from "@/lib/tutorials/catalog";
+import { noteTutorialWatch } from "@/actions/tutorials";
 import "./tutorials.css";
 
 // ── where this browser left each film ─────────────────────────────────────────
@@ -241,6 +243,16 @@ function Player({
     onKeep(t.slug, done ? { t: 0, done: true } : { t: Math.floor(v.currentTime), done: doneRef.current });
   };
 
+  // WHO WATCHED (owner, 2026-11-11 — Admin → Tutorials): the server is told when this film starts in this page view
+  // (one play, however often it is paused), how far it got every 30 seconds and on a pause, and when the end is
+  // reached. Best effort: a count that fails never touches the film.
+  const counted = useRef<string | null>(null);
+  const lastSent = useRef(0);
+  const tell = (event: "play" | "progress" | "done") => {
+    const v = video.current;
+    void noteTutorialWatch({ slug: t.slug, event, sec: v ? Math.floor(v.currentTime) : 0 }).catch(() => {});
+  };
+
   const jump = (s: number) => {
     const v = video.current;
     if (!v) return;
@@ -316,6 +328,12 @@ function Player({
                 if (v.currentTime >= 1) startRef.current = Math.floor(v.currentTime);
                 router.refresh();
               }}
+              onPlay={() => {
+                if (counted.current === t.slug) return;
+                counted.current = t.slug;
+                lastSent.current = Date.now();
+                tell("play");
+              }}
               onTimeUpdate={(e) => {
                 const s = e.currentTarget.currentTime;
                 setNow(s);
@@ -323,9 +341,19 @@ function Player({
                   lastSaved.current = s;
                   if (s >= 5) save();
                 }
+                if (counted.current === t.slug && Date.now() - lastSent.current >= 30_000) {
+                  lastSent.current = Date.now();
+                  tell("progress");
+                }
               }}
-              onPause={() => save()}
-              onEnded={() => save(true)}
+              onPause={(e) => {
+                save();
+                if (counted.current === t.slug && !e.currentTarget.ended) tell("progress");
+              }}
+              onEnded={() => {
+                save(true);
+                tell("done");
+              }}
               data-tutorial-video
             >
               Your browser cannot play this video.

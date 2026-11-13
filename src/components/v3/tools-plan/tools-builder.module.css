@@ -1,0 +1,216 @@
+/* BUILD YOUR PLAN (owner, 2026-11-12) — tools-builder.tsx. The landing's own drawing: white cards on a 2px ink frame
+   with a hard offset, blueprint blue for what is chosen, mono capitals for the small words (pricing-faq.css lp-pw-*).
+   Self-contained, so the same builder stands on the landing's dark band (.ink), on /pricing and in the sign-up. */
+.b {
+  --ink: #0a0a0a;
+  --blue: #1854a0;
+  --rule: #d5d1c8;
+  --mute: #555;
+  --paper: #f2f0eb;
+  --ok: #1d6b3a;
+  --words: #0a0a0a;
+  --mono: var(--font-mono, var(--font-jbmono, ui-monospace, "JetBrains Mono", monospace));
+  color: var(--ink);
+  text-align: left;
+  min-width: 0;
+  /* The builder lays itself out by the room it is given (the landing's band, /pricing, the sign-up's sheet). */
+  container-type: inline-size;
+  container-name: jfbuild;
+}
+.b.ink { --words: #f2f0eb; }
+/* The builder's own buttons only: the start button is the page's (the sign-up's .btn keeps its own ink). Two classes
+   deep, so a page's blanket button reset (the sign-up's `.bp button`) doesn't strip their frames. */
+.b .size, .b .tile, .b .more, .b .betterBtn { font: inherit; color: var(--ink); cursor: pointer; }
+.b .size:focus-visible, .b .tile:focus-visible, .b .more:focus-visible, .b .betterBtn:focus-visible { outline: 2px solid #4a9eff; outline-offset: 2px; }
+
+.b .termRow { display: flex; justify-content: flex-start; margin: 0 0 22px; }
+
+.b .step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  color: var(--words);
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+.b .step b {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--ink);
+  border-radius: 2px;
+  background: var(--blue);
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+}
+.b.ink .step b { border-color: #f2f0eb; }
+.b .stepSub { margin: -4px 0 12px; color: var(--words); opacity: 0.82; font-size: 14px; font-weight: 500; line-height: 1.45; max-width: 62ch; }
+
+/* ── 1. the sizes ── */
+.b .sizes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; padding-top: 12px; margin-bottom: 30px; }
+.b .size {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+  padding: 20px 18px 16px;
+  border: 2px solid var(--ink);
+  border-radius: 2px;
+  background: #fff;
+  text-align: left;
+  box-shadow: 3px 3px 0 var(--ink);
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+.b .size:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ink); }
+.b .sizeOn, .b .sizeOn:hover { border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue), 5px 5px 0 var(--blue); transform: none; }
+.b .sizeTag {
+  position: absolute;
+  top: -12px;
+  left: 14px;
+  padding: 4px 9px;
+  border: 2px solid var(--ink);
+  border-radius: 2px;
+  background: var(--blue);
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.b .sizeHead { display: flex; align-items: center; gap: 8px; }
+.b .radio { flex: none; width: 16px; height: 16px; border: 2px solid var(--ink); border-radius: 50%; background: #fff; }
+.b .sizeOn .radio { border-color: var(--blue); background: radial-gradient(circle, var(--blue) 0 4px, #fff 4.5px); }
+.b .sizeName { font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--mute); }
+.b .sizeOn .sizeName { color: var(--blue); }
+.b .sizePrice { font-size: 38px; font-weight: 900; line-height: 0.95; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.b .sizePrice i { margin-left: 2px; font-style: normal; font-size: 13px; font-weight: 800; letter-spacing: 0; color: var(--mute); }
+.b .sizeWho { font-size: 13px; font-weight: 700; line-height: 1.3; }
+.b .sizeLines { display: flex; flex-direction: column; margin-top: 4px; border-top: 1.5px solid var(--rule); }
+.b .line { display: flex; align-items: flex-start; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--rule); font-size: 12.5px; font-weight: 600; line-height: 1.3; }
+.b .line:last-child { border-bottom: none; }
+.b .tick { flex: none; width: 14px; height: 14px; margin-top: 1px; fill: none; stroke: var(--blue); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.b .pickedLines { display: none; }
+
+/* ── 2 + 3. the tools and the plan as built ── */
+.b .body { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+.b .toolsCol, .b .sumCol { min-width: 0; }
+.b .sumCol { position: sticky; top: 84px; }
+.b .panel { padding: 16px 18px 18px; border: 2px solid var(--ink); border-radius: 2px; background: #fff; box-shadow: 3px 3px 0 var(--ink); }
+.b .groupH { margin: 14px 0 8px; font-family: var(--mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--mute); }
+.b .groupH:first-child { margin-top: 0; }
+.b .tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.b .tile {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas: "box text" "box price";
+  column-gap: 10px;
+  row-gap: 4px;
+  align-items: start;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1.5px solid var(--rule);
+  border-radius: 2px;
+  background: #fff;
+  text-align: left;
+}
+.b .tile:hover { border-color: var(--ink); }
+.b .tileOn { border-color: var(--blue); background: #eef3fb; box-shadow: inset 0 0 0 1px var(--blue); }
+.b .tileFixed { cursor: default; background: #f4f6f3; border-color: var(--rule); box-shadow: none; }
+.b .tileFixed:hover { border-color: var(--rule); }
+.b .box { grid-area: box; display: grid; place-items: center; width: 18px; height: 18px; margin-top: 1px; border: 2px solid var(--ink); border-radius: 2px; background: #fff; }
+.b .tileOn .box { border-color: var(--blue); background: var(--blue); }
+.b .tileOn .box .tick { stroke: #fff; margin: 0; width: 12px; height: 12px; stroke-width: 3; }
+.b .tileFixed .box { border-color: var(--ok); background: var(--ok); }
+.b .tileText { grid-area: text; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.b .tileName { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 14px; font-weight: 800; line-height: 1.25; }
+.b .came { padding: 2px 6px; border-radius: 2px; background: var(--blue); color: #fff; font-family: var(--mono); font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap; }
+.b .tileNote { font-size: 12px; font-weight: 500; line-height: 1.35; color: var(--mute); }
+.b .tilePrice { grid-area: price; font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.b .tileFree { color: var(--ok); }
+.b .more { margin-top: 8px; padding: 8px 12px; border: 1.5px dashed var(--ink); border-radius: 2px; background: #fff; font-size: 13px; font-weight: 700; }
+.b .more:hover { background: var(--paper); }
+
+.b .sum { display: flex; flex-direction: column; gap: 12px; }
+.b .rows { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.b .row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--rule); font-size: 14px; font-weight: 600; line-height: 1.3; font-variant-numeric: tabular-nums; }
+.b .row > span:last-child { flex: none; font-weight: 800; }
+.b .rowFree { color: var(--ok); }
+.b .rowNone { color: var(--mute); font-weight: 500; }
+.b .total { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 14px; font-weight: 700; }
+.b .total b { font-size: 30px; font-weight: 900; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+.b .fine { margin: -6px 0 0; font-size: 12px; font-weight: 600; color: var(--ok); }
+.b .trial { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 12px; list-style: none; border: 1.5px solid var(--ink); border-radius: 2px; background: var(--paper); }
+.b .trial li { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; font-weight: 500; line-height: 1.4; }
+.b .trial b { font-weight: 800; }
+.b .better { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1.5px solid var(--ok); border-radius: 2px; background: #eef6f0; }
+.b .better p { margin: 0; font-size: 13px; font-weight: 500; line-height: 1.4; }
+.b .betterBtn { align-self: flex-start; padding: 7px 12px; border: 2px solid var(--ink); border-radius: 2px; background: #fff; font-size: 12px; font-weight: 800; letter-spacing: 0.04em; box-shadow: 2px 2px 0 var(--ink); }
+.b .betterBtn:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+.b .act { display: flex; flex-direction: column; gap: 8px; }
+
+/* The start button, for the pages that hand in a link (the landing, /pricing). */
+.go {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 16px;
+  border: 2px solid var(--ink);
+  border-radius: 2px;
+  background: var(--blue);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: center;
+  text-decoration: none;
+  box-shadow: 3px 3px 0 var(--ink);
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+.go:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ink); }
+.go:active { transform: none; box-shadow: 1px 1px 0 var(--ink); }
+
+/* The ad's line over the builder. */
+.adLine { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 20px; padding: 12px 14px; border: 2px solid #0a0a0a; border-radius: 2px; background: #fff; color: #0a0a0a; font-size: 14px; font-weight: 600; line-height: 1.4; }
+.adLineInk { background: #0a0a0a; color: #f2f0eb; border-color: #4a9eff; }
+.adLine b { padding: 3px 8px; border-radius: 2px; background: #1854a0; color: #fff; font-family: var(--font-mono, ui-monospace, monospace); font-size: 10.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+
+@container jfbuild (max-width: 980px) {
+  .b .sizes { gap: 12px; }
+  .b .size { padding: 18px 14px 14px; }
+  .b .sizePrice { font-size: 32px; }
+  .b .body { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .b .sumCol { position: static; }
+}
+@container jfbuild (max-width: 700px) {
+  .b .sizes { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+  .b .size { padding: 16px 12px 12px; gap: 6px; }
+  .b .sizePrice { font-size: 28px; }
+  .b .sizeWho { font-size: 12px; }
+  .b .sizeLines { display: none; }
+  .b .pickedLines { display: flex; flex-direction: column; margin: 0 0 26px; padding: 12px 14px; border: 2px solid var(--ink); border-radius: 2px; background: #fff; }
+  .b .pickedLinesH { margin-bottom: 4px; font-family: var(--mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--blue); }
+  .b .tiles { grid-template-columns: minmax(0, 1fr); }
+  .b .tile { min-height: 44px; }
+  .b .panel { padding: 14px 12px 14px; }
+  .b .total b { font-size: 26px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .b .size, .go, .b .betterBtn { transition: none; }
+  .b .size:hover, .go:hover, .b .betterBtn:hover { transform: none; }
+}

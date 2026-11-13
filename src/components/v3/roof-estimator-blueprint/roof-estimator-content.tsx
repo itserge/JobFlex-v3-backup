@@ -34,7 +34,10 @@ export function RoofEstimatorContent({
   webRoof,
   proposalId,
   homeState = null,
+  roofDiagramPreview = false,
 }: {
+  /** A platform admin is looking (2026-11-12): the roof diagram card (lib/roofFacets) shows under a saved measurement. */
+  roofDiagramPreview?: boolean;
   /** A lead's address, typed into the search field on arrival (lib/estimateSeed). */
   initialAddress?: string;
   /** A Lead Center lead the homeowner priced on /price (2026-10-27): its whole hidden estimate opens here. */
@@ -74,7 +77,7 @@ export function RoofEstimatorContent({
         drawingEnabled && evEnabled ? (
           <RoofEstimatorBlueprintForm aiEnabled={aiEnabled} />
         ) : (
-          <RoofEstimatorDataForm aiEnabled={aiEnabled} evEnabled={evEnabled} measurementEnabled={measurementEnabled} initialAddress={initialAddress} leadEstimateId={leadEstimateId} webRoof={webRoof} proposalId={proposalId} homeState={homeState} />
+          <RoofEstimatorDataForm aiEnabled={aiEnabled} evEnabled={evEnabled} measurementEnabled={measurementEnabled} initialAddress={initialAddress} leadEstimateId={leadEstimateId} webRoof={webRoof} proposalId={proposalId} homeState={homeState} roofDiagramPreview={roofDiagramPreview} />
         )
       ) : (
         <div className="card rf-card">

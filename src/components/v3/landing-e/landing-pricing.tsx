@@ -6,8 +6,9 @@ import "./pricing-faq.css";
 import { CustomPlanBlock } from "@/components/v3/pricing-d/custom-plan-block";
 import { DeckAddonPlate } from "@/components/v3/pricing-d/deck-addon-plate";
 import { showsTool, type SpotlightTool } from "@/lib/planSpotlight";
-import { isToolsCatalog, toolsBanner, withPlanQuery, adKeyOf } from "@/lib/toolPlans/cards";
-import type { ToolId } from "@/lib/toolPlans/shared";
+import { isToolsCatalog } from "@/lib/toolPlans/cards";
+import type { Catalog, ToolId } from "@/lib/toolPlans/shared";
+import { VisitorToolsBuilder } from "@/components/v3/tools-plan/tools-builder";
 
 /* The price anchor before the footer (CRO stage 2, 2026-09-09). The plans
    are the Subscription page's own catalogue (PricingPlan, via
@@ -28,10 +29,13 @@ export function LandingPricing({
   narrow = false,
   fromUrl = null,
   mainTool = null,
+  toolsCatalog = null,
 }: {
   plans: PlanDTO[];
-  /** The new plans (Plans switch on): the tool the cards are priced with — their first line, and the banner. */
+  /** The new plans (Plans switch on): the ad's tool — ticked in the builder when the page opens. */
   mainTool?: ToolId | null;
+  /** The new plans: the sizes and tools at the prices in force (lib/toolPlans/prices) — the builder draws from it. */
+  toolsCatalog?: Catalog | null;
   /** The tool the visitor came for (lib/planSpotlight): pinned and marked on every card. */
   spotlight?: SpotlightTool | null;
   /** Hide the other trade estimators — only during the ad visit (lib/planSpotlight spotlightNarrows). */
@@ -46,16 +50,11 @@ export function LandingPricing({
 }) {
   const sellable = plans.filter((p) => !p.isFree);
   if (!sellable.length) return null;
-  /* THE NEW PLANS (Base + Tools, part 4): the cards are the four sizes priced with the ad's tool, each start button
-     opening the sign-up on its own plan. Deck Studio is one of their twelve tools, not the Classic add-on, and the
-     Classic custom plan is not sold beside them — both plates stay off. */
-  const tools = isToolsCatalog(sellable)
-    ? {
-        main: mainTool,
-        banner: mainTool ? toolsBanner(mainTool) : null,
-        startHrefs: Object.fromEntries(sellable.map((p) => [p.slug, withPlanQuery(registerHref, p.slug, adKeyOf(mainTool))])),
-      }
-    : undefined;
+  /* THE NEW PLANS (Base + Tools; the builder, owner 2026-11-12): no cards priced with a tool — the visitor builds the
+     plan: a size at its own price, the tools they want to try ticked on top (the ad's tool comes ticked), and one
+     start button that carries it all to the sign-up. Deck Studio is one of the tools, not the Classic add-on, and
+     the Classic custom plan is not sold beside them — both plates stay off. */
+  const tools = isToolsCatalog(sellable) && toolsCatalog ? { catalog: toolsCatalog, main: mainTool } : undefined;
 
   return (
     <section id="pricing" className="lp-price relative overflow-hidden px-5 py-[8vmin] sm:px-6">
@@ -64,11 +63,15 @@ export function LandingPricing({
           <h2 className="lp-sec-title lp-sec-title--on-ink">Subscription plans</h2>
           {/* U+2011 non-breaking hyphens: the line never breaks at "per-/seat" or "add-/ons". */}
           {/* The new plans sell people past a size's own and tools on top: the Classic line would not be true of them. */}
-          <p className="lp-sec-lede lp-sec-lede--on-ink">{tools ? "One monthly bill · add or remove a tool any time" : "Flat monthly price · no per‑seat add‑ons"}</p>
+          <p className="lp-sec-lede lp-sec-lede--on-ink">{tools ? "Build your plan · try it free · keep only what you use" : "Flat monthly price · no per‑seat add‑ons"}</p>
         </Reveal>
 
         <Reveal delay={120} className="mt-9 sm:mt-11">
-          <PricingPlans plans={sellable} registerHref={registerHref} tone="ink" spotlight={spotlight} narrow={narrow} fromUrl={fromUrl} tools={tools} />
+          {tools ? (
+            <VisitorToolsBuilder catalog={tools.catalog} adTool={tools.main} registerHref={registerHref} narrow={narrow} tone="ink" />
+          ) : (
+            <PricingPlans plans={sellable} registerHref={registerHref} tone="ink" spotlight={spotlight} narrow={narrow} fromUrl={fromUrl} />
+          )}
         </Reveal>
 
         {/* The Deck Studio add-on (owner, 2026-10-26): on any plan, in the trial. A trade estimator: hidden while a

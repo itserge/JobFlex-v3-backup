@@ -15,6 +15,7 @@
 
 import { NoOrgError, UnauthorizedError, requireOrg, roleMayOpen } from "@/lib/orgContext";
 import { buildDashboardData } from "./dashboard-data";
+import { toolsWelcomeDue } from "@/lib/toolPlans/view";
 import type { DashboardData } from "@/components/v3/dashboard-blueprint/blueprint-data";
 
 /** Either the rows, or WHY there are none. The two "no rows" cases are ordinary
@@ -24,7 +25,7 @@ import type { DashboardData } from "@/components/v3/dashboard-blueprint/blueprin
  *  screen. A genuine failure still throws. */
 export type DashboardRead =
   | { ok: true; data: DashboardData }
-  | { ok: false; reason: "no-org" | "signed-out" | "no-access" };
+  | { ok: false; reason: "no-org" | "signed-out" | "no-access" | "welcome" };
 
 export async function getDashboardData(opts: { showTour?: boolean } = {}): Promise<DashboardRead> {
   try {
@@ -33,6 +34,10 @@ export async function getDashboardData(opts: { showTour?: boolean } = {}): Promi
     // the page gate; a crafted call gets the same answer (2026-10-12).
     const { role } = await requireOrg();
     if (!roleMayOpen(role, "/dashboard")) return { ok: false, reason: "no-access" };
+    // A new-plan shop's owner, the first time here: the welcome page first, as ./page.tsx sends the desk (owner,
+    // 2026-11-12). The handheld Overview is mounted in place of the page, so the page's own redirect never reaches a
+    // phone that arrived by a client navigation (the sign-up's last step) — this answer does.
+    if (await toolsWelcomeDue()) return { ok: false, reason: "welcome" };
     return { ok: true, data: await buildDashboardData({ showTour: opts.showTour === true }) };
   } catch (err) {
     if (err instanceof NoOrgError) return { ok: false, reason: "no-org" };
