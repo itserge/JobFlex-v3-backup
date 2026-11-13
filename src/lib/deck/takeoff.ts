@@ -22,6 +22,8 @@ import { PIER_BLOCK, STOCK_LENGTHS_FT, type DeckFrame, type Stick, type StickRol
 import type { DeckSurface } from "./surface";
 import { LEDGER_FASTENER_LABEL, ftIn, type LedgerFastener } from "./codeTables";
 import { POST_HARDWARE_FACTOR, STAINLESS_FACTOR, lumberKey, tubeFactor } from "./rates";
+import { isCompositeFraming } from "./catalog";
+import { OC_NOTCH_SCREWS_PER_ROW, OC_POST, OC_STOCK_LENGTHS_FT } from "./ocLumber";
 import type { RoofMember, RoofRole } from "./roof";
 import { type CustomSlot, ROOFING_LABEL, type DeckDesign } from "./design";
 import type { DeckStructure } from "./structure";
@@ -145,9 +147,9 @@ const ROOF_ROLE_STEP: Partial<Record<RoofRole, BomStep>> = {
 };
 export const FIXTURE_RATE: Record<FixtureKind, string> = { "led-strip": "elec.ledStrip", "post-cap": "elec.postCap", "step-light": "elec.stepLight", "string-light": "elec.string", sconce: "elec.sconce", "ceiling-light": "elec.ceilingLight", chandelier: "elec.chandelier", fan: "elec.fan", outlet: "elec.gfci", heater: "elec.heater120", flood: "elec.flood" };
 
-/** The shortest stock a stick comes out of. */
-export function stockFor(lengthIn: number): number {
-  return STOCK_LENGTHS_FT.find((s) => s * 12 >= lengthIn - 0.01) ?? STOCK_LENGTHS_FT[STOCK_LENGTHS_FT.length - 1];
+/** The shortest stock a stick comes out of (OC Lumber comes in 12, 16 and 20 ft only). */
+export function stockFor(lengthIn: number, stocks: readonly number[] = STOCK_LENGTHS_FT): number {
+  return stocks.find((s) => s * 12 >= lengthIn - 0.01) ?? stocks[stocks.length - 1];
 }
 
 /** A member longer than stock is bought in pieces, spliced: how many, and from what stock. */
@@ -190,9 +192,12 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
   const levels = structureLevels(s);
   const species = s.frame?.species ?? roof?.species;
   const lines: BomLine[] = [];
-  const speciesFactor = species?.priceFactor ?? 1;
+  // OC LUMBER (2026-11-12): the deck's frame is bought as OC boards on their own rows and lengths; the stairs, the
+  // rails and a roof stay sawn wood (the roof's own species prices them).
+  const oc = isCompositeFraming(s.frame?.species ?? null);
+  const speciesFactor = oc ? (roof?.species.priceFactor ?? 1) : (species?.priceFactor ?? 1);
   const metal = design.extras.stainless ? STAINLESS_FACTOR : 1;
-  const grade = (ground: boolean) => (species?.treated !== false ? (ground ? "ground-contact" : "above-ground") : "heartwood");
+  const grade = (ground: boolean, ocMember = false) => (ocMember ? "OC Lumber composite, black" : oc || species?.treated !== false ? (ground ? "ground-contact" : "above-ground") : "heartwood");
   let framingLf = 0;
   let groundContactLf = 0;
 
@@ -207,13 +212,14 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
     }
     lines.push(l);
   };
-  const lumber = (step: BomStep, roleLabel: string, nominal: string, stockFt: number, boards: number, ground: boolean, note?: string, idTag = roleLabel) => {
+  const lumber = (step: BomStep, roleLabel: string, nominal: string, stockFt: number, boards: number, ground: boolean, note?: string, idTag = roleLabel, ocMember = false) => {
     if (!(boards > 0)) return;
     framingLf += boards * stockFt;
-    if (ground) groundContactLf += boards * stockFt;
-    const id = `lumber-${idTag.replace(/\s+/g, "-")}-${nominal.replace(/[^\w.]+/g, "")}-${stockFt}`;
-    push({ id, step, kind: "lumber", label: `${nominal} × ${stockFt} ft — ${roleLabel}`, qty: boards, unit: "pcs", note: [grade(ground), note].filter(Boolean).join(" · "), rateKey: lumberKey(nominal), rateQty: boards * stockFt, factor: speciesFactor });
+    if (ground && !ocMember) groundContactLf += boards * stockFt;
+    const id = `lumber-${idTag.replace(/\s+/g, "-")}-${ocMember ? "oc" : ""}${nominal.replace(/[^\w.]+/g, "")}-${stockFt}`;
+    push({ id, step, kind: "lumber", label: `${ocMember ? "OC Lumber " : ""}${nominal} × ${stockFt} ft — ${roleLabel}`, qty: boards, unit: "pcs", note: [grade(ground, ocMember), note].filter(Boolean).join(" · "), rateKey: lumberKey(nominal, ocMember), rateQty: boards * stockFt, factor: ocMember ? 1 : speciesFactor });
   };
+  const frameStocks: readonly number[] = oc ? OC_STOCK_LENGTHS_FT : STOCK_LENGTHS_FT;
   const hw = (id: string, step: BomStep, label: string, qty: number, rateKey: string, factor = 1, unit: BomLine["unit"] = "ea", note?: string) => {
     if (!(qty > 0)) return;
     push({ id, step, kind: "hardware", label, qty, unit, note, rateKey, rateQty: qty, factor: factor * metal });
@@ -233,7 +239,7 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
     for (const role of ["ledger", "beam", "joist", "rim"] as const) {
       for (const st of byRole(role)) {
         if (st.curved) continue;
-        lumber(ROLE_STEP[role], ROLE_LABEL[role], st.nominal, stockFor(st.lengthIn), 1, st.ground, undefined, role);
+        lumber(ROLE_STEP[role], ROLE_LABEL[role], st.nominal, stockFor(st.lengthIn, frameStocks), 1, st.ground, undefined, role, oc);
       }
     }
     const curvedIn = byRole("rim").filter((st) => st.curved).reduce((a, st) => a + st.lengthIn, 0);
@@ -242,22 +248,27 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
       push({ id: "rim-curved", step: "framing", kind: "lumber", label: "Curved rim — 1/2-in. treated plywood plies, bent to the bow", qty: Math.ceil((curvedIn / 12) * plies), unit: "ft", note: `${plies} plies, glued and screwed, ${Math.round(curvedIn / 12)} ft of arc`, rateKey: "rim.curved", rateQty: Math.ceil((curvedIn / 12) * plies), factor: 1 });
     }
     const shorts = (role: StickRole, stocks: readonly number[]) => {
-      const groups = new Map<string, { nominal: string; ground: boolean; lengths: number[] }>();
+      const groups = new Map<string, { nominal: string; ground: boolean; lengths: number[]; posts: number }>();
       for (const st of byRole(role) as Stick[]) {
-        const g = groups.get(st.nominal) ?? { nominal: st.nominal, ground: st.ground, lengths: [] };
-        g.lengths.push(Math.ceil(st.lengthIn * 4 - 1e-9) / 4);
-        groups.set(st.nominal, g);
+        // A built-up OC post is three 2x6 OC boards, each cut to the post's height.
+        const built = st.nominal === OC_POST;
+        const nominal = built ? "2x6" : st.nominal;
+        const g = groups.get(nominal) ?? { nominal, ground: st.ground, lengths: [], posts: 0 };
+        for (let k = 0; k < (built ? 3 : 1); k++) g.lengths.push(Math.ceil(st.lengthIn * 4 - 1e-9) / 4);
+        if (built) g.posts += 1;
+        groups.set(nominal, g);
       }
       for (const g of groups.values()) {
         const pack = packPieces(g.lengths, stocks);
         const min = Math.min(...g.lengths);
         const max = Math.max(...g.lengths);
-        lumber(ROLE_STEP[role], ROLE_LABEL[role], g.nominal, pack.stockFt, pack.boards, g.ground, `${g.lengths.length} cut ${max - min < 0.5 ? `at ${ftIn(max)}` : `from ${ftIn(min)} to ${ftIn(max)}`}`, role);
+        const cut = `${g.lengths.length} cut ${max - min < 0.5 ? `at ${ftIn(max)}` : `from ${ftIn(min)} to ${ftIn(max)}`}`;
+        lumber(ROLE_STEP[role], ROLE_LABEL[role], g.nominal, pack.stockFt, pack.boards, g.ground, g.posts ? `${cut} — ${g.posts} posts, three boards each` : cut, role, oc);
       }
     };
-    shorts("post", [8, 10, 12, 16]);
-    shorts("blocking", [8, 10, 12, 16]);
-    shorts("brace", [8]);
+    shorts("post", oc ? OC_STOCK_LENGTHS_FT : [8, 10, 12, 16]);
+    shorts("blocking", oc ? OC_STOCK_LENGTHS_FT : [8, 10, 12, 16]);
+    shorts("brace", oc ? [12] : [8]);
 
     // Footings (the roof's posts on the deck have theirs here too).
     const poured = frame.posts.filter((p) => p.footing.type === "poured");
@@ -276,9 +287,10 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
     if (blocks > 0) push({ id: "pier-blocks", step: "footings", kind: "concrete", label: `Precast pier blocks, ${PIER_BLOCK.baseIn} in.`, qty: blocks, unit: "ea", rateKey: "conc.pierBlock", rateQty: blocks, factor: 1 });
     const postFactor = POST_HARDWARE_FACTOR[design.framing.post] ?? 1;
     const deckBases = poured.filter((p) => !p.roof).length;
-    hw("post-bases", "footings", `Post bases, ${design.framing.post}`, deckBases, "hw.postBase", postFactor);
+    const ocPost = design.framing.post === OC_POST;
+    hw("post-bases", "footings", ocPost ? "Post bases for 3-ply 2x6 OC posts (4 1/2 × 5 1/2 in.), 2,000-lb uplift" : `Post bases, ${design.framing.post}`, deckBases, "hw.postBase", postFactor);
     hw("anchor-bolts", "footings", "Anchor bolts for the post bases", poured.length, "hw.anchorBolt");
-    hw("post-caps", "footings", `Post caps, ${design.framing.post}`, hardware.postCaps, "hw.postCap", postFactor);
+    hw("post-caps", "footings", ocPost ? "Beam-to-post caps for 3-ply OC beams, 2,000-lb uplift" : `Post caps, ${design.framing.post}`, hardware.postCaps, "hw.postCap", postFactor);
 
     // The ledger: its fasteners, the flashing over it, the membrane behind and above, the ties to the house.
     const ledgerFasteners = frame.ledgers.reduce((a, l) => a + l.fasteners, 0);
@@ -297,10 +309,29 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
     hw("hangers", "framing", `Joist hangers, ${frame.joistSize}`, hardware.hangers, "hw.hanger");
     hw("double-hangers", "framing", `Double joist hangers, ${frame.joistSize}`, hardware.doubleHangers, "hw.hangerDouble");
     hw("ties", "framing", "Hurricane ties, joist to beam", hardware.ties, "hw.tie");
-    hw("connector-fasteners", "framing", "Connector nails and screws", hardware.hangers + 2 * hardware.doubleHangers + hardware.ties + hardware.postCaps + poured.length, "hw.connectorFasteners", 1, "ea", "one set per connector");
-    hw("rim-screws", "framing", "Structural screws, rim to joists", hardware.rimScrews, "hw.structScrew", 1, "ea", "three in each joist end");
+    hw("connector-fasteners", "framing", oc ? "Connector screws, #9 × 1 1/2 in. exterior grade" : "Connector nails and screws", hardware.hangers + 2 * hardware.doubleHangers + hardware.ties + hardware.postCaps + poured.length, "hw.connectorFasteners", 1, "ea", oc ? "one set per connector — OC Lumber is screwed, never nailed" : "one set per connector");
     hw("brace-lags", "framing", "1/2-in. lag screws for the knee braces", hardware.braces * 2, "hw.lag", 1, "ea", "one at each end of a brace");
-    hw("framing-fasteners", "framing", "Framing nails and screws", Math.round(frame.areaSqFt), "fast.framing", 1, "sq ft");
+    if (oc) {
+      // OC framing is screwed together with stainless composite screws (DrJ listing 2302-42, 6.7; the installation
+      // guide's steps): two rows 16 in. apart along every ply of a beam, two rows 12 in. apart along a doubled band
+      // joist or rim, three each end of a block, three into each joist end through the rim, the notched posts' rows;
+      // the posts' plies with #10 x 4 in., two rows 8 in. apart.
+      const rows = (lengthIn: number, everyIn: number) => 2 * (Math.floor(lengthIn / everyIn) + 1);
+      let screws3 = hardware.rimScrews;
+      for (const b of frame.beams) screws3 += (b.spec.plies - 1) * rows(b.x1 - b.x0, 16);
+      const sisterXs = frame.joists.filter((j) => j.sister).map((j) => j.x);
+      for (const st of byRole("joist")) if (sisterXs.some((x) => Math.abs(x - st.cx) < 0.01)) screws3 += rows(st.lengthIn, 12);
+      if (design.framing.doubleRim) screws3 += Math.round(byRole("rim").reduce((a, st) => a + rows(st.lengthIn, 12), 0) / 2);
+      screws3 += 6 * byRole("blocking").length;
+      const notchDepth = Math.max(6, ...frame.beams.filter((b) => b.spec.plies === 2).map((b) => Number(b.spec.stock.slice(2))));
+      screws3 += hardware.notchedPosts * 2 * (OC_NOTCH_SCREWS_PER_ROW[notchDepth] ?? 4);
+      const screws4 = byRole("post").reduce((a, st) => a + (st.nominal === OC_POST ? 2 * rows(st.lengthIn, 8) : 0), 0);
+      hw("oc-screws-3", "framing", "Stainless composite screws, #10 × 3 in. — OC framing", screws3, "hw.ocScrew3", 1 / metal, "ea", "beams, doubled band joists and rim, blocking, rim to joist ends, notched posts");
+      hw("oc-screws-4", "framing", "Stainless composite screws, #10 × 4 in. — OC posts", screws4, "hw.ocScrew4", 1 / metal, "ea", "three boards to a post, two rows 8 in. apart, staggered");
+    } else {
+      hw("rim-screws", "framing", "Structural screws, rim to joists", hardware.rimScrews, "hw.structScrew", 1, "ea", "three in each joist end");
+      hw("framing-fasteners", "framing", "Framing nails and screws", Math.round(frame.areaSqFt), "fast.framing", 1, "sq ft");
+    }
     if (design.framing.joistTape) {
       const topsIn = frame.sticks.filter((st) => st.role === "joist" || st.role === "rim" || st.role === "ledger" || st.role === "beam").reduce((a, st) => a + st.lengthIn, 0);
       hw("joist-tape", "framing", "Joist tape", Math.ceil(topsIn / 12 / 10 - 1e-9) * 10, "hw.joistTape", 1 / metal, "ft", "joists, rim, ledger and beam tops");

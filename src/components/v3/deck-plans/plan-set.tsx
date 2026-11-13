@@ -30,6 +30,7 @@ import { legendView } from "@/lib/deck/plans/legend";
 import { buildSequence, cutList, stringerLayout, stringerView } from "@/lib/deck/plans/crew";
 import { lateralDevices } from "@/lib/deck/permit";
 import { LEDGER_FASTENER_LABEL, RULE } from "@/lib/deck/codeTables";
+import { OC_POST, OC_SOURCES, postWords } from "@/lib/deck/ocLumber";
 import { railNamed } from "@/lib/deck/rails";
 import { permitSheetList, crewSheetList, type PlanSheet } from "@/lib/deck/plans/sheets";
 import { PAPERS, fitOn, type Paper, type PaperKey } from "@/lib/deck/plans/paper";
@@ -394,7 +395,11 @@ function FoundationSheet({ m }: { m: PlanModel }) {
           <ol className={s.notes}>
             <li>Footings bear on undisturbed soil, the bottom at least {inFrac(d.frostIn)} below grade — the frost depth used for this design; the building department may set a deeper one.</li>
             <li>Concrete 2,500 psi at 28 days, minimum. Piers formed with round tubes, the top at least 1&quot; above grade under each post base.</li>
-            <li>Posts {m.f.posts[0]?.size ?? "6x6"} preservative-treated for ground contact, on a metal post base anchored to the pier; no post buried in the soil.</li>
+            {m.f.posts[0]?.size === OC_POST ? (
+              <li>Posts built up of three 2x6 Owens Corning OC Lumber boards, #10 x 4&quot; stainless screws 8&quot; apart, staggered; on a metal post base of 2,000 lb uplift anchored to the pier; 9 ft tall at most, braced.</li>
+            ) : (
+              <li>Posts {m.f.posts[0]?.size ?? "6x6"} preservative-treated for ground contact, on a metal post base anchored to the pier; no post buried in the soil.</li>
+            )}
             <li>Call 811 at least two business days before digging. Verify every footing location against the layout before pouring.</li>
             <li>Footing inspection before concrete is placed, where the building department requires it.</li>
           </ol>
@@ -426,8 +431,8 @@ function FramingSheet({ m }: { m: PlanModel }) {
     ["Joist hanger", `${f.joistSize} face-mount`, "Every joist end on the ledger or a flush beam", hw.hangers],
     ["Double hanger", `(2) ${f.joistSize}`, "The doubled outside joists", hw.doubleHangers],
     ["Hurricane tie", "Joist to beam", "Every joist on a dropped beam", hw.ties],
-    ["Post cap", `${d.framing.post} to beam`, "Every post", hw.postCaps],
-    ["Post base", `${d.framing.post}, standoff`, "Every post, 1\" above the concrete", hw.postBases],
+    ["Post cap", `${postWords(d.framing.post)} to beam`, d.framing.post === OC_POST ? "Every post under a 3-ply beam (2-ply beams sit in a notch)" : "Every post", hw.postCaps],
+    ["Post base", `${postWords(d.framing.post)}, standoff`, "Every post, 1\" above the concrete", hw.postBases],
     ["Lateral device", devices.length ? `${devices[0].lb.toLocaleString("en-US")} lb hold-down` : "—", RULE.lateral, devices.length],
     ["Ledger fastener", d.placement === "attached" ? LEDGER_FASTENER_LABEL[d.ledger.fastener] : "—", f.ledgers[0] ? `${f.ledgers[0].spacingIn}\" o.c., 2 rows staggered` : "—", f.ledgers.reduce((a, l) => a + l.fasteners, 0)],
     ["Rim screw", "Structural screw", "Three in each joist end", hw.rimScrews],
@@ -482,7 +487,11 @@ function FramingSheet({ m }: { m: PlanModel }) {
         <Card k="notes" label="Framing notes">
           <div className={s.h}>Framing notes</div>
           <ol className={s.notes}>
-            <li>Lumber {f.species.label.toLowerCase()}, No. 2 or better, preservative-treated: ground-contact for posts, beams and the ledger, above-ground elsewhere (AWPA U1).</li>
+            {f.group === "OC" ? (
+              <li>Framing Owens Corning OC Lumber (glass-fiber composite), sized on {OC_SOURCES.spans.title} and {OC_SOURCES.listing.title} — not IRC R507; screwed with #10 x 3&quot; stainless composite screws, never nailed; blocking every 5 ft at most.</li>
+            ) : (
+              <li>Lumber {f.species.label.toLowerCase()}, No. 2 or better, preservative-treated: ground-contact for posts, beams and the ledger, above-ground elsewhere (AWPA U1).</li>
+            )}
             <li>Joists {f.joistSize} at {f.spacingIn}&quot; on centre, crowned up; {d.framing.doubleRim ? "outside joists and rim doubled" : "single rim"}; full-depth blocking where tagged BK.</li>
             <li>Every joist end on the ledger in a face-mount hanger with every nail hole filled with the maker&apos;s fasteners; joists on a dropped beam tied to it.</li>
             {m.attached ? <li>Ledger to the house band joist only — never to brick veneer, a cantilevered floor or siding alone — with metal flashing over it and membrane behind (detail {DETAIL_NO.ledger}/S-501).</li> : <li>Free-standing: braced at the corner posts both ways; no load on the house.</li>}
@@ -927,7 +936,11 @@ function SchedulesSheet({ list, m }: { list: MaterialList; m: PlanModel | null }
           <div className={s.h}>Material notes</div>
           <ol className={s.notes}>
             <li>Quantities are the studio&apos;s takeoff of this design, waste included where noted. Confirm counts against the site before ordering.</li>
-            <li>Treated lumber: ground-contact (UC4A) for posts, beams, the ledger and anything within 6&quot; of the soil; above-ground (UC3B) elsewhere.</li>
+            {m?.f.group === "OC" ? (
+              <li>Framing: Owens Corning OC Lumber, black, in 12, 16 and 20 ft — no treatment; it may touch the ground and water. Stairs and anything not framed in OC: treated lumber, ground-contact (UC4A) near the soil.</li>
+            ) : (
+              <li>Treated lumber: ground-contact (UC4A) for posts, beams, the ledger and anything within 6&quot; of the soil; above-ground (UC3B) elsewhere.</li>
+            )}
             <li>Connectors and fasteners hot-dip galvanized (G185) or stainless where in contact with treated lumber; stainless within 300 ft of salt water.</li>
             <li>A substitution matches or exceeds the size, grade, species and corrosion resistance named here.</li>
           </ol>

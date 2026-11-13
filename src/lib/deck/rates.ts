@@ -53,6 +53,12 @@ export interface DeckRateDef {
 }
 
 const lumber = (nominal: string, price: number): DeckRateDef => ({ key: `lf.${nominal}`, label: `${nominal} framing lumber`, unit: "ft", price, group: "lumber", basis: "vinyl", min: 0.1, max: 80 });
+/**
+ * OC Lumber by the foot (2026-11-12): The Deck Store's 16-ft black board ÷ 16, November 2026 (read off its product
+ * feed: 2x4 $88.24, 2x6 $145.21, 2x8 $171.64, 2x10 $200.97, 2x12 $254.55). Shipped by freight from a dealer, so the
+ * job's market does not move it (basis null); the freight is the dealer's.
+ */
+const ocLumber = (nominal: string, price: number): DeckRateDef => ({ key: `oc.${nominal}`, label: `OC Lumber ${nominal}, Owens Corning composite (The Deck Store, Nov 2026)`, unit: "ft", price, group: "lumber", basis: null, min: 0.5, max: 80 });
 const hw = (key: string, label: string, price: number, unit = "ea", max = 400): DeckRateDef => ({ key: `hw.${key}`, label, unit, price, group: "hardware", basis: "metal", min: 0.01, max });
 const labor = (key: string, label: string, unit: string, price: number, max = 400): DeckRateDef => ({ key: `labor.${key}`, label, unit, price, group: "labor", basis: "labor", min: 0.1, max });
 const roofLabor = (key: string, label: string, unit: string, price: number, max = 2000): DeckRateDef => ({ key: `labor.${key}`, label, unit, price, group: "roofLabor", basis: "labor", min: 0.1, max });
@@ -83,6 +89,11 @@ export const DECK_RATES: readonly DeckRateDef[] = [
   lumber("2x2", 0.55),
   lumber("1x8", 1.6),
   lumber("1x10", 2.2),
+  ocLumber("2x4", 5.52),
+  ocLumber("2x6", 9.08),
+  ocLumber("2x8", 10.73),
+  ocLumber("2x10", 12.56),
+  ocLumber("2x12", 15.91),
   ...DECKING.map((d): DeckRateDef => ({ key: `deck.${d.id}`, label: d.label, unit: "ft", price: d.pricePerLf, group: "decking", basis: d.basis, min: 0.2, max: 60 })),
   { key: "fascia.wood", label: "Fascia board, wood", unit: "ft", price: 2.2, group: "decking", basis: "cedar", min: 0.2, max: 60 },
   { key: "fascia.composite", label: "Fascia board, composite or PVC", unit: "ft", price: 5, group: "decking", basis: "vinyl", min: 0.2, max: 60 },
@@ -104,6 +115,9 @@ export const DECK_RATES: readonly DeckRateDef[] = [
   hw("holddown", "Lateral hold-down, 1,500 lb, with rod", 28),
   hw("holddownSmall", "Lateral tie, 750 lb", 9),
   hw("structScrew", "Structural wood screw, rim to joist", 0.45),
+  // OC Lumber is screwed, never nailed (DrJ listing 2302-42, 6.7): stainless composite screws, about $95 for 350.
+  hw("ocScrew3", "Stainless composite screw, #10 x 3 in. — OC framing", 0.28),
+  hw("ocScrew4", "Stainless composite screw, #10 x 4 in. — OC posts", 0.4),
   hw("flashing", "Ledger cap flashing", 2.5, "ft"),
   hw("membrane", "Flashing membrane tape", 0.9, "ft"),
   hw("joistTape", "Joist tape", 0.35, "ft"),
@@ -262,7 +276,7 @@ export const DECK_RATES: readonly DeckRateDef[] = [
 const BY_KEY = new Map(DECK_RATES.map((r) => [r.key, r]));
 
 /** A post base or cap for another post size, against the 6x6's price. */
-export const POST_HARDWARE_FACTOR: Record<string, number> = { "4x4": 0.55, "4x6": 0.7, "6x6": 1, "8x8": 1.8 };
+export const POST_HARDWARE_FACTOR: Record<string, number> = { "4x4": 0.55, "4x6": 0.7, "6x6": 1, "8x8": 1.8, "3-2x6": 1 };
 /** Stainless connectors and fasteners, against galvanized — an EXAMPLE factor. */
 export const STAINLESS_FACTOR = 2.2;
 /** A form tube wider than 12 in., priced in proportion to its width. */
@@ -325,7 +339,8 @@ export function deckRateRows(book?: DeckRateBook): Array<DeckRateDef & { own: nu
 /** A price that is neither the shop's own nor a store's: an example (as is, or scaled to the market). */
 export const isExampleSource = (s: ResolvedRate["source"]) => s === "example" || s === "market";
 
-/** The lumber row a member is bought on: "2-2x10" and "2x10" are both 2x10 stock. */
-export function lumberKey(nominal: string): string {
-  return `lf.${nominal.replace(/^\d-/, "")}`;
+/** The lumber row a member is bought on: "2-2x10" and "2x10" are both 2x10 stock; OC framing is bought on its own rows. */
+export function lumberKey(nominal: string, composite = false): string {
+  const stock = nominal.replace(/^\d-/, "");
+  return composite && BY_KEY.has(`oc.${stock}`) ? `oc.${stock}` : `lf.${stock}`;
 }

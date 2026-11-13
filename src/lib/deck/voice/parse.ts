@@ -1092,6 +1092,8 @@ function readDecking(c: string, ctx: ParseContext): Read {
 /* ------------------------------------------------------------------ */
 
 const SPECIES_WORDS: ReadonlyArray<[RegExp, FramingSet["species"]]> = [
+  // Owens Corning's composite framing (2026-11-12): "frame it in OC lumber", "composite framing", "Owens Corning joists".
+  [/\b(?:oc lumber|o\.?c\.? (?:lumber|composite|framing|frame|joists)|owens corning|composite (?:framing|frame|joists|lumber))\b/, "oc-lumber"],
   [/\b(?:southern (?:yellow )?pine|syp|yellow pine)\b/, "southern-pine"],
   [/\bhem[- ]?fir\b/, "hem-fir"],
   [/\b(?:douglas fir|doug fir|df)\b/, "douglas-fir"],

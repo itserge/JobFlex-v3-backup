@@ -10,6 +10,7 @@ import type { StairBuild } from "../stairs";
 import { STRINGER_DEPTH_IN, TREAD_NOSING_IN } from "../stairs";
 import type { MaterialList } from "../materialList";
 import { LEDGER_FASTENER_LABEL } from "../codeTables";
+import { OC_POST } from "../ocLumber";
 import { Sketch, ftInFrac, inFrac, type ArchScale, type View } from "./draft";
 import type { PlanModel } from "./model";
 import { beamLabel } from "./model";
@@ -205,7 +206,9 @@ export function buildSequence(m: PlanModel, list: MaterialList): BuildPhase[] {
   out.push({
     title: "Posts and beams",
     steps: [
-      `Set the post bases; stand the ${d.framing.post} posts; cut each in place to the beam's underside (about ${ftInFrac(Math.max(6, (m.posts[0]?.post.heightIn ?? 12) - 1), 8)}).`,
+      d.framing.post === OC_POST
+        ? `Set the post bases; build each post from three 2x6 OC boards, #10 x 4" stainless screws 8" apart, staggered, from both faces; stand them; cut each in place to the beam's underside (about ${ftInFrac(Math.max(6, (m.posts[0]?.post.heightIn ?? 12) - 1), 8)}) — a 2-ply beam sits in a notch cut in the post, a 3-ply beam in a post cap.`
+        : `Set the post bases; stand the ${d.framing.post} posts; cut each in place to the beam's underside (about ${ftInFrac(Math.max(6, (m.posts[0]?.post.heightIn ?? 12) - 1), 8)}).`,
       ...f.beams.map((b) => `Beam ${m.beamTag.get(b.id) ?? ""}: ${beamLabel(b)} on post caps, splices over posts only, crowned up.`),
       ...(f.hardware.braces ? [`Knee braces at the ${f.hardware.braces} corner posts, 2 ft down and 2 ft out, a 1/2" lag each end.`] : []),
     ],
