@@ -40,9 +40,11 @@ check("a new California deck is drawn in Douglas fir on composite boards", d0.fr
 
 console.log("── the brands' own lines");
 const brandLines = DECKING.filter((d) => d.brand);
-check("twenty-nine brand lines (nine more makers 2026-10-24), every brand on the list has some, Trex five", brandLines.length === 29 && DECKING_BRAND_ORDER.every((b) => brandLines.some((d) => d.brand === b)) && brandLines.filter((d) => d.brand === "Trex").length === 5, `${brandLines.length}`);
-check("each is the maker's line: its guide read, 16 in. square, 12 in. at 45°, grooved for hidden clips", brandLines.every((d) => d.source === "maker" && d.maxSpacingIn.square === 16 && d.maxSpacingIn.diagonal === 12 && d.hiddenFasteners && d.sourceNote.length > 20));
-check("…named for its maker, the label starting with the brand", brandLines.every((d) => d.label.startsWith(d.brand!)));
+// 2026-11-12: Owens Corning's two Marine Grade boards make thirty-one.
+check("thirty-one brand lines (nine more makers 2026-10-24, Owens Corning 2026-11-12), every brand on the list has some, Trex five", brandLines.length === 31 && DECKING_BRAND_ORDER.every((b) => brandLines.some((d) => d.brand === b)) && brandLines.filter((d) => d.brand === "Trex").length === 5, `${brandLines.length}`);
+check("each is the maker's line: its guide read, 16 in. square, 12 in. at 45°, grooved for hidden clips", brandLines.filter((d) => d.brand !== "OwensCorning").every((d) => d.source === "maker" && d.maxSpacingIn.square === 16 && d.maxSpacingIn.diagonal === 12 && d.hiddenFasteners && d.sourceNote.length > 20));
+check("…but Owens Corning's glass-fiber boards: 24 in. square (its report), 16 in. at 45°, face-screwed", brandLines.filter((d) => d.brand === "OwensCorning").length === 2 && brandLines.filter((d) => d.brand === "OwensCorning").every((d) => d.source === "maker" && d.maxSpacingIn.square === 24 && d.maxSpacingIn.diagonal === 16 && !d.hiddenFasteners));
+check("…named for its maker, the label starting with the brand", brandLines.every((d) => d.label.replace(/ /g, "").startsWith(d.brand!)));
 check("…composite, PVC or mineral-based — never wood", brandLines.every((d) => d.family === "composite" || d.family === "pvc" || d.family === "mineral"));
 check("AZEK PVC carries its blocking rows (6 ft) and 1½ in. of air; Fiberon its 1½ in.; Deckorators Vista 2 in.", brandLines.filter((d) => d.id.startsWith("timbertech-azek")).every((d) => d.blockingRowsMaxFt === 6 && d.minClearanceIn === 1.5) && brandLines.filter((d) => d.brand === "Fiberon").every((d) => d.minClearanceIn === 1.5) && deckingProduct("deckorators-vista").minClearanceIn === 2);
 check("ground-contact boards (Surestone, MoistureShield) and Trex ask no fixed air gap", ["deckorators-summit", "deckorators-voyage", "moistureshield-vision", "trex-transcend"].every((id) => deckingProduct(id).minClearanceIn === undefined));
@@ -51,7 +53,7 @@ check("every brand line is a row of the price book", brandLines.every((d) => row
 const HD = ["trex-enhance-basics", "trex-enhance-naturals", "trex-select", "trex-transcend", "trex-transcend-lineage", "timbertech-azek-harvest", "timbertech-azek-vintage", "fiberon-armorguard", "fiberon-paramount", "deckorators-summit", "deckorators-vista", "deckorators-voyage", "moistureshield-vision"];
 check("the thirteen Home Depot sells are priced as Home Depot lists them", HD.every((id) => STORE_PRICES[`deck.${id}`] && deckRate(`deck.${id}`).source === "store" && Math.abs(STORE_PRICES[`deck.${id}`].price - deckingProduct(id).pricePerLf) < 0.011));
 const dealer = brandLines.filter((d) => !HD.includes(d.id));
-check("the sixteen it does not (the nine more makers among them) are examples at a dealer's or Lowe's price", dealer.length === 16 && dealer.every((d) => !STORE_PRICES[`deck.${d.id}`] && deckRate(`deck.${d.id}`).source === "example"), dealer.map((d) => d.id).join(", "));
+check("the eighteen it does not (the nine more makers and Owens Corning among them) are examples at a dealer's or Lowe's price", dealer.length === 18 && dealer.every((d) => !STORE_PRICES[`deck.${d.id}`] && deckRate(`deck.${d.id}`).source === "example"), dealer.map((d) => d.id).join(", "));
 check("prices climb with the tier: Enhance Basics < Select < Transcend", deckingProduct("trex-enhance-basics").pricePerLf < deckingProduct("trex-select").pricePerLf && deckingProduct("trex-select").pricePerLf < deckingProduct("trex-transcend").pricePerLf);
 
 console.log("── a deck on a brand's boards");

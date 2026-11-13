@@ -20,7 +20,8 @@
 // use an upright frame — X across, Z up from the grade — and the renderer
 // flips Z. A `dim` is a dimension string with ticks and its label.
 
-import { ftIn, LEDGER_FASTENER_LABEL, RULE } from "./codeTables";
+import { ftIn, LEDGER_FASTENER_LABEL, RULE, rulesFor } from "./codeTables";
+import { OC_POST, OC_RULE, OC_SOURCES } from "./ocLumber";
 import { RULE_RAFTER } from "./roofTables";
 import type { DeckDesign } from "./design";
 import type { DeckFrame, Post } from "./frame";
@@ -257,7 +258,9 @@ export function detailDrawings(s: DeckStructure, which: "floor" | "roof" | "all"
         title: "Post, beam and footing",
         drawing: { box: { x: -22, z: -Math.max(ft.depthIn, d.frostIn) - 12, w: 74, h: Math.max(ft.depthIn, d.frostIn) + postH + beamDepth + 20 }, items },
         notes: [
-          `${post.size} posts in metal post bases and caps; the tallest post ${ftIn(Math.max(...f.posts.map((p) => p.heightIn)))}. ${RULE.post}.`,
+          post.size === OC_POST
+            ? `Posts: three 2x6 OC Lumber boards screwed together (#10 x 4 in. stainless, 8 in. apart, staggered), in post bases of 2,000 lb uplift; a 2-ply beam sits in a notch screwed to the post, a 3-ply beam in a post cap; the tallest post ${ftIn(Math.max(...f.posts.map((p) => p.heightIn)))} (9 ft at most), braced. ${OC_RULE.post}.`
+            : `${post.size} posts in metal post bases and caps; the tallest post ${ftIn(Math.max(...f.posts.map((p) => p.heightIn)))}. ${RULE.post}.`,
           ft.type === "poured" ? `Footings ${ft.padIn} in. square (or round) and ${ft.padThickIn} in. thick on undisturbed soil, ${ft.depthIn} in. below grade — below the ${d.frostIn} in. frost line. ${RULE.footing}; ${RULE.frost}.` : `Precast pier blocks on compacted gravel; ${RULE.pierBlock}.`,
           `Soil taken at ${d.soilPsf.toLocaleString("en-US")} psf; each post carries at most ${Math.round(Math.max(...f.posts.map((p) => p.tributarySqFt)))} sq ft of deck.`,
         ],
@@ -297,7 +300,7 @@ export function detailDrawings(s: DeckStructure, which: "floor" | "roof" | "all"
         title: "Lateral bracing, free-standing",
         drawing: { box: { x: -18, z: -6, w: 56, h: 60 }, items },
         notes: [
-          `A deck that stands free braces itself: knee braces at the end posts of every beam, both ways, where the posts are over 2 ft — ${f.hardware.braces || "none"} on this deck. ${RULE.bracing}; ${RULE.selfSupporting}.`,
+          `A deck that stands free braces itself: knee braces at the end posts of every beam, both ways, where the posts are over 2 ft — ${f.hardware.braces || "none"} on this deck. ${rulesFor(f.group).bracing}; ${RULE.selfSupporting}.`,
           "This bracing is the deck's lateral system: it takes the sideways load a ledger would otherwise hand to the house.",
         ],
       });
@@ -589,8 +592,16 @@ export function permitNotes(s: DeckStructure, local: string[] = [], edition: str
   // The county's own edition when it is on file (lib/deck/countyCodes), else the state's.
   out.push(`All work to the ${edition ?? code.name} and the local amendments; the building department's review and inspections govern.`);
   if (f) {
-    out.push(`Framing lumber: ${f.species.label}, No. 2 or better. Preservative-treated per AWPA U1 — ground-contact for posts and anything within 6 in. of the soil, above-ground elsewhere (${RULE.treatment}).`);
-    out.push(`Fasteners and connectors hot-dip galvanized or stainless steel${d.extras.stainless ? " — stainless throughout here (within 300 ft of salt water)" : ""}; connectors installed with the maker's listed fasteners (${RULE.fasteners}).`);
+    const R = rulesFor(f.group);
+    if (f.group === "OC") {
+      // OC LUMBER (2026-11-12): an alternative material — the notes say whose tables size it and what goes with the permit.
+      out.push(`Framing: Owens Corning OC Lumber, glass-fiber-reinforced composite (2x nominal, 1 1/2 in. thick), installed to the maker's guide. Not sized from IRC R507: joists, beams and posts from ${OC_SOURCES.spans.title} and ${OC_SOURCES.listing.title} — the listing and the installation guide are submitted with this application (IRC R104.11).`);
+      out.push(`OC Lumber is screwed, never nailed: #10 x 3 in. stainless composite screws in two staggered rows through every ply of the beams (16 in. apart) and the doubled band joists (12 in.); #9 x 1 1/2 in. exterior screws in the hangers and ties; joist hangers of at least the listing's Table 6 capacities, beam-to-post connectors of 2,000 lb uplift (${OC_RULE.fasteners}; ${OC_RULE.hangers}).`);
+      out.push(`Joists cantilever no more than 2 ft or a quarter of the span; blocking between the joists every 5 ft at most and over every bearing; stair stringers and guard posts are outside the OC listing and are built in treated lumber or to their maker's details (${OC_RULE.cantilever}).`);
+    } else {
+      out.push(`Framing lumber: ${f.species.label}, No. 2 or better. Preservative-treated per AWPA U1 — ground-contact for posts and anything within 6 in. of the soil, above-ground elsewhere (${RULE.treatment}).`);
+      out.push(`Fasteners and connectors hot-dip galvanized or stainless steel${d.extras.stainless ? " — stainless throughout here (within 300 ft of salt water)" : ""}; connectors installed with the maker's listed fasteners (${RULE.fasteners}).`);
+    }
     const poured = f.posts.filter((p) => p.footing.type === "poured");
     if (poured.length) out.push(`Footings on undisturbed soil, the bottom at least ${Math.min(...poured.map((p) => p.footing.depthIn))} in. below grade${d.placement === "attached" || d.footing.frostAlways ? ` (frost line ${d.frostIn} in.)` : ""}, sized for ${d.soilPsf.toLocaleString("en-US")} psf presumptive bearing; the inspector sees the holes before the concrete (${RULE.footing}; ${RULE.footingDepth}).`);
     else out.push(`Precast pier blocks on compacted gravel — a free-standing deck only (${RULE.pierBlock}).`);
@@ -598,9 +609,9 @@ export function permitNotes(s: DeckStructure, local: string[] = [], edition: str
       out.push(`Ledger: ${LEDGER_FASTENER_LABEL[d.ledger.fastener]} into the house band, two staggered rows at ${f.ledgers[0].spacingIn} in.; flashed over the top; never to brick veneer, a cantilevered floor or a hollow wall (${RULE.ledger}; ${RULE.ledgerWall}).`);
       const devices = lateralDevices(f);
       if (devices.length) out.push(`Lateral load connection: ${devices.length} hold-down tension devices of at least ${devices[0].lb.toLocaleString("en-US")} lb, within 24 in. of each end of the deck — LD-1 and LD-2 on the framing plan, detail 2/S-501 (${RULE.lateral}).`);
-    } else out.push(`Free-standing: the deck stands on its own posts and beams, braced both ways at the posts — detail 7/S-501 (${RULE.selfSupporting}; ${RULE.bracing}).`);
-    out.push(`Joists ${f.joistSize} at ${f.spacingIn} in. on center; a hanger at every joist end on a ledger or a flush beam, a tie at every joist on a dropped beam (${RULE.hangers}; ${RULE.restraint}).`);
-    out.push(`Posts ${d.framing.post} in metal post bases and caps; beams bear fully on the posts, never toe-nailed (${RULE.post}; ${RULE.beam}).`);
+    } else out.push(`Free-standing: the deck stands on its own posts and beams, braced both ways at the posts — detail 7/S-501 (${RULE.selfSupporting}; ${R.bracing}).`);
+    out.push(`Joists ${f.group === "OC" ? "OC Lumber " : ""}${f.joistSize} at ${f.spacingIn} in. on center; a hanger at every joist end on a ledger or a flush beam, a tie at every joist on a dropped beam (${R.hangers}; ${R.restraint}).`);
+    out.push(d.framing.post === OC_POST ? `Posts built up of three 2x6 OC boards, 9 ft at most and braced; beams of two or three OC boards bear fully on the posts (${R.post}; ${R.beam}).` : `Posts ${d.framing.post} in metal post bases and caps; beams bear fully on the posts, never toe-nailed (${R.post}; ${R.beam}).`);
     out.push(`Decking: ${f.decking.label}, fastened to its maker's instructions; joist spacing ${f.spacingIn} in. (the boards allow ${f.deckingMaxSpacingIn} in.) (${RULE.decking}).`);
   }
   if (s.rails.on) out.push(`Guards ${s.rails.heightIn} in. high where the walking surface is more than 30 in. above grade; no opening passes a 4-in. sphere; guard posts through-bolted to the rim and blocked; the top rail resists 200 lb (${RULE.guard}; IRC Table R301.5).`);

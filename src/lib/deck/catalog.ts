@@ -22,22 +22,29 @@
 // shop's own numbers live in its price book (rates.ts) and win over these.
 
 import { regionalPicks } from "./regional";
-import type { LedgerFastener, SpeciesGroup } from "./codeTables";
+import type { FramingGroup, LedgerFastener } from "./codeTables";
 import type { MarketBasis } from "../fence/market";
 
 /* ------------------------------------------------------------------ */
 /*  Framing species                                                    */
 /* ------------------------------------------------------------------ */
 
-export type FramingSpeciesId = "southern-pine" | "hem-fir" | "douglas-fir" | "spf" | "ponderosa-pine" | "red-pine" | "redwood" | "western-cedar";
+export type FramingSpeciesId = "southern-pine" | "hem-fir" | "douglas-fir" | "spf" | "ponderosa-pine" | "red-pine" | "redwood" | "western-cedar" | "oc-lumber";
+
+/** What a frame is built of (2026-11-12, owner: "like it's a wood, or it's a OC composite framing"). */
+export type FramingMaterial = "wood" | "composite";
+/** Owens Corning OC Lumber — the composite framing (lib/deck/ocLumber). */
+export const OC_LUMBER_ID = "oc-lumber" as const;
 
 export interface FramingSpecies {
   id: FramingSpeciesId;
   label: string;
   short: string;
-  /** The code's species row its spans are read from. */
-  group: SpeciesGroup;
-  /** Pressure-treated (true) or naturally durable heartwood (false). */
+  /** The code's species row its spans are read from — or "OC", Owens Corning's own tables. */
+  group: FramingGroup;
+  /** Sawn wood, or a composite the code's tables do not cover. */
+  material: FramingMaterial;
+  /** Pressure-treated (true) or naturally durable heartwood (false); a composite is neither (false). */
   treated: boolean;
   /** A hem-fir ledger holds a structural screw less well (the makers' tables tell it apart). */
   hemFir?: boolean;
@@ -49,18 +56,34 @@ export interface FramingSpecies {
 }
 
 export const FRAMING_SPECIES: readonly FramingSpecies[] = [
-  { id: "southern-pine", label: "Southern pine, pressure-treated", short: "Treated Southern pine", group: "SP", treated: true, region: "East, South and Midwest", note: "The strongest of the treated framing species, and the one most yards east of the Rockies stock.", priceFactor: 1 },
-  { id: "hem-fir", label: "Hem-fir, pressure-treated", short: "Treated hem-fir", group: "DF", treated: true, hemFir: true, region: "West", note: "The treated framing lumber of the Pacific Northwest, incised to take the preservative.", priceFactor: 1 },
-  { id: "douglas-fir", label: "Douglas fir-larch, pressure-treated", short: "Treated Douglas fir", group: "DF", treated: true, region: "West", note: "Incised and treated; the code reads it on the same row as hem-fir.", priceFactor: 1.1 },
-  { id: "spf", label: "Spruce-pine-fir, pressure-treated", short: "Treated SPF", group: "DF", treated: true, region: "Northern states", note: "Above ground only — it is not sold for ground contact, so posts and anything near the soil need another species.", priceFactor: 0.95 },
-  { id: "ponderosa-pine", label: "Ponderosa pine, pressure-treated", short: "Treated ponderosa pine", group: "RW", treated: true, region: "Mountain West", note: "Read on the code's weakest row, with redwood and cedar: shorter spans for the same size.", priceFactor: 1 },
-  { id: "red-pine", label: "Red pine, pressure-treated", short: "Treated red pine", group: "RW", treated: true, region: "Great Lakes and Northeast", note: "Read on the code's weakest row, with redwood and cedar: shorter spans for the same size.", priceFactor: 1 },
-  { id: "redwood", label: "Redwood heartwood (not treated)", short: "Redwood heart", group: "RW", treated: false, region: "California and the West", note: "Naturally durable — heartwood only; sapwood rots. Shorter spans than treated fir.", priceFactor: 2.4 },
-  { id: "western-cedar", label: "Western red cedar heartwood (not treated)", short: "Cedar heart", group: "RW", treated: false, region: "Northwest", note: "Naturally durable — heartwood only. Soft: the shortest spans, and it wants stainless or coated fasteners.", priceFactor: 2.1 },
+  { id: "southern-pine", label: "Southern pine, pressure-treated", short: "Treated Southern pine", group: "SP", material: "wood", treated: true, region: "East, South and Midwest", note: "The strongest of the treated framing species, and the one most yards east of the Rockies stock.", priceFactor: 1 },
+  { id: "hem-fir", label: "Hem-fir, pressure-treated", short: "Treated hem-fir", group: "DF", material: "wood", treated: true, hemFir: true, region: "West", note: "The treated framing lumber of the Pacific Northwest, incised to take the preservative.", priceFactor: 1 },
+  { id: "douglas-fir", label: "Douglas fir-larch, pressure-treated", short: "Treated Douglas fir", group: "DF", material: "wood", treated: true, region: "West", note: "Incised and treated; the code reads it on the same row as hem-fir.", priceFactor: 1.1 },
+  { id: "spf", label: "Spruce-pine-fir, pressure-treated", short: "Treated SPF", group: "DF", material: "wood", treated: true, region: "Northern states", note: "Above ground only — it is not sold for ground contact, so posts and anything near the soil need another species.", priceFactor: 0.95 },
+  { id: "ponderosa-pine", label: "Ponderosa pine, pressure-treated", short: "Treated ponderosa pine", group: "RW", material: "wood", treated: true, region: "Mountain West", note: "Read on the code's weakest row, with redwood and cedar: shorter spans for the same size.", priceFactor: 1 },
+  { id: "red-pine", label: "Red pine, pressure-treated", short: "Treated red pine", group: "RW", material: "wood", treated: true, region: "Great Lakes and Northeast", note: "Read on the code's weakest row, with redwood and cedar: shorter spans for the same size.", priceFactor: 1 },
+  { id: "redwood", label: "Redwood heartwood (not treated)", short: "Redwood heart", group: "RW", material: "wood", treated: false, region: "California and the West", note: "Naturally durable — heartwood only; sapwood rots. Shorter spans than treated fir.", priceFactor: 2.4 },
+  { id: "western-cedar", label: "Western red cedar heartwood (not treated)", short: "Cedar heart", group: "RW", material: "wood", treated: false, region: "Northwest", note: "Naturally durable — heartwood only. Soft: the shortest spans, and it wants stainless or coated fasteners.", priceFactor: 2.1 },
+  // OWENS CORNING OC LUMBER (2026-11-12): a glass-fiber-reinforced composite, sized on the maker's tables, never the code's.
+  { id: "oc-lumber", label: "Owens Corning OC Lumber (composite)", short: "OC Lumber composite", group: "OC", material: "composite", treated: false, region: "Shipped by Owens Corning dealers", note: "Glass-fiber composite boards, black, 12, 16 and 20 ft: no rot, no rust, may touch the ground and water. They span shorter than wood (a 2x8 at 16 in. reaches 8'-0\" against about 11' in treated fir), so the studio sizes the frame on Owens Corning's own tables and adds beams where it must. Posts are three 2x6 OC boards screwed together, 9 ft at most and braced. Bring DrJ Engineering's listing 2302-42 to the permit office.", priceFactor: 1 },
 ];
 
 export function framingSpecies(id: string | null | undefined): FramingSpecies {
   return FRAMING_SPECIES.find((s) => s.id === id) ?? FRAMING_SPECIES[0];
+}
+
+/** The sawn species — what "Wood" offers. */
+export const WOOD_FRAMING_SPECIES: readonly FramingSpecies[] = FRAMING_SPECIES.filter((s) => s.material === "wood");
+
+/** The species as a sentence names it: "treated hem-fir", but "OC Lumber composite" keeps its capitals. */
+export function speciesWords(species: Pick<FramingSpecies, "material" | "short">): string {
+  return species.material === "composite" ? species.short : species.short.toLowerCase();
+}
+
+/** Framed in OC Lumber (or a composite like it): sized on the maker's tables. */
+export function isCompositeFraming(species: Pick<FramingSpecies, "material"> | string | null | undefined): boolean {
+  if (typeof species === "string" || species == null) return species === OC_LUMBER_ID;
+  return species.material === "composite";
 }
 
 /** The treated lumber the state's yards stock (lib/deck/regional): Southern pine east of the Rockies, hem-fir in the
@@ -92,8 +115,8 @@ export type DeckingLaborClass = "wood" | "hardwood" | "composite" | "pvc" | "alu
 
 /** The makers whose own lines are on the list (2026-10-12): the brands contractors buy most, in the order of their
  *  share of composite and PVC decking. Any other brand goes in as a custom board. */
-export type DeckingBrand = "Trex" | "TimberTech" | "Fiberon" | "Deckorators" | "MoistureShield" | "Veranda" | "Envision" | "DuraLife" | "Wolf" | "NewTechWood" | "Lumberock" | "Cali" | "Armadillo";
-export const DECKING_BRAND_ORDER: readonly DeckingBrand[] = ["Trex", "TimberTech", "Fiberon", "Deckorators", "MoistureShield", "Veranda", "Envision", "DuraLife", "Wolf", "NewTechWood", "Lumberock", "Cali", "Armadillo"];
+export type DeckingBrand = "Trex" | "TimberTech" | "Fiberon" | "Deckorators" | "MoistureShield" | "Veranda" | "Envision" | "DuraLife" | "Wolf" | "NewTechWood" | "Lumberock" | "Cali" | "Armadillo" | "OwensCorning";
+export const DECKING_BRAND_ORDER: readonly DeckingBrand[] = ["Trex", "TimberTech", "Fiberon", "Deckorators", "MoistureShield", "Veranda", "Envision", "DuraLife", "Wolf", "NewTechWood", "Lumberock", "Cali", "Armadillo", "OwensCorning"];
 export const DECKING_BRAND_LABEL: Record<DeckingBrand, string> = {
   Trex: "Trex",
   TimberTech: "TimberTech and AZEK",
@@ -108,6 +131,7 @@ export const DECKING_BRAND_LABEL: Record<DeckingBrand, string> = {
   Lumberock: "Lumberock",
   Cali: "Cali Bamboo",
   Armadillo: "Armadillo",
+  OwensCorning: "Owens Corning (Marine Grade)",
 };
 
 export interface DeckingProduct {
@@ -172,6 +196,7 @@ const ARMADILLO = "Armadillo guide: 16 in. on center, 12 in. at 45°";
 const VISTA = "Deckorators Vista guide: 16 in., 12 in. at 45°; blocking every 4–6 ft, 2 in. of air under the joists";
 const SURESTONE = "Deckorators Surestone guide: 16 in., 12 in. at 45°; rated for ground contact";
 const MOISTURESHIELD = "MoistureShield guide: 16 in., 12 in. at 45°; rated for ground and water contact";
+const OC_DECK = "Owens Corning Marine Grade (WEARDECK) report 2311-03: joists up to 24 in. apart, 100 psf there; 16 in. on the diagonal by the yard's practice";
 
 const wood54 = { nominal: "5/4x6", widthIn: 5.5, thickIn: 1, gapIn: 0.125, maxSpacingIn: { square: 16, diagonal: 12 }, source: "code", sourceNote: CODE_54, hiddenFasteners: false } as const;
 const wood2x6 = { nominal: "2x6", widthIn: 5.5, thickIn: 1.5, gapIn: 0.125, maxSpacingIn: { square: 24, diagonal: 24 }, source: "code", sourceNote: CODE_2X, hiddenFasteners: false } as const;
@@ -258,6 +283,10 @@ export const DECKING: readonly DeckingProduct[] = [
   { id: "lumberock-mineral", label: "Lumberock (mineral-based)", brand: "Lumberock", family: "mineral", ...capped, widthIn: 5.5, thickIn: 1, maxSpacingIn: { square: 16, diagonal: 12 }, source: "maker", sourceNote: LUMBEROCK, color: "#8b7a66", labor: "composite", pricePerLf: 6.1 },
   { id: "calibamboo-truorganics", label: "Cali Bamboo TruOrganics", brand: "Cali", family: "composite", ...capped, widthIn: 5.5, thickIn: 0.94, maxSpacingIn: { square: 16, diagonal: 12 }, source: "maker", sourceNote: CALI, color: "#5c4a3a", labor: "composite", pricePerLf: 5.9 },
   { id: "armadillo-expression", label: "Armadillo Expression", brand: "Armadillo", family: "composite", ...capped, widthIn: 5.5, thickIn: 0.94, maxSpacingIn: { square: 16, diagonal: 12 }, source: "maker", sourceNote: ARMADILLO, color: "#7b6350", labor: "composite", pricePerLf: 4.6 },
+  // Owens Corning Marine Grade (sold before as WEARDECK, 2026-11-12): the glass-fiber composite boards, made by the
+  // same maker as the OC Lumber framing; rated for joists 24 in. apart. Price: The Deck Store's 16-ft board ÷ 16.
+  { id: "oc-marine-54x6", label: "Owens Corning Marine Grade 5/4x6", brand: "OwensCorning", family: "composite", nominal: "5/4x6", widthIn: 5.5, thickIn: 1.02, gapIn: 0.1875, maxSpacingIn: { square: 24, diagonal: 16 }, source: "maker", sourceNote: OC_DECK, lengthsFt: COMPOSITE_LENGTHS, hiddenFasteners: false, color: "#b2a095", labor: "composite", basis: "vinyl", pricePerLf: 5.37 },
+  { id: "oc-marine-2x6", label: "Owens Corning Marine Grade 2x6", brand: "OwensCorning", family: "composite", nominal: "2x6", widthIn: 5.5, thickIn: 1.4, gapIn: 0.1875, maxSpacingIn: { square: 24, diagonal: 16 }, source: "maker", sourceNote: OC_DECK, lengthsFt: COMPOSITE_LENGTHS, hiddenFasteners: false, color: "#b2a095", labor: "composite", basis: "vinyl", pricePerLf: 7.81 },
 ];
 
 export function deckingProduct(id: string | null | undefined): DeckingProduct {

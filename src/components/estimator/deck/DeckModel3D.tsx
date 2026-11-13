@@ -1262,6 +1262,8 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       const fade: THREE.Material[] = [];
       const centres: Array<[THREE.Vector3, number]> = [];
       const frameColor = new THREE.Color(s.colors.frame);
+      // A roof over an OC (black composite) frame is sawn wood: its own colour (2026-11-12).
+      const roofFrameColor = s.colors.roofFrame ? new THREE.Color(s.colors.roofFrame) : frameColor;
       const deckColor = new THREE.Color(s.colors.decking);
       const deckColor2 = s.colors.decking2 ? new THREE.Color(s.colors.decking2) : null;
       // A picture-frame border in a second colour of the line (2026-11-10).
@@ -1282,13 +1284,17 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           case "slab":
             return new THREE.Color(CONCRETE);
           case "beam":
-          case "header":
             return tone(frameColor, -0.05);
+          case "header":
+            return tone(roofFrameColor, -0.05);
           case "post":
-          case "roof-post":
             return tone(frameColor, -0.08);
+          case "roof-post":
+            return tone(roofFrameColor, -0.08);
           case "ridge":
-            return tone(frameColor, -0.03);
+            return tone(roofFrameColor, -0.03);
+          case "rafter":
+            return roofFrameColor;
           case "stair":
             return tone(deckColor, -0.02);
           case "rail":

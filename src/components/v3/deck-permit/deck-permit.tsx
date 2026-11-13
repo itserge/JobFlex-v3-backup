@@ -15,6 +15,7 @@ import { buildStructure, type DeckStructure } from "@/lib/deck/structure";
 import { deckChecks } from "@/lib/deck/checks";
 import { PLACEMENT_LABEL, structureWords, type DeckDesign } from "@/lib/deck/design";
 import { ftIn, RULE } from "@/lib/deck/codeTables";
+import { speciesWords } from "@/lib/deck/catalog";
 import { RULE_RAFTER } from "@/lib/deck/roofTables";
 import { DeckPlan } from "@/components/v3/deck-estimator-blueprint/deck-plan";
 import { permitNotes, roofDetails, type DetailDrawing } from "@/lib/deck/permit";
@@ -423,7 +424,7 @@ function scopeWords(st: DeckStructure): string {
   const d = st.design;
   const f = st.frame;
   const parts: string[] = [`New ${structureWords(d)}`];
-  if (f) parts.push(`${Math.round(f.areaSqFt)} sq ft, the walking surface ${ftIn(d.heightIn)} above grade`, PLACEMENT_LABEL[d.placement].toLowerCase(), `${f.decking.label} on ${f.species.short.toLowerCase()} framing`);
+  if (f) parts.push(`${Math.round(f.areaSqFt)} sq ft, the walking surface ${ftIn(d.heightIn)} above grade`, PLACEMENT_LABEL[d.placement].toLowerCase(), `${f.decking.label} on ${speciesWords(f.species)} framing`);
   if (st.rails.on) parts.push(`${st.rails.label} guard, ${st.rails.heightIn} in.`);
   if (st.stairs.length) parts.push(`${st.stairs.length} stair${st.stairs.length > 1 ? "s" : ""}`);
   if (st.roof) parts.push(st.roof.kind === "pergola" ? "a pergola over it" : `a ${st.roof.kind} roof over it, ${st.roof.roof.pitch}:12`);

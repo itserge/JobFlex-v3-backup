@@ -9,7 +9,8 @@
 import type { DeckStructure } from "../structure";
 import type { Beam, DeckFrame, Footing, Post } from "../frame";
 import { shapeOutline } from "../design";
-import { ftIn, joistMaxSpanIn, LEDGER_FASTENER_LABEL, RULE } from "../codeTables";
+import { speciesWords } from "../catalog";
+import { ftIn, joistMaxSpanIn, LEDGER_FASTENER_LABEL, RULE, rulesFor } from "../codeTables";
 import { clusterValues, gridLetter, type V2 } from "./geom";
 
 export interface GridLine {
@@ -270,32 +271,36 @@ export function planModel(s: DeckStructure): PlanModel | null {
   const jt = f.spacingIn;
   // The same table the engine's own joist check reads (lib/deck/checks).
   const allowJoist = joistMaxSpanIn(f.load, f.group, f.joistSize, f.spacingIn);
+  // OC LUMBER (2026-11-12): the schedule names the material and Owens Corning's tables.
+  const R = rulesFor(f.group);
+  const oc = f.group === "OC";
+  const stock = oc ? "OC Lumber" : "treated";
   tags.push({
     tag: "J1",
     member: "Joists",
-    spec: `${f.joistSize} @ ${jt}" o.c., ${f.species.short.toLowerCase()}`,
+    spec: `${f.joistSize} @ ${jt}" o.c., ${speciesWords(f.species)}`,
     where: "Hung from the ledger, over the beam",
-    check: allowJoist ? { actual: ftIn(maxSpan), allowed: ftIn(allowJoist), ratio: maxSpan / allowJoist, rule: RULE.joist } : undefined,
+    check: allowJoist ? { actual: ftIn(maxSpan), allowed: ftIn(allowJoist), ratio: maxSpan / allowJoist, rule: R.joist } : undefined,
   });
-  tags.push({ tag: "R1", member: "Rim joist", spec: `${f.joistSize}${d.framing.doubleRim ? ", doubled" : ""}`, where: "Every open edge; outside joists doubled", check: undefined });
+  tags.push({ tag: "R1", member: "Rim joist", spec: `${oc ? "OC Lumber " : ""}${f.joistSize}${d.framing.doubleRim ? ", doubled" : ""}`, where: "Every open edge; outside joists doubled", check: undefined });
   if (attached) {
     const l = f.ledgers[0];
-    tags.push({ tag: "L1", member: "Ledger", spec: `${f.joistSize} treated, ${LEDGER_FASTENER_LABEL[d.ledger.fastener]} @ ${l.spacingIn}" o.c. staggered`, where: "Against the house band, flashed", check: { actual: `${l.spacingIn}" o.c.`, allowed: `${l.spacingIn}" o.c. at ${ftIn(l.joistSpanFt * 12)}`, ratio: 1, rule: l.rule, byTable: true } });
+    tags.push({ tag: "L1", member: "Ledger", spec: `${f.joistSize} ${stock}, ${LEDGER_FASTENER_LABEL[d.ledger.fastener]} @ ${l.spacingIn}" o.c. staggered`, where: "Against the house band, flashed", check: { actual: `${l.spacingIn}" o.c.`, allowed: `${l.spacingIn}" o.c. at ${ftIn(l.joistSpanFt * 12)}`, ratio: 1, rule: l.rule, byTable: true } });
   }
   for (const b of beams) {
     const t = beamTag.get(b.id) ?? "B";
     tags.push({
       tag: t,
       member: `Beam ${t.slice(1)}`,
-      spec: `${beamLabel(b)}${b.style === "flush" ? ", flush" : ", dropped"}`,
+      spec: `${oc ? "OC Lumber " : ""}${beamLabel(b)}${b.style === "flush" ? ", flush" : ", dropped"}`,
       where: `${ftIn(b.y)} from the house, ${b.postXs.length} posts`,
-      check: b.maxSpanIn > 0 ? { actual: ftIn(b.spanIn), allowed: ftIn(b.maxSpanIn), ratio: b.spanIn / b.maxSpanIn, rule: b.table === "DCA6" ? RULE.solidBeam : RULE.beam } : undefined,
+      check: b.maxSpanIn > 0 ? { actual: ftIn(b.spanIn), allowed: ftIn(b.maxSpanIn), ratio: b.spanIn / b.maxSpanIn, rule: b.table === "DCA6" ? RULE.solidBeam : R.beam } : undefined,
     });
   }
   const tallest = mainPosts.reduce((m, p) => Math.max(m, p.heightIn), 0);
   const tallestMax = mainPosts.reduce((m, p) => (p.heightIn === tallest ? p.maxHeightIn : m), 0);
-  tags.push({ tag: "P1", member: "Posts", spec: `${d.framing.post} treated, ground-contact`, where: "On post bases, capped to the beam", check: tallestMax > 0 ? { actual: ftIn(tallest), allowed: ftIn(tallestMax), ratio: tallest / tallestMax, rule: RULE.post } : undefined });
-  if (f.blockingRows.length) tags.push({ tag: "BK", member: "Blocking", spec: `${f.joistSize} solid`, where: f.blockingRows.some((r) => r.why === "beam") ? "Over the beam, between joists" : "Mid-span rows" });
+  tags.push({ tag: "P1", member: "Posts", spec: oc ? "3-ply 2x6 OC Lumber, screwed, braced" : `${d.framing.post} treated, ground-contact`, where: oc ? "On post bases; 2-ply beams notched in, 3-ply capped" : "On post bases, capped to the beam", check: tallestMax > 0 ? { actual: ftIn(tallest), allowed: ftIn(tallestMax), ratio: tallest / tallestMax, rule: R.post } : undefined });
+  if (f.blockingRows.length) tags.push({ tag: "BK", member: "Blocking", spec: `${oc ? "OC Lumber " : ""}${f.joistSize} solid`, where: f.blockingRows.some((r) => r.why === "beam") ? "Over the beam, between joists" : "Mid-span rows" });
   return { s, f, W, D, outline, attached, house, cols, rows, posts, footings, bearing, layout: { origin, points, diagonals }, tags, beamTag, stairFootings, stairPads };
 }
 

@@ -19,7 +19,7 @@ import { deckSurface, type DeckSurface } from "./surface";
 import { buildStair, type StairBuild, type StairLevel } from "./stairs";
 import { buildRails, type RailBuild, type RailLevel } from "./rails";
 import { buildElectrical, type ElectricalBuild } from "./electrical";
-import { framingSpecies } from "./catalog";
+import { defaultFramingSpecies, framingSpecies } from "./catalog";
 import { groundAt as slopeGroundAt, slopeGradePct } from "./site";
 import { defaultStair, frontEdgeAt, hasDeck, hasLowerLevel, hasRoof, normalizeDeckDesign, shapeOutline, shapeZones, type DeckDesign, type DeckEdge, type StairDesign } from "./design";
 import { deckCodeFor, type DeckStateCode } from "./stateCodes";
@@ -140,8 +140,12 @@ export function buildStructure(raw: DeckDesign, opts: StructureOptions = {}): De
   const footingTopIn = design.footing.type === "pier-block" ? PIER_BLOCK.topIn : design.footing.aboveGradeIn;
 
   const deckUnder = withDeck ? { zones, footingTopIn } : null;
-  const roof = hasRoof(design) ? buildRoofFrame(design, species, species.group, deckUnder, { ...opts, groundAt, stairOpenings: withDeck ? stairOpenings(design, W, code.riserMaxIn) : [] }) : null;
-  const frame = withDeck ? buildDeckFrame(design, { ...opts, groundAt, extraPosts: roof ? roofPostsForDeck(roof) : undefined }) : null;
+  // A roof is framed in sawn wood even over an OC deck: Owens Corning sells its lumber for deck and dock framing only,
+  // so the roof takes the region's treated lumber (2026-11-12).
+  const roofSpecies = species.group === "OC" ? framingSpecies(defaultFramingSpecies(design.site.state)) : species;
+  const roofGroup = roofSpecies.group === "OC" ? "DF" : roofSpecies.group;
+  const roof = hasRoof(design) ? buildRoofFrame(design, roofSpecies, roofGroup, deckUnder, { ...opts, groundAt, stairOpenings: withDeck ? stairOpenings(design, W, code.riserMaxIn) : [] }) : null;
+  const frame = withDeck ? buildDeckFrame(design, { ...opts, groundAt, extraPosts: roof ? roofPostsForDeck(roof) : undefined, extraPostsGroup: roofGroup }) : null;
   const surface = frame ? deckSurface(frame) : null;
 
   // The lower level: a detached deck of its own, a step down, touching the main deck's front.
