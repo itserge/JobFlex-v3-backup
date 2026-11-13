@@ -191,7 +191,7 @@ function PadBtn({ label, action, disabled, primary, hold, test, onRun, onHoldSta
   );
 }
 
-export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLarge }: { shape: DeckShape; house: HouseDesign; onChange: (next: WallChange) => void; size?: "small" | "large"; onOpenLarge?: () => void }) {
+export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLarge, doorFloor }: { shape: DeckShape; house: HouseDesign; onChange: (next: WallChange) => void; size?: "small" | "large"; onOpenLarge?: () => void; /** Which floor a door is on against the deck (2026-11-13): a door under a second-storey deck reads "door below". */ doorFloor?: (o: NonNullable<HouseDesign["openings"]>[number]) => "below" | "deck" | "above" }) {
   const [full, setFull] = React.useState(false);
   const roomy = size === "large" || full;
   const W = shape.widthFt;
@@ -762,10 +762,10 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
           return o.kind === "window" ? (
             <line key={o.id} x1={o.xFt - o.widthFt / 2} x2={o.xFt + o.widthFt / 2} y1={face} y2={face} className={s.wallWin} pointerEvents="none" data-deck-wall-window />
           ) : (
-            <g key={o.id} pointerEvents="none" data-deck-wall-door>
+            <g key={o.id} pointerEvents="none" data-deck-wall-door={doorFloor ? doorFloor(o) : "deck"}>
               <line x1={o.xFt - o.widthFt / 2} x2={o.xFt + o.widthFt / 2} y1={face} y2={face} className={s.wallDoor} />
               <text x={o.xFt} y={face + font * 1.05} fontSize={font * 0.72} textAnchor="middle" className={s.wallOpeningText}>
-                door
+                {doorFloor && doorFloor(o) !== "deck" ? `door ${doorFloor(o)}` : "door"}
               </text>
             </g>
           );

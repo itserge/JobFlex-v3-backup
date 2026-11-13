@@ -40,6 +40,8 @@ import { patchDesign, patchRoof, switchStructure } from "../edit";
 import type { FieldFocus } from "../fieldParts";
 import { HOUSE_ROOF_LABEL, QUICK_WALL_LABEL, ROOF_COLOURS, SIDINGS, houseForShape, quickWall, resizeDeckLeft, shiftHouseThings, slideDeck } from "../house";
 import type { DeckPriceOptions } from "../pricing";
+import { railMountLine } from "../rails";
+import { railMountFor, type RailSectionKey } from "../design";
 import { DECK_SAMPLES } from "../samples";
 import { autoFixDesign, settleDesign } from "../settle";
 import { deckLoadForSnow } from "../site";
@@ -1040,7 +1042,7 @@ function runDecking(d: DeckDesign, s: DeckingSet, env: RunEnv, settle: (x: DeckD
   }
   if (s.border !== undefined) {
     p.decking = { ...(p.decking ?? {}), border: s.border };
-    said.push(s.border ? `A picture-frame border, ${plural(s.border, "row")} of boards around the edge.` : "No border.");
+    said.push(s.border ? `A picture-frame border, ${plural(s.border, "row")} of boards along every open edge — toned a shade deeper in the 3D so the frame shows.` : "No border.");
     flash.push({ label: "Picture-frame border" });
   }
   if (s.fastening) {
@@ -1084,6 +1086,17 @@ function runRail(d: DeckDesign, s: import("./commands").RailSet, settle: (x: Dec
   if (s.lowerLevel !== undefined) p.lowerLevel = s.lowerLevel;
   if (s.customPerFt !== undefined) p.customPerFt = s.customPerFt;
   if (s.customName) p.customName = s.customName;
+  // The mount: every side — one side's own goes with it — or one side alone, kept apart only where it differs from the rest.
+  if (s.mount && !s.mountSide) {
+    p.mount = s.mount;
+    p.mountBy = {};
+  } else if (s.mount && s.mountSide) {
+    const key = `upper-${s.mountSide}` as RailSectionKey;
+    const by = { ...d.rail.mountBy };
+    if (railMountFor(p.type ?? d.rail.type, d.rail.mount) === s.mount) delete by[key];
+    else by[key] = s.mount;
+    p.mountBy = by;
+  }
   const next = patchDesign(d, { rail: p }, settle);
   const rails = buildStructure(next).rails;
   if (s.type === "none") {
@@ -1092,8 +1105,13 @@ function runRail(d: DeckDesign, s: import("./commands").RailSet, settle: (x: Dec
     const label = next.rail.type === "custom" ? next.rail.customName || "Your own railing" : rails.label;
     said.push(`${label}, ${next.rail.heightIn} in. high${rails.lf ? `, ${Math.round(rails.lf)} ft around the open edges` : ""}${next.rail.cap && rails.system === "wood" ? ", with a 2x6 cap" : ""}.`);
     if (s.postSpacingFt) said.push(`Posts every ${next.rail.postSpacingFt} ft.`);
+    if (s.mount) {
+      if (!rails.posts) said.push("There is no rail along the deck's edges to mount yet.");
+      else if (s.mountSide && !rails.mounts[`upper-${s.mountSide}`]) said.push(`There is no rail on the ${s.mountSide} to mount.`);
+      else said.push(`The railing is ${railMountLine(rails)}: ${rails.topPosts ? "a top-mounted post stands on the boards over blocking" : ""}${rails.topPosts && rails.sidePosts ? "; " : ""}${rails.sidePosts ? "a side-mounted post hangs on the outside of the rim" : ""}.`);
+    }
   }
-  return out(next, said, { touched, flash: [{ label: s.heightIn ? "Rail height" : "Your railing" }] });
+  return out(next, said, { touched, flash: [{ label: s.mount ? "How the posts are mounted" : s.heightIn ? "Rail height" : "Your railing" }] });
 }
 
 function runStairs(d: DeckDesign, cmd: Extract<DeckCommand, { do: "stairs" }>, settle: (x: DeckDesign) => DeckDesign, out: Out, no: No): Outcome {

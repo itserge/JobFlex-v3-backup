@@ -699,7 +699,8 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
   // no maker's list: only a colour typed in applies to it.
   const look = deckingLook(decking0, design.custom.decking ? { color: "", ownColor: design.decking.ownColor } : design.decking);
   // A PICTURE-FRAME BORDER IN A SECOND COLOUR (2026-11-10): another colour of the same line, bought and drawn apart.
-  const borderPick = !design.custom.decking && design.decking.border > 0 && design.shape.kind === "rect" ? deckingColor(decking0.id, design.decking.borderColor) : null;
+  // On every shape (2026-11-13): the border runs an L's and a wall-following deck's open edges too (lib/deck/surface).
+  const borderPick = !design.custom.decking && design.decking.border > 0 ? deckingColor(decking0.id, design.decking.borderColor) : null;
   const border = borderPick && (design.decking.ownColor || borderPick.id !== design.decking.color) ? { name: borderPick.name, label: deckingNamed(decking0.label, borderPick.name), color: borderPick.hex, ...(borderPick.hex2 ? { color2: borderPick.hex2 } : {}) } : null;
   const decking: DeckingProduct = { ...decking0, label: deckingNamed(design.custom.decking ? design.custom.decking.name : decking0.label, look.name), color: look.hex, ...(look.name ? { colorName: look.name } : {}), ...(look.hex2 ? { color2: look.hex2 } : {}), ...(border ? { border } : {}) };
   const wall = wallType(design.wall);

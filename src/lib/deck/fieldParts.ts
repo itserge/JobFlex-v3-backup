@@ -388,6 +388,22 @@ const RULES: Rule[] = [
     run: (c) => light(c, { boxIdx: partsOf(c.sc, ["gutter"]) }, `Gutters · ${String(c.d.roof.gutters.kind).replace(/-/g, " ")}`),
   },
   {
+    // Posts and openings set by hand (2026-11-13): the builder's own posts light — an opening's two, a post stood by
+    // hand — with the door between them; the spacing lights every roof post. (They lit the whole roof, like any field
+    // of the step with no part of its own: the two posts just set could not be told from it.)
+    when: (f) => isStep(f, "step-roof") && named(f, "Its middle at", "Clear width", "Standing at", "A screen door in it now", "Posts no farther apart than"),
+    run: (c) => {
+      const r = c.s.roof;
+      if (!r) return null;
+      const mine = r.posts.filter((p) => p.by);
+      const every = named(c.f, "Posts no farther apart than") || !mine.length;
+      const posts = partsOf(c.sc, ["roof-post"]).filter((i) => every || mine.some((p) => Math.abs(c.sc.boxes[i][1] * 12 - p.x) < 1 && Math.abs(c.sc.boxes[i][2] * 12 - p.y) < 1));
+      const doors = every ? [] : partsOf(c.sc, ["wall"], /^door$/);
+      const said = [r.openings.length ? plural(r.openings.length, "opening") : "", r.pins.length ? plural(r.pins.length, "post") : ""].filter(Boolean).join(", ");
+      return light(c, { boxIdx: [...posts, ...doors] }, every ? `Roof posts · ${c.d.roof.post} · ${r.posts.length} of them` : `Set by hand · ${said}`);
+    },
+  },
+  {
     when: (f) => isStep(f, "step-roof"),
     run: (c) => {
       const r = c.s.roof;

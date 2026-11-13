@@ -10,6 +10,8 @@ import type { StairBuild } from "../stairs";
 import { STRINGER_DEPTH_IN, TREAD_NOSING_IN } from "../stairs";
 import type { MaterialList } from "../materialList";
 import { LEDGER_FASTENER_LABEL } from "../codeTables";
+import { railHeldWords } from "../rails";
+import { borderWords } from "../surface";
 import { Sketch, ftInFrac, inFrac, type ArchScale, type View } from "./draft";
 import type { PlanModel } from "./model";
 import { beamLabel } from "./model";
@@ -223,7 +225,7 @@ export function buildSequence(m: PlanModel, list: MaterialList): BuildPhase[] {
   });
   out.push({
     title: "Decking and fascia",
-    steps: [`${f.decking.label}: start square at the house, gaps and fasteners per the maker; ${f.decking.family === "composite" || f.decking.family === "pvc" ? "hidden clips" : "two screws per joist"}.`, "Fascia on the open edges, screwed and plugged."],
+    steps: [`${f.decking.label}${s.surface?.border ? `, with ${borderWords(s.surface)} (set the border first, mitred at the corners, on its backing along the sides; the field runs inside it)` : ""}: start square at the house, gaps and fasteners per the maker; ${f.decking.family === "composite" || f.decking.family === "pvc" ? "hidden clips" : "two screws per joist"}.`, "Fascia on the open edges, screwed and plugged."],
   });
   if (s.stairs.length) {
     out.push({
@@ -234,7 +236,7 @@ export function buildSequence(m: PlanModel, list: MaterialList): BuildPhase[] {
   if (s.rails.on) {
     out.push({
       title: "Guards",
-      steps: [`${s.rails.label}, ${s.rails.heightIn}" — ${Math.round(s.rails.totalLf)} ft, posts through-bolted to the blocked rim, no opening a 4" sphere passes.`, "Handrails on every stair of four or more risers, 34\"–38\" over the nosings."],
+      steps: [`${s.rails.label}, ${s.rails.heightIn}" — ${Math.round(s.rails.totalLf)} ft, posts ${s.rails.topPosts || s.rails.postKind === "metal" ? railHeldWords(s.rails) : "through-bolted to the blocked rim"}, no opening a 4" sphere passes.`, "Handrails on every stair of four or more risers, 34\"–38\" over the nosings."],
     });
   }
   out.push({ title: "Finish", steps: ["Walk the deck with this set; clean up; photos of every connection for the file."], hold: "Final inspection." });

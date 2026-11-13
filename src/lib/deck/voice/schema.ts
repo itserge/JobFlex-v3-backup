@@ -117,6 +117,8 @@ const COMMAND = z.discriminatedUnion("do", [
         lowerLevel: z.boolean(),
         customName: z.string().max(80),
         customPerFt: z.number().min(0).max(1000),
+        mount: z.enum(["top", "side"]),
+        mountSide: z.enum(["front", "left", "right", "back"]),
       })
       .partial(),
   }),
@@ -181,7 +183,7 @@ decking {set: {product?: catalog id, color?: dark gray|light gray|gray|black|dar
 framing {set: {species?, joist?: 2x6|2x8|2x10|2x12|auto|up|down, spacingIn?: 12|16|24|auto, beam?: 4x6..4x12 or 2-2x6..3-2x12 or auto, beamKind?: solid|built-up, beamStyle?: dropped|flush|auto, post?: 4x4|4x6|6x6|8x8, overhangFt?, doubleRim?, joistTape?, braces?, blocking?: auto|mid-span}}
 ledger {fastener?: lag|bolt|ledgerlok|sdws|anchor, lateral?: two|four}; footing {type?: poured|pier-block, aboveGradeIn?, frostAlways?}
 site {frostIn?: amount (inches), snowPsf?, loadPsf?: 40|50|60|70, soilPsf?: 1500|2000|3000, outDropIn?, acrossDropIn?, state?: two letters}
-rail {set: {type?: none|treated|cedar|composite|vinyl|aluminum|cable|glass|custom, heightIn?: 36|42, infill?: balusters|cable|glass|panel|horizontal, postSpacingFt?: 4|6|8, cap?, customPerFt?}}
+rail {set: {type?: none|treated|cedar|composite|vinyl|aluminum|cable|glass|custom, heightIn?: 36|42, infill?: balusters|cable|glass|panel|horizontal, postSpacingFt?: 4|6|8, cap?, customPerFt?, mount?: top|side (posts on the deck boards | on the outside of the rim, the fascia), mountSide?: front|left|right|back (that side only)}}
 stairs {op: add|remove|change, which?: {side}|{index}|last|all|only, side?: front|left|right, at?: left|center|right|house|out|{ft}|{by}, width?: amount (feet), wrap?, wrapSides?: 1|3|4, landing?: pad|patio|grade, handrail?: auto|both|one|none, level?: upper|lower, count?: 1|2}
 lower {on?, width?, depth?, dropIn?, align?: left|centre|right}; spa {on?, width?, depth?, align?} (hot tub spot 5–10 ft)
 fixture {op: add|remove|set, kind: led-strip|post-cap|step-light|string-light|sconce|ceiling-light|chandelier|fan|outlet|heater|flood, qty?: amount, supply?: we|client, volts240?}

@@ -32,7 +32,7 @@ import type { DeckStructure } from "./structure";
 import { BETWEEN_LEVELS_STAIR_ID, structureLevels } from "./structure";
 import type { StairMember } from "./stairs";
 import type { RailMember } from "./rails";
-import { railWords } from "./rails";
+import { BASE_PLATE_IN, BASE_PLATE_THICK_IN, railMountCallout, railPostWords, railWords } from "./rails";
 import { electricalWords } from "./electrical";
 import { HOUSE_MATERIALS, HOUSE_ROOFS, houseHandles, houseScene, type HouseMaterial, type HouseRoof } from "./house";
 import { railColorOf } from "./catalog";
@@ -287,14 +287,16 @@ function diagonalBoards(frame: DeckFrame, surface: DeckSurface, offX: number, of
   const step = pitch * Math.SQRT2;
   const band = w * Math.SQRT2;
   const far = width + depth;
-  const inset = surface.border * pitch;
-  const halves: Array<{ x0: number; x1: number; dir: 1 | -1 }> = surface.pattern === "herringbone" ? [{ x0: inset, x1: width / 2, dir: 1 }, { x0: width / 2, x1: width - inset, dir: -1 }] : [{ x0: inset, x1: width - inset, dir: 1 }];
+  // Cut to the field inside the border (2026-11-13: the surface's own rectangles — the border's bands left out on every
+  // open edge of any outline; it was a rectangle's three sides, whatever stood there, and ran under a back border).
+  const halves: Array<{ x0: number; x1: number; dir: 1 | -1 }> = surface.pattern === "herringbone" ? [{ x0: 0, x1: width / 2, dir: 1 }, { x0: width / 2, x1: width, dir: -1 }] : [{ x0: 0, x1: width, dir: 1 }];
   for (const h of halves) {
     for (let c = -depth - width; c < width + depth && out.length < SCENE_MAX_DIAGONALS; c += step) {
       // A board is the strip between two lines x − dir·y = c.
       const strip: Array<[number, number]> = h.dir === 1 ? [[c - far, -far], [c + band - far, -far], [c + band + far, far], [c + far, far]] : [[c + far, -far], [c + band + far, -far], [c + band - far, far], [c - far, far]];
-      for (const z of zones) {
-        const ring = clipToRect(strip, Math.max(z.x0, h.x0), z.y0, Math.min(z.x1, h.x1), z.y1 - inset);
+      for (const z of surface.field) {
+        if (Math.min(z.x1, h.x1) - Math.max(z.x0, h.x0) < 0.01) continue;
+        const ring = clipToRect(strip, Math.max(z.x0, h.x0), z.y0, Math.min(z.x1, h.x1), z.y1);
         if (ring.length >= 3 && ringArea(ring) > 2) out.push(ring.flatMap((p) => [r3(p[0] + offX), r3(p[1] + offY)]));
       }
     }
@@ -339,6 +341,18 @@ export const RAIL_INFILL_ROLE = /^(?:lower level )?(?:baluster|stair baluster|ca
 /** A rail's cap (a kit rail's deck-board drink rail is drawn in the scene's `railCap` colour), and a border board. */
 export const RAIL_CAP_ROLE = /^(?:lower level )?rail cap$/;
 export const BORDER_BOARD_ROLE = /^(?:lower level )?border board$/;
+/**
+ * A picture-frame border in the deck's OWN colour (2026-11-13 — a deck builder: "turning the border on changes nothing
+ * in the 3D"): the same boards, laid along the edges, were drawn in the same colour with seams under a pixel wide —
+ * nothing to see. It is drawn a shade deeper, the way a drafter tones a border, and the legend says so.
+ */
+export const BORDER_SAME_COLOUR_SHADE = 0.82;
+/** A hex colour's channels scaled (k < 1 darker): the border's shade. Plain sRGB — it is a drafting tone, not a paint match. */
+const shadeHex = (hex: string, k: number): string => {
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+  if (!m) return hex;
+  return `#${[1, 2, 3].map((i) => Math.max(0, Math.min(255, Math.round(parseInt(m[i], 16) * k))).toString(16).padStart(2, "0")).join("")}`;
+};
 
 /** The scene the whole structure stands up. */
 export function deckScene(s: DeckStructure): DeckScene {
@@ -527,11 +541,11 @@ export function deckScene(s: DeckStructure): DeckScene {
     // The boards on top.
     const boardZ = f.surfaceIn - surface.product.thickIn / 2;
     const boardTag = tagFor(`${lvl}deck board`, surface.product.nominal, 0, `${surface.product.label}, ${surface.product.gapIn}-in. gaps, ${surface.fastening === "hidden" ? "hidden clips in the grooves" : "two coated screws at every joist"}${surface.pattern !== "straight" ? `, laid ${surface.pattern === "diagonal" ? "on the diagonal" : "in a herringbone"}` : ""}.`);
-    const borderTag = tagFor(`${lvl}border board`, surface.product.nominal, 0, `Picture-frame border${surface.product.border ? ` in ${surface.product.border.name}` : ""}: mitred 45° at the corners, two screws or plugs at every joist.`);
+    const borderTag = tagFor(`${lvl}border board`, surface.product.nominal, 0, `Picture-frame border${surface.product.border ? ` in ${surface.product.border.name}` : ""}, ${surface.border === 2 ? "two boards" : "one board"} wide along every open edge: the corners mitred 45° on site (drawn square), two screws or plugs at every joist, blocking under its inner edge where it runs with the joists.${surface.product.border ? "" : " In the deck's own colour — drawn a shade deeper so the frame reads."}`);
     for (const p of surface.pieces) box("decking", p.cx + ox, p.cy + oy, boardZ, p.sx, p.sy, surface.product.thickIn, p.border ? borderTag : boardTag, 0, p.yaw ?? 0, 0);
     surface.shaped.forEach((ring, ri) => {
       // The border's own cut pieces, in a second colour: the 3D is told which rings they are.
-      if (surface.product.border && ri >= surface.shapedBorderFrom) borderRings.push(shapedBoards.length);
+      if (surface.border > 0 && ri >= surface.shapedBorderFrom) borderRings.push(shapedBoards.length);
       shapedBoards.push(ring.map((v, i) => r3(v + (i % 2 === 0 ? ox : oy))));
       shapedZs.push(r3(f.surfaceIn));
     });
@@ -624,7 +638,7 @@ export function deckScene(s: DeckStructure): DeckScene {
     const noteFor = (m: RailMember): string => {
       switch (m.role) {
         case "rail-post":
-          return rails.system === "wood" ? `4x4 rail post, notched over the rim and bolted through it with two ½-in. carriage bolts and a pair of tension ties into the joist; ${rails.heightIn} in. above the boards.` : `${rails.label} post on its base plate, four structural screws through the deck boards into the rim or a blocked joist.`;
+          return railPostWords(rails, m.mount ?? rails.mount);
         case "rail-top":
           return rails.system === "wood" ? "2x4 top rail on edge between the posts, on rail brackets or toe-screwed." : `${rails.label} top rail in its brackets.`;
         case "rail-bottom":
@@ -643,10 +657,21 @@ export function deckScene(s: DeckStructure): DeckScene {
     };
     for (const m of rails.members) box(RAIL_LAYER[m.role], m.cx, m.cy, m.cz, m.sx, m.sy, m.sz, tagFor(m.role.replace(/-/g, " "), m.nominal, m.lengthIn, noteFor(m)), 0, m.yaw, m.tilt);
     for (const p of rails.panelsOut) poly(p.kind === "glass" ? "glass" : "wall", p.ring, tagFor(p.kind === "glass" ? "glass panel" : "rail panel", p.kind === "glass" ? "tempered glass" : "panel", 0, p.kind === "glass" ? "Tempered glass panel in the rail's channels." : "Solid panel in the rail's frame."));
+    // WHAT HOLDS EACH POST, DRAWN (2026-11-13): a top-mounted post's base plate on the boards; a side-mounted wood post's
+    // tension ties at its foot, a side-mounted metal post's bracket on the rim's face. Each as its own section says.
     const tieTag = tagFor("rail post tie", "DTT1Z pair", 0, "Two tension ties at the base of each rail post, ½-in. through-bolts into the joist and blocking: the 200-lb rail load goes into the frame, not just the rim.");
-    for (const m of rails.members.filter((mm) => mm.role === "rail-post")) box("hardware", m.cx, m.cy, m.cz - m.sz / 2 + 4, 3, 3, 6, tieTag);
+    const plateTag = tagFor("rail post base", rails.postKind === "wood" ? "post base" : "base plate", 0, rails.postKind === "wood" ? "A rated guard-post base under the 4x4, its screws through the boards into solid blocking between the joists." : "The post's base plate on the deck boards: four structural screws through the boards into solid blocking between the joists.");
+    const bracketTag = tagFor("rail post bracket", "fascia bracket", 0, "The maker's fascia-mount bracket: through-bolted to the rim, with blocking behind the rim so the 200-lb rail load goes into the frame.");
+    for (const m of rails.members.filter((mm) => mm.role === "rail-post")) {
+      const foot = m.cz - m.sz / 2;
+      const mount = m.mount ?? rails.mount;
+      // The plate lies on the boards, under the post's foot.
+      if (mount === "top") box("hardware", m.cx, m.cy, foot - BASE_PLATE_THICK_IN / 2, BASE_PLATE_IN, BASE_PLATE_IN, BASE_PLATE_THICK_IN, plateTag);
+      else if (rails.postKind === "metal") box("hardware", m.cx, m.cy, foot + 4.5, 4.5, 4.5, 7, bracketTag);
+      else box("hardware", m.cx, m.cy, foot + 4, 3, 3, 6, tieTag);
+    }
     const firstPost = rails.members.find((m) => m.role === "rail-post");
-    if (firstPost) callout(firstPost.cx, firstPost.cy, firstPost.cz - firstPost.sz / 2 + 6, "connection", "Rail post to the frame", rails.system === "wood" ? "Each 4x4 post is bolted through the rim with two ½-in. carriage bolts and a pair of tension ties into the joist and blocking, so a 200-lb push on the rail goes into the frame." : `Each ${rails.label.toLowerCase()} post sits on its base plate, screwed through the boards into the rim or a blocked joist with the maker's structural screws.`);
+    if (firstPost) callout(firstPost.cx, firstPost.cy, firstPost.cz - firstPost.sz / 2 + 6, "connection", "Rail post to the frame", railMountCallout(rails, firstPost.mount ?? rails.mount));
   }
 
   /* ── The roof ─────────────────────────────────────────────────────── */
@@ -960,7 +985,7 @@ export function deckScene(s: DeckStructure): DeckScene {
   const frameC = frameColor(design.framing.species, frame?.group ?? roof?.group ?? "SP");
   const deckColor2 = s.surface?.product.color2;
   const borderLook = s.surface?.border ? s.surface.product.border : undefined;
-  const colors: DeckScene["colors"] = { frame: frameC, decking: deckColor, fascia: deckColor, roofing: roofingColor(design.roof.roofing), rail: railColor(design.rail.type, deckColor, frameC, design.rail.color), ...(deckColor2 ? { decking2: deckColor2 } : {}), ...(rails.on && rails.infillColor ? { railInfill: rails.infillColor } : {}), ...(borderLook ? { border: borderLook.color, ...(borderLook.color2 ? { border2: borderLook.color2 } : {}) } : {}), ...(rails.on && rails.drinkLf ? { railCap: deckColor } : {}) };
+  const colors: DeckScene["colors"] = { frame: frameC, decking: deckColor, fascia: deckColor, roofing: roofingColor(design.roof.roofing), rail: railColor(design.rail.type, deckColor, frameC, design.rail.color), ...(deckColor2 ? { decking2: deckColor2 } : {}), ...(rails.on && rails.infillColor ? { railInfill: rails.infillColor } : {}), ...(borderLook ? { border: borderLook.color, ...(borderLook.color2 ? { border2: borderLook.color2 } : {}) } : s.surface?.border ? { border: shadeHex(deckColor, BORDER_SAME_COLOUR_SHADE), ...(deckColor2 ? { border2: shadeHex(deckColor2, BORDER_SAME_COLOUR_SHADE) } : {}) } : {}), ...(rails.on && rails.drinkLf ? { railCap: deckColor } : {}) };
   const slope = design.site.slope;
   const ground = slope.outDropIn || slope.acrossDropIn ? { outDropFt: r3(slope.outDropIn), acrossDropFt: r3(slope.acrossDropIn) } : null;
   // The handles (edit mode): the deck's width, depth and height at its front-right corner, the roof's eave, each stair along its edge, the lower level's depth.

@@ -112,6 +112,9 @@ export interface RailSet {
   lowerLevel?: boolean;
   customName?: string;
   customPerFt?: number;
+  /** How the posts meet the deck (2026-11-13): on the boards, or on the rim — for every side, or for `mountSide` alone. */
+  mount?: "top" | "side";
+  mountSide?: "front" | "left" | "right" | "back";
 }
 
 /** Which stair a command means: by its side, by its order, the last one talked about, or all of them. */

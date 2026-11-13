@@ -140,6 +140,7 @@ scripts:
   - { file: crew-onsite.check.ts, suite: logic, kind: check, status: live }
   - { file: crm-brief.check.ts, suite: logic, kind: check, status: live }
   - { file: deck-autofix.check.ts, suite: logic, kind: check, status: live }
+  - { file: deck-border.check.ts, suite: logic, kind: check, status: live }
   - { file: deck-brands-regional.check.ts, suite: logic, kind: check, status: live }
   - { file: deck-client-design.check.ts, suite: logic, kind: check, status: live }
   - { file: deck-client-flow.check.ts, suite: logic, kind: check, status: live }
@@ -149,12 +150,15 @@ scripts:
   - { file: deck-fuzz.check.ts, suite: logic, kind: check, status: live }
   - { file: deck-house.check.ts, suite: logic, kind: check, status: live }
   - { file: deck-m3.check.ts, suite: logic, kind: check, status: live }
+  - { file: deck-rail-mount.check.ts, suite: logic, kind: check, status: live }
   - { file: deck-material-list.check.ts, suite: logic, kind: check, status: live }
   - { file: deck-permit.check.ts, suite: logic, kind: check, status: live }
+  - { file: deck-plan-scale.check.ts, suite: logic, kind: check, status: live }
   - { file: county-match.check.ts, suite: logic, kind: check, status: live, note: "the permit set matched to the county's requirements (uploaded, pasted, found online) or to the contractor's own words: the model's answer checked against the set (cards and sheets that exist, figures that read, a change to the deck always the contractor's, a card most departments want taken out starts unticked unless asked), ticked changes as edits (cards after the right card or on a requirements sheet, sheets, names, a rewritten card fingerprinted), notes/figures/sheet size for the panel, the kept check and the county's list in words" }
   - { file: plan-edits.check.ts, suite: logic, kind: check, status: live, note: "the permit and construction sets' Edit: a card's words cleaned to a few tags (no script, style, picture or link), classes kept as tokens and drawn with the build's names, the design's words fingerprinted, edits read back to their limits, sheets taken out without renumbering, added sheets after the G sheets or last on the crew's, added cards and sheets deleted again" }
   - { file: deck-photo-fit.check.ts, suite: logic, kind: check, status: live }
   - { file: deck-proposal-edit.check.ts, suite: logic, kind: check, status: live }
+  - { file: deck-roof-by-hand.check.ts, suite: logic, kind: check, status: live }
   - { file: deck-roof-engineering.check.ts, suite: logic, kind: check, status: live }
   - { file: deck-parts.check.ts, suite: logic, kind: check, status: live }
   - { file: deck-roof-supports.check.ts, suite: logic, kind: check, status: live, note: "passes placement \"freestanding\", no longer a Placement value (attached|beside|detached) — its free-standing cases run as an attached deck" }

@@ -6,6 +6,11 @@
 //   · glass that becomes low glass beside the new walking surface (safety glazing);
 //   · a covered deck's roof running into a window or a door where it meets the house;
 //   · glass by the hot tub.
+// BY HEIGHT AS WELL AS BY PLACE (2026-11-13, a deck builder: "a second-storey deck is checked against the first floor's
+// doors and windows"): every opening is first put on its floor against THIS deck — under its frame (the floor below),
+// at its boards, or well above them (the floor above). Only a door at the boards has its threshold checked; a door
+// under the deck is checked for what can really be in its way down there — a post in front of it, a beam under its
+// head; a window under the deck's surface is not glass beside the tub.
 // Houses drawn by rule (no openings) are not checked: their doors and windows are a picture, not a measurement.
 // Estimating grade — the building department decides.
 
@@ -28,6 +33,24 @@ export const ROOF_FLASHING_IN = 4;
 const LOW_GLASS = { bottomIn: 18, topIn: 36, areaSqFt: 9 } as const;
 /** Glass by a hot tub (IRC R308.4.5): within 60 in. of the water's edge and under 60 in. up. */
 const TUB_GLASS_IN = 60;
+/** Past this far above the boards a door is not this deck's door: nobody steps down four feet — it is a door of the floor above. */
+export const DOOR_ABOVE_IN = 48;
+/** The clear landing a door needs outside it, in the way one walks out (IRC R311.3), and the head room walking out (R311.2's door height). */
+const LANDING_IN = 36;
+const HEAD_ROOM_IN = 80;
+/** Half a post, with a little air: how far past a door's side a post still stands in the doorway. */
+const POST_HALF_IN = 3;
+
+/** Where an opening stands against a deck's floor: wholly under its frame (the floor below), at its boards, or — a door — well above them (the floor above). */
+export type OpeningLevel = "below" | "deck" | "above";
+export function openingLevel(o: Pick<HouseOpening, "kind" | "sillFt" | "heightFt">, deckTopIn: number, frameBottomIn: number): OpeningLevel {
+  const sill = o.sillFt * 12;
+  if (sill + o.heightFt * 12 <= frameBottomIn) return "below";
+  if (o.kind !== "window" && sill - deckTopIn > DOOR_ABOVE_IN) return "above";
+  return "deck";
+}
+/** The underside of a deck's frame at the house: its boards, then its joists. Inches above the ground. */
+export const frameBottomIn = (deckTopIn: number, joistSize: Parameters<typeof joistDepthIn>[0]) => deckTopIn - UNDER_THRESHOLD_IN - joistDepthIn(joistSize);
 
 const WHAT: Record<HouseOpening["kind"], string> = { window: "window", door: "door", slider: "sliding door", garage: "garage door" };
 const where = (o: HouseOpening) => `${ftIn(Math.round(Math.max(0, o.xFt) * 12))} along the deck`;
@@ -73,28 +96,80 @@ export function openingChecks(s: DeckStructure, add: (c: DeckCheck) => void): vo
   const minH = DECK_LIMITS.heightIn.min;
   const maxH = DECK_LIMITS.heightIn.max;
 
+  /* ── Each door on its floor: under the deck, at its boards, above it ── */
+  const bottom = frameBottomIn(top, frame.joistSize);
+  const level = (o: HouseOpening) => openingLevel(o, top, bottom);
+  // A garage door is never the door the deck serves (2026-10-26): no threshold check against it.
+  const doors = onDeck.filter((o) => o.kind !== "window" && o.kind !== "garage");
+  const served = doors.filter((d) => level(d) === "deck");
+
   /* ── The door the deck serves ─────────────────────────────────────── */
-  onDeck
-    // A garage door is never the door the deck serves (2026-10-26): no threshold check against it.
-    .filter((o) => o.kind !== "window" && o.kind !== "garage")
-    .forEach((d, i) => {
-      const id = `door-threshold${i ? `-${i + 1}` : ""}`;
-      const th = Math.round(d.sillFt * 12 * 4) / 4;
-      const drop = th - top;
-      const what = WHAT[d.kind];
+  served.forEach((d, i) => {
+    const id = `door-threshold${i ? `-${i + 1}` : ""}`;
+    const th = Math.round(d.sillFt * 12 * 4) / 4;
+    const drop = th - top;
+    const what = WHAT[d.kind];
+    const set = Math.round(th - UNDER_THRESHOLD_IN);
+    const fix = set >= minH && set <= maxH && set !== top ? { label: `Set the deck at ${set} in.`, patch: { heightIn: set } } : undefined;
+    if (drop < -12) {
+      // Not a deck a little too high for its door: the frame runs across the doorway itself. Under the threshold, or clear above the head.
+      const head = th + d.heightFt * 12;
+      const over = Math.ceil(head + (top - bottom));
+      const alts = over <= maxH ? [{ label: `Raise the deck clear above it: ${over} in.`, patch: { heightIn: over } }] : undefined;
+      add({ id, level: "fail", part: PART, text: `The deck would run across the ${what} ${where(d)}: its threshold is ${ftIn(Math.round(th))} off the ground and its head ${ftIn(Math.round(head))}, and the deck's frame runs from ${ftIn(Math.round(bottom))} to ${ftIn(Math.round(top))}. Set the boards about ${UNDER_THRESHOLD_IN} in. under the threshold, or raise the deck clear above the door's head.`, rule: "IRC R311.3.1 · R507.9", fix, alts });
+    } else if (drop < 0) add({ id, level: "fail", part: PART, text: `The deck's surface stands ${inches(-drop)} above the ${what}'s threshold (${where(d)}): rain runs in under it${d.kind === "door" ? " and the door can't swing out over the boards" : ""}. Keep the boards about ${UNDER_THRESHOLD_IN} in. under it.`, rule: "IRC R311.3.1 · R507.2.4", fix });
+    else if (drop < 0.5) add({ id, level: "warn", part: PART, text: `The deck's surface is level with the ${what}'s threshold (${where(d)}) — no room for the flashing under the door, and water stands at the sill. About ${UNDER_THRESHOLD_IN} in. under it is the usual mark.`, rule: "IRC R311.3.1 · R507.2.4", fix });
+    else if (drop <= STEP_ANY_DOOR_IN) add({ id, level: "pass", part: PART, text: `The deck's surface sits ${inches(drop)} under the ${what}'s threshold (${where(d)}) — the step the code allows at any door.`, rule: "IRC R311.3.1" });
+    else if (drop <= STEP_NO_SWING_IN) add({ id, level: d.kind === "slider" ? "pass" : "info", part: PART, text: `A ${inches(drop)} step down from the ${what} (${where(d)}) onto the deck: allowed where the door does not swing out over the deck${d.kind === "slider" ? " — a sliding door doesn't" : " — a door that swings in, as most back doors do. A door swinging out wants the deck within 1½ in."}.`, rule: "IRC R311.3.1, exception", fix: d.kind === "door" ? fix : undefined });
+    else add({ id, level: "warn", part: PART, text: `A ${inches(drop)} step down from the ${what}'s threshold (${where(d)}) to the deck — past the 7¾ in. the code allows. Raise the deck, or build a landing step at the door.`, rule: "IRC R311.3.1", fix });
+    // A roof's post running up through the deck in front of its own door.
+    const sp = span(d);
+    const post = frame.posts.find((p) => p.roof && p.y < LANDING_IN && p.x > sp.x0 - POST_HALF_IN && p.x < sp.x1 + POST_HALF_IN);
+    if (post) add({ id: `door-post${i ? `-${i + 1}` : ""}`, level: "warn", part: PART, text: `A post of the roof stands ${inches(post.y)} out from the wall in front of the ${what} ${where(d)}. A door needs a clear landing ${LANDING_IN} in. deep outside it: slide the roof along the wall, or hang it on the wall there.`, rule: "IRC R311.3" });
+  });
+
+  /* ── A door of the floor above, when the deck serves none of its own ── */
+  if (!served.length) {
+    const up = doors.filter((d) => level(d) === "above").sort((a, b) => a.sillFt - b.sillFt)[0];
+    if (up) {
+      const th = Math.round(up.sillFt * 12 * 4) / 4;
       const set = Math.round(th - UNDER_THRESHOLD_IN);
-      const fix = set >= minH && set <= maxH && set !== top ? { label: `Set the deck at ${set} in.`, patch: { heightIn: set } } : undefined;
-      if (drop < 0) add({ id, level: "fail", part: PART, text: `The deck's surface stands ${inches(-drop)} above the ${what}'s threshold (${where(d)}): rain runs in under it${d.kind === "door" ? " and the door can't swing out over the boards" : ""}. Keep the boards about ${UNDER_THRESHOLD_IN} in. under it.`, rule: "IRC R311.3.1 · R507.2.4", fix });
-      else if (drop < 0.5) add({ id, level: "warn", part: PART, text: `The deck's surface is level with the ${what}'s threshold (${where(d)}) — no room for the flashing under the door, and water stands at the sill. About ${UNDER_THRESHOLD_IN} in. under it is the usual mark.`, rule: "IRC R311.3.1 · R507.2.4", fix });
-      else if (drop <= STEP_ANY_DOOR_IN) add({ id, level: "pass", part: PART, text: `The deck's surface sits ${inches(drop)} under the ${what}'s threshold (${where(d)}) — the step the code allows at any door.`, rule: "IRC R311.3.1" });
-      else if (drop <= STEP_NO_SWING_IN) add({ id, level: d.kind === "slider" ? "pass" : "info", part: PART, text: `A ${inches(drop)} step down from the ${what} (${where(d)}) onto the deck: allowed where the door does not swing out over the deck${d.kind === "slider" ? " — a sliding door doesn't" : " — a door that swings in, as most back doors do. A door swinging out wants the deck within 1½ in."}.`, rule: "IRC R311.3.1, exception", fix: d.kind === "door" ? fix : undefined });
-      else add({ id, level: "warn", part: PART, text: `A ${inches(drop)} step down from the ${what}'s threshold (${where(d)}) to the deck — past the 7¾ in. the code allows. Raise the deck, or build a landing step at the door.`, rule: "IRC R311.3.1", fix });
+      const fix = set >= minH && set <= maxH ? { label: `Set the deck at ${set} in.`, patch: { heightIn: set } } : undefined;
+      add({ id: "door-above", level: "info", part: PART, text: `The ${WHAT[up.kind]} ${where(up)} is ${ftIn(Math.round(th - top))} above the deck's surface: a door of the floor above, which this deck does not reach.${fix ? ` If the deck is meant for that door, it stands at ${ftIn(set)}.` : ""}`, rule: "IRC R311.3.1", fix });
+    }
+  }
+
+  /* ── Doors on the floor below: under the deck, and what can stand in their way there ── */
+  const under = onDeck.filter((o) => o.kind !== "window" && level(o) === "below");
+  if (under.length) {
+    const blocked: string[] = [];
+    under.forEach((d, i) => {
+      const sp = span(d);
+      const th = d.sillFt * 12;
+      const n = i ? `-${i + 1}` : "";
+      const what = WHAT[d.kind];
+      const post = frame.posts.filter((p) => p.y < LANDING_IN && p.x > sp.x0 - POST_HALF_IN && p.x < sp.x1 + POST_HALF_IN).sort((a, b) => a.y - b.y)[0];
+      if (post) {
+        blocked.push(d.id);
+        add({ id: `door-under-post${n}`, level: "warn", part: PART, text: `A post of the ${post.roof ? "roof" : "deck"} stands ${inches(post.y)} out from the wall in front of the ${what} on the floor below (${where(d)}). ${d.kind === "garage" ? "Nothing drives in or out past it" : `A door needs a clear landing ${LANDING_IN} in. deep outside it`}: slide the deck along the wall, or move that post clear of the doorway and size the beam for the longer span.`, rule: d.kind === "garage" ? undefined : "IRC R311.3" });
+      }
+      const beam = d.kind === "garage" ? undefined : frame.beams.find((b) => b.y < LANDING_IN && overlapIn(sp, b) > 3 && b.bottomIn - th < HEAD_ROOM_IN);
+      if (beam) {
+        blocked.push(d.id);
+        add({ id: `door-under-beam${n}`, level: "warn", part: PART, text: `The deck's beam by the house runs ${inches(beam.y)} out from the wall with its underside ${ftIn(Math.round(beam.bottomIn))} off the ground — ${ftIn(Math.round(beam.bottomIn - th))} over the threshold of the ${what} on the floor below (${where(d)}). Walking out under it wants ${ftIn(HEAD_ROOM_IN)} of head room: raise the deck, or carry that end on the house.`, rule: "IRC R311.2" });
+      }
     });
+    const free = under.filter((d) => !blocked.includes(d.id));
+    if (free.length) {
+      const room = Math.min(...free.map((d) => bottom - d.sillFt * 12));
+      const which = free.length === 1 ? `The ${WHAT[free[0].kind]} ${where(free[0])} is on the floor below: it opens` : `${free.length} doors (${places(free)}) are on the floor below: they open`;
+      add({ id: "door-under", level: "pass", part: PART, text: `${which} under the deck, with ${ftIn(Math.round(room))} from the threshold to the deck's frame and no post in the way. ${free.length === 1 ? "It is" : "They are"} not checked against this deck's surface.`, rule: "IRC R311.3" });
+    }
+  }
 
   /* ── Windows the deck runs across, and windows under it ───────────── */
   if (design.placement === "attached") {
-    const ledgerTop = top - UNDER_THRESHOLD_IN;
-    const ledgerBottom = ledgerTop - joistDepthIn(frame.joistSize);
+    const ledgerBottom = bottom;
     const underDeck: HouseOpening[] = [];
     onDeck
       .filter((o) => o.kind === "window")
@@ -112,7 +187,11 @@ export function openingChecks(s: DeckStructure, add: (c: DeckCheck) => void): vo
     if (underDeck.length) {
       const clear = ledgerBottom;
       const which = underDeck.length === 1 ? `A window under the deck ${where(underDeck[0])}` : `${underDeck.length} windows under the deck (${places(underDeck)})`;
-      add({ id: "window-under", level: clear < 36 ? "warn" : "info", part: PART, text: `${which}. If ${underDeck.length === 1 ? "it is" : "one is"} a bedroom's escape window, it must still open all the way and leave a way out under the deck at least 36 in. high to the yard — ${clear < 36 ? `the frame there is only ${ftIn(Math.round(clear))} off the ground` : `the frame there is ${ftIn(Math.round(clear))} up`}.`, rule: "IRC R310 · escape openings under decks" });
+      // A post right in front of one of them narrows that way out, whatever the height.
+      const inFront = underDeck.find((w) => frame.posts.some((p) => p.y < LANDING_IN && p.x > span(w).x0 - POST_HALF_IN && p.x < span(w).x1 + POST_HALF_IN));
+      // A whole storey of room under the frame (2026-11-13): the floor below's windows are simply under a second-storey deck — said as a pass, not as something to look at.
+      if (clear >= HEAD_ROOM_IN && !inFront) add({ id: "window-under", level: "pass", part: PART, text: `${which}, on the floor below: the frame there is ${ftIn(Math.round(clear))} off the ground, so a bedroom's escape window still opens all the way and keeps its way out to the yard (36 in. is the least).`, rule: "IRC R310 · escape openings under decks" });
+      else add({ id: "window-under", level: clear < 36 ? "warn" : "info", part: PART, text: `${which}. If ${underDeck.length === 1 ? "it is" : "one is"} a bedroom's escape window, it must still open all the way and leave a way out under the deck at least 36 in. high to the yard — ${clear < 36 ? `the frame there is only ${ftIn(Math.round(clear))} off the ground` : `the frame there is ${ftIn(Math.round(clear))} up`}${inFront ? `, and a post stands in front of the window ${where(inFront)}` : ""}.`, rule: "IRC R310 · escape openings under decks" });
     }
   }
 
@@ -192,7 +271,8 @@ export function openingChecks(s: DeckStructure, add: (c: DeckCheck) => void): vo
       if (w.kind !== "window") return false;
       const sp = span(w);
       const dx = Math.max(0, sp.x0 - tub.x1, tub.x0 - sp.x1);
-      return Math.hypot(dx, tub.y0) <= TUB_GLASS_IN && w.sillFt * 12 - top < TUB_GLASS_IN;
+      // Glass beside the tub is glass above the boards: a window of the floor below, under the deck, is not (2026-11-13).
+      return Math.hypot(dx, tub.y0) <= TUB_GLASS_IN && w.sillFt * 12 - top < TUB_GLASS_IN && (w.sillFt + w.heightFt) * 12 > top;
     });
     if (near.length) add({ id: "spa-glass", level: "warn", part: "Hot tub spot", text: `${near.length === 1 ? `The window ${where(near[0])} is` : `${near.length} windows are`} within 5 ft of the tub's water and less than 5 ft above the deck: that glass must be safety (tempered) glass. Check the stamps, or move the tub toward the rail.`, rule: "IRC R308.4.5" });
   }

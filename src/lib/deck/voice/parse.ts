@@ -155,7 +155,10 @@ const isRemove = (c: string) => REMOVE_VERB.test(c);
 /* ------------------------------------------------------------------ */
 
 const STAIR_WORDS = /\b(?:stairs?|steps?|staircases?|stairway|stairwell|stringers?|treads?|risers?|handrails?)\b/;
-const RAIL_WORDS = /\b(?:railings?|rails?|guards?|guardrails?|balusters|balustrade)\b/;
+const RAIL_WORDS = /\b(?:railings?|rails?|guards?|guardrails?|balusters|balustrade|(?:top|surface|deck|side|fascia|rim)[- ]?mount(?:ed|ing|s)?)\b/;
+/** How the rail's posts meet the deck: "top mount", "surface mounted" — on the boards; "side mount", "fascia mounted" — on the rim. */
+const RAIL_TOP_MOUNT = /\b(?:top|surface|deck)[- ]?mount(?:ed|ing|s)?\b|\bmount(?:ed)? (?:it |them |the posts |the rail(?:ing)?s? )?on (?:top|the (?:deck|boards|surface))\b|\bposts on (?:top|the (?:deck|boards))\b/;
+const RAIL_SIDE_MOUNT = /\b(?:side|fascia|rim)[- ]?mount(?:ed|ing|s)?\b|\bmount(?:ed)? (?:it |them |the posts |the rail(?:ing)?s? )?(?:on|to) the (?:side|fascia|rim)\b|\bposts on the (?:fascia|rim|outside)\b/;
 const SPA_WORDS = /\b(?:hot tub|spa|tub)\b/;
 const LOWER_WORDS = /\b(?:lower (?:level|deck|platform|landing|tier|section|part)|second level|bottom level|two levels?|2 levels?|two[- ]tier(?:ed)?(?: deck)?|multi[- ]?level|step[- ]?down (?:deck|platform|level|section)|tiered deck|split[- ]level deck|landing (?:deck|platform))\b/;
 const FIX_WORDS = new RegExp(FIXTURE_WORDS.map(([re]) => re.source).join("|"));
@@ -615,6 +618,14 @@ function readRail(c: string, ctx: ParseContext): Read {
   }
   if (/\b(?:drink (?:rail|cap)|cocktail rail|flat cap|cap rail|2x6 cap|rail cap|bar top rail|wide cap)\b/.test(c)) set.cap = !/\bno\b/.test(c);
   if (/\blower level\b/.test(c)) set.lowerLevel = true;
+  // The mount (2026-11-13): for every side, or — "side mount the left side", "top mount on the front only" — for one.
+  const mount = RAIL_TOP_MOUNT.test(c) ? "top" : RAIL_SIDE_MOUNT.test(c) ? "side" : null;
+  if (mount) {
+    set.mount = mount;
+    const rest = c.replace(RAIL_TOP_MOUNT, " ").replace(RAIL_SIDE_MOUNT, " ");
+    const where = /\b(?:the |on the |at the )?(front|back|left|right)(?: side| edge)?\b/.exec(rest);
+    if (where) set.mountSide = where[1] as RailSet["mountSide"];
+  }
   const perFt = /\$(\d+(?:\.\d+)?) (?:a|per|each) (?:foot|ft|linear foot|lf)\b/.exec(c);
   if (perFt) {
     set.type = "custom";

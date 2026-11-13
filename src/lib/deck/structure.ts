@@ -17,6 +17,7 @@ import { buildDeckFrame, type BuildOptions, type DeckFrame, PIER_BLOCK } from ".
 import { buildRoofFrame, roofPostsForDeck, type RoofFrame, type StairOpening } from "./roof";
 import { deckSurface, type DeckSurface } from "./surface";
 import { buildStair, type StairBuild, type StairLevel } from "./stairs";
+import { POST_ACTUAL_IN } from "./codeTables";
 import { buildRails, type RailBuild, type RailLevel } from "./rails";
 import { buildElectrical, type ElectricalBuild } from "./electrical";
 import { framingSpecies } from "./catalog";
@@ -198,7 +199,8 @@ export function buildStructure(raw: DeckDesign, opts: StructureOptions = {}): De
   const levels: RailLevel[] = [];
   if (frame) levels.push(railLevelOf("upper", frame, 0, 0, groundAt, lower ? { x0: lower.offsetXIn, x1: lower.offsetXIn + Math.round(design.lower.widthFt * 12), dropIn: lower.dropIn } : null, false));
   if (lower) levels.push(railLevelOf("lower", lower.frame, lower.offsetXIn, lower.offsetYIn, groundAt, null, true));
-  const rails = buildRails({ design, rail: design.rail, levels, stairs });
+  // The roof's posts that stand on the deck (2026-11-13): where one stands on a top-mounted rail's line, the rail runs to it and sets no post of its own.
+  const rails = buildRails({ design, rail: design.rail, levels, stairs, roofPosts: roof && design.floor === "deck" ? roof.posts.map((p) => ({ x: p.x, y: p.y, halfIn: (POST_ACTUAL_IN[p.size]?.[0] ?? 5.5) / 2 })) : [] });
 
   // The electrical: fixtures where the contractor put them or where they usually go, and the wiring to them.
   const ringW = roof && !frame ? roof.widthIn : W;

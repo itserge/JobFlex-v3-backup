@@ -22,7 +22,10 @@
 
 import { ftIn, LEDGER_FASTENER_LABEL, RULE } from "./codeTables";
 import { RULE_RAFTER } from "./roofTables";
-import type { DeckDesign } from "./design";
+import type { DeckDesign, RailMount } from "./design";
+import { BASE_PLATE_IN, TOP_MOUNT_IN, railHeldWords, railSidesMounted } from "./rails";
+import { borderWords } from "./surface";
+import { roofByHandWords } from "./roof";
 import type { DeckFrame, Post } from "./frame";
 import type { DeckStructure } from "./structure";
 import type { DeckPackage } from "./pricing";
@@ -160,8 +163,12 @@ export function sectionDrawing(s: DeckStructure): Drawing | null {
   }
   // The guard at the front edge.
   if (rails.on) {
-    items.push({ t: "rect", x: D - 2, z: f.joistBottomIn, w: 3.5, h: guardTop - f.joistBottomIn, cls: "wood" });
-    items.push({ t: "rect", x: D - 4, z: guardTop - 1.5, w: 7.5, h: 1.5, cls: "wood" });
+    // As the front is mounted (2026-11-13): on the boards inside the edge, or down the rim's outside face.
+    const frontTop = (rails.mounts["upper-front"] ?? rails.mount) === "top";
+    const gx = frontTop ? D - TOP_MOUNT_IN - 1.75 : D + 0.5;
+    const gz = frontTop ? f.surfaceIn : f.joistBottomIn;
+    items.push({ t: "rect", x: gx, z: gz, w: 3.5, h: guardTop - gz, cls: "wood" });
+    items.push({ t: "rect", x: gx - 2, z: guardTop - 1.5, w: 7.5, h: 1.5, cls: "wood" });
     items.push({ t: "dim", x1: D + 12, z1: f.surfaceIn, x2: D + 12, z2: guardTop, label: `${rails.heightIn} in. guard` });
   }
   // The stairs down the front, if any.
@@ -264,26 +271,77 @@ export function detailDrawings(s: DeckStructure, which: "floor" | "roof" | "all"
       });
     }
     if (s.rails.on) {
-      const items: DrawItem[] = [];
+      // THE GUARD POST AS IT IS MOUNTED (2026-11-13). The detail drew every post outside the rim with two bolts, whatever
+      // the railing: a top-mounted aluminum post went to the permit desk drawn side-mounted. It is drawn the way most of
+      // the deck's posts are held — and where a side of the deck is mounted the other way, that way has its own detail.
       const H = s.rails.heightIn;
-      items.push({ t: "rect", x: 0, z: 0, w: 14, h: joistDepth, cls: "wood" });
-      items.push({ t: "text", x: -1.5, z: joistDepth / 2 - 1, s: "rim joist", anchor: "end", cls: "note" });
-      items.push({ t: "rect", x: 0, z: joistDepth, w: 14, h: 1, cls: "wood" });
-      items.push({ t: "rect", x: 14, z: -2, w: 3.5, h: joistDepth + 2 + 1 + H, cls: "wood" });
-      items.push({ t: "rect", x: 12, z: joistDepth + 1 + H - 1.5, w: 7.5, h: 1.5, cls: "wood" });
-      items.push({ t: "circle", x: 15.75, z: joistDepth * 0.7, r: 0.7, cls: "steel" });
-      items.push({ t: "circle", x: 15.75, z: joistDepth * 0.25, r: 0.7, cls: "steel" });
-      items.push({ t: "rect", x: 10, z: 0, w: 1.5, h: joistDepth, cls: "wood" });
-      items.push({ t: "text", x: 9, z: -3.5, s: "blocking", anchor: "end", cls: "note" });
-      items.push({ t: "dim", x1: 24, z1: joistDepth + 1, x2: 24, z2: joistDepth + 1 + H, label: `${H} in. guard` });
-      out.push({
-        title: "Guard post",
-        drawing: { box: { x: -20, z: -8, w: 52, h: joistDepth + H + 16 }, items },
-        notes: [
-          `Guard ${H} in. high, posts through-bolted to the rim with two ½-in. bolts and blocked, pickets with no 4-in. opening. ${RULE.guard}.`,
-          s.rails.system === "wood" ? `Wood 4x4 posts ${d.rail.postSpacingFt} ft on centre.` : `${s.rails.label} system installed to its listing; posts ${d.rail.postSpacingFt} ft on centre.`,
-        ],
-      });
+      const kind = s.rails.postKind;
+      const sides = (mount: RailMount) => railSidesMounted(s.rails, mount);
+      const guardDetail = (mount: RailMount, title: string, where: string): DetailDrawing => {
+        const items: DrawItem[] = [];
+        const top = joistDepth + 1;
+        // A joist coming to the rim, the boards over it.
+        items.push({ t: "rect", x: 0, z: 0, w: 14, h: joistDepth, cls: "wood" });
+        items.push({ t: "text", x: -1.5, z: joistDepth / 2 - 1, s: "rim joist", anchor: "end", cls: "note" });
+        items.push({ t: "rect", x: 0, z: joistDepth, w: 14, h: 1, cls: "wood" });
+        if (mount === "top") {
+          const pw = kind === "metal" ? 2.5 : 3.5;
+          const cx = 14 - TOP_MOUNT_IN;
+          // Solid blocking under the post, the base on the boards, its screws down into the blocking.
+          items.push({ t: "rect", x: cx - 1.5, z: 0, w: 1.5, h: joistDepth, cls: "wood" });
+          items.push({ t: "rect", x: cx, z: 0, w: 1.5, h: joistDepth, cls: "wood" });
+          items.push({ t: "text", x: cx - 2.5, z: -3.5, s: "solid blocking, 2 pieces", anchor: "end", cls: "note" });
+          items.push({ t: "rect", x: cx - BASE_PLATE_IN / 2, z: top, w: BASE_PLATE_IN, h: 0.5, cls: "steel" });
+          items.push({ t: "rect", x: cx - 1.9, z: top - 4.5, w: 0.3, h: 5, cls: "steel" });
+          items.push({ t: "rect", x: cx + 1.6, z: top - 4.5, w: 0.3, h: 5, cls: "steel" });
+          items.push({ t: "rect", x: cx - pw / 2, z: top + 0.5, w: pw, h: H - 0.5, cls: kind === "metal" ? "steel" : "wood" });
+          items.push({ t: "rect", x: cx - 3.75, z: top + H - 1.5, w: 7.5, h: 1.5, cls: kind === "metal" ? "steel" : "wood" });
+          // Said beside the plate, not dimensioned under the frame: a dimension line there made the drawing taller and cost it a scale.
+          items.push({ t: "text", x: cx + 4.5, z: top + 4.5, s: kind === "wood" ? "rated post base" : "base plate, 4 screws", cls: "note" });
+          items.push({ t: "text", x: cx + 4.5, z: top + 1.5, s: `centre ${TOP_MOUNT_IN} in. in from the edge`, cls: "note" });
+          items.push({ t: "dim", x1: 24, z1: top, x2: 24, z2: top + H, label: `${H} in. guard` });
+        } else if (kind === "metal") {
+          // The maker's bracket on the rim's face, through-bolted; the post up from it.
+          items.push({ t: "rect", x: 14, z: joistDepth * 0.1, w: 0.6, h: joistDepth * 0.8, cls: "steel" });
+          items.push({ t: "rect", x: 14.6, z: joistDepth * 0.1, w: 2.5, h: joistDepth * 0.9 + 1 + H, cls: "steel" });
+          items.push({ t: "rect", x: 12.6, z: top + H - 1.5, w: 6.5, h: 1.5, cls: "steel" });
+          items.push({ t: "circle", x: 14.3, z: joistDepth * 0.7, r: 0.7, cls: "steel" });
+          items.push({ t: "circle", x: 14.3, z: joistDepth * 0.3, r: 0.7, cls: "steel" });
+          items.push({ t: "rect", x: 10, z: 0, w: 1.5, h: joistDepth, cls: "wood" });
+          items.push({ t: "text", x: 9, z: -3.5, s: "blocking behind the rim", anchor: "end", cls: "note" });
+          items.push({ t: "text", x: 18.5, z: joistDepth / 2, s: "fascia bracket", cls: "note" });
+          items.push({ t: "dim", x1: 26, z1: top, x2: 26, z2: top + H, label: `${H} in. guard` });
+        } else {
+          items.push({ t: "rect", x: 14, z: -2, w: 3.5, h: joistDepth + 2 + 1 + H, cls: "wood" });
+          items.push({ t: "rect", x: 12, z: joistDepth + 1 + H - 1.5, w: 7.5, h: 1.5, cls: "wood" });
+          items.push({ t: "circle", x: 15.75, z: joistDepth * 0.7, r: 0.7, cls: "steel" });
+          items.push({ t: "circle", x: 15.75, z: joistDepth * 0.25, r: 0.7, cls: "steel" });
+          items.push({ t: "rect", x: 10, z: 0, w: 1.5, h: joistDepth, cls: "wood" });
+          items.push({ t: "text", x: 9, z: -3.5, s: "blocking", anchor: "end", cls: "note" });
+          items.push({ t: "dim", x1: 24, z1: joistDepth + 1, x2: 24, z2: joistDepth + 1 + H, label: `${H} in. guard` });
+        }
+        const held =
+          mount === "top"
+            ? kind === "wood"
+              ? `TOP MOUNT${where}: each 4x4 post stands on the boards in a rated guard-post base, its screws into two pieces of solid ${f.joistSize} blocking between the joists; the base maker's tested load (200 lb at the top rail) with the permit set.`
+              : `TOP MOUNT${where}: each post's base plate on the deck boards, ${TOP_MOUNT_IN} in. in from the edge to its centre, four structural screws through the boards into two pieces of solid ${f.joistSize} blocking between the joists — never into the boards alone.`
+            : kind === "metal"
+              ? `SIDE MOUNT${where}: each post on the maker's fascia bracket on the outside of the rim, through-bolted to the rim itself (not to a fascia board), blocking behind the rim.`
+              : `SIDE MOUNT${where}: ${kind === "sleeve" ? "each sleeve's 4x4 core" : "posts"} through-bolted to the rim with two ½-in. bolts and blocked.`;
+        return {
+          title,
+          drawing: { box: { x: -20, z: -8, w: 52, h: joistDepth + H + 16 }, items },
+          notes: [
+            mount === "side" && kind !== "metal" && !where ? `Guard ${H} in. high, posts through-bolted to the rim with two ½-in. bolts and blocked, pickets with no 4-in. opening. ${RULE.guard}.` : `Guard ${H} in. high, pickets with no 4-in. opening. ${held} ${RULE.guard}.`,
+            s.rails.system === "wood" ? `Wood 4x4 posts ${d.rail.postSpacingFt} ft on centre.` : `${s.rails.label} system installed to its listing; posts ${d.rail.postSpacingFt} ft on centre.`,
+          ],
+        };
+      };
+      const main: RailMount = s.rails.topPosts > s.rails.sidePosts ? "top" : s.rails.sidePosts > s.rails.topPosts ? "side" : s.rails.mount;
+      const other: RailMount = main === "top" ? "side" : "top";
+      const mixed = s.rails.topPosts > 0 && s.rails.sidePosts > 0;
+      out.push(guardDetail(main, "Guard post", mixed ? ` (${sides(main).join(", ")})` : ""));
+      if (mixed) out.push(guardDetail(other, `Guard post, ${other}-mounted`, ` (${sides(other).join(", ")})`));
     }
     if (d.placement !== "attached") {
       const items: DrawItem[] = [];
@@ -601,12 +659,13 @@ export function permitNotes(s: DeckStructure, local: string[] = [], edition: str
     } else out.push(`Free-standing: the deck stands on its own posts and beams, braced both ways at the posts — detail 7/S-501 (${RULE.selfSupporting}; ${RULE.bracing}).`);
     out.push(`Joists ${f.joistSize} at ${f.spacingIn} in. on center; a hanger at every joist end on a ledger or a flush beam, a tie at every joist on a dropped beam (${RULE.hangers}; ${RULE.restraint}).`);
     out.push(`Posts ${d.framing.post} in metal post bases and caps; beams bear fully on the posts, never toe-nailed (${RULE.post}; ${RULE.beam}).`);
-    out.push(`Decking: ${f.decking.label}, fastened to its maker's instructions; joist spacing ${f.spacingIn} in. (the boards allow ${f.deckingMaxSpacingIn} in.) (${RULE.decking}).`);
+    out.push(`Decking: ${f.decking.label}${s.surface?.border ? `, with ${borderWords(s.surface)} — blocked under its inner edge along the sides` : ""}, fastened to its maker's instructions; joist spacing ${f.spacingIn} in. (the boards allow ${f.deckingMaxSpacingIn} in.) (${RULE.decking}).`);
   }
-  if (s.rails.on) out.push(`Guards ${s.rails.heightIn} in. high where the walking surface is more than 30 in. above grade; no opening passes a 4-in. sphere; guard posts through-bolted to the rim and blocked; the top rail resists 200 lb (${RULE.guard}; IRC Table R301.5).`);
+  if (s.rails.on) out.push(`Guards ${s.rails.heightIn} in. high where the walking surface is more than 30 in. above grade; no opening passes a 4-in. sphere; guard posts ${railHeldWords(s.rails)}${s.rails.sidePosts && s.rails.postKind !== "metal" ? ", the rim blocked" : ""}; the top rail resists 200 lb (${RULE.guard}; IRC Table R301.5).`);
   if (s.stairs.length) out.push(`Stairs: risers no more than ${code.riserMaxIn} in., treads at least ${code.treadMinIn} in., uniform within ⅜ in.; a graspable handrail 34–38 in. high on any stair of four or more risers; a light at the stairs (${RULE.stairs}; IRC R303.8).`);
   if (s.electrical.on) out.push("Receptacles GFCI-protected and weather-resistant, in-use covers; wiring by a licensed electrician, under its own permit where the jurisdiction requires one (NEC 210.8, 406.9).");
   if (s.roof && s.roof.kind !== "pergola") out.push(`Roof framing per the roof framing plan, ${f ? "S-103" : "S-101"}: ${s.roof.trusses ? "manufactured trusses to the truss maker's stamped drawings" : `${s.roof.rafters.size} rafters at ${s.roof.rafters.spacingIn} in.`}, a hurricane tie at every rafter or truss, uplift-rated post bases (IRC R802.11).`);
+  if (s.roof && (s.roof.openings.length || s.roof.pins.length)) out.push(`Roof posts set by the builder — ${roofByHandWords(s.roof)}: shown on the roof framing plan; each header sized for the span between the posts as drawn${s.roof.openings.some((o) => o.engineered || o.beyond) ? "; the header over an opening past the sawn-lumber tables is an engineered beam, its sizing by the maker or an engineer with this set" : ""} (IRC Table R507.5).`);
   if (s.roof && s.roof.kind === "pergola") out.push(`Pergola per its framing plan, ${f ? "S-103" : "S-101"}: open slats, no roof covering; posts braced both ways (${RULE.bracing}).`);
   out.push("Call 811 at least two business days before digging, so the utility lines are marked.");
   for (const l of local) out.push(`Local: ${l}`);
