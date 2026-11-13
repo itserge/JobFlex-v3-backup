@@ -21,6 +21,7 @@ import { useRouter } from "next/navigation";
 import { setStripeModeAction } from "@/actions/admin";
 import type { Route } from "next";
 import type { IntegrationGroup, IntegrationStatus, LiveProbe } from "@/lib/sdk/integrations";
+import type { PackRow } from "@/lib/eagleviewEntitlements";
 import s from "@/components/v3/admin-overview/admin-shared.module.css";
 import { Ic } from "@/components/v3/admin-overview/admin-ui";
 import { useAdminMotion } from "@/components/v3/admin-overview/admin-motion";
@@ -91,6 +92,59 @@ function GroupCard({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** "2026-11-06 21:54 UTC" — the same on the server and in the browser. */
+const utc = (iso: string) => iso.slice(0, 16).replace("T", " ") + " UTC";
+
+/** EagleView Property Data packs: what EagleView last said about each one.
+ *  The account's entitlement table, read — a refused pack is asked again on
+ *  the first paid order a day after its refusal; the imagery (008) only ever
+ *  riding along with another pack (lib/eagleviewOrder). */
+function EagleViewPacks({ rows }: { rows: PackRow[] | null }) {
+  return (
+    <div className="card">
+      <div className="card-head">
+        <div className="card-titles">
+          <div className="card-title">EagleView packs</div>
+          <div className="card-sub">
+            What EagleView last answered for each Property Data pack. A refused pack is asked
+            again with the first paid order more than 24&nbsp;h after the refusal; nothing on
+            this page orders anything.
+          </div>
+        </div>
+      </div>
+      <hr className="card-rule" />
+      {!rows ? (
+        <div className={i.packNote}>The entitlement table could not be read.</div>
+      ) : (
+        rows.map((r) => {
+          const chip =
+            r.status === "live"
+              ? { cls: "chip ok", label: "Entitled" }
+              : r.status === "denied"
+                ? { cls: `chip ${s.chipDanger}`, label: "Refused" }
+                : { cls: `chip ${s.chipMuted}`, label: "Not checked" };
+          return (
+            <div className={`${s.row} ${i.iRow}`} key={r.pack}>
+              <div className={s.rowMain}>
+                <div className={s.rowTitle} title={r.name}>
+                  {r.name}
+                </div>
+                <div className={`${s.rowSub} ${i.packSub}`}>
+                  {r.pack.slice(-3)}
+                  {r.checkedAt ? ` · ${utc(r.checkedAt)}` : " · never asked"}
+                  {r.refusal ? ` · ${r.refusal}` : ""}
+                </div>
+              </div>
+              <span className={chip.cls}>{chip.label}</span>
+              {r.unsettled ? <div className={i.packNote}>{r.unsettled}</div> : null}
+            </div>
+          );
+        })
+      )}
     </div>
   );
 }
@@ -168,11 +222,13 @@ export function AdminIntegrationsContent({
   live,
   stripeMode,
   stripeModes,
+  evPacks,
 }: {
   items: IntegrationStatus[];
   live: LiveMap;
   stripeMode: "live" | "test";
   stripeModes: { live: boolean; test: boolean };
+  evPacks: PackRow[] | null;
 }) {
   useAdminMotion();
 
@@ -217,6 +273,8 @@ export function AdminIntegrationsContent({
         <GroupCard title={cards[2].title} items={cards[2].items} live={live} />
         <GroupCard title={cards[3].title} items={cards[3].items} live={live} />
       </div>
+
+      <EagleViewPacks rows={evPacks} />
     </>
   );
 }

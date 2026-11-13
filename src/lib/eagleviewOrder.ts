@@ -12,7 +12,12 @@
 //      since it was recorded, so fall through to 3 for those packs.
 //   3. Pack by pack, in PROBE_ORDER, for everything unknown, stale-denied, or
 //      knocked out of step 2. 202 → live; 403 → denied (a refusal is free);
-//      anything else → failed, verdict unchanged.
+//      anything else → failed, verdict unchanged (the reason is written on
+//      the pack's row since 2026-11-12, dated, so a re-check is never silent).
+//   The imagery (008, PAIRED_ONLY) is never asked alone — EagleView refuses it
+//   that way even to an entitled account. It rides along with step 2's
+//   request (or, when nothing else is ordered, with the roof area), and a
+//   refusal with it aboard is asked again without it to say whose it was.
 //
 // THE AREA IS THE MEASUREMENT; THE REST LANDS BEHIND IT (2026-09-18). Until
 // 2026-09-17 every accepted order was polled to completion — up to 30 s each —
@@ -46,7 +51,7 @@ import {
   type InstantStructure,
   type PdPack,
 } from "@/lib/eagleview";
-import { PROBE_ORDER, needsProbe, type PackRecord, type PackStatus } from "@/lib/eagleviewEntitlements";
+import { PAIRED_ONLY, PROBE_ORDER, needsProbe, type PackRecord, type PackStatus } from "@/lib/eagleviewEntitlements";
 
 /** What a measurement's Instant answer is made of, pack by pack. */
 export interface PackReport {
@@ -155,6 +160,8 @@ export interface OrderDeps {
   entitlements: {
     read(): Promise<Map<string, PackRecord>>;
     mark(packs: readonly string[], status: PackStatus, error?: string | null): Promise<void>;
+    /** A re-check that reached no verdict: the reason is written, the verdict and its date stay. */
+    note?(packs: readonly string[], reason: string): Promise<void>;
   };
   /** Whether a poll error is EagleView's final verdict on the order. */
   isTerminalFailure(err: unknown): boolean;
@@ -322,31 +329,106 @@ export async function orderPacksFor(
 
   // ── 2. the rest: placed now, collected by the page ──
   const placed: PlacedOrder[] = [];
-  // 2a. everything the account is known to have, in one request
+  const msg = (err: unknown) => (err instanceof Error ? err.message : String(err));
+  const note = async (packs: readonly string[], reason: string) => {
+    if (packs.length) await deps.entitlements.note?.(packs, reason).catch(() => {});
+  };
   const rest = wanted.filter((p) => p !== ROOF_AREA);
   const known = await deps.entitlements.read();
   const live = rest.filter((p) => known.get(p)?.status === "live");
-  let oneByOne = rest.filter((p) => !live.includes(p) && needsProbe(known.get(p)));
-  for (const p of rest) if (!live.includes(p) && !oneByOne.includes(p)) denied.add(p); // fresh refusals, not re-asked
-  if (live.length) {
+  // Due a check: never asked, or refused more than a day ago.
+  const due = rest.filter((p) => !live.includes(p) && needsProbe(known.get(p)));
+  for (const p of rest) if (!live.includes(p) && !due.includes(p)) denied.add(p); // fresh refusals, not re-asked
+  // A pack EagleView refuses when asked alone (the imagery, PAIRED_ONLY) is
+  // checked riding along with another order — never by itself.
+  const riders = due.filter((p) => (PAIRED_ONLY as readonly string[]).includes(p)) as PdPack[];
+  let oneByOne: string[] = due.filter((p) => !riders.includes(p as PdPack));
+
+  // 2a. everything the account is known to have, in one request — with the
+  //     riders aboard. Their partner, in this order of preference:
+  //       · the known-live packs (the usual case);
+  //       · else the first pack due a probe — it is being bought or probed
+  //         this click anyway;
+  //       · else the roof area again, when the address already has it — a
+  //         "buy the missing packs" click on an address that has everything
+  //         but the imagery: that click is a paid order either way, and the
+  //         area is the one pack that is always entitled.
+  //     When the area was bought by this very call and nothing else is
+  //     ordered, there is no partner worth paying for: the riders wait, and
+  //     their row says so.
+  const probeOrder = PROBE_ORDER as readonly string[];
+  const byProbeOrder = (ps: readonly string[]) => [...probeOrder.filter((p) => ps.includes(p)), ...ps.filter((p) => !probeOrder.includes(p))];
+  // A refused grouped order sends its packs to be probed one by one — all but
+  // a paired-only pack, which a lone probe would deny whatever the account
+  // has: its verdict stays, and its row says the check settled nothing.
+  const probeLiveOneByOne = async (why: string) => {
+    const paired = live.filter((p) => (PAIRED_ONLY as readonly string[]).includes(p));
+    oneByOne = [...live.filter((p) => !paired.includes(p)), ...oneByOne];
+    paired.forEach((p) => failed.add(p));
+    await note(paired, why);
+  };
+  let partner: PdPack[] = [];
+  let partnerIsProbe = false;
+  if (live.length) partner = live;
+  else if (riders.length && oneByOne.length) {
+    partner = [byProbeOrder(oneByOne)[0] as PdPack];
+    oneByOne = oneByOne.filter((p) => p !== partner[0]);
+    partnerIsProbe = true;
+  } else if (riders.length && !wanted.includes(ROOF_AREA)) partner = [ROOF_AREA];
+  if (riders.length && !partner.length) {
+    await note(riders, "not re-checked — nothing else was ordered to carry it (EagleView refuses this pack asked alone)");
+  }
+  if (partner.length) {
+    const aboard = [...partner, ...riders];
+    const failPartner = () => partner.filter((p) => p !== ROOF_AREA).forEach((p) => failed.add(p));
+    let refusal: PdEntitlementError | null = null;
     try {
-      placed.push(await placeOrder(deps, input, live));
-      await deps.entitlements.mark(live, "live");
+      placed.push(await placeOrder(deps, input, aboard));
+      await deps.entitlements.mark(aboard, "live");
     } catch (err) {
-      if (err instanceof PdEntitlementError) {
-        deps.log?.(`grouped order for ${live.join(",")} refused — entitlement changed, probing one by one`);
-        oneByOne = [...live, ...oneByOne];
-      } else {
-        live.forEach((p) => failed.add(p));
-        deps.log?.(`grouped order for ${live.join(",")} could not be placed: ${err instanceof Error ? err.message : String(err)}`);
+      if (err instanceof PdEntitlementError) refusal = err;
+      else {
+        failPartner();
+        deps.log?.(`grouped order for ${aboard.join(",")} could not be placed: ${msg(err)}`);
+        await note(riders, `the order carrying it (${partner.join(",")}) could not be placed: ${msg(err)}`);
+      }
+    }
+    if (refusal && !riders.length) {
+      deps.log?.(`grouped order for ${live.join(",")} refused — entitlement changed, probing one by one`);
+      await probeLiveOneByOne(`the grouped order carrying it was refused: ${refusal.message}`);
+    } else if (refusal && partner[0] === ROOF_AREA) {
+      // With the always-entitled area as partner, the refusal is the riders'.
+      riders.forEach((p) => denied.add(p));
+      await deps.entitlements.mark(riders, "denied", `${refusal.message} (asked together with ${partner.join(",")})`);
+    } else if (refusal) {
+      // Refused with the riders aboard: ask again without them. Accepted → it
+      // was the riders, and they are denied with EagleView's own words.
+      try {
+        placed.push(await placeOrder(deps, input, partner));
+        await deps.entitlements.mark(partner, "live");
+        riders.forEach((p) => denied.add(p));
+        await deps.entitlements.mark(riders, "denied", `${refusal.message} (asked together with ${partner.join(",")})`);
+      } catch (err) {
+        if (err instanceof PdEntitlementError && partnerIsProbe) {
+          // a single-pack probe refused: that verdict is the partner's own
+          denied.add(partner[0]);
+          await deps.entitlements.mark(partner, "denied", err.message);
+          await note(riders, `refused together with ${partner.join(",")}, which is itself refused: ${msg(err)}`);
+        } else if (err instanceof PdEntitlementError) {
+          deps.log?.(`grouped order for ${live.join(",")} refused — entitlement changed, probing one by one`);
+          await probeLiveOneByOne(`refused together with ${partner.join(",")}, and those were refused without it too: ${msg(err)}`);
+          await note(riders, `refused together with ${partner.join(",")}, and those were refused without it too: ${msg(err)}`);
+        } else {
+          failPartner();
+          deps.log?.(`order for ${partner.join(",")} could not be placed: ${msg(err)}`);
+          await note(riders, `refused together with ${partner.join(",")}; the order without it then failed: ${msg(err)}`);
+        }
       }
     }
   }
 
   // 2b. one pack at a time, in the order the page misses them
-  const probeOrder = PROBE_ORDER as readonly string[];
-  const toProbe: string[] = oneByOne;
-  const ordered = [...probeOrder.filter((p) => toProbe.includes(p)), ...toProbe.filter((p) => !probeOrder.includes(p))];
+  const ordered = byProbeOrder(oneByOne);
   for (const pack of ordered as PdPack[]) {
     try {
       placed.push(await placeOrder(deps, input, [pack]));
@@ -357,12 +439,15 @@ export async function orderPacksFor(
         await deps.entitlements.mark([pack], "denied", err.message);
       } else {
         failed.add(pack);
-        deps.log?.(`pack ${pack} could not be placed: ${err instanceof Error ? err.message : String(err)}`);
+        deps.log?.(`pack ${pack} could not be placed: ${msg(err)}`);
+        await note([pack], `the probe could not be placed: ${msg(err)}`);
       }
     }
   }
   // Placed and paid, not waited for: the page collects them (collectPendingInstant).
   const stillPending = placed.flatMap((o) => o.packs);
+  // A rider whose re-check settled nothing keeps its last verdict in the report.
+  for (const p of riders) if (!stillPending.includes(p) && !denied.has(p) && known.get(p)?.status === "denied") denied.add(p);
 
   // The base (pack 001, this order's or an earlier one's) goes first so every
   // later part fills its structures in; the merge re-derives the totals.

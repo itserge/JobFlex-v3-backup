@@ -799,6 +799,24 @@ export class PdEntitlementError extends Error {
     this.name = "PdEntitlementError";
   }
 }
+
+/** EagleView's entitlement error codes: 10880 / 10036 seen in the field (403), 10640 documented (400). */
+const PD_ENTITLEMENT_CODES = new Set([10640, 10880, 10036]);
+
+/**
+ * Whether a refused Property Data order is an ENTITLEMENT refusal, and which.
+ * Any 403 is one (that is how it has always arrived, "explicit deny" included).
+ * A 400 is one only when it says so — by code or in words — because a 400 is
+ * also what a malformed request gets (10017 empty address, 10875 bad format).
+ * Exported for the QA check; null = some other failure.
+ */
+export function pdEntitlementRefusal(httpStatus: number | undefined, message: string): { status: number; code: number | null } | null {
+  const m = message.match(/"errorCode"\s*:\s*(\d+)/);
+  const code = m ? Number(m[1]) : null;
+  if (httpStatus === 403) return { status: 403, code };
+  if (httpStatus === 400 && ((code != null && PD_ENTITLEMENT_CODES.has(code)) || /entitle/i.test(message))) return { status: 400, code };
+  return null;
+}
 /** Everything the roof diagram consumes: figures + outline + flags + ortho. */
 export const PD_DIAGRAM_PACKS: PdPack[] = [
   PD_PACK.ROOF_AREA,
@@ -1074,6 +1092,8 @@ const PD_SEEN_ROOT = new Set([
 const PD_SEEN_STRUCTURE = new Set([
   "roof", "structure_eave_height", "structure_geometry", "structure_footprint_sqft",
   "structure_chimney_presence",
+  // seen, not read — every response since 2026-09-09 (audit 2026-11-12)
+  "structure_centroid",
   "structure_images", "structure_wildfire_mitigation_rating", "structure_setback",
   "structure_hail_vulnerability_rating", "structure_hail_loss_severity_rating",
   "structure_vegetation_setback", "structure_density_zones", "structure_count_zones",
@@ -1343,16 +1363,22 @@ export async function submitInstantOrder(
     // The refusal is therefore typed, per pack, and the caller
     // (lib/eagleviewOrder) buys pack by pack — no retry happens here, so that
     // one place decides what is ordered and records the verdict per pack.
-    if (err instanceof EagleViewUnavailableError && err.httpStatus === 403) {
+    // TWO SHAPES OF THE SAME REFUSAL (2026-11-12). What we saw in the field
+    // through 2026-11-06 is 403 / 10880 or 10036; EagleView's own guide (Data
+    // Packs, 2026-04-01 onwards) documents 400 / 10640. Before this, a 400 /
+    // 10640 fell through as a plain failure: the planner recorded nothing, the
+    // pack's old "denied" stood, and a re-check could never reach a verdict.
+    const entitlement = err instanceof EagleViewUnavailableError ? pdEntitlementRefusal(err.httpStatus, err.message) : null;
+    if (err instanceof EagleViewUnavailableError && entitlement) {
       evDebug("property request REFUSED (entitlement)", { ...identity, packs, detail: err.message.slice(0, 300) });
-      const m = err.message.match(/"errorCode"\s*:\s*(\d+)/);
-      const code = m ? Number(m[1]) : null;
+      const code = entitlement.code;
       throw new PdEntitlementError(
-        `EagleView refused the Property Data request for ${packs.join(", ")} (403${code != null ? ` / ${code}` : ""}): ` +
+        `EagleView refused the Property Data request for ${packs.join(", ")} (${entitlement.status}${code != null ? ` / ${code}` : ""}): ` +
           `this account is not entitled to one or more of these packs. Account org ${identity.org ?? "?"}, client ${identity.clientId}, host ${identity.propertyHost}. ` +
           "Entitlements are switched on per product in the EagleView developer portal (My Apps → this app → Property Data).",
         packs,
         code,
+        entitlement.status,
       );
     }
     evDebug("property request FAILED", { ...identity, packs, error: (err as Error)?.message?.slice(0, 300) });

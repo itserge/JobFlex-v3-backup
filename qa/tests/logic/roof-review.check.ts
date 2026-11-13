@@ -133,10 +133,10 @@ const short = (packs: readonly string[]) => packs.map((p) => p.slice(-3)).join("
     const out = await orderPacksFor(input, w.deps, { collectBudgetMs: 60_000 });
     const submits = w.calls.map((c, i) => (c.startsWith("submit") ? i : -1)).filter((i) => i >= 0);
     const polls = w.calls.map((c, i) => (c.startsWith("poll") ? i : -1)).filter((i) => i >= 0);
-    check("001 is submitted first and alone; the other six follow", w.calls[0] === "submit 001" && submits.length === 7, w.calls.filter((c) => c.startsWith("submit")).join(" | "));
+    check("001 is submitted first and alone; the other six follow — the imagery (008) riding with the grouped order, never alone", w.calls[0] === "submit 001" && submits.length === 6 && w.calls.includes("submit 002,008") && !w.calls.includes("submit 008"), w.calls.filter((c) => c.startsWith("submit")).join(" | "));
     check("the area is waited for before anything else is placed", polls.length > 0 && polls.every((i) => i < submits[1]), w.calls.slice(0, 6).join(" | "));
     check("only the area order is ever asked about, one ask per round", w.calls.filter((c) => c.startsWith("poll")).every((c) => c === "poll req1@0") && w.asks.req1 === 3, JSON.stringify(w.asks));
-    check("every accepted order is in the ledger", w.calls.filter((c) => c.startsWith("ledger.create")).length === 7);
+    check("every accepted order is in the ledger", w.calls.filter((c) => c.startsWith("ledger.create")).length === 6);
     check("the answer carries the area; the rest is pending for the page", short(out.report.have) === "001" && short(out.report.pending ?? []) === "002,003,004,005,007,008", JSON.stringify(out.report));
     check("nothing is failed or missing", out.report.failed.length === 0 && out.report.missing.length === 0);
     check("the merged answer has the area", out.instant.totals.areaSqft === 2400);
@@ -158,17 +158,42 @@ const short = (packs: readonly string[]) => packs.map((p) => p.slice(-3)).join("
 
   console.log("── refusals, placement failures, EagleView's own failures");
   {
-    const w = fakeDeps({ readiness: { "001": 1, "002": 1, "008": 1, "005": 1, "007": 1, "003": "fail", "004": 1 }, refuse: { "002": "403", "008": "403" }, refuseOnce: ["002"] });
+    const w = fakeDeps({ readiness: { "001": 1, "002": 1, "008": 1, "005": 1, "007": 1, "003": "fail", "004": 1 }, refuse: { "002,008": "403", "002": "403" }, refuseOnce: ["002"] });
     const out = await orderPacksFor(input, w.deps, { collectBudgetMs: 20_000 });
     check("a refused grouped order is probed pack by pack", w.calls.includes("submit 002") && w.calls.filter((c) => c === "submit 002").length === 2, w.calls.filter((c) => c.startsWith("submit")).join(" | "));
-    check("a 403 probe is denied", short(out.report.denied) === "008", JSON.stringify(out.report.denied));
+    check("the imagery is never asked alone, and an unsettled re-check is no verdict", !w.calls.includes("submit 008") && !w.marks.some(([p]) => p.includes(P.ORTHO)), JSON.stringify(w.marks));
     check("the area is in; the accepted probes are pending for the page (EagleView's own verdict on them comes then)", short(out.report.have) === "001" && short(out.report.pending ?? []) === "002,003,004,005,007", JSON.stringify(out.report));
     check("nothing the page will collect is marked failed", out.report.failed.length === 0 && Object.values(w.ledger).every((r) => r.status !== "failed"));
   }
   {
-    const w = fakeDeps({ readiness: { "001": 1, "002": 1 }, refuse: { "002": "5xx" } });
+    const w = fakeDeps({ readiness: { "001": 1, "002": 1 }, refuse: { "002,008": "5xx" } });
     const out = await orderPacksFor(input, w.deps, { collectBudgetMs: 5_000 });
     check("a grouped order that could not be placed is failed, not pending", short(out.report.failed) === "002" && !(out.report.pending ?? []).includes(P.PITCH_EAVE), JSON.stringify(out.report));
+  }
+  {
+    // 400 / 10640 or 403 alike reach the planner as a PdEntitlementError (lib/eagleview pdEntitlementRefusal).
+    const w = fakeDeps({ readiness: { "001": 1 }, refuse: { "002,008": "403" } });
+    const out = await orderPacksFor(input, w.deps, { collectBudgetMs: 5_000 });
+    check("refused with the imagery aboard, accepted without it → 008 is denied, 002 goes on", short(out.report.denied) === "008" && w.calls.includes("submit 002") && (out.report.pending ?? []).includes(P.PITCH_EAVE) && w.marks.some(([p, st]) => st === "denied" && p.includes(P.ORTHO)), w.calls.filter((c) => c.startsWith("submit")).join(" | "));
+  }
+  {
+    // EagleView switched the imagery back on: it rides with the grouped order, is accepted, and is bought from then on.
+    const w = fakeDeps({ readiness: { "001": 1 }, entitlements: [[P.ROOF_AREA, "live"], [P.PITCH_EAVE, "live"]] });
+    const out = await orderPacksFor(input, w.deps, { collectBudgetMs: 5_000 });
+    check("an accepted rider is marked live and its order is pending for the page", w.marks.some(([p, st]) => st === "live" && p.includes(P.ORTHO)) && (out.report.pending ?? []).includes(P.ORTHO), JSON.stringify(w.marks));
+  }
+  {
+    // The imagery is live and the grouped order is refused: the rest is probed alone, the imagery is not.
+    const w = fakeDeps({ readiness: { "001": 1 }, refuse: { "002,008": "403" }, entitlements: [[P.ROOF_AREA, "live"], [P.PITCH_EAVE, "live"], [P.ORTHO, "live"]] });
+    await orderPacksFor(input, w.deps, { collectBudgetMs: 5_000 });
+    check("a refused grouped order with the imagery live never probes the imagery alone", w.calls.includes("submit 002") && !w.calls.includes("submit 008") && !w.marks.some(([p, st]) => st === "denied" && p.includes(P.ORTHO)), w.calls.filter((c) => c.startsWith("submit")).join(" | "));
+  }
+  {
+    // "Order the missing packs" on an address that has everything but the imagery: the area carries it.
+    const w = fakeDeps({ readiness: {}, entitlements: [[P.ROOF_AREA, "live"], [P.PITCH_EAVE, "live"]] });
+    const base = answerFor("old2", PD_DIAGRAM_PACKS.filter((p) => p !== P.ORTHO));
+    await orderPacksFor(input, w.deps, { skip: PD_DIAGRAM_PACKS.filter((p) => p !== P.ORTHO), base, collectBudgetMs: 0 });
+    check("the only missing pack is the imagery → one order, 001 + 008", w.calls.filter((c) => c.startsWith("submit")).join(" | ") === "submit 001,008", w.calls.filter((c) => c.startsWith("submit")).join(" | "));
   }
   {
     const w = fakeDeps({ readiness: {}, refuse: { "001": "403" } });

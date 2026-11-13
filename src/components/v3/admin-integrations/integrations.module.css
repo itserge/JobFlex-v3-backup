@@ -56,6 +56,22 @@
   margin-right: 10px;
 }
 
+/* EagleView packs: a re-check that settled nothing, said in full on its own
+   line under the pack (it is long, and it is the one thing to read). */
+/* The pack's id, verdict time and EagleView's code wrap rather than clip:
+   on a phone the code is exactly the part an ellipsis would hide. */
+:global(.jf-blueprint .content) div.packSub {
+  white-space: normal;
+}
+:global(.jf-blueprint .content) .packNote {
+  flex: 1 0 100%;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
 /* ── Payments mode switch ───────────────────────────────────── */
 :global(.jf-blueprint .content) .modeRow {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;

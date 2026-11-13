@@ -54,7 +54,7 @@ import {
   type PackReport,
   type PlacedOrder,
 } from "@/lib/eagleviewOrder";
-import { markPacks, readEntitlements } from "@/lib/eagleviewEntitlements";
+import { markPacks, notePacks, readEntitlements } from "@/lib/eagleviewEntitlements";
 import { isSolarEnabled, SOLAR_CALL_BUDGET_MS, SolarUnavailableError, type SolarFailureKind } from "@/lib/solar";
 // The Google measurement itself and the row it is kept as live in lib/roofSolarMeasure (2026-11-05), shared with the AI Operator.
 import { persistRoofMeasurement } from "@/lib/roofSolarMeasure";
@@ -234,7 +234,7 @@ export function orderDeps(organizationId: string, addressKey: string, input: EvO
         await db.instantOrder.update({ where: { requestId }, data: { status: "failed", error } });
       },
     },
-    entitlements: { read: readEntitlements, mark: markPacks },
+    entitlements: { read: readEntitlements, mark: markPacks, note: notePacks },
     isTerminalFailure: isTerminalPdFailure,
     log: (msg) => console.error("[roofMeasurement] " + msg),
   };
