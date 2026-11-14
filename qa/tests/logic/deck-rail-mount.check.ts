@@ -135,5 +135,21 @@ const railPosts = covS.rails.members.filter((m) => m.role === "rail-post");
 check("a covered deck, top-mounted: no rail post is set inside a roof post — the roof's post is the rail's post there, and the checks say so", roofPostsOn.length > 0 && covS.rails.onRoofPosts > 0 && !railPosts.some((m) => roofPostsOn.some((rp) => Math.abs(rp.x - m.cx) < 4.5 && Math.abs(rp.y - m.cy) < 4.5)) && /roof's post is the rail's post there/.test(deckChecks(covS).find((c) => c.id === "guard-mount")?.text ?? ""), `${covS.rails.onRoofPosts} on roof posts; ${railPosts.length} rail posts`);
 check("…side-mounted, the rail hangs outside the rim, clear of the roof's posts: every rail post its own", buildStructure(base({ structure: "covered-deck", rail: { type: "aluminum", mount: "side" }, roof: covered.roof })).rails.onRoofPosts === 0);
 
+console.log("── the stairs' rail posts follow the side they leave");
+const stairOn = (rail: Record<string, unknown>) => base({ rail, stairs: [{ id: "s1", side: "front", atFt: 8, widthFt: 4, level: "upper", wrap: false, wrapSides: 1, landing: "pad", handrail: "both" }] });
+const stairPostsOf = (d: DeckDesign) => buildStructure(d).stairs[0].members.filter((m) => m.role === "stair-rail-post");
+const aluStair = stairOn({ type: "aluminum" });
+const aluSt = buildStructure(aluStair);
+const stTop = stairPostsOf(aluStair);
+const treadTops = new Set(Array.from({ length: aluSt.stairs[0].risers }, (_, k) => Math.round((surface - k * aluSt.stairs[0].riserIn) * 10)));
+check("an aluminum rail, top-mounted: the stair's posts stand ON the treads (each foot at the deck's surface or a tread's), 2¾ in. in from the stair's edges", aluSt.stairs[0].rail.mount === "top" && stTop.length === aluSt.stairs[0].rail.posts && stTop.every((m) => treadTops.has(Math.round((m.cz - m.sz / 2) * 10))) && new Set(stTop.map((m) => Math.round(Math.abs(m.cx - 96) * 100))).size === 1 && Math.abs(Math.abs(stTop[0].cx - 96) - (24 - 2.75)) < 0.01, JSON.stringify(stTop.map((m) => [m.cx, (m.cz - m.sz / 2).toFixed(2)]).slice(0, 4)));
+check("…no post runs down the stringer, no tension ties: blocking under every post, the deck's and the stairs'", aluSt.rails.hardware.postTies === 0 && aluSt.rails.stairTopPosts === aluSt.rails.stairPosts && aluSt.rails.hardware.blocks === 2 * (aluSt.rails.posts + aluSt.rails.stairPosts), JSON.stringify(aluSt.rails.hardware));
+const cedarStair = stairOn({ type: "cedar" });
+const cedarSt = buildStructure(cedarStair);
+check("a cedar rail, side-mounted: the stair's posts are bolted to the stringers as they always were — down the stringer's depth, a pair of ties each", cedarSt.stairs[0].rail.mount === "side" && stairPostsOf(cedarStair).every((m) => m.sz > 36 + 6 + 10) && cedarSt.rails.hardware.postTies === cedarSt.rails.posts + cedarSt.rails.stairPosts && cedarSt.rails.stairTopPosts === 0);
+const frontSide = buildStructure(stairOn({ type: "aluminum", mountBy: { "upper-front": "side" } }));
+check("the front alone side-mounted: the stair down the front follows it — on the stringers, on the maker's brackets", frontSide.stairs[0].rail.mount === "side" && frontSide.rails.stairTopPosts === 0 && frontSide.rails.hardware.fasciaBrackets === frontSide.rails.sidePosts + frontSide.rails.stairPosts, JSON.stringify(frontSide.rails.hardware));
+check("the checks say how the stairs' posts are held", /stairs' \d+ posts follow the side they leave: on the treads/.test(deckChecks(aluSt).find((c) => c.id === "guard-mount")?.text ?? "") && /on the stringers/.test(deckChecks(cedarSt).find((c) => c.id === "guard-mount")?.text ?? ""));
+
 console.log(bad ? `\n${bad} FAILED` : "\nALL PASS");
 if (bad) process.exit(1);

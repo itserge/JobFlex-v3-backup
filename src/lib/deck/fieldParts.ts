@@ -315,7 +315,12 @@ const RULES: Rule[] = [
     when: (f) => named(f, "Picture-frame border"),
     run: (c) => {
       const b = partsOf(c.sc, ["decking"], /^border board$/);
-      return light(c, { boxIdx: b, diagonal: false }, c.s.surface?.border ? `Picture-frame border · ${plural(c.s.surface.border, "row")} of boards` : "No picture-frame border");
+      // Its boards are mitred pieces (2026-11-13), not boxes: lit as the band they lie in, along every edge the border runs.
+      const sf = c.s.surface;
+      const band = sf && sf.border ? (sf.border * (sf.product.widthIn + sf.product.gapIn)) / 12 : 0;
+      const z = c.s.frame ? c.s.frame.surfaceIn / 12 : c.sc.heightFt;
+      const bars = sf && band ? sf.borderEdges.map((e) => bar(e.x0 / 12 + (e.inX * band) / 2, e.y0 / 12 + (e.inY * band) / 2, e.x1 / 12 + (e.inX * band) / 2, e.y1 / 12 + (e.inY * band) / 2, z, band)) : [];
+      return light(c, { boxIdx: b, boxes: bars, diagonal: false }, c.s.surface?.border ? `Picture-frame border · ${plural(c.s.surface.border, "row")} of boards` : "No picture-frame border");
     },
   },
   {

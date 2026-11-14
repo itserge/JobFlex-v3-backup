@@ -105,7 +105,14 @@ export function DeckPlan({ structure, placing = null, onPlaceStair, show = "all"
     // along every open edge, each board outlined — with a word saying how wide.
     const borderPieces = surface && surface.border > 0 && show !== "roof" ? surface.pieces.filter((pc) => pc.border) : [];
     const borderRings = surface && surface.border > 0 && show !== "roof" ? surface.shaped.slice(surface.shapedBorderFrom) : [];
-    const borderAt = borderPieces.length ? borderPieces.reduce((a, b) => (b.cy > a.cy ? b : a)) : null;
+    // Where its label hangs: under the border's front-most piece — a plain board, or a mitred one (its cut ring's box).
+    const ringBoxes = borderRings.map((ring) => {
+      const xs = ring.filter((_, k) => k % 2 === 0);
+      const ys = ring.filter((_, k) => k % 2 === 1);
+      return { cx: (Math.min(...xs) + Math.max(...xs)) / 2, cy: (Math.min(...ys) + Math.max(...ys)) / 2, sx: Math.max(...xs) - Math.min(...xs), sy: Math.max(...ys) - Math.min(...ys) };
+    });
+    const labelled = [...borderPieces.map((pc) => ({ cx: pc.cx, cy: pc.cy, sx: pc.sx, sy: pc.sy })), ...ringBoxes];
+    const borderAt = labelled.length ? labelled.reduce((a, b) => (b.cy + b.sy / 2 > a.cy + a.sy / 2 + 0.5 || (Math.abs(b.cy + b.sy / 2 - (a.cy + a.sy / 2)) <= 0.5 && b.sx > a.sx) ? b : a)) : null;
     const zones = f.zones.map((z) => z.zone);
     const W = Math.max(...zones.map((z) => z.x1));
     const D = Math.max(...zones.map((z) => z.y1));
@@ -132,7 +139,13 @@ export function DeckPlan({ structure, placing = null, onPlaceStair, show = "all"
         {f.posts.filter((p) => !p.roof).map((p) => {
           const w = p.size === "8x8" ? 7.5 : p.size === "6x6" ? 5.5 : 3.5;
           const d = p.size === "4x6" ? 5.5 : w;
-          return <rect key={p.id} x={p.x + ox - w / 2} y={p.y + oy - d / 2} width={w} height={d} fill="var(--ink)" />;
+          // A post set by hand wears a ring (2026-11-13), like the roof's.
+          return (
+            <g key={p.id}>
+              <rect x={p.x + ox - w / 2} y={p.y + oy - d / 2} width={w} height={d} fill="var(--ink)" />
+              {p.by ? <circle cx={p.x + ox} cy={p.y + oy} r={w * 0.95} fill="none" stroke="var(--blueprint)" strokeWidth={lw * 1.1} data-deck-plan-post-by="pin" /> : null}
+            </g>
+          );
         })}
         {show === "floor"
           ? f.posts.filter((p) => !p.roof).map((p) => (

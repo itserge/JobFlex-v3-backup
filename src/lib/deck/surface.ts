@@ -435,16 +435,44 @@ export function deckSurface(frame: DeckFrame): DeckSurface {
     const n = nB;
     // The sides' boards, as rectangles, for the front's pieces to start above.
     const sideRects: Array<{ x0: number; x1: number; y0: number; y1: number }> = [];
+    const mitred = on.every((v, i) => !v || square[i]);
     for (let i = 0; i < n; i++) {
       if (!on[i]) continue;
       const e = edges[i];
       borderLf += (borderBoards * e.length) / 12;
       crossings += borderBoards * Math.round(e.length / frame.spacingIn);
       if (!square[i]) continue;
+      const alongX = Math.abs(e.uy) < 1e-6;
+      // MITRED AT THE CORNERS (2026-11-13). Where every bordered edge is straight and square to its neighbours — a
+      // rectangle, an L, a deck along a stepped wall — two border boards that meet are cut 45° to each other: at an
+      // outside corner each is shorter along its inner edge, at an inside corner longer. They were butted (the longer
+      // edge's board ran through) while the note on them said "mitred". A board that meets no other border board at
+      // either end (it runs to the house wall both ways) stays a plain board. A bowed or clipped front keeps its own
+      // cut pieces, below.
+      if (mitred) {
+        const p = (i - 1 + n) % n;
+        const q = (i + 1) % n;
+        // How far along the edge a board's line at depth `o` starts and ends: at the corner's mitre, or square at the edge's own end.
+        const startAt = (o: number) => (on[p] && square[p] && edges[p].turnAtB > 0 ? o : on[p] && square[p] && edges[p].turnAtB < 0 ? -o : 0);
+        const endAt = (o: number) => e.length - (on[q] && square[q] && e.turnAtB > 0 ? o : on[q] && square[q] && e.turnAtB < 0 ? -o : 0);
+        const cut = (on[p] && square[p] && edges[p].turnAtB !== 0) || (on[q] && square[q] && e.turnAtB !== 0);
+        const at = (along: number, off: number): [number, number] => [e.A.x + e.ux * along - e.outX * off, e.A.y + e.uy * along - e.outY * off];
+        for (let k = 0; k < borderBoards; k++) {
+          const o0 = (k + 0.5) * pitch - product.widthIn / 2;
+          const o1 = o0 + product.widthIn;
+          if (!cut) {
+            const off = (k + 0.5) * pitch;
+            pieces.push({ cx: e.A.x + e.ux * (e.length / 2) - e.outX * off, cy: e.A.y + e.uy * (e.length / 2) - e.outY * off, sx: alongX ? e.length : product.widthIn, sy: alongX ? product.widthIn : e.length, border: true });
+            continue;
+          }
+          const ring = [at(startAt(o0), o0), at(endAt(o0), o0), at(endAt(o1), o1), at(startAt(o1), o1)];
+          if (ringArea(ring) > 4) shapedPieces.push(ring.flatMap((pt) => [pt[0], pt[1]]));
+        }
+        continue;
+      }
       const len = e.length - trimA[i] - trimB[i];
       if (!(len > 1)) continue;
       const mid = trimA[i] + len / 2;
-      const alongX = Math.abs(e.uy) < 1e-6;
       for (let k = 0; k < borderBoards; k++) {
         const off = (k + 0.5) * pitch;
         pieces.push({ cx: e.A.x + e.ux * mid - e.outX * off, cy: e.A.y + e.uy * mid - e.outY * off, sx: alongX ? len : product.widthIn, sy: alongX ? product.widthIn : len, border: true });

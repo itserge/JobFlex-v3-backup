@@ -64,7 +64,8 @@ check("\"Out from the house\": a bar down the side, 14 ft", !!out && out.tag?.te
 const boards = lit({ label: "Deck boards", step: "Surface" });
 check("\"Deck boards\": the boards", !!boards && layerCount(boards.boxIdx, "decking") > 0 && /^Deck boards · /.test(boards.tag?.text ?? ""), boards?.tag?.text);
 const border = lit({ label: "Picture-frame border", step: "Surface" });
-check("\"Picture-frame border\": only the border boards", !!border && border.boxIdx.length > 0 && border.boxIdx.every((i) => sc.legend[sc.tags[i]].role === "border board") && /1 row of boards/.test(border.tag?.text ?? ""), border?.tag?.text);
+// 2026-11-13: the border's boards are mitred pieces, not boxes — it is lit as the band along each of the three open edges.
+check("\"Picture-frame border\": only the border — its band along the three open edges, nothing else of the deck", !!border && border.boxes.length === 3 && border.boxIdx.every((i) => sc.legend[sc.tags[i]].role === "border board") && border.polyIdx.length === 0 && /1 row of boards/.test(border.tag?.text ?? ""), `${border?.boxes.length} bars · ${border?.tag?.text}`);
 const fascia = lit({ label: "Fascia", step: "Surface" });
 check("\"Fascia\" (Surface): the deck's fascia, not the roof's trim", !!fascia && layerCount(fascia.boxIdx, "fascia") > 0 && layerCount(fascia.boxIdx, "trim") === 0, fascia?.tag?.text);
 // Roof

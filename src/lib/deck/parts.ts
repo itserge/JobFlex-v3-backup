@@ -31,7 +31,7 @@
 import { BRACE_ABOVE_IN, JOIST_SIZES, POST_ACTUAL_IN, POST_SIZES, SOLID_BEAMS, SPACINGS, ftIn } from "./codeTables";
 import { wallType } from "./catalog";
 import { applyDeckPatch, deckChecks, type DeckPatch } from "./checks";
-import { BUILT_UP_CHOICES, RAIL_MOUNT_LABEL, RAIL_MOUNT_WORDS, RAIL_SECTION_LABEL, ROOF_POST_LIMITS, defaultRoofOpening, type DeckDesign, type RailSectionKey, type RoofDesign, type RoofSide } from "./design";
+import { BUILT_UP_CHOICES, DECK_POST_LIMITS, RAIL_MOUNT_LABEL, RAIL_MOUNT_WORDS, RAIL_SECTION_LABEL, ROOF_POST_LIMITS, defaultRoofOpening, type DeckDesign, type DeckPostPin, type RailSectionKey, type RoofDesign, type RoofSide } from "./design";
 import { priceDeck, type DeckPackage, type DeckPriceOptions } from "./pricing";
 import { railMountLine } from "./rails";
 import type { RoofMember } from "./roof";
@@ -376,7 +376,24 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
       if (!f || !post || !beam) return card("Post", "A post under the deck.", []);
       const choices: PartChoice[] = [];
       let stays: string | undefined;
+      // BY HAND (2026-11-13; design.framing.pins). A post can be slid, one can be added, and one set by hand taken off:
+      // the beam then stands on the posts as placed — and on more only where its spans or its ends need one.
+      if (!lower) {
+        const role = beam.role;
+        const others = d.framing.pins.filter((pn) => !(pn.beam === role && pn.atFt * 12 >= beam.x0 - 0.5 && pn.atFt * 12 <= beam.x1 + 0.5));
+        const pinsOf = (xs: number[]): DeckPostPin[] => [...others, ...xs.map((x) => ({ id: `${role[0]}${Math.round(x)}`, beam: role, atFt: Math.round(x) / 12 }))];
+        const byHand = f.posts.filter((q) => q.beamId === beam.id && q.by).map((q) => q.x);
+        const taken = byHand.length > 0;
+        // What the builder's posts are now: theirs where the beam is already by hand, every post of it where it is not yet.
+        const now = taken ? byHand : beam.postXs;
+        const here = now.findIndex((x) => Math.abs(x - post.x) < 0.5);
+        if (post.by) choices.push({ id: "pin-off", tone: "remove", label: "Remove this post — it was set by hand", note: "If the beam needs a post in the span it leaves, one stands in the middle of it.", patch: { framing: { pins: pinsOf(now.filter((_, k) => k !== here)) } } });
+        if (here >= 0) for (const by of [-12, 12]) choices.push({ id: `pin-slide-${by}`, tone: "swap", label: `Slide this post 1 ft to the ${by < 0 ? "left" : "right"}`, note: taken ? undefined : "The beam's posts stay where they are, as posts set by hand; this one moves.", patch: { framing: { pins: pinsOf(now.map((x, k) => (k === here ? Math.max(beam.x0 + 1, Math.min(beam.x1 - 1, x + by)) : x))) } } });
+        const gaps = beam.postXs.slice(1).map((x, k) => ({ at: (x + beam.postXs[k]) / 2, w: x - beam.postXs[k] })).sort((a, b) => b.w - a.w);
+        if (gaps.length && d.framing.pins.length < DECK_POST_LIMITS.pins) choices.push({ id: "pin-add", tone: "add", label: "Add a post under this beam", note: `In the middle of its longest span, ${ftIn(Math.round(gaps[0].w))} now.`, patch: { framing: { pins: pinsOf([...now, gaps[0].at]) } } });
+      }
       if (lower) stays = "The lower level's posts follow its own beams.";
+      else if (post.by) stays = undefined;
       else if (beam.postXs.length <= 2) stays = "A beam stands on two posts at least.";
       else {
         const fewer = fewerDeckPosts(s, beam.id, opts);

@@ -541,7 +541,7 @@ export function deckScene(s: DeckStructure): DeckScene {
     // The boards on top.
     const boardZ = f.surfaceIn - surface.product.thickIn / 2;
     const boardTag = tagFor(`${lvl}deck board`, surface.product.nominal, 0, `${surface.product.label}, ${surface.product.gapIn}-in. gaps, ${surface.fastening === "hidden" ? "hidden clips in the grooves" : "two coated screws at every joist"}${surface.pattern !== "straight" ? `, laid ${surface.pattern === "diagonal" ? "on the diagonal" : "in a herringbone"}` : ""}.`);
-    const borderTag = tagFor(`${lvl}border board`, surface.product.nominal, 0, `Picture-frame border${surface.product.border ? ` in ${surface.product.border.name}` : ""}, ${surface.border === 2 ? "two boards" : "one board"} wide along every open edge: the corners mitred 45° on site (drawn square), two screws or plugs at every joist, blocking under its inner edge where it runs with the joists.${surface.product.border ? "" : " In the deck's own colour — drawn a shade deeper so the frame reads."}`);
+    const borderTag = tagFor(`${lvl}border board`, surface.product.nominal, 0, `Picture-frame border${surface.product.border ? ` in ${surface.product.border.name}` : ""}, ${surface.border === 2 ? "two boards" : "one board"} wide along every open edge: mitred 45° at the corners, two screws or plugs at every joist, blocking under its inner edge where it runs with the joists.${surface.product.border ? "" : " In the deck's own colour — drawn a shade deeper so the frame reads."}`);
     for (const p of surface.pieces) box("decking", p.cx + ox, p.cy + oy, boardZ, p.sx, p.sy, surface.product.thickIn, p.border ? borderTag : boardTag, 0, p.yaw ?? 0, 0);
     surface.shaped.forEach((ring, ri) => {
       // The border's own cut pieces, in a second colour: the 3D is told which rings they are.
@@ -608,7 +608,8 @@ export function deckScene(s: DeckStructure): DeckScene {
         case "stair-rail":
           return `2x4 stair rail at ${slopeDeg}, 36 in. above the nosings, on brackets to the posts.`;
         case "stair-rail-post":
-          return "4x4 stair rail post bolted to the stringer, two ½-in. carriage bolts.";
+          // As the stair's rail is mounted (2026-11-13): on the treads, or on the stringer.
+          return st.rail.mount === "top" ? (s.rails.postKind === "wood" ? "4x4 stair rail post, top-mounted: on the tread in a rated post base, its screws into solid blocking between the stringers." : `${s.rails.label} stair rail post, top-mounted: its base plate on the tread, four structural screws into solid blocking between the stringers.`) : s.rails.postKind === "metal" ? `${s.rails.label} stair rail post, side-mounted: on the maker's bracket on the stringer's face, through-bolted.` : "4x4 stair rail post bolted to the stringer, two ½-in. carriage bolts.";
         case "stair-baluster":
           return "2x2 baluster, cut plumb top and bottom to the rail's slope, 5 in. on centre.";
         case "pad":

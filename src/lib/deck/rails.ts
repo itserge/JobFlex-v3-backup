@@ -146,6 +146,8 @@ export interface RailBuild {
   sidePosts: number;
   /** Places where a covered deck's roof post is the rail's post: the rail runs to it, on rail brackets. */
   onRoofPosts: number;
+  /** The stairs' rail posts that stand on the treads (the rest are on the stringers). */
+  stairTopPosts: number;
   /** The system's colour (2026-11-09): the one picked or its usual one; null for a wood rail (it is the wood). */
   color: RailColor | null;
   /** The balusters as built: the rail's own square ones, or thin metal ones (round black in wood, composite and vinyl; an aluminum system's own pickets). */
@@ -217,7 +219,7 @@ export function buildRails(input: RailInput): RailBuild {
   let balusters = 0;
   let cableLf = 0;
   let panels = 0;
-  const empty: RailBuild = { on: false, required, type: rail.type, label: type.label, heightIn: H, infill, system, segments: [], lf: 0, stairLf: 0, totalLf: 0, posts: 0, stairPosts: 0, topRailLf: 0, bottomRailLf: 0, capLf: 0, balusters: 0, cableLf: 0, panels: 0, litCaps: 0, riserLights: 0, members: [], panelsOut: [], hardware, color: null, baluster: "square", meshPanels: 0, infillColor: null, drinkLf: 0, postKind, mount: mountAll, mounts, topPosts: 0, sidePosts: 0, onRoofPosts: 0 };
+  const empty: RailBuild = { on: false, required, type: rail.type, label: type.label, heightIn: H, infill, system, segments: [], lf: 0, stairLf: 0, totalLf: 0, posts: 0, stairPosts: 0, topRailLf: 0, bottomRailLf: 0, capLf: 0, balusters: 0, cableLf: 0, panels: 0, litCaps: 0, riserLights: 0, members: [], panelsOut: [], hardware, color: null, baluster: "square", meshPanels: 0, infillColor: null, drinkLf: 0, postKind, mount: mountAll, mounts, topPosts: 0, sidePosts: 0, onRoofPosts: 0, stairTopPosts: 0 };
   if (rail.type === "none") return empty;
 
   /** Posts the other level set: two levels meeting at a corner would set two posts in one place (2026-10-11). */
@@ -458,6 +460,10 @@ export function buildRails(input: RailInput): RailBuild {
   // The stairs' rails, counted by the stairs; summed here so the price has one figure.
   const stairLf = stairs.reduce((a, s) => a + (s.rail.sides * s.rail.lengthIn) / 12, 0);
   const stairPosts = stairs.reduce((a, s) => a + s.rail.posts, 0);
+  // The stairs' posts by how each stair's are held (2026-11-13): on the treads — blocking between the stringers under
+  // each, a rated base under a wood one; on the stringers — tension ties for wood, the maker's brackets for metal.
+  const stairTop = stairs.reduce((a, s) => a + (s.rail.mount === "top" ? s.rail.posts : 0), 0);
+  const stairSide = stairPosts - stairTop;
   const stairBalusters = stairs.reduce((a, s) => a + s.rail.balusters, 0);
   const totalLf = Math.round((lf + stairLf) * 10) / 10;
   const litCaps = rail.lighting === "none" ? 0 : posts + stairPosts;
@@ -487,8 +493,15 @@ export function buildRails(input: RailInput): RailBuild {
     riserLights,
     members,
     panelsOut,
-    // The stairs' posts stand on their stringers: tied like the rim's where the posts are wood, bare or sleeved.
-    hardware: { ...hardware, postTies: hardware.postTies + (postKind === "metal" ? 0 : stairPosts), postCaps: hardware.postCaps + stairPosts },
+    hardware: {
+      ...hardware,
+      postTies: hardware.postTies + (postKind === "metal" ? 0 : stairSide),
+      fasciaBrackets: hardware.fasciaBrackets + (postKind === "metal" ? stairSide : 0),
+      blocks: hardware.blocks + TOP_MOUNT_BLOCKS * stairTop,
+      postBases: hardware.postBases + (postKind === "wood" ? stairTop : 0),
+      postCaps: hardware.postCaps + stairPosts,
+    },
+    stairTopPosts: stairTop,
     postKind,
     mount: mountAll,
     mounts,

@@ -29,7 +29,7 @@ import { GUARD_REQUIRED_ABOVE_IN, HANDRAIL_FROM_RISERS, RISER_MAX_IN, THICK_2X_I
 import { IRC_CODE, cite, inFrac, type DeckStateCode } from "./stateCodes";
 import { BAG_CUFT, footingFor, type Footing } from "./frame";
 import type { DeckingProduct } from "./catalog";
-import type { DeckDesign, RailDesign, StairDesign } from "./design";
+import { railMountOf, type DeckDesign, type RailDesign, type RailMount, type StairDesign } from "./design";
 
 /* ------------------------------------------------------------------ */
 /*  Constants a stair builder would recognise                           */
@@ -39,6 +39,8 @@ import type { DeckDesign, RailDesign, StairDesign } from "./design";
 export const RISER_TARGET_IN = 7.5;
 /** The tread's run (riser face to riser face): two 5 1/2-in. boards, 1 in. of nosing over the riser below. */
 export const TREAD_RUN_IN = 10.5;
+/** A top-mounted stair rail post's centre in from the stair's edge: what the deck's posts stand in from the deck's (lib/deck/rails TOP_MOUNT_IN). */
+export const STAIR_TOP_MOUNT_IN = 2.75;
 export const TREAD_NOSING_IN = 1;
 export const STRINGER_NOMINAL = "2x12";
 export const STRINGER_DEPTH_IN = 11.25;
@@ -151,7 +153,8 @@ export interface StairBuild {
   pad: { lengthIn: number; widthIn: number; thickIn: number; cuFt: number; bags: number } | null;
   pavers: number;
   /** Sides with a rail built, sides the code wants one on, and the sloped length of rail on each. */
-  rail: { sides: 0 | 1 | 2; wanted: 0 | 1 | 2; lengthIn: number; posts: number; balusters: number; handrailOnly: boolean };
+  /** `mount` (2026-11-13): how its rail's posts are held — as the deck's side it leaves: on the treads (top), or on the stringers (side). */
+  rail: { sides: 0 | 1 | 2; wanted: 0 | 1 | 2; lengthIn: number; posts: number; balusters: number; handrailOnly: boolean; mount: RailMount };
   /** A guard is required on the open sides (the deck is more than 30 in. up). */
   guard: boolean;
   members: StairMember[];
@@ -265,6 +268,8 @@ export function buildStair(input: StairInput): StairBuild {
   let totalRunIn = 0;
   let midSupport = false;
   let landing = false;
+  /** How the rail's posts are held on this stair: as on the side of the deck it leaves. */
+  const railMount: RailMount = railMountOf(rail, `${level.id}-${stair.side}`);
   let railSides: 0 | 1 | 2 = 0;
   let railWanted: 0 | 1 | 2 = 0;
   let railLengthIn = 0;
@@ -418,12 +423,27 @@ export function buildStair(input: StairInput): StairBuild {
       const metalBalusters = rail.type === "aluminum" || (rail.baluster === "round" && rail.type !== "cable" && rail.type !== "glass");
       const perSide = Math.floor(sloped / (metalBalusters ? 4.5 : BALUSTER_SPACING_IN));
       balusters = perSide * railSides;
-      const sides: number[] = railSides === 2 ? [THICK_2X_IN / 2 + 1.75, w - THICK_2X_IN / 2 - 1.75] : [w - THICK_2X_IN / 2 - 1.75];
+      // AS THE DECK'S RAIL IS MOUNTED (2026-11-13). The stair's posts were always drawn bolted to the stringer, down its
+      // depth — beside a top-mounted aluminum rail they were the "side-mounted section" a deck builder saw. They follow
+      // the side of the deck the stair leaves: TOP — on the treads, the same 2¾ in. in from the stair's edge as the
+      // deck's posts stand in from the deck's, from the tread up (no post down the stringer, no tension tie); SIDE —
+      // on the stringer, as they were.
+      const topMount = railMount === "top";
+      const inFrom = topMount ? STAIR_TOP_MOUNT_IN : THICK_2X_IN / 2 + 1.75;
+      const sides: number[] = railSides === 2 ? [inFrom, w - inFrom] : [w - inFrom];
       const slopeT = Math.atan2(riseIn, totalRunIn);
+      const riserIn = riseIn / Math.max(1, risers);
       for (const a of sides) {
         for (let k = 0; k < postsPerSide; k++) {
           const b = (totalRunIn * k) / (postsPerSide - 1);
           const zn = level.surfaceIn - (riseIn * b) / Math.max(1, totalRunIn);
+          if (topMount) {
+            // The tread it stands on: the deck itself at the top, then a riser down for every tread's run.
+            const foot = level.surfaceIn - (b < 0.5 ? 0 : Math.min(Math.max(1, risers - 1), Math.ceil(b / runIn - 1e-6)) * riserIn);
+            const h = zn + HANDRAIL_HEIGHT_IN + 6 - foot;
+            member("stair-rail-post", input.postSize === "8x8" ? "6x6" : "4x4", h, P(a, b), foot + h / 2, 3.5, 3.5, h, 0);
+            continue;
+          }
           const h = HANDRAIL_HEIGHT_IN + 6 + STRINGER_DEPTH_IN;
           member("stair-rail-post", input.postSize === "8x8" ? "6x6" : "4x4", h, P(a, b), zn - STRINGER_DEPTH_IN + h / 2, 3.5, 3.5, h, 0);
           hardware.railPostTies += 1;
@@ -510,7 +530,7 @@ export function buildStair(input: StairInput): StairBuild {
     landing,
     pad,
     pavers,
-    rail: { sides: railSides, wanted: railWanted, lengthIn: Math.round(railLengthIn), posts: railPosts, balusters, handrailOnly: railSides === 1 && !guard },
+    rail: { sides: railSides, wanted: railWanted, lengthIn: Math.round(railLengthIn), posts: railPosts, balusters, handrailOnly: railSides === 1 && !guard, mount: railMount },
     guard,
     members,
     footings,

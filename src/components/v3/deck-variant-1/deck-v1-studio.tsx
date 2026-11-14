@@ -47,12 +47,15 @@ import {
   PLACEMENT_LABEL,
   RAIL_BALUSTER_LABEL,
   RAIL_INFILL_LABEL,
+  DECK_BEAM_LABEL,
+  DECK_POST_LIMITS,
   RAIL_MOUNT_LABEL,
   ROOF_POST_LIMITS,
   ROOF_SIDES,
   ROOF_SIDE_LABEL,
   defaultRoofOpening,
   defaultRoofPin,
+  type DeckPostPin,
   type RoofOpening,
   type RoofPin,
   type RoofSide,
@@ -2049,6 +2052,54 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                 </select>
               </Field>
             </div>
+          ) : null}
+          {/* THE DECK'S POSTS BY HAND (2026-11-13): the widest spacing, and posts stood at the builder's own places. A beam
+              with posts set by hand stands on those, and on more only where its spans or its ends need one. */}
+          <Field label="Posts under a beam no farther apart than" aside={typeof design.framing.postSpacingFt === "number" ? undefined : `the beam's table decides — now ${ftIn(Math.round(Math.max(0, ...frame.beams.map((b) => b.spanIn))))} at most`} wide>
+            <Seg label="Deck posts no farther apart than" value={design.framing.postSpacingFt} onChange={(v) => patch({ framing: { postSpacingFt: v } })} options={[{ value: "auto" as const, label: "Auto" }, ...[4, 6, 8, 10].map((v) => ({ value: v as number | "auto", label: `${v} ft` }))]} />
+          </Field>
+          {design.framing.pins.length ? (
+            <div className="v1-rows" data-deck-post-pins>
+              {design.framing.pins.map((pn, i) => {
+                const missed = frame.pinsNotSet.find((x) => x.id === pn.id);
+                const set = (pch: Partial<DeckPostPin>) => patch({ framing: { pins: design.framing.pins.map((x) => (x.id === pn.id ? { ...x, ...pch } : x)) } });
+                return (
+                  <div className="v1-item" key={pn.id} data-deck-post-pin={pn.id}>
+                    <div className="v1-item-head">
+                      <span className="v1-item-title">
+                        {`Post ${i + 1}, by hand`}
+                        <span className="v1-item-sub">{missed ? `not set: ${missed.why}` : `under the ${DECK_BEAM_LABEL[pn.beam].toLowerCase()}, on a footing of its own`}</span>
+                      </span>
+                      <button type="button" className="v1-btn v1-btn-sm v1-btn-danger" onClick={() => patch({ framing: { pins: design.framing.pins.filter((x) => x.id !== pn.id) } })}>
+                        Remove
+                      </button>
+                    </div>
+                    <div className="v1-grid2">
+                      <Field label="Under the" lights={null}>
+                        <select className="v1-sel" value={pn.beam} aria-label={`Post ${i + 1}: which beam`} onChange={(e) => set({ beam: e.target.value as DeckPostPin["beam"] })}>
+                          {(["front", "middle", "back"] as const).filter((b) => b === pn.beam || frame.beams.some((x) => x.role === b)).map((b) => (
+                            <option key={b} value={b}>{DECK_BEAM_LABEL[b]}</option>
+                          ))}
+                        </select>
+                      </Field>
+                      <Stepper label="Standing at" aside="from the deck's left end" unit="ft" value={pn.atFt} step={0.5} parse={parseFeet} format={feetText} min={DECK_POST_LIMITS.atFt.min} max={Math.min(DECK_POST_LIMITS.atFt.max, design.shape.widthFt)} onCommit={(n2) => set({ atFt: n2 })} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+          <div className="v1-row-acts">
+            {[...new Set(frame.beams.map((b) => b.role))].map((role) => (
+              <button key={role} type="button" className="v1-btn v1-btn-sm v1-btn-quiet" disabled={design.framing.pins.length >= DECK_POST_LIMITS.pins} data-deck-post-add={role} onClick={() => patch({ framing: { pins: [...design.framing.pins, { id: `k${Date.now().toString(36).slice(-6)}`, beam: role, atFt: Math.round(design.shape.widthFt / 2) }] } })}>
+                {`+ A post under the ${DECK_BEAM_LABEL[role].toLowerCase()}`}
+              </button>
+            ))}
+          </div>
+          {frame.postsByHand.length ? (
+            <p className="v1-hint" data-deck-post-hand>
+              {frame.postsByHand.map((h) => `${DECK_BEAM_LABEL[h.role]}: ${h.mine} set by hand${h.added ? `, ${h.added} more where its spans and its ends need them` : ""}.`).join(" ")} Click a post in the 3D to slide it or take it off.
+            </p>
           ) : null}
         </More>
         </Scope>

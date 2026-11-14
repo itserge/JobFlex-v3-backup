@@ -550,6 +550,14 @@ export interface DeckDesign {
     braces: boolean;
     /** Braces taken out one by one in the 3D (2026-11-09; lib/deck/parts): each a post and the way its brace leans. */
     bracesOff: string[];
+    /**
+     * THE DECK'S OWN POSTS BY HAND (2026-11-13 — a deck builder: "let me add and position posts, and set their spacing").
+     * `pins`: posts stood under a beam at the builder's own places. A beam with any post set by hand stands on THOSE
+     * posts — and on more only where its spans or its ends need one, so the code's tables are never left behind.
+     * `postSpacingFt`: the farthest apart the posts under a beam may stand ("auto" = what the beam's table allows).
+     */
+    pins: DeckPostPin[];
+    postSpacingFt: number | "auto";
   };
   ledger: {
     fastener: LedgerFastener;
@@ -691,6 +699,15 @@ export function defaultRoofDesign(structure: Structure = "covered-deck"): RoofDe
   };
 }
 
+/** A post under a deck beam, set by hand: the beam it stands under — the front one, a middle one, a free-standing deck's back one — and its place, feet from the deck's left end. */
+export interface DeckPostPin {
+  id: string;
+  beam: "front" | "middle" | "back";
+  atFt: number;
+}
+export const DECK_BEAM_LABEL: Record<DeckPostPin["beam"], string> = { front: "Front beam", middle: "Middle beam", back: "Back beam" };
+export const DECK_POST_LIMITS = { pins: 24, atFt: { min: 0, max: 60 }, spacingFt: { min: 3, max: 14 } } as const;
+
 /** The railing a deck starts with: none chosen — the checks ask for one where the height requires it. */
 export function defaultRailDesign(): RailDesign {
   return { type: "none", heightIn: 36, infill: "auto", postSpacingFt: 6, cap: true, lighting: "none", customPerFt: 0, customName: "", lowerLevel: true, color: "", baluster: "square", drink: false, mount: "auto", mountBy: {} };
@@ -744,6 +761,8 @@ export function defaultDeckDesign(opts: { state?: string | null; frostIn?: numbe
       blocking: "auto",
       braces: true,
       bracesOff: [],
+      pins: [],
+      postSpacingFt: "auto",
     },
     ledger: { fastener: "lag", lateral: "two" },
     footing: { type: "poured", aboveGradeIn: 3, frostAlways: false },
@@ -914,6 +933,8 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
       blocking: oneOf(f.blocking, ["auto", "mid-span"] as const, d.framing.blocking),
       braces: typeof f.braces === "boolean" ? f.braces : d.framing.braces,
       bracesOff: keyList(f.bracesOff),
+      pins: deckPins(f.pins),
+      postSpacingFt: typeof f.postSpacingFt === "number" && Number.isFinite(f.postSpacingFt) ? Math.round(clamp(f.postSpacingFt, DECK_POST_LIMITS.spacingFt.min, DECK_POST_LIMITS.spacingFt.max)) : "auto",
     },
     ledger: { fastener, lateral: oneOf(l.lateral, ["two", "four"] as const, d.ledger.lateral) },
     footing: {
@@ -1128,6 +1149,21 @@ export function normalizeRoof(raw: unknown, structure: Structure, floor: Floor, 
     openings: roofPlaced(r.openings, ROOF_POST_LIMITS.openings, "o", (v, id, side, atFt) => ({ id, side, atFt, widthFt: toInch(clamp(num(v.widthFt, 4), ROOF_POST_LIMITS.openingFt.min, ROOF_POST_LIMITS.openingFt.max)), door: v.door !== false })),
     postSpacingFt: typeof r.postSpacingFt === "number" && Number.isFinite(r.postSpacingFt) ? Math.round(clamp(r.postSpacingFt, ROOF_POST_LIMITS.spacingFt.min, ROOF_POST_LIMITS.spacingFt.max)) : "auto",
   };
+}
+
+/** The deck's posts set by hand: each with an id of its own, a beam and a place along it to the inch; junk and doubles dropped. */
+function deckPins(raw: unknown): DeckPostPin[] {
+  const out: DeckPostPin[] = [];
+  for (const [i, item] of (Array.isArray(raw) ? raw : []).entries()) {
+    if (out.length >= DECK_POST_LIMITS.pins) break;
+    if (!item || typeof item !== "object") continue;
+    const v = item as Record<string, unknown>;
+    if (typeof v.atFt !== "number" || !Number.isFinite(v.atFt)) continue;
+    const id = typeof v.id === "string" && /^[a-z0-9-]{1,12}$/.test(v.id) ? v.id : `k${i + 1}`;
+    if (out.some((o) => o.id === id)) continue;
+    out.push({ id, beam: oneOf(v.beam, ["front", "middle", "back"] as const, "front"), atFt: toInch(clamp(v.atFt, DECK_POST_LIMITS.atFt.min, DECK_POST_LIMITS.atFt.max)) });
+  }
+  return out;
 }
 
 /** A list of things set by hand on the roof's sides: each with an id of its own, a side and a place along it, to the inch; junk and doubles dropped. */

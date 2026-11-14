@@ -228,6 +228,8 @@ export interface Post {
   maxHeightIn: number;
   /** An end post of its beam — where the braces go. */
   corner: boolean;
+  /** Set by hand (2026-11-13; design.framing.pins): a post the builder stood under this beam. */
+  by?: { kind: "pin"; id: string };
   footing: Footing;
   /** A roof's post (M2): it runs from its own footing up through the deck; the roof draws the post, the deck only its footing and base. */
   roof?: boolean;
@@ -277,6 +279,12 @@ export interface DeckFrame {
   beamKind: BeamKind;
   /** Why the beams are not the kind the design asked for, when they are not. */
   beamKindNote: string | null;
+  /**
+   * Posts set by hand (2026-11-13), beam by beam: how many are the builder's, and how many more the beam still needed —
+   * at an end it would have run too far past, or in a span past its table. And the ones that found no beam to stand under.
+   */
+  postsByHand: Array<{ beamId: string; role: Beam["role"]; mine: number; added: number }>;
+  pinsNotSet: Array<{ id: string; why: string }>;
   /** Levels, inches above the ground. */
   surfaceIn: number;
   joistTopIn: number;
@@ -773,8 +781,26 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
     // Beams: for each line, the size and post count that cost least together.
     const lines = mergeLines(plan.zones.flatMap((z) => beamLines(z, style)));
     const beyond: string[] = [];
+    const postsByHand: DeckFrame["postsByHand"] = [];
+    const pinsNotSet: DeckFrame["pinsNotSet"] = [];
     let droppedDoesNotFit = false;
     const beams: Beam[] = [];
+    // The builder's own posts, each put on its beam: the one of that name its place is under — the longest, where two are.
+    const spacingByHandIn = typeof design.framing.postSpacingFt === "number" ? design.framing.postSpacingFt * 12 : 0;
+    const postW = POST_ACTUAL_IN[design.framing.post]?.[0] ?? 5.5;
+    const pinsByLine = new Map<number, Array<{ id: string; x: number }>>();
+    const pinAt = new Map<string, string>();
+    for (const pin of design.framing.pins) {
+      const x = pin.atFt * 12;
+      const named = lines.map((l, k) => ({ l, k })).filter(({ l }) => l.role === pin.beam);
+      if (!named.length) {
+        pinsNotSet.push({ id: pin.id, why: pin.beam === "back" ? "this deck has no back beam — it hangs on the house there" : pin.beam === "middle" ? "this deck has no middle beam" : "this deck has no front beam" });
+        continue;
+      }
+      const under = named.filter(({ l }) => x >= l.x0 - 0.5 && x <= l.x1 + 0.5);
+      const at = (under.length ? under : named).reduce((m, q) => (q.l.x1 - q.l.x0 > m.l.x1 - m.l.x0 ? q : m));
+      pinsByLine.set(at.k, [...(pinsByLine.get(at.k) ?? []), { id: pin.id, x }]);
+    }
     for (const [i, line] of lines.entries()) {
       const id = `b${i + 1}`;
       const lengthIn = line.x1 - line.x0;
@@ -792,7 +818,8 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       const options: Option[] = beamChoices.map((size) => {
         const spec = beamSpec(size);
         const maxSpanIn = spec.kind === "solid" ? solidBeamMaxSpanIn(load, group, size as (typeof SOLID_BEAMS)[number], dcaFt) : builtUpBeamMaxSpanIn(load, group, size as (typeof BUILT_UP_CHOICES)[number], ircFt);
-        const posts = layoutPosts(lengthIn, maxSpanIn > 0 ? Math.min(maxSpanIn, areaSpanIn) : maxSpanIn, style);
+        // …nor farther apart than the builder set by hand (2026-11-13) — closer posts may let a lighter beam do.
+        const posts = layoutPosts(lengthIn, maxSpanIn > 0 ? Math.min(maxSpanIn, areaSpanIn, spacingByHandIn || Infinity) : maxSpanIn, style);
         return { spec, maxSpanIn, posts, cost: (lengthIn / 12) * spec.plies * price(lumberKey(spec.stock)) + posts.count * postSetCost };
       });
       const cheapest = (list: Option[]) => list.reduce((m, o) => (o.cost < m.cost - 0.005 || (Math.abs(o.cost - m.cost) <= 0.005 && o.spec.depthIn < m.spec.depthIn) ? o : m));
@@ -821,7 +848,55 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       const { spec, posts } = pick;
       // A flush beam is the deck's edge: its outer face on the line of the deck.
       const y = style === "flush" && line.role !== "middle" ? (line.role === "front" ? line.segs[0].y + BEARING_HALF_IN - spec.thickIn / 2 : line.segs[0].y - BEARING_HALF_IN + spec.thickIn / 2) : line.y;
-      const postXs = Array.from({ length: posts.count }, (_, k) => line.x0 + posts.endIn + k * posts.spanIn);
+      let postXs = Array.from({ length: posts.count }, (_, k) => line.x0 + posts.endIn + k * posts.spanIn);
+      let spanIn = posts.spanIn;
+      let endIn = posts.endIn;
+      // POSTS SET BY HAND (2026-11-13). A beam the builder stood posts under stands on those — and on more only where
+      // it must: at an end it would otherwise run past by more than a quarter of the span beside it (2 ft at most), and
+      // in a span longer than its table, the post table's 160 sq ft, or the spacing set by hand allow. So a post can be
+      // moved or added freely, and one "taken away" that the beam needs comes back in the middle of the span it left.
+      const mine = pinsByLine.get(i) ?? [];
+      if (mine.length) {
+        const limit = pick.maxSpanIn > 0 ? Math.min(pick.maxSpanIn, areaSpanIn, spacingByHandIn || Infinity) : Infinity;
+        let xs: number[] = [];
+        for (const m of mine.map((q) => Math.max(line.x0 + 1, Math.min(line.x1 - 1, q.x))).sort((a, b) => a - b)) if (!xs.some((q) => Math.abs(q - m) < postW + 1)) xs.push(m);
+        const own = xs.slice();
+        for (let round = 0; round < 6; round++) {
+          const before = xs.length;
+          // The ends: past its end post a beam runs a quarter of its span at most, 2 ft at most — read on its longest
+          // span, as the beam's own check reads it (checks.ts "beam-end"). An end post goes where the layout puts one.
+          const longest = xs.length > 1 ? xs.slice(1).reduce((m, x, k) => Math.max(m, x - xs[k]), 0) : Infinity;
+          const reach = Math.min(24, longest * BEAM_CANTILEVER_SHARE) + 1e-6;
+          if (xs.length < 2 || xs[0] - line.x0 > reach) {
+            const gap = xs[0] - line.x0;
+            if (gap > postW + 1) xs.unshift(line.x0 + Math.min(posts.endIn, gap / 2));
+          }
+          if (xs.length < 2 || line.x1 - xs[xs.length - 1] > reach) {
+            const gap = line.x1 - xs[xs.length - 1];
+            if (gap > postW + 1) xs.push(line.x1 - Math.min(posts.endIn, gap / 2));
+          }
+          // The spans.
+          const filled: number[] = [];
+          xs.forEach((x, k) => {
+            if (k > 0 && Number.isFinite(limit)) {
+              const gap = x - xs[k - 1];
+              const more = Math.ceil(gap / limit - 1e-9) - 1;
+              for (let j = 1; j <= more; j++) filled.push(xs[k - 1] + (gap * j) / (more + 1));
+            }
+            filled.push(x);
+          });
+          xs = filled;
+          if (xs.length === before) break;
+        }
+        postXs = xs;
+        spanIn = xs.slice(1).reduce((m, x, k) => Math.max(m, x - xs[k]), 0);
+        endIn = Math.max(xs[0] - line.x0, line.x1 - xs[xs.length - 1]);
+        for (const m of mine) {
+          const at = Math.max(line.x0 + 1, Math.min(line.x1 - 1, m.x));
+          if (own.some((q) => Math.abs(q - at) < 0.01) && !pinAt.has(`${id}:${Math.round(at * 100)}`)) pinAt.set(`${id}:${Math.round(at * 100)}`, m.id);
+        }
+        postsByHand.push({ beamId: id, role: line.role, mine: own.length, added: xs.length - own.length });
+      }
       const topIn = style === "dropped" ? joistBottomIn : joistTopIn;
       beams.push({
         id,
@@ -838,8 +913,8 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
         bothSides,
         maxSpanIn: pick.maxSpanIn,
         postXs,
-        spanIn: posts.spanIn,
-        endIn: posts.endIn,
+        spanIn,
+        endIn,
         bottomIn: topIn - spec.depthIn,
       });
       // Remember the strips for the posts' areas.
@@ -888,6 +963,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
           tributarySqFt,
           maxHeightIn: postMaxHeightIn(load, group, design.framing.post, tributarySqFt),
           corner: k === 0 || k === beam.postXs.length - 1,
+          ...(pinAt.has(`${beam.id}:${Math.round(x * 100)}`) ? { by: { kind: "pin" as const, id: pinAt.get(`${beam.id}:${Math.round(x * 100)}`) as string } } : {}),
           footing,
         });
       });
@@ -1187,6 +1263,8 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       beamStyle: style,
       beamKind,
       beamKindNote,
+      postsByHand,
+      pinsNotSet,
       surfaceIn,
       joistTopIn,
       joistBottomIn,

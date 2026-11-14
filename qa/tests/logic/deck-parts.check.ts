@@ -232,7 +232,7 @@ const plainBorder = buildStructure(mk({ decking: { borderColor: "" } }, framed))
 check("the border takes a second colour of the same line, named as the order names it", sBd.frame!.decking.border?.name === "Biscayne" && sBd.frame!.decking.border.label === "Trex Transcend Lineage in Biscayne" && sBd.frame!.decking.border.color === bis.hex && sBd.frame!.decking.label === "Trex Transcend Lineage in Jasper", sBd.frame!.decking.border);
 check("it is bought apart: its own boards, off the deck's own count", sBd.surface!.borderStock.length === 1 && sBd.surface!.borderStock[0].count > 0 && plainBorder.surface!.borderStock.length === 0 && sBd.surface!.stock.reduce((a, x) => a + x.count * x.lengthFt, 0) < plainBorder.surface!.stock.reduce((a, x) => a + x.count * x.lengthFt, 0), [sBd.surface!.borderStock, sBd.surface!.stock, plainBorder.surface!.stock]);
 const scBd = deckScene(sBd);
-check("the 3D draws the border boards in it, the field in the deck's colour", scBd.colors.border === bis.hex && scBd.colors.border2 === bis.hex2 && scBd.colors.decking === jc.hex && scBd.boxes.some((_, i) => /border board$/.test(scBd.legend[scBd.tags[i]]?.role ?? "")) );
+check("the 3D draws the border boards in it, the field in the deck's colour", scBd.colors.border === bis.hex && scBd.colors.border2 === bis.hex2 && scBd.colors.decking === jc.hex && (scBd.diagonal?.border?.length ?? 0) === 3 && scBd.legend.some((l) => /border board$/.test(l.role)));
 // 2026-11-13 — a deck builder: "the picture-frame border does not visibly change the deck". In the deck's own colour it
 // was drawn exactly like the field. It is drawn a shade deeper (a drafting tone, said in the legend); no border, no tone.
 const plainScene = deckScene(plainBorder);

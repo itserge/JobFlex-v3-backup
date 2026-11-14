@@ -70,6 +70,11 @@ function randomDesign(r: Rng): unknown {
   d.roof = { kind: pick(r, ROOF_KINDS), attach: pick(r, ["wall", "free"]), plan: { shape: pick(r, ROOF_PLAN_SHAPES), widthFt: odd(r, 6, 40), depthFt: odd(r, 6, 40), acrossFt: odd(r, 8, 30), offsetFt: odd(r, -30, 30) }, pitch: odd(r, 2, 12), eaveHeightIn: int(r, 84, 144), overhangIn: int(r, 0, 36), load: pick(r, ["auto", 20, 30, 50, 70]), post: pick(r, ["4x4", "6x6", "8x8"]), rafter: pick(r, ["auto", "2x6", "2x8", "2x10", "2x12"]), rafterSpacingIn: pick(r, [12, 16, 24]), header: pick(r, ["auto", "lvl", "4x8", "4x12", "2-2x10", "3-2x12"]), ridge: pick(r, ["auto", "beam", "board", "none", "trusses"]), crossBeams: pick(r, [0, 0, 1, 2, 3, 4, -1, 2.6]), roofing: pick(r, ROOFINGS), roofDeck: pick(r, ["sheathing", "purlins"]), ceiling: pick(r, ["none", "tongue-groove", "beadboard"]), cupola: bool(r), fascia: { eave: bool(r), rake: bool(r), finish: pick(r, ["wood", "pvc", "aluminum-wrap"]) }, soffit: bool(r), gutters: { kind: pick(r, GUTTER_KINDS), guards: bool(r) }, braces: bool(r), slats: { size: pick(r, ["2x2", "2x4", "2x6"]), spacingIn: int(r, 3, 24) }, pergolaStyle: pick(r, ["flat", "louvered", "arched"]), walls: { fill: pick(r, ["none", "screen", "lattice", "solid"]), sides: int(r, 1, 16) }, extras: { fan: bool(r), lights: int(r, 0, 12) } };
   // 2026-11-13: how the rail's posts are mounted (the deck's, and any side's own); posts and openings set by hand on the roof.
   d.rail.mount = pick(r, ["auto", "top", "side"]);
+  // …and the deck's own posts set by hand, with the widest spacing.
+  if (r() < 0.35) {
+    d.framing.pins = Array.from({ length: int(r, 1, 26) }, (_, i) => ({ id: `k${i + 1}`, beam: pick(r, ["front", "middle", "back", "side"]), atFt: odd(r, -3, 64) }));
+    d.framing.postSpacingFt = pick(r, ["auto", 3, 4, 6, 8, 14, 1, 40]);
+  }
   d.rail.mountBy = r() < 0.6 ? {} : Object.fromEntries(["upper-front", "upper-left", "upper-right", "upper-back", "lower-front", "lower-left"].filter(() => r() < 0.4).map((k) => [k, pick(r, ["top", "side"])]));
   if (r() < 0.45) {
     d.roof.openings = Array.from({ length: int(r, 1, 7) }, (_, i) => ({ id: `o${i + 1}`, side: pick(r, ["front", "left", "right", "back"]), atFt: odd(r, -2, 62), widthFt: odd(r, 1, 20), door: bool(r) }));
