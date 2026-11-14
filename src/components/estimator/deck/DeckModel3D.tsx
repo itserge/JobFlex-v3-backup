@@ -45,8 +45,8 @@ export interface DeckEdit {
 }
 
 /** The short name beside each edit knob, and which names win a crowded spot (the deck's own size first, the house last). */
-const KNOB_NAME: Record<SceneHandle["kind"], string> = { width: "Width", depth: "Depth", height: "Height", eave: "Post height", pitch: "Pitch", "roof-width": "Roof width", "roof-depth": "Roof depth", "lower-depth": "Lower level", stair: "Move stairs", "stair-width": "Stair width", jog: "Wall step", "house-left": "House corner", "house-right": "House corner" };
-const KNOB_RANK: Record<SceneHandle["kind"], number> = { width: 0, depth: 1, height: 2, eave: 3, pitch: 4, "roof-width": 5, "roof-depth": 6, "lower-depth": 7, "stair-width": 8, stair: 9, "house-left": 10, "house-right": 11, jog: 12 };
+const KNOB_NAME: Record<SceneHandle["kind"], string> = { width: "Width", depth: "Depth", height: "Height", eave: "Post height", pitch: "Pitch", "roof-width": "Roof width", "roof-depth": "Roof depth", "lower-depth": "Lower level", stair: "Move stairs", "stair-width": "Stair width", jog: "Wall step", "house-left": "House corner", "house-right": "House corner", post: "Move post", beam: "Move beam", "roof-post": "Move roof post" };
+const KNOB_RANK: Record<SceneHandle["kind"], number> = { width: 0, depth: 1, height: 2, eave: 3, pitch: 4, "roof-width": 5, "roof-depth": 6, "lower-depth": 7, "stair-width": 8, stair: 9, "house-left": 10, "house-right": 11, jog: 12, post: 13, beam: 14, "roof-post": 15 };
 
 /** What a touch landed on, for the studio's label and the fixture placer. */
 export interface DeckPick {
@@ -1100,6 +1100,8 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
     let content: Built | null = null;
     // A handle drag: the pointer's movement along the handle's axis, read on a plane through the handle; `last` is the value last sent.
     let drag: { handle: SceneHandle; plane: THREE.Plane; start: THREE.Vector3; last: number } | null = null;
+    // A post or a beam the pointer went down on (SceneHandle.grab), not yet pulled: a pull moves it, letting go is a click.
+    let grabDown: { mesh: THREE.Mesh; x: number; y: number } | null = null;
     // THE GRABBED EDGE STAYS UNDER THE POINTER (owner, 2026-10-18). The scene stands on the deck's centre, so a wider
     // deck used to slide the house one way and the knob the other: the knob fell behind the pointer and the size ran
     // ahead of the hand. While a knob is held the origin is pinned where the drag began, so only the grabbed edge
@@ -1907,9 +1909,24 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       const handleMat = new THREE.MeshStandardMaterial({ color: 0x1854a0, roughness: 0.35, metalness: 0.1, emissive: new THREE.Color(0x1854a0), emissiveIntensity: 0.25 });
       owned.push(handleGeo, handleMat);
       const handles: THREE.Mesh[] = [];
+      // A POST OR A BEAM IS ITS OWN HANDLE (2026-11-13; SceneHandle.grab): an unseen box around the part, a little
+      // larger than it (a finger's width more on a touch screen), that the pointer takes hold of. No knob.
+      const grabMat = new THREE.MeshBasicMaterial({ visible: false });
+      owned.push(grabMat);
+      const pad = coarse ? 0.3 : 0.06;
       for (const h of s.handles) {
-        const m = new THREE.Mesh(handleGeo, handleMat);
-        m.position.set(h.x - ox, h.z + 0.3, h.y - oz);
+        let m: THREE.Mesh;
+        if (h.grab) {
+          const [x0, y0, z0, x1, y1, z1] = h.grab;
+          const geo = new THREE.BoxGeometry(Math.max(0.05, x1 - x0) + 2 * pad, Math.max(0.05, z1 - z0) + 2 * pad, Math.max(0.05, y1 - y0) + 2 * pad);
+          owned.push(geo);
+          m = new THREE.Mesh(geo, grabMat);
+          m.position.set((x0 + x1) / 2 - ox, (z0 + z1) / 2, (y0 + y1) / 2 - oz);
+          m.userData.grab = true;
+        } else {
+          m = new THREE.Mesh(handleGeo, handleMat);
+          m.position.set(h.x - ox, h.z + 0.3, h.y - oz);
+        }
         m.userData.handle = h;
         m.userData.layer = -3;
         m.visible = false;
@@ -1920,8 +1937,12 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       const knobs: HTMLButtonElement[] = [];
       const knobLabels: HTMLSpanElement[] = [];
       const leaders: SVGGElement[] = [];
+      // The post or beam in the hand, read again where it stands now: its place shows as it moves.
+      const held = drag?.handle.grab ? s.handles.find((q) => q.kind === drag?.handle.kind && q.id === drag?.handle.id) : undefined;
+      if (held) queueMicrotask(() => hoverHandle(held));
       handles.forEach((m, i) => {
         const h = s.handles[i];
+        if (h.grab) return;
         const key = `${h.kind}:${h.id}`;
         const leader = document.createElementNS("http://www.w3.org/2000/svg", "g");
         leader.innerHTML = `<line/><circle r="3.5"/>`;
@@ -2549,7 +2570,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           return { pick: { legend: lg, layer: null, point: [sp.position.x + ox, sp.position.z + oz, sp.position.y], mount: "deck" }, boxIdx: null, mesh: null, instanceId: null, calloutLegend: sp.userData.legend as number };
         }
       }
-      const hits = ray.intersectObjects(content.group.children.filter((o) => o.visible && !(o instanceof THREE.Sprite) && !(o instanceof THREE.LineSegments) && !o.userData.dims), true);
+      const hits = ray.intersectObjects(content.group.children.filter((o) => o.visible && !(o instanceof THREE.Sprite) && !(o instanceof THREE.LineSegments) && !o.userData.dims && !o.userData.grab), true);
       // X-RAY IS SEE-THROUGH TO THE FINGER TOO (2026-11-09): with the boards, the roofing, the trim and the ceiling faded,
       // a touch goes through them to the frame behind — the rafter tie under the shingles, the beam behind the fascia —
       // so a part of the frame can be picked (and taken out or swapped) without turning the picture inside out.
@@ -2601,8 +2622,25 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       const rect = renderer.domElement.getBoundingClientRect();
       pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
       ray.setFromCamera(pointer, camera);
-      const hits = ray.intersectObjects(content.handles.filter((h) => h.visible), false);
-      return (hits[0]?.object as THREE.Mesh | undefined) ?? null;
+      const hits = ray.intersectObjects(content.handles.filter((h) => h.visible && !h.userData.grab), false);
+      if (hits[0]) return hits[0].object as THREE.Mesh;
+      // A post or a beam, taken hold of by itself — only where it is what the pointer really touches: nothing solid
+      // in front of it (the boards over a post seen from above), X-ray's faded layers aside.
+      const grabs = ray.intersectObjects(content.handles.filter((h) => h.visible && h.userData.grab), false);
+      if (!grabs[0]) return null;
+      const through = (o: THREE.Object3D) => xrayRef.current && typeof o.userData.layer === "number" && FADES.has(o.userData.layer as number);
+      const solid = ray
+        .intersectObjects(content.group.children.filter((o) => o.visible && !(o instanceof THREE.Sprite) && !(o instanceof THREE.LineSegments) && !o.userData.dims && !o.userData.grab && o.userData.layer !== -3), true)
+        .find((h) => h.object.visible && (h.object as THREE.Mesh).isMesh && !through(h.object));
+      if (!solid) return null;
+      // The nearest grab whose part is the thing hit: the solid point lies inside its box.
+      const box = new THREE.Box3();
+      for (const g of grabs) {
+        if (g.distance > solid.distance + 0.02) break;
+        box.setFromObject(g.object);
+        if (box.containsPoint(solid.point)) return g.object as THREE.Mesh;
+      }
+      return null;
     };
     const dragStart = (mesh: THREE.Mesh, clientX: number, clientY: number) => {
       const h = mesh.userData.handle as SceneHandle;
@@ -2615,7 +2653,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       setDragging(`${h.kind}:${h.id}`);
       pinned = origin(sceneRef.current);
       orbit.enabled = false;
-      renderer.domElement.style.cursor = h.axis === "z" ? "ns-resize" : "move";
+      renderer.domElement.style.cursor = h.grab ? "grabbing" : h.axis === "z" ? "ns-resize" : "move";
     };
     const dragMove = (clientX: number, clientY: number, done: boolean) => {
       if (!drag) return;
@@ -2656,8 +2694,8 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
     };
     const hoverHandle = (h: SceneHandle) => {
       clearHover();
-      const now = h.kind === "pitch" ? `${Math.round(h.value)}:12` : h.perUnit === 1 ? `${Math.round(h.value * 2) / 2} ft` : `${Math.round(h.value)} in.`;
-      pickRef.current?.({ legend: { role: h.label, nominal: now, lengthFt: 0, count: 1, note: "Drag the knob, or press the arrow keys." }, layer: null, point: [h.x, h.y, h.z], mount: "deck" }, "hover");
+      const now = h.shown ? `${feetInches(Math.max(0, h.shown.sign * (h.value - h.shown.origin)) / 12)} ${h.shown.from}` : h.kind === "pitch" ? `${Math.round(h.value)}:12` : h.perUnit === 1 ? `${Math.round(h.value * 2) / 2} ft` : `${Math.round(h.value)} in.`;
+      pickRef.current?.({ legend: { role: h.label, nominal: now, lengthFt: 0, count: 1, note: h.grab ? "Drag it to move it, an inch at a time — or click it to type its place." : "Drag the knob, or press the arrow keys." }, layer: null, point: [h.x, h.y, h.z], mount: "deck" }, "hover");
     };
     const knobKey = (e: KeyboardEvent, h: SceneHandle) => {
       const dir = e.key === "ArrowRight" || e.key === "ArrowUp" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowDown" ? -1 : 0;
@@ -2671,11 +2709,30 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         dragMove(e.clientX, e.clientY, false);
         return;
       }
+      // A post or a beam held and now pulled: the drag starts where the pointer went down. Let go without pulling and
+      // it was a click — its card opens, with its place to type.
+      if (grabDown) {
+        if (Math.hypot(e.clientX - grabDown.x, e.clientY - grabDown.y) < 5) return;
+        const g = grabDown;
+        grabDown = null;
+        downAt = null;
+        dragStart(g.mesh, g.x, g.y);
+        if (drag) {
+          try {
+            renderer.domElement.setPointerCapture(e.pointerId);
+          } catch {
+            /* the drag still works while the pointer stays over the canvas */
+          }
+          dragMove(e.clientX, e.clientY, false);
+        } else orbit.enabled = true;
+        return;
+      }
       if (editRef.current && !downAt) {
         const hm = handleAt(e.clientX, e.clientY);
         if (hm) {
-          renderer.domElement.style.cursor = (hm.userData.handle as SceneHandle).axis === "z" ? "ns-resize" : "move";
-          hoverHandle(hm.userData.handle as SceneHandle);
+          const h = hm.userData.handle as SceneHandle;
+          renderer.domElement.style.cursor = h.grab ? "grab" : h.axis === "z" ? "ns-resize" : "move";
+          hoverHandle(h);
           return;
         }
       }
@@ -2701,6 +2758,13 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
     };
     const onDown = (e: PointerEvent) => {
       const hm = handleAt(e.clientX, e.clientY);
+      if (hm && hm.userData.grab) {
+        // Held, not yet pulled: the view stays still under it; a click still reaches the part.
+        grabDown = { mesh: hm, x: e.clientX, y: e.clientY };
+        orbit.enabled = false;
+        downAt = { x: e.clientX, y: e.clientY, t: performance.now() };
+        return;
+      }
       if (hm) {
         dragStart(hm, e.clientX, e.clientY);
         try {
@@ -2716,6 +2780,10 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       if (drag) {
         dragMove(e.clientX, e.clientY, true);
         return;
+      }
+      if (grabDown) {
+        grabDown = null;
+        orbit.enabled = true;
       }
       const d = downAt;
       downAt = null;
@@ -2740,6 +2808,10 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       pickRef.current?.(null, "hover");
     };
     const onCancel = () => {
+      if (grabDown) {
+        grabDown = null;
+        orbit.enabled = true;
+      }
       if (drag) {
         drag = null;
         setDragging(null);

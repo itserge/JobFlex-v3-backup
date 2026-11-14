@@ -559,6 +559,15 @@ export interface DeckDesign {
      */
     pins: DeckPostPin[];
     postSpacingFt: number | "auto";
+    /**
+     * THE BEAMS BY HAND (2026-11-13 — the owner: "move beams and posts by hand, drag them anywhere, or type the inches").
+     * `beamLines`: middle beams stood at the builder's own places, to the inch. The joists land on THOSE — and on one
+     * more only where a span between them is past the joist table, so a beam can be moved, added or taken off freely.
+     * `backOverhangFt`: how far the joists run past a free-standing deck's house-side beam ("auto" = as the front).
+     * The front beam's place is `overhangFt`.
+     */
+    beamLines: DeckBeamLine[];
+    backOverhangFt: number | "auto";
   };
   ledger: {
     fastener: LedgerFastener;
@@ -705,9 +714,19 @@ export interface DeckPostPin {
   id: string;
   beam: "front" | "middle" | "back";
   atFt: number;
+  /** The middle beam it stands under, when that beam was itself placed by hand (its id in framing.beamLines): the post goes with its beam wherever the beam is moved. */
+  line?: string;
 }
+/** A middle beam set by hand: its place, feet from the house line (the deck's back edge; behind it — a minus — under a part of a deck that follows the wall back), and the parts of the deck (shapeZones' ids) it runs under — none named: every part it fits in. */
+export interface DeckBeamLine {
+  id: string;
+  atFt: number;
+  zones: string[];
+}
+/** No two beams closer than a foot, centre to centre: each stands on footings of its own. */
+export const DECK_BEAM_LIMITS = { lines: 12, atFt: { min: -60, max: 60 }, gapIn: 12 } as const;
 export const DECK_BEAM_LABEL: Record<DeckPostPin["beam"], string> = { front: "Front beam", middle: "Middle beam", back: "Back beam" };
-export const DECK_POST_LIMITS = { pins: 24, atFt: { min: 0, max: 60 }, spacingFt: { min: 3, max: 14 } } as const;
+export const DECK_POST_LIMITS = { pins: 48, atFt: { min: 0, max: 60 }, spacingFt: { min: 3, max: 14 } } as const;
 
 /** The railing a deck starts with: none chosen — the checks ask for one where the height requires it. */
 export function defaultRailDesign(): RailDesign {
@@ -764,6 +783,8 @@ export function defaultDeckDesign(opts: { state?: string | null; frostIn?: numbe
       bracesOff: [],
       pins: [],
       postSpacingFt: "auto",
+      beamLines: [],
+      backOverhangFt: "auto",
     },
     ledger: { fastener: "lag", lateral: "two" },
     footing: { type: "poured", aboveGradeIn: 3, frostAlways: false },
@@ -942,6 +963,8 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
       bracesOff: keyList(f.bracesOff),
       pins: deckPins(f.pins),
       postSpacingFt: typeof f.postSpacingFt === "number" && Number.isFinite(f.postSpacingFt) ? Math.round(clamp(f.postSpacingFt, DECK_POST_LIMITS.spacingFt.min, DECK_POST_LIMITS.spacingFt.max)) : "auto",
+      beamLines: deckBeamLines(f.beamLines),
+      backOverhangFt: typeof f.backOverhangFt === "number" && Number.isFinite(f.backOverhangFt) ? toInch(clamp(f.backOverhangFt, DECK_LIMITS.overhangFt.min, DECK_LIMITS.overhangFt.max)) : "auto",
     },
     ledger: { fastener, lateral: oneOf(l.lateral, ["two", "four"] as const, d.ledger.lateral) },
     footing: {
@@ -1168,9 +1191,29 @@ function deckPins(raw: unknown): DeckPostPin[] {
     if (typeof v.atFt !== "number" || !Number.isFinite(v.atFt)) continue;
     const id = typeof v.id === "string" && /^[a-z0-9-]{1,12}$/.test(v.id) ? v.id : `k${i + 1}`;
     if (out.some((o) => o.id === id)) continue;
-    out.push({ id, beam: oneOf(v.beam, ["front", "middle", "back"] as const, "front"), atFt: toInch(clamp(v.atFt, DECK_POST_LIMITS.atFt.min, DECK_POST_LIMITS.atFt.max)) });
+    const line = typeof v.line === "string" && /^[a-z0-9-]{1,12}$/.test(v.line) ? v.line : "";
+    out.push({ id, beam: line ? "middle" : oneOf(v.beam, ["front", "middle", "back"] as const, "front"), atFt: toInch(clamp(v.atFt, DECK_POST_LIMITS.atFt.min, DECK_POST_LIMITS.atFt.max)), ...(line ? { line } : {}) });
   }
   return out;
+}
+
+/** The middle beams set by hand: each with an id of its own and a place to the inch, in order from the house; junk, doubles and two within a foot of each other under one part of the deck dropped. */
+function deckBeamLines(raw: unknown): DeckBeamLine[] {
+  const out: DeckBeamLine[] = [];
+  for (const [i, item] of (Array.isArray(raw) ? raw : []).entries()) {
+    if (out.length >= DECK_BEAM_LIMITS.lines) break;
+    if (!item || typeof item !== "object") continue;
+    const v = item as Record<string, unknown>;
+    if (typeof v.atFt !== "number" || !Number.isFinite(v.atFt)) continue;
+    const id = typeof v.id === "string" && /^[a-z0-9-]{1,12}$/.test(v.id) ? v.id : `l${i + 1}`;
+    if (out.some((o) => o.id === id)) continue;
+    const zones = [...new Set((Array.isArray(v.zones) ? v.zones : []).filter((z): z is string => typeof z === "string" && /^[a-z]$/.test(z)))].sort();
+    const atFt = toInch(clamp(v.atFt, DECK_BEAM_LIMITS.atFt.min, DECK_BEAM_LIMITS.atFt.max));
+    const shares = (o: DeckBeamLine) => o.zones.length === 0 || zones.length === 0 || o.zones.some((z) => zones.includes(z));
+    if (out.some((o) => shares(o) && Math.abs(o.atFt - atFt) * 12 < DECK_BEAM_LIMITS.gapIn - 0.01)) continue;
+    out.push({ id, atFt, zones });
+  }
+  return out.sort((a, b) => a.atFt - b.atFt);
 }
 
 /** A list of things set by hand on the roof's sides: each with an id of its own, a side and a place along it, to the inch; junk and doubles dropped. */

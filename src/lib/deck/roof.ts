@@ -471,6 +471,12 @@ export interface RoofFrame {
   pins: Array<{ id: string; side: RoofSide; x: number; y: number }>;
   /** What could not be set, and why — said, never dropped in silence. */
   notPlaced: Array<{ kind: "post" | "opening"; id: string; why: string }>;
+  /**
+   * The sides a post or an opening set by hand is measured along (2026-11-13; lib/deck/byHand): where each starts —
+   * its left end (front, back) or its house end (left, right) — the way it runs, and its length, inches. A side the
+   * roof hangs on the house by has none; a round or many-sided roof has none at all.
+   */
+  sides: Partial<Record<RoofSide, { x: number; y: number; ux: number; uy: number; lengthIn: number }>>;
   flags: {
     rafterBeyondTable: boolean;
     headerBeyondTable: string[];
@@ -1357,6 +1363,19 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
     const t = Math.max(0, Math.min(L, atIn));
     return { s: fromStart ? t : L - t, L };
   };
+  const sides: RoofFrame["sides"] = {};
+  for (const side of ["front", "left", "right", "back"] as const) {
+    const k = sideEdge(side);
+    if (k < 0) continue;
+    const A = ring[k];
+    const B = ring[(k + postEvery) % n];
+    const L = len(sub(B, A));
+    if (!(L > 1)) continue;
+    const fromStart = side === "front" || side === "back" ? A.x <= B.x : A.y <= B.y;
+    const a = fromStart ? A : B;
+    const b = fromStart ? B : A;
+    sides[side] = { x: a.x, y: a.y, ux: (b.x - a.x) / L, uy: (b.y - a.y) / L, lengthIn: L };
+  }
   const edgeOf = (k: number): UserEdge => {
     const e = userEdges.get(k) ?? { posts: [], keeps: [], opens: [], pins: [] };
     userEdges.set(k, e);
@@ -2871,6 +2890,7 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
     openings: openingsBuilt,
     pins: pinsBuilt,
     notPlaced,
+    sides,
     bracesLeftOut,
     postsInStair,
     flags: {

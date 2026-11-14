@@ -167,7 +167,7 @@ export function buildStructure(raw: DeckDesign, opts: StructureOptions = {}): De
       photo: null,
       // Its own beams are read from its own size; the posts and footings follow the main deck's choices.
       // Braces taken out by hand on the lower level are named "L:…" in the one list (lib/deck/parts).
-      framing: { ...design.framing, joist: "auto", beam: "auto", beamStyle: "auto", overhangFt: "auto", bracesOff: design.framing.bracesOff.filter((k) => k.startsWith(LOWER_KEY)).map((k) => k.slice(LOWER_KEY.length)), pins: [] },
+      framing: { ...design.framing, joist: "auto", beam: "auto", beamStyle: "auto", overhangFt: "auto", bracesOff: design.framing.bracesOff.filter((k) => k.startsWith(LOWER_KEY)).map((k) => k.slice(LOWER_KEY.length)), pins: [], beamLines: [], backOverhangFt: "auto" },
     });
     const lowerFrame = buildDeckFrame(lowerDesign, { ...opts, groundAt: (x, y) => groundAt(x + offsetXIn, y + offsetYIn) });
     lower = { design: lowerDesign, frame: lowerFrame, surface: deckSurface(lowerFrame), offsetXIn, offsetYIn, dropIn: design.lower.dropIn };

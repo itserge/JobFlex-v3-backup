@@ -6,7 +6,10 @@
 //   NODE_PATH="" npx tsx --tsconfig tsconfig.json qa/tests/logic/deck-fuzz.check.ts --repro A40 B5293 [--json]
 import { defaultDeckDesign, normalizeDeckDesign, structureWords, sizeWords, FIXTURE_KINDS, STRUCTURES, FLOORS, ROOF_KINDS, ROOF_PLAN_SHAPES, ROOFINGS, GUTTER_KINDS, PLACEMENTS, NOTCH_CORNERS, type DeckDesign } from "../../../src/lib/deck/design";
 import { priceDeck, deckScope, deckNotes } from "../../../src/lib/deck/pricing";
-import { deckChecks } from "../../../src/lib/deck/checks";
+import { writeFileSync } from "node:fs";
+import { applyDeckPatch, deckChecks } from "../../../src/lib/deck/checks";
+import { deckGrips, moveGrip } from "../../../src/lib/deck/byHand";
+import { buildStructure } from "../../../src/lib/deck/structure";
 import { deckScene, parseDeckScene, sceneBuildLayers, SCENE_LAYERS, SCENE_MAX_BOXES, SCENE_MAX_FOOTINGS, SCENE_MAX_DIAGONALS, SCENE_MAX_POLYS } from "../../../src/lib/deck/scene";
 import { deckElevation, elevationOverlay, defaultPlacement } from "../../../src/lib/deck/elevation";
 import { deckConvertSchema } from "../../../src/lib/deck/convertSchema";
@@ -75,6 +78,12 @@ function randomDesign(r: Rng): unknown {
     d.framing.pins = Array.from({ length: int(r, 1, 26) }, (_, i) => ({ id: `k${i + 1}`, beam: pick(r, ["front", "middle", "back", "side"]), atFt: odd(r, -3, 64) }));
     d.framing.postSpacingFt = pick(r, ["auto", 3, 4, 6, 8, 14, 1, 40]);
   }
+  // …and the beams by hand (2026-11-13): middle beams at places of their own, posts tied to them, the back beam's overhang.
+  if (r() < 0.35) {
+    d.framing.beamLines = Array.from({ length: int(r, 1, 7) }, (_, i) => ({ id: `l${i + 1}`, atFt: odd(r, -2, dep + 3), zones: pick(r, [[], ["a"], ["b"], ["a", "b"], ["q"], "x"]) }));
+    d.framing.backOverhangFt = pick(r, ["auto", 0, 0.5, 1, 2.25, 4, 9, -1]);
+    if (r() < 0.5) d.framing.pins = [...(Array.isArray(d.framing.pins) ? d.framing.pins : []), ...Array.from({ length: int(r, 1, 4) }, (_, i) => ({ id: `t${i + 1}`, beam: "middle", line: pick(r, ["l1", "l2", "l9"]), atFt: odd(r, 0, w) }))];
+  }
   d.rail.mountBy = r() < 0.6 ? {} : Object.fromEntries(["upper-front", "upper-left", "upper-right", "upper-back", "lower-front", "lower-left"].filter(() => r() < 0.4).map((k) => [k, pick(r, ["top", "side"])]));
   if (r() < 0.45) {
     d.roof.openings = Array.from({ length: int(r, 1, 7) }, (_, i) => ({ id: `o${i + 1}`, side: pick(r, ["front", "left", "right", "back"]), atFt: odd(r, -2, 62), widthFt: odd(r, 1, 20), door: bool(r) }));
@@ -129,6 +138,26 @@ function exercise(d: DeckDesign, tag: string, out: string[]) {
   if (drift) out.push(`normalize drifts: ${drift}  [${tag}]`);
   const pkg = priceDeck(d);
   if (!(Number.isFinite(pkg.subtotal) && pkg.subtotal >= 0)) out.push(`subtotal bad: ${pkg.subtotal}  [${tag}]`);
+  // BY HAND (2026-11-13; lib/deck/byHand): a post or a beam taken hold of and moved — to its line's ends and a few
+  // inches along — is still in the hand afterwards (the same name), where it was put, and the deck still builds.
+  if (Number(tag.replace(/\D/g, "")) % 4 === 0) {
+    const grips = deckGrips(pkg.structure).filter((g) => !g.fixed);
+    const tried = [grips[0], grips[Math.floor(grips.length / 2)], grips[grips.length - 1]].filter((g, i, a) => g && a.indexOf(g) === i);
+    for (const g of tried) {
+      for (const at of [g.min, g.at + 7, g.max]) {
+        const p = moveGrip(pkg.structure, g.kind, g.id, at, grips);
+        if (!p) continue;
+        const d3 = normalizeDeckDesign(applyDeckPatch(d, p));
+        const s3 = buildStructure(d3);
+        // (The front and the house-side beam go by the part of the deck they run under: on a deck whose beams met on one line before the move, that part can be another after it.)
+        const g3 = deckGrips(s3).find((q) => q.kind === g.kind && (q.id === g.id || (g.id.includes(":") && !g.id.startsWith("open:") && q.id.startsWith(`${g.id.split(":")[0]}:`))));
+        const want = Math.min(g.max, Math.max(g.min, at));
+        if (!g3) out.push(`moved by hand, then not in the hand: a ${g.kind} ${g.id.replace(/[-\d.]+/g, "#")} of ${g.label}  [${tag}]`);
+        else if (!g.id.includes(":") && g.kind !== "roof-post" && Math.abs(g3.at - want) > (g.kind === "post" ? 9 : 0.6)) out.push(`moved by hand, not where it was put: a ${g.kind} of ${g.label} asked ${want} stands ${g3.at}  [${tag}]`);
+        deckScene(s3);
+      }
+    }
+  }
   if (Math.abs(pkg.materialSubtotal + pkg.laborSubtotal - pkg.subtotal) > 1) out.push(`halves ≠ total: ${pkg.materialSubtotal} + ${pkg.laborSubtotal} vs ${pkg.subtotal}  [${tag}]`);
   if (pkg.lines.length < 1 || pkg.lines.length > 60) out.push(`lines count ${pkg.lines.length}  [${tag}]`);
   for (const l of pkg.lines) {
@@ -185,6 +214,8 @@ if (process.argv[2] === "--repro") {
     const i = Number(tag.slice(1));
     const raw = tag[0] === "A" ? randomDesign(rngOf(1000 + i)) : tag[0] === "W" ? wallDesign(i) : (() => { const r = rngOf(50000 + i); return mutate(r, normalizeDeckDesign(randomDesign(r))); })();
     const d = normalizeDeckDesign(raw);
+    // --dump: the design alone, before anything is built from it (for one that kills the process when built).
+    if (process.argv.includes("--dump")) { console.log(JSON.stringify(d)); continue; }
     console.log(`\n=== ${tag}: ${structureWords(d)} · ${sizeWords(d)} · h ${d.heightIn} in · placement ${d.placement} · floor ${d.floor} · roof ${d.roof.kind}/${d.roof.plan.shape} · stairs ${d.stairs.length} · rail ${d.rail.type} · lower ${d.lower.on} · fixtures ${d.electrical.fixtures.length} · front ${d.shape.kind === "rect" ? d.shape.front?.kind : "L"}`);
     const pkg = priceDeck(d);
     const scene = deckScene(pkg.structure);
@@ -201,6 +232,8 @@ if (process.argv[2] === "--repro") {
 
 const trouble: string[] = [];
 const run = (tag: string, raw: unknown) => {
+  // A design that kills the process outright (an array grown past what V8 holds) leaves its name here: FUZZ_TRACE=<file>.
+  if (process.env.FUZZ_TRACE) writeFileSync(process.env.FUZZ_TRACE, tag);
   let d: DeckDesign;
   try { d = normalizeDeckDesign(raw); } catch (e) { trouble.push(`normalize THREW: ${e instanceof Error ? e.message : String(e)}  [${tag}]`); return; }
   try { exercise(d, tag, trouble); } catch (e) { trouble.push(`THREW: ${e instanceof Error ? (e.stack ?? e.message).split("\n").slice(0, 3).join(" | ") : String(e)}  [${tag}]`); }

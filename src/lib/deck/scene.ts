@@ -25,7 +25,8 @@
 import type { DeckFrame } from "./frame";
 import type { DeckSurface } from "./surface";
 import { FLASH_LEG_IN, type RoofMember, type RoofPlane } from "./roof";
-import { ftIn } from "./codeTables";
+import { POST_ACTUAL_IN, ftIn } from "./codeTables";
+import { deckGrips } from "./byHand";
 import { ROOFING_LABEL, hasDeck, shapeOutline, sizeWords, structureWords, type DeckDesign, spaRectIn } from "./design";
 import { outsideRunOn, ringEdges } from "./ringEdges";
 import type { DeckStructure } from "./structure";
@@ -128,7 +129,7 @@ export const SCENE_MAX_GLOWS = 120;
 
 /** A handle: dragging it along `axis` (scene feet) changes `kind` from `value` by the distance dragged. */
 export interface SceneHandle {
-  kind: "width" | "depth" | "height" | "eave" | "stair" | "stair-width" | "lower-depth" | "roof-width" | "roof-depth" | "pitch" | "jog" | "house-left" | "house-right";
+  kind: "width" | "depth" | "height" | "eave" | "stair" | "stair-width" | "lower-depth" | "roof-width" | "roof-depth" | "pitch" | "jog" | "house-left" | "house-right" | "post" | "beam" | "roof-post";
   id: string;
   x: number;
   y: number;
@@ -142,6 +143,13 @@ export interface SceneHandle {
    *  width); the drag is divided by it so the knob stays under the pointer. 1 when absent. */
   follow?: number;
   label: string;
+  /**
+   * BY HAND (2026-11-13; lib/deck/byHand): a post or a beam is taken hold of by the part itself — this is its box
+   * (x0, y0, z0, x1, y1, z1, feet), and it has no knob. Its value is inches along its line.
+   */
+  grab?: [number, number, number, number, number, number];
+  /** How a builder reads that value: `sign × (value − origin)` inches `from` ("from the deck's left end"). */
+  shown?: { origin: number; sign: 1 | -1; from: string };
 }
 
 /** One kind of part: what it is, how it is cut, what fastens it. The 3D shows this when a part is touched. */
@@ -207,6 +215,15 @@ export interface DeckScene {
 }
 
 const r3 = (inches: number) => Math.round((inches / 12) * 1000) / 1000;
+
+/** A saved handle's box and reading (SceneHandle.grab, .shown), where they are whole. */
+function handleGrab(o: Record<string, unknown>): Pick<SceneHandle, "grab" | "shown"> {
+  const g = o.grab;
+  if (!Array.isArray(g) || g.length !== 6 || !g.every((v) => typeof v === "number" && Number.isFinite(v) && Math.abs(v) < 500)) return {};
+  const sh = (o.shown && typeof o.shown === "object" ? o.shown : null) as Record<string, unknown> | null;
+  const shown = sh && typeof sh.origin === "number" && Number.isFinite(sh.origin) && (sh.sign === 1 || sh.sign === -1) && typeof sh.from === "string" ? { origin: sh.origin, sign: sh.sign as 1 | -1, from: sh.from.slice(0, 60) } : undefined;
+  return { grab: g as [number, number, number, number, number, number], ...(shown ? { shown } : {}) };
+}
 const r4 = (rad: number) => Math.round(rad * 10000) / 10000;
 const LEAN: Record<string, number> = { "x:1": 1, "x:-1": 2, "y:1": 3, "y:-1": 4 };
 const deg = (rad: number) => `${Math.round(Math.abs(rad) * (180 / Math.PI) * 10) / 10}°`;
@@ -1030,6 +1047,27 @@ export function deckScene(s: DeckStructure): DeckScene {
     if (st.kind === "flight" && c) handles.push({ kind: "stair-width", id: st.design.id, x: r3((b.x + c.x) / 2), y: r3((b.y + c.y) / 2), z: r3(top - st.riseIn / 2), axis: st.design.side === "front" ? "x" : "y", value: st.design.widthFt, perUnit: 1, follow: 0.5, label: "Stair width" });
   }
   if (house && frame) for (const h of houseHandles(design.shape, design.house, (frame.surfaceIn + 2) / 12)) handles.push(h);
+  // BY HAND (2026-11-13; lib/deck/byHand): every post and beam that can be moved is a handle of its own, taken hold of
+  // by the part itself and slid along its beam, its side or the joists an inch at a time. Last in the list: they have
+  // no knob, and the knobs' lists run beside the handles' from the start.
+  for (const g of deckGrips(s)) {
+    if (g.fixed) continue;
+    let b: [number, number, number, number, number, number] | null = null;
+    if (g.kind === "post" && frame) {
+      const p = frame.posts.find((q) => q.id === g.part);
+      const [w, dp] = p ? POST_ACTUAL_IN[p.size] ?? [5.5, 5.5] : [0, 0];
+      if (p) b = [p.x - w / 2, p.y - dp / 2, p.footing.groundIn + p.footing.topIn, p.x + w / 2, p.y + dp / 2, p.footing.groundIn + p.footing.topIn + p.heightIn];
+    } else if (g.kind === "beam" && frame) {
+      const m = frame.beams.find((q) => q.id === g.part);
+      if (m) b = [m.x0, m.y - m.spec.thickIn / 2, m.bottomIn, m.x1, m.y + m.spec.thickIn / 2, m.bottomIn + m.spec.depthIn];
+    } else if (g.kind === "roof-post" && roof) {
+      const p = roof.posts.find((q) => q.id === g.part);
+      const [w, dp] = p ? POST_ACTUAL_IN[p.size] ?? [5.5, 5.5] : [0, 0];
+      if (p) b = [p.x - w / 2, p.y - dp / 2, p.bottomIn, p.x + w / 2, p.y + dp / 2, p.topIn];
+    }
+    if (!b) continue;
+    handles.push({ kind: g.kind, id: g.id, x: r3((b[0] + b[3]) / 2), y: r3((b[1] + b[4]) / 2), z: r3((b[2] + b[5]) / 2), axis: g.axis, value: g.at, perUnit: 1 / 12, label: g.label, grab: [r3(b[0]), r3(b[1]), r3(b[2]), r3(b[3]), r3(b[4]), r3(b[5])], shown: { origin: g.origin, sign: g.sign, from: g.from } });
+  }
   return {
     v: DECK_SCENE_VERSION,
     widthFt: r3(Math.max(width, 48)),
@@ -1210,11 +1248,11 @@ export function parseDeckScene(raw: unknown): DeckScene | null {
     }
     const gr = (r.ground && typeof r.ground === "object" ? r.ground : null) as Record<string, unknown> | null;
     if (gr && fin(gr.outDropFt) && fin(gr.acrossDropFt) && inside(gr.outDropFt, -10, 10) && inside(gr.acrossDropFt, -10, 10)) ground = { outDropFt: gr.outDropFt, acrossDropFt: gr.acrossDropFt };
-    if (Array.isArray(r.handles) && r.handles.length <= 40) {
+    if (Array.isArray(r.handles) && r.handles.length <= 240) {
       for (const h of r.handles) {
         const o = (h && typeof h === "object" ? h : null) as Record<string, unknown> | null;
         if (!o || typeof o.kind !== "string" || typeof o.id !== "string" || !fin(o.x) || !fin(o.y) || !fin(o.z) || !fin(o.value) || !fin(o.perUnit) || (o.axis !== "x" && o.axis !== "y" && o.axis !== "z")) continue;
-        handles.push({ kind: o.kind as SceneHandle["kind"], id: o.id.slice(0, 20), x: o.x, y: o.y, z: o.z, axis: o.axis, value: o.value, perUnit: o.perUnit, ...(fin(o.follow) && o.follow > 0 && o.follow <= 1 ? { follow: o.follow } : {}), label: typeof o.label === "string" ? o.label.slice(0, 60) : "" });
+        handles.push({ kind: o.kind as SceneHandle["kind"], id: o.id.slice(0, 20), x: o.x, y: o.y, z: o.z, axis: o.axis, value: o.value, perUnit: o.perUnit, ...(fin(o.follow) && o.follow > 0 && o.follow <= 1 ? { follow: o.follow } : {}), label: typeof o.label === "string" ? o.label.slice(0, 60) : "", ...handleGrab(o) });
       }
     }
   }

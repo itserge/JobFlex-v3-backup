@@ -101,6 +101,13 @@ export function deckChecks(s: DeckStructure): DeckCheck[] {
     for (const h of frame.postsByHand) add({ id: `deck-posts-set-${h.beamId}`, level: "pass", part: "Beams", text: `${plural(h.mine, "post")} under the ${h.role} beam set by hand${h.added ? `; ${plural(h.added, "more post")} ${h.added === 1 ? "stands" : "stand"} where its spans and its ends need ${h.added === 1 ? "it" : "them"}` : ""}. The beam is checked on the spans they make.`, rule: "IRC Table R507.5 · beam ends, a quarter of the span beside them" });
     if (typeof design.framing.postSpacingFt === "number") add({ id: "deck-post-spacing", level: "pass", part: "Beams", text: `Posts under the beams no farther apart than ${design.framing.postSpacingFt} ft, as set by hand: ${plural(frame.posts.filter((p) => !p.roof).length, "post")} — never fewer than the beam's table asks for.` });
     frame.pinsNotSet.forEach((np, i) => add({ id: `deck-post-not-set-${i + 1}`, level: "info", part: "Beams", text: `A post set by hand could not be placed: ${np.why}.`, fix: { label: "Take that post off", patch: { framing: { pins: design.framing.pins.filter((x) => x.id !== np.id) } } } }));
+    // THE BEAMS SET BY HAND (2026-11-13; lib/deck/byHand): the joists land on the builder's middle beams and on one
+    // more only where a span between them is past the joist table; the beam by the house at its own overhang.
+    const hand = frame.beamsByHand;
+    if (hand.mine) add({ id: "deck-beams-set", level: "pass", part: "Joists", text: `${plural(hand.mine, "middle beam")} set by hand${hand.added ? `; ${plural(hand.added, "more beam")} ${hand.added === 1 ? "stands" : "stand"} where the joists' span needs ${hand.added === 1 ? "it" : "them"}` : ""}. The ${frame.joistSize} joists at ${frame.spacingIn} in. are checked on the spans the beams make.`, rule: "IRC Table R507.6 · joist spans and overhangs" });
+    frame.beamLinesNotSet.forEach((nb, i) => add({ id: `deck-beam-not-set-${i + 1}`, level: "info", part: "Joists", text: `A middle beam set by hand could not be placed: ${nb.why}.`, fix: { label: "Take that beam off", patch: { framing: { beamLines: design.framing.beamLines.filter((x) => x.id !== nb.id), pins: design.framing.pins.filter((x) => x.line !== nb.id) } } } }));
+    const backBeam = typeof design.framing.backOverhangFt === "number" ? frame.zones.find((z) => z.back === "beam") : undefined;
+    if (backBeam && frame.beamStyle === "dropped") add({ id: "deck-beam-back-set", level: "pass", part: "Joists", text: `The beam by the house stands ${ftIn(Math.round(backBeam.beamYs[0] - backBeam.zone.y0))} in from the deck's back edge, as set by hand.` });
   }
   // The picture-frame border, said where the builder looks (2026-11-13): how wide, how far, what goes under it.
   const bordered = frame && s.surface && s.surface.border > 0 ? s.surface : null;
@@ -196,7 +203,8 @@ function deckFrameChecks(frame: DeckFrame, addRaw: (c: DeckCheck) => void, roof:
       fix: bigger ? { label: `Use ${bigger} joists`, patch: { framing: { joist: bigger } } } : { label: "Let the studio size the joists", patch: { framing: { joist: "auto", spacingIn: "auto", overhangFt: "auto" } } },
     });
   }
-  if (design.framing.joist === "auto" && middleBeams > 0 && worstSpan <= maxSpan) {
+  // (Middle beams the builder placed are said by "deck-beams-set": the joists then land where they were put.)
+  if (design.framing.joist === "auto" && middleBeams > 0 && worstSpan <= maxSpan && frame.beamsByHand.mine === 0) {
     add({ id: "joist-middle-beam", level: "info", part: "Joists", text: `No joist in the table reaches across this deck in one span at ${frame.spacingIn} in., so ${middleBeams === 1 ? "a middle beam carries" : `${middleBeams} middle beams carry`} them.`, rule: R.joist });
   }
   for (const z of frame.zones) {
@@ -211,7 +219,7 @@ function deckFrameChecks(frame: DeckFrame, addRaw: (c: DeckCheck) => void, roof:
           part: "Joists",
           text: allowed > 0 ? `Joists run ${ftIn(cant)} past the ${where} beam; the table allows ${ftIn(allowed)} behind a ${ftIn(backSpanIn)} span.` : `The table allows no overhang for a ${frame.joistSize} behind a ${ftIn(backSpanIn)} span.`,
           rule: R.cantilever,
-          fix: { label: "Let the studio set the overhang", patch: { framing: { overhangFt: "auto" } } },
+          fix: { label: "Let the studio set the overhang", patch: { framing: { overhangFt: "auto", backOverhangFt: "auto" } } },
         });
     };
     checkCant(z.frontCantIn + frame.frontExtraCantIn, z.spansIn[z.spansIn.length - 1], front?.kind === "curve" ? "outer beam at the middle of the bow" : "outer", `joist-overhang-${z.zone.id}`);
