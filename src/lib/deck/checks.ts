@@ -44,7 +44,7 @@ import { DOUBLE_DECK_HEADROOM_IN, DOUBLE_DECK_STOREY_IN, FIXTURE_LABEL, GUTTER_L
 import { STAIR_POST_CLEAR_IN, type RoofFrame } from "./roof";
 import { RULE_HIP, RULE_RAFTER, RULE_RIDGE, RULE_ROOF_LOAD, RULE_TIES } from "./roofTables";
 import { BETWEEN_LEVELS_STAIR_ID, betweenLevelsStair, type DeckStructure } from "./structure";
-import { FLIGHT_MAX_RISE_IN, LANDING_DEPTH_IN, STAIR_HEADROOM_IN, stairRules, stairTurnWords } from "./stairs";
+import { FLIGHT_MAX_RISE_IN, LANDING_DEPTH_IN, STAIR_HEADROOM_IN, WRAP_STEP_MAX_RISERS, stairRules, stairTurnWords } from "./stairs";
 import { SNOW_TABLE_MAX_PSF, TERMITE_LABEL, deckLoadForSnow, roofLoadForSnow } from "./site";
 import { POST_ACTUAL_IN, STAIR_MIN_WIDTH_IN } from "./codeTables";
 import { FRAMING_SPECIES, defaultFramingSpecies, speciesWords } from "./catalog";
@@ -823,13 +823,23 @@ function guardAndStairChecks(s: DeckStructure, add: (c: DeckCheck) => void): voi
   stairs.forEach((st, i) => {
     const tag = `stair-${st.design.id}`;
     const where = `${st.kind === "box" ? "Box steps" : `Stair ${i + 1}`} (${st.design.side})`;
-    if (st.flags.tooTallForBox) add({ id: `${tag}-box`, level: "fail", part: where, text: `Box steps go three risers at most; this climb is ${plural(st.risers, "riser")}. It is framed as a flight.`, rule: SR.box, fix: { label: "Make it a flight", patch: { stairs: design.stairs.map((d) => (d.id === st.design.id ? { ...d, wrap: false } : d)) } } });
+    if (st.flags.tooTallForBox) add({ id: `${tag}-box`, level: "fail", part: where, text: `Steps that wrap the deck go ${st.level === "lower" ? "three" : WRAP_STEP_MAX_RISERS} risers at most; this climb is ${plural(st.risers, "riser")}. It is framed as a flight.`, rule: SR.box, fix: { label: "Make it a flight", patch: { stairs: design.stairs.map((d) => (d.id === st.design.id ? { ...d, wrap: false } : d)) } } });
     if (st.risers === 0) {
       if (st.lands === "lower-deck") add({ id: `${tag}-step`, level: "info", part: where, text: "The lower level is one step down here: nothing to build but the riser's trim." });
       return;
     }
     add({ id: `${tag}-riser`, level: "pass", part: where, text: `${plural(st.risers, "riser")} of ${st.riserIn.toFixed(2)} in. (${inFrac(code.riserMaxIn)} at most), treads ${st.runIn + 1} in. deep with a 1-in. nosing (${code.treadMinIn} in. at least), ${st.widthIn} in. wide${st.lands === "lower-deck" ? ", landing on the lower level" : st.design.landing === "pad" ? ", onto a new pad" : st.design.landing === "patio" ? ", onto the patio" : ", onto pavers"}.`, rule: `${SR.riser} · ${SR.tread}` });
     if (st.widthIn < STAIR_MIN_WIDTH_IN) add({ id: `${tag}-width`, level: "fail", part: where, text: `${st.widthIn} in. wide: the code asks for 36 in. clear.`, rule: SR.width, fix: { label: "Make it 3 ft wide", patch: { stairs: design.stairs.map((d) => (d.id === st.design.id ? { ...d, widthFt: 3 } : d)) } } });
+    // WIDE STEPS ON STRINGERS (2026-11-14): how they stand, the handrail four risers ask for, and the two ends of a run
+    // that stops at the deck's corners on a tall deck. (Ids clear of lib/deck/settle AUTO_FIX.)
+    if (st.kind === "box" && st.wide) {
+      add({ id: `${tag}-wide`, level: "pass", part: where, text: `Past three risers the steps stand on stringers, not boxes: ${plural(st.stringers.count, "2x12 cut stringer")} ${st.stringers.spacingIn} in. apart along ${Math.round(st.wide.lengthIn / 12)} ft of the deck's edge${st.wide.hips ? `, one along the mitre at each of the ${plural(st.wide.hips, "corner")} they turn` : ""} — ${ftIn(st.stringers.lengthIn)} each, on connectors at the rim, their feet on a treated 2x6 sleeper over compacted gravel.`, rule: SR.stringer });
+      if (st.risers >= HANDRAIL_FROM_RISERS) {
+        if (st.rail.sides === 0) add({ id: `${tag}-handrail`, level: "fail", part: where, text: `${plural(st.risers, "riser")}: a graspable handrail 34 to 38 in. above the nosings is required on a stair of four risers or more — one rail down the steps is enough. ${design.rail.type === "none" ? "Choose a railing to put one on." : "None is on these steps."}`, rule: SR.handrail, fix: design.rail.type === "none" ? { label: "Add a wood railing", patch: { rail: { type: "treated" } } } : { label: "A handrail down the steps", patch: { stairs: design.stairs.map((d) => (d.id === st.design.id ? { ...d, handrail: "one" } : d)) } } });
+        else add({ id: `${tag}-handrail`, level: "pass", part: where, text: `A handrail down the steps where the stair is set along the front: two posts, the rail 36 in. above the nosings.`, rule: SR.handrail });
+      }
+      if (st.wide.openEnds && st.riseIn > GUARD_REQUIRED_ABOVE_IN) add({ id: `${tag}-ends`, level: "warn", part: where, text: `The steps stop at the deck's corners, and their two ends are open — more than 30 in. up at the top. Run them round the deck's ends as well, or close each end with a guard.`, rule: SR.guard, fix: { label: "Round the front and both ends", patch: { stairs: design.stairs.map((d) => (d.id === st.design.id ? { ...d, wrapSides: 3 } : d)) } } });
+    }
     if (st.kind === "flight") {
       add({ id: `${tag}-stringers`, level: "pass", part: where, text: `${plural(st.stringers.count, "2x12 cut stringer")} ${st.stringers.spacingIn} in. apart (${frame.decking.family === "pvc" ? "PVC treads want 10" : frame.decking.family === "composite" || frame.decking.family === "mineral" ? "composite treads want 12" : "wood treads take 16"}), ${ftIn(st.stringers.lengthIn)} each, on connectors at the rim and a treated kicker${st.pad ? " bolted to the pad" : ""}${st.midSupport ? "; a 2x8 beam on two posts midway — a cut stringer spans 6 ft at most" : ""}${st.landing ? "; a landing midway — a flight climbs 12 ft 3 in. at most" : ""}.`, rule: `${SR.stringer}${st.landing ? ` · ${SR.landing}` : ""}` });
       if (st.risers >= HANDRAIL_FROM_RISERS) {

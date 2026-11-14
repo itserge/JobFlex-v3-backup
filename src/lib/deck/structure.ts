@@ -208,7 +208,7 @@ export function buildStructure(raw: DeckDesign, opts: StructureOptions = {}): De
   if (frame && surface) {
     // (Steps that wrap the deck follow its own outline wherever it is not a plain rectangle — 2026-11-14.)
     const plain = design.shape.kind === "rect" && (!design.shape.front || design.shape.front.kind === "straight");
-    const upper: StairLevel = { id: "upper", surfaceIn: frame.surfaceIn, joistBottomIn: frame.joistBottomIn, x0: 0, y0: 0, widthIn: W, depthIn: D, frontAt: (x) => frontEdgeAt(design.shape, x), ...(plain ? {} : { sides: railLevelOf("upper", frame, 0, 0, groundAt, null, false).sides }) };
+    const upper: StairLevel = { id: "upper", surfaceIn: frame.surfaceIn, joistBottomIn: frame.joistBottomIn, x0: 0, y0: 0, widthIn: W, depthIn: D, frontAt: (x) => frontEdgeAt(design.shape, x), sides: railLevelOf("upper", frame, 0, 0, groundAt, null, false).sides, plain };
     const lowerLevel: StairLevel | null = lower ? { id: "lower", surfaceIn: lower.frame.surfaceIn, joistBottomIn: lower.frame.joistBottomIn, x0: lower.offsetXIn, y0: lower.offsetYIn, widthIn: Math.round(design.lower.widthFt * 12), depthIn: Math.round(design.lower.depthFt * 12), frontAt: lower.place === "under" ? (x) => frontEdgeAt(design.shape, x) : () => Math.round(design.lower.depthFt * 12) } : null;
     const build = (st: StairDesign, level: StairLevel) =>
       buildStair({ design, stair: st, level, lowerLevel: level.id === "upper" ? lowerLevel : null, product: frame.decking, rail: design.rail, groundAt, riserMaxIn: code.riserMaxIn, postSize: design.framing.post === "8x8" ? "6x6" : design.framing.post === "4x6" ? "4x4" : design.framing.post });

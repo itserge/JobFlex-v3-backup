@@ -530,8 +530,10 @@ console.log("── the runner holds the engine's rails");
   check("a ledger on brick veneer is refused, with the code's reason", brick.design.placement !== "attached" && /veneer/.test(brick.said.join(" ")), brick.said.join(" "));
   const fan = runCommand(d, { do: "fixture", op: "add", kind: "fan" });
   check("a fan with no roof asks to add one", fan.refused === true && !!fan.pending, fan.said.join(" "));
-  const box = runCommand(d, { do: "stairs", op: "add", wrap: true });
-  check("box steps on a 3-ft deck are refused, a flight offered", box.refused === true && box.pending?.yes[0].do === "stairs");
+  // (2026-11-14: steps that wrap the deck go to seven risers, on stringers past three.)
+  const box = runCommand({ ...d, heightIn: 60 }, { do: "stairs", op: "add", wrap: true });
+  check("steps wrapping a 5-ft deck are refused, a flight offered", box.refused === true && box.pending?.yes[0].do === "stairs");
+  check("…on a 3-ft deck they are added", runCommand({ ...d, heightIn: 36 }, { do: "stairs", op: "add", wrap: true }).design.stairs.some((x) => x.wrap));
   const gazebo = runCommand(switchStructure(d, "covered-deck"), { do: "roof", set: { kind: "pyramid" } });
   check("a pyramid roof on a covered deck is built as a gazebo — and on a rectangle said to frame as a hip, with a square offered", gazebo.design.structure === "gazebo" && gazebo.design.roof.kind === "pyramid" && /short ridge — a hip roof/.test(gazebo.said.join(" ")) && gazebo.pending?.yes[0].do === "roof", gazebo.said.join(" "));
   const joists = runCommand(base({ shape: { kind: "rect", widthFt: 16, depthFt: 16 } }), { do: "framing", set: { joist: "2x6" } });
