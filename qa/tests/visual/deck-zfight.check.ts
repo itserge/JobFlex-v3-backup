@@ -418,6 +418,11 @@ variants.push(["a 4-ft screen in the middle of the front and one on a cut corner
 variants.push(["a 28-ft deck with one breaker board, no border, fascia", { structure: "deck", shape: rect(28, 14), heightIn: 36, decking: { ...base.decking, fascia: "match", breakers: 1 }, stairs: [] } as Patch]);
 variants.push(["two breaker boards inside a two-board border, free-standing", { structure: "deck", placement: "detached", shape: rect(30, 16), heightIn: 30, decking: { ...base.decking, fascia: "match", border: 2, breakers: 2 }, stairs: [] } as Patch]);
 variants.push(["an L with a border and a breaker board beside its inside corner", { structure: "deck", shape: { kind: "L", widthFt: 24, depthFt: 16, notch: { corner: "front-right", widthFt: 10, depthFt: 6 } }, heightIn: 42, decking: { ...base.decking, fascia: "match", border: 1, breakers: 1 }, stairs: [] } as Patch]);
+// A STAIR'S STRINGERS AT A DEEP, DOUBLED RIM (2026-11-14): their heads stood 3 in. inside the deck's edge, the cut
+// face in the inner face of a doubled 2x10 or 2x12 rim — these flickered. The heads bear on the rim's outer face now,
+// their connectors with them, clear of the rail post beside.
+variants.push(["a front stair on a deck 16 ft deep (2x12 joists, doubled rim), fascia, aluminum rail", { structure: "deck", shape: rect(20, 16), heightIn: 48, rail: { ...base.rail, type: "aluminum" }, decking: { ...base.decking, fascia: "match" }, framing: { ...base.framing, doubleRim: true }, stairs: stairs("front", 4, 4) } as Patch]);
+variants.push(["a side stair on a deck 14 ft deep, single rim, cedar rail, no fascia", { structure: "deck", shape: rect(20, 14), heightIn: 72, rail: { ...base.rail, type: "cedar" }, decking: { ...base.decking, fascia: "none" }, framing: { ...base.framing, doubleRim: false }, stairs: stairs("left", 8, 4) } as Patch]);
 for (const [name, p] of variants) cases.push({ name, design: applyDeckPatch(base, p) });
 
 /**

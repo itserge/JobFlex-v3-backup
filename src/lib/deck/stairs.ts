@@ -358,6 +358,9 @@ export interface StairInput {
   postSize: PostSize;
 }
 
+/** How far into the rim's outer face a stringer's head is drawn, in. (its plumb cut bears on the rim; a quarter inch in keeps the cut face out of the rim's and the fascia's own planes in the 3D). */
+const STRINGER_HEAD_IN = 0.25;
+
 /** Where a stair leaves its deck: O at its top-left looking down it, u along its width, nrm the way it runs out. */
 function stairSetOut(stair: StairDesign, level: Pick<StairLevel, "x0" | "y0" | "widthIn" | "frontAt">): { O: V2; u: V2; nrm: V2 } {
   const w = Math.round(stair.widthFt * 12);
@@ -559,9 +562,17 @@ export function buildStair(input: StairInput): StairBuild {
       // stood up through every tread, 6 in. at its back, and a wide flight read as a ramp ribbed by its stringers.)
       const zA = zTop - treadThick - rIn;
       const zB = zTop - treadThick - r * rIn;
-      const midB = runF / 2 - (STRINGER_DEPTH_IN / 2) * sinT;
-      const midZ = (zA + zB) / 2 - (STRINGER_DEPTH_IN / 2) * cosT;
-      for (const a2 of stringerAt) member("stringer", STRINGER_NOMINAL, L, P2(a2, midB), midZ, Math.hypot(runF, zA - zB), THICK_2X_IN, STRINGER_DEPTH_IN, yawB, -theta);
+      // THE HEAD'S PLUMB CUT ON THE RIM'S FACE (2026-11-14). The box is drawn with plumb ends through the ends of its
+      // own middle line, and that line began square under the top of the stringer's top edge — half the stringer's
+      // depth back up the slope, so the head stood about 3 in. INSIDE the deck's edge: through the rim, its cut face in
+      // the inner face of a doubled rim (the 3D flickered there on any deck with 2x10 or 2x12 joists, seen from
+      // under it). The middle line now begins on the edge's own line: the head bears on the rim's outer face, and the
+      // connector that holds it is drawn there too (lib/deck/scene).
+      // (…a quarter inch into it, so the cut face lies in no face of the rim or of the fascia over it.)
+      const headCut = (STRINGER_DEPTH_IN / 2) * Math.tan(theta) - STRINGER_HEAD_IN / cosT;
+      const midB = runF / 2 - (STRINGER_DEPTH_IN / 2) * sinT + (headCut / 2) * cosT;
+      const midZ = (zA + zB) / 2 - (STRINGER_DEPTH_IN / 2) * cosT - (headCut / 2) * sinT;
+      for (const a2 of stringerAt) member("stringer", STRINGER_NOMINAL, L, P2(a2, midB), midZ, Math.hypot(runF, zA - zB) - headCut, THICK_2X_IN, STRINGER_DEPTH_IN, yawB, -theta);
       hardware.stringerConnectors += count;
       // Treads and risers.
       const boardsPerTread = Math.ceil((runIn + TREAD_NOSING_IN) / boardPitch - 1e-9);
@@ -866,10 +877,12 @@ export function buildStair(input: StairInput): StairBuild {
     const stringerFrom = (E: V2, dir: V2, stretch: number) => {
       const run = runAll * stretch;
       const th = Math.atan2(zA - zB, run);
-      const midB = run / 2 - (STRINGER_DEPTH_IN / 2) * Math.sin(th);
-      const midZ = (zA + zB) / 2 - (STRINGER_DEPTH_IN / 2) * Math.cos(th);
+      // (Its head's plumb cut on the rim's face, as a flight's: see `headCut` there.)
+      const headCut = (STRINGER_DEPTH_IN / 2) * Math.tan(th) - STRINGER_HEAD_IN / Math.cos(th);
+      const midB = run / 2 - (STRINGER_DEPTH_IN / 2) * Math.sin(th) + (headCut / 2) * Math.cos(th);
+      const midZ = (zA + zB) / 2 - (STRINGER_DEPTH_IN / 2) * Math.cos(th) - (headCut / 2) * Math.sin(th);
       const L = Math.hypot(risers * riserIn, run) + 8;
-      member("stringer", STRINGER_NOMINAL, L, { x: E.x + dir.x * midB, y: E.y + dir.y * midB }, midZ, Math.hypot(run, zA - zB), THICK_2X_IN, STRINGER_DEPTH_IN, Math.atan2(dir.y, dir.x), -th);
+      member("stringer", STRINGER_NOMINAL, L, { x: E.x + dir.x * midB, y: E.y + dir.y * midB }, midZ, Math.hypot(run, zA - zB) - headCut, THICK_2X_IN, STRINGER_DEPTH_IN, Math.atan2(dir.y, dir.x), -th);
       stringers.lengthIn = Math.max(stringers.lengthIn, L);
       stringers.count += 1;
       hardware.stringerConnectors += 1;

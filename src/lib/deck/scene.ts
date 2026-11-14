@@ -751,7 +751,12 @@ export function deckScene(s: DeckStructure): DeckScene {
         const dx = Math.cos(m.yaw) * (m.sx / 2) * Math.cos(m.tilt);
         const dy = Math.sin(m.yaw) * (m.sx / 2) * Math.cos(m.tilt);
         const dz = Math.sin(m.tilt) * (m.sx / 2);
-        box("hardware", m.cx - dx, m.cy - dy, m.cz - dz + 2, 2, 2.5, 6, connTag);
+        // On the rim's outer face, round the stringer's head (2026-11-14: the head stood inside the rim, and the
+        // connector with it): its back a quarter inch into the rim (never in the head's own cut face), a shade
+        // narrower across the stringer than the rail post beside it, so no face of the one lies in a face of the other.
+        const out = 1;
+        const alongX = Math.abs(Math.cos(m.yaw)) > Math.abs(Math.sin(m.yaw));
+        box("hardware", m.cx - dx + Math.cos(m.yaw) * out, m.cy - dy + Math.sin(m.yaw) * out, m.cz - dz + 2, alongX ? 2.5 : 1.75, alongX ? 1.75 : 2.5, 6, connTag);
       }
       callout(top.cx - Math.cos(top.yaw) * (top.sx / 2) * Math.cos(top.tilt), top.cy - Math.sin(top.yaw) * (top.sx / 2) * Math.cos(top.tilt), top.cz - Math.sin(top.tilt) * (top.sx / 2) + 2, "connection", "Stair stringers at the rim", `${st.stringers.count} 2x12 stringers on galvanized stringer connectors at the rim (never on screws alone), cut ${st.risers} × ${st.riserIn.toFixed(2)} in. rise over ${st.runIn} in. run — ${slopeDeg}; a treated kicker at the foot, ${st.pad ? "bolted to the pad" : "on the landing"}.`);
     }
