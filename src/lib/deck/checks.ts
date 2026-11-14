@@ -71,6 +71,11 @@ export function applyDeckPatch(design: DeckDesign, patch: DeckPatch): DeckDesign
   if (patch.house?.storeys !== undefined && patch.house.storeys !== design.house.storeys && !("eaveHeightFt" in patch.house)) {
     delete (out.house as Record<string, unknown>).eaveHeightFt;
   }
+  // The parts' own heights and roofs go with the steps they were read between: a step added or taken away by hand
+  // (the House step) without them leaves them describing another wall, so they go (2026-11-13).
+  if (patch.house?.jogs !== undefined && !("parts" in patch.house) && patch.house.jogs.length !== design.house.jogs.length) {
+    delete (out.house as Record<string, unknown>).parts;
+  }
   return normalizeDeckDesign(out);
 }
 

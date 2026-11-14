@@ -16,6 +16,7 @@
 
 import { z } from "zod";
 import { JOG_DEFAULT_FT, parseWallRead, autoRectify, applyHomography, type RectifyPlan, type Pt, type WallRead } from "./photoFit";
+import type { PartRoof } from "./house";
 
 /** Straighten the wall while retaining complete opening boxes at its edges.
  * Axis-aligned boxes on an angled photo can extend above the sloping eave.
@@ -41,6 +42,21 @@ export type ReadDoorKind = "slider" | "hinged" | "french" | "garage";
 export type ReadRoofKind = "hip" | "gable-side" | "gable-end" | "shed" | "flat";
 export type ReadMaterial = "lap" | "brick" | "stucco" | "board-batten" | "stone" | "shingle";
 
+/**
+ * A stretch of the wall with a height or a roof of its own (2026-11-13, owner: "use the same roof as the picture"):
+ * one storey where the house is two, under a lean-to, a hip, a gable or a flat roof lower than the main one; `wing`
+ * when no taller wall of the house stands behind or above it. Kept as a stretch of the PICTURE (fractions of its
+ * width), not as "part number n": the wall's steps are moved, added and taken away in the review, and a part takes
+ * the stretch that covers most of it (sectionHeights).
+ */
+export interface ReadHeight {
+  x0: number;
+  x1: number;
+  storeys: 1 | 2 | null;
+  roof: PartRoof | null;
+  wing: boolean;
+}
+
 /** What the model reads off the photo for the house, validated. Every coordinate a fraction of the picture it read. */
 export interface HouseRead extends WallRead {
   /** Every door in that wall, left to right (the one onto the deck included — `door` keeps the back door itself). */
@@ -53,6 +69,8 @@ export interface HouseRead extends WallRead {
    *  standing in front of it: what the pixel passes may read as the house, the depth map's mask. Absent on an older
    *  read, or one the model gave none for. */
   outline?: Pt[];
+  /** The stretches of the wall that have a height or a roof of their own; absent when every part stands under the main roof. */
+  heights?: ReadHeight[];
 }
 
 const MAX_WINDOWS = 30;
@@ -96,6 +114,16 @@ const MATERIAL_WORDS: ReadonlyArray<[RegExp, ReadMaterial]> = [
   [/lap|vinyl|clapboard|fiber.?cement|hardie|wood siding|siding|horizontal/i, "lap"],
 ];
 
+const PART_ROOF_WORDS: Record<string, PartRoof> = { "lean-to": "shed", shed: "shed", hip: "hip", gable: "gable", flat: "flat" };
+/** A section's (or a saved stretch's) own height and roof, as the model or the saved read gives them. */
+function heightOf(o: Record<string, unknown>): { storeys: 1 | 2 | null; roof: PartRoof | null; wing: boolean } {
+  return {
+    storeys: o.storeys === 1 || o.storeys === 2 ? o.storeys : null,
+    roof: typeof o.roof === "string" ? (PART_ROOF_WORDS[o.roof] ?? null) : null,
+    wing: o.wing === true,
+  };
+}
+
 /** The model's JSON, checked field by field; null when there is no usable wall in it. */
 export function parseHouseRead(raw: unknown): HouseRead | null {
   const r = obj(raw);
@@ -105,7 +133,7 @@ export function parseHouseRead(raw: unknown): HouseRead | null {
     .map((x) => {
       const o = obj(x);
       const sp = span(x, 0.01);
-      return sp && typeof o.outFt === "number" && Number.isFinite(o.outFt) ? { ...sp, outFt: clamp(o.outFt, -20, 20) } : null;
+      return sp && typeof o.outFt === "number" && Number.isFinite(o.outFt) ? { ...sp, outFt: clamp(o.outFt, -20, 20), ...heightOf(o) } : null;
     })
     .filter((x): x is NonNullable<typeof x> => !!x)
     .sort((a, b) => a.x0 - b.x0);
@@ -162,6 +190,11 @@ export function parseHouseRead(raw: unknown): HouseRead | null {
     })
     .filter((p): p is Pt => !!p)
     .slice(0, 32);
+  // The stretches with a height or a roof of their own: from the sections that said so (a one-storey section of a
+  // two-storey house, a section under its own roof), or as a saved read kept them.
+  const saved = (Array.isArray(r.heights) ? r.heights : []).map((x) => { const sp = span(x, 0.01); return sp ? { ...sp, ...heightOf(obj(x)) } : null; }).filter((x): x is ReadHeight => !!x);
+  const told = sections.filter((x) => (x.storeys === 1 && wall.storeys !== 1) || x.roof !== null || x.wing).map((x) => ({ x0: r3(x.x0), x1: r3(x.x1), storeys: x.storeys, roof: x.roof, wing: x.wing }));
+  const heights = (saved.length ? saved : told).filter((x) => x.storeys !== null || x.roof !== null || x.wing).slice(0, 6);
   return {
     ...wall,
     windows: clearOfDoors,
@@ -170,6 +203,7 @@ export function parseHouseRead(raw: unknown): HouseRead | null {
     material,
     colours: { siding: hex(c.siding), roof: hex(c.roof), trim: hex(c.trim) },
     ...(outline.length >= 3 ? { outline } : {}),
+    ...(heights.length ? { heights } : {}),
   };
 }
 
@@ -442,6 +476,37 @@ export function setSectionOut(read: HouseRead, i: number, outFt: number): HouseR
   return { ...read, jogs };
 }
 
+/**
+ * Each part's own height and roof, where it has them: the stretch that covers most of the part (half of it or more).
+ * Null for a part that stands under the main roof like the rest.
+ */
+export function sectionHeights(read: HouseRead): Array<ReadHeight | null> {
+  return readSections(read).map((sec) => {
+    let best: ReadHeight | null = null, most = 0;
+    for (const h of read.heights ?? []) {
+      const over = Math.min(sec.x1, h.x1) - Math.max(sec.x0, h.x0);
+      if (over > most) { most = over; best = h; }
+    }
+    return best && most >= 0.5 * (sec.x1 - sec.x0) ? best : null;
+  });
+}
+/** One part given a height and a roof of its own — or, with null, put back under the main roof. */
+export function setSectionHeight(read: HouseRead, i: number, to: { storeys: 1 | 2 | null; roof: PartRoof | null; wing: boolean } | null): HouseRead {
+  const sec = readSections(read)[i];
+  if (!sec) return read;
+  // what the other stretches keep of themselves outside this part
+  const rest = (read.heights ?? []).flatMap((h): ReadHeight[] => {
+    const out: ReadHeight[] = [];
+    if (h.x0 < sec.x0 - 0.005) out.push({ ...h, x1: Math.min(h.x1, sec.x0) });
+    if (h.x1 > sec.x1 + 0.005) out.push({ ...h, x0: Math.max(h.x0, sec.x1) });
+    return out.filter((x) => x.x1 - x.x0 > 0.01);
+  });
+  const heights = (to && (to.storeys !== null || to.roof !== null || to.wing) ? [...rest, { x0: r3(sec.x0), x1: r3(sec.x1), ...to }] : rest).sort((a, b) => a.x0 - b.x0);
+  const bare: HouseRead = { ...read };
+  delete bare.heights;
+  return heights.length ? { ...bare, heights } : bare;
+}
+
 export const removeReadJog = (read: HouseRead, i: number): HouseRead => ({ ...read, jogs: read.jogs.filter((_, k) => k !== i) });
 export const flipReadJog = (read: HouseRead, i: number): HouseRead => ({ ...read, jogs: read.jogs.map((j, k) => (k === i ? { ...j, dir: j.dir === "toward" ? ("away" as const) : ("toward" as const) } : j)) });
 
@@ -530,6 +595,7 @@ export function mergeLooks(wide: HouseRead, close: HouseRead | null): HouseRead 
     // wide look's eave stands — the picture's own pass needs one to find the eave's shadow near.
     eave: close.eave ?? wide.eave,
     jogs: wide.jogs,
+    ...(wide.heights ? { heights: wide.heights } : {}),
     storeys: wide.storeys ?? close.storeys,
     roof: wide.roof.kind ? wide.roof : close.roof,
     material: wide.material ?? close.material,
@@ -585,7 +651,7 @@ export const houseReadSchema = z.object({
   base: z.object({ left: PX, right: PX }).nullable(),
   eave: z.object({ left: PX, right: PX }).nullable(),
   storeys: z.number().nullable(),
-  sections: z.array(z.object({ x0: z.number(), x1: z.number(), outFt: z.number(), why: z.string() })),
+  sections: z.array(z.object({ x0: z.number(), x1: z.number(), outFt: z.number(), storeys: z.number().nullable(), roof: z.enum(["main", "lean-to", "hip", "gable", "flat"]).nullable(), wing: z.boolean(), why: z.string() })),
   doors: z.array(z.object({ x0: z.number(), x1: z.number(), bottom: z.number(), top: z.number(), kind: z.enum(["slider", "hinged", "french", "garage"]), ontoYard: z.boolean() })),
   windows: z.array(z.object({ x0: z.number(), x1: z.number(), sill: z.number(), head: z.number() })),
   patio: SPAN.nullable(),
@@ -605,11 +671,11 @@ COORDINATES: every coordinate is in PIXELS of the picture exactly as you were gi
 SUBJECT: "house-exterior" when the picture shows the outside wall(s) of a house (a townhouse, a duplex, a garage attached to a house count) seen from the yard, the side or the street — a wall a deck could meet. "house-interior" for a room. "other-building" for a shop, a barn, a shed, a block of flats seen from afar. "not-a-building" for anything else — a person, a car, a plan drawing, a screenshot, a yard with no wall in it. "unclear" when you cannot tell. Confidence 0–1 and one short reason.
 OUTLINE: the house's own silhouette, a polygon of 6 to 20 points going round clockwise — along the roof's ridge and its edges, down the walls' corners to the ground and back: the HOUSE, not the trees in front of it, not a fence, not a neighbour's house, not an old deck, a porch roof or a car standing in front of the wall (the outline runs behind them, along the house). Where the house runs off the picture's edge, follow the edge. Null when there is no house.
 THE WALL: "base" is the house wall's bottom edge where the WALL meets the ground (or would meet it behind a patio, steps or a deck), at the house's left corner and at its right corner — the whole face of the house across every step in it. "eave" is the top of that wall above each corner: the underside of the MAIN roof's eave (on a two-storey house, the eave over the upper floor); null when hidden. "storeys": 1 or 2 storeys of wall between the base and that eave (count the rows of windows), null when unsure.
-SECTIONS: FIRST work out the wall's sections, left to right from its left corner to its right corner: a section is a stretch of the house's wall whose face is one flat plane. "outFt" is how far that section's face stands IN FRONT of the main wall (the main wall — the widest stretch — is 0; a bump-out or a bay is +2 to +4; a part set back is negative). "why" is the evidence you see for that section's plane: its own corner boards at both its ends, its own eave or roof edge in front of the main eave, a shadow down the wall at its side, its siding meeting the next section at a corner. A porch roof, a patio roof or an awning in front of the wall does NOT make a section: the wall under it and behind it is the main wall unless its OWN face steps. A lower roof over only the GROUND storey of part of a two-storey wall, with that part's upper-storey windows above it, is a porch roof or a lean-to — that stretch is NOT a bump-out unless its upper storey stands forward too (its own corner boards up both storeys, its own hip or gable in the main roof). One section when the wall is one flat face.
+SECTIONS: FIRST work out the wall's sections, left to right from its left corner to its right corner: a section is a stretch of the house's wall whose face is one flat plane. "outFt" is how far that section's face stands IN FRONT of the main wall (the main wall — the widest stretch — is 0; a bump-out or a bay is +2 to +4; a part set back is negative). "why" is the evidence you see for that section's plane: its own corner boards at both its ends, its own eave or roof edge in front of the main eave, a shadow down the wall at its side, its siding meeting the next section at a corner. "storeys" is how many storeys of WALL that section's OWN face has (1 or 2), and "roof" is what covers it: "main" when its wall runs up to the house's main roof; "lean-to" (one slope leaning against the taller wall behind it), "hip", "gable" or "flat" when it stands under a LOWER roof of its own. "wing" is true when that section is ALL the house there is at that spot — a one-storey wing beside the two-storey block, nothing but sky above its roof — and false when the house's taller wall stands behind or above it (the upper-storey windows show over the low roof). WHERE A LOWER ROOF SHOWS over only the GROUND storey of part of a two-storey wall, tell three things apart. (1) A ROOM under it: a wall face under the low roof — its own siding, windows or a door — standing FORWARD of the wall above it, with its own corner at its end and no open space beneath the roof. That IS a section: storeys 1, outFt as far as the room's face stands forward of the wall above (usually 4 to 12), roof "lean-to" (or hip, gable, flat as seen), wing false. (2) An OPEN porch or patio cover: posts or brackets hold it, the house wall shows behind it under the roof, a person could walk under it. That is NOT a section — the wall behind it is — and the cover goes in "lookPast". (3) A shallow roof band or skirt on the wall itself, the wall above and below it in one plane: NOT a section either. A porch roof, a patio roof or an awning in front of the wall never makes a section by itself. A two-storey stretch that stands forward (its own corner boards up both storeys, its own hip or gable in the main roof) is a section of storeys 2, roof "main" unless it carries a roof of its own. One section when the wall is one flat face of one height.
 DOORS: EVERY door in the wall, left to right, with its kind (slider, hinged, french, garage); "ontoYard" true for the one door a deck would meet — the back door, the slider onto the yard — and false for every other (at most one true). A garage door IS a door here, kind "garage", never ontoYard: box the whole panel, its bottom where it meets the driveway. Box every door whole, threshold to head, even where a railing, a step or a plant hides part of it. For an elevated entry, follow the door DOWN BEHIND the railing to the landing floor. The TOP RAIL across the door is NOT its threshold. A single hinged entry is usually about 80 inches tall and 32–36 inches wide: a nearly square box around its visible upper half is incomplete. Infer the hidden lower frame cautiously from the landing and the frame sides; state that occlusion in note. Do not use the decorative glass inset as the door box. Keep the separate window ABOVE that door as its own window.
 WINDOWS: EVERY window in the wall, both storeys: the outside edges of its frame left and right, its sill and its head. A window unit of several sashes or panes in ONE frame — a picture window with sliders beside it, a triple, a bay's front — is ONE window: box the whole frame, outside edge to outside edge. Windows with siding between them are separate entries — count them. Not the doors, not a garage door's panels.
 PATIO: a concrete patio or slab at the wall's base, its ends along the wall (only to know where a deck would go); null when none.
-ROOF: the MAIN roof of the house — hip (slopes on every side), gable-side (the ridge runs along this wall, triangles at the sides), gable-end (a triangle of wall faces the camera), shed, flat; pitch in inches of rise per foot when you can judge it (a usual house is 4 to 8), else null.
+ROOF: the MAIN roof of the house — hip (slopes on every side), gable-side (the ridge runs along this wall, triangles at the sides), gable-end (a triangle of wall faces the camera), shed, flat; pitch in inches of rise per foot when you can judge it (a usual house is 4 to 8), else null. A lower roof over one part of the wall is said in that part's section, not here.
 MATERIAL: what most of the wall is clad in (lap = horizontal siding, vinyl or fiber cement). COLOURS: your best guess at the real colours as "#rrggbb" in plain daylight (not the sunset, not the shadow), null when you cannot say.
 LOOK PAST, NEVER READ AS THE WALL: a porch roof or a covered patio's roof standing out in front of the wall, its posts and beams, an awning, a pergola, an old deck and its railing, stairs, a slab, a fence, a hedge, trees, a neighbour's house, a car. None of them is a step in the wall, an edge of the wall or its eave: a porch roof's low edge is not the eave; its post is not a corner. Read the house wall behind them — and list each such thing in "lookPast" with the box it covers, so the builder can keep it out of the picture.
 BARS: black bands or a phone's status bar at the top and the bottom of the picture, in pixels of height; 0 when none. CONFIDENCE: how sure you are of the corners, the steps and the windows. NOTE: one short sentence a deck builder should know (a meter or a dryer vent on the wall, the ground sloping), else null.
@@ -637,7 +703,7 @@ export function fromStructured(s: HouseReadStructured, w: number, h: number): Re
     base: s.base ? { left: P(s.base.left), right: P(s.base.right) } : null,
     eave: s.eave ? { left: P(s.eave.left), right: P(s.eave.right) } : null,
     storeys: s.storeys,
-    sections: s.sections.map((x) => ({ x0: X(x.x0), x1: X(x.x1), outFt: x.outFt, why: x.why })),
+    sections: s.sections.map((x) => ({ x0: X(x.x0), x1: X(x.x1), outFt: x.outFt, storeys: x.storeys, roof: x.roof, wing: x.wing, why: x.why })),
     door: back ? { x0: X(back.x0), x1: X(back.x1), bottom: Y(back.bottom), top: Y(back.top) } : null,
     doors: s.doors.map((d) => ({ x0: X(d.x0), x1: X(d.x1), bottom: Y(d.bottom), top: Y(d.top), kind: d.kind })),
     windows: s.windows.map((x) => ({ x0: X(x.x0), x1: X(x.x1), sill: Y(x.sill), head: Y(x.head) })),
