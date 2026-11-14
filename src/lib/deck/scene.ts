@@ -35,7 +35,7 @@ import type { StairMember } from "./stairs";
 import type { RailMember } from "./rails";
 import { BASE_PLATE_IN, BASE_PLATE_THICK_IN, railMountCallout, railPostWords, railWords } from "./rails";
 import { electricalWords } from "./electrical";
-import { HOUSE_MATERIALS, HOUSE_ROOFS, houseHandles, houseScene, type HouseMaterial, type HouseRoof } from "./house";
+import { HOUSE_MATERIALS, HOUSE_ROOFS, houseHandles, houseScene, settleSceneOpenings, type HouseMaterial, type HouseRoof } from "./house";
 import { railColorOf, speciesWords } from "./catalog";
 
 export const DECK_SCENE_VERSION = 3;
@@ -1199,6 +1199,12 @@ export function parseDeckScene(raw: unknown): DeckScene | null {
     // Built from a photo (2026-10-23): the doors and the cladding — malformed ones dropped.
     if (Array.isArray(h.doors)) house.doors = h.doors.map((d) => numbers(d, 6)).filter((d): d is number[] => !!d).slice(0, 8);
     if (typeof h.material === "string" && (HOUSE_MATERIALS as readonly string[]).includes(h.material)) house.material = h.material as HouseMaterial;
+    // A scene saved before 2026-11-13 can hold a window inside a door: none on another's spot (lib/deck/house).
+    if (house.windows || house.doors) {
+      const clear = settleSceneOpenings(house.windows, house.doors);
+      if (clear.windows) house.windows = clear.windows;
+      if (clear.doors) house.doors = clear.doors;
+    }
     // The roofs over the body and its bump-outs (2026-10-23): all of them or none (a roof per block, as before).
     if (Array.isArray(h.roofs) && h.roofs.length <= 16) {
       const roofs = h.roofs.map((x) => numbers(x, 7)).filter((x): x is number[] => !!x && Number.isInteger(x[0]) && x[0] >= 0 && x[0] <= 8);

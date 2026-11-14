@@ -70,16 +70,23 @@ export function snapToPhoto(result: EngineResult, photo: SnapPhoto, dsm: EngineR
     const i = ((y + gy0) * photo.width + x + gx0) * 3;
     raw[y * gw + x] = 0.299 * photo.data[i] + 0.587 * photo.data[i + 1] + 0.114 * photo.data[i + 2];
   }
-  const gray = new Float32Array(gw * gh);
-  for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
-    let s = 0, n = 0;
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-      const xx = x + dx, yy = y + dy;
-      if (xx < 0 || yy < 0 || xx >= gw || yy >= gh) continue;
-      const wgt = dx === 0 && dy === 0 ? 4 : dx === 0 || dy === 0 ? 2 : 1;
-      s += wgt * raw[yy * gw + xx]; n += wgt;
+  // blurred as far as one raster pixel reaches: once for a photograph on the height map's own grid, twice for one
+  // twice as sharp (EagleView's) — on that one the courses of the tiles show, row after row parallel to the eave, and
+  // unblurred each of them is an "edge the same way all along" that a line could be set on
+  let gray = raw;
+  for (let pass = 0; pass < Math.max(1, Math.round(photo.scale)); pass++) {
+    const src = gray, out = new Float32Array(gw * gh);
+    for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
+      let s = 0, n = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const xx = x + dx, yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= gw || yy >= gh) continue;
+        const wgt = dx === 0 && dy === 0 ? 4 : dx === 0 || dy === 0 ? 2 : 1;
+        s += wgt * src[yy * gw + xx]; n += wgt;
+      }
+      out[y * gw + x] = s / n;
     }
-    gray[y * gw + x] = s / n;
+    gray = out;
   }
   /** brightness at a photograph point (continuous: a pixel's centre is its index + 0.5); NaN off the picture */
   const G = (x: number, y: number): number => {
@@ -144,7 +151,11 @@ export function snapToPhoto(result: EngineResult, photo: SnapPhoto, dsm: EngineR
         const half = (zin + zout) / 2;
         let wall = NaN;
         for (let t = -far; t <= far; t += 0.5) if (h(t) < half) { wall = t; break; }
-        if (Number.isFinite(wall)) { lo = Math.max(lo, wall - 0.5 / px); hi = Math.min(hi, wall + 0.12 / px); }
+        // The height map reads a roof's edge fat (0.2 to 0.3 m on the roofs measured): the real edge lies a little
+        // INSIDE where the height falls, never outside it — and just outside is where the eave's shadow lies on the
+        // ground, an edge as plain as the gutter's (seen on EagleView's sharper picture: a wall set on its shadow).
+        // (0.7 m inside on one wall of the first roof seen sharply: an eave with a wide gutter over a patio.)
+        if (Number.isFinite(wall)) { lo = Math.max(lo, wall - 0.9 / px); hi = Math.min(hi, wall - 0.15 / px); }
       } else {
         // no drop to read here (a tree over the edge, a lower roof beside it): only a small move is trusted
         lo = Math.max(lo, -0.3 / px); hi = Math.min(hi, 0.3 / px);

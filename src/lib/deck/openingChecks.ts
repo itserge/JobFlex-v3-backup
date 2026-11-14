@@ -16,7 +16,7 @@
 
 import { DECK_LIMITS, LOWER_LIMITS, ROOF_LIMITS, spaRectIn, type DeckDesign } from "./design";
 import { DRESSED_DEPTH_IN, ftIn, joistDepthIn } from "./codeTables";
-import type { HouseOpening } from "./house";
+import { settleOpenings, type HouseOpening } from "./house";
 import type { DeckStructure } from "./structure";
 import type { RoofFrame } from "./roof";
 import type { DeckCheck } from "./checks";
@@ -87,7 +87,8 @@ export function roofAtWall(roof: RoofFrame, design: DeckDesign): { x0: number; x
 
 export function openingChecks(s: DeckStructure, add: (c: DeckCheck) => void): void {
   const { design, frame, roof } = s;
-  const all = design.house.openings;
+  // The openings as they stand on the wall: a window read inside a door, or twice, is no window of its own (2026-11-13).
+  const all = design.house.openings ? settleOpenings(design.house.openings) : null;
   if (!all?.length || design.placement === "detached" || !frame) return;
   const W = design.shape.widthFt * 12;
   const deck = { x0: 0, x1: W };

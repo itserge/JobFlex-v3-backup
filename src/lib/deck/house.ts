@@ -510,14 +510,117 @@ export function houseScene(shape: DeckShape, house: HouseDesign, ctx: { deckHeig
 /** The wall part an opening stands in: the one its middle is over. */
 const partAt = (parts: WallPart[], x: number) => parts.findIndex((p) => x >= p.x0 - 1e-6 && x <= p.x1 + 1e-6);
 
+/* ── Windows and doors that run into each other ─────────────────────── */
+
+/** A window or a door as a rectangle on its wall, ft: x along the house, y up from the ground; `face` = the wall face it stands on. */
+export interface OpeningRect {
+  kind: OpeningKind;
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+  face?: number;
+}
+/** The least wall between two openings, ft. Side by side: a casing each (6 in.), which a window's sill horn stays inside. One over the
+ *  other: the two casings meeting as one band (3 in.) — a transom over a door. */
+export const OPENING_GAP_FT = { side: 0.5, over: 0.25 } as const;
+/** A gap this much short of the rule still stands (the design keeps its openings to the inch). */
+const GAP_SLACK_FT = 0.045;
+/** The least left of an opening that is cut back: this much of its side, and this share of what it was. */
+const OPENING_MIN_FT = 0.75;
+const OPENING_MIN_SHARE = 0.4;
+/** The narrowest a door is cut to before it is left out. */
+const DOOR_MIN_FT: Record<Exclude<OpeningKind, "window">, number> = { door: 2, slider: 4, garage: 6 };
+
+/**
+ * No two openings on one spot of the wall (owner, 2026-11-13: "the glass and doors on the 3D are messy" — a photo's
+ * read had put a window inside the sliding door and another under its edge, and the 3D drew every one of them).
+ * Doors stand first, the largest first; then the windows, the largest first. An opening that lies mostly inside one
+ * already standing is that one's own glass, or the same opening read twice: left out. One that only runs into it is
+ * cut back to leave the casings their room, on the side that costs it least — and left out when too little of it
+ * would be left. A door is never cut in height: its threshold and its head stay where they are.
+ * One entry per rectangle given, in the order given: the rectangle as it stands, or null.
+ */
+export function settleOpeningRects<T extends OpeningRect>(rects: readonly T[]): Array<T | null> {
+  const area = (r: OpeningRect) => Math.max(0, r.x1 - r.x0) * Math.max(0, r.y1 - r.y0);
+  const rank = (r: OpeningRect) => (r.kind === "window" ? 1 : 0);
+  const order = rects.map((_, i) => i).sort((a, b) => rank(rects[a]) - rank(rects[b]) || area(rects[b]) - area(rects[a]) || a - b);
+  const out: Array<T | null> = rects.map(() => null);
+  const standing: T[] = [];
+  for (const i of order) {
+    const full = area(rects[i]);
+    if (!(full > 0)) continue;
+    const door = rects[i].kind !== "window";
+    const minW = rects[i].kind === "window" ? OPENING_MIN_FT : DOOR_MIN_FT[rects[i].kind as Exclude<OpeningKind, "window">];
+    const fits = (c: OpeningRect) => c.x1 - c.x0 >= minW - 1e-9 && c.y1 - c.y0 >= OPENING_MIN_FT - 1e-9 && area(c) >= OPENING_MIN_SHARE * full - 1e-9;
+    let r: T | null = { ...rects[i] };
+    for (const k of standing) {
+      if (!r) break;
+      if (Math.abs((k.face ?? 0) - (r.face ?? 0)) > 0.05) continue;
+      const ox = Math.min(r.x1, k.x1) - Math.max(r.x0, k.x0);
+      const oy = Math.min(r.y1, k.y1) - Math.max(r.y0, k.y0);
+      // Far enough apart, side by side or one over the other.
+      if (ox <= -(OPENING_GAP_FT.side - GAP_SLACK_FT) || oy <= -(OPENING_GAP_FT.over - GAP_SLACK_FT)) continue;
+      const shared = Math.max(0, ox) * Math.max(0, oy);
+      if (shared >= 0.5 * Math.min(area(r), area(k))) {
+        r = null;
+        break;
+      }
+      const cuts: T[] = [
+        { ...r, x0: Math.max(r.x0, k.x1 + OPENING_GAP_FT.side) },
+        { ...r, x1: Math.min(r.x1, k.x0 - OPENING_GAP_FT.side) },
+        ...(door ? [] : [{ ...r, y0: Math.max(r.y0, k.y1 + OPENING_GAP_FT.over) }, { ...r, y1: Math.min(r.y1, k.y0 - OPENING_GAP_FT.over) }]),
+      ].filter(fits);
+      r = cuts.sort((a, b) => area(b) - area(a))[0] ?? null;
+    }
+    if (r) {
+      standing.push(r);
+      out[i] = r;
+    }
+  }
+  return out;
+}
+
+/** The design's windows and doors with none on another's spot (see settleOpeningRects): what the code checks read, and what a photo's read is kept as. */
+export function settleOpenings(openings: readonly HouseOpening[]): HouseOpening[] {
+  const rects = openings.map((o) => ({ kind: o.kind, x0: o.xFt - o.widthFt / 2, x1: o.xFt + o.widthFt / 2, y0: o.sillFt, y1: o.sillFt + o.heightFt }));
+  const out: HouseOpening[] = [];
+  settleOpeningRects(rects).forEach((r, i) => {
+    if (!r) return;
+    const o = openings[i];
+    const same = Math.abs(r.x0 - rects[i].x0) < 1e-9 && Math.abs(r.x1 - rects[i].x1) < 1e-9 && Math.abs(r.y0 - rects[i].y0) < 1e-9 && Math.abs(r.y1 - rects[i].y1) < 1e-9;
+    out.push(same ? o : { ...o, xFt: toInchFt((r.x0 + r.x1) / 2), widthFt: toInchFt(r.x1 - r.x0), heightFt: toInchFt(r.y1 - r.y0), sillFt: toInchFt(r.y0) });
+  });
+  return out;
+}
+
+/**
+ * A drawn house's windows [x, face, w, h, sill] and doors [x, face, w, h, sill, kind] with none on another's spot — a
+ * scene saved before 2026-11-13 can still hold a window inside a door.
+ */
+export function settleSceneOpenings(windows: number[][] | undefined, doors: number[][] | undefined): { windows?: number[][]; doors?: number[][] } {
+  const KIND: OpeningKind[] = ["door", "slider", "garage"];
+  const rows = [...(doors ?? []).map((d) => ({ row: d, door: true })), ...(windows ?? []).map((w) => ({ row: w, door: false }))];
+  const rects = rows.map(({ row, door }) => ({ kind: door ? (KIND[row[5]] ?? "door") : ("window" as OpeningKind), x0: row[0] - row[2] / 2, x1: row[0] + row[2] / 2, y0: row[4], y1: row[4] + row[3], face: row[1] }));
+  const settled = settleOpeningRects(rects);
+  if (settled.every((r, i) => r === rects[i] || (!!r && r.x0 === rects[i].x0 && r.x1 === rects[i].x1 && r.y0 === rects[i].y0 && r.y1 === rects[i].y1))) return { windows, doors };
+  const out = { windows: [] as number[][], doors: [] as number[][] };
+  settled.forEach((r, i) => {
+    if (!r) return;
+    const row = [r2((r.x0 + r.x1) / 2), rows[i].row[1], r2(r.x1 - r.x0), r2(r.y1 - r.y0), r2(r.y0)];
+    if (rows[i].door) out.doors.push([...row, rows[i].row[5]]);
+    else out.windows.push(row);
+  });
+  return { windows: windows ? out.windows : undefined, doors: doors ? out.doors : undefined };
+}
+
 /**
  * Real windows and doors on the wall: each on the part its middle stands in, narrowed to stay a hand's width inside
  * that part, dropped when it would stand above that part's wall (an upper-storey window over a one-storey bump-out)
- * or when nothing of it is left.
+ * or when nothing of it is left — and none of them on another's spot (settleOpeningRects).
  */
 function placeOpenings(openings: HouseOpening[], parts: WallPart[], partH: number[], fromPhoto = false): { windows: number[][]; doors: number[][] } {
-  const windows: number[][] = [];
-  const doors: number[][] = [];
+  const placed: OpeningRect[] = [];
   for (const o of openings) {
     const i = partAt(parts, o.xFt);
     if (i < 0) continue;
@@ -533,10 +636,16 @@ function placeOpenings(openings: HouseOpening[], parts: WallPart[], partH: numbe
     const sill = !fromPhoto && o.sillFt + o.heightFt > top ? Math.max(0, top - o.heightFt) : o.sillFt;
     const h = Math.min(o.heightFt, top - sill);
     if (h < 0.75) continue;
-    const row = [r2((x0 + x1) / 2), p.depthFt, r2(x1 - x0), r2(h), r2(sill)];
-    if (o.kind === "window") windows.push(row);
+    placed.push({ kind: o.kind, x0, x1, y0: sill, y1: sill + h, face: p.depthFt });
+  }
+  const windows: number[][] = [];
+  const doors: number[][] = [];
+  for (const r of settleOpeningRects(placed)) {
+    if (!r) continue;
+    const row = [r2((r.x0 + r.x1) / 2), r.face ?? 0, r2(r.x1 - r.x0), r2(r.y1 - r.y0), r2(r.y0)];
+    if (r.kind === "window") windows.push(row);
     // The door's kind for the 3D: 0 a door, 1 a sliding door, 2 a garage door (2026-10-26).
-    else doors.push([...row, o.kind === "slider" ? 1 : o.kind === "garage" ? 2 : 0]);
+    else doors.push([...row, r.kind === "slider" ? 1 : r.kind === "garage" ? 2 : 0]);
   }
   return { windows: windows.slice(0, 60), doors: doors.slice(0, 8) };
 }

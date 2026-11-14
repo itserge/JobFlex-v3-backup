@@ -1700,15 +1700,14 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           g.fillRect(0, 0, 8, 64);
         });
         const glassMat = new THREE.MeshStandardMaterial({ color: 0xffffff, map: glassTex, roughness: 0.28, metalness: 0, envMapIntensity: 1.1 });
-        // The jamb — the rim between the casing and the pane, a shade of shadow, so the glass reads set back into the
-        // wall (the wall is one solid block: its depth is drawn, not cut).
-        const jambMat = new THREE.MeshStandardMaterial({ color: 0x3d4148, roughness: 0.9 });
+        // A knob, a sliding door's pull: dark metal, so it reads on a white door.
+        const handleMat = new THREE.MeshStandardMaterial({ color: 0x2c2e33, roughness: 0.45, metalness: 0.55 });
         owned.push(glassTex);
         const trimMat = new THREE.MeshStandardMaterial({ color: TRIM_WHITE, roughness: 0.8 });
         const doorMat = new THREE.MeshStandardMaterial({ color: 0xf1eee6, roughness: 0.7 });
         // A garage door's rails: a shade under its panel, so the sections read without a lite (2026-10-26).
         const railMat = new THREE.MeshStandardMaterial({ color: 0xd9d5cc, roughness: 0.85 });
-        owned.push(wallMat, baseMat, roofMat, glassMat, jambMat, trimMat, doorMat, railMat);
+        owned.push(wallMat, baseMat, roofMat, glassMat, handleMat, trimMat, doorMat, railMat);
         const height = H.heightFt;
         const band = Math.min(1.5, Math.max(0.5, s.heightFt - 0.6));
         const blocks = H.blocks.map((b) => ({ x0: b[0], y0: b[1], x1: b[2], y1: b[3], h: b[4] ?? height }));
@@ -1797,62 +1796,109 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           if (along && !bump && kind !== 3) part(null, trimMat, rw, 0.55, 0.16, cx, eave - 0.05, cz - rd / 2);
           if (sides) for (const sx of [-1, 1]) part(null, trimMat, 0.16, 0.55, rd, cx + (sx * rw) / 2, eave - 0.05, cz);
         }
-        // The door onto the deck and the windows: trim, glass, mullions.
-        const opening = (x: number, w: number, h: number, y: number, door: boolean, face: number) => {
-          const z0 = face - oz;
-          part(null, trimMat, w + 0.5, h + 0.5, 0.12, x - ox, y + h / 2, z0 + 0.03);
-          part(null, jambMat, w + 0.14, h + 0.14, 0.13, x - ox, y + h / 2, z0 + 0.035);
-          part(null, glassMat, w, h, 0.14, x - ox, y + h / 2, z0 + 0.04);
-          // A window's mullions: one up the middle to about 5 ft wide, then one every sash of about 3 ft (a long
-          // window read off a photo is one frame with its sashes, 2026-10-27), and the meeting rail across.
-          const sashes = door ? 1 : Math.max(1, Math.round(w / 3.2));
-          const bars: number[][] = door ? [[x - ox, y + h / 2, 0.1, h]] : [[x - ox, y + h / 2, w, 0.08]];
-          if (!door) {
-            if (sashes === 1) bars.push([x - ox, y + h / 2, 0.08, h]);
-            else for (let i = 1; i < sashes; i++) bars.push([x - ox - w / 2 + (w * i) / sashes, y + h / 2, 0.08, h]);
-          }
-          for (const [bx, by, bw, bh] of bars) part(null, trimMat, bw, bh, 0.16, bx, by, z0 + 0.05);
-          if (door) part(null, glassMat, 0.08, 0.5, 0.2, x - ox + 0.35, y + 3, z0 + 0.12);
-          else {
-            // A head cap over the casing, the sill with its nose, the apron under it.
-            part(null, trimMat, w + 0.62, 0.22, 0.22, x - ox, y + h + 0.3, z0 + 0.08);
-            part(null, trimMat, w + 0.7, 0.18, 0.34, x - ox, y - 0.09, z0 + 0.14);
-            part(null, trimMat, w + 0.46, 0.3, 0.1, x - ox, y - 0.33, z0 + 0.02);
-          }
+        // THE DOORS AND THE WINDOWS (drawn again 2026-11-13 — owner: "the glass and doors on the 3D are messy"). Every part
+        // stands at a depth of its own off the wall, so no face lies on another and nothing flickers: the glass 0.06 ft
+        // out, a sash's bars and a door leaf's frame 0.1, the casing 0.16, the head cap 0.2, the sill's nose 0.34. The
+        // casing is a FRAME of boards round the glass, not a plate behind it: the pane sits back in it by real depth.
+        const CASING = 0.25;
+        /** A box on the wall whose face is at z0: centred on (x, y), w × h, from `back` to `front` off that face. */
+        const onWall = (mat: THREE.Material, x: number, y: number, w: number, h: number, z0: number, back: number, front: number) => part(null, mat, w, h, front - back, x - ox, y, z0 + (back + front) / 2);
+        /** The casing round an opening x wide from y0 up to y1: its two sides and its head board. */
+        const casing = (x: number, w: number, y0: number, y1: number, z0: number) => {
+          for (const side of [-1, 1]) onWall(trimMat, x + side * (w / 2 + CASING / 2), (y0 + y1 + CASING) / 2, CASING, y1 + CASING - y0, z0, -0.02, 0.16);
+          onWall(trimMat, x, y1 + CASING / 2, w, CASING, z0, -0.02, 0.16);
         };
-        if (H.doors) {
-          // The doors where the photo showed them, on their own thresholds: a sliding door is glass with its meeting
-          // rail; a door is a painted slab with a glass lite in its top half, its knob on the latch side.
-          for (const [dx, face, dw, dh, sill, kind] of H.doors) {
-            if (kind === 1) opening(dx, dw, dh, sill, true, face);
-            else if (kind === 2) {
-              // A garage door (2026-10-26): one flat panel the width of the opening, its rails as shaded lines, no lite.
-              const z0 = face - oz;
-              part(null, trimMat, dw + 0.5, dh + 0.3, 0.12, dx - ox, sill + (dh + 0.3) / 2, z0 + 0.03);
-              part(null, doorMat, dw - 0.1, dh - 0.05, 0.14, dx - ox, sill + dh / 2, z0 + 0.04);
-              const rails = Math.max(2, Math.round(dh / 1.75));
-              for (let i = 1; i < rails; i++) part(null, railMat, dw - 0.3, 0.07, 0.16, dx - ox, sill + (dh * i) / rails, z0 + 0.05);
-            } else {
-              const z0 = face - oz;
-              part(null, trimMat, dw + 0.5, dh + 0.3, 0.12, dx - ox, sill + (dh + 0.3) / 2, z0 + 0.03);
-              part(null, doorMat, dw - 0.1, dh - 0.05, 0.14, dx - ox, sill + dh / 2, z0 + 0.04);
-              part(null, glassMat, dw * 0.55, dh * 0.38, 0.16, dx - ox, sill + dh * 0.7, z0 + 0.05);
-              part(null, trimMat, 0.08, 0.3, 0.2, dx - ox + dw * 0.36, sill + 3, z0 + 0.12);
-            }
+        /** A door's threshold, out over the deck's boards. */
+        const threshold = (x: number, w: number, y: number, z0: number) => onWall(railMat, x, y + 0.04, w + 2 * CASING, 0.08, z0, -0.02, 0.24);
+        /**
+         * A window. Its bars: the meeting rail across when it is tall enough to be two sashes, one bar up the middle to
+         * about 5 ft wide, then one every sash of about 3 ft (a long window read off a photo is one frame with its
+         * sashes, 2026-10-27) — a small pane (a transom, a bath window) keeps its glass clear. `over` = it stands right
+         * over another opening (a transom): a plain board under it, no sill and apron across that opening's head;
+         * `under` = another stands right over it: no head cap.
+         */
+        const windowAt = (x: number, w: number, h: number, y: number, face: number, over = false, under = false) => {
+          const z0 = face - oz;
+          onWall(glassMat, x, y + h / 2, w, h, z0, -0.02, 0.06);
+          const bar = (bx: number, by: number, bw: number, bh: number) => onWall(trimMat, bx, by, bw, bh, z0, 0.03, 0.1);
+          const sashes = Math.max(1, Math.round(w / 3.2));
+          if (h >= 2.5) bar(x, y + h / 2, w, 0.08);
+          if (sashes > 1) for (let i = 1; i < sashes; i++) bar(x - w / 2 + (w * i) / sashes, y + h / 2, 0.08, h);
+          else if (w >= 2 && h >= 1.5) bar(x, y + h / 2, 0.08, h);
+          if (over) {
+            casing(x, w, y - 0.12, y + h, z0);
+            onWall(trimMat, x, y - 0.06, w, 0.12, z0, -0.02, 0.16);
+          } else {
+            casing(x, w, y, y + h, z0);
+            // The sill with its nose and horns, the apron under it.
+            onWall(trimMat, x, y - 0.09, w + 0.66, 0.18, z0, -0.02, 0.34);
+            onWall(trimMat, x, y - 0.33, w + 0.46, 0.3, z0, -0.02, 0.1);
           }
-        } else if (H.door) {
+          if (!under) onWall(trimMat, x, y + h + 0.3, w + 0.62, 0.22, z0, -0.02, 0.2);
+        };
+        /** A sliding door: glass in leaves, each in its frame — a stile at both ends, a meeting stile between leaves, the top rail, the taller bottom rail — and the pull on the stile it closes on. */
+        const sliderAt = (x: number, w: number, h: number, y: number, face: number) => {
+          const z0 = face - oz;
+          onWall(glassMat, x, y + h / 2, w, h, z0, -0.02, 0.06);
+          const leaves = Math.min(4, Math.max(2, Math.round(w / 3.5)));
+          const stile = Math.min(0.2, w / 8);
+          const frame = (bx: number, by: number, bw: number, bh: number) => onWall(trimMat, bx, by, bw, bh, z0, 0.03, 0.1);
+          for (const side of [-1, 1]) frame(x + side * (w / 2 - stile / 2), y + h / 2, stile, h);
+          for (let i = 1; i < leaves; i++) frame(x - w / 2 + (w * i) / leaves, y + h / 2, stile * 1.2, h);
+          frame(x, y + h - stile / 2, w, stile);
+          frame(x, y + 0.15, w, 0.3);
+          if (h >= 4.5) onWall(handleMat, x + w / 2 - stile / 2, y + 3.1, 0.07, 0.6, z0, 0.08, 0.17);
+          casing(x, w, y, y + h, z0);
+          threshold(x, w, y, z0);
+        };
+        /** A door: a painted slab, a glass lite in its top half in a frame of its own, a panel under it, the knob on the latch side. */
+        const doorAt = (x: number, w: number, h: number, y: number, face: number) => {
+          const z0 = face - oz;
+          onWall(doorMat, x, y + h / 2, w, h, z0, -0.02, 0.07);
+          if (h >= 4.5) {
+            onWall(trimMat, x, y + h * 0.7, w * 0.56 + 0.14, h * 0.36 + 0.14, z0, 0.03, 0.1);
+            onWall(glassMat, x, y + h * 0.7, w * 0.56, h * 0.36, z0, 0.05, 0.13);
+            onWall(railMat, x, y + h * 0.26, w * 0.62, h * 0.3, z0, 0.03, 0.1);
+            onWall(handleMat, x + w * 0.39, y + 3, 0.1, 0.1, z0, 0.05, 0.19);
+          }
+          casing(x, w, y, y + h, z0);
+          threshold(x, w, y, z0);
+        };
+        /** A garage door (2026-10-26): one flat panel the width of the opening, its rails as shaded lines, no lite. */
+        const garageAt = (x: number, w: number, h: number, y: number, face: number) => {
+          const z0 = face - oz;
+          onWall(doorMat, x, y + h / 2, w, h, z0, -0.02, 0.07);
+          const rails = Math.max(2, Math.round(h / 1.75));
+          for (let i = 1; i < rails; i++) onWall(railMat, x, y + (h * i) / rails, w - 0.3, 0.07, z0, 0.03, 0.1);
+          casing(x, w, y, y + h, z0);
+        };
+        // What stands in the wall: the doors where the photo showed them, on their own thresholds — or the one door onto
+        // the deck, drawn by rule (a wide one slides, a narrow one swings) — and the windows.
+        const openings: Array<{ kind: "window" | "door" | "slider" | "garage"; x: number; w: number; h: number; y: number; face: number }> = [];
+        if (H.doors) for (const [dx, face, dw, dh, sill, kind] of H.doors) openings.push({ kind: kind === 1 ? "slider" : kind === 2 ? "garage" : "door", x: dx, w: dw, h: dh, y: sill, face });
+        else if (H.door) {
           const [dx, dw, dh, face = 0] = H.door;
-          opening(dx, dw, dh, s.heightFt, true, face);
+          openings.push({ kind: dw >= 5 ? "slider" : "door", x: dx, w: dw, h: dh, y: s.heightFt, face });
           if (!H.windows) {
             // An older scene: a window each side of the door.
             const main = H.blocks[0];
             for (const side of [-1, 1]) {
               const wx = dx + side * (dw / 2 + 4.5);
-              if (wx - 1.5 > Math.max(main[0], 0) && wx + 1.5 < Math.min(main[2], s.widthFt)) opening(wx, 3, 4, s.heightFt + 2.7, false, 0);
+              if (wx - 1.5 > Math.max(main[0], 0) && wx + 1.5 < Math.min(main[2], s.widthFt)) openings.push({ kind: "window", x: wx, w: 3, h: 4, y: s.heightFt + 2.7, face: 0 });
             }
           }
         }
-        for (const [wx, face, ww, wh, sill] of H.windows ?? []) opening(wx, ww, wh, sill, false, face);
+        for (const [wx, face, ww, wh, sill] of H.windows ?? []) openings.push({ kind: "window", x: wx, w: ww, h: wh, y: sill, face });
+        /** Two openings in one column of the same face, the first right under the second. */
+        const stacked = (lower: (typeof openings)[number], upper: (typeof openings)[number]) =>
+          lower !== upper && Math.abs(lower.face - upper.face) < 0.05 && Math.min(lower.x + lower.w / 2, upper.x + upper.w / 2) - Math.max(lower.x - lower.w / 2, upper.x - upper.w / 2) > -CASING && upper.y >= lower.y + lower.h - 0.01 && upper.y - (lower.y + lower.h) < 0.6;
+        for (const o of openings) {
+          if (o.kind === "window") windowAt(o.x, o.w, o.h, o.y, o.face, openings.some((l) => stacked(l, o)), openings.some((u) => stacked(o, u)));
+          else if (o.kind === "slider") sliderAt(o.x, o.w, o.h, o.y, o.face);
+          else if (o.kind === "garage") garageAt(o.x, o.w, o.h, o.y, o.face);
+          else doorAt(o.x, o.w, o.h, o.y, o.face);
+        }
+        mount.dataset.deck3dOpenings = openings.map((o) => `${o.kind}@${o.x}`).join(" ");
       }
 
       // The fixtures' light at night: a few real lights, the rest glow.
