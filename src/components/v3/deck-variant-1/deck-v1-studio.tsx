@@ -22,6 +22,7 @@ import type { Route } from "next";
 import { createWheelMotion, wheelPixels } from "@/lib/smooth-wheel";
 import { AlertTriangle, Check, ChevronDown, ChevronRight, ExternalLink, FileText, Lock, Maximize2, Mic, Minimize2, Plus, RotateCcw, Send, X } from "lucide-react";
 import { resolveMarket, parseStateZip, type MarketSnapshot } from "@/lib/fence/market";
+import { leftEndPatch } from "@/lib/deck/frontByHand";
 import { DECKING, DECKING_BRAND_LABEL, DECKING_BRAND_ORDER, DECKING_FAMILY_LABEL, DECKING_FAMILY_ORDER, FRAMING_SPECIES, OC_LUMBER_ID, RAIL_TYPES, WALL_TYPES, WOOD_FRAMING_SPECIES, defaultDecking, defaultFramingSpecies, deckingProduct, isCompositeFraming, treatedDecking, wallType, type DeckingFamily, type DeckingProduct } from "@/lib/deck/catalog";
 import { OC_POST, OC_SOURCES } from "@/lib/deck/ocLumber";
 import { regionalPicks, regionalWords } from "@/lib/deck/regional";
@@ -637,6 +638,12 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
         case "width":
           patch({ shape: { ...design.shape, widthFt: Math.min(DECK_LIMITS.widthFt.max, Math.max(DECK_LIMITS.widthFt.min, toHalfFt(e.value))) } });
           break;
+        case "width-left": {
+          // (2026-11-14) The deck's LEFT end: the house stays put, the left part of a front in parts takes the change.
+          const moved = leftEndPatch(design, e.value);
+          if (moved) patch(moved);
+          break;
+        }
         case "depth":
           patch({ shape: { ...design.shape, depthFt: Math.min(DECK_LIMITS.depthFt.max, Math.max(DECK_LIMITS.depthFt.min, toHalfFt(e.value))) } });
           break;

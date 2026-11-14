@@ -45,8 +45,8 @@ export interface DeckEdit {
 }
 
 /** The short name beside each edit knob, and which names win a crowded spot (the deck's own size first, the house last). */
-const KNOB_NAME: Record<SceneHandle["kind"], string> = { width: "Width", depth: "Depth", height: "Height", eave: "Post height", pitch: "Pitch", "roof-width": "Roof width", "roof-depth": "Roof depth", "lower-depth": "Lower level", stair: "Move stairs", "stair-width": "Stair width", jog: "Wall step", "house-left": "House corner", "house-right": "House corner", post: "Move post", beam: "Move beam", "roof-post": "Move roof post" };
-const KNOB_RANK: Record<SceneHandle["kind"], number> = { width: 0, depth: 1, height: 2, eave: 3, pitch: 4, "roof-width": 5, "roof-depth": 6, "lower-depth": 7, "stair-width": 8, stair: 9, "house-left": 10, "house-right": 11, jog: 12, post: 13, beam: 14, "roof-post": 15 };
+const KNOB_NAME: Record<SceneHandle["kind"], string> = { width: "Width", "width-left": "Width", depth: "Depth", height: "Height", eave: "Post height", pitch: "Pitch", "roof-width": "Roof width", "roof-depth": "Roof depth", "lower-depth": "Lower level", stair: "Move stairs", "stair-width": "Stair width", jog: "Wall step", "house-left": "House corner", "house-right": "House corner", post: "Move post", beam: "Move beam", "roof-post": "Move roof post" };
+const KNOB_RANK: Record<SceneHandle["kind"], number> = { width: 0, "width-left": 0.5, depth: 1, height: 2, eave: 3, pitch: 4, "roof-width": 5, "roof-depth": 6, "lower-depth": 7, "stair-width": 8, stair: 9, "house-left": 10, "house-right": 11, jog: 12, post: 13, beam: 14, "roof-post": 15 };
 
 /** What a touch landed on, for the studio's label and the fixture placer. */
 export interface DeckPick {
@@ -1107,14 +1107,16 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
     // ahead of the hand. While a knob is held the origin is pinned where the drag began, so only the grabbed edge
     // moves — by exactly the drag; the rebuild after letting go re-centres (and re-frames) as before.
     let pinned: { ox: number; oz: number } | null = null;
-    const origin = (s: { widthFt: number; depthFt: number }) => pinned ?? { ox: s.widthFt / 2, oz: s.depthFt / 2 };
+    // (The deck's LEFT end, 2026-11-14: the scene is measured from that end, so while it is pulled the pinned origin
+    // goes with it by as much as the deck has grown — the house stays where it was and the end stays under the hand.)
+    const origin = (s: { widthFt: number; depthFt: number }) => (pinned ? { ox: pinned.ox + (drag && drag.handle.kind === "width-left" ? s.widthFt - drag.handle.value : 0), oz: pinned.oz } : { ox: s.widthFt / 2, oz: s.depthFt / 2 });
     // The knob that had the keyboard, so a rebuild hands it back.
     let focusedKnob: string | null = null;
     // The knob under the pointer, focused or held: its name shows first, with its size, in blue.
     let hotKnob: string | null = null;
     const textRuler = document.createElement("canvas").getContext("2d");
     const setKnobLabel = (tag: HTMLSpanElement, h: SceneHandle, hot: boolean) => {
-      const sized = h.kind === "width" || h.kind === "depth" || h.kind === "height" || h.kind === "eave" || h.kind === "pitch" || h.kind === "roof-width" || h.kind === "roof-depth" || h.kind === "lower-depth" || h.kind === "stair-width";
+      const sized = h.kind === "width" || h.kind === "width-left" || h.kind === "depth" || h.kind === "height" || h.kind === "eave" || h.kind === "pitch" || h.kind === "roof-width" || h.kind === "roof-depth" || h.kind === "lower-depth" || h.kind === "stair-width";
       const now = h.kind === "pitch" ? `${Math.round(h.value)}:12` : h.perUnit === 1 ? `${Math.round(h.value * 2) / 2} ft` : `${Math.round(h.value)} in`;
       tag.textContent = hot && sized ? `${KNOB_NAME[h.kind]} · ${now}` : KNOB_NAME[h.kind];
       if (hot) tag.dataset.hot = "";
@@ -2755,7 +2757,8 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       const dir = e.key === "ArrowRight" || e.key === "ArrowUp" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowDown" ? -1 : 0;
       if (!dir) return;
       e.preventDefault();
-      const step = (h.perUnit === 1 ? 0.5 : 1) * (e.shiftKey ? 4 : 1);
+      // (A knob that travels against its value — the deck's left end — goes the way its arrow key points.)
+      const step = (h.perUnit === 1 ? 0.5 : 1) * (e.shiftKey ? 4 : 1) * ((h.follow ?? 1) < 0 && h.axis === "x" ? -1 : 1);
       editCbRef.current?.({ kind: h.kind, id: h.id, value: h.value + dir * step, done: true });
     };
     const onMove = (e: PointerEvent) => {
