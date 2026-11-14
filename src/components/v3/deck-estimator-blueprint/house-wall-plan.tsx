@@ -35,6 +35,7 @@ import {
   pullSectionAt,
   referencePartIndex,
   setSectionDepth,
+  settleOpenings,
   resizeDeckLeft,
   shiftWallPart,
   slideDeck,
@@ -755,7 +756,7 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
       />
       <polyline points={pts.join(" ")} className={s.wallLine} pointerEvents="none" />
       {/* The doors and the ground-floor windows where the photo showed them, on the wall line. */}
-      {(house.openings ?? [])
+      {settleOpenings(house.openings ?? [])
         .filter((o) => o.kind !== "window" || o.sillFt < 8)
         .map((o) => {
           const face = faceAt(o.xFt);
