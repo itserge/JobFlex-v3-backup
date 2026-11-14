@@ -107,7 +107,26 @@ export interface HouseDesign {
   openings?: HouseOpening[] | null;
   /** The photo the house was built from. */
   photo?: HousePhoto | null;
+  /** A porch roof on posts that stays (2026-11-13, kept from the photo): drawn as an existing cover. Absent or null = none. */
+  covers?: HouseCover[] | null;
 }
+
+/**
+ * AN EXISTING COVER (2026-11-13): a porch roof on posts the photo showed in front of the wall, which the contractor
+ * said stays. Not a part of the wall and not a part of the new deck: a lean-to slab against the house on its own
+ * posts, drawn so the client sees their house — nothing is priced or framed from it.
+ */
+export interface HouseCover {
+  /** Its two ends along the house, ft in the deck's frame. */
+  x0Ft: number;
+  x1Ft: number;
+  /** How far it comes out from the wall, ft (a photo taken square-on cannot say: 10 ft unless set). */
+  outFt: number;
+  /** Its front edge above the ground, ft. */
+  heightFt: number;
+}
+export const COVER_LIMITS = { count: 2, widthFt: { min: 3, max: 60 }, outFt: { min: 4, max: 24 }, heightFt: { min: 6.5, max: 14 } } as const;
+export const COVER_OUT_DEFAULT_FT = 10;
 
 /** A colour of the house's own, "#rrggbb". */
 export type HouseHex = `#${string}`;
@@ -250,6 +269,19 @@ export function normalizeHouse(raw: unknown, shape: DeckShape): HouseDesign {
   const wrap = (v: unknown) => half(clamp(num(v, 0), HOUSE_LIMITS.wrapFt.min, Math.max(0, Math.min(HOUSE_LIMITS.wrapFt.max, Math.floor((DECK_LIMITS.depthFt.max - shape.depthFt) * 2) / 2))));
   if (leftFt < 0 && wrap(r.wrapLeftFt) > 0) out.wrapLeftFt = wrap(r.wrapLeftFt);
   if (rightFt < 0 && wrap(r.wrapRightFt) > 0) out.wrapRightFt = wrap(r.wrapRightFt);
+  if (Array.isArray(r.covers)) {
+    const C = COVER_LIMITS;
+    const covers = r.covers
+      .map((c): HouseCover | null => {
+        const o = obj(c);
+        const x0 = num(o.x0Ft, NaN), x1 = num(o.x1Ft, NaN);
+        if (!Number.isFinite(x0) || !Number.isFinite(x1) || x1 - x0 < C.widthFt.min || x1 - x0 > C.widthFt.max) return null;
+        return { x0Ft: half(x0), x1Ft: half(x1), outFt: half(clamp(num(o.outFt, COVER_OUT_DEFAULT_FT), C.outFt.min, C.outFt.max)), heightFt: half(clamp(num(o.heightFt, 8), C.heightFt.min, C.heightFt.max)) };
+      })
+      .filter((c): c is HouseCover => !!c && c.x1Ft > -leftFt - 0.5 && c.x0Ft < W + rightFt + 0.5)
+      .slice(0, C.count);
+    if (covers.length) out.covers = covers;
+  }
   const photo = normalizeHousePhoto(r.photo);
   if (photo) out.photo = photo;
   return out;
@@ -284,10 +316,11 @@ function normalizeHousePhoto(raw: unknown): HousePhoto | null {
 }
 
 /** The windows and the doors moved along the house by `d` ft in the deck's feet (the deck slid with the house still). */
-export function shiftHouseThings(house: HouseDesign, d: number): Pick<HouseDesign, "openings" | "photo"> {
-  const out: Pick<HouseDesign, "openings" | "photo"> = {};
+export function shiftHouseThings(house: HouseDesign, d: number): Pick<HouseDesign, "openings" | "photo" | "covers"> {
+  const out: Pick<HouseDesign, "openings" | "photo" | "covers"> = {};
   if (house.openings) out.openings = house.openings.map((o) => ({ ...o, xFt: toInchFt(o.xFt + d) }));
   else if (house.openings === null) out.openings = null;
+  if (house.covers) out.covers = house.covers.map((c) => ({ ...c, x0Ft: half(c.x0Ft + d), x1Ft: half(c.x1Ft + d) }));
   if (house.photo) out.photo = { ...house.photo, deckAtFt: r2(house.photo.deckAtFt - d) };
   return out;
 }
@@ -582,8 +615,11 @@ export interface HouseScene {
 }
 
 /** A roof's piece in the scene: 0 hip, 1 gable (ridge along the wall), 2 gable to the yard, 3 shed (down toward the
- *  yard), 4 flat — over the body; 5 hip, 6 gable, 7 shed, 8 flat — a bump-out's, its back against the body. */
-export const ROOF_PIECE = { hip: 0, gable: 1, "gable-end": 2, shed: 3, flat: 4, bumpHip: 5, bumpGable: 6, bumpShed: 7, bumpFlat: 8 } as const;
+ *  yard), 4 flat — over the body; 5 hip, 6 gable, 7 shed, 8 flat — a bump-out's, its back against the body; 9 an
+ *  existing cover (2026-11-13): a lean-to slab against the wall on posts of its own, open under it. */
+export const ROOF_PIECE = { hip: 0, gable: 1, "gable-end": 2, shed: 3, flat: 4, bumpHip: 5, bumpGable: 6, bumpShed: 7, bumpFlat: 8, cover: 9 } as const;
+/** An existing cover's fall, inches per foot: a porch roof is low-sloped. */
+export const COVER_PITCH = 2;
 const BUMP_PIECE: Record<HouseRoof, number> = { hip: ROOF_PIECE.bumpHip, gable: ROOF_PIECE.bumpGable, "gable-end": ROOF_PIECE.bumpGable, shed: ROOF_PIECE.bumpShed, flat: ROOF_PIECE.bumpFlat };
 
 /**
@@ -663,6 +699,16 @@ export function houseScene(shape: DeckShape, house: HouseDesign, ctx: { deckHeig
       above.push(null);
     }
   });
+  // AN EXISTING COVER KEPT FROM THE PHOTO (2026-11-13): against the face of the part its middle stands over, its front
+  // edge at its own height — never climbing past that part's wall where it meets it.
+  for (const c of (house.covers ?? []).slice(0, COVER_LIMITS.count)) {
+    const mid = (c.x0Ft + c.x1Ft) / 2;
+    const i = Math.max(0, parts.findIndex((p) => mid >= p.x0 - 1e-6 && mid <= p.x1 + 1e-6));
+    const face = parts[i].depthFt;
+    const rise = (c.outFt * COVER_PITCH) / 12;
+    const front = r2(clamp(Math.min(c.heightFt, partH[i] - rise - 0.4), COVER_LIMITS.heightFt.min, COVER_LIMITS.heightFt.max));
+    roofs.push([ROOF_PIECE.cover, c.x0Ft, face, c.x1Ft, r2(face + c.outFt), front, COVER_PITCH]);
+  }
   const look = { storeys: house.storeys, roof: house.roof, siding: sidingHex(house.siding), roofColour: roofHex(house.roofColour), roofs, ...(house.material && house.material !== "lap" ? { material: house.material } : {}) };
   if (house.openings) {
     const placed = placeOpenings(house.openings, parts, partH, house.eaveHeightFt !== undefined, above);

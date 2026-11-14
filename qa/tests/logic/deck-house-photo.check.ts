@@ -91,7 +91,7 @@ const S: HouseReadStructured = {
   roof: { kind: "hip", pitch: 5 },
   material: "lap",
   colours: { siding: "#7D7B76", roof: "#3c3d40", trim: null },
-  lookPast: [{ kind: "porch-roof", x0: 358, y0: 740 - 380, x1: 655, y1: 775 - 380 }],
+  lookPast: [{ kind: "porch-roof", x0: 358, y0: 740 - 380, x1: 655, y1: 775 - 380, floorY: null }],
   bars: { top: 0, bottom: 0 },
   confidence: 0.8,
   note: null,
