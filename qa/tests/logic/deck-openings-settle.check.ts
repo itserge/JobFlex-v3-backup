@@ -136,6 +136,47 @@ const withOpenings = (openings: HouseOpening[], more: Parameters<typeof applyDec
   check("a house with no openings listed stays that way", none.windows === undefined && none.doors === undefined);
 }
 
+console.log("— a house drawn by rule: the door on the deck's floor, every row of windows clear of it —");
+{
+  // (2026-11-14) A second-storey deck: its door stands on the upper floor, where only the FIRST row of windows used
+  // to leave a door clear — the upper row ran straight across it.
+  const byRule = (heightIn: number, widthFt = 24, more: Parameters<typeof applyDeckPatch>[1] = {}) => deckScene(buildStructure(applyDeckPatch(d0, { shape: { kind: "rect", widthFt, depthFt: 12 }, heightIn, ...more }))).house!;
+  const rowsOf = (H: NonNullable<ReturnType<typeof byRule>>, deckFt: number) => [
+    ...(H.door ? [rect("slider", H.door[0] - H.door[1] / 2, H.door[0] + H.door[1] / 2, deckFt, deckFt + H.door[2], H.door[3] ?? 0)] : []),
+    ...(H.windows ?? []).map((r) => rect("window", r[0] - r[2] / 2, r[0] + r[2] / 2, r[4], r[4] + r[3], r[1])),
+  ];
+  const up = byRule(114);
+  const door = up.door!;
+  const nearDoor = (up.windows ?? []).filter((w) => w[4] < 9.5 + door[2] + 1 && w[4] + w[3] > 9.5 - 1 && Math.abs(w[0] - door[0]) < door[1] / 2 + 1.5 + w[2] / 2 - 0.01);
+  check("a second-storey deck: there is a door on the deck, and windows on that floor", !!door && (up.windows ?? []).some((w) => w[4] > 9.5), up.windows);
+  check("…and no window stands on the door or inside its trim", nearDoor.length === 0, nearDoor);
+  check("…nothing on the wall is on another's spot", clear(rowsOf(up, 9.5)), rowsOf(up, 9.5));
+  // The owner's deck: a covered second-storey deck. Its roof's peak makes the wall taller, the taller wall gets an
+  // upper row of windows — and that row is the one on the door's floor.
+  const covered = byRule(114, 24, { structure: "covered-deck", roof: { ...d0.roof, kind: "gable", attach: "wall" } });
+  const cDoor = covered.door!;
+  const onDoor = (covered.windows ?? []).filter((w) => Math.abs(w[0] - cDoor[0]) < cDoor[1] / 2 + 1.5 + w[2] / 2 - 0.01 && w[4] < 9.5 + cDoor[2] + 1);
+  check("a covered second-storey deck: windows stand on the door's floor, each side of it", (covered.windows ?? []).some((w) => w[0] < cDoor[0]) && (covered.windows ?? []).some((w) => w[0] > cDoor[0]) && (covered.windows ?? []).every((w) => w[4] > 9.5), covered.windows);
+  check("…none of them on the door or inside its trim", onDoor.length === 0 && clear(rowsOf(covered, 9.5)), onDoor);
+  const upper2 = byRule(114, 24, { house: { ...d0.house, storeys: 2 } });
+  check("a second-storey deck on a two-storey house: the same", clear(rowsOf(upper2, 9.5)) && (upper2.windows ?? []).length > 0, upper2.windows);
+  let ok = true;
+  const badAt: number[] = [];
+  for (let h = 8; h <= 168; h += 4) {
+    for (const w of [8, 12, 16, 24, 36]) {
+      const H = byRule(h, w);
+      if (!clear(rowsOf(H, h / 12))) {
+        ok = false;
+        badAt.push(h, w);
+      }
+    }
+  }
+  check("every deck height from 8 in. to 14 ft, five widths: the door and the windows never meet", ok, badAt.slice(0, 12));
+  const two = byRule(30, 24, { house: { ...d0.house, storeys: 2 } });
+  const over = (two.windows ?? []).filter((w) => w[4] > 9.5 && Math.abs(w[0] - two.door![0]) < 3);
+  check("a low deck on a two-storey house keeps the upper windows over its door (they are a storey above it)", over.length > 0 && clear(rowsOf(two, 2.5)), two.windows);
+}
+
 console.log("— the code checks read the settled wall —");
 {
   // A window marked low inside the sliding door (its glass): on its own it would read as a window the deck runs across.
