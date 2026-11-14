@@ -185,6 +185,7 @@ export function unlockVoice(): void {
 function letGo(a: HTMLAudioElement) {
   a.onended = null;
   a.onerror = null;
+  a.onplaying = null;
   try {
     a.pause();
     a.removeAttribute("src");
@@ -207,6 +208,11 @@ const LIVE_GUESS_PAUSE_MS = 1500;
  *  finished-sounding words go this long after they come back with nothing more said. */
 const UNFINISHED_WAIT_MS = 5000;
 const HANDON_GRACE_MS = 600;
+/** The Operator's new engine (`quick`, 2026-11-13 — the owner: "instant respond"): a take ends sooner after the speech
+ *  in it stops and finished-sounding words go sooner. The microphone still listens while a piece is written down, a
+ *  sentence that stops mid-way still waits its five seconds, so a pause to think is not cut off. */
+const QUICK_HANDON_GRACE_MS = 300;
+const QUICK_LIVE_QUIET_MS = 900;
 
 /** Words a sentence doesn't end on: "Create me a proposal from…", "I need to", "for the" — the rest is coming. */
 const DANGLING = new Set(
@@ -265,6 +271,13 @@ const modeNow = (): HearMode => {
   if (canRecord()) return "record";
   return "none";
 };
+/** Every device records and lets the server write it down (the Operator's new engine: the server's ears are given
+ *  the company's own words, which the browser's own recogniser cannot be). */
+const modeServerAlways = (): HearMode => {
+  if (typeof window === "undefined") return "none";
+  if (canRecord()) return "record";
+  return modeNow();
+};
 /** The same, except that an iPhone or iPad records and lets the server write it down (see the head of the file). */
 const modeServerOnApple = (): HearMode => {
   if (typeof window === "undefined") return "none";
@@ -302,13 +315,23 @@ export interface SpeechHandlers {
   /** On an iPhone or iPad, record and let the server write it down instead of Safari's own recogniser (see the head
    *  of the file). The AI Operator asks for it; the Deck Studio doesn't. */
   appleServerEars?: boolean;
+  /** On every device (2026-11-13, the Operator's new engine): record and let the server write it down — its ears are
+   *  given the company's own words. */
+  serverEarsAlways?: boolean;
+  /** The Operator's new engine: hand a finished sentence on sooner (QUICK_* above). */
+  quick?: boolean;
+  /** Server's ears: a request is being handed on — how long since their voice was last heard, and how long the last
+   *  piece took to be written down (the admin's speed readout). */
+  onHandOn?: (t: { sinceVoiceMs: number | null; heardMs: number | null }) => void;
+  /** A reply's sound started. */
+  onVoiceStart?: () => void;
 }
 
 /** Record mode: one recording, from the moment the meter says go to the pause after the speech in it. */
 type Take = { recorder: MediaRecorder; chunks: Blob[]; send: boolean; spoke: boolean; voiceMs: number; quietMs: number; at: number };
 
 export function useDeckSpeech(handlers: SpeechHandlers) {
-  const mode = React.useSyncExternalStore(noop, handlers.appleServerEars ? modeServerOnApple : modeNow, () => "none" as HearMode);
+  const mode = React.useSyncExternalStore(noop, handlers.serverEarsAlways ? modeServerAlways : handlers.appleServerEars ? modeServerOnApple : modeNow, () => "none" as HearMode);
   const [mic, setMic] = React.useState<MicState>("off");
   const [speaking, setSpeaking] = React.useState(false);
   /** Record mode: the meter hears a voice in the take being recorded; and words are being written down while the
@@ -349,6 +372,12 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
   const inFlight = React.useRef(0);
   const landedAt = React.useRef(0);
   const unfinishedAt = React.useRef(0);
+  /** For the speed readout: when the meter last heard their voice, and how long the last take took to be written down. */
+  const lastVoiceAt = React.useRef(0);
+  const lastHeardMs = React.useRef<number | null>(null);
+  const handingOn = React.useCallback(() => {
+    h.current.onHandOn?.({ sinceVoiceMs: lastVoiceAt.current ? Date.now() - lastVoiceAt.current : null, heardMs: lastHeardMs.current });
+  }, []);
   const decideTimer = React.useRef(0);
   /** The natural voice playing, the answer it belongs to (a newer one drops a late one), and whether it works here. */
   const audio = React.useRef<HTMLAudioElement | null>(null);
@@ -573,8 +602,10 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
       const form = new FormData();
       form.append("audio", blob, `voice.${/mp4|m4a|aac/.test(blob.type) ? "m4a" : /ogg/.test(blob.type) ? "ogg" : "webm"}`);
       form.append("language", (h.current.lang ?? "en-US").slice(0, 2).toLowerCase());
+      const sent = performance.now();
       const res = await fetch(h.current.transcribeUrl ?? "/api/deck/voice/transcribe", { method: "POST", body: form });
       const body = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
+      lastHeardMs.current = Math.round(performance.now() - sent);
       if (!res.ok) {
         h.current.onError(body.error ?? "Couldn't write that down.");
         return { text: "", failed: true };
@@ -603,7 +634,7 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
     const unfinished = soundsUnfinished(said);
     if (unfinished && !unfinishedAt.current) unfinishedAt.current = Date.now();
     const waited = Date.now() - (unfinished ? unfinishedAt.current : landedAt.current);
-    const need = unfinished ? UNFINISHED_WAIT_MS : HANDON_GRACE_MS;
+    const need = unfinished ? UNFINISHED_WAIT_MS : h.current.quick ? QUICK_HANDON_GRACE_MS : HANDON_GRACE_MS;
     if (waited < need) {
       decideTimer.current = window.setTimeout(() => decideLiveRef.current(), Math.min(need - waited, 200));
       return;
@@ -612,8 +643,9 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
     unfinishedAt.current = 0;
     thinking.current = true;
     h.current.onInterim("");
+    handingOn();
     h.current.onFinal([said]);
-  }, []);
+  }, [handingOn]);
   React.useEffect(() => {
     decideLiveRef.current = decideLive;
   }, [decideLive]);
@@ -647,6 +679,7 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
       if (text) {
         // Live rests until the reply has been said (say → resume), as the native ears do.
         if (w === "live") thinking.current = true;
+        handingOn();
         h.current.onFinal([text]);
         if (w === "free" && !talking.current && !media.current) void startRecordingRef.current?.();
         return;
@@ -654,7 +687,7 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
       if (how === "hold" && !failed) h.current.onNothing?.();
       if ((w === "live" || w === "free") && !talking.current && !thinking.current && !media.current) void startRecordingRef.current?.();
     },
-    [writeDown],
+    [writeDown, handingOn],
   );
 
   /** Record mode: the microphone off — the take on it sent to be written down, or thrown away. */
@@ -819,6 +852,7 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
         if (rms > threshold) {
           t.voiceMs += dt;
           t.quietMs = 0;
+          if (t.spoke || t.voiceMs >= VOICE_MS) lastVoiceAt.current = Date.now();
         } else t.quietMs += dt;
         if (!t.spoke && t.voiceMs >= VOICE_MS) {
           t.spoke = true;
@@ -827,7 +861,7 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
           unfinishedAt.current = 0;
         }
         if (how === "hold") return;
-        if (t.spoke && (t.quietMs >= (how === "live" ? LIVE_QUIET_MS : QUIET_MS) || age > TAKE_MAX_MS)) {
+        if (t.spoke && (t.quietMs >= (how === "live" ? (h.current.quick ? QUICK_LIVE_QUIET_MS : LIVE_QUIET_MS) : QUIET_MS) || age > TAKE_MAX_MS)) {
           if (how === "live") endTake();
           else stopRecording(true);
           return;
@@ -1005,6 +1039,7 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
         if (v) u.voice = v;
         u.lang = v?.lang ?? "en-US";
         u.rate = 1.04;
+        u.onstart = () => h.current.onVoiceStart?.();
         u.onend = done;
         u.onerror = done;
         synth.speak(u);
@@ -1013,6 +1048,9 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
       // The unlocked element when there is one (a phone), else a fresh one.
       const a = player ?? new Audio();
       player = a;
+      a.onplaying = () => {
+        if (run === sayRun.current) h.current.onVoiceStart?.();
+      };
       if (h.current.streamSpeech && h.current.speakUrl) {
         // Played as it streams from the route: the first words sound before the sentence is finished being made.
         audio.current = a;
