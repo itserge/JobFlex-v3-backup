@@ -54,6 +54,18 @@
 // ("…from", "…to", "…for the"), only after a longer wait for the rest. A reply that comes back while they're still
 // talking stays on the screen and is not read out over them. The native ears wait longer too, and the same way for
 // an unfinished sentence.
+//
+// THE METER COMES BACK, AND A SILENT PIECE STARTS NO WAIT OVER (2026-11-13, the owner's first try of the Operator's
+// new engine — the server's ears on a Mac: "sent after 22.7 s", "20 seconds or more", "need more faster reaction").
+// A Mac's microphone can hand over PURE silence until somebody speaks (a headset, the system's own voice
+// processing). A second and a half of exactly nothing and the meter was given up for the whole conversation: timed
+// six-second takes, a silent one uploaded every six seconds, and each of those began the wait for an
+// unfinished-sounding sentence again — on the stand such a sentence was never sent. Now the meter is used again the
+// moment it reads anything (and looked for again where its context wasn't running yet); the waits count from the
+// last WORDS that landed, so a piece with nothing in it changes nothing; a microphone the meter knows and reads as
+// pure silence is not uploaded; a reply is held back only for speech the meter heard; a click and a cough ten
+// seconds apart no longer add up to speech; and the readout is timed from this request's own last word — or says
+// that no level could be read.
 
 import * as React from "react";
 
@@ -208,11 +220,19 @@ const LIVE_GUESS_PAUSE_MS = 1500;
  *  finished-sounding words go this long after they come back with nothing more said. */
 const UNFINISHED_WAIT_MS = 5000;
 const HANDON_GRACE_MS = 600;
-/** The Operator's new engine (`quick`, 2026-11-13 — the owner: "instant respond"): a take ends sooner after the speech
- *  in it stops and finished-sounding words go sooner. The microphone still listens while a piece is written down, a
- *  sentence that stops mid-way still waits its five seconds, so a pause to think is not cut off. */
-const QUICK_HANDON_GRACE_MS = 300;
-const QUICK_LIVE_QUIET_MS = 900;
+/** The Operator's new engine (`quick`, 2026-11-13 — the owner: "instant respond", then, after his first try, "need
+ *  more faster reaction"): a take ends sooner after the speech in it stops, so it is being written down while the
+ *  pause is still running, and finished-sounding words go as soon as they are written down and the meter has heard
+ *  nothing for QUICK_SEND_QUIET_MS — a moment after they land where no level can be read. The microphone still
+ *  listens while a piece is written down, and a sentence that stops mid-way still waits for the rest, so a pause to
+ *  think is not cut off. */
+const QUICK_HANDON_GRACE_MS = 100;
+const QUICK_BLIND_GRACE_MS = 300;
+const QUICK_LIVE_QUIET_MS = 700;
+const QUICK_SEND_QUIET_MS = 1500;
+/** …and words that sound unfinished wait three seconds for the rest, not five: "send it to me" ends on a word a
+ *  sentence usually doesn't end on, and five seconds of nothing after it read as the Operator not having heard. */
+const QUICK_UNFINISHED_WAIT_MS = 3000;
 
 /** Words a sentence doesn't end on: "Create me a proposal from…", "I need to", "for the" — the rest is coming. */
 const DANGLING = new Set(
@@ -254,6 +274,9 @@ const START_WATCH_MS = 1800;
 const QUIET_MS = 1300;
 const LIVE_QUIET_MS = 1200;
 const VOICE_MS = 200;
+/** Before a take counts as speech, the voice heard in it drains away again in the quiet (this share of the time):
+ *  a click now and a cough ten seconds later don't add up to "they spoke" — on a desktop microphone they did. */
+const VOICE_LEAK = 0.15;
 const TAKE_MAX_MS = 25_000;
 const HOLD_RECORD_MAX_MS = 45_000;
 /** A take with no speech in it this long starts over (nothing is sent); where no level can be read, takes are this
@@ -263,6 +286,12 @@ const BLIND_TAKE_MS = 6_000;
 /** The level meter reads every this many ms; a meter that reads exactly nothing this long is not working. */
 const WATCH_MS = 50;
 const DEAD_METER_MS = 1500;
+/** A meter whose context was not running when the microphone came on is asked for again this often. */
+const METER_RETRY_MS = 1000;
+/** The meter has read sound on this page: its context and the way to the microphone work here, so a later take it
+ *  reads as exactly nothing is a silent microphone (a headset or the system's own voice processing hand over pure
+ *  silence until somebody speaks), not a meter that came loose. */
+let meterProven = false;
 
 const noop = () => () => {};
 const modeNow = (): HearMode => {
@@ -320,15 +349,18 @@ export interface SpeechHandlers {
   serverEarsAlways?: boolean;
   /** The Operator's new engine: hand a finished sentence on sooner (QUICK_* above). */
   quick?: boolean;
-  /** Server's ears: a request is being handed on — how long since their voice was last heard, and how long the last
-   *  piece took to be written down (the admin's speed readout). */
-  onHandOn?: (t: { sinceVoiceMs: number | null; heardMs: number | null }) => void;
+  /** Server's ears: a request is being handed on — how long since their voice was last heard (null where no level
+   *  could be read: the takes were timed), how long the last piece took to be written down, and whether the words
+   *  sounded unfinished and were waited on (the admin's speed readout). */
+  onHandOn?: (t: { sinceVoiceMs: number | null; heardMs: number | null; ears: "meter" | "timed"; rest: boolean }) => void;
   /** A reply's sound started. */
   onVoiceStart?: () => void;
 }
 
 /** Record mode: one recording, from the moment the meter says go to the pause after the speech in it. */
-type Take = { recorder: MediaRecorder; chunks: Blob[]; send: boolean; spoke: boolean; voiceMs: number; quietMs: number; at: number };
+/** `timed`: no level could be read for some of it, so it goes at the timed length whatever the meter noticed;
+ *  `zero`: a meter was on it all along and read exactly nothing. */
+type Take = { recorder: MediaRecorder; chunks: Blob[]; send: boolean; spoke: boolean; timed: boolean; zero: boolean; voiceMs: number; quietMs: number; at: number };
 
 export function useDeckSpeech(handlers: SpeechHandlers) {
   const mode = React.useSyncExternalStore(noop, handlers.serverEarsAlways ? modeServerAlways : handlers.appleServerEars ? modeServerOnApple : modeNow, () => "none" as HearMode);
@@ -372,11 +404,20 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
   const inFlight = React.useRef(0);
   const landedAt = React.useRef(0);
   const unfinishedAt = React.useRef(0);
-  /** For the speed readout: when the meter last heard their voice, and how long the last take took to be written down. */
+  /** When the meter last heard their voice in the request being said (0: not yet, or no level can be read), how long
+   *  the last take took to be written down, whether a piece of this request went on a timer with no speech noticed
+   *  in it, and how many pieces now being written down the meter did hear speech in. */
   const lastVoiceAt = React.useRef(0);
   const lastHeardMs = React.useRef<number | null>(null);
-  const handingOn = React.useCallback(() => {
-    h.current.onHandOn?.({ sinceVoiceMs: lastVoiceAt.current ? Date.now() - lastVoiceAt.current : null, heardMs: lastHeardMs.current });
+  const timedSince = React.useRef(false);
+  const inFlightVoiced = React.useRef(0);
+  const handingOn = React.useCallback((rest = false) => {
+    const timed = timedSince.current;
+    h.current.onHandOn?.({ sinceVoiceMs: !timed && lastVoiceAt.current ? Date.now() - lastVoiceAt.current : null, heardMs: lastHeardMs.current, ears: timed ? "timed" : "meter", rest });
+    // The next request is timed from its own last word, never from this one's (2026-11-13: after a turn the meter
+    // could not read, the readout counted from the turn before — "sent after 22.7 s").
+    lastVoiceAt.current = 0;
+    timedSince.current = false;
   }, []);
   const decideTimer = React.useRef(0);
   /** The natural voice playing, the answer it belongs to (a newer one drops a late one), and whether it works here. */
@@ -626,24 +667,29 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
     if (want.current !== "live") return;
     const said = livePending.current.trim();
     if (!said) return;
-    // More words on the way, or they're talking right now: that piece, when it comes back, asks again.
-    if (inFlight.current > 0 || media.current?.take?.spoke) {
-      unfinishedAt.current = 0;
-      return;
-    }
+    // More words on the way, or they're talking right now: that piece, when it comes back, asks again. The waits
+    // below count from the last WORDS that landed — a piece that comes back with nothing in it (a noise, a quiet
+    // room on timed takes) does not start them over. It used to (2026-11-13, the owner on a Mac: "20 seconds or
+    // more"): where no level could be read a silent piece went every six seconds, each one began the five seconds
+    // for an unfinished-sounding sentence again, and the request could wait for ever.
+    if (inFlight.current > 0 || media.current?.take?.spoke) return;
+    const now = Date.now();
     const unfinished = soundsUnfinished(said);
-    if (unfinished && !unfinishedAt.current) unfinishedAt.current = Date.now();
-    const waited = Date.now() - (unfinished ? unfinishedAt.current : landedAt.current);
-    const need = unfinished ? UNFINISHED_WAIT_MS : h.current.quick ? QUICK_HANDON_GRACE_MS : HANDON_GRACE_MS;
-    if (waited < need) {
-      decideTimer.current = window.setTimeout(() => decideLiveRef.current(), Math.min(need - waited, 200));
+    const sinceWords = now - landedAt.current;
+    let left: number;
+    if (unfinished) left = (h.current.quick ? QUICK_UNFINISHED_WAIT_MS : UNFINISHED_WAIT_MS) - sinceWords;
+    else if (!h.current.quick) left = HANDON_GRACE_MS - sinceWords;
+    else if (lastVoiceAt.current && !timedSince.current) left = Math.max(QUICK_HANDON_GRACE_MS - sinceWords, QUICK_SEND_QUIET_MS - (now - lastVoiceAt.current));
+    else left = QUICK_BLIND_GRACE_MS - sinceWords;
+    if (left > 0) {
+      decideTimer.current = window.setTimeout(() => decideLiveRef.current(), Math.min(left, 200));
       return;
     }
     livePending.current = "";
     unfinishedAt.current = 0;
     thinking.current = true;
     h.current.onInterim("");
-    handingOn();
+    handingOn(unfinished);
     h.current.onFinal([said]);
   }, [handingOn]);
   React.useEffect(() => {
@@ -652,11 +698,13 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
 
   /** Live: a piece of what they said, written down while the microphone stays on; joined to the pieces before it. */
   const hearLive = React.useCallback(
-    async (blob: Blob) => {
+    async (blob: Blob, voiced: boolean) => {
       inFlight.current++;
+      if (voiced) inFlightVoiced.current++;
       setWriting(true);
       const { text } = await writeDown(blob);
       inFlight.current = Math.max(0, inFlight.current - 1);
+      if (voiced) inFlightVoiced.current = Math.max(0, inFlightVoiced.current - 1);
       if (!inFlight.current) setWriting(false);
       if (want.current !== "live") return;
       if (text) {
@@ -734,26 +782,37 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
     // The level meter: speech, and the pause after it. Its context runs only after a touch woke it (unlockVoice) or
     // while the microphone is on; where it can't, takes are timed instead.
     const nodes: AudioNode[] = [];
-    let analyser: AnalyserNode | null = null;
+    const meter: { analyser: AnalyserNode | null; buf: Float32Array | null } = { analyser: null, buf: null };
     const ctx = earsContext();
+    /** The meter on this microphone, as soon as its context runs (asked again while it listens, where it didn't yet). */
+    const meterOn = (): boolean => {
+      if (meter.analyser) return true;
+      if (!ctx || ctx.state !== "running") return false;
+      try {
+        const src = ctx.createMediaStreamSource(stream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 1024;
+        // Through a silent gain to the output: Safari reads a meter only when it leads somewhere.
+        const mute = ctx.createGain();
+        mute.gain.value = 0;
+        src.connect(analyser);
+        analyser.connect(mute);
+        mute.connect(ctx.destination);
+        nodes.push(src, analyser, mute);
+        meter.analyser = analyser;
+        meter.buf = new Float32Array(analyser.fftSize);
+        return true;
+      } catch {
+        return false;
+      }
+    };
     if (ctx) {
       try {
         if (ctx.state !== "running") await Promise.race([ctx.resume(), new Promise((r) => window.setTimeout(r, 400))]);
-        if (ctx.state === "running") {
-          const src = ctx.createMediaStreamSource(stream);
-          analyser = ctx.createAnalyser();
-          analyser.fftSize = 1024;
-          // Through a silent gain to the output: Safari reads a meter only when it leads somewhere.
-          const mute = ctx.createGain();
-          mute.gain.value = 0;
-          src.connect(analyser);
-          analyser.connect(mute);
-          mute.connect(ctx.destination);
-          nodes.push(src, analyser, mute);
-        }
       } catch {
-        analyser = null;
+        /* it may start a moment later */
       }
+      meterOn();
     }
     opening.current = false;
     // How it listens is read now: it may have changed while the microphone was coming on (a tap on the dial starts a
@@ -769,11 +828,12 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
     const m: { stream: MediaStream; take: Take | null; nodes: AudioNode[]; watch: number } = { stream, take: null, nodes, watch: 0 };
     media.current = m;
 
-    // The meter's state: the last three seconds of levels, and whether it reads anything at all.
-    const buf = analyser ? new Float32Array(analyser.fftSize) : null;
+    // The meter's state: the last three seconds of levels, and whether a level can be read right now (`blind`: not
+    // — no meter yet, or one that has read exactly nothing since the microphone came on; takes are timed meanwhile).
     const levels: number[] = [];
-    let blind = !analyser;
+    let blind = !meter.analyser;
     let deadMs = 0;
+    let retryMs = 0;
     let everSound = false;
     let last = performance.now();
 
@@ -789,19 +849,24 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
         }
       }
       const recorder = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
-      const t: Take = { recorder, chunks: [], send: false, spoke: false, voiceMs: 0, quietMs: 0, at: performance.now() };
+      const t: Take = { recorder, chunks: [], send: false, spoke: false, timed: blind, zero: !!meter.analyser, voiceMs: 0, quietMs: 0, at: performance.now() };
       recorder.ondataavailable = (e) => {
         if (e.data.size) t.chunks.push(e.data);
       };
       recorder.onstop = () => {
         if (!t.send) return;
-        // The meter heard nothing: nothing is sent (a lift on silence says so).
-        if ((analyser && !blind && !t.spoke) || !t.chunks.length) {
+        // The meter heard nothing: nothing is sent (a lift on silence says so) — unless no level could be read for
+        // some of it (`timed`): then it goes, and the server writes nothing down for silence. One exception: a
+        // meter known to work here that read exactly nothing all through it — that microphone was silent (live and
+        // held only; and not on an iPhone or iPad, where a meter can come loose from a microphone that still hears).
+        const silent = (how === "live" || how === "hold") && t.timed && !t.spoke && t.zero && meterProven && !isAppleMobile();
+        if ((!t.timed && !t.spoke) || silent || !t.chunks.length) {
           if (how === "hold") h.current.onNothing?.();
           return;
         }
         const blob = new Blob(t.chunks, { type: recorder.mimeType || type || "audio/mp4" });
-        if (how === "live") void hearLive(blob);
+        if (t.timed && !t.spoke) timedSince.current = true;
+        if (how === "live") void hearLive(blob, t.spoke);
         else void transcribe(blob, how);
       };
       m.take = t;
@@ -836,14 +901,36 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
         stopRecording(true);
         return;
       }
-      if (!blind && analyser && buf) {
-        analyser.getFloatTimeDomainData(buf);
+      // No meter yet (its context wasn't running when the microphone came on): asked for again every second.
+      if (!meter.analyser && ctx && (retryMs += dt) >= METER_RETRY_MS) {
+        retryMs = 0;
+        if (ctx.state !== "running") void ctx.resume().catch(() => undefined);
+        meterOn();
+      }
+      let rms = 0;
+      if (meter.analyser && meter.buf) {
+        const buf = meter.buf;
+        meter.analyser.getFloatTimeDomainData(buf);
         let sum = 0;
         for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
-        const rms = Math.sqrt(sum / buf.length);
-        // A meter that reads exactly nothing is not connected to the microphone: timed takes from here on.
-        if (rms > 0) everSound = true;
-        else if (!everSound && (deadMs += dt) > DEAD_METER_MS) blind = true;
+        rms = Math.sqrt(sum / buf.length);
+        // A meter that reads exactly nothing is not hearing the microphone — yet: timed takes until it reads
+        // something, and the meter again from then on. (2026-11-13: it used to be given up for the whole
+        // conversation. A Mac's microphone can hand over pure silence until somebody speaks — a headset, the
+        // system's own voice processing — so a second and a half of thinking before a sentence put every turn on
+        // six-second takes.)
+        if (rms > 0) {
+          everSound = true;
+          meterProven = true;
+          if (blind) {
+            blind = false;
+            levels.length = 0;
+          }
+          t.zero = false;
+        } else if (!everSound && (deadMs += dt) > DEAD_METER_MS) blind = true;
+      } else t.zero = false;
+      if (blind) t.timed = true;
+      if (!blind) {
         // The room's own level: a low point of the last three seconds; speech is well above it.
         levels.push(rms);
         if (levels.length > 60) levels.shift();
@@ -853,7 +940,10 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
           t.voiceMs += dt;
           t.quietMs = 0;
           if (t.spoke || t.voiceMs >= VOICE_MS) lastVoiceAt.current = Date.now();
-        } else t.quietMs += dt;
+        } else {
+          t.quietMs += dt;
+          if (!t.spoke && t.voiceMs > 0) t.voiceMs = Math.max(0, t.voiceMs - dt * VOICE_LEAK);
+        }
         if (!t.spoke && t.voiceMs >= VOICE_MS) {
           t.spoke = true;
           setVoiced(true);
@@ -862,6 +952,12 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
         }
         if (how === "hold") return;
         if (t.spoke && (t.quietMs >= (how === "live" ? (h.current.quick ? QUICK_LIVE_QUIET_MS : LIVE_QUIET_MS) : QUIET_MS) || age > TAKE_MAX_MS)) {
+          if (how === "live") endTake();
+          else stopRecording(true);
+          return;
+        }
+        // Some of this take had no level to read: it goes at the timed length, though no speech was noticed in it.
+        if (t.timed && !t.spoke && age > BLIND_TAKE_MS) {
           if (how === "live") endTake();
           else stopRecording(true);
           return;
@@ -902,6 +998,8 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
       interim.current = "";
       livePending.current = "";
       unfinishedAt.current = 0;
+      lastVoiceAt.current = 0;
+      timedSince.current = false;
       window.clearTimeout(decideTimer.current);
       quickEnds.current = 0;
       setHearing(w);
@@ -996,8 +1094,9 @@ export function useDeckSpeech(handlers: SpeechHandlers) {
       if (typeof window === "undefined" || !text.trim()) return;
       // Live on the server's ears, and they're still talking — or have said more since, still being written down or
       // waiting to go: the reply stays on the screen, not read out over them; the ears stay on (the next request
-      // goes when they're done).
-      if (mode === "record" && want.current === "live" && (media.current?.take?.spoke || inFlight.current > 0 || livePending.current)) {
+      // goes when they're done). A timed piece the meter heard no speech in doesn't hold a reply back (where no
+      // level could be read one was on its way one second in six, and that reply was never said).
+      if (mode === "record" && want.current === "live" && (media.current?.take?.spoke || inFlightVoiced.current > 0 || livePending.current)) {
         thinking.current = false;
         return;
       }

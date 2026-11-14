@@ -390,6 +390,9 @@ export async function handleTurn(input: TurnInput): Promise<TurnResult> {
   const t0 = Date.now();
   let modelMs = 0;
   let rounds = 0;
+  /** The prompt's tokens over the turn's rounds, and how many of them OpenAI had kept ready (its prompt cache). */
+  let promptTokens = 0;
+  let cachedTokens = 0;
   /** The request counted toward the plan's limit — written while the model reads, finished before the reply is kept. */
   let marked: Promise<unknown> = Promise.resolve();
 
@@ -401,8 +404,9 @@ export async function handleTurn(input: TurnInput): Promise<TurnResult> {
     await marked;
     await keep(actor, "OUT", reply, { actionId: proposed?.id ?? cardId });
     const turnMs = Date.now() - t0;
-    if (rounds) console.info(`[assistant] turn ${turnMs} ms · model ${modelMs} ms in ${rounds} round${rounds === 1 ? "" : "s"}${answeredBy ? ` · ${answeredBy}` : ""}${input.spoken ? " · spoken" : ""}`);
-    return { reply, proposed, speed: { turnMs, modelMs, rounds, model: answeredBy, engine } };
+    const cachedPct = promptTokens ? Math.round((cachedTokens / promptTokens) * 100) : null;
+    if (rounds) console.info(`[assistant] turn ${turnMs} ms · model ${modelMs} ms in ${rounds} round${rounds === 1 ? "" : "s"}${answeredBy ? ` · ${answeredBy}` : ""}${cachedPct === null ? "" : ` · cache ${cachedPct}% of ${promptTokens}`}${input.spoken ? " · spoken" : ""}`);
+    return { reply, proposed, speed: { turnMs, modelMs, rounds, model: answeredBy, engine, cachedPct } };
   };
 
   let quick = quickReply(text);
@@ -552,6 +556,8 @@ export async function handleTurn(input: TurnInput): Promise<TurnResult> {
       }
       modelMs += Date.now() - m0;
       rounds++;
+      promptTokens += completion.usage?.prompt_tokens ?? 0;
+      cachedTokens += completion.usage?.prompt_tokens_details?.cached_tokens ?? 0;
       answeredBy = model;
       message = completion.choices[0]?.message;
     } catch (err) {
