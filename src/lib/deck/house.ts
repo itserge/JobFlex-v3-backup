@@ -724,6 +724,10 @@ export function houseScene(shape: DeckShape, house: HouseDesign, ctx: { deckHeig
   const door = span >= doorW + 2 ? [r2((edge.x0 + edge.x1) / 2), doorW, 6.67, underRef.depthFt] : null;
   // Windows: 3 ft wide, 4 ft tall, every 5 ft along the free runs of each face (the door and its trim left clear),
   // the sills above the deck's floor on the first storey.
+  // The door stands on the deck's floor, whichever storey that is: EVERY row of windows whose height comes within a
+  // foot of the door leaves it and its trim clear (owner, 2026-11-14: "still a mess with doors and windows" — a
+  // second-storey deck's door stood in the middle of the upper row of windows, which only the first row kept clear).
+  const doorY = door ? { y0: ctx.deckHeightFt, y1: ctx.deckHeightFt + door[2] } : null;
   const windows: number[][] = [];
   const WIN_W = 3;
   const PITCH = 5;
@@ -737,7 +741,7 @@ export function houseScene(shape: DeckShape, house: HouseDesign, ctx: { deckHeig
       const wh = Math.min(4, top - sill);
       if (wh < 2) continue;
       const runs: Array<{ x0: number; x1: number }> = [];
-      if (door && st === 1 && p === underRef) {
+      if (door && doorY && p === underRef && sill < doorY.y1 + 1 && sill + wh > doorY.y0 - 1) {
         const d0 = door[0] - door[1] / 2 - 1.5;
         const d1 = door[0] + door[1] / 2 + 1.5;
         runs.push({ x0: p.x0, x1: Math.min(p.x1, d0) }, { x0: Math.max(p.x0, d1), x1: p.x1 });
@@ -747,7 +751,21 @@ export function houseScene(shape: DeckShape, house: HouseDesign, ctx: { deckHeig
       }
     }
   });
-  return { blocks, heightFt: mainH, door, windows: windows.slice(0, 60), ...look };
+  // And none of them on the door's spot or on another's, whatever the rows above did (settleOpeningRects): the door
+  // stands, a window in its way is cut back or left out.
+  const rects: OpeningRect[] = [
+    ...(door && doorY ? [{ kind: (door[1] >= 5 ? "slider" : "door") as OpeningKind, x0: door[0] - door[1] / 2, x1: door[0] + door[1] / 2, y0: doorY.y0, y1: doorY.y1, face: door[3] }] : []),
+    ...windows.map((w) => ({ kind: "window" as OpeningKind, x0: w[0] - w[2] / 2, x1: w[0] + w[2] / 2, y0: w[4], y1: w[4] + w[3], face: w[1] })),
+  ];
+  const stood = settleOpeningRects(rects).slice(door ? 1 : 0);
+  const clear = windows.flatMap((w, i) => {
+    const r = stood[i];
+    if (!r) return [];
+    const j = i + (door ? 1 : 0);
+    const same = r.x0 === rects[j].x0 && r.x1 === rects[j].x1 && r.y0 === rects[j].y0 && r.y1 === rects[j].y1;
+    return [same ? w : [r2((r.x0 + r.x1) / 2), w[1], r2(r.x1 - r.x0), r2(r.y1 - r.y0), r2(r.y0)]];
+  });
+  return { blocks, heightFt: mainH, door, windows: clear.slice(0, 60), ...look };
 }
 
 /** The wall part an opening stands in: the one its middle is over. */
