@@ -11,7 +11,7 @@
 
 import { PLAN_TIERS, type Plan } from "@/lib/entitlements";
 import type { PlanLimits } from "@/lib/planLimits";
-import { isToolsSlug } from "@/lib/toolPlans/shared";
+import { isToolsSlug, toolPlanBySlug } from "@/lib/toolPlans/shared";
 
 export interface PlanDTO {
   id: string;
@@ -90,6 +90,10 @@ export function planDisplayName(
       if (hit) return hit;
     }
   }
+  // A new plan (Base + Tools) is not a catalog row: it is named by its size — "Basic", never "Tools Basic" or the
+  // stored "TOOLS-BASIC" (owner, 2026-11-12).
+  const size = toolPlanBySlug(key);
+  if (size) return size.name;
   return titleCaseSlug(key);
 }
 

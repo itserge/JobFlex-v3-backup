@@ -32,6 +32,8 @@ import { BROWSER_TYPE_SQL, HOST_SQL, TRAFFIC_SINCE, UA_SQL, carriesAdTag, isCoun
 import { resolveLandingVariant, VARIANT_TRADE } from "@/components/v3/landing-e/landing-variants";
 import { browserErrorWords, durationWords, problemOf, reasonWords, screenName, type SignupSide } from "./signup-watch-shared";
 import { detectInAppBrowser } from "./inAppBrowser";
+import { toolPlanBySlug } from "@/lib/toolPlans/shared";
+import type { SignupTool } from "@/lib/toolPlans/numbers";
 
 export const LIVE_WINDOW_MINUTES = 30;
 export const LIVE_ACTIVE_MINUTES = 5;
@@ -770,8 +772,10 @@ export function signupPlanLabel(sub: { plan: string; subStatus: string; trialEnd
   const plan = (sub.plan || "").trim();
   const status = (sub.subStatus || "").trim().toUpperCase();
   if (!status && !plan) return "no subscription row yet";
+  // A new plan is named by its size ("Basic"), never by the stored slug "TOOLS-BASIC" (owner, 2026-11-12); the tools
+  // picked are said beside it (SignupRecord.tools).
   const pretty = plan && plan.toUpperCase() !== "FREE"
-    ? plan.charAt(0).toUpperCase() + plan.slice(1).toLowerCase()
+    ? (toolPlanBySlug(plan)?.name ?? plan.charAt(0).toUpperCase() + plan.slice(1).toLowerCase())
     : "";
   switch (status) {
     case "TRIALING": {
@@ -821,6 +825,9 @@ export interface SignupRecord {
   industry: string;
   /** What the account is now, from its Subscription row. */
   planLabel: string;
+  /** A sign-up on the new plans (Base + Tools): the tools it picked, each with what it is now (lib/toolPlans/numbers
+   *  signupTools) — [] when it picked none. Absent on a Classic plan and on ledgers read before 2026-11-12. */
+  tools?: SignupTool[];
   state: SignupState;
   /** What the account is worth per month (2026-10-05): a trial's plan price,
    *  its chance of paying and the two multiplied; a paying account's price.

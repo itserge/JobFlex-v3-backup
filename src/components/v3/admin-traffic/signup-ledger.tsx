@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { EyeOff, Info, Megaphone, RefreshCw } from "lucide-react";
 import { getSignupLedger, setSignupHidden } from "@/actions/trafficDashboard";
 import type { SignupLedger, SignupRecord, SignupState } from "@/lib/traffic-live";
+import { signupToolsLine } from "@/lib/toolPlans/numbers";
 import { TIER_CHANCE, TIER_LABEL, TRIAL_TIERS, dollars, trialChance, type TrialProjection } from "@/lib/trialProjection";
 import { EmailContractorButton } from "@/components/v3/admin-mail/contractor-mail";
 import s from "./traffic.module.css";
@@ -144,6 +145,8 @@ function LedgerRow({ r, when, onHide, pending }: { r: SignupRecord; when: (iso: 
       <div className={s.ledgerPlan}>
         <b className={s.livePlan} data-state={r.state}>{r.planLabel}</b>
         <span>{STATE_LABEL[r.state]}{worth(r)}</span>
+        {/* The new plans: the tools this sign-up picked (owner, 2026-11-12). */}
+        {r.tools && <span data-signup-tools="">Tools picked: {signupToolsLine(r.tools)}</span>}
         {r.lapse && <span className={s.ledgerWhy}><b>Why:</b> {r.lapse.reason}{r.lapse.at ? ` · ${when(r.lapse.at)}` : ""}</span>}
       </div>
       <div className={s.ledgerWhen}>
