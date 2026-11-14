@@ -33,6 +33,7 @@ import {
   CUSTOM_LIMITS,
   OWN_UNITS,
   DECK_LIMITS,
+  DOUBLE_DECK_STOREY_IN,
   ELECTRICAL_LIMITS,
   FASCIA_FINISH_LABEL,
   FIXTURE_KINDS,
@@ -1560,7 +1561,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
         <Stepper label="Deck height" unit="in." aside={ftIn(design.heightIn)} value={design.heightIn} step={1} parse={parseInches} format={(n2) => String(Math.round(n2 * 4) / 4)} min={DECK_LIMITS.heightIn.min} max={DECK_LIMITS.heightIn.max} onCommit={(n2) => patch({ heightIn: n2 })} />
       </div>
       {design.shape.kind === "rect" || design.shape.kind === "wall" ? (
-        <More title={design.shape.kind === "wall" ? "Lower level, hot tub" : "Front edge, lower level, hot tub"} now={[front ? FRONT_LABEL[front.kind] : "", design.lower.on ? "lower level" : "", design.spa.on ? "hot tub" : ""].filter(Boolean).join(" · ") || "Straight front, one level"} open={!!front || design.lower.on || design.spa.on} id="size-more">
+        <More title={design.shape.kind === "wall" ? "Double deck, lower level, hot tub" : "Front edge, double deck, lower level, hot tub"} now={[front ? FRONT_LABEL[front.kind] : "", design.lower.on ? (design.lower.place === "under" ? "double deck" : "lower level") : "", design.spa.on ? "hot tub" : ""].filter(Boolean).join(" · ") || "Straight front, one level"} open={!!front || design.lower.on || design.spa.on} id="size-more">
           {design.shape.kind === "rect" ? (
           <Field label="The front edge" wide>
             <Seg label="The front edge" value={front?.kind ?? "straight"} onChange={(k: FrontKind) => patch({ shape: { kind: "rect", widthFt: design.shape.widthFt, depthFt: design.shape.depthFt, front: k === "straight" ? undefined : { kind: k, bulgeFt: front?.bulgeFt ?? 2, clipFt: front?.clipFt ?? 2 } } })} options={(["straight", "curve", "clipped"] as const).map((k) => ({ value: k, label: FRONT_LABEL[k] }))} />
@@ -1575,8 +1576,36 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
               <NumberInput label="How much each front corner is clipped, feet" value={front.clipFt} parse={parseFeet} format={feetText} min={DECK_LIMITS.clipFt.min} max={Math.min(DECK_LIMITS.clipFt.max, (design.shape.widthFt - 2) / 2, design.shape.depthFt - 2)} onCommit={(n2) => patch({ shape: { kind: "rect", widthFt: design.shape.widthFt, depthFt: design.shape.depthFt, front: { ...front, clipFt: n2 } } })} />
             </Field>
           ) : null}
-          <Toggle checked={design.lower.on} onChange={(v) => patch({ lower: { on: v } })}>A lower level in front, a step down</Toggle>
-          {design.lower.on ? (
+          {/* A DOUBLE DECK (2026-11-13 — the owner: "a double deck, like first floor and second floor"): a second deck
+              of the same outline UNDER this one, on the same posts. Turned on where the deck is too low for one, the
+              deck is raised to leave a storey (9 ft) between the two. One or the other: under it, or a step down in front. */}
+          <Toggle
+            checked={design.lower.on && design.lower.place === "under"}
+            onChange={(v) =>
+              patch(v ? { heightIn: Math.max(design.heightIn, design.lower.heightIn + DOUBLE_DECK_STOREY_IN), lower: { on: true, place: "under" } } : { lower: { on: false } })
+            }
+          >
+            A double deck — a second deck under this one (first floor and second floor)
+          </Toggle>
+          {design.lower.on && design.lower.place === "under" ? (
+            <Scope level="lower">
+              <div className="v1-grid2" data-deck-double>
+                <Field label="Lower deck above the ground" aside={`in. · ${ftIn(design.lower.heightIn)}`}>
+                  <NumberInput label="How high the lower deck stands above the ground, inches" value={design.lower.heightIn} parse={parseInches} format={(v) => String(Math.round(v))} min={LOWER_LIMITS.heightIn.min} max={Math.max(LOWER_LIMITS.heightIn.min, Math.min(LOWER_LIMITS.heightIn.max, design.heightIn - LOWER_LIMITS.storeyIn))} onCommit={(n2) => patch({ lower: { heightIn: Math.round(n2) } })} />
+                </Field>
+                <Field label="Upper deck above it" aside={`in. · ${ftIn(design.heightIn - design.lower.heightIn)} floor to floor`}>
+                  <NumberInput label="From the lower deck's boards up to the upper deck's, inches" value={design.heightIn - design.lower.heightIn} parse={parseInches} format={(v) => String(Math.round(v))} min={LOWER_LIMITS.storeyIn} max={DECK_LIMITS.heightIn.max - design.lower.heightIn} onCommit={(n2) => patch({ heightIn: design.lower.heightIn + Math.round(n2) })} />
+                </Field>
+              </div>
+              <p className="v1-hint">
+                {structure.lower?.place === "under"
+                  ? `The same outline as the deck above, framed on the same lines: ${structure.lower.frame.joistSize} joists, ${[...new Set(structure.lower.frame.beams.map((b) => b.spec.size))].join(" and ")} ${structure.lower.frame.beams.length === 1 ? "beam" : "beams"} let into the same posts — no posts or footings of its own. The posts and footings are sized for both decks. A stair can leave either deck: pick “The lower deck” on the stair.`
+                  : `The two decks need at least ${ftIn(LOWER_LIMITS.storeyIn)} between them, floor to floor: raise the upper deck or bring the lower one down — the checks offer both.`}
+              </p>
+            </Scope>
+          ) : null}
+          <Toggle checked={design.lower.on && design.lower.place === "front"} onChange={(v) => patch({ lower: { on: v, place: "front" } })}>A lower level in front, a step down</Toggle>
+          {design.lower.on && design.lower.place === "front" ? (
             <Scope level="lower">
               <div className="v1-grid2">
                 <Field label="Along the house" aside="ft">
@@ -2338,7 +2367,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
           <div className="v1-toggles">
             {woodRail ? <Toggle checked={design.rail.cap} onChange={(v) => patch({ rail: { cap: v } })}>A flat 2x6 drink cap</Toggle> : null}
             {!woodRail && design.rail.type !== "glass" ? <Toggle checked={design.rail.drink} onChange={(v) => patch({ rail: { drink: v } })}>A deck board on top — a drink rail</Toggle> : null}
-            {design.lower.on ? <Toggle checked={design.rail.lowerLevel} onChange={(v) => patch({ rail: { lowerLevel: v } })}>Rail on the lower level too</Toggle> : null}
+            {design.lower.on ? <Toggle checked={design.rail.lowerLevel} onChange={(v) => patch({ rail: { lowerLevel: v } })}>{design.lower.place === "under" ? "Rail on the lower deck too" : "Rail on the lower level too"}</Toggle> : null}
           </div>
         </More>
       ) : null}
@@ -2390,7 +2419,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                 </div>
                 {design.lower.on ? (
                   <Field label="From" wide>
-                    <Seg label="From which level" value={st.level} onChange={(v) => set({ level: v })} options={[{ value: "upper", label: "The deck" }, { value: "lower", label: "The lower level" }]} />
+                    <Seg label="From which level" value={st.level} onChange={(v) => set({ level: v })} options={[{ value: "upper", label: design.lower.place === "under" ? "The upper deck" : "The deck" }, { value: "lower", label: design.lower.place === "under" ? "The lower deck" : "The lower level" }]} />
                   </Field>
                 ) : null}
                 {st.side === "front" ? (

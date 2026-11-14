@@ -84,6 +84,11 @@ function randomDesign(r: Rng): unknown {
     d.framing.backOverhangFt = pick(r, ["auto", 0, 0.5, 1, 2.25, 4, 9, -1]);
     if (r() < 0.5) d.framing.pins = [...(Array.isArray(d.framing.pins) ? d.framing.pins : []), ...Array.from({ length: int(r, 1, 4) }, (_, i) => ({ id: `t${i + 1}`, beam: "middle", line: pick(r, ["l1", "l2", "l9"]), atFt: odd(r, 0, w) }))];
   }
+  // …and a double deck (2026-11-13): a second deck under this one, a storey down — or not quite a storey.
+  if (r() < 0.2) {
+    d.lower = { ...d.lower, on: true, place: pick(r, ["under", "under", "under", "front", "sideways"]), heightIn: odd(r, 0, 150) };
+    if (r() < 0.7) d.heightIn = Math.round(Number(d.lower.heightIn)) + int(r, 70, 170);
+  }
   d.rail.mountBy = r() < 0.6 ? {} : Object.fromEntries(["upper-front", "upper-left", "upper-right", "upper-back", "lower-front", "lower-left"].filter(() => r() < 0.4).map((k) => [k, pick(r, ["top", "side"])]));
   if (r() < 0.45) {
     d.roof.openings = Array.from({ length: int(r, 1, 7) }, (_, i) => ({ id: `o${i + 1}`, side: pick(r, ["front", "left", "right", "back"]), atFt: odd(r, -2, 62), widthFt: odd(r, 1, 20), door: bool(r) }));

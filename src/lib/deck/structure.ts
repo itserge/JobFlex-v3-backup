@@ -22,7 +22,7 @@ import { buildRails, type RailBuild, type RailLevel } from "./rails";
 import { buildElectrical, type ElectricalBuild } from "./electrical";
 import { defaultFramingSpecies, framingSpecies } from "./catalog";
 import { groundAt as slopeGroundAt, slopeGradePct } from "./site";
-import { defaultStair, frontEdgeAt, hasDeck, hasLowerLevel, hasRoof, normalizeDeckDesign, shapeOutline, shapeZones, type DeckDesign, type DeckEdge, type StairDesign } from "./design";
+import { defaultStair, frontEdgeAt, hasDeck, hasLowerLevel, hasRoof, isDoubleDeck, normalizeDeckDesign, shapeOutline, shapeZones, type DeckDesign, type DeckEdge, type StairDesign } from "./design";
 import { deckCodeFor, type DeckStateCode } from "./stateCodes";
 
 /** The lower level: its own frame and boards, placed in front of the main deck. */
@@ -35,6 +35,8 @@ export interface LowerBuild {
   offsetYIn: number;
   /** The step down from the main deck, inches. */
   dropIn: number;
+  /** In front of the main deck, a step or a stair down — or under it: the lower floor of a double deck, hung on the main deck's posts (2026-11-13). */
+  place: "front" | "under";
 }
 
 export interface DeckStructure {
@@ -116,7 +118,7 @@ export function stairOpenings(design: DeckDesign, W: number, riserMaxIn: number)
     out.push({ side: st.side, fromIn: at - half, toIn: at + half });
   };
   for (const st of design.stairs) add(st);
-  if (hasLowerLevel(design) && design.lower.dropIn > riserMaxIn) {
+  if (hasLowerLevel(design) && design.lower.place === "front" && design.lower.dropIn > riserMaxIn) {
     const lw = Math.round(design.lower.widthFt * 12);
     const offsetXIn = design.lower.align === "left" ? 0 : design.lower.align === "right" ? W - lw : Math.round((W - lw) / 2);
     const toLower = design.stairs.some((st) => st.level === "upper" && st.side === "front" && !st.wrap && st.atFt * 12 > offsetXIn && st.atFt * 12 < offsetXIn + lw);
@@ -146,12 +148,39 @@ export function buildStructure(raw: DeckDesign, opts: StructureOptions = {}): De
   const roofSpecies = species.group === "OC" ? framingSpecies(defaultFramingSpecies(design.site.state)) : species;
   const roofGroup = roofSpecies.group === "OC" ? "DF" : roofSpecies.group;
   const roof = hasRoof(design) ? buildRoofFrame(design, roofSpecies, roofGroup, deckUnder, { ...opts, groundAt, stairOpenings: withDeck ? stairOpenings(design, W, code.riserMaxIn) : [] }) : null;
-  const frame = withDeck ? buildDeckFrame(design, { ...opts, groundAt, extraPosts: roof ? roofPostsForDeck(roof) : undefined, extraPostsGroup: roofGroup }) : null;
-  const surface = frame ? deckSurface(frame) : null;
+  // A DOUBLE DECK (2026-11-13 — the owner: "a double deck, like first floor and second floor"): the main deck's posts
+  // and footings hold both decks, so they are sized for two.
+  const doubled = isDoubleDeck(design);
+  const deckOpts = { ...opts, groundAt, extraPosts: roof ? roofPostsForDeck(roof) : undefined, extraPostsGroup: roofGroup, ...(doubled ? { carries: 2 } : {}) };
+  let frame = withDeck ? buildDeckFrame(design, deckOpts) : null;
 
   // The lower level: a detached deck of its own, a step down, touching the main deck's front.
   let lower: LowerBuild | null = null;
-  if (frame && hasLowerLevel(design)) {
+  if (frame && doubled) {
+    // …or the lower floor of a double deck: the same outline at its own height, hanging on the house as the main deck
+    // does, its joists on the main deck's own beam lines and its beams let into the main deck's posts where they pass —
+    // no posts or footings of its own. Its joists and beams are read from the tables for the spans those lines make.
+    const lowerDesign = normalizeDeckDesign({
+      ...design,
+      heightIn: design.lower.heightIn,
+      structure: "deck",
+      floor: "deck",
+      lower: { ...design.lower, on: false },
+      stairs: [],
+      photo: null,
+      spa: { ...design.spa, on: false },
+      framing: { ...design.framing, bracesOff: [], pins: [], beamLines: [], backOverhangFt: "auto", postSpacingFt: "auto" },
+    });
+    const lowerOpts = { ...opts, groundAt };
+    let lowerFrame = buildDeckFrame(lowerDesign, { ...lowerOpts, follow: frame });
+    // Too near the ground for a beam under its joists: both decks take flush beams — the posts are the same posts.
+    const front = design.shape.kind === "rect" ? design.shape.front : undefined;
+    if (lowerFrame.flags.droppedDoesNotFit && frame.beamStyle === "dropped" && design.framing.beamStyle === "auto" && (!front || front.kind === "straight")) {
+      frame = buildDeckFrame({ ...design, framing: { ...design.framing, beamStyle: "flush" } }, deckOpts);
+      lowerFrame = buildDeckFrame(lowerDesign, { ...lowerOpts, follow: frame });
+    }
+    lower = { design: lowerDesign, frame: lowerFrame, surface: deckSurface(lowerFrame), offsetXIn: 0, offsetYIn: 0, dropIn: design.heightIn - design.lower.heightIn, place: "under" };
+  } else if (frame && hasLowerLevel(design)) {
     const lw = Math.round(design.lower.widthFt * 12);
     const offsetXIn = design.lower.align === "left" ? 0 : design.lower.align === "right" ? W - lw : Math.round((W - lw) / 2);
     const offsetYIn = D;
@@ -170,14 +199,15 @@ export function buildStructure(raw: DeckDesign, opts: StructureOptions = {}): De
       framing: { ...design.framing, joist: "auto", beam: "auto", beamStyle: "auto", overhangFt: "auto", bracesOff: design.framing.bracesOff.filter((k) => k.startsWith(LOWER_KEY)).map((k) => k.slice(LOWER_KEY.length)), pins: [], beamLines: [], backOverhangFt: "auto" },
     });
     const lowerFrame = buildDeckFrame(lowerDesign, { ...opts, groundAt: (x, y) => groundAt(x + offsetXIn, y + offsetYIn) });
-    lower = { design: lowerDesign, frame: lowerFrame, surface: deckSurface(lowerFrame), offsetXIn, offsetYIn, dropIn: design.lower.dropIn };
+    lower = { design: lowerDesign, frame: lowerFrame, surface: deckSurface(lowerFrame), offsetXIn, offsetYIn, dropIn: design.lower.dropIn, place: "front" };
   }
+  const surface = frame ? deckSurface(frame) : null;
 
   // The stairs.
   const stairs: StairBuild[] = [];
   if (frame && surface) {
     const upper: StairLevel = { id: "upper", surfaceIn: frame.surfaceIn, joistBottomIn: frame.joistBottomIn, x0: 0, y0: 0, widthIn: W, depthIn: D, frontAt: (x) => frontEdgeAt(design.shape, x) };
-    const lowerLevel: StairLevel | null = lower ? { id: "lower", surfaceIn: lower.frame.surfaceIn, joistBottomIn: lower.frame.joistBottomIn, x0: lower.offsetXIn, y0: lower.offsetYIn, widthIn: Math.round(design.lower.widthFt * 12), depthIn: Math.round(design.lower.depthFt * 12), frontAt: () => Math.round(design.lower.depthFt * 12) } : null;
+    const lowerLevel: StairLevel | null = lower ? { id: "lower", surfaceIn: lower.frame.surfaceIn, joistBottomIn: lower.frame.joistBottomIn, x0: lower.offsetXIn, y0: lower.offsetYIn, widthIn: Math.round(design.lower.widthFt * 12), depthIn: Math.round(design.lower.depthFt * 12), frontAt: lower.place === "under" ? (x) => frontEdgeAt(design.shape, x) : () => Math.round(design.lower.depthFt * 12) } : null;
     const build = (st: StairDesign, level: StairLevel) =>
       buildStair({ design, stair: st, level, lowerLevel: level.id === "upper" ? lowerLevel : null, product: frame.decking, rail: design.rail, groundAt, riserMaxIn: code.riserMaxIn, postSize: design.framing.post === "8x8" ? "6x6" : design.framing.post === "4x6" ? "4x4" : design.framing.post });
     for (const st of design.stairs) stairs.push(build(st, st.level === "lower" && lowerLevel ? lowerLevel : upper));
@@ -185,7 +215,7 @@ export function buildStructure(raw: DeckDesign, opts: StructureOptions = {}): De
     // steps"). A lower level more than one riser down cannot be reached without a stair; when the design has none from
     // the main deck to it, the engine builds one — centred on the lower level, the warning's own fix — so the 3D, the
     // framing plan, the takeoff, the price and the permit set all carry it. A stair the contractor puts there replaces it.
-    if (lower && lowerLevel && lower.dropIn > code.riserMaxIn && !stairs.some((b) => b.level === "upper" && b.lands === "lower-deck")) {
+    if (lower && lower.place === "front" && lowerLevel && lower.dropIn > code.riserMaxIn && !stairs.some((b) => b.level === "upper" && b.lands === "lower-deck")) {
       const between = build(betweenLevelsStair(design, lower.offsetXIn), upper);
       if (between.lands === "lower-deck") stairs.push(between);
     }
@@ -193,7 +223,7 @@ export function buildStructure(raw: DeckDesign, opts: StructureOptions = {}): De
 
   // The step between the levels.
   let stepDown: DeckStructure["stepDown"] = null;
-  if (lower) {
+  if (lower && lower.place === "front") {
     const lengthIn = Math.round(design.lower.widthFt * 12);
     const stairBetween = stairs.some((s) => s.level === "upper" && s.lands === "lower-deck");
     stepDown = { lengthIn, dropIn: lower.dropIn, stairWanted: lower.dropIn > code.riserMaxIn && !stairBetween };
@@ -201,8 +231,9 @@ export function buildStructure(raw: DeckDesign, opts: StructureOptions = {}): De
 
   // The rails.
   const levels: RailLevel[] = [];
-  if (frame) levels.push(railLevelOf("upper", frame, 0, 0, groundAt, lower ? { x0: lower.offsetXIn, x1: lower.offsetXIn + Math.round(design.lower.widthFt * 12), dropIn: lower.dropIn } : null, false));
-  if (lower) levels.push(railLevelOf("lower", lower.frame, lower.offsetXIn, lower.offsetYIn, groundAt, null, true));
+  if (frame) levels.push(railLevelOf("upper", frame, 0, 0, groundAt, lower && lower.place === "front" ? { x0: lower.offsetXIn, x1: lower.offsetXIn + Math.round(design.lower.widthFt * 12), dropIn: lower.dropIn } : null, false));
+  // (A lower level in front meets the main deck along its back; a double deck's lower floor has the house there, or its own open edge.)
+  if (lower) levels.push(railLevelOf("lower", lower.frame, lower.offsetXIn, lower.offsetYIn, groundAt, null, lower.place === "front"));
   // The roof's posts that stand on the deck (2026-11-13): where one stands on a top-mounted rail's line, the rail runs to it and sets no post of its own.
   const rails = buildRails({ design, rail: design.rail, levels, stairs, roofPosts: roof && design.floor === "deck" ? roof.posts.map((p) => ({ x: p.x, y: p.y, halfIn: (POST_ACTUAL_IN[p.size]?.[0] ?? 5.5) / 2 })) : [] });
 

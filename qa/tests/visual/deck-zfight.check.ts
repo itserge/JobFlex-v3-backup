@@ -340,6 +340,10 @@ const variants: Array<[string, Patch]> = [
   ["free-standing deck 16 × 12, two-board border all round", { placement: "detached", shape: rect(16, 12), decking: { ...base.decking, fascia: "match", border: 2 } } as Patch],
   ["deck 12 × 20 (deeper than wide), border", { shape: rect(12, 20), decking: { ...base.decking, border: 1 } } as Patch],
 ];
+// A DOUBLE DECK (2026-11-13): the lower deck's beams let into posts that run on up through its boards — with the beams
+// under the joists (the starting layout's are flush), wood rails, and standing free of the house.
+variants.push(["double deck, beams under the joists, cedar rail", { structure: "deck", floor: "deck", placement: "attached", shape: { kind: "rect", widthFt: 20, depthFt: 14 }, heightIn: 156, rail: { type: "cedar" }, stairs: [], lower: { on: true, place: "under", heightIn: 42 } }]);
+variants.push(["double deck, free-standing", { structure: "deck", floor: "deck", placement: "beside", shape: { kind: "rect", widthFt: 16, depthFt: 12 }, heightIn: 132, rail: { type: "composite" }, stairs: [], lower: { on: true, place: "under", heightIn: 24 } }]);
 for (const [name, p] of variants) cases.push({ name, design: applyDeckPatch(base, p) });
 
 /**

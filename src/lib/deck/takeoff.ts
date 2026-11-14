@@ -291,6 +291,8 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
     hw("post-bases", "footings", ocPost ? "Post bases for 3-ply 2x6 OC posts (4 1/2 × 5 1/2 in.), 2,000-lb uplift" : `Post bases, ${design.framing.post}`, deckBases, "hw.postBase", postFactor);
     hw("anchor-bolts", "footings", "Anchor bolts for the post bases", poured.length, "hw.anchorBolt");
     hw("post-caps", "footings", ocPost ? "Beam-to-post caps for 3-ply OC beams, 2,000-lb uplift" : `Post caps, ${design.framing.post}`, hardware.postCaps, "hw.postCap", postFactor);
+    // A double deck's lower floor (2026-11-13): each beam sits in a seat let into a post of the upper deck, through-bolted.
+    hw("beam-seats", "framing", "Through bolts, 1/2 in. with washers and nuts — the lower deck's beams to the posts", hardware.beamSeats * 2, "hw.bolt", 1, "ea", `two at each of the ${hardware.beamSeats} seats let into the posts`);
 
     // The ledger: its fasteners, the flashing over it, the membrane behind and above, the ties to the house.
     const ledgerFasteners = frame.ledgers.reduce((a, l) => a + l.fasteners, 0);

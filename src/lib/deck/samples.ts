@@ -55,6 +55,18 @@ export const DECK_SAMPLES: readonly DeckSample[] = [
     facts: "12 × 12 ft · 14 in. high · no rails needed · a step down",
     patch: { structure: "deck", floor: "deck", placement: "attached", shape: { kind: "rect", widthFt: 12, depthFt: 12 }, heightIn: 14, rail: { type: "none" }, stairs: [], lower: { on: false } },
   },
+  // A DOUBLE DECK (2026-11-13 — the owner: "a double deck, like first floor and second floor").
+  {
+    id: "deck-double",
+    structure: "deck",
+    name: "Double deck — two floors",
+    facts: "16 × 12 ft · a first-floor deck 18 in. up under a second-floor deck 10 ft 6 in. up · stairs from each",
+    patch: {
+      structure: "deck", floor: "deck", placement: "attached", shape: { kind: "rect", widthFt: 16, depthFt: 12 }, heightIn: 126,
+      rail: { type: "aluminum", infill: "auto" }, lower: { on: true, place: "under", heightIn: 18 },
+      stairs: [defaultStair("s1", "front", 4), { ...defaultStair("s2", "front", 12), level: "lower" }],
+    },
+  },
   {
     id: "deck-two-level",
     structure: "deck",
@@ -62,7 +74,7 @@ export const DECK_SAMPLES: readonly DeckSample[] = [
     facts: "18 × 12 ft · 48 in. high · a 12 × 8 ft lower level two steps down · stairs",
     patch: {
       structure: "deck", floor: "deck", placement: "attached", shape: { kind: "rect", widthFt: 18, depthFt: 12 }, heightIn: 48,
-      rail: { type: "composite", infill: "auto" }, lower: { on: true, widthFt: 12, depthFt: 8, dropIn: 15, align: "centre" },
+      rail: { type: "composite", infill: "auto" }, lower: { on: true, place: "front", widthFt: 12, depthFt: 8, dropIn: 15, align: "centre" },
       stairs: [{ ...defaultStair("s1", "front", 6), level: "lower" }],
     },
   },
@@ -73,7 +85,7 @@ export const DECK_SAMPLES: readonly DeckSample[] = [
     facts: "16 × 14 ft · 7 × 7 ft tub spot on doubled joists · a 10 × 8 ft level one step down",
     patch: {
       structure: "deck", floor: "deck", placement: "attached", shape: { kind: "rect", widthFt: 16, depthFt: 14 }, heightIn: 24,
-      rail: { type: "composite", infill: "auto" }, lower: { on: true, widthFt: 10, depthFt: 8, dropIn: 8, align: "right" },
+      rail: { type: "composite", infill: "auto" }, lower: { on: true, place: "front", widthFt: 10, depthFt: 8, dropIn: 8, align: "right" },
       spa: { on: true, widthFt: 7, depthFt: 7, align: "left" },
       stairs: [{ ...defaultStair("s1", "front", 5), level: "lower" }],
     },

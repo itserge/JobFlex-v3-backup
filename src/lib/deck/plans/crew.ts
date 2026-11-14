@@ -213,6 +213,13 @@ export function buildSequence(m: PlanModel, list: MaterialList): BuildPhase[] {
         : `Set the post bases; stand the ${d.framing.post} posts; cut each in place to the beam's underside (about ${ftInFrac(Math.max(6, (m.posts[0]?.post.heightIn ?? 12) - 1), 8)}).`,
       ...f.beams.map((b) => `Beam ${m.beamTag.get(b.id) ?? ""}: ${beamLabel(b)} on post caps, splices over posts only, crowned up.`),
       ...(f.hardware.braces ? [`Knee braces at the ${f.hardware.braces} corner posts, 2 ft down and 2 ft out, a 1/2" lag each end.`] : []),
+      // A DOUBLE DECK (2026-11-13): the lower deck's beams go into the posts before the upper frame goes on.
+      ...(s.lower?.place === "under"
+        ? [
+            `Double deck — the posts run in ONE piece from the footings to the upper beams. From one level line, mark the lower beams' underside on every post (${ftInFrac(Math.max(0, Math.min(...s.lower.frame.beams.map((b) => b.bottomIn))), 8)} above grade); cut a seat 1 1/2" deep per ply; set each lower beam in its seats and bolt it with two 1/2" through bolts and washers at every post (${s.lower.frame.seats.length} seats).`,
+            "Frame the lower deck first — ledger, beams in their seats, joists — and work off it to frame the upper deck.",
+          ]
+        : []),
     ],
   });
   out.push({

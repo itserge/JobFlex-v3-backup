@@ -375,16 +375,30 @@ export interface SiteDesign {
   state: string | null;
 }
 
-/** A second, lower deck in front of the main one, a step or a short stair down. */
+/**
+ * A second, lower deck. "front": in front of the main one, a step or a short stair down. "under" (2026-11-13 — the
+ * owner: "a double deck, like first floor and second floor"): a DOUBLE DECK — a deck of the same outline under the main
+ * one, a first-floor deck under a second-floor one, its beams let into the same posts. Under the main deck its width
+ * and depth are the main deck's and its drop is the difference between the two heights (kept so by the normaliser), so
+ * everything that reads a lower level reads this one too.
+ */
 export interface LowerLevel {
   on: boolean;
+  place: "front" | "under";
   widthFt: number;
   depthFt: number;
   /** How far below the main deck it sits, inches. */
   dropIn: number;
   align: "left" | "centre" | "right";
+  /** A double deck's lower floor: how high its boards stand above the ground, inches (its own door's threshold). */
+  heightIn: number;
 }
-export const LOWER_LIMITS = { widthFt: { min: 4, max: 60 }, depthFt: { min: 4, max: 30 }, dropIn: { min: 4, max: 96 } } as const;
+/** `storeyIn`: the least from one deck's boards up to the other's for a double deck to be one — room to stand under the upper deck's frame. */
+export const LOWER_LIMITS = { widthFt: { min: 4, max: 60 }, depthFt: { min: 4, max: 30 }, dropIn: { min: 4, max: 96 }, heightIn: { min: 6, max: 144 }, storeyIn: 90 } as const;
+/** The clear height wanted under the upper deck's frame, boards to the underside of its lowest beam or joist (R305.1's 6 ft 8 in. under beams). */
+export const DOUBLE_DECK_HEADROOM_IN = 80;
+/** The storey a double deck is given when it is asked for on a deck too low for one: 9 ft, floor to floor. */
+export const DOUBLE_DECK_STOREY_IN = 108;
 
 /** A hot-tub spot on the deck: where the tub will stand, and the frame
  *  under it doubled for the water it holds. The tub itself is by others. */
@@ -739,7 +753,7 @@ export function defaultStair(id = "s1", side: StairSide = "front", atFt = 0): St
 }
 
 export function defaultLowerLevel(): LowerLevel {
-  return { on: false, widthFt: 12, depthFt: 8, dropIn: 7.5, align: "centre" };
+  return { on: false, place: "front", widthFt: 12, depthFt: 8, dropIn: 7.5, align: "centre", heightIn: 18 };
 }
 
 export function defaultSite(): SiteDesign {
@@ -1312,6 +1326,12 @@ function normalizeStairs(raw: unknown, legacyExtras: Record<string, unknown>, sh
 function normalizeLower(raw: unknown, shape: DeckShape, heightIn: number): LowerLevel {
   const d = defaultLowerLevel();
   const r = obj(raw);
+  const lowerHeightIn = Math.round(clamp(num(r.heightIn, d.heightIn), LOWER_LIMITS.heightIn.min, LOWER_LIMITS.heightIn.max));
+  // A DOUBLE DECK: the main deck's own outline, under it. It is kept as asked even where the two heights leave no
+  // storey between them — hasLowerLevel then says no and the checks say why, with the way to make room.
+  if (r.place === "under") {
+    return { on: r.on === true, place: "under", widthFt: shape.widthFt, depthFt: shape.depthFt, dropIn: Math.max(0, heightIn - lowerHeightIn), align: "left", heightIn: lowerHeightIn };
+  }
   const front = shape.kind === "rect" ? shape.front : undefined;
   const on = r.on === true && shape.kind !== "L" && heightIn > LOWER_LIMITS.dropIn.min + 4 && front?.kind !== "curve";
   const maxDrop = Math.max(LOWER_LIMITS.dropIn.min, Math.min(LOWER_LIMITS.dropIn.max, heightIn - 4));
@@ -1319,10 +1339,12 @@ function normalizeLower(raw: unknown, shape: DeckShape, heightIn: number): Lower
   const maxWidth = Math.max(LOWER_LIMITS.widthFt.min, Math.min(LOWER_LIMITS.widthFt.max, shape.widthFt - (front?.kind === "clipped" ? 2 * front.clipFt : 0)));
   return {
     on,
+    place: "front",
     widthFt: toInch(clamp(num(r.widthFt, Math.min(d.widthFt, maxWidth)), LOWER_LIMITS.widthFt.min, maxWidth)),
     depthFt: toInch(clamp(num(r.depthFt, d.depthFt), LOWER_LIMITS.depthFt.min, LOWER_LIMITS.depthFt.max)),
     dropIn: Math.round(clamp(num(r.dropIn, d.dropIn), LOWER_LIMITS.dropIn.min, maxDrop) * 4) / 4,
     align: oneOf(r.align, ["left", "centre", "right"] as const, d.align),
+    heightIn: lowerHeightIn,
   };
 }
 
@@ -1358,9 +1380,14 @@ function normalizeSite(raw: unknown, loadPsf: number, fallbackState?: string | n
   };
 }
 
-/** True when the design has a lower level in front of the main deck. */
+/** True when the design has a second deck: a lower level in front of the main deck, or — a double deck — one under it with a storey between the two. */
 export function hasLowerLevel(design: DeckDesign): boolean {
-  return hasDeck(design) && design.lower.on && design.shape.kind !== "L";
+  if (!hasDeck(design) || !design.lower.on) return false;
+  return design.lower.place === "under" ? design.heightIn - design.lower.heightIn >= LOWER_LIMITS.storeyIn : design.shape.kind !== "L";
+}
+/** A DOUBLE DECK (2026-11-13): a deck of the same outline under the main one — a first-floor deck under a second-floor one. */
+export function isDoubleDeck(design: DeckDesign): boolean {
+  return design.lower.place === "under" && hasLowerLevel(design);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1643,9 +1670,9 @@ export function sizeWords(design: DeckDesign): string {
     return p.shape === "square" ? `${ft(p.widthFt)} square` : `${ft(p.widthFt)} × ${ft(p.depthFt)}`;
   }
   const front = s.kind === "rect" && s.front && s.front.kind !== "straight" ? (s.front.kind === "curve" ? " curved front" : " clipped corners") : "";
-  const lower = design.lower.on && s.kind !== "L" ? " two levels" : "";
+  const lower = isDoubleDeck(design) ? " double deck" : design.lower.on && design.lower.place === "front" && s.kind !== "L" ? " two levels" : "";
   if (s.kind === "wall") return `${ft(s.widthFt)} × ${ft(s.depthFt)} following the house wall${lower}`;
-  return s.kind === "rect" ? `${ft(s.widthFt)} × ${ft(s.depthFt)}${front}${lower}` : `${ft(s.widthFt)} × ${ft(s.depthFt)} L-shaped`;
+  return s.kind === "rect" ? `${ft(s.widthFt)} × ${ft(s.depthFt)}${front}${lower}` : `${ft(s.widthFt)} × ${ft(s.depthFt)} L-shaped${isDoubleDeck(design) ? lower : ""}`;
 }
 
 /** What is being built, as a title: "16 ft × 12 ft covered deck", "12 ft octagon gazebo". */

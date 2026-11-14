@@ -90,7 +90,11 @@ export function DeckPlan({
   const frame = show === "roof" ? null : frameIn;
   const roof = show === "floor" ? null : roofIn;
   const outlineOnly = show === "roof" ? frameIn : null;
-  const levels = structureLevels(structure);
+  // A DOUBLE DECK (2026-11-13): the lower deck is framed on the upper deck's own lines, so one plan is both — drawn
+  // once, with a word saying so (two frames laid on one another were unreadable).
+  const under = structure.lower?.place === "under" ? structure.lower : null;
+  const levels = structureLevels(structure).filter((l) => !(under && l.id === "lower"));
+  const underNote = under ? `double deck · the lower deck ${ftIn(under.frame.surfaceIn)} high, framed on the same lines: ${under.frame.joistSize} @ ${under.frame.spacingIn}", ${[...new Set(under.frame.beams.map((b) => b.spec.size))].join(" and ")} ${under.frame.beams.length === 1 ? "beam" : "beams"} let into the posts` : "";
   const svgRef = React.useRef<SVGSVGElement>(null);
   const eave = roof?.eaveRing ?? [];
   // The roof's framing plan draws no stairs (2026-11-13): their footprints made its frame larger and the roof smaller.
@@ -253,6 +257,11 @@ export function DeckPlan({
         {!roof || lower ? (
           <text x={W / 2 + ox} y={(f.zones[0].zone.y0 + (f.beams[0]?.y ?? D)) / 2 + oy} fontSize={font * 0.95} textAnchor="middle" className={s.planNote}>
             {lower ? `lower level · ${f.joistSize} @ ${f.spacingIn}" · ${ftIn(f.surfaceIn)} high` : joistNote}
+          </text>
+        ) : null}
+        {!lower && underNote && show !== "roof" ? (
+          <text x={W / 2 + ox} y={(f.zones[0].zone.y0 + (f.beams[0]?.y ?? D)) / 2 + oy + font * 1.25} fontSize={font * 0.7} textAnchor="middle" className={s.planNote} data-deck-plan-double>
+            {underNote}
           </text>
         ) : null}
       </g>

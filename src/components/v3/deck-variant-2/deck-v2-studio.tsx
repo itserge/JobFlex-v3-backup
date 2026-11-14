@@ -1119,8 +1119,9 @@ export function DeckV2Studio({ initialBook, homeState, initialAddress, clientId,
             </Field>
           ) : null}
           <div className="v2-group">
-            <Toggle checked={design.lower.on} onChange={(v) => patch({ lower: { on: v } })}>A lower level in front, a step down</Toggle>
-            {design.lower.on ? (
+            {/* (A double deck — a deck UNDER this one, design.lower.place "under", 2026-11-13 — is set in the main studio: this tick is the level in front.) */}
+            <Toggle checked={design.lower.on && design.lower.place === "front"} onChange={(v) => patch({ lower: { on: v, place: "front" } })}>A lower level in front, a step down</Toggle>
+            {design.lower.on && design.lower.place === "front" ? (
               <Scope level="lower">
                 <div className="v2-grid2">
                   <Field label="Along the house" aside="ft">

@@ -315,7 +315,9 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
   const roof = s.roof;
   const lower = ref.level === "lower";
   const f = lower ? s.lower?.frame ?? null : s.frame;
-  const lvl = lower ? "lower-level " : "";
+  // (A double deck's lower floor is "the lower deck": it hangs on the main deck's posts — 2026-11-13.)
+  const under = lower && s.lower?.place === "under";
+  const lvl = under ? "lower-deck " : lower ? "lower-level " : "";
   const card = (title: string, does: string, choices: PartChoice[], stays?: string, place?: DeckGrip | null): PartCard => ({ ref, title, does, choices, ...(stays ? { stays } : {}), ...(place && !place.fixed ? { place } : {}) });
 
   switch (ref.kind) {
@@ -332,8 +334,8 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
       const many = f.beams.length > 1;
       const choices: PartChoice[] = [];
       let stays: string | undefined;
-      const title = `${lvl ? "Lower-level " : ""}${beam.role === "front" ? "front beam" : beam.role === "middle" ? "middle beam" : "beam by the house"}`.replace(/^./, (c) => c.toUpperCase());
-      let does = `${beam.spec.size} ${beam.style === "flush" ? "flush beam (the joists hang on it)" : "beam under the joists"} on ${plural(beam.postXs.length, "post")}, ${ftIn(beam.spanIn)} between them. `;
+      const title = `${under ? "Lower-deck " : lvl ? "Lower-level " : ""}${beam.role === "front" ? "front beam" : beam.role === "middle" ? "middle beam" : "beam by the house"}`.replace(/^./, (c) => c.toUpperCase());
+      let does = `${beam.spec.size} ${beam.style === "flush" ? "flush beam (the joists hang on it)" : "beam under the joists"} ${under ? "let into" : "on"} ${plural(beam.postXs.length, "post")}${under ? " of the upper deck" : ""}, ${ftIn(beam.spanIn)} between them. `;
       if (beam.role === "middle") {
         does += "It is here because the joists, at the size and spacing set, do not span the whole depth in one piece.";
         if (!lower && (d.framing.joist !== "auto" || d.framing.spacingIn !== "auto")) choices.push({ id: "re-span", tone: "remove", label: "Remove this beam — re-span the joists", note: "The joist size and spacing go back to the tables' own pick: a deeper joist, or joists closer together, that spans without a beam in the middle.", patch: { framing: { joist: "auto", spacingIn: "auto" } }, works: (after) => (after.frame?.beams.length ?? 0) < f.beams.length });
@@ -342,7 +344,7 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
         does += "This side stands on its own posts instead of hanging on the house.";
         const w = wallType(d.wall);
         if (!lower && d.placement === "beside" && w.ledger) choices.push({ id: "ledger", tone: "remove", label: "Remove it — hang this side on the house", note: "A ledger bolted to the house's rim carries this side instead: no beam, posts or footings along the wall.", patch: { placement: "attached" }, works: (after) => (after.frame?.ledgers.length ?? 0) > 0 });
-        else stays = lower ? "The lower level stands on its own beams, front and back." : d.placement === "detached" ? "The deck stands out in the yard: this beam is one of the two it stands on." : `${w.label}: ${w.why}`;
+        else stays = under ? "The lower deck's beams stand on the upper deck's own lines, let into its posts: move the upper deck's beam and this one goes with it." : lower ? "The lower level stands on its own beams, front and back." : d.placement === "detached" ? "The deck stands out in the yard: this beam is one of the two it stands on." : `${w.label}: ${w.why}`;
       } else {
         does += "It carries the outer ends of the joists down to the posts.";
         stays = "The joists' outer ends rest on it: it cannot come out. Its size, and how many posts it needs, can change.";
@@ -392,7 +394,7 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
         else stays = "No beam in the code's table spans farther between posts here: they stay, or an engineer sizes the beam.";
       }
       if (!lower) choices.push(...sizeRow("Post size — every post", "post", POST_SIZES, d.framing.post, (v) => String(v), (v) => ({ framing: { post: v as DeckDesign["framing"]["post"] } })).filter((c) => c.id !== "post-auto"));
-      return card(`${lvl ? "Lower-level post" : "Post"}`, `${post.size} post, ${ftIn(post.heightIn)} tall, carrying ${Math.round(post.tributarySqFt)} sq ft of deck down to its footing.`, choices, stays, grip);
+      return card(`${lvl ? "Lower-level post" : "Post"}`, `${post.size} post, ${ftIn(post.heightIn)} tall, carrying ${Math.round(post.tributarySqFt)} sq ft of ${!lower && f.carries > 1 ? "the two decks — the lower deck's beam is let into it —" : "deck"} down to its footing.`, choices, stays, grip);
     }
 
     case "joist": {

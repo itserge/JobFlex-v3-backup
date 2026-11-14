@@ -296,6 +296,10 @@ export interface DeckFrame {
   /** The middle beams the builder placed (design.framing.beamLines): how many stand, how many more the joists' spans asked for, and the ones that found no place. */
   beamsByHand: { mine: number; added: number };
   beamLinesNotSet: Array<{ id: string; why: string }>;
+  /** A double deck (2026-11-13): how many decks its posts and footings hold (1, or 2 for the upper of two), and — the lower one — that its beams hang on the upper deck's posts, each at one of these seats. */
+  carries: number;
+  hung: boolean;
+  seats: Array<{ beamId: string; x: number; y: number }>;
   /** Levels, inches above the ground. */
   surfaceIn: number;
   joistTopIn: number;
@@ -321,6 +325,8 @@ export interface DeckFrame {
     lateralTies: number;
     /** OC framing: posts notched for a 2-ply beam and screwed to it (no post cap), per the installation guide. */
     notchedPosts: number;
+    /** A double deck's lower floor: beams let into the posts that pass them, through-bolted (2026-11-13). */
+    beamSeats: number;
   };
   /** Rows of blocking: where, and how many pieces. */
   blockingRows: Array<{ y: number; zoneId: Zone["id"]; pieces: number; why: "beam" | "mid-span" | "maker" | "curve" }>;
@@ -357,6 +363,14 @@ export interface BuildOptions {
   extraPostsGroup?: SpeciesGroup;
   /** The ground's height under a point of the plan, inches (M3: the site's slope). Flat when left out. */
   groundAt?: (x: number, y: number) => number;
+  /**
+   * A DOUBLE DECK (2026-11-13; lib/deck/structure — the owner: "a double deck, like first floor and second floor").
+   * `carries`: this deck's posts and footings also hold a deck of the same outline hung under it, so each is sized for
+   * that many decks (2). `follow`: this IS that lower deck — its beams stand on the upper deck's own lines and are let
+   * into the upper deck's posts where they pass, so it has no posts, footings or braces of its own.
+   */
+  carries?: number;
+  follow?: DeckFrame;
 }
 
 /* ------------------------------------------------------------------ */
@@ -849,6 +863,20 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
   const zoneIds = new Set(zones.map((z) => z.id));
   const handLines = design.framing.beamLines.map((l) => ({ id: l.id, y: Math.round(l.atFt * 12), zones: l.zones.some((z) => zoneIds.has(z)) ? l.zones.filter((z) => zoneIds.has(z)) : [] }));
 
+  // A DOUBLE DECK (2026-11-13). The upper deck's posts hold both decks; the lower deck stands on the upper one's lines.
+  const carries = Math.max(1, Math.min(3, Math.round(opts.carries ?? 1)));
+  const follow = opts.follow && opts.follow.zones.length === zones.length ? opts.follow : null;
+  /** The lower deck's joists on the upper deck's supports: the same lines, checked for this deck's own joists. */
+  const followPlan = (of: DeckFrame, style: BeamStyle, size: JoistSize): JoistPlan => {
+    const zs = zones.map((zone, i): ZoneFrame => {
+      const fz = of.zones.find((q) => q.zone.id === zone.id) ?? of.zones[i];
+      const l = { zone, back: backs[i], beamYs: fz.beamYs.slice(), spansIn: fz.spansIn.slice(), backCantIn: fz.backCantIn, frontCantIn: fz.frontCantIn, byHand: [] };
+      return { ...l, ok: zoneInsideTable(l, size, spacingIn, group, load, bulgeIn) };
+    });
+    const inside = zs.every((z) => z.ok);
+    return { size, zones: zs, middle: 0, inside, beamsInside: inside && zs.every((z) => zoneInsideTable(z, size, spacingIn, group, load, bulgeIn, style)), dropped: 0 };
+  };
+
   /** One whole frame for a beam style; null when a dropped beam cannot fit and the style is the engine's to choose. */
   const attempt = (style: BeamStyle, mayFail: boolean): DeckFrame | null => {
     strips.clear();
@@ -856,7 +884,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
     const hand: HandBeams = { backIn: style === "dropped" && !attached && typeof design.framing.backOverhangFt === "number" ? Math.round(design.framing.backOverhangFt * 12) : null, lines: handLines };
     let plan: JoistPlan | null = null;
     for (const size of sizes) {
-      const p = planJoists(zones, backs, style, size, spacingIn, group, load, design.framing.overhangFt, bulgeIn, hand);
+      const p = follow ? followPlan(follow, style, size) : planJoists(zones, backs, style, size, spacingIn, group, load, design.framing.overhangFt, bulgeIn, hand);
       // Inside both tables beats inside the joist table alone beats neither; then the fewest middle beams.
       const rank = (q: JoistPlan) => (q.inside ? (q.beamsInside ? 2 : 1) : 0);
       if (!plan || rank(p) > rank(plan) || (rank(p) === rank(plan) && (p.dropped < plan.dropped || (p.dropped === plan.dropped && p.middle < plan.middle)))) plan = p;
@@ -911,7 +939,10 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       // limit, for the rounding of the areas).
       const stripFt = Math.max(0.5, ...line.segs.map((s) => s.tributaryFt));
       // An OC post carries what Owens Corning's listing says under that beam (5,500 lb under 2 plies, 8,250 under 3).
-      const areaSpanFor = (plies: number) => Math.floor(((Math.min(POST_TABLE_MAX_AREA, composite ? ocPostMaxAreaSqFt(load, plies) : Infinity) * 0.98) / stripFt) * 12);
+      // (The upper of two decks: its posts carry the strip of BOTH, so they stand as close as that asks.)
+      const areaSpanFor = (plies: number) => Math.floor(((Math.min(POST_TABLE_MAX_AREA, composite ? ocPostMaxAreaSqFt(load, plies) : Infinity) * 0.98) / (stripFt * carries)) * 12);
+      // The lower of two decks: this beam hangs on the posts of the upper deck's beam on the same line — its posts are given.
+      const over = follow ? follow.beams.find((b) => Math.abs(b.lineY - line.y) < 0.5 && Math.abs(b.x0 - line.x0) < 0.5 && Math.abs(b.x1 - line.x1) < 0.5) ?? null : null;
       type Option = { spec: BeamSpec; maxSpanIn: number; posts: ReturnType<typeof layoutPosts>; cost: number };
       const options: Option[] = beamChoices.map((size) => {
         const spec = beamSpec(size);
@@ -922,12 +953,13 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
               ? ocBeamMaxSpanIn(load, size as (typeof BUILT_UP_CHOICES)[number], ocFt)
               : builtUpBeamMaxSpanIn(load, group, size as (typeof BUILT_UP_CHOICES)[number], ircFt);
         // …nor farther apart than the builder set by hand (2026-11-13) — closer posts may let a lighter beam do.
-        const posts = layoutPosts(lengthIn, maxSpanIn > 0 ? Math.min(maxSpanIn, areaSpanFor(spec.plies), spacingByHandIn || Infinity) : maxSpanIn, style);
-        return { spec, maxSpanIn, posts, cost: (lengthIn / 12) * spec.plies * price(lumberKey(spec.stock, composite)) + posts.count * postSetCost };
+        const posts = over ? { count: over.postXs.length, endIn: over.endIn, spanIn: over.spanIn } : layoutPosts(lengthIn, maxSpanIn > 0 ? Math.min(maxSpanIn, areaSpanFor(spec.plies), spacingByHandIn || Infinity) : maxSpanIn, style);
+        return { spec, maxSpanIn, posts, cost: (lengthIn / 12) * spec.plies * price(lumberKey(spec.stock, composite)) + (over ? 0 : posts.count * postSetCost) };
       });
       const cheapest = (list: Option[]) => list.reduce((m, o) => (o.cost < m.cost - 0.005 || (Math.abs(o.cost - m.cost) <= 0.005 && o.spec.depthIn < m.spec.depthIn) ? o : m));
       const deepest = (list: Option[]) => list.reduce((m, o) => (o.spec.depthIn > m.spec.depthIn || (o.spec.depthIn === m.spec.depthIn && o.spec.plies > m.spec.plies) ? o : m));
-      const tabulated = options.filter((o) => o.maxSpanIn > 0);
+      // (Hung on given posts, a beam must reach from one to the next: a size that does not is no choice.)
+      const tabulated = options.filter((o) => o.maxSpanIn > 0 && (!over || o.maxSpanIn >= over.spanIn - 0.01));
       let pick: Option;
       if (tabulated.length === 0) {
         // Nothing in the table carries this: the deepest is drawn, and flagged.
@@ -951,7 +983,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       const { spec, posts } = pick;
       // A flush beam is the deck's edge: its outer face on the line of the deck.
       const y = style === "flush" && line.role !== "middle" ? (line.role === "front" ? line.segs[0].y + BEARING_HALF_IN - spec.thickIn / 2 : line.segs[0].y - BEARING_HALF_IN + spec.thickIn / 2) : line.y;
-      let postXs = Array.from({ length: posts.count }, (_, k) => line.x0 + posts.endIn + k * posts.spanIn);
+      let postXs = over ? over.postXs.slice() : Array.from({ length: posts.count }, (_, k) => line.x0 + posts.endIn + k * posts.spanIn);
       let spanIn = posts.spanIn;
       let endIn = posts.endIn;
       // POSTS SET BY HAND (2026-11-13). A beam the builder stood posts under stands on those — and on more only where
@@ -1027,9 +1059,14 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       strips.set(id, line.segs);
     }
 
-    // Posts and their footings.
+    // Posts and their footings. (The lower of two decks has none: each beam sits in a seat let into a post of the upper deck.)
     const posts: Post[] = [];
+    const seats: DeckFrame["seats"] = [];
     for (const beam of beams) {
+      if (follow) {
+        for (const x of beam.postXs) seats.push({ beamId: beam.id, x, y: beam.y });
+        continue;
+      }
       const segs = strips.get(beam.id) ?? [];
       const areas = new Array<number>(beam.postXs.length).fill(0);
       for (const seg of segs) {
@@ -1053,7 +1090,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       // Under a beam that sits lower than the footings usually stand, the concrete stops under the beam.
       const topIn = Math.min(footingTopIn, Math.max(0, beam.bottomIn));
       beam.postXs.forEach((x, k) => {
-        const tributarySqFt = Math.round(areas[k] * 10) / 10;
+        const tributarySqFt = Math.round(areas[k] * carries * 10) / 10;
         // The ground under this post: a downhill post is taller, its footing deeper in the picture.
         const zg = groundAt(x, beam.y);
         const heightIn = Math.max(0, beam.bottomIn - (topIn + zg));
@@ -1101,7 +1138,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
     const sticks: Stick[] = [];
     const near = (bottomIn: number) => bottomIn < GROUND_CONTACT_WITHIN_IN;
     const joistGround = near(joistBottomIn);
-    const hardware = { hangers: 0, doubleHangers: 0, ties: 0, postBases: 0, postCaps: 0, braces: 0, rimScrews: 0, lateralTies: 0, notchedPosts: 0 };
+    const hardware = { hangers: 0, doubleHangers: 0, ties: 0, postBases: 0, postCaps: 0, braces: 0, rimScrews: 0, lateralTies: 0, notchedPosts: 0, beamSeats: 0 };
     /** Braces the tables' layout would set that the contractor took out by hand. */
     let bracesLeftOut = 0;
     const rimPlies = (exposed: boolean) => (design.framing.doubleRim && exposed ? 2 : 1);
@@ -1263,6 +1300,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
         }
       }
     }
+    hardware.beamSeats = seats.length;
     for (const p of posts) {
       const [w, d] = POST_ACTUAL_IN[p.size];
       hardware.postBases += 1;
@@ -1378,6 +1416,9 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       pinsNotSet,
       beamsByHand,
       beamLinesNotSet,
+      carries,
+      hung: !!follow,
+      seats,
       surfaceIn,
       joistTopIn,
       joistBottomIn,
@@ -1398,6 +1439,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
   };
 
   // A shaped front needs a beam under the joists: they run past it to the arc or the clip.
+  if (follow) return attempt(follow.beamStyle, false) as DeckFrame;
   const style = shaped ? (design.framing.beamStyle === "flush" ? "dropped" : design.framing.beamStyle) : design.framing.beamStyle;
   if (style === "auto") {
     const dropped = attempt("dropped", true);

@@ -161,6 +161,8 @@ const RAIL_TOP_MOUNT = /\b(?:top|surface|deck)[- ]?mount(?:ed|ing|s)?\b|\bmount(
 const RAIL_SIDE_MOUNT = /\b(?:side|fascia|rim)[- ]?mount(?:ed|ing|s)?\b|\bmount(?:ed)? (?:it |them |the posts |the rail(?:ing)?s? )?(?:on|to) the (?:side|fascia|rim)\b|\bposts on the (?:fascia|rim|outside)\b/;
 const SPA_WORDS = /\b(?:hot tub|spa|tub)\b/;
 const LOWER_WORDS = /\b(?:lower (?:level|deck|platform|landing|tier|section|part)|second level|bottom level|two levels?|2 levels?|two[- ]tier(?:ed)?(?: deck)?|multi[- ]?level|step[- ]?down (?:deck|platform|level|section)|tiered deck|split[- ]level deck|landing (?:deck|platform))\b/;
+/** A DOUBLE DECK (2026-11-13): one deck over another — "a double deck, like first floor and second floor". */
+const DOUBLE_WORDS = /\b(?:double[- ]?deck(?:er)?s?|(?:two|2)[- ]?stor(?:e)?y deck|stacked decks?|(?:a |another |second )?deck (?:below|underneath|beneath|under (?:it|this one|this deck|the deck|the main deck))|deck (?:on|at) (?:both|two) floors|(?:first|ground)[- ]floor deck (?:and|with|under|below) (?:a |the )?(?:second|upper)|upper and lower decks?|deck over (?:a |another )?deck)\b/;
 const FIX_WORDS = new RegExp(FIXTURE_WORDS.map(([re]) => re.source).join("|"));
 const LIGHT_WORDS = /\b(?:lights?|lighting|lamps?|leds?|bulbs?)\b/;
 const ROOF_WORDS = /\b(?:roofs?|roofing|pitch|rafters?|ridge|shingles?|shakes|gutters?|downspouts?|ceiling|eaves?|headers?|cupola|soffit|covered|cover(?:ing)?|porch|patio cover|shelter|pergola|gazebo|pavilion|trellis|arbor|slats?|louver(?:ed)?|screen(?:ed)?(?: in| porch| room)?|screens|lattice|privacy (?:walls?|panels?|screens?)|walls between|metal roof|tin roof|standing seam|overhead|more shade|less shade|more sun|less sun|pagoda|gambrel|dutch gable|pyramid|purlins?|rake boards?|rakes)\b/;
@@ -182,6 +184,7 @@ function headOf(c: string, roofed = false): Subject | null {
   push("rail", at(RAIL_WORDS));
   push("spa", at(SPA_WORDS));
   push("lower", at(LOWER_WORDS));
+  push("lower", at(DOUBLE_WORDS));
   push("roof", at(ROOF_WORDS));
   if (roofed) push("roof", at(OVERHANG_WORD));
   if (ADD_VERB.test(c) || /\b(?:timer|photocell)\b/.test(c)) push("fixture", at(LIGHT_WORDS));
@@ -691,8 +694,19 @@ function readSpa(c: string, ctx: ParseContext): Read {
 }
 
 function readLower(c: string, ctx: ParseContext): Read {
+  // A double deck: a second deck under this one. "…with the lower deck 2 ft off the ground" sets how high it stands.
+  if (DOUBLE_WORDS.test(c)) {
+    if (isRemove(c) || /\b(?:one deck|single deck|just one deck|no double)\b/.test(c)) return read([{ do: "lower", on: false }], "lower");
+    const cmd: Extract<DeckCommand, { do: "lower" }> = { do: "lower", on: true, place: "under" };
+    const h = /(\d+(?:\.\d+)?)( ft| in)? (?:off|above|over|from) (?:the )?(?:ground|grade|yard|grass)\b/.exec(c);
+    if (h) cmd.heightIn = { to: h[2] === " ft" || (!h[2] && Number(h[1]) <= 8) ? Number(h[1]) * 12 : Number(h[1]) };
+    return read([cmd], "lower");
+  }
   if (!LOWER_WORDS.test(c)) return null;
   if (isRemove(c) || /\b(?:one level|single level|just one level)\b/.test(c)) return read([{ do: "lower", on: false }], "lower");
+  // "the lower deck 2 ft off the ground": how high it stands — a double deck's lower floor, or what a step-down level's drop comes to.
+  const offGround = /(\d+(?:\.\d+)?)( ft| in)? (?:off|above|over|from) (?:the )?(?:ground|grade|yard|grass)\b/.exec(c);
+  if (offGround) return read([{ do: "lower", heightIn: { to: offGround[2] === " ft" || (!offGround[2] && Number(offGround[1]) <= 8) ? Number(offGround[1]) * 12 : Number(offGround[1]) } }], "lower");
   const cmd: Extract<DeckCommand, { do: "lower" }> = { do: "lower" };
   if (!ctx.design.lower.on || ADD_VERB.test(c)) cmd.on = true;
   const drop = /(\d+(?:\.\d+)?)( ft| in)? (?:down|lower|drop|below|step(?: down)?)\b|\bdrop (?:of |it )?(\d+(?:\.\d+)?)( ft| in)?/.exec(c);
@@ -1284,7 +1298,7 @@ function readShape(c: string, ctx: ParseContext): Read {
 
 function readSlide(c: string): Read {
   if (!/\b(?:move|slide|shift|scoot|push|center|centre)\b/.test(c)) return null;
-  if (!/\b(?:deck|it|the whole thing)\b/.test(c) || STAIR_WORDS.test(c) || SPA_WORDS.test(c) || LOWER_WORDS.test(c)) return null;
+  if (!/\b(?:deck|it|the whole thing)\b/.test(c) || STAIR_WORDS.test(c) || SPA_WORDS.test(c) || LOWER_WORDS.test(c) || DOUBLE_WORDS.test(c)) return null;
   if (/\b(?:center|centre|middle)\b/.test(c) && /\b(?:house|wall|on the house)\b/.test(c)) return read([{ do: "slide", ft: "center" }], "deck");
   const dir = /\bleft\b/.test(c) ? -1 : /\bright\b/.test(c) ? 1 : 0;
   if (!dir) return null;

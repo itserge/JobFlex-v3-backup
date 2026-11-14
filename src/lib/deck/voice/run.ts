@@ -13,6 +13,7 @@ import {
   DECK_LIMITS,
   ELECTRICAL_LIMITS,
   FIXTURE_LABEL,
+  DOUBLE_DECK_STOREY_IN,
   LOWER_LIMITS,
   PLACEMENT_LABEL,
   ROOFING_LABEL,
@@ -26,6 +27,7 @@ import {
   defaultFixture,
   defaultStair,
   hasDeck,
+  isDoubleDeck,
   shapeAreaSqFt,
   sizeWords,
   type DeckDesign,
@@ -569,10 +571,21 @@ export function runCommand(d0: DeckDesign, cmd: DeckCommand, env: RunEnv = {}): 
         return out(next, ["Took the lower level off — one level now."], { view: { reset: true } });
       }
       const L = d.lower;
-      const p: DeckPatch["lower"] = { on: cmd.on ?? L.on };
+      // A DOUBLE DECK (2026-11-13): a deck of the same size under this one. The upper deck is raised, where it must be,
+      // to leave a storey between the two.
+      if (cmd.place === "under" || (L.on && L.place === "under" && cmd.place !== "front" && (cmd.heightIn || cmd.on))) {
+        const lowerH = Math.round(clamp(cmd.heightIn ? amt(L.heightIn, cmd.heightIn) : L.heightIn, LOWER_LIMITS.heightIn.min, LOWER_LIMITS.heightIn.max));
+        const upperH = Math.max(d.heightIn, lowerH + DOUBLE_DECK_STOREY_IN);
+        const next = patchDesign(d, { heightIn: upperH, lower: { on: true, place: "under", heightIn: lowerH } }, settle);
+        if (!isDoubleDeck(next)) return no("This deck can't take a second deck under it — it needs a storey between the two.");
+        return out(next, [`A double deck: a second deck of the same size under this one, ${inWords(lowerH)} above the ground${next.heightIn !== d.heightIn ? `. The upper deck is raised to ${inWords(next.heightIn)} to leave a storey between them` : ""}. Its beams are let into the same posts, and the posts and footings are sized for both decks.`], { view: { reset: true } });
+      }
+      const p: DeckPatch["lower"] = { on: cmd.on ?? L.on, ...(cmd.place === "front" || L.place === "under" ? { place: "front" as const } : {}) };
       if (cmd.width) p.widthFt = toInch(clamp(amt(L.widthFt, cmd.width), LOWER_LIMITS.widthFt.min, LOWER_LIMITS.widthFt.max));
       if (cmd.depth) p.depthFt = toInch(clamp(amt(L.depthFt, cmd.depth), LOWER_LIMITS.depthFt.min, LOWER_LIMITS.depthFt.max));
       if (cmd.dropIn) p.dropIn = Math.round(clamp(amt(L.dropIn, cmd.dropIn), LOWER_LIMITS.dropIn.min, LOWER_LIMITS.dropIn.max) * 4) / 4;
+      // "the lower level 2 ft off the ground" — a level in front: that is its drop from the deck.
+      else if (cmd.heightIn) p.dropIn = Math.round(clamp(d.heightIn - amt(d.heightIn - L.dropIn, cmd.heightIn), LOWER_LIMITS.dropIn.min, LOWER_LIMITS.dropIn.max) * 4) / 4;
       if (cmd.align) p.align = cmd.align;
       const next = patchDesign(d, { lower: p }, settle);
       if (!next.lower.on) return no(d.shape.kind === "L" ? "An L-shaped deck can't take a lower level here — make it a rectangle first." : d.heightIn <= LOWER_LIMITS.dropIn.min + 4 ? `At ${inWords(d.heightIn)} it's too low for a step down — raise the deck first.` : "A curved front can't take a lower level — straighten it first.");

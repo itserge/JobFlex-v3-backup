@@ -137,7 +137,7 @@ const COMMAND = z.discriminatedUnion("do", [
     count: z.number().int().min(1).max(2).optional(),
     flip: z.boolean().optional(),
   }),
-  z.object({ do: z.literal("lower"), on: z.boolean().optional(), width: amount.optional(), depth: amount.optional(), dropIn: amount.optional(), align: align.optional() }),
+  z.object({ do: z.literal("lower"), on: z.boolean().optional(), width: amount.optional(), depth: amount.optional(), dropIn: amount.optional(), align: align.optional(), place: z.enum(["front", "under"]).optional(), heightIn: amount.optional() }),
   z.object({ do: z.literal("spa"), on: z.boolean().optional(), width: amount.optional(), depth: amount.optional(), align: align.optional() }),
   z.object({ do: z.literal("fixture"), op: z.enum(["add", "remove", "set"]), kind: fixtureKind, qty: amount.optional(), supply: z.enum(["we", "client"]).optional(), volts240: z.boolean().optional() }),
   z.object({ do: z.literal("electrical"), timer: z.boolean().optional(), feedFt: z.number().min(5).max(300).optional(), panelSide: z.enum(["left", "right"]).optional() }),
@@ -185,7 +185,7 @@ ledger {fastener?: lag|bolt|ledgerlok|sdws|anchor, lateral?: two|four}; footing 
 site {frostIn?: amount (inches), snowPsf?, loadPsf?: 40|50|60|70, soilPsf?: 1500|2000|3000, outDropIn?, acrossDropIn?, state?: two letters}
 rail {set: {type?: none|treated|cedar|composite|vinyl|aluminum|cable|glass|custom, heightIn?: 36|42, infill?: balusters|cable|glass|panel|horizontal, postSpacingFt?: 4|6|8, cap?, customPerFt?, mount?: top|side (posts on the deck boards | on the outside of the rim, the fascia), mountSide?: front|left|right|back (that side only)}}
 stairs {op: add|remove|change, which?: {side}|{index}|last|all|only, side?: front|left|right, at?: left|center|right|house|out|{ft}|{by}, width?: amount (feet), wrap?, wrapSides?: 1|3|4, landing?: pad|patio|grade, handrail?: auto|both|one|none, level?: upper|lower, count?: 1|2}
-lower {on?, width?, depth?, dropIn?, align?: left|centre|right}; spa {on?, width?, depth?, align?} (hot tub spot 5–10 ft)
+lower {on?, place?: front|under, width?, depth?, dropIn?, align?: left|centre|right, heightIn?} (place under = a DOUBLE DECK: a second deck of the same size under this one, first floor and second floor; heightIn = that lower deck's height above the ground, inches); spa {on?, width?, depth?, align?} (hot tub spot 5–10 ft)
 fixture {op: add|remove|set, kind: led-strip|post-cap|step-light|string-light|sconce|ceiling-light|chandelier|fan|outlet|heater|flood, qty?: amount, supply?: we|client, volts240?}
 electrical {timer?, feedFt?, panelSide?}; house {storeys?: 1|2, roof?: hip|gable, siding?: white|cream|grey|blue|sage, roofColour?: charcoal|brown|slate|forest|terracotta, wall?: straight|bump-right|bump-left|nook, leftFt?/rightFt?: amount (how far the house wall runs past the deck's ends), widthFt? (the house's whole width)}
 extras {demoSqFt?: number|"deck", stainless?, drain?}; item {op: add|remove, name, qty?, unit?: ea|pcs|ft|sq ft|bags, price?} — anything the studio cannot draw, priced as the contractor's own item
