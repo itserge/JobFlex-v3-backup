@@ -53,6 +53,8 @@ export interface FacetModelFacet {
   areaSqft: number;
   /** true when one of Google's roof segments stands behind the plane */
   google: boolean;
+  /** a round roof (a turret's cone): one facet with no facing — it faces all the way round */
+  round?: true;
 }
 
 export interface FacetModelEdge {
@@ -161,6 +163,7 @@ export function toFacetModel(input: {
       planSqft: r1(f.planM2 * SQFT_PER_M2),
       areaSqft: r1(f.areaM2 * SQFT_PER_M2),
       google: f.google,
+      ...(f.round ? { round: true as const } : {}),
     };
   });
   const edges: FacetModelEdge[] = result.edges.map((e) => ({

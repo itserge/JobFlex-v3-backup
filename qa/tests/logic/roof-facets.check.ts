@@ -12,6 +12,8 @@ import { fromUtm, latLngToPixel, pixelToUtm, toUtm, type RasterFrame } from "../
 import { facetLetter, facingWord, pitchLabel, toFacetModel } from "../../../src/lib/roofFacets/model";
 import { sharpenCorners } from "../../../src/lib/roofFacets/raster";
 import { roofOutline } from "../../../src/lib/roofFacets/roofOutline";
+import { snapToPhoto } from "../../../src/lib/roofFacets/photoSnap";
+import { findCones } from "../../../src/lib/roofFacets/round";
 import { buildStructureFootprints } from "../../../src/lib/roofRecon/footprint";
 
 let bad = 0;
@@ -373,6 +375,66 @@ check("an outline of two points draws nothing", buildFacets({ ...raster(gable), 
   const res = buildFacets({ dsm, mask, outline: toPx(steep.outline), priors: [], squareOutline: false });
   const f = res ? feetOf(res) : ({} as Record<FacetEdgeType, number>);
   check("a very steep ridge is a ridge, not a wall between two roofs", res != null && res.facets.length === 2 && near(planOf(res, "RIDGE"), 12, 0.6) && !(f.WALL > 0) && !(f.STEP > 0), res ? `${res.facets.length} facets ${JSON.stringify(Object.fromEntries(Object.entries(f).map(([k, v]) => [k, Math.round(v as number)])))}` : "nothing");
+}
+
+// ── a round roof (owner, 2026-11-13, of a house with a turret: "looks like it doesn't read the round roofs") ──
+{
+  // the gable house with a turret on its west wall: a cone 2.5 m in radius, 4.8/12, its peak 1.5 m out from the wall
+  const CX = 7.5, CY = 15, R = 2.5, K = 0.4;
+  const turret: Roof = {
+    name: "turret",
+    // the outline as an aerial vendor traces it: the circle cut into a few straight walls
+    outline: [{ x: 9, y: 11 }, { x: 21, y: 11 }, { x: 21, y: 19 }, { x: 9, y: 19 }, { x: 9, y: 17 }, { x: 7.5, y: 17.6 }, { x: 5.6, y: 16.5 }, { x: 4.9, y: 15 }, { x: 5.6, y: 13.5 }, { x: 7.5, y: 12.4 }, { x: 9, y: 13 }],
+    height: (x, y) => {
+      const house = gable.height(x, y), d = Math.hypot(x - CX, y - CY);
+      const cone = d <= R ? EAVE + K * (R - d) : null;
+      return house == null ? cone : cone == null ? house : Math.max(house, cone);
+    },
+  };
+  const { dsm, mask } = raster(turret);
+  const res = buildFacets({ dsm, mask, outline: toPx(turret.outline), priors: [], register: false, squareOutline: false });
+  const round = res?.facets.filter((f) => f.round) ?? [];
+  // the cone's plan: its disc less the part the house's roof stands over (beyond the wall, 1.5 m from the peak)
+  const plan = Math.PI * R * R - (R * R * Math.acos(1.5 / R) - 1.5 * Math.sqrt(R * R - 1.5 * 1.5));
+  check("a turret's cone is one round facet beside the house's two", res != null && round.length === 1 && res.facets.length === 3, res ? `${res.facets.length} facets, ${round.length} round` : "no result");
+  check("the round facet's size and pitch are the cone's", round.length === 1 && near(round[0].planM2, plan, plan * 0.25) && near(round[0].slope, K, 0.05) && round[0].azimuthDeg === null, round[0] ? `${round[0].planM2.toFixed(1)} m2 (the cone ${plan.toFixed(1)}), ${(round[0].slope * 12).toFixed(1)}/12` : "");
+  const ri = res ? res.facets.indexOf(round[0]) : -1;
+  const eaves = res ? res.edges.filter((e) => e.type === "EAVE" && (e.left === ri || e.right === ri)) : [];
+  const off = res ? Math.max(0, ...eaves.flatMap((e) => [e.a, e.b]).map((v) => Math.abs(Math.hypot(res.vertices[v].x * PX - CX, res.vertices[v].y * PX - CY) - R))) : 9;
+  // (the eave is drawn a little inside where the height map ends it: a real height map reads a roof's edge fat, and
+  // the allowance was set on the first real turret, held against its photograph)
+  check("its eave is drawn as the curve it is, on the circle", eaves.length >= 6 && off < 0.45, `${eaves.length} chords, ${off.toFixed(2)} m off the circle at the worst`);
+  // a hip roof's peak is not a round roof
+  const flat = raster(hip);
+  const all = new Uint8Array(W * H).fill(1);
+  check("a hip roof is not taken for a round one", findCones(flat.dsm.data, W, H, all, PX).length === 0 && (buildFacets({ ...flat, outline: toPx(hip.outline), priors: [] })?.facets.every((f) => !f.round) ?? false));
+}
+
+// ── the lines set on the photograph (owner, 2026-11-13: "it's offset — not following the roof") ──
+{
+  // the gable, and a photograph in which the roof's edge lies 0.3 m inside where the soft height map reads it, and
+  // the ridge 0.2 m south of the planes' crossing
+  const { dsm, mask } = raster(gable);
+  const res = buildFacets({ dsm, mask, outline: toPx(gable.outline), priors: [], register: false, squareOutline: false })!;
+  const rgb = new Uint8Array(W * H * 3);
+  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
+    const x = (c + 0.5) * PX, y = (r + 0.5) * PX;
+    const on = inRect(x, y, [9.3, 11.3, 20.7, 18.7]);
+    const v = !on ? 60 : y < 15.2 ? 150 : 200;
+    rgb[(r * W + c) * 3] = rgb[(r * W + c) * 3 + 1] = rgb[(r * W + c) * 3 + 2] = v;
+  }
+  const before = area(res);
+  const rep = snapToPhoto(res, { width: W, height: H, data: rgb, toPhoto: (q) => q, scale: 1 }, dsm);
+  const xs = res.vertices.map((v) => v.x * PX), ys = res.vertices.map((v) => v.y * PX);
+  const ridgeY = res.edges.filter((e) => e.type === "RIDGE").flatMap((e) => [res.vertices[e.a].y * PX, res.vertices[e.b].y * PX]);
+  check("the walls are set on the roof's edge in the photograph", rep.moved >= 4 && near(Math.min(...xs), 9.3, 0.08) && near(Math.max(...xs), 20.7, 0.08) && near(Math.min(...ys), 11.3, 0.08) && near(Math.max(...ys), 18.7, 0.08), `${rep.moved} of ${rep.lines} lines moved; x ${Math.min(...xs).toFixed(2)}..${Math.max(...xs).toFixed(2)}, y ${Math.min(...ys).toFixed(2)}..${Math.max(...ys).toFixed(2)}`);
+  check("the ridge is set on the ridge in the photograph", ridgeY.length > 0 && ridgeY.every((y) => near(y, 15.2, 0.1)), ridgeY.map((y) => y.toFixed(2)).join(" "));
+  const box = (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys));
+  check("the drawing is measured again and still has no cracks", watertight(res, box) && area(res) < before && near(area(res), 11.4 * 7.4 * SL, 1.5), `${area(res).toFixed(1)} m2 (was ${before.toFixed(1)})`);
+  // a photograph with nothing to see moves nothing
+  const res2 = buildFacets({ dsm, mask, outline: toPx(gable.outline), priors: [], register: false, squareOutline: false })!;
+  const blank = new Uint8Array(W * H * 3).fill(128);
+  check("a photograph that shows no edge moves nothing", snapToPhoto(res2, { width: W, height: H, data: blank, toPhoto: (q) => q, scale: 1 }, dsm).moved === 0 && near(area(res2), before, 1e-6));
 }
 
 console.log(bad ? `\n${bad} FAILED` : "\nall passed");
