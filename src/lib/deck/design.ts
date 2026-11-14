@@ -660,6 +660,8 @@ export interface DeckDesign {
     pattern: DeckPattern;
     /** Picture-frame border boards around the edge: none, one or two. */
     border: 0 | 1 | 2;
+    /** Breaker boards (2026-11-14; lib/deck/surface): one or two boards laid ACROSS the field — out from the house, in the border's colour — that cut every row into shorter boards, so no row has a butt joint. Absent = none. Straight-laid boards only. */
+    breakers?: 1 | 2;
     fastening: "auto" | "screws" | "hidden";
     fascia: "auto" | "none" | "match";
     wastePct: number;
@@ -1267,6 +1269,7 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
       diagonal: pattern !== "straight",
       pattern,
       border: (oneOf(num(dk.border, 0), [0, 1, 2] as const, 0) as 0 | 1 | 2),
+      ...(pattern === "straight" && (dk.breakers === 1 || dk.breakers === 2) ? { breakers: dk.breakers } : {}),
       fastening: oneOf(dk.fastening, ["auto", "screws", "hidden"] as const, d.decking.fastening),
       fascia: oneOf(dk.fascia, ["auto", "none", "match"] as const, d.decking.fascia),
       wastePct: Math.round(clamp(num(dk.wastePct, d.decking.wastePct), DECK_LIMITS.wastePct.min, DECK_LIMITS.wastePct.max)),

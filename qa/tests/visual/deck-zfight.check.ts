@@ -414,6 +414,10 @@ variants.push(["benches round a low deck with no rail, one along a cut corner, l
 // own end posts, a bench in front of it, the fascia under it.
 variants.push(["a 6-ft privacy screen along the left end with a bench in front, aluminum rail on the rest, fascia", { structure: "deck", shape: rect(20, 12), heightIn: 48, rail: { ...base.rail, type: "aluminum" }, decking: { ...base.decking, fascia: "match" }, stairs: stairs("front", 14, 4), extras: { ...base.extras, builtIns: [{ ...builtIn("screen", "left", 6, 30, "s1"), heightFt: 6 }, builtIn("bench", "left", 6, 8, "b1")] } } as Patch]);
 variants.push(["a 4-ft screen in the middle of the front and one on a cut corner, cedar rail, low deck with skirting", { structure: "deck", shape: cut([[24, 14, 6, 0]]), heightIn: 30, rail: { ...base.rail, type: "cedar" }, decking: { ...base.decking, fascia: "match" }, stairs: [], extras: { ...base.extras, skirt: "boards", builtIns: [{ ...builtIn("screen", "front", 14, 8, "s1"), heightFt: 4 }, { ...builtIn("screen", "front", 3, 6, "s2"), heightFt: 5 }] } } as Patch]);
+// BREAKER BOARDS (2026-11-14; lib/deck/surface): a board across the field between the rows' ends, inside the border.
+variants.push(["a 28-ft deck with one breaker board, no border, fascia", { structure: "deck", shape: rect(28, 14), heightIn: 36, decking: { ...base.decking, fascia: "match", breakers: 1 }, stairs: [] } as Patch]);
+variants.push(["two breaker boards inside a two-board border, free-standing", { structure: "deck", placement: "detached", shape: rect(30, 16), heightIn: 30, decking: { ...base.decking, fascia: "match", border: 2, breakers: 2 }, stairs: [] } as Patch]);
+variants.push(["an L with a border and a breaker board beside its inside corner", { structure: "deck", shape: { kind: "L", widthFt: 24, depthFt: 16, notch: { corner: "front-right", widthFt: 10, depthFt: 6 } }, heightIn: 42, decking: { ...base.decking, fascia: "match", border: 1, breakers: 1 }, stairs: [] } as Patch]);
 for (const [name, p] of variants) cases.push({ name, design: applyDeckPatch(base, p) });
 
 /**

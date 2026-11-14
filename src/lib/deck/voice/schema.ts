@@ -77,6 +77,7 @@ const COMMAND = z.discriminatedUnion("do", [
         thick: z.enum(["54", "2x6"]),
         pattern: z.enum(["straight", "diagonal", "herringbone"]),
         border: z.union([z.literal(0), z.literal(1), z.literal(2)]),
+        breakers: z.union([z.literal(0), z.literal(1), z.literal(2)]),
         fastening: z.enum(["auto", "screws", "hidden"]),
         fascia: z.enum(["auto", "none", "match"]),
         wastePct: z.number().min(0).max(30),
@@ -182,7 +183,7 @@ slide {ft: number (+ right, − left) or "center"}  — moves the deck along the
 placement {to: attached|beside|detached}; wall {to: wood-rim|engineered-rim|foam-sheathing|concrete|brick-veneer|hollow-block|cantilever|open-truss|sip-icf|unknown}
 structure {to: deck|covered-deck|gazebo|pergola}; floor {to: deck|slab|existing|ground} (gazebo/pergola only; slab = a NEW slab poured and priced, existing = a slab or patio already there, no concrete priced)
 roof {set: {kind?: shed|gable|hip|pyramid|double-tier|gambrel|dutch-gable, pitch?: amount (rise per 12), eaveIn?: amount (inches, 84–144), overhangIn?, roofing?: arch-shingle|3tab-shingle|designer-shingle|cedar-shake|metal-panel|standing-seam, ceiling?: none|tongue-groove|beadboard, gutters?: none|k5|k6|half-round-alum|half-round-copper, guards?, cupola?, soffit?, fasciaFinish?: wood|pvc|aluminum-wrap, walls?: none|screen|lattice|solid, wallSides?, pergolaStyle?: flat|louvered|arched, slatSize?: 2x2|2x4|2x6, slatSpacingIn?, planShape?: follows-deck|square|rect|hexagon|octagon|round, widthFt?, depthFt?, acrossFt?, attach?: wall|free, post?: 4x4|6x6|8x8, braces?, header?: auto|lvl|beam size, rafter?: 2x6..2x12|auto, rafterSpacingIn?: 12|16|24, load?: auto|20|30|50|70, roofDeck?: sheathing|purlins, fasciaEave?, fasciaRake?}}
-decking {set: {product?: catalog id, color?: dark gray|light gray|gray|black|dark brown|reddish brown|red|light brown|brown, shade?: lighter|darker, family?: treated|softwood|hardwood|modified|composite|pvc|mineral|aluminum, tier?: good|better|best, pattern?: straight|diagonal|herringbone, border?: 0|1|2, fastening?: screws|hidden, fascia?: none|match, wastePct?}}
+decking {set: {product?: catalog id, color?: dark gray|light gray|gray|black|dark brown|reddish brown|red|light brown|brown, shade?: lighter|darker, family?: treated|softwood|hardwood|modified|composite|pvc|mineral|aluminum, tier?: good|better|best, pattern?: straight|diagonal|herringbone, border?: 0|1|2 (picture-frame border along the open edges), breakers?: 0|1|2 (breaker / divider boards laid ACROSS the field so no row has a butt joint: one in the middle, two at the thirds; straight boards only), fastening?: screws|hidden, fascia?: none|match, wastePct?}}
 framing {set: {species?, joist?: 2x6|2x8|2x10|2x12|auto|up|down, spacingIn?: 12|16|24|auto, beam?: 4x6..4x12 or 2-2x6..3-2x12 or auto, beamKind?: solid|built-up, beamStyle?: dropped|flush|auto, post?: 4x4|4x6|6x6|8x8, overhangFt?, doubleRim?, joistTape?, braces?, blocking?: auto|mid-span}}
 ledger {fastener?: lag|bolt|ledgerlok|sdws|anchor, lateral?: two|four}; footing {type?: poured|pier-block, aboveGradeIn?, frostAlways?}
 site {frostIn?: amount (inches), snowPsf?, loadPsf?: 40|50|60|70, soilPsf?: 1500|2000|3000, outDropIn?, acrossDropIn?, state?: two letters}
