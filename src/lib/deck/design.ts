@@ -1594,7 +1594,9 @@ function normalizeStairs(raw: unknown, legacyExtras: Record<string, unknown>, sh
       atFt = part.x1Ft - part.x0Ft >= widthFt ? toInch(clamp(atFt, part.x0Ft + widthFt / 2, part.x1Ft - widthFt / 2)) : toInch((part.x0Ft + part.x1Ft) / 2);
     }
     const wrap = s.wrap === true && side === "front";
-    const wrapSides = (oneOf(num(s.wrapSides, 1), placement === "detached" ? ([1, 3, 4] as const) : ([1, 3] as const), 1) as 1 | 3 | 4);
+    // (All the way round: a deck that stands free — or, 2026-11-14, one with an open back edge past the house's corner.)
+    const allRound = placement === "detached" || (shape.kind === "wall" && shape.back.some((b) => b.open));
+    const wrapSides = (oneOf(num(s.wrapSides, 1), allRound ? ([1, 3, 4] as const) : ([1, 3] as const), 1) as 1 | 3 | 4);
     return {
       id: typeof s.id === "string" && /^[a-z0-9-]{1,12}$/.test(s.id) ? s.id : `s${i + 1}`,
       side,

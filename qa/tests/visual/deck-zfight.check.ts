@@ -381,6 +381,13 @@ variants.push(["a bay with both corners cut at 45°, border, fascia, aluminum ra
 variants.push(["one front, a 5-ft cut at the left corner and 2 ft at the right, two-board border, composite rail", { structure: "deck", shape: cut([[24, 14, 5, 2]]), heightIn: 60, rail: { ...base.rail, type: "composite" }, decking: { ...base.decking, fascia: "match", border: 2 }, stairs: [] } as Patch]);
 variants.push(["a prow — two cuts meeting in a point — cedar rail, fascia", { structure: "deck", shape: cut([[6, 10], [12, 16, 6, 6], [6, 10]]), heightIn: 36, rail: { ...base.rail, type: "cedar" }, decking: { ...base.decking, fascia: "match" }, stairs: [] } as Patch]);
 variants.push(["both ends cut at 45° on a deck round the right corner, double rim, no border", { structure: "deck", shape: cut([[10, 12, 4], [14, 12, 0, 4]]), heightIn: 96, house: { ...base.house, rightFt: -8, wrapRightFt: 8 }, rail: { ...base.rail, type: "aluminum" }, framing: { ...base.framing, doubleRim: true }, decking: { ...base.decking, fascia: "match" }, stairs: [] } as Patch]);
+// STEPS THAT WRAP THE DECK ALONG ITS OWN OUTLINE (2026-11-14): each level set out one more run from the deck's edges,
+// turning every corner with them — the frames, the risers at outside and inside corners, the mitred treads.
+const wrapSteps = (sides: 1 | 3 | 4) => [{ ...stairs("front", 8, 4)[0], wrap: true, wrapSides: sides }];
+variants.push(["steps along the front of a bay with cut corners, low deck, fascia", { structure: "deck", shape: cut([[7, 12], [10, 18, 3, 3], [7, 12]]), heightIn: 21, rail: { ...base.rail, type: "none" }, decking: { ...base.decking, fascia: "match" }, stairs: wrapSteps(1) } as Patch]);
+variants.push(["steps round three sides of an L, border", { structure: "deck", shape: { kind: "L", widthFt: 24, depthFt: 16, notch: { corner: "front-right", widthFt: 10, depthFt: 6 } }, heightIn: 14, rail: { ...base.rail, type: "none" }, decking: { ...base.decking, fascia: "match", border: 1 }, stairs: wrapSteps(3) } as Patch]);
+variants.push(["free-standing deck with two cut corners, steps all the way round", { structure: "deck", placement: "detached", shape: cut([[24, 14, 4, 4]]), heightIn: 20, rail: { ...base.rail, type: "none" }, decking: { ...base.decking, fascia: "match" }, stairs: wrapSteps(4) } as Patch]);
+variants.push(["a U-shaped front, steps along the front and both ends, a deck round the right corner", { structure: "deck", shape: parts([[6, 16], [12, 10], [6, 16]]), heightIn: 18, house: { ...base.house, rightFt: -8, wrapRightFt: 8 }, rail: { ...base.rail, type: "none" }, decking: { ...base.decking, fascia: "match" }, stairs: wrapSteps(3) } as Patch]);
 for (const [name, p] of variants) cases.push({ name, design: applyDeckPatch(base, p) });
 
 /**
