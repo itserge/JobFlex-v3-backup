@@ -50,7 +50,8 @@ import { snapRead, type Gray } from "@/lib/deck/photoSnap";
 import { SQUARE_ON_PCT, levelRead, photoObliqueness, wallStepsReport, type WallStepsReport, type WallStepsWhy } from "@/lib/deck/wallSteps";
 import { type WallJog, AUTO_STRAIGHTEN_PCT, applyHomography, obliqueness, transformRead } from "@/lib/deck/photoFit";
 import { applyDepthVerdicts, type DepthRelief } from "@/lib/deck/houseDepthApply";
-import { deckClientPhotoData, deckClientPhotos, deckPhotoHref, readHouseDepth, readHousePhoto, uploadDeckPhoto, type ClientPhoto, type DeckPhotoResult, type HouseDepthResult, type HousePhotoRead } from "@/actions/deckEstimator";
+import { deckClientPhotoData, deckClientPhotos, deckPhotoHref, readHouseCorner, readHouseDepth, readHousePhoto, uploadDeckPhoto, type ClientPhoto, type DeckPhotoResult, type HouseCornerRead, type HouseDepthResult, type HousePhotoRead } from "@/actions/deckEstimator";
+import { applyCornerVerdict, cornerCrop, unresolvedSteps } from "@/lib/deck/houseCorner";
 import { cropPhoto, shrinkPhoto, straightenPhoto, trimLetterbox } from "@/components/v3/deck-estimator-blueprint/deck-photo";
 import { NumberInput, Toggle, cx, feetText, parseFeet } from "./deck-v1-parts";
 
@@ -69,7 +70,7 @@ export interface HouseReview {
   /** The picture could not be read: the lines are a start to drag onto the wall. */
   byHand: string | null;
   /** How it was read: the looks taken, the model, the lines the picture's own edges moved. */
-  how?: { looks: number; model: string; snapped: number; split: number; /** The wall's steps measured off the photo's own pixels (lib/deck/wallSteps) — 0 when the photo didn't show them and the model's read stands. */ stepsFromPhoto?: number; /** Windows read off the picture itself (lib/deck/photoSnap findWindows), 0 when the model's boxes were lined up instead (2026-10-25). */ windowsFromPhoto?: number; /** Why the photo's pixels said nothing about the steps, and how many corners they found anyway (2026-10-24). */ stepsWhy?: WallStepsWhy; cornersFromPhoto?: number; /** The steps were read on the clean picture, before it was straightened (the warp, made from the model's leaning lines, loses the corners). */ stepsBeforeWarp?: boolean; /** The model's lines leaned this much, percent — enough to straighten — but the photo's own rows of windows ran parallel: kept square (2026-10-24). */ squareOn?: number; /** What the depth map did (2026-10-26): how many parts of the wall it set out or back, how many of those it turned round, how many raised or sunk parts it saw. */ depth?: { sections: number; flipped: number; relief: number } } | null;
+  how?: { looks: number; model: string; snapped: number; split: number; /** The wall's steps measured off the photo's own pixels (lib/deck/wallSteps) — 0 when the photo didn't show them and the model's read stands. */ stepsFromPhoto?: number; /** Windows read off the picture itself (lib/deck/photoSnap findWindows), 0 when the model's boxes were lined up instead (2026-10-25). */ windowsFromPhoto?: number; /** Why the photo's pixels said nothing about the steps, and how many corners they found anyway (2026-10-24). */ stepsWhy?: WallStepsWhy; cornersFromPhoto?: number; /** The steps were read on the clean picture, before it was straightened (the warp, made from the model's leaning lines, loses the corners). */ stepsBeforeWarp?: boolean; /** The model's lines leaned this much, percent — enough to straighten — but the photo's own rows of windows ran parallel: kept square (2026-10-24). */ squareOn?: number; /** What the depth map did (2026-10-26): how many parts of the wall it set out or back, how many of those it turned round, how many raised or sunk parts it saw. */ corners?: { asked: number; set: number; gone: number }; depth?: { sections: number; flipped: number; relief: number } } | null;
   /** The wall's relief the depth map found — a bay, a chimney, a recessed entry — as boxes in the picture's fractions, for the 3D's raised and sunk parts. */
   relief?: DepthRelief[];
 }
@@ -83,13 +84,15 @@ export interface HousePhotoApi {
   read: (form: FormData) => Promise<HousePhotoRead>;
   /** The depth map of the picture (2026-10-26): which way each part of the wall stands, and its relief. Absent = no depth pass. */
   depth?: (form: FormData) => Promise<HouseDepthResult>;
+  /** One corner of the wall looked at by itself (2026-11-13): which side of it stands forward. Absent = no corner look. */
+  corner?: (form: FormData) => Promise<HouseCornerRead>;
   upload: (form: FormData) => Promise<DeckPhotoResult>;
   href: (url: string) => Promise<string | null>;
   clientPhotos?: typeof deckClientPhotos;
   clientPhotoData?: typeof deckClientPhotoData;
 }
 
-const STUDIO_API: HousePhotoApi = { read: readHousePhoto, depth: readHouseDepth, upload: uploadDeckPhoto, href: deckPhotoHref, clientPhotos: deckClientPhotos, clientPhotoData: deckClientPhotoData };
+const STUDIO_API: HousePhotoApi = { read: readHousePhoto, depth: readHouseDepth, corner: readHouseCorner, upload: uploadDeckPhoto, href: deckPhotoHref, clientPhotos: deckClientPhotos, clientPhotoData: deckClientPhotoData };
 
 export interface HousePhotoState {
   /** Who it is for: the card's words (the client's page has no clients' photos). */
@@ -243,6 +246,10 @@ function stepsWhyWords(why: WallStepsWhy | undefined, corners: number): string {
       return "the wall's steps as the model read them";
   }
 }
+
+/** What the corner look did, for the review's line. */
+const cornerWords = (c: { asked: number; set: number; gone: number }) =>
+  `, ${c.asked === 1 ? "its corner" : `${c.asked} corners`} looked at closer${c.set ? ` — ${c.set === 1 ? "a step" : `${c.set} steps`} set from ${c.set === 1 ? "it" : "them"}` : c.gone ? " — no step there" : " — still not plain which side comes out: tap the part that does"}`;
 
 /** The form for one look: the picture at the model's size, that size in pixels (the model answers in them), and which look it is. */
 async function lookForm(src: { file: File; w: number; h: number }, look: "wide" | "close"): Promise<FormData> {
@@ -447,6 +454,31 @@ export function useHousePhoto({
               how = { ...(how ?? { looks, model: res.model, snapped: 0, split: 0 }), depth: { sections: applied.changed, flipped: applied.flipped, relief: depth.relief.length } };
             }
           }
+        }
+        // THE CORNER LOOK (2026-11-13 — owner: "it still doesn't understand the jogs — make it more smart"): a corner
+        // the picture shows without saying which side of it stands forward (a divider, built as nothing) is looked at
+        // by itself — a close cut round that one line, one question (lib/deck/houseCorner). The answer makes it a step,
+        // or takes it away when it is no corner at all; "unclear" leaves it to be tapped. From the right, so that one
+        // taken away leaves the others where they were counted.
+        if (api.corner) {
+          let asked = 0, set = 0, gone = 0;
+          for (const i of unresolvedSteps(read).slice(-3).reverse()) {
+            const crop = cornerCrop(read, i);
+            if (!crop) continue;
+            setBusy("Looking closer at a corner of the wall…");
+            const cut = await cropPhoto(image.file, crop, image.w, image.h).catch(() => null);
+            if (!cut) continue;
+            const cf = await lookForm(cut, "close");
+            cf.set("x", String(Math.round(Number(cf.get("w")) / 2)));
+            const ans = await api.corner(cf).catch(() => null);
+            asked++;
+            if (!ans?.ok) continue;
+            const applied = applyCornerVerdict(read, i, ans.answer);
+            read = applied.read;
+            if (applied.did === "step") set++;
+            else if (applied.did === "removed") gone++;
+          }
+          if (asked) how = { ...(how ?? { looks, model: res.model, snapped: 0, split: 0 }), corners: { asked, set, gone } };
         }
       } else
         byHand = res.configured
@@ -870,7 +902,7 @@ export function HousePhotoReview({ hp, design }: { hp: HousePhotoState; design: 
             <div>
               <h3 className="v1-h3">Here&rsquo;s what I see</h3>
               <span className="v1-meta">
-                {r.byHand ? "Marked by hand" : `Read off the photo${r.how ? ` in ${r.how.looks === 2 ? "two looks" : "one look"}${r.how.windowsFromPhoto ? `, its ${r.how.windowsFromPhoto} windows read off the picture` : r.how.snapped ? ", lined up with its edges" : ""}${r.how.stepsFromPhoto ? `, the wall's steps measured off the photo${r.how.stepsBeforeWarp ? " before it was straightened" : ""}` : r.how.stepsFromPhoto === 0 ? `, ${stepsWhyWords(r.how.stepsWhy, r.how.cornersFromPhoto ?? 0)}` : ""}${r.how.squareOn ? ", shot square-on — not straightened" : ""}${r.how.depth ? depthWords(r.how.depth) : ""} (${r.how.model})` : ""}${r.straightened ? ` · straightened (the shot was ${r.straightened}% off square)` : ""}`} — drag any line that&rsquo;s off; tap a part
+                {r.byHand ? "Marked by hand" : `Read off the photo${r.how ? ` in ${r.how.looks === 2 ? "two looks" : "one look"}${r.how.windowsFromPhoto ? `, its ${r.how.windowsFromPhoto} windows read off the picture` : r.how.snapped ? ", lined up with its edges" : ""}${r.how.stepsFromPhoto ? `, the wall's steps measured off the photo${r.how.stepsBeforeWarp ? " before it was straightened" : ""}` : r.how.stepsFromPhoto === 0 ? `, ${stepsWhyWords(r.how.stepsWhy, r.how.cornersFromPhoto ?? 0)}` : ""}${r.how.squareOn ? ", shot square-on — not straightened" : ""}${r.how.depth ? depthWords(r.how.depth) : ""}${r.how.corners ? cornerWords(r.how.corners) : ""} (${r.how.model})` : ""}${r.straightened ? ` · straightened (the shot was ${r.straightened}% off square)` : ""}`} — drag any line that&rsquo;s off; tap a part
                 of the wall to set it out or back. Select a window or door to move it, resize its corners, or change its bounds below.
               </span>
             </div>
@@ -956,7 +988,14 @@ export function HousePhotoReview({ hp, design }: { hp: HousePhotoState; design: 
                 {handle("base-right", read.base.right.x, read.base.right.y, "The wall's base, right corner", null, "is-corner")}
                 {read.eave ? handle("eave-left", read.eave.left.x, read.eave.left.y, "The eave, left end", null, "is-corner") : null}
                 {read.eave ? handle("eave-right", read.eave.right.x, read.eave.right.y, "The eave, right end", null, "is-corner") : null}
-                {read.jogs.map((j, i) => handle(`jog-${i}`, j.x, j.y, `Step ${i + 1} in the wall`, { kind: "jog", i }, "is-jog"))}
+                {read.jogs.map((j, i) => handle(`jog-${i}`, j.x, j.y, j.depthFt === 0 ? `A corner in the wall — which side comes out is not known yet` : `Step ${i + 1} in the wall`, { kind: "jog", i }, j.depthFt === 0 ? "is-jog is-open" : "is-jog"))}
+                {read.jogs.map((j, i) =>
+                  j.depthFt === 0 ? (
+                    <span key={`open-${i}`} className="v1-hp-open-step" style={{ left: `${j.x * 100}%`, top: `${j.y * 100}%` }} data-deck-house-open-step>
+                      Step? Tap the part that comes out
+                    </span>
+                  ) : null,
+                )}
                 {read.doors.map((d, i) => (
                   <React.Fragment key={`dh${i}`}>
                     {handle(`door-${i}`, (d.x0 + d.x1) / 2, d.bottom, `${d.kind === "garage" ? "Garage door" : "Door"} ${i + 1} — its ${d.kind === "garage" ? "bottom" : "threshold"}`, { kind: "door", i }, "is-door")}
