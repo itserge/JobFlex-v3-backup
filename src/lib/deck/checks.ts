@@ -54,7 +54,7 @@ import { deckPast, pastWords } from "./house";
 import { railHeldWords, railMountLine } from "./rails";
 import { borderWords } from "./surface";
 import { SKIRT_GAP_IN, SKIRT_GROUND_CLEAR_IN, SKIRT_MIN_IN } from "./skirt";
-import { BENCH_BACK_IN, BENCH_SEAT_IN, BUILT_IN_LABEL, builtInWords } from "./builtins";
+import { BENCH_BACK_IN, BENCH_SEAT_IN, BUILT_IN_LABEL, SCREEN_GAP_IN, SCREEN_WIND_PSF, builtInWords } from "./builtins";
 
 /** A change to a design, part by part; anything left out stays as it is. */
 export type DeckPatch = {
@@ -209,7 +209,17 @@ export function deckChecks(s: DeckStructure): DeckCheck[] {
         continue;
       }
       const fitted = b.flags.shortened ? ` It was asked for ${b.design.lengthFt} ft long; ${b.flags.beside ? "beside the other built-in there is room for" : "that edge has room for"} ${Math.round((b.lengthIn / 12) * 10) / 10} ft.` : "";
-      if (b.kind === "planter") {
+      if (b.kind === "screen") {
+        const hFt = Math.round(((b.heightIn - 1) / 12) * 2) / 2;
+        const tall = hFt > 6;
+        add({
+          id: `builtin-${b.design.id}`,
+          level: tall ? "warn" : "pass",
+          part: PART,
+          text: `${name}: the deck's own boards across ${b.posts} ${b.postSize} posts no more than 6 ft apart, ${SCREEN_GAP_IN} in. between the boards, a cap board on top (${Math.round(b.sqFt)} sq ft). ${s.rails.on ? "It stands on the railing's line in the railing's place" : "It stands at the deck's edge"}${guarded ? " and is the guard along its stretch (taller than 36 in., no gap a 4-in. ball passes)" : ""}.${fitted} A screen catches wind like a fence: at ${SCREEN_WIND_PSF} psf each post takes about ${Math.round(b.windLb / 10) * 10} lb, which turns it with about ${Math.round(b.windFtLb / 10) * 10} ft-lb where it meets the deck — so each post is one piece from under the deck, through-bolted twice beside a joist or the rim over solid blocking (never screwed to the boards), and the deck's bracing takes the push.${tall ? ` Over 6 ft it is past what a deck's frame holds by rule of thumb: have an engineer size its posts and their connection, and ask the building office — many limit a screen's height.` : ""}`,
+          rule: "IRC R301.2.1 · R312.1",
+        });
+      } else if (b.kind === "planter") {
         add({
           id: `builtin-${b.design.id}`,
           level: b.overBeam ? "pass" : "warn",
@@ -226,7 +236,7 @@ export function deckChecks(s: DeckStructure): DeckCheck[] {
           : "";
         add({ id: `builtin-${b.design.id}`, level: "pass", part: PART, text: `${name}: ${seat}${b.kind === "bench-back" ? `; a back of two boards and a cap on 4x4 posts ${BENCH_BACK_IN} in. tall, each bolted to the frame` : ""}.${fitted}${guardNote}` });
       }
-      if (b.flags.onStair) add({ id: `builtin-${b.design.id}-stair`, level: "fail", part: PART, text: `${name} stands across the top of a stair: nobody can get down it. Move one of them along the edge, or shorten the ${b.kind === "planter" ? "planter" : "bench"}.`, fix: { label: "Take it off", patch: { extras: { builtIns: others } } } });
+      if (b.flags.onStair) add({ id: `builtin-${b.design.id}-stair`, level: "fail", part: PART, text: `${name} stands across the top of a stair: nobody can get down it. Move one of them along the edge, or shorten the ${b.kind === "planter" ? "planter" : b.kind === "screen" ? "screen" : "bench"}.`, fix: { label: "Take it off", patch: { extras: { builtIns: others } } } });
       if (b.flags.onSteps) add({ id: `builtin-${b.design.id}-steps`, level: "warn", part: PART, text: `${name} stands along an edge the wide steps run on: the steps behind it lead nowhere. Wrap the steps round fewer sides, or move it to an edge without steps.` });
       if (b.flags.overlaps.length && b.flags.overlaps.some((id) => id > b.design.id)) add({ id: `builtin-${b.design.id}-overlap`, level: "warn", part: PART, text: `${name} and another built-in stand on the same boards. Shorten one, or move it along its edge, so the two meet without crossing.` });
     }

@@ -178,9 +178,9 @@ function builtInsFor(tag: string, raw: unknown): unknown {
   if (!raw || typeof raw !== "object" || Array.isArray(raw) || !Number.isFinite(i) || i % 4 !== 2) return raw;
   const o = raw as Record<string, unknown>;
   if (o.extras !== undefined && (typeof o.extras !== "object" || o.extras === null)) return raw;
-  const kinds = ["bench", "bench-back", "planter"];
+  const kinds = ["bench", "bench-back", "planter", "screen"];
   const sides = ["front", "left", "right"];
-  const list: unknown[] = i % 86 === 2 ? [null, "x", { kind: "sofa" }, { kind: "bench", side: 7, atFt: "a", lengthFt: -3 }, { id: "BAD ID", kind: "planter", atFt: 1e9, lengthFt: 1e9 }] : Array.from({ length: 1 + (i % 5) }, (_, k) => ({ id: `q${k}`, kind: kinds[(i + k) % 3], side: sides[(Math.floor(i / 3) + k) % 3], atFt: ((i * 7 + k * 5) % 41) / 2, lengthFt: 2 + ((i + k * 3) % 17) * 1.5 }));
+  const list: unknown[] = i % 86 === 2 ? [null, "x", { kind: "sofa" }, { kind: "bench", side: 7, atFt: "a", lengthFt: -3 }, { id: "BAD ID", kind: "planter", atFt: 1e9, lengthFt: 1e9 }] : Array.from({ length: 1 + (i % 5) }, (_, k) => ({ id: `q${k}`, kind: kinds[(i + k) % 4], side: sides[(Math.floor(i / 3) + k) % 3], atFt: ((i * 7 + k * 5) % 41) / 2, lengthFt: 2 + ((i + k * 3) % 17) * 1.5, heightFt: 2 + ((i + k) % 8) }));
   return { ...o, extras: { ...((o.extras as object) ?? {}), builtIns: list } };
 }
 type Pt = { x: number; y: number };
@@ -260,9 +260,17 @@ function exercise(d: DeckDesign, tag: string, out: string[]) {
         if (!tangled && ![c, mid(mid(b.footprint[0], b.footprint[3]), c), mid(mid(b.footprint[1], b.footprint[2]), c)].every((p) => inside(p.x, p.y))) { out.push(`a built-in off the deck  [${tag}]`); break; }
         if (b.flags.overlaps.length) { out.push(`two built-ins on the same boards  [${tag}]`); break; }
         if (b.kind === "planter" && !(b.weightLb > 0 && b.psf > 0 && b.soilCuFt > 0)) { out.push(`a planter with no weight  [${tag}]`); break; }
+        if (b.kind === "screen" && !(b.posts >= 2 && b.sqFt > 0 && b.windLb > 0 && (b.postSize === "4x4" || b.postSize === "6x6"))) { out.push(`a screen with no posts or no wind  [${tag}]`); break; }
       }
       const built = s0.builtIns.filter((b) => b.built);
-      if (built.some((b) => b.kind !== "planter") !== pkg.lines.some((l) => l.id === "deck-benches")) out.push(`benches built and priced do not agree  [${tag}]`);
+      if (built.some((b) => b.kind === "bench" || b.kind === "bench-back") !== pkg.lines.some((l) => l.id === "deck-benches")) out.push(`benches built and priced do not agree  [${tag}]`);
+      if (built.some((b) => b.kind === "screen") !== pkg.lines.some((l) => l.id === "deck-screens")) out.push(`screens built and priced do not agree  [${tag}]`);
+      // A screen stands in the rail's place: no rail post of the main deck within its stretch.
+      for (const b of built.filter((q) => q.kind === "screen")) {
+        const [p0, p1] = b.footprint;
+        const L = Math.hypot(p1.x - p0.x, p1.y - p0.y) || 1, ux = (p1.x - p0.x) / L, uy = (p1.y - p0.y) / L;
+        if (s0.rails.segments.some((g) => g.level === "upper" && Math.abs((g.x0 - p0.x) * uy - (g.y0 - p0.y) * ux) < 4 && Math.abs((g.x1 - p0.x) * uy - (g.y1 - p0.y) * ux) < 4 && Math.max((g.x0 - p0.x) * ux + (g.y0 - p0.y) * uy, (g.x1 - p0.x) * ux + (g.y1 - p0.y) * uy) > 1 && Math.min((g.x0 - p0.x) * ux + (g.y0 - p0.y) * uy, (g.x1 - p0.x) * ux + (g.y1 - p0.y) * uy) < L - 1)) { out.push(`a rail runs through a privacy screen  [${tag}]`); break; }
+      }
       if (built.some((b) => b.kind === "planter") !== pkg.lines.some((l) => l.id === "deck-planters")) out.push(`planters built and priced do not agree  [${tag}]`);
     }
   }

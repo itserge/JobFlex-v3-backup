@@ -2,7 +2,7 @@
 // changes … don't say any numbers … offer some other options really quick, and understand different wording for
 // clients … on the contractor side don't speak back the measurements and pricing, just show it in the text").
 //   npx tsx --tsconfig tsconfig.json qa/tests/logic/deck-voice-speak.check.ts
-import { defaultDeckDesign } from "../../../src/lib/deck/design";
+import { defaultDeckDesign, normalizeDeckDesign } from "../../../src/lib/deck/design";
 import { freshVoiceState, hear } from "../../../src/lib/deck/voice/assistant";
 import { CLIENT_SAYS, clientChips, clientGate, clientOffer, clientText, isPraise, isPriceAsk, noteLine, spokenReply } from "../../../src/lib/deck/voice/speak";
 import type { DeckCommand } from "../../../src/lib/deck/voice/commands";
@@ -95,9 +95,13 @@ const railTalk = { ...freshVoiceState(), subject: "rail" as const };
 for (const line of ["privacy on one side", "more privacy", "some privacy from the neighbors"]) {
   const fresh = hear(line, d, freshVoiceState()).ran;
   const inRail = hear(line, d, railTalk).ran;
-  check(`"${line}" → a privacy screen (a wish), even while talking railings`, [fresh, inRail].every((ran) => ran.length === 1 && ran[0].do === "wish" && ran[0].item === "Privacy screen"), JSON.stringify(inRail));
+  // (2026-11-14: an open deck's privacy screen is drawn — lib/deck/builtins — so the words build one, not a wish.)
+  check(`"${line}" → a privacy screen on the deck's edge, even while talking railings`, [fresh, inRail].every((ran) => ran.length === 1 && ran[0].do === "builtin" && ran[0].kind === "screen" && ran[0].op === "add"), JSON.stringify(inRail));
 }
-check("a covered deck's \"privacy walls\" stay its walls; \"lattice for privacy\" stays lattice", hear("privacy walls", d, freshVoiceState()).ran[0]?.do === "roof" && hear("add lattice for privacy", d, freshVoiceState()).ran[0]?.do === "roof");
+const roofedDeck = normalizeDeckDesign({ ...d, structure: "covered-deck" });
+check("under a roof the same words stay a wish — the roof's walls are the contractor's to choose", hear("more privacy", roofedDeck, freshVoiceState()).ran.every((c) => c.do === "wish" && c.item === "Privacy screen") && hear("more privacy", roofedDeck, freshVoiceState()).ran.length === 1, JSON.stringify(hear("more privacy", roofedDeck, freshVoiceState()).ran));
+check("\"privacy on the right side\" keeps its side", (() => { const r = hear("privacy on the right side", d, freshVoiceState()).ran[0]; return r?.do === "builtin" && r.side === "right"; })(), JSON.stringify(hear("privacy on the right side", d, freshVoiceState()).ran));
+check("a covered deck's \"privacy walls\" stay its walls; \"lattice for privacy\" stays lattice", hear("privacy walls", roofedDeck, freshVoiceState()).ran[0]?.do === "roof" && hear("add lattice for privacy", d, freshVoiceState()).ran[0]?.do === "roof");
 check("\"a privacy screen\", \"a privacy trellis\" (one thing), \"lights\" (many)", CLIENT_SAYS.wish(["Privacy screen", "Privacy trellis", "Lights"]) === "I've added a privacy screen, a privacy trellis and lights to your notes for your contractor. Anything else?", CLIENT_SAYS.wish(["Privacy screen", "Privacy trellis", "Lights"]));
 
 console.log("── a waiting price takes a price, not any number");

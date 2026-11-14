@@ -21,9 +21,9 @@
 //     stands matters (over a beam line, or on doubled joists).
 import { ringEdges } from "./ringEdges";
 
-export type BuiltInKind = "bench" | "bench-back" | "planter";
-export const BUILT_IN_KINDS: readonly BuiltInKind[] = ["bench", "bench-back", "planter"];
-export const BUILT_IN_LABEL: Record<BuiltInKind, string> = { bench: "Bench", "bench-back": "Bench with a back", planter: "Planter box" };
+export type BuiltInKind = "bench" | "bench-back" | "planter" | "screen";
+export const BUILT_IN_KINDS: readonly BuiltInKind[] = ["bench", "bench-back", "planter", "screen"];
+export const BUILT_IN_LABEL: Record<BuiltInKind, string> = { bench: "Bench", "bench-back": "Bench with a back", planter: "Planter box", screen: "Privacy screen" };
 export type BuiltInSide = "front" | "left" | "right";
 export const BUILT_IN_SIDES: readonly BuiltInSide[] = ["front", "left", "right"];
 export const BUILT_IN_SIDE_LABEL: Record<BuiltInSide, string> = { front: "Front", left: "Left end", right: "Right end" };
@@ -35,9 +35,23 @@ export interface BuiltIn {
   side: BuiltInSide;
   atFt: number;
   lengthFt: number;
+  /** A privacy screen's height above the boards, ft (screens only). */
+  heightFt?: number;
 }
 
-export const BUILT_IN_LIMITS = { count: 8, lengthFt: { min: 2, max: 30 }, planterFt: { min: 2, max: 10 } } as const;
+export const BUILT_IN_LIMITS = { count: 8, lengthFt: { min: 2, max: 30 }, planterFt: { min: 2, max: 10 }, screenFt: { min: 3, max: 8 } } as const;
+/** A privacy screen as most are built: 6 ft above the boards. */
+export const SCREEN_DEFAULT_FT = 6;
+/** Its posts: no farther apart than this; 4x4 up to this height, 6x6 above it; how far their outer face stands inside the deck's edge (a top-mounted rail post's own line). */
+export const SCREEN_POST_MAX_IN = 72;
+export const SCREEN_4X4_MAX_IN = 48;
+export const SCREEN_EDGE_IN = 1;
+/** How far short of a corner that turns round the deck it stops (the next edge's rail has its corner post there), and how far the rail keeps off its ends. */
+export const SCREEN_CORNER_IN = 8;
+export const SCREEN_RAIL_CLEAR_IN = 5;
+/** The gap between its boards, in.; the wind a screen is figured for, lb per sq ft (a 115-mph design wind in open suburban terrain, on a solid-faced fence). */
+export const SCREEN_GAP_IN = 0.75;
+export const SCREEN_WIND_PSF = 20;
 
 /** Seat height above the boards, a bench back's height, a planter's depth front to back, in. */
 export const BENCH_SEAT_IN = 18;
@@ -46,8 +60,8 @@ export const PLANTER_DEPTH_IN = 20;
 /** Supports under a bench no farther apart than this, and how far in from its ends the first stands. */
 export const BENCH_SUPPORT_MAX_IN = 48;
 export const BENCH_END_IN = 4;
-/** How far inside the deck's edge a built-in stands: clear of a top-mounted rail's posts, of a side-mounted rail, of nothing. */
-export const BUILT_IN_INSET_IN = { top: 6, side: 2.5, none: 1.5 } as const;
+/** How far inside the deck's edge a built-in stands: clear of a top-mounted rail's posts, of a side-mounted rail, of nothing — or of a privacy screen standing there (its 6x6 posts and boards). */
+export const BUILT_IN_INSET_IN = { top: 6, side: 2.5, none: 1.5, screen: 8.5 } as const;
 /** Wet planting soil, lb per cubic foot; how deep it lies in a planter, in. */
 export const SOIL_LB_PER_CUFT = 100;
 export const PLANTER_SOIL_IN = 14;
@@ -59,6 +73,8 @@ const half = (v: number) => Math.round(v * 2) / 2;
 /** A built-in a contractor would add first: a bench in the middle of the front, a planter at a front corner. */
 export function defaultBuiltIn(id: string, kind: BuiltInKind, widthFt: number): BuiltIn {
   if (kind === "planter") return { id, kind, side: "front", atFt: half(Math.min(widthFt / 2, 3)), lengthFt: 4 };
+  // (A screen goes where the neighbours are: along an end, its whole length unless said.)
+  if (kind === "screen") return { id, kind, side: "left", atFt: 0, lengthFt: 8, heightFt: SCREEN_DEFAULT_FT };
   return { id, kind, side: "front", atFt: half(widthFt / 2), lengthFt: Math.min(8, Math.max(BUILT_IN_LIMITS.lengthFt.min, half(widthFt - 4))) };
 }
 
@@ -77,12 +93,12 @@ export function normalizeBuiltIns(raw: unknown, widthFt: number, depthFt: number
     seen.add(id);
     const along = side === "front" ? widthFt : depthFt;
     const max = kind === "planter" ? BUILT_IN_LIMITS.planterFt.max : BUILT_IN_LIMITS.lengthFt.max;
-    out.push({ id, kind, side, atFt: half(clamp(num(o.atFt, along / 2), 0, along)), lengthFt: half(clamp(num(o.lengthFt, kind === "planter" ? 4 : 8), BUILT_IN_LIMITS.lengthFt.min, max)) });
+    out.push({ id, kind, side, atFt: half(clamp(num(o.atFt, along / 2), 0, along)), lengthFt: half(clamp(num(o.lengthFt, kind === "planter" ? 4 : 8), BUILT_IN_LIMITS.lengthFt.min, max)), ...(kind === "screen" ? { heightFt: half(clamp(num(o.heightFt, SCREEN_DEFAULT_FT), BUILT_IN_LIMITS.screenFt.min, BUILT_IN_LIMITS.screenFt.max)) } : {}) });
   });
   return out;
 }
 
-export type BuiltInRole = "bench leg" | "bench cleat" | "bench seat" | "bench apron" | "bench back post" | "bench back" | "bench cap" | "planter board" | "planter cap" | "planter soil";
+export type BuiltInRole = "bench leg" | "bench cleat" | "bench seat" | "bench apron" | "bench back post" | "bench back" | "bench cap" | "planter board" | "planter cap" | "planter soil" | "screen post" | "screen board" | "screen cap";
 
 /** One stick or board of a built-in: a box `sx` long along `yaw`, `sy` across, `sz` high, centred at (cx, cy, cz) — plan inches, z above the house-line ground. */
 export interface BuiltInMember {
@@ -123,6 +139,12 @@ export interface BuiltInBuild {
   weightLb: number;
   psf: number;
   overBeam: boolean;
+  /** A screen: its posts and their size, its face in sq ft, the wind on one post (lb, at SCREEN_WIND_PSF) and that wind's turning moment where the post meets the deck (ft-lb). */
+  posts: number;
+  postSize: "4x4" | "6x6" | "";
+  sqFt: number;
+  windLb: number;
+  windFtLb: number;
   /** What it was fitted to, or runs into. */
   flags: { shortened: boolean; /** Shortened to stop at another built-in's face. */ beside: boolean; onStair: boolean; onSteps: boolean; overlaps: string[] };
 }
@@ -136,12 +158,16 @@ export interface BuiltInsInput {
   /** The deck's boards: their face, thickness and the gap between two, in.; and how they are sold ("5/4x6"). */
   board: { widthIn: number; thickIn: number; gapIn: number; nominal: string };
   /** How the rail stands along a stretch of edge, if one does. */
-  railAt: (x0: number, y0: number, x1: number, y1: number) => "top" | "side" | "none";
+  railAt: (x0: number, y0: number, x1: number, y1: number) => "top" | "side" | "none" | "screen";
   /** Stretches of edge a stair's top stands on, and stretches wide steps run along. */
   stairTops: ReadonlyArray<{ x0: number; y0: number; x1: number; y1: number }>;
   wrapped: ReadonlyArray<{ x0: number; y0: number; x1: number; y1: number }>;
   /** The beams' lines under the deck (plan in.), for a planter's weight. */
   beams: ReadonlyArray<{ x0: number; y0: number; x1: number; y1: number }>;
+  /** Which of the list to build: the privacy screens (they stand on the rail's line, so they are set before the rail is), or the rest (set inside the rail). Default: the rest. */
+  only?: "screens" | "rest";
+  /** The joists' depth, in. (a screen's posts run down beside them). */
+  joistDepthIn?: number;
 }
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
@@ -167,9 +193,14 @@ export function buildBuiltIns(input: BuiltInsInput): BuiltInBuild[] {
     }
     return c;
   };
-  const empty = (it: BuiltIn, why: string): BuiltInBuild => ({ design: it, kind: it.kind, built: false, why, footprint: [], lengthIn: 0, depthIn: 0, heightIn: 0, members: [], boardLf: 0, apronLf: 0, postLf: 0, frameLf: 0, supports: 0, soilCuFt: 0, weightLb: 0, psf: 0, overBeam: false, flags: { shortened: false, beside: false, onStair: false, onSteps: false, overlaps: [] } });
+  const empty = (it: BuiltIn, why: string): BuiltInBuild => ({ design: it, kind: it.kind, built: false, why, footprint: [], lengthIn: 0, depthIn: 0, heightIn: 0, members: [], boardLf: 0, apronLf: 0, postLf: 0, frameLf: 0, supports: 0, soilCuFt: 0, weightLb: 0, psf: 0, overBeam: false, posts: 0, postSize: "", sqFt: 0, windLb: 0, windFtLb: 0, flags: { shortened: false, beside: false, onStair: false, onSteps: false, overlaps: [] } });
 
   for (const it of input.items) {
+    if ((it.kind === "screen") !== (input.only === "screens")) continue;
+    const screen = it.kind === "screen";
+    const screenH = (it.heightFt ?? SCREEN_DEFAULT_FT) * 12;
+    const postSize: "4x4" | "6x6" = screenH <= SCREEN_4X4_MAX_IN ? "4x4" : "6x6";
+    const postIn = postSize === "4x4" ? 3.5 : 5.5;
     const at = it.atFt * 12;
     // 1. Its edge: the open side of that name the place lies along — the outermost, where there are several.
     let pick = -1;
@@ -202,12 +233,15 @@ export function buildBuiltIns(input: BuiltInsInput): BuiltInBuild[] {
     const inX = -e.outX;
     const inY = -e.outY;
     const mount = input.railAt(sd.x0, sd.y0, sd.x1, sd.y1);
-    const inset = BUILT_IN_INSET_IN[mount];
-    const depth = it.kind === "planter" ? PLANTER_DEPTH_IN : it.kind === "bench-back" ? seatDepth + 3.5 : seatDepth;
+    // (A screen stands on the rail's own line, in the rail's place; the rest stand inside whatever is there.)
+    const inset = screen ? SCREEN_EDGE_IN : BUILT_IN_INSET_IN[mount];
+    const depth = screen ? postIn + T : it.kind === "planter" ? PLANTER_DEPTH_IN : it.kind === "bench-back" ? seatDepth + 3.5 : seatDepth;
     // 2. Kept on its edge: clear of the next edge's own rail (or of what stands along it) at a corner that turns round the deck.
     const prev = edges[(pick - 1 + n) % n];
-    const lo = prev.turnAtB > 0.3 ? inset : 0.5;
-    const hi = e.length - (e.turnAtB > 0.3 ? inset : 0.5);
+    const cornerIn = screen ? SCREEN_CORNER_IN : inset;
+    // (Against the house there is no rail to keep clear of: it runs up to the wall.)
+    const lo = prev.turnAtB > 0.3 && !sides[(pick - 1 + n) % n].house ? cornerIn : 0.5;
+    const hi = e.length - (e.turnAtB > 0.3 && !sides[(pick + 1) % n].house ? cornerIn : 0.5);
     const want = it.lengthFt * 12;
     const room = hi - lo;
     if (room < BUILT_IN_LIMITS.lengthFt.min * 12) {
@@ -275,7 +309,7 @@ export function buildBuiltIns(input: BuiltInsInput): BuiltInBuild[] {
     };
     let boardIn = 0;
     let apronIn = 0;
-    let postIn = 0;
+    let postLen = 0;
     let frameIn = 0;
     let supports = 0;
     let heightIn = BENCH_SEAT_IN;
@@ -284,8 +318,33 @@ export function buildBuiltIns(input: BuiltInsInput): BuiltInBuild[] {
     let psf = 0;
     let overBeam = false;
     const mid = (a0 + a1) / 2;
+    let posts = 0;
+    let sqFt = 0;
+    let windLb = 0;
+    let windFtLb = 0;
 
-    if (it.kind === "planter") {
+    if (screen) {
+      // Posts no more than 6 ft apart, the deck's boards across their inner faces from 2 in. above the deck to the
+      // top, ¾ in. between them; a cap board on the posts.
+      heightIn = screenH + T;
+      posts = Math.max(2, Math.ceil((len - postIn) / SCREEN_POST_MAX_IN - 1e-9) + 1);
+      const bay = (len - postIn) / (posts - 1);
+      for (let k = 0; k < posts; k++) put("screen post", postSize, screenH, a0 + postIn / 2 + bay * k, postIn / 2, screenH / 2, postIn, postIn, screenH);
+      // (Bought long enough to run down beside the joists and bolt there.)
+      postLen += posts * (screenH + (input.joistDepthIn ?? 9.25) + 3);
+      const pitch = W + SCREEN_GAP_IN;
+      let rows = 0;
+      for (let z = 2; z + W <= screenH - 0.25; z += pitch) {
+        put("screen board", board.nominal, len, mid, postIn + T / 2, z + W / 2, len, T, W);
+        rows++;
+      }
+      put("screen cap", board.nominal, len + 1, mid, (postIn + T) / 2, screenH + T / 2, len + 1, W, T);
+      boardIn += rows * len + (len + 1);
+      sqFt = (len * screenH) / 144;
+      // The wind on one post's share of the screen, and what it does at the deck: the post is a lever a screen-height long.
+      windLb = (bay * screenH * SCREEN_WIND_PSF) / 144;
+      windFtLb = (windLb * (screenH / 2)) / 12;
+    } else if (it.kind === "planter") {
       // Three boards high on feet that keep it off the deck's boards, a cap board all round the rim, the soil inside.
       const foot = 0.75;
       const wallTop = foot + 3 * W + 2 * G;
@@ -350,14 +409,14 @@ export function buildBuiltIns(input: BuiltInsInput): BuiltInBuild[] {
         put("bench cleat", "2x4", inner1 - inner0, a, (inner0 + inner1) / 2, legTop + 0.75, 3.5, inner1 - inner0, 1.5);
         frameIn += inner1 - inner0;
         put("bench leg", "4x4", legTop, a, inner1 - 1.75, legTop / 2, 3.5, 3.5, legTop);
-        postIn += legTop;
+        postLen += legTop;
         if (back) {
           // The back's post: from the boards to the cap; the seat's cleat is lagged to its face.
           put("bench back post", "4x4", BENCH_BACK_IN, a, 1.75, BENCH_BACK_IN / 2, 3.5, 3.5, BENCH_BACK_IN);
-          postIn += BENCH_BACK_IN;
+          postLen += BENCH_BACK_IN;
         } else {
           put("bench leg", "4x4", legTop, a, inner0 + 1.75, legTop / 2, 3.5, 3.5, legTop);
-          postIn += legTop;
+          postLen += legTop;
         }
       }
       if (back) {
@@ -368,7 +427,7 @@ export function buildBuiltIns(input: BuiltInsInput): BuiltInBuild[] {
         boardIn += 3 * len;
       }
     }
-    out.push({ design: it, kind: it.kind, built: true, footprint, lengthIn: r2(len), depthIn: r2(depth), heightIn: r2(heightIn), members, boardLf: r2(boardIn / 12), apronLf: r2(apronIn / 12), postLf: r2(postIn / 12), frameLf: r2(frameIn / 12), supports, soilCuFt: r2(soilCuFt), weightLb: Math.round(weightLb), psf: Math.round(psf), overBeam, flags: { shortened, beside, onStair, onSteps, overlaps: [] } });
+    out.push({ design: it, kind: it.kind, built: true, footprint, lengthIn: r2(len), depthIn: r2(depth), heightIn: r2(heightIn), members, boardLf: r2(boardIn / 12), apronLf: r2(apronIn / 12), postLf: r2(postLen / 12), frameLf: r2(frameIn / 12), supports, soilCuFt: r2(soilCuFt), weightLb: Math.round(weightLb), psf: Math.round(psf), overBeam, posts, postSize: screen ? postSize : "", sqFt: r2(sqFt), windLb: Math.round(windLb), windFtLb: Math.round(windFtLb), flags: { shortened, beside, onStair, onSteps, overlaps: [] } });
   }
 
   // 3. Two that stand on the same boards.
@@ -398,6 +457,6 @@ export function buildBuiltIns(input: BuiltInsInput): BuiltInBuild[] {
 /** "an 8-ft bench along the front" */
 export function builtInWords(b: BuiltInBuild): string {
   const ft = Math.round((b.lengthIn / 12) * 2) / 2;
-  const what = b.kind === "planter" ? "planter box" : b.kind === "bench-back" ? "bench with a back" : "bench";
+  const what = b.kind === "screen" ? `privacy screen ${Math.round(((b.heightIn - 1) / 12) * 2) / 2} ft high` : b.kind === "planter" ? "planter box" : b.kind === "bench-back" ? "bench with a back" : "bench";
   return `${/^(8|11|18)/.test(String(ft)) ? "an" : "a"} ${ft}-ft ${what} along the ${b.design.side === "front" ? "front" : `${b.design.side} end`}`;
 }

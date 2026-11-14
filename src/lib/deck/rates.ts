@@ -169,6 +169,7 @@ export const DECK_RATES: readonly DeckRateDef[] = [
   labor("bench", "Build a built-in bench", "ft", 34),
   labor("benchBack", "Add a back to a built-in bench", "ft", 16),
   labor("planter", "Build a planter box", "ft", 48),
+  labor("screen", "Build a privacy screen on the deck's edge", "sq ft", 11),
   // ── Walls, lights, drainage and engineered beams for the roof (M3). EXAMPLE prices.
   trim("screen", "Screen panels, framed, between posts", "sq ft", 9.5),
   trim("screenDoor", "Screen door, hung", "ea", 420, "vinyl", 5000),

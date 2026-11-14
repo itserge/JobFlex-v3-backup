@@ -118,6 +118,36 @@ const midP = buildStructure(mk({ shape: { kind: "rect", widthFt: 20, depthFt: 16
 const midCheck = deckChecks(midP).find((c) => c.id === "builtin-b1");
 check("away from every beam line: a warning, with what to do", !midP.builtIns[0].overBeam && midCheck?.level === "warn" && /double the joists/.test(midCheck.text), `${midP.frame!.beams.map((b) => b.y).join()} ${midCheck?.text ?? ""}`);
 
+/* ── 5b. A privacy screen ────────────────────────────────────────────── */
+const scrD = mk({}, [{ id: "s1", kind: "screen", side: "left", atFt: 6, lengthFt: 30, heightFt: 6 }]);
+const sS = buildStructure(scrD);
+const scr = sS.builtIns[0];
+const railNo = buildStructure(mk());
+check("a 6-ft screen along the left end: from the house wall to 8 in. short of the front corner (the front rail's corner post stands there)", scr.built && scr.kind === "screen" && near(Math.min(...ys(scr)), 0.5) && near(Math.max(...ys(scr)), 144 - 8) && scr.flags.shortened, `${Math.min(...ys(scr))}..${Math.max(...ys(scr))}`);
+check("it stands on the rail's own line: its posts' outer faces 1 in. inside the edge", near(Math.min(...xs(scr)), 1) && roles(scr, "screen post").every((m) => near(m.cx - m.sx / 2, 1, 0.02)));
+check("6x6 posts no more than 6 ft apart, one piece from the boards to the cap; the deck's boards across their inner faces; a cap board", scr.postSize === "6x6" && scr.posts === 3 && roles(scr, "screen post").length === 3 && roles(scr, "screen post").every((m) => m.sz === 72 && near(m.cz - m.sz / 2, S)) && roles(scr, "screen board").length >= 10 && roles(scr, "screen board").every((m) => m.cz + m.sz / 2 <= S + 72 && m.cz - m.sz / 2 >= S + 1.99) && roles(scr, "screen cap").length === 1 && near(scr.heightIn, 72 + sS.surface!.product.thickIn));
+check("a screen 4 ft high or less stands on 4x4 posts", one(mk({}, [{ id: "s1", kind: "screen", side: "front", atFt: 10, lengthFt: 8, heightFt: 4 }]), "s1").postSize === "4x4");
+check("the rail leaves its stretch to it: no rail along the left end, the rest as it was", !sS.rails.segments.some((g) => near(g.x0, 0, 1) && near(g.x1, 0, 1)) && sS.rails.segments.length === railNo.rails.segments.length - 1 && near(sS.rails.lf, railNo.rails.lf - 12, 0.6), `${sS.rails.lf} vs ${railNo.rails.lf}`);
+const midScr = buildStructure(mk({}, [{ id: "s1", kind: "screen", side: "front", atFt: 10, lengthFt: 8, heightFt: 6 }]));
+const frontRuns = midScr.rails.segments.filter((g) => near(g.y0, 144, 1) && near(g.y1, 144, 1));
+check("in the middle of an edge the rail stops a hand short of each of its ends", frontRuns.length === 2 && frontRuns.every((g) => Math.max(g.x0, g.x1) <= 72 - 4.9 || Math.min(g.x0, g.x1) >= 168 + 4.9), JSON.stringify(frontRuns.map((g) => [g.x0, g.x1])));
+check("the wind on it is worked out: 20 psf on each post's share, and the turning it makes at the deck", near(scr.windLb, Math.round((((scr.lengthIn - 5.5) / 2) * 72 * 20) / 144), 1) && near(scr.windFtLb, Math.round(scr.windLb * 3), 6) && scr.sqFt === Math.round(((scr.lengthIn * 72) / 144) * 100) / 100);
+const scrCheck = deckChecks(sS).find((c) => c.id === "builtin-s1");
+check("the check says how it stands, that it is the guard there, and what the wind asks of its posts", scrCheck?.level === "pass" && /in the railing's place and is the guard/.test(scrCheck.text) && /each post takes about \d+ lb/.test(scrCheck.text) && /through-bolted twice/.test(scrCheck.text), scrCheck?.text ?? "");
+const tallCheck = deckChecks(buildStructure(mk({}, [{ id: "s1", kind: "screen", side: "left", atFt: 6, lengthFt: 10, heightFt: 8 }]))).find((c) => c.id === "builtin-s1");
+check("over 6 ft: a warning — an engineer, and the building office", tallCheck?.level === "warn" && /engineer/.test(tallCheck.text));
+const withBench = buildStructure(mk({}, [{ id: "s1", kind: "screen", side: "right", atFt: 6, lengthFt: 10, heightFt: 6 }, B("bench", "right", 6, 8)]));
+const [scrR, benchR] = [withBench.builtIns.find((b) => b.kind === "screen")!, withBench.builtIns.find((b) => b.kind === "bench")!];
+check("a bench in front of a screen: set inside it as inside a rail, the two not touching", scrR.built && benchR.built && Math.max(...xs(benchR)) <= Math.min(...xs(scrR)) + 0.01 && benchR.flags.overlaps.length === 0 && withBench.builtIns[0].kind === "screen", `${Math.max(...xs(benchR))} vs ${Math.min(...xs(scrR))}`);
+const lowScr = deckChecks(buildStructure(mk({ heightIn: 14, rail: { ...d0.rail, type: "none" } }, [{ id: "s1", kind: "screen", side: "left", atFt: 6, lengthFt: 10 }]))).find((c) => c.id === "builtin-s1");
+check("on a low deck with no railing it stands at the deck's edge, and nothing is said of a guard", /stands at the deck's edge\./.test(lowScr?.text ?? "") && !/guard/.test(lowScr?.text ?? ""), lowScr?.text ?? "");
+const pS = priceDeck(scrD);
+const scrLine = pS.lines.find((l) => l.id === "deck-screens");
+check("priced by the square foot on a line of its own; the rail's line is shorter by what it replaced", !!scrLine && scrLine.quantity === Math.round(scr.sqFt) && scrLine.unit === "sqft" && scrLine.materialCost > 0 && scrLine.laborCost > 0 && (pS.lines.find((l) => l.id === "deck-rail")?.quantity ?? 0) < (priceDeck(mk()).lines.find((l) => l.id === "deck-rail")?.quantity ?? 0));
+const scrBom = pS.takeoff.lines.filter((l) => l.step === "builtins");
+check("the list: the deck's boards, 6x6 posts in one piece, two through-bolts a post, blocking behind them", scrBom.some((l) => l.id === "screen-boards") && scrBom.some((l) => /screen-posts/.test(l.id) && l.rateKey === "lf.6x6" && l.qty === 3) && scrBom.some((l) => l.id === "screen-post-bolts" && l.qty === 6) && scrBom.some((l) => /screen-blocking/.test(l.id)) && scrBom.every((l) => DECK_RATES.some((r) => r.key === l.rateKey)) && DECK_RATES.some((r) => r.key === "labor.screen"), scrBom.map((l) => `${l.id} ${l.qty}`).join());
+check("the scope names it", deckScope(pS).some((t) => /privacy screen 6 ft high along the left end/.test(t)));
+
 /* ── 6. The price, the list, the words ───────────────────────────────── */
 const allD = mk({}, [B("bench", "front", 10, 8), B("bench-back", "left", 6, 6, "b2"), B("planter", "front", 18, 4, "b3")]);
 const p0 = priceDeck(mk());
@@ -185,6 +215,13 @@ check("\"take the bench off\"", v5.design.extras.builtIns === undefined && /Took
 check("…and there is none to take off a deck without one", say(plain, "remove the planters").refused);
 const v6 = say(plain, "add a bench for $400");
 check("with a price said it stays the contractor's own item", v6.design.extras.builtIns === undefined && v6.design.extras.items.length === 1 && v6.design.extras.items[0].price === 400, JSON.stringify(v6.design.extras));
+const v8 = say(plain, "add a privacy screen on the right side");
+check("\"add a privacy screen on the right side\": 6 ft high, the whole right end, said with its wind", v8.design.extras.builtIns?.[0]?.kind === "screen" && v8.design.extras.builtIns[0].side === "right" && v8.design.extras.builtIns[0].heightFt === 6 && /privacy screen 6 ft high along the right end/.test(v8.said) && /lb on each post/.test(v8.said), `${JSON.stringify(v8.design.extras.builtIns)} ${v8.said}`);
+const v9 = say(plain, "an 8 ft long privacy screen 5 ft high on the left");
+check("\"an 8 ft long privacy screen 5 ft high on the left\"", v9.design.extras.builtIns?.[0]?.lengthFt === 8 && v9.design.extras.builtIns[0].heightFt === 5 && v9.design.extras.builtIns[0].side === "left", JSON.stringify(v9.design.extras.builtIns));
+check("\"take the privacy screen off\"", say(v8.design, "take the privacy screen off").design.extras.builtIns === undefined);
+const roofed = normalizeDeckDesign({ ...plain, structure: "covered-deck" });
+check("under a roof, privacy screens stay the roof's walls", (say(roofed, "add privacy screens").design.extras.builtIns ?? []).length === 0);
 const v7 = say(normalizeDeckDesign({ ...plain, structure: "pergola", floor: "ground" }), "add a bench");
 check("on a pergola standing on the ground: not built, and why", v7.refused && /no deck/.test(v7.said), v7.said);
 

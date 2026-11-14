@@ -167,7 +167,7 @@ export type DeckCommand =
   | { do: "extras"; demoSqFt?: number | "deck"; stainless?: boolean; drain?: boolean; skirt?: "lattice" | "boards" | "none" }
   | { do: "item"; op: "add" | "remove"; name: string; qty?: number; unit?: OwnUnit; price?: number }
   /** A built-in bench or planter box along one edge (2026-11-14; lib/deck/builtins). `at`: which end of that edge it stands toward. */
-  | { do: "builtin"; op: "add" | "remove"; kind: "bench" | "bench-back" | "planter"; side?: "front" | "left" | "right"; lengthFt?: number; at?: "left" | "centre" | "right" }
+  | { do: "builtin"; op: "add" | "remove"; kind: "bench" | "bench-back" | "planter" | "screen"; side?: "front" | "left" | "right"; lengthFt?: number; at?: "left" | "centre" | "right"; /** A privacy screen's height, ft. */ heightFt?: number }
   /** A product of the shop's own in one of the studio's lists ("our own boards, Azek Timbertech, at 9 dollars a foot"). */
   | { do: "custom"; slot: CustomSlot; name: string; price: number }
   | { do: "sample"; id: string }
@@ -351,6 +351,8 @@ export const NOT_DRAWN: ReadonlyArray<[RegExp, string]> = [
   [/\bramp\b|\bwheelchair\b|\bada\b/, "Ramp"],
   // An open deck's privacy ("privacy on one side", "more privacy" — lib/deck/voice/words EVERYDAY); a covered deck's
   // "privacy walls / panels / screens" are its walls (parse ROOF_WORDS) and never reach this list.
+  // (On an OPEN deck "a privacy fence / screen" is drawn — a privacy screen on its edge, lib/deck/builtins, read before
+  // this list; what is left here is the same wish on a design with a roof over it.)
   [/\bprivacy fence\b/, "Privacy screen"],
   [/\btrellis\b|\bprivacy trellis\b/, "Privacy trellis"],
   [/\bhot water\b|\bwater line\b|\bhose bib\b|\bspigot\b/, "Water line"],

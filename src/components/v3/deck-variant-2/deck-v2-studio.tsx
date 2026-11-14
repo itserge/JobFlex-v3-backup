@@ -107,7 +107,7 @@ import { fieldLight, type FieldFocus } from "@/lib/deck/fieldParts";
 import type { PlanEdgeHit } from "@/components/v3/deck-estimator-blueprint/deck-plan";
 import { nearestStairEdge } from "@/components/v3/deck-estimator-blueprint/deck-plan";
 import { SKIRT_KINDS, SKIRT_LABEL } from "@/lib/deck/skirt";
-import { BUILT_IN_KINDS, BUILT_IN_LABEL, BUILT_IN_LIMITS, BUILT_IN_SIDES, BUILT_IN_SIDE_LABEL, defaultBuiltIn, type BuiltIn } from "@/lib/deck/builtins";
+import { BUILT_IN_KINDS, BUILT_IN_LABEL, BUILT_IN_LIMITS, BUILT_IN_SIDES, BUILT_IN_SIDE_LABEL, SCREEN_DEFAULT_FT, defaultBuiltIn, type BuiltIn } from "@/lib/deck/builtins";
 import { CUSTOM, CUSTOM_LABEL, CustomBox, Field, FieldScope, Fold, NameInput, NumberInput, Scope, Seg, Toggle, ago, cx, feetText, intText, money, parseFeet, parseInches, priceShow, priceText, type FieldScopeValue } from "./deck-v2-controls";
 import { DeckV2Plan, type Part, type PartHit } from "./deck-v2-plan";
 import { DeckV2ClientLinks } from "./deck-v2-client";
@@ -1272,7 +1272,7 @@ export function DeckV2Studio({ initialBook, homeState, initialAddress, clientId,
               return (
                 <div key={b.id} className="v2-row v2-row-card" data-deck-builtin={b.id}>
                   <div className="v2-row-head">
-                    <span className="v2-row-title">{BUILT_IN_LABEL[b.kind]} — {built?.built ? `${feetText(Math.round((built.lengthIn / 12) * 2) / 2)} ft along the ${BUILT_IN_SIDE_LABEL[b.side].toLowerCase()}` : `not built: ${built?.why ?? "no room"}`}</span>
+                    <span className="v2-row-title">{BUILT_IN_LABEL[b.kind]} — {built?.built ? `${feetText(Math.round((built.lengthIn / 12) * 2) / 2).replace(/^(\d+(?:\.\d+)?)$/, "$1 ft")} along the ${BUILT_IN_SIDE_LABEL[b.side].toLowerCase()}` : `not built: ${built?.why ?? "no room"}`}</span>
                     <button type="button" className="v2-btn v2-btn-sm v2-btn-quiet" onClick={() => patch({ extras: { builtIns: list.filter((x) => x.id !== b.id) } })} data-deck-builtin-remove>Remove</button>
                   </div>
                   <div className="v2-grid2">
@@ -1289,6 +1289,11 @@ export function DeckV2Studio({ initialBook, homeState, initialAddress, clientId,
                     <Field label="How long" aside="ft">
                       <NumberInput label={`${name}: how long, feet`} value={b.lengthFt} parse={parseFeet} format={feetText} min={BUILT_IN_LIMITS.lengthFt.min} max={b.kind === "planter" ? BUILT_IN_LIMITS.planterFt.max : BUILT_IN_LIMITS.lengthFt.max} onCommit={(n2) => setB({ lengthFt: n2 })} />
                     </Field>
+                    {b.kind === "screen" ? (
+                      <Field label="How high" aside="ft above the deck">
+                        <NumberInput label={`${name}: how high, feet above the deck`} value={b.heightFt ?? SCREEN_DEFAULT_FT} parse={parseFeet} format={feetText} min={BUILT_IN_LIMITS.screenFt.min} max={BUILT_IN_LIMITS.screenFt.max} onCommit={(n2) => setB({ heightFt: n2 })} />
+                      </Field>
+                    ) : null}
                   </div>
                 </div>
               );

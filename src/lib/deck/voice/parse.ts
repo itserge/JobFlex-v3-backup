@@ -1327,10 +1327,23 @@ function readSkirt(c: string): Read {
 /** Built-in benches and planter boxes (2026-11-14; lib/deck/builtins). With a price said they stay the shop's own item (readItem). */
 const BENCH_WORDS = /\bbench(?:es)?\b|\bbuilt[- ]in seat(?:s|ing)?\b|\bseating\b/;
 const PLANTER_WORDS = /\bplanters?\b|\bplanter box(?:es)?\b|\bflower box(?:es)?\b/;
-function readBuiltIn(c: string): Read {
+/** A privacy screen on an OPEN deck's edge. (Under a roof, "privacy walls / screens" are the roof's walls: its own rule.) */
+const SCREEN_WORDS = /\bprivacy (?:screens?|fences?|walls?|panels?|slats)\b|\bscreen wall\b|\bslat(?:ted)? (?:screen|wall)s?\b/;
+function readBuiltIn(c: string, ctx: ParseContext): Read {
   const planter = PLANTER_WORDS.test(c);
-  if ((!planter && !BENCH_WORDS.test(c)) || money(c) !== null) return null;
+  const screen = !planter && ctx.design.structure === "deck" && SCREEN_WORDS.test(c);
+  if ((!planter && !screen && !BENCH_WORDS.test(c)) || money(c) !== null) return null;
   type B = Extract<DeckCommand, { do: "builtin" }>;
+  if (screen) {
+    const lr = (/\bleft\b/.test(c) ? 1 : 0) + (/\bright\b/.test(c) ? 2 : 0);
+    if (isRemove(c) || /^no /.test(c)) return read([{ do: "builtin", op: "remove", kind: "screen", ...(lr === 1 ? { side: "left" } : lr === 2 ? { side: "right" } : /\bfront\b/.test(c) ? { side: "front" } : {}) }], "deck");
+    // "6 ft high" is its height; another length said is how long it runs.
+    const high = /(\d+(?:\.\d+)?) ft (?:high|tall)\b/.exec(c);
+    const long = /(\d+(?:\.\d+)?) ft (?:long|wide|of)\b/.exec(c) ?? (high ? null : /(\d+(?:\.\d+)?) ft\b/.exec(c));
+    const one = (side: NonNullable<B["side"]>): B => ({ do: "builtin", op: "add", kind: "screen", side, ...(long ? { lengthFt: Math.min(30, Math.max(2, Math.round(Number(long[1]) * 2) / 2)) } : {}), ...(high ? { heightFt: Math.min(8, Math.max(3, Math.round(Number(high[1]) * 2) / 2)) } : {}) });
+    if (lr === 3 || /\bboth (?:sides|ends)\b|\beach (?:side|end)\b/.test(c)) return read([one("left"), one("right")], "deck");
+    return read([one(lr === 2 ? "right" : lr === 1 ? "left" : /\bfront\b/.test(c) ? "front" : "left")], "deck");
+  }
   const kind: B["kind"] = planter ? "planter" : /\bback(?:s|rests?|ed)?\b/.test(c) && !/\bbackless\b|\b(?:no|without (?:a |any )?) ?back(?:s|rests?)?\b/.test(c) ? "bench-back" : "bench";
   const left = /\bleft\b/.test(c);
   const right = /\bright\b/.test(c);
@@ -1776,7 +1789,7 @@ export function readClause(raw: string, ctx: ParseContext): ClauseRead {
   if (show) return { text, ...show, unknown: false };
   const skirt = readSkirt(c);
   if (skirt) return { text, ...skirt, unknown: false };
-  const builtIn = readBuiltIn(c);
+  const builtIn = readBuiltIn(c, ctx);
   if (builtIn) return { text, ...builtIn, unknown: false };
   // A clause that names a part to change is read by that part's rule; "show me", "at night" and the like by the view.
   const head = headOf(c, ctx.design.structure !== "deck");

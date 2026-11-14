@@ -21,6 +21,7 @@
 import { PIER_BLOCK, STOCK_LENGTHS_FT, type DeckFrame, type Stick, type StickRole } from "./frame";
 import type { DeckSurface } from "./surface";
 import { SKIRT_GAP_IN } from "./skirt";
+import { SCREEN_GAP_IN } from "./builtins";
 import { LEDGER_FASTENER_LABEL, ftIn, type LedgerFastener } from "./codeTables";
 import { POST_HARDWARE_FACTOR, STAINLESS_FACTOR, lumberKey, tubeFactor } from "./rates";
 import { isCompositeFraming } from "./catalog";
@@ -384,7 +385,8 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
   if (s.surface && s.frame) {
     const product = s.surface.product;
     const fasciaKey = product.family === "composite" || product.family === "pvc" ? "fascia.composite" : "fascia.wood";
-    const benches = s.builtIns.filter((b) => b.built && b.kind !== "planter");
+    const benches = s.builtIns.filter((b) => b.built && (b.kind === "bench" || b.kind === "bench-back"));
+    const screens = s.builtIns.filter((b) => b.built && b.kind === "screen");
     const planters = s.builtIns.filter((b) => b.built && b.kind === "planter");
     const tenth = (lf: number, stockFt: number) => Math.ceil((lf * 1.1) / stockFt - 1e-9);
     const sumOf = (list: typeof benches, f: (b: (typeof benches)[number]) => number) => list.reduce((a, b) => a + f(b), 0);
@@ -399,6 +401,22 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
       lumber("builtins", "bench cleats", "2x4", 8, tenth(sumOf(benches, (b) => b.frameLf), 8), false, "one across each pair of legs", "bench-cleats");
       const supports = sumOf(benches, (b) => b.supports);
       lumber("builtins", "blocking under the benches", s.frame.joistSize, frameStocks[0], tenth((supports * 2 * s.frame.spacingIn) / 12, frameStocks[0]), false, `two blocks between the joists under each of the ${supports} supports`, "bench-blocking", oc);
+    }
+    if (screens.length) {
+      const boards = tenth(sumOf(screens, (b) => b.boardLf), 12);
+      push({ id: "screen-boards", step: "builtins", kind: "boards", label: `${product.label} × 12 ft — privacy screen`, qty: boards, unit: "pcs", note: `${Math.round(sumOf(screens, (b) => b.sqFt))} sq ft of screen: boards across the posts ${SCREEN_GAP_IN} in. apart, a cap board on top`, rateKey: `deck.${product.id}`, rateQty: boards * 12, factor: 1 });
+      // Posts in one piece from under the deck to the cap, each in the stock length that covers it.
+      for (const size of ["4x4", "6x6"] as const) {
+        const of = screens.filter((b) => b.postSize === size);
+        const count = sumOf(of, (b) => b.posts);
+        if (!count) continue;
+        const longest = Math.max(...of.map((b) => b.postLf / b.posts));
+        const stockFt = [8, 10, 12, 16].find((v) => v >= longest) ?? 16;
+        lumber("builtins", "privacy screen posts", size, stockFt, count, false, "one piece from under the deck to the cap", "screen-posts");
+        hw("screen-post-bolts", "builtins", "1/2-in. through-bolts — privacy screen posts to the frame", count * 2, "hw.bolt", 1, "ea", "two to a post, through solid blocking");
+      }
+      const posts = sumOf(screens, (b) => b.posts);
+      lumber("builtins", "blocking behind the screen posts", s.frame.joistSize, frameStocks[0], tenth((posts * 2 * s.frame.spacingIn) / 12, frameStocks[0]), false, `two blocks at each of the ${posts} posts`, "screen-blocking", oc);
     }
     if (planters.length) {
       const boards = tenth(sumOf(planters, (b) => b.boardLf), 12);

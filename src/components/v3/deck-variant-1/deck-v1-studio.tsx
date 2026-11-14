@@ -134,7 +134,7 @@ import { HouseWallPlan } from "@/components/v3/deck-estimator-blueprint/house-wa
 import { DeckKindPicker } from "@/components/v3/deck-estimator-blueprint/deck-kind-picker";
 import { DeckPlan, type PlanEdgeHit, nearestStairEdge } from "@/components/v3/deck-estimator-blueprint/deck-plan";
 import { SKIRT_KINDS, SKIRT_LABEL } from "@/lib/deck/skirt";
-import { BUILT_IN_KINDS, BUILT_IN_LABEL, BUILT_IN_LIMITS, BUILT_IN_SIDES, BUILT_IN_SIDE_LABEL, defaultBuiltIn, type BuiltIn } from "@/lib/deck/builtins";
+import { BUILT_IN_KINDS, BUILT_IN_LABEL, BUILT_IN_LIMITS, BUILT_IN_SIDES, BUILT_IN_SIDE_LABEL, SCREEN_DEFAULT_FT, defaultBuiltIn, type BuiltIn } from "@/lib/deck/builtins";
 import { Answers, CUSTOM, CUSTOM_LABEL, CustomBox, Field, FieldScope, More, NameInput, NumberInput, Scope, Seg, Stepper, Toggle, ago, cx, feetText, intText, money, parseFeet, parseInches, priceShow, priceText, type FieldScopeValue } from "./deck-v1-parts";
 import { DeckV1Send, type SendPrefill } from "./deck-v1-send";
 import { PartCardView, PartDoneLine, TakenOutLine, usePartLight, type PartDone, type PickedPart } from "./deck-v1-pick";
@@ -3122,7 +3122,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
       {withDeck ? (
         <div data-deck-builtins>
           <h3 className="v1-h3">Built-in benches and planters</h3>
-          <p className="v1-hint">Built into the deck in its own boards, each along one edge: just inside the railing where there is one. Add one, then say which edge, where along it and how long.</p>
+          <p className="v1-hint">Built into the deck in its own boards, each along one edge: benches and planters just inside the railing, a privacy screen in the railing&apos;s place. Add one, then say which edge, where along it and how long.</p>
           <div className="v1-fix-grid">
             {BUILT_IN_KINDS.map((k) => (
               <button key={k} type="button" className="v1-add v1-add-small" disabled={builtIns.length >= BUILT_IN_LIMITS.count} onClick={() => setBuiltIns([...builtIns, defaultBuiltIn(`b${builtIns.length + 1}-${Date.now().toString(36).slice(-3)}`, k, design.shape.widthFt)])} data-deck-builtin-add={k}>
@@ -3142,7 +3142,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                   <div className="v1-item-head">
                     <span className="v1-item-title">
                       {BUILT_IN_LABEL[b.kind]}
-                      <span className="v1-item-sub">{built?.built ? `${feetText(Math.round((built.lengthIn / 12) * 2) / 2)} ft along the ${BUILT_IN_SIDE_LABEL[b.side].toLowerCase()}${built.flags.shortened ? " — as long as that edge allows" : ""}${built.kind === "planter" ? ` · about ${Math.round(built.weightLb / 10) * 10} lb full` : ""}` : `not built: ${built?.why ?? "no room"}`}</span>
+                      <span className="v1-item-sub">{built?.built ? `${feetText(Math.round((built.lengthIn / 12) * 2) / 2).replace(/^(\d+(?:\.\d+)?)$/, "$1 ft")} along the ${BUILT_IN_SIDE_LABEL[b.side].toLowerCase()}${built.flags.shortened ? " — as long as that edge allows" : ""}${built.kind === "planter" ? ` · about ${Math.round(built.weightLb / 10) * 10} lb full` : built.kind === "screen" ? ` · ${built.posts} ${built.postSize} posts, in the railing's place` : ""}` : `not built: ${built?.why ?? "no room"}`}</span>
                     </span>
                     <button type="button" className="v1-btn v1-btn-sm v1-btn-danger" onClick={() => setBuiltIns(builtIns.filter((x) => x.id !== b.id))} data-deck-builtin-remove>
                       Remove
@@ -3162,6 +3162,11 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                     <Field label="How long" aside="ft">
                       <NumberInput label={`${name}: how long, feet`} value={b.lengthFt} parse={parseFeet} format={feetText} min={BUILT_IN_LIMITS.lengthFt.min} max={b.kind === "planter" ? BUILT_IN_LIMITS.planterFt.max : BUILT_IN_LIMITS.lengthFt.max} onCommit={(n2) => setB({ lengthFt: n2 })} />
                     </Field>
+                    {b.kind === "screen" ? (
+                      <Field label="How high" aside="ft above the deck">
+                        <NumberInput label={`${name}: how high, feet above the deck`} value={b.heightFt ?? SCREEN_DEFAULT_FT} parse={parseFeet} format={feetText} min={BUILT_IN_LIMITS.screenFt.min} max={BUILT_IN_LIMITS.screenFt.max} onCommit={(n2) => setB({ heightFt: n2 })} />
+                      </Field>
+                    ) : null}
                   </div>
                 </div>
               );

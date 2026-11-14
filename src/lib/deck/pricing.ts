@@ -30,7 +30,7 @@ import { roofByHandWords, roofWords, type RoofFrame } from "./roof";
 import { buildStructure, structureLevels, type DeckStructure } from "./structure";
 import { deckTakeoff, type BomLine, type BomStep, type DeckTakeoff } from "./takeoff";
 import { SKIRT_GAP_IN } from "./skirt";
-import { BENCH_SEAT_IN, PLANTER_DEPTH_IN, builtInWords } from "./builtins";
+import { BENCH_SEAT_IN, PLANTER_DEPTH_IN, SCREEN_GAP_IN, builtInWords } from "./builtins";
 import { isExampleSource, deckRate, type ResolvedRate } from "./rates";
 import { railType, speciesWords } from "./catalog";
 import { OC_POST } from "./ocLumber";
@@ -250,8 +250,25 @@ export function priceStructure(s: DeckStructure, opts: DeckPriceOptions = {}): D
 
     // Built-in benches and planter boxes (2026-11-14; lib/deck/builtins): a line for the benches, a line for the boxes.
     {
-      const benches = s.builtIns.filter((b) => b.built && b.kind !== "planter");
+      const benches = s.builtIns.filter((b) => b.built && (b.kind === "bench" || b.kind === "bench-back"));
       const planters = s.builtIns.filter((b) => b.built && b.kind === "planter");
+      const screens = s.builtIns.filter((b) => b.built && b.kind === "screen");
+      if (screens.length) {
+        const isScreen = (l: PricedBomLine) => l.id.includes("screen");
+        const sqFt = Math.round(screens.reduce((a, b) => a + b.sqFt, 0));
+        const w = work("labor.screen", sqFt);
+        line({
+          id: "deck-screens",
+          name: screens.length === 1 ? "Privacy screen" : `${screens.length} privacy screens`,
+          description: `${screens.map((b) => builtInWords(b).replace(/^an? /, "")).join("; ")} — the deck's own boards across ${[...new Set(screens.map((b) => b.postSize))].join(" and ")} posts no more than 6 ft apart, ${SCREEN_GAP_IN} in. between the boards, a cap board on top; each post in one piece from under the deck, through-bolted to the frame over solid blocking`,
+          quantity: Math.max(1, sqFt),
+          unit: "sqft",
+          material: stepMaterial("builtins", isScreen),
+          labor: w.amount,
+          exampleMaterial: stepExample("builtins", isScreen),
+          exampleLabor: w.example,
+        });
+      }
       const ftOf = (list: typeof benches) => Math.round((list.reduce((a, b) => a + b.lengthIn, 0) / 12) * 2) / 2;
       if (benches.length) {
         const backs = benches.filter((b) => b.kind === "bench-back");
@@ -535,7 +552,7 @@ export function deckScope(pkg: DeckPackage, where?: string | null): string[] {
     out.push(`Electrical: ${electricalWords(el).toLowerCase()} — ${[...new Set(el.fixtures.map((f) => FIXTURE_LABEL[f.kind].toLowerCase()))].join(", ")}, on ${plural(el.circuits.length, "new circuit")} from the panel, weatherproof boxes and GFCI protection, by a licensed electrician.`);
     if (el.byClient.length) out.push(`${el.byClient.length === 1 ? "One fixture" : `${el.byClient.length} fixtures`} (${[...new Set(el.byClient.map((f) => FIXTURE_LABEL[f.kind].toLowerCase()))].join(", ")}) to be chosen and bought by you; we wire the boxes and hang them.`);
   }
-  for (const b of s.builtIns) if (b.built) out.push(b.kind === "planter" ? `${builtInWords(b).replace(/^a /, "A ").replace(/^an /, "An ")}, in the deck's own boards with a cap round the rim, lined and drained. Soil and plants are not included.` : `${builtInWords(b).replace(/^a /, "A ").replace(/^an /, "An ")}, built in: the seat in the deck's own boards on treated legs, a fascia apron under its edge${b.kind === "bench-back" ? ", a capped back behind it" : ""}.`);
+  for (const b of s.builtIns) if (b.built) out.push(b.kind === "screen" ? `${builtInWords(b).replace(/^a /, "A ").replace(/^an /, "An ")}: the deck's own boards across ${b.postSize} posts, with a cap board; the posts bolted through the deck's frame.` : b.kind === "planter" ? `${builtInWords(b).replace(/^a /, "A ").replace(/^an /, "An ")}, in the deck's own boards with a cap round the rim, lined and drained. Soil and plants are not included.` : `${builtInWords(b).replace(/^a /, "A ").replace(/^an /, "An ")}, built in: the seat in the deck's own boards on treated legs, a fascia apron under its edge${b.kind === "bench-back" ? ", a capped back behind it" : ""}.`);
   if (s.skirt) out.push(`Skirting under the deck on its open sides (${Math.round(s.skirt.lf)} ft): ${s.skirt.kind === "lattice" ? "lattice in a border" : "the deck's own boards laid level, with gaps for air"}, on a treated frame, stopped a hand above the ground, with one hinged panel to get under the deck.`);
   if (design.extras.underDeckDrain) out.push("An under-deck drainage system keeps the space below the deck dry.");
   if (design.extras.demoSqFt > 0) out.push(`Tear-out and haul-away of the existing deck, ${design.extras.demoSqFt} sq ft.`);

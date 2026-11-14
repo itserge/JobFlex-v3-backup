@@ -36,7 +36,7 @@ import type { RailMember } from "./rails";
 import { BASE_PLATE_IN, BASE_PLATE_THICK_IN, railMountCallout, railPostWords, railWords } from "./rails";
 import { electricalWords } from "./electrical";
 import { SKIRT_BOARD_IN, SKIRT_BORDER_IN, SKIRT_CLEAR_IN, SKIRT_GAP_IN, SKIRT_THICK_IN } from "./skirt";
-import { BENCH_BACK_IN, BENCH_SEAT_IN, type BuiltInMember } from "./builtins";
+import { BENCH_BACK_IN, BENCH_SEAT_IN, SCREEN_GAP_IN, type BuiltInMember } from "./builtins";
 import { HOUSE_MATERIALS, HOUSE_ROOFS, houseHandles, houseScene, settleSceneOpenings, type HouseMaterial, type HouseRoof } from "./house";
 import { railColorOf, speciesWords } from "./catalog";
 
@@ -356,7 +356,7 @@ export const ROOF_MEMBER_LAYER: Record<RoofMember["role"], SceneLayer> = {
 const ROOF_PLANE_LAYER: Record<RoofPlane["kind"], SceneLayer> = { sheathing: "sheathing", roofing: "roofing", ceiling: "ceiling", soffit: "trim", slab: "slab", wall: "wall", screen: "screen", louver: "roofing", fixture: "light" };
 const STAIR_LAYER: Record<StairMember["role"], SceneLayer> = { stringer: "stair", tread: "stair", riser: "stair", kicker: "stair", "stair-post": "stair", "stair-beam": "stair", "landing-frame": "stair", "landing-tread": "stair", "box-frame": "stair", "box-tread": "stair", "stair-rail": "rail", "stair-rail-post": "rail", "stair-baluster": "rail", pad: "slab" };
 /** Built-ins: boards as the deck's, aprons as its fascia, legs and cleats as its frame, a planter's soil dark. */
-const BUILT_IN_LAYER: Record<BuiltInMember["role"], SceneLayer> = { "bench seat": "decking", "bench back": "decking", "bench cap": "decking", "bench apron": "fascia", "bench leg": "post", "bench back post": "post", "bench cleat": "joist", "planter board": "decking", "planter cap": "fascia", "planter soil": "spa" };
+const BUILT_IN_LAYER: Record<BuiltInMember["role"], SceneLayer> = { "bench seat": "decking", "bench back": "decking", "bench cap": "decking", "bench apron": "fascia", "bench leg": "post", "bench back post": "post", "bench cleat": "joist", "planter board": "decking", "planter cap": "fascia", "planter soil": "spa", "screen post": "post", "screen board": "decking", "screen cap": "fascia" };
 const RAIL_LAYER: Record<RailMember["role"], SceneLayer> = { "rail-post": "rail", "rail-top": "rail", "rail-bottom": "rail", "rail-cap": "rail", baluster: "rail", cable: "rail", "rail-panel": "glass", mesh: "rail" };
 /** The rail parts a scene's `railInfill` colour is for: the infill, not the frame. */
 export const RAIL_INFILL_ROLE = /^(?:lower level )?(?:baluster|stair baluster|cable|mesh)$/;
@@ -684,6 +684,12 @@ export function deckScene(s: DeckStructure): DeckScene {
           return "Planter box: deck boards on a treated 2x4 frame, on feet that keep it off the deck's boards so water runs out under it.";
         case "planter cap":
           return "Cap board round the planter's rim.";
+        case "screen post":
+          return `Privacy screen post, treated ${bi.postSize}: one piece from under the deck to the cap — run down beside a joist or the rim and through-bolted twice, with solid blocking behind it. It holds the wind, not just the boards: about ${bi.windLb} lb on each post in a strong wind.`;
+        case "screen board":
+          return `Privacy screen: the deck's boards across the posts' inner faces, ${SCREEN_GAP_IN} in. apart, two screws at every post.`;
+        case "screen cap":
+          return "Cap board on the screen's posts.";
         default:
           return "Planting soil in a liner with drain holes. Wet soil is heavy: see the checks for what this box weighs.";
       }
