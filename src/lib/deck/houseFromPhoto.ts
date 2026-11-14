@@ -152,6 +152,9 @@ export function houseFromPhoto(input: PhotoHouseInput): PhotoHouse | null {
   // A divider the contractor left level on the review (depth 0) is no step.
   const jogs: HouseJog[] = read.jogs.filter((j) => j.depthFt === null || j.depthFt >= 0.25).slice(0, HOUSE_LIMITS.jogs).map((j, i) => ({ id: `j${i + 1}`, atFt: half(deckFt(j.x)), dir: j.dir, depthFt: half(clamp(j.depthFt ?? JOG_DEFAULT_FT, HOUSE_LIMITS.depthFt.min, HOUSE_LIMITS.depthFt.max)) }));
   const unsizedSteps = read.jogs.filter((j) => j.depthFt === null).length;
+  // Corners seen in the wall whose way is still not known (dividers): built as nothing, but SAID — a wall that reads
+  // "straight" with a corner standing in it is the thing to look at (2026-11-13).
+  const openCorners = read.jogs.filter((j) => j.depthFt === 0).map((j) => Math.round(along(j.x) * 2) / 2);
 
   // STOREYS, the roof, the cladding, the colours.
   const eaveFt = read.eave ? Math.max(above(read.eave.left.y, read.eave.left.x), above(read.eave.right.y, read.eave.right.x)) : null;
@@ -239,7 +242,7 @@ export function houseFromPhoto(input: PhotoHouseInput): PhotoHouse | null {
   const rough = scale.by === "eave";
   facts.push({ id: "wall", label: "Wall", value: `≈ ${ftIn(Math.round(wallFt * 2) / 2)} wide · sized by ${scaleWords}`, guess: rough });
   facts.push({ id: "storeys", label: "House", value: `${storeys === 2 ? "Two storeys" : "One storey"} · ${read.roof.kind ? ROOF_WORDS[read.roof.kind] : `${roof} roof (not seen — kept)`}${read.roof.pitch ? ` · about ${read.roof.pitch}/12` : ""}${ownWords.length ? ` · ${ownWords.join(", ")}` : ""}`, guess: !read.storeys || !read.roof.kind });
-  facts.push({ id: "steps", label: "Steps", value: jogs.length ? `${plural(jogs.length, "step")} in the wall — ${jogs.map((j) => `${j.dir === "toward" ? "out" : "back"} ${ftIn(j.depthFt)}`).join(", ")}${tallBump ? " · the bump-out is as tall as the house" : ""}` : "A straight wall", guess: unsizedSteps > 0 });
+  facts.push({ id: "steps", label: "Steps", value: jogs.length ? `${plural(jogs.length, "step")} in the wall — ${jogs.map((j) => `${j.dir === "toward" ? "out" : "back"} ${ftIn(j.depthFt)}`).join(", ")}${tallBump ? " · the bump-out is as tall as the house" : ""}` : openCorners.length ? `A straight wall so far — ${plural(openCorners.length, "corner")} seen in it, not yet a step` : "A straight wall", guess: unsizedSteps > 0 || (!jogs.length && openCorners.length > 0) });
   const winCount = openings.filter((o) => o.kind === "window").length;
   const stoodDoors = openings.filter((o) => o.kind !== "window");
   const doorWords = stoodDoors.length ? stoodDoors.map((d) => `${d.kind === "garage" ? "a garage door" : d.kind === "slider" ? "a sliding door" : "a door"} ${ftIn(Math.round(d.widthFt * 2) / 2)} wide`).join(", ") : "no door seen";
@@ -252,6 +255,7 @@ export function houseFromPhoto(input: PhotoHouseInput): PhotoHouse | null {
   if (rough && read.doors.some((d) => d.kind !== "garage")) checks.push("The door's marked height does not agree with the wall. Include its full frame behind any railing, or enter the measured wall width.");
   if (mainDoor && !reliableThreshold) checks.push("Deck height kept: mark the full door down to its threshold and check the scale before setting the deck floor from it.");
   if (!mainDoor) checks.push(doors.length ? "No door onto the deck seen (a garage door doesn't count) — if there is one, mark it, and the deck's height comes from its threshold." : "No back door seen — if there is one, mark it, and the deck's height comes from its threshold.");
+  if (openCorners.length) checks.push(`${openCorners.length === 1 ? `A corner shows in the wall about ${ftIn(openCorners[0])} from its left end` : `Corners show in the wall about ${openCorners.map((x) => ftIn(x)).join(" and ")} from its left end`}, but not which side stands forward — tap the part that comes out, then set how far. Left alone, the wall is built flat there.`);
   if (unsizedSteps) checks.push(`${unsizedSteps === 1 ? "The step's depth is" : "The steps' depths are"} a guess (${ftIn(JOG_DEFAULT_FT)}) — set ${unsizedSteps === 1 ? "it" : "them"} in the wall drawing.`);
   if (read.confidence < 0.5) checks.push("The picture was hard to read — look over the lines before building.");
   if (read.note) checks.push(read.note);
