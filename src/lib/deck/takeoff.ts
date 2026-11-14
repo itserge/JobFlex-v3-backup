@@ -353,7 +353,12 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
     }
     // A border in a second colour is its own order, named with its colour (2026-11-10).
     for (const st of surface.borderStock) {
-      push({ id: `boards-border-${st.lengthFt}`, step: "decking", kind: "boards", label: `${surface.product.border?.label ?? surface.product.label} × ${st.lengthFt} ft — border`, qty: st.count, unit: "pcs", note: `${surface.border === 2 ? "double" : "single"} picture-frame border, ${Math.round(surface.borderLf)} ft of board`, rateKey: `deck.${surface.product.id}`, rateQty: st.count * st.lengthFt, factor: 1 });
+      push({ id: `boards-border-${st.lengthFt}`, step: "decking", kind: "boards", label: `${surface.product.border?.label ?? surface.product.label} × ${st.lengthFt} ft — border`, qty: st.count, unit: "pcs", note: [surface.border ? `${surface.border === 2 ? "double" : "single"} picture-frame border, ${Math.round(surface.borderLf)} ft of board` : "", surface.breakers.length ? `${surface.breakers.length === 1 ? "one breaker board" : "two breaker boards"}, ${Math.round(surface.breakerLf)} ft` : ""].filter(Boolean).join("; "), rateKey: `deck.${surface.product.id}`, rateQty: st.count * st.lengthFt, factor: 1 });
+    }
+    // What a breaker board lies on (2026-11-14): a joist under each row of board ends, and blocks between the two.
+    if (surface.breakerBackingIn.length) {
+      const bk = lfOf(surface.breakerBackingIn, [8, 10, 12, 16, 20]);
+      lumber("framing", "framing under the breaker boards", frame.joistSize, bk.stockFt, bk.boards, false, `${surface.breakers.length === 1 ? "one breaker" : "two breakers"}: a joist under each row of board ends and one length cut into blocks between them`, "breaker-backing");
     }
     hw("deck-fasteners", "decking", surface.fastening === "hidden" ? "Hidden clips and screws" : "Deck screws", Math.round(frame.areaSqFt), surface.fastening === "hidden" ? "fast.hidden" : "fast.screws", 1, "sq ft", surface.fastening === "hidden" ? `about ${surface.crossings} clips` : `about ${surface.crossings * 2} screws`);
     if (surface.fascia.on) {

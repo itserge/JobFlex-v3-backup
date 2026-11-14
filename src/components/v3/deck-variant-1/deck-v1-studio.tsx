@@ -2190,6 +2190,10 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
               <NumberInput label="Waste allowance on the boards, percent" value={design.decking.wastePct} parse={intText} format={String} min={0} max={30} onCommit={(n2) => patch({ decking: { wastePct: n2 } })} />
             </Field>
           </div>
+          {/* Breaker boards (2026-11-14; lib/deck/surface): a board across the field, so no row has a butt joint. */}
+          <Field label="Breaker boards" wide aside={design.decking.pattern !== "straight" ? "for boards laid square to the joists" : pkg.takeoff.surface.breakers.length ? `longest board in a row ${feetText(Math.round((pkg.takeoff.surface.longestRowIn / 12) * 4) / 4)}${/'/.test(feetText(Math.round((pkg.takeoff.surface.longestRowIn / 12) * 4) / 4)) ? "" : " ft"}` : design.decking.breakers ? "does not fit here" : "a board across the field: no butt joints"}>
+            <Seg label="Breaker boards" value={design.decking.pattern === "straight" ? (design.decking.breakers ?? 0) : 0} onChange={(v) => patch({ decking: { breakers: v === 0 ? undefined : v, ...(design.decking.pattern !== "straight" ? { pattern: "straight" as const, diagonal: false } : {}) } })} options={[{ value: 0 as const, label: "None" }, { value: 1 as const, label: "One, in the middle" }, { value: 2 as const, label: "Two, at the thirds" }]} />
+          </Field>
           {/* Skirting under the deck (2026-11-14; lib/deck/skirt): the first of the luxury options. */}
           <Field label="Skirting under the deck" wide aside={design.extras.skirt ? (pkg.structure.skirt ? `${Math.round(pkg.structure.skirt.lf)} ft, up to ${pkg.structure.skirt.heightIn} in. high` : "the deck is too low for it") : undefined}>
             <Seg label="Skirting under the deck" value={design.extras.skirt ?? "none"} onChange={(v) => patch({ extras: { skirt: v === "none" ? undefined : v } })} options={SKIRT_KINDS.map((v) => ({ value: v, label: SKIRT_LABEL[v] }))} />

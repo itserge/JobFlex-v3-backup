@@ -1165,6 +1165,19 @@ function runDecking(d: DeckDesign, s: DeckingSet, env: RunEnv, settle: (x: DeckD
     said.push(s.border ? `A picture-frame border, ${plural(s.border, "row")} of boards along every open edge — toned a shade deeper in the 3D so the frame shows.` : "No border.");
     flash.push({ label: "Picture-frame border" });
   }
+  if (s.breakers !== undefined) {
+    // Breaker boards go with boards laid straight: asked for on a diagonal or a herringbone, the boards go straight too.
+    const straight = (p.decking?.pattern ?? d.decking.pattern) === "straight";
+    p.decking = { ...(p.decking ?? {}), breakers: s.breakers === 0 ? undefined : s.breakers, ...(s.breakers && !straight ? { pattern: "straight" as const, diagonal: false } : {}) };
+    if (s.breakers === 0) said.push(d.decking.breakers ? "No breaker boards — the rows run the deck's whole width." : "There are no breaker boards on this deck.");
+    else {
+      const built = buildStructure(patchDesign(d, p, settle)).surface;
+      if (!built?.breakers.length) return no("A breaker board does not fit this deck: the boards beside it would be shorter than 2 ft, or its front is bowed or clipped.");
+      const longestStockFt = Math.max(...built.product.lengthsFt);
+      said.push(`${built.breakers.length === 1 ? "A breaker board across the middle" : "Two breaker boards at the thirds"}, out from the house: every row stops against ${built.breakers.length === 1 ? "it" : "them"}, so the longest board in a row is ${ftWords(Math.round((built.longestRowIn / 12) * 4) / 4)}${built.longestRowIn > longestStockFt * 12 + 0.5 ? ` — still longer than a ${longestStockFt}-ft board, so those rows are spliced` : " and no row has a butt joint"}. Two joists and blocking go under ${built.breakers.length === 1 ? "it" : "each"}.${!straight ? " The boards are laid straight for it." : ""}`);
+    }
+    flash.push({ label: "Breaker boards" });
+  }
   if (s.fastening) {
     p.decking = { ...(p.decking ?? {}), fastening: s.fastening };
     const prod = product ?? now;

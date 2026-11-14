@@ -52,7 +52,7 @@ import { cite, codeWords, inFrac, stateName } from "./stateCodes";
 import { openingChecks } from "./openingChecks";
 import { deckPast, pastWords } from "./house";
 import { railHeldWords, railMountLine } from "./rails";
-import { borderWords } from "./surface";
+import { borderWords, breakerWords } from "./surface";
 import { SKIRT_GAP_IN, SKIRT_GROUND_CLEAR_IN, SKIRT_MIN_IN } from "./skirt";
 import { BENCH_BACK_IN, BENCH_SEAT_IN, BUILT_IN_LABEL, SCREEN_GAP_IN, SCREEN_WIND_PSF, builtInWords } from "./builtins";
 
@@ -257,6 +257,25 @@ export function deckChecks(s: DeckStructure): DeckCheck[] {
         part: "Skirting",
         text: `${what} under ${Math.round(sk.lf)} ft of the deck's open edges — ${bays} ${bays === 1 ? "bay" : "bays"}, 8 ft long at most, up to ${sk.heightIn} in. high (${Math.round(sk.sqFt)} sq ft) — on a treated 2x4 frame: a rail fastened under the rim, a rail a hand above the ground, an upright every ${design.extras.skirt === "boards" ? 2 : 4} ft. It stops ${SKIRT_GROUND_CLEAR_IN} in. clear of the soil so it cannot wick water${stepped ? ", stepping down bay by bay with the ground" : ""}${sk.roundPosts ? `; it is cut round the ${sk.roundPosts === 1 ? "post that stands" : `${sk.roundPosts} posts that stand`} at the deck's edge` : ""}. Hang one bay on hinges to get under the deck.${sk.lowFt > 0 ? ` Left off ${Math.round(sk.lowFt)} ft of edge where the frame is less than ${SKIRT_MIN_IN} in. above the ground.` : ""}${design.extras.skirt === "boards" ? " The gaps between the boards are the frame's air: do not close them, and keep the ground under the deck sloped to drain." : ""}`,
       });
+    }
+  }
+  // BREAKER BOARDS (2026-11-14; lib/deck/surface): what they do to the rows, what goes under them — and where one
+  // asked for could not be laid. (Ids clear of AUTO_FIX: a finish the builder chose.)
+  if (frame && s.surface && design.decking.breakers) {
+    const sf = s.surface;
+    const longestStockIn = Math.max(...sf.product.lengthsFt) * 12;
+    if (sf.breakers.length) {
+      const spliced = sf.longestRowIn > longestStockIn + 0.5;
+      add({
+        id: "decking-breaker",
+        level: "pass",
+        part: "Decking",
+        text: `${breakerWords(sf).replace(/^a /, "A ").replace(/^two /, "Two ")}, laid out from the house (${Math.round(sf.breakerLf)} ft of board): every row of the field stops against ${sf.breakers.length === 1 ? "it" : "them"}, so the longest board in a row is ${ftIn(Math.round(sf.longestRowIn))}${spliced ? ` — still longer than a ${Math.round(longestStockIn / 12)}-ft board, so those rows are spliced over a joist${sf.breakers.length === 1 ? "; a second breaker would make every row one board" : ""}` : " and no row has a butt joint"}. Under ${sf.breakers.length === 1 ? "it" : "each"}: a joist under each row of board ends and solid blocking between the two every 16 in. (${Math.round(sf.breakerBackingIn.reduce((a, v) => a + v, 0) / 12)} ft of ${frame.joistSize} added); leave the maker's gap at the board ends against it.${sf.breakersLeftOut > 0 ? ` One of the two asked for is left out: the boards beside it would be shorter than 2 ft.` : ""}`,
+        ...(spliced && sf.breakers.length === 1 ? { fix: { label: "Two breaker boards", patch: { decking: { breakers: 2 as const } } } } : {}),
+      });
+    } else {
+      const front = design.shape.kind === "rect" ? design.shape.front : undefined;
+      add({ id: "decking-breaker-none", level: "warn", part: "Decking", text: `No breaker board is laid: ${front && front.kind !== "straight" ? "under a bowed or clipped front the rows are cut to the front's line, and a board across them is not drawn" : "the field is too narrow — the boards beside it would be shorter than 2 ft"}. It is not in the price.`, fix: { label: "Take the breaker board off", patch: { decking: { breakers: undefined } } } });
     }
   }
   if (s.lower) deckFrameChecks(s.lower.frame, add, null, s.lower.place === "under" ? "Lower deck — " : "Lower level — ");

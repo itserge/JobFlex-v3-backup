@@ -170,7 +170,7 @@ const LIGHT_WORDS = /\b(?:lights?|lighting|lamps?|leds?|bulbs?)\b/;
 const ROOF_WORDS = /\b(?:roofs?|roofing|pitch|rafters?|ridge|shingles?|shakes|gutters?|downspouts?|ceiling|eaves?|headers?|cupola|soffit|covered|cover(?:ing)?|porch|patio cover|shelter|pergola|gazebo|pavilion|trellis|arbor|slats?|louver(?:ed)?|screen(?:ed)?(?: in| porch| room)?|screens|lattice|privacy (?:walls?|panels?|screens?)|walls between|metal roof|tin roof|standing seam|overhead|more shade|less shade|more sun|less sun|pagoda|gambrel|dutch gable|pyramid|purlins?|rake boards?|rakes)\b/;
 const OVERHANG_WORD = /\boverhangs?\b/;
 const HOUSE_WORDS = /\b(?:house|home|siding|bump ?out|nook|ranch|rambler|colonial|bungalow|(?:1|2|one|two|single) story)\b/;
-const DECKING_WORDS = /\b(?:decking|deck boards?|boards?|planks?|surface|floor ?boards?|flooring|walking surface|border|picture ?frame|fascia|fasteners?|clips|pattern|herringbone|chevron|diagonal(?:ly)?|waste)\b/;
+const DECKING_WORDS = /\b(?:decking|deck boards?|boards?|planks?|surface|floor ?boards?|flooring|walking surface|border|picture ?frame|breakers?|butt joints?|fascia|fasteners?|clips|pattern|herringbone|chevron|diagonal(?:ly)?|waste)\b/;
 const FRAME_WORDS = /\b(?:joists?|beams?|girders?|posts?|framing|frame|ledger|footings?|footers?|piers?|blocking|braces?|bracing|rim|cantilever|lumber|hardware|concrete|sonotube|lags?|bolts?|hold ?downs?|stainless|galvanized|species|fir|pine|spf|spruce)\b/;
 
 /** The subject named first in the clause decides which rule reads it first. */
@@ -1161,7 +1161,10 @@ function readDecking(c: string, ctx: ParseContext): Read {
   else if (/\b(?:herringbone|chevron|zig ?zag)\b/.test(c)) set.pattern = "herringbone";
   else if (/\b(?:straight|parallel(?: to the house)?|regular pattern|normal pattern|standard pattern|perpendicular|straight boards)\b/.test(c) && /\b(?:boards?|decking|pattern|lay|run)\b/.test(c)) set.pattern = "straight";
   if (/\b(?:double (?:picture[- ]?frame|border)|two (?:rows? of )?borders?|2 (?:rows? of )?borders?|double[- ]framed|2 border)\b/.test(c)) set.border = 2;
-  else if (/\b(?:picture[- ]?frame(?:d)?|borders?|framed edge|breaker boards?)\b/.test(c)) set.border = isRemove(c) ? 0 : 1;
+  else if (/\b(?:picture[- ]?frame(?:d)?|borders?|framed edge)\b/.test(c)) set.border = isRemove(c) ? 0 : 1;
+  // Breaker boards (2026-11-14; lib/deck/surface): a board across the field, the rows stopping against it. (They were
+  // read as a border — a different thing: the border runs the edges.)
+  if (/\b(?:breaker|divider|dividing|transition|seam|feature) (?:boards?|strips?)\b|\bbreakers?\b|\bno butt joints?\b|\bwithout butt joints?\b/.test(c)) set.breakers = (isRemove(c) || /^no (?:breaker|divider)/.test(c)) && !/\bbutt joints?\b/.test(c) ? 0 : /\b(?:two|2|double|pair of|thirds)\b/.test(c) ? 2 : 1;
   if (/\b(?:hidden (?:fasteners?|clips?|screws?)|hide (?:the )?(?:screws|fasteners|screw heads)|clips|no (?:visible )?screws|(?:don't|do not) (?:want to )?see (?:the |any )?screws|camo|cortex|plugs|invisible fasteners?|screwless)\b/.test(c)) set.fastening = "hidden";
   else if (/\b(?:face[- ]?screw(?:ed|s)?|screws|face[- ]?fasten(?:ed)?|top screwed|deck screws)\b/.test(c)) set.fastening = "screws";
   if (/\bfascia\b|\brim (?:cover|boards?)\b|\bskirt boards?\b/.test(c)) set.fascia = isRemove(c) ? "none" : "match";

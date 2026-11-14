@@ -362,7 +362,7 @@ const RAIL_LAYER: Record<RailMember["role"], SceneLayer> = { "rail-post": "rail"
 export const RAIL_INFILL_ROLE = /^(?:lower level )?(?:baluster|stair baluster|cable|mesh)$/;
 /** A rail's cap (a kit rail's deck-board drink rail is drawn in the scene's `railCap` colour), and a border board. */
 export const RAIL_CAP_ROLE = /^(?:lower level )?rail cap$/;
-export const BORDER_BOARD_ROLE = /^(?:lower level )?border board$/;
+export const BORDER_BOARD_ROLE = /^(?:lower level )?(?:border|breaker) board$/;
 /**
  * A picture-frame border in the deck's OWN colour (2026-11-13 — a deck builder: "turning the border on changes nothing
  * in the 3D"): the same boards, laid along the edges, were drawn in the same colour with seams under a pixel wide —
@@ -564,7 +564,8 @@ export function deckScene(s: DeckStructure): DeckScene {
     const boardZ = f.surfaceIn - surface.product.thickIn / 2;
     const boardTag = tagFor(`${lvl}deck board`, surface.product.nominal, 0, `${surface.product.label}, ${surface.product.gapIn}-in. gaps, ${surface.fastening === "hidden" ? "hidden clips in the grooves" : "two coated screws at every joist"}${surface.pattern !== "straight" ? `, laid ${surface.pattern === "diagonal" ? "on the diagonal" : "in a herringbone"}` : ""}.`);
     const borderTag = tagFor(`${lvl}border board`, surface.product.nominal, 0, `Picture-frame border${surface.product.border ? ` in ${surface.product.border.name}` : ""}, ${surface.border === 2 ? "two boards" : "one board"} wide along every open edge: mitred 45° at the corners, two screws or plugs at every joist, blocking under its inner edge where it runs with the joists.${surface.product.border ? "" : " In the deck's own colour — drawn a shade deeper so the frame reads."}`);
-    for (const p of surface.pieces) box("decking", p.cx + ox, p.cy + oy, boardZ, p.sx, p.sy, surface.product.thickIn, p.border ? borderTag : boardTag, 0, p.yaw ?? 0, 0);
+    const breakerTag = surface.breakers.length ? tagFor(`${lvl}breaker board`, surface.product.nominal, 0, `Breaker board${surface.product.border ? ` in ${surface.product.border.name}` : ""}: laid across the field, out from the house — every row stops against it, so no row has a butt joint. Under it: a joist under each row of board ends and solid blocking between the two every 16 in.; two screws or plugs at every block.${surface.product.border ? "" : " In the deck's own colour — drawn a shade deeper so it reads."}`) : -1;
+    for (const p of surface.pieces) box("decking", p.cx + ox, p.cy + oy, boardZ, p.sx, p.sy, surface.product.thickIn, p.breaker ? breakerTag : p.border ? borderTag : boardTag, 0, p.yaw ?? 0, 0);
     surface.shaped.forEach((ring, ri) => {
       // The border's own cut pieces, in a second colour: the 3D is told which rings they are.
       if (surface.border > 0 && ri >= surface.shapedBorderFrom) borderRings.push(shapedBoards.length);
@@ -1110,8 +1111,8 @@ export function deckScene(s: DeckStructure): DeckScene {
   // Over an OC frame the roof and a wood railing are sawn wood: they keep wood's colour.
   const woodC = design.framing.species === "oc-lumber" ? frameColor(roof?.species.id ?? "hem-fir", roof?.group ?? "DF") : frameC;
   const deckColor2 = s.surface?.product.color2;
-  const borderLook = s.surface?.border ? s.surface.product.border : undefined;
-  const colors: DeckScene["colors"] = { frame: frameC, decking: deckColor, fascia: deckColor, roofing: roofingColor(design.roof.roofing), rail: railColor(design.rail.type, deckColor, woodC, design.rail.color), ...(woodC !== frameC ? { roofFrame: woodC } : {}), ...(deckColor2 ? { decking2: deckColor2 } : {}), ...(rails.on && rails.infillColor ? { railInfill: rails.infillColor } : {}), ...(borderLook ? { border: borderLook.color, ...(borderLook.color2 ? { border2: borderLook.color2 } : {}) } : s.surface?.border ? { border: shadeHex(deckColor, BORDER_SAME_COLOUR_SHADE), ...(deckColor2 ? { border2: shadeHex(deckColor2, BORDER_SAME_COLOUR_SHADE) } : {}) } : {}), ...(rails.on && rails.drinkLf ? { railCap: deckColor } : {}) };
+  const borderLook = s.surface?.border || s.surface?.breakers.length ? s.surface.product.border : undefined;
+  const colors: DeckScene["colors"] = { frame: frameC, decking: deckColor, fascia: deckColor, roofing: roofingColor(design.roof.roofing), rail: railColor(design.rail.type, deckColor, woodC, design.rail.color), ...(woodC !== frameC ? { roofFrame: woodC } : {}), ...(deckColor2 ? { decking2: deckColor2 } : {}), ...(rails.on && rails.infillColor ? { railInfill: rails.infillColor } : {}), ...(borderLook ? { border: borderLook.color, ...(borderLook.color2 ? { border2: borderLook.color2 } : {}) } : s.surface?.border || s.surface?.breakers.length ? { border: shadeHex(deckColor, BORDER_SAME_COLOUR_SHADE), ...(deckColor2 ? { border2: shadeHex(deckColor2, BORDER_SAME_COLOUR_SHADE) } : {}) } : {}), ...(rails.on && rails.drinkLf ? { railCap: deckColor } : {}) };
   const slope = design.site.slope;
   const ground = slope.outDropIn || slope.acrossDropIn ? { outDropFt: r3(slope.outDropIn), acrossDropFt: r3(slope.acrossDropIn) } : null;
   // The handles (edit mode): the deck's width, depth and height at its front-right corner, the roof's eave, each stair along its edge, the lower level's depth.
