@@ -10,6 +10,12 @@
 // the first reply — components/v3/deck-voice/use-deck-speech). So it writes down with gpt-4o-mini-transcribe — quicker
 // and closer on accents and street addresses — and falls back to Whisper when that model is not there; and the lines
 // these models make up out of a quiet room ("Thank you.", "Thanks for watching!") are not sent on as requests.
+//
+// 2026-11-13 (owner: "understand me better … the best voice recognition and even accents"): on the new engine
+// (lib/assistant/speed — platform admins while it is tested) the take is written down by gpt-transcribe, OpenAI's
+// current model, and it is GIVEN the company's own words as keywords: the person's "my words", the crew, the newest
+// clients, their streets and cities, the trade's brands. A refusal of the model or of the keywords falls back a
+// step at a time to the models before, so a turn is never lost to the new one.
 import { NextResponse } from "next/server";
 import { toFile } from "openai";
 import { actorForSession, refusal } from "@/lib/assistant/actor";
@@ -17,6 +23,8 @@ import { getOpenAI, isOpenAIEnabled } from "@/lib/sdk/openai";
 import { rateLimitShared, HOUR } from "@/lib/rateLimit";
 import { takeTrialCap } from "@/lib/trialMeter";
 import { tidySpokenAddress } from "@/lib/assistant/address";
+import { operatorEngine, operatorKeywords } from "@/lib/assistant/speed";
+import { newEarsParams, NEW_EARS_MODEL } from "@/lib/assistant/words";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,11 +50,13 @@ const OTHER_SCRIPT = /[\u0400-\u04FF\u0590-\u06FF\u0900-\u0DFF\u3040-\u30FF\u4E0
 
 export async function POST(req: Request) {
   let organizationId: string;
+  let userId: string;
   try {
     const actor = await actorForSession();
     const closed = await refusal(actor, "today", false);
     if (closed) return NextResponse.json({ error: closed }, { status: 403 });
     organizationId = actor.organizationId;
+    userId = actor.userId;
   } catch {
     return NextResponse.json({ error: "Not signed in." }, { status: 403 });
   }
@@ -73,17 +83,46 @@ export async function POST(req: Request) {
     const ext = /ogg/.test(type) ? "ogg" : /mp4|m4a|aac/.test(type) ? "m4a" : /wav/.test(type) ? "wav" : "webm";
     const file = await toFile(Buffer.from(await audio.arrayBuffer()), `voice.${ext}`, { type });
     const ask = (model: string) => getOpenAI().audio.transcriptions.create({ file, model, language, ...(language === "en" ? { prompt: PROMPT } : {}) });
-    const t0 = Date.now();
-    let model = MODEL;
-    let res;
-    try {
-      res = await ask(model);
-    } catch (err) {
-      // The newer model refused (not on this key, or the file): Whisper writes it down instead.
+    /** The new ears: gpt-transcribe with the company's words (the installed SDK's types predate `keywords` and `languages`). */
+    const askNew = (keywords: readonly string[]) =>
+      getOpenAI().audio.transcriptions.create({ file, ...newEarsParams(language, language === "en" ? PROMPT : null, keywords) } as unknown as Parameters<ReturnType<typeof getOpenAI>["audio"]["transcriptions"]["create"]>[0]) as Promise<{ text?: string }>;
+    const refused = (err: unknown) => {
       const status = (err as { status?: unknown })?.status;
-      if (status !== 400 && status !== 403 && status !== 404) throw err;
-      model = FALLBACK_MODEL;
-      res = await ask(model);
+      return status === 400 || status === 403 || status === 404;
+    };
+    const t0 = Date.now();
+    const engine = await operatorEngine(organizationId, userId);
+    const keywords = engine === "new" ? await operatorKeywords(organizationId, userId) : [];
+    let model = MODEL;
+    let res: { text?: string } | null = null;
+    let given = 0;
+    if (engine === "new") {
+      // The new model with the words; refused, without them; refused again, the models before.
+      try {
+        res = await askNew(keywords);
+        model = NEW_EARS_MODEL;
+        given = keywords.length;
+      } catch (err) {
+        if (!refused(err)) throw err;
+        console.warn(`[assistant] ${NEW_EARS_MODEL} refused the take${keywords.length ? ` with ${keywords.length} keywords` : ""} (${(err as { status?: unknown })?.status}): ${err instanceof Error ? err.message.slice(0, 200) : ""}`);
+        if (keywords.length) {
+          res = await askNew([]).catch((again) => {
+            if (!refused(again)) throw again;
+            return null;
+          });
+          if (res) model = NEW_EARS_MODEL;
+        }
+      }
+    }
+    if (!res) {
+      try {
+        res = await ask(model);
+      } catch (err) {
+        // The newer model refused (not on this key, or the file): Whisper writes it down instead.
+        if (!refused(err)) throw err;
+        model = FALLBACK_MODEL;
+        res = await ask(model);
+      }
     }
     let text = (res.text ?? "").trim();
     // Told English and written in another script (an accent on "Presidential roof" came back in Cyrillic, 2026-11-07):
@@ -95,16 +134,17 @@ export async function POST(req: Request) {
         model = FALLBACK_MODEL;
       }
     }
-    console.info(`[assistant] heard ${audio.size} bytes in ${Date.now() - t0} ms · ${model} · ${text ? `${text.length} chars` : "nothing"}`);
+    const ms = Date.now() - t0;
+    console.info(`[assistant] heard ${audio.size} bytes in ${ms} ms · ${model}${given ? ` · ${given} keywords` : ""} · ${text ? `${text.length} chars` : "nothing"}`);
     // On silence Whisper says its prompt back: six words in a row of the word list, or the address examples, is the
     // prompt, not speech.
     const words = (s: string) => s.toLowerCase().replace(/[^a-z0-9/\s]/g, " ").split(/\s+/).filter(Boolean);
     const p = words(PROMPT).join(" ");
     const w = words(text);
     const echo = language === "en" && w.length >= 6 && w.some((_, i) => i + 6 <= w.length && p.includes(w.slice(i, i + 6).join(" ")));
-    if (!text || echo || MADE_UP.test(text)) return NextResponse.json({ text: "" });
+    if (!text || echo || MADE_UP.test(text)) return NextResponse.json({ text: "", ms, model });
     // An address in it, put the way it is written ("12103 200 seconds. Creed Southeast" → "12103 202nd St SE").
-    return NextResponse.json({ text: tidySpokenAddress(text).slice(0, 600) });
+    return NextResponse.json({ text: tidySpokenAddress(text).slice(0, 600), ms, model });
   } catch (err) {
     if (typeof (err as { status?: unknown })?.status === "number") await trial.refund();
     return NextResponse.json({ error: "Couldn't write that down — try again, or type it." }, { status: 502 });
