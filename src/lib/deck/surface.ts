@@ -47,6 +47,8 @@ export interface BoardPiece {
   yaw?: number;
   /** A border piece. */
   border?: boolean;
+  /** A breaker board's piece (drawn as the border is). */
+  breaker?: boolean;
 }
 
 export interface DeckSurface {
@@ -56,6 +58,14 @@ export interface DeckSurface {
   /** Border boards along the open edges (0, 1 or 2) and the feet of board they take. */
   border: number;
   borderLf: number;
+  /** Breaker boards (2026-11-14): each one's line — `x` along the house, from `y0` to `y1` out from it — and the feet of board they take; what was asked for and could not be laid. */
+  breakers: Array<{ x: number; y0: number; y1: number }>;
+  breakerLf: number;
+  breakersLeftOut: number;
+  /** What a breaker lies on: a joist under each row of board ends beside it and one length cut into blocks between them — three lengths a breaker, in. */
+  breakerBackingIn: number[];
+  /** The longest board in a row of the field, in. (a row longer than the longest stock is spliced). */
+  longestRowIn: number;
   /** Rows of boards across the deepest part of the deck. */
   rows: number;
   /** Every square piece, for the 3D (square-laid boards only; a diagonal is drawn from the outline). */
@@ -194,6 +204,12 @@ export function borderWords(s: Pick<DeckSurface, "border" | "borderLf" | "produc
   return `a ${s.border === 2 ? "double" : "single"} picture-frame border${s.product.border ? ` in ${s.product.border.name}` : ""} along ${Math.round(s.borderLf / s.border)} ft of open edge`;
 }
 
+/** "a breaker board across the middle" / "two breaker boards at the thirds" */
+export function breakerWords(s: Pick<DeckSurface, "breakers" | "product">): string {
+  if (!s.breakers.length) return "";
+  return `${s.breakers.length === 1 ? "a breaker board across the middle" : "two breaker boards at the thirds"} of the field${s.product.border ? `, in ${s.product.border.name}` : ""}`;
+}
+
 /** The boards and the fascia for a frame. */
 export function deckSurface(frame: DeckFrame): DeckSurface {
   const { design, decking: product } = frame;
@@ -251,6 +267,8 @@ export function deckSurface(frame: DeckFrame): DeckSurface {
   let netIn = 0;
   let crossings = 0;
   let borderLf = 0;
+  let breakerLf = 0;
+  let longestRowIn = 0;
 
   // The field: inside the border on the open sides, up to the front's line.
   const fieldX0 = open("left") ? borderIn : 0;
@@ -352,6 +370,47 @@ export function deckSurface(frame: DeckFrame): DeckSurface {
     }
     return rowsOut.filter((c) => c.x1 - c.x0 > 0.5 && c.y1 - c.y0 > 0.5);
   };
+  // BREAKER BOARDS (2026-11-14 — the owner: "more options to build luxury"). A board laid ACROSS the field, out from
+  // the house, in the border's colour: every row of the field stops against it, so a deck wider than the longest board
+  // has no butt joints — each row is two (or three) whole boards — and the floor reads as panels. It is one more band
+  // the field keeps out of. One sits in the middle of the field's width, two at its thirds; each runs the whole depth
+  // of the field where it stands. Not laid where a row beside it would be shorter than 2 ft, on boards laid on the
+  // diagonal or in a herringbone (design.ts reads it off those), or under a bowed or clipped front.
+  const breakersAsked = !diagonal && !shaped ? (design.decking.breakers ?? 0) : 0;
+  const breakers: DeckSurface["breakers"] = [];
+  if (breakersAsked) {
+    const before = fieldCells();
+    const half = product.widthIn / 2 + product.gapIn;
+    /** The stretches of field a breaker at `x` would cross — none where a board beside it would be shorter than 2 ft. */
+    const crossed = (x: number) => {
+      const here = before.filter((c) => c.x0 < x - half + 0.01 && c.x1 > x + half - 0.01);
+      return here.length && !here.some((c) => x - half - c.x0 < 24 || c.x1 - x - half < 24) && !breakers.some((q) => Math.abs(q.x - x) < 30) ? here : null;
+    };
+    for (let k = 1; k <= breakersAsked; k++) {
+      const nominal = Math.round(fieldX0 + ((fieldX1 - fieldX0) * k) / (breakersAsked + 1));
+      // Where its own place leaves a stub (an L's inside corner a hand away), the nearest place that does not, within
+      // a quarter of the field's width.
+      let x = nominal;
+      let here = crossed(x);
+      for (let step = 6; !here && step <= (fieldX1 - fieldX0) / 4; step += 6) {
+        for (const at of [nominal - step, nominal + step]) {
+          const got = crossed(at);
+          if (got) {
+            here = got;
+            x = at;
+            break;
+          }
+        }
+      }
+      if (!here) continue;
+      const y0 = Math.min(...here.map((c) => c.y0));
+      const y1 = Math.max(...here.map((c) => c.y1));
+      if (!(y1 - y0 > 12)) continue;
+      bands.push({ x0: x - half, x1: x + half, y0, y1 });
+      // (A quarter inch off the wall, as the rows are.)
+      breakers.push({ x, y0: againstHouse && y0 <= back0 + 0.01 ? y0 + 0.25 : y0, y1 });
+    }
+  }
   const field = fieldCells();
 
   /** Where the field's row at depth y0 (its near edge) runs, on a shaped front: the x range where the front is still past it. */
@@ -420,6 +479,7 @@ export function deckSurface(frame: DeckFrame): DeckSurface {
     }
     for (const g of groups.values()) {
       const length = g.x1 - g.x0;
+      longestRowIn = Math.max(longestRowIn, length);
       const plan = planRow(length, g.ys.length, product.lengthsFt);
       for (const [stock, n] of plan.buy) buy.set(stock, (buy.get(stock) ?? 0) + n);
       netIn += length * g.ys.length;
@@ -555,6 +615,28 @@ export function deckSurface(frame: DeckFrame): DeckSurface {
     else buy.set(longest, (buy.get(longest) ?? 0) + borderCount);
   }
 
+  // The breaker boards themselves: laid out from the house, in the border's colour — its own order where that is a
+  // second colour, the field's stock where it is not.
+  for (const b of breakers) {
+    const len = b.y1 - b.y0;
+    const plan = planRow(len, 1, product.lengthsFt);
+    let at = b.y0;
+    for (const c of plan.cuts) {
+      pieces.push({ cx: b.x, cy: at + c / 2, sx: c, sy: product.widthIn, yaw: Math.PI / 2, border: true, breaker: true });
+      at += c;
+    }
+    breakerLf += len / 12;
+    netIn += len;
+    crossings += Math.round(len / frame.spacingIn);
+    for (const [stockFt, count] of plan.buy) {
+      if (product.border) {
+        const have = borderStock.find((q) => q.lengthFt === stockFt);
+        if (have) have.count += count;
+        else borderStock.push({ lengthFt: stockFt, count });
+      } else buy.set(stockFt, (buy.get(stockFt) ?? 0) + count);
+    }
+  }
+
   // The waste allowance, in the length the job uses most.
   const boughtBefore = [...buy].reduce((a, [s, n]) => a + s * n, 0);
   if (wastePct > 0 && buy.size > 0) {
@@ -581,6 +663,11 @@ export function deckSurface(frame: DeckFrame): DeckSurface {
     shaped: shapedPieces,
     shapedBorderFrom,
     field,
+    breakers,
+    breakerLf: Math.round(breakerLf * 10) / 10,
+    breakersLeftOut: (design.decking.breakers ?? 0) - breakers.length,
+    breakerBackingIn: breakers.flatMap((b) => new Array<number>(3).fill(Math.round(b.y1 - b.y0))),
+    longestRowIn: Math.round(longestRowIn * 10) / 10,
     borderBackingIn: bEdges.flatMap((e, i) => (on[i] && square[i] && Math.abs(e.ux) < 1e-6 ? new Array<number>(borderBoards).fill(Math.round(e.length)) : [])),
     borderEdges: bEdges.filter((_, i) => on[i]).map((e) => ({ x0: e.A.x, y0: e.A.y, x1: e.B.x, y1: e.B.y, inX: -e.outX, inY: -e.outY })),
     stock,

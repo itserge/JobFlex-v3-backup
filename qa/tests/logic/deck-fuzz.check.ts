@@ -172,6 +172,14 @@ function skirtFor(tag: string, raw: unknown): unknown {
   if (!skirt || (o.extras !== undefined && (typeof o.extras !== "object" || o.extras === null))) return raw;
   return { ...o, extras: { ...((o.extras as object) ?? {}), skirt } };
 }
+/** BREAKER BOARDS (2026-11-14): asked for on one design in three, by the design's own number (the random stream stays what it was). */
+function breakersFor(tag: string, raw: unknown): unknown {
+  const i = Number(tag.slice(1));
+  if (!raw || typeof raw !== "object" || Array.isArray(raw) || !Number.isFinite(i) || i % 3 !== 1) return raw;
+  const o = raw as Record<string, unknown>;
+  if (o.decking !== undefined && (typeof o.decking !== "object" || o.decking === null)) return raw;
+  return { ...o, decking: { ...((o.decking as object) ?? {}), breakers: i % 91 === 1 ? 7 : 1 + (Math.floor(i / 3) % 2) } };
+}
 /** BUILT-IN BENCHES AND PLANTERS (2026-11-14): on one design in four, by the design's own number (the random stream stays what it was); junk on a few. */
 function builtInsFor(tag: string, raw: unknown): unknown {
   const i = Number(tag.slice(1));
@@ -238,6 +246,21 @@ function exercise(d: DeckDesign, tag: string, out: string[]) {
       }
     }
   }
+  // BREAKER BOARDS (2026-11-14; lib/deck/surface): where they are laid, no field board lies across one and none beside
+  // one is a stub; each runs inside the deck; where one asked for is not laid, that is said. On both levels.
+  for (const lv of structureLevels(pkg.structure)) {
+    const sf = lv.surface;
+    const asked = lv.frame.design.decking.breakers ?? 0;
+    if (sf.breakers.length > asked || sf.breakersLeftOut !== asked - sf.breakers.length) { out.push(`breaker boards laid ${sf.breakers.length}, asked ${asked}, left out ${sf.breakersLeftOut}  [${tag}]`); break; }
+    if (!sf.breakers.length) continue;
+    const w = sf.product.widthIn;
+    if (sf.pieces.some((p) => !p.border && sf.breakers.some((b) => p.cx - p.sx / 2 < b.x + w / 2 - 0.01 && p.cx + p.sx / 2 > b.x - w / 2 + 0.01 && p.cy > b.y0 && p.cy < b.y1))) { out.push(`a deck board lies across a breaker board  [${tag}]`); break; }
+    if (sf.breakers.some((b) => !(b.y1 - b.y0 > 12) || ![b.x, b.y0, b.y1].every(Number.isFinite)) || !(sf.breakerLf > 0) || sf.breakerBackingIn.length !== 3 * sf.breakers.length) { out.push(`a breaker board with no length, or nothing under it  [${tag}]`); break; }
+    // (On the deck: a hand either side of it, near both its ends, lies in one of the deck's rectangles — it may stand on the line where two of them meet.)
+    const onDeck = (x: number, y: number) => lv.frame.zones.some((z) => x > z.zone.x0 - 0.01 && x < z.zone.x1 + 0.01 && y > z.zone.y0 - 0.01 && y < z.zone.y1 + 0.01);
+    if (sf.breakers.some((b) => ![b.y0 + 1, b.y1 - 1].every((y) => onDeck(b.x - 4, y) && onDeck(b.x + 4, y)))) { out.push(`a breaker board off the deck  [${tag}]`); break; }
+  }
+  if (pkg.structure.surface && (d.decking.breakers ?? 0) > 0 && !deckChecks(pkg.structure).some((c) => c.id === "decking-breaker" || c.id === "decking-breaker-none")) out.push(`breaker boards asked for, nothing said  [${tag}]`);
   // BUILT-IN BENCHES AND PLANTERS (2026-11-14; lib/deck/builtins): each one asked for is built or said not to be; one
   // built stands on the deck, its parts above the boards with real sizes, across no other; and it is priced.
   {
@@ -390,7 +413,7 @@ if (process.argv[2] === "--repro") {
   for (const tag of process.argv.slice(3)) {
     const i = Number(tag.slice(1));
     const raw = tag[0] === "A" ? randomDesign(rngOf(1000 + i)) : tag[0] === "W" ? wallDesign(i) : (() => { const r = rngOf(50000 + i); return mutate(r, normalizeDeckDesign(randomDesign(r))); })();
-    const d = normalizeDeckDesign(builtInsFor(tag, skirtFor(tag, raw)));
+    const d = normalizeDeckDesign(breakersFor(tag, builtInsFor(tag, skirtFor(tag, raw))));
     // --dump: the design alone, before anything is built from it (for one that kills the process when built).
     if (process.argv.includes("--dump")) { console.log(JSON.stringify(d)); continue; }
     console.log(`\n=== ${tag}: ${structureWords(d)} · ${sizeWords(d)} · h ${d.heightIn} in · placement ${d.placement} · floor ${d.floor} · roof ${d.roof.kind}/${d.roof.plan.shape} · stairs ${d.stairs.length} · rail ${d.rail.type} · lower ${d.lower.on} · fixtures ${d.electrical.fixtures.length} · front ${d.shape.kind === "rect" ? d.shape.front?.kind : "L"}`);
@@ -412,7 +435,7 @@ const run = (tag: string, raw: unknown) => {
   // A design that kills the process outright (an array grown past what V8 holds) leaves its name here: FUZZ_TRACE=<file>.
   if (process.env.FUZZ_TRACE) writeFileSync(process.env.FUZZ_TRACE, tag);
   let d: DeckDesign;
-  try { d = normalizeDeckDesign(builtInsFor(tag, skirtFor(tag, raw))); } catch (e) { trouble.push(`normalize THREW: ${e instanceof Error ? e.message : String(e)}  [${tag}]`); return; }
+  try { d = normalizeDeckDesign(breakersFor(tag, builtInsFor(tag, skirtFor(tag, raw)))); } catch (e) { trouble.push(`normalize THREW: ${e instanceof Error ? e.message : String(e)}  [${tag}]`); return; }
   try { exercise(d, tag, trouble); } catch (e) { trouble.push(`THREW: ${e instanceof Error ? (e.stack ?? e.message).split("\n").slice(0, 3).join(" | ") : String(e)}  [${tag}]`); }
 };
 const started = Date.now();

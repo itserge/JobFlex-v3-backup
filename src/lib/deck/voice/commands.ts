@@ -82,6 +82,8 @@ export interface DeckingSet {
   thick?: "54" | "2x6";
   pattern?: DeckPattern;
   border?: 0 | 1 | 2;
+  /** Breaker boards across the field (2026-11-14; lib/deck/surface): none, one in the middle, two at the thirds. */
+  breakers?: 0 | 1 | 2;
   fastening?: "auto" | "screws" | "hidden";
   fascia?: "auto" | "none" | "match";
   wastePct?: number;
