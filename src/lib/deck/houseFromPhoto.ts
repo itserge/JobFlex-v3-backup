@@ -19,7 +19,7 @@
 // The same read and the same picture always build the same house, so the QA script can prove it.
 
 import { baseYAt, DOOR_HEIGHT_FT, JOG_DEFAULT_FT, scaleFromRead, type PhotoScale } from "./photoFit";
-import { HOUSE_LIMITS, OPENING_LIMITS, isHouseHex, toInchFt, wallParts, type HouseDesign, type HouseHex, type HouseJog, type HouseMaterial, type HouseOpening, type HousePhoto, type HouseRoof } from "./house";
+import { HOUSE_LIMITS, OPENING_LIMITS, isHouseHex, settleOpenings, toInchFt, wallParts, type HouseDesign, type HouseHex, type HouseJog, type HouseMaterial, type HouseOpening, type HousePhoto, type HouseRoof } from "./house";
 import type { HouseRead } from "./houseRead";
 
 export interface PhotoHouseInput {
@@ -163,15 +163,17 @@ export function houseFromPhoto(input: PhotoHouseInput): PhotoHouse | null {
 
   // THE WINDOWS AND DOORS.
   const OL = OPENING_LIMITS;
-  const openings: HouseOpening[] = [];
+  const seen: HouseOpening[] = [];
   for (const w of read.windows) {
     const cx = (w.x0 + w.x1) / 2;
-    openings.push({ id: `w${openings.length + 1}`, kind: "window", xFt: toInchFt(deckFt(cx)), widthFt: toInchFt(clamp(((w.x1 - w.x0) * photoW) / k, OL.widthFt.min, OL.widthFt.max)), heightFt: toInchFt(clamp(((w.sill - w.head) * photoH) / k, OL.heightFt.min, OL.heightFt.max)), sillFt: toInchFt(clamp(above(w.sill, cx), OL.sillFt.min, OL.sillFt.max)) });
+    seen.push({ id: `w${seen.length + 1}`, kind: "window", xFt: toInchFt(deckFt(cx)), widthFt: toInchFt(clamp(((w.x1 - w.x0) * photoW) / k, OL.widthFt.min, OL.widthFt.max)), heightFt: toInchFt(clamp(((w.sill - w.head) * photoH) / k, OL.heightFt.min, OL.heightFt.max)), sillFt: toInchFt(clamp(above(w.sill, cx), OL.sillFt.min, OL.sillFt.max)) });
   }
   for (const d of doors) {
-    openings.push({ id: `d${openings.length + 1}`, kind: d.kind, xFt: toInchFt(d.atFt - deckAtFt), widthFt: toInchFt(clamp(d.widthFt, OL.widthFt.min, OL.widthFt.max)), heightFt: toInchFt(clamp(d.heightFt, OL.heightFt.min, OL.heightFt.max)), sillFt: toInchFt(clamp(d.sillFt, 0, OL.sillFt.max)) });
+    seen.push({ id: `d${seen.length + 1}`, kind: d.kind, xFt: toInchFt(d.atFt - deckAtFt), widthFt: toInchFt(clamp(d.widthFt, OL.widthFt.min, OL.widthFt.max)), heightFt: toInchFt(clamp(d.heightFt, OL.heightFt.min, OL.heightFt.max)), sillFt: toInchFt(clamp(d.sillFt, 0, OL.sillFt.max)) });
   }
-  openings.sort((a, b) => a.xFt - b.xFt || a.sillFt - b.sillFt);
+  seen.sort((a, b) => a.xFt - b.xFt || a.sillFt - b.sillFt);
+  // None of them on another's spot: a window marked inside a door is the door's own glass (2026-11-13).
+  const openings = settleOpenings(seen);
   // Every step of the wall runs the house's full height: the wall's shape, under the one roof.
   const tallBump = storeys === 2 && wallParts({ ...input.house, leftFt, rightFt, jogs }, { kind: "rect", widthFt: W, depthFt: 12 }).some((p) => p.depthFt > 0.4);
 
@@ -210,7 +212,8 @@ export function houseFromPhoto(input: PhotoHouseInput): PhotoHouse | null {
   facts.push({ id: "storeys", label: "House", value: `${storeys === 2 ? "Two storeys" : "One storey"} · ${read.roof.kind ? ROOF_WORDS[read.roof.kind] : `${roof} roof (not seen — kept)`}${read.roof.pitch ? ` · about ${read.roof.pitch}/12` : ""}`, guess: !read.storeys || !read.roof.kind });
   facts.push({ id: "steps", label: "Steps", value: jogs.length ? `${plural(jogs.length, "step")} in the wall — ${jogs.map((j) => `${j.dir === "toward" ? "out" : "back"} ${ftIn(j.depthFt)}`).join(", ")}${tallBump ? " · the bump-out is as tall as the house" : ""}` : "A straight wall", guess: unsizedSteps > 0 });
   const winCount = openings.filter((o) => o.kind === "window").length;
-  const doorWords = doors.length ? doors.map((d) => `${d.kind === "garage" ? "a garage door" : d.kind === "slider" ? "a sliding door" : "a door"} ${ftIn(Math.round(d.widthFt * 2) / 2)} wide`).join(", ") : "no door seen";
+  const stoodDoors = openings.filter((o) => o.kind !== "window");
+  const doorWords = stoodDoors.length ? stoodDoors.map((d) => `${d.kind === "garage" ? "a garage door" : d.kind === "slider" ? "a sliding door" : "a door"} ${ftIn(Math.round(d.widthFt * 2) / 2)} wide`).join(", ") : "no door seen";
   facts.push({ id: "openings", label: "Openings", value: `${plural(winCount, "window")} · ${doorWords}`, guess: false });
   facts.push({ id: "look", label: "Siding", value: `${MATERIAL_WORDS[read.material ?? "lap"]}${sidingColour ? "" : " · colour kept"}`, guess: !read.material, ...(sidingColour ? { swatch: sidingColour } : {}) });
   if (roofColour) facts.push({ id: "roof-colour", label: "Roof colour", value: "from the picture", guess: false, swatch: roofColour });

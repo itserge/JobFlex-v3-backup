@@ -21,7 +21,7 @@ import { createPortal } from "react-dom";
 import { Camera, ImagePlus, RotateCcw, Users, X } from "lucide-react";
 import type { DeckDesign } from "@/lib/deck/design";
 import type { DeckPatch } from "@/lib/deck/checks";
-import { isHouseHex, type HousePhoto } from "@/lib/deck/house";
+import { isHouseHex, settleOpenings, type HousePhoto } from "@/lib/deck/house";
 import {
   addReadDoor,
   addReadJog,
@@ -616,8 +616,10 @@ function PhotoInputs({ fileInput, camInput, onFile }: { fileInput: (el: HTMLInpu
 
 export function HousePhotoCard({ hp, design }: { hp: HousePhotoState; design: DeckDesign }) {
   const photo = design.house.photo ?? null;
-  const n = design.house.openings?.length ?? 0;
-  const wins = design.house.openings?.filter((o) => o.kind === "window").length ?? 0;
+  // Counted as they stand on the wall: a window marked inside a door is the door's own glass (lib/deck/house, 2026-11-13).
+  const stood = design.house.openings ? settleOpenings(design.house.openings) : [];
+  const n = stood.length;
+  const wins = stood.filter((o) => o.kind === "window").length;
   return (
     <div className="v1-hp-card" data-deck-house-photo={photo ? "built" : "none"} data-tour="deck:house-photo">
       {photo ? (
