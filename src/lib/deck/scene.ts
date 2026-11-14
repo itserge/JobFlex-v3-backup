@@ -129,7 +129,7 @@ export const SCENE_MAX_GLOWS = 120;
 
 /** A handle: dragging it along `axis` (scene feet) changes `kind` from `value` by the distance dragged. */
 export interface SceneHandle {
-  kind: "width" | "depth" | "height" | "eave" | "stair" | "stair-width" | "lower-depth" | "roof-width" | "roof-depth" | "pitch" | "jog" | "house-left" | "house-right" | "post" | "beam" | "roof-post";
+  kind: "width" | "width-left" | "depth" | "height" | "eave" | "stair" | "stair-width" | "lower-depth" | "roof-width" | "roof-depth" | "pitch" | "jog" | "house-left" | "house-right" | "post" | "beam" | "roof-post";
   id: string;
   x: number;
   y: number;
@@ -1021,6 +1021,15 @@ export function deckScene(s: DeckStructure): DeckScene {
     const Wd = Math.max(...frame.zones.map((z) => z.zone.x1));
     const Dd = Math.max(...frame.zones.map((z) => z.zone.y1));
     handles.push({ kind: "width", id: "width", x: r3(Wd), y: r3(Dd / 2), z: r3(frame.surfaceIn + 1), axis: "x", value: design.shape.widthFt, perUnit: 1, label: "Width along the house" });
+    // THE LEFT END TOO (2026-11-14 — the owner: "there is no toggle on the left side that moves the left side of the
+    // deck"): the same width, taken hold of at the other end. It travels a foot LEFT for every foot wider (`follow`
+    // −1), and the house stays where it is (lib/deck/frontByHand leftEndPatch). Not on a deck in the yard, which has
+    // no house to stay put against — its one Width knob is enough.
+    if (design.placement !== "detached") {
+      const X0 = Math.min(...frame.zones.map((z) => z.zone.x0));
+      const sideD = Math.max(...frame.zones.filter((z) => z.zone.x0 <= X0 + 0.5).map((z) => z.zone.y1));
+      handles.push({ kind: "width-left", id: "width-left", x: r3(X0), y: r3(sideD / 2), z: r3(frame.surfaceIn + 1), axis: "x", value: design.shape.widthFt, perUnit: 1, follow: -1, label: "Width — the deck's left end" });
+    }
     handles.push({ kind: "depth", id: "depth", x: r3(Wd / 2), y: r3(Dd), z: r3(frame.surfaceIn + 1), axis: "y", value: design.shape.depthFt, perUnit: 1, label: "Depth out from the house" });
     handles.push({ kind: "height", id: "height", x: r3(Wd), y: r3(Dd), z: r3(frame.surfaceIn), axis: "z", value: design.heightIn, perUnit: 1 / 12, label: "Deck height" });
     if (s.lower && s.lower.place === "front") handles.push({ kind: "lower-depth", id: "lower-depth", x: r3(s.lower.offsetXIn + (design.lower.widthFt * 12) / 2), y: r3(s.lower.offsetYIn + design.lower.depthFt * 12), z: r3(s.lower.frame.surfaceIn + 1), axis: "y", value: design.lower.depthFt, perUnit: 1, label: "Lower level depth" });
@@ -1265,7 +1274,7 @@ export function parseDeckScene(raw: unknown): DeckScene | null {
       for (const h of r.handles) {
         const o = (h && typeof h === "object" ? h : null) as Record<string, unknown> | null;
         if (!o || typeof o.kind !== "string" || typeof o.id !== "string" || !fin(o.x) || !fin(o.y) || !fin(o.z) || !fin(o.value) || !fin(o.perUnit) || (o.axis !== "x" && o.axis !== "y" && o.axis !== "z")) continue;
-        handles.push({ kind: o.kind as SceneHandle["kind"], id: o.id.slice(0, 20), x: o.x, y: o.y, z: o.z, axis: o.axis, value: o.value, perUnit: o.perUnit, ...(fin(o.follow) && o.follow > 0 && o.follow <= 1 ? { follow: o.follow } : {}), label: typeof o.label === "string" ? o.label.slice(0, 60) : "", ...handleGrab(o) });
+        handles.push({ kind: o.kind as SceneHandle["kind"], id: o.id.slice(0, 20), x: o.x, y: o.y, z: o.z, axis: o.axis, value: o.value, perUnit: o.perUnit, ...(fin(o.follow) && ((o.follow > 0 && o.follow <= 1) || o.follow === -1) ? { follow: o.follow } : {}), label: typeof o.label === "string" ? o.label.slice(0, 60) : "", ...handleGrab(o) });
       }
     }
   }
