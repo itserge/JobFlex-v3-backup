@@ -54,7 +54,7 @@ export function fromDrawing(items: DrawItem[]): DItem[] {
 }
 
 export interface PlanDetail {
-  key: "ledger" | "lateral" | "post" | "guard" | "bracing" | "pattern" | "stringer" | "roof" | "uplift" | "roofBracing";
+  key: "ledger" | "lateral" | "post" | "guard" | "guard2" | "bracing" | "pattern" | "stringer" | "roof" | "uplift" | "roofBracing";
   title: string;
   notes: string[];
   build: (sc: ArchScale) => View;
@@ -89,6 +89,10 @@ export function floorDetails(m: PlanModel): PlanDetail[] {
   if (st) out.push(stringerDetail(m, st));
   const bracing = find("Lateral bracing, free-standing");
   if (bracing) out.push(wrap("bracing", bracing));
+  // A side of the deck whose rail is mounted the other way (2026-11-13) has its own guard detail — last, so the other
+  // details keep the numbers the framing plan's bubbles call them by.
+  const guard2 = eng.find((dt) => dt.title.startsWith("Guard post, "));
+  if (guard2) out.push(wrap("guard2", guard2));
   return out;
 }
 

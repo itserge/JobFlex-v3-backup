@@ -63,7 +63,7 @@
 import { POST_ACTUAL_IN, THICK_2X_IN, DRESSED_DEPTH_IN, JOIST_SIZES, SOLID_BEAMS, builtUpBeamMaxSpanIn, solidBeamMaxSpanIn, solidBeamTabulated, joistDepthIn, postMaxHeightIn, POST_TABLE_MAX_AREA, type JoistSize, type PostSize, type SpeciesGroup } from "./codeTables";
 import { CEILING_FACTOR, ROOF_DEAD_PSF, RW_FACTOR, rafterMaxSpanIn, roofLoadFor, type RafterGroup, type RoofLoad } from "./roofTables";
 import { beamSpec, footingFor, type BeamSpec, type Footing } from "./frame";
-import { BUILT_UP_CHOICES, isPolygonShape, isSolidBeam, type BeamSize, type DeckDesign, type RoofDesign, type RoofKind, type WallFill, type Zone } from "./design";
+import { BUILT_UP_CHOICES, ROOF_DOOR_LEAF_FT, isPolygonShape, isSolidBeam, type BeamSize, type DeckDesign, type RoofDesign, type RoofKind, type RoofOpening, type RoofPin, type RoofSide, type WallFill, type Zone } from "./design";
 import { roofLoadForSnow } from "./site";
 import type { FramingSpecies } from "./catalog";
 import { deckRate, lumberKey, type DeckRateBook } from "./rates";
@@ -255,6 +255,8 @@ export interface RoofPost {
   /** The post table's limit for a post carrying that at 40 psf (0 = beyond). */
   maxHeightIn: number;
   corner: boolean;
+  /** Set by hand (2026-11-13): a post the builder stood there, or one of the two that frame an opening of theirs. */
+  by?: { kind: "pin" | "opening"; id: string };
   /** How it meets the floor. */
   bearing: DeckDesign["floor"];
   footing: Footing | null;
@@ -459,6 +461,16 @@ export interface RoofFrame {
   bracesLeftOut: number;
   /** Posts left standing in a stair's opening — a ring corner, or one no header could be laid to clear (the checks say to move the stair). */
   postsInStair: Array<{ x: number; y: number; side: StairOpening["side"]; corner: boolean }>;
+  /**
+   * OPENINGS AND POSTS SET BY HAND, AS BUILT (2026-11-13; design.roof.openings, .pins). An opening: its clear ends on
+   * the posts' line, its clear width, the door's leaves (0 = left open), the header over it — its span post to post,
+   * its size, whether that took an engineered beam, whether no beam in the list carries it — and whether a post the
+   * structure cannot spare (under a cross beam) stands in it. A pin: where its post stands.
+   */
+  openings: Array<{ id: string; side: RoofSide; x0: number; y0: number; x1: number; y1: number; widthIn: number; leaves: number; headerId: string; spanIn: number; size: string; engineered: boolean; beyond: boolean; blocked: boolean; cornerJambs: number }>;
+  pins: Array<{ id: string; side: RoofSide; x: number; y: number }>;
+  /** What could not be set, and why — said, never dropped in silence. */
+  notPlaced: Array<{ kind: "post" | "opening"; id: string; why: string }>;
   flags: {
     rafterBeyondTable: boolean;
     headerBeyondTable: string[];
@@ -754,6 +766,15 @@ export function designHip(runIn: number, ovhIn: number, halfAngle: number, commo
     }
   }
   return { nominal: "3-ply LVL 1¾×18", stock: "LVL1.75x18", plies: 3, plyIn: LVL_PLY_IN, depthIn: 18, kind: "lvl", spanIn: Math.round(spanIn), loadLb: Math.round(loadLb), beyond: true };
+}
+
+/** The openings and posts set by hand, in a line for the scope and the plans' notes: "a 4'-0" opening framed on the front (a screen door in it), 2 posts set by hand" — "" for none. */
+export function roofByHandWords(roof: Pick<RoofFrame, "openings" | "pins">): string {
+  const ft = (inches: number) => `${Math.floor(Math.round(inches) / 12)}'-${Math.round(inches) % 12}"`;
+  const side = (sd: RoofSide) => (sd === "front" ? "front" : sd === "back" ? "back" : `${sd} side`);
+  const bits = roof.openings.map((o) => `a ${ft(o.widthIn)} opening framed on the ${side(o.side)}${o.leaves === 2 ? " (a pair of screen doors in it)" : o.leaves === 1 ? " (a screen door in it)" : " (left open)"}`);
+  if (roof.pins.length) bits.push(`${roof.pins.length} ${roof.pins.length === 1 ? "post" : "posts"} set by hand`);
+  return bits.join(", ");
 }
 
 export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, group: SpeciesGroup, deck: DeckUnder | null, opts: RoofBuildOptions = {}): RoofFrame {
@@ -1296,6 +1317,117 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
     cornerPosts.push({ k, x: p.x, y: p.y });
   }
 
+  // POSTS AND OPENINGS SET BY HAND (2026-11-13 — a deck builder: "let me add two posts with a 4-ft opening for a future
+  // screen door"). Each is put on its side of the ring — the front is the edge farthest from the house, the left and
+  // right its ends, the back a free roof's house side — at its place along it. An opening is two posts (its jambs) its
+  // clear width apart and a stretch between them where no post may stand; a pin is one post. They go into the headers'
+  // laying as posts that MUST stand and stretches that must stay clear — the same two things a cross beam's landing
+  // and a stair's opening already were — so the header over an opening is sized for the span the opening makes, more
+  // posts go in beside it where a span is past every header, and nothing is ever just left out of the structure.
+  // A round, six- or eight-sided roof has no front or side to measure along: said, not guessed.
+  type UserEdge = { posts: number[]; keeps: Array<[number, number]>; opens: Array<{ o: RoofOpening; lo: number; hi: number; cornerJambs: number }>; pins: Array<{ p: RoofPin; at: number }> };
+  const userEdges = new Map<number, UserEdge>();
+  const notPlaced: RoofFrame["notPlaced"] = [];
+  const pw0 = POST_ACTUAL_IN[r.post]?.[0] ?? 5.5;
+  const sideEdge = (side: RoofSide): number => {
+    if (regular) return -1;
+    let best = -1;
+    let score = -Infinity;
+    for (let k = 0; k < n; k += postEvery) {
+      if (edgeIsWall(k)) continue;
+      const A = ring[k];
+      const B = ring[(k + postEvery) % n];
+      const L = len(sub(B, A));
+      const horiz = Math.abs(A.y - B.y) < 0.5;
+      const vert = Math.abs(A.x - B.x) < 0.5;
+      const sc = side === "front" ? (horiz && A.y > y0 + 1 ? A.y * 1000 + L : -Infinity) : side === "back" ? (horiz && A.y < y1 - 1 ? -A.y * 1000 + L : -Infinity) : side === "left" ? (vert ? -A.x * 1000 + L : -Infinity) : vert ? A.x * 1000 + L : -Infinity;
+      if (sc > score) {
+        score = sc;
+        best = k;
+      }
+    }
+    return best;
+  };
+  /** A place along a side — from its left end (front, back) or its house end (left, right) — as inches from the edge's own start. */
+  const alongEdge = (k: number, side: RoofSide, atIn: number): { s: number; L: number } => {
+    const A = ring[k];
+    const B = ring[(k + postEvery) % n];
+    const L = len(sub(B, A));
+    const fromStart = side === "front" || side === "back" ? A.x <= B.x : A.y <= B.y;
+    const t = Math.max(0, Math.min(L, atIn));
+    return { s: fromStart ? t : L - t, L };
+  };
+  const edgeOf = (k: number): UserEdge => {
+    const e = userEdges.get(k) ?? { posts: [], keeps: [], opens: [], pins: [] };
+    userEdges.set(k, e);
+    return e;
+  };
+  if (!pergola || r.openings.length || r.pins.length) {
+    for (const o of r.openings) {
+      const k = sideEdge(o.side);
+      if (k < 0) {
+        notPlaced.push({ kind: "opening", id: o.id, why: regular ? "a round or many-sided roof has no side to measure along" : o.side === "back" ? "the roof hangs on the house there" : `the roof has no ${o.side} side` });
+        continue;
+      }
+      const { s: c0, L } = alongEdge(k, o.side, o.atFt * 12);
+      // Its clear width, never more than the side between its corner posts; its two posts' centres half a post outside it.
+      const clear = Math.min(o.widthFt * 12, L - pw0);
+      if (clear < 24) {
+        notPlaced.push({ kind: "opening", id: o.id, why: "that side is too short for an opening" });
+        continue;
+      }
+      const half = clear / 2 + pw0 / 2;
+      const c = Math.max(half, Math.min(L - half, c0));
+      let lo = c - half;
+      let hi = c + half;
+      // A jamb within a post of the corner IS the corner's post.
+      let cornerJambs = 0;
+      if (lo < pw0 + 1) {
+        lo = 0;
+        cornerJambs++;
+      }
+      if (hi > L - pw0 - 1) {
+        hi = L;
+        cornerJambs++;
+      }
+      const e = edgeOf(k);
+      if (e.opens.some((x) => lo < x.hi - 0.5 && hi > x.lo + 0.5)) {
+        notPlaced.push({ kind: "opening", id: o.id, why: "it overlaps another opening on that side" });
+        continue;
+      }
+      e.opens.push({ o, lo, hi, cornerJambs });
+      e.keeps.push([lo, hi]);
+      for (const at of [lo, hi]) if (at > 0.5 && at < L - 0.5 && !e.posts.some((q) => Math.abs(q - at) < pw0 + 1)) e.posts.push(at);
+    }
+    for (const pin of r.pins) {
+      const k = sideEdge(pin.side);
+      if (k < 0) {
+        notPlaced.push({ kind: "post", id: pin.id, why: regular ? "a round or many-sided roof has no side to measure along" : pin.side === "back" ? "the roof hangs on the house there" : `the roof has no ${pin.side} side` });
+        continue;
+      }
+      const { s: at, L } = alongEdge(k, pin.side, pin.atFt * 12);
+      const e = edgeOf(k);
+      if (at < pw0 + 1 || at > L - pw0 - 1) {
+        notPlaced.push({ kind: "post", id: pin.id, why: "a corner post stands there already" });
+        continue;
+      }
+      if (e.opens.some((x) => at > x.lo + 0.5 && at < x.hi - 0.5)) {
+        notPlaced.push({ kind: "post", id: pin.id, why: "it would stand in an opening" });
+        continue;
+      }
+      if (e.posts.some((q) => Math.abs(q - at) < pw0 + 1)) {
+        notPlaced.push({ kind: "post", id: pin.id, why: "a post stands there already" });
+        continue;
+      }
+      e.posts.push(at);
+      e.pins.push({ p: pin, at });
+    }
+  }
+  /** The farthest the posts may stand apart, by hand, inches (0 = the spans decide). */
+  const spacingByHandIn = typeof r.postSpacingFt === "number" ? r.postSpacingFt * 12 : 0;
+  /** Posts that stand inside an opening set by hand because the structure cannot spare them: [edge, along]. */
+  const postsInOpenings: Array<{ k: number; at: number }> = [];
+
   // Headers edge by edge (post to post), with the posts their spans need — laid again with more posts on a header whose
   // post would bring down more than the footing table reads (2026-10-11).
   const extraPosts: Array<{ x: number; y: number; edge: number }> = [];
@@ -1399,6 +1531,7 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
     stuckPosts.length = 0;
     pergolaMidYs.length = 0;
     headerBeyond.length = 0;
+    postsInOpenings.length = 0;
     headerLoad.clear();
     engineered = engineeredBeforeHeaders;
     engineeredBeyond = engineeredBeyondBeforeHeaders;
@@ -1438,19 +1571,21 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
       // with no king post on it (trusses, or a ridge board with ties) and a shed's sloping side only tie two posts
       // together. Left out by hand, it is simply not laid; the moment something bears on it again it is back.
       const idle = !pergola && !face && !king && (kind === "gable" || (kind === "shed" && Math.abs(B.x - A.x) <= Math.abs(B.y - A.y)));
-      if (idle && headersOff.has(`h${k + 1}`)) {
+      if (idle && headersOff.has(`h${k + 1}`) && !userEdges.has(k)) {
         headersLeftOut.push({ id: `h${k + 1}`, x0: A.x, y0: A.y, x1: B.x, y1: B.y, lengthIn });
         continue;
       }
       const eq = Math.round(((2 * tribFt * totalPsf) / 50) * 10) / 10;
       let eqUsed = eq;
-      let pick = pickHeader(lengthIn, eq, tribFt * totalPsf, minSegs.get(`h${k + 1}`) ?? 1);
+      // The fewest spans: what a post past the footing table asked for, and — by hand — posts no farther apart than the builder set.
+      const segMin = Math.max(minSegs.get(`h${k + 1}`) ?? 1, spacingByHandIn ? Math.ceil(lengthIn / spacingByHandIn - 1e-9) : 1);
+      let pick = pickHeader(lengthIn, eq, tribFt * totalPsf, segMin);
       if (king && pick.segments > 1) {
         // A king post's load does not ride mid-bay (its equivalent load was for ONE span): a post goes right under it — an
         // even number of spans — and between the posts the header carries only the rake's own weight. Where a stair's
         // opening is under it, the post stands beside the stair and the header carries the king post across (below).
         eqUsed = Math.round(((2 * totalPsf) / 50) * 10) / 10;
-        const m0 = Math.max(2, minSegs.get(`h${k + 1}`) ?? 2);
+        const m0 = Math.max(2, segMin);
         pick = pickHeader(lengthIn, eqUsed, totalPsf, m0 % 2 ? m0 + 1 : m0);
         if (pick.segments % 2) pick = pickHeader(lengthIn, eqUsed, totalPsf, pick.segments + 1);
       }
@@ -1464,7 +1599,8 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
       let spec = pick.spec;
       let maxSpanIn = pick.maxSpanIn;
       let eqHeader = eqUsed;
-      const keep = keepOutAlong(A, B, lengthIn);
+      const mine = userEdges.get(k);
+      const keep = mine ? [...keepOutAlong(A, B, lengthIn), ...mine.keeps] : keepOutAlong(A, B, lengthIn);
       // POSTS UNDER THE CROSS BEAMS (2026-10-12): a post stands where each cross beam lands on this header, and the header
       // spans between them — with more posts between where that is cheaper, or where a span is past every header.
       const forced = crossPlan
@@ -1475,27 +1611,43 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
           const off = Math.abs(-d.x * u.y + d.y * u.x);
           return off < 0.5 && along > pw && along < lengthIn - pw ? along : NaN;
         })
-        .filter((v) => Number.isFinite(v))
-        .sort((a, b) => a - b);
-      if (forced.length) {
+        .filter((v) => Number.isFinite(v));
+      // The builder's posts and their openings' jambs stand too (2026-11-13): one post where two would share a place.
+      if (mine) for (const at of mine.posts) if (!forced.some((q) => Math.abs(q - at) < pw + 1)) forced.push(at);
+      forced.sort((a, b) => a - b);
+      /** A span that IS an opening set by hand: it is as wide as the builder made it, whatever the spacing asked. */
+      const isOpening = (c0: number, c1: number) => !!mine && mine.opens.some((x) => Math.abs(x.lo - c0) < 0.5 && Math.abs(x.hi - c1) < 0.5);
+      if (forced.length || (mine && mine.keeps.length)) {
         const perFtF = (sp: BeamSpec) => sp.plies * (sp.kind === "lvl" ? sp.depthIn * price("lf.lvl") : price(lumberKey(sp.stock)));
-        const minS = minSegs.get(`h${k + 1}`) ?? 1;
+        const minS = mine ? minSegs.get(`h${k + 1}`) ?? 1 : segMin;
         const wOwn = tribFt * totalPsf;
+        // What each span carries: its own even load — and, on a gable end whose ridge beam stands on a king post, the
+        // post's weight in the span under it, as the even load that bends the header as much (2026-11-13: an opening
+        // under the peak makes a short span that holds the whole king post).
+        const loads = (cuts: number[], spans: number[]) => spans.map((sp, i) => (king ? wLb + (lengthIn / 2 > cuts[i] + 0.5 && lengthIn / 2 < cuts[i + 1] - 0.5 ? (2 * kingP) / Math.max(1, sp / 12) : 0) : wOwn));
         let best: { inner: number[]; spec: BeamSpec; maxSpanIn: number; eq: number; cost: number } | null = null;
         for (let extra = 0; extra <= Math.max(4, minS); extra++) {
           const cuts = [0, ...forced, lengthIn];
           for (let e = 0; e < extra; e++) {
-            let wi = 0;
-            for (let i = 1; i + 1 < cuts.length; i++) if (cuts[i + 1] - cuts[i] > cuts[wi + 1] - cuts[wi]) wi = i;
-            let at = (cuts[wi] + cuts[wi + 1]) / 2;
-            const hit = keep.find(([k0, k1]) => at > k0 && at < k1);
-            if (hit) at = hit[0] > cuts[wi] + pw && at - hit[0] <= hit[1] - at ? hit[0] : hit[1] < cuts[wi + 1] - pw ? hit[1] : hit[0] > cuts[wi] + pw ? hit[0] : NaN;
-            if (!Number.isFinite(at)) break;
-            cuts.splice(wi + 1, 0, at);
+            // The longest span that can take a post: its middle, or — a stair or an opening there — the nearer side of that.
+            const order = cuts.slice(0, -1).map((_, i) => i).sort((p, q) => cuts[q + 1] - cuts[q] - (cuts[p + 1] - cuts[p]));
+            let set = false;
+            for (const wi of order) {
+              let at = (cuts[wi] + cuts[wi + 1]) / 2;
+              const hit = keep.find(([k0, k1]) => at > k0 && at < k1);
+              if (hit) at = hit[0] > cuts[wi] + pw && at - hit[0] <= hit[1] - at ? hit[0] : hit[1] < cuts[wi + 1] - pw ? hit[1] : hit[0] > cuts[wi] + pw ? hit[0] : NaN;
+              if (!Number.isFinite(at)) continue;
+              cuts.splice(wi + 1, 0, at);
+              set = true;
+              break;
+            }
+            if (!set) break;
           }
           if (cuts.length - 1 < minS) continue;
           const spans = cuts.slice(1).map((v, i) => v - cuts[i]);
-          const sized = headerForSpans(spans, spans.map(() => wOwn));
+          // By hand: no two posts farther apart than the builder set — but for an opening, which is as wide as it was made.
+          if (mine && spacingByHandIn && spans.some((sp, i) => sp > spacingByHandIn + 0.5 && !isOpening(cuts[i], cuts[i + 1])) && extra < Math.max(4, segMin)) continue;
+          const sized = headerForSpans(spans, loads(cuts, spans));
           if (!sized) continue;
           const cost = (lengthIn / 12) * perFtF(sized.spec) + (cuts.length - 2) * postSetCost;
           if (!best || cost < best.cost - 0.005) best = { inner: cuts.slice(1, -1), ...sized, cost };
@@ -1510,6 +1662,8 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
           maxSpanIn = 0;
         }
         for (const at of forced) if (inKeep(keep, at)) stuckPosts.push({ x: A.x + u.x * at, y: A.y + u.y * at });
+        // A post the structure cannot spare — under a cross beam's end — inside an opening set by hand: it stays, and it is said.
+        if (mine) for (const at of inner) if (mine.opens.some((x) => at > x.lo + 0.5 && at < x.hi - 0.5)) postsInOpenings.push({ k, at });
       } else if (keep.length && inner.some((at) => inKeep(keep, at))) {
         // The cheapest that works, as pickHeader weighs it — the header's lumber against another post — over a few
         // layings; past those, the first that works at all.
@@ -1720,6 +1874,35 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
     posts.push({ id: `rp${i + 1}`, x: p.x, y: p.y, size: r.post, bottomIn: postBottomIn, topIn, heightIn, loadLb, tributarySqFt, maxHeightIn, corner: p.corner, bearing: design.floor, footing, spliced });
     members.push({ role: "roof-post", nominal: r.post, lengthIn: heightIn, cx: p.x, cy: p.y, cz: postBottomIn + heightIn / 2, sx: pw, sy: pd, sz: heightIn, yaw: 0, tilt: 0, x0: p.x, y0: p.y, x1: p.x, y1: p.y, ground: design.floor !== "deck" });
   });
+
+  // WHAT WAS SET BY HAND, AS BUILT (2026-11-13): each post the builder stood is marked as theirs, and each opening says
+  // what the header over it came to — its span, its size, whether it took an engineered beam.
+  const openingsBuilt: RoofFrame["openings"] = [];
+  const pinsBuilt: RoofFrame["pins"] = [];
+  for (const [k, e] of userEdges) {
+    const A = ring[k];
+    const B = ring[(k + postEvery) % n];
+    const u = unit(sub(B, A));
+    const pt = (t: number) => ({ x: A.x + u.x * t, y: A.y + u.y * t });
+    const postNear = (q: V2) => posts.find((p) => Math.hypot(p.x - q.x, p.y - q.y) < 0.6);
+    const h = headers.find((x) => x.id === `h${k + 1}`);
+    for (const { p: pin, at } of e.pins) {
+      const q = pt(at);
+      const post = postNear(q);
+      if (!post) continue;
+      post.by = { kind: "pin", id: pin.id };
+      pinsBuilt.push({ id: pin.id, side: pin.side, x: q.x, y: q.y });
+    }
+    for (const x of e.opens) {
+      for (const t of [x.lo, x.hi]) {
+        const post = postNear(pt(t));
+        if (post && !post.corner && !post.by) post.by = { kind: "opening", id: x.o.id };
+      }
+      const c0 = pt(x.lo + pw0 / 2);
+      const c1 = pt(x.hi - pw0 / 2);
+      openingsBuilt.push({ id: x.o.id, side: x.o.side, x0: c0.x, y0: c0.y, x1: c1.x, y1: c1.y, widthIn: Math.round((x.hi - x.lo - pw0) * 4) / 4, leaves: 0, headerId: h?.id ?? "", spanIn: Math.round(x.hi - x.lo), size: h ? String(h.spec.size) : "", engineered: h?.spec.kind === "lvl", beyond: !!h && headerBeyond.includes(h.id), blocked: postsInOpenings.some((q) => q.k === k && q.at > x.lo + 0.5 && q.at < x.hi - 0.5), cornerJambs: x.cornerJambs });
+    }
+  }
 
   // Headers as lumber: post centre to post centre, plus half a post at each free end. Two headers meeting on a corner
   // post would both be drawn over it, their tops in one plane (they flickered, 2026-10-11): the one laid first runs
@@ -2416,35 +2599,89 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
       const B = { x: e.B.x - u.x * (pw / 2), y: e.B.y - u.y * (pw / 2) };
       const yaw = Math.atan2(u.y, u.x);
       segments.push({ x0: A.x, y0: A.y, x1: B.x, y1: B.y, lengthIn: Math.round(L) });
-      const mid = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 };
-      // A door in the first (front) wall: its opening left out of the panel.
-      const door = fill === "screen" && i === 0 && L > DOOR_W_IN + 24;
-      const doorAt = door ? L / 2 : 0;
+      const at = (t: number) => ({ x: A.x + u.x * t, y: A.y + u.y * t });
+      // THE GAPS IN THIS WALL (2026-11-13), along it from its own start (half a post in from the corner):
+      //  · the openings the builder framed on this side, each with its door's leaves (one to 4 ft, a pair to 8 ft) where
+      //    the wall is screen and a door was asked for now — left open otherwise;
+      //  · or, when the builder framed none anywhere, the one door a screened room always had, in the front wall. It
+      //    stood at the wall's middle whatever was there — on a header laid in two spans, right on the middle post. It
+      //    now stands in the bay the middle is in, or the widest, clear of the posts.
+      const gaps: Array<{ a: number; b: number; leaves: number; id?: string }> = [];
+      const mineW = userEdges.get(e.k);
+      if (mineW) {
+        for (const x of mineW.opens) {
+          const ga = Math.max(0, x.lo);
+          const gb = Math.min(L, x.hi - pw);
+          if (gb - ga < 6) continue;
+          const clear = gb - ga;
+          const leaves = fill === "screen" && x.o.door ? (clear <= ROOF_DOOR_LEAF_FT * 12 + 3 ? 1 : clear <= 2 * ROOF_DOOR_LEAF_FT * 12 + 3 ? 2 : 0) : 0;
+          gaps.push({ a: ga, b: gb, leaves, id: x.o.id });
+          const built = openingsBuilt.find((ob) => ob.id === x.o.id);
+          if (built) built.leaves = leaves;
+        }
+      }
+      if (fill === "screen" && i === 0 && L > DOOR_W_IN + 24 && r.openings.length === 0) {
+        let doorAt = L / 2;
+        const hd = headers.find((x) => x.id === `h${e.k + 1}`);
+        const inner = hd ? hd.postAt.slice(1, -1).map((t) => t - pw / 2) : [];
+        if (inner.some((t) => Math.abs(t - doorAt) < DOOR_W_IN / 2 + pw / 2 + 1)) {
+          // The bays between the posts, post face to post face.
+          const marks = [-pw / 2, ...inner, L + pw / 2];
+          const bays = marks.slice(1).map((t, bi) => ({ a: marks[bi] + pw / 2, b: t - pw / 2 })).filter((bay) => bay.b - bay.a >= DOOR_W_IN + 2);
+          const best = bays.sort((p, q) => q.b - q.a - (p.b - p.a))[0];
+          if (best) doorAt = (best.a + best.b) / 2;
+        }
+        gaps.push({ a: doorAt - DOOR_W_IN / 2, b: doorAt + DOOR_W_IN / 2, leaves: 1 });
+      }
+      gaps.sort((p, q) => p.a - q.a);
+      const pieces: Array<[number, number]> = [];
+      let from = 0;
+      for (const gp of gaps) {
+        if (gp.a - from >= 6) pieces.push([from, gp.a]);
+        from = Math.max(from, gp.b);
+      }
+      if (L - from >= 6) pieces.push([from, L]);
+      // The plates: the wall's whole length as they always were — or, where the builder framed openings, piece by piece (no plate across a doorway).
+      const plateRuns: Array<[number, number]> = mineW?.opens.length ? pieces : [[0, L]];
+      const plates = (zs: number[]) => {
+        for (const [pa, pb] of plateRuns) {
+          const P = at(pa);
+          const Q = at(pb);
+          for (const z of zs) members.push({ role: "kneewall", nominal: "2x4", lengthIn: pb - pa, cx: (P.x + Q.x) / 2, cy: (P.y + Q.y) / 2, cz: z, sx: pb - pa, sy: 3.5, sz: 1.5, yaw, tilt: 0, x0: P.x, y0: P.y, x1: Q.x, y1: Q.y, of: `w${e.k}` });
+          kneewallLf += ((pb - pa) / 12) * (zs.length / 2);
+        }
+      };
       if (fill === "screen") {
         // The kneewall: 2x4 top and bottom plates with a solid panel, then screen to the header.
-        for (const z of [zFloor + 1.75, zFloor + KNEEWALL_IN - 1.75]) members.push({ role: "kneewall", nominal: "2x4", lengthIn: L, cx: mid.x, cy: mid.y, cz: z, sx: L, sy: 3.5, sz: 1.5, yaw, tilt: 0, x0: A.x, y0: A.y, x1: B.x, y1: B.y, of: `w${e.k}` });
-        kneewallLf += L / 12;
-        const pieces: Array<[number, number]> = door ? [[0, doorAt - DOOR_W_IN / 2], [doorAt + DOOR_W_IN / 2, L]] : [[0, L]];
-        for (const [a, b] of pieces) {
-          if (b - a < 6) continue;
-          const P = { x: A.x + u.x * a, y: A.y + u.y * a };
-          const Q = { x: A.x + u.x * b, y: A.y + u.y * b };
+        plates([zFloor + 1.75, zFloor + KNEEWALL_IN - 1.75]);
+        for (const [pa, pb] of pieces) {
+          const P = at(pa);
+          const Q = at(pb);
           planes.push({ kind: "wall", ring: [P.x, P.y, zFloor, Q.x, Q.y, zFloor, Q.x, Q.y, zFloor + KNEEWALL_IN, P.x, P.y, zFloor + KNEEWALL_IN], of: `w${e.k}` });
           planes.push({ kind: "screen", ring: [P.x, P.y, zFloor + KNEEWALL_IN, Q.x, Q.y, zFloor + KNEEWALL_IN, Q.x, Q.y, zTop, P.x, P.y, zTop], of: `w${e.k}` });
-          sqFt += ((b - a) * (zTop - zFloor - KNEEWALL_IN)) / 144;
+          sqFt += ((pb - pa) * (zTop - zFloor - KNEEWALL_IN)) / 144;
         }
-        if (door) {
-          doors++;
-          const P = { x: A.x + u.x * (doorAt - DOOR_W_IN / 2), y: A.y + u.y * (doorAt - DOOR_W_IN / 2) };
-          const Q = { x: A.x + u.x * (doorAt + DOOR_W_IN / 2), y: A.y + u.y * (doorAt + DOOR_W_IN / 2) };
-          members.push({ role: "door", nominal: "screen door", lengthIn: DOOR_H_IN, cx: (P.x + Q.x) / 2, cy: (P.y + Q.y) / 2, cz: zFloor + DOOR_H_IN / 2, sx: DOOR_W_IN, sy: 1.5, sz: DOOR_H_IN, yaw, tilt: 0, x0: P.x, y0: P.y, x1: Q.x, y1: Q.y, of: `w${e.k}` });
+        for (const gp of gaps) {
+          if (!gp.leaves) continue;
+          const leafW = (gp.b - gp.a) / gp.leaves;
+          for (let lf = 0; lf < gp.leaves; lf++) {
+            const P = at(gp.a + leafW * lf);
+            const Q = at(gp.a + leafW * (lf + 1));
+            doors++;
+            members.push({ role: "door", nominal: "screen door", lengthIn: DOOR_H_IN, cx: (P.x + Q.x) / 2, cy: (P.y + Q.y) / 2, cz: zFloor + DOOR_H_IN / 2, sx: leafW, sy: 1.5, sz: DOOR_H_IN, yaw, tilt: 0, x0: P.x, y0: P.y, x1: Q.x, y1: Q.y, of: `w${e.k}` });
+          }
+          const P = at(gp.a);
+          const Q = at(gp.b);
           planes.push({ kind: "screen", ring: [P.x, P.y, zFloor + DOOR_H_IN, Q.x, Q.y, zFloor + DOOR_H_IN, Q.x, Q.y, zTop, P.x, P.y, zTop], of: `w${e.k}` });
         }
       } else {
-        for (const z of [zFloor + 1.75, zTop - 1.75]) members.push({ role: "kneewall", nominal: "2x4", lengthIn: L, cx: mid.x, cy: mid.y, cz: z, sx: L, sy: 3.5, sz: 1.5, yaw, tilt: 0, x0: A.x, y0: A.y, x1: B.x, y1: B.y, of: `w${e.k}` });
-        planes.push({ kind: fill === "lattice" ? "screen" : "wall", ring: [A.x, A.y, zFloor, B.x, B.y, zFloor, B.x, B.y, zTop, A.x, A.y, zTop], of: `w${e.k}` });
-        sqFt += (L * (zTop - zFloor)) / 144;
-        kneewallLf += (2 * L) / 12;
+        plates([zFloor + 1.75, zTop - 1.75]);
+        for (const [pa, pb] of pieces) {
+          const P = at(pa);
+          const Q = at(pb);
+          planes.push({ kind: fill === "lattice" ? "screen" : "wall", ring: [P.x, P.y, zFloor, Q.x, Q.y, zFloor, Q.x, Q.y, zTop, P.x, P.y, zTop], of: `w${e.k}` });
+          sqFt += ((pb - pa) * (zTop - zFloor)) / 144;
+        }
       }
     });
     walls = { fill, segments, sqFt: Math.round(sqFt), kneewallLf: Math.round(kneewallLf), doors };
@@ -2631,6 +2868,9 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
     engineered,
     hardware,
     headersLeftOut,
+    openings: openingsBuilt,
+    pins: pinsBuilt,
+    notPlaced,
     bracesLeftOut,
     postsInStair,
     flags: {

@@ -32,8 +32,9 @@ import { lateralDevices } from "@/lib/deck/permit";
 import { LEDGER_FASTENER_LABEL, RULE } from "@/lib/deck/codeTables";
 import { OC_POST, OC_SOURCES, postWords } from "@/lib/deck/ocLumber";
 import { railNamed } from "@/lib/deck/rails";
+import { borderWords } from "@/lib/deck/surface";
 import { permitSheetList, crewSheetList, type PlanSheet } from "@/lib/deck/plans/sheets";
-import { PAPERS, fitOn, type Paper, type PaperKey } from "@/lib/deck/plans/paper";
+import { PAPERS, fitElevationsOn, fitOn, fitPlanOn, type Paper, type PaperKey } from "@/lib/deck/plans/paper";
 import { editedSheets, emptySetEdits, sheetEditId } from "@/lib/deck/plans/edits";
 import { PlanSvg } from "./plan-svg";
 import { Card, ExtraSheetBody, SheetCtx, useEditSurface, usePlanEdit, useSheetOverflow } from "./plan-edit";
@@ -76,6 +77,8 @@ export interface PlanSetProps {
   set: "permit" | "crew";
   /** The permit set's sheet size (lib/deck/plans/paper): 11 × 17 unless the department asks for more room. */
   paper?: PaperKey;
+  /** The plans' scale picked by hand, inches per foot (lib/deck/plans/paper SheetPrefs.planInPerFt); none = the largest that fits. */
+  planInPerFt?: number | null;
   /** Sheets the caller draws itself (the site plan, with its own panel), by kind. */
   slots?: Partial<Record<PlanSheet["kind"], (sheet: PlanSheet, frame: (children: React.ReactNode, className?: string) => React.ReactNode) => React.ReactNode>>;
 }
@@ -88,6 +91,9 @@ const useInBrowser = () => React.useSyncExternalStore(noSubscribe, () => true, (
 /** The sheet the set is drawn on: every permit view fits its frame on it (fitOn). */
 const PaperCtx = React.createContext<Paper>(PAPERS.B);
 const usePaper = () => React.useContext(PaperCtx);
+/** The plans' scale asked by hand, paper inches per model inch (null: the largest that fits). */
+const PlanScaleCtx = React.createContext<number | null>(null);
+const usePlanScale = () => React.useContext(PlanScaleCtx);
 
 export function PlanSet(props: PlanSetProps) {
   const inBrowser = useInBrowser();
@@ -115,11 +121,13 @@ function PlanSetSheets(props: PlanSetProps) {
   const surface = useEditSurface();
   return (
     <PaperCtx.Provider value={paper}>
+      <PlanScaleCtx.Provider value={props.planInPerFt ? props.planInPerFt / 12 : null}>
       <div className={`${s.set} ${surface.className ?? ""}`} onClickCapture={surface.onClickCapture} data-plan-set={set} data-plan-paper={set === "crew" ? "A" : paper.key}>
         {sheets.map((sh, i) => (
           <SheetOf key={sh.no} sheet={sh} index={i} sheets={sheets} m={m} scene={scene} list={list} split={split} {...props} />
         ))}
       </div>
+      </PlanScaleCtx.Provider>
     </PaperCtx.Provider>
   );
 }
@@ -141,7 +149,7 @@ function SheetOf(p: PlanSetProps & { sheet: PlanSheet; index: number; sheets: Pl
     case "framing":
       return m ? <>{frame(<FramingSheet m={m} />, s.foundation)}</> : null;
     case "elevations":
-      return m ? <>{frame(<ElevationsSheet m={m} scene={scene} />, s.stack2)}</> : null;
+      return m ? <ElevationsSheet m={m} scene={scene} frame={frame} /> : null;
     case "sections":
       return m ? <>{frame(<SectionsSheet m={m} scene={scene} />, s.sections)}</> : null;
     case "details":
@@ -301,7 +309,8 @@ function ViewBox({ view, no, sheetNo, style, note, card, need }: { view: View; n
 /* ── S-101 · the foundation plan ─────────────────────────────────────── */
 function FoundationSheet({ m }: { m: PlanModel }) {
   const paper = usePaper();
-  const view = React.useMemo(() => fitOn(paper, (sc) => foundationPlan(m, sc, {}), 8.9, 9.45), [m, paper]);
+  const asked = usePlanScale();
+  const view = React.useMemo(() => fitPlanOn(paper, (sc) => foundationPlan(m, sc, {}), asked), [m, paper, asked]);
   const d = m.s.design;
   const worst = m.bearing.reduce((a, b) => Math.max(a, b.ratio), 0);
   return (
@@ -417,11 +426,15 @@ export const DETAIL_NO = { ledger: 1, lateral: 2, post: 3, guard: 4, pattern: 5,
 /** Where the building section cuts: the post line nearest the middle of the deck. */
 const sectionX = (m: PlanModel) => (m.cols.length ? m.cols[Math.floor((m.cols.length - 1) / 2)].at : m.W / 2);
 
+/** What S-102's framing plan carries beside the frame — its detail bubbles and section marks: they take room, so whoever fits the plan fits it with them. */
+export const framingPlanRefs = (m: PlanModel) => ({ ledger: m.attached ? DETAIL_NO.ledger : undefined, lateral: m.attached ? DETAIL_NO.lateral : undefined, post: DETAIL_NO.post, guard: m.s.rails.on ? DETAIL_NO.guard : undefined, section: 1, stair: 2, sectionX: sectionX(m) });
+
 function FramingSheet({ m }: { m: PlanModel }) {
   const paper = usePaper();
+  const asked = usePlanScale();
   const view = React.useMemo(
-    () => fitOn(paper, (sc) => framingPlan(m, sc, { ledger: m.attached ? DETAIL_NO.ledger : undefined, lateral: m.attached ? DETAIL_NO.lateral : undefined, post: DETAIL_NO.post, guard: m.s.rails.on ? DETAIL_NO.guard : undefined, section: 1, stair: 2, sectionX: sectionX(m) }), 8.9, 9.45),
-    [m, paper],
+    () => fitPlanOn(paper, (sc) => framingPlan(m, sc, framingPlanRefs(m)), asked),
+    [m, paper, asked],
   );
   const f = m.f;
   const d = m.s.design;
@@ -497,7 +510,7 @@ function FramingSheet({ m }: { m: PlanModel }) {
             {m.attached ? <li>Ledger to the house band joist only — never to brick veneer, a cantilevered floor or siding alone — with metal flashing over it and membrane behind (detail {DETAIL_NO.ledger}/S-501).</li> : <li>Free-standing: braced at the corner posts both ways; no load on the house.</li>}
             {devices.length ? <li>Lateral load: {devices.length} hold-down devices of {devices[0].lb.toLocaleString("en-US")} lb within 24&quot; of each end, LD-1 to LD-{devices.length} on the plan ({RULE.lateral}; detail {DETAIL_NO.lateral}/S-501).</li> : null}
             {d.framing.joistTape ? <li>Butyl joist tape over the tops of the joists, rim, ledger and beams before the decking.</li> : null}
-            <li>Decking: {f.decking.label}, fastened per its maker&apos;s guide; joists no farther apart than {f.deckingMaxSpacingIn}&quot; for these boards laid as drawn.</li>
+            <li>Decking: {f.decking.label}{m.s.surface?.border ? `, with ${borderWords(m.s.surface)} — a joist added under its inner edge along the sides` : ""}, fastened per its maker&apos;s guide; joists no farther apart than {f.deckingMaxSpacingIn}&quot; for these boards laid as drawn.</li>
           </ol>
         </Card>
       </div>
@@ -506,15 +519,27 @@ function FramingSheet({ m }: { m: PlanModel }) {
 }
 
 /* ── S-201 · elevations ──────────────────────────────────────────────── */
-function ElevationsSheet({ m, scene }: { m: PlanModel; scene: DeckScene }) {
+/**
+ * THE TWO ELEVATIONS, LAID OUT FOR THE DECK (2026-11-13 — a deck builder: "some plans show the deck too small to
+ * review"). They were always one over the other: two frames each wide and low, so a tall deck — a second storey, a roof
+ * over it — was held to the frame's 4 in. of height and drawn a few inches wide in a 13-in. row. They are fitted both
+ * ways — one over the other, and side by side (two frames narrow and tall) — and the way that draws them larger wins;
+ * a tie keeps them one over the other, as before.
+ */
+function ElevationsSheet({ m, scene, frame }: { m: PlanModel; scene: DeckScene; frame: (children: React.ReactNode, className?: string) => React.ReactNode }) {
   const paper = usePaper();
   const side = m.s.stairs.some((st) => st.design.side === "left") ? "right" : "left";
-  const front = React.useMemo(() => fitOn(paper, (sc) => elevationView(m, scene, "front", sc), 12.9, 4.15), [m, scene, paper]);
-  const other = React.useMemo(() => fitOn(paper, (sc) => elevationView(m, scene, side, sc), 12.9, 4.15), [m, scene, side, paper]);
+  const { front, other, beside, share } = React.useMemo(() => fitElevationsOn(paper, (sc) => elevationView(m, scene, "front", sc), (sc) => elevationView(m, scene, side, sc)), [m, scene, side, paper]);
+  const BESIDE: Record<number, string> = { 35: s.beside35, 40: s.beside40, 45: s.beside45, 50: s.beside2, 55: s.beside55, 60: s.beside60, 65: s.beside65 };
   return (
     <>
-      <ViewBox view={front} no={1} sheetNo="S-201" note={ELEVATION_NAME.front === front.title ? undefined : undefined} />
-      <ViewBox view={other} no={2} sheetNo="S-201" note="Grade drawn level — verify in the field" />
+      {frame(
+        <>
+          <ViewBox view={front} no={1} sheetNo="S-201" note={ELEVATION_NAME.front === front.title ? undefined : undefined} />
+          <ViewBox view={other} no={2} sheetNo="S-201" note="Grade drawn level — verify in the field" />
+        </>,
+        beside ? BESIDE[Math.round(share * 100)] ?? s.beside2 : s.stack2,
+      )}
     </>
   );
 }
@@ -580,6 +605,7 @@ const DETAIL_NEED: Record<string, string | undefined> = {
   lateral: "Most building departments ask for the lateral load connection to the house.",
   post: "Most building departments ask how the posts sit on the footings and carry the beam.",
   guard: "Most building departments ask how the guard posts are fastened.",
+  guard2: "This side's guard posts are mounted another way than the rest: the building department sees both.",
   stringer: "Most building departments ask how the stair hangs from the deck.",
 };
 function DetailCell({ dt, w }: { dt: PlanDetail; w: number }) {
@@ -671,7 +697,7 @@ function CoverSheet(p: PlanSetProps & { sheets: PlanSheet[]; m: PlanModel | null
     rows.push(["Framing", `${f.species.label}, ${f.joistSize} joists @ ${f.spacingIn}" o.c.`]);
     rows.push(["Beams · posts", `${m ? m.tags.filter((t) => t.tag.startsWith("B") && t.tag !== "BK").map((t) => t.spec.split(",")[0]).join(", ") : ""} · ${d.framing.post} posts`]);
     rows.push(["Footings", m ? `${m.posts.length} poured, ${m.footings.filter((x) => x.kind === "post").map((x) => `${x.tag} ${inFrac(x.padIn)} Ø`).join(", ")} · ${inFrac(d.frostIn)} below grade` : ""]);
-    rows.push(["Decking", f.decking.label]);
+    rows.push(["Decking", `${f.decking.label}${st.surface?.border ? ` · ${st.surface.border === 2 ? "double" : "single"} picture-frame border${st.surface.product.border ? ` in ${st.surface.product.border.name}` : ""}` : ""}`]);
   }
   if (st.rails.on) rows.push(["Guard", `${railNamed(st.rails)}, ${st.rails.heightIn}" · ${Math.round(st.rails.totalLf)} ft`]);
   if (st.stairs.length) rows.push(["Stairs", st.stairs.map((x, i) => `${i + 1}: ${x.risers} risers @ ${inFrac(x.riserIn)}, ${inFrac(x.widthIn)} wide`).join(" · ")]);

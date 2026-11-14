@@ -109,7 +109,16 @@ export const ARCH_SCALES: readonly ArchScale[] = [
  * `w` × `h` paper inches. `build` makes the view at a scale (anything sized in paper inches changes the model box);
  * `max` caps the scale (a plan is never drawn at 1" = 1'-0", whatever the room).
  */
-export function fitView(build: (s: ArchScale) => View, w: number, h: number, max = 0.5 / 12): View {
+export function fitView(build: (s: ArchScale) => View, w: number, h: number, max = 0.5 / 12, force?: number | null): View {
+  // A scale the builder asked for by hand (2026-11-13): drawn at it where it fits the frame; where it does not, the
+  // largest that does — a drawing is never cut off to keep a scale (the caller says so: the view's scale is not the one asked).
+  if (force) {
+    const asked = ARCH_SCALES.find((s) => Math.abs(s.k - force) < 1e-9);
+    if (asked) {
+      const v = build(asked);
+      if (v.box.w * v.scale <= w + 1e-6 && v.box.h * v.scale <= h + 1e-6) return v;
+    }
+  }
   let last: View | null = null;
   for (const s of ARCH_SCALES) {
     if (s.k > max + 1e-9) continue;

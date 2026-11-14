@@ -141,6 +141,13 @@ console.log("── commands read from what was said");
     ["no railing", (c) => has(c, "rail")?.set.type === "none"],
     ["glass panels", (c) => has(c, "rail")?.set.type === "glass", d, { subject: "rail" }],
     ["posts every 6 feet", (c) => has(c, "rail")?.set.postSpacingFt === 6, d, { subject: "rail" }],
+    // How the posts meet the deck (2026-11-13): for every side, or for one.
+    ["top mount the railing", (c) => has(c, "rail")?.set.mount === "top" && !has(c, "rail")?.set.mountSide],
+    ["surface mounted posts", (c) => has(c, "rail")?.set.mount === "top"],
+    ["fascia mount the railing", (c) => has(c, "rail")?.set.mount === "side" && !has(c, "rail")?.set.mountSide],
+    ["side mount the railing on the left side", (c) => has(c, "rail")?.set.mount === "side" && has(c, "rail")?.set.mountSide === "left"],
+    ["aluminum railing top mounted", (c) => has(c, "rail")?.set.type === "aluminum" && has(c, "rail")?.set.mount === "top"],
+    ["top mount the front only", (c) => has(c, "rail")?.set.mount === "top" && has(c, "rail")?.set.mountSide === "front"],
     // Decking
     ["composite decking", (c) => has(c, "decking")?.set.family === "composite"],
     ["trex", (c) => has(c, "decking")?.set.product === "trex-enhance-naturals"],

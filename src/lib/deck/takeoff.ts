@@ -29,7 +29,7 @@ import { type CustomSlot, ROOFING_LABEL, type DeckDesign } from "./design";
 import type { DeckStructure } from "./structure";
 import { structureLevels } from "./structure";
 import { BOX_FRAME_NOMINAL, STRINGER_NOMINAL } from "./stairs";
-import { BALUSTER_NOMINAL, METAL_BALUSTER_SPACING_IN, RAIL_CAP_NOMINAL, RAIL_POST_NOMINAL, RAIL_TOP_NOMINAL, infillWords, railNamed } from "./rails";
+import { BALUSTER_NOMINAL, METAL_BALUSTER_SPACING_IN, RAIL_CAP_NOMINAL, RAIL_POST_NOMINAL, RAIL_TOP_NOMINAL, infillWords, railHeldWords, railNamed } from "./rails";
 import { FIXTURE_LABEL, type FixtureKind } from "./design";
 
 export type BomStep = "footings" | "ledger" | "framing" | "decking" | "fascia" | "stairs" | "rails" | "drainage" | "slab" | "roof-posts" | "roof-frame" | "roof-deck" | "roofing" | "trim" | "ceiling" | "gutters" | "walls" | "cupola" | "electrical" | "own";
@@ -341,6 +341,11 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
     for (const st of surface.stock) {
       push({ id: `boards-${st.lengthFt}`, step: "decking", kind: "boards", label: `${surface.product.label} × ${st.lengthFt} ft`, qty: st.count, unit: "pcs", note: surface.border ? (surface.borderStock.length ? `the ${surface.border === 2 ? "double" : "single"} picture-frame border is bought apart, in its own colour` : `${surface.border === 2 ? "double" : "single"} picture-frame border included`) : surface.pattern !== "straight" ? `${surface.pattern}, bought by the foot` : undefined, rateKey: `deck.${surface.product.id}`, rateQty: st.count * st.lengthFt, factor: 1 });
     }
+    // What the border lies on along the sides (2026-11-13): a joist under each seam, in the joists' own stock.
+    if (surface.borderBackingIn.length) {
+      const bk = lfOf(surface.borderBackingIn, [8, 10, 12, 16, 20]);
+      lumber("framing", "backing under the picture-frame border", frame.joistSize, bk.stockFt, bk.boards, false, `${surface.borderBackingIn.length} ${surface.borderBackingIn.length === 1 ? "length" : "lengths"} along the sides, under the border's inner edge${surface.border === 2 ? " and its seam" : ""}`, "border-backing");
+    }
     // A border in a second colour is its own order, named with its colour (2026-11-10).
     for (const st of surface.borderStock) {
       push({ id: `boards-border-${st.lengthFt}`, step: "decking", kind: "boards", label: `${surface.product.border?.label ?? surface.product.label} × ${st.lengthFt} ft — border`, qty: st.count, unit: "pcs", note: `${surface.border === 2 ? "double" : "single"} picture-frame border, ${Math.round(surface.borderLf)} ft of board`, rateKey: `deck.${surface.product.id}`, rateQty: st.count * st.lengthFt, factor: 1 });
@@ -414,10 +419,12 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
   if (rails.on) {
     railLf = rails.totalLf;
     if (rails.system === "wood") {
-      const postLen = rails.members.find((m) => m.role === "rail-post")?.lengthIn ?? 48;
+      // Each post at its own length (2026-11-13): a top-mounted one stops at the boards, a side-mounted one runs down the rim.
+      const deckPosts = rails.members.filter((m) => m.role === "rail-post").map((m) => m.lengthIn);
+      const postLen = deckPosts.length ? Math.max(...deckPosts) : 48;
       const posts = rails.posts + rails.stairPosts;
-      const pk = lfOf(new Array<number>(posts).fill(postLen + 2), [8, 10, 12]);
-      lumber("rails", "rail posts", RAIL_POST_NOMINAL, pk.stockFt, pk.boards, true, `${posts} posts, bolted through the rim`, "rail-post");
+      const pk = lfOf([...deckPosts, ...new Array<number>(Math.max(0, posts - deckPosts.length)).fill(postLen)].map((l) => l + 2), [8, 10, 12]);
+      lumber("rails", "rail posts", RAIL_POST_NOMINAL, pk.stockFt, pk.boards, true, `${posts} posts, ${rails.topPosts && !rails.sidePosts ? "top-mounted in rated bases" : rails.topPosts ? railHeldWords(rails) : "bolted through the rim"}`, "rail-post");
       const railRuns = Math.ceil(((rails.topRailLf + rails.bottomRailLf) * 1.05) / 12 - 1e-9);
       lumber("rails", "top and bottom rails", RAIL_TOP_NOMINAL, 12, railRuns, false, `${Math.round(rails.topRailLf)} ft of rail, two rails high`, "rail-run");
       if (rails.capLf) lumber("rails", "rail cap", RAIL_CAP_NOMINAL, 12, Math.ceil((rails.capLf * 1.05) / 12 - 1e-9), false, "a flat drink cap", "rail-cap");
@@ -444,6 +451,15 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
       push({ id: "rail-drink-boards", step: "rails", kind: "boards", label: `${board.label} × ${stockFt} ft — drink rail on the railing`, qty: boards, unit: "pcs", note: `${rails.drinkLf} ft of rail capped with a deck board, mitred at the corners`, rateKey: `deck.${board.id}`, rateQty: boards * stockFt, factor: 1 });
     }
     hw("rail-post-ties", "rails", "Rail post tension ties with bolts", rails.hardware.postTies, "hw.railPostTie");
+    // BY THE MOUNT (2026-11-13). Top-mounted posts stand over solid blocking — two pieces of the joists' stock a post,
+    // cut to fit between the joists — and a wood one in a rated base; side-mounted metal posts hang on fascia brackets.
+    hw("rail-post-bases", "rails", "Guard post bases, rated, for a 4x4 on the deck", rails.hardware.postBases, "hw.railPostBase", 1, "ea", "one under each top-mounted post, screwed into the blocking");
+    hw("rail-fascia-brackets", "rails", "Fascia-mount post brackets, the rail maker's", rails.hardware.fasciaBrackets, "hw.railFasciaBracket", 1, "ea", "one a side-mounted post, through-bolted to the rim");
+    if (rails.hardware.blocks && s.frame) {
+      const each = Math.max(6, s.frame.spacingIn - 1.5);
+      const bk = lfOf(new Array<number>(rails.hardware.blocks).fill(each), [8, 10, 12]);
+      lumber("rails", "blocking under the rail posts", s.frame.joistSize, bk.stockFt, bk.boards, true, `${rails.hardware.blocks} pieces, two under each of ${rails.topPosts} top-mounted posts`, "rail-blocking");
+    }
   }
 
   /* ── The roof ─────────────────────────────────────────────────────── */

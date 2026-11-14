@@ -238,7 +238,42 @@ export interface RoofDesign {
   walls: { fill: WallFill; sides: number };
   /** Lights and a fan in the roof (M3). */
   extras: { fan: boolean; lights: number };
+  /**
+   * POSTS AND OPENINGS SET BY HAND (2026-11-13 — a deck builder: "let me add two posts with a 4-ft opening for a
+   * future screen door"). The roof's posts stood only where the spans put them. A builder can now stand a post on a
+   * side at a place of their own (`pins`), frame an opening between two posts where a door will hang (`openings`), and
+   * set the farthest the posts may stand apart (`postSpacingFt`). Nothing here overrides the structure: the headers
+   * are sized again for the spans these posts make, more posts go in where a span is past every header, and the
+   * checks say where an engineer is wanted (lib/deck/roof).
+   */
+  pins: RoofPin[];
+  openings: RoofOpening[];
+  postSpacingFt: number | "auto";
 }
+
+/** A side of the roof, as its builder stands facing the house: the front (farthest from it), the left, the right, the back (a free-standing roof's). */
+export type RoofSide = "front" | "left" | "right" | "back";
+export const ROOF_SIDES: readonly RoofSide[] = ["front", "left", "right", "back"];
+export const ROOF_SIDE_LABEL: Record<RoofSide, string> = { front: "Front", left: "Left side", right: "Right side", back: "Back" };
+/** A post set by hand: a side, and its place along it — feet from the side's left end (front, back) or from its house end (left, right). */
+export interface RoofPin {
+  id: string;
+  side: RoofSide;
+  atFt: number;
+}
+/** An opening between two posts: a side, its middle along it, its clear width between the posts, and whether a screen door hangs in it now (or later). */
+export interface RoofOpening {
+  id: string;
+  side: RoofSide;
+  atFt: number;
+  widthFt: number;
+  door: boolean;
+}
+export const ROOF_POST_LIMITS = { pins: 12, openings: 6, atFt: { min: 0, max: 60 }, openingFt: { min: 2.5, max: 16 }, spacingFt: { min: 4, max: 16 } } as const;
+/** The widest opening one screen door fills, and a pair of them. */
+export const ROOF_DOOR_LEAF_FT = 4;
+export const defaultRoofOpening = (id: string, side: RoofSide = "front", atFt = 6): RoofOpening => ({ id, side, atFt, widthFt: 4, door: true });
+export const defaultRoofPin = (id: string, side: RoofSide = "front", atFt = 6): RoofPin => ({ id, side, atFt });
 
 /* ------------------------------------------------------------------ */
 /*  Stairs and rails (M3)                                               */
@@ -276,6 +311,29 @@ export const RAIL_BALUSTER_LABEL: Record<RailBaluster, string> = { square: "Squa
 export type RailLighting = "none" | "post-caps" | "post-caps-risers";
 export const RAIL_LIGHTING_LABEL: Record<RailLighting, string> = { none: "No lights", "post-caps": "Lit post caps", "post-caps-risers": "Lit post caps and stair risers" };
 
+/**
+ * HOW A RAIL'S POSTS MEET THE DECK (2026-11-13 — a deck builder: "some sections show side-mounted, others top-mounted;
+ * it matters at the permit desk"). Top: the post stands on the boards — a kit post on its base plate, a wood post in a
+ * rated post base — over blocking between the joists. Side: the post hangs on the outside of the rim — a wood post
+ * bolted through it with tension ties, a metal post on the maker's fascia brackets. The builder picks; "auto" is what
+ * each system is sold for (a metal post on its base plate; a wood post, bare or sleeved, on the rim). One side of the
+ * deck can differ.
+ */
+export type RailMount = "top" | "side";
+export const RAIL_MOUNT_LABEL: Record<RailMount, string> = { top: "Top mount", side: "Side mount" };
+export const RAIL_MOUNT_WORDS: Record<RailMount, string> = { top: "on the deck boards, over blocking", side: "on the outside of the rim" };
+/** A rail section: a level and the side of it the rail runs along. */
+export type RailSectionKey = `${"upper" | "lower"}-${"front" | "back" | "left" | "right"}`;
+export const RAIL_SECTION_KEYS: readonly RailSectionKey[] = (["upper", "lower"] as const).flatMap((l) => (["front", "left", "right", "back"] as const).map((sd): RailSectionKey => `${l}-${sd}`));
+export const RAIL_SECTION_LABEL: Record<RailSectionKey, string> = { "upper-front": "Front", "upper-left": "Left side", "upper-right": "Right side", "upper-back": "Back", "lower-front": "Lower level, front", "lower-left": "Lower level, left side", "lower-right": "Lower level, right side", "lower-back": "Lower level, back" };
+/** What a system's posts are: wood 4x4s; a composite or vinyl sleeve over a wood 4x4; a metal post of the system's own (aluminum, cable, glass, a custom one). */
+export type RailPostKind = "wood" | "sleeve" | "metal";
+export const railPostKind = (type: RailTypeId): RailPostKind => (type === "treated" || type === "cedar" ? "wood" : type === "composite" || type === "vinyl" ? "sleeve" : "metal");
+/** What "auto" builds for a system: a metal post on its base plate; a wood post, sleeved or bare, on the rim. */
+export const railMountFor = (type: RailTypeId, asked: RailMount | "auto"): RailMount => (asked !== "auto" ? asked : railPostKind(type) === "metal" ? "top" : "side");
+/** The mount of one section: its own where the builder set one, else the deck's. */
+export const railMountOf = (rail: Pick<RailDesign, "type" | "mount" | "mountBy">, key: string): RailMount => rail.mountBy[key as RailSectionKey] ?? railMountFor(rail.type, rail.mount);
+
 /** The railing: its system, height, infill, post spacing, cap and lights. The feet come from the open edges. */
 export interface RailDesign {
   type: RailTypeId;
@@ -297,6 +355,10 @@ export interface RailDesign {
   baluster: RailBaluster;
   /** A deck board laid flat on top of a kit rail — a drink rail (2026-11-10). A wood rail has its own 2x6 `cap`. */
   drink: boolean;
+  /** How the posts meet the deck (2026-11-13): on the boards, on the rim, or what the system is sold for. */
+  mount: RailMount | "auto";
+  /** Sections mounted another way than the rest: a side of a level → its mount. Empty = every section as `mount`. */
+  mountBy: Partial<Record<RailSectionKey, RailMount>>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -489,6 +551,14 @@ export interface DeckDesign {
     braces: boolean;
     /** Braces taken out one by one in the 3D (2026-11-09; lib/deck/parts): each a post and the way its brace leans. */
     bracesOff: string[];
+    /**
+     * THE DECK'S OWN POSTS BY HAND (2026-11-13 — a deck builder: "let me add and position posts, and set their spacing").
+     * `pins`: posts stood under a beam at the builder's own places. A beam with any post set by hand stands on THOSE
+     * posts — and on more only where its spans or its ends need one, so the code's tables are never left behind.
+     * `postSpacingFt`: the farthest apart the posts under a beam may stand ("auto" = what the beam's table allows).
+     */
+    pins: DeckPostPin[];
+    postSpacingFt: number | "auto";
   };
   ledger: {
     fastener: LedgerFastener;
@@ -624,12 +694,24 @@ export function defaultRoofDesign(structure: Structure = "covered-deck"): RoofDe
     pergolaStyle: "flat",
     walls: { fill: "none", sides: 3 },
     extras: { fan: false, lights: 0 },
+    pins: [],
+    openings: [],
+    postSpacingFt: "auto",
   };
 }
 
+/** A post under a deck beam, set by hand: the beam it stands under — the front one, a middle one, a free-standing deck's back one — and its place, feet from the deck's left end. */
+export interface DeckPostPin {
+  id: string;
+  beam: "front" | "middle" | "back";
+  atFt: number;
+}
+export const DECK_BEAM_LABEL: Record<DeckPostPin["beam"], string> = { front: "Front beam", middle: "Middle beam", back: "Back beam" };
+export const DECK_POST_LIMITS = { pins: 24, atFt: { min: 0, max: 60 }, spacingFt: { min: 3, max: 14 } } as const;
+
 /** The railing a deck starts with: none chosen — the checks ask for one where the height requires it. */
 export function defaultRailDesign(): RailDesign {
-  return { type: "none", heightIn: 36, infill: "auto", postSpacingFt: 6, cap: true, lighting: "none", customPerFt: 0, customName: "", lowerLevel: true, color: "", baluster: "square", drink: false };
+  return { type: "none", heightIn: 36, infill: "auto", postSpacingFt: 6, cap: true, lighting: "none", customPerFt: 0, customName: "", lowerLevel: true, color: "", baluster: "square", drink: false, mount: "auto", mountBy: {} };
 }
 
 /** A flight of stairs where a contractor usually puts one: down the front, in the middle, 4 ft wide, onto a new pad. */
@@ -680,6 +762,8 @@ export function defaultDeckDesign(opts: { state?: string | null; frostIn?: numbe
       blocking: "auto",
       braces: true,
       bracesOff: [],
+      pins: [],
+      postSpacingFt: "auto",
     },
     ledger: { fastener: "lag", lateral: "two" },
     footing: { type: "poured", aboveGradeIn: 3, frostAlways: false },
@@ -856,6 +940,8 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
       blocking: oneOf(f.blocking, ["auto", "mid-span"] as const, d.framing.blocking),
       braces: typeof f.braces === "boolean" ? f.braces : d.framing.braces,
       bracesOff: keyList(f.bracesOff),
+      pins: deckPins(f.pins),
+      postSpacingFt: typeof f.postSpacingFt === "number" && Number.isFinite(f.postSpacingFt) ? Math.round(clamp(f.postSpacingFt, DECK_POST_LIMITS.spacingFt.min, DECK_POST_LIMITS.spacingFt.max)) : "auto",
     },
     ledger: { fastener, lateral: oneOf(l.lateral, ["two", "four"] as const, d.ledger.lateral) },
     footing: {
@@ -1066,7 +1152,40 @@ export function normalizeRoof(raw: unknown, structure: Structure, floor: Floor, 
     pergolaStyle: kind === "pergola" ? oneOf(r.pergolaStyle, ["flat", "louvered", "arched"] as const, d.pergolaStyle) : "flat",
     walls: { fill: oneOf(wa.fill, ["none", "screen", "lattice", "solid"] as const, d.walls.fill), sides: Math.round(clamp(num(wa.sides, Math.min(3, ringSides - (attach === "wall" ? 1 : 0))), ROOF_LIMITS.wallSides.min, Math.min(ROOF_LIMITS.wallSides.max, ringSides))) },
     extras: { fan: kind !== "pergola" && rx.fan === true, lights: Math.round(clamp(num(rx.lights, 0), ROOF_LIMITS.lights.min, ROOF_LIMITS.lights.max)) },
+    pins: roofPlaced(r.pins, ROOF_POST_LIMITS.pins, "p", (v, id, side, atFt) => ({ id, side, atFt })),
+    openings: roofPlaced(r.openings, ROOF_POST_LIMITS.openings, "o", (v, id, side, atFt) => ({ id, side, atFt, widthFt: toInch(clamp(num(v.widthFt, 4), ROOF_POST_LIMITS.openingFt.min, ROOF_POST_LIMITS.openingFt.max)), door: v.door !== false })),
+    postSpacingFt: typeof r.postSpacingFt === "number" && Number.isFinite(r.postSpacingFt) ? Math.round(clamp(r.postSpacingFt, ROOF_POST_LIMITS.spacingFt.min, ROOF_POST_LIMITS.spacingFt.max)) : "auto",
   };
+}
+
+/** The deck's posts set by hand: each with an id of its own, a beam and a place along it to the inch; junk and doubles dropped. */
+function deckPins(raw: unknown): DeckPostPin[] {
+  const out: DeckPostPin[] = [];
+  for (const [i, item] of (Array.isArray(raw) ? raw : []).entries()) {
+    if (out.length >= DECK_POST_LIMITS.pins) break;
+    if (!item || typeof item !== "object") continue;
+    const v = item as Record<string, unknown>;
+    if (typeof v.atFt !== "number" || !Number.isFinite(v.atFt)) continue;
+    const id = typeof v.id === "string" && /^[a-z0-9-]{1,12}$/.test(v.id) ? v.id : `k${i + 1}`;
+    if (out.some((o) => o.id === id)) continue;
+    out.push({ id, beam: oneOf(v.beam, ["front", "middle", "back"] as const, "front"), atFt: toInch(clamp(v.atFt, DECK_POST_LIMITS.atFt.min, DECK_POST_LIMITS.atFt.max)) });
+  }
+  return out;
+}
+
+/** A list of things set by hand on the roof's sides: each with an id of its own, a side and a place along it, to the inch; junk and doubles dropped. */
+function roofPlaced<T extends { id: string }>(raw: unknown, limit: number, prefix: string, make: (v: Record<string, unknown>, id: string, side: RoofSide, atFt: number) => T): T[] {
+  const out: T[] = [];
+  for (const [i, item] of (Array.isArray(raw) ? raw : []).entries()) {
+    if (out.length >= limit) break;
+    if (!item || typeof item !== "object") continue;
+    const v = item as Record<string, unknown>;
+    if (typeof v.atFt !== "number" || !Number.isFinite(v.atFt)) continue;
+    const id = typeof v.id === "string" && /^[a-z0-9-]{1,12}$/.test(v.id) ? v.id : `${prefix}${i + 1}`;
+    if (out.some((o) => o.id === id)) continue;
+    out.push(make(v, id, oneOf(v.side, ROOF_SIDES, "front"), toInch(clamp(v.atFt, ROOF_POST_LIMITS.atFt.min, ROOF_POST_LIMITS.atFt.max))));
+  }
+  return out;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1092,6 +1211,8 @@ function normalizeRail(raw: unknown, legacyExtras: Record<string, unknown>): Rai
     color: typeof r.color === "string" && railColors(type).some((c) => c.id === r.color) ? r.color : "",
     baluster: oneOf(r.baluster, ["square", "round"] as const, d.baluster),
     drink: r.drink === true,
+    mount: oneOf(r.mount, ["auto", "top", "side"] as const, d.mount),
+    mountBy: Object.fromEntries(RAIL_SECTION_KEYS.filter((k) => obj(r.mountBy)[k] === "top" || obj(r.mountBy)[k] === "side").map((k) => [k, obj(r.mountBy)[k] as RailMount])),
   };
 }
 

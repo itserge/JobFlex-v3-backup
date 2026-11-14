@@ -40,7 +40,7 @@ import {
 } from "./codeTables";
 import { OC_BLOCKING_MAX_FT, OC_GUIDE_MAX_POSTS, OC_POST_MAX_HEIGHT_IN, OC_RULE, OC_SOURCES, ocPostCapacityLb } from "./ocLumber";
 import { GROUND_CONTACT_WITHIN_IN, MIN_FRAME_CLEAR_IN, PIER_BLOCK, footingDepthIn, type DeckFrame } from "./frame";
-import { FIXTURE_LABEL, GUTTER_LABEL, ROOFING_LABEL, WALL_FILL_LABEL, defaultStair, frontRadiusFt, normalizeDeckDesign, type DeckDesign, spaRectIn } from "./design";
+import { FIXTURE_LABEL, GUTTER_LABEL, ROOFING_LABEL, STAIR_LIMITS, WALL_FILL_LABEL, defaultStair, frontRadiusFt, normalizeDeckDesign, type DeckDesign, spaRectIn } from "./design";
 import { STAIR_POST_CLEAR_IN, type RoofFrame } from "./roof";
 import { RULE_HIP, RULE_RAFTER, RULE_RIDGE, RULE_ROOF_LOAD, RULE_TIES } from "./roofTables";
 import { BETWEEN_LEVELS_STAIR_ID, betweenLevelsStair, type DeckStructure } from "./structure";
@@ -50,6 +50,8 @@ import { POST_ACTUAL_IN, STAIR_MIN_WIDTH_IN } from "./codeTables";
 import { FRAMING_SPECIES, defaultFramingSpecies, speciesWords } from "./catalog";
 import { cite, codeWords, inFrac, stateName } from "./stateCodes";
 import { openingChecks } from "./openingChecks";
+import { railHeldWords, railMountLine } from "./rails";
+import { borderWords } from "./surface";
 
 /** A change to a design, part by part; anything left out stays as it is. */
 export type DeckPatch = {
@@ -93,6 +95,16 @@ export function deckChecks(s: DeckStructure): DeckCheck[] {
   const out: DeckCheck[] = [];
   const add = (c: DeckCheck) => out.push(c);
   if (frame) deckFrameChecks(frame, add, roof, "");
+  // THE DECK'S POSTS SET BY HAND (2026-11-13; lib/deck/frame): the beam stands on the builder's posts and on whatever
+  // more its spans and its ends need, so what is said here is what that came to. (Ids clear of lib/deck/settle AUTO_FIX.)
+  if (frame) {
+    for (const h of frame.postsByHand) add({ id: `deck-posts-set-${h.beamId}`, level: "pass", part: "Beams", text: `${plural(h.mine, "post")} under the ${h.role} beam set by hand${h.added ? `; ${plural(h.added, "more post")} ${h.added === 1 ? "stands" : "stand"} where its spans and its ends need ${h.added === 1 ? "it" : "them"}` : ""}. The beam is checked on the spans they make.`, rule: "IRC Table R507.5 · beam ends, a quarter of the span beside them" });
+    if (typeof design.framing.postSpacingFt === "number") add({ id: "deck-post-spacing", level: "pass", part: "Beams", text: `Posts under the beams no farther apart than ${design.framing.postSpacingFt} ft, as set by hand: ${plural(frame.posts.filter((p) => !p.roof).length, "post")} — never fewer than the beam's table asks for.` });
+    frame.pinsNotSet.forEach((np, i) => add({ id: `deck-post-not-set-${i + 1}`, level: "info", part: "Beams", text: `A post set by hand could not be placed: ${np.why}.`, fix: { label: "Take that post off", patch: { framing: { pins: design.framing.pins.filter((x) => x.id !== np.id) } } } }));
+  }
+  // The picture-frame border, said where the builder looks (2026-11-13): how wide, how far, what goes under it.
+  const bordered = frame && s.surface && s.surface.border > 0 ? s.surface : null;
+  if (bordered) add({ id: "decking-border", level: "pass", part: "Decking", text: `${borderWords(bordered).replace(/^a /, "A ")}: mitred at the corners${bordered.borderBackingIn.length ? `, with a joist added under its inner edge along the sides (${Math.round(bordered.borderBackingIn.reduce((a, v) => a + v, 0) / 12)} ft of ${frame!.joistSize})` : ""}${bordered.product.border ? `, bought apart in ${bordered.product.border.name}` : ", cut from the deck's own boards"}.`, rule: "The decking maker's installation guide" });
   if (s.lower) deckFrameChecks(s.lower.frame, add, null, "Lower level — ");
   if (roof) roofChecks(roof, design, frame, add);
   siteChecks(s, add);
@@ -524,6 +536,37 @@ function roofChecks(roof: RoofFrame, design: DeckDesign, frame: DeckFrame | null
   if (roof.kind === "dutch-gable") add({ id: "roof-dutch", level: "info", part: "Ridge", text: `A Dutch gable: the hips stop at a 2x6 cap beam, and a small gable (the gablet) stands on each end — studs at 16 in., sheathed and sided to match the house, a vent where the owner wants one.` });
   if (roof.flags.engineeredBeyond) add({ id: "roof-engineered", level: "fail", part: "Headers", text: "A span here is past even an engineered beam from the usual list. More posts, a shorter roof, or an engineer's design.", rule: "LVL maker's span tables" });
   if (roof.walls) add({ id: "roof-walls", level: "info", part: "Walls", text: `${WALL_FILL_LABEL[roof.walls.fill]} on ${plural(roof.walls.segments.length, "side")}, ${roof.walls.sqFt} sq ft${roof.walls.fill === "screen" ? `, over a 36-in. kneewall that stands in for the guard${roof.walls.doors ? `; ${plural(roof.walls.doors, "screen door")}` : ""}` : ", floor to header"}. The house side is never filled.`, rule: roof.walls.fill === "screen" ? "IRC R312 — the kneewall is the guard" : undefined });
+  // OPENINGS AND POSTS SET BY HAND (2026-11-13; lib/deck/roof). The structure is never overridden — the header over an
+  // opening is sized for the span it makes — so what is said here is what that came to, and where it wants an engineer.
+  // (Ids kept clear of the ones the studio answers by itself, lib/deck/settle AUTO_FIX: these are the builder's to answer.)
+  const sideWords = (sd: string) => (sd === "front" ? "front" : sd === "back" ? "back" : `${sd} side`);
+  roof.openings.forEach((o, i) => {
+    const id = `roof-opening-${i + 1}`;
+    const made = design.roof.openings.find((x) => x.id === o.id);
+    const where = `${ftIn(Math.round(o.widthIn))} opening on the ${sideWords(o.side)}`;
+    const h = roof.headers.find((x) => x.id === o.headerId);
+    const door = o.leaves === 1 ? "a screen door hangs in it" : o.leaves === 2 ? "a pair of screen doors hangs in it" : made?.door && roof.walls?.fill === "screen" ? "too wide for a pair of screen doors (8 ft): left open" : made?.door ? "framed for a door — no screen walls between the posts yet, so none hangs in it" : "left open";
+    if (o.blocked) add({ id, level: "warn", part: "Roof posts", text: `A post stands in the ${where}: a cross beam under the ridge lands there, and the roof cannot spare the post under it. Slide the opening along the side, or take the cross beams out.`, rule: "Structural review" });
+    else if (o.beyond) add({ id, level: "fail", part: "Roof posts", text: `No beam in the list carries the roof across the ${where} (${ftIn(o.spanIn)} post to post): narrow the opening, or it is an engineer's design.`, rule: "Structural review — beyond the span tables", fix: made && made.widthFt > 4 ? { label: "Narrow it to 4 ft", patch: { roof: { ...design.roof, openings: design.roof.openings.map((x) => (x.id === o.id ? { ...x, widthFt: 4 } : x)) } } } : undefined });
+    else if (o.engineered) add({ id, level: "warn", part: "Roof posts", text: `The header over the ${where} spans ${ftIn(o.spanIn)} post to post: past the sawn-lumber tables, so it is an engineered beam (${o.size}). The building department will ask for the beam maker's sizing or an engineer's stamp — structural review.`, rule: "IRC R301.1.3 — engineered design", fix: made && made.widthFt > 6 ? { label: "Narrow the opening to 6 ft", patch: { roof: { ...design.roof, openings: design.roof.openings.map((x) => (x.id === o.id ? { ...x, widthFt: 6 } : x)) } } } : undefined });
+    else add({ id, level: "pass", part: "Roof posts", text: `A ${where}, framed by ${o.cornerJambs === 2 ? "the two corner posts" : o.cornerJambs === 1 ? `a ${design.roof.post} post and the corner post` : `two ${design.roof.post} posts`}: the ${o.size} header spans ${ftIn(o.spanIn)} over it${h && h.maxSpanIn > 0 ? ` (good for ${ftIn(h.maxSpanIn)} there)` : ""}; ${door}.`, rule: "IRC Table R507.5 — the header sized for the span the opening makes" });
+    // An opening off a deck high enough to need a guard, with no stair at it: a door onto a drop.
+    if (design.floor === "deck" && frame && o.side !== "back") {
+      const lo = (o.side === "front" ? Math.min(o.x0, o.x1) : Math.min(o.y0, o.y1)) / 12;
+      const hi = (o.side === "front" ? Math.max(o.x0, o.x1) : Math.max(o.y0, o.y1)) / 12;
+      const stairThere = design.stairs.some((st) => st.level === "upper" && (st.wrap || (st.side === o.side && st.atFt + st.widthFt / 2 > lo + 0.5 && st.atFt - st.widthFt / 2 < hi - 0.5)));
+      if (!stairThere && frame.surfaceIn > GUARD_REQUIRED_ABOVE_IN) {
+        const width = Math.max(STAIR_LIMITS.widthFt.min, Math.min(STAIR_LIMITS.widthFt.max, Math.floor(((hi - lo) * 12) / 6) / 2));
+        add({ id: `roof-opening-drop-${i + 1}`, level: "warn", part: "Guard and stairs", text: `The ${where} opens off a deck ${ftIn(Math.round(frame.surfaceIn))} above the ground with no stair at it: a door there is a door onto a drop. Put a stair at the opening, or keep the guard across it.`, rule: "IRC R312.1.1", fix: design.stairs.length < STAIR_LIMITS.count ? { label: "Put a stair at the opening", patch: { stairs: [...design.stairs, { ...defaultStair(`s${design.stairs.length + 1}o`, o.side as "front" | "left" | "right", (lo + hi) / 2), widthFt: width }] } } : undefined });
+      }
+    }
+  });
+  if (roof.pins.length) {
+    const bySide = (["front", "left", "right", "back"] as const).map((sd) => [sd, roof.pins.filter((pn) => pn.side === sd).length] as const).filter(([, c]) => c > 0);
+    add({ id: "roof-posts-set", level: "pass", part: "Roof posts", text: `${plural(roof.pins.length, "post")} set by hand (${bySide.map(([sd, c]) => `${c} on the ${sideWords(sd)}`).join(", ")}): every header is sized again for the spans they make, and each stands on a footing of its own like the others.`, rule: "IRC Table R507.5" });
+  }
+  if (typeof design.roof.postSpacingFt === "number") add({ id: "roof-post-spacing", level: "pass", part: "Roof posts", text: `Roof posts no farther apart than ${design.roof.postSpacingFt} ft, as set by hand (an opening is as wide as it was made): ${plural(roof.posts.length, "post")} in all — never fewer than the spans ask for.` });
+  roof.notPlaced.forEach((np, i) => add({ id: `roof-not-set-${i + 1}`, level: "info", part: "Roof posts", text: `${np.kind === "opening" ? "An opening" : "A post"} set by hand could not be placed: ${np.why}.`, fix: { label: np.kind === "opening" ? "Take that opening off" : "Take that post off", patch: { roof: { ...design.roof, ...(np.kind === "opening" ? { openings: design.roof.openings.filter((x) => x.id !== np.id) } : { pins: design.roof.pins.filter((x) => x.id !== np.id) }) } } } }));
   if (roof.louvers) add({ id: "roof-louvers", level: "info", part: "Pergola", text: `${roof.louvers.blades} louver blades that turn — open for sun, closed for shade or a light rain. The kit is priced per square foot of cover; a motor is the owner's upgrade.` });
   if (roof.archRafters) add({ id: "roof-arch", level: "info", part: "Pergola", text: "Arched rafters cut from 2x12 stock, two boards each; the slats follow the curve." });
 
@@ -660,7 +703,16 @@ function guardAndStairChecks(s: DeckStructure, add: (c: DeckCheck) => void): voi
   if (rails.required && !rails.on) {
     add({ id: "guard", level: "warn", part: "Guard and stairs", text: `More than 30 in. up, so a guard at least ${code.guardIn} in. high is required on the ${Math.round(frame.openEdgeFt)} ft of open edge${s.lower ? " (and on the lower level where it is that high)" : ""}. No railing is in the price yet.`, rule: guardRule, fix: { label: "Add a treated-wood railing", patch: { rail: { type: "treated" } } }, alts: [{ label: "Add a composite railing", patch: { rail: { type: "composite" } } }, { label: "Add an aluminum railing", patch: { rail: { type: "aluminum" } } }] });
   } else if (rails.on) {
-    add({ id: "guard", level: "pass", part: "Guard and stairs", text: `${Math.round(rails.lf)} ft of ${rails.label.toLowerCase()} railing ${rails.heightIn} in. high${rails.required ? " where the code asks for a guard" : " by choice"}: ${plural(rails.posts, "post")} ${design.rail.postSpacingFt} ft apart at most, bolted through the rim with tension ties; ${rails.infill === "balusters" ? "balusters 5 in. on centre leave the code's 4-in. gap" : rails.infill === "cable" ? "cable runs 3 in. apart, tensioned so a 4-in. sphere cannot pass" : rails.infill === "glass" ? "tempered glass panels" : rails.infill === "panel" ? "solid panels" : "horizontal rails 5 1/2 in. apart"}${rails.stairLf ? `; ${Math.round(rails.stairLf)} ft on the stairs` : ""}.`, rule: `${guardRule} · R312.1.3 · R507.2.4` });
+    add({ id: "guard", level: "pass", part: "Guard and stairs", text: `${Math.round(rails.lf)} ft of ${rails.label.toLowerCase()} railing ${rails.heightIn} in. high${rails.required ? " where the code asks for a guard" : " by choice"}: ${plural(rails.posts, "post")} ${design.rail.postSpacingFt} ft apart at most, ${railHeldWords(rails)}; ${rails.infill === "balusters" ? "balusters 5 in. on centre leave the code's 4-in. gap" : rails.infill === "cable" ? "cable runs 3 in. apart, tensioned so a 4-in. sphere cannot pass" : rails.infill === "glass" ? "tempered glass panels" : rails.infill === "panel" ? "solid panels" : "horizontal rails 5 1/2 in. apart"}${rails.stairLf ? `; ${Math.round(rails.stairLf)} ft on the stairs` : ""}.`, rule: `${guardRule} · R312.1.3 · R507.2.4` });
+    // HOW THE POSTS MEET THE DECK (2026-11-13): said for the permit desk, with what each mount needs under or behind it.
+    if (rails.posts) {
+      const mixed = rails.topPosts > 0 && rails.sidePosts > 0;
+      const topNeeds = rails.postKind === "wood" ? `each top-mounted 4x4 in a rated guard-post base over two pieces of ${frame.joistSize} blocking between the joists` : `each top-mounted post's base plate over two pieces of ${frame.joistSize} blocking between the joists, four structural screws through the boards into it`;
+      const sideNeeds = rails.postKind === "metal" ? "each side-mounted post on the maker's fascia bracket, through-bolted to the rim itself (never to the fascia board alone) with blocking behind the rim" : "each side-mounted post bolted through the rim with two ½-in. bolts and a pair of tension ties into the joist";
+      add({ id: "guard-mount", level: "pass", part: "Guard and stairs", text: `The railing is ${railMountLine(rails)}: ${[rails.topPosts ? topNeeds : "", rails.sidePosts ? sideNeeds : ""].filter(Boolean).join("; ")}.${rails.stairPosts ? ` The stairs' ${plural(rails.stairPosts, "post")} follow the side they leave: ${rails.stairTopPosts === rails.stairPosts ? "on the treads, over blocking between the stringers" : rails.stairTopPosts ? `${rails.stairTopPosts} on the treads, ${rails.stairPosts - rails.stairTopPosts} on the stringers` : "on the stringers"}.` : ""}${rails.onRoofPosts ? ` At ${plural(rails.onRoofPosts, "roof post")} the rail runs to the post itself, on rail brackets — the roof's post is the rail's post there.` : ""}${mixed ? " The drawings show each side as it is mounted." : ""}`, rule: "IRC R301.5 (200 lb on the top rail) · R507.2.4" });
+      // A wood post on top of the boards is not the code's own detail: the base's tested load is what the plans reviewer asks for.
+      if (rails.postKind === "wood" && rails.topPosts) add({ id: "guard-mount-wood", level: "info", part: "Guard and stairs", text: `${plural(rails.topPosts, "wood post")} top-mounted: the code's own detail for a wood guard post is bolted to the rim. On the boards it stands in a rated post base, and the building department will ask for the base maker's tested load (200 lb at the top rail) — have the sheet with the permit set.`, rule: "IRC R301.5 · AWC DCA 6, guard post attachment", fix: { label: "Bolt the posts to the rim (side mount)", patch: { rail: { mount: "side", mountBy: {} } } } });
+    }
     if (rails.system === "wood" && design.rail.postSpacingFt > 6) add({ id: "guard-posts", level: "warn", part: "Guard and stairs", text: `Wood 4x4 rail posts 8 ft apart: the 200-lb load on the top rail wants them no more than 6 ft apart (AWC's guide). Kits are rated by their maker.`, rule: "AWC DCA 6 · IRC Table R301.5", fix: { label: "Posts 6 ft apart", patch: { rail: { postSpacingFt: 6 } } } });
     if (rails.required && rails.heightIn < code.guardIn) add({ id: "guard-height", level: "fail", part: "Guard and stairs", text: `A guard must be at least ${code.guardIn} in. high${code.guardIn !== 36 && stateName(code.state) ? ` in ${stateName(code.state)}` : ""}.`, rule: guardRule, fix: { label: `Make it ${code.guardIn} in.`, patch: { rail: { heightIn: code.guardIn } } } });
   } else if (H <= GUARD_REQUIRED_ABOVE_IN) {

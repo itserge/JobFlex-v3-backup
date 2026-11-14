@@ -25,6 +25,7 @@ import { resolveMarket, parseStateZip, type MarketSnapshot } from "@/lib/fence/m
 import { DECKING, DECKING_BRAND_LABEL, DECKING_BRAND_ORDER, DECKING_FAMILY_LABEL, DECKING_FAMILY_ORDER, FRAMING_SPECIES, OC_LUMBER_ID, RAIL_TYPES, WALL_TYPES, WOOD_FRAMING_SPECIES, defaultDecking, defaultFramingSpecies, deckingProduct, isCompositeFraming, treatedDecking, wallType, type DeckingFamily, type DeckingProduct } from "@/lib/deck/catalog";
 import { OC_POST, OC_SOURCES } from "@/lib/deck/ocLumber";
 import { regionalPicks, regionalWords } from "@/lib/deck/regional";
+import { frameBottomIn, openingLevel } from "@/lib/deck/openingChecks";
 import { LEDGER_FASTENER_LABEL, LOADS, POST_SIZES, SOLID_BEAMS, ftIn, solidBeamTabulated, type LoadPsf, type SoilPsf } from "@/lib/deck/codeTables";
 import {
   BUILT_UP_CHOICES,
@@ -47,6 +48,20 @@ import {
   PLACEMENT_LABEL,
   RAIL_BALUSTER_LABEL,
   RAIL_INFILL_LABEL,
+  DECK_BEAM_LABEL,
+  DECK_POST_LIMITS,
+  RAIL_MOUNT_LABEL,
+  ROOF_POST_LIMITS,
+  ROOF_SIDES,
+  ROOF_SIDE_LABEL,
+  defaultRoofOpening,
+  defaultRoofPin,
+  type DeckPostPin,
+  type RoofOpening,
+  type RoofPin,
+  type RoofSide,
+  RAIL_SECTION_KEYS,
+  RAIL_SECTION_LABEL,
   ROOFING_LABEL,
   ROOFINGS,
   ROOF_KIND_LABEL,
@@ -441,6 +456,8 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
 
   const pkg = React.useMemo(() => priceDeck(design, { rates: book, market }), [design, book, market]);
   const structure = pkg.structure;
+  // Which floor a door of the house is on against this deck: the wall's plan says "door below" under a second-storey deck.
+  const doorFloor = React.useCallback((o: { kind: "window" | "door" | "slider" | "garage"; sillFt: number; heightFt: number }) => (pkg.structure.frame ? openingLevel(o, pkg.structure.design.heightIn, frameBottomIn(pkg.structure.design.heightIn, pkg.structure.frame.joistSize)) : "deck"), [pkg.structure]);
   const frame = pkg.frame;
   const roof = pkg.roof;
   // Framed in Owens Corning OC Lumber (2026-11-12).
@@ -1670,7 +1687,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
       <HousePhotoCard hp={hp} design={design} />
       <Field label="The back wall and the deck, seen from above — drag anything" wide lights={null}>
         <div className="v1-wall-small" onPointerDownCapture={quiet} data-deck-wall-quiet>
-          <HouseWallPlan shape={design.shape} house={design.house} onChange={(n2) => patch({ ...(n2.shape ? { shape: n2.shape } : {}), ...(n2.house ? { house: n2.house } : {}) })} onOpenLarge={openWallLarge} />
+          <HouseWallPlan shape={design.shape} house={design.house} onChange={(n2) => patch({ ...(n2.shape ? { shape: n2.shape } : {}), ...(n2.house ? { house: n2.house } : {}) })} onOpenLarge={openWallLarge} doorFloor={doorFloor} />
         </div>
       </Field>
       <p className={houseNotes(design.shape, design.house).length ? "v1-call v1-call-bad" : "v1-hint"} data-deck-wall-words>
@@ -1948,7 +1965,13 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
           <Field label="Picture-frame border" wide>
             <Seg label="Picture-frame border" value={design.decking.border} onChange={(v) => patch({ decking: { border: v } })} options={[{ value: 0, label: "None" }, { value: 1, label: "One board" }, { value: 2, label: "Two boards" }]} />
           </Field>
-          {design.decking.border > 0 && design.shape.kind === "rect" && !design.custom.decking ? (
+          {pkg.takeoff.surface.border > 0 ? (
+            <p className="v1-hint" data-deck-border-hint={pkg.takeoff.surface.border}>
+              {`${pkg.takeoff.surface.border === 2 ? "Two boards" : "One board"} wide along ${Math.round(pkg.takeoff.surface.borderLf / pkg.takeoff.surface.border)} ft of open edge — see it in the 3D and on the framing plan. `}
+              {pkg.takeoff.surface.product.border ? `In ${pkg.takeoff.surface.product.border.name}, bought apart.` : "In the deck's own colour it is drawn a shade deeper, so the frame shows; pick a second colour below to make it a real contrast."}
+            </p>
+          ) : null}
+          {design.decking.border > 0 && !design.custom.decking ? (
             <BorderColorPicker productId={design.decking.product} deckColor={design.decking.ownColor ? "" : design.decking.color} color={design.decking.borderColor} onPick={(id) => patch({ decking: { borderColor: id } }, ["decking"])} />
           ) : null}
           <div className="v1-grid2">
@@ -2064,6 +2087,54 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
               </Field>
             </div>
           ) : null}
+          {/* THE DECK'S POSTS BY HAND (2026-11-13): the widest spacing, and posts stood at the builder's own places. A beam
+              with posts set by hand stands on those, and on more only where its spans or its ends need one. */}
+          <Field label="Posts under a beam no farther apart than" aside={typeof design.framing.postSpacingFt === "number" ? undefined : `the beam's table decides — now ${ftIn(Math.round(Math.max(0, ...frame.beams.map((b) => b.spanIn))))} at most`} wide>
+            <Seg label="Deck posts no farther apart than" value={design.framing.postSpacingFt} onChange={(v) => patch({ framing: { postSpacingFt: v } })} options={[{ value: "auto" as const, label: "Auto" }, ...[4, 6, 8, 10].map((v) => ({ value: v as number | "auto", label: `${v} ft` }))]} />
+          </Field>
+          {design.framing.pins.length ? (
+            <div className="v1-rows" data-deck-post-pins>
+              {design.framing.pins.map((pn, i) => {
+                const missed = frame.pinsNotSet.find((x) => x.id === pn.id);
+                const set = (pch: Partial<DeckPostPin>) => patch({ framing: { pins: design.framing.pins.map((x) => (x.id === pn.id ? { ...x, ...pch } : x)) } });
+                return (
+                  <div className="v1-item" key={pn.id} data-deck-post-pin={pn.id}>
+                    <div className="v1-item-head">
+                      <span className="v1-item-title">
+                        {`Post ${i + 1}, by hand`}
+                        <span className="v1-item-sub">{missed ? `not set: ${missed.why}` : `under the ${DECK_BEAM_LABEL[pn.beam].toLowerCase()}, on a footing of its own`}</span>
+                      </span>
+                      <button type="button" className="v1-btn v1-btn-sm v1-btn-danger" onClick={() => patch({ framing: { pins: design.framing.pins.filter((x) => x.id !== pn.id) } })}>
+                        Remove
+                      </button>
+                    </div>
+                    <div className="v1-grid2">
+                      <Field label="Under the" lights={null}>
+                        <select className="v1-sel" value={pn.beam} aria-label={`Post ${i + 1}: which beam`} onChange={(e) => set({ beam: e.target.value as DeckPostPin["beam"] })}>
+                          {(["front", "middle", "back"] as const).filter((b) => b === pn.beam || frame.beams.some((x) => x.role === b)).map((b) => (
+                            <option key={b} value={b}>{DECK_BEAM_LABEL[b]}</option>
+                          ))}
+                        </select>
+                      </Field>
+                      <Stepper label="Standing at" aside="from the deck's left end" unit="ft" value={pn.atFt} step={0.5} parse={parseFeet} format={feetText} min={DECK_POST_LIMITS.atFt.min} max={Math.min(DECK_POST_LIMITS.atFt.max, design.shape.widthFt)} onCommit={(n2) => set({ atFt: n2 })} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+          <div className="v1-row-acts">
+            {[...new Set(frame.beams.map((b) => b.role))].map((role) => (
+              <button key={role} type="button" className="v1-btn v1-btn-sm v1-btn-quiet" disabled={design.framing.pins.length >= DECK_POST_LIMITS.pins} data-deck-post-add={role} onClick={() => patch({ framing: { pins: [...design.framing.pins, { id: `k${Date.now().toString(36).slice(-6)}`, beam: role, atFt: Math.round(design.shape.widthFt / 2) }] } })}>
+                {`+ A post under the ${DECK_BEAM_LABEL[role].toLowerCase()}`}
+              </button>
+            ))}
+          </div>
+          {frame.postsByHand.length ? (
+            <p className="v1-hint" data-deck-post-hand>
+              {frame.postsByHand.map((h) => `${DECK_BEAM_LABEL[h.role]}: ${h.mine} set by hand${h.added ? `, ${h.added} more where its spans and its ends need them` : ""}.`).join(" ")} Click a post in the 3D to slide it or take it off.
+            </p>
+          ) : null}
         </More>
         </Scope>
       </>
@@ -2084,6 +2155,50 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
           options={[{ value: 36, label: "36 in." }, { value: 42, label: "42 in." }]}
         />
       </Field>
+      {design.rail.type !== "none" ? (
+        <>
+          {/* HOW THE POSTS MEET THE DECK (2026-11-13): the builder's own choice, said up front — it is what the permit desk reads. */}
+          <Field label="How the posts are mounted" aside={design.rail.mount === "auto" ? `this system's usual: ${RAIL_MOUNT_LABEL[structure.rails.mount].toLowerCase()}` : undefined} wide>
+            <Seg
+              label="Rail post mounting"
+              value={structure.rails.mount}
+              onChange={(v) => patch({ rail: { mount: v } })}
+              options={[
+                { value: "top", label: "Top mount", title: "Each post stands on the deck boards — a base plate (or a rated post base under a wood post) over blocking between the joists." },
+                { value: "side", label: "Side mount", title: "Each post hangs on the outside of the rim — bolted through it, or on the rail maker's fascia bracket." },
+              ]}
+            />
+          </Field>
+          <p className="v1-hint" data-deck-rail-mount={structure.rails.mount}>
+            {structure.rails.mount === "top" ? "Top mount: every post stands on the deck boards, 2¾ in. in from the edge, over two pieces of blocking between the joists." : "Side mount: every post hangs on the outside of the rim — a wood post bolted through it, a metal post on the maker's fascia bracket."}
+          </p>
+          {Object.keys(structure.rails.mounts).length > 1 ? (
+            <More
+              title="Mount one side another way"
+              now={Object.keys(design.rail.mountBy).length ? RAIL_SECTION_KEYS.filter((k) => design.rail.mountBy[k] && structure.rails.mounts[k]).map((k) => `${RAIL_SECTION_LABEL[k].toLowerCase()}: ${design.rail.mountBy[k]}`).join(", ") || "every side the same" : "every side the same"}
+              id="rail-mount-sides"
+            >
+              <div className="v1-grid2">
+                {RAIL_SECTION_KEYS.filter((k) => structure.rails.mounts[k]).map((k) => (
+                  <Field key={k} label={RAIL_SECTION_LABEL[k]} wide lights={null}>
+                    <Seg
+                      label={`Mounting, ${RAIL_SECTION_LABEL[k].toLowerCase()}`}
+                      value={design.rail.mountBy[k] ?? "same"}
+                      onChange={(v) => {
+                        const next = { ...design.rail.mountBy };
+                        if (v === "same") delete next[k];
+                        else next[k] = v;
+                        patch({ rail: { mountBy: next } });
+                      }}
+                      options={[{ value: "same" as const, label: `As the deck (${structure.rails.mount})` }, { value: "top" as const, label: "Top" }, { value: "side" as const, label: "Side" }]}
+                    />
+                  </Field>
+                ))}
+              </div>
+            </More>
+          ) : null}
+        </>
+      ) : null}
       <RailColorPicker type={design.rail.type} color={design.rail.color} onPick={(id) => patch({ rail: { color: id } })} />
       {design.rail.type === "custom" ? (
         <div className="v1-grid2">
@@ -2320,6 +2435,85 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
               <NumberInput label="How many sides get walls" value={r.walls.sides} parse={intText} format={String} min={1} max={Math.max(1, roof.ring.length - (roof.attach === "wall" ? 1 : 0))} onCommit={(n2) => rp({ walls: { ...r.walls, sides: n2 } })} />
             </Field>
           ) : null}
+        </More>
+        {/* POSTS AND OPENINGS SET BY HAND (2026-11-13 — a deck builder: "add two posts with a 4-ft opening for a future
+            screen door"): an opening is two posts its clear width apart; a post is one, where the builder wants it. The
+            roof sizes the headers again for the spans they make and says where that wants an engineer. */}
+        <More
+          title="Posts and openings by hand"
+          now={[r.openings.length ? `${r.openings.length} ${r.openings.length === 1 ? "opening" : "openings"}` : "", r.pins.length ? `${r.pins.length} ${r.pins.length === 1 ? "post" : "posts"} added` : "", typeof r.postSpacingFt === "number" ? `posts ${r.postSpacingFt} ft apart at most` : ""].filter(Boolean).join(" · ") || "none — the spans set the posts"}
+          open={r.openings.length + r.pins.length > 0}
+          id="roof-by-hand"
+        >
+          <p className="v1-hint">A door opening is two posts with a clear width between them — for a screen door now or later. The header over it is sized for the span it makes; where that needs an engineer, the checks say so.</p>
+          <div className="v1-rows" data-deck-roof-openings>
+            {r.openings.map((o, i) => {
+              const built = roof.openings.find((x) => x.id === o.id);
+              const missed = roof.notPlaced.find((x) => x.kind === "opening" && x.id === o.id);
+              const set = (pch: Partial<RoofOpening>) => rp({ openings: r.openings.map((x) => (x.id === o.id ? { ...x, ...pch } : x)) });
+              return (
+                <div className="v1-item" key={o.id} data-deck-roof-opening={o.id}>
+                  <div className="v1-item-head">
+                    <span className="v1-item-title">
+                      {`Opening ${i + 1}`}
+                      <span className="v1-item-sub">{missed ? `not set: ${missed.why}` : built ? `${ftIn(Math.round(built.widthIn))} clear · ${built.size} header spans ${ftIn(built.spanIn)}${built.leaves ? ` · ${built.leaves === 2 ? "a pair of screen doors" : "a screen door"}` : " · open"}${built.engineered || built.beyond || built.blocked ? " · needs a structural review" : ""}` : ""}</span>
+                    </span>
+                    <button type="button" className="v1-btn v1-btn-sm v1-btn-danger" onClick={() => rp({ openings: r.openings.filter((x) => x.id !== o.id) })}>
+                      Remove
+                    </button>
+                  </div>
+                  <Field label="On the" wide lights={null}>
+                    <Seg label={`Opening ${i + 1}: which side`} value={o.side} onChange={(v) => set({ side: v })} options={ROOF_SIDES.filter((sd) => sd !== "back" || roof.attach !== "wall").map((sd) => ({ value: sd, label: ROOF_SIDE_LABEL[sd] }))} />
+                  </Field>
+                  <div className="v1-grid2">
+                    <Stepper label="Its middle at" aside={`from the ${o.side === "front" || o.side === "back" ? "left end" : "house"}`} unit="ft" value={o.atFt} step={0.5} parse={parseFeet} format={feetText} min={ROOF_POST_LIMITS.atFt.min} max={ROOF_POST_LIMITS.atFt.max} onCommit={(n2) => set({ atFt: n2 })} />
+                    <Stepper label="Clear width" aside="between the posts" unit="ft" value={o.widthFt} step={0.5} parse={parseFeet} format={feetText} min={ROOF_POST_LIMITS.openingFt.min} max={ROOF_POST_LIMITS.openingFt.max} onCommit={(n2) => set({ widthFt: n2 })} />
+                  </div>
+                  <div className="v1-toggles">
+                    <Toggle checked={o.door} onChange={(v) => set({ door: v })}>A screen door in it now</Toggle>
+                  </div>
+                </div>
+              );
+            })}
+            {r.pins.map((pn, i) => {
+              const missed = roof.notPlaced.find((x) => x.kind === "post" && x.id === pn.id);
+              const set = (pch: Partial<RoofPin>) => rp({ pins: r.pins.map((x) => (x.id === pn.id ? { ...x, ...pch } : x)) });
+              return (
+                <div className="v1-item" key={pn.id} data-deck-roof-pin={pn.id}>
+                  <div className="v1-item-head">
+                    <span className="v1-item-title">
+                      {`Post ${i + 1}, by hand`}
+                      <span className="v1-item-sub">{missed ? `not set: ${missed.why}` : `${r.post}, on a footing of its own`}</span>
+                    </span>
+                    <button type="button" className="v1-btn v1-btn-sm v1-btn-danger" onClick={() => rp({ pins: r.pins.filter((x) => x.id !== pn.id) })}>
+                      Remove
+                    </button>
+                  </div>
+                  <div className="v1-grid2">
+                    <Field label="On the" lights={null}>
+                      <select className="v1-sel" value={pn.side} aria-label={`Post ${i + 1}: which side`} onChange={(e) => set({ side: e.target.value as RoofSide })}>
+                        {ROOF_SIDES.filter((sd) => sd !== "back" || roof.attach !== "wall").map((sd) => (
+                          <option key={sd} value={sd}>{ROOF_SIDE_LABEL[sd]}</option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Stepper label="Standing at" aside={`from the ${pn.side === "front" || pn.side === "back" ? "left end" : "house"}`} unit="ft" value={pn.atFt} step={0.5} parse={parseFeet} format={feetText} min={ROOF_POST_LIMITS.atFt.min} max={ROOF_POST_LIMITS.atFt.max} onCommit={(n2) => set({ atFt: n2 })} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="v1-row-acts">
+            <button type="button" className="v1-btn v1-btn-sm" disabled={r.openings.length >= ROOF_POST_LIMITS.openings} data-deck-roof-add="opening" onClick={() => rp({ openings: [...r.openings, defaultRoofOpening(`o${Date.now().toString(36).slice(-6)}`, "front", Math.max(3, Math.round(design.shape.widthFt / 3)))] })}>
+              + A door opening
+            </button>
+            <button type="button" className="v1-btn v1-btn-sm v1-btn-quiet" disabled={r.pins.length >= ROOF_POST_LIMITS.pins} data-deck-roof-add="post" onClick={() => rp({ pins: [...r.pins, defaultRoofPin(`p${Date.now().toString(36).slice(-6)}`, "front", Math.max(2, Math.round(design.shape.widthFt / 2)))] })}>
+              + A post
+            </button>
+          </div>
+          <Field label="Posts no farther apart than" aside={typeof r.postSpacingFt === "number" ? "an opening stays as wide as it was made" : `the spans decide — now ${ftIn(Math.round(Math.max(0, ...roof.headers.filter((h) => !h.cross).map((h) => h.spanIn))))} at most`} wide>
+            <Seg label="Roof posts no farther apart than" value={r.postSpacingFt} onChange={(v) => rp({ postSpacingFt: v })} options={[{ value: "auto" as const, label: "Auto" }, ...[4, 6, 8, 10, 12].map((v) => ({ value: v as number | "auto", label: `${v} ft` }))]} />
+          </Field>
         </More>
         <More title={design.structure === "pergola" ? "Rafters and slats" : "Rafters and ridge"} now={`${roof.trusses ? "trusses" : `${roof.rafters.size} rafters`} @ ${r.rafterSpacingIn}" · ${roof.roofLoad} psf`} id="roof-rafters">
           <Field label="Rafters" aside={roof.trusses ? "trusses frame this roof" : r.rafter === "auto" ? `picked: ${roof.rafters.size}` : undefined} wide>
@@ -3301,7 +3495,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
             <div className={cx("v1-view-box", view === "wall" && "is-wall")}>
               {view === "wall" ? (
                 <div className="v1-wall-large" onPointerDownCapture={quiet} data-deck-wall-large-view>
-                  <HouseWallPlan size="large" shape={design.shape} house={design.house} onChange={(n2) => patch({ ...(n2.shape ? { shape: n2.shape } : {}), ...(n2.house ? { house: n2.house } : {}) })} />
+                  <HouseWallPlan size="large" shape={design.shape} house={design.house} onChange={(n2) => patch({ ...(n2.shape ? { shape: n2.shape } : {}), ...(n2.house ? { house: n2.house } : {}) })} doorFloor={doorFloor} />
                 </div>
               ) : view === "3d" ? (
                 <>

@@ -149,6 +149,9 @@ export const DECK_RATES: readonly DeckRateDef[] = [
   hw("stringerConnector", "Stair stringer connector", 9),
   hw("railPostTie", "Rail post tension ties, pair, with bolts", 16),
   hw("railBracket", "Rail bracket", 2.2),
+  // By the mount (2026-11-13): a rated base under a top-mounted wood post; the rail maker's fascia bracket for a side-mounted metal one.
+  hw("railPostBase", "Guard post base, rated, 4x4 on the deck", 38),
+  hw("railFasciaBracket", "Fascia-mount rail post bracket", 34),
   hw("postCapWood", "Post cap, decorative", 9),
   // Rail infill bought by the piece (2026-11-09), at DecksDirect's listed prices that month: Deckorators Classic round
   // aluminum balusters, Satin Black, $17.97 for ten; a Wild Hog welded mesh panel, 36 in. x 6 ft, $82.79.

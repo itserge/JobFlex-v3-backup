@@ -361,7 +361,7 @@ export function mergeClientDesign(base: DeckDesign, raw: unknown, opts: { settle
     house: { ...c.house, photo: c.house.photo && opts.photoOk?.(c.house.photo.url) ? c.house.photo : (base.house.photo ?? null) },
     photo: base.photo,
     electrical: mergeFixtures(base.electrical, c.electrical),
-    rail: { ...c.rail, heightIn: base.rail.heightIn, postSpacingFt: base.rail.postSpacingFt, customPerFt: base.rail.customPerFt, type: c.rail.type === "custom" && base.rail.type !== "custom" ? base.rail.type : c.rail.type },
+    rail: { ...c.rail, heightIn: base.rail.heightIn, postSpacingFt: base.rail.postSpacingFt, customPerFt: base.rail.customPerFt, mount: base.rail.mount, mountBy: base.rail.mountBy, type: c.rail.type === "custom" && base.rail.type !== "custom" ? base.rail.type : c.rail.type },
     // The colour is the client's to pick from the line's own list; a colour typed in is the contractor's.
     decking: { ...c.decking, fastening: base.decking.fastening, fascia: base.decking.fascia, wastePct: base.decking.wastePct, ownColor: base.decking.ownColor },
     roof,

@@ -64,7 +64,8 @@ check("\"Out from the house\": a bar down the side, 14 ft", !!out && out.tag?.te
 const boards = lit({ label: "Deck boards", step: "Surface" });
 check("\"Deck boards\": the boards", !!boards && layerCount(boards.boxIdx, "decking") > 0 && /^Deck boards · /.test(boards.tag?.text ?? ""), boards?.tag?.text);
 const border = lit({ label: "Picture-frame border", step: "Surface" });
-check("\"Picture-frame border\": only the border boards", !!border && border.boxIdx.length > 0 && border.boxIdx.every((i) => sc.legend[sc.tags[i]].role === "border board") && /1 row of boards/.test(border.tag?.text ?? ""), border?.tag?.text);
+// 2026-11-13: the border's boards are mitred pieces, not boxes — it is lit as the band along each of the three open edges.
+check("\"Picture-frame border\": only the border — its band along the three open edges, nothing else of the deck", !!border && border.boxes.length === 3 && border.boxIdx.every((i) => sc.legend[sc.tags[i]].role === "border board") && border.polyIdx.length === 0 && /1 row of boards/.test(border.tag?.text ?? ""), `${border?.boxes.length} bars · ${border?.tag?.text}`);
 const fascia = lit({ label: "Fascia", step: "Surface" });
 check("\"Fascia\" (Surface): the deck's fascia, not the roof's trim", !!fascia && layerCount(fascia.boxIdx, "fascia") > 0 && layerCount(fascia.boxIdx, "trim") === 0, fascia?.tag?.text);
 // Roof
@@ -123,6 +124,20 @@ const low = fieldLight(twoSc, two, { label: "Step down", step: "step-shape", lev
 const lowAlong = fieldLight(twoSc, two, { label: "Along the house", step: "step-shape", level: "lower" });
 check("the lower level's \"Step down\" and \"Along the house\": the lower level's own parts, tagged", !!low && low.boxIdx.length > 0 && low.boxIdx.every((i) => twoSc.legend[twoSc.tags[i]].role.startsWith("lower level")) && low.tag?.text === "The lower level · 1'-6\" down" && !!lowAlong && lowAlong.boxes.length === 1, `${low?.tag?.text} | ${lowAlong?.tag?.text}`);
 check(`every field the studio shows lights something on this deck (${STUDIO.length} fields)`, dark.length === 0, dark.map(([l, st]) => `${l} (${st})`).join(", ") || "all lit");
+
+// 2026-11-13 — posts and openings set by hand on the roof: their own fields light their own posts and the door, not the whole roof.
+{
+  const hand = applyDeckPatch(design, { roof: { ...design.roof, walls: { fill: "screen", sides: 3 }, openings: [{ id: "o1", side: "front", atFt: 6, widthFt: 4, door: true }] } } as never);
+  const hs = buildStructure(hand);
+  const hsc = deckScene(hs);
+  const lit = fieldLight(hsc, hs, { step: "step-roof", label: "Clear width" } as never);
+  const roofPosts = hs.roof!.posts.length;
+  const litPosts = (lit?.boxIdx ?? []).filter((i) => hsc.boxes[i][0] === SCENE_LAYERS.indexOf("roof-post" as never));
+  const places = new Set(litPosts.map((i) => `${Math.round(hsc.boxes[i][1] * 12)},${Math.round(hsc.boxes[i][2] * 12)}`));
+  check("an opening's own field lights its two posts and its door — not every roof post, not the roof", !!lit && places.size === 2 && roofPosts > 2 && (lit.boxIdx ?? []).some((i) => hsc.legend[hsc.tags[i]]?.role === "door") && /Set by hand · 1 opening/.test(lit.tag.text), `${places.size} of ${roofPosts} posts lit · ${lit?.tag.text}`);
+  const every = fieldLight(hsc, hs, { step: "step-roof", label: "Posts no farther apart than" } as never);
+  check("the spacing set by hand lights every roof post", new Set((every?.boxIdx ?? []).filter((i) => hsc.boxes[i][0] === SCENE_LAYERS.indexOf("roof-post" as never)).map((i) => `${Math.round(hsc.boxes[i][1] * 12)},${Math.round(hsc.boxes[i][2] * 12)}`)).size === roofPosts, every?.tag.text);
+}
 
 console.log(bad ? `\n${bad} FAILED` : "\nALL PASS");
 process.exit(bad ? 1 : 0);

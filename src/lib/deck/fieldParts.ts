@@ -315,7 +315,12 @@ const RULES: Rule[] = [
     when: (f) => named(f, "Picture-frame border"),
     run: (c) => {
       const b = partsOf(c.sc, ["decking"], /^border board$/);
-      return light(c, { boxIdx: b, diagonal: false }, c.s.surface?.border ? `Picture-frame border · ${plural(c.s.surface.border, "row")} of boards` : "No picture-frame border");
+      // Its boards are mitred pieces (2026-11-13), not boxes: lit as the band they lie in, along every edge the border runs.
+      const sf = c.s.surface;
+      const band = sf && sf.border ? (sf.border * (sf.product.widthIn + sf.product.gapIn)) / 12 : 0;
+      const z = c.s.frame ? c.s.frame.surfaceIn / 12 : c.sc.heightFt;
+      const bars = sf && band ? sf.borderEdges.map((e) => bar(e.x0 / 12 + (e.inX * band) / 2, e.y0 / 12 + (e.inY * band) / 2, e.x1 / 12 + (e.inX * band) / 2, e.y1 / 12 + (e.inY * band) / 2, z, band)) : [];
+      return light(c, { boxIdx: b, boxes: bars, diagonal: false }, c.s.surface?.border ? `Picture-frame border · ${plural(c.s.surface.border, "row")} of boards` : "No picture-frame border");
     },
   },
   {
@@ -386,6 +391,22 @@ const RULES: Rule[] = [
   {
     when: (f) => isStep(f, "step-roof") && named(f, "Gutters", "Hangs like"),
     run: (c) => light(c, { boxIdx: partsOf(c.sc, ["gutter"]) }, `Gutters · ${String(c.d.roof.gutters.kind).replace(/-/g, " ")}`),
+  },
+  {
+    // Posts and openings set by hand (2026-11-13): the builder's own posts light — an opening's two, a post stood by
+    // hand — with the door between them; the spacing lights every roof post. (They lit the whole roof, like any field
+    // of the step with no part of its own: the two posts just set could not be told from it.)
+    when: (f) => isStep(f, "step-roof") && named(f, "Its middle at", "Clear width", "Standing at", "A screen door in it now", "Posts no farther apart than"),
+    run: (c) => {
+      const r = c.s.roof;
+      if (!r) return null;
+      const mine = r.posts.filter((p) => p.by);
+      const every = named(c.f, "Posts no farther apart than") || !mine.length;
+      const posts = partsOf(c.sc, ["roof-post"]).filter((i) => every || mine.some((p) => Math.abs(c.sc.boxes[i][1] * 12 - p.x) < 1 && Math.abs(c.sc.boxes[i][2] * 12 - p.y) < 1));
+      const doors = every ? [] : partsOf(c.sc, ["wall"], /^door$/);
+      const said = [r.openings.length ? plural(r.openings.length, "opening") : "", r.pins.length ? plural(r.pins.length, "post") : ""].filter(Boolean).join(", ");
+      return light(c, { boxIdx: [...posts, ...doors] }, every ? `Roof posts · ${c.d.roof.post} · ${r.posts.length} of them` : `Set by hand · ${said}`);
+    },
   },
   {
     when: (f) => isStep(f, "step-roof"),

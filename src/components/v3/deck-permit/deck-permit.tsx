@@ -24,11 +24,11 @@ import { DECK_SIDE_LABEL, DECK_SIDES, defaultSitePlan, normalizeSitePlan, siteLa
 import { countyCodeFor, designCriteria, jurisdictionFor, jurisdictionTyped, RESEARCHED_ON, siteScaleWarning, siteScaleWords, type DeckCountyCode, type TypedJurisdiction } from "@/lib/deck/countyCodes";
 import { planModel } from "@/lib/deck/plans/model";
 import { framingPlan } from "@/lib/deck/plans/framing";
-import { PAPERS, PAPER_ORDER, PLAN_SCALE_MINS, SITE_SCALE_MINS, fitOn, pickPaper, siteBoxOn, type PaperChoice, type PaperPick } from "@/lib/deck/plans/paper";
+import { PAPERS, PAPER_ORDER, PLAN_SCALES, PLAN_SCALE_MINS, SITE_SCALE_MINS, archLabel, fitPlanOn, forcedPlanK, pickPaper, planScaleLabel, siteBoxOn, type PaperChoice, type PaperPick } from "@/lib/deck/plans/paper";
 import { readDeckCounty, readDeckLot, saveDeckSitePlan } from "@/actions/deckSitePlan";
 import { DrawingSvg } from "./deck-sections";
 import { SitePlanSvg } from "./deck-site-plan";
-import { PlanSet, ViewFrame } from "@/components/v3/deck-plans/plan-set";
+import { PlanSet, ViewFrame, framingPlanRefs } from "@/components/v3/deck-plans/plan-set";
 import { Card, PlanEditProvider, usePlanEdit } from "@/components/v3/deck-plans/plan-edit";
 import { saveDeckPlanEdits } from "@/actions/deckPlanEdits";
 import type { PlanEdits, PlanTemplateIndex } from "@/lib/deck/plans/edits";
@@ -84,6 +84,8 @@ function PermitSet({ design, address, title, shop, initialPlan, editable, built,
   const [busy, setBusy] = React.useState(false);
   // The building department's set (11 × 17) or the crew's (letter) — the same design, drawn for each.
   const [which, setWhich] = React.useState<"permit" | "crew">("permit");
+  /** The sheets' zoom on screen, as a multiple of the one that fits the window (1 = fit). */
+  const [zoomBy, setZoomBy] = React.useState(1);
   const dirty = React.useRef(false);
   const screenW = React.useSyncExternalStore(subscribeWidth, widthNow, widthServer);
   // The contractor's own templates of the two sets (./plan-templates), kept by the company.
@@ -154,11 +156,20 @@ function PermitSet({ design, address, title, shop, initialPlan, editable, built,
   // plan at its minimum and the lot at the site plan's; the site plan's own scale follows the sheet.
   const model = React.useMemo(() => planModel(structure), [structure]);
   const pick = React.useMemo(
-    () => pickPaper(plan.sheets, (p) => ({ planK: model ? fitOn(p, (sc) => framingPlan(model, sc, {}), 8.9, 9.45).scale : 1, siteFtPerIn: siteScale(siteW, siteH, siteBoxOn(p)) })),
+    // The framing plan as S-102 draws it — its detail bubbles on, at the scale asked by hand where there is one — so the
+    // scale the sheet is picked by is the scale the sheet shows.
+    () => pickPaper(plan.sheets, (p) => ({ planK: model ? fitPlanOn(p, (sc) => framingPlan(model, sc, framingPlanRefs(model)), forcedPlanK(plan.sheets)).scale : 1, siteFtPerIn: siteScale(siteW, siteH, siteBoxOn(p)) })),
     [plan.sheets, model, siteW, siteH],
   );
   const scale = pick.siteFtPerIn;
-  const zoom = Math.min(1, (screenW - 32) / (pick.paper.w * 96));
+  // ON SCREEN (2026-11-13 — a deck builder: "the plans are too small to review"). The sheets were shrunk to the
+  // window's width, and that was all: an 18 × 24 or 24 × 36 set came up at 60% or 40% with no way to look closer, the
+  // letter-size construction set was shrunk by the PERMIT sheet's width, and the shrink was carried into the print.
+  // The fit is by the set shown; − and + step from it (the sheets scroll sideways when they are wider than the window);
+  // the print is always at full size.
+  const shownW = which === "crew" ? 8.5 : pick.paper.w;
+  const fitZoom = Math.min(1, (screenW - 32) / (shownW * 96));
+  const zoom = Math.round(Math.max(0.25, Math.min(2, fitZoom * zoomBy)) * 1000) / 1000;
   const rDetails = roofDetails(structure, county?.windMph ?? null);
   const notes = permitNotes(structure, criteria.countyNotes, county?.edition ?? null);
   const fails = checks.filter((c) => c.level === "fail");
@@ -234,12 +245,23 @@ function PermitSet({ design, address, title, shop, initialPlan, editable, built,
           </div>
         </div>
 
-        <div style={{ zoom }}>
+        <div className={s.zoomBar} data-plan-zoom-bar>
+          <span>{`On screen: ${Math.round(zoom * 100)}%`}</span>
+          <span className={ps.seg} role="group" aria-label="Zoom the sheets on screen">
+            <button type="button" onClick={() => setZoomBy((z) => Math.max(0.5, Math.round((z - 0.25) * 100) / 100))} disabled={zoom <= 0.25 + 1e-6} aria-label="Smaller" data-plan-zoom="out">−</button>
+            <button type="button" aria-pressed={zoomBy === 1} onClick={() => setZoomBy(1)} data-plan-zoom="fit">Fit the window</button>
+            <button type="button" onClick={() => setZoomBy((z) => Math.min(4, Math.round((z + 0.25) * 100) / 100))} disabled={zoom >= 2 - 1e-6} aria-label="Larger" data-plan-zoom="in">+</button>
+          </span>
+          <span className={s.zoomNote}>{which === "permit" ? `The framing plan is drawn at ${archLabel(pick.planInPerFt / 12)} on ${pick.paper.name}; it prints at full size whatever the zoom.` : "Letter sheets; they print at full size whatever the zoom."}</span>
+        </div>
+        <div className={s.sheetsScroll}>
+        <div className={s.sheetsZoom} style={{ zoom }} data-plan-zoom-now={zoom}>
           <PlanSet
             structure={structure}
             checks={checks}
             set={which}
             paper={pick.paper.key}
+            planInPerFt={typeof plan.sheets.planInPerFt === "number" ? plan.sheets.planInPerFt : null}
             shop={shop}
             criteria={criteria.rows}
             notes={notes}
@@ -266,6 +288,7 @@ function PermitSet({ design, address, title, shop, initialPlan, editable, built,
                 : undefined,
             }}
           />
+        </div>
         </div>
       </div>
       <PlanEditBar />
@@ -553,6 +576,15 @@ function JurisdictionPanel({ plan, update, editable, onFile, countyName, pick }:
             </select>
           </label>
           <label className={s.field}>
+            <span>Plan scale</span>
+            <select value={plan.sheets.planInPerFt} disabled={!editable} data-sheet-field="plan-scale" onChange={(e) => setSheets({ planInPerFt: e.target.value === "auto" ? "auto" : Number(e.target.value) })}>
+              <option value="auto">Auto — the largest that fits</option>
+              {PLAN_SCALES.map((x) => (
+                <option key={x.inPerFt} value={x.inPerFt}>{x.label}</option>
+              ))}
+            </select>
+          </label>
+          <label className={s.field}>
             <span>Site plan no smaller than</span>
             <select value={plan.sheets.minSiteFtPerIn} disabled={!editable} data-sheet-field="site-min" onChange={(e) => setSheets({ minSiteFtPerIn: Number(e.target.value) })}>
               {SITE_SCALE_MINS.map((x) => (
@@ -561,6 +593,9 @@ function JurisdictionPanel({ plan, update, editable, onFile, countyName, pick }:
             </select>
           </label>
         </div>
+        {typeof plan.sheets.planInPerFt === "number" && pick.planInPerFt + 1e-6 < plan.sheets.planInPerFt ? (
+          <p className={s.siteSaid} data-sheet-scale-miss>{`At ${planScaleLabel(plan.sheets.planInPerFt)} the framing plan does not fit ${pick.paper.name}: it is drawn at ${archLabel(pick.planInPerFt / 12)}, the largest that does. ${plan.sheets.paper === "auto" ? "It is already on the largest sheet." : "Pick a larger sheet, or \"Auto\"."}`}</p>
+        ) : null}
         <p className={s.siteSaid} data-sheet-pick>{pick.met ? `This set: ${pick.words}.` : pick.words}{onFile?.minSiteScaleFtPerIn ? ` ${onFile.city ?? onFile.county} asks the site plan at ${siteScaleWords(onFile.minSiteScaleFtPerIn)} or larger.` : ""}</p>
       </div>
     </div>

@@ -26,7 +26,7 @@
 // does, and the studio shows it so nobody sends a client a placeholder.
 
 import { footingDepthIn, type BuildOptions, type DeckFrame } from "./frame";
-import { roofWords, type RoofFrame } from "./roof";
+import { roofByHandWords, roofWords, type RoofFrame } from "./roof";
 import { buildStructure, structureLevels, type DeckStructure } from "./structure";
 import { deckTakeoff, type BomLine, type BomStep, type DeckTakeoff } from "./takeoff";
 import { isExampleSource, deckRate, type ResolvedRate } from "./rates";
@@ -37,7 +37,7 @@ import { codeWords } from "./stateCodes";
 import { type CustomSlot, CEILING_LABEL, FASCIA_FINISH_LABEL, FIXTURE_LABEL, GUTTER_LABEL, PLACEMENT_LABEL, ROOFING_LABEL, ROOF_KIND_LABEL, WALL_FILL_LABEL, sizeWords, structureWords, type DeckDesign } from "./design";
 import { RULE_RAFTER } from "./roofTables";
 import { TERMITE_LABEL } from "./site";
-import { railNamed, railWords } from "./rails";
+import { railHeldWords, railNamed, railWords } from "./rails";
 import { electricalWords } from "./electrical";
 import type { MarketSnapshot } from "../fence/market";
 
@@ -283,7 +283,7 @@ export function priceStructure(s: DeckStructure, opts: DeckPriceOptions = {}): D
       line({ id: "deck-rail", name: `Railing — ${design.rail.customName || "custom"}`, description: `${railWords(rails)}; your installed price by the foot`, quantity: railFt, unit: "ln ft", material: each * railFt * 0.6, labor: each * railFt * 0.4, exampleMaterial: 0, exampleLabor: 0 });
     } else {
       const l = work(`rail.${t.id}.labor`, railFt);
-      line({ id: "deck-rail", name: `Railing — ${railNamed(rails).toLowerCase()}, ${rails.heightIn} in.`, description: `${plural(rails.posts + rails.stairPosts, "post")} bolted through the rim with tension ties; ${rails.infill === "balusters" ? (rails.baluster === "metal" && rails.type !== "aluminum" ? `${rails.balusters} round black metal balusters at 4½ in.` : `${rails.balusters} ${rails.system === "wood" ? "2x2 balusters" : "pickets"} at ${rails.baluster === "metal" ? "4½" : "5"} in.`) : rails.infill === "cable" ? `${rails.cableLf} ft of cable` : rails.infill === "glass" ? `${rails.panels} glass panels` : rails.infill === "panel" ? `${rails.panels} panels` : rails.infill === "mesh" ? `${rails.meshPanels} welded wire mesh panels` : "horizontal rails"}${rails.capLf ? "; a flat 2x6 cap" : ""}${rails.drinkLf ? "; a deck board on top as a drink rail" : ""}${rails.stairLf ? `; ${Math.round(rails.stairLf)} ft on the stairs` : ""}`, quantity: railFt, unit: "ln ft", material: stepMaterial("rails"), labor: l.amount, exampleMaterial: stepExample("rails"), exampleLabor: l.example });
+      line({ id: "deck-rail", name: `Railing — ${railNamed(rails).toLowerCase()}, ${rails.heightIn} in.`, description: `${plural(rails.posts + rails.stairPosts, "post")} ${railHeldWords(rails)}; ${rails.infill === "balusters" ? (rails.baluster === "metal" && rails.type !== "aluminum" ? `${rails.balusters} round black metal balusters at 4½ in.` : `${rails.balusters} ${rails.system === "wood" ? "2x2 balusters" : "pickets"} at ${rails.baluster === "metal" ? "4½" : "5"} in.`) : rails.infill === "cable" ? `${rails.cableLf} ft of cable` : rails.infill === "glass" ? `${rails.panels} glass panels` : rails.infill === "panel" ? `${rails.panels} panels` : rails.infill === "mesh" ? `${rails.meshPanels} welded wire mesh panels` : "horizontal rails"}${rails.capLf ? "; a flat 2x6 cap" : ""}${rails.drinkLf ? "; a deck board on top as a drink rail" : ""}${rails.stairLf ? `; ${Math.round(rails.stairLf)} ft on the stairs` : ""}`, quantity: railFt, unit: "ln ft", material: stepMaterial("rails"), labor: l.amount, exampleMaterial: stepExample("rails"), exampleLabor: l.example });
     }
   }
 
@@ -461,7 +461,9 @@ export function deckScope(pkg: DeckPackage, where?: string | null): string[] {
       out.push(`${design.custom.roofing?.name ?? ROOFING_LABEL[r.roofing]} over ${roof.sheets > 0 ? "1/2-in. sheathing and synthetic underlayment" : "2x4 purlins"}, drip edge on every edge${roof.wallFt ? ", step and counter flashing where the roof meets the house" : ""}${r.fascia.eave || r.fascia.rake ? `; ${FASCIA_FINISH_LABEL[r.fascia.finish].toLowerCase()} fascia${r.fascia.rake && roof.rakeFt ? " and rake boards" : ""}` : ""}${roof.soffitSqFt ? "; vented soffit under the eaves" : ""}${roof.ceilingSqFt ? `; ${CEILING_LABEL[r.ceiling].toLowerCase()} ceiling` : ""}${r.cupola ? "; a cupola at the peak" : ""}.`);
       if (roof.gutters) out.push(`${design.custom.gutters?.name ?? `${GUTTER_LABEL[roof.gutters.kind]} gutters`} on the eaves (${Math.round(roof.gutters.lf)} ft) with ${plural(roof.gutters.downspouts, "downspout")} to splash blocks${roof.gutters.guardsLf ? ", with gutter guards" : ""}.`);
     }
-    if (roof.walls) out.push(`${design.custom.walls?.name ?? WALL_FILL_LABEL[roof.walls.fill]} on ${plural(roof.walls.segments.length, "side")}${roof.walls.doors ? ", with a screen door" : ""}.`);
+    if (roof.walls) out.push(`${design.custom.walls?.name ?? WALL_FILL_LABEL[roof.walls.fill]} on ${plural(roof.walls.segments.length, "side")}${roof.walls.doors ? `, with ${roof.walls.doors === 1 ? "a screen door" : `${roof.walls.doors} screen doors`}` : ""}.`);
+    // What the builder set by hand (2026-11-13): said in the scope the client signs.
+    if (roof.openings.length || roof.pins.length) out.push(`${roofByHandWords(roof).replace(/^a /, "A ")}; the headers sized for the spans they make.`);
   }
   if (pkg.railFt > 0) out.push(`${railWords(s.rails).replace(/^(\d)/, "$1")}.`);
   for (const st of s.stairs) out.push(st.kind === "box" ? `Box steps wrapping ${st.design.wrapSides === 4 ? "all four sides" : st.design.wrapSides === 3 ? "three sides" : "the front"}, ${plural(st.risers, "riser")} of ${st.riserIn.toFixed(2)} in.` : `A ${st.widthIn / 12}-ft-wide stair down the ${st.design.side}: ${plural(st.risers, "riser")} of ${st.riserIn.toFixed(2)} in., treads ${st.runIn + 1} in. deep${st.lands === "lower-deck" ? ", onto the lower level" : st.design.landing === "pad" ? ", onto a new concrete pad" : st.design.landing === "patio" ? ", onto the existing patio" : ", onto pavers"}${st.rail.sides ? `, ${st.rail.sides === 2 ? "rails on both sides" : "a handrail"}` : ""}.`);

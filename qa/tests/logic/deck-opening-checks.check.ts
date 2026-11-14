@@ -94,6 +94,39 @@ const tub = find(run(withOpenings(tubDeck, [win(8, 4, 3, 4)])), "spa-glass");
 check("a window within 5 ft of the tub's water and under 5 ft up: safety glass", tub?.level === "warn" && tub.rule === "IRC R308.4.5", JSON.stringify(tub) + " " + ids(run(withOpenings(tubDeck, [win(8, 4, 3, 4)]))));
 check("…not on a 16-ft-deep deck, where the tub by the front rail is 8 ft out from the wall", !find(run(withOpenings(applyDeckPatch(d0, { shape: { kind: "rect", widthFt: 16, depthFt: 16 }, spa: { ...d0.spa, on: true, widthFt: 7, depthFt: 7 } }), [win(8, 4, 3, 4)])), "spa-glass"));
 
+console.log("— a second-storey deck: every opening on its own floor (2026-11-13) —");
+// A deck builder's report: a second-storey deck was checked against the first floor's doors and windows as if it served them.
+const both: HouseOpening[] = [
+  { id: "d1", kind: "door", xFt: 8, widthFt: 3, heightFt: 6.75, sillFt: 0.5 },
+  win(3, 3, 3, 4, "w1"),
+  { id: "g1", kind: "garage", xFt: 13, widthFt: 4, heightFt: 7, sillFt: 0 },
+  { id: "d2", kind: "slider", xFt: 8, widthFt: 6, heightFt: 6.75, sillFt: 115 / 12 },
+  win(3, 12.5, 3, 4, "w2"),
+];
+const upDeck = applyDeckPatch(d0, { heightIn: 114, house: { ...d0.house, storeys: 2, openings: both } });
+const upChecks = run(upDeck);
+const loudOnes = upChecks.filter((c) => /^(door|window|spa-glass)/.test(c.id) && (c.level === "fail" || c.level === "warn" || !!c.fix));
+check("a deck at the second floor, doors and windows on both floors: nothing to answer", !loudOnes.length, ids(upChecks));
+check("…its own door is the upper one: an inch under its threshold", find(upChecks, "door-threshold")?.level === "pass" && /sliding door/.test(find(upChecks, "door-threshold")!.text) && !find(upChecks, "door-threshold-2"), ids(upChecks));
+check("…the doors of the floor below are said once, as under the deck, with the room to its frame", find(upChecks, "door-under")?.level === "pass" && /^2 doors .* on the floor below/.test(find(upChecks, "door-under")!.text) && /8'-4"/.test(find(upChecks, "door-under")!.text), JSON.stringify(find(upChecks, "door-under")));
+check("…and the window of the floor below, a storey under the frame, is a pass", find(upChecks, "window-under")?.level === "pass", JSON.stringify(find(upChecks, "window-under")));
+check("the old fault: no 'stands 108 in. above the threshold', no 'set the deck at 5 in.'", !upChecks.some((c) => /above the door's threshold/.test(c.text) || c.fix?.patch.heightIn === 5));
+const tubUp = applyDeckPatch(tubDeck, { heightIn: 114 });
+check("a window of the floor below, under the deck, is not glass beside the tub", !find(run(withOpenings(tubUp, [win(8, 3, 3, 4)])), "spa-glass"), ids(run(withOpenings(tubUp, [win(8, 3, 3, 4)]))));
+check("…a window above the boards within reach of the water still is", find(run(withOpenings(tubUp, [win(8, 10.5, 3, 4)])), "spa-glass")?.level === "warn");
+const crossing = find(run(applyDeckPatch(upDeck, { heightIn: 60 })), "door-threshold");
+check("a deck across the middle of a door is a real conflict still: under its threshold, or clear above its head", crossing?.level === "fail" && /would run across the door/.test(crossing.text) && crossing.fix?.patch.heightIn === 5 && crossing.alts?.[0].patch.heightIn === 96, JSON.stringify(crossing));
+check("…raised clear above it, that door is under the deck", !!find(run(applyDeckPatch(applyDeckPatch(upDeck, { heightIn: 60 }), crossing!.alts![0].patch)), "door-under"));
+const freeUp = run(applyDeckPatch(upDeck, { placement: "beside" }));
+const inWay = find(freeUp, "door-under-post");
+check("a free-standing deck's post in front of the door below: a warning, by the post's own place", inWay?.level === "warn" && /24 in\. out from the wall/.test(inWay.text) && inWay.rule === "IRC R311.3", JSON.stringify(inWay));
+check("…and in front of the garage door below", /garage door/.test(find(freeUp, "door-under-post-2")?.text ?? ""), ids(freeUp));
+const lowOnly = run(applyDeckPatch(d0, { heightIn: 12, house: { ...d0.house, storeys: 2, openings: [both[3]] } }));
+const upperDoor = find(lowOnly, "door-above");
+check("a low deck under an upper door alone: a note that the door is the floor above's, with the height that would reach it", upperDoor?.level === "info" && upperDoor.fix?.patch.heightIn === 114 && !find(lowOnly, "door-threshold"), ids(lowOnly));
+const lowBoth = run(applyDeckPatch(upDeck, { heightIn: 5 }));
+check("a low deck at its own door: the upper door is nothing to it", find(lowBoth, "door-threshold")?.level === "pass" && !find(lowBoth, "door-above") && !find(lowBoth, "door-threshold-2"), ids(lowBoth));
+
 console.log("— what is not checked —");
 check("a house drawn by rule (no doors or windows of its own): none of these checks", !ids(run(d0)), ids(run(d0)));
 check("a detached deck: none", !ids(run(withOpenings(applyDeckPatch(d0, { placement: "detached" }), [door(2.5), win(4, 2)]))));

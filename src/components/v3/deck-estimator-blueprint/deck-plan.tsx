@@ -16,6 +16,7 @@ import * as React from "react";
 import type { DeckFrame } from "@/lib/deck/frame";
 import type { DeckStructure } from "@/lib/deck/structure";
 import { structureLevels } from "@/lib/deck/structure";
+import type { DeckSurface } from "@/lib/deck/surface";
 import { ftIn } from "@/lib/deck/codeTables";
 import { shapeOutline, type StairSide } from "@/lib/deck/design";
 import s from "./deck-studio.module.css";
@@ -67,15 +68,17 @@ export function DeckPlan({ structure, placing = null, onPlaceStair, show = "all"
   const levels = structureLevels(structure);
   const svgRef = React.useRef<SVGSVGElement>(null);
   const eave = roof?.eaveRing ?? [];
-  const xs = [...levels.flatMap((l) => l.frame.zones.flatMap((z) => [z.zone.x0 + l.offsetXIn, z.zone.x1 + l.offsetXIn])), ...eave.map((p) => p.x), ...(roof ? [0] : []), ...structure.stairs.flatMap((st) => st.footprint.map((p) => p.x))];
-  const ys = [...levels.flatMap((l) => l.frame.zones.flatMap((z) => [z.zone.y0 + l.offsetYIn, z.zone.y1 + l.offsetYIn])), ...eave.map((p) => p.y), ...(roof ? [0] : []), ...structure.stairs.flatMap((st) => st.footprint.map((p) => p.y))];
+  // The roof's framing plan draws no stairs (2026-11-13): their footprints made its frame larger and the roof smaller.
+  const drawnStairs = show === "roof" ? [] : structure.stairs;
+  const xs = [...levels.flatMap((l) => l.frame.zones.flatMap((z) => [z.zone.x0 + l.offsetXIn, z.zone.x1 + l.offsetXIn])), ...eave.map((p) => p.x), ...(roof ? [0] : []), ...drawnStairs.flatMap((st) => st.footprint.map((p) => p.x))];
+  const ys = [...levels.flatMap((l) => l.frame.zones.flatMap((z) => [z.zone.y0 + l.offsetYIn, z.zone.y1 + l.offsetYIn])), ...eave.map((p) => p.y), ...(roof ? [0] : []), ...drawnStairs.flatMap((st) => st.footprint.map((p) => p.y))];
   const minX = Math.min(...xs, 0);
   const maxX = Math.max(...xs, 48);
   const minY = Math.min(...ys, 0);
   const maxY = Math.max(...ys, 48);
   const size = Math.max(maxX - minX, maxY - minY);
   const font = Math.max(9, size / 34);
-  const pad = font * (show === "floor" ? 9 : 5.5);
+  const pad = font * (show === "floor" ? 9 : show === "roof" ? 3.6 : 5.5);
   const onHouse = frame ? frame.design.placement !== "detached" : roof?.attach === "wall";
   const houseBand = font * 2.2;
   const lw = Math.max(0.8, size / 260);
@@ -96,7 +99,20 @@ export function DeckPlan({ structure, placing = null, onPlaceStair, show = "all"
     if (hit) onPlaceStair(hit);
   };
 
-  const levelDrawing = (f: DeckFrame, ox: number, oy: number, lower: boolean) => {
+  const levelDrawing = (f: DeckFrame, ox: number, oy: number, lower: boolean, surface: DeckSurface | null) => {
+    // THE PICTURE-FRAME BORDER, SEEN FROM ABOVE (2026-11-13 — a deck builder: "the border option changes nothing in the
+    // overhead view"). This plan drew the frame only. The border's boards are now laid on it as they lie — a toned band
+    // along every open edge, each board outlined — with a word saying how wide.
+    const borderPieces = surface && surface.border > 0 && show !== "roof" ? surface.pieces.filter((pc) => pc.border) : [];
+    const borderRings = surface && surface.border > 0 && show !== "roof" ? surface.shaped.slice(surface.shapedBorderFrom) : [];
+    // Where its label hangs: under the border's front-most piece — a plain board, or a mitred one (its cut ring's box).
+    const ringBoxes = borderRings.map((ring) => {
+      const xs = ring.filter((_, k) => k % 2 === 0);
+      const ys = ring.filter((_, k) => k % 2 === 1);
+      return { cx: (Math.min(...xs) + Math.max(...xs)) / 2, cy: (Math.min(...ys) + Math.max(...ys)) / 2, sx: Math.max(...xs) - Math.min(...xs), sy: Math.max(...ys) - Math.min(...ys) };
+    });
+    const labelled = [...borderPieces.map((pc) => ({ cx: pc.cx, cy: pc.cy, sx: pc.sx, sy: pc.sy })), ...ringBoxes];
+    const borderAt = labelled.length ? labelled.reduce((a, b) => (b.cy + b.sy / 2 > a.cy + a.sy / 2 + 0.5 || (Math.abs(b.cy + b.sy / 2 - (a.cy + a.sy / 2)) <= 0.5 && b.sx > a.sx) ? b : a)) : null;
     const zones = f.zones.map((z) => z.zone);
     const W = Math.max(...zones.map((z) => z.x1));
     const D = Math.max(...zones.map((z) => z.y1));
@@ -123,7 +139,13 @@ export function DeckPlan({ structure, placing = null, onPlaceStair, show = "all"
         {f.posts.filter((p) => !p.roof).map((p) => {
           const w = p.size === "8x8" ? 7.5 : p.size === "6x6" ? 5.5 : 3.5;
           const d = p.size === "4x6" ? 5.5 : w;
-          return <rect key={p.id} x={p.x + ox - w / 2} y={p.y + oy - d / 2} width={w} height={d} fill="var(--ink)" />;
+          // A post set by hand wears a ring (2026-11-13), like the roof's.
+          return (
+            <g key={p.id}>
+              <rect x={p.x + ox - w / 2} y={p.y + oy - d / 2} width={w} height={d} fill="var(--ink)" />
+              {p.by ? <circle cx={p.x + ox} cy={p.y + oy} r={w * 0.95} fill="none" stroke="var(--blueprint)" strokeWidth={lw * 1.1} data-deck-plan-post-by="pin" /> : null}
+            </g>
+          );
         })}
         {show === "floor"
           ? f.posts.filter((p) => !p.roof).map((p) => (
@@ -132,6 +154,21 @@ export function DeckPlan({ structure, placing = null, onPlaceStair, show = "all"
               </text>
             ))
           : null}
+        {borderPieces.length || borderRings.length ? (
+          <g data-deck-plan-border={surface?.border} pointerEvents="none">
+            {borderPieces.map((pc, i) => (
+              <rect key={`bd${i}`} x={pc.cx + ox - pc.sx / 2} y={pc.cy + oy - pc.sy / 2} width={pc.sx} height={pc.sy} fill="var(--blueprint)" fillOpacity={0.2} stroke="var(--blueprint)" strokeWidth={lw * 0.9} />
+            ))}
+            {borderRings.map((ring, i) => (
+              <polygon key={`br${i}`} points={ring.map((v, k) => v + (k % 2 === 0 ? ox : oy)).join(" ")} fill="var(--blueprint)" fillOpacity={0.2} stroke="var(--blueprint)" strokeWidth={lw * 0.9} />
+            ))}
+            {borderAt ? (
+              <text x={borderAt.cx + ox} y={borderAt.cy + oy + borderAt.sy / 2 + font * 0.95} fontSize={font * 0.8} textAnchor="middle" className={s.planNote}>
+                {`picture-frame border · ${surface!.border === 2 ? "2 boards" : "1 board"}${surface!.product.border ? ` · ${surface!.product.border.name}` : ""}`}
+              </text>
+            ) : null}
+          </g>
+        ) : null}
         <polygon points={outline} fill="none" stroke="var(--ink)" strokeWidth={lw * 2.2} />
         {f.beams.map((b) => (
           <text key={`bt${b.id}`} x={b.x0 + ox + font * 0.6} y={b.y + oy - b.spec.thickIn / 2 - font * 0.45} fontSize={font * 0.9} className={s.planNote}>
@@ -176,7 +213,7 @@ export function DeckPlan({ structure, placing = null, onPlaceStair, show = "all"
       ) : null}
       {/* The deck's levels — or, on the roof plan, just its outline. */}
       {outlineOnly ? <polygon points={shapeOutline(outlineOnly.design.shape).map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke="var(--muted-light)" strokeWidth={lw * 1.4} strokeDasharray={`${lw * 6} ${lw * 4}`} /> : null}
-      {frame ? levels.map((l) => levelDrawing(l.frame, l.offsetXIn, l.offsetYIn, l.id === "lower")) : null}
+      {frame ? levels.map((l) => levelDrawing(l.frame, l.offsetXIn, l.offsetYIn, l.id === "lower", l.surface)) : null}
       {/* The stairs: the footprint and every tread line. */}
       {(show === "roof" ? [] : structure.stairs).map((st) => {
         const pts = st.footprint.map((p) => `${p.x},${p.y}`).join(" ");
@@ -228,9 +265,53 @@ export function DeckPlan({ structure, placing = null, onPlaceStair, show = "all"
             <line key={`w${i}`} x1={w.x0} y1={w.y0} x2={w.x1} y2={w.y1} stroke="var(--blueprint-dark)" strokeWidth={lw * 3.5} opacity={0.5} />
           ))}
           {roof.ledger ? <rect x={Math.min(...roof.members.filter((m) => m.role === "roof-ledger").map((m) => m.x0))} y={0} width={roof.ledger.lengthIn} height={1.5} fill="var(--ink)" /> : null}
+          {/* OPENINGS FRAMED BY HAND (2026-11-13): the gap between its two posts, its clear width, its door's swing. */}
+          {roof.openings.map((o) => {
+            const L = Math.hypot(o.x1 - o.x0, o.y1 - o.y0) || 1;
+            const ux = (o.x1 - o.x0) / L;
+            const uy = (o.y1 - o.y0) / L;
+            const mx = (o.x0 + o.x1) / 2;
+            const my = (o.y0 + o.y1) / 2;
+            // Out of the roof: away from its middle.
+            const out = (mx - roof.centreX) * -uy + (my - roof.centreY) * ux >= 0 ? 1 : -1;
+            const nx = -uy * out;
+            const ny = ux * out;
+            const leaf = o.leaves ? L / o.leaves : 0;
+            const tick = font * 0.7;
+            return (
+              <g key={`op${o.id}`} data-deck-plan-opening={o.id}>
+                <line x1={o.x0} y1={o.y0} x2={o.x1} y2={o.y1} stroke="#fff" strokeWidth={lw * 4.2} />
+                <line x1={o.x0} y1={o.y0} x2={o.x1} y2={o.y1} stroke="var(--ink)" strokeWidth={lw * 0.9} strokeDasharray={`${lw * 3} ${lw * 2.5}`} />
+                {[[o.x0, o.y0], [o.x1, o.y1]].map(([x, y], i) => (
+                  <line key={i} x1={x - nx * tick} y1={y - ny * tick} x2={x + nx * tick} y2={y + ny * tick} stroke="var(--blueprint-dark)" strokeWidth={lw * 1.2} />
+                ))}
+                {Array.from({ length: o.leaves }, (_, i) => {
+                  // Each leaf hung on its own jamb: the first on the opening's start, the second on its end; drawn half open,
+                  // swung out 45° (a full quarter swing ran out through the plan's dimensions).
+                  const hx = i === 0 ? o.x0 : o.x1;
+                  const hy = i === 0 ? o.y0 : o.y1;
+                  const dir = i === 0 ? 1 : -1;
+                  const ex = hx + ux * leaf * dir;
+                  const ey = hy + uy * leaf * dir;
+                  const sx = hx + (ux * dir + nx) * leaf * Math.SQRT1_2;
+                  const sy = hy + (uy * dir + ny) * leaf * Math.SQRT1_2;
+                  return <path key={`lf${i}`} d={`M${hx},${hy} L${sx},${sy} A${leaf},${leaf} 0 0 ${(ux * ny - uy * nx) * dir > 0 ? 0 : 1} ${ex},${ey}`} fill="none" stroke="var(--blueprint-dark)" strokeWidth={lw * 0.8} />;
+                })}
+                <text x={mx - nx * font * 1.5} y={my - ny * font * 1.5 + font * 0.3} fontSize={font * 0.72} textAnchor="middle" className={s.planNote}>
+                  {`${ftIn(Math.round(o.widthIn))} opening${o.leaves === 2 ? " · pair of doors" : o.leaves === 1 ? " · door" : ""}`}
+                </text>
+              </g>
+            );
+          })}
           {roof.posts.map((p) => {
             const w = p.size === "8x8" ? 7.5 : p.size === "6x6" ? 5.5 : 3.5;
-            return <rect key={p.id} x={p.x - w / 2} y={p.y - w / 2} width={w} height={w} fill="var(--blueprint-dark)" stroke="#fff" strokeWidth={lw * 0.6} />;
+            // A post set by hand wears a ring, so the builder's own posts read apart from the ones the spans set.
+            return (
+              <g key={p.id}>
+                <rect x={p.x - w / 2} y={p.y - w / 2} width={w} height={w} fill="var(--blueprint-dark)" stroke="#fff" strokeWidth={lw * 0.6} />
+                {p.by ? <circle cx={p.x} cy={p.y} r={w * 0.95} fill="none" stroke="var(--blueprint)" strokeWidth={lw * 1.1} data-deck-plan-post-by={p.by.kind} /> : null}
+              </g>
+            );
           })}
           {roof.posts.filter((p) => p.footing).map((p) => (
             <circle key={`rf${p.id}`} cx={p.x} cy={p.y} r={(p.footing?.padIn ?? 12) / 2} fill="none" stroke="var(--muted)" strokeWidth={lw} strokeDasharray={`${lw * 3} ${lw * 2}`} />

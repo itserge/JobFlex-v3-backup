@@ -28,11 +28,12 @@
 // Nothing here draws or stores anything: a choice is a DeckPatch, applied
 // through the same door as every other change in the studio.
 
-import { BRACE_ABOVE_IN, JOIST_SIZES, POST_SIZES, SOLID_BEAMS, SPACINGS, ftIn } from "./codeTables";
+import { BRACE_ABOVE_IN, JOIST_SIZES, POST_ACTUAL_IN, POST_SIZES, SOLID_BEAMS, SPACINGS, ftIn } from "./codeTables";
 import { wallType } from "./catalog";
 import { applyDeckPatch, deckChecks, type DeckPatch } from "./checks";
-import { BUILT_UP_CHOICES, type DeckDesign, type RoofDesign } from "./design";
+import { BUILT_UP_CHOICES, DECK_POST_LIMITS, RAIL_MOUNT_LABEL, RAIL_MOUNT_WORDS, RAIL_SECTION_LABEL, ROOF_POST_LIMITS, defaultRoofOpening, type DeckDesign, type DeckPostPin, type RailSectionKey, type RoofDesign, type RoofSide } from "./design";
 import { priceDeck, type DeckPackage, type DeckPriceOptions } from "./pricing";
+import { railMountLine } from "./rails";
 import type { RoofMember } from "./roof";
 import { ROOF_MEMBER_LAYER, SCENE_LAYERS, type DeckScene, type SceneLayer } from "./scene";
 import { settleDesign } from "./settle";
@@ -182,8 +183,40 @@ export function partAt(s: DeckStructure, scene: DeckScene, boxIdx: number | null
     }
     return best ? { kind: "stair", id: best.id } : null;
   }
-  if (name === "rail") return s.rails.on ? { kind: "rail", id: "" } : null;
+  if (name === "rail") return s.rails.on ? railPart(s, x, y, z) : null;
   if (name === "fascia") return { kind: "fascia", id: "" };
+  return null;
+}
+
+/**
+ * The rail's section a box belongs to (2026-11-13): a level and the side its run stands along — "upper-front" — so one
+ * side can be mounted another way than the rest. A stair's rail is the whole rail.
+ */
+function railPart(s: DeckStructure, x: number, y: number, z: number): PartRef {
+  let best: { id: string; d: number } | null = null;
+  for (const m of s.rails.members) {
+    const d = near(m.cx, m.cy, m.cz, x, y, z);
+    if (d > 1.5 || (best && best.d <= d)) continue;
+    best = { id: m.of, d };
+  }
+  return { kind: "rail", id: best?.id ?? "" };
+}
+
+/** The side of the roof a post stands on and its place along it, as design.roof's posts and openings are measured: feet from the side's left end (front, back) or its house end (left, right). */
+function roofSideOf(roof: NonNullable<DeckStructure["roof"]>, post: { x: number; y: number }): { side: RoofSide; atFt: number; lengthFt: number } | null {
+  const ringH = roof.headers.filter((h) => !h.cross);
+  if (!ringH.length) return null;
+  const minX = Math.min(...ringH.flatMap((h) => [h.x0, h.x1]));
+  const maxY = Math.max(...ringH.flatMap((h) => [h.y0, h.y1]));
+  for (const h of ringH) {
+    const horiz = Math.abs(h.y0 - h.y1) < 0.5;
+    const vert = Math.abs(h.x0 - h.x1) < 0.5;
+    if (!horiz && !vert) continue;
+    const on = horiz ? Math.abs(post.y - h.y0) < 0.6 && post.x > Math.min(h.x0, h.x1) + 1 && post.x < Math.max(h.x0, h.x1) - 1 : Math.abs(post.x - h.x0) < 0.6 && post.y > Math.min(h.y0, h.y1) + 1 && post.y < Math.max(h.y0, h.y1) - 1;
+    if (!on) continue;
+    const side: RoofSide = horiz ? (Math.abs(h.y0 - maxY) < 1 ? "front" : "back") : Math.abs(h.x0 - minX) < 1 ? "left" : "right";
+    return { side, atFt: ((horiz ? post.x : post.y) - (horiz ? Math.min(h.x0, h.x1) : Math.min(h.y0, h.y1))) / 12, lengthFt: h.lengthIn / 12 };
+  }
   return null;
 }
 
@@ -343,7 +376,24 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
       if (!f || !post || !beam) return card("Post", "A post under the deck.", []);
       const choices: PartChoice[] = [];
       let stays: string | undefined;
+      // BY HAND (2026-11-13; design.framing.pins). A post can be slid, one can be added, and one set by hand taken off:
+      // the beam then stands on the posts as placed — and on more only where its spans or its ends need one.
+      if (!lower) {
+        const role = beam.role;
+        const others = d.framing.pins.filter((pn) => !(pn.beam === role && pn.atFt * 12 >= beam.x0 - 0.5 && pn.atFt * 12 <= beam.x1 + 0.5));
+        const pinsOf = (xs: number[]): DeckPostPin[] => [...others, ...xs.map((x) => ({ id: `${role[0]}${Math.round(x)}`, beam: role, atFt: Math.round(x) / 12 }))];
+        const byHand = f.posts.filter((q) => q.beamId === beam.id && q.by).map((q) => q.x);
+        const taken = byHand.length > 0;
+        // What the builder's posts are now: theirs where the beam is already by hand, every post of it where it is not yet.
+        const now = taken ? byHand : beam.postXs;
+        const here = now.findIndex((x) => Math.abs(x - post.x) < 0.5);
+        if (post.by) choices.push({ id: "pin-off", tone: "remove", label: "Remove this post — it was set by hand", note: "If the beam needs a post in the span it leaves, one stands in the middle of it.", patch: { framing: { pins: pinsOf(now.filter((_, k) => k !== here)) } } });
+        if (here >= 0) for (const by of [-12, 12]) choices.push({ id: `pin-slide-${by}`, tone: "swap", label: `Slide this post 1 ft to the ${by < 0 ? "left" : "right"}`, note: taken ? undefined : "The beam's posts stay where they are, as posts set by hand; this one moves.", patch: { framing: { pins: pinsOf(now.map((x, k) => (k === here ? Math.max(beam.x0 + 1, Math.min(beam.x1 - 1, x + by)) : x))) } } });
+        const gaps = beam.postXs.slice(1).map((x, k) => ({ at: (x + beam.postXs[k]) / 2, w: x - beam.postXs[k] })).sort((a, b) => b.w - a.w);
+        if (gaps.length && d.framing.pins.length < DECK_POST_LIMITS.pins) choices.push({ id: "pin-add", tone: "add", label: "Add a post under this beam", note: `In the middle of its longest span, ${ftIn(Math.round(gaps[0].w))} now.`, patch: { framing: { pins: pinsOf([...now, gaps[0].at]) } } });
+      }
       if (lower) stays = "The lower level's posts follow its own beams.";
+      else if (post.by) stays = undefined;
       else if (beam.postXs.length <= 2) stays = "A beam stands on two posts at least.";
       else {
         const fewer = fewerDeckPosts(s, beam.id, opts);
@@ -464,14 +514,36 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
       if (!roof || !post) return card("Roof post", "A post under the roof.", []);
       const choices: PartChoice[] = [];
       let stays: string | undefined;
+      // SET BY HAND (2026-11-13): a post the builder stood, or one that frames an opening of theirs — theirs to move,
+      // resize or take off; any other post between the corners can have an opening framed beside it.
+      const pin = post.by?.kind === "pin" ? d.roof.pins.find((x) => x.id === post.by?.id) : undefined;
+      const opening = post.by?.kind === "opening" ? d.roof.openings.find((x) => x.id === post.by?.id) : undefined;
+      const built = opening ? roof.openings.find((x) => x.id === opening.id) : undefined;
+      if (pin) {
+        choices.push({ id: "pin-off", tone: "remove", label: "Remove this post — it was set by hand", note: "The header is sized again for the span it leaves; if no header reaches, the roof puts a post back where the span needs one.", patch: roofPatch({ pins: d.roof.pins.filter((x) => x.id !== pin.id) }) });
+        for (const by of [-1, 1]) choices.push({ id: `pin-slide-${by}`, tone: "swap", label: `Slide it 1 ft ${by < 0 ? (pin.side === "front" || pin.side === "back" ? "to the left" : "toward the house") : pin.side === "front" || pin.side === "back" ? "to the right" : "away from the house"}`, patch: roofPatch({ pins: d.roof.pins.map((x) => (x.id === pin.id ? { ...x, atFt: Math.max(0, x.atFt + by) } : x)) }) });
+      } else if (opening) {
+        choices.push({ id: "opening-off", tone: "remove", label: "Remove the opening — its two posts go with it", note: "The side goes back to the posts its spans ask for.", patch: roofPatch({ openings: d.roof.openings.filter((x) => x.id !== opening.id) }) });
+        for (const w of [3, 4, 5, 6, 8]) choices.push({ id: `opening-${w}`, tone: "size", label: `${w} ft`, patch: roofPatch({ openings: d.roof.openings.map((x) => (x.id === opening.id ? { ...x, widthFt: w } : x)) }), current: opening.widthFt === w, row: "The opening's clear width" });
+        choices.push({ id: "opening-door", tone: "swap", label: opening.door ? "Leave it open — the door comes later" : "Hang a screen door in it now", note: opening.door ? undefined : "A door hangs only where the walls between the posts are screen.", patch: roofPatch({ openings: d.roof.openings.map((x) => (x.id === opening.id ? { ...x, door: !x.door } : x)) }) });
+        for (const by of [-1, 1]) choices.push({ id: `opening-slide-${by}`, tone: "swap", label: `Slide the opening 1 ft ${by < 0 ? (opening.side === "front" || opening.side === "back" ? "to the left" : "toward the house") : opening.side === "front" || opening.side === "back" ? "to the right" : "away from the house"}`, patch: roofPatch({ openings: d.roof.openings.map((x) => (x.id === opening.id ? { ...x, atFt: Math.max(0, x.atFt + by) } : x)) }) });
+      }
       if (post.corner) stays = "A corner post: the roof stands on it.";
+      else if (pin || opening) stays = undefined;
       else {
+        const at = roofSideOf(roof, post);
+        if (at && d.roof.openings.length < ROOF_POST_LIMITS.openings) {
+          // Beside this post, toward the side's middle: the post becomes one of the opening's two.
+          const toward = at.atFt < at.lengthFt / 2 ? 1 : -1;
+          const id = `o${d.roof.openings.length + 1}${Math.round(at.atFt * 12).toString(36)}`.slice(0, 12);
+          choices.push({ id: "opening-add", tone: "add", label: "Frame a 4-ft opening beside this post", note: "Two posts 4 ft apart for a door, now or later: the header over it is sized for that span.", patch: roofPatch({ openings: [...d.roof.openings, { ...defaultRoofOpening(id, at.side, Math.max(0, at.atFt + toward * (2 + POST_ACTUAL_IN[d.roof.post][0] / 12))) }] }) });
+        }
         const fewer = fewerRoofPosts(s, opts);
         if (fewer) choices.push({ id: "fewer", tone: "remove", label: `Remove a post — ${fewer.header === "lvl" ? "LVL" : fewer.header} beams span it`, note: `Deeper beams reach farther between posts: the roof stands on ${plural(fewer.posts, "post")} instead of ${roof.posts.length}.`, patch: roofPatch({ header: fewer.header }) });
         else stays = "No beam in the list spans this side without it: it stays, or an engineer sizes the beam.";
       }
       choices.push(...sizeRow("Post size — every roof post", "rpost", ["4x4", "6x6", "8x8"] as const, d.roof.post, (v) => String(v), (v) => roofPatch({ post: v as RoofDesign["post"] })).filter((c) => c.id !== "rpost-auto"));
-      return card("Roof post", `${post.size} post, ${ftIn(post.heightIn)} tall, bringing about ${Math.round(post.loadLb / 10) * 10} lb of roof down to ${post.bearing === "deck" ? "its own footing under the deck" : post.bearing === "ground" ? "its footing" : "the slab"}.`, choices, stays);
+      return card(pin ? "Roof post — set by hand" : opening ? `Roof post — at the ${built ? ftIn(Math.round(built.widthIn)) : `${opening.widthFt}-ft`} opening` : "Roof post", `${post.size} post, ${ftIn(post.heightIn)} tall, bringing about ${Math.round(post.loadLb / 10) * 10} lb of roof down to ${post.bearing === "deck" ? "its own footing under the deck" : post.bearing === "ground" ? "its footing" : "the slab"}.`, choices, stays);
     }
 
     case "stair": {
@@ -479,8 +551,25 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
       return card("Stairs", "A flight of stairs with its stringers, treads and landing.", [{ id: "remove", tone: "remove", label: "Remove this stair", patch: { stairs: d.stairs.filter((x) => x.id !== ref.id) } }]);
     }
 
-    case "rail":
-      return card("Railing", `${s.rails.label} railing, ${s.rails.heightIn} in. high, along the open edges.`, [{ id: "remove", tone: "remove", label: "Remove the railing", note: s.rails.required ? "This deck is more than 30 in. off the ground: the code requires a guard." : undefined, patch: { rail: { type: "none" } } }]);
+    case "rail": {
+      // HOW THIS SIDE IS MOUNTED (2026-11-13): top or side, for this side alone or for every side.
+      const key = ref.id as RailSectionKey;
+      const here = s.rails.mounts[key];
+      const sideName = here ? RAIL_SECTION_LABEL[key]?.toLowerCase() : undefined;
+      const choices: PartChoice[] = [];
+      if (here && sideName) {
+        const all = Object.values(s.rails.mounts);
+        for (const m of ["top", "side"] as const) {
+          const by = { ...d.rail.mountBy };
+          if (m === s.rails.mount) delete by[key];
+          else by[key] = m;
+          choices.push({ id: `mount-${m}`, tone: "size", label: RAIL_MOUNT_LABEL[m], note: `The ${sideName} only: its posts ${RAIL_MOUNT_WORDS[m]}.`, patch: { rail: { mountBy: by } }, current: here === m, row: `Mounting — the ${sideName} only`, works: (after) => after.rails.mounts[key] === m });
+        }
+        if (all.length > 1) for (const m of ["top", "side"] as const) choices.push({ id: `mount-all-${m}`, tone: "size", label: RAIL_MOUNT_LABEL[m], note: `Every side: the posts ${RAIL_MOUNT_WORDS[m]}.`, patch: { rail: { mount: m, mountBy: {} } }, current: all.every((v) => v === m), row: "Mounting — every side", whole: true, works: (after) => Object.values(after.rails.mounts).every((v) => v === m) });
+      }
+      choices.push({ id: "remove", tone: "remove", label: "Remove the railing", note: s.rails.required ? "This deck is more than 30 in. off the ground: the code requires a guard." : undefined, patch: { rail: { type: "none" } }, whole: true });
+      return card(sideName ? `Railing — ${sideName}` : "Railing", `${s.rails.label} railing, ${s.rails.heightIn} in. high${here ? `, ${here}-mounted on this side: the posts ${RAIL_MOUNT_WORDS[here]}` : ", along the open edges"}.`, choices);
+    }
 
     case "fascia":
       return card("Fascia", "A trim board over the rim: it hides the frame's edge.", [{ id: "remove", tone: "remove", label: "Remove the fascia", patch: { decking: { fascia: "none" } } }]);
@@ -556,6 +645,7 @@ export function structureChanges(a: DeckStructure, b: DeckStructure): string[] {
   }
   if (a.stairs.length !== b.stairs.length) out.push(`stairs ${a.stairs.length} → ${b.stairs.length}`);
   if (a.rails.on !== b.rails.on) out.push(b.rails.on ? "a railing" : "no railing");
+  else if (b.rails.on && JSON.stringify(a.rails.mounts) !== JSON.stringify(b.rails.mounts)) out.push(`railing ${railMountLine(b.rails)}`);
   if (a.design.decking.fascia !== b.design.decking.fascia) out.push(b.design.decking.fascia === "none" ? "no fascia" : "fascia on");
   return out;
 }

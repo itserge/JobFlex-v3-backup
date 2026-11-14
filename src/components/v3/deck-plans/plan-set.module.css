@@ -85,6 +85,15 @@
 /* ── Sheet layouts ──────────────────────────────────────────────────── */
 .foundation { grid-template-columns: minmax(0, 1fr) 4.15in; grid-template-rows: minmax(0, 1fr); }
 .stack2 { grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+/* Two elevations side by side: a tall deck is drawn larger in two narrow, tall frames (plan-set ElevationsSheet). */
+.beside2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+/* …with the width shared toward the one whose lettering needs it (lib/deck/plans/paper ELEVATION_SHARES). */
+.beside35 { grid-template-columns: minmax(0, 35fr) minmax(0, 65fr); grid-template-rows: minmax(0, 1fr); }
+.beside40 { grid-template-columns: minmax(0, 40fr) minmax(0, 60fr); grid-template-rows: minmax(0, 1fr); }
+.beside45 { grid-template-columns: minmax(0, 45fr) minmax(0, 55fr); grid-template-rows: minmax(0, 1fr); }
+.beside55 { grid-template-columns: minmax(0, 55fr) minmax(0, 45fr); grid-template-rows: minmax(0, 1fr); }
+.beside60 { grid-template-columns: minmax(0, 60fr) minmax(0, 40fr); grid-template-rows: minmax(0, 1fr); }
+.beside65 { grid-template-columns: minmax(0, 65fr) minmax(0, 35fr); grid-template-rows: minmax(0, 1fr); }
 .sections { grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); }
 .details { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); }
 .detail { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 3pt; min-height: 0; min-width: 0; border-bottom: 0.6pt solid var(--hair); padding-bottom: 3pt; }
