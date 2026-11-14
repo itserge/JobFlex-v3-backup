@@ -252,6 +252,17 @@ export function RoofLabStage({ id, drawing, startView }: { id: string; drawing: 
 
   return (
     <div>
+      {/* THE ROOF REPORT (2026-11-13, owner: "show it only for admin for testing"): this roof as the sellable PDF
+          report (lib/roofReport) — the contractor's copy with the order list, the homeowner's without. */}
+      <div className={r.tools} data-roof-report-links>
+        <span className={r.caption}>Roof report PDF · admin test</span>
+        <a className="btn btn-ghost" href={`/api/admin/roof-report/pdf?id=${encodeURIComponent(id)}&copy=contractor`} target="_blank" rel="noopener" data-roof-report="contractor">
+          Contractor copy
+        </a>
+        <a className="btn btn-ghost" href={`/api/admin/roof-report/pdf?id=${encodeURIComponent(id)}&copy=homeowner`} target="_blank" rel="noopener" data-roof-report="homeowner">
+          Homeowner copy
+        </a>
+      </div>
       <div className={r.tools}>
         <div className={r.seg} role="group" aria-label="View">
           <button type="button" className={shown === "photo" ? r.segOn : ""} disabled={!drawing.photo || photoFailed} onClick={() => setView("photo")}>
