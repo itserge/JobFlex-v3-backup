@@ -440,7 +440,7 @@ export function RoofLabStage({ id, drawing, startView }: { id: string; drawing: 
                   <span className={r.letterBox}>{f.letter}</span>
                 </td>
                 <td className={r.keep}>{f.part}</td>
-                <td className={r.keep}>{f.facing ? (FACING_WORDS[f.facing] ?? f.facing) : "—"}</td>
+                <td className={r.keep}>{f.round ? "Round" : f.facing ? (FACING_WORDS[f.facing] ?? f.facing) : "—"}</td>
                 <td className={r.num}>{f.pitchLabel}</td>
                 <td className={r.num}>{whole(f.areaSqft)}</td>
                 <td className={r.num}>{(f.areaSqft / 100).toFixed(2)}</td>
