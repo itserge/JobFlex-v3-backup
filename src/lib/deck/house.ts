@@ -47,6 +47,32 @@ export interface HouseJog {
   dir: JogDir;
   depthFt: number;
 }
+/**
+ * A PART OF THE WALL WITH ITS OWN HEIGHT AND ROOF (2026-11-13, owner, of a photo of a two-storey house whose right
+ * half is one storey under a low roof of its own: "when you convert the picture to 3D, use the same roof … make it
+ * smart to understand the jogs"). Until now every part stood under the house's one roof, a bump-out one storey or
+ * full height for the whole house at once.
+ *   storeys  how many storeys of wall THIS part's own face has. Absent = the old rule: as tall as the house, a
+ *            bump-out by `bumpOuts`.
+ *   roof     the part's own roof when it stands lower than the house's (or comes out under a roof of its own):
+ *            a lean-to against the taller wall ("shed"), a hip, a gable, a flat roof. Absent = the house's kind.
+ *   wing     the part is ALL the house there is at that spot — a one-storey wing beside the two-storey block, no
+ *            taller wall behind or above it. Absent = a one-storey part in front of the taller house (its upper
+ *            windows stay on the wall above it).
+ */
+export type PartRoof = "hip" | "gable" | "shed" | "flat";
+export const PART_ROOFS: readonly PartRoof[] = ["shed", "hip", "gable", "flat"];
+export const PART_ROOF_LABEL: Record<PartRoof, string> = { shed: "Lean-to", hip: "Hip", gable: "Gable", flat: "Flat" };
+export interface HousePart {
+  storeys?: 1 | 2;
+  roof?: PartRoof;
+  wing?: true;
+}
+/** A part's own entry, when the list still matches the wall's parts (a step added or taken away since makes it stale: it is then ignored). */
+export function housePartAt(house: Pick<HouseDesign, "parts" | "jogs">, i: number): HousePart | null {
+  return house.parts && house.parts.length === house.jogs.length + 1 ? (house.parts[i] ?? null) : null;
+}
+
 export interface HouseDesign {
   storeys: 1 | 2;
   /** Ground to eave at the photo's scale. Absent on houses drawn by rule. */
@@ -65,6 +91,8 @@ export interface HouseDesign {
   pitch?: number;
   /** A two-storey house's bump-outs: one storey tall (the rule) or as tall as the house (as a photo shows them). Absent = one storey. */
   bumpOuts?: "low" | "full";
+  /** Each part of the wall, left to right (one more than the steps), where it has a height or a roof of its own; null = by the rule. */
+  parts?: Array<HousePart | null> | null;
   /** The windows and doors where they really are (2026-10-23, built from a photo). Absent or null = drawn by rule: a door on the deck's main back edge, windows every 5 ft. */
   openings?: HouseOpening[] | null;
   /** The photo the house was built from. */
@@ -178,6 +206,18 @@ export function normalizeHouse(raw: unknown, shape: DeckShape): HouseDesign {
   if (HOUSE_MATERIALS.includes(r.material as HouseMaterial) && r.material !== "lap") out.material = r.material as HouseMaterial;
   if (typeof r.pitch === "number" && Number.isFinite(r.pitch)) out.pitch = half(clamp(r.pitch, HOUSE_PITCH_LIMITS.min, HOUSE_PITCH_LIMITS.max));
   if (r.bumpOuts === "full") out.bumpOuts = "full";
+  // The parts' own heights and roofs: kept only while they still line up with the steps as read back.
+  if (Array.isArray(r.parts) && Array.isArray(r.jogs) && spaced.length === r.jogs.length && r.parts.length === spaced.length + 1) {
+    const parts = r.parts.map((raw): HousePart | null => {
+      const o = obj(raw);
+      const part: HousePart = {};
+      if (o.storeys === 1 || o.storeys === 2) part.storeys = o.storeys;
+      if (PART_ROOFS.includes(o.roof as PartRoof)) part.roof = o.roof as PartRoof;
+      if (o.wing === true) part.wing = true;
+      return part.storeys || part.roof || part.wing ? part : null;
+    });
+    if (parts.some(Boolean)) out.parts = parts;
+  }
   if (typeof r.eaveHeightFt === "number" && Number.isFinite(r.eaveHeightFt) && r.eaveHeightFt >= 4 && r.eaveHeightFt <= 60) out.eaveHeightFt = toInchFt(r.eaveHeightFt);
   if (Array.isArray(r.openings)) out.openings = normalizeOpenings(r.openings, -leftFt, W + rightFt);
   const photo = normalizeHousePhoto(r.photo);
@@ -453,22 +493,62 @@ export function houseScene(shape: DeckShape, house: HouseDesign, ctx: { deckHeig
   for (const [d, w] of faceWidth) if (w > widest + 1e-9 || (Math.abs(w - widest) < 1e-9 && Math.abs(d) < Math.abs(mainFace))) [mainFace, widest] = [d, w];
   const pitch = roofPitch(house);
   const blocks: number[][] = [];
-  const roofs: number[][] = [[ROOF_PIECE[house.roof], r2(Math.min(...parts.map((p) => p.x0))), r2(mainFace - HOUSE_BODY_FT), r2(Math.max(...parts.map((p) => p.x1))), mainFace, mainH, pitch]];
+  const roofs: number[][] = [];
   /** Each part's wall height (its block's, or its bump-out's). */
   const partH: number[] = [];
-  for (const p of parts) {
+  /** Over a one-storey part standing in front of the taller house: the wall above it (its face, its top), where its upper windows are. */
+  const above: Array<{ face: number; top: number; from: number } | null> = [];
+  // EACH PART BY WHAT IT IS (2026-11-13): as tall as the house under the main roof; one storey in front of the taller
+  // house under a roof of its own (a lean-to unless seen otherwise); or a one-storey WING beside the taller block —
+  // all the house there is at that spot, under its own roof, the main roof ending where the wing begins.
+  const kinds = parts.map((p, i) => {
+    const own = housePartAt(house, i);
     const out = p.depthFt > mainFace + 0.5;
+    const low = house.storeys === 2 && (own?.storeys ? own.storeys === 1 : out && house.bumpOuts !== "full");
+    // a low part that does not come out has no taller wall to stand in front of: it is a wing whether marked or not
+    const wing = low && (own?.wing === true || !out);
+    return { own, out, low, wing };
+  });
+  // the main roof: one over every run of parts that are not wings
+  for (let i = 0; i < parts.length; ) {
+    if (kinds[i].wing) { i++; continue; }
+    let j = i;
+    while (j + 1 < parts.length && !kinds[j + 1].wing) j++;
+    roofs.push([ROOF_PIECE[house.roof], parts[i].x0, r2(mainFace - HOUSE_BODY_FT), parts[j].x1, mainFace, mainH, pitch]);
+    i = j + 1;
+  }
+  parts.forEach((p, i) => {
+    const { own, out, low, wing } = kinds[i];
+    const ownPitch = (kind: PartRoof | undefined) => (kind === "flat" ? HOUSE_PITCH_DEFAULT.flat : kind === "shed" ? Math.min(pitch, 4) : pitch);
+    if (wing) {
+      // the wing: one block from the back of the house to its own face, under its own roof
+      blocks.push([p.x0, r2(mainFace - HOUSE_BODY_FT), p.x1, p.depthFt, lowH]);
+      const kind: HouseRoof = own?.roof ?? (house.roof === "gable-end" ? "gable" : house.roof);
+      roofs.push([ROOF_PIECE[kind], p.x0, r2(mainFace - HOUSE_BODY_FT), p.x1, p.depthFt, lowH, ownPitch(own?.roof)]);
+      partH.push(lowH);
+      above.push(null);
+      return;
+    }
     blocks.push([p.x0, r2(mainFace - HOUSE_BODY_FT), p.x1, out ? mainFace : p.depthFt, mainH]);
     if (out) {
-      const h = house.storeys === 2 && house.bumpOuts !== "full" ? lowH : mainH;
+      const h = low ? lowH : mainH;
       blocks.push([p.x0, mainFace, p.x1, p.depthFt, h]);
-      roofs.push([BUMP_PIECE[house.roof], p.x0, mainFace, p.x1, p.depthFt, h, pitch]);
+      roofs.push([own?.roof ? BUMP_PIECE[own.roof] : BUMP_PIECE[house.roof], p.x0, mainFace, p.x1, p.depthFt, h, own?.roof ? ownPitch(own.roof) : pitch]);
       partH.push(h);
-    } else partH.push(mainH);
-  }
+      // the upper storey's windows over a low part are on the house's wall behind it, above where the low roof
+      // meets that wall (a lean-to climbs all the way to it; a hip or a gable to its ridge)
+      const kind = own?.roof ?? (house.roof === "gable-end" ? "gable" : house.roof);
+      const run = kind === "shed" ? p.depthFt - mainFace : kind === "flat" ? 0 : kind === "gable" ? (p.x1 - p.x0) / 2 : Math.min(p.depthFt - mainFace, (p.x1 - p.x0) / 2);
+      const meets = h + (run * (own?.roof ? ownPitch(own.roof) : pitch)) / 12 + 0.5;
+      above.push(low && own?.storeys === 1 ? { face: mainFace, top: mainH, from: r2(meets) } : null);
+    } else {
+      partH.push(mainH);
+      above.push(null);
+    }
+  });
   const look = { storeys: house.storeys, roof: house.roof, siding: sidingHex(house.siding), roofColour: roofHex(house.roofColour), roofs, ...(house.material && house.material !== "lap" ? { material: house.material } : {}) };
   if (house.openings) {
-    const placed = placeOpenings(house.openings, parts, partH, house.eaveHeightFt !== undefined);
+    const placed = placeOpenings(house.openings, parts, partH, house.eaveHeightFt !== undefined, above);
     const ref = ctx.mainEdge ? (ctx.mainEdge.x0 + ctx.mainEdge.x1) / 2 : referenceX(shape);
     const main = placed.doors.slice().sort((a, b) => Math.abs(a[0] - ref) - Math.abs(b[0] - ref))[0];
     return { blocks, heightFt: mainH, door: main ? [main[0], main[2], main[3], main[1]] : null, windows: placed.windows, doors: placed.doors, ...look };
@@ -619,7 +699,7 @@ export function settleSceneOpenings(windows: number[][] | undefined, doors: numb
  * that part, dropped when it would stand above that part's wall (an upper-storey window over a one-storey bump-out)
  * or when nothing of it is left — and none of them on another's spot (settleOpeningRects).
  */
-function placeOpenings(openings: HouseOpening[], parts: WallPart[], partH: number[], fromPhoto = false): { windows: number[][]; doors: number[][] } {
+function placeOpenings(openings: HouseOpening[], parts: WallPart[], partH: number[], fromPhoto = false, above: ReadonlyArray<{ face: number; top: number; from: number } | null> = []): { windows: number[][]; doors: number[][] } {
   const placed: OpeningRect[] = [];
   for (const o of openings) {
     const i = partAt(parts, o.xFt);
@@ -632,7 +712,15 @@ function placeOpenings(openings: HouseOpening[], parts: WallPart[], partH: numbe
     // A window that starts above the part's top stands over a lower part's roof — no window of this wall. One that
     // starts inside the part but runs into the frieze (a transom just under the eave, read off a photo) is brought
     // down to fit under it rather than left out (2026-10-25).
-    if (o.sillFt >= top) continue;
+    if (o.sillFt >= top) {
+      // …unless the house's own wall stands above that roof (a one-storey part in front of a two-storey house): a
+      // window up there is the upper storey's, on the wall behind, clear of the low roof's top edge (2026-11-13).
+      const up = above[i];
+      if (!up || o.kind !== "window") continue;
+      const y0 = Math.max(o.sillFt, up.from), y1 = Math.min(o.sillFt + o.heightFt, up.top - (fromPhoto ? 0 : 0.6));
+      if (y1 - y0 >= 0.75) placed.push({ kind: o.kind, x0, x1, y0, y1, face: up.face });
+      continue;
+    }
     const sill = !fromPhoto && o.sillFt + o.heightFt > top ? Math.max(0, top - o.heightFt) : o.sillFt;
     const h = Math.min(o.heightFt, top - sill);
     if (h < 0.75) continue;

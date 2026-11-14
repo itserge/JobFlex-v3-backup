@@ -19,7 +19,7 @@
 // The same read and the same picture always build the same house, so the QA script can prove it.
 
 import { baseYAt, DOOR_HEIGHT_FT, JOG_DEFAULT_FT, scaleFromRead, type PhotoScale } from "./photoFit";
-import { HOUSE_LIMITS, OPENING_LIMITS, isHouseHex, settleOpenings, toInchFt, wallParts, type HouseDesign, type HouseHex, type HouseJog, type HouseMaterial, type HouseOpening, type HousePhoto, type HouseRoof } from "./house";
+import { HOUSE_LIMITS, OPENING_LIMITS, isHouseHex, settleOpenings, toInchFt, wallParts, type HouseDesign, type HouseHex, type HouseJog, type HouseMaterial, type HouseOpening, type HousePart, type HousePhoto, type HouseRoof } from "./house";
 import type { HouseRead } from "./houseRead";
 
 export interface PhotoHouseInput {
@@ -174,8 +174,36 @@ export function houseFromPhoto(input: PhotoHouseInput): PhotoHouse | null {
   seen.sort((a, b) => a.xFt - b.xFt || a.sillFt - b.sillFt);
   // None of them on another's spot: a window marked inside a door is the door's own glass (2026-11-13).
   const openings = settleOpenings(seen);
-  // Every step of the wall runs the house's full height: the wall's shape, under the one roof.
-  const tallBump = storeys === 2 && wallParts({ ...input.house, leftFt, rightFt, jogs }, { kind: "rect", widthFt: W, depthFt: 12 }).some((p) => p.depthFt > 0.4);
+  // EACH PART'S OWN HEIGHT AND ROOF (2026-11-13, owner: "use the same roof as the picture"): a part the read saw one
+  // storey tall under a lower roof of its own is built that way; every other step of the wall runs the house's full
+  // height under the one roof, as before (a porch roof in front of the wall is never a part — the read leaves it out).
+  const partEnds = (() => {
+    const left = Math.min(read.base.left.x, read.base.right.x), right = Math.max(read.base.left.x, read.base.right.x);
+    const kept = read.jogs.filter((j) => j.depthFt === null || j.depthFt >= 0.25).slice(0, HOUSE_LIMITS.jogs).map((j) => j.x);
+    return [left, ...kept, right];
+  })();
+  const parts: Array<HousePart | null> = partEnds.slice(0, -1).map((x0, i) => {
+    const x1 = partEnds[i + 1];
+    let best: NonNullable<HouseRead["heights"]>[number] | null = null, most = 0;
+    for (const h of read.heights ?? []) {
+      const over = Math.min(x1, h.x1) - Math.max(x0, h.x0);
+      if (over > most) { most = over; best = h; }
+    }
+    if (!best || most < 0.5 * (x1 - x0)) return null;
+    const part: HousePart = {};
+    if (storeys === 2 && best.storeys === 1) part.storeys = 1;
+    if (best.roof) part.roof = best.roof;
+    if (storeys === 2 && best.storeys === 1 && best.wing) part.wing = true;
+    return part.storeys || part.roof ? part : null;
+  });
+  const shapeOfWall = wallParts({ ...input.house, leftFt, rightFt, jogs }, { kind: "rect", widthFt: W, depthFt: 12 });
+  const tallBump = storeys === 2 && shapeOfWall.some((p, i) => p.depthFt > 0.4 && parts[i]?.storeys !== 1);
+  const where = (i: number) => (parts.length <= 1 ? "the wall" : i === 0 ? "the left part" : i === parts.length - 1 ? "the right part" : parts.length === 3 ? "the middle part" : `part ${i + 1}`);
+  const ownWords = parts.flatMap((part, i) => {
+    if (!part) return [];
+    const roofWord = part.roof ? (part.roof === "shed" ? "a lean-to roof" : `its own ${part.roof} roof`) : "its own roof";
+    return part.storeys === 1 ? [`${where(i)} one storey under ${roofWord}${part.wing ? " (a wing)" : ""}`] : part.roof ? [`${where(i)} under ${roofWord}`] : [];
+  });
 
   // THE DECK'S HEIGHT from the back door: an inch under its threshold.
   // A partial door is not a reliable threshold. Keep the current deck height until
@@ -195,6 +223,7 @@ export function houseFromPhoto(input: PhotoHouseInput): PhotoHouse | null {
     roofColour: roofColour ?? input.house.roofColour,
     material,
     bumpOuts: "full",
+    parts: parts.some(Boolean) ? parts : null,
     openings,
     // Keep the photo's vertical scale as well as its horizontal scale. A fixed two-storey
     // height used to discard upper windows and push a transom down into the entry door.
@@ -209,7 +238,7 @@ export function houseFromPhoto(input: PhotoHouseInput): PhotoHouse | null {
   const scaleWords = scale.by === "width" ? "the wall's width you typed" : scale.by === "line" ? (read.scaleLine?.kind === "storey" ? `one storey of the wall, window head to window head (${ftIn(read.scaleLine.lengthIn)})` : "your measure on the picture") : scale.by === "door" ? `the back door (${ftIn(DOOR_HEIGHT_FT)} tall)` : scale.by === "eave" ? `${storeys === 2 ? "two storeys" : "one storey"} of wall to the eave` : "nothing";
   const rough = scale.by === "eave";
   facts.push({ id: "wall", label: "Wall", value: `≈ ${ftIn(Math.round(wallFt * 2) / 2)} wide · sized by ${scaleWords}`, guess: rough });
-  facts.push({ id: "storeys", label: "House", value: `${storeys === 2 ? "Two storeys" : "One storey"} · ${read.roof.kind ? ROOF_WORDS[read.roof.kind] : `${roof} roof (not seen — kept)`}${read.roof.pitch ? ` · about ${read.roof.pitch}/12` : ""}`, guess: !read.storeys || !read.roof.kind });
+  facts.push({ id: "storeys", label: "House", value: `${storeys === 2 ? "Two storeys" : "One storey"} · ${read.roof.kind ? ROOF_WORDS[read.roof.kind] : `${roof} roof (not seen — kept)`}${read.roof.pitch ? ` · about ${read.roof.pitch}/12` : ""}${ownWords.length ? ` · ${ownWords.join(", ")}` : ""}`, guess: !read.storeys || !read.roof.kind });
   facts.push({ id: "steps", label: "Steps", value: jogs.length ? `${plural(jogs.length, "step")} in the wall — ${jogs.map((j) => `${j.dir === "toward" ? "out" : "back"} ${ftIn(j.depthFt)}`).join(", ")}${tallBump ? " · the bump-out is as tall as the house" : ""}` : "A straight wall", guess: unsizedSteps > 0 });
   const winCount = openings.filter((o) => o.kind === "window").length;
   const stoodDoors = openings.filter((o) => o.kind !== "window");

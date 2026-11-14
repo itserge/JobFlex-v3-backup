@@ -21,7 +21,7 @@ import { createPortal } from "react-dom";
 import { Camera, ImagePlus, RotateCcw, Users, X } from "lucide-react";
 import type { DeckDesign } from "@/lib/deck/design";
 import type { DeckPatch } from "@/lib/deck/checks";
-import { isHouseHex, settleOpenings, type HousePhoto } from "@/lib/deck/house";
+import { PART_ROOFS, PART_ROOF_LABEL, isHouseHex, settleOpenings, type HousePhoto, type PartRoof } from "@/lib/deck/house";
 import {
   addReadDoor,
   addReadJog,
@@ -36,6 +36,8 @@ import {
   mainSection,
   readSections,
   setSectionOut,
+  sectionHeights,
+  setSectionHeight,
   removeReadDoor,
   removeReadJog,
   removeReadWindow,
@@ -790,6 +792,9 @@ export function HousePhotoReview({ hp, design }: { hp: HousePhotoState; design: 
   const eaveY = (x: number) => (read.eave ? lineY(read.eave, x) : lineY(read.base, x) - 0.25);
   const secSel = sel?.kind === "sec" && sections[sel.i] ? sel.i : null;
   const mainAt = mainSection(sections);
+  // Each part's own height and roof (2026-11-13): one storey under a lower roof of its own, where the house is two.
+  const heights = sectionHeights(read);
+  const twoStoreys = (b?.house.storeys ?? read.storeys) === 2;
   const setOut = (i: number, outFt: number) => {
     const next = setSectionOut(read, i, outFt);
     setRead(next);
@@ -1046,6 +1051,45 @@ export function HousePhotoReview({ hp, design }: { hp: HousePhotoState; design: 
                   ) : null}
                     </>
                   )}
+                  {twoStoreys ? (() => {
+                    const cur = heights[secSel];
+                    const low = cur?.storeys === 1;
+                    const out = sections[secSel].outFt > 0;
+                    const set = (to: { storeys: 1 | 2 | null; roof: PartRoof | null; wing: boolean } | null) => setRead(setSectionHeight(read, secSel, to));
+                    return (
+                      <span className="v1-hp-sec-height" data-deck-house-section-height={low ? "one" : "house"}>
+                        <span className="v1-lbl">Its height</span>
+                        <span className="v1-seg" role="group" aria-label="How tall this part is">
+                          <button type="button" className={cx("v1-seg-btn", !low && "is-on")} aria-pressed={!low} onClick={() => set(null)} data-deck-house-section-storeys="house">
+                            As the house
+                          </button>
+                          <button type="button" className={cx("v1-seg-btn", low && "is-on")} aria-pressed={low} onClick={() => set({ storeys: 1, roof: cur?.roof ?? "shed", wing: out ? (cur?.wing ?? false) : true })} data-deck-house-section-storeys="one">
+                            One storey
+                          </button>
+                        </span>
+                        {low ? (
+                          <>
+                            <span className="v1-lbl">Its roof</span>
+                            <span className="v1-seg" role="group" aria-label="This part's own roof">
+                              {PART_ROOFS.map((k) => (
+                                <button key={k} type="button" className={cx("v1-seg-btn", (cur?.roof ?? "shed") === k && "is-on")} aria-pressed={(cur?.roof ?? "shed") === k} onClick={() => set({ storeys: 1, roof: k, wing: cur?.wing ?? !out })} data-deck-house-section-roof={k}>
+                                  {PART_ROOF_LABEL[k]}
+                                </button>
+                              ))}
+                            </span>
+                            {out ? (
+                              <label className="v1-hp-sec-wing">
+                                <input type="checkbox" checked={cur?.wing ?? false} onChange={(e) => set({ storeys: 1, roof: cur?.roof ?? "shed", wing: e.target.checked })} data-deck-house-section-wing />
+                                <span>Nothing of the house above it (a wing)</span>
+                              </label>
+                            ) : (
+                              <span className="v1-hp-sec-note">A one-storey wing beside the taller house, under its own roof.</span>
+                            )}
+                          </>
+                        ) : null}
+                      </span>
+                    );
+                  })() : null}
                 </div>
               ) : null}
               <div className="v1-row-acts v1-hp-tools">
