@@ -36,6 +36,7 @@ import {
   type RoofDesign,
   type RoofKind,
   type StairDesign,
+  type StairTurnKind,
   type StairSide,
 } from "../design";
 import { patchDesign, patchRoof, switchStructure } from "../edit";
@@ -48,7 +49,8 @@ import { DECK_SAMPLES } from "../samples";
 import { autoFixDesign, settleDesign } from "../settle";
 import { deckLoadForSnow } from "../site";
 import { buildStructure } from "../structure";
-import { COLORS, FIXTURE_SAY, type Amount, type DeckCommand, type DeckingSet, type Look, type RoofSet } from "./commands";
+import { COLORS, FIXTURE_SAY, type Amount, type DeckCommand, type DeckingSet, type Look, type RoofSet, type StairTurnSaid } from "./commands";
+import { stairDirAfter, stairTurnWords, type StairDir } from "../stairs";
 import { firstSentence, ftWords, halfFt, inWords } from "./words";
 
 export interface RunEnv extends DeckPriceOptions {
@@ -1130,6 +1132,41 @@ function runRail(d: DeckDesign, s: import("./commands").RailSet, settle: (x: Dec
   return out(next, said, { touched, flash: [{ label: s.mount ? "How the posts are mounted" : s.heightIn ? "Rail height" : "Your railing" }] });
 }
 
+/**
+ * A landing on a stair, as it was said (2026-11-14). "Add" — or a height, or the first time a turn is asked for — puts a
+ * new landing in the middle of the tallest flight (or at the height said); a turn alone re-turns the last landing.
+ * Left and right are as the deck is SEEN from the yard, so they are worked out from the way the flight above runs.
+ */
+function stairTurned(d: DeckDesign, st: StairDesign, turn: StairTurnSaid, atIn?: number): StairDesign {
+  if (turn === "remove") return { ...st, landings: [] };
+  const b = buildStructure(d).stairs.find((x) => x.design.id === st.id);
+  if (!b || b.kind !== "flight" || !b.flights.length) return st;
+  const mine = b.landings.filter((l) => !l.auto);
+  const fresh = turn === "add" || atIn !== undefined || mine.length === 0;
+  const startDir: StairDir = st.side === "front" ? "out" : st.side;
+  const dirOfFlight = (k: number): StairDir => (k <= 0 ? startDir : stairDirAfter(b.landings[k - 1]?.dir ?? startDir, b.landings[k - 1]?.turn ?? "straight"));
+  let landings = st.landings;
+  let id: string;
+  let dirIn: StairDir;
+  if (fresh) {
+    if (landings.length >= STAIR_LIMITS.landings) return st;
+    const k = atIn !== undefined ? Math.max(0, b.flights.findIndex((f) => atIn < f.topIn && atIn > f.topIn - f.riseIn)) : b.flights.reduce((m, f, i) => (f.riseIn > b.flights[m].riseIn ? i : m), 0);
+    const f = b.flights[k];
+    id = `t${[1, 2, 3, 4, 5, 6, 7, 8, 9].find((n) => !landings.some((l) => l.id === `t${n}`)) ?? 9}`;
+    dirIn = dirOfFlight(k);
+    landings = [...landings, { id, heightIn: Math.round(atIn ?? f.topIn - f.riseIn / 2), turn: "straight" }];
+  } else {
+    const last = mine[mine.length - 1];
+    id = last.id;
+    dirIn = last.dir;
+  }
+  // "Add" alone: the first landing turns toward the open yard, a later one runs straight on.
+  const said: StairTurnSaid = turn === "add" ? (mine.length ? "straight" : st.side === "front" ? (st.atFt * 12 < (d.shape.widthFt * 12) / 2 ? "left" : "right") : "yard") : turn;
+  const wanted: StairDir | null = said === "left" ? "left" : said === "right" ? "right" : said === "house" ? "in" : said === "yard" ? "out" : null;
+  const rel: StairTurnKind = said === "straight" ? "straight" : said === "back" ? "back-left" : (["left", "right"] as const).find((q) => stairDirAfter(dirIn, q) === wanted) ?? (said === "left" || said === "right" ? said : "straight");
+  return { ...st, landings: landings.map((l) => (l.id === id ? { ...l, turn: rel } : l)) };
+}
+
 function runStairs(d: DeckDesign, cmd: Extract<DeckCommand, { do: "stairs" }>, settle: (x: DeckDesign) => DeckDesign, out: Out, no: No): Outcome {
   if (!hasDeck(d)) return no("There's no deck to step down from.");
   const list = d.stairs;
@@ -1203,6 +1240,7 @@ function runStairs(d: DeckDesign, cmd: Extract<DeckCommand, { do: "stairs" }>, s
     if (cmd.landing) s2.landing = cmd.landing;
     if (cmd.handrail) s2.handrail = cmd.handrail;
     if (cmd.level) s2.level = cmd.level;
+    if (cmd.turn) s2 = stairTurned(d, s2, cmd.turn, cmd.turnAtIn);
     return s2;
   });
   const next = patchDesign(d, { stairs }, settle);
@@ -1218,6 +1256,13 @@ function runStairs(d: DeckDesign, cmd: Extract<DeckCommand, { do: "stairs" }>, s
   if (cmd.width) said.push(`Stairs ${ftWords(t.widthFt)} wide.`);
   if (cmd.wrap !== undefined) said.push(t.wrap ? "Box steps along the front." : "A regular flight.");
   if (cmd.landing) said.push(cmd.landing === "pad" ? "Onto a new concrete pad." : cmd.landing === "patio" ? "Onto the existing patio." : "Onto pavers.");
+  if (cmd.turn) {
+    const built = buildStructure(next).stairs.find((x) => x.design.id === t.id);
+    const mine = built?.landings.filter((l) => !l.auto) ?? [];
+    if (cmd.turn === "remove") said.push(built?.landings.length ? "Took the landings out — the code's own stays: this stair climbs more than 12 ft 3 in." : "Took the landings out: one straight flight.");
+    else if (!mine.length) said.push("There's no room for a landing on that stair — it needs a foot clear of the deck and the ground.");
+    else said.push(`${mine.length === 1 ? "A landing" : `${mine.length} landings`} — ${mine.map((l) => `${inWords(Math.round(l.heightIn))} up, then ${stairTurnWords(l.dir, l.turn).toLowerCase()}`).join("; ")}. ${built!.flights.length} flights, ${built!.risers} risers; each landing on its own posts.`);
+  }
   if (cmd.handrail) said.push(cmd.handrail === "both" ? "Handrails on both sides." : cmd.handrail === "one" ? "One handrail." : cmd.handrail === "none" ? "No handrail — the code wants one at 4 risers or more." : "Handrails where the code wants them.");
   const detail = stairWords(next, t.id);
   if (detail && (cmd.width || cmd.side)) said.push(`${detail[0].toUpperCase()}${detail.slice(1)}.`);

@@ -463,7 +463,7 @@ export function deckScene(s: DeckStructure): DeckScene {
         case "blocking":
           return `${lvl}${st.nominal} blocking between the joists, square-cut to the bay, toe-nailed.`;
         case "brace":
-          return `${lvl}2x4 knee brace cut at 45° both ends, a ½-in. lag at each end.`;
+          return `${lvl}${st.nominal} knee brace cut at 45° both ends, a ½-in. lag at each end.`;
         default:
           return st.role;
       }
@@ -727,7 +727,7 @@ export function deckScene(s: DeckStructure): DeckScene {
         case "roof-post":
           return `${m.nominal} roof post, ${roof.floor === "deck" ? "from its own footing up through the deck" : roof.floor === "slab" ? "on a base anchored to the slab" : "on its footing"}, capped for the header.`;
         case "roof-brace":
-          return "4x4 knee brace, 45° cuts both ends, a ½-in. lag each end — holds the roof square.";
+          return `${m.nominal} knee brace, 45° cuts both ends, a ½-in. lag each end — holds the roof square.`;
         case "purlin":
           return "2x4 purlin across the rafters at 24 in., the metal panels screwed to it.";
         case "slat":
@@ -1378,8 +1378,10 @@ export function memberBoxCorners(b: readonly number[], role: string | null): Sce
     w = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
     if (w[2] < 0) w = [-w[0], -w[1], -w[2]];
     su = L;
-    sv = Math.min(alongX ? sy : sx, 0.3);
-    sw = 0.3;
+    // Its two faces: a 2x4 is its thickness by 3 1/2 in., as it always was; a heavier brace (2026-11-14) is square.
+    const thick = alongX ? sy : sx;
+    sv = thick > 0.31 ? Math.min(thick, 0.7) : Math.min(thick, 0.3);
+    sw = thick > 0.31 ? sv : 0.3;
     tilt = Math.atan2(sz, Math.abs(run));
     isBrace = true;
   } else {

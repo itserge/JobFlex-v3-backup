@@ -29,7 +29,7 @@ import { GUARD_REQUIRED_ABOVE_IN, HANDRAIL_FROM_RISERS, RISER_MAX_IN, THICK_2X_I
 import { IRC_CODE, cite, inFrac, type DeckStateCode } from "./stateCodes";
 import { BAG_CUFT, footingFor, type Footing } from "./frame";
 import type { DeckingProduct } from "./catalog";
-import { railMountOf, type DeckDesign, type RailDesign, type RailMount, type StairDesign } from "./design";
+import { STAIR_LIMITS, railMountOf, type DeckDesign, type RailDesign, type RailMount, type StairDesign, type StairTurn, type StairTurnKind } from "./design";
 
 /* ------------------------------------------------------------------ */
 /*  Constants a stair builder would recognise                           */
@@ -58,6 +58,10 @@ export const STRINGER_MAX_SPAN_IN = 72;
 export const FLIGHT_MAX_RISE_IN = 147;
 /** IRC R311.7.6: a landing at least 36 in. in the direction of travel. */
 export const LANDING_DEPTH_IN = 36;
+/** A switchback's well: the gap between the flight coming down to a landing and the one going back from it, in. — room for both inner rails. */
+export const SWITCHBACK_GAP_IN = 6;
+/** IRC R311.7.2: 6 ft 8 in. of headroom over the nosings — a flight that runs back under the deck needs it under the deck's frame. */
+export const STAIR_HEADROOM_IN = 80;
 /** Box steps: three risers at most (Fine Homebuilding; past that, stringers). */
 export const BOX_STEP_MAX_RISERS = 3;
 export const PAD_THICK_IN = 4;
@@ -149,7 +153,16 @@ export interface StairBuild {
   lands: "ground" | "lower-deck";
   stringers: { count: number; nominal: string; lengthIn: number; spacingIn: number };
   midSupport: boolean;
+  /** It has a landing (its own, or one the code's 12 ft 3 in. asked for). */
   landing: boolean;
+  /**
+   * THE WAY DOWN (2026-11-14): the flights in order and the landings between them. One flight and no landing is the
+   * plain stair it always was. `path` is its centre line in plan, top to foot, through every turn.
+   */
+  flights: Array<{ risers: number; riserIn: number; riseIn: number; runIn: number; topIn: number }>;
+  /** `dir`: the way the flight that comes down to it runs, as the deck is seen from the yard (lib/deck/stairs StairDir). */
+  landings: Array<{ id: string; auto: boolean; heightIn: number; turn: StairTurnKind; dir: StairDir; widthIn: number; depthIn: number; posts: number; aboveGroundIn: number; x: number; y: number }>;
+  path: Array<{ x: number; y: number }>;
   pad: { lengthIn: number; widthIn: number; thickIn: number; cuFt: number; bags: number } | null;
   pavers: number;
   /** Sides with a rail built, sides the code wants one on, and the sloped length of rail on each. */
@@ -169,7 +182,124 @@ export interface StairBuild {
   boxBlocks: number;
   gravelSqFt: number;
   hardware: { stringerConnectors: number; anchors: number; postBases: number; railPostTies: number; riserLights: number; treadScrewsSqFt: number };
-  flags: { tooTallForBox: boolean; beyondRun: boolean; narrow: boolean };
+  /** `landingsLeftOut`: landings asked for that the climb has no room for (too near the deck, the ground or each other); `hitsHouse`: a flight or a landing runs into the house wall; `underDeckClearIn`: where it runs back under the deck, the headroom there (null: it does not). */
+  flags: { tooTallForBox: boolean; beyondRun: boolean; narrow: boolean; landingsLeftOut: string[]; hitsHouse: boolean; underDeckClearIn: number | null };
+}
+
+/** The way a flight runs going down, as the deck is seen from the yard with the house behind it: away from the house, toward it, to the left, to the right. */
+export type StairDir = "out" | "in" | "left" | "right";
+const dirOf = (n: { x: number; y: number }): StairDir => (Math.abs(n.y) >= Math.abs(n.x) ? (n.y > 0 ? "out" : "in") : n.x > 0 ? "right" : "left");
+const DIR_VEC: Record<StairDir, { x: number; y: number }> = { out: { x: 0, y: 1 }, in: { x: 0, y: -1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } };
+/** The walker's left, going down (x runs to the right as the deck is seen from the yard, y toward the yard). */
+const walkerLeft = (v: { x: number; y: number }) => ({ x: v.y, y: -v.x });
+/** The way the next flight runs after a turn at a landing reached running `dir`. */
+export function stairDirAfter(dir: StairDir, turn: StairTurnKind): StairDir {
+  const n = DIR_VEC[dir];
+  const l = walkerLeft(n);
+  return dirOf(turn === "straight" ? n : turn === "left" ? l : turn === "right" ? { x: -l.x, y: -l.y } : { x: -n.x, y: -n.y });
+}
+const DIR_WORDS: Record<StairDir, string> = { out: "away from the house", in: "toward the house", left: "to the left", right: "to the right" };
+const SIDE_WORDS: Record<StairDir, string> = { out: "on the yard side", in: "on the house side", left: "on the left", right: "on the right" };
+/**
+ * A turn in plain words, as the deck is SEEN — from the yard, the house behind it — not as the walker turns (walking
+ * down a front stair faces the yard, so the walker's left is the right of the picture: "turn left" went right).
+ * "Straight on", "Turn to the left", "Turn toward the house", "Back, on the right".
+ */
+export function stairTurnWords(dir: StairDir, turn: StairTurnKind): string {
+  if (turn === "straight") return "Straight on";
+  if (turn === "left" || turn === "right") return `Turn ${DIR_WORDS[stairDirAfter(dir, turn)]}`;
+  return `Back, ${SIDE_WORDS[stairDirAfter(dir, turn === "back-left" ? "left" : "right")]}`;
+}
+
+/** The turns in the order a builder reads them for a landing reached running `dir`: straight on, then the quarter turns and the switchbacks — the left one (or the one toward the house) first. */
+export function stairTurnsInOrder(dir: StairDir): StairTurnKind[] {
+  const rank: Record<StairDir, number> = { left: 0, in: 1, out: 2, right: 3 };
+  const byWay = (a: StairTurnKind, b: StairTurnKind) => rank[stairDirAfter(dir, a.replace("back-", "") as StairTurnKind)] - rank[stairDirAfter(dir, b.replace("back-", "") as StairTurnKind)];
+  return ["straight", ...(["left", "right"] as StairTurnKind[]).sort(byWay), ...(["back-left", "back-right"] as StairTurnKind[]).sort(byWay)];
+}
+
+/** One flight of a stair: how far it climbs, in how many risers, from where to where, and the landing at its foot (none under the last). */
+export interface StairLeg {
+  riseIn: number;
+  risers: number;
+  riserIn: number;
+  topIn: number;
+  footIn: number;
+  landing: { id: string; turn: StairTurnKind; auto: boolean } | null;
+}
+
+/**
+ * THE CLIMB CUT INTO FLIGHTS (2026-11-14). The builder's landings that fit — each two risers at least from the deck,
+ * the ground and the next landing — and then a straight landing wherever a flight would still climb past the code's
+ * 12 ft 3 in. Each flight's risers are its own (the code lets the riser differ either side of a landing), aimed at
+ * 7 1/2 in. and never over 7 3/4.
+ */
+export function stairLegs(topIn: number, footIn: number, turns: readonly StairTurn[] = []): { legs: StairLeg[]; leftOut: string[] } {
+  const apart = STAIR_LIMITS.landingApartIn;
+  const fit: StairTurn[] = [];
+  const leftOut: string[] = [];
+  for (const t of [...turns].sort((a, b) => b.heightIn - a.heightIn)) {
+    const above = fit.length ? fit[fit.length - 1].heightIn : topIn;
+    if (t.heightIn <= above - apart + 1e-6 && t.heightIn >= footIn + apart - 1e-6) fit.push(t);
+    else leftOut.push(t.id);
+  }
+  const cuts: Array<{ z: number; landing: StairLeg["landing"] }> = [...fit.map((t) => ({ z: t.heightIn, landing: { id: t.id, turn: t.turn, auto: false } })), { z: footIn, landing: null }];
+  const legs: StairLeg[] = [];
+  let top = topIn;
+  for (const c of cuts) {
+    const rise = top - c.z;
+    const parts = Math.max(1, Math.ceil(rise / FLIGHT_MAX_RISE_IN - 1e-9));
+    for (let k = 1; k <= parts; k++) {
+      const foot = k === parts ? c.z : top - rise / parts;
+      const r = stairRisers(top - foot);
+      legs.push({ riseIn: top - foot, risers: r, riserIn: r > 0 ? (top - foot) / r : 0, topIn: top, footIn: foot, landing: k === parts ? c.landing : { id: `auto${legs.length + 1}`, turn: "straight", auto: true } });
+      top = foot;
+    }
+  }
+  return { legs, leftOut };
+}
+
+/** The outline of rectangles that touch, as one ring — from (0, 0) along the first one's near edge and on round. Rectangles are [a0, b0, a1, b1]. */
+function rectsOutline(rects: Array<[number, number, number, number]>): Array<[number, number]> {
+  const uniq = (v: number[]) => [...new Set(v.map((n) => Math.round(n * 100) / 100))].sort((p, q) => p - q);
+  const xs = uniq(rects.flatMap((r) => [r[0], r[2]]));
+  const ys = uniq(rects.flatMap((r) => [r[1], r[3]]));
+  const inside = (i: number, j: number) => {
+    if (i < 0 || j < 0 || i >= xs.length - 1 || j >= ys.length - 1) return false;
+    const cx = (xs[i] + xs[i + 1]) / 2;
+    const cy = (ys[j] + ys[j + 1]) / 2;
+    return rects.some((r) => cx > r[0] && cx < r[2] && cy > r[1] && cy < r[3]);
+  };
+  // Every side of a cell that faces the outside, pointing so the inside is on its left.
+  const edges = new Map<string, Array<[number, number]>>();
+  const key = (x: number, y: number) => `${x},${y}`;
+  const add = (x0: number, y0: number, x1: number, y1: number) => edges.set(key(x0, y0), [...(edges.get(key(x0, y0)) ?? []), [x1, y1]]);
+  for (let i = 0; i < xs.length - 1; i++) {
+    for (let j = 0; j < ys.length - 1; j++) {
+      if (!inside(i, j)) continue;
+      if (!inside(i, j - 1)) add(xs[i], ys[j], xs[i + 1], ys[j]);
+      if (!inside(i + 1, j)) add(xs[i + 1], ys[j], xs[i + 1], ys[j + 1]);
+      if (!inside(i, j + 1)) add(xs[i + 1], ys[j + 1], xs[i], ys[j + 1]);
+      if (!inside(i - 1, j)) add(xs[i], ys[j + 1], xs[i], ys[j]);
+    }
+  }
+  const start: [number, number] = edges.has(key(0, 0)) ? [0, 0] : (([...edges.keys()][0] ?? "0,0").split(",").map(Number) as [number, number]);
+  const ring: Array<[number, number]> = [start];
+  let at = start;
+  for (let guard = 0; guard < 400; guard++) {
+    const outs = edges.get(key(at[0], at[1]));
+    if (!outs || !outs.length) break;
+    const next = outs.shift() as [number, number];
+    if (next[0] === start[0] && next[1] === start[1]) break;
+    ring.push(next);
+    at = next;
+  }
+  // Points in the middle of a straight side say nothing.
+  return ring.filter((p, k) => {
+    const a = ring[(k + ring.length - 1) % ring.length];
+    const b = ring[(k + 1) % ring.length];
+    return Math.abs((p[0] - a[0]) * (b[1] - p[1]) - (p[1] - a[1]) * (b[0] - p[0])) > 1e-6;
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -236,8 +366,6 @@ export function buildStair(input: StairInput): StairBuild {
     nrm = { x: 1, y: 0 };
   }
   const P = (a: number, b: number): V2 => ({ x: O.x + u.x * a + nrm.x * b, y: O.y + u.y * a + nrm.y * b });
-  const yawU = Math.atan2(u.y, u.x);
-  const yawN = Math.atan2(nrm.y, nrm.x);
   const narrow = w < 36;
   const id = stair.id;
   void D;
@@ -246,15 +374,22 @@ export function buildStair(input: StairInput): StairBuild {
   const probe = (b: number) => P(w / 2, b);
   const lowerUnder = (p: V2) => !!input.lowerLevel && level.id === "upper" && p.x >= input.lowerLevel.x0 - 0.5 && p.x <= input.lowerLevel.x0 + input.lowerLevel.widthIn + 0.5 && p.y >= input.lowerLevel.y0 - 0.5 && p.y <= input.lowerLevel.y0 + input.lowerLevel.depthIn + 0.5;
   const footGuess = probe(TREAD_RUN_IN * 3);
-  const lands: StairBuild["lands"] = lowerUnder(footGuess) ? "lower-deck" : "ground";
-  const groundIn = lands === "lower-deck" ? input.lowerLevel!.surfaceIn : input.groundAt(footGuess.x, footGuess.y);
-  const landingTopIn = lands === "lower-deck" ? groundIn : stair.landing === "pad" ? groundIn + PAD_TOP_IN : stair.landing === "grade" ? groundIn + PAVER_TOP_IN : groundIn;
-  const riseIn = Math.max(0, level.surfaceIn - landingTopIn);
+  /** What the foot stands on and how high that is, read at a point of the plan. */
+  const footAt = (p: V2) => {
+    const on: StairBuild["lands"] = lowerUnder(p) ? "lower-deck" : "ground";
+    const g = on === "lower-deck" ? input.lowerLevel!.surfaceIn : input.groundAt(p.x, p.y);
+    return { on, g, top: on === "lower-deck" ? g : stair.landing === "pad" ? g + PAD_TOP_IN : stair.landing === "grade" ? g + PAVER_TOP_IN : g };
+  };
+  const foot0 = footAt(footGuess);
+  let lands: StairBuild["lands"] = foot0.on;
+  let groundIn = foot0.g;
+  let landingTopIn = foot0.top;
+  let riseIn = Math.max(0, level.surfaceIn - landingTopIn);
   // One riser or less is a step the level below already makes: nothing to build.
-  const risers = riseIn > (input.riserMaxIn ?? RISER_MAX_IN) ? stairRisers(riseIn) : 0;
-  const riserIn = risers > 0 ? riseIn / risers : 0;
+  let risers = riseIn > (input.riserMaxIn ?? RISER_MAX_IN) ? stairRisers(riseIn) : 0;
+  let riserIn = risers > 0 ? riseIn / risers : 0;
   const runIn = TREAD_RUN_IN;
-  const treads = Math.max(0, risers - 1);
+  let treads = Math.max(0, risers - 1);
   const guard = level.surfaceIn - (level.id === "upper" && lands === "lower-deck" ? groundIn : input.groundAt(O.x, O.y)) > GUARD_REQUIRED_ABOVE_IN;
 
   const hardware = { stringerConnectors: 0, anchors: 0, postBases: 0, railPostTies: 0, riserLights: 0, treadScrewsSqFt: 0 };
@@ -276,6 +411,12 @@ export function buildStair(input: StairInput): StairBuild {
   let railPosts = 0;
   let balusters = 0;
   let footprint: V2[] = [];
+  const flightsOut: StairBuild["flights"] = [];
+  const landingsOut: StairBuild["landings"] = [];
+  let path: V2[] = [];
+  let landingsLeftOut: string[] = [];
+  let hitsHouse = false;
+  let underDeckClearIn: number | null = null;
   const wantsBox = stair.wrap && stair.side === "front";
   const tooTallForBox = wantsBox && risers > BOX_STEP_MAX_RISERS;
   const kind: StairBuild["kind"] = wantsBox && !tooTallForBox ? "box" : "flight";
@@ -286,75 +427,151 @@ export function buildStair(input: StairInput): StairBuild {
   };
 
   if (kind === "flight" && risers > 0) {
-    /* ── a flight ──────────────────────────────────────────────────── */
-    // A landing splits a tall climb; the stringer's horizontal span past 6 ft gets a beam.
-    landing = riseIn > FLIGHT_MAX_RISE_IN;
-    const flights = landing ? 2 : 1;
-    const risersA = landing ? Math.ceil(risers / 2) : risers;
-    const risersB = risers - risersA;
-    const runA = (risersA - (landing ? 0 : 1)) * runIn;
-    totalRunIn = landing ? runA + LANDING_DEPTH_IN + (risersB - 1) * runIn : runA;
-    const theta = Math.atan2(riserIn, runIn);
-    const cosT = Math.cos(theta);
-    const sinT = Math.sin(theta);
+    /* ── the way down: flights, and the landings between them ─────── */
+    // One frame for each flight: O at its top-left looking down it, u along its width, n the way it runs. A landing
+    // hands the next flight a frame of its own — straight on, a quarter turn, or back beside the flight above.
+    type Frame = { O: V2; u: V2; n: V2 };
+    type Plat = { a0: number; a1: number; b0: number; b1: number };
+    const at2 = (F: Frame, a2: number, b2: number): V2 => ({ x: F.O.x + F.u.x * a2 + F.n.x * b2, y: F.O.y + F.u.y * a2 + F.n.y * b2 });
+    const yawOf = (v: V2) => Math.atan2(v.y, v.x);
+    const leftOf = walkerLeft;
     const count = Math.max(narrow ? 2 : 3, Math.floor((w - THICK_2X_IN) / stringerSpacing) + 1);
-    stringers.count = count * flights;
     const stringerAt: number[] = [];
     // The outer stringers an inch in from the treads' ends, the treads and risers running past them (2026-10-11: flush,
     // a tread's end lay in the stringer's face and the 3D flickered between them).
     for (let i = 0; i < count; i++) stringerAt.push(TREAD_PAST_STRINGER_IN + THICK_2X_IN / 2 + ((w - THICK_2X_IN - 2 * TREAD_PAST_STRINGER_IN) * i) / (count - 1));
 
-    /** One flight: `r` risers, its top riser face at (b0, zTop), landing on something at zTop − r·riser. */
-    const flight = (tag: string, r: number, b0: number, zTop: number, lastTreadIsLanding: boolean) => {
+    /** The legs laid out in plan for a foot at `footTop`: each flight's frame, its run, and the landing at its foot. */
+    const lay = (footTop: number) => {
+      const cut = stairLegs(level.surfaceIn, footTop, stair.landings);
+      const out: Array<{ leg: StairLeg; F: Frame; runF: number; plat: Plat | null }> = [];
+      let F: Frame = { O, u, n: nrm };
+      for (const leg of cut.legs) {
+        const runF = Math.max(0, leg.risers - 1) * runIn;
+        let plat: Plat | null = null;
+        let next = F;
+        if (leg.landing) {
+          const L = leftOf(F.n);
+          const leftIsPlus = F.u.x * L.x + F.u.y * L.y > 0;
+          const turn = leg.landing.turn;
+          const deep = Math.max(w, LANDING_DEPTH_IN);
+          if (turn === "straight") {
+            plat = { a0: 0, a1: w, b0: runF, b1: runF + LANDING_DEPTH_IN };
+            next = { O: at2(F, 0, runF + LANDING_DEPTH_IN), u: F.u, n: F.n };
+          } else if (turn === "left" || turn === "right") {
+            // A square landing; the next flight leaves by its left or right edge, its width along the way this one came.
+            const plus = (turn === "left") === leftIsPlus;
+            plat = { a0: 0, a1: w, b0: runF, b1: runF + deep };
+            next = { O: at2(F, plus ? w : 0, runF), u: F.n, n: turn === "left" ? L : { x: -L.x, y: -L.y } };
+          } else {
+            // A switchback: the landing two flights and the well between them wide; the next flight goes back beside this one.
+            const plus = (turn === "back-left") === leftIsPlus;
+            plat = { a0: plus ? 0 : -(w + SWITCHBACK_GAP_IN), a1: plus ? 2 * w + SWITCHBACK_GAP_IN : w, b0: runF, b1: runF + deep };
+            next = { O: at2(F, plus ? w + SWITCHBACK_GAP_IN : -(w + SWITCHBACK_GAP_IN), runF), u: F.u, n: { x: -F.n.x, y: -F.n.y } };
+          }
+        }
+        out.push({ leg, F, runF, plat });
+        F = next;
+      }
+      return { chain: out, leftOut: cut.leftOut };
+    };
+
+    let laid = lay(landingTopIn);
+    if (stair.landings.length) {
+      // A stair that turns comes down somewhere else: the ground — or the lower level — is read where its foot really is.
+      const last0 = laid.chain[laid.chain.length - 1];
+      const foot = footAt(at2(last0.F, w / 2, last0.runF + runIn));
+      // (On the ground: no more than 10 ft above or below where it was first read by the deck — a fall of a storey in
+      // the length of a stair is not a yard a stair is laid out on, and each foot farther down would lengthen it again.)
+      const drift = foot.on === "ground" ? Math.max(-120, Math.min(120, foot.g - foot0.g)) - (foot.g - foot0.g) : 0;
+      lands = foot.on;
+      groundIn = foot.g + drift;
+      landingTopIn = foot.top + drift;
+      laid = lay(landingTopIn);
+    }
+    const chain = laid.chain;
+    landingsLeftOut = laid.leftOut;
+    riseIn = Math.max(0, level.surfaceIn - landingTopIn);
+    risers = chain.reduce((n2, c) => n2 + c.leg.risers, 0);
+    riserIn = Math.max(...chain.map((c) => c.leg.riserIn));
+    treads = chain.reduce((n2, c) => n2 + Math.max(0, c.leg.risers - 1), 0);
+    landing = chain.length > 1;
+    stringers.count = count * chain.length;
+    totalRunIn = chain.reduce((n2, c) => n2 + c.runF + (c.plat ? c.plat.b1 - c.plat.b0 : 0), 0);
+
+    // The rails wanted: a handrail from four risers; guards on both open sides where the deck is more than 30 in. up.
+    const want = stair.handrail === "auto" ? (risers >= HANDRAIL_FROM_RISERS ? (guard ? 2 : 1) : 0) : stair.handrail === "both" ? 2 : stair.handrail === "one" ? 1 : 0;
+    railWanted = want as 0 | 1 | 2;
+    railSides = rail.type !== "none" ? railWanted : 0;
+    const metalBalusters = rail.type === "aluminum" || (rail.baluster === "round" && rail.type !== "cable" && rail.type !== "glass");
+    const topMount = railMount === "top";
+    const inFrom = topMount ? STAIR_TOP_MOUNT_IN : THICK_2X_IN / 2 + 1.75;
+    const railPostNominal = input.postSize === "8x8" ? "6x6" : "4x4";
+
+    // (The rails are drawn after the foot, as they always were: kept apart until then.)
+    const railMembers: StairMember[] = [];
+    const railMember = (role: StairRole, nominal: string, lengthIn: number, c: V2, cz: number, sx: number, sy: number, sz: number, yaw: number, tilt = 0) => {
+      railMembers.push({ role, nominal, lengthIn, cx: c.x, cy: c.y, cz, sx, sy, sz, yaw, tilt, of: id });
+    };
+    /** One flight: `r` risers of `rIn` from `zTop` down, in its own frame — stringers, treads, risers, a beam under a long run, its rails. */
+    const flight = (F: Frame, r: number, rIn: number, zTop: number, lastLeg: boolean, fromLanding: boolean, toLanding: boolean) => {
+      const P2 = (a2: number, b2: number) => at2(F, a2, b2);
+      const yawA = yawOf(F.u);
+      const yawB = yawOf(F.n);
+      const theta = Math.atan2(rIn, runIn);
+      const cosT = Math.cos(theta);
+      const sinT = Math.sin(theta);
       const t = r - 1; // treads below the top surface inside this flight
-      const runF = (lastTreadIsLanding ? r : t) * runIn;
-      const L = Math.hypot(r * riserIn, runF) + 8;
+      const runF = t * runIn;
+      const L = Math.hypot(r * rIn, runF) + 8;
       stringers.lengthIn = Math.max(stringers.lengthIn, L);
       // The stringer's top line runs under the tread backs; the box hangs below it. (2026-10-12, owner: "the stairs in 3D
       // don't look like treads and risers": the line ran one riser higher — along the treads' fronts — so every stringer
       // stood up through every tread, 6 in. at its back, and a wide flight read as a ramp ribbed by its stringers.)
-      const zA = zTop - treadThick - riserIn;
-      const zB = zTop - treadThick - r * riserIn + (lastTreadIsLanding ? 0 : riserIn) - riserIn;
-      const bA = b0;
-      const bB = b0 + runF;
-      const midB = (bA + bB) / 2 - (STRINGER_DEPTH_IN / 2) * sinT;
+      const zA = zTop - treadThick - rIn;
+      const zB = zTop - treadThick - r * rIn;
+      const midB = runF / 2 - (STRINGER_DEPTH_IN / 2) * sinT;
       const midZ = (zA + zB) / 2 - (STRINGER_DEPTH_IN / 2) * cosT;
-      for (const a of stringerAt) member("stringer", STRINGER_NOMINAL, L, P(a, midB), midZ, Math.hypot(bB - bA, zA - zB), THICK_2X_IN, STRINGER_DEPTH_IN, yawN, -theta);
+      for (const a2 of stringerAt) member("stringer", STRINGER_NOMINAL, L, P2(a2, midB), midZ, Math.hypot(runF, zA - zB), THICK_2X_IN, STRINGER_DEPTH_IN, yawB, -theta);
       hardware.stringerConnectors += count;
       // Treads and risers.
       const boardsPerTread = Math.ceil((runIn + TREAD_NOSING_IN) / boardPitch - 1e-9);
       for (let k = 1; k <= t; k++) {
-        const zk = zTop - k * riserIn;
-        const bk = b0 + (k - 1) * runIn;
+        const zk = zTop - k * rIn;
+        const bk = (k - 1) * runIn;
         for (let j = 0; j < boardsPerTread; j++) {
           const bw = Math.min(product.widthIn, runIn + TREAD_NOSING_IN - j * boardPitch);
           if (!(bw > 1)) continue;
           // From the riser behind out past the riser below: the nosing is in front (it was laid behind, under the riser above,
           // and the treads ended flush with the risers below them — no shadow line, nothing to read as a step).
-          member("tread", product.nominal, w, P(w / 2, bk + j * boardPitch + bw / 2), zk - treadThick / 2, w, bw, treadThick, yawU);
+          member("tread", product.nominal, w, P2(w / 2, bk + j * boardPitch + bw / 2), zk - treadThick / 2, w, bw, treadThick, yawA);
         }
         treadBoardLf += (boardsPerTread * w) / 12;
         // The riser board under this tread's nosing, closing the step below.
-        const zr0 = zk - riserIn;
-        member("riser", "1x8", w, P(w / 2, bk + runIn - 0.375), (zk - treadThick + zr0) / 2, w - RISER_SHORT_IN, 0.75, zk - treadThick - zr0, yawU);
+        const zr0 = zk - rIn;
+        member("riser", "1x8", w, P2(w / 2, bk + runIn - 0.375), (zk - treadThick + zr0) / 2, w - RISER_SHORT_IN, 0.75, zk - treadThick - zr0, yawA);
         riserBoardLf += w / 12;
         if (rail.lighting === "post-caps-risers") hardware.riserLights += 1;
       }
-      // The top riser board hangs off the deck's rim; the bottom one meets the pad.
+      // The top riser board hangs off the deck's rim (or the landing's); the bottom one meets the pad (or the landing).
       riserBoardLf += w / 12;
-      member("riser", "1x8", w, P(w / 2, b0 + 0.375), zTop - treadThick - riserIn / 2, w - RISER_SHORT_IN, 0.75, riserIn - treadThick, yawU);
+      member("riser", "1x8", w, P2(w / 2, 0.375), zTop - treadThick - rIn / 2, w - RISER_SHORT_IN, 0.75, rIn - treadThick, yawA);
       hardware.treadScrewsSqFt += Math.round(((t + 1) * w * (runIn + TREAD_NOSING_IN)) / 144);
       // A mid-flight support when the cut stringers would span past 6 ft.
       if (runF > STRINGER_MAX_SPAN_IN) {
         midSupport = true;
-        const bm = b0 + runF / 2;
-        const zUnder = zTop - treadThick - riserIn - (runF / 2 / runIn) * riserIn - STRINGER_DEPTH_IN / cosT;
-        member("stair-beam", "2x8", w, P(w / 2, bm), zUnder - 7.25 / 2, w, THICK_2X_IN, 7.25, yawU);
-        for (const a of [THICK_2X_IN / 2 + 1, w - THICK_2X_IN / 2 - 1]) {
-          const q = P(a, bm);
-          const g = lands === "lower-deck" ? input.lowerLevel!.surfaceIn : input.groundAt(q.x, q.y);
+        const bm = runF / 2;
+        const zUnder = zTop - treadThick - rIn - (runF / 2 / runIn) * rIn - STRINGER_DEPTH_IN / cosT;
+        member("stair-beam", "2x8", w, P2(w / 2, bm), zUnder - 7.25 / 2, w, THICK_2X_IN, 7.25, yawA);
+        // (Under a flight that leaves a landing the posts stand a half inch farther in: turned a quarter, the beam's
+        // end lay in its post's face and the two flickered.)
+        const postIn = THICK_2X_IN / 2 + (fromLanding ? 1.5 : 1);
+        for (const a2 of [postIn, w - postIn]) {
+          const q = P2(a2, bm);
+          const onLower = lastLeg && lands === "lower-deck";
+          const g = onLower ? input.lowerLevel!.surfaceIn : input.groundAt(q.x, q.y);
           const f = footingFor(design, q.x, q.y, 6, input.postSize, design.footing.aboveGradeIn);
-          f.groundIn = lands === "lower-deck" ? g - design.footing.aboveGradeIn : g;
+          f.groundIn = onLower ? g - design.footing.aboveGradeIn : g;
           footings.push(f);
           const bottom = f.groundIn + f.topIn;
           const h = Math.max(6, zUnder - 7.25 - bottom);
@@ -362,106 +579,215 @@ export function buildStair(input: StairInput): StairBuild {
           hardware.postBases += 1;
         }
       }
-      return { bEnd: b0 + runF, zEnd: zTop - r * riserIn, tag };
+      // Its rails. AS THE DECK'S RAIL IS MOUNTED (2026-11-13): the posts follow the side of the deck the stair leaves —
+      // TOP: on the treads, the same 2¾ in. in from the stair's edge as the deck's posts stand in from the deck's, from
+      // the tread up (no post down the stringer, no tension tie); SIDE: on the stringer, down its depth. At a landing
+      // the flight's rail runs to the landing's own corner post: no second post beside it.
+      if (railSides > 0 && r > 0) {
+        const rise = r * rIn;
+        const sloped = Math.hypot(runF, rise);
+        railLengthIn += sloped;
+        const postsPerSide = Math.max(2, Math.ceil(sloped / STAIR_RAIL_POST_SPACING_IN) + 1);
+        const perSide = Math.floor(sloped / (metalBalusters ? 4.5 : BALUSTER_SPACING_IN));
+        balusters += perSide * railSides;
+        const sides: number[] = railSides === 2 ? [inFrom, w - inFrom] : [w - inFrom];
+        const slopeT = Math.atan2(rise, runF);
+        for (const a2 of sides) {
+          for (let k = 0; k < postsPerSide; k++) {
+            if ((k === 0 && fromLanding) || (k === postsPerSide - 1 && toLanding)) continue;
+            railPosts += 1;
+            const b2 = (runF * k) / (postsPerSide - 1);
+            const zn = zTop - (rise * b2) / Math.max(1, runF);
+            if (topMount) {
+              // The tread it stands on: the floor at the top, then a riser down for every tread's run.
+              const foot = zTop - (b2 < 0.5 ? 0 : Math.min(Math.max(1, r - 1), Math.ceil(b2 / runIn - 1e-6)) * rIn);
+              const h = zn + HANDRAIL_HEIGHT_IN + 6 - foot;
+              railMember("stair-rail-post", railPostNominal, h, P2(a2, b2), foot + h / 2, 3.5, 3.5, h, 0);
+              continue;
+            }
+            const h = HANDRAIL_HEIGHT_IN + 6 + STRINGER_DEPTH_IN;
+            railMember("stair-rail-post", railPostNominal, h, P2(a2, b2), zn - STRINGER_DEPTH_IN + h / 2, 3.5, 3.5, h, 0);
+            hardware.railPostTies += 1;
+          }
+          // The rails drawn an inch past each end (their ends clear the top and bottom risers' faces); the balusters a
+          // quarter inch toward the stair's middle, so no face of theirs lies in a rail's (both flickered, 2026-10-11).
+          railMember("stair-rail", "2x4", sloped, P2(a2, runF / 2), zTop - rise / 2 + HANDRAIL_HEIGHT_IN, sloped + 2, 1.5, 3.5, yawB, -slopeT);
+          railMember("stair-rail", "2x4", sloped, P2(a2, runF / 2), zTop - rise / 2 + 4, sloped + 2, 1.5, 3.5, yawB, -slopeT);
+          const inward = a2 < w / 2 ? STAIR_BALUSTER_IN_IN : -STAIR_BALUSTER_IN_IN;
+          for (let k = 1; k < perSide; k++) {
+            const b2 = ((sloped * k) / perSide) * Math.cos(slopeT);
+            const zn = zTop - (rise * b2) / Math.max(1, runF);
+            // Thin metal balusters where the deck's rail has them (lib/deck/rails, 2026-11-09): the stair matches the deck.
+            railMember("stair-baluster", metalBalusters ? "¾-in. aluminum baluster" : "2x2", HANDRAIL_HEIGHT_IN - 4, P2(a2 + inward, b2), zn + 4 + (HANDRAIL_HEIGHT_IN - 4) / 2, metalBalusters ? 0.75 : 1.5, metalBalusters ? 0.75 : 1.5, HANDRAIL_HEIGHT_IN - 4, 0);
+          }
+        }
+      }
     };
 
-    const topB = 0;
-    const topZ = level.surfaceIn;
-    const A = flight("a", risersA, topB, topZ, landing);
-    if (landing) {
-      // The landing: a 2x8 frame on four posts, treads over it.
-      const b0 = A.bEnd;
-      const zL = A.zEnd;
+    /**
+     * A landing: a 2x8 frame on its own posts and footings, the deck's boards over it, and — where the stair is railed —
+     * a rail along every edge no flight comes to or leaves by, a post at each corner.
+     */
+    const platform = (F: Frame, pl: Plat, zL: number, turn: StairTurnKind, id2: string, auto: boolean) => {
+      const P2 = (a2: number, b2: number) => at2(F, a2, b2);
+      const yawA = yawOf(F.u);
+      const yawB = yawOf(F.n);
+      const wide = pl.a1 - pl.a0;
+      const deep = pl.b1 - pl.b0;
       const frameTop = zL - treadThick;
-      for (const [a0, a1, b, along] of [[0, w, b0 + THICK_2X_IN / 2, true], [0, w, b0 + LANDING_DEPTH_IN - THICK_2X_IN / 2, true]] as Array<[number, number, number, boolean]>) {
-        void a0; void a1; void along;
-        member("landing-frame", "2x8", w, P(w / 2, b), frameTop - 7.25 / 2, w, THICK_2X_IN, 7.25, yawU);
+      const am = (pl.a0 + pl.a1) / 2;
+      const bm = (pl.b0 + pl.b1) / 2;
+      // Two rims the landing's width, joists between them 16 in. apart.
+      for (const b2 of [pl.b0 + THICK_2X_IN / 2, pl.b1 - THICK_2X_IN / 2]) member("landing-frame", "2x8", wide, P2(am, b2), frameTop - 7.25 / 2, wide, THICK_2X_IN, 7.25, yawA);
+      // …the last of them closing the far side (a flight that leaves by that side hangs on it).
+      const joistAt: number[] = [];
+      for (let a2 = pl.a0 + THICK_2X_IN / 2; a2 < pl.a1 - THICK_2X_IN / 2 - 3; a2 += 16) joistAt.push(a2);
+      joistAt.push(pl.a1 - THICK_2X_IN / 2);
+      for (const a2 of joistAt) member("landing-frame", "2x8", deep - 2 * THICK_2X_IN, P2(a2, bm), frameTop - 7.25 / 2, THICK_2X_IN, deep - 2 * THICK_2X_IN, 7.25, yawA);
+      member("landing-tread", product.nominal, wide, P2(am, bm), zL - treadThick / 2, wide, deep, treadThick, yawA);
+      treadBoardLf += (Math.ceil(deep / boardPitch) * wide) / 12;
+      hardware.treadScrewsSqFt += Math.round((wide * deep) / 144);
+      // Its posts: one at each corner, two more under a long side (a switchback's landing).
+      // Each post's centre 6 1/2 in. in from the landing's faces: clear, both ways, of the connectors of a flight that
+      // hangs on that side (nearer the corner a connector lay in the post's face and the two flickered).
+      const inset = 6.5;
+      const as = wide > 96 ? [pl.a0 + inset, am, pl.a1 - inset] : [pl.a0 + inset, pl.a1 - inset];
+      const share = Math.max(10, Math.round((wide * deep) / 144 / (as.length * 2) + (w * 4 * runIn) / 144 / 2));
+      let low = Infinity;
+      for (const a2 of as) {
+        for (const b2 of [pl.b0 + inset, pl.b1 - inset]) {
+          const q = P2(a2, b2);
+          // (Never a post more than 30 ft tall: the ground far down a steep fall is not where a landing is footed.)
+          const g = Math.max(input.groundAt(q.x, q.y), zL - 360);
+          low = Math.min(low, g);
+          const f = footingFor(design, q.x, q.y, share, input.postSize, design.footing.aboveGradeIn);
+          f.groundIn = g;
+          footings.push(f);
+          const bottom = g + f.topIn;
+          const h = Math.max(6, frameTop - 7.25 - bottom);
+          member("stair-post", input.postSize, h, q, bottom + h / 2, 3.5, 3.5, h, 0);
+          hardware.postBases += 1;
+        }
       }
-      for (let a = THICK_2X_IN / 2; a <= w - THICK_2X_IN / 2 + 1e-6; a += 16) member("landing-frame", "2x8", LANDING_DEPTH_IN - 2 * THICK_2X_IN, P(a, b0 + LANDING_DEPTH_IN / 2), frameTop - 7.25 / 2, THICK_2X_IN, LANDING_DEPTH_IN - 2 * THICK_2X_IN, 7.25, yawU);
-      member("landing-tread", product.nominal, w, P(w / 2, b0 + LANDING_DEPTH_IN / 2), zL - treadThick / 2, w, LANDING_DEPTH_IN, treadThick, yawU);
-      treadBoardLf += (Math.ceil(LANDING_DEPTH_IN / boardPitch) * w) / 12;
-      for (const [a, b] of [[THICK_2X_IN / 2 + 1, b0 + 2], [w - THICK_2X_IN / 2 - 1, b0 + 2], [THICK_2X_IN / 2 + 1, b0 + LANDING_DEPTH_IN - 2], [w - THICK_2X_IN / 2 - 1, b0 + LANDING_DEPTH_IN - 2]]) {
-        const q = P(a, b);
-        const g = input.groundAt(q.x, q.y);
-        const f = footingFor(design, q.x, q.y, 10, input.postSize, design.footing.aboveGradeIn);
-        f.groundIn = g;
-        footings.push(f);
-        const bottom = g + f.topIn;
-        const h = Math.max(6, frameTop - 7.25 - bottom);
-        member("stair-post", input.postSize, h, q, bottom + h / 2, 3.5, 3.5, h, 0);
-        hardware.postBases += 1;
+      const c = P2(am, bm);
+      landingsOut.push({ id: id2, auto, heightIn: Math.round(zL * 100) / 100, turn, dir: dirOf(F.n), widthIn: Math.round(wide), depthIn: Math.round(deep), posts: as.length * 2, aboveGroundIn: Math.round(zL - low), x: c.x, y: c.y });
+      // Its rails: where the stair is guarded, or the landing itself stands more than 30 in. up.
+      const guarded = railSides === 2 || (railSides > 0 && zL - low > GUARD_REQUIRED_ABOVE_IN);
+      if (!guarded) return;
+      // The edges nobody walks through: [a0, b0, a1, b1] each, along a or along b.
+      const open: Array<[number, number, number, number]> = [];
+      if (turn === "straight") open.push([pl.a0, pl.b0, pl.a0, pl.b1], [pl.a1, pl.b0, pl.a1, pl.b1]);
+      else if (turn === "left" || turn === "right") {
+        const L = leftOf(F.n);
+        const plus = (turn === "left") === (F.u.x * L.x + F.u.y * L.y > 0);
+        open.push([pl.a0, pl.b1, pl.a1, pl.b1], plus ? [pl.a0, pl.b0, pl.a0, pl.b1] : [pl.a1, pl.b0, pl.a1, pl.b1]);
+      } else open.push([pl.a0, pl.b0, pl.a0, pl.b1], [pl.a1, pl.b0, pl.a1, pl.b1], [pl.a0, pl.b1, pl.a1, pl.b1]);
+      // A post at every corner of the landing — the flights' rails run to them — standing on its boards.
+      const corner = STAIR_TOP_MOUNT_IN;
+      const postH = HANDRAIL_HEIGHT_IN + 6;
+      for (const a2 of [pl.a0 + corner, pl.a1 - corner]) {
+        for (const b2 of [pl.b0 + corner, pl.b1 - corner]) {
+          railMember("stair-rail-post", railPostNominal, postH, P2(a2, b2), zL + postH / 2, 3.5, 3.5, postH, 0);
+          railPosts += 1;
+        }
       }
-      flight("b", risersB, b0 + LANDING_DEPTH_IN, zL, false);
-    }
+      for (const [a0, b0, a1, b1] of open) {
+        const alongA = Math.abs(b1 - b0) < 0.5;
+        const len = (alongA ? Math.abs(a1 - a0) : Math.abs(b1 - b0)) - 2 * corner;
+        if (!(len > 6)) continue;
+        // The rail's line: its edge, a post's inset in from it.
+        const ca = alongA ? (a0 + a1) / 2 : a0 + (Math.abs(a0 - pl.a0) < 0.5 ? corner : -corner);
+        const cb = alongA ? b0 + (Math.abs(b0 - pl.b0) < 0.5 ? corner : -corner) : (b0 + b1) / 2;
+        const yaw = alongA ? yawA : yawB;
+        railLengthIn += len / Math.max(1, railSides);
+        railMember("stair-rail", "2x4", len, P2(ca, cb), zL + HANDRAIL_HEIGHT_IN, len, 1.5, 3.5, yaw, 0);
+        railMember("stair-rail", "2x4", len, P2(ca, cb), zL + 4, len, 1.5, 3.5, yaw, 0);
+        // A post in the middle of a long edge.
+        const mids = Math.max(0, Math.ceil(len / STAIR_RAIL_POST_SPACING_IN) - 1);
+        for (let k = 1; k <= mids; k++) {
+          const tt = k / (mids + 1) - 0.5;
+          railMember("stair-rail-post", railPostNominal, postH, P2(alongA ? ca + tt * len : ca, alongA ? cb : cb + tt * len), zL + postH / 2, 3.5, 3.5, postH, 0);
+          railPosts += 1;
+        }
+        const n2 = Math.floor(len / (metalBalusters ? 4.5 : BALUSTER_SPACING_IN));
+        balusters += Math.max(0, n2 - 1);
+        // The balusters a quarter inch toward the landing's middle: no face of theirs in a rail's.
+        const inA = alongA ? 0 : ca < am ? STAIR_BALUSTER_IN_IN : -STAIR_BALUSTER_IN_IN;
+        const inB = alongA ? (cb < bm ? STAIR_BALUSTER_IN_IN : -STAIR_BALUSTER_IN_IN) : 0;
+        for (let k = 1; k < n2; k++) {
+          const tt = k / n2 - 0.5;
+          railMember("stair-baluster", metalBalusters ? "¾-in. aluminum baluster" : "2x2", HANDRAIL_HEIGHT_IN - 4, P2((alongA ? ca + tt * len : ca) + inA, (alongA ? cb : cb + tt * len) + inB), zL + 4 + (HANDRAIL_HEIGHT_IN - 4) / 2, metalBalusters ? 0.75 : 1.5, metalBalusters ? 0.75 : 1.5, HANDRAIL_HEIGHT_IN - 4, 0);
+        }
+      }
+    };
+
+    // Built, top to foot.
+    const rects: V2[][] = [];
+    path = [at2(chain[0].F, w / 2, 0)];
+    chain.forEach((c, i) => {
+      const lastLeg = i === chain.length - 1;
+      flight(c.F, c.leg.risers, c.leg.riserIn, c.leg.topIn, lastLeg, i > 0, !!c.plat);
+      flightsOut.push({ risers: c.leg.risers, riserIn: Math.round(c.leg.riserIn * 100) / 100, riseIn: Math.round(c.leg.riseIn * 100) / 100, runIn: Math.round(c.runF * 10) / 10, topIn: Math.round(c.leg.topIn * 100) / 100 });
+      if (c.runF > 0.5) rects.push([at2(c.F, 0, 0), at2(c.F, w, 0), at2(c.F, w, c.runF), at2(c.F, 0, c.runF)]);
+      path.push(at2(c.F, w / 2, c.runF));
+      if (c.plat && c.leg.landing) {
+        platform(c.F, c.plat, c.leg.footIn, c.leg.landing.turn, c.leg.landing.id, c.leg.landing.auto);
+        rects.push([at2(c.F, c.plat.a0, c.plat.b0), at2(c.F, c.plat.a1, c.plat.b0), at2(c.F, c.plat.a1, c.plat.b1), at2(c.F, c.plat.a0, c.plat.b1)]);
+        path.push(at2(c.F, w / 2, (c.plat.b0 + c.plat.b1) / 2));
+        const nx = chain[i + 1];
+        if (nx) path.push(at2(nx.F, w / 2, 0));
+      }
+    });
 
     // The foot: a kicker on a pad, pavers, or the patio.
-    const bFoot = totalRunIn;
+    const lastC = chain[chain.length - 1];
+    const PF = (a2: number, b2: number) => at2(lastC.F, a2, b2);
+    const yawF = yawOf(lastC.F.u);
+    const bFoot = lastC.runF;
     const padWidthIn = w + 2 * PAD_APRON_IN;
     const padLengthIn = PAD_OUT_IN + PAD_APRON_IN;
     if (lands === "ground") {
       if (stair.landing === "pad") {
         const cuFt = (padWidthIn * padLengthIn * PAD_THICK_IN) / 1728;
         pad = { lengthIn: padLengthIn, widthIn: padWidthIn, thickIn: PAD_THICK_IN, cuFt: Math.round(cuFt * 100) / 100, bags: Math.ceil(cuFt / BAG_CUFT - 1e-9) };
-        member("pad", "concrete", padLengthIn, P(w / 2, bFoot - PAD_APRON_IN + padLengthIn / 2), groundIn + PAD_TOP_IN - PAD_THICK_IN / 2, padWidthIn, padLengthIn, PAD_THICK_IN, yawU);
+        member("pad", "concrete", padLengthIn, PF(w / 2, bFoot - PAD_APRON_IN + padLengthIn / 2), groundIn + PAD_TOP_IN - PAD_THICK_IN / 2, padWidthIn, padLengthIn, PAD_THICK_IN, yawF);
         hardware.anchors += 2;
       } else if (stair.landing === "grade") {
         pavers = Math.ceil((padWidthIn * padLengthIn) / 144);
-        member("pad", "pavers", padLengthIn, P(w / 2, bFoot - PAD_APRON_IN + padLengthIn / 2), groundIn + PAVER_TOP_IN - 1.2, padWidthIn, padLengthIn, 2.4, yawU);
+        member("pad", "pavers", padLengthIn, PF(w / 2, bFoot - PAD_APRON_IN + padLengthIn / 2), groundIn + PAVER_TOP_IN - 1.2, padWidthIn, padLengthIn, 2.4, yawF);
       }
+      rects.push([PF(0, bFoot), PF(w, bFoot), PF(w, bFoot + PAD_OUT_IN), PF(0, bFoot + PAD_OUT_IN)]);
     }
-    member("kicker", "2x4", w, P(w / 2, bFoot - 1.75 - KICKER_BACK_IN), landingTopIn + 0.75, w, 3.5, 1.5, yawU);
+    member("kicker", "2x4", w, PF(w / 2, bFoot - 1.75 - KICKER_BACK_IN), landingTopIn + 0.75, w, 3.5, 1.5, yawF);
+    members.push(...railMembers);
 
-    // Rails: a handrail from four risers; guards on both open sides where the deck is more than 30 in. up.
-    const want = stair.handrail === "auto" ? (risers >= HANDRAIL_FROM_RISERS ? (guard ? 2 : 1) : 0) : stair.handrail === "both" ? 2 : stair.handrail === "one" ? 1 : 0;
-    railWanted = want as 0 | 1 | 2;
-    railSides = rail.type !== "none" ? railWanted : 0;
-    if (railSides > 0) {
-      const sloped = Math.hypot(totalRunIn, riseIn);
-      railLengthIn = sloped;
-      const postsPerSide = Math.max(2, Math.ceil(sloped / STAIR_RAIL_POST_SPACING_IN) + 1);
-      railPosts = postsPerSide * railSides;
-      const metalBalusters = rail.type === "aluminum" || (rail.baluster === "round" && rail.type !== "cable" && rail.type !== "glass");
-      const perSide = Math.floor(sloped / (metalBalusters ? 4.5 : BALUSTER_SPACING_IN));
-      balusters = perSide * railSides;
-      // AS THE DECK'S RAIL IS MOUNTED (2026-11-13). The stair's posts were always drawn bolted to the stringer, down its
-      // depth — beside a top-mounted aluminum rail they were the "side-mounted section" a deck builder saw. They follow
-      // the side of the deck the stair leaves: TOP — on the treads, the same 2¾ in. in from the stair's edge as the
-      // deck's posts stand in from the deck's, from the tread up (no post down the stringer, no tension tie); SIDE —
-      // on the stringer, as they were.
-      const topMount = railMount === "top";
-      const inFrom = topMount ? STAIR_TOP_MOUNT_IN : THICK_2X_IN / 2 + 1.75;
-      const sides: number[] = railSides === 2 ? [inFrom, w - inFrom] : [w - inFrom];
-      const slopeT = Math.atan2(riseIn, totalRunIn);
-      const riserIn = riseIn / Math.max(1, risers);
-      for (const a of sides) {
-        for (let k = 0; k < postsPerSide; k++) {
-          const b = (totalRunIn * k) / (postsPerSide - 1);
-          const zn = level.surfaceIn - (riseIn * b) / Math.max(1, totalRunIn);
-          if (topMount) {
-            // The tread it stands on: the deck itself at the top, then a riser down for every tread's run.
-            const foot = level.surfaceIn - (b < 0.5 ? 0 : Math.min(Math.max(1, risers - 1), Math.ceil(b / runIn - 1e-6)) * riserIn);
-            const h = zn + HANDRAIL_HEIGHT_IN + 6 - foot;
-            member("stair-rail-post", input.postSize === "8x8" ? "6x6" : "4x4", h, P(a, b), foot + h / 2, 3.5, 3.5, h, 0);
-            continue;
-          }
-          const h = HANDRAIL_HEIGHT_IN + 6 + STRINGER_DEPTH_IN;
-          member("stair-rail-post", input.postSize === "8x8" ? "6x6" : "4x4", h, P(a, b), zn - STRINGER_DEPTH_IN + h / 2, 3.5, 3.5, h, 0);
-          hardware.railPostTies += 1;
-        }
-        // The rails drawn an inch past each end (their ends clear the top and bottom risers' faces); the balusters a
-        // quarter inch toward the stair's middle, so no face of theirs lies in a rail's (both flickered, 2026-10-11).
-        member("stair-rail", "2x4", sloped, P(a, totalRunIn / 2), level.surfaceIn - riseIn / 2 + HANDRAIL_HEIGHT_IN, sloped + 2, 1.5, 3.5, yawN, -slopeT);
-        member("stair-rail", "2x4", sloped, P(a, totalRunIn / 2), level.surfaceIn - riseIn / 2 + 4, sloped + 2, 1.5, 3.5, yawN, -slopeT);
-        const inward = a < w / 2 ? STAIR_BALUSTER_IN_IN : -STAIR_BALUSTER_IN_IN;
-        for (let k = 1; k < perSide; k++) {
-          const b = (sloped * k) / perSide * Math.cos(slopeT);
-          const zn = level.surfaceIn - (riseIn * b) / Math.max(1, totalRunIn);
-          // Thin metal balusters where the deck's rail has them (lib/deck/rails, 2026-11-09): the stair matches the deck.
-          member("stair-baluster", metalBalusters ? "¾-in. aluminum baluster" : "2x2", HANDRAIL_HEIGHT_IN - 4, P(a + inward, b), zn + 4 + (HANDRAIL_HEIGHT_IN - 4) / 2, metalBalusters ? 0.75 : 1.5, metalBalusters ? 0.75 : 1.5, HANDRAIL_HEIGHT_IN - 4, 0);
-        }
-      }
+    // Its outline in plan: every flight, every landing and the foot as one ring, from the edge of the deck it leaves.
+    const local = (p: V2): [number, number] => [(p.x - O.x) * u.x + (p.y - O.y) * u.y, (p.x - O.x) * nrm.x + (p.y - O.y) * nrm.y];
+    const boxes = rects.map((r): [number, number, number, number] => {
+      const q = r.map(local);
+      return [Math.min(...q.map((v) => v[0])), Math.min(...q.map((v) => v[1])), Math.max(...q.map((v) => v[0])), Math.max(...q.map((v) => v[1]))];
+    });
+    footprint = rectsOutline(boxes).map(([a2, b2]) => P(a2, b2));
+
+    // Where it must not go: into the house's wall; and back under the deck only with room to walk there.
+    const againstHouse = design.placement !== "detached" && level.id === "upper";
+    for (const r of rects) {
+      const xs2 = r.map((q) => q.x);
+      const ys2 = r.map((q) => q.y);
+      if (againstHouse && Math.min(...ys2) < level.y0 - 1 && Math.max(...xs2) > level.x0 - design.house.leftFt * 12 + 1 && Math.min(...xs2) < level.x0 + W + design.house.rightFt * 12 - 1) hitsHouse = true;
     }
-    footprint = [P(0, 0), P(w, 0), P(w, totalRunIn + (lands === "ground" ? PAD_OUT_IN : 0)), P(0, totalRunIn + (lands === "ground" ? PAD_OUT_IN : 0))];
+    // Under the deck: every tread and landing past the first flight that lies inside the deck's own rectangle, and
+    // the room over it to the underside of the deck's joists.
+    const underDeck = (q: V2) => q.x > level.x0 + 1 && q.x < level.x0 + W - 1 && q.y > level.y0 + 1 && q.y < level.y0 + level.frontAt(Math.max(0, Math.min(W, q.x - level.x0))) - 1;
+    const roomOver = (q: V2, walkIn: number) => {
+      if (!underDeck(q)) return;
+      const clear = Math.round(level.joistBottomIn - walkIn);
+      underDeckClearIn = underDeckClearIn === null ? clear : Math.min(underDeckClearIn, clear);
+    };
+    chain.forEach((c, i) => {
+      if (i > 0) for (let k = 0; k <= Math.max(0, c.leg.risers - 1); k++) roomOver(at2(c.F, w / 2, k * runIn), c.leg.topIn - k * c.leg.riserIn);
+      if (c.plat) roomOver(at2(c.F, (c.plat.a0 + c.plat.a1) / 2, (c.plat.b0 + c.plat.b1) / 2), c.leg.footIn);
+    });
   } else if (kind === "box" && risers > 0) {
     /* ── box steps wrapping the deck ─────────────────────────────────── */
     const sides = stair.wrapSides;
@@ -528,6 +854,9 @@ export function buildStair(input: StairInput): StairBuild {
     stringers,
     midSupport,
     landing,
+    flights: flightsOut,
+    landings: landingsOut,
+    path,
     pad,
     pavers,
     rail: { sides: railSides, wanted: railWanted, lengthIn: Math.round(railLengthIn), posts: railPosts, balusters, handrailOnly: railSides === 1 && !guard, mount: railMount },
@@ -541,8 +870,18 @@ export function buildStair(input: StairInput): StairBuild {
     boxBlocks,
     gravelSqFt,
     hardware,
-    flags: { tooTallForBox, beyondRun: false, narrow: narrow || w < 36 },
+    flags: { tooTallForBox, beyondRun: false, narrow: narrow || w < 36, landingsLeftOut, hitsHouse, underDeckClearIn },
   };
+}
+
+/**
+ * A stair's first flight as a stair of its own — from the deck down to the first landing — for a drawing of ONE flight
+ * (the permit set's stair section, the stringer's layout). A stair with no landing is itself.
+ */
+export function firstFlightOf(st: StairBuild): StairBuild {
+  const f = st.flights[0];
+  if (!st.landings.length || !f) return st;
+  return { ...st, risers: f.risers, riserIn: f.riserIn, treads: Math.max(0, f.risers - 1), riseIn: f.riseIn, totalRunIn: Math.round(f.runIn), pad: null, midSupport: f.runIn > STRINGER_MAX_SPAN_IN };
 }
 
 /** The code's words for a stair, in the state's own figures (lib/deck/stateCodes): riser, tread, width, handrail. */

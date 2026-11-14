@@ -63,7 +63,7 @@
 import { POST_ACTUAL_IN, THICK_2X_IN, DRESSED_DEPTH_IN, JOIST_SIZES, SOLID_BEAMS, builtUpBeamMaxSpanIn, solidBeamMaxSpanIn, solidBeamTabulated, joistDepthIn, postMaxHeightIn, POST_TABLE_MAX_AREA, type JoistSize, type PostSize, type SpeciesGroup } from "./codeTables";
 import { CEILING_FACTOR, ROOF_DEAD_PSF, RW_FACTOR, rafterMaxSpanIn, roofLoadFor, type RafterGroup, type RoofLoad } from "./roofTables";
 import { beamSpec, footingFor, type BeamSpec, type Footing } from "./frame";
-import { BUILT_UP_CHOICES, ROOF_DOOR_LEAF_FT, isPolygonShape, isSolidBeam, type BeamSize, type DeckDesign, type RoofDesign, type RoofKind, type RoofOpening, type RoofPin, type RoofSide, type WallFill, type Zone } from "./design";
+import { BRACE_ACTUAL_IN, BUILT_UP_CHOICES, ROOF_DOOR_LEAF_FT, braceSizeFor, isPolygonShape, isSolidBeam, type BeamSize, type DeckDesign, type RoofDesign, type RoofKind, type RoofOpening, type RoofPin, type RoofSide, type WallFill, type Zone } from "./design";
 import { roofLoadForSnow } from "./site";
 import type { FramingSpecies } from "./catalog";
 import { deckRate, lumberKey, type DeckRateBook } from "./rates";
@@ -2562,6 +2562,9 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
   let braces = 0;
   let bracesLeftOut = 0;
   const bracesOff = new Set(r.bracesOff ?? []);
+  // The braces' timber (2026-11-14): the 4x4 they always were, or the builder's 6x6 or 8x8 — never larger than the post.
+  const braceNominal = braceSizeFor(r.braceSize, r.post, "4x4");
+  const braceFace = BRACE_ACTUAL_IN[braceNominal][0];
   if (r.braces) {
     for (const p of posts) {
       if (p.heightIn < BRACE_LEG_IN * 2) continue;
@@ -2583,7 +2586,7 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
             bracesLeftOut++;
             continue;
           }
-          members.push({ role: "roof-brace", nominal: "4x4", lengthIn: L, cx: ex, cy: ey, cz: under - BRACE_LEG_IN / 2, sx: L, sy: 3.5, sz: 3.5, yaw, tilt: Math.PI / 4, x0: p.x, y0: p.y, x1: p.x + u.x * d * BRACE_LEG_IN, y1: p.y + u.y * d * BRACE_LEG_IN, of: key });
+          members.push({ role: "roof-brace", nominal: braceNominal, lengthIn: L, cx: ex, cy: ey, cz: under - BRACE_LEG_IN / 2, sx: L, sy: braceFace, sz: braceFace, yaw, tilt: Math.PI / 4, x0: p.x, y0: p.y, x1: p.x + u.x * d * BRACE_LEG_IN, y1: p.y + u.y * d * BRACE_LEG_IN, of: key });
           braces++;
         }
       }

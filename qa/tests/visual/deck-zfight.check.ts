@@ -344,6 +344,13 @@ const variants: Array<[string, Patch]> = [
 // under the joists (the starting layout's are flush), wood rails, and standing free of the house.
 variants.push(["double deck, beams under the joists, cedar rail", { structure: "deck", floor: "deck", placement: "attached", shape: { kind: "rect", widthFt: 20, depthFt: 14 }, heightIn: 156, rail: { type: "cedar" }, stairs: [], lower: { on: true, place: "under", heightIn: 42 } }]);
 variants.push(["double deck, free-standing", { structure: "deck", floor: "deck", placement: "beside", shape: { kind: "rect", widthFt: 16, depthFt: 12 }, heightIn: 132, rail: { type: "composite" }, stairs: [], lower: { on: true, place: "under", heightIn: 24 } }]);
+// LANDINGS (2026-11-14): a stair that turns at a landing, one that comes back beside itself, one with two landings —
+// the landings' frames, posts and rails against the flights' own; top-mounted metal rails and side-mounted wood ones.
+const turned = (turns: Array<[number, string]>, side: "front" | "left" | "right" = "front") => [{ ...stairs(side, 8, 4)[0], handrail: "both" as const, landings: turns.map(([heightIn, turn], i) => ({ id: `t${i + 1}`, heightIn, turn })) }];
+variants.push(["stair with a landing, a quarter turn, aluminum rail", { structure: "deck", shape: rect(16, 12), heightIn: 120, rail: { ...base.rail, type: "aluminum" }, stairs: turned([[60, "left"]]) } as Patch]);
+variants.push(["stair with a switchback landing, cedar rail", { structure: "deck", shape: rect(16, 12), heightIn: 132, rail: { ...base.rail, type: "cedar" }, stairs: turned([[66, "back-right"]]) } as Patch]);
+variants.push(["stair with two landings turning the same way, composite rail", { structure: "deck", shape: rect(20, 12), heightIn: 126, rail: { ...base.rail, type: "composite" }, stairs: turned([[84, "right"], [42, "right"]]) } as Patch]);
+variants.push(["stair with a straight landing and then a turn", { structure: "deck", shape: rect(16, 12), heightIn: 108, rail: { ...base.rail, type: "aluminum" }, stairs: turned([[72, "straight"], [36, "left"]]) } as Patch]);
 for (const [name, p] of variants) cases.push({ name, design: applyDeckPatch(base, p) });
 
 /**

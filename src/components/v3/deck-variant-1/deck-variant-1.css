@@ -956,6 +956,8 @@
 .jf-deck-v1 .v1-choice-issue { display: flex; align-items: flex-start; gap: 6px; font-size: 13px; line-height: 1.4; color: var(--v1-amber-ink); }
 .jf-deck-v1 .v1-choice-issue svg { flex: none; margin-top: 2px; }
 .jf-deck-v1 .v1-pick-sizes { display: grid; gap: 6px; }
+/* A stair's landings (2026-11-14): a block of their own inside the stair's card. */
+.jf-deck-v1 .v1-landings { display: grid; gap: 8px; padding-top: 10px; border-top: 1.5px dashed var(--ink-line); }
 .jf-deck-v1 .v1-plan-hint { margin: 8px 0 0; font-size: 13.5px; line-height: 1.45; color: var(--ink-muted); }
 /* Where a post or a beam stands (2026-11-13): feet and inches to type, an inch or six to nudge. */
 .jf-deck-v1 .v1-place { display: grid; gap: 8px; padding: 10px 12px; background: var(--paper-deep); border: 1.5px solid var(--ink-line); border-radius: var(--r-sm); }

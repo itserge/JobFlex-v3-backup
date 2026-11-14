@@ -32,7 +32,7 @@ import { BRACE_ABOVE_IN, JOIST_SIZES, POST_ACTUAL_IN, POST_SIZES, SOLID_BEAMS, S
 import { wallType } from "./catalog";
 import { addBeam, addPostUnder, addRoofPost, deckGrips, gripOfPart, removeBeamLine, removePost, roofCornerSides, roofSideOf, type DeckGrip } from "./byHand";
 import { applyDeckPatch, deckChecks, type DeckPatch } from "./checks";
-import { BUILT_UP_CHOICES, RAIL_MOUNT_LABEL, RAIL_MOUNT_WORDS, RAIL_SECTION_LABEL, ROOF_POST_LIMITS, ROOF_SIDE_LABEL, defaultRoofOpening, type DeckDesign, type RailSectionKey, type RoofDesign } from "./design";
+import { BUILT_UP_CHOICES, braceSizesFor, RAIL_MOUNT_LABEL, RAIL_MOUNT_WORDS, RAIL_SECTION_LABEL, ROOF_POST_LIMITS, ROOF_SIDE_LABEL, defaultRoofOpening, type DeckDesign, type RailSectionKey, type RoofDesign } from "./design";
 import { priceDeck, type DeckPackage, type DeckPriceOptions } from "./pricing";
 import { railMountLine } from "./rails";
 import type { RoofMember } from "./roof";
@@ -325,7 +325,12 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
       const n = (s.frame?.hardware.braces ?? 0) + (s.lower?.frame.hardware.braces ?? 0);
       const choices: PartChoice[] = [{ id: "one", tone: "remove", label: "Remove this brace", patch: { framing: { bracesOff: withKey(d.framing.bracesOff, ref.id) } } }];
       if (n > 1) choices.push({ id: "all", tone: "remove", label: `Remove all ${n} deck braces`, patch: { framing: { braces: false, bracesOff: [] } }, whole: true });
-      return card("Knee brace", `A 2x4 at 45° from the post up to the ${f?.beamStyle === "flush" ? "frame" : "beam"}: it keeps a tall post from racking sideways. The American Wood Council's deck guide puts one at every corner post over ${BRACE_ABOVE_IN / 12} ft.`, choices);
+      // THE BRACE'S TIMBER (2026-11-14 — the owner: "if it's a 6 by 6 brace, I can change it for 4 by 4, or 8 by 8 if the
+      // post is 8 by 8"): a row of sizes, none larger than the post.
+      const size = f?.sticks.find((st) => st.role === "brace")?.nominal ?? "2x4";
+      const sizes = f?.group === "OC" ? [] : braceSizesFor(d.framing.post, "2x4");
+      if (sizes.length > 1) choices.push(...sizeRow("Brace size — every deck brace", "brace-size", sizes, d.framing.braceSize, (v) => (v === "auto" ? "Auto" : String(v)), (v) => ({ framing: { braceSize: v as DeckDesign["framing"]["braceSize"] } })));
+      return card("Knee brace", `A ${size} at 45° from the post up to the ${f?.beamStyle === "flush" ? "frame" : "beam"}: it keeps a tall post from racking sideways. The American Wood Council's deck guide puts one at every corner post over ${BRACE_ABOVE_IN / 12} ft.${sizes.length > 1 ? ` It can be a heavier timber — up to the post's own ${d.framing.post === "4x6" ? "4x4" : d.framing.post}.` : ""}`, choices);
     }
 
     case "deck-beam": {
@@ -428,7 +433,10 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
       const n = roof.hardware.braces;
       const choices: PartChoice[] = [{ id: "one", tone: "remove", label: "Remove this brace", patch: roofPatch({ bracesOff: withKey(d.roof.bracesOff, ref.id) }) }];
       if (n > 1) choices.push({ id: "all", tone: "remove", label: `Remove all ${n} roof braces`, patch: roofPatch({ braces: false, bracesOff: [] }), whole: true });
-      return card("Roof knee brace", `A 4x4 at 45° from the post up to the beam: the braces are what hold ${roof.attach === "free" ? "a free-standing roof" : "the roof"} square against wind and racking.`, choices);
+      const rsize = roof.members.find((m) => m.role === "roof-brace")?.nominal ?? "4x4";
+      const rsizes = braceSizesFor(d.roof.post, "4x4");
+      if (rsizes.length > 1) choices.push(...sizeRow("Brace size — every roof brace", "rbrace-size", rsizes, d.roof.braceSize, (v) => (v === "auto" ? "Auto" : String(v)), (v) => roofPatch({ braceSize: v as RoofDesign["braceSize"] })));
+      return card("Roof knee brace", `A ${rsize} at 45° from the post up to the beam: the braces are what hold ${roof.attach === "free" ? "a free-standing roof" : "the roof"} square against wind and racking.${rsizes.length > 1 ? ` It can be as heavy as the ${d.roof.post} post.` : d.roof.post === "4x4" ? " On a 4x4 post it is a 4x4: a larger post takes a larger brace." : ""}`, choices);
     }
 
     case "roof-beam": {

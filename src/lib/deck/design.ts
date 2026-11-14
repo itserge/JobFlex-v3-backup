@@ -222,6 +222,8 @@ export interface RoofDesign {
   soffit: boolean;
   gutters: { kind: GutterKind; guards: boolean };
   braces: boolean;
+  /** The braces' timber (2026-11-14 — the owner: "if it's a 6 by 6 brace, I can change it for 4 by 4, or 8 by 8 if the post is 8 by 8"): "auto" is the 4x4 it always was. Never larger than the post it braces. */
+  braceSize: BraceSize | "auto";
   /** Knee braces taken out one by one in the 3D (2026-11-09; lib/deck/parts): each a post and the way its brace runs. */
   bracesOff: string[];
   /**
@@ -299,8 +301,29 @@ export interface StairDesign {
   wrapSides: 1 | 3 | 4;
   landing: StairLanding;
   handrail: Handrail;
+  /**
+   * LANDINGS ON THE WAY DOWN (2026-11-14 — the owner: "split it with the landing, and turn the second part to the right
+   * or to the left… add more landings at any height to turn it somewhere, fully adjustable"). Each a platform on its
+   * own posts at a height of the builder's, and which way the stairs go on from it. None: one straight flight — a
+   * flight past the code's 12 ft 3 in. still gets a straight landing by itself.
+   */
+  landings: StairTurn[];
 }
-export const STAIR_LIMITS = { widthFt: { min: 3, max: 12 }, count: 6 } as const;
+/**
+ * Which way the stairs go on from a landing, as you walk DOWN them: straight on, a quarter turn to the left or the
+ * right, or back the way they came beside the flight above (a switchback) on its left or its right.
+ */
+export type StairTurnKind = "straight" | "left" | "right" | "back-left" | "back-right";
+export const STAIR_TURNS: readonly StairTurnKind[] = ["straight", "left", "right", "back-left", "back-right"];
+export const STAIR_TURN_LABEL: Record<StairTurnKind, string> = { straight: "Straight on", left: "Turn left", right: "Turn right", "back-left": "Back, on the left", "back-right": "Back, on the right" };
+/** A landing of a stair: how high its boards stand above the ground (the deck's own datum), and the turn it makes. */
+export interface StairTurn {
+  id: string;
+  heightIn: number;
+  turn: StairTurnKind;
+}
+/** `landings`: the most a stair takes; `landingHeightIn`: how high one may stand; `landingApartIn`: the least between two landings, or a landing and the deck or the ground — two risers. */
+export const STAIR_LIMITS = { widthFt: { min: 3, max: 12 }, count: 6, landings: 5, landingHeightIn: { min: 8, max: 348 }, landingApartIn: 12 } as const;
 
 export type RailInfill = "balusters" | "cable" | "glass" | "panel" | "horizontal" | "mesh";
 export const RAIL_INFILL_LABEL: Record<RailInfill, string> = { balusters: "Balusters", cable: "Cable", glass: "Glass panels", panel: "Panels", horizontal: "Horizontal rails", mesh: "Wire mesh panels" };
@@ -563,6 +586,8 @@ export interface DeckDesign {
     blocking: "auto" | "mid-span";
     /** Knee braces at corner posts over 2 ft (AWC's guide). */
     braces: boolean;
+    /** The braces' timber (2026-11-14): "auto" is the 2x4 it always was; a 4x4, 6x6 or 8x8 where the builder wants the heavier look — never larger than the post it braces. */
+    braceSize: BraceSize | "auto";
     /** Braces taken out one by one in the 3D (2026-11-09; lib/deck/parts): each a post and the way its brace leans. */
     bracesOff: string[];
     /**
@@ -711,6 +736,7 @@ export function defaultRoofDesign(structure: Structure = "covered-deck"): RoofDe
     soffit: false,
     gutters: { kind: structure === "covered-deck" ? "k5" : "none", guards: false },
     braces: true,
+    braceSize: "auto",
     bracesOff: [],
     headersOff: [],
     slats: { size: "2x2", spacingIn: 12 },
@@ -749,7 +775,7 @@ export function defaultRailDesign(): RailDesign {
 
 /** A flight of stairs where a contractor usually puts one: down the front, in the middle, 4 ft wide, onto a new pad. */
 export function defaultStair(id = "s1", side: StairSide = "front", atFt = 0): StairDesign {
-  return { id, side, atFt, widthFt: 4, level: "upper", wrap: false, wrapSides: 1, landing: "pad", handrail: "auto" };
+  return { id, side, atFt, widthFt: 4, level: "upper", wrap: false, wrapSides: 1, landing: "pad", handrail: "auto", landings: [] };
 }
 
 export function defaultLowerLevel(): LowerLevel {
@@ -794,6 +820,7 @@ export function defaultDeckDesign(opts: { state?: string | null; frostIn?: numbe
       joistTape: true,
       blocking: "auto",
       braces: true,
+      braceSize: "auto",
       bracesOff: [],
       pins: [],
       postSpacingFt: "auto",
@@ -974,6 +1001,7 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
       joistTape: typeof f.joistTape === "boolean" ? f.joistTape : d.framing.joistTape,
       blocking: oneOf(f.blocking, ["auto", "mid-span"] as const, d.framing.blocking),
       braces: typeof f.braces === "boolean" ? f.braces : d.framing.braces,
+      braceSize: oneOf(f.braceSize, ["auto", ...BRACE_SIZES] as const, "auto"),
       bracesOff: keyList(f.bracesOff),
       pins: deckPins(f.pins),
       postSpacingFt: typeof f.postSpacingFt === "number" && Number.isFinite(f.postSpacingFt) ? Math.round(clamp(f.postSpacingFt, DECK_POST_LIMITS.spacingFt.min, DECK_POST_LIMITS.spacingFt.max)) : "auto",
@@ -1183,6 +1211,7 @@ export function normalizeRoof(raw: unknown, structure: Structure, floor: Floor, 
     soffit: kind !== "pergola" && r.soffit === true,
     gutters: { kind: kind === "pergola" ? "none" : oneOf(gu.kind, GUTTER_KINDS, d.gutters.kind), guards: gu.guards === true },
     braces: typeof r.braces === "boolean" ? r.braces : d.braces,
+    braceSize: oneOf(r.braceSize, ["auto", "4x4", "6x6", "8x8"] as const, "auto"),
     bracesOff: keyList(r.bracesOff),
     headersOff: keyList(r.headersOff),
     slats: { size: oneOf(sl.size, ["2x2", "2x4", "2x6"] as const, d.slats.size), spacingIn: Math.round(clamp(num(sl.spacingIn, d.slats.spacingIn), ROOF_LIMITS.slatSpacingIn.min, ROOF_LIMITS.slatSpacingIn.max)) },
@@ -1193,6 +1222,39 @@ export function normalizeRoof(raw: unknown, structure: Structure, floor: Floor, 
     openings: roofPlaced(r.openings, ROOF_POST_LIMITS.openings, "o", (v, id, side, atFt) => ({ id, side, atFt, widthFt: toInch(clamp(num(v.widthFt, 4), ROOF_POST_LIMITS.openingFt.min, ROOF_POST_LIMITS.openingFt.max)), door: v.door !== false })),
     postSpacingFt: typeof r.postSpacingFt === "number" && Number.isFinite(r.postSpacingFt) ? Math.round(clamp(r.postSpacingFt, ROOF_POST_LIMITS.spacingFt.min, ROOF_POST_LIMITS.spacingFt.max)) : "auto",
   };
+}
+
+/** A knee brace's timber. */
+export type BraceSize = "2x4" | "4x4" | "6x6" | "8x8";
+export const BRACE_SIZES: readonly BraceSize[] = ["2x4", "4x4", "6x6", "8x8"];
+/** A brace's two faces, inches. */
+export const BRACE_ACTUAL_IN: Record<BraceSize, readonly [number, number]> = { "2x4": [1.5, 3.5], "4x4": [3.5, 3.5], "6x6": [5.5, 5.5], "8x8": [7.5, 7.5] };
+/** The brace sizes a post takes: none larger than the post (a 4x6 takes a 4x4; a built-up OC post the 2x4 it always had). */
+export function braceSizesFor(post: string, least: BraceSize = "2x4"): BraceSize[] {
+  const most = post === "8x8" ? 3 : post === "6x6" ? 2 : post === "4x4" || post === "4x6" ? 1 : 0;
+  return BRACE_SIZES.filter((_, k) => k <= most && k >= BRACE_SIZES.indexOf(least));
+}
+/** The brace a post gets: the size asked for where the post takes it, else the largest it does; "auto" is `usual`. */
+export function braceSizeFor(asked: BraceSize | "auto", post: string, usual: BraceSize): BraceSize {
+  const ok = braceSizesFor(post, usual);
+  if (asked === "auto" || !ok.length) return usual;
+  return ok.includes(asked) ? asked : BRACE_SIZES.indexOf(asked) < BRACE_SIZES.indexOf(usual) ? usual : ok[ok.length - 1];
+}
+
+/** A stair's landings: each with an id of its own, a height to the inch and a turn; highest first; junk, doubles and two within two risers of each other dropped. (Which of them the stair can really take is the build's to say: stairs.ts.) */
+function stairTurns(raw: unknown): StairTurn[] {
+  const out: StairTurn[] = [];
+  for (const [i, item] of (Array.isArray(raw) ? raw : []).entries()) {
+    if (out.length >= STAIR_LIMITS.landings) break;
+    if (!item || typeof item !== "object") continue;
+    const v = item as Record<string, unknown>;
+    if (typeof v.heightIn !== "number" || !Number.isFinite(v.heightIn)) continue;
+    const id = typeof v.id === "string" && /^[a-z0-9-]{1,12}$/.test(v.id) ? v.id : `t${i + 1}`;
+    const heightIn = Math.round(clamp(v.heightIn, STAIR_LIMITS.landingHeightIn.min, STAIR_LIMITS.landingHeightIn.max));
+    if (out.some((o) => o.id === id || Math.abs(o.heightIn - heightIn) < STAIR_LIMITS.landingApartIn)) continue;
+    out.push({ id, heightIn, turn: oneOf(v.turn, STAIR_TURNS, "straight") });
+  }
+  return out.sort((a, b) => b.heightIn - a.heightIn);
 }
 
 /** The deck's posts set by hand: each with an id of its own, a beam and a place along it to the inch; junk and doubles dropped. */
@@ -1296,6 +1358,7 @@ function normalizeStairs(raw: unknown, legacyExtras: Record<string, unknown>, sh
       wrapSides,
       landing: oneOf(s.landing, ["pad", "patio", "grade"] as const, "pad"),
       handrail: oneOf(s.handrail, ["auto", "both", "one", "none"] as const, "auto"),
+      landings: wrap ? [] : stairTurns(s.landings),
     };
   };
   if (list) {

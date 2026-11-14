@@ -71,6 +71,10 @@ import {
   ROOF_PLAN_LABEL,
   STAIR_LANDING_LABEL,
   STAIR_LIMITS,
+  STAIR_TURNS,
+  braceSizeFor,
+  braceSizesFor,
+  STAIR_TURN_LABEL,
   STAIR_SIDE_LABEL,
   STRUCTURE_LABEL,
   WALL_FILL_LABEL,
@@ -98,6 +102,7 @@ import {
   type RoofKind,
   type RoofPlanShape,
   type StairDesign,
+  type StairTurn,
   type Structure,
 } from "@/lib/deck/design";
 import { priceDeck, deckNotes, deckScope } from "@/lib/deck/pricing";
@@ -119,6 +124,7 @@ import { reportPlanLimitResult } from "@/stores/usePlanLimitStore";
 import { autoFixDesign, autoFixable, settleDesign } from "@/lib/deck/settle";
 import type { DeckEdit, DeckLook, DeckPick, SceneHighlight } from "@/components/estimator/deck/DeckModel3D";
 import { KINDS_FOR, patchDesign, patchRoof, switchStructure } from "@/lib/deck/edit";
+import { stairTurnWords, stairTurnsInOrder } from "@/lib/deck/stairs";
 import { addBeam, deckGrips, gripAtFor, gripShownIn, moveGrip, partOfGrip, removeBeamLine, type DeckGrip, type GripKind } from "@/lib/deck/byHand";
 import type { Flash } from "@/lib/deck/voice/run";
 import type { DeckVoiceHost } from "@/components/v3/deck-voice/deck-voice";
@@ -2125,6 +2131,17 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
             <Toggle checked={design.framing.doubleRim} onChange={(v) => patch({ framing: { doubleRim: v } })}>{ocFrame ? "Doubled band joists and rim (Owens Corning's way)" : "Doubled rim and outside joists"}</Toggle>
             <Toggle checked={design.framing.joistTape} onChange={(v) => patch({ framing: { joistTape: v } })}>Joist tape on every top</Toggle>
             <Toggle checked={design.framing.braces} onChange={(v) => patch({ framing: { braces: v } })}>Knee braces at corner posts over 2 ft</Toggle>
+            {/* The braces' timber (2026-11-14 — the owner: "a 6 by 6 brace, or 4 by 4, or 8 by 8 if the post is 8 by 8"). */}
+            {design.framing.braces && frame.group !== "OC" && braceSizesFor(design.framing.post, "2x4").length > 1 ? (
+              <Field label="Brace size" aside={design.framing.braceSize === "auto" ? "auto: 2x4" : `no larger than the ${design.framing.post} post`}>
+                <select className="v1-sel" value={braceSizeFor(design.framing.braceSize, design.framing.post, "2x4") === design.framing.braceSize ? design.framing.braceSize : "auto"} aria-label="Deck brace size" onChange={(e) => patch({ framing: { braceSize: e.target.value as DeckDesign["framing"]["braceSize"] } })} data-deck-brace-size>
+                  <option value="auto">Auto — 2x4</option>
+                  {braceSizesFor(design.framing.post, "2x4").map((v) => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </select>
+              </Field>
+            ) : null}
             <Toggle checked={design.framing.blocking === "mid-span"} onChange={(v) => patch({ framing: { blocking: v ? "mid-span" : "auto" } })}>Mid-span blocking on spans over 8 ft</Toggle>
             {design.heightIn >= 84 ? <Toggle checked={design.extras.underDeckDrain} onChange={(v) => patch({ extras: { underDeckDrain: v } })}>Under-deck drainage — a dry room below</Toggle> : null}
           </div>
@@ -2385,7 +2402,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                 <div className="v1-item-head">
                   <span className="v1-item-title">
                     {st.wrap ? "Box steps" : `Stair ${i + 1}`}
-                    {b ? <span className="v1-item-sub">{b.risers} risers of {b.riserIn.toFixed(2)} in.{b.lands === "lower-deck" ? " to the lower level" : ""}</span> : null}
+                    {b ? <span className="v1-item-sub">{b.risers} risers of {b.riserIn.toFixed(2)} in.{b.landings.length ? ` · ${b.flights.length} flights, ${b.landings.length} ${b.landings.length === 1 ? "landing" : "landings"}` : ""}{b.lands === "lower-deck" ? " to the lower level" : ""}</span> : null}
                   </span>
                   <button type="button" className="v1-btn v1-btn-sm v1-btn-danger" onClick={() => setStairs((list) => list.filter((x) => x.id !== st.id))}>
                     Remove
@@ -2421,6 +2438,70 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                   <Field label="From" wide>
                     <Seg label="From which level" value={st.level} onChange={(v) => set({ level: v })} options={[{ value: "upper", label: design.lower.place === "under" ? "The upper deck" : "The deck" }, { value: "lower", label: design.lower.place === "under" ? "The lower deck" : "The lower level" }]} />
                   </Field>
+                ) : null}
+                {/* LANDINGS ON THE WAY DOWN (2026-11-14 — the owner: "split it with the landing, and turn the second part to
+                    the right or to the left… add more landings at any height, fully adjustable"). Each a platform on its
+                    own posts at a height of the builder's, and the way the stairs go on from it — said as the deck is
+                    SEEN from the yard, not as the walker turns. */}
+                {!st.wrap && b && b.kind === "flight" && b.risers > 0 ? (
+                  <div className="v1-landings" data-deck-landings={st.id}>
+                    <span className="v1-h4">Landings on the way down</span>
+                    {st.landings.length ? (
+                      <div className="v1-rows">
+                        {st.landings.map((ld, k) => {
+                          const built = b.landings.find((x) => x.id === ld.id);
+                          const setL = (p: Partial<StairTurn>) => set({ landings: st.landings.map((x) => (x.id === ld.id ? { ...x, ...p } : x)) });
+                          const top = st.level === "lower" && structure.lower ? structure.lower.frame.surfaceIn : design.heightIn;
+                          return (
+                            <div className="v1-item" key={ld.id} data-deck-landing={ld.id}>
+                              <div className="v1-item-head">
+                                <span className="v1-item-title">
+                                  {`Landing ${k + 1}`}
+                                  <span className="v1-item-sub">{built ? `${ftIn(built.widthIn)} × ${ftIn(built.depthIn)} on ${built.posts} posts of its own` : "no room for it here — keep it a foot clear of the deck, the ground and the next landing"}</span>
+                                </span>
+                                <button type="button" className="v1-btn v1-btn-sm v1-btn-danger" onClick={() => set({ landings: st.landings.filter((x) => x.id !== ld.id) })}>
+                                  Remove
+                                </button>
+                              </div>
+                              <div className="v1-grid2">
+                                <Stepper label="How high" aside={`above the ground · ${ftIn(ld.heightIn)}`} unit="in." value={ld.heightIn} step={6} parse={parseInches} format={(n2) => String(Math.round(n2))} min={STAIR_LIMITS.landingHeightIn.min} max={Math.max(STAIR_LIMITS.landingHeightIn.min, Math.round(top) - STAIR_LIMITS.landingApartIn)} onCommit={(n2) => setL({ heightIn: Math.round(n2) })} />
+                                <Field label="Then the stairs go">
+                                  <select className="v1-sel" value={ld.turn} aria-label={`Landing ${k + 1}: which way the stairs go on`} onChange={(e) => setL({ turn: e.target.value as StairTurn["turn"] })} data-deck-landing-turn>
+                                    {(built ? stairTurnsInOrder(built.dir) : STAIR_TURNS).map((t) => (
+                                      <option key={t} value={t}>{built ? stairTurnWords(built.dir, t) : STAIR_TURN_LABEL[t]}</option>
+                                    ))}
+                                  </select>
+                                </Field>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                    {(() => {
+                      // A new landing goes in the middle of the tallest flight; the first one turns toward the open yard.
+                      const tall = b.flights.reduce<(typeof b.flights)[number] | null>((m, f) => (!m || f.riseIn > m.riseIn ? f : m), null);
+                      const room = !!tall && tall.riseIn >= 2 * STAIR_LIMITS.landingApartIn + 6;
+                      const firstTurn: StairTurn["turn"] = st.side === "front" ? (st.atFt * 12 < (design.shape.widthFt * 12) / 2 ? "right" : "left") : st.side === "left" ? "left" : "right";
+                      return (
+                        <div className="v1-row-acts">
+                          <button
+                            type="button"
+                            className="v1-btn v1-btn-sm v1-btn-quiet"
+                            disabled={!room || st.landings.length >= STAIR_LIMITS.landings}
+                            onClick={() => tall && set({ landings: [...st.landings, { id: `t${Date.now().toString(36).slice(-5)}`, heightIn: Math.round(tall.topIn - tall.riseIn / 2), turn: st.landings.length ? "straight" : firstTurn }] })}
+                            data-deck-add-landing
+                          >
+                            + A landing
+                          </button>
+                        </div>
+                      );
+                    })()}
+                    <p className="v1-hint">
+                      {b.landings.some((l) => l.auto) ? "This stair climbs more than 12 ft 3 in. in one go, so the code's landing is already in it. " : ""}
+                      A landing splits the stair and can turn it — to either side, or back beside the flight above. Each stands on its own posts and footings, as wide as the stair, railed like it. Set its height, then which way the stairs go on.
+                    </p>
+                  </div>
                 ) : null}
                 {st.side === "front" ? (
                   <>
@@ -2546,6 +2627,16 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
             </Field>
           </div>
           <Toggle checked={r.braces} onChange={(v) => rp({ braces: v })}>Knee braces at the posts</Toggle>
+          {r.braces && braceSizesFor(r.post, "4x4").length > 1 ? (
+            <Field label="Brace size" aside={r.braceSize === "auto" ? "auto: 4x4" : `no larger than the ${r.post} post`}>
+              <select className="v1-sel" value={braceSizeFor(r.braceSize, r.post, "4x4") === r.braceSize ? r.braceSize : "auto"} aria-label="Roof brace size" onChange={(e) => rp({ braceSize: e.target.value as RoofDesign["braceSize"] })} data-deck-roof-brace-size>
+                <option value="auto">Auto — 4x4</option>
+                {braceSizesFor(r.post, "4x4").map((v) => (
+                  <option key={v} value={v}>{v}</option>
+                ))}
+              </select>
+            </Field>
+          ) : null}
           <Field label="Walls between the posts" wide>
             <Seg
               label="Walls between the posts"

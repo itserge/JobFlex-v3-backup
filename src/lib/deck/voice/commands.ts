@@ -122,6 +122,13 @@ export type StairPick = { side: StairSide } | { index: number } | "last" | "all"
 /** Where along its edge: an end, the middle, a distance from the start of the edge, or a slide by so much. */
 export type StairAt = "left" | "center" | "right" | "house" | "out" | { ft: number } | { by: number };
 
+/**
+ * A LANDING ON A STAIR, AS IT IS SAID (2026-11-14): "add a landing", "take the landings out", or the way the stairs go
+ * on from it — to the left or the right AS THE DECK IS SEEN from the yard, toward the house, out to the yard, back
+ * beside the flight above, or straight on. `turnAtIn` is the landing's height above the ground.
+ */
+export type StairTurnSaid = "add" | "remove" | "straight" | "left" | "right" | "house" | "yard" | "back";
+
 export type DeckCommand =
   | { do: "size"; width?: Amount; depth?: Amount; areaSqFt?: number; square?: boolean; from?: "left" | "right" | "house" }
   | { do: "height"; in: Amount }
@@ -138,7 +145,7 @@ export type DeckCommand =
   | { do: "footing"; type?: FootingType; aboveGradeIn?: number; frostAlways?: boolean }
   | { do: "site"; frostIn?: Amount; snowPsf?: number; loadPsf?: LoadPsf; soilPsf?: SoilPsf; outDropIn?: number; acrossDropIn?: number; state?: string }
   | { do: "rail"; set: RailSet }
-  | { do: "stairs"; op: "add" | "remove" | "change"; which?: StairPick; side?: StairSide; at?: StairAt; width?: Amount; wrap?: boolean; wrapSides?: 1 | 3 | 4; landing?: StairLanding; handrail?: Handrail; level?: "upper" | "lower"; count?: number; flip?: boolean }
+  | { do: "stairs"; op: "add" | "remove" | "change"; which?: StairPick; side?: StairSide; at?: StairAt; width?: Amount; wrap?: boolean; wrapSides?: 1 | 3 | 4; landing?: StairLanding; handrail?: Handrail; level?: "upper" | "lower"; count?: number; flip?: boolean; turn?: StairTurnSaid; turnAtIn?: number }
   // `place: "under"` is a DOUBLE DECK (2026-11-13): a deck of the same size under this one; `heightIn` — how high that lower deck stands above the ground.
   | { do: "lower"; on?: boolean; width?: Amount; depth?: Amount; dropIn?: Amount; align?: Align; place?: "front" | "under"; heightIn?: Amount }
   | { do: "spa"; on?: boolean; width?: Amount; depth?: Amount; align?: Align }

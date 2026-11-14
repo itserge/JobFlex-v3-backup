@@ -35,6 +35,7 @@ import {
   type RoofSet,
   type StairAt,
   type StairPick,
+  type StairTurnSaid,
 } from "./commands";
 import { QUESTION_HEAD, halfFt, normalizeSpeech, phraseKey, splitClauses, trimClause } from "./words";
 
@@ -496,12 +497,38 @@ function stairSide(c: string): { side?: StairSide; at?: StairAt; both?: boolean 
 }
 
 function readStairs(c: string, ctx: ParseContext): Read {
-  if (!STAIR_WORDS.test(c)) return null;
+  // "…with a landing 5 ft up" is cut off from its stairs by the "with": on a deck that has stairs, a landing is theirs
+  // (it was read as the DECK going 5 ft up).
+  const landingAlone = /\blandings?\b/.test(c) && ctx.design.stairs.length > 0 && !LOWER_WORDS.test(c) && !/\b(?:concrete|pad|patio|pavers?)\b/.test(c);
+  if (!STAIR_WORDS.test(c) && !landingAlone) return null;
   // "Two steps down to a lower level" is how far down the lower level sits, not a stair.
   if (LOWER_WORDS.test(c) && /\b(?:\d+|one|two|three|a) steps? down\b/.test(c)) return null;
   if (FIX_WORDS.test(c) && !/\bhandrails?\b/.test(c)) return null;
   const d = ctx.design;
   const n = d.stairs.length;
+  // LANDINGS (2026-11-14): "add a landing", "split the stairs with a landing 5 ft up", "turn the stairs left",
+  // "make the stairs a switchback", "take the landing out". (A "concrete landing" is the pad at the foot, read below.)
+  const landingSaid = /\blandings?\b/.test(c) && !/\b(?:concrete|pad|patio|pavers?) (?:landing|pad)\b|\blanding (?:pad|on|onto)\b/.test(c);
+  const turnSaid = /\b(?:turns?|turning|switch[- ]?backs?|u[- ]?turn|dog[- ]?leg(?:ged)?|l[- ]shaped?)\b/.test(c);
+  if (n > 0 && (landingSaid || turnSaid)) {
+    if (landingSaid && (isRemove(c) || /\bno landings?\b|\bstraight (?:stairs?|flight|run)\b|\bone (?:straight )?flight\b/.test(c))) return read([{ do: "stairs", op: "change", turn: "remove" }], "stairs");
+    const turn: StairTurnSaid = /\bswitch[- ]?backs?\b|\bu[- ]?turn\b|\bdog[- ]?leg|\bturn(?:s|ing)? (?:it |them |the (?:stairs?|steps) )?(?:back|around)\b|\bback (?:toward|to|under) the (?:deck|house)\b/.test(c)
+      ? "back"
+      : /\bleft\b/.test(c)
+        ? "left"
+        : /\bright\b/.test(c)
+          ? "right"
+          : /\b(?:toward|towards|to) the house\b/.test(c)
+            ? "house"
+            : /\baway from the house\b|\b(?:toward|towards|to|into|out to) the yard\b/.test(c)
+              ? "yard"
+              : /\bstraight\b/.test(c)
+                ? "straight"
+                : "add";
+    const h = /(\d+(?:\.\d+)?)( ft| in)? (?:up|high|off the ground|above the ground|from the ground|above grade)\b|\bat (\d+(?:\.\d+)?)( ft| in)\b/.exec(c);
+    const hv = h ? Number(h[1] ?? h[3]) * ((h[2] ?? h[4]) === " in" ? 1 : 12) : undefined;
+    return read([{ do: "stairs", op: "change", turn, ...(hv && hv >= 8 && hv <= 348 ? { turnAtIn: Math.round(hv) } : {}) }], "stairs");
+  }
   const where = stairSide(c);
   const lower = /\b(?:from|off|on|to|for) (?:the )?lower (?:level|deck)\b|\blower (?:level )?(?:stairs|steps)\b/.test(c) ? "lower" : undefined;
   const wrap = /\b(?:wrap(?:[- ]?around)?|box steps?|steps? all (?:the way )?around|full[- ]width (?:steps|stairs)|cascad(?:e|ing) (?:steps|stairs)|bleacher (?:steps|stairs)|step down all (?:the way )?around|around the (?:deck|front)|steps? along the (?:whole |entire )?front|(?:whole|entire|full) front)\b/.test(c);

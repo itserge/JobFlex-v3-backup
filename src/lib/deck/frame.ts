@@ -69,7 +69,7 @@ import {
 } from "./codeTables";
 import { deckingProduct, framingSpecies, isCompositeFraming, wallType, type DeckingProduct, type FramingSpecies, type WallType } from "./catalog";
 import { OC_BEAM_LAST_FT, OC_BLOCKING_MAX_FT, OC_POST, ocBeamMaxSpanIn, ocPostMaxAreaSqFt } from "./ocLumber";
-import { BUILT_UP_CHOICES, DECK_BEAM_LIMITS, frontEdgeAt, isSolidBeam, normalizeDeckDesign, shapeAreaSqFt, shapeEdges, shapeOutline, shapeZones, type BeamKind, type BeamSize, type BeamStyle, type DeckDesign, type DeckEdge, type Zone, spaRectIn } from "./design";
+import { BRACE_ACTUAL_IN, BUILT_UP_CHOICES, DECK_BEAM_LIMITS, braceSizeFor, frontEdgeAt, isSolidBeam, normalizeDeckDesign, shapeAreaSqFt, shapeEdges, shapeOutline, shapeZones, type BeamKind, type BeamSize, type BeamStyle, type DeckDesign, type DeckEdge, type Zone, spaRectIn } from "./design";
 import { ringEdges } from "./ringEdges";
 import { deckingColor, deckingLook, deckingNamed } from "./deckingColors";
 import { deckRate, lumberKey, type DeckRateBook } from "./rates";
@@ -1362,6 +1362,9 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
     // ONE BY ONE (2026-11-09 — owner: "somebody doesn't want those braces: you just click it and delete"): a brace
     // taken out in the 3D is left out by its key — its beam, which end, which way it leans (`deckBraceKey`).
     const bracesOff = new Set(design.framing.bracesOff);
+    // The braces' timber (2026-11-14): the 2x4 they always were, or the builder's 4x4, 6x6 or 8x8 — never larger than the post.
+    const braceNominal = composite ? "2x4" : braceSizeFor(design.framing.braceSize, design.framing.post, "2x4");
+    const braceThick = BRACE_ACTUAL_IN[braceNominal][0];
     if (design.framing.braces) {
       for (const b of beams) {
         const ends = posts.filter((p) => p.beamId === b.id && p.corner);
@@ -1373,7 +1376,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
           const len = Math.round(BRACE_LEG_IN * Math.SQRT2);
           if (bracesOff.has(deckBraceKey(b.id, k, "x"))) bracesLeftOut += 1;
           else {
-            sticks.push({ role: "brace", nominal: "2x4", lengthIn: len, cx: p.x + (along * BRACE_LEG_IN) / 2, cy: p.y, cz: z, sx: BRACE_LEG_IN, sy: THICK_2X_IN, sz: BRACE_LEG_IN, ground: false, lean: { axis: "x", dir: along }, of: deckBraceKey(b.id, k, "x") });
+            sticks.push({ role: "brace", nominal: braceNominal, lengthIn: len, cx: p.x + (along * BRACE_LEG_IN) / 2, cy: p.y, cz: z, sx: BRACE_LEG_IN, sy: braceThick, sz: BRACE_LEG_IN, ground: false, lean: { axis: "x", dir: along }, of: deckBraceKey(b.id, k, "x") });
             hardware.braces += 1;
           }
           if (freeStanding && style === "dropped") {
@@ -1386,7 +1389,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
             if (leg >= 12 && bracesOff.has(deckBraceKey(b.id, k, "y"))) bracesLeftOut += 1;
             else if (leg >= 12) {
               const cz2 = joistBottomIn - leg / 2;
-              sticks.push({ role: "brace", nominal: "2x4", lengthIn: Math.round(leg * Math.SQRT2), cx: p.x, cy: p.y + (out * leg) / 2, cz: cz2, sx: THICK_2X_IN, sy: leg, sz: leg, ground: false, lean: { axis: "y", dir: out }, of: deckBraceKey(b.id, k, "y") });
+              sticks.push({ role: "brace", nominal: braceNominal, lengthIn: Math.round(leg * Math.SQRT2), cx: p.x, cy: p.y + (out * leg) / 2, cz: cz2, sx: braceThick, sy: leg, sz: leg, ground: false, lean: { axis: "y", dir: out }, of: deckBraceKey(b.id, k, "y") });
               hardware.braces += 1;
             }
           }
