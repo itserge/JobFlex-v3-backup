@@ -115,7 +115,7 @@ const sc = deckScene(st);
 const jambBox = sc.boxes.findIndex((b, i) => sc.legend[sc.tags[i]]?.role === "roof post" && near(b[1] * 12, jambs[0].x, 0.7) && near(b[2] * 12, jambs[0].y, 0.7));
 const ref = partAt(st, sc, jambBox);
 const card = ref ? partCard(st, ref) : null;
-check("click one of the opening's posts in the 3D: its card is the opening's — remove it, make it 3 to 8 ft, hang or leave out the door, slide it", ref?.kind === "roof-post" && /opening/.test(card?.title ?? "") && ["opening-off", "opening-3", "opening-6", "opening-door", "opening-slide--1", "opening-slide-1"].every((id) => card!.choices.some((c) => c.id === id)) && card!.choices.find((c) => c.id === "opening-4")?.current === true, JSON.stringify(card?.choices.map((c) => c.id)));
+check("click one of the opening's posts in the 3D: its card is the opening's — remove it, make it 3 to 8 ft, hang or leave out the door, and its place to type or nudge by the inch (2026-11-13: it was a slide of a foot)", ref?.kind === "roof-post" && /opening/.test(card?.title ?? "") && ["opening-off", "opening-3", "opening-6", "opening-door"].every((id) => card!.choices.some((c) => c.id === id)) && card!.choices.find((c) => c.id === "opening-4")?.current === true && card!.place?.kind === "roof-post" && /^open:/.test(card!.place.id) && !card!.choices.some((c) => /slide/.test(c.id)), JSON.stringify(card?.choices.map((c) => c.id)));
 const off = card ? tryChoice(door, card.choices.find((c) => c.id === "opening-off")!) : null;
 check("…remove it: the two posts go, the roof is as it was", !!off && off.design.roof.openings.length === 0 && roofOf(off.design).posts.length === r0.posts.length);
 const six = card ? tryChoice(door, card.choices.find((c) => c.id === "opening-6")!) : null;

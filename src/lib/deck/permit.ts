@@ -670,6 +670,11 @@ export function permitNotes(s: DeckStructure, local: string[] = [], edition: str
     } else out.push(`Free-standing: the deck stands on its own posts and beams, braced both ways at the posts — detail 7/S-501 (${RULE.selfSupporting}; ${R.bracing}).`);
     out.push(`Joists ${f.group === "OC" ? "OC Lumber " : ""}${f.joistSize} at ${f.spacingIn} in. on center; a hanger at every joist end on a ledger or a flush beam, a tie at every joist on a dropped beam (${R.hangers}; ${R.restraint}).`);
     out.push(d.framing.post === OC_POST ? `Posts built up of three 2x6 OC boards, 9 ft at most and braced; beams of two or three OC boards bear fully on the posts (${R.post}; ${R.beam}).` : `Posts ${d.framing.post} in metal post bases and caps; beams bear fully on the posts, never toe-nailed (${R.post}; ${R.beam}).`);
+    // A DOUBLE DECK (2026-11-13): the lower deck on the upper deck's posts.
+    if (s.lower?.place === "under") {
+      const lf = s.lower.frame;
+      out.push(`Double deck: a lower deck ${ftIn(d.lower.heightIn)} above grade under the upper one, the same outline, framed on the same lines — ${lf.joistSize} joists at ${lf.spacingIn} in., ${[...new Set(lf.beams.map((b) => b.spec.size))].join(" and ")} ${lf.beams.length === 1 ? "beam" : "beams"}. Each lower beam sits in a seat let 1 1/2 in. per ply into its post and is fastened with two 1/2-in. through bolts with washers (${lf.seats.length} seats); the posts run in one piece from the footings to the upper beams, and the posts and footings are sized for the area of both decks. The lower deck's ledger, hangers and lateral connection as the upper deck's (${R.post}; ${R.beam}).`);
+    }
     out.push(`Decking: ${f.decking.label}${s.surface?.border ? `, with ${borderWords(s.surface)} — blocked under its inner edge along the sides` : ""}, fastened to its maker's instructions; joist spacing ${f.spacingIn} in. (the boards allow ${f.deckingMaxSpacingIn} in.) (${RULE.decking}).`);
   }
   if (s.rails.on) out.push(`Guards ${s.rails.heightIn} in. high where the walking surface is more than 30 in. above grade; no opening passes a 4-in. sphere; guard posts ${railHeldWords(s.rails)}${s.rails.sidePosts && s.rails.postKind !== "metal" ? ", the rim blocked" : ""}; the top rail resists 200 lb (${RULE.guard}; IRC Table R301.5).`);

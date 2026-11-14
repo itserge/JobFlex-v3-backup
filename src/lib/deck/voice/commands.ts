@@ -139,7 +139,8 @@ export type DeckCommand =
   | { do: "site"; frostIn?: Amount; snowPsf?: number; loadPsf?: LoadPsf; soilPsf?: SoilPsf; outDropIn?: number; acrossDropIn?: number; state?: string }
   | { do: "rail"; set: RailSet }
   | { do: "stairs"; op: "add" | "remove" | "change"; which?: StairPick; side?: StairSide; at?: StairAt; width?: Amount; wrap?: boolean; wrapSides?: 1 | 3 | 4; landing?: StairLanding; handrail?: Handrail; level?: "upper" | "lower"; count?: number; flip?: boolean }
-  | { do: "lower"; on?: boolean; width?: Amount; depth?: Amount; dropIn?: Amount; align?: Align }
+  // `place: "under"` is a DOUBLE DECK (2026-11-13): a deck of the same size under this one; `heightIn` — how high that lower deck stands above the ground.
+  | { do: "lower"; on?: boolean; width?: Amount; depth?: Amount; dropIn?: Amount; align?: Align; place?: "front" | "under"; heightIn?: Amount }
   | { do: "spa"; on?: boolean; width?: Amount; depth?: Amount; align?: Align }
   | { do: "fixture"; op: "add" | "remove" | "set"; kind: FixtureKind; qty?: Amount; supply?: FixtureSupply; volts240?: boolean }
   | { do: "electrical"; timer?: boolean; feedFt?: number; panelSide?: "left" | "right" }

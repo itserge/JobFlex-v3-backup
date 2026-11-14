@@ -30,8 +30,9 @@
 
 import { BRACE_ABOVE_IN, JOIST_SIZES, POST_ACTUAL_IN, POST_SIZES, SOLID_BEAMS, SPACINGS, ftIn } from "./codeTables";
 import { wallType } from "./catalog";
+import { addBeam, addPostUnder, addRoofPost, deckGrips, gripOfPart, removeBeamLine, removePost, roofCornerSides, roofSideOf, type DeckGrip } from "./byHand";
 import { applyDeckPatch, deckChecks, type DeckPatch } from "./checks";
-import { BUILT_UP_CHOICES, DECK_POST_LIMITS, RAIL_MOUNT_LABEL, RAIL_MOUNT_WORDS, RAIL_SECTION_LABEL, ROOF_POST_LIMITS, defaultRoofOpening, type DeckDesign, type DeckPostPin, type RailSectionKey, type RoofDesign, type RoofSide } from "./design";
+import { BUILT_UP_CHOICES, RAIL_MOUNT_LABEL, RAIL_MOUNT_WORDS, RAIL_SECTION_LABEL, ROOF_POST_LIMITS, ROOF_SIDE_LABEL, defaultRoofOpening, type DeckDesign, type RailSectionKey, type RoofDesign } from "./design";
 import { priceDeck, type DeckPackage, type DeckPriceOptions } from "./pricing";
 import { railMountLine } from "./rails";
 import type { RoofMember } from "./roof";
@@ -202,24 +203,6 @@ function railPart(s: DeckStructure, x: number, y: number, z: number): PartRef {
   return { kind: "rail", id: best?.id ?? "" };
 }
 
-/** The side of the roof a post stands on and its place along it, as design.roof's posts and openings are measured: feet from the side's left end (front, back) or its house end (left, right). */
-function roofSideOf(roof: NonNullable<DeckStructure["roof"]>, post: { x: number; y: number }): { side: RoofSide; atFt: number; lengthFt: number } | null {
-  const ringH = roof.headers.filter((h) => !h.cross);
-  if (!ringH.length) return null;
-  const minX = Math.min(...ringH.flatMap((h) => [h.x0, h.x1]));
-  const maxY = Math.max(...ringH.flatMap((h) => [h.y0, h.y1]));
-  for (const h of ringH) {
-    const horiz = Math.abs(h.y0 - h.y1) < 0.5;
-    const vert = Math.abs(h.x0 - h.x1) < 0.5;
-    if (!horiz && !vert) continue;
-    const on = horiz ? Math.abs(post.y - h.y0) < 0.6 && post.x > Math.min(h.x0, h.x1) + 1 && post.x < Math.max(h.x0, h.x1) - 1 : Math.abs(post.x - h.x0) < 0.6 && post.y > Math.min(h.y0, h.y1) + 1 && post.y < Math.max(h.y0, h.y1) - 1;
-    if (!on) continue;
-    const side: RoofSide = horiz ? (Math.abs(h.y0 - maxY) < 1 ? "front" : "back") : Math.abs(h.x0 - minX) < 1 ? "left" : "right";
-    return { side, atFt: ((horiz ? post.x : post.y) - (horiz ? Math.min(h.x0, h.x1) : Math.min(h.y0, h.y1))) / 12, lengthFt: h.lengthIn / 12 };
-  }
-  return null;
-}
-
 /** Every box of the scene that is this same part (a beam's plies, a post's two halves) — what the 3D lights. */
 export function partBoxes(s: DeckStructure, scene: DeckScene, ref: PartRef, wholeKind = false): number[] {
   const out: number[] = [];
@@ -261,6 +244,8 @@ export interface PartCard {
   /** Why it cannot simply come out, when it cannot. */
   stays?: string;
   choices: PartChoice[];
+  /** MOVED BY HAND (2026-11-13; lib/deck/byHand): a post or a beam that can be slid — where it stands, to type or nudge by the inch. */
+  place?: DeckGrip;
 }
 
 const plural = (n: number, w: string, many = `${w}s`) => `${n} ${n === 1 ? w : many}`;
@@ -330,8 +315,10 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
   const roof = s.roof;
   const lower = ref.level === "lower";
   const f = lower ? s.lower?.frame ?? null : s.frame;
-  const lvl = lower ? "lower-level " : "";
-  const card = (title: string, does: string, choices: PartChoice[], stays?: string): PartCard => ({ ref, title, does, choices, ...(stays ? { stays } : {}) });
+  // (A double deck's lower floor is "the lower deck": it hangs on the main deck's posts — 2026-11-13.)
+  const under = lower && s.lower?.place === "under";
+  const lvl = under ? "lower-deck " : lower ? "lower-level " : "";
+  const card = (title: string, does: string, choices: PartChoice[], stays?: string, place?: DeckGrip | null): PartCard => ({ ref, title, does, choices, ...(stays ? { stays } : {}), ...(place && !place.fixed ? { place } : {}) });
 
   switch (ref.kind) {
     case "deck-brace": {
@@ -347,8 +334,8 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
       const many = f.beams.length > 1;
       const choices: PartChoice[] = [];
       let stays: string | undefined;
-      const title = `${lvl ? "Lower-level " : ""}${beam.role === "front" ? "front beam" : beam.role === "middle" ? "middle beam" : "beam by the house"}`.replace(/^./, (c) => c.toUpperCase());
-      let does = `${beam.spec.size} ${beam.style === "flush" ? "flush beam (the joists hang on it)" : "beam under the joists"} on ${plural(beam.postXs.length, "post")}, ${ftIn(beam.spanIn)} between them. `;
+      const title = `${under ? "Lower-deck " : lvl ? "Lower-level " : ""}${beam.role === "front" ? "front beam" : beam.role === "middle" ? "middle beam" : "beam by the house"}`.replace(/^./, (c) => c.toUpperCase());
+      let does = `${beam.spec.size} ${beam.style === "flush" ? "flush beam (the joists hang on it)" : "beam under the joists"} ${under ? "let into" : "on"} ${plural(beam.postXs.length, "post")}${under ? " of the upper deck" : ""}, ${ftIn(beam.spanIn)} between them. `;
       if (beam.role === "middle") {
         does += "It is here because the joists, at the size and spacing set, do not span the whole depth in one piece.";
         if (!lower && (d.framing.joist !== "auto" || d.framing.spacingIn !== "auto")) choices.push({ id: "re-span", tone: "remove", label: "Remove this beam — re-span the joists", note: "The joist size and spacing go back to the tables' own pick: a deeper joist, or joists closer together, that spans without a beam in the middle.", patch: { framing: { joist: "auto", spacingIn: "auto" } }, works: (after) => (after.frame?.beams.length ?? 0) < f.beams.length });
@@ -357,17 +344,28 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
         does += "This side stands on its own posts instead of hanging on the house.";
         const w = wallType(d.wall);
         if (!lower && d.placement === "beside" && w.ledger) choices.push({ id: "ledger", tone: "remove", label: "Remove it — hang this side on the house", note: "A ledger bolted to the house's rim carries this side instead: no beam, posts or footings along the wall.", patch: { placement: "attached" }, works: (after) => (after.frame?.ledgers.length ?? 0) > 0 });
-        else stays = lower ? "The lower level stands on its own beams, front and back." : d.placement === "detached" ? "The deck stands out in the yard: this beam is one of the two it stands on." : `${w.label}: ${w.why}`;
+        else stays = under ? "The lower deck's beams stand on the upper deck's own lines, let into its posts: move the upper deck's beam and this one goes with it." : lower ? "The lower level stands on its own beams, front and back." : d.placement === "detached" ? "The deck stands out in the yard: this beam is one of the two it stands on." : `${w.label}: ${w.why}`;
       } else {
         does += "It carries the outer ends of the joists down to the posts.";
         stays = "The joists' outer ends rest on it: it cannot come out. Its size, and how many posts it needs, can change.";
+      }
+      // BY HAND (2026-11-13; lib/deck/byHand): the beam slides along the joists — on the card, to the inch — one more
+      // can be stood under the joists, and one the builder placed can be taken off again.
+      const grip = lower ? null : gripOfPart(s, ref);
+      if (!lower) {
+        if (beam.by) choices.push({ id: "line-off", tone: "remove", label: "Remove this beam — it was set by hand", note: "Its posts go with it. If the joists cannot span what it leaves, deeper joists or a beam in the middle of the span carry them.", patch: removeBeamLine(s, beam.by.id) ?? {} });
+        if (beam.role === "front" && d.framing.overhangFt !== "auto") choices.push({ id: "front-auto", tone: "swap", label: "Let the studio place this beam", note: "It goes back to where the joist table puts it.", patch: { framing: { overhangFt: "auto" } } });
+        if (beam.role === "back" && d.framing.backOverhangFt !== "auto") choices.push({ id: "back-auto", tone: "swap", label: "Let the studio place this beam", note: "It goes back to as far in as the front beam.", patch: { framing: { backOverhangFt: "auto" } } });
+        const more = addBeam(s, beam.id);
+        if (more) choices.push({ id: "line-add", tone: "add", label: "Add a beam under the joists", note: `In the middle of the joists' longest span, ${ftIn(Math.round(more.spanIn))} now. The joists and the beams are sized again for the shorter spans.`, patch: more.patch });
+        if (grip?.fixed) does += ` ${grip.fixed}`;
       }
       if (!lower) {
         const sizes: readonly string[] = f.beamKind === "solid" ? SOLID_BEAMS : BUILT_UP_CHOICES;
         choices.push(...sizeRow(many ? "Beam size — every beam" : "Beam size", "beam", sizes, d.framing.beam, (v) => (v === "auto" ? "Auto" : String(v)), (v) => ({ framing: { beam: v as DeckDesign["framing"]["beam"] } })));
         choices.push(beam.style === "dropped" ? { id: "flush", tone: "swap", label: "Make the beams flush with the joists", note: "The beam moves up into the joists' plane and they hang on it in hangers: nothing below the frame but the posts.", patch: { framing: { beamStyle: "flush" } } } : { id: "dropped", tone: "swap", label: "Drop the beams under the joists", note: "The joists sit on top of the beam and may run past it.", patch: { framing: { beamStyle: "dropped" } } });
       }
-      return card(title, does, choices, stays);
+      return card(title, does, choices, stays, grip);
     }
 
     case "deck-post": {
@@ -376,21 +374,16 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
       if (!f || !post || !beam) return card("Post", "A post under the deck.", []);
       const choices: PartChoice[] = [];
       let stays: string | undefined;
-      // BY HAND (2026-11-13; design.framing.pins). A post can be slid, one can be added, and one set by hand taken off:
-      // the beam then stands on the posts as placed — and on more only where its spans or its ends need one.
-      if (!lower) {
-        const role = beam.role;
-        const others = d.framing.pins.filter((pn) => !(pn.beam === role && pn.atFt * 12 >= beam.x0 - 0.5 && pn.atFt * 12 <= beam.x1 + 0.5));
-        const pinsOf = (xs: number[]): DeckPostPin[] => [...others, ...xs.map((x) => ({ id: `${role[0]}${Math.round(x)}`, beam: role, atFt: Math.round(x) / 12 }))];
-        const byHand = f.posts.filter((q) => q.beamId === beam.id && q.by).map((q) => q.x);
-        const taken = byHand.length > 0;
-        // What the builder's posts are now: theirs where the beam is already by hand, every post of it where it is not yet.
-        const now = taken ? byHand : beam.postXs;
-        const here = now.findIndex((x) => Math.abs(x - post.x) < 0.5);
-        if (post.by) choices.push({ id: "pin-off", tone: "remove", label: "Remove this post — it was set by hand", note: "If the beam needs a post in the span it leaves, one stands in the middle of it.", patch: { framing: { pins: pinsOf(now.filter((_, k) => k !== here)) } } });
-        if (here >= 0) for (const by of [-12, 12]) choices.push({ id: `pin-slide-${by}`, tone: "swap", label: `Slide this post 1 ft to the ${by < 0 ? "left" : "right"}`, note: taken ? undefined : "The beam's posts stay where they are, as posts set by hand; this one moves.", patch: { framing: { pins: pinsOf(now.map((x, k) => (k === here ? Math.max(beam.x0 + 1, Math.min(beam.x1 - 1, x + by)) : x))) } } });
-        const gaps = beam.postXs.slice(1).map((x, k) => ({ at: (x + beam.postXs[k]) / 2, w: x - beam.postXs[k] })).sort((a, b) => b.w - a.w);
-        if (gaps.length && d.framing.pins.length < DECK_POST_LIMITS.pins) choices.push({ id: "pin-add", tone: "add", label: "Add a post under this beam", note: `In the middle of its longest span, ${ftIn(Math.round(gaps[0].w))} now.`, patch: { framing: { pins: pinsOf([...now, gaps[0].at]) } } });
+      // BY HAND (2026-11-13; design.framing.pins, lib/deck/byHand). A post slides along its beam — on the card, to the
+      // inch — one can be added, and one set by hand taken off: the beam then stands on the posts as placed, and on
+      // more only where its spans or its ends need one.
+      const grips = lower ? [] : deckGrips(s);
+      const grip = lower ? null : gripOfPart(s, ref, grips);
+      if (grip) {
+        const off = post.by ? removePost(s, grip.id, grips) : null;
+        if (off) choices.push({ id: "pin-off", tone: "remove", label: "Remove this post — it was set by hand", note: "If the beam needs a post in the span it leaves, one stands in the middle of it.", patch: off });
+        const more = addPostUnder(s, beam.id, grips);
+        if (more) choices.push({ id: "pin-add", tone: "add", label: "Add a post under this beam", note: `In the middle of its longest span, ${ftIn(Math.round(more.spanIn))} now.`, patch: more.patch });
       }
       if (lower) stays = "The lower level's posts follow its own beams.";
       else if (post.by) stays = undefined;
@@ -401,7 +394,7 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
         else stays = "No beam in the code's table spans farther between posts here: they stay, or an engineer sizes the beam.";
       }
       if (!lower) choices.push(...sizeRow("Post size — every post", "post", POST_SIZES, d.framing.post, (v) => String(v), (v) => ({ framing: { post: v as DeckDesign["framing"]["post"] } })).filter((c) => c.id !== "post-auto"));
-      return card(`${lvl ? "Lower-level post" : "Post"}`, `${post.size} post, ${ftIn(post.heightIn)} tall, carrying ${Math.round(post.tributarySqFt)} sq ft of deck down to its footing.`, choices, stays);
+      return card(`${lvl ? "Lower-level post" : "Post"}`, `${post.size} post, ${ftIn(post.heightIn)} tall, carrying ${Math.round(post.tributarySqFt)} sq ft of ${!lower && f.carries > 1 ? "the two decks — the lower deck's beam is let into it —" : "deck"} down to its footing.`, choices, stays, grip);
     }
 
     case "joist": {
@@ -521,14 +514,21 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
       const built = opening ? roof.openings.find((x) => x.id === opening.id) : undefined;
       if (pin) {
         choices.push({ id: "pin-off", tone: "remove", label: "Remove this post — it was set by hand", note: "The header is sized again for the span it leaves; if no header reaches, the roof puts a post back where the span needs one.", patch: roofPatch({ pins: d.roof.pins.filter((x) => x.id !== pin.id) }) });
-        for (const by of [-1, 1]) choices.push({ id: `pin-slide-${by}`, tone: "swap", label: `Slide it 1 ft ${by < 0 ? (pin.side === "front" || pin.side === "back" ? "to the left" : "toward the house") : pin.side === "front" || pin.side === "back" ? "to the right" : "away from the house"}`, patch: roofPatch({ pins: d.roof.pins.map((x) => (x.id === pin.id ? { ...x, atFt: Math.max(0, x.atFt + by) } : x)) }) });
       } else if (opening) {
         choices.push({ id: "opening-off", tone: "remove", label: "Remove the opening — its two posts go with it", note: "The side goes back to the posts its spans ask for.", patch: roofPatch({ openings: d.roof.openings.filter((x) => x.id !== opening.id) }) });
         for (const w of [3, 4, 5, 6, 8]) choices.push({ id: `opening-${w}`, tone: "size", label: `${w} ft`, patch: roofPatch({ openings: d.roof.openings.map((x) => (x.id === opening.id ? { ...x, widthFt: w } : x)) }), current: opening.widthFt === w, row: "The opening's clear width" });
         choices.push({ id: "opening-door", tone: "swap", label: opening.door ? "Leave it open — the door comes later" : "Hang a screen door in it now", note: opening.door ? undefined : "A door hangs only where the walls between the posts are screen.", patch: roofPatch({ openings: d.roof.openings.map((x) => (x.id === opening.id ? { ...x, door: !x.door } : x)) }) });
-        for (const by of [-1, 1]) choices.push({ id: `opening-slide-${by}`, tone: "swap", label: `Slide the opening 1 ft ${by < 0 ? (opening.side === "front" || opening.side === "back" ? "to the left" : "toward the house") : opening.side === "front" || opening.side === "back" ? "to the right" : "away from the house"}`, patch: roofPatch({ openings: d.roof.openings.map((x) => (x.id === opening.id ? { ...x, atFt: Math.max(0, x.atFt + by) } : x)) }) });
+      }
+      // BY HAND (2026-11-13; lib/deck/byHand): a post between two corners slides along its side — on the card, to the
+      // inch (an opening's post takes the opening with it) — and one more can be stood on a side.
+      const rgrips = deckGrips(s);
+      const rgrip = gripOfPart(s, ref, rgrips);
+      for (const side of post.corner ? roofCornerSides(roof, post) : rgrip?.side ? [rgrip.side] : []) {
+        const more = addRoofPost(s, side, rgrips);
+        if (more) choices.push({ id: `rpin-add-${side}`, tone: "add", label: `Add a post on the ${ROOF_SIDE_LABEL[side].toLowerCase()}`, note: `In the middle of the longest stretch between two posts there, ${ftIn(Math.round(more.spanIn))} now. The beam over it is sized again for the shorter spans.`, patch: more.patch });
       }
       if (post.corner) stays = "A corner post: the roof stands on it.";
+      else if (rgrip?.fixed) stays = rgrip.fixed;
       else if (pin || opening) stays = undefined;
       else {
         const at = roofSideOf(roof, post);
@@ -543,7 +543,7 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
         else stays = "No beam in the list spans this side without it: it stays, or an engineer sizes the beam.";
       }
       choices.push(...sizeRow("Post size — every roof post", "rpost", ["4x4", "6x6", "8x8"] as const, d.roof.post, (v) => String(v), (v) => roofPatch({ post: v as RoofDesign["post"] })).filter((c) => c.id !== "rpost-auto"));
-      return card(pin ? "Roof post — set by hand" : opening ? `Roof post — at the ${built ? ftIn(Math.round(built.widthIn)) : `${opening.widthFt}-ft`} opening` : "Roof post", `${post.size} post, ${ftIn(post.heightIn)} tall, bringing about ${Math.round(post.loadLb / 10) * 10} lb of roof down to ${post.bearing === "deck" ? "its own footing under the deck" : post.bearing === "ground" ? "its footing" : "the slab"}.`, choices, stays);
+      return card(pin ? "Roof post — set by hand" : opening ? `Roof post — at the ${built ? ftIn(Math.round(built.widthIn)) : `${opening.widthFt}-ft`} opening` : "Roof post", `${post.size} post, ${ftIn(post.heightIn)} tall, bringing about ${Math.round(post.loadLb / 10) * 10} lb of roof down to ${post.bearing === "deck" ? "its own footing under the deck" : post.bearing === "ground" ? "its footing" : "the slab"}.`, choices, stays, rgrip);
     }
 
     case "stair": {

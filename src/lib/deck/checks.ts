@@ -40,7 +40,7 @@ import {
 } from "./codeTables";
 import { OC_BLOCKING_MAX_FT, OC_GUIDE_MAX_POSTS, OC_POST_MAX_HEIGHT_IN, OC_RULE, OC_SOURCES, ocPostCapacityLb } from "./ocLumber";
 import { GROUND_CONTACT_WITHIN_IN, MIN_FRAME_CLEAR_IN, PIER_BLOCK, footingDepthIn, type DeckFrame } from "./frame";
-import { FIXTURE_LABEL, GUTTER_LABEL, ROOFING_LABEL, STAIR_LIMITS, WALL_FILL_LABEL, defaultStair, frontRadiusFt, normalizeDeckDesign, type DeckDesign, spaRectIn } from "./design";
+import { DOUBLE_DECK_HEADROOM_IN, DOUBLE_DECK_STOREY_IN, FIXTURE_LABEL, GUTTER_LABEL, LOWER_LIMITS, ROOFING_LABEL, STAIR_LIMITS, WALL_FILL_LABEL, defaultStair, frontRadiusFt, normalizeDeckDesign, type DeckDesign, spaRectIn } from "./design";
 import { STAIR_POST_CLEAR_IN, type RoofFrame } from "./roof";
 import { RULE_HIP, RULE_RAFTER, RULE_RIDGE, RULE_ROOF_LOAD, RULE_TIES } from "./roofTables";
 import { BETWEEN_LEVELS_STAIR_ID, betweenLevelsStair, type DeckStructure } from "./structure";
@@ -90,6 +90,51 @@ export interface DeckCheck {
 
 const plural = (n: number, w: string, many = `${w}s`) => `${n} ${n === 1 ? w : many}`;
 
+/**
+ * A DOUBLE DECK (2026-11-13 — the owner: "a double deck, like first floor and second floor"). The lower deck hangs on
+ * the upper deck's posts: its beams on the upper deck's own lines, let into the posts where they pass. Said here: that
+ * it is so, the room to stand between the two, and the posts a beam can be let into. Where the two heights leave no
+ * storey between them the lower deck is not built — and that is said, with the way to make room. (Ids clear of
+ * lib/deck/settle AUTO_FIX: these are the builder's to answer.)
+ */
+function doubleDeckChecks(s: DeckStructure, add: (c: DeckCheck) => void): void {
+  const { design, frame, lower } = s;
+  if (!frame) return;
+  const PART = "Double deck";
+  const apart = design.heightIn - design.lower.heightIn;
+  if (!lower || lower.place !== "under") {
+    const storey = design.lower.heightIn + DOUBLE_DECK_STOREY_IN;
+    add({
+      id: "double-deck-room",
+      level: "fail",
+      part: PART,
+      text: `The upper deck stands ${ftIn(Math.max(0, apart))} above the lower one, floor to floor: under ${ftIn(LOWER_LIMITS.storeyIn)} there is no room to stand under its frame, so the lower deck is not built.`,
+      fix: { label: `Raise the upper deck to ${ftIn(storey)}`, patch: { heightIn: storey } },
+      ...(design.heightIn - LOWER_LIMITS.storeyIn >= LOWER_LIMITS.heightIn.min ? { alts: [{ label: `Set the lower deck ${ftIn(design.heightIn - LOWER_LIMITS.storeyIn)} above the ground`, patch: { lower: { heightIn: design.heightIn - LOWER_LIMITS.storeyIn } } }] } : {}),
+    });
+    return;
+  }
+  const posts = frame.posts.filter((p) => !p.roof).length;
+  add({
+    id: "double-deck",
+    level: "pass",
+    part: PART,
+    text: `Two decks on one set of posts: the lower one ${ftIn(design.lower.heightIn)} above the ground, the upper one ${ftIn(apart)} above it. The lower deck's ${plural(lower.frame.beams.length, "beam")} ${lower.frame.beams.length === 1 ? "stands" : "stand"} on the upper deck's own ${lower.frame.beams.length === 1 ? "line" : "lines"} and ${lower.frame.beams.length === 1 ? "is" : "are"} let into its ${plural(posts, "post")} where they pass — ${plural(lower.frame.seats.length, "seat")}, two 1/2-in. through bolts each. The posts and their footings are sized for both decks.`,
+    rule: "IRC R507.4, R507.5.2 · a beam bears on its post; a post and its footing carry every deck above them",
+  });
+  // Room to walk under the upper deck: its lowest beam or joist over the lower deck's boards.
+  const beamLow = Math.min(...frame.beams.map((b) => b.bottomIn));
+  const clear = Math.round(Math.min(frame.joistBottomIn, beamLow) - lower.frame.surfaceIn);
+  const what = beamLow < frame.joistBottomIn - 0.5 ? "beams" : "joists";
+  if (clear < DOUBLE_DECK_HEADROOM_IN) {
+    const to = design.heightIn + (DOUBLE_DECK_HEADROOM_IN - clear);
+    add({ id: "double-deck-headroom", level: "warn", part: PART, text: `${ftIn(clear)} clear on the lower deck, under the upper deck's ${what}: ${ftIn(DOUBLE_DECK_HEADROOM_IN)} is wanted to walk under them.`, rule: "IRC R305.1 · 6 ft 8 in. under beams", fix: { label: `Raise the upper deck to ${ftIn(to)}`, patch: { heightIn: to } } });
+  } else add({ id: "double-deck-headroom", level: "pass", part: PART, text: `${ftIn(clear)} clear on the lower deck, under the upper deck's ${what} (${ftIn(DOUBLE_DECK_HEADROOM_IN)} at least).`, rule: "IRC R305.1 · 6 ft 8 in. under beams" });
+  // A seat is cut into the post: a 4x4 or a 4x6 has no wood left beside it.
+  if (design.framing.post === "4x4" || design.framing.post === "4x6") add({ id: "double-deck-posts", level: "fail", part: PART, text: `A beam is let into a post only where the post is a 6x6 or larger: a ${design.framing.post} has too little wood left beside the seat to carry the deck above.`, rule: "IRC R507.5.2 · beam bearing on a notched 6x6 post", fix: { label: "Use 6x6 posts", patch: { framing: { post: "6x6" } } } });
+  else if (frame.group === "OC") add({ id: "double-deck-posts", level: "warn", part: PART, text: "Owens Corning lists its built-up post under one beam. A second deck's beams let into its side are outside that listing: an engineer details the connection.", rule: OC_RULE.post });
+}
+
 export function deckChecks(s: DeckStructure): DeckCheck[] {
   const { design, frame, roof } = s;
   const out: DeckCheck[] = [];
@@ -101,11 +146,20 @@ export function deckChecks(s: DeckStructure): DeckCheck[] {
     for (const h of frame.postsByHand) add({ id: `deck-posts-set-${h.beamId}`, level: "pass", part: "Beams", text: `${plural(h.mine, "post")} under the ${h.role} beam set by hand${h.added ? `; ${plural(h.added, "more post")} ${h.added === 1 ? "stands" : "stand"} where its spans and its ends need ${h.added === 1 ? "it" : "them"}` : ""}. The beam is checked on the spans they make.`, rule: "IRC Table R507.5 · beam ends, a quarter of the span beside them" });
     if (typeof design.framing.postSpacingFt === "number") add({ id: "deck-post-spacing", level: "pass", part: "Beams", text: `Posts under the beams no farther apart than ${design.framing.postSpacingFt} ft, as set by hand: ${plural(frame.posts.filter((p) => !p.roof).length, "post")} — never fewer than the beam's table asks for.` });
     frame.pinsNotSet.forEach((np, i) => add({ id: `deck-post-not-set-${i + 1}`, level: "info", part: "Beams", text: `A post set by hand could not be placed: ${np.why}.`, fix: { label: "Take that post off", patch: { framing: { pins: design.framing.pins.filter((x) => x.id !== np.id) } } } }));
+    // THE BEAMS SET BY HAND (2026-11-13; lib/deck/byHand): the joists land on the builder's middle beams and on one
+    // more only where a span between them is past the joist table; the beam by the house at its own overhang.
+    const hand = frame.beamsByHand;
+    if (hand.mine) add({ id: "deck-beams-set", level: "pass", part: "Joists", text: `${plural(hand.mine, "middle beam")} set by hand${hand.added ? `; ${plural(hand.added, "more beam")} ${hand.added === 1 ? "stands" : "stand"} where the joists' span needs ${hand.added === 1 ? "it" : "them"}` : ""}. The ${frame.joistSize} joists at ${frame.spacingIn} in. are checked on the spans the beams make.`, rule: "IRC Table R507.6 · joist spans and overhangs" });
+    frame.beamLinesNotSet.forEach((nb, i) => add({ id: `deck-beam-not-set-${i + 1}`, level: "info", part: "Joists", text: `A middle beam set by hand could not be placed: ${nb.why}.`, fix: { label: "Take that beam off", patch: { framing: { beamLines: design.framing.beamLines.filter((x) => x.id !== nb.id), pins: design.framing.pins.filter((x) => x.line !== nb.id) } } } }));
+    const backBeam = typeof design.framing.backOverhangFt === "number" ? frame.zones.find((z) => z.back === "beam") : undefined;
+    if (backBeam && frame.beamStyle === "dropped") add({ id: "deck-beam-back-set", level: "pass", part: "Joists", text: `The beam by the house stands ${ftIn(Math.round(backBeam.beamYs[0] - backBeam.zone.y0))} in from the deck's back edge, as set by hand.` });
   }
   // The picture-frame border, said where the builder looks (2026-11-13): how wide, how far, what goes under it.
   const bordered = frame && s.surface && s.surface.border > 0 ? s.surface : null;
   if (bordered) add({ id: "decking-border", level: "pass", part: "Decking", text: `${borderWords(bordered).replace(/^a /, "A ")}: mitred at the corners${bordered.borderBackingIn.length ? `, with a joist added under its inner edge along the sides (${Math.round(bordered.borderBackingIn.reduce((a, v) => a + v, 0) / 12)} ft of ${frame!.joistSize})` : ""}${bordered.product.border ? `, bought apart in ${bordered.product.border.name}` : ", cut from the deck's own boards"}.`, rule: "The decking maker's installation guide" });
-  if (s.lower) deckFrameChecks(s.lower.frame, add, null, "Lower level — ");
+  if (s.lower) deckFrameChecks(s.lower.frame, add, null, s.lower.place === "under" ? "Lower deck — " : "Lower level — ");
+  // A DOUBLE DECK (2026-11-13; lib/deck/structure): what the two decks on one set of posts came to.
+  if (frame && design.lower.on && design.lower.place === "under") doubleDeckChecks(s, add);
   if (roof) roofChecks(roof, design, frame, add);
   siteChecks(s, add);
   codeCheck(s, add);
@@ -196,7 +250,8 @@ function deckFrameChecks(frame: DeckFrame, addRaw: (c: DeckCheck) => void, roof:
       fix: bigger ? { label: `Use ${bigger} joists`, patch: { framing: { joist: bigger } } } : { label: "Let the studio size the joists", patch: { framing: { joist: "auto", spacingIn: "auto", overhangFt: "auto" } } },
     });
   }
-  if (design.framing.joist === "auto" && middleBeams > 0 && worstSpan <= maxSpan) {
+  // (Middle beams the builder placed are said by "deck-beams-set": the joists then land where they were put.)
+  if (design.framing.joist === "auto" && middleBeams > 0 && worstSpan <= maxSpan && frame.beamsByHand.mine === 0) {
     add({ id: "joist-middle-beam", level: "info", part: "Joists", text: `No joist in the table reaches across this deck in one span at ${frame.spacingIn} in., so ${middleBeams === 1 ? "a middle beam carries" : `${middleBeams} middle beams carry`} them.`, rule: R.joist });
   }
   for (const z of frame.zones) {
@@ -211,7 +266,7 @@ function deckFrameChecks(frame: DeckFrame, addRaw: (c: DeckCheck) => void, roof:
           part: "Joists",
           text: allowed > 0 ? `Joists run ${ftIn(cant)} past the ${where} beam; the table allows ${ftIn(allowed)} behind a ${ftIn(backSpanIn)} span.` : `The table allows no overhang for a ${frame.joistSize} behind a ${ftIn(backSpanIn)} span.`,
           rule: R.cantilever,
-          fix: { label: "Let the studio set the overhang", patch: { framing: { overhangFt: "auto" } } },
+          fix: { label: "Let the studio set the overhang", patch: { framing: { overhangFt: "auto", backOverhangFt: "auto" } } },
         });
     };
     checkCant(z.frontCantIn + frame.frontExtraCantIn, z.spansIn[z.spansIn.length - 1], front?.kind === "curve" ? "outer beam at the middle of the bow" : "outer", `joist-overhang-${z.zone.id}`);

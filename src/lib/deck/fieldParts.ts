@@ -108,8 +108,13 @@ const RULES: Rule[] = [
   { when: (f) => isStep(f, "step-stairs"), run: () => null },
   /* The ticks (a checkbox's words are its label) */
   {
+    // A double deck (2026-11-13): the lower deck, lit.
+    when: (f) => named(f, /^A double deck/),
+    run: (c) => (c.s.lower?.place === "under" ? light(c, { boxIdx: partsOf(c.sc, [...FRAMING, "decking", "fascia"], undefined, "lower") }, `The lower deck · ${feetWords(c.d.lower.heightIn)} above the ground, ${feetWords(c.d.lower.dropIn)} under the upper deck`) : light(c, {}, "One deck — no second deck under it yet")),
+  },
+  {
     when: (f) => named(f, /^A lower level in front/),
-    run: (c) => (c.s.lower ? light(c, { boxIdx: partsOf(c.sc, [...FRAMING, "decking", "fascia"], undefined, "lower") }, `The lower level · ${feetWords(c.d.lower.widthFt * 12)} × ${feetWords(c.d.lower.depthFt * 12)}, ${feetWords(c.d.lower.dropIn)} down`) : light(c, {}, "No lower level yet")),
+    run: (c) => (c.s.lower?.place === "front" ? light(c, { boxIdx: partsOf(c.sc, [...FRAMING, "decking", "fascia"], undefined, "lower") }, `The lower level · ${feetWords(c.d.lower.widthFt * 12)} × ${feetWords(c.d.lower.depthFt * 12)}, ${feetWords(c.d.lower.dropIn)} down`) : light(c, {}, "No lower level yet")),
   },
   {
     when: (f) => named(f, /^Dig to the frost line/),
@@ -173,7 +178,7 @@ const RULES: Rule[] = [
       const D = c.d.lower.depthFt;
       const z = lw.frame.surfaceIn / 12;
       const boxes = named(c.f, "Along the house") ? [bar(x0, y0 + D, x0 + W, y0 + D, z)] : named(c.f, "Out from the deck") ? [bar(x0 + W, y0, x0 + W, y0 + D, z)] : [];
-      const text = named(c.f, "Step down") ? `The lower level · ${feetWords(c.d.lower.dropIn)} down` : named(c.f, "Set") ? `The lower level · set at the ${c.d.lower.align === "centre" ? "middle" : c.d.lower.align}` : `The lower level · ${feetWords(W * 12)} × ${feetWords(D * 12)}`;
+      const text = lw.place === "under" ? `The lower deck · ${feetWords(c.d.lower.heightIn)} above the ground, ${feetWords(c.d.lower.dropIn)} under the upper deck` : named(c.f, "Step down") ? `The lower level · ${feetWords(c.d.lower.dropIn)} down` : named(c.f, "Set") ? `The lower level · set at the ${c.d.lower.align === "centre" ? "middle" : c.d.lower.align}` : `The lower level · ${feetWords(W * 12)} × ${feetWords(D * 12)}`;
       return light(c, { boxes, boxIdx: parts }, text);
     },
   },

@@ -33,6 +33,7 @@ import {
   CUSTOM_LIMITS,
   OWN_UNITS,
   DECK_LIMITS,
+  DOUBLE_DECK_STOREY_IN,
   ELECTRICAL_LIMITS,
   FASCIA_FINISH_LABEL,
   FIXTURE_KINDS,
@@ -49,6 +50,7 @@ import {
   RAIL_BALUSTER_LABEL,
   RAIL_INFILL_LABEL,
   DECK_BEAM_LABEL,
+  DECK_BEAM_LIMITS,
   DECK_POST_LIMITS,
   RAIL_MOUNT_LABEL,
   ROOF_POST_LIMITS,
@@ -117,6 +119,7 @@ import { reportPlanLimitResult } from "@/stores/usePlanLimitStore";
 import { autoFixDesign, autoFixable, settleDesign } from "@/lib/deck/settle";
 import type { DeckEdit, DeckLook, DeckPick, SceneHighlight } from "@/components/estimator/deck/DeckModel3D";
 import { KINDS_FOR, patchDesign, patchRoof, switchStructure } from "@/lib/deck/edit";
+import { addBeam, deckGrips, gripAtFor, gripShownIn, moveGrip, partOfGrip, removeBeamLine, type DeckGrip, type GripKind } from "@/lib/deck/byHand";
 import type { Flash } from "@/lib/deck/voice/run";
 import type { DeckVoiceHost } from "@/components/v3/deck-voice/deck-voice";
 import { fieldLight, type FieldFocus } from "@/lib/deck/fieldParts";
@@ -518,7 +521,9 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
   };
   // A part touched in the 3D (2026-11-09): its legend, the scene's box it is, and the scene that box belongs to — a
   // change to the design redraws the scene and the old box number means nothing, so the card closes with it.
-  const [picked, setPicked] = React.useState<{ legend: SceneLegend | null; point: [number, number, number]; boxIdx: number | null; layer: string | null; scene: DeckScene | null } | null>(null);
+  // …unless the part is a post or a beam being moved by hand (`grip`, lib/deck/byHand): that card stays on its part
+  // through every move, by the part's own name.
+  const [picked, setPicked] = React.useState<{ legend: SceneLegend | null; point: [number, number, number]; boxIdx: number | null; layer: string | null; scene: DeckScene | null; grip?: { kind: GripKind; id: string } } | null>(null);
   const [partWhole, setPartWhole] = React.useState(false);
   const [partDone, setPartDone] = React.useState<PartDone | null>(null);
   const scene = React.useMemo(() => deckScene(structure), [structure]);
@@ -528,7 +533,22 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
   }, [scene]);
   // THE PART UNDER THE FINGER (lib/deck/parts): named from the scene's box, while that scene still stands.
   const priceOpts = React.useMemo(() => ({ rates: book, market }), [book, market]);
-  const pickedPart = React.useMemo<PickedPart | null>(() => (picked && picked.scene === scene ? { legend: picked.legend, point: picked.point, ref: partAt(structure, scene, picked.boxIdx, picked.layer) } : null), [picked, scene, structure]);
+  const grips = React.useMemo<DeckGrip[]>(() => deckGrips(structure), [structure]);
+  const beamToAdd = React.useMemo(() => addBeam(structure), [structure]);
+  const pickedPart = React.useMemo<PickedPart | null>(() => {
+    if (!picked) return null;
+    if (picked.scene === scene) return { legend: picked.legend, point: picked.point, ref: partAt(structure, scene, picked.boxIdx, picked.layer) };
+    const g = picked.grip ? grips.find((q) => q.kind === picked.grip?.kind && q.id === picked.grip?.id) : undefined;
+    return g ? { legend: picked.legend, point: [g.x / 12, g.y / 12, picked.point[2]], ref: partOfGrip(g) } : null;
+  }, [picked, scene, structure, grips]);
+  /** A post or a beam put at a place typed or nudged on its card, or dragged on the plan: inches as the card reads them. */
+  const placeGrip = (g: DeckGrip, shownIn: number, keepCard: boolean) => {
+    const p = moveGrip(structure, g.kind, g.id, gripAtFor(g, shownIn), grips);
+    if (!p) return;
+    if (keepCard) setPicked((was) => (was ? { ...was, grip: { kind: g.kind, id: g.id } } : was));
+    setPartDone(null);
+    patch(p, ["by-hand"]);
+  };
   const partLit = usePartLight(pkg, scene, view3dPart(pickedPart), partWhole);
   const outByHand = React.useMemo<TakenOut[]>(() => takenOut(structure), [structure]);
   // The focused field's light; the hovered field's is computed in Lit3D, from the store.
@@ -648,9 +668,18 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
           rp({ pitch: PITCHES.reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a)) });
           break;
         }
+        // BY HAND (2026-11-13; lib/deck/byHand): a post or a beam pulled in the 3D goes where the pointer takes it, to
+        // the inch — and the frame re-sizes around it at every step.
+        case "post":
+        case "beam":
+        case "roof-post": {
+          const p = moveGrip(structure, e.kind, e.id, e.value);
+          if (p) patch(p, ["by-hand"]);
+          break;
+        }
       }
     },
-    [design, patch, rp, setStairs, setHouse, polygon],
+    [design, structure, patch, rp, setStairs, setHouse, polygon],
   );
   React.useEffect(() => {
     if (!playing) return;
@@ -1532,7 +1561,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
         <Stepper label="Deck height" unit="in." aside={ftIn(design.heightIn)} value={design.heightIn} step={1} parse={parseInches} format={(n2) => String(Math.round(n2 * 4) / 4)} min={DECK_LIMITS.heightIn.min} max={DECK_LIMITS.heightIn.max} onCommit={(n2) => patch({ heightIn: n2 })} />
       </div>
       {design.shape.kind === "rect" || design.shape.kind === "wall" ? (
-        <More title={design.shape.kind === "wall" ? "Lower level, hot tub" : "Front edge, lower level, hot tub"} now={[front ? FRONT_LABEL[front.kind] : "", design.lower.on ? "lower level" : "", design.spa.on ? "hot tub" : ""].filter(Boolean).join(" · ") || "Straight front, one level"} open={!!front || design.lower.on || design.spa.on} id="size-more">
+        <More title={design.shape.kind === "wall" ? "Double deck, lower level, hot tub" : "Front edge, double deck, lower level, hot tub"} now={[front ? FRONT_LABEL[front.kind] : "", design.lower.on ? (design.lower.place === "under" ? "double deck" : "lower level") : "", design.spa.on ? "hot tub" : ""].filter(Boolean).join(" · ") || "Straight front, one level"} open={!!front || design.lower.on || design.spa.on} id="size-more">
           {design.shape.kind === "rect" ? (
           <Field label="The front edge" wide>
             <Seg label="The front edge" value={front?.kind ?? "straight"} onChange={(k: FrontKind) => patch({ shape: { kind: "rect", widthFt: design.shape.widthFt, depthFt: design.shape.depthFt, front: k === "straight" ? undefined : { kind: k, bulgeFt: front?.bulgeFt ?? 2, clipFt: front?.clipFt ?? 2 } } })} options={(["straight", "curve", "clipped"] as const).map((k) => ({ value: k, label: FRONT_LABEL[k] }))} />
@@ -1547,8 +1576,36 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
               <NumberInput label="How much each front corner is clipped, feet" value={front.clipFt} parse={parseFeet} format={feetText} min={DECK_LIMITS.clipFt.min} max={Math.min(DECK_LIMITS.clipFt.max, (design.shape.widthFt - 2) / 2, design.shape.depthFt - 2)} onCommit={(n2) => patch({ shape: { kind: "rect", widthFt: design.shape.widthFt, depthFt: design.shape.depthFt, front: { ...front, clipFt: n2 } } })} />
             </Field>
           ) : null}
-          <Toggle checked={design.lower.on} onChange={(v) => patch({ lower: { on: v } })}>A lower level in front, a step down</Toggle>
-          {design.lower.on ? (
+          {/* A DOUBLE DECK (2026-11-13 — the owner: "a double deck, like first floor and second floor"): a second deck
+              of the same outline UNDER this one, on the same posts. Turned on where the deck is too low for one, the
+              deck is raised to leave a storey (9 ft) between the two. One or the other: under it, or a step down in front. */}
+          <Toggle
+            checked={design.lower.on && design.lower.place === "under"}
+            onChange={(v) =>
+              patch(v ? { heightIn: Math.max(design.heightIn, design.lower.heightIn + DOUBLE_DECK_STOREY_IN), lower: { on: true, place: "under" } } : { lower: { on: false } })
+            }
+          >
+            A double deck — a second deck under this one (first floor and second floor)
+          </Toggle>
+          {design.lower.on && design.lower.place === "under" ? (
+            <Scope level="lower">
+              <div className="v1-grid2" data-deck-double>
+                <Field label="Lower deck above the ground" aside={`in. · ${ftIn(design.lower.heightIn)}`}>
+                  <NumberInput label="How high the lower deck stands above the ground, inches" value={design.lower.heightIn} parse={parseInches} format={(v) => String(Math.round(v))} min={LOWER_LIMITS.heightIn.min} max={Math.max(LOWER_LIMITS.heightIn.min, Math.min(LOWER_LIMITS.heightIn.max, design.heightIn - LOWER_LIMITS.storeyIn))} onCommit={(n2) => patch({ lower: { heightIn: Math.round(n2) } })} />
+                </Field>
+                <Field label="Upper deck above it" aside={`in. · ${ftIn(design.heightIn - design.lower.heightIn)} floor to floor`}>
+                  <NumberInput label="From the lower deck's boards up to the upper deck's, inches" value={design.heightIn - design.lower.heightIn} parse={parseInches} format={(v) => String(Math.round(v))} min={LOWER_LIMITS.storeyIn} max={DECK_LIMITS.heightIn.max - design.lower.heightIn} onCommit={(n2) => patch({ heightIn: design.lower.heightIn + Math.round(n2) })} />
+                </Field>
+              </div>
+              <p className="v1-hint">
+                {structure.lower?.place === "under"
+                  ? `The same outline as the deck above, framed on the same lines: ${structure.lower.frame.joistSize} joists, ${[...new Set(structure.lower.frame.beams.map((b) => b.spec.size))].join(" and ")} ${structure.lower.frame.beams.length === 1 ? "beam" : "beams"} let into the same posts — no posts or footings of its own. The posts and footings are sized for both decks. A stair can leave either deck: pick “The lower deck” on the stair.`
+                  : `The two decks need at least ${ftIn(LOWER_LIMITS.storeyIn)} between them, floor to floor: raise the upper deck or bring the lower one down — the checks offer both.`}
+              </p>
+            </Scope>
+          ) : null}
+          <Toggle checked={design.lower.on && design.lower.place === "front"} onChange={(v) => patch({ lower: { on: v, place: "front" } })}>A lower level in front, a step down</Toggle>
+          {design.lower.on && design.lower.place === "front" ? (
             <Scope level="lower">
               <div className="v1-grid2">
                 <Field label="Along the house" aside="ft">
@@ -2056,7 +2113,8 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
             <Field label="Joists past the beam" aside={design.framing.overhangFt === "auto" ? `auto: ${ftIn(frame.zones[0].frontCantIn)}` : "ft"}>
               <select className="v1-sel" value={String(design.framing.overhangFt)} onChange={(e) => patch({ framing: { overhangFt: e.target.value === "auto" ? "auto" : Number(e.target.value) } })}>
                 <option value="auto">Auto — up to 2 ft</option>
-                {[0, 0.5, 1, 1.5, 2, 2.5, 3].map((v) => (
+                {/* A front beam pulled to a place of its own (2026-11-13) is in the list as it stands. */}
+                {[...new Set([0, 0.5, 1, 1.5, 2, 2.5, 3, ...(typeof design.framing.overhangFt === "number" ? [design.framing.overhangFt] : [])])].sort((a, b) => a - b).map((v) => (
                   <option key={v} value={v}>{v === 0 ? "None" : feetText(v).replace(/^(\d+)$/, "$1 ft")}</option>
                 ))}
               </select>
@@ -2110,7 +2168,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                     </div>
                     <div className="v1-grid2">
                       <Field label="Under the" lights={null}>
-                        <select className="v1-sel" value={pn.beam} aria-label={`Post ${i + 1}: which beam`} onChange={(e) => set({ beam: e.target.value as DeckPostPin["beam"] })}>
+                        <select className="v1-sel" value={pn.beam} aria-label={`Post ${i + 1}: which beam`} onChange={(e) => set({ beam: e.target.value as DeckPostPin["beam"], line: undefined })}>
                           {(["front", "middle", "back"] as const).filter((b) => b === pn.beam || frame.beams.some((x) => x.role === b)).map((b) => (
                             <option key={b} value={b}>{DECK_BEAM_LABEL[b]}</option>
                           ))}
@@ -2132,7 +2190,84 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
           </div>
           {frame.postsByHand.length ? (
             <p className="v1-hint" data-deck-post-hand>
-              {frame.postsByHand.map((h) => `${DECK_BEAM_LABEL[h.role]}: ${h.mine} set by hand${h.added ? `, ${h.added} more where its spans and its ends need them` : ""}.`).join(" ")} Click a post in the 3D to slide it or take it off.
+              {frame.postsByHand.map((h) => `${DECK_BEAM_LABEL[h.role]}: ${h.mine} set by hand${h.added ? `, ${h.added} more where its spans and its ends need them` : ""}.`).join(" ")} Drag a post on the plan, or in the picture with Edit in 3D on — or click it to type its place.
+            </p>
+          ) : null}
+          {/* THE BEAMS BY HAND (2026-11-13; lib/deck/byHand): middle beams stood at the builder's own places, and a
+              free-standing deck's house-side beam at its own overhang. The joists land on them, and on one more only
+              where a span between them is past the joist table. The front beam's place is "Joists past the beam". */}
+          {design.framing.beamLines.length || typeof design.framing.backOverhangFt === "number" ? (
+            <div className="v1-rows" data-deck-beam-lines>
+              {design.framing.beamLines.map((ln, i) => {
+                const missed = frame.beamLinesNotSet.find((x) => x.id === ln.id);
+                const g = grips.find((q) => q.kind === "beam" && q.id === ln.id);
+                return (
+                  <div className="v1-item" key={ln.id} data-deck-beam-line={ln.id}>
+                    <div className="v1-item-head">
+                      <span className="v1-item-title">
+                        {`Middle beam ${i + 1}, by hand`}
+                        <span className="v1-item-sub">{missed ? `not set: ${missed.why}` : "the joists land on it where it stands"}</span>
+                      </span>
+                      <button
+                        type="button"
+                        className="v1-btn v1-btn-sm v1-btn-danger"
+                        onClick={() => {
+                          const p = removeBeamLine(structure, ln.id);
+                          if (p) patch(p, ["by-hand"]);
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <Stepper
+                      label="Standing"
+                      aside={g ? g.from : "from the house"}
+                      unit="ft"
+                      value={g ? gripShownIn(g) / 12 : ln.atFt}
+                      step={0.5}
+                      parse={parseFeet}
+                      format={feetText}
+                      min={g ? Math.max(0, Math.min(gripShownIn(g, g.min), gripShownIn(g, g.max))) / 12 : DECK_BEAM_LIMITS.atFt.min}
+                      max={g ? Math.max(gripShownIn(g, g.min), gripShownIn(g, g.max)) / 12 : design.shape.depthFt}
+                      onCommit={(n2) => {
+                        const p = g ? moveGrip(structure, "beam", ln.id, gripAtFor(g, Math.round(n2 * 12)), grips) : { framing: { beamLines: design.framing.beamLines.map((x) => (x.id === ln.id ? { ...x, atFt: n2 } : x)) } };
+                        if (p) patch(p, ["by-hand"]);
+                      }}
+                    />
+                  </div>
+                );
+              })}
+              {typeof design.framing.backOverhangFt === "number" ? (
+                <div className="v1-item" data-deck-beam-back>
+                  <div className="v1-item-head">
+                    <span className="v1-item-title">
+                      Beam by the house, by hand
+                      <span className="v1-item-sub">{`${ftIn(Math.round(design.framing.backOverhangFt * 12))} in from the deck's back edge`}</span>
+                    </span>
+                    <button type="button" className="v1-btn v1-btn-sm v1-btn-quiet" onClick={() => patch({ framing: { backOverhangFt: "auto" } }, ["by-hand"])}>
+                      Auto
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          <div className="v1-row-acts">
+            <button
+              type="button"
+              className="v1-btn v1-btn-sm v1-btn-quiet"
+              disabled={!beamToAdd}
+              data-deck-beam-add
+              onClick={() => {
+                if (beamToAdd) patch(beamToAdd.patch, ["by-hand"]);
+              }}
+            >
+              + A beam under the joists
+            </button>
+          </div>
+          {frame.beamsByHand.mine ? (
+            <p className="v1-hint" data-deck-beam-hand>
+              {`${frame.beamsByHand.mine} middle ${frame.beamsByHand.mine === 1 ? "beam" : "beams"} set by hand${frame.beamsByHand.added ? `, ${frame.beamsByHand.added} more where the joists' span needs ${frame.beamsByHand.added === 1 ? "it" : "them"}` : ""}.`} Drag a beam on the plan, or in the picture with Edit in 3D on — or click it to type its place.
             </p>
           ) : null}
         </More>
@@ -2232,7 +2367,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
           <div className="v1-toggles">
             {woodRail ? <Toggle checked={design.rail.cap} onChange={(v) => patch({ rail: { cap: v } })}>A flat 2x6 drink cap</Toggle> : null}
             {!woodRail && design.rail.type !== "glass" ? <Toggle checked={design.rail.drink} onChange={(v) => patch({ rail: { drink: v } })}>A deck board on top — a drink rail</Toggle> : null}
-            {design.lower.on ? <Toggle checked={design.rail.lowerLevel} onChange={(v) => patch({ rail: { lowerLevel: v } })}>Rail on the lower level too</Toggle> : null}
+            {design.lower.on ? <Toggle checked={design.rail.lowerLevel} onChange={(v) => patch({ rail: { lowerLevel: v } })}>{design.lower.place === "under" ? "Rail on the lower deck too" : "Rail on the lower level too"}</Toggle> : null}
           </div>
         </More>
       ) : null}
@@ -2284,7 +2419,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                 </div>
                 {design.lower.on ? (
                   <Field label="From" wide>
-                    <Seg label="From which level" value={st.level} onChange={(v) => set({ level: v })} options={[{ value: "upper", label: "The deck" }, { value: "lower", label: "The lower level" }]} />
+                    <Seg label="From which level" value={st.level} onChange={(v) => set({ level: v })} options={[{ value: "upper", label: design.lower.place === "under" ? "The upper deck" : "The deck" }, { value: "lower", label: design.lower.place === "under" ? "The lower deck" : "The lower level" }]} />
                   </Field>
                 ) : null}
                 {st.side === "front" ? (
@@ -3531,7 +3666,28 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                 <PhotoViewBox ph={ph} design={design} patch={patch} what={what} />
               ) : (
                 <div className="v1-plan-wrap">
-                  <DeckPlan structure={structure} placing={placing?.kind === "stair" ? "stair" : null} onPlaceStair={placeStair} />
+                  <DeckPlan
+                    structure={structure}
+                    placing={placing?.kind === "stair" ? "stair" : null}
+                    onPlaceStair={placeStair}
+                    grips={viewOnly ? undefined : grips}
+                    onMoveGrip={(g, at) => {
+                      const p = moveGrip(structure, g.kind, g.id, at, grips);
+                      if (!p) return;
+                      setPartDone(null);
+                      patch(p, ["by-hand"]);
+                    }}
+                    onPickGrip={(g) => {
+                      setPartWhole(false);
+                      setPartDone(null);
+                      setPicked({ legend: null, point: [g.x / 12, g.y / 12, 0], boxIdx: null, layer: null, scene: null, grip: { kind: g.kind, id: g.id } });
+                    }}
+                  />
+                  {!viewOnly && !placing && grips.some((g) => !g.fixed) ? (
+                    <p className="v1-plan-hint" data-deck-plan-hint>
+                      Drag a post along its beam, or a beam along the joists, to move it an inch at a time. Click one to type its place, add one or take one off.
+                    </p>
+                  ) : null}
                   {placing?.kind === "stair" ? (
                     <div className="v1-banner" data-deck-placing="stair">
                       <span>Click an open edge of the deck where the stairs go.</span>
@@ -3567,7 +3723,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                 {editing && !placing ? (
                   <p className="v1-edit-hint" data-deck-editing>
                     <span className="v1-edit-hint-knob" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 12h16M8 7.5 3.5 12 8 16.5M16 7.5l4.5 4.5-4.5 4.5" /></svg></span>
-                    <span>Drag a knob the way its arrow points. The price follows.</span>
+                    <span>Drag a knob the way its arrow points — or take hold of a post or a beam itself and pull it, an inch at a time. The price follows.</span>
                   </p>
                 ) : null}
                 <div className="v1-playback" hidden={editing && !placing}>
@@ -3625,7 +3781,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                 Re-sized to the tables: {autoNotes.join(" · ")}.
               </p>
             ) : null}
-            {view === "3d" && partDone ? (
+            {(view === "3d" || view === "plan") && partDone ? (
               <PartDoneLine
                 done={partDone}
                 onClose={() => setPartDone(null)}
@@ -3636,7 +3792,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                 }}
               />
             ) : null}
-            {view === "3d" && pickedPart ? (
+            {(view === "3d" || (view === "plan" && picked?.grip)) && pickedPart ? (
               <PartCardView
                 design={design}
                 pkg={pkg}
@@ -3644,6 +3800,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                 opts={priceOpts}
                 locked={viewOnly}
                 zoomed={zoomedAt === pickedPart.point.join(",")}
+                canZoom={view === "3d"}
                 onZoom={(zoomIn) => {
                   if (zoomIn) {
                     setFocus([...pickedPart.point] as [number, number, number]);
@@ -3664,6 +3821,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                   setPartDone(done);
                   setPicked(null);
                 }}
+                onPlace={(g, v) => placeGrip(g, v, true)}
               />
             ) : view === "3d" && connections ? (
               <p className="v1-pick v1-pick-body">Numbered tags mark the connections: click one to read how it is made and fly to it. Click any part to name it.</p>

@@ -408,7 +408,7 @@ export function changesFrom(base: DeckDesign, next: DeckDesign): string[] {
   const boardColour = deckingColor(next.decking.product, next.decking.color);
   if (boardColour && (base.decking.color !== next.decking.color || base.decking.product !== next.decking.product)) out.push(`board colour: ${boardColour.name}`);
   if (next.rail.type !== "none" && base.rail.color !== next.rail.color && base.rail.type === next.rail.type) out.push(`rail colour: ${railColorOf(next.rail.type, next.rail.color)?.name.toLowerCase() ?? "the usual"}`);
-  if (base.lower.on !== next.lower.on) out.push(next.lower.on ? "a lower level" : "no lower level");
+  if (base.lower.on !== next.lower.on) out.push(next.lower.on ? (next.lower.place === "under" ? "a second deck under it" : "a lower level") : base.lower.place === "under" ? "no second deck under it" : "no lower level");
   if (base.roof.kind !== next.roof.kind && next.structure !== "deck") out.push(`${ROOF_KIND_LABEL[next.roof.kind].split(" — ")[0].toLowerCase()} roof`);
   const wall = (d: DeckDesign) => JSON.stringify([d.house.leftFt, d.house.rightFt, d.house.jogs.map((j) => [j.atFt, j.dir, j.depthFt])]);
   if (wall(base) !== wall(next)) {

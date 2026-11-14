@@ -956,6 +956,14 @@
 .jf-deck-v1 .v1-choice-issue { display: flex; align-items: flex-start; gap: 6px; font-size: 13px; line-height: 1.4; color: var(--v1-amber-ink); }
 .jf-deck-v1 .v1-choice-issue svg { flex: none; margin-top: 2px; }
 .jf-deck-v1 .v1-pick-sizes { display: grid; gap: 6px; }
+.jf-deck-v1 .v1-plan-hint { margin: 8px 0 0; font-size: 13.5px; line-height: 1.45; color: var(--ink-muted); }
+/* Where a post or a beam stands (2026-11-13): feet and inches to type, an inch or six to nudge. */
+.jf-deck-v1 .v1-place { display: grid; gap: 8px; padding: 10px 12px; background: var(--paper-deep); border: 1.5px solid var(--ink-line); border-radius: var(--r-sm); }
+.jf-deck-v1 .v1-place-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.jf-deck-v1 .v1-place-num { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; }
+.jf-deck-v1 .v1-place-num input { width: 64px; min-width: 0; text-align: right; }
+.jf-deck-v1 .v1-place-from { font-size: 13.5px; color: var(--ink-muted); flex: 1 1 140px; min-width: 0; }
+.jf-deck-v1 .v1-place-hint { margin: 0; font-size: 13px; line-height: 1.45; color: var(--ink-muted); }
 .jf-deck-v1 .v1-size { cursor: pointer; }
 .jf-deck-v1 .v1-size:disabled { cursor: default; }
 .jf-deck-v1 .v1-size.is-refused { color: var(--ink-muted); border-color: var(--ink-line); background: var(--paper); text-decoration: line-through; cursor: not-allowed; }
