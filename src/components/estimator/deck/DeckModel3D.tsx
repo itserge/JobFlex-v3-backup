@@ -1786,11 +1786,19 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           part(geo.slopes, roofMat, 1, 1, 1, cx, eave, cz, true);
           if (geo.ends) {
             owned.push(geo.ends);
-            part(geo.ends, wallMat, 1, 1, 1, cx, eave, cz);
+            // an existing cover (9) is open at its ends: no wall under its slope
+            if (kind !== 9) part(geo.ends, wallMat, 1, 1, 1, cx, eave, cz);
+          }
+          // AN EXISTING COVER (9, 2026-11-13 — a porch roof kept from the photo): its posts under the front edge, one
+          // at each end and no more than 10 ft apart, and the beam they carry.
+          if (kind === 9) {
+            const n = Math.max(2, Math.ceil(w / 10) + 1);
+            for (let i = 0; i < n; i++) part(null, trimMat, 0.5, eave - 0.7, 0.5, x0 + 0.25 + ((w - 0.5) * i) / (n - 1) - ox, (eave - 0.7) / 2, y1 - 0.25 - oz, true);
+            part(null, trimMat, w, 0.7, 0.45, cx, eave - 0.35, y1 - 0.25 - oz, true);
           }
           // Fascia along the eaves: along the house where the slopes come down to it; along the sides of a hip, of a
           // gable to the yard and of a bump-out's gable.
-          const along = kind === 0 || kind === 1 || kind === 3 || kind === 5 || kind === 7;
+          const along = kind === 0 || kind === 1 || kind === 3 || kind === 5 || kind === 7 || kind === 9;
           const sides = kind === 0 || kind === 2 || kind === 5 || kind === 6;
           if (along) part(null, trimMat, rw, 0.55, 0.16, cx, eave - 0.05, cz + rd / 2);
           if (along && !bump && kind !== 3) part(null, trimMat, rw, 0.55, 0.16, cx, eave - 0.05, cz - rd / 2);

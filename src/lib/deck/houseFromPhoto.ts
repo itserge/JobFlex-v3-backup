@@ -14,13 +14,17 @@
 //   · the DECK on it — centred on the back door, else on a patio at the wall's base, else in the middle; the wall's
 //     reach past each end from there;
 //   · the WINDOWS and DOORS where they are, their sizes and heights;
-//   · the deck's height from the door's threshold (an inch below it), when there is a door;
+//   · the deck's height from the door's threshold (an inch below it), when there is a door — else from the OLD DECK's
+//     floor, when the picture shows one (2026-11-13): the new deck usually goes where the old one was;
+//   · what stood in front of the wall — an old deck, its stairs, a porch roof — left out of the house, and said so; a
+//     porch roof on posts kept as an existing cover when the contractor says it stays;
 //   · what was seen, what was guessed, and what to check, in words.
 // The same read and the same picture always build the same house, so the QA script can prove it.
 
 import { baseYAt, DOOR_HEIGHT_FT, JOG_DEFAULT_FT, scaleFromRead, type PhotoScale } from "./photoFit";
-import { HOUSE_LIMITS, OPENING_LIMITS, isHouseHex, settleOpenings, toInchFt, wallParts, type HouseDesign, type HouseHex, type HouseJog, type HouseMaterial, type HouseOpening, type HousePart, type HousePhoto, type HouseRoof } from "./house";
+import { COVER_LIMITS, COVER_OUT_DEFAULT_FT, HOUSE_LIMITS, OPENING_LIMITS, isHouseHex, settleOpenings, toInchFt, wallParts, type HouseCover, type HouseDesign, type HouseHex, type HouseJog, type HouseMaterial, type HouseOpening, type HousePart, type HousePhoto, type HouseRoof } from "./house";
 import type { HouseRead } from "./houseRead";
+import { inFrontAt, leftOutWords, oldDeckOf, porchRoofOf } from "./houseInFront";
 
 export interface PhotoHouseInput {
   read: HouseRead;
@@ -35,6 +39,10 @@ export interface PhotoHouseInput {
   wallWidthFt?: number | null;
   /** The colours measured off the picture's pixels (the browser's), #rrggbb. */
   measured?: { siding: string | null; roof: string | null };
+  /** A porch roof seen in front of the wall stays: built as an existing cover (2026-11-13). Left out otherwise. */
+  keepCovers?: boolean;
+  /** How far that cover comes out from the wall, ft — a square-on photo cannot say (10 ft unless set). */
+  coverOutFt?: number | null;
 }
 
 export interface PhotoFact {
@@ -57,8 +65,17 @@ export interface PhotoHouse {
   deckAtFt: number;
   /** What the deck was centred on. */
   centredOn: "door" | "patio" | "middle";
-  /** The deck's floor an inch below the back door's threshold, inches — null without a door. */
+  /** The deck's floor, inches: an inch below the back door's threshold, else where the old deck's floor is — null
+   *  when the picture shows neither. */
   heightIn: number | null;
+  /** What that height was read from. */
+  heightBy: "door" | "old-deck" | null;
+  /** The old deck's floor above the ground at the wall, inches — null when the picture shows none (or not its floor). */
+  oldDeckIn: number | null;
+  /** What stood in front of the wall and was left out of the house, in words: "the old deck and its stairs". */
+  leftOut: string | null;
+  /** A porch roof seen in front of the wall: its width, ft — the review offers to keep it as an existing cover. */
+  porch: { widthFt: number } | null;
   facts: PhotoFact[];
   /** What to look at before trusting it. */
   checks: string[];
@@ -213,7 +230,37 @@ export function houseFromPhoto(input: PhotoHouseInput): PhotoHouse | null {
   // its full frame is marked at a credible scale instead of raising the deck to a railing.
   const reliableThreshold = mainDoor && scale.by !== "eave" && mainDoor.heightFt >= 5 && mainDoor.heightFt <= 9;
   const thresholdIn = reliableThreshold ? Math.round(mainDoor.sillFt * 12) : null;
-  const heightIn = thresholdIn !== null && thresholdIn >= 7 ? thresholdIn - 1 : null;
+  const doorHeightIn = thresholdIn !== null && thresholdIn >= 7 ? thresholdIn - 1 : null;
+
+  // WHAT STOOD IN FRONT OF THE WALL (2026-11-13, owner: "remove the deck, because instead of this deck we're going to
+  // build something new"). The old deck is not built; its floor — the line the model read where it meets the wall —
+  // says where the new deck's floor can go when no door does: half a foot to 14 ft off the ground at the wall's foot.
+  const wallX = (x: number) => clamp(x, Math.min(read.base.left.x, read.base.right.x), Math.max(read.base.left.x, read.base.right.x));
+  const oldDeck = oldDeckOf(read);
+  const oldMid = oldDeck ? wallX((oldDeck.x0 + oldDeck.x1) / 2) : 0;
+  const oldFloorIn = oldDeck?.floor !== undefined ? Math.round(above(oldDeck.floor, oldMid) * 12) : null;
+  const oldDeckIn = oldFloorIn !== null && oldFloorIn >= 6 && oldFloorIn <= 168 ? oldFloorIn : null;
+  const heightIn = doorHeightIn ?? oldDeckIn;
+  const heightBy: PhotoHouse["heightBy"] = doorHeightIn !== null ? "door" : oldDeckIn !== null ? "old-deck" : null;
+  // A porch roof on posts: left out like the old deck unless it stays — then an existing cover where it was seen, its
+  // front edge at the height the picture shows it.
+  const porchRoof = porchRoofOf(read);
+  const porchWidthFt = porchRoof ? ((porchRoof.x1 - porchRoof.x0) * photoW) / k : 0;
+  const porch = porchRoof && porchWidthFt >= COVER_LIMITS.widthFt.min ? { widthFt: half(Math.min(porchWidthFt, COVER_LIMITS.widthFt.max)) } : null;
+  const covers: HouseCover[] = input.keepCovers
+    ? (read.lookPast ?? [])
+        .filter((b) => b.kind === "porch-roof")
+        .sort((a, b) => b.x1 - b.x0 - (a.x1 - a.x0))
+        .slice(0, COVER_LIMITS.count)
+        .flatMap((b): HouseCover[] => {
+          const x0Ft = half(deckFt(b.x0)), x1Ft = half(deckFt(b.x1));
+          if (x1Ft - x0Ft < COVER_LIMITS.widthFt.min || x1Ft - x0Ft > COVER_LIMITS.widthFt.max) return [];
+          const seenFt = above(b.y1, wallX((b.x0 + b.x1) / 2));
+          return [{ x0Ft, x1Ft, outFt: half(clamp(input.coverOutFt ?? COVER_OUT_DEFAULT_FT, COVER_LIMITS.outFt.min, COVER_LIMITS.outFt.max)), heightFt: half(clamp(seenFt, COVER_LIMITS.heightFt.min, COVER_LIMITS.heightFt.max)) }];
+        })
+        .sort((a, b) => a.x0Ft - b.x0Ft)
+    : [];
+  const leftOut = leftOutWords({ lookPast: (read.lookPast ?? []).filter((b) => !(covers.length && b.kind === "porch-roof")) });
 
   const house: HouseDesign = {
     ...input.house,
@@ -227,6 +274,7 @@ export function houseFromPhoto(input: PhotoHouseInput): PhotoHouse | null {
     material,
     bumpOuts: "full",
     parts: parts.some(Boolean) ? parts : null,
+    covers: covers.length ? covers : null,
     openings,
     // Keep the photo's vertical scale as well as its horizontal scale. A fixed two-storey
     // height used to discard upper windows and push a transom down into the entry door.
@@ -247,6 +295,11 @@ export function houseFromPhoto(input: PhotoHouseInput): PhotoHouse | null {
   const stoodDoors = openings.filter((o) => o.kind !== "window");
   const doorWords = stoodDoors.length ? stoodDoors.map((d) => `${d.kind === "garage" ? "a garage door" : d.kind === "slider" ? "a sliding door" : "a door"} ${ftIn(Math.round(d.widthFt * 2) / 2)} wide`).join(", ") : "no door seen";
   facts.push({ id: "openings", label: "Openings", value: `${plural(winCount, "window")} · ${doorWords}`, guess: false });
+  if (leftOut || covers.length) {
+    const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+    const kept = covers.length ? `the porch roof kept as an existing cover (${ftIn(covers[0].x1Ft - covers[0].x0Ft)} wide, ${ftIn(covers[0].outFt)} out)` : "";
+    facts.push({ id: "left-out", label: "Left out", value: leftOut ? `${cap(leftOut)} — not built${oldDeck ? ": the new deck goes in its place" : ""}${kept ? ` · ${kept}` : ""}` : cap(kept), guess: false });
+  }
   facts.push({ id: "look", label: "Siding", value: `${MATERIAL_WORDS[read.material ?? "lap"]}${sidingColour ? "" : " · colour kept"}`, guess: !read.material, ...(sidingColour ? { swatch: sidingColour } : {}) });
   if (roofColour) facts.push({ id: "roof-colour", label: "Roof colour", value: "from the picture", guess: false, swatch: roofColour });
   facts.push({ id: "deck", label: "The deck", value: centredOn === "middle" ? "In the middle of the wall" : `Centred on the ${centredOn}`, guess: false });
@@ -254,13 +307,17 @@ export function houseFromPhoto(input: PhotoHouseInput): PhotoHouse | null {
   if (rough) checks.push("Sized by the storeys, the roughest way — type the wall's width (corner to corner) for a true size.");
   if (rough && read.doors.some((d) => d.kind !== "garage")) checks.push("The door's marked height does not agree with the wall. Include its full frame behind any railing, or enter the measured wall width.");
   if (mainDoor && !reliableThreshold) checks.push("Deck height kept: mark the full door down to its threshold and check the scale before setting the deck floor from it.");
+  // The wall's foot behind the old deck: a base line lying on the deck's floor (or above it) is the deck, not the ground.
+  if (oldDeck?.floor !== undefined && baseYAt(read, oldMid) <= oldDeck.floor + 0.004) checks.push("The wall's bottom line sits on the old deck, not on the ground behind it — drag its two ends down to where the wall meets the ground, or the house is drawn too short.");
+  if (thresholdIn !== null && oldDeckIn !== null && Math.abs(thresholdIn - oldDeckIn) > 6) checks.push(`The door's threshold reads ${thresholdIn} in. off the ground and the old deck's floor ${oldDeckIn} in. — they should be about the same: check the door's box and the wall's bottom line before taking the deck's height from the picture.`);
+  if (covers.length) checks.push(`The porch roof is drawn as an existing cover, ${ftIn(covers[0].outFt)} out from the wall — a photo taken square-on cannot show how far it comes out: set it beside the switch. Nothing is priced or framed from it.`);
   if (!mainDoor) checks.push(doors.length ? "No door onto the deck seen (a garage door doesn't count) — if there is one, mark it, and the deck's height comes from its threshold." : "No back door seen — if there is one, mark it, and the deck's height comes from its threshold.");
   if (openCorners.length) checks.push(`${openCorners.length === 1 ? `A corner shows in the wall about ${ftIn(openCorners[0])} from its left end` : `Corners show in the wall about ${openCorners.map((x) => ftIn(x)).join(" and ")} from its left end`}, but not which side stands forward — tap the part that comes out, then set how far. Left alone, the wall is built flat there.`);
   if (unsizedSteps) checks.push(`${unsizedSteps === 1 ? "The step's depth is" : "The steps' depths are"} a guess (${ftIn(JOG_DEFAULT_FT)}) — set ${unsizedSteps === 1 ? "it" : "them"} in the wall drawing.`);
   if (read.confidence < 0.5) checks.push("The picture was hard to read — look over the lines before building.");
   if (read.note) checks.push(read.note);
 
-  return { house, wallFt, scale, deckAtFt, centredOn, heightIn, facts, checks };
+  return { house, wallFt, scale, deckAtFt, centredOn, heightIn, heightBy, oldDeckIn, leftOut, porch, facts, checks };
 }
 
 /**
@@ -389,18 +446,21 @@ export function colourZones(read: HouseRead, photoW: number, photoH: number): { 
     ...read.doors.map((d) => ({ x0: d.x0, x1: d.x1, top: d.top, bottom: d.bottom })),
   ];
   const inset = (x1 - x0) * 0.03;
+  // An old deck's boards, a tree, the shade under a porch roof are not the wall's colour (2026-11-13).
+  const hidden = inFrontAt(read, { under: true });
   const wall = (x: number, y: number) => {
     if (x < x0 + inset || x > x1 - inset) return false;
     const top = eaveY(x) + 0.02;
     const bottom = baseYAt(read, x) - 0.03;
     if (y < top || y > bottom) return false;
+    if (hidden(x, y)) return false;
     return !holes.some((h) => x > h.x0 - mx && x < h.x1 + mx && y > h.top - my && y < h.bottom + my);
   };
   const roof = read.eave
     ? (x: number, y: number) => {
         if (x < x0 + inset || x > x1 - inset) return false;
         const e = eaveY(x);
-        return y < e - 0.012 && y > e - 0.06;
+        return y < e - 0.012 && y > e - 0.06 && !hidden(x, y);
       }
     : null;
   const top = read.eave ? Math.min(read.eave.left.y, read.eave.right.y) - 0.07 : Math.min(read.base.left.y, read.base.right.y) - 0.3;

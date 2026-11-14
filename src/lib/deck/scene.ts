@@ -1207,7 +1207,7 @@ export function parseDeckScene(raw: unknown): DeckScene | null {
     }
     // The roofs over the body and its bump-outs (2026-10-23): all of them or none (a roof per block, as before).
     if (Array.isArray(h.roofs) && h.roofs.length <= 16) {
-      const roofs = h.roofs.map((x) => numbers(x, 7)).filter((x): x is number[] => !!x && Number.isInteger(x[0]) && x[0] >= 0 && x[0] <= 8);
+      const roofs = h.roofs.map((x) => numbers(x, 7)).filter((x): x is number[] => !!x && Number.isInteger(x[0]) && x[0] >= 0 && x[0] <= 9);
       if (roofs.length && roofs.length === h.roofs.length) house.roofs = roofs;
     }
   }

@@ -15,13 +15,19 @@
 // picture with every line the read found, each one draggable, and the house that would be built, in words; "Build my
 // house" lays it over the design (lib/deck/houseFromPhoto). The photo stays beside the wall drawing to look back at —
 // never pasted on the wall in the 3D (owner, 2026-10-11).
+//
+// AN OLD DECK IN THE PICTURE IS LEFT OUT (2026-11-13 — owner: "remove the deck, because instead of this deck we're
+// going to build something new"): what the model says stands in front of the wall (an old deck, its stairs, a porch
+// roof — lib/deck/houseInFront) is kept out of every pass that reads the wall off the pixels, shown on the picture as
+// left out, and not built; a door behind the old railing is carried down to the old floor; that floor's height is
+// offered as the new deck's; a porch roof on posts can be kept as an existing cover.
 
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { Camera, ImagePlus, RotateCcw, Users, X } from "lucide-react";
 import type { DeckDesign } from "@/lib/deck/design";
 import type { DeckPatch } from "@/lib/deck/checks";
-import { PART_ROOFS, PART_ROOF_LABEL, isHouseHex, settleOpenings, type HousePhoto, type PartRoof } from "@/lib/deck/house";
+import { COVER_LIMITS, COVER_OUT_DEFAULT_FT, PART_ROOFS, PART_ROOF_LABEL, isHouseHex, settleOpenings, type HousePhoto, type PartRoof } from "@/lib/deck/house";
 import {
   addReadDoor,
   addReadJog,
@@ -52,6 +58,7 @@ import { type WallJog, AUTO_STRAIGHTEN_PCT, applyHomography, obliqueness, transf
 import { applyDepthVerdicts, type DepthRelief } from "@/lib/deck/houseDepthApply";
 import { deckClientPhotoData, deckClientPhotos, deckPhotoHref, readHouseCorner, readHouseDepth, readHousePhoto, uploadDeckPhoto, type ClientPhoto, type DeckPhotoResult, type HouseCornerRead, type HouseDepthResult, type HousePhotoRead } from "@/actions/deckEstimator";
 import { applyCornerVerdict, cornerCrop, unresolvedSteps } from "@/lib/deck/houseCorner";
+import { LEFT_OUT_TAG, leftOut, oldDeckOf, removeInFront, settleBehindDeck } from "@/lib/deck/houseInFront";
 import { cropPhoto, shrinkPhoto, straightenPhoto, trimLetterbox } from "@/components/v3/deck-estimator-blueprint/deck-photo";
 import { NumberInput, Toggle, cx, feetText, parseFeet } from "./deck-v1-parts";
 
@@ -65,6 +72,10 @@ export interface HouseReview {
   wallWidthFt: number | null;
   useHeight: boolean;
   veneer: boolean;
+  /** A porch roof seen in front of the wall stays: drawn as an existing cover (off = left out, like the old deck). */
+  keepCover?: boolean;
+  /** How far that cover comes out from the wall, ft. */
+  coverOutFt?: number;
   /** How far off square the shot was, percent, when it was straightened. */
   straightened: number | null;
   /** The picture could not be read: the lines are a start to drag onto the wall. */
@@ -312,6 +323,8 @@ export function useHousePhoto({
             house: design.house,
             wallWidthFt: review.wallWidthFt,
             measured: review.measured,
+            keepCovers: review.keepCover === true,
+            coverOutFt: review.coverOutFt ?? null,
           })
         : null,
     [review, design.shape.widthFt, design.house],
@@ -359,6 +372,9 @@ export function useHousePhoto({
             read = merged;
           }
         }
+        // THE DOORS BEHIND THE OLD DECK (2026-11-13): a door boxed only down to the old railing's top rail stands on
+        // the old deck's floor — carried down to it, a whole door again (lib/deck/houseInFront).
+        read = settleBehindDeck(read).read;
         // A SQUARE-ON SHOT STAYS SQUARE (2026-10-24 — owner, the same photo: "still wrong"). The model's eave and base
         // lines lean a few per cent off the wall's; 3 % made a square-on photo look angled, it was "straightened", its
         // corners leaned and the wall's steps went unread. The photo says which it is (lib/deck/wallSteps
@@ -598,6 +614,8 @@ export function useHousePhoto({
       wallWidthFt: photo.by === "width" ? photo.wallFt : null,
       useHeight: false,
       veneer: design.wall === "brick-veneer",
+      keepCover: !!design.house.covers?.length,
+      coverOutFt: design.house.covers?.[0]?.outFt ?? COVER_OUT_DEFAULT_FT,
       straightened: null,
       byHand: photo.read ? null : "Drag the lines onto the wall, then add the windows and the door.",
     });
@@ -892,6 +910,10 @@ export function HousePhotoReview({ hp, design }: { hp: HousePhotoState; design: 
   const selectedBox = selectedWindow ? { x0: selectedWindow.x0, x1: selectedWindow.x1, top: selectedWindow.head, bottom: selectedWindow.sill } : selectedDoor;
   const selectedName = sel ? (selectedKind === "win" ? "Window" : "Door") + " " + (sel.i + 1) : "";
   const veneer = b?.house.material === "brick" || b?.house.material === "stone";
+  // What stood in front of the wall (2026-11-13): shown where it is, said to be left out, each one taken back with its ×.
+  const outThings = leftOut(read);
+  const oldDeck = oldDeckOf(read);
+  const keptCover = !!b?.house.covers?.length;
   // On the page itself, above the app's sidebar (the studio's own layer sits under it), in the studio's style scope.
   if (typeof document === "undefined") return null;
   return createPortal(
@@ -902,7 +924,7 @@ export function HousePhotoReview({ hp, design }: { hp: HousePhotoState; design: 
             <div>
               <h3 className="v1-h3">Here&rsquo;s what I see</h3>
               <span className="v1-meta">
-                {r.byHand ? "Marked by hand" : `Read off the photo${r.how ? ` in ${r.how.looks === 2 ? "two looks" : "one look"}${r.how.windowsFromPhoto ? `, its ${r.how.windowsFromPhoto} windows read off the picture` : r.how.snapped ? ", lined up with its edges" : ""}${r.how.stepsFromPhoto ? `, the wall's steps measured off the photo${r.how.stepsBeforeWarp ? " before it was straightened" : ""}` : r.how.stepsFromPhoto === 0 ? `, ${stepsWhyWords(r.how.stepsWhy, r.how.cornersFromPhoto ?? 0)}` : ""}${r.how.squareOn ? ", shot square-on — not straightened" : ""}${r.how.depth ? depthWords(r.how.depth) : ""}${r.how.corners ? cornerWords(r.how.corners) : ""} (${r.how.model})` : ""}${r.straightened ? ` · straightened (the shot was ${r.straightened}% off square)` : ""}`} — drag any line that&rsquo;s off; tap a part
+                {r.byHand ? "Marked by hand" : `Read off the photo${r.how ? ` in ${r.how.looks === 2 ? "two looks" : "one look"}${r.how.windowsFromPhoto ? `, its ${r.how.windowsFromPhoto} windows read off the picture` : r.how.snapped ? ", lined up with its edges" : ""}${r.how.stepsFromPhoto ? `, the wall's steps measured off the photo${r.how.stepsBeforeWarp ? " before it was straightened" : ""}` : r.how.stepsFromPhoto === 0 ? `, ${stepsWhyWords(r.how.stepsWhy, r.how.cornersFromPhoto ?? 0)}` : ""}${r.how.squareOn ? ", shot square-on — not straightened" : ""}${r.how.depth ? depthWords(r.how.depth) : ""}${r.how.corners ? cornerWords(r.how.corners) : ""} (${r.how.model})` : ""}${b?.leftOut ? ` · ${b.leftOut} left out` : ""}${r.straightened ? ` · straightened (the shot was ${r.straightened}% off square)` : ""}`} — drag any line that&rsquo;s off; tap a part
                 of the wall to set it out or back. Select a window or door to move it, resize its corners, or change its bounds below.
               </span>
             </div>
@@ -937,6 +959,10 @@ export function HousePhotoReview({ hp, design }: { hp: HousePhotoState; design: 
                       <line className="v1-hp-l-side" x1={read.base.right.x * 1000} y1={read.base.right.y * 1000} x2={read.eave.right.x * 1000} y2={read.eave.right.y * 1000} />
                     </>
                   ) : null}
+                  {outThings.map(({ i, box }) => (
+                    <rect key={`lp${i}`} className={cx("v1-hp-l-out", box.kind === "porch-roof" && keptCover && "is-kept")} x={box.x0 * 1000} y={box.y0 * 1000} width={(box.x1 - box.x0) * 1000} height={(box.y1 - box.y0) * 1000} />
+                  ))}
+                  {oldDeck?.floor !== undefined ? <line className="v1-hp-l-floor" x1={oldDeck.x0 * 1000} y1={oldDeck.floor * 1000} x2={oldDeck.x1 * 1000} y2={oldDeck.floor * 1000} /> : null}
                   {sections.map((sec, i) => (
                     <polygon
                       key={`s${i}`}
@@ -996,6 +1022,15 @@ export function HousePhotoReview({ hp, design }: { hp: HousePhotoState; design: 
                     </span>
                   ) : null,
                 )}
+                {outThings.map(({ i, box }) => (
+                  <span key={`lpt${i}`} className={cx("v1-hp-out-tag", box.kind === "porch-roof" && keptCover && "is-kept")} style={{ left: pct((box.x0 + box.x1) / 2), top: pct(box.y0) }} data-deck-house-left-out={box.kind}>
+                    {LEFT_OUT_TAG[box.kind]} — {box.kind === "porch-roof" && keptCover ? "kept" : "left out"}
+                    <button type="button" onClick={() => setRead(removeInFront(read, i))} aria-label={`${LEFT_OUT_TAG[box.kind]}: not there — take this mark off`} title="Not there — take this mark off">
+                      {/* a plain ×: an icon here would be an svg, and every svg in the picture is laid over the whole of it */}
+                      <span aria-hidden="true">×</span>
+                    </button>
+                  </span>
+                ))}
                 {read.doors.map((d, i) => (
                   <React.Fragment key={`dh${i}`}>
                     {handle(`door-${i}`, (d.x0 + d.x1) / 2, d.bottom, `${d.kind === "garage" ? "Garage door" : "Door"} ${i + 1} — its ${d.kind === "garage" ? "bottom" : "threshold"}`, { kind: "door", i }, "is-door")}
@@ -1159,6 +1194,14 @@ export function HousePhotoReview({ hp, design }: { hp: HousePhotoState; design: 
             </div>
             <div className="v1-hp-side">
               {r.byHand ? <p className="v1-call v1-call-warn">{r.byHand}</p> : null}
+              {b?.leftOut ? (
+                <p className="v1-call v1-call-pass" data-deck-house-left-out-note>
+                  <b>{oldDeck ? "Old deck found — left out" : `${b.leftOut.charAt(0).toUpperCase()}${b.leftOut.slice(1)} — left out`}</b>
+                  <span>
+                    {oldDeck ? `The house is built without ${b.leftOut}: the new deck goes in its place.` : "The house is built without it."} The wall, its doors and its windows are read behind it. Marked in yellow on the picture — tap × on a mark that is wrong.
+                  </span>
+                </p>
+              ) : null}
               {b ? (
                 <ul className="v1-hp-facts" data-deck-house-review-facts>
                   {b.facts.map((f) => (
@@ -1189,8 +1232,31 @@ export function HousePhotoReview({ hp, design }: { hp: HousePhotoState; design: 
               </label>
               {b?.heightIn ? (
                 <Toggle checked={r.useHeight} onChange={(on) => hp.setReview((v) => (v ? { ...v, useHeight: on } : v))}>
-                  Set the deck&rsquo;s floor from the door — {b.heightIn} in. (an inch under its threshold; now {design.heightIn} in.)
+                  {b.heightBy === "old-deck" ? (
+                    <>Set the new deck&rsquo;s floor where the old deck&rsquo;s is — {b.heightIn} in. off the ground (now {design.heightIn} in.)</>
+                  ) : (
+                    <>Set the deck&rsquo;s floor from the door — {b.heightIn} in. (an inch under its threshold; now {design.heightIn} in.)</>
+                  )}
                 </Toggle>
+              ) : null}
+              {b?.porch ? (
+                <div className="v1-hp-cover" data-deck-house-cover={r.keepCover ? "kept" : "out"}>
+                  <Toggle checked={r.keepCover === true} onChange={(on) => hp.setReview((v) => (v ? { ...v, keepCover: on } : v))}>
+                    The porch roof stays — keep it in the 3D as an existing cover (about {ftIn(b.porch.widthFt)} wide)
+                  </Toggle>
+                  {r.keepCover ? (
+                    <span className="v1-hp-sec-depth" data-deck-house-cover-out>
+                      <span className="v1-lbl">How far it comes out</span>
+                      <button type="button" className="v1-btn v1-btn-sm" onClick={() => hp.setReview((v) => (v ? { ...v, coverOutFt: Math.max(COVER_LIMITS.outFt.min, (v.coverOutFt ?? COVER_OUT_DEFAULT_FT) - 1) } : v))} aria-label="A foot less">
+                        −
+                      </button>
+                      <b>{ftIn(r.coverOutFt ?? COVER_OUT_DEFAULT_FT)}</b>
+                      <button type="button" className="v1-btn v1-btn-sm" onClick={() => hp.setReview((v) => (v ? { ...v, coverOutFt: Math.min(COVER_LIMITS.outFt.max, (v.coverOutFt ?? COVER_OUT_DEFAULT_FT) + 1) } : v))} aria-label="A foot more">
+                        +
+                      </button>
+                    </span>
+                  ) : null}
+                </div>
               ) : null}
               {veneer ? (
                 <Toggle checked={r.veneer} onChange={(on) => hp.setReview((v) => (v ? { ...v, veneer: on } : v))}>

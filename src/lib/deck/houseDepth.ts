@@ -18,6 +18,7 @@ import { logServerError } from "@/lib/server-events";
 import { notePaidCall } from "@/lib/trialMeter";
 import { mainSection, parseHouseRead, readSections, type HouseRead } from "./houseRead";
 import { baseYAt } from "./photoFit";
+import { inFrontAt } from "./houseInFront";
 import { photoOf } from "./housePhotoServer";
 import type { DepthRelief, DepthVerdict } from "./houseDepthApply";
 
@@ -201,6 +202,8 @@ export function depthVerdicts(read: HouseRead, map: DepthMap): { verdicts: Depth
     ...read.doors.map((d) => ({ x0: d.x0, x1: d.x1, y0: d.top, y1: d.bottom })),
   ];
   const inOutline = read.outline && read.outline.length >= 3 ? insidePolygon(read.outline) : null;
+  // What stands in front of the wall is nearer than the wall: an old deck measured as a part that "comes out" (2026-11-13).
+  const hidden = inFrontAt(read);
   const inset = (xR - xL) * 0.02;
   const inWall = (fx: number, fy: number) => {
     if (fx < xL + inset || fx > xR - inset) return false;
@@ -210,6 +213,7 @@ export function depthVerdicts(read: HouseRead, map: DepthMap): { verdicts: Depth
     if (H <= 0.02) return false;
     if (fy < top + H * 0.04 || fy > bot - H * 0.03) return false;
     if (holes.some((b) => fx > b.x0 - 0.008 && fx < b.x1 + 0.008 && fy > b.y0 - 0.008 && fy < b.y1 + 0.008)) return false;
+    if (hidden(fx, fy)) return false;
     return !inOutline || inOutline(fx, fy);
   };
   const secOf = (fx: number) => {
