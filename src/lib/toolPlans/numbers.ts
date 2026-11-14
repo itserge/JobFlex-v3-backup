@@ -289,6 +289,49 @@ export function toolsRowLabel(plan: string, lines: ReadonlyArray<Pick<ToolsLine,
   return [head, tools.length ? tools.join(" + ") : null, extra ? `+${extra} ${extra === 1 ? "person" : "people"}` : null].filter(Boolean).join(" · ");
 }
 
+/** A tool on a sign-up's card in Admin (owner, 2026-11-12: "show what tool he picked up when he signs up"). */
+export interface SignupTool {
+  id: ToolId;
+  label: string;
+  /** main: the shop's main tool · try: ticked beside it, free until the trial ends · bill: on the bill · included: one
+   *  of the size's own trade tools · removed: taken off before it was billed. */
+  state: "main" | "try" | "bill" | "included" | "removed";
+}
+
+/**
+ * WHAT A NEW-PLAN SIGN-UP PICKED, for Admin's sign-up cards: the size by its name ("Basic", never the stored
+ * "TOOLS-BASIC") and the tools on its record — the main tool first, then the others in the catalog's order, each with
+ * what it is now. A size's office set and Complete's "everything" are not listed (the size's name says them); the
+ * trade tools an Advanced shop chose as its own are. Null for a Classic slug.
+ */
+/** The words after a tool's name on a sign-up card: nothing for the main tool, else what it is now. */
+export const SIGNUP_TOOL_WORDS: Record<SignupTool["state"], string> = { main: "main tool", try: "free try", bill: "on the bill", included: "in the plan", removed: "removed" };
+
+/** "Deck Studio (main tool), Fence estimator (free try)" · "no tool, the plan alone". */
+export function signupToolsLine(tools: readonly SignupTool[]): string {
+  return tools.length ? tools.map((t) => `${t.label} (${SIGNUP_TOOL_WORDS[t.state]})`).join(", ") : "no tool, the plan alone";
+}
+
+export function signupTools(record: ToolsRecord | null, planSlug: string | null | undefined, now: Date): { size: string; tools: SignupTool[] } | null {
+  const def = isToolsSlug(planSlug) ? toolPlanBySlug(planSlug) : null;
+  if (!def) return null;
+  const r = record ?? emptyToolsRecord(def.id);
+  const t = now.getTime();
+  const out: SignupTool[] = [];
+  const add = (id: ToolId, state: SignupTool["state"]) => {
+    if (!out.some((x) => x.id === id)) out.push({ id, label: toolById(id).label, state });
+  };
+  if (r.main && TOOLS.some((x) => x.id === r.main)) add(r.main, "main");
+  for (const tool of TOOLS) {
+    const tr = r.tries[tool.id];
+    if (tr?.removedAt && !tr.billedAt) add(tool.id, "removed");
+    else if (tr && !tr.billedAt && !tr.failedAt && Date.parse(tr.endsAt) > t) add(tool.id, "try");
+    else if (r.lines[tool.id]) add(tool.id, "bill");
+    else if (def.includedTrade !== "all" && r.chosenTrade.includes(tool.id)) add(tool.id, "included");
+  }
+  return { size: def.name, tools: out };
+}
+
 /**
  * A new-plan shop's lines at the prices in force, for the platform's own record when Stripe isn't read (dev, or Stripe
  * unreachable — lib/subscribersRead fromRecord, where a Classic row is priced from the catalog the same way): the

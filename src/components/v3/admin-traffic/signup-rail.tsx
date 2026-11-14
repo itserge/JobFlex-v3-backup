@@ -26,6 +26,7 @@ import { signupLedgerSummary, type LiveVisitor, type SignupLedger, type SignupRe
 import { TRAFFIC_SINCE_LABEL, TRAFFIC_SINCE_MS, TRAFFIC_TZ, trafficDayStartMs } from "@/lib/traffic-visitor";
 import { Ago, useNow } from "./ticker";
 import { EmailContractorButton } from "@/components/v3/admin-mail/contractor-mail";
+import { SIGNUP_TOOL_WORDS } from "@/lib/toolPlans/numbers";
 import s from "./signup-rail.module.css";
 
 /** The spans: the page's days (TRAFFIC_TZ), today counted as one. */
@@ -220,6 +221,15 @@ export function SignupRail({ initial, timezone, fullHistory = false, liveSignups
                         {!r.fromAd && r.source && <em className={s.src}>{r.source}</em>}
                         {r.industry && r.industry !== "default" && <em className={s.trade}>{r.industry}</em>}
                       </div>
+                      {/* The new plans (owner, 2026-11-12): the tools this sign-up picked, the main tool first. */}
+                      {r.tools && (
+                        <div className={s.tools} data-signup-tools={r.tools.map((t) => `${t.id}:${t.state}`).join(",")}>
+                          <span className={s.toolsK}>Tools picked</span>
+                          {r.tools.length === 0
+                            ? <span className={s.toolNone}>none, the plan alone</span>
+                            : r.tools.map((t) => <em key={t.id} className={s.tool} data-tool-state={t.state}>{t.label}<i>{SIGNUP_TOOL_WORDS[t.state]}</i></em>)}
+                        </div>
+                      )}
                       {live && (live.place || live.device) && <div className={s.place}>{live.active ? "On the site now" : "Was on the map"}{placeOfVisitor(live) ? ` · ${placeOfVisitor(live)}` : ""}{live.device ? ` · ${live.device}` : ""}</div>}
                       {/* Write to them from here (2026-10-08): the console's composer, on this account. */}
                       {r.ownerEmail && <EmailContractorButton row orgId={r.orgId} seed={{ business: r.orgName, ownerName: r.ownerName, ownerEmail: r.ownerEmail }} />}

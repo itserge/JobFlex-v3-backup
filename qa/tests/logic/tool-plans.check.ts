@@ -65,7 +65,8 @@ import { flattenNavItems, navDropsBlocked, navSectionsFor, showsUpgradePlan, UPG
 import { hasEdition } from "@/lib/editions";
 import { spaceOpen, spacePage, SPACE_IDS } from "@/lib/projectSpaces";
 import { SPOTLIGHT_TOOLS, TOOLS_AD, TOOLS_AD_KEYS, adToolFor, keptAdTool, parseAdTool, parseSpotlightTool, spotlightFor } from "@/lib/planSpotlight";
-import { catalogToolsLines, lineMonthlyCents, toolPlansNumbers, toolsFirstBill, toolsRowLabel, tryOutcome, type NumbersRow, type ToolsLine } from "@/lib/toolPlans/numbers";
+import { catalogToolsLines, lineMonthlyCents, signupTools, signupToolsLine, toolPlansNumbers, toolsFirstBill, toolsRowLabel, tryOutcome, type NumbersRow, type ToolsLine } from "@/lib/toolPlans/numbers";
+import { planDisplayName } from "@/lib/planCatalog";
 import { adKeyOf, BETTER_SIZE_MARGIN_CENTS, firstToolsRecord, isToolsCatalog, mainToolFor, parseToolPicks, pickWire, recordBill, toolsBuild, toolsPlanDTOs, toolsPlanFromAsk, toolsSignupPick, withPlanQuery } from "@/lib/toolPlans/cards";
 import { autoPlanFor } from "@/lib/signupAutoPlan";
 import { isAddonLine, planLine } from "@/lib/deckAddon";
@@ -394,6 +395,16 @@ check("…in the free days the main tool can be removed too, and says until when
 const mPaid = toolsSubscriptionModel({ record: { ...builtRec, tries: {} }, planSlug: "tools-professional", people: 1, now: nov(25), status: "ACTIVE", trialEndsAt: null, hasCard: true, timeZone: "UTC" })!;
 check("…after them it is a tool on the bill like the others: removable, no day", mPaid.tools[0].state === "main" && mPaid.tools[0].removable === true && mPaid.tools[0].day === undefined && mPaid.tools.slice(1).every((t) => t.state === "on-bill"));
 check("what the trial's end will bill: the size, the main tool and the tools still on the bill", JSON.stringify(recordBill(builtRec)) === '{"label":"Professional + Deck Studio + Fence estimator + Text messaging","cents":23200}' && recordBill({ ...builtRec, lines: { deck: builtRec.lines.deck } }).cents === 15400 && recordBill(emptyToolsRecord("basic")).label === "Basic");
+
+// ── Admin's sign-up card: the plan by its name and the tools picked (owner, 2026-11-12) ──
+const cardRec = { ...builtRec, tries: { ...builtRec.tries, texting: { ...builtRec.tries.texting!, removedAt: nov(12).toISOString() } }, lines: { deck: builtRec.lines.deck, fence: builtRec.lines.fence } };
+const card = signupTools(cardRec, "TOOLS-PROFESSIONAL", nov(13))!;
+check("a sign-up's card: the size by its name, the main tool first, then what each other tool is now", card.size === "Professional" && card.tools.map((t) => `${t.id}:${t.state}`).join() === "deck:main,fence:try,texting:removed", card);
+check("…in words", signupToolsLine(card.tools) === "Deck Studio (main tool), Fence estimator (free try), Text messaging (removed)" && signupToolsLine([]) === "no tool, the plan alone");
+check("…after the free days the tools still on are on the bill", signupTools({ ...builtRec, tries: {} }, "tools-professional", nov(25))!.tools.map((t) => `${t.id}:${t.state}`).join() === "deck:main,fence:bill,texting:bill");
+check("…Basic with nothing picked: no tools; Advanced lists its own two trade tools, not the office set", signupTools(null, "TOOLS-BASIC", nov(13))!.tools.length === 0 && signupTools(null, "TOOLS-BASIC", nov(13))!.size === "Basic" && signupTools(firstAdv2, "tools-advanced", nov(12))!.tools.map((t) => `${t.id}:${t.state}`).join() === "deck:main,video:try,builder:included", signupTools(firstAdv2, "tools-advanced", nov(12)));
+check("…a Classic plan has no tools line", signupTools(null, "PROFESSIONAL", nov(13)) === null && signupTools(null, null, nov(13)) === null);
+check("a new plan's name on every screen is its size, never the stored slug; a Classic slug as before", planDisplayName("TOOLS-BASIC") === "Basic" && planDisplayName("tools-complete", {}) === "Complete" && planDisplayName("enterprise", { enterprise: "Advanced" }) === "Advanced" && planDisplayName("starter") === "Starter" && planDisplayName(null) === "—");
 
 // ── part 5: the ad key a sign-up keeps (the Google round trip) ──
 check("a new plans' key is kept as its key: video, crm from smartcrm, home-builder from builder", keptAdTool("video") === "video" && keptAdTool("smartcrm") === "crm" && keptAdTool("builder") === "home-builder" && keptAdTool(" Remodel ") === "remodeler");

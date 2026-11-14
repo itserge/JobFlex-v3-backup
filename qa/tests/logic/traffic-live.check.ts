@@ -294,6 +294,11 @@ check("a free trial says so, and how long is left",
 check("a trial whose date has passed is not called days left",
   sub("STARTER", "TRIALING", "2026-09-28T12:00:00Z") === "Free trial · Starter · trial expired");
 check("a trial with no end date still reads as a trial", sub("STARTER", "TRIALING", null) === "Free trial · Starter");
+check("a new plan is named by its size, never by the stored slug (owner, 2026-11-12)",
+  sub("TOOLS-BASIC", "TRIALING", "2026-10-07T12:00:00Z") === "Free trial · Basic · 6 days left"
+  && sub("tools-professional", "ACTIVE") === "Professional · paying"
+  && sub("TOOLS-ADVANCED", "CANCELED") === "Advanced · canceled",
+  sub("TOOLS-BASIC", "TRIALING", "2026-10-07T12:00:00Z"));
 check("paying, failing, canceled and free each read as themselves",
   sub("PROFESSIONAL", "ACTIVE") === "Professional · paying"
   && sub("STARTER", "PAST_DUE") === "Starter · payment failed"

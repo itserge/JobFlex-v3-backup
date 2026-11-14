@@ -12,6 +12,8 @@ import { valueSignups } from "@/lib/trialProjectionRead";
 import { countedOrgs, setStatsHidden, statsHiddenIds } from "@/lib/statsHidden";
 import { qaOrgIds } from "@/lib/qaTestMode";
 import { lapseReasons } from "@/lib/lapseReason";
+import { isToolsSlug, parseToolsRecord } from "@/lib/toolPlans/shared";
+import { signupTools } from "@/lib/toolPlans/numbers";
 import type { SignupAttribution, StaleNote } from "@/lib/traffic-contract";
 import { adNameKey, adTagsOf, isMapSpan, signupLedgerSummary, signupPlanLabel, signupSource, signupState, type FreshSignup, type LiveReport, type LiveVisitor, type MapHistory, type MapSpan, type SignupLedger, type SignupRecord } from "@/lib/traffic-live";
 
@@ -220,6 +222,22 @@ export async function getSignupLedger(input: Record<string, unknown> = {}): Prom
       state: signupState(shape.subStatus),
     };
   });
+  // The new plans' sign-ups: the tools each picked, from its record (SyncState `orgTools:<orgId>`) — its own try, so
+  // a failure costs the tools line and nothing else (owner, 2026-11-12).
+  try {
+    const toolsRecs = records.filter((r) => isToolsSlug(subs.get(r.orgId)?.plan));
+    if (toolsRecs.length) {
+      const rows = await db.syncState.findMany({ where: { key: { in: toolsRecs.map((r) => `orgTools:${r.orgId}`) } }, select: { key: true, cursor: true } });
+      const byOrg = new Map(rows.map((row) => [row.key.slice("orgTools:".length), parseToolsRecord(row.cursor)]));
+      const now = new Date();
+      for (const rec of toolsRecs) {
+        const picked = signupTools(byOrg.get(rec.orgId) ?? null, subs.get(rec.orgId)?.plan, now);
+        if (picked) rec.tools = picked.tools;
+      }
+    }
+  } catch {
+    /* the tools line is a courtesy */
+  }
   // Accounts an admin took out of the statistics (lib/statsHidden): listed
   // apart under the list, in no count and no figure.
   // The QA Lab's own accounts (lib/qaTestMode) are left out without a line here.
