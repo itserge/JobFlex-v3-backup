@@ -637,6 +637,12 @@ export function deckScene(s: DeckStructure): DeckScene {
       }
     };
     for (const m of st.members) box(STAIR_LAYER[m.role], m.cx, m.cy, m.cz, m.sx, m.sy, m.sz, tagFor(m.role.replace(/-/g, " "), m.nominal, m.lengthIn, noteFor(m)), 0, m.yaw, m.tilt);
+    // Steps that follow the deck's outline (2026-11-14): their tread boards, each a flat ring at its own height, mitred
+    // where two edges meet — drawn as the deck's cut boards are.
+    for (const t of st.treadRings ?? []) {
+      shapedBoards.push(t.ring.map((v) => r3(v)));
+      shapedZs.push(r3(t.z));
+    }
     for (const ft of st.footings) footings.push([r3(ft.x), r3(ft.y), r3(ft.padIn), r3(ft.padThickIn), r3(ft.pierIn), r3(ft.depthIn - ft.groundIn), r3(ft.topIn + ft.groundIn)]);
     const top = st.members.find((m) => m.role === "stringer");
     if (top && st.kind === "flight") {

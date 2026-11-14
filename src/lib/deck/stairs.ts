@@ -29,6 +29,7 @@ import { GUARD_REQUIRED_ABOVE_IN, HANDRAIL_FROM_RISERS, RISER_MAX_IN, THICK_2X_I
 import { IRC_CODE, cite, inFrac, type DeckStateCode } from "./stateCodes";
 import { BAG_CUFT, footingFor, type Footing } from "./frame";
 import type { DeckingProduct } from "./catalog";
+import { ringEdges } from "./ringEdges";
 import { STAIR_LIMITS, railMountOf, type DeckDesign, type RailDesign, type RailMount, type StairDesign, type StairTurn, type StairTurnKind } from "./design";
 
 /* ------------------------------------------------------------------ */
@@ -133,6 +134,12 @@ export interface StairLevel {
   depthIn: number;
   /** The front edge's y at a local x (a curve or a clip moves it). */
   frontAt: (xLocal: number) => number;
+  /**
+   * The level's outline as its sides in order round it, the house's marked (2026-11-14): steps that wrap the deck
+   * follow THESE — every part of a front set part by part, a corner cut at an angle, a deck round the house's corner —
+   * not the rectangle the deck fits in. Absent (a lower level, a plain rectangle of old): the rectangle.
+   */
+  sides?: Array<{ x0: number; y0: number; x1: number; y1: number; house: boolean; side: "front" | "back" | "left" | "right" }>;
 }
 
 export interface StairBuild {
@@ -174,6 +181,9 @@ export interface StairBuild {
   footings: Footing[];
   /** The stair's outline in plan, inches, for the framing plan. */
   footprint: Array<{ x: number; y: number }>;
+  /** Steps that wrap the deck along its own outline (2026-11-14): each tread board as a flat ring [x0, y0, x1, y1, …] at its top's height — mitred where two edges meet — and the stretches of the deck's edge the steps run along (no rail there). */
+  treadRings?: Array<{ ring: number[]; z: number }>;
+  wrapped?: Array<{ x0: number; y0: number; x1: number; y1: number }>;
   /** Feet of deck boards for the treads and of riser boards. */
   treadBoardLf: number;
   riserBoardLf: number;
@@ -411,6 +421,8 @@ export function buildStair(input: StairInput): StairBuild {
   let railPosts = 0;
   let balusters = 0;
   let footprint: V2[] = [];
+  let treadRingsOut: StairBuild["treadRings"];
+  let wrappedOut: StairBuild["wrapped"];
   const flightsOut: StairBuild["flights"] = [];
   const landingsOut: StairBuild["landings"] = [];
   let path: V2[] = [];
@@ -788,6 +800,152 @@ export function buildStair(input: StairInput): StairBuild {
       if (i > 0) for (let k = 0; k <= Math.max(0, c.leg.risers - 1); k++) roomOver(at2(c.F, w / 2, k * runIn), c.leg.topIn - k * c.leg.riserIn);
       if (c.plat) roomOver(at2(c.F, (c.plat.a0 + c.plat.a1) / 2, (c.plat.b0 + c.plat.b1) / 2), c.leg.footIn);
     });
+  } else if (kind === "box" && risers > 0 && level.sides && level.sides.length >= 3) {
+    /* ── steps wrapping the deck ALONG ITS OWN OUTLINE (2026-11-14) ───────
+     * The owner, of a picture of wide steps running round a deck's angled edges: "the steps could be all around the
+     * deck". The box steps went round the rectangle the deck fits in — right for a rectangle only. They now follow the
+     * deck's edges: the front (every part of it, the cuts at its corners, the sides of a bay), the front and both ends,
+     * or every open edge. Each level is the outline set out one more run; where two edges meet, the level turns the
+     * corner with them and its boards are mitred there. */
+    const ring = level.sides.map((sd) => ({ x: sd.x0, y: sd.y0 }));
+    const edges = ringEdges(ring);
+    const xs = ring.map((q) => q.x);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const pick = (i: number) => {
+      const sd = level.sides![i];
+      if (sd.house || edges[i].length < 0.5) return false;
+      if (stair.wrapSides === 4) return true;
+      if (sd.side === "back") return false;
+      if (stair.wrapSides === 3) return true;
+      // The front alone: not the deck's two ends (its outermost sides).
+      const upright = Math.abs(sd.x1 - sd.x0) < 0.5;
+      return !(upright && (Math.abs(sd.x0 - minX) < 0.5 || Math.abs(sd.x0 - maxX) < 0.5));
+    };
+    const n = edges.length;
+    const on = edges.map((_, i) => pick(i));
+    // The runs of edges the steps go along, in order round the deck (one closed run when they go all the way round).
+    const chains: number[][] = [];
+    if (on.every(Boolean)) chains.push(edges.map((_, i) => i));
+    else {
+      const start = on.findIndex((v, i) => v && !on[(i - 1 + n) % n]);
+      for (let c = 0, i = start; start >= 0 && c < n; c++, i = (i + 1) % n) {
+        if (!on[i]) continue;
+        if (!on[(i - 1 + n) % n]) chains.push([]);
+        chains[chains.length - 1].push(i);
+      }
+    }
+    const closed = on.every(Boolean);
+    const frameJoistSpacing = product.family === "composite" || product.family === "pvc" || product.family === "mineral" ? 12 : 16;
+    const boardsDeep = Math.ceil((runIn + TREAD_NOSING_IN) / boardPitch - 1e-9);
+    const rings: NonNullable<StairBuild["treadRings"]> = [];
+    const wrapped: NonNullable<StairBuild["wrapped"]> = [];
+    let longest: V2[] = [];
+    let longestLen = -1;
+    for (const chain of chains) {
+      const m = chain.length;
+      // At each corner of the run, the way a level's corner moves out with it: along the mitre where two of its edges
+      // meet, square out from the edge at an end of the run.
+      const outOf = (i: number) => ({ x: edges[i].outX, y: edges[i].outY });
+      const mitre = (a: V2, b: V2): V2 => {
+        const d = 1 + a.x * b.x + a.y * b.y;
+        return d < 0.05 ? a : { x: (a.x + b.x) / d, y: (a.y + b.y) / d };
+      };
+      const corner = (j: number): { V: V2; m: V2 } => {
+        // j = 0…m: the corner before the j-th edge of the run.
+        const first = j === 0;
+        const last = j === m;
+        const e = edges[chain[Math.min(j, m - 1)]];
+        const V = last ? e.B : e.A;
+        if ((first || last) && !closed) return { V, m: outOf(chain[first ? 0 : m - 1]) };
+        const prev = chain[(j - 1 + m) % m];
+        const next = chain[j % m];
+        return { V, m: mitre(outOf(prev), outOf(next)) };
+      };
+      const at = (j: number, o: number): V2 => {
+        const c = corner(j);
+        return { x: c.V.x + c.m.x * o, y: c.V.y + c.m.y * o };
+      };
+      for (const i of chain) wrapped.push({ x0: edges[i].A.x, y0: edges[i].A.y, x1: edges[i].B.x, y1: edges[i].B.y });
+      for (let k = 1; k <= treads; k++) {
+        const d0 = (k - 1) * runIn;
+        const d1 = k * runIn;
+        const zTop = level.surfaceIn - k * riserIn;
+        const frameTop = zTop - treadThick;
+        for (let j = 0; j < m; j++) {
+          const e = edges[chain[j]];
+          const a0 = at(j, d0);
+          const b0 = at(j + 1, d0);
+          const a1 = at(j, d1);
+          const b1 = at(j + 1, d1);
+          const along = (p: V2, q: V2) => (q.x - p.x) * e.ux + (q.y - p.y) * e.uy;
+          const L0 = along(a0, b0);
+          const L1 = along(a1, b1);
+          // (An edge the corners beside it have closed over at this level — a narrow recess — has no step of its own.)
+          if (!(L0 > 1 && L1 > 1)) continue;
+          const midL = (L0 + L1) / 2;
+          // The frame under it: the rectangle that fits between the two mitres (the stretch of the edge BOTH its inner
+          // and its outer line cover), so no two frames lie in each other at a corner.
+          const lo = Math.max(along(e.A, a0), along(e.A, a1));
+          const hi = Math.min(along(e.A, b0), along(e.A, b1));
+          const short = hi - lo;
+          const mid = (lo + hi) / 2;
+          const off = (d0 + d1) / 2;
+          const joists = Math.ceil(midL / frameJoistSpacing) + 1;
+          boxFrameLf += (2 * midL + joists * (runIn - 2 * THICK_2X_IN)) / 12;
+          if (short > 2) member("box-frame", BOX_FRAME_NOMINAL, short, { x: e.A.x + e.ux * mid + e.outX * off, y: e.A.y + e.uy * mid + e.outY * off }, frameTop - 5.5 / 2, short - 0.5, runIn - 0.5, 5.5, e.yaw);
+          // The tread: boards along the edge, each cut to the mitres at its two ends.
+          for (let r = 0; r < boardsDeep; r++) {
+            const oa = d0 + r * boardPitch;
+            const ob = Math.min(d1 + TREAD_NOSING_IN, oa + product.widthIn);
+            if (!(ob - oa > 0.25)) continue;
+            const pa = at(j, oa);
+            const pb = at(j + 1, oa);
+            const qa = at(j, ob);
+            const qb = at(j + 1, ob);
+            if (!(along(pa, pb) > 0.5 && along(qa, qb) > 0.5)) continue;
+            rings.push({ ring: [pa.x, pa.y, pb.x, pb.y, qb.x, qb.y, qa.x, qa.y].map((v) => Math.round(v * 100) / 100), z: zTop });
+            treadBoardLf += (along(pa, pb) + along(qa, qb)) / 24;
+          }
+          // The riser board on the level's outer face — clear of the next edge's at an inside corner.
+          const turnA = j > 0 || closed ? edges[chain[(j - 1 + m) % m]].turnAtB : 0;
+          const turnB = j < m - 1 || closed ? e.turnAtB : 0;
+          const trimA = turnA < -0.01 ? 0.75 * Math.tan(-turnA / 2) : 0;
+          const trimB = turnB < -0.01 ? 0.75 * Math.tan(-turnB / 2) : 0;
+          const rl = L1 - trimA - trimB;
+          if (rl > 1) {
+            const mx = (a1.x + b1.x) / 2 + e.ux * ((trimA - trimB) / 2) + e.outX * 0.375;
+            const my = (a1.y + b1.y) / 2 + e.uy * ((trimA - trimB) / 2) + e.outY * 0.375;
+            member("riser", "1x8", rl, { x: mx, y: my }, zTop - treadThick - riserIn / 2, rl, 0.75, riserIn - treadThick, e.yaw);
+          }
+          riserBoardLf += L1 / 12;
+          hardware.treadScrewsSqFt += Math.round((midL * (runIn + TREAD_NOSING_IN)) / 144);
+          if (rail.lighting === "post-caps-risers") hardware.riserLights += Math.max(1, Math.round(L1 / 72));
+          if (k === treads) {
+            boxBlocks += Math.ceil(L1 / BOX_BLOCK_SPACING_IN) + 1;
+            gravelSqFt += (L1 * (runIn + 6)) / 144;
+          }
+        }
+      }
+      // What the steps cover on the ground: the run of the deck's edge, and back along the lowest level's outer line.
+      const D2 = treads * runIn;
+      const inner: V2[] = [];
+      const outer: V2[] = [];
+      for (let j = 0; j <= (closed ? m - 1 : m); j++) {
+        inner.push(corner(j).V);
+        outer.push(at(j, D2));
+      }
+      const len = chain.reduce((a, i) => a + edges[i].length, 0);
+      if (len > longestLen) {
+        longestLen = len;
+        longest = closed ? outer : [...inner, ...outer.reverse()];
+      }
+    }
+    totalRunIn = treads * runIn;
+    footprint = longest;
+    gravelSqFt = Math.round(gravelSqFt);
+    treadRingsOut = rings;
+    wrappedOut = wrapped;
   } else if (kind === "box" && risers > 0) {
     /* ── box steps wrapping the deck ─────────────────────────────────── */
     const sides = stair.wrapSides;
@@ -864,6 +1022,8 @@ export function buildStair(input: StairInput): StairBuild {
     members,
     footings,
     footprint,
+    ...(treadRingsOut ? { treadRings: treadRingsOut } : {}),
+    ...(wrappedOut ? { wrapped: wrappedOut } : {}),
     treadBoardLf: Math.round(treadBoardLf * 10) / 10,
     riserBoardLf: Math.round(riserBoardLf * 10) / 10,
     boxFrameLf: Math.round(boxFrameLf * 10) / 10,

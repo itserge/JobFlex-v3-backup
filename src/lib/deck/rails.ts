@@ -235,7 +235,9 @@ export function buildRails(input: RailInput): RailBuild {
     type Side = RailLevel["sides"][number];
     const lengthOf = (sd: Side) => Math.hypot(sd.x1 - sd.x0, sd.y1 - sd.y0);
     // Box steps wrap a side: no rail there (the deck is low by definition).
-    const railed = (sd: Side) => !sd.house && lengthOf(sd) >= 12 && !wraps.some((w) => w.design.wrapSides === 4 || (w.design.wrapSides === 3 && sd.side !== "back") || (w.design.wrapSides === 1 && sd.side === "front"));
+    // (Steps that follow the deck's own outline name the stretches of edge they run along — 2026-11-14.)
+    const onSteps = (w: (typeof wraps)[number], sd: Side) => (w.wrapped ? w.wrapped.some((g) => Math.abs(g.x0 - sd.x0) < 0.6 && Math.abs(g.y0 - sd.y0) < 0.6 && Math.abs(g.x1 - sd.x1) < 0.6 && Math.abs(g.y1 - sd.y1) < 0.6) : w.design.wrapSides === 4 || (w.design.wrapSides === 3 && sd.side !== "back") || (w.design.wrapSides === 1 && sd.side === "front"));
+    const railed = (sd: Side) => !sd.house && lengthOf(sd) >= 12 && !wraps.some((w) => onSteps(w, sd));
     const keyOf = (sd: Side) => `${level.id}-${sd.side}`;
     /**
      * Where a TOP-MOUNTED run's line meets its neighbour's at a corner, inches along this side from the corner (2026-11-13):

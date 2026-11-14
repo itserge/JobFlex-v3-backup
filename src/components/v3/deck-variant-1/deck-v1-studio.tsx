@@ -2629,7 +2629,10 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                 {st.side === "front" ? (
                   <>
                     <Toggle checked={st.wrap} onChange={(v) => set({ wrap: v })}>Box steps wrapping the deck (three risers at most)</Toggle>
-                    {st.wrap ? <Seg label="Wrap how many sides" value={st.wrapSides} onChange={(v) => set({ wrapSides: v })} options={[{ value: 1, label: "Front" }, { value: 3, label: "Three sides" }, ...(design.placement === "detached" ? [{ value: 4 as const, label: "All four" }] : [])]} /> : null}
+                    {/* The steps follow the deck's own edges (2026-11-14): the whole front — every part of it, cut corners,
+                        the sides of a bay; the front and the deck's two ends; or every open edge. */}
+                    {st.wrap ? <Seg label="Wrap how many sides" value={st.wrapSides} onChange={(v) => set({ wrapSides: v })} options={[{ value: 1, label: "Front" }, { value: 3, label: "Front and both ends" }, ...(design.placement === "detached" || (design.shape.kind === "wall" && design.shape.back.some((b) => b.open)) ? [{ value: 4 as const, label: "All round" }] : [])]} /> : null}
+                    {st.wrap ? <p className="v1-hint">The steps follow the deck&rsquo;s own edges — every part of the front, corners cut at an angle, the sides of a bay — and turn each corner with it.</p> : null}
                   </>
                 ) : null}
               </div>
