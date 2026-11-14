@@ -16,9 +16,11 @@
 import { buildDeckFrame, type BuildOptions, type DeckFrame, PIER_BLOCK } from "./frame";
 import { buildRoofFrame, roofPostsForDeck, type RoofFrame, type StairOpening } from "./roof";
 import { deckSurface, type DeckSurface } from "./surface";
-import { buildStair, type StairBuild, type StairLevel } from "./stairs";
+import { buildStair, stairTopEdge, type StairBuild, type StairLevel } from "./stairs";
 import { POST_ACTUAL_IN } from "./codeTables";
 import { buildRails, type RailBuild, type RailLevel } from "./rails";
+import { buildSkirt, type SkirtBuild, type SkirtLevelInput } from "./skirt";
+import { SCREEN_RAIL_CLEAR_IN, buildBuiltIns, type BuiltInBuild } from "./builtins";
 import { buildElectrical, type ElectricalBuild } from "./electrical";
 import { defaultFramingSpecies, framingSpecies } from "./catalog";
 import { groundAt as slopeGroundAt, slopeGradePct } from "./site";
@@ -47,6 +49,10 @@ export interface DeckStructure {
   lower: LowerBuild | null;
   stairs: StairBuild[];
   rails: RailBuild;
+  /** Skirting under the deck (lib/deck/skirt): null when none is asked for, or the deck is too near the ground. */
+  skirt: SkirtBuild | null;
+  /** Built-in benches and planter boxes on the main deck (lib/deck/builtins); empty when there are none. */
+  builtIns: BuiltInBuild[];
   electrical: ElectricalBuild;
   /** The ground under any point of the plan, inches against the house line's ground. */
   groundAt: (x: number, y: number) => number;
@@ -94,6 +100,33 @@ function railLevelOf(id: "upper" | "lower", frame: DeckFrame, offsetX: number, o
     if (Math.hypot(B.x - A.x, B.y - A.y) < 0.5) continue;
     const e = edgeFor(edges, A, B);
     const onBack = Math.abs(A.y - offsetY) < 0.5 && Math.abs(B.y - offsetY) < 0.5;
+    // ONE STRAIGHT LINE, PART WALL AND PART OPEN (2026-11-14): a deck run straight past the house's corner has one back
+    // line — the house behind most of it, nothing behind the rest. Read whole (by its middle) it was all "house", and
+    // the open stretch past the corner got no rail. Where the frame's own edges along the line differ, it is cut there.
+    const L = Math.hypot(B.x - A.x, B.y - A.y);
+    const ux = (B.x - A.x) / L;
+    const uy = (B.y - A.y) / L;
+    const lying = edges
+      .filter((g) => Math.abs((g.x0 - A.x) * uy - (g.y0 - A.y) * ux) < 0.6 && Math.abs((g.x1 - A.x) * uy - (g.y1 - A.y) * ux) < 0.6)
+      .map((g) => {
+        const t0 = (g.x0 - A.x) * ux + (g.y0 - A.y) * uy;
+        const t1 = (g.x1 - A.x) * ux + (g.y1 - A.y) * uy;
+        return { t0: Math.max(0, Math.min(t0, t1)), t1: Math.min(L, Math.max(t0, t1)), house: g.house, side: g.side };
+      })
+      .filter((g) => g.t1 - g.t0 > 0.6)
+      .sort((p, q) => p.t0 - q.t0);
+    // (Only where those edges lie end to end along the whole line — never on an outline that doubles back on itself.)
+    const endToEnd = lying.length > 1 && Math.abs(lying[0].t0) < 0.6 && Math.abs(lying[lying.length - 1].t1 - L) < 0.6 && lying.every((g, k) => k === 0 || Math.abs(g.t0 - lying[k - 1].t1) < 0.6);
+    if (!backIsStep && endToEnd && lying.some((g) => g.house !== lying[0].house)) {
+      let from = 0;
+      for (let k = 0; k < lying.length; k++) {
+        if (k + 1 < lying.length && lying[k + 1].house === lying[k].house) continue;
+        const to = k + 1 < lying.length ? lying[k].t1 : L;
+        sides.push({ x0: A.x + ux * from, y0: A.y + uy * from, x1: A.x + ux * to, y1: A.y + uy * to, house: lying[k].house, side: lying[k].side });
+        from = to;
+      }
+      continue;
+    }
     const side: RailLevel["sides"][number]["side"] = e ? e.side : onBack ? "back" : "front";
     const house = e ? e.house : onBack && backIsStep;
     sides.push({ x0: A.x, y0: A.y, x1: B.x, y1: B.y, house: house || (onBack && backIsStep), side });
@@ -184,8 +217,13 @@ export function buildStructure(raw: DeckDesign, opts: StructureOptions = {}): De
     const lw = Math.round(design.lower.widthFt * 12);
     const offsetXIn = design.lower.align === "left" ? 0 : design.lower.align === "right" ? W - lw : Math.round((W - lw) / 2);
     const offsetYIn = D;
+    // (Its own rectangle, whatever the main deck does at the house: a deck run past the house's corner handed its
+    // lower level the same reach past that corner — read back as a wing of its own, built back UNDER the main deck and
+    // counted in the price. 2026-11-14: the lower level is told of no corner.)
+    const pastCorner = design.house.leftFt < 0 || design.house.rightFt < 0;
     const lowerDesign = normalizeDeckDesign({
       ...design,
+      ...(pastCorner ? { house: { ...design.house, leftFt: Math.max(0, design.house.leftFt), rightFt: Math.max(0, design.house.rightFt), wrapLeftFt: undefined, wrapRightFt: undefined } } : {}),
       shape: { kind: "rect", widthFt: design.lower.widthFt, depthFt: design.lower.depthFt },
       placement: "detached",
       heightIn: design.heightIn - design.lower.dropIn,
@@ -205,6 +243,8 @@ export function buildStructure(raw: DeckDesign, opts: StructureOptions = {}): De
 
   // The stairs.
   const stairs: StairBuild[] = [];
+  /** Where each flight leaves its deck (the skirt under that deck is left open there). */
+  const stairTops: Array<{ level: "upper" | "lower"; x0: number; y0: number; x1: number; y1: number }> = [];
   if (frame && surface) {
     // (Steps that wrap the deck follow its own outline wherever it is not a plain rectangle — 2026-11-14.)
     const plain = design.shape.kind === "rect" && (!design.shape.front || design.shape.front.kind === "straight");
@@ -212,7 +252,13 @@ export function buildStructure(raw: DeckDesign, opts: StructureOptions = {}): De
     const lowerLevel: StairLevel | null = lower ? { id: "lower", surfaceIn: lower.frame.surfaceIn, joistBottomIn: lower.frame.joistBottomIn, x0: lower.offsetXIn, y0: lower.offsetYIn, widthIn: Math.round(design.lower.widthFt * 12), depthIn: Math.round(design.lower.depthFt * 12), frontAt: lower.place === "under" ? (x) => frontEdgeAt(design.shape, x) : () => Math.round(design.lower.depthFt * 12) } : null;
     const build = (st: StairDesign, level: StairLevel) =>
       buildStair({ design, stair: st, level, lowerLevel: level.id === "upper" ? lowerLevel : null, product: frame.decking, rail: design.rail, groundAt, riserMaxIn: code.riserMaxIn, postSize: design.framing.post === "8x8" ? "6x6" : design.framing.post === "4x6" ? "4x4" : design.framing.post });
-    for (const st of design.stairs) stairs.push(build(st, st.level === "lower" && lowerLevel ? lowerLevel : upper));
+    const put = (st: StairDesign, level: StairLevel) => {
+      const built = build(st, level);
+      stairs.push(built);
+      if (built.kind === "flight") stairTops.push({ level: level.id, ...stairTopEdge(st, level) });
+      return built;
+    };
+    for (const st of design.stairs) put(st, st.level === "lower" && lowerLevel ? lowerLevel : upper);
     // THE STEPS BETWEEN THE LEVELS (owner, 2026-10-11: "the double deck, one deck lower than the other — the missing
     // steps"). A lower level more than one riser down cannot be reached without a stair; when the design has none from
     // the main deck to it, the engine builds one — centred on the lower level, the warning's own fix — so the 3D, the
@@ -220,6 +266,7 @@ export function buildStructure(raw: DeckDesign, opts: StructureOptions = {}): De
     if (lower && lower.place === "front" && lowerLevel && lower.dropIn > code.riserMaxIn && !stairs.some((b) => b.level === "upper" && b.lands === "lower-deck")) {
       const between = build(betweenLevelsStair(design, lower.offsetXIn), upper);
       if (between.lands === "lower-deck") stairs.push(between);
+      // (Its top stands where the lower level meets the deck: no skirt there either way.)
     }
   }
 
@@ -237,14 +284,94 @@ export function buildStructure(raw: DeckDesign, opts: StructureOptions = {}): De
   // (A lower level in front meets the main deck along its back; a double deck's lower floor has the house there, or its own open edge.)
   if (lower) levels.push(railLevelOf("lower", lower.frame, lower.offsetXIn, lower.offsetYIn, groundAt, null, lower.place === "front"));
   // The roof's posts that stand on the deck (2026-11-13): where one stands on a top-mounted rail's line, the rail runs to it and sets no post of its own.
-  const rails = buildRails({ design, rail: design.rail, levels, stairs, roofPosts: roof && design.floor === "deck" ? roof.posts.map((p) => ({ x: p.x, y: p.y, halfIn: (POST_ACTUAL_IN[p.size]?.[0] ?? 5.5) / 2 })) : [] });
+  // The stretches of the main deck's edge that steps wrap: the steps' own where they follow the outline; on a plain
+  // rectangle (the box steps' older set-out, which names sides) the front, the front and both ends, or every open edge.
+  const wrappedEdges = stairs.flatMap((st) => {
+    if (st.wrapped) return st.wrapped;
+    if (st.kind !== "box" || st.level !== "upper" || !levels[0]) return [];
+    const n = st.design.wrapSides;
+    return levels[0].sides.filter((sd) => !sd.house && (sd.side === "front" || (n >= 3 && (sd.side === "left" || sd.side === "right")) || n === 4)).map((sd) => ({ x0: sd.x0, y0: sd.y0, x1: sd.x1, y1: sd.y1 }));
+  });
+
+  // PRIVACY SCREENS (2026-11-14; lib/deck/builtins): on the rail's own line, in the rail's place — so they are set
+  // first, and the rail stops a hand short of each one's ends.
+  const railEdge = (b: BuiltInBuild) => {
+    // (Its back line stands SCREEN_EDGE_IN inside the edge: the stretch of edge behind it, a hand more at each end.)
+    const [p, q] = b.footprint;
+    const L = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+    const ux = (q.x - p.x) / L;
+    const uy = (q.y - p.y) / L;
+    return { x0: p.x - ux * SCREEN_RAIL_CLEAR_IN, y0: p.y - uy * SCREEN_RAIL_CLEAR_IN, x1: q.x + ux * SCREEN_RAIL_CLEAR_IN, y1: q.y + uy * SCREEN_RAIL_CLEAR_IN };
+  };
+  const builtInInput =
+    frame && surface && design.extras.builtIns?.length && levels[0]
+      ? {
+          items: design.extras.builtIns,
+          sides: levels[0].sides,
+          surfaceIn: frame.surfaceIn,
+          board: { widthIn: surface.product.widthIn, thickIn: surface.product.thickIn, gapIn: surface.product.gapIn, nominal: surface.product.nominal },
+          stairTops: stairTops.filter((t) => t.level === "upper"),
+          beams: [...frame.beams.map((b) => ({ x0: b.x0, y0: b.y, x1: b.x1, y1: b.y })), ...frame.cornerBeams.map((b) => ({ x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 }))],
+          joistDepthIn: frame.joistTopIn - frame.joistBottomIn,
+        }
+      : null;
+  const screens: BuiltInBuild[] = builtInInput ? buildBuiltIns({ ...builtInInput, only: "screens", railAt: () => "none", wrapped: wrappedEdges }) : [];
+  const rails = buildRails({ design, rail: design.rail, levels, stairs, gaps: screens.filter((b) => b.built).map(railEdge), roofPosts: roof && design.floor === "deck" ? roof.posts.map((p) => ({ x: p.x, y: p.y, halfIn: (POST_ACTUAL_IN[p.size]?.[0] ?? 5.5) / 2 })) : [] });
+
+  // SKIRTING (2026-11-14; lib/deck/skirt): under the open edges of the deck nearest the ground — the lower floor of a
+  // double deck when there is one — and round a lower level in front. (Its top: under the deepest thing at the edge, the
+  // joists or a flush beam.) Left open where a stair leaves, where wide steps run, where the lower level meets the deck.
+  let skirt: SkirtBuild | null = null;
+  if (frame && design.extras.skirt) {
+    const under = (f: DeckFrame) => Math.min(f.joistBottomIn, ...f.beams.filter((b) => b.style === "flush").map((b) => b.bottomIn));
+    const postsOf = (f: DeckFrame, ox: number, oy: number) => f.posts.map((p) => ({ x: p.x + ox, y: p.y + oy, halfIn: Math.max(...(POST_ACTUAL_IN[p.size] ?? [5.5, 5.5])) / 2, pierHalfIn: p.footing.pierIn / 2, pierTopIn: p.footing.topIn + p.footing.groundIn }));
+    const wrapped = wrappedEdges;
+    const doubledUnder = lower && lower.place === "under" ? lower : null;
+    const inFront = lower && lower.place === "front" ? lower : null;
+    // (Every post of both levels: one of the main deck's can stand where the lower level's skirt starts, and the other way.)
+    const posts = [...postsOf(frame, 0, 0), ...(inFront ? postsOf(inFront.frame, inFront.offsetXIn, inFront.offsetYIn) : [])];
+    const skirtLevels: SkirtLevelInput[] = [
+      {
+        id: "upper",
+        sides: levels[0].sides,
+        wrapped,
+        // (A double deck: the stairs of both floors leave by this outline.)
+        openings: [...stairTops.filter((t) => t.level === "upper" || doubledUnder), ...(inFront ? [{ x0: inFront.offsetXIn, y0: inFront.offsetYIn, x1: inFront.offsetXIn + Math.round(design.lower.widthFt * 12), y1: inFront.offsetYIn }] : [])],
+        posts,
+        topIn: under(doubledUnder ? doubledUnder.frame : frame),
+      },
+    ];
+    if (inFront && levels[1]) skirtLevels.push({ id: "lower", sides: levels[1].sides, wrapped, openings: stairTops.filter((t) => t.level === "lower"), posts, topIn: under(inFront.frame) });
+    skirt = buildSkirt({ kind: design.extras.skirt, levels: skirtLevels, groundAt });
+  }
+
+  // BUILT-IN BENCHES AND PLANTERS (2026-11-14; lib/deck/builtins): on the main deck's boards, each along one of its
+  // edges — inside the rail where one stands there (or the privacy screen in its place), clear of nothing where none does.
+  const rest: BuiltInBuild[] = builtInInput
+    ? buildBuiltIns({
+        ...builtInInput,
+        only: "rest",
+        wrapped: wrappedEdges,
+        railAt: (x0, y0, x1, y1) => {
+          const L = Math.hypot(x1 - x0, y1 - y0) || 1;
+          const ux = (x1 - x0) / L;
+          const uy = (y1 - y0) / L;
+          const lies = (g: { x0: number; y0: number; x1: number; y1: number }, off: number) => Math.abs((g.x0 - x0) * uy - (g.y0 - y0) * ux) < off && Math.abs((g.x1 - x0) * uy - (g.y1 - y0) * ux) < off && Math.max((g.x0 - x0) * ux + (g.y0 - y0) * uy, (g.x1 - x0) * ux + (g.y1 - y0) * uy) > 1 && Math.min((g.x0 - x0) * ux + (g.y0 - y0) * uy, (g.x1 - x0) * ux + (g.y1 - y0) * uy) < L - 1;
+          if (screens.some((b) => b.built && lies(railEdge(b), 4))) return "screen";
+          const on = rails.segments.find((g) => g.level === "upper" && lies(g, 4));
+          return on ? on.mount : "none";
+        },
+      })
+    : [];
+  // (In the list's own order.)
+  const builtIns: BuiltInBuild[] = (design.extras.builtIns ?? []).flatMap((it) => [...screens, ...rest].filter((b) => b.design.id === it.id));
 
   // The electrical: fixtures where the contractor put them or where they usually go, and the wiring to them.
   const ringW = roof && !frame ? roof.widthIn : W;
   const ringD = roof && !frame ? roof.depthIn : D;
   const electrical = buildElectrical({ design, frame, roof, stairs, rails, widthIn: ringW, depthIn: ringD, onHouse: frame ? design.placement !== "detached" : roof?.attach === "wall", floorIn: frame ? frame.surfaceIn : roof ? roof.floorIn : 0 });
 
-  return { design, frame, surface, roof, lower, stairs, rails, electrical, groundAt, gradePct, stepDown, code };
+  return { design, frame, surface, roof, lower, stairs, rails, skirt, builtIns, electrical, groundAt, gradePct, stepDown, code };
 }
 
 /** The structure's deck levels, main first, each with where it sits. */

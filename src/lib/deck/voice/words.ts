@@ -268,10 +268,10 @@ const EVERYDAY: ReadonlyArray<[RegExp, string]> = [
   [/\b(?:looks? like|real looking|wood[- ]look(?:ing)?) (?:real )?wood\b/g, "composite decking"],
   // Steps.
   [/\b(?:steps|a way) (?:down )?(?:to|onto|into) the (?:yard|grass|lawn|garden|patio)\b/g, "stairs down the front"],
-  // Privacy on an open deck — a privacy screen the studio can't draw yet (commands NOT_DRAWN "privacy fence"; "privacy
-  // walls / panels / screens" stay a covered deck's walls; "lattice for privacy" stays lattice). The side is the
-  // contractor's to ask.
-  [/(?<!\bfor )\b(?:(?:some|more|a little|a bit of|a bit more|extra|get|give us|give me) )?privacy\b(?! (?:walls?|panels?|screens?|trellis|fence))(?: from (?:the )?(?:neighbou?rs?|street|road|house next door|people next door))?(?: (?:on|along|at) (?:one|1|the \w+|both|each|that|this) sides?| on the (?:left|right|back|front))?/g, "a privacy fence"],
+  // Privacy on an open deck — a privacy screen on its edge (2026-11-14; lib/deck/builtins, parse readBuiltIn reads
+  // "privacy fence"; "privacy walls / panels / screens" stay a covered deck's walls; "lattice for privacy" stays
+  // lattice). The side said goes with it.
+  [/(?<!\bfor )\b(?:(?:some|more|a little|a bit of|a bit more|extra|get|give us|give me) )?privacy\b(?! (?:walls?|panels?|screens?|trellis|fence))(?: from (?:the )?(?:neighbou?rs?|street|road|house next door|people next door))?((?: (?:on|along|at) (?:one|1|the \w+|both|each|that|this) sides?| on the (?:left|right|back|front))?)/g, "a privacy fence$1"],
 ];
 
 export function normalizeSpeech(raw: string): string {
