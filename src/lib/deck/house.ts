@@ -24,7 +24,7 @@
 // in front of it (a porch roof, an old deck, a patio) is not taken off the photo (owner, 2026-10-23: "read just a shape
 // of that back wall and don't show existing deck or porch roofs, just shape and windows"). Without them the house is
 // drawn by rule, as before.
-import { BACK_LIMITS, DECK_LIMITS, normalizeBack, type DeckShape } from "./design";
+import { BACK_LIMITS, DECK_LIMITS, normalizeBack, partsShape, type BackPart, type DeckShape } from "./design";
 import { normalizeHouseRead, type HouseRead } from "./houseRead";
 
 /** The house's roof (2026-10-23, the shapes a photo shows): a hip, a gable with its ridge along the back wall (the triangles
@@ -78,9 +78,19 @@ export interface HouseDesign {
   /** Ground to eave at the photo's scale. Absent on houses drawn by rule. */
   eaveHeightFt?: number;
   roof: HouseRoof;
-  /** How far the back wall runs past the deck's left and right ends, ft. */
+  /**
+   * How far the back wall runs past the deck's left and right ends, ft. NEGATIVE (2026-11-14) where the deck runs past
+   * the house instead: −6 = the house's corner stands 6 ft inside the deck's end, and the deck goes on past it.
+   */
   leftFt: number;
   rightFt: number;
+  /**
+   * AROUND THE CORNER (2026-11-14 — the owner: "go back past the house, on the sides"): where the deck runs past a
+   * corner of the house, how far it goes BACK from the house line along the house's side wall, ft. Absent = it stops
+   * at the house line.
+   */
+  wrapLeftFt?: number;
+  wrapRightFt?: number;
   jogs: HouseJog[];
   /** The look (2026-10-11, "the client would say: this is my house"): the siding's colour and the roof's — a preset, or (2026-10-23) the house's own colour off a photo. */
   siding: SidingId | HouseHex;
@@ -175,7 +185,15 @@ export const sidingHex = (id: SidingId | HouseHex) => (isHouseHex(id) ? id.toLow
 export const roofHex = (id: RoofColourId | HouseHex) => (isHouseHex(id) ? id.toLowerCase() : (ROOF_COLOURS.find((c) => c.id === id)?.hex ?? ROOF_COLOURS[0].hex));
 
 /** A step shallower than half a foot is no step: it is dropped, which is how a wall dragged level loses its step. */
-export const HOUSE_LIMITS = { extendFt: { min: 0, max: 60 }, depthFt: { min: 0.5, max: 12 }, jogs: 6 } as const;
+export const HOUSE_LIMITS = {
+  extendFt: { min: 0, max: 60 },
+  depthFt: { min: 0.5, max: 12 },
+  jogs: 6,
+  /** The deck past a corner of the house (2026-11-14): 2 ft at least (less is no part of a deck to frame — the design's BACK_LIMITS.partFt), 30 at most; the wall keeps 4 ft of the deck. */
+  pastFt: { min: 2, max: 30, keepFt: 4 },
+  /** …and back along the house's side wall (the design's BACK_LIMITS.wrapFt; plain numbers here — this module and the design's load each other). */
+  wrapFt: { min: 0, max: 24 },
+} as const;
 /** Floor to floor. */
 export const STOREY_FT = 9.5;
 /** How deep the house is drawn behind its back wall. */
@@ -200,9 +218,17 @@ export function normalizeHouse(raw: unknown, shape: DeckShape): HouseDesign {
   const r = obj(raw);
   const storeys: 1 | 2 = r.storeys === 2 ? 2 : 1;
   const roof: HouseRoof = HOUSE_ROOFS.includes(r.roof as HouseRoof) ? (r.roof as HouseRoof) : "hip";
-  const leftFt = half(clamp(num(r.leftFt, d.leftFt), HOUSE_LIMITS.extendFt.min, HOUSE_LIMITS.extendFt.max));
-  const rightFt = half(clamp(num(r.rightFt, d.rightFt), HOUSE_LIMITS.extendFt.min, HOUSE_LIMITS.extendFt.max));
   const W = shape.widthFt;
+  // PAST THE HOUSE'S CORNER (2026-11-14): a negative reach is the deck running on past the corner — 2 ft at least (a
+  // corner dragged a hair inside the deck's end stays AT its end), 30 at most, and the two ends together leave the
+  // wall 4 ft of the deck.
+  const P = HOUSE_LIMITS.pastFt;
+  const reach = (v: unknown, fallback: number, room: number) => {
+    const n = half(clamp(num(v, fallback), -Math.max(0, Math.min(P.max, room)), HOUSE_LIMITS.extendFt.max));
+    return n < 0 && n > -P.min ? 0 : n;
+  };
+  const leftFt = reach(r.leftFt, d.leftFt, Math.floor((W - P.keepFt) * 2) / 2);
+  const rightFt = reach(r.rightFt, d.rightFt, Math.floor((W - P.keepFt - Math.max(0, -leftFt)) * 2) / 2);
   const seen = new Set<string>();
   const jogs: HouseJog[] = (Array.isArray(r.jogs) ? r.jogs : [])
     .map((j, i) => {
@@ -239,6 +265,10 @@ export function normalizeHouse(raw: unknown, shape: DeckShape): HouseDesign {
   }
   if (typeof r.eaveHeightFt === "number" && Number.isFinite(r.eaveHeightFt) && r.eaveHeightFt >= 4 && r.eaveHeightFt <= 60) out.eaveHeightFt = toInchFt(r.eaveHeightFt);
   if (Array.isArray(r.openings)) out.openings = normalizeOpenings(r.openings, -leftFt, W + rightFt);
+  // How far back along the house's side — only where the deck is past that corner, and no deeper than a deck goes.
+  const wrap = (v: unknown) => half(clamp(num(v, 0), HOUSE_LIMITS.wrapFt.min, Math.max(0, Math.min(HOUSE_LIMITS.wrapFt.max, Math.floor((DECK_LIMITS.depthFt.max - shape.depthFt) * 2) / 2))));
+  if (leftFt < 0 && wrap(r.wrapLeftFt) > 0) out.wrapLeftFt = wrap(r.wrapLeftFt);
+  if (rightFt < 0 && wrap(r.wrapRightFt) > 0) out.wrapRightFt = wrap(r.wrapRightFt);
   if (Array.isArray(r.covers)) {
     const C = COVER_LIMITS;
     const covers = r.covers
@@ -364,13 +394,19 @@ export function deckShapeForHouse(shape: DeckShape, house: HouseDesign): { shape
   const W = shape.widthFt;
   const D = shape.depthFt;
   const under = partsUnderDeck(wallParts(house, shape), W);
+  // Past a corner of the house (2026-11-14): the deck follows what wall there is, and stands on its own beyond it.
+  const past = deckPast(house);
+  if (past.leftFt > 0 || past.rightFt > 0) return followWall(shape, under, past);
   const out = under.filter((p) => p.depthFt > 0.5);
   const back = under.filter((p) => p.depthFt < -0.5);
   const hasBackNotch = shape.kind === "L" && shape.notch.corner.startsWith("back");
+  // A FRONT SET PART BY PART (2026-11-14) stays the deck's whatever the wall does behind it: the deck keeps its parts
+  // along a straight wall, and follows a stepped one part by part (no corner notch in its place).
+  const parted = shape.kind === "wall" && shape.front ? shape.front : null;
   // A wall brought level takes away the notch, or the steps the deck followed.
-  const rect = (): DeckShape => (hasBackNotch || shape.kind === "wall" ? { kind: "rect", widthFt: W, depthFt: D } : shape);
+  const rect = (): DeckShape => (parted ? partsOn(W, D, [{ x0Ft: 0, x1Ft: W, yFt: 0 }], parted) : hasBackNotch || shape.kind === "wall" ? { kind: "rect", widthFt: W, depthFt: D } : shape);
   if (!out.length && !back.length) return { shape: rect(), note: null };
-  if (!back.length && out.length === 1) {
+  if (!back.length && out.length === 1 && !parted) {
     const t = out[0];
     if (t.x0 <= 0.01 && t.x1 >= W - 0.01) return { shape: rect(), note: null };
     const atRight = t.x1 >= W - 0.01 && t.x0 > 0.01;
@@ -381,12 +417,14 @@ export function deckShapeForHouse(shape: DeckShape, house: HouseDesign): { shape
 }
 
 /** The deck's back made to follow every part of the wall under it — or the shape kept, with what stops it in a note. */
-function followWall(shape: DeckShape, under: WallPart[]): { shape: DeckShape; note: string | null } {
+function followWall(shape: DeckShape, under: WallPart[], past: DeckPast | null = null): { shape: DeckShape; note: string | null } {
   const W = shape.widthFt;
   const D = shape.depthFt;
   const front = shape.kind === "rect" ? shape.front : undefined;
   const frontCut = shape.kind === "L" && shape.notch.corner.startsWith("front");
-  if ((front && front.kind !== "straight") || frontCut) {
+  const shapedFront = (front && front.kind !== "straight") || frontCut;
+  // (Past a corner there is no wall to hang on: the deck takes the straight front that lets it stand there, and says so.)
+  if (shapedFront && !past) {
     return { shape, note: `The wall steps under the deck — the deck follows the wall's steps with a straight front. Make the front straight${frontCut ? " (no corner cut at the front)" : ""}, or move the step past the deck's end.` };
   }
   // Past its limits the deck is HELD there (normalizeBack clamps) and the note says so, as the L holds its notch.
@@ -406,9 +444,86 @@ function followWall(shape: DeckShape, under: WallPart[]): { shape: DeckShape; no
     const near = [under[i - 1], under[i + 1]].filter((q): q is WallPart => !!q).map((q) => q.depthFt);
     return { ...p, depthFt: Math.max(p.depthFt, ...near) };
   });
-  const back = normalizeBack(parts.map((p) => ({ x0Ft: p.x0, x1Ft: p.x1, yFt: p.depthFt })), W, D);
-  if (!back) return { shape: { kind: "rect", widthFt: W, depthFt: D }, note };
-  return { shape: { kind: "wall", widthFt: W, depthFt: D, back }, note };
+  const walled = parts.map((p) => ({ x0Ft: p.x0, x1Ft: p.x1, yFt: p.depthFt }));
+  const parted = shape.kind === "wall" && shape.front ? shape.front : null;
+  if (!past) {
+    const back = normalizeBack(walled, W, D);
+    if (!back) return { shape: parted ? partsOn(W, D, [{ x0Ft: 0, x1Ft: W, yFt: 0 }], parted) : { kind: "rect", widthFt: W, depthFt: D }, note };
+    return { shape: partsOn(W, D, back, parted), note };
+  }
+  // The parts past the house's corners: no wall behind them, back along the house's side as far as was asked.
+  const back = normalizeBack(
+    [
+      ...(past.leftFt > 0 ? [{ x0Ft: 0, x1Ft: past.leftFt, yFt: -past.wrapLeftFt, open: true }] : []),
+      ...walled,
+      ...(past.rightFt > 0 ? [{ x0Ft: W - past.rightFt, x1Ft: W, yFt: -past.wrapRightFt, open: true }] : []),
+    ],
+    W,
+    D,
+  );
+  if (!back) return { shape: parted ? partsOn(W, D, [{ x0Ft: 0, x1Ft: W, yFt: 0 }], parted) : { kind: "rect", widthFt: W, depthFt: D }, note };
+  if (parted) return { shape: partsOn(W, D, back, parted), note };
+  const pastNote = shapedFront ? `The deck runs past the house's corner — there it stands on its own beam and posts, with a straight front${frontCut ? " (no corner cut at the front)" : ""}.` : null;
+  return { shape: { kind: "wall", widthFt: W, depthFt: D, back }, note: note ?? pastNote };
+}
+
+/** A deck in parts on this back: its front's own parts held against it (a front that comes out straight is left off; a straight back with it, and the deck is a rectangle). */
+function partsOn(W: number, D: number, back: BackPart[], front: ReadonlyArray<{ x0Ft: number; x1Ft: number; yFt: number }> | null): DeckShape {
+  return partsShape(W, D, back, front);
+}
+
+/** How far the deck runs past each corner of the house, and back along its side there, ft (0 = the wall reaches the deck's end). */
+export interface DeckPast {
+  leftFt: number;
+  rightFt: number;
+  wrapLeftFt: number;
+  wrapRightFt: number;
+}
+export function deckPast(house: HouseDesign): DeckPast {
+  const leftFt = Math.max(0, -house.leftFt);
+  const rightFt = Math.max(0, -house.rightFt);
+  return { leftFt, rightFt, wrapLeftFt: leftFt > 0 ? (house.wrapLeftFt ?? 0) : 0, wrapRightFt: rightFt > 0 ? (house.wrapRightFt ?? 0) : 0 };
+}
+
+/**
+ * THE DECK'S ENDS AND THE HOUSE'S CORNERS AGREE (2026-11-14), whatever changed last: a deck whose end is past a corner
+ * of the house has no wall behind it there — never a ledger in the air — and a deck the wall has grown back behind
+ * hangs on it again. A design with the wall behind the whole deck (every design before this) is returned untouched.
+ */
+export function fitDeckEnds(shape: DeckShape, house: HouseDesign): DeckShape {
+  const past = deckPast(house);
+  const open = shape.kind === "wall" ? shape.back : [];
+  const openLeft = open[0]?.open ? open[0].x1Ft : 0;
+  const last = open[open.length - 1];
+  const openRight = last?.open ? shape.widthFt - last.x0Ft : 0;
+  const wrapOf = (b: { yFt: number } | undefined) => (b ? -b.yFt : 0);
+  const same = (a: number, b: number) => Math.abs(a - b) < 1 / 24;
+  if (same(past.leftFt, openLeft) && same(past.rightFt, openRight) && (!openLeft || same(past.wrapLeftFt, wrapOf(open[0]))) && (!openRight || same(past.wrapRightFt, wrapOf(last)))) return shape;
+  return deckShapeForHouse(shape, house).shape;
+}
+
+/**
+ * The deck run past a corner of the house (2026-11-14), the house staying where it stands: its end on that side goes
+ * `pastFt` beyond the corner and `wrapFt` back along the house's side wall; 0 brings an end that was past back TO the
+ * corner. The deck is widened or narrowed by the difference — at the left end everything measured from that end
+ * shifts with it.
+ */
+export function setDeckPast(house: HouseDesign, shape: DeckShape, side: "left" | "right", pastFt: number, wrapFt: number, limits: { minWidthFt: number; maxWidthFt: number }): { house: HouseDesign; shape: DeckShape } {
+  const P = HOUSE_LIMITS.pastFt;
+  const want0 = half(clamp(pastFt, 0, P.max));
+  const want = want0 > 0 && want0 < P.min ? P.min : want0;
+  const now = side === "left" ? house.leftFt : house.rightFt;
+  // ("Not past" said of an end that is not past: nothing to do — a deck that stops short of the corner stays where it is.)
+  if (want === 0 && now >= 0) return { house, shape };
+  // The deck's end moves out by the wall it passes plus what it runs past the corner — within the widths a deck comes in.
+  const grow = clamp(now + want, limits.minWidthFt - shape.widthFt, limits.maxWidthFt - shape.widthFt);
+  const widthFt = half(shape.widthFt + grow);
+  const reach = half(now - (widthFt - shape.widthFt));
+  const wrap = reach < 0 ? half(clamp(wrapFt, 0, HOUSE_LIMITS.wrapFt.max)) : 0;
+  // (No wrap is said as `undefined`, not left out: a patch is laid OVER the house, and a key left out would keep the old one.)
+  if (side === "right") return { house: { ...house, rightFt: reach, wrapRightFt: wrap > 0 ? wrap : undefined }, shape: { ...shape, widthFt } };
+  const d = widthFt - shape.widthFt; // the left end moves LEFT by this much
+  return { house: { ...house, leftFt: reach, wrapLeftFt: wrap > 0 ? wrap : undefined, jogs: house.jogs.map((j) => ({ ...j, atFt: half(j.atFt + d) })), ...shiftHouseThings(house, d) }, shape: { ...shape, widthFt } };
 }
 
 /** A bump-out at one end of the deck: the L's back notch, as before 2026-10-19. */
@@ -428,6 +543,8 @@ function endNotch(shape: DeckShape, t: WallPart, atRight: boolean, rect: () => D
  * deck set back to a rectangle loses the step that notched it.
  */
 export function houseForShape(house: HouseDesign, shape: DeckShape, opts: { drop?: boolean } = {}): HouseDesign {
+  // (A deck in parts follows the wall as it is: its shape asks nothing of the house.)
+  if (shape.kind === "wall") return house;
   const W = shape.widthFt;
   const want = shape.kind === "L" && shape.notch.corner.startsWith("back") ? shape.notch : null;
   const underBefore = partsUnderDeck(wallParts(house, shape), W).filter((p) => p.depthFt > 0.5);
@@ -825,7 +942,7 @@ export function wallHighlight(shape: DeckShape, house: HouseDesign, focus: WallF
     const mid = (Math.min(...boxes.map((bx) => bx[0])) + Math.max(...boxes.map((bx) => bx[3]))) / 2;
     const extra = isLeft ? house.leftFt : house.rightFt;
     const end = isLeft ? "left" : "right";
-    const text = extra > 0 ? `${feetWords(extra)} of wall past the deck's ${end} end` : `The wall ends at the deck's ${end} end`;
+    const text = extra > 0 ? `${feetWords(extra)} of wall past the deck's ${end} end` : extra < 0 ? `The deck runs ${feetWords(-extra)} past the house's ${end} corner` : `The wall ends at the deck's ${end} end`;
     return { boxes, tag: { x: mid, y: Math.max(...boxes.map((bx) => bx[4])) + 0.3, z: top + 1.2, text } };
   }
   const n = house.jogs.findIndex((j) => j.id === focus.id);
@@ -913,9 +1030,19 @@ export function wallWords(shape: DeckShape, house: HouseDesign): string {
   const fit = deckShapeForHouse(shape, house);
   if (fit.note) return fit.note;
   if (quickWallOf(shape, house) === "nook") return "The deck sits in a nook: the house wraps both its ends, its back edge on the wall.";
+  const past = deckPast(house);
+  if (fit.shape.kind === "wall" && (past.leftFt > 0 || past.rightFt > 0)) return `${pastWords(past)} There it stands on its own beam and posts — no ledger.`;
+  if (fit.shape.kind === "wall" && !fit.shape.back.some((b) => Math.abs(b.yFt) > 0.01)) return house.jogs.length ? "The wall's steps are past the deck's ends — the deck's back edge runs straight along the house." : "A straight wall behind the deck.";
   if (fit.shape.kind === "wall") return `The deck follows the wall, ${wallDeckWords(fit.shape)}.`;
   if (fit.shape.kind === "L" && fit.shape.notch.corner.startsWith("back")) return `The deck wraps the bump-out at its ${fit.shape.notch.corner === "back-right" ? "right" : "left"} end: a ${ftWords(fit.shape.notch.widthFt)} × ${ftWords(fit.shape.notch.depthFt)} notch, framed around it.`;
   return house.jogs.length ? "The wall's steps are past the deck's ends — the deck's back edge runs straight along the house." : "A straight wall behind the deck.";
+}
+
+/** "The deck runs 6 ft past the house's right corner and 10 ft back along its side." */
+export function pastWords(past: DeckPast): string {
+  const one = (end: "left" | "right", p: number, w: number) => `${ftWords(p)} past the house's ${end} corner${w > 0 ? ` and ${ftWords(w)} back along its side` : ""}`;
+  const ends = [past.leftFt > 0 ? one("left", past.leftFt, past.wrapLeftFt) : null, past.rightFt > 0 ? one("right", past.rightFt, past.wrapRightFt) : null].filter((v): v is string => !!v);
+  return ends.length ? `The deck runs ${ends.join(", and ")}.` : "";
 }
 
 /** A step, in words: where it is and what the wall does there. */
@@ -1079,8 +1206,10 @@ export function moveJogTo(house: HouseDesign, shape: DeckShape, id: string, xFt:
 export function slideDeck(house: HouseDesign, deltaFt: number): HouseDesign {
   // The deck right by d with the house still: more wall past its left end by d, less past its right — both held between
   // 0 and the most a wall reaches; the steps, fixed in the world, move the other way in the deck's feet.
-  const lo = Math.max(-house.leftFt, house.rightFt - HOUSE_LIMITS.extendFt.max);
-  const hi = Math.min(HOUSE_LIMITS.extendFt.max - house.leftFt, house.rightFt);
+  // (An end already past its corner may go farther past, or come back; one on the wall stays on it.)
+  const floor = (v: number) => (v < 0 ? -HOUSE_LIMITS.pastFt.max : 0);
+  const lo = Math.max(floor(house.leftFt) - house.leftFt, house.rightFt - HOUSE_LIMITS.extendFt.max);
+  const hi = Math.min(HOUSE_LIMITS.extendFt.max - house.leftFt, house.rightFt - floor(house.rightFt));
   const d = half(clamp(deltaFt, lo, hi));
   if (d === 0) return house;
   return { ...house, leftFt: half(house.leftFt + d), rightFt: half(house.rightFt - d), jogs: house.jogs.map((j) => ({ ...j, atFt: half(j.atFt - d) })), ...shiftHouseThings(house, -d) };
@@ -1095,7 +1224,7 @@ export function resizeDeckLeft(house: HouseDesign, shape: DeckShape, newWidthFt:
   const w2 = half(clamp(newWidthFt, minWidthFt, maxWidthFt));
   const d = W - w2; // the left end moves right by this much
   if (d === 0) return { house, shape };
-  const leftFt = clamp(half(house.leftFt + d), HOUSE_LIMITS.extendFt.min, HOUSE_LIMITS.extendFt.max);
+  const leftFt = clamp(half(house.leftFt + d), house.leftFt < 0 ? -HOUSE_LIMITS.pastFt.max : HOUSE_LIMITS.extendFt.min, HOUSE_LIMITS.extendFt.max);
   const moved = { ...house, leftFt, jogs: house.jogs.map((j) => ({ ...j, atFt: half(j.atFt - d) })), ...shiftHouseThings(house, -d) };
   return { house: moved, shape: { ...shape, widthFt: w2 } };
 }
@@ -1129,14 +1258,14 @@ export function shiftWallPart(house: HouseDesign, shape: DeckShape, part: number
   } else {
     // The first part: the house's left end moves with it, between 0 and the most a wall reaches past the deck.
     lo = Math.max(lo, -(L.max - house.leftFt));
-    hi = Math.min(hi, house.leftFt - L.min);
+    hi = Math.min(hi, Math.max(0, house.leftFt - L.min));
   }
   if (rightI < n) {
     const j = house.jogs[rightI];
     hi = Math.min(hi, (rightI + 1 < n ? house.jogs[rightI + 1].atFt - 1 : W + house.rightFt - 1) - j.atFt);
   } else {
     // The last part: the house's right end moves with it.
-    lo = Math.max(lo, -(house.rightFt - L.min));
+    lo = Math.max(lo, -Math.max(0, house.rightFt - L.min));
     hi = Math.min(hi, L.max - house.rightFt);
   }
   const d = half(clamp(d0, lo, hi));

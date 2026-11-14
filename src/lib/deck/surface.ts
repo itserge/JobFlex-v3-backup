@@ -32,7 +32,7 @@
 
 import type { DeckFrame } from "./frame";
 import type { DeckingProduct } from "./catalog";
-import { frontEdgeAt, shapeOutline } from "./design";
+import { frontClips, frontEdgeAt, shapeOutline } from "./design";
 import { ringEdges, type RingEdge } from "./ringEdges";
 
 /** One board, or one piece of a spliced row, inches. */
@@ -222,6 +222,29 @@ export function deckSurface(frame: DeckFrame): DeckSurface {
   const joistXs = frame.joists.filter((j) => !j.sister).map((j) => j.x);
   const open = (side: "left" | "right" | "front") => frame.edges.some((e) => e.side === side && !e.house);
 
+  // CORNERS CUT AT AN ANGLE on a deck in parts (2026-11-14): the field stops along each cut — behind the border where
+  // there is one — and the border's boards are mitred round it. (A rectangle's two clipped corners keep their own way.)
+  const corners = design.shape.kind === "wall" ? frontClips(design.shape) : [];
+  /** A rectangle of board less the corners cut at an angle: what is left of it, as rings ([x, y] pairs) — itself where no cut touches it. */
+  const lessCorners = (x0: number, y0: number, x1: number, y1: number): Array<Array<[number, number]>> => {
+    let rings: Array<Array<[number, number]>> = [[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]];
+    for (const k of corners) {
+      const t = k.c + borderIn * Math.SQRT2;
+      const xa = Math.min(k.x, k.x + k.dir * t);
+      const xb = Math.max(k.x, k.x + k.dir * t);
+      if (y1 <= k.y - t + 0.01 || x1 <= xa + 0.01 || x0 >= xb - 0.01) continue;
+      const next: Array<Array<[number, number]>> = [];
+      for (const ring of rings) {
+        // Beside the corner's square the board is whole; inside it, what lies behind the cut's line is kept.
+        const beside = [clipHalf(ring, 1, 0, xa), clipHalf(ring, -1, 0, -xb)];
+        const inside = clipHalf(clipHalf(clipHalf(ring, -1, 0, -xa), 1, 0, xb), -k.dir, 1, k.y - k.dir * k.x - t);
+        for (const q of [...beside, inside]) if (q.length >= 3 && ringArea(q) > 0.5) next.push(q);
+      }
+      rings = next;
+    }
+    return rings;
+  };
+  const isRect = (ring: Array<[number, number]>) => ring.length === 4 && ring.every((q, i) => Math.abs(q[0] - ring[(i + 1) % 4][0]) < 1e-6 || Math.abs(q[1] - ring[(i + 1) % 4][1]) < 1e-6);
   const pieces: BoardPiece[] = [];
   const shapedPieces: number[][] = [];
   const buy = new Map<number, number>();
@@ -240,7 +263,9 @@ export function deckSurface(frame: DeckFrame): DeckSurface {
   // The border's edges, read once: which carry it, how they meet at the corners, and the bands of deck they cover.
   const bEdges = borderBoards > 0 ? ringEdges(outline) : [];
   const nB = bEdges.length;
-  const isHouse = (e: RingEdge) => (e.A.y < 0.5 && e.B.y < 0.5 && againstHouse) || frame.edges.some((fe) => fe.house && Math.abs((e.A.x + e.B.x) / 2 - (fe.x0 + fe.x1) / 2) < 0.6 && Math.abs((e.A.y + e.B.y) / 2 - (fe.y0 + fe.y1) / 2) < 0.6);
+  const onEdge = (e: RingEdge, fe: DeckFrame["edges"][number]) => Math.abs((e.A.x + e.B.x) / 2 - (fe.x0 + fe.x1) / 2) < 0.6 && Math.abs((e.A.y + e.B.y) / 2 - (fe.y0 + fe.y1) / 2) < 0.6;
+  // (Past the house's corner — 2026-11-14 — a back edge is an open one: the frame's own edges say which.)
+  const isHouse = (e: RingEdge) => (e.A.y < 0.5 && e.B.y < 0.5 && againstHouse && !frame.edges.some((fe) => !fe.house && fe.side === "back" && onEdge(e, fe))) || frame.edges.some((fe) => fe.house && onEdge(e, fe));
   const on = bEdges.map((e) => e.length >= 2 && !isHouse(e));
   const square = bEdges.map((e) => Math.abs(e.ux) < 1e-6 || Math.abs(e.uy) < 1e-6);
   const trimA = bEdges.map(() => 0);
@@ -407,6 +432,14 @@ export function deckSurface(frame: DeckFrame): DeckSurface {
           if (row.cut) {
             const ring = clipToOutline(at, row.y - row.w / 2, at + c, row.y + row.w / 2, fieldOutline);
             if (ring.length >= 3 && ringArea(ring) > 4) shapedPieces.push(ring.flatMap((p) => [p[0], p[1]]));
+          } else if (corners.length) {
+            for (const ring of lessCorners(at, row.y - row.w / 2, at + c, row.y + row.w / 2)) {
+              if (isRect(ring)) {
+                const xs = ring.map((q) => q[0]);
+                const ys = ring.map((q) => q[1]);
+                pieces.push({ cx: (Math.min(...xs) + Math.max(...xs)) / 2, cy: (Math.min(...ys) + Math.max(...ys)) / 2, sx: Math.max(...xs) - Math.min(...xs), sy: Math.max(...ys) - Math.min(...ys) });
+              } else if (ringArea(ring) > 4) shapedPieces.push(ring.flatMap((q) => [q[0], q[1]]));
+            }
           } else pieces.push({ cx: at + c / 2, cy: row.y, sx: c, sy: row.w });
           at += c;
         }
@@ -435,13 +468,16 @@ export function deckSurface(frame: DeckFrame): DeckSurface {
     const n = nB;
     // The sides' boards, as rectangles, for the front's pieces to start above.
     const sideRects: Array<{ x0: number; x1: number; y0: number; y1: number }> = [];
-    const mitred = on.every((v, i) => !v || square[i]);
+    // (A deck in parts with corners cut at an angle: every bordered edge is straight, square to its neighbour or not —
+    // each board is cut to the mitre the corner makes, half the turn at each end.)
+    const angled = corners.length > 0;
+    const mitred = angled || on.every((v, i) => !v || square[i]);
     for (let i = 0; i < n; i++) {
       if (!on[i]) continue;
       const e = edges[i];
       borderLf += (borderBoards * e.length) / 12;
       crossings += borderBoards * Math.round(e.length / frame.spacingIn);
-      if (!square[i]) continue;
+      if (!square[i] && !angled) continue;
       const alongX = Math.abs(e.uy) < 1e-6;
       // MITRED AT THE CORNERS (2026-11-13). Where every bordered edge is straight and square to its neighbours — a
       // rectangle, an L, a deck along a stepped wall — two border boards that meet are cut 45° to each other: at an
@@ -453,9 +489,12 @@ export function deckSurface(frame: DeckFrame): DeckSurface {
         const p = (i - 1 + n) % n;
         const q = (i + 1) % n;
         // How far along the edge a board's line at depth `o` starts and ends: at the corner's mitre, or square at the edge's own end.
-        const startAt = (o: number) => (on[p] && square[p] && edges[p].turnAtB > 0 ? o : on[p] && square[p] && edges[p].turnAtB < 0 ? -o : 0);
-        const endAt = (o: number) => e.length - (on[q] && square[q] && e.turnAtB > 0 ? o : on[q] && square[q] && e.turnAtB < 0 ? -o : 0);
-        const cut = (on[p] && square[p] && edges[p].turnAtB !== 0) || (on[q] && square[q] && e.turnAtB !== 0);
+        // (Square corners: a full board's width in or out, as it always was; any other turn, by half its angle.)
+        const mitre = (turn: number, o: number) => (Math.abs(Math.abs(turn) - Math.PI / 2) < 1e-6 ? Math.sign(turn) * o : o * Math.tan(turn / 2));
+        const meets = (k: number) => on[k] && (square[k] || angled);
+        const startAt = (o: number) => (meets(p) && edges[p].turnAtB !== 0 ? mitre(edges[p].turnAtB, o) : 0);
+        const endAt = (o: number) => e.length - (meets(q) && e.turnAtB !== 0 ? mitre(e.turnAtB, o) : 0);
+        const cut = (meets(p) && edges[p].turnAtB !== 0) || (meets(q) && e.turnAtB !== 0) || !square[i];
         const at = (along: number, off: number): [number, number] => [e.A.x + e.ux * along - e.outX * off, e.A.y + e.uy * along - e.outY * off];
         for (let k = 0; k < borderBoards; k++) {
           const o0 = (k + 0.5) * pitch - product.widthIn / 2;
@@ -484,7 +523,7 @@ export function deckSurface(frame: DeckFrame): DeckSurface {
       }
     }
     for (let i = 0; i < n; i++) {
-      if (!on[i] || square[i]) continue;
+      if (!on[i] || square[i] || angled) continue;
       const e = edges[i];
       const xa = Math.min(e.A.x, e.B.x);
       const xb = Math.max(e.A.x, e.B.x);

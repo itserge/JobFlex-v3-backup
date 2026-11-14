@@ -370,7 +370,12 @@ function moveBeam(s: DeckStructure, id: string, at: number, grips: DeckGrip[]): 
     const now = Math.round(grip.sign * (grip.at - grip.origin));
     const c = overhangInside(d, key, clampN(Math.round(grip.sign * (y - grip.origin)), 0, DECK_LIMITS.overhangFt.max * 12), now);
     if (c === now) return null;
-    return { framing: { [key]: c / 12 } };
+    const patch: DeckPatch = { framing: { [key]: c / 12 } };
+    // It must be a beam that stands (2026-11-14): on a part nearly all cut away at an angle, a beam moved toward the
+    // cut has no length left inside it — the move is refused, as a middle beam's is.
+    const role = id.startsWith("front:") ? "front" : "back";
+    const zone = id.slice(role.length + 1);
+    return buildDeckFrame(applyDeckPatch(d, patch)).beams.some((b) => b.role === role && b.zoneIds.includes(zone)) ? patch : null;
   }
   const beam = s.frame?.beams.find((b) => b.id === grip.part);
   const t = beam ? takeLines(s, beam.zoneIds, beam.id) : null;

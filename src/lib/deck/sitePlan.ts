@@ -26,7 +26,7 @@
 
 import type { DeckStructure } from "./structure";
 import { structureLevels } from "./structure";
-import { HOUSE_BODY_FT } from "./house";
+import { HOUSE_BODY_FT, deckPast } from "./house";
 import { EMPTY_JURISDICTION, normalizeJurisdiction, type TypedJurisdiction } from "./countyCodes";
 import { DEFAULT_SHEET_PREFS, normalizeSheetPrefs, type SheetPrefs } from "./plans/paper";
 
@@ -386,8 +386,11 @@ export function siteLayout(plan: SitePlan, s: DeckStructure): SiteLayout {
   const side = plan.deckSide;
   const wallLen = side === "rear" || side === "front" ? hb.x1 - hb.x0 : hb.y1 - hb.y0;
   const gap = d.placement === "detached" ? plan.deckGapFt : 0;
-  // The deck stays on the wall even when the assessor's footprint is narrower than the studio's wall.
-  const leftOffset = clamp(d.house.leftFt, 0, Math.max(0, wallLen - d.shape.widthFt));
+  // The deck stays on the wall even when the assessor's footprint is narrower than the studio's wall. Where it runs
+  // PAST a corner of the house (2026-11-14) it stands as far past that corner as the studio drew it: its left end left
+  // of the house's left corner, or — only its right end past — its right end beyond the house's right corner.
+  const past = deckPast(d.house);
+  const leftOffset = past.leftFt > 0 ? -past.leftFt : past.rightFt > 0 ? wallLen + past.rightFt - d.shape.widthFt : clamp(d.house.leftFt, 0, Math.max(0, wallLen - d.shape.widthFt));
   const toSite = (x: number, y: number): XY => {
     const a = leftOffset + x / 12;
     const o = gap + y / 12;

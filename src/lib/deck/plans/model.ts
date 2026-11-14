@@ -9,6 +9,7 @@
 import type { DeckStructure } from "../structure";
 import type { Beam, DeckFrame, Footing, Post } from "../frame";
 import { shapeOutline } from "../design";
+import { deckPast } from "../house";
 import { speciesWords } from "../catalog";
 import { ftIn, joistMaxSpanIn, LEDGER_FASTENER_LABEL, RULE, rulesFor } from "../codeTables";
 import { clusterValues, gridLetter, type V2 } from "./geom";
@@ -95,6 +96,11 @@ export interface PlanModel {
   attached: boolean;
   /** The house's face along y = 0 (attached, or beside it). */
   house: boolean;
+  /**
+   * Where the house ENDS inside the deck's width (2026-11-14, a deck that runs past the house's corner): the corner's
+   * x, inches — null where the wall runs on past the deck's end — and how far the deck goes back beside the house there.
+   */
+  houseEnds: { x0: number | null; x1: number | null; wrapLeftIn: number; wrapRightIn: number };
   cols: GridLine[];
   rows: GridRow[];
   posts: PlanPost[];
@@ -120,6 +126,8 @@ export function planModel(s: DeckStructure): PlanModel | null {
   const outline = shapeOutline(d.shape);
   const attached = d.placement === "attached" && f.ledgers.length > 0;
   const house = d.placement !== "detached";
+  const past = deckPast(d.house);
+  const houseEnds = { x0: house && past.leftFt > 0 ? past.leftFt * 12 : null, x1: house && past.rightFt > 0 ? W - past.rightFt * 12 : null, wrapLeftIn: past.wrapLeftFt * 12, wrapRightIn: past.wrapRightFt * 12 };
 
   // ── The grid: rows parallel to the house (the ledger first), columns at the posts.
   const rows: GridRow[] = [];
@@ -301,7 +309,7 @@ export function planModel(s: DeckStructure): PlanModel | null {
   const tallestMax = mainPosts.reduce((m, p) => (p.heightIn === tallest ? p.maxHeightIn : m), 0);
   tags.push({ tag: "P1", member: "Posts", spec: oc ? "3-ply 2x6 OC Lumber, screwed, braced" : `${d.framing.post} treated, ground-contact`, where: oc ? "On post bases; 2-ply beams notched in, 3-ply capped" : "On post bases, capped to the beam", check: tallestMax > 0 ? { actual: ftIn(tallest), allowed: ftIn(tallestMax), ratio: tallest / tallestMax, rule: R.post } : undefined });
   if (f.blockingRows.length) tags.push({ tag: "BK", member: "Blocking", spec: `${oc ? "OC Lumber " : ""}${f.joistSize} solid`, where: f.blockingRows.some((r) => r.why === "beam") ? "Over the beam, between joists" : "Mid-span rows" });
-  return { s, f, W, D, outline, attached, house, cols, rows, posts, footings, bearing, layout: { origin, points, diagonals }, tags, beamTag, stairFootings, stairPads };
+  return { s, f, W, D, outline, attached, house, houseEnds, cols, rows, posts, footings, bearing, layout: { origin, points, diagonals }, tags, beamTag, stairFootings, stairPads };
 }
 
 /** A beam as it is ordered: "(2) 2x10" for built-up, "4x10" solid. */

@@ -22,8 +22,14 @@ export function foundationPlan(m: PlanModel, sc: ArchScale, opts: { north?: numb
   // ── The house, its face along y = 0.
   if (m.house) {
     const ext = p(0.35);
-    k.rect(xMin - ext, -p(0.22), xMax - xMin + 2 * ext, p(0.22), "heavy", "poche");
-    k.text((xMin + xMax) / 2, -p(0.3), "EXISTING HOUSE", "md", { anchor: "middle", bold: true });
+    // (Past the house's corner the wall stops at the corner; its side wall runs back as far as the deck does. 2026-11-14.)
+    const e = m.houseEnds;
+    const hx0 = e.x0 ?? xMin - ext;
+    const hx1 = e.x1 ?? xMax + ext;
+    k.rect(hx0, -p(0.22), e.x0 === null && e.x1 === null ? xMax - xMin + 2 * ext : hx1 - hx0, p(0.22), "heavy", "poche");
+    if (e.x0 !== null && e.wrapLeftIn > 0) k.rect(hx0, -(e.wrapLeftIn + ext), p(0.22), e.wrapLeftIn + ext, "heavy", "poche");
+    if (e.x1 !== null && e.wrapRightIn > 0) k.rect(hx1 - p(0.22), -(e.wrapRightIn + ext), p(0.22), e.wrapRightIn + ext, "heavy", "poche");
+    k.text(e.x0 === null && e.x1 === null ? (xMin + xMax) / 2 : (hx0 + hx1) / 2, -p(0.3), "EXISTING HOUSE", "md", { anchor: "middle", bold: true });
   }
 
   // ── The deck it all carries, shaded by the post that carries it.
@@ -31,10 +37,12 @@ export function foundationPlan(m: PlanModel, sc: ArchScale, opts: { north?: numb
   shaded.forEach((t, i) => {
     if (t.pts.length < 3) return;
     k.poly(flat(t.pts), null, TINTS[i % TINTS.length]);
+    for (const r of t.more ?? []) k.poly(flat(r), null, TINTS[i % TINTS.length]);
   });
-  // The deck above: its outline, phantom.
+  // The deck above: its outline, phantom. The ledger: hidden, along the wall it hangs on (2026-11-14 — each run where
+  // it is: it was one line the deck's whole width at the house line, whatever the wall did behind the deck).
   k.poly(flat(outline), "phantom", "none");
-  if (m.attached) k.line(0, 0, W, 0, "hidden");
+  if (m.attached) for (const l of f.ledgers) k.line(l.x0, l.y, l.x1, l.y, "hidden");
 
   // ── The grid.
   const gx0 = xMin - p(0.92);
@@ -145,11 +153,16 @@ export function foundationPlan(m: PlanModel, sc: ArchScale, opts: { north?: numb
  * halfway back to the support behind (the ledger, a beam) and forward to the next one or the deck's edge — clipped to
  * the deck's real outline, so a clipped corner shades what it really is. The engine's own area is printed with it.
  */
-export function tributaries(m: PlanModel): Array<{ grid: string; pts: V2[]; sqFt: number }> {
+export function tributaries(m: PlanModel): Array<{ grid: string; pts: V2[]; sqFt: number; more?: V2[][] }> {
   const { f, outline } = m;
   const supports = [...new Set([...(m.attached || m.house ? [0] : []), ...f.beams.map((b) => b.y)])].sort((a, b) => a - b);
   const D = m.D;
-  const out: Array<{ grid: string; pts: V2[]; sqFt: number }> = [];
+  const out: Array<{ grid: string; pts: V2[]; sqFt: number; more?: V2[][] }> = [];
+  // A rectangle (its front straight, clipped or bowed) is one convex outline: a post's strip is clipped to it. An L, a
+  // deck along a stepped wall or round the house's corner is not (2026-11-14 — clipped to such an outline as if it
+  // were, the strips of whole parts of the deck came out empty): there each strip is laid part by part — across,
+  // halfway to the next post; out, halfway to that part's own next support, to its own edges.
+  const byPart = m.s.design.shape.kind !== "rect";
   for (const pp of m.posts) {
     const q = pp.post;
     if (q.roof) continue;
@@ -159,6 +172,28 @@ export function tributaries(m: PlanModel): Array<{ grid: string; pts: V2[]; sqFt
     const i = xs.findIndex((x) => Math.abs(x - q.x) < 1);
     const left = i <= 0 ? beam.x0 : (xs[i - 1] + xs[i]) / 2;
     const right = i < 0 || i >= xs.length - 1 ? beam.x1 : (xs[i] + xs[i + 1]) / 2;
+    if (byPart) {
+      const rects: V2[][] = [];
+      for (const zf of f.zones) {
+        const z = zf.zone;
+        if (!beam.zoneIds.includes(z.id)) continue;
+        const xa = Math.max(left, z.x0);
+        const xb = Math.min(right, z.x1);
+        if (xb - xa < 0.5) continue;
+        const sup = zf.back === "ledger" ? [z.y0, ...zf.beamYs] : [...zf.beamYs];
+        const k2 = sup.findIndex((y) => Math.abs(y - beam.lineY) < 1);
+        if (k2 < 0) continue;
+        const ya = k2 === 0 ? z.y0 : (sup[k2 - 1] + sup[k2]) / 2;
+        const yb = k2 === sup.length - 1 ? z.y1 : (sup[k2] + sup[k2 + 1]) / 2;
+        if (yb - ya < 0.5) continue;
+        rects.push(rectPts(xa, ya, xb, yb));
+      }
+      if (!rects.length) continue;
+      const area = (r: V2[]) => Math.abs((r[2].x - r[0].x) * (r[2].y - r[0].y));
+      rects.sort((a, b) => area(b) - area(a));
+      out.push({ grid: pp.grid, pts: rects[0], sqFt: q.tributarySqFt, ...(rects.length > 1 ? { more: rects.slice(1) } : {}) });
+      continue;
+    }
     const si = supports.findIndex((y) => Math.abs(y - beam.y) < 1);
     const behind = si > 0 ? supports[si - 1] : null;
     const ahead = si >= 0 && si < supports.length - 1 ? supports[si + 1] : null;
@@ -170,6 +205,21 @@ export function tributaries(m: PlanModel): Array<{ grid: string; pts: V2[]; sqFt
     const zr = zones.filter((z) => beam.zoneIds.includes(z.id));
     if (zr.length === 1) poly = clipPoly(poly, rectPts(zr[0].x0, zr[0].y0, zr[0].x1, zr[0].y1));
     out.push({ grid: pp.grid, pts: poly, sqFt: q.tributarySqFt });
+  }
+  // The corners cut at an angle (2026-11-14): what each angled beam carries — from the cut back halfway to the support
+  // behind it — half to the post at each of its ends (the front one is the front beam's own end post).
+  for (const cb of f.cornerBeams) {
+    const k = cb.clip;
+    const X = (t: number) => k.x + k.dir * t;
+    const edge = (t: number) => k.y - k.c + t;
+    const mid = (t: number) => (edge(t) - cb.overIn + cb.behindY) / 2;
+    const half = (t0: number, t1: number): V2[] => [{ x: X(t0), y: edge(t0) }, { x: X(t1), y: edge(t1) }, { x: X(t1), y: mid(t1) }, { x: X(t0), y: mid(t0) }];
+    const own = m.posts.find((pp) => pp.post.beamId === cb.id && Math.abs(pp.post.x - cb.x1) < 1 && Math.abs(pp.post.y - cb.y1) < 1);
+    if (own) out.push({ grid: own.grid, pts: half(0, k.c / 2), sqFt: own.post.tributarySqFt });
+    const front = m.posts.find((pp) => Math.abs(pp.post.x - cb.x0) < 1 && Math.abs(pp.post.y - cb.y0) < 1);
+    const entry = front ? out.find((t) => t.grid === front.grid) : undefined;
+    if (entry) entry.more = [...(entry.more ?? []), half(k.c / 2, k.c)];
+    else if (front) out.push({ grid: front.grid, pts: half(k.c / 2, k.c), sqFt: front.post.tributarySqFt });
   }
   return out;
 }

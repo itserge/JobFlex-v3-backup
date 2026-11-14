@@ -1175,7 +1175,8 @@ export function parseDeckScene(raw: unknown): DeckScene | null {
       polys.push(n);
     }
   }
-  const outline = Array.isArray(r.outline) && r.outline.length >= 6 && r.outline.length <= 40 && r.outline.length % 2 === 0 ? numbers(r.outline, r.outline.length) : null;
+  // (Up to 80 corners — 2026-11-14: a deck in parts, its back stepping with the wall and its front part by part, has more than the 20 a rectangle, an L or a bowed front ever had.)
+  const outline = Array.isArray(r.outline) && r.outline.length >= 6 && r.outline.length <= 160 && r.outline.length % 2 === 0 ? numbers(r.outline, r.outline.length) : null;
   if (!outline) return null;
   let house: DeckScene["house"] = null;
   const h = (r.house && typeof r.house === "object" ? r.house : null) as Record<string, unknown> | null;

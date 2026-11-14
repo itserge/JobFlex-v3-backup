@@ -29,6 +29,9 @@ import {
   hasDeck,
   isDoubleDeck,
   shapeAreaSqFt,
+  shapeWithFront,
+  frontParts,
+  FRONT_LIMITS,
   sizeWords,
   type DeckDesign,
   type DeckShape,
@@ -41,7 +44,7 @@ import {
 } from "../design";
 import { patchDesign, patchRoof, switchStructure } from "../edit";
 import type { FieldFocus } from "../fieldParts";
-import { HOUSE_ROOF_LABEL, QUICK_WALL_LABEL, ROOF_COLOURS, SIDINGS, houseForShape, quickWall, resizeDeckLeft, shiftHouseThings, slideDeck } from "../house";
+import { HOUSE_ROOF_LABEL, QUICK_WALL_LABEL, ROOF_COLOURS, SIDINGS, deckPast, houseForShape, pastWords, quickWall, resizeDeckLeft, setDeckPast, shiftHouseThings, slideDeck } from "../house";
 import type { DeckPriceOptions } from "../pricing";
 import { railMountLine } from "../rails";
 import { railMountFor, type RailSectionKey } from "../design";
@@ -368,9 +371,32 @@ export function runCommand(d0: DeckDesign, cmd: DeckCommand, env: RunEnv = {}): 
       } else if (cmd.kind === "curve") {
         shape = { kind: "rect", ...base, front: { kind: "curve", bulgeFt: cmd.bulgeFt ?? 2, clipFt: 2 } };
         words = "a curved front";
+      } else if (cmd.kind === "clipped" && s.kind === "wall" && s.front) {
+        // A deck in parts (2026-11-14): every corner that stands out is cut — the parts stay as they are.
+        const c = clamp(cmd.clipFt ?? 2, FRONT_LIMITS.clipFt.min, FRONT_LIMITS.clipFt.max);
+        shape = shapeWithFront(s, s.front.map((q) => ({ widthFt: q.x1Ft - q.x0Ft, yFt: q.yFt, clipLeftFt: c, clipRightFt: c })));
+        words = `every corner that stands out cut at 45°, ${ftWords(c)}`;
       } else if (cmd.kind === "clipped") {
         shape = { kind: "rect", ...base, front: { kind: "clipped", bulgeFt: 2, clipFt: cmd.clipFt ?? 2 } };
         words = "the front corners clipped at 45°";
+      } else if (cmd.kind === "parts") {
+        // THE FRONT IN PARTS (2026-11-14): from the deck's own size — the part named comes out past the rest.
+        const W = s.widthFt;
+        const near = Math.min(...frontParts(s).map((q) => q.yFt));
+        const far = clamp(near + clamp(cmd.outFt ?? 4, 1, 20), DECK_LIMITS.depthFt.min, DECK_LIMITS.depthFt.max);
+        const preset = cmd.preset ?? "t";
+        const part = halfFt(clamp(cmd.partWidthFt ?? (preset === "t" ? W / 3 : preset === "u" ? W / 4 : W / 2), FRONT_LIMITS.partFt, W - FRONT_LIMITS.partFt * (preset === "left" || preset === "right" ? 1 : 2)));
+        const list =
+          preset === "t"
+            ? [{ widthFt: (W - part) / 2, yFt: near }, { widthFt: part, yFt: far }, { widthFt: (W - part) / 2, yFt: near }]
+            : preset === "u"
+              ? [{ widthFt: part, yFt: far }, { widthFt: W - 2 * part, yFt: near }, { widthFt: part, yFt: far }]
+              : preset === "left"
+                ? [{ widthFt: part, yFt: far }, { widthFt: W - part, yFt: near }]
+                : [{ widthFt: W - part, yFt: near }, { widthFt: part, yFt: far }];
+        if (W < 3 * FRONT_LIMITS.partFt && preset !== "left" && preset !== "right") return no("It's too narrow to cut its front in three parts — make it wider first.");
+        shape = shapeWithFront(s, list);
+        words = preset === "t" ? "T-shaped" : preset === "u" ? "U-shaped" : `deeper on the ${preset}`;
       } else {
         shape = { kind: "rect", ...base };
         words = "a plain rectangle";
@@ -382,6 +408,11 @@ export function runCommand(d0: DeckDesign, cmd: DeckCommand, env: RunEnv = {}): 
       else if (cmd.kind === "L" && got.kind !== "L") return no("It's too small to cut a corner out and keep both legs at least 3 ft — make it bigger first.");
       if (cmd.kind === "curve" && got.kind === "rect" && got.front?.kind === "curve") said[0] = `A curved front, bowed out ${ftWords(got.front.bulgeFt)} at the middle.`;
       if (cmd.kind === "clipped" && got.kind === "rect" && got.front?.kind === "clipped") said[0] = `The front corners clipped ${ftWords(got.front.clipFt)} at 45°.`;
+      if (cmd.kind === "parts") {
+        if (!(got.kind === "wall" && got.front)) return no("That leaves the front straight — say how far the part comes out, at least a foot.");
+        said[0] = `Made it ${words}: ${got.front.map((q) => `${ftWords(q.x1Ft - q.x0Ft)} wide, ${ftWords(q.yFt)} out`).join("; ")} — left to right. ${Math.round(shapeAreaSqFt(got))} sq ft.`;
+        return out(next, said, { flash: [{ label: "Shape" }], light: { label: "Shape", step: "step-shape" } });
+      }
       const label = cmd.kind === "L" ? "Corner cut away" : "The front edge";
       return out(next, said, { flash: [{ label }], light: { label, step: "step-shape" } });
     }
@@ -658,9 +689,38 @@ export function runCommand(d0: DeckDesign, cmd: DeckCommand, env: RunEnv = {}): 
         said.push(cmd.widthFt > d.shape.widthFt ? `The house ${ftWords(cmd.widthFt)} wide — the deck centered on it, ${ftWords(past / 2)} of wall past each end.` : "The house wall is no wider than the deck.");
       }
       if (cmd.leftFt || cmd.rightFt) {
-        if (cmd.leftFt) house = { ...house, leftFt: halfFt(clamp(amt(house.leftFt, cmd.leftFt), 0, 60)) };
-        if (cmd.rightFt) house = { ...house, rightFt: halfFt(clamp(amt(house.rightFt, cmd.rightFt), 0, 60)) };
-        said.push(`The house runs ${ftWords(house.leftFt)} past the deck on the left and ${ftWords(house.rightFt)} on the right.`);
+        // (The wall's own reach: said of an end the deck had run past, the wall is behind that end again.)
+        if (cmd.leftFt) house = { ...house, leftFt: halfFt(clamp(amt(Math.max(0, house.leftFt), cmd.leftFt), 0, 60)) };
+        if (cmd.rightFt) house = { ...house, rightFt: halfFt(clamp(amt(Math.max(0, house.rightFt), cmd.rightFt), 0, 60)) };
+        const reach = (v: number, end: string) => (v < 0 ? `the deck runs ${ftWords(-v)} past it on the ${end}` : `it runs ${ftWords(v)} past the deck on the ${end}`);
+        said.push(house.leftFt < 0 || house.rightFt < 0 ? `The house: ${reach(house.leftFt, "left")}, ${reach(house.rightFt, "right")}.` : `The house runs ${ftWords(house.leftFt)} past the deck on the left and ${ftWords(house.rightFt)} on the right.`);
+      }
+      // THE DECK PAST A CORNER OF THE HOUSE (2026-11-14 — the owner: "go back past the house, on the sides… extend to
+      // the right and to the left outside the house wall"). The house stays; the deck's end moves out past the corner
+      // and, for a wrap-around, back along the house's side. Said with no length: 6 ft past, 8 ft back.
+      let shape: DeckShape | null = null;
+      if (cmd.past) {
+        const ends = cmd.past.side === "both" ? (["left", "right"] as const) : ([cmd.past.side] as const);
+        const before = deckPast(house);
+        for (const end of ends) {
+          const now = deckPast(house);
+          const cur = end === "left" ? now.leftFt : now.rightFt;
+          const curBack = end === "left" ? now.wrapLeftFt : now.wrapRightFt;
+          const ft = cmd.past.off ? 0 : (cmd.past.ft ?? (cur > 0 ? cur : 6));
+          const back = cmd.past.off ? 0 : (cmd.past.backFt ?? (cmd.past.wrap ? (curBack > 0 ? curBack : 8) : curBack));
+          const r = setDeckPast(house, shape ?? d.shape, end, ft, back, { minWidthFt: DECK_LIMITS.widthFt.min, maxWidthFt: DECK_LIMITS.widthFt.max });
+          house = r.house;
+          shape = r.shape;
+        }
+        const fitted = patchDesign(d, { house, shape: shape ?? d.shape }, settle);
+        const after = deckPast(fitted.house);
+        const was = before.leftFt > 0 || before.rightFt > 0;
+        if (after.leftFt > 0 || after.rightFt > 0) {
+          said.push(`${pastWords(after)} There it stands on its own beam and posts — ${ftWords(fitted.shape.widthFt)} along the house now.`);
+          // (Said with no side and no length, it is the right corner at the usual size: the other choices, in a line.)
+          if (cmd.past.side === "right" && !was && cmd.past.ft === undefined && cmd.past.backFt === undefined) said.push("Say \"on the left\" or \"both sides\" for the other corner, and how many feet.");
+        } else said.push(was ? `The deck stops at the house's corner again — ${ftWords(fitted.shape.widthFt)} along the house.` : "The deck does not run past the house.");
+        return out(fitted, said, { flash: [{ label: cmd.past.side === "left" ? "Past the left corner" : "Past the right corner" }], view: { reset: true } });
       }
       const next = patchDesign(d, { house }, settle);
       return out(next, said, { flash: cmd.wall ? [{ label: "The wall's shape" }] : cmd.siding ? [{ label: "Siding" }] : cmd.roofColour ? [{ label: "Roof colour" }] : [{ label: "Storeys" }], view: { reset: true } });

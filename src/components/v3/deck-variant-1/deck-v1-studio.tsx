@@ -104,6 +104,7 @@ import {
   type StairDesign,
   type StairTurn,
   type Structure,
+ FRONT_LIMITS, frontParts, shapeWithFront,
 } from "@/lib/deck/design";
 import { priceDeck, deckNotes, deckScope } from "@/lib/deck/pricing";
 import { railWords } from "@/lib/deck/rails";
@@ -117,7 +118,7 @@ import { DECK_RATES, DECK_RATE_GROUP_LABEL, deckRate, sanitizeDeckRateBook, type
 import { convertDeckEstimateToProposal, updateDeckProposal, deleteDeckDraft, listDeckDrafts, loadDeckDraft, readDeckSite, saveDeckDraft, saveDeckRateBook, type DeckDraftRow, type ReturnedClientDesign } from "@/actions/deckEstimator";
 import { deckClientInbox } from "@/actions/deckClientDesign";
 import { jobLine, type ClientLinkRow } from "@/lib/deck/clientDesign";
-import { HOUSE_LIMITS, HOUSE_MATERIALS, HOUSE_MATERIAL_LABEL, HOUSE_PITCH_LIMITS, HOUSE_ROOF_LABEL, HOUSE_ROOFS, roofPitch, QUICK_WALLS, QUICK_WALL_LABEL, ROOF_COLOURS, SIDINGS, isHouseHex, levelUnderDeck, wallDeckWords, houseForShape, houseNotes, houseWords, nextJogId, quickWall, quickWallOf, stepWords, wallWords, type HouseDesign, type HouseJog, type HouseMaterial, type HouseRoof, wallHighlight, type WallFocus } from "@/lib/deck/house";
+import { HOUSE_LIMITS, HOUSE_MATERIALS, HOUSE_MATERIAL_LABEL, HOUSE_PITCH_LIMITS, HOUSE_ROOF_LABEL, HOUSE_ROOFS, roofPitch, QUICK_WALLS, QUICK_WALL_LABEL, ROOF_COLOURS, SIDINGS, isHouseHex, levelUnderDeck, wallDeckWords, deckPast, setDeckPast, houseForShape, houseNotes, houseWords, nextJogId, quickWall, quickWallOf, stepWords, wallWords, type HouseDesign, type HouseJog, type HouseMaterial, type HouseRoof, wallHighlight, type WallFocus } from "@/lib/deck/house";
 import { DECK_LOCK_WORDS, PROPOSAL_STATUS_WORDS, type LinkedDeckProposal } from "@/lib/deck/proposalEdit";
 import type { DeckSample } from "@/lib/deck/samples";
 import { reportPlanLimitResult } from "@/stores/usePlanLimitStore";
@@ -455,7 +456,8 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
   const [applied, setApplied] = React.useState<{ id: string; design: DeckDesign } | null>(null);
   const applySample = React.useCallback((sample: DeckSample) => {
     dirty.current = true;
-    let next = applyDeckPatch(design, sample.patch);
+    // (A sample is a plain deck on the wall: where this one ran past the house's corner, the wall is behind it again.)
+    let next = applyDeckPatch(design, sample.patch.shape && (design.house.leftFt < 0 || design.house.rightFt < 0) ? { ...sample.patch, house: { ...sample.patch.house, leftFt: Math.max(0, design.house.leftFt), rightFt: Math.max(0, design.house.rightFt) } } : sample.patch);
     const h2 = houseForShape(next.house, next.shape);
     if (h2 !== next.house) next = applyDeckPatch(next, { house: h2 });
     next = settle(next);
@@ -659,10 +661,11 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
           patch({ house: { jogs: design.house.jogs.map((j) => (j.id === e.id ? { ...j, atFt: toHalfFt(e.value) } : j)) } });
           break;
         case "house-left":
-          setHouse({ leftFt: Math.min(HOUSE_LIMITS.extendFt.max, Math.max(HOUSE_LIMITS.extendFt.min, -toHalfFt(e.value))) });
+          // (Dragged inside the deck's end — 2026-11-14 — the deck runs past the house's corner.)
+          setHouse({ leftFt: Math.min(HOUSE_LIMITS.extendFt.max, Math.max(-HOUSE_LIMITS.pastFt.max, -toHalfFt(e.value))) });
           break;
         case "house-right":
-          setHouse({ rightFt: Math.min(HOUSE_LIMITS.extendFt.max, Math.max(HOUSE_LIMITS.extendFt.min, toHalfFt(e.value) - design.shape.widthFt)) });
+          setHouse({ rightFt: Math.min(HOUSE_LIMITS.extendFt.max, Math.max(-HOUSE_LIMITS.pastFt.max, toHalfFt(e.value) - design.shape.widthFt)) });
           break;
         case "stair-width": {
           const w2 = Math.min(STAIR_LIMITS.widthFt.max, Math.max(STAIR_LIMITS.widthFt.min, toHalfFt(e.value)));
@@ -1236,6 +1239,19 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
   const canAttach = (withDeck ? design.placement !== "detached" : true) && !polygon && r.kind !== "pyramid" && r.kind !== "double-tier" && r.kind !== "gambrel" && r.kind !== "dutch-gable" && r.kind !== "pergola";
   const metalRoof = r.roofing === "metal-panel" || r.roofing === "standing-seam";
   const front = design.shape.kind === "rect" ? design.shape.front : undefined;
+  // How far the deck runs past each corner of the house, and the one door that moves it (lib/deck/house).
+  const pastHouse = deckPast(design.house);
+  // THE FRONT, PART BY PART (2026-11-14; lib/deck/design FrontPart): the parts as the list shows them, and the one door
+  // that sets them — the deck is as wide as the parts together and as deep as the deepest.
+  const partsFront = design.shape.kind === "wall" && design.shape.front ? design.shape.front : null;
+  const partsList = (partsFront ?? []).map((q) => ({ widthFt: q.x1Ft - q.x0Ft, yFt: q.yFt, clipLeftFt: q.clipLeftFt, clipRightFt: q.clipRightFt }));
+  const setFrontParts = (list: Array<{ widthFt: number; yFt: number; clipLeftFt?: number; clipRightFt?: number }>) => patch({ shape: shapeWithFront(design.shape, list) });
+  /** A new part beside this one: 6 ft wide, 4 ft nearer the house — or farther out, where nearer leaves no deck. */
+  const newPartBy = (q: { widthFt: number; yFt: number } | undefined) => ({ widthFt: 6, yFt: !q ? design.shape.depthFt : q.yFt - 4 >= DECK_LIMITS.depthFt.min + 2 ? q.yFt - 4 : Math.min(DECK_LIMITS.depthFt.max, q.yFt + 4) });
+  const goPast = (side: "left" | "right", pastFt: number, wrapFt: number) => {
+    const r = setDeckPast(design.house, design.shape, side, pastFt, wrapFt, { minWidthFt: DECK_LIMITS.widthFt.min, maxWidthFt: DECK_LIMITS.widthFt.max });
+    patch({ house: r.house, shape: r.shape });
+  };
   const woodRail = design.rail.type === "treated" || design.rail.type === "cedar";
   const infills = design.rail.type === "cable" ? (["auto", "cable"] as const) : design.rail.type === "glass" ? (["auto", "glass"] as const) : design.rail.type === "aluminum" ? (["auto", "balusters", "cable", "glass", "horizontal", "mesh"] as const) : woodRail ? (["auto", "balusters", "horizontal", "mesh"] as const) : design.rail.type === "vinyl" ? (["auto", "balusters", "panel"] as const) : (["auto", "balusters", "panel", "mesh"] as const);
   // Round black metal balusters: in a wood, composite or vinyl rail (an aluminum system's pickets are metal anyway).
@@ -1515,17 +1531,30 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
       <div className="v1-size-group" role="group" aria-label="Deck footprint">
         <Answers
           label="Shape"
-          value={design.shape.kind}
+          value={partsFront ? "parts" : design.shape.kind}
           onChange={(k) => {
-            if (k === design.shape.kind || k === "wall") return;
-            // A rectangle asked for while the deck follows the wall: the wall under it goes straight, and the deck with it.
-            if (k === "rect" && design.shape.kind === "wall") return patch({ house: levelUnderDeck(design.house, design.shape) });
+            if (k === (partsFront ? "parts" : design.shape.kind) || k === "wall") return;
+            // THE FRONT IN PARTS (2026-11-14): an L keeps its two fronts as two parts; any other deck starts with a bay —
+            // its middle third 4 ft farther out — to be made whatever is wanted in the list below.
+            if (k === "parts") {
+              const now = frontParts(design.shape);
+              const W0 = design.shape.widthFt;
+              const side = Math.max(FRONT_LIMITS.partFt, Math.round(W0 / 3));
+              const bay = W0 - 2 * side >= FRONT_LIMITS.partFt ? [{ widthFt: side, yFt: design.shape.depthFt }, { widthFt: W0 - 2 * side, yFt: Math.min(DECK_LIMITS.depthFt.max, design.shape.depthFt + 4) }, { widthFt: side, yFt: design.shape.depthFt }] : [{ widthFt: W0 / 2, yFt: Math.min(DECK_LIMITS.depthFt.max, design.shape.depthFt + 4) }, { widthFt: W0 / 2, yFt: design.shape.depthFt }];
+              return setFrontParts(now.length > 1 ? now.map((q) => ({ widthFt: q.x1Ft - q.x0Ft, yFt: q.yFt })) : bay);
+            }
+            // A rectangle asked for while the front is in parts: one straight front, the wall straight behind it.
+            if (k === "rect" && partsFront) return patch({ shape: { kind: "rect", widthFt: design.shape.widthFt, depthFt: design.shape.depthFt }, house: { ...levelUnderDeck(design.house, design.shape), leftFt: Math.max(0, design.house.leftFt), rightFt: Math.max(0, design.house.rightFt) } });
+            // A rectangle asked for while the deck follows the wall: the wall under it goes straight, and the deck with it
+            // (and where the deck ran past the house's corner, the wall is behind the whole of it again).
+            if (k === "rect" && design.shape.kind === "wall") return patch({ house: { ...levelUnderDeck(design.house, design.shape), leftFt: Math.max(0, design.house.leftFt), rightFt: Math.max(0, design.house.rightFt) } });
             patch({ shape: k === "rect" ? { kind: "rect", widthFt: design.shape.widthFt, depthFt: design.shape.depthFt } : { kind: "L", widthFt: design.shape.widthFt, depthFt: design.shape.depthFt, notch: { corner: "front-right", widthFt: Math.max(2, Math.round(design.shape.widthFt / 2)), depthFt: Math.max(2, Math.round(design.shape.depthFt / 2)) } } });
           }}
           options={[
             { value: "rect", label: "Rectangle", sub: "Four straight sides" },
             { value: "L", label: "L-shaped", sub: "One corner cut away" },
-            ...(design.shape.kind === "wall" ? [{ value: "wall" as const, label: "Follows the wall", sub: "Its back steps with the house" }] : []),
+            { value: "parts" as const, label: "Any shape", sub: "The front set part by part" },
+            ...(design.shape.kind === "wall" && !partsFront ? [pastHouse.leftFt > 0 || pastHouse.rightFt > 0 ? { value: "wall" as const, label: pastHouse.wrapLeftFt > 0 || pastHouse.wrapRightFt > 0 ? "Round the house" : "Past the house", sub: "It runs on past the house's corner" } : { value: "wall" as const, label: "Follows the wall", sub: "Its back steps with the house" }] : []),
           ]}
         />
         <div className="v1-grid2">
@@ -1550,7 +1579,54 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
             </div>
             <p className="v1-hint">A back corner is where the house steps out into the deck — a bump-out or a bay.</p>
           </div>
-        ) : design.shape.kind === "wall" ? (
+        ) : null}
+        {partsFront ? (
+          <div className="v1-sub" data-deck-front-parts>
+            <p className="v1-hint">
+              <b>The front, part by part</b> — left to right as you look at the deck from the yard. Each part is as wide as you set and stands that far out from the house: a bay that comes out, a side that stops short, a T, a U, steps down one side. Any corner that stands out can be cut at an angle.
+            </p>
+            <div className="v1-rows">
+              {partsFront.map((q, i) => (
+                <div key={i} className="v1-item" data-deck-front-part={i + 1}>
+                  <div className="v1-item-head">
+                    <span className="v1-item-title">
+                      Part {i + 1} — {feetText(q.x1Ft - q.x0Ft)} ft wide, {feetText(q.yFt)} ft out
+                      {q.clipLeftFt || q.clipRightFt ? ` · corner${q.clipLeftFt && q.clipRightFt ? "s" : ""} cut ${[q.clipLeftFt, q.clipRightFt].filter(Boolean).map((c) => `${feetText(c as number)} ft`).join(" and ")}` : ""}
+                    </span>
+                    <button type="button" className="v1-btn v1-btn-sm v1-btn-danger" onClick={() => setFrontParts(partsList.filter((_, k) => k !== i))} data-deck-front-part-remove>
+                      Remove
+                    </button>
+                  </div>
+                  <div className="v1-grid2">
+                    <Field label="How wide" aside="ft">
+                      <NumberInput label={`Part ${i + 1}: how wide, feet`} value={q.x1Ft - q.x0Ft} parse={parseFeet} format={feetText} min={FRONT_LIMITS.partFt} max={DECK_LIMITS.widthFt.max} onCommit={(n2) => setFrontParts(partsList.map((x, k) => (k === i ? { ...x, widthFt: n2 } : x)))} />
+                    </Field>
+                    <Field label="Out from the house" aside="ft">
+                      <NumberInput label={`Part ${i + 1}: how far out from the house, feet`} value={q.yFt} parse={parseFeet} format={feetText} min={DECK_LIMITS.depthFt.min} max={DECK_LIMITS.depthFt.max} onCommit={(n2) => setFrontParts(partsList.map((x, k) => (k === i ? { ...x, yFt: n2 } : x)))} />
+                    </Field>
+                    {/* ANGLED CORNERS (2026-11-14): a corner that stands out — the deck's own end, or where this part
+                        stands farther out than the one beside it — cut off at 45°. */}
+                    <Field label="Left corner cut at an angle" aside="ft · 0 = square">
+                      <NumberInput label={`Part ${i + 1}: its left corner cut at 45 degrees, feet`} value={q.clipLeftFt ?? 0} parse={parseFeet} format={feetText} min={0} max={FRONT_LIMITS.clipFt.max} onCommit={(n2) => setFrontParts(partsList.map((x, k) => (k === i ? { ...x, clipLeftFt: n2 } : x)))} />
+                    </Field>
+                    <Field label="Right corner cut at an angle" aside="ft · 0 = square">
+                      <NumberInput label={`Part ${i + 1}: its right corner cut at 45 degrees, feet`} value={q.clipRightFt ?? 0} parse={parseFeet} format={feetText} min={0} max={FRONT_LIMITS.clipFt.max} onCommit={(n2) => setFrontParts(partsList.map((x, k) => (k === i ? { ...x, clipRightFt: n2 } : x)))} />
+                    </Field>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="v1-row-acts">
+              <button type="button" className="v1-btn v1-btn-sm" disabled={partsFront.length >= FRONT_LIMITS.parts} onClick={() => setFrontParts([newPartBy(partsList[0]), ...partsList])} data-deck-front-part-add="left">
+                <Plus size={15} strokeWidth={2.5} aria-hidden="true" /> A part at the left end
+              </button>
+              <button type="button" className="v1-btn v1-btn-sm" disabled={partsFront.length >= FRONT_LIMITS.parts} onClick={() => setFrontParts([...partsList, newPartBy(partsList[partsList.length - 1])])} data-deck-front-part-add="right">
+                <Plus size={15} strokeWidth={2.5} aria-hidden="true" /> A part at the right end
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {design.shape.kind === "L" ? null : design.shape.kind === "wall" && !design.shape.back.some((b) => !b.open && Math.abs(b.yFt) > 0.01) ? null : design.shape.kind === "wall" ? (
           <div className="v1-sub" data-deck-follows-wall>
             <p className="v1-hint">
               <b>The back follows the house wall</b> — {wallDeckWords(design.shape)}. It reaches into a set-back, its ledger on that wall, and steps around a bump-out. Move the wall in the drawing and the deck follows.
@@ -1561,6 +1637,44 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
           </div>
         ) : null}
       </div>
+      {/* PAST THE HOUSE'S CORNER (2026-11-14 — the owner: "if I want to go back past the house, on the sides… the deck
+          can extend to the right and to the left outside the house wall"). The house stays where it stands: the deck's
+          end moves out past the corner, and — for a wrap-around deck — back along the house's side wall. */}
+      {design.placement !== "detached" ? (
+        <div className="v1-size-group" role="group" aria-labelledby="v1-past-title" data-deck-past-house>
+          <h3 className="v1-h3" id="v1-past-title">Past the house&rsquo;s corner</h3>
+          <p className="v1-hint">Run the deck on past a corner of the house, and back along the house&rsquo;s side for a wrap-around deck. That part stands on its own beam and posts.</p>
+          <div className="v1-grid2">
+            <Field label="Past the left corner" aside="ft · 0 = no">
+              <NumberInput label="How far the deck runs past the house's left corner, feet" value={pastHouse.leftFt} parse={parseFeet} format={feetText} min={0} max={HOUSE_LIMITS.pastFt.max} onCommit={(n2) => goPast("left", n2, pastHouse.wrapLeftFt)} />
+            </Field>
+            <Field label="Past the right corner" aside="ft · 0 = no">
+              <NumberInput label="How far the deck runs past the house's right corner, feet" value={pastHouse.rightFt} parse={parseFeet} format={feetText} min={0} max={HOUSE_LIMITS.pastFt.max} onCommit={(n2) => goPast("right", n2, pastHouse.wrapRightFt)} />
+            </Field>
+            {pastHouse.leftFt > 0 || pastHouse.rightFt > 0 ? (
+              <>
+                {pastHouse.leftFt > 0 ? (
+                  <Field label="Back along the left side" aside="ft · 0 = no">
+                    <NumberInput label="How far the deck runs back along the house's left side, feet" value={pastHouse.wrapLeftFt} parse={parseFeet} format={feetText} min={0} max={HOUSE_LIMITS.wrapFt.max} onCommit={(n2) => goPast("left", pastHouse.leftFt, n2)} />
+                  </Field>
+                ) : (
+                  <span aria-hidden />
+                )}
+                {pastHouse.rightFt > 0 ? (
+                  <Field label="Back along the right side" aside="ft · 0 = no">
+                    <NumberInput label="How far the deck runs back along the house's right side, feet" value={pastHouse.wrapRightFt} parse={parseFeet} format={feetText} min={0} max={HOUSE_LIMITS.wrapFt.max} onCommit={(n2) => goPast("right", pastHouse.rightFt, n2)} />
+                  </Field>
+                ) : null}
+              </>
+            ) : null}
+          </div>
+          {pastHouse.leftFt > 0 || pastHouse.rightFt > 0 ? (
+            <p className="v1-readout" data-deck-past-words>
+              {wallWords(design.shape, design.house)}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <div className="v1-size-group v1-size-height" role="group" aria-labelledby="v1-height-title">
         <h3 className="v1-h3" id="v1-height-title">How high off the ground?</h3>
         <Answers label="Deck height" cols={2} value={HEIGHT_PRESETS.some((h) => h.inches === design.heightIn) ? design.heightIn : -1} onChange={(v) => patch({ heightIn: v })} options={HEIGHT_PRESETS.map((h) => ({ value: h.inches, label: h.label, sub: ftIn(h.inches) }))} />
@@ -1852,10 +1966,10 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
         </Field>
         <div className="v1-grid2">
           <Field label="Wall past the left end" aside="ft" lights={lightsFor({ kind: "left" })}>
-            <NumberInput label="Wall past the left end, feet" value={design.house.leftFt} parse={parseFeet} format={feetText} min={HOUSE_LIMITS.extendFt.min} max={HOUSE_LIMITS.extendFt.max} onCommit={(n2) => setHouse({ leftFt: n2 })} />
+            <NumberInput label="Wall past the left end, feet" value={Math.max(0, design.house.leftFt)} parse={parseFeet} format={feetText} min={HOUSE_LIMITS.extendFt.min} max={HOUSE_LIMITS.extendFt.max} onCommit={(n2) => setHouse({ leftFt: n2 })} />
           </Field>
           <Field label="Wall past the right end" aside="ft" lights={lightsFor({ kind: "right" })}>
-            <NumberInput label="Wall past the right end, feet" value={design.house.rightFt} parse={parseFeet} format={feetText} min={HOUSE_LIMITS.extendFt.min} max={HOUSE_LIMITS.extendFt.max} onCommit={(n2) => setHouse({ rightFt: n2 })} />
+            <NumberInput label="Wall past the right end, feet" value={Math.max(0, design.house.rightFt)} parse={parseFeet} format={feetText} min={HOUSE_LIMITS.extendFt.min} max={HOUSE_LIMITS.extendFt.max} onCommit={(n2) => setHouse({ rightFt: n2 })} />
           </Field>
         </div>
         <div className="v1-rows" data-deck-house-jogs>

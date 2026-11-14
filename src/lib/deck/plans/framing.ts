@@ -48,8 +48,15 @@ export function framingPlan(m: PlanModel, sc: ArchScale, refs: FramingRefs = {},
   // ── The house.
   if (m.house) {
     const ext = p(0.35);
-    k.rect(xMin - ext, -p(0.22), xMax - xMin + 2 * ext, p(0.22), "heavy", "poche");
-    k.text(xMin + (xMax - xMin) * 0.22, -p(0.3), "EXISTING HOUSE", "md", { anchor: "middle", bold: true });
+    // (Where the deck runs past the house's corner — 2026-11-14 — the wall stops at the corner, and the house's side
+    // wall is drawn as far back as the deck goes beside it.)
+    const e = m.houseEnds;
+    const hx0 = e.x0 ?? xMin - ext;
+    const hx1 = e.x1 ?? xMax + ext;
+    k.rect(hx0, -p(0.22), e.x0 === null && e.x1 === null ? xMax - xMin + 2 * ext : hx1 - hx0, p(0.22), "heavy", "poche");
+    if (e.x0 !== null && e.wrapLeftIn > 0) k.rect(hx0, -(e.wrapLeftIn + ext), p(0.22), e.wrapLeftIn + ext, "heavy", "poche");
+    if (e.x1 !== null && e.wrapRightIn > 0) k.rect(hx1 - p(0.22), -(e.wrapRightIn + ext), p(0.22), e.wrapRightIn + ext, "heavy", "poche");
+    k.text(e.x0 === null && e.x1 === null ? xMin + (xMax - xMin) * 0.22 : hx0 + (hx1 - hx0) * 0.5, -p(0.3), "EXISTING HOUSE", "md", { anchor: "middle", bold: true });
   }
 
   // ── Every stick, beams and posts first (they are under the joists), the ledger and rims last.
@@ -87,9 +94,11 @@ export function framingPlan(m: PlanModel, sc: ArchScale, refs: FramingRefs = {},
   // The span arrow across the joists, in the widest bay between two joists near a third of the width.
   const xs = f.joists.filter((j) => !j.sister).map((j) => j.x).sort((a, b) => a - b);
   const xa = xs.length > 2 ? (xs[Math.floor(xs.length * 0.36)] + xs[Math.floor(xs.length * 0.36) + 1]) / 2 : W / 3;
-  // Across the first bay: from the ledger (or the back) to the first beam out from it.
-  const ya = m.attached ? 3 : z0.zone.y0 + 3;
-  const firstBeam = [...f.beams].sort((a, b) => a.y - b.y).find((b) => b.y > ya + 12);
+  // Across the first bay: from the ledger (or the back) to the first beam out from it — of the part of the deck the
+  // arrow stands in (2026-11-14: an L's other leg, a part past the house's corner have backs and beams of their own).
+  const zx = f.zones.find((z) => xa >= z.zone.x0 && xa <= z.zone.x1) ?? z0;
+  const ya = zx.zone.y0 + 3;
+  const firstBeam = [...f.beams].sort((a, b) => a.y - b.y).find((b) => b.y > ya + 12 && xa >= b.x0 - 0.5 && xa <= b.x1 + 0.5);
   const yb = (firstBeam?.y ?? front?.y ?? D) - 3;
   k.line(xa, ya, xa, yb, "medium");
   for (const [yy, dir] of [[ya, 1], [yb, -1]] as Array<[number, number]>) {

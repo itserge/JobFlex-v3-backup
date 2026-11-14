@@ -23,7 +23,13 @@ export const KINDS_FOR: Record<Structure, RoofKind[]> = {
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 /** A patch laid over the design: the house and the deck agree after it, and a resize settles the frame. */
-export function patchDesign(d: DeckDesign, p: DeckPatch, settle: (next: DeckDesign) => DeckDesign = (x) => x): DeckDesign {
+export function patchDesign(d: DeckDesign, p0: DeckPatch, settle: (next: DeckDesign) => DeckDesign = (x) => x): DeckDesign {
+  // A PLAIN SHAPE PICKED WHILE THE DECK RAN PAST THE HOUSE'S CORNER (2026-11-14) — a rectangle, an L, a bowed or a
+  // clipped front: those hang on the wall, so the wall is behind the whole deck again (the house's corners go back out
+  // to the deck's ends). Without this the pick would be undone at once: a deck past a corner keeps the shape that lets
+  // it stand there.
+  const pastNow = d.house.leftFt < 0 || d.house.rightFt < 0;
+  const p: DeckPatch = p0.shape && p0.shape.kind !== "wall" && !p0.house && pastNow ? { ...p0, house: { leftFt: Math.max(0, d.house.leftFt), rightFt: Math.max(0, d.house.rightFt) } } : p0;
   let next = applyDeckPatch(d, p);
   // THE HOUSE AND THE DECK AGREE (lib/deck/house).
   if (p.house) {
@@ -34,7 +40,8 @@ export function patchDesign(d: DeckDesign, p: DeckPatch, settle: (next: DeckDesi
     // A house built from its photo is the real wall (2026-10-23): a wider or narrower deck does not stretch it — the
     // wall past the deck's right end gives up or takes what the deck took.
     const grew = next.shape.widthFt - d.shape.widthFt;
-    if (resized && grew && d.house.photo) next = applyDeckPatch(next, { house: { rightFt: Math.min(HOUSE_LIMITS.extendFt.max, Math.max(HOUSE_LIMITS.extendFt.min, d.house.rightFt - grew)) } });
+    // (A deck already past that corner goes farther past it, or comes back: the wall stays the photo's.)
+    if (resized && grew && d.house.photo) next = applyDeckPatch(next, { house: { rightFt: Math.min(HOUSE_LIMITS.extendFt.max, Math.max(d.house.rightFt < 0 ? -HOUSE_LIMITS.pastFt.max : HOUSE_LIMITS.extendFt.min, d.house.rightFt - grew)) } });
     if (resized) {
       const fit = deckShapeForHouse(next.shape, next.house);
       if (!same(fit.shape, next.shape)) next = applyDeckPatch(next, { shape: fit.shape });

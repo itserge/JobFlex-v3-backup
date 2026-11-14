@@ -69,24 +69,51 @@ export function elevationView(m: PlanModel, scene: DeckScene, side: ElevationSid
   // Screen u along the view, depth toward the viewer.
   const U = (v: V3) => (side === "front" ? v[0] : side === "left" ? v[1] : D - v[1]);
   const depth = (v: V3) => (side === "front" ? v[1] : side === "left" ? -v[0] : v[0]);
+  // ROUND THE HOUSE'S CORNER (2026-11-14). Seen from the side the deck runs back along, the house's side wall stands
+  // behind that part. Seen from the other side, the part beside the house's FAR wall is behind the house: the members
+  // out there are painted first, the house's wall over them, and the rest of the deck in front of it.
+  const ends = m.houseEnds;
+  const wrapHere = !m.house ? 0 : side === "left" ? (ends.x0 !== null ? ends.wrapLeftIn : 0) : side === "right" ? (ends.x1 !== null ? ends.wrapRightIn : 0) : 0;
+  const wrapFar = !m.house ? 0 : side === "left" ? (ends.x1 !== null ? ends.wrapRightIn : 0) : side === "right" ? (ends.x0 !== null ? ends.wrapLeftIn : 0) : 0;
+  const pastFar = (pts: V3[]) => wrapFar > 0 && (side === "left" ? pts.every((v) => v[0] > (ends.x1 as number) - 1) : pts.every((v) => v[0] < (ends.x0 as number) + 1));
   const solids = sceneSolids(scene).map((sd) => ({ sd, d: sd.pts.reduce((a, v) => a + depth(v), 0) / sd.pts.length })).sort((a, b) => a.d - b.d);
   const us = solids.flatMap((x) => x.sd.pts.map(U));
   let u0 = Math.min(...us, side === "front" ? 0 : 0);
   let u1 = Math.max(...us, side === "front" ? W : D);
+
+  /** The house's side wall in a side view of a deck that goes round its corner: from the house line back past the deck's end. */
+  const sideWall = () => {
+    const reach = Math.max(wrapHere, wrapFar) + 24;
+    return side === "left" ? { from: -reach, to: 0 } : { from: D, to: D + reach };
+  };
+  const paintSideWall = () => {
+    const { from, to } = sideWall();
+    const h = f.surfaceIn + (m.s.rails.on ? m.s.rails.heightIn : 0) + 26;
+    k.rect(from, -h, to - from, h, "light", "house");
+    for (let z = 8; z < h - 4; z += 8) k.line(from, -z, to, -z, "fine");
+    k.text(side === "left" ? from + p(0.12) : to - p(0.12), -h + p(0.2), "EXISTING HOUSE", "sm", { anchor: side === "left" ? "start" : "end", bold: true, tone: "muted" });
+  };
 
   // ── The house behind (front view) or beside (side views).
   // The house drawn to a little over the guard, broken off there.
   const houseH = f.surfaceIn + (m.s.rails.on ? m.s.rails.heightIn : 0) + 26;
   if (m.house) {
     if (side === "front") {
-      const hx0 = Math.min(u0, -24);
-      const hx1 = Math.max(u1, W + 24);
+      // (The house ends at its corner where the deck runs past it. 2026-11-14.)
+      const hx0 = m.houseEnds.x0 ?? Math.min(u0, -24);
+      const hx1 = m.houseEnds.x1 ?? Math.max(u1, W + 24);
       u0 = Math.min(u0, hx0);
       u1 = Math.max(u1, hx1);
       k.rect(hx0, -houseH, hx1 - hx0, houseH, "light", "house");
       // Siding courses, and the break line at the top.
       for (let z = 8; z < houseH - 4; z += 8) k.line(hx0, -z, hx1, -z, "fine");
       k.text(hx0 + p(0.12), -houseH + p(0.2), "EXISTING HOUSE", "sm", { bold: true, tone: "muted" });
+    } else if (wrapHere > 0 || wrapFar > 0) {
+      // The house's side wall: behind the part of the deck that runs back beside it — painted now — or over the part
+      // beside its far wall, painted below once those members are down.
+      u0 = Math.min(u0, sideWall().from);
+      u1 = Math.max(u1, sideWall().to);
+      if (wrapFar <= 0) paintSideWall();
     } else {
       const wx = side === "left" ? -10 : D;
       const ww = 10;
@@ -97,14 +124,19 @@ export function elevationView(m: PlanModel, scene: DeckScene, side: ElevationSid
     }
   }
 
-  // ── Every member, far to near.
-  for (const { sd } of solids) {
+  // ── Every member, far to near. (Round the house's far corner: what stands out there first, the house over it.)
+  const paint = (sd: (typeof solids)[number]["sd"]) => {
     const ring = hull(sd.pts.map((v) => [U(v), -v[2]] as [number, number]));
-    if (ring.length < 6) continue;
+    if (ring.length < 6) return;
     const pen: Pen = /baluster|picket|cable/.test(sd.role) ? "fine" : PEN_OF[sd.layer] ?? "light";
     const fill: Fill = sd.layer === "slab" ? "concrete" : sd.layer === "rail" && /glass/.test(sd.role) ? "glass" : "paper";
     k.poly(ring, pen, fill);
-  }
+  };
+  if (wrapFar > 0 && side !== "front") {
+    for (const { sd } of solids) if (pastFar(sd.pts)) paint(sd);
+    paintSideWall();
+    for (const { sd } of solids) if (!pastFar(sd.pts)) paint(sd);
+  } else for (const { sd } of solids) paint(sd);
 
   // ── The ground, and the footings below it (hidden).
   const deepest = Math.max(12, ...m.posts.map((pp) => pp.post.footing.depthIn));
@@ -181,6 +213,10 @@ export function sectionView(m: PlanModel, scene: DeckScene, xCut: number, sc: Ar
   const { f, D } = m;
   const d = m.s.design;
   const solids = sceneSolids(scene);
+  // ROUND THE HOUSE'S CORNER (2026-11-14): beyond the cut, the part of the deck that runs back beside the house's far
+  // wall is behind the house — what lies wholly there is left out, and what crosses the house line is covered there.
+  const farWrapIn = m.house && m.houseEnds.x1 !== null && m.houseEnds.wrapRightIn > 0 && xCut < m.houseEnds.x1 ? m.houseEnds.wrapRightIn : 0;
+  const behindWall = (sd: Solid) => farWrapIn > 0 && sd.pts.every((v) => v[1] < -1 && v[0] > (m.houseEnds.x1 as number) - 1);
   const beyond: Array<{ sd: Solid; d: number }> = [];
   const cut: Solid[] = [];
   for (const sd of solids) {
@@ -191,7 +227,7 @@ export function sectionView(m: PlanModel, scene: DeckScene, xCut: number, sc: Ar
     // The stairs (and anything past the deck's front) are drawn in their own section.
     if (sd.layer === "stair" || /stair/.test(sd.role) || Math.min(...sd.pts.map((v) => v[1])) > D + 2 || (sd.layer === "rail" && Math.max(...sd.pts.map((v) => v[1])) > D + 4)) continue;
     if (x0 <= xCut && x1 >= xCut) cut.push(sd);
-    else beyond.push({ sd, d: x0 });
+    else if (!behindWall(sd)) beyond.push({ sd, d: x0 });
   }
   beyond.sort((a, b) => b.d - a.d);
   const post = m.posts.reduce((best, pp) => (Math.abs(pp.post.x - xCut) < Math.abs(best.post.x - xCut) ? pp : best), m.posts[0]);
@@ -211,6 +247,12 @@ export function sectionView(m: PlanModel, scene: DeckScene, xCut: number, sc: Ar
   for (const { sd } of beyond) {
     const ring = hull(sd.pts.map((v) => [v[1], -v[2]] as [number, number]));
     if (ring.length >= 6) k.poly(ring, /baluster|picket|cable/.test(sd.role) ? "fine" : "light", "paper");
+  }
+  if (farWrapIn > 0) {
+    // The house, cut open, hides what crosses behind its line: blank there, and the wall again over it.
+    k.rect(-(farWrapIn + 30), -(zTop + 12), farWrapIn + 20, zTop + 12, null, "paper");
+    k.rect(-10, -(zTop + 12), 10, zTop + 12 + deepest + 10, "cut", "poche");
+    k.text(-12, -(zTop + 4), "EXISTING HOUSE", "sm", { anchor: "end", bold: true, tone: "muted" });
   }
   // ── The footing, cut.
   if (ft && ft.type === "poured" && post) {
@@ -263,7 +305,8 @@ export function sectionView(m: PlanModel, scene: DeckScene, xCut: number, sc: Ar
   if (m.s.rails.on) k.dim(D + p(0.15), -f.surfaceIn, D + p(0.15), -(f.surfaceIn + m.s.rails.heightIn), -0.18, inFrac(m.s.rails.heightIn));
   if (front) {
     const top = -(zTop - 6);
-    const ys = [0, ...f.beams.map((b) => b.y).sort((a, b) => a - b), D];
+    // (The beams the cut passes over — 2026-11-14: a part past the house's corner, an L's other leg have beams of their own.)
+    const ys = [0, ...f.beams.filter((b) => xCut >= b.x0 - 0.5 && xCut <= b.x1 + 0.5).map((b) => b.y).sort((a, b) => a - b), D];
     k.chain(ys.map((y) => [y, top] as [number, number]), 0.12);
   }
   if (ft && post) {

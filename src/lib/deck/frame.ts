@@ -69,7 +69,7 @@ import {
 } from "./codeTables";
 import { deckingProduct, framingSpecies, isCompositeFraming, wallType, type DeckingProduct, type FramingSpecies, type WallType } from "./catalog";
 import { OC_BEAM_LAST_FT, OC_BLOCKING_MAX_FT, OC_POST, ocBeamMaxSpanIn, ocPostMaxAreaSqFt } from "./ocLumber";
-import { BRACE_ACTUAL_IN, BUILT_UP_CHOICES, DECK_BEAM_LIMITS, braceSizeFor, frontEdgeAt, isSolidBeam, normalizeDeckDesign, shapeAreaSqFt, shapeEdges, shapeOutline, shapeZones, type BeamKind, type BeamSize, type BeamStyle, type DeckDesign, type DeckEdge, type Zone, spaRectIn } from "./design";
+import { BRACE_ACTUAL_IN, BUILT_UP_CHOICES, DECK_BEAM_LIMITS, braceSizeFor, frontClips, frontEdgeAt, isSolidBeam, normalizeDeckDesign, shapeAreaSqFt, shapeEdges, shapeOutline, shapeZones, type BeamKind, type BeamSize, type BeamStyle, type DeckDesign, type DeckEdge, type FrontClip, type Zone, spaRectIn } from "./design";
 import { ringEdges } from "./ringEdges";
 import { deckingColor, deckingLook, deckingNamed } from "./deckingColors";
 import { deckRate, lumberKey, type DeckRateBook } from "./rates";
@@ -242,6 +242,33 @@ export interface Post {
   roof?: boolean;
 }
 
+/**
+ * AN ANGLED BEAM UNDER A CORNER CUT AT 45° (2026-11-14). Where a corner of the front is cut back farther than the
+ * joists may hang past their beam, the front beam stops where the cut begins and an angled beam runs under the cut —
+ * parallel to it, the same overhang back — from the post at the front beam's end (`x0`, `y0`: one post carries both)
+ * to a post of its own near the deck's side (`x1`, `y1`). The joists over it are cut to the angled rim.
+ */
+export interface CornerBeam {
+  id: string;
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  spec: BeamSpec;
+  lengthIn: number;
+  /** The span its size takes between two posts on the joists it carries (0 = past its table). */
+  maxSpanIn: number;
+  bottomIn: number;
+  /** The beam whose end post it shares at (`x0`, `y0`); null when it stands on two posts of its own (a prow: no front beam left). */
+  hostBeamId: string | null;
+  /** The deck it carries, sq ft — half to each of its posts. */
+  areaSqFt: number;
+  /** The corner it stands under; how far the joists hang past it; the support behind it (a beam's line, or the deck's back), inches from the house line. */
+  clip: FrontClip;
+  overIn: number;
+  behindY: number;
+}
+
 export interface LedgerRun {
   y: number;
   x0: number;
@@ -300,6 +327,8 @@ export interface DeckFrame {
   carries: number;
   hung: boolean;
   seats: Array<{ beamId: string; x: number; y: number }>;
+  /** The angled beams under corners cut at 45° (2026-11-14; see CornerBeam). */
+  cornerBeams: CornerBeam[];
   /** Levels, inches above the ground. */
   surfaceIn: number;
   joistTopIn: number;
@@ -654,6 +683,36 @@ export function layoutPosts(lengthIn: number, maxSpanIn: number, style: BeamStyl
   return { count: 60, endIn: capped(60), spanIn: (lengthIn - 2 * capped(60)) / 59 };
 }
 
+/** A beam's end stands this far inside a corner cut at an angle, in.; clear of an angled beam it stops short of; the least beam left worth a beam; how far past its overhang a cut goes before an angled beam carries it. */
+const CLIP_BEAM_INSET_IN = 3;
+const CLIP_BEAM_HALF_IN = 2;
+const CLIP_BEAM_CLEAR_IN = 8;
+const CLIP_BEAM_MIN_IN = 24;
+const CLIP_ANGLED_MIN_IN = 18;
+/** An angled beam's own post stands this far in from the deck's side, in.; the beam runs this far past it. */
+const CORNER_POST_IN_IN = 6;
+const CORNER_BEAM_PAST_IN = 3;
+
+/**
+ * layoutPosts for a beam with an end — or both — on a post it shares with an angled beam: a post AT that end, the
+ * fewest between, and the free end no farther past its post than a quarter of the span beside it (R507.5). `xs` are
+ * the posts from the beam's left end.
+ */
+function layoutPostsEnds(lengthIn: number, maxSpanIn: number, style: BeamStyle, fixedLeft: boolean, fixedRight: boolean): ReturnType<typeof layoutPosts> & { xs?: number[] } {
+  if (!fixedLeft && !fixedRight) return layoutPosts(lengthIn, maxSpanIn, style);
+  const free = fixedLeft && fixedRight ? 0 : 1;
+  const want = style === "flush" ? Math.min(3, lengthIn / 4) : Math.min(12, Math.floor(lengthIn / 8));
+  for (let n = 2; n <= 60; n++) {
+    const end = free ? Math.min(want, Math.floor(lengthIn / (4 * n - 3))) : 0;
+    const span = (lengthIn - end) / (n - 1);
+    if (!(maxSpanIn > 0) || span <= maxSpanIn + 1e-6 || n === 60) {
+      const first = fixedLeft ? 0 : end;
+      return { count: n, endIn: end, spanIn: span, xs: Array.from({ length: n }, (_, k) => first + k * span) };
+    }
+  }
+  return layoutPosts(lengthIn, maxSpanIn, style);
+}
+
 interface BeamLine {
   zoneId: Zone["id"];
   /** The builder's own line it stands on (design.framing.beamLines), a middle beam only. */
@@ -816,7 +875,9 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
   const deckingMaxSpacingIn = design.decking.pattern !== "straight" ? decking.maxSpacingIn.diagonal : decking.maxSpacingIn.square;
   // The front's shape (M3) and the ground under the deck.
   const front = design.shape.kind === "rect" ? design.shape.front : undefined;
-  const shaped = !!front && front.kind !== "straight";
+  // CORNERS CUT AT AN ANGLE (2026-11-14): a rectangle's two clipped corners, or any corner of a front set part by part.
+  const clips = frontClips(design.shape);
+  const shaped = (!!front && front.kind !== "straight") || (design.shape.kind === "wall" && clips.length > 0);
   const bulgeIn = front?.kind === "curve" ? Math.round(front.bulgeFt * 12) : 0;
   const frontAt = (x: number, y1: number) => (shaped ? frontEdgeAt(design.shape, x) : y1);
   const groundAt = opts.groundAt ?? (() => 0);
@@ -831,7 +892,10 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
   const joistTopIn = surfaceIn - decking.thickIn;
   const footingTopIn = design.footing.type === "pier-block" ? PIER_BLOCK.topIn : design.footing.aboveGradeIn;
   const fits = (size: JoistSize) => joistTopIn - joistDepthIn(size) >= MIN_FRAME_CLEAR_IN;
-  const backs: Array<"ledger" | "beam"> = zones.map(() => (attached ? "ledger" : "beam"));
+  // PAST THE HOUSE'S CORNER (2026-11-14): a part of the deck with no wall behind it stands on a beam of its own there,
+  // however the rest of the deck meets the house.
+  const backs: Array<"ledger" | "beam"> = zones.map((z) => (attached && !z.open ? "ledger" : "beam"));
+  const anyBackBeam = backs.includes("beam");
 
   // Joist sizes to try: the one asked for, or the smallest that both fits
   // under the deck and spans. A 2x6 is offered only where a 2x8 will not fit.
@@ -881,7 +945,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
   const attempt = (style: BeamStyle, mayFail: boolean): DeckFrame | null => {
     strips.clear();
     // A flush beam is the deck's edge: only a dropped back beam can stand in from it.
-    const hand: HandBeams = { backIn: style === "dropped" && !attached && typeof design.framing.backOverhangFt === "number" ? Math.round(design.framing.backOverhangFt * 12) : null, lines: handLines };
+    const hand: HandBeams = { backIn: style === "dropped" && anyBackBeam && typeof design.framing.backOverhangFt === "number" ? Math.round(design.framing.backOverhangFt * 12) : null, lines: handLines };
     let plan: JoistPlan | null = null;
     for (const size of sizes) {
       const p = follow ? followPlan(follow, style, size) : planJoists(zones, backs, style, size, spacingIn, group, load, design.framing.overhangFt, bulgeIn, hand);
@@ -897,7 +961,50 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
     const tooLow = joistBottomIn - groundHighIn < MIN_FRAME_CLEAR_IN;
 
     // Beams: for each line, the size and post count that cost least together.
-    const lines = mergeLines(plan.zones.flatMap((z) => beamLines(z, style)));
+    let lines = mergeLines(plan.zones.flatMap((z) => beamLines(z, style)));
+    // NO BEAM PAST A CORNER CUT AT AN ANGLE (2026-11-14). A beam under the joists ran the part's whole width: at a corner
+    // cut back farther than the joists hang past it, its end — and the post under it — stood outside the deck (a
+    // rectangle with 5-ft clipped corners had two posts out in the open). Every beam now stops inside the cut; and where
+    // the cut goes more than 18 in. past the overhang, the FRONT beam stops where the cut begins and an angled beam
+    // carries the joists under it (cornerPlans, built below).
+    const cornerPlans: Array<{ clip: FrontClip; frontY: number; overIn: number; behind: number; wide: number; host: MergedLine | null }> = [];
+    if (style === "dropped" && clips.length) {
+      for (const k of clips) {
+        const zf = plan.zones.find((q) => Math.abs(q.zone.y1 - k.y) < 0.5 && (k.dir === 1 ? Math.abs(q.zone.x0 - k.x) < 1 : Math.abs(q.zone.x1 - k.x) < 1));
+        if (!zf) continue;
+        const frontY = zf.beamYs[zf.beamYs.length - 1];
+        const overIn = k.y - frontY;
+        const angled = k.c - overIn > CLIP_ANGLED_MIN_IN;
+        const behind = zf.beamYs.length >= 2 ? zf.beamYs[zf.beamYs.length - 2] : zf.zone.y0;
+        let host: MergedLine | null = null;
+        for (const line of lines) {
+          const atEnd = k.dir === 1 ? Math.abs(line.x0 - k.x) < 1 : Math.abs(line.x1 - k.x) < 1;
+          if (!atEnd || line.y >= k.y) continue;
+          // (To the beam's OUTER face: its own half-thickness is past its line.)
+          const excess = k.c - (k.y - line.y) + CLIP_BEAM_HALF_IN;
+          if (excess <= 0) continue;
+          const isFront = Math.abs(line.y - frontY) < 0.5;
+          const cut = isFront && angled ? k.c : excess + (angled ? overIn + CLIP_BEAM_CLEAR_IN : CLIP_BEAM_INSET_IN);
+          if (k.dir === 1) line.x0 = Math.min(line.x1, k.x + cut);
+          else line.x1 = Math.max(line.x0, k.x - cut);
+          for (const sg of line.segs) {
+            sg.x0 = Math.max(sg.x0, line.x0);
+            sg.x1 = Math.min(sg.x1, line.x1);
+          }
+          line.segs = line.segs.filter((sg) => sg.x1 - sg.x0 > 0.5);
+          if (isFront && angled) host = line;
+        }
+        if (angled) cornerPlans.push({ clip: k, frontY, overIn, behind, wide: zf.zone.x1 - zf.zone.x0, host });
+      }
+      // A beam the cuts left less than 2 ft of is no beam: the angled beams stand on posts of their own there.
+      const gone = new Set(lines.filter((l) => l.x1 - l.x0 < CLIP_BEAM_MIN_IN || !l.segs.length));
+      if (gone.size) {
+        lines = lines.filter((l) => !gone.has(l));
+        for (const cp of cornerPlans) if (cp.host && gone.has(cp.host)) cp.host = null;
+      }
+    }
+    /** The ends of a beam that stand on a post shared with an angled beam: a post AT that end. */
+    const fixedEnds = (line: MergedLine) => ({ left: cornerPlans.some((cp) => cp.host === line && cp.clip.dir === 1), right: cornerPlans.some((cp) => cp.host === line && cp.clip.dir === -1) });
     const beyond: string[] = [];
     const postsByHand: DeckFrame["postsByHand"] = [];
     const pinsNotSet: DeckFrame["pinsNotSet"] = [];
@@ -943,7 +1050,8 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       const areaSpanFor = (plies: number) => Math.floor(((Math.min(POST_TABLE_MAX_AREA, composite ? ocPostMaxAreaSqFt(load, plies) : Infinity) * 0.98) / (stripFt * carries)) * 12);
       // The lower of two decks: this beam hangs on the posts of the upper deck's beam on the same line — its posts are given.
       const over = follow ? follow.beams.find((b) => Math.abs(b.lineY - line.y) < 0.5 && Math.abs(b.x0 - line.x0) < 0.5 && Math.abs(b.x1 - line.x1) < 0.5) ?? null : null;
-      type Option = { spec: BeamSpec; maxSpanIn: number; posts: ReturnType<typeof layoutPosts>; cost: number };
+      type Option = { spec: BeamSpec; maxSpanIn: number; posts: ReturnType<typeof layoutPosts> & { xs?: number[] }; cost: number };
+      const fixed = fixedEnds(line);
       const options: Option[] = beamChoices.map((size) => {
         const spec = beamSpec(size);
         const maxSpanIn =
@@ -953,7 +1061,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
               ? ocBeamMaxSpanIn(load, size as (typeof BUILT_UP_CHOICES)[number], ocFt)
               : builtUpBeamMaxSpanIn(load, group, size as (typeof BUILT_UP_CHOICES)[number], ircFt);
         // …nor farther apart than the builder set by hand (2026-11-13) — closer posts may let a lighter beam do.
-        const posts = over ? { count: over.postXs.length, endIn: over.endIn, spanIn: over.spanIn } : layoutPosts(lengthIn, maxSpanIn > 0 ? Math.min(maxSpanIn, areaSpanFor(spec.plies), spacingByHandIn || Infinity) : maxSpanIn, style);
+        const posts = over ? { count: over.postXs.length, endIn: over.endIn, spanIn: over.spanIn } : layoutPostsEnds(lengthIn, maxSpanIn > 0 ? Math.min(maxSpanIn, areaSpanFor(spec.plies), spacingByHandIn || Infinity) : maxSpanIn, style, fixed.left, fixed.right);
         return { spec, maxSpanIn, posts, cost: (lengthIn / 12) * spec.plies * price(lumberKey(spec.stock, composite)) + (over ? 0 : posts.count * postSetCost) };
       });
       const cheapest = (list: Option[]) => list.reduce((m, o) => (o.cost < m.cost - 0.005 || (Math.abs(o.cost - m.cost) <= 0.005 && o.spec.depthIn < m.spec.depthIn) ? o : m));
@@ -983,7 +1091,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       const { spec, posts } = pick;
       // A flush beam is the deck's edge: its outer face on the line of the deck.
       const y = style === "flush" && line.role !== "middle" ? (line.role === "front" ? line.segs[0].y + BEARING_HALF_IN - spec.thickIn / 2 : line.segs[0].y - BEARING_HALF_IN + spec.thickIn / 2) : line.y;
-      let postXs = over ? over.postXs.slice() : Array.from({ length: posts.count }, (_, k) => line.x0 + posts.endIn + k * posts.spanIn);
+      let postXs = over ? over.postXs.slice() : posts.xs ? posts.xs.map((x) => line.x0 + x) : Array.from({ length: posts.count }, (_, k) => line.x0 + posts.endIn + k * posts.spanIn);
       let spanIn = posts.spanIn;
       let endIn = posts.endIn;
       // POSTS SET BY HAND (2026-11-13). A beam the builder stood posts under stands on those — and on more only where
@@ -995,6 +1103,9 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
         const limit = pick.maxSpanIn > 0 ? Math.min(pick.maxSpanIn, areaSpanFor(pick.spec.plies), spacingByHandIn || Infinity) : Infinity;
         const own: number[] = [];
         for (const m of mine.map((q) => Math.max(line.x0 + 1, Math.min(line.x1 - 1, q.x))).sort((a, b) => a - b)) if (!own.some((q) => Math.abs(q - m) < postW + 1)) own.push(m);
+        // (An end that shares its post with an angled beam keeps that post, whatever the builder set.)
+        for (const fx of [...(fixed.left ? [line.x0] : []), ...(fixed.right ? [line.x1] : [])]) if (!own.some((q) => Math.abs(q - fx) < postW + 1)) own.push(fx);
+        own.sort((a, b) => a - b);
         const longestOf = (list: number[]) => (list.length > 1 ? list.slice(1).reduce((m, x, k) => Math.max(m, x - list[k]), 0) : Infinity);
         let xs = own.slice();
         // The ends: past its end post a beam runs a quarter of its span at most, 2 ft at most — read on its longest
@@ -1059,6 +1170,31 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       strips.set(id, line.segs);
     }
 
+    // THE ANGLED BEAMS under the corners cut at 45° (see CornerBeam): each the size of the beam whose end post it
+    // shares, from that post back along the cut to a post of its own — no nearer the support behind than a foot.
+    const cornerBeams: CornerBeam[] = [];
+    const cornerEnds: Array<{ cb: CornerBeam; hostAt: "left" | "right" | null }> = [];
+    cornerPlans.forEach((cp, n) => {
+      const k = cp.clip;
+      const hostBeam = cp.host ? beams.find((b) => Math.abs(b.lineY - cp.host!.y) < 0.5 && Math.abs(b.x0 - cp.host!.x0) < 0.5 && Math.abs(b.x1 - cp.host!.x1) < 0.5) ?? null : null;
+      const spec = hostBeam?.spec ?? beamSpec(beamChoices[Math.min(1, beamChoices.length - 1)]);
+      // From J, where the cut begins on the front beam's line, toward the deck's side — the joists over it hang the same
+      // overhang past it as past the front beam.
+      // (A cut as wide as its whole part: the front end stands a post's inset inside the part's far side, not on it.)
+      const start = Math.max(0, k.c - Math.max(CORNER_POST_IN_IN, cp.wide - CORNER_POST_IN_IN));
+      const reach = Math.min(k.c - CORNER_POST_IN_IN, cp.frontY - (cp.behind + 12)) - start;
+      if (!(reach > 12)) return;
+      const J = { x: k.x + k.dir * (k.c - start), y: cp.frontY - start };
+      const K = { x: J.x - k.dir * reach, y: J.y - reach };
+      const lengthIn = reach * Math.SQRT2;
+      const maxSpanIn = hostBeam ? hostBeam.maxSpanIn : 0;
+      const areaSqFt = Math.round(((k.c * ((cp.frontY - k.c / 2 - cp.behind) / 2 + cp.overIn)) / 144) * 10) / 10;
+      const topIn = joistBottomIn;
+      const cb: CornerBeam = { id: `c${n + 1}`, x0: J.x, y0: J.y, x1: K.x, y1: K.y, spec, lengthIn, maxSpanIn, bottomIn: topIn - spec.depthIn, hostBeamId: hostBeam?.id ?? null, areaSqFt, clip: k, overIn: cp.overIn, behindY: cp.behind };
+      cornerBeams.push(cb);
+      cornerEnds.push({ cb, hostAt: hostBeam ? (k.dir === 1 ? "left" : "right") : null });
+    });
+
     // Posts and their footings. (The lower of two decks has none: each beam sits in a seat let into a post of the upper deck.)
     const posts: Post[] = [];
     const seats: DeckFrame["seats"] = [];
@@ -1087,6 +1223,8 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
           }
         }
       }
+      // (The end post an angled beam shares carries half of what that beam does.)
+      for (const ce of cornerEnds) if (ce.cb.hostBeamId === beam.id && areas.length) areas[ce.hostAt === "left" ? 0 : areas.length - 1] += ce.cb.areaSqFt / 2;
       // Under a beam that sits lower than the footings usually stand, the concrete stops under the beam.
       const topIn = Math.min(footingTopIn, Math.max(0, beam.bottomIn));
       beam.postXs.forEach((x, k) => {
@@ -1110,6 +1248,37 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
           footing,
         });
       });
+    }
+
+    // The angled beams' own posts: at the side end of each, and at its front end where no beam's post is there to share.
+    const cornerPostAt = new Map<string, string>();
+    for (const { cb } of cornerEnds) {
+      const ends = [...(cb.hostBeamId ? [] : [{ x: cb.x0, y: cb.y0, tag: "a" }]), { x: cb.x1, y: cb.y1, tag: "b" }];
+      for (const e of ends) {
+        const at = `${Math.round(e.x)}:${Math.round(e.y)}`;
+        // (Two angled beams that meet in a point stand on one post there.)
+        const shared = cornerPostAt.get(at);
+        const tributarySqFt = Math.round((cb.areaSqFt / 2) * carries * 10) / 10;
+        if (shared) {
+          const q = posts.find((pp) => pp.id === shared);
+          if (q) {
+            q.tributarySqFt = Math.round((q.tributarySqFt + tributarySqFt) * 10) / 10;
+            q.footing = { ...footingFor(design, q.x, q.y, q.tributarySqFt, design.framing.post, q.footing.topIn), groundIn: q.footing.groundIn };
+          }
+          continue;
+        }
+        if (follow) {
+          seats.push({ beamId: cb.id, x: e.x, y: e.y });
+          continue;
+        }
+        const topIn = Math.min(footingTopIn, Math.max(0, cb.bottomIn));
+        const zg = groundAt(e.x, e.y);
+        const footing = footingFor(design, e.x, e.y, tributarySqFt, design.framing.post, topIn);
+        footing.groundIn = zg;
+        const id = `${cb.id}p${e.tag}`;
+        cornerPostAt.set(at, id);
+        posts.push({ id, beamId: cb.id, x: e.x, y: e.y, size: design.framing.post, heightIn: Math.max(0, cb.bottomIn - (topIn + zg)), tributarySqFt, maxHeightIn: postMaxHeightIn(load, group, design.framing.post, tributarySqFt, cb.spec.plies), corner: false, footing });
+      }
     }
 
     // A roof's posts (M2): a footing and a base each, the post itself drawn by the roof.
@@ -1191,7 +1360,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       const frontBeam = zoneBeams[zoneBeams.length - 1];
       const middleBeams = zoneBeams.slice(backBeam ? 1 : 0, -1);
       const frontExposed = edges.some((e) => e.side === "front" && !e.house && Math.abs(e.y0 - z.y1) < 0.01 && e.x0 < z.x1 && e.x1 > z.x0);
-      const backExposed = design.placement === "detached";
+      const backExposed = design.placement === "detached" || !!z.open;
       const frontRim = style === "dropped" ? rimPlies(frontExposed) * THICK_2X_IN : 0;
       const backRim = style === "dropped" && zf.back === "beam" ? rimPlies(backExposed) * THICK_2X_IN : 0;
       const start = zf.back === "ledger" ? z.y0 + THICK_2X_IN : style === "flush" && backBeam ? z.y0 + backBeam.spec.thickIn : z.y0 + backRim;
@@ -1247,7 +1416,13 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
           // the left), took a rim of its own besides.
           const plies = rimPlies(frontExposed);
           for (const e of ringEdges(shapeOutline(design.shape))) {
-            if (e.A.y < 0.5 && e.B.y < 0.5) continue;
+            if (design.shape.kind === "wall") {
+              // A deck in parts (2026-11-14): this rectangle's own front and its cuts — not its back (wherever the wall
+              // puts it), nor another part's front.
+              const mx = (e.A.x + e.B.x) / 2;
+              if (!(mx > z.x0 - 0.01 && mx <= z.x1 - 0.01)) continue;
+              if (Math.abs(e.A.y - z.y0) < 0.5 && Math.abs(e.B.y - z.y0) < 0.5) continue;
+            } else if (e.A.y < 0.5 && e.B.y < 0.5) continue;
             if (Math.abs(e.ux) < 1e-6) continue;
             if (e.length < 1) continue;
             const curved = front?.kind === "curve" && !(Math.abs(e.A.y - z.y1) < 0.01 && Math.abs(e.B.y - z.y1) < 0.01 && Math.abs(e.uy) < 1e-6);
@@ -1269,6 +1444,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
     if (attached) {
       const runs: Array<{ y: number; x0: number; x1: number; spanFt: number }> = [];
       for (const zf of [...plan.zones].sort((p, q) => p.zone.y0 - q.zone.y0 || p.zone.x0 - q.zone.x0)) {
+        if (zf.back !== "ledger") continue;
         const spanFt = zf.spansIn[0] / 12;
         const m = runs.find((r) => Math.abs(r.y - zf.zone.y0) < 0.01 && Math.abs(r.x1 - zf.zone.x0) < 0.01);
         if (m) {
@@ -1298,6 +1474,21 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
         for (const [u, v] of splitRun(b.x0, b.x1, b.postXs)) {
           sticks.push({ role: "beam", nominal: b.spec.stock, lengthIn: v - u, cx: (u + v) / 2, cy, cz: topIn - b.spec.depthIn / 2, sx: v - u, sy: ply, sz: b.spec.depthIn, ground: true, of: b.id });
         }
+      }
+    }
+    // …the angled beams: their plies side by side along the cut, a hand's breadth clear of the front beam's end.
+    for (const cb of cornerBeams) {
+      const ux = (cb.x1 - cb.x0) / cb.lengthIn;
+      const uy = (cb.y1 - cb.y0) / cb.lengthIn;
+      // (Clear of whatever else stands on its front post: the front beam's end, or the other angled beam of a point.)
+      const met = cb.hostBeamId !== null || cornerBeams.some((o) => o !== cb && Math.abs(o.x0 - cb.x0) < 0.5 && Math.abs(o.y0 - cb.y0) < 0.5);
+      const from = met ? cb.spec.thickIn / 2 + 0.25 : -CORNER_BEAM_PAST_IN;
+      const len = cb.lengthIn + CORNER_BEAM_PAST_IN - from;
+      const mid = from + len / 2;
+      const ply = cb.spec.kind === "solid" ? THICK_4X_IN : THICK_2X_IN;
+      for (let p = 0; p < cb.spec.plies; p++) {
+        const off = -cb.spec.thickIn / 2 + (p + 0.5) * ply;
+        sticks.push({ role: "beam", nominal: cb.spec.stock, lengthIn: len, cx: cb.x0 + ux * mid - uy * off, cy: cb.y0 + uy * mid + ux * off, cz: cb.bottomIn + cb.spec.depthIn / 2, sx: len, sy: ply, sz: cb.spec.depthIn, ground: true, of: cb.id, yaw: Math.atan2(uy, ux) });
       }
     }
     hardware.beamSeats = seats.length;
@@ -1422,6 +1613,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       carries,
       hung: !!follow,
       seats,
+      cornerBeams,
       surfaceIn,
       joistTopIn,
       joistBottomIn,

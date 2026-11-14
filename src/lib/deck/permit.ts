@@ -86,7 +86,11 @@ export function permitPages(s: DeckStructure): PermitPage[] {
 /** The post the section cuts through: the first beam's first post (the deck's front line), else the first post. */
 export function sectionPost(frame: DeckFrame): Post | null {
   const front = frame.beams.find((b) => b.role === "front") ?? frame.beams[0];
-  return (front && frame.posts.find((p) => p.beamId === front.id)) ?? frame.posts[0] ?? null;
+  // Where the deck runs past the house's corner (2026-11-14) the section is cut through the part ON the wall — the
+  // wall, the ledger and a joist from one to the other are what it shows.
+  const walled = frame.zones.filter((z) => !z.zone.open).map((z) => z.zone);
+  const onWall = (p: Post) => walled.length === frame.zones.length || walled.some((z) => p.x >= z.x0 && p.x <= z.x1);
+  return (front && (frame.posts.find((p) => p.beamId === front.id && onWall(p)) ?? frame.posts.find((p) => p.beamId === front.id))) ?? frame.posts[0] ?? null;
 }
 
 /**
