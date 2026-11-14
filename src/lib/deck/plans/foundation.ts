@@ -206,6 +206,21 @@ export function tributaries(m: PlanModel): Array<{ grid: string; pts: V2[]; sqFt
     if (zr.length === 1) poly = clipPoly(poly, rectPts(zr[0].x0, zr[0].y0, zr[0].x1, zr[0].y1));
     out.push({ grid: pp.grid, pts: poly, sqFt: q.tributarySqFt });
   }
+  // The corners cut at an angle (2026-11-14): what each angled beam carries — from the cut back halfway to the support
+  // behind it — half to the post at each of its ends (the front one is the front beam's own end post).
+  for (const cb of f.cornerBeams) {
+    const k = cb.clip;
+    const X = (t: number) => k.x + k.dir * t;
+    const edge = (t: number) => k.y - k.c + t;
+    const mid = (t: number) => (edge(t) - cb.overIn + cb.behindY) / 2;
+    const half = (t0: number, t1: number): V2[] => [{ x: X(t0), y: edge(t0) }, { x: X(t1), y: edge(t1) }, { x: X(t1), y: mid(t1) }, { x: X(t0), y: mid(t0) }];
+    const own = m.posts.find((pp) => pp.post.beamId === cb.id && Math.abs(pp.post.x - cb.x1) < 1 && Math.abs(pp.post.y - cb.y1) < 1);
+    if (own) out.push({ grid: own.grid, pts: half(0, k.c / 2), sqFt: own.post.tributarySqFt });
+    const front = m.posts.find((pp) => Math.abs(pp.post.x - cb.x0) < 1 && Math.abs(pp.post.y - cb.y0) < 1);
+    const entry = front ? out.find((t) => t.grid === front.grid) : undefined;
+    if (entry) entry.more = [...(entry.more ?? []), half(k.c / 2, k.c)];
+    else if (front) out.push({ grid: front.grid, pts: half(k.c / 2, k.c), sqFt: front.post.tributarySqFt });
+  }
   return out;
 }
 

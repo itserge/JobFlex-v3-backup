@@ -371,6 +371,11 @@ export function runCommand(d0: DeckDesign, cmd: DeckCommand, env: RunEnv = {}): 
       } else if (cmd.kind === "curve") {
         shape = { kind: "rect", ...base, front: { kind: "curve", bulgeFt: cmd.bulgeFt ?? 2, clipFt: 2 } };
         words = "a curved front";
+      } else if (cmd.kind === "clipped" && s.kind === "wall" && s.front) {
+        // A deck in parts (2026-11-14): every corner that stands out is cut — the parts stay as they are.
+        const c = clamp(cmd.clipFt ?? 2, FRONT_LIMITS.clipFt.min, FRONT_LIMITS.clipFt.max);
+        shape = shapeWithFront(s, s.front.map((q) => ({ widthFt: q.x1Ft - q.x0Ft, yFt: q.yFt, clipLeftFt: c, clipRightFt: c })));
+        words = `every corner that stands out cut at 45°, ${ftWords(c)}`;
       } else if (cmd.kind === "clipped") {
         shape = { kind: "rect", ...base, front: { kind: "clipped", bulgeFt: 2, clipFt: cmd.clipFt ?? 2 } };
         words = "the front corners clipped at 45°";

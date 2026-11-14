@@ -88,6 +88,14 @@ export interface FrontPart {
   x0Ft: number;
   x1Ft: number;
   yFt: number;
+  /**
+   * ANGLED CORNERS (2026-11-14 — the owner's pictures: decks whose corners are cut at an angle). The part's front
+   * corner at its left / right end cut off at 45°, this many feet along the front and as many back along the side.
+   * Only a corner that stands OUT can be cut — the deck's own end, or where this part stands farther out than its
+   * neighbour. Two cuts that meet in the middle of a part make a point (a prow).
+   */
+  clipLeftFt?: number;
+  clipRightFt?: number;
 }
 
 export type DeckShape =
@@ -973,7 +981,7 @@ export function normalizeBack(raw: unknown, widthFt: number, depthFt: number): B
 }
 
 /** The narrowest part of a front, ft (as of a back), and the most parts a front is cut in. */
-export const FRONT_LIMITS = { partFt: 2, parts: 8 } as const;
+export const FRONT_LIMITS = { partFt: 2, parts: 8, clipFt: { min: 1, max: 12 }, sideFt: 2 } as const;
 
 /**
  * A deck's front parts made buildable: in order, end to end over the deck's width, to the inch; none narrower than
@@ -985,10 +993,15 @@ export function normalizeFront(raw: unknown, widthFt: number, depthFt: number, b
   if (!Array.isArray(raw)) return null;
   const cuts = raw
     .map((v) => obj(v))
-    .map((b) => ({ x0: num(b.x0Ft, NaN), x1: num(b.x1Ft, NaN), y: num(b.yFt, depthFt) }))
+    .map((b) => ({ x0: num(b.x0Ft, NaN), x1: num(b.x1Ft, NaN), y: num(b.yFt, depthFt), clipL: num(b.clipLeftFt, 0), clipR: num(b.clipRightFt, 0) }))
     .filter((b) => Number.isFinite(b.x0) && Number.isFinite(b.x1) && b.x1 > b.x0)
     .sort((a, b) => a.x0 - b.x0);
   if (!cuts.length) return null;
+  // The corners asked to be cut, by their place along the deck (a part may be joined to its neighbour below).
+  const asks = cuts.flatMap((c, i) => [
+    ...(c.clipL > 0 ? [{ x: i === 0 ? 0 : c.x0, left: true, c: c.clipL }] : []),
+    ...(c.clipR > 0 ? [{ x: i === cuts.length - 1 ? widthFt : c.x1, left: false, c: c.clipR }] : []),
+  ]);
   const steps = back.slice(1).map((b) => b.x0Ft);
   // (The NEAREST step: a cut that is on one stays on it, however near the next step is.)
   const snap = (x: number) => {
@@ -1044,8 +1057,52 @@ export function normalizeFront(raw: unknown, widthFt: number, depthFt: number, b
     if (last && Math.abs(last.yFt - y) < 1 / 24) last.x1Ft = q.x1Ft;
     else settled.push({ x0Ft: q.x0Ft, x1Ft: q.x1Ft, yFt: y });
   }
-  if (settled.length < 2) return null;
+  // THE CORNERS CUT AT AN ANGLE: each kept only where the corner stands out — no longer along the front than the part
+  // has (two cuts share it), no farther back than the face beside it (at the deck's end, 2 ft of side stay square).
+  if (asks.length) {
+    const C = FRONT_LIMITS.clipFt;
+    const backAt = (x: number) => (back.find((b) => x >= b.x0Ft - 1 / 24 && x <= b.x1Ft + 1 / 24) ?? back[back.length - 1]).yFt;
+    settled.forEach((q, i) => {
+      const prev = settled[i - 1];
+      const next = settled[i + 1];
+      const wide = q.x1Ft - q.x0Ft;
+      const roomL = prev ? q.yFt - prev.yFt : q.yFt - backAt(0) - FRONT_LIMITS.sideFt;
+      const roomR = next ? q.yFt - next.yFt : q.yFt - backAt(widthFt) - FRONT_LIMITS.sideFt;
+      const want = (left: boolean, at: number) => asks.find((a) => a.left === left && Math.abs(a.x - at) < FRONT_LIMITS.partFt)?.c ?? 0;
+      const fit = (asked: number, room: number, along: number) => {
+        const c = toInch(Math.min(asked, C.max, room, along));
+        return asked > 0 && c >= C.min - 1 / 24 ? c : 0;
+      };
+      const cl = fit(want(true, q.x0Ft), roomL, wide);
+      const cr = fit(want(false, q.x1Ft), roomR, wide - cl);
+      if (cl > 0) q.clipLeftFt = cl;
+      if (cr > 0) q.clipRightFt = cr;
+    });
+  }
+  if (settled.length < 2 && !settled.some((q) => q.clipLeftFt || q.clipRightFt)) return null;
   return settled;
+}
+
+/** One corner of the front cut at 45°, inches: the square corner it replaces at (`x`, `y`), which way the deck lies from it along the front, and the cut's size (along the front, and back). */
+export interface FrontClip {
+  x: number;
+  y: number;
+  dir: 1 | -1;
+  c: number;
+}
+/** Every corner of the front that is cut at an angle — a rectangle's two clipped corners, or each part's own. */
+export function frontClips(shape: DeckShape): FrontClip[] {
+  if (shape.kind === "rect") {
+    if (shape.front?.kind !== "clipped") return [];
+    const D = Math.round(shape.depthFt * 12);
+    const c = shape.front.clipFt * 12;
+    return [{ x: 0, y: D, dir: 1, c }, { x: Math.round(shape.widthFt * 12), y: D, dir: -1, c }];
+  }
+  if (shape.kind !== "wall" || !shape.front) return [];
+  return shape.front.flatMap((q): FrontClip[] => [
+    ...(q.clipLeftFt ? [{ x: Math.round(q.x0Ft * 12), y: Math.round(q.yFt * 12), dir: 1 as const, c: q.clipLeftFt * 12 }] : []),
+    ...(q.clipRightFt ? [{ x: Math.round(q.x1Ft * 12), y: Math.round(q.yFt * 12), dir: -1 as const, c: q.clipRightFt * 12 }] : []),
+  ]);
 }
 
 /**
@@ -1053,13 +1110,20 @@ export function normalizeFront(raw: unknown, widthFt: number, depthFt: number, b
  * against THAT — round again until nothing moves (a part dropped for being a sliver may have been the deepest). A
  * straight back with a straight front is a rectangle.
  */
-export function partsShape(widthFt: number, depthFt: number, rawBack: unknown, rawFront: unknown): DeckShape {
+export function partsShape(widthFt: number, depthFt: number, rawBack: unknown, rawFront0: unknown): DeckShape {
+  let rawFront = rawFront0;
   const straight: BackPart[] = [{ x0Ft: 0, x1Ft: widthFt, yFt: 0 }];
   let depth = depthFt;
   for (let round = 0; ; round++) {
     const back = normalizeBack(rawBack, widthFt, depth);
     const front = normalizeFront(rawFront, widthFt, depth, back ?? straight);
     const deep = front ? Math.max(...front.map((q) => q.yFt)) : depth;
+    // (No deck is shallower than the least a deck is: its deepest part stands at least that far out.)
+    if (front && deep < DECK_LIMITS.depthFt.min - 1 / 24 && round < 6) {
+      rawFront = front.map((q) => (Math.abs(q.yFt - deep) < 1 / 24 ? { ...q, yFt: DECK_LIMITS.depthFt.min } : q));
+      depth = DECK_LIMITS.depthFt.min;
+      continue;
+    }
     if (deep >= depth - 1 / 24 || round >= 6) {
       if (!back && !front) return { kind: "rect", widthFt, depthFt: depth };
       return { kind: "wall", widthFt, depthFt: depth, back: back ?? straight, ...(front ? { front } : {}) };
@@ -1083,12 +1147,12 @@ export function frontParts(shape: DeckShape): FrontPart[] {
  * A deck with its front set part by part — each part `widthFt` wide, its front `yFt` out from the house line, left to
  * right. The deck is as wide as the parts together and as deep as the deepest; its back stays as the wall has it.
  */
-export function shapeWithFront(shape: DeckShape, parts: ReadonlyArray<{ widthFt: number; yFt: number }>): DeckShape {
+export function shapeWithFront(shape: DeckShape, parts: ReadonlyArray<{ widthFt: number; yFt: number; clipLeftFt?: number; clipRightFt?: number }>): DeckShape {
   const list = parts.filter((q) => q.widthFt > 0);
   if (!list.length) return shape;
   let x = 0;
   const front: FrontPart[] = list.map((q) => {
-    const part = { x0Ft: x, x1Ft: x + q.widthFt, yFt: q.yFt };
+    const part: FrontPart = { x0Ft: x, x1Ft: x + q.widthFt, yFt: q.yFt, ...(q.clipLeftFt ? { clipLeftFt: q.clipLeftFt } : {}), ...(q.clipRightFt ? { clipRightFt: q.clipRightFt } : {}) };
     x += q.widthFt;
     return part;
   });
@@ -1652,7 +1716,15 @@ export function frontEdgeAt(shape: DeckShape, xIn: number): number {
   // A front set part by part (2026-11-14): the part that x is over.
   if (shape.kind === "wall" && shape.front) {
     const at = shape.front.find((q) => xIn >= q.x0Ft * 12 - 0.01 && xIn <= q.x1Ft * 12 + 0.01) ?? shape.front[shape.front.length - 1];
-    return Math.round(at.yFt * 12);
+    const y = Math.round(at.yFt * 12);
+    // …cut back along a corner cut at an angle.
+    const cl = (at.clipLeftFt ?? 0) * 12;
+    const cr = (at.clipRightFt ?? 0) * 12;
+    const x0 = Math.round(at.x0Ft * 12);
+    const x1 = Math.round(at.x1Ft * 12);
+    if (cl && xIn < x0 + cl) return y - (x0 + cl - Math.max(x0, xIn));
+    if (cr && xIn > x1 - cr) return y - (Math.min(x1, xIn) - (x1 - cr));
+    return y;
   }
   if (shape.kind !== "rect" || !shape.front || shape.front.kind === "straight") return D;
   const W = Math.round(shape.widthFt * 12);
@@ -1850,18 +1922,18 @@ export function shapeEdges(shape: DeckShape, placement: Placement): DeckEdge[] {
     });
     // The front: one edge along each run of parts on one line, and the open face where the front steps between two —
     // the side of the part that stands farther out (2026-11-14; a straight front is the one edge it always was).
-    for (let i = 0; i < zones.length; ) {
-      let j = i;
-      while (j + 1 < zones.length && zones[j + 1].y1 === zones[i].y1) j++;
-      out.push(edge(zones[i].x0, zones[i].y1, zones[j].x1, zones[i].y1, "front", false));
-      i = j + 1;
-    }
-    zones.forEach((z, i) => {
-      const n = zones[i + 1];
-      if (n && n.y1 !== z.y1) out.push(edge(z.x1, Math.min(z.y1, n.y1), z.x1, Math.max(z.y1, n.y1), n.y1 > z.y1 ? "left" : "right", false));
+    // (Each part's own, where the front is set part by part: a corner cut at an angle takes its size off the front and
+    // off the side beside it, and its own length goes with the front's.)
+    const fr = (shape.front ?? [{ x0Ft: 0, x1Ft: shape.widthFt, yFt: shape.depthFt }]).map((q: FrontPart) => ({ x0: Math.round(q.x0Ft * 12), x1: Math.round(q.x1Ft * 12), y: Math.round(q.yFt * 12), cl: (q.clipLeftFt ?? 0) * 12, cr: (q.clipRightFt ?? 0) * 12 }));
+    for (const q of fr) out.push(edge(q.x0, q.y, q.x1, q.y, "front", false, q.cl || q.cr ? q.x1 - q.x0 - q.cl - q.cr + (q.cl + q.cr) * Math.SQRT2 : undefined));
+    fr.forEach((q, i) => {
+      const n = fr[i + 1];
+      if (!n || n.y === q.y) return;
+      const top = Math.max(q.y, n.y) - (n.y > q.y ? n.cl : q.cr);
+      if (top - Math.min(q.y, n.y) > 0.5) out.push(edge(q.x1, Math.min(q.y, n.y), q.x1, top, n.y > q.y ? "left" : "right", false));
     });
-    out.push(edge(0, zones[0].y0, 0, zones[0].y1, "left", false));
-    out.push(edge(W, zones[zones.length - 1].y0, W, zones[zones.length - 1].y1, "right", false));
+    out.push(edge(0, zones[0].y0, 0, fr[0].y - fr[0].cl, "left", false));
+    out.push(edge(W, zones[zones.length - 1].y0, W, fr[fr.length - 1].y - fr[fr.length - 1].cr, "right", false));
     return out;
   }
   const [a, b] = zones;
@@ -1922,14 +1994,19 @@ export function shapeOutline(shape: DeckShape): Array<{ x: number; y: number }> 
     }
     if (!shape.front) pts.push({ x: W, y: D }, { x: 0, y: D });
     else {
-      // …and back along the front, right to left, stepping with its parts (2026-11-14).
-      const zs = shapeZones(shape);
-      for (let i = zs.length - 1; i >= 0; i--) {
-        const last = pts[pts.length - 1];
-        // (Two parts on one line: the point between them is not a corner.)
-        if (i < zs.length - 1 && zs[i + 1].y1 === zs[i].y1 && Math.abs(last.y - zs[i].y1) < 0.01) pts.pop();
-        else pts.push({ x: zs[i].x1, y: zs[i].y1 });
-        pts.push({ x: zs[i].x0, y: zs[i].y1 });
+      // …and back along the front, right to left, stepping with its parts (2026-11-14) — two points where a corner is
+      // cut at an angle.
+      for (let i = shape.front.length - 1; i >= 0; i--) {
+        const q = shape.front[i];
+        const x0 = Math.round(q.x0Ft * 12);
+        const x1 = Math.round(q.x1Ft * 12);
+        const y = Math.round(q.yFt * 12);
+        const cl = (q.clipLeftFt ?? 0) * 12;
+        const cr = (q.clipRightFt ?? 0) * 12;
+        if (cr) pts.push({ x: x1, y: y - cr }, { x: x1 - cr, y });
+        else pts.push({ x: x1, y });
+        if (cl) pts.push({ x: x0 + cl, y }, { x: x0, y: y - cl });
+        else pts.push({ x: x0, y });
       }
     }
     return pts.filter((p, i) => {
@@ -1952,7 +2029,9 @@ export function shapeOutline(shape: DeckShape): Array<{ x: number; y: number }> 
 }
 
 export function shapeAreaSqFt(shape: DeckShape): number {
-  const rect = shapeZones(shape).reduce((a, z) => a + (z.x1 - z.x0) * (z.y1 - z.y0), 0) / 144;
+  const whole = shapeZones(shape).reduce((a, z) => a + (z.x1 - z.x0) * (z.y1 - z.y0), 0) / 144;
+  // (A front set part by part: less the corners cut at an angle.)
+  const rect = shape.kind === "wall" && shape.front ? Math.round((whole - frontClips(shape).reduce((a, k) => a + (k.c * k.c) / 288, 0)) * 100) / 100 : whole;
   if (shape.kind !== "rect" || !shape.front || shape.front.kind === "straight") return rect;
   if (shape.front.kind === "clipped") return rect - shape.front.clipFt * shape.front.clipFt;
   // The circular segment outside the chord: R²·acos((R−s)/R) − (R−s)·√(2Rs − s²).
@@ -1980,7 +2059,9 @@ export function sizeWords(design: DeckDesign): string {
     const ends = s.back.filter((b) => b.open);
     const stepped = s.back.some((b) => !b.open && Math.abs(b.yFt) > 0.01);
     const how = ends.length ? (ends.some((b) => b.yFt < 0) ? " wrapping round the house" : " running past the house's corner") : stepped ? " following the house wall" : "";
-    const front = s.front ? `${how ? "," : ""} its front in ${s.front.length} parts` : "";
+    const cutN = s.front ? s.front.reduce((a, q) => a + (q.clipLeftFt ? 1 : 0) + (q.clipRightFt ? 1 : 0), 0) : 0;
+    const cuts = cutN ? `${cutN === 1 ? "a corner" : `${cutN} corners`} cut at an angle` : "";
+    const front = !s.front ? "" : s.front.length > 1 ? `${how ? "," : ""} its front in ${s.front.length} parts${cuts ? `, ${cuts}` : ""}` : `${how ? "," : ""} ${cuts}`;
     return `${ft(s.widthFt)} × ${ft(s.depthFt)}${how}${front}${lower}`;
   }
   return s.kind === "rect" ? `${ft(s.widthFt)} × ${ft(s.depthFt)}${front}${lower}` : `${ft(s.widthFt)} × ${ft(s.depthFt)} L-shaped${isDoubleDeck(design) ? lower : ""}`;

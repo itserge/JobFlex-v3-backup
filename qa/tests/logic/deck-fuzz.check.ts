@@ -4,7 +4,7 @@
 // zero-size parts that made a scene unreadable, and a normalize drift — all fixed the same day.
 //   NODE_PATH="" npx tsx --tsconfig tsconfig.json qa/tests/logic/deck-fuzz.check.ts [nInRails] [nJunk]
 //   NODE_PATH="" npx tsx --tsconfig tsconfig.json qa/tests/logic/deck-fuzz.check.ts --repro A40 B5293 [--json]
-import { defaultDeckDesign, normalizeDeckDesign, shapeZones, structureWords, sizeWords, FIXTURE_KINDS, STRUCTURES, FLOORS, ROOF_KINDS, ROOF_PLAN_SHAPES, ROOFINGS, GUTTER_KINDS, PLACEMENTS, NOTCH_CORNERS, type DeckDesign } from "../../../src/lib/deck/design";
+import { defaultDeckDesign, frontClips, normalizeDeckDesign, shapeOutline, shapeZones, structureWords, sizeWords, FIXTURE_KINDS, STRUCTURES, FLOORS, ROOF_KINDS, ROOF_PLAN_SHAPES, ROOFINGS, GUTTER_KINDS, PLACEMENTS, NOTCH_CORNERS, type DeckDesign } from "../../../src/lib/deck/design";
 import { priceDeck, deckScope, deckNotes } from "../../../src/lib/deck/pricing";
 import { writeFileSync } from "node:fs";
 import { applyDeckPatch, deckChecks } from "../../../src/lib/deck/checks";
@@ -51,7 +51,8 @@ function randomFront(r: Rng, widthFt: number, depthFt: number): unknown {
   const n = int(r, 1, 9);
   const cuts = Array.from({ length: n - 1 }, () => odd(r, 0, widthFt)).sort((a, b) => a - b);
   const xs = [0, ...cuts, r() < 0.9 ? widthFt : widthFt + 5];
-  return xs.slice(0, -1).map((x0, i) => ({ x0Ft: x0, x1Ft: xs[i + 1], yFt: r() < 0.1 ? pick(r, [-3, 0, 99, "x"]) : odd(r, 2, depthFt + 6) }));
+  // …its corners cut at an angle now and then (2026-11-14): any size, on any part, whether the corner stands out or not.
+  return xs.slice(0, -1).map((x0, i) => ({ x0Ft: x0, x1Ft: xs[i + 1], yFt: r() < 0.1 ? pick(r, [-3, 0, 99, "x"]) : odd(r, 2, depthFt + 6), ...(r() < 0.3 ? { clipLeftFt: pick(r, [odd(r, 0, 14), 2, 4, -1, "x"]) } : {}), ...(r() < 0.3 ? { clipRightFt: pick(r, [odd(r, 0, 14), 3, 6, 99]) } : {}) }));
 }
 
 /** A whole random design whose deck follows a stepped house wall. */
@@ -190,6 +191,17 @@ function exercise(d: DeckDesign, tag: string, out: string[]) {
       }
     }
     const f0 = pkg.structure.frame;
+    // CORNERS CUT AT AN ANGLE (2026-11-14): with the beams under the joists, no post of the deck stands outside the
+    // deck's own outline — a beam stops inside a cut, an angled beam carries a deep one.
+    if (f0 && f0.beamStyle === "dropped" && d.shape.kind === "wall" && d.shape.front && d.framing.pins.length === 0) {
+      const ring = shapeOutline(d.shape);
+      const inRing = (x: number, y: number) => { let c = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const a = ring[i], b = ring[j]; if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) c = !c; } return c; };
+      // (Under a corner that is cut away; and an angled beam's own posts anywhere but on the deck.)
+      const cutAway = frontClips(d.shape);
+      const outP = f0.posts.filter((q) => !q.roof && (cutAway.some((k) => k.dir * (q.x - k.x) >= 0 && k.y - q.y >= 0 && k.dir * (q.x - k.x) + (k.y - q.y) < k.c - 1) || (/^c\d+p/.test(q.id) && !inRing(q.x, q.y))));
+      if (outP.length) out.push(`a post stands outside the deck: ${outP[0].id} (${Math.round(outP[0].x)}, ${Math.round(outP[0].y)})  [${tag}]`);
+      for (const q of d.shape.front) if ((q.clipLeftFt ?? 0) + (q.clipRightFt ?? 0) > q.x1Ft - q.x0Ft + 0.01 || (q.clipLeftFt ?? 0) < 0 || (q.clipRightFt ?? 0) < 0) out.push(`a part's cuts are more than the part  [${tag}]`);
+    }
     if (f0) {
       const x0 = -d.house.leftFt * 12 - 0.6;
       const x1 = (W + d.house.rightFt) * 12 + 0.6;

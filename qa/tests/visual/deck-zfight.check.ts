@@ -369,6 +369,18 @@ variants.push(["deck with a bay in the middle of its front, fascia, composite ra
 variants.push(["deck stepping down to the right in three parts, two-board border, aluminum rail", { structure: "deck", shape: parts([[8, 16], [8, 12], [8, 8]]), heightIn: 36, rail: { ...base.rail, type: "aluminum" }, decking: { ...base.decking, fascia: "match", border: 2 }, stairs: stairs("right", 4, 4) } as Patch]);
 variants.push(["U-shaped front on its own posts, flush beams, cedar rail, one-board border", { structure: "deck", placement: "beside", shape: parts([[6, 16], [12, 10], [6, 16]]), heightIn: 60, rail: { ...base.rail, type: "cedar" }, framing: { ...base.framing, beamStyle: "flush" }, decking: { ...base.decking, fascia: "match", border: 1 }, stairs: [] } as Patch]);
 variants.push(["a bay and the deck round the right corner, double rim", { structure: "deck", shape: parts([[8, 12], [10, 16], [12, 12]]), heightIn: 96, house: { ...base.house, rightFt: -8, wrapRightFt: 8 }, rail: { ...base.rail, type: "aluminum" }, framing: { ...base.framing, doubleRim: true }, decking: { ...base.decking, fascia: "match" }, stairs: [] } as Patch]);
+// CORNERS CUT AT AN ANGLE (2026-11-14): any corner of a front in parts cut at 45° — the joists cut to the angled rim,
+// the beam stopping inside the cut (an angled beam under a deep one), the field's boards cut along it, the border
+// mitred round it, fascia and rail along it.
+const cut = (list: Array<[number, number, number?, number?]>) => {
+  let x = 0;
+  const front = list.map(([w, y, cl, cr]) => ({ x0Ft: x, x1Ft: (x += w), yFt: y, ...(cl ? { clipLeftFt: cl } : {}), ...(cr ? { clipRightFt: cr } : {}) }));
+  return { kind: "wall" as const, widthFt: x, depthFt: Math.max(...list.map((q) => q[1])), back: [{ x0Ft: 0, x1Ft: x, yFt: 0 }], front };
+};
+variants.push(["a bay with both corners cut at 45°, border, fascia, aluminum rail, stairs off the bay", { structure: "deck", shape: cut([[7, 9], [10, 12, 3, 3], [7, 9]]), heightIn: 48, rail: { ...base.rail, type: "aluminum" }, decking: { ...base.decking, fascia: "match", border: 1 }, stairs: stairs("front", 12, 4) } as Patch]);
+variants.push(["one front, a 5-ft cut at the left corner and 2 ft at the right, two-board border, composite rail", { structure: "deck", shape: cut([[24, 14, 5, 2]]), heightIn: 60, rail: { ...base.rail, type: "composite" }, decking: { ...base.decking, fascia: "match", border: 2 }, stairs: [] } as Patch]);
+variants.push(["a prow — two cuts meeting in a point — cedar rail, fascia", { structure: "deck", shape: cut([[6, 10], [12, 16, 6, 6], [6, 10]]), heightIn: 36, rail: { ...base.rail, type: "cedar" }, decking: { ...base.decking, fascia: "match" }, stairs: [] } as Patch]);
+variants.push(["both ends cut at 45° on a deck round the right corner, double rim, no border", { structure: "deck", shape: cut([[10, 12, 4], [14, 12, 0, 4]]), heightIn: 96, house: { ...base.house, rightFt: -8, wrapRightFt: 8 }, rail: { ...base.rail, type: "aluminum" }, framing: { ...base.framing, doubleRim: true }, decking: { ...base.decking, fascia: "match" }, stairs: [] } as Patch]);
 for (const [name, p] of variants) cases.push({ name, design: applyDeckPatch(base, p) });
 
 /**

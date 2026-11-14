@@ -1244,8 +1244,8 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
   // THE FRONT, PART BY PART (2026-11-14; lib/deck/design FrontPart): the parts as the list shows them, and the one door
   // that sets them — the deck is as wide as the parts together and as deep as the deepest.
   const partsFront = design.shape.kind === "wall" && design.shape.front ? design.shape.front : null;
-  const partsList = (partsFront ?? []).map((q) => ({ widthFt: q.x1Ft - q.x0Ft, yFt: q.yFt }));
-  const setFrontParts = (list: Array<{ widthFt: number; yFt: number }>) => patch({ shape: shapeWithFront(design.shape, list) });
+  const partsList = (partsFront ?? []).map((q) => ({ widthFt: q.x1Ft - q.x0Ft, yFt: q.yFt, clipLeftFt: q.clipLeftFt, clipRightFt: q.clipRightFt }));
+  const setFrontParts = (list: Array<{ widthFt: number; yFt: number; clipLeftFt?: number; clipRightFt?: number }>) => patch({ shape: shapeWithFront(design.shape, list) });
   /** A new part beside this one: 6 ft wide, 4 ft nearer the house — or farther out, where nearer leaves no deck. */
   const newPartBy = (q: { widthFt: number; yFt: number } | undefined) => ({ widthFt: 6, yFt: !q ? design.shape.depthFt : q.yFt - 4 >= DECK_LIMITS.depthFt.min + 2 ? q.yFt - 4 : Math.min(DECK_LIMITS.depthFt.max, q.yFt + 4) });
   const goPast = (side: "left" | "right", pastFt: number, wrapFt: number) => {
@@ -1583,7 +1583,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
         {partsFront ? (
           <div className="v1-sub" data-deck-front-parts>
             <p className="v1-hint">
-              <b>The front, part by part</b> — left to right as you look at the deck from the yard. Each part is as wide as you set and stands that far out from the house: a bay that comes out, a side that stops short, a T, a U, steps down one side.
+              <b>The front, part by part</b> — left to right as you look at the deck from the yard. Each part is as wide as you set and stands that far out from the house: a bay that comes out, a side that stops short, a T, a U, steps down one side. Any corner that stands out can be cut at an angle.
             </p>
             <div className="v1-rows">
               {partsFront.map((q, i) => (
@@ -1591,6 +1591,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                   <div className="v1-item-head">
                     <span className="v1-item-title">
                       Part {i + 1} — {feetText(q.x1Ft - q.x0Ft)} ft wide, {feetText(q.yFt)} ft out
+                      {q.clipLeftFt || q.clipRightFt ? ` · corner${q.clipLeftFt && q.clipRightFt ? "s" : ""} cut ${[q.clipLeftFt, q.clipRightFt].filter(Boolean).map((c) => `${feetText(c as number)} ft`).join(" and ")}` : ""}
                     </span>
                     <button type="button" className="v1-btn v1-btn-sm v1-btn-danger" onClick={() => setFrontParts(partsList.filter((_, k) => k !== i))} data-deck-front-part-remove>
                       Remove
@@ -1602,6 +1603,14 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                     </Field>
                     <Field label="Out from the house" aside="ft">
                       <NumberInput label={`Part ${i + 1}: how far out from the house, feet`} value={q.yFt} parse={parseFeet} format={feetText} min={DECK_LIMITS.depthFt.min} max={DECK_LIMITS.depthFt.max} onCommit={(n2) => setFrontParts(partsList.map((x, k) => (k === i ? { ...x, yFt: n2 } : x)))} />
+                    </Field>
+                    {/* ANGLED CORNERS (2026-11-14): a corner that stands out — the deck's own end, or where this part
+                        stands farther out than the one beside it — cut off at 45°. */}
+                    <Field label="Left corner cut at an angle" aside="ft · 0 = square">
+                      <NumberInput label={`Part ${i + 1}: its left corner cut at 45 degrees, feet`} value={q.clipLeftFt ?? 0} parse={parseFeet} format={feetText} min={0} max={FRONT_LIMITS.clipFt.max} onCommit={(n2) => setFrontParts(partsList.map((x, k) => (k === i ? { ...x, clipLeftFt: n2 } : x)))} />
+                    </Field>
+                    <Field label="Right corner cut at an angle" aside="ft · 0 = square">
+                      <NumberInput label={`Part ${i + 1}: its right corner cut at 45 degrees, feet`} value={q.clipRightFt ?? 0} parse={parseFeet} format={feetText} min={0} max={FRONT_LIMITS.clipFt.max} onCommit={(n2) => setFrontParts(partsList.map((x, k) => (k === i ? { ...x, clipRightFt: n2 } : x)))} />
                     </Field>
                   </div>
                 </div>

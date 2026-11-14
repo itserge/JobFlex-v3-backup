@@ -211,6 +211,23 @@ export function DeckPlan({
         {f.beams.map((b) => (
           <rect key={b.id} x={b.x0 + ox} y={b.y + oy - b.spec.thickIn / 2} width={b.x1 - b.x0} height={b.spec.thickIn} fill={b.style === "flush" ? "var(--paper-deep)" : "none"} stroke="var(--blueprint)" strokeWidth={lw * 1.6} strokeDasharray={b.style === "dropped" ? `${lw * 6} ${lw * 3}` : undefined} />
         ))}
+        {/* The angled beams under corners cut at 45° (2026-11-14): the same dashed line as the beams they meet. */}
+        {f.cornerBeams.map((c) => {
+          const len = Math.hypot(c.x1 - c.x0, c.y1 - c.y0) || 1;
+          const nx = (-(c.y1 - c.y0) / len) * (c.spec.thickIn / 2);
+          const ny = ((c.x1 - c.x0) / len) * (c.spec.thickIn / 2);
+          return (
+            <polygon
+              key={c.id}
+              points={`${c.x0 + nx + ox},${c.y0 + ny + oy} ${c.x1 + nx + ox},${c.y1 + ny + oy} ${c.x1 - nx + ox},${c.y1 - ny + oy} ${c.x0 - nx + ox},${c.y0 - ny + oy}`}
+              fill="none"
+              stroke="var(--blueprint)"
+              strokeWidth={lw * 1.6}
+              strokeDasharray={`${lw * 6} ${lw * 3}`}
+              data-deck-plan-corner-beam={c.id}
+            />
+          );
+        })}
         {sticks("joist").map((j, i) => rect(j, `j${i}`, "var(--paper-deep)", "var(--ink-soft)"))}
         {sticks("rim").map((r, i) => rect(r, `r${i}`, r.curved ? "var(--blueprint)" : "var(--paper-deep)", "var(--ink-soft)"))}
         {sticks("blocking").map((b, i) => rect(b, `k${i}`, "var(--muted-light)"))}

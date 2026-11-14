@@ -178,6 +178,19 @@ export function deckChecks(s: DeckStructure): DeckCheck[] {
       });
     }
   }
+  // CORNERS CUT AT AN ANGLE (2026-11-14): what carries them, said where the builder looks. (Ids clear of AUTO_FIX.)
+  if (frame && frame.cornerBeams.length) {
+    const n = frame.cornerBeams.length;
+    const longest = frame.cornerBeams.reduce((m, c) => (c.lengthIn > m.lengthIn ? c : m));
+    const past = frame.cornerBeams.filter((c) => !(c.maxSpanIn > 0) || c.lengthIn > c.maxSpanIn + 0.5);
+    add({
+      id: "deck-corner-beams",
+      level: past.length ? "warn" : "pass",
+      part: "Beams",
+      text: `${n === 1 ? "The corner cut at an angle has" : `The ${n} corners cut at an angle each have`} an angled ${longest.spec.size} beam under the cut — parallel to it, the joists hanging the same overhang past it as past the front beam — from the post at the front beam's end to a post of its own by the deck's side${n > 1 ? "" : ""}; the longest is ${ftIn(Math.round(longest.lengthIn))}. The joists there are cut to the angled rim.${past.length ? ` ${past.length === 1 ? "One is" : `${past.length} are`} longer than that size spans between two posts on its table: stand a post under its middle, pick a deeper beam, or have it sized.` : ""}`,
+      rule: "IRC R507.5",
+    });
+  }
   // The picture-frame border, said where the builder looks (2026-11-13): how wide, how far, what goes under it.
   const bordered = frame && s.surface && s.surface.border > 0 ? s.surface : null;
   if (bordered) add({ id: "decking-border", level: "pass", part: "Decking", text: `${borderWords(bordered).replace(/^a /, "A ")}: mitred at the corners${bordered.borderBackingIn.length ? `, with a joist added under its inner edge along the sides (${Math.round(bordered.borderBackingIn.reduce((a, v) => a + v, 0) / 12)} ft of ${frame!.joistSize})` : ""}${bordered.product.border ? `, bought apart in ${bordered.product.border.name}` : ", cut from the deck's own boards"}.`, rule: "The decking maker's installation guide" });

@@ -7,14 +7,15 @@
 // may run past the house's corner). Every stretch between two cuts of the back or the front is one rectangle of deck,
 // framed off its own back to its own front.
 //   npx --no-install tsx --tsconfig tsconfig.json qa/tests/logic/deck-front-parts.check.ts
-import { DECK_LIMITS, FRONT_LIMITS, defaultDeckDesign, defaultStair, frontEdgeAt, frontParts, hasLowerLevel, normalizeDeckDesign, normalizeFront, shapeAreaSqFt, shapeEdges, shapeOutline, shapeWithFront, shapeZones, sizeWords, type DeckDesign, type DeckShape } from "../../../src/lib/deck/design";
+import { DECK_LIMITS, FRONT_LIMITS, defaultDeckDesign, defaultStair, frontClips, frontEdgeAt, frontParts, hasLowerLevel, normalizeDeckDesign, normalizeFront, shapeAreaSqFt, shapeEdges, shapeOutline, shapeWithFront, shapeZones, sizeWords, type DeckDesign, type DeckShape } from "../../../src/lib/deck/design";
 import { deckShapeForHouse, defaultHouse, setDeckPast } from "../../../src/lib/deck/house";
 import { buildStructure } from "../../../src/lib/deck/structure";
 import { applyDeckPatch, deckChecks } from "../../../src/lib/deck/checks";
 import { patchDesign } from "../../../src/lib/deck/edit";
 import { priceDeck } from "../../../src/lib/deck/pricing";
 import { deckScene } from "../../../src/lib/deck/scene";
-import { settleDesign } from "../../../src/lib/deck/settle";
+import { AUTO_FIX, settleDesign } from "../../../src/lib/deck/settle";
+import { partCard } from "../../../src/lib/deck/parts";
 import { planModel } from "../../../src/lib/deck/plans/model";
 import { tributaries } from "../../../src/lib/deck/plans/foundation";
 import { permitPages, permitSheets } from "../../../src/lib/deck/permit";
@@ -136,6 +137,90 @@ check("\"the left side 4 feet deeper\"", v4.design.shape.kind === "wall" && v4.d
 check("\"make it a rectangle\" takes the parts away", say(v1.design, "make it a rectangle").design.shape.kind === "rect");
 check("\"bay shaped\" is still the clipped corners; a bump-out of the HOUSE is still the wall's", (() => { const b = say(base, "bay shaped").design.shape; return b.kind === "rect" && b.front?.kind === "clipped"; })() && say(base, "the house has a bump out on the right").design.house.jogs.length === 1);
 void applyDeckPatch;
+
+console.log("── corners cut at an angle");
+type Cut = { widthFt: number; yFt: number; clipLeftFt?: number; clipRightFt?: number };
+const cutParts = (d: DeckDesign, list: Cut[]) => patchDesign(d, { shape: shapeWithFront(d.shape, list) });
+const front = (d: DeckDesign) => (d.shape.kind === "wall" ? (d.shape.front ?? []) : []);
+const bay = cutParts(base, [{ widthFt: 7, yFt: 12 }, { widthFt: 10, yFt: 18, clipLeftFt: 3, clipRightFt: 3 }, { widthFt: 7, yFt: 12 }]);
+check("a bay's two corners cut 3 ft at 45°", front(bay)[1].clipLeftFt === 3 && front(bay)[1].clipRightFt === 3 && frontClips(bay.shape).length === 2);
+const inner = cutParts(base, [{ widthFt: 7, yFt: 12, clipRightFt: 3 }, { widthFt: 10, yFt: 18 }, { widthFt: 7, yFt: 12, clipLeftFt: 3 }]);
+check("only a corner that stands OUT is cut: asked of the corners in the angle beside the bay, nothing is", frontClips(inner.shape).length === 0);
+const ends = cutParts(base, [{ widthFt: 7, yFt: 12, clipLeftFt: 4 }, { widthFt: 10, yFt: 18 }, { widthFt: 7, yFt: 12, clipRightFt: 4 }]);
+check("…the deck's own two end corners are", front(ends)[0].clipLeftFt === 4 && front(ends)[2].clipRightFt === 4);
+const deepCut = cutParts(base, [{ widthFt: 7, yFt: 12 }, { widthFt: 10, yFt: 16, clipLeftFt: 9, clipRightFt: 0.5 }, { widthFt: 7, yFt: 12 }]);
+check("a cut goes no farther back than the face beside it (4 ft here); under a foot is no cut", front(deepCut)[1].clipLeftFt === 4 && front(deepCut)[1].clipRightFt === undefined);
+const prow = cutParts(base, [{ widthFt: 6, yFt: 10 }, { widthFt: 12, yFt: 16, clipLeftFt: 6, clipRightFt: 9 }, { widthFt: 6, yFt: 10 }]);
+check("two cuts share the part's width: 6 ft each on a 12-ft part make a point", front(prow)[1].clipLeftFt === 6 && front(prow)[1].clipRightFt === 6);
+const oneFront = cutParts(base, [{ widthFt: 24, yFt: 14, clipLeftFt: 5, clipRightFt: 2 }]);
+check("ONE straight front with its corners cut — each its own size — is a deck in parts too", oneFront.shape.kind === "wall" && front(oneFront).length === 1 && front(oneFront)[0].clipLeftFt === 5 && front(oneFront)[0].clipRightFt === 2);
+check("at the deck's end 2 ft of side stay square: a 12-ft cut on a 12-ft side is held at 10", front(cutParts(base, [{ widthFt: 24, yFt: 12, clipLeftFt: 12 }]))[0].clipLeftFt === 10);
+check("the outline has two corners where one was cut", JSON.stringify(shapeOutline(bay.shape)) === JSON.stringify([{ x: 0, y: 0 }, { x: 288, y: 0 }, { x: 288, y: 144 }, { x: 204, y: 144 }, { x: 204, y: 180 }, { x: 168, y: 216 }, { x: 120, y: 216 }, { x: 84, y: 180 }, { x: 84, y: 144 }, { x: 0, y: 144 }]));
+check("the area is less the two triangles: 348 − 9", shapeAreaSqFt(bay.shape) === 339);
+check("the front along a cut runs back at 45°", frontEdgeAt(bay.shape, 85) === 181 && frontEdgeAt(bay.shape, 102) === 198 && frontEdgeAt(bay.shape, 144) === 216 && frontEdgeAt(bay.shape, 203) === 181);
+const eB = shapeEdges(bay.shape, "attached");
+check("the bay's front is as long as its straight run and its two cuts; its sides are shorter by them", Math.abs(eB.find((e) => e.side === "front" && e.x0 === 84)!.lengthIn - (48 + 72 * Math.SQRT2)) < 0.01 && eB.some((e) => e.x0 === 84 && e.y0 === 144 && e.y1 === 180));
+check("read back the same; in words", JSON.stringify(normalizeDeckDesign(JSON.parse(JSON.stringify(bay)))) === JSON.stringify(bay) && sizeWords(bay) === "24 ft × 18 ft its front in 3 parts, 2 corners cut at an angle" && sizeWords(oneFront) === "24 ft × 14 ft 2 corners cut at an angle", `${sizeWords(bay)} | ${sizeWords(oneFront)}`);
+
+const inRing = (ring: Array<{ x: number; y: number }>, x: number, y: number) => {
+  let c = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i];
+    const b = ring[j];
+    if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) c = !c;
+  }
+  return c;
+};
+/** Every post, and every corner of every straight beam, joist and rim, inside the deck's outline. */
+const allInside = (d: DeckDesign) => {
+  const ring = shapeOutline(d.shape);
+  const fr = buildStructure(d).frame!;
+  const sticksOut = fr.sticks.filter((st) => (st.role === "beam" || st.role === "joist" || st.role === "blocking") && !st.yaw).filter((st) => [[-1, -1], [1, -1], [1, 1], [-1, 1]].some(([sx, sy]) => !inRing(ring, st.cx + (sx * st.sx) / 2 - sx * 0.5, st.cy + (sy * st.sy) / 2 - sy * 0.5)));
+  const postsOut = fr.posts.filter((q) => !inRing(ring, q.x, q.y));
+  return sticksOut.length === 0 && postsOut.length === 0;
+};
+const sBay = buildStructure(bay);
+const fBay = sBay.frame!;
+check("the bay's beam stops inside both cuts, its posts with it — nothing stands outside the deck", allInside(bay) && fBay.beams.some((b) => b.x0 > 84 + 10 && b.x1 < 204 - 10 && b.y > 180));
+check("a 3-ft cut is within reach of the joists' overhang: no angled beam", fBay.cornerBeams.length === 0 && !deckChecks(sBay).some((c) => c.id === "deck-corner-beams"));
+check("the joists under a cut are cut to it, and a rim runs along it at 45°", fBay.sticks.filter((st) => st.role === "rim" && st.yaw && Math.abs(Math.abs(Math.tan(st.yaw)) - 1) < 0.01).length >= 2 && !fBay.sticks.some((st) => st.role === "joist" && st.cy + st.sy / 2 > frontEdgeAt(bay.shape, st.cx) + 0.5));
+const sOne = buildStructure(oneFront);
+const fOne = sOne.frame!;
+const cb = fOne.cornerBeams[0];
+check("a 5-ft cut is past it: the front beam stops where the cut begins, and an angled beam runs under the cut", fOne.cornerBeams.length === 1 && !!cb && cb.x0 === 60 && Math.abs(cb.y1 - cb.y0) === Math.abs(cb.x1 - cb.x0) && fOne.beams[0].x0 === 60 && allInside(oneFront), JSON.stringify(cb));
+check("…the two share ONE post where they meet, and the angled beam has a post of its own by the deck's side", fOne.posts.filter((q) => Math.abs(q.x - 60) < 0.6 && Math.abs(q.y - cb.y0) < 0.6).length === 1 && fOne.posts.some((q) => q.beamId === cb.id && Math.abs(q.x - cb.x1) < 0.6) && fOne.posts.find((q) => Math.abs(q.x - 60) < 0.6)!.beamId === fOne.beams[0].id);
+check("…that shared post carries half of what the angled beam does, and is sized for it", fOne.posts.find((q) => Math.abs(q.x - 60) < 0.6)!.tributarySqFt > fOne.posts.find((q) => q.beamId === cb.id)!.tributarySqFt + 10);
+const said = deckChecks(sOne).find((c) => c.id === "deck-corner-beams");
+check("the checks say it; an id the auto-fix leaves alone", !!said && said.level === "pass" && /angled .* beam under the cut/.test(said.text) && !AUTO_FIX.test("deck-corner-beams"), said?.text);
+const sProw = buildStructure(prow);
+check("a point: no front beam left under it — two angled beams on one post at the point and one each by the sides", sProw.frame!.cornerBeams.length === 2 && sProw.frame!.cornerBeams.every((c) => c.hostBeamId === null) && sProw.frame!.posts.filter((q) => q.beamId.startsWith("c")).length === 3 && allInside(prow));
+const oldClip = normalizeDeckDesign({ ...base, shape: { kind: "rect", widthFt: 24, depthFt: 16, front: { kind: "clipped", bulgeFt: 2, clipFt: 5 } } });
+check("the rectangle with clipped corners gains by it: its beam and end posts stood outside the deck past the corners — they stand inside now", allInside(oldClip) && buildStructure(oldClip).frame!.cornerBeams.length === 2);
+check("nothing fails on any of them", [bay, ends, prow, oneFront, oldClip].every((d) => fails(d).length === 0));
+check("clicking the angled beam or its post in the 3D does not break the part's card", (() => { try { partCard(sOne, { kind: "deck-beam", id: cb.id }); partCard(sOne, { kind: "deck-post", id: fOne.posts.find((q) => q.beamId === cb.id)!.id }); return true; } catch { return false; } })());
+const dbl = buildStructure(normalizeDeckDesign({ ...oneFront, heightIn: 126, lower: { ...d0.lower, on: true, place: "under", heightIn: 18 } }));
+check("a double deck: the deck under it has its angled beam too, let into the same posts", !!dbl.lower && dbl.lower.frame.cornerBeams.length === 1 && dbl.lower.frame.posts.length === 0 && dbl.lower.frame.seats.some((q) => q.beamId === dbl.lower!.frame.cornerBeams[0].id));
+
+const ringAreaOf = (r: number[]) => { let a = 0; for (let i = 0; i < r.length; i += 2) { const j = (i + 2) % r.length; a += r[i] * r[j + 1] - r[j] * r[i + 1]; } return Math.abs(a) / 2; };
+const covered = (st: ReturnType<typeof buildStructure>) => (st.surface!.pieces.reduce((a, q) => a + q.sx * q.sy, 0) + st.surface!.shaped.reduce((a, r) => a + ringAreaOf(r), 0)) / 144;
+const bordered2 = buildStructure(normalizeDeckDesign({ ...bay, decking: { ...bay.decking, border: 1, fascia: "match" } }));
+const cuts = frontClips(bay.shape);
+const inCut = (x: number, y: number) => cuts.some((k) => k.dir * (x - k.x) >= 0 && k.y - y >= 0 && k.dir * (x - k.x) + (k.y - y) < k.c - 1);
+check("the boards stop along the cuts: none lies over a corner that is cut away, and they cover the deck once", !sBay.surface!.pieces.some((q) => inCut(q.cx, q.cy)) && covered(sBay) <= 339 + 0.5 && covered(sBay) > 339 * 0.93, `${covered(sBay).toFixed(1)} of 339`);
+check("…with a border too: it runs along both cuts, mitred to its neighbours, and nothing is laid twice", bordered2.surface!.borderEdges.length === 9 && bordered2.surface!.borderEdges.filter((e) => Math.abs(Math.abs(e.x1 - e.x0) - Math.abs(e.y1 - e.y0)) < 0.01 && Math.abs(e.x1 - e.x0) > 1).length === 2 && covered(bordered2) <= 339 + 0.5 && covered(bordered2) > 339 * 0.93, `${bordered2.surface!.borderEdges.length} edges, ${covered(bordered2).toFixed(1)} of 339`);
+check("fascia and rail run along the cuts", Math.abs(bordered2.surface!.fascia.lf - sBay.frame!.openEdgeFt) < 0.2 && sBay.rails.segments.some((g) => Math.abs(Math.abs(g.x1 - g.x0) - Math.abs(g.y1 - g.y0)) < 2 && Math.abs(g.x1 - g.x0) > 12));
+let cutPages = 0;
+let cutThrew = "";
+try {
+  cutPages = permitPages(sOne).length + permitSheets(sOne).length + tributaries(planModel(sOne)!).length;
+} catch (e) {
+  cutThrew = e instanceof Error ? e.message : String(e);
+}
+check("the permit set draws; the 3D has the angled beam; the price has it", cutPages > 6 && !cutThrew && deckScene(sOne).boxes.length > 100 && priceDeck(oneFront).subtotal > 0, cutThrew);
+const trOne = tributaries(planModel(sOne)!);
+check("the footing plan shades what the angled beam's posts carry: its own post's half, and the other half with the post it shares", trOne.length === fOne.posts.length && trOne.some((t) => (t.more ?? []).length === 1));
+const v6 = say(tee, "clip the corners 3 feet");
+check("\"clip the corners 3 feet\" on a deck in parts: every corner that stands out — the bay's two and the deck's two ends — the parts as they were", v6.design.shape.kind === "wall" && v6.design.shape.front!.length === 3 && frontClips(v6.design.shape).length === 4 && /cut at 45°/.test(v6.said), v6.said);
 
 console.log(bad ? `\n${bad} FAILED` : "\nALL PASS");
 process.exit(bad ? 1 : 0);
