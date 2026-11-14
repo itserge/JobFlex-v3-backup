@@ -29,6 +29,9 @@ import {
   hasDeck,
   isDoubleDeck,
   shapeAreaSqFt,
+  shapeWithFront,
+  frontParts,
+  FRONT_LIMITS,
   sizeWords,
   type DeckDesign,
   type DeckShape,
@@ -371,6 +374,24 @@ export function runCommand(d0: DeckDesign, cmd: DeckCommand, env: RunEnv = {}): 
       } else if (cmd.kind === "clipped") {
         shape = { kind: "rect", ...base, front: { kind: "clipped", bulgeFt: 2, clipFt: cmd.clipFt ?? 2 } };
         words = "the front corners clipped at 45°";
+      } else if (cmd.kind === "parts") {
+        // THE FRONT IN PARTS (2026-11-14): from the deck's own size — the part named comes out past the rest.
+        const W = s.widthFt;
+        const near = Math.min(...frontParts(s).map((q) => q.yFt));
+        const far = clamp(near + clamp(cmd.outFt ?? 4, 1, 20), DECK_LIMITS.depthFt.min, DECK_LIMITS.depthFt.max);
+        const preset = cmd.preset ?? "t";
+        const part = halfFt(clamp(cmd.partWidthFt ?? (preset === "t" ? W / 3 : preset === "u" ? W / 4 : W / 2), FRONT_LIMITS.partFt, W - FRONT_LIMITS.partFt * (preset === "left" || preset === "right" ? 1 : 2)));
+        const list =
+          preset === "t"
+            ? [{ widthFt: (W - part) / 2, yFt: near }, { widthFt: part, yFt: far }, { widthFt: (W - part) / 2, yFt: near }]
+            : preset === "u"
+              ? [{ widthFt: part, yFt: far }, { widthFt: W - 2 * part, yFt: near }, { widthFt: part, yFt: far }]
+              : preset === "left"
+                ? [{ widthFt: part, yFt: far }, { widthFt: W - part, yFt: near }]
+                : [{ widthFt: W - part, yFt: near }, { widthFt: part, yFt: far }];
+        if (W < 3 * FRONT_LIMITS.partFt && preset !== "left" && preset !== "right") return no("It's too narrow to cut its front in three parts — make it wider first.");
+        shape = shapeWithFront(s, list);
+        words = preset === "t" ? "T-shaped" : preset === "u" ? "U-shaped" : `deeper on the ${preset}`;
       } else {
         shape = { kind: "rect", ...base };
         words = "a plain rectangle";
@@ -382,6 +403,11 @@ export function runCommand(d0: DeckDesign, cmd: DeckCommand, env: RunEnv = {}): 
       else if (cmd.kind === "L" && got.kind !== "L") return no("It's too small to cut a corner out and keep both legs at least 3 ft — make it bigger first.");
       if (cmd.kind === "curve" && got.kind === "rect" && got.front?.kind === "curve") said[0] = `A curved front, bowed out ${ftWords(got.front.bulgeFt)} at the middle.`;
       if (cmd.kind === "clipped" && got.kind === "rect" && got.front?.kind === "clipped") said[0] = `The front corners clipped ${ftWords(got.front.clipFt)} at 45°.`;
+      if (cmd.kind === "parts") {
+        if (!(got.kind === "wall" && got.front)) return no("That leaves the front straight — say how far the part comes out, at least a foot.");
+        said[0] = `Made it ${words}: ${got.front.map((q) => `${ftWords(q.x1Ft - q.x0Ft)} wide, ${ftWords(q.yFt)} out`).join("; ")} — left to right. ${Math.round(shapeAreaSqFt(got))} sq ft.`;
+        return out(next, said, { flash: [{ label: "Shape" }], light: { label: "Shape", step: "step-shape" } });
+      }
       const label = cmd.kind === "L" ? "Corner cut away" : "The front edge";
       return out(next, said, { flash: [{ label }], light: { label, step: "step-shape" } });
     }

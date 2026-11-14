@@ -24,7 +24,7 @@
 // in front of it (a porch roof, an old deck, a patio) is not taken off the photo (owner, 2026-10-23: "read just a shape
 // of that back wall and don't show existing deck or porch roofs, just shape and windows"). Without them the house is
 // drawn by rule, as before.
-import { BACK_LIMITS, DECK_LIMITS, normalizeBack, type DeckShape } from "./design";
+import { BACK_LIMITS, DECK_LIMITS, normalizeBack, partsShape, type BackPart, type DeckShape } from "./design";
 import { normalizeHouseRead, type HouseRead } from "./houseRead";
 
 /** The house's roof (2026-10-23, the shapes a photo shows): a hip, a gable with its ridge along the back wall (the triangles
@@ -367,10 +367,13 @@ export function deckShapeForHouse(shape: DeckShape, house: HouseDesign): { shape
   const out = under.filter((p) => p.depthFt > 0.5);
   const back = under.filter((p) => p.depthFt < -0.5);
   const hasBackNotch = shape.kind === "L" && shape.notch.corner.startsWith("back");
+  // A FRONT SET PART BY PART (2026-11-14) stays the deck's whatever the wall does behind it: the deck keeps its parts
+  // along a straight wall, and follows a stepped one part by part (no corner notch in its place).
+  const parted = shape.kind === "wall" && shape.front ? shape.front : null;
   // A wall brought level takes away the notch, or the steps the deck followed.
-  const rect = (): DeckShape => (hasBackNotch || shape.kind === "wall" ? { kind: "rect", widthFt: W, depthFt: D } : shape);
+  const rect = (): DeckShape => (parted ? partsOn(W, D, [{ x0Ft: 0, x1Ft: W, yFt: 0 }], parted) : hasBackNotch || shape.kind === "wall" ? { kind: "rect", widthFt: W, depthFt: D } : shape);
   if (!out.length && !back.length) return { shape: rect(), note: null };
-  if (!back.length && out.length === 1) {
+  if (!back.length && out.length === 1 && !parted) {
     const t = out[0];
     if (t.x0 <= 0.01 && t.x1 >= W - 0.01) return { shape: rect(), note: null };
     const atRight = t.x1 >= W - 0.01 && t.x0 > 0.01;
@@ -409,10 +412,11 @@ function followWall(shape: DeckShape, under: WallPart[], past: DeckPast | null =
     return { ...p, depthFt: Math.max(p.depthFt, ...near) };
   });
   const walled = parts.map((p) => ({ x0Ft: p.x0, x1Ft: p.x1, yFt: p.depthFt }));
+  const parted = shape.kind === "wall" && shape.front ? shape.front : null;
   if (!past) {
     const back = normalizeBack(walled, W, D);
-    if (!back) return { shape: { kind: "rect", widthFt: W, depthFt: D }, note };
-    return { shape: { kind: "wall", widthFt: W, depthFt: D, back }, note };
+    if (!back) return { shape: parted ? partsOn(W, D, [{ x0Ft: 0, x1Ft: W, yFt: 0 }], parted) : { kind: "rect", widthFt: W, depthFt: D }, note };
+    return { shape: partsOn(W, D, back, parted), note };
   }
   // The parts past the house's corners: no wall behind them, back along the house's side as far as was asked.
   const back = normalizeBack(
@@ -424,9 +428,15 @@ function followWall(shape: DeckShape, under: WallPart[], past: DeckPast | null =
     W,
     D,
   );
-  if (!back) return { shape: { kind: "rect", widthFt: W, depthFt: D }, note };
+  if (!back) return { shape: parted ? partsOn(W, D, [{ x0Ft: 0, x1Ft: W, yFt: 0 }], parted) : { kind: "rect", widthFt: W, depthFt: D }, note };
+  if (parted) return { shape: partsOn(W, D, back, parted), note };
   const pastNote = shapedFront ? `The deck runs past the house's corner — there it stands on its own beam and posts, with a straight front${frontCut ? " (no corner cut at the front)" : ""}.` : null;
   return { shape: { kind: "wall", widthFt: W, depthFt: D, back }, note: note ?? pastNote };
+}
+
+/** A deck in parts on this back: its front's own parts held against it (a front that comes out straight is left off; a straight back with it, and the deck is a rectangle). */
+function partsOn(W: number, D: number, back: BackPart[], front: ReadonlyArray<{ x0Ft: number; x1Ft: number; yFt: number }> | null): DeckShape {
+  return partsShape(W, D, back, front);
 }
 
 /** How far the deck runs past each corner of the house, and back along its side there, ft (0 = the wall reaches the deck's end). */
@@ -500,6 +510,8 @@ function endNotch(shape: DeckShape, t: WallPart, atRight: boolean, rect: () => D
  * deck set back to a rectangle loses the step that notched it.
  */
 export function houseForShape(house: HouseDesign, shape: DeckShape, opts: { drop?: boolean } = {}): HouseDesign {
+  // (A deck in parts follows the wall as it is: its shape asks nothing of the house.)
+  if (shape.kind === "wall") return house;
   const W = shape.widthFt;
   const want = shape.kind === "L" && shape.notch.corner.startsWith("back") ? shape.notch : null;
   const underBefore = partsUnderDeck(wallParts(house, shape), W).filter((p) => p.depthFt > 0.5);
@@ -974,6 +986,7 @@ export function wallWords(shape: DeckShape, house: HouseDesign): string {
   if (quickWallOf(shape, house) === "nook") return "The deck sits in a nook: the house wraps both its ends, its back edge on the wall.";
   const past = deckPast(house);
   if (fit.shape.kind === "wall" && (past.leftFt > 0 || past.rightFt > 0)) return `${pastWords(past)} There it stands on its own beam and posts — no ledger.`;
+  if (fit.shape.kind === "wall" && !fit.shape.back.some((b) => Math.abs(b.yFt) > 0.01)) return house.jogs.length ? "The wall's steps are past the deck's ends — the deck's back edge runs straight along the house." : "A straight wall behind the deck.";
   if (fit.shape.kind === "wall") return `The deck follows the wall, ${wallDeckWords(fit.shape)}.`;
   if (fit.shape.kind === "L" && fit.shape.notch.corner.startsWith("back")) return `The deck wraps the bump-out at its ${fit.shape.notch.corner === "back-right" ? "right" : "left"} end: a ${ftWords(fit.shape.notch.widthFt)} × ${ftWords(fit.shape.notch.depthFt)} notch, framed around it.`;
   return house.jogs.length ? "The wall's steps are past the deck's ends — the deck's back edge runs straight along the house." : "A straight wall behind the deck.";

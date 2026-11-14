@@ -1353,6 +1353,17 @@ function readShape(c: string, ctx: ParseContext): Read {
     return read([{ do: "shape", kind: "clipped", clipFt: v ?? undefined }], "deck");
   }
   if (/\b(?:rectangle|rectangular|straight (?:front|edge)|square corners|plain shape|regular shape|normal shape|box shape|simple shape|no (?:curve|notch|cutout|clip|angles?)|square it off)\b/.test(c)) return read([{ do: "shape", kind: "rect" }], "deck");
+  // THE FRONT IN PARTS (2026-11-14): "make it T-shaped", "a U shape", "a bump-out in the middle 8 by 4", "the left
+  // side 4 feet deeper". (A bump-out of the HOUSE is the wall's, read with the house.)
+  const tee = /\bt[- ]?shaped?\b|\bt shape\b|\b(?:bump ?out|bay|extension|section|part) (?:in|at|on) the (?:middle|center|centre)(?: of the (?:front|deck))?\b|\b(?:middle|center|centre)(?: part| section| third)? (?:sticks?|comes?|pushed|pushes|bumps?|stands?|goes|go) (?:out|farther|further)\b/.test(c);
+  const yoo = /\bu[- ]?shaped?\b|\bu shape\b|\b(?:both|the two|2) (?:ends|sides) (?:stick|come|pushed|push|bump|stand|go) (?:out|farther|further)\b/.test(c);
+  const sideOut = /\b(left|right) (?:side|half|end|part)(?: of the deck)?(?: is| goes| stands| comes| sticks)? (?:\d+(?:\.\d+)? (?:ft )?)?(?:deeper|farther out|further out|longer|out farther|out further)\b|\bdeeper on the (left|right)\b/.exec(c);
+  if ((tee || yoo || sideOut) && !/\b(?:house|wall|roof|stairs?|steps?)\b/.test(c)) {
+    const p = pair(c);
+    const one = lengthFt(c);
+    return read([{ do: "shape", kind: "parts", preset: tee ? "t" : yoo ? "u" : ((sideOut?.[1] ?? sideOut?.[2]) as "left" | "right"), partWidthFt: p ? ftOf(p.a) : undefined, outFt: p ? ftOf(p.b) : (one ?? undefined) }], "deck");
+  }
+  if (/\b(?:any|custom|free|own) shape\b|\bstepped front\b|\bfront in parts\b/.test(c)) return read([{ do: "shape", kind: "parts", preset: "t" }], "deck");
   return null;
 }
 

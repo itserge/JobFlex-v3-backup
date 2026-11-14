@@ -358,6 +358,17 @@ variants.push(["deck 6 ft past the house's right corner, aluminum rail, fascia",
 variants.push(["wrap-around deck: 8 ft past the right corner, 10 ft back, border, composite rail", { structure: "deck", shape: rect(30, 12), heightIn: 48, house: { ...base.house, rightFt: -8, wrapRightFt: 10 }, rail: { ...base.rail, type: "composite" }, decking: { ...base.decking, fascia: "match", border: 1 }, stairs: stairs("front", 6, 4) } as Patch]);
 variants.push(["deck round both corners of the house, second storey, cedar rail, double rim", { structure: "deck", shape: rect(40, 12), heightIn: 108, house: { ...base.house, storeys: 2, leftFt: -6, rightFt: -8, wrapLeftFt: 8, wrapRightFt: 12 }, rail: { ...base.rail, type: "cedar" }, framing: { ...base.framing, doubleRim: true }, decking: { ...base.decking, fascia: "match" }, stairs: [] } as Patch]);
 variants.push(["wrap-around deck on its own posts, flush beams, two-board border", { structure: "deck", placement: "beside", shape: rect(28, 14), heightIn: 30, house: { ...base.house, leftFt: -6, wrapLeftFt: 12 }, rail: { ...base.rail, type: "none" }, framing: { ...base.framing, beamStyle: "flush" }, decking: { ...base.decking, fascia: "match", border: 2 }, stairs: [] } as Patch]);
+// A FRONT SET PART BY PART (2026-11-14): a bay that comes out, a front stepping down a side, a U — each part's own
+// front beam, the rim, fascia, border and rail round every step in the front, and the inside corners where two meet.
+const parts = (list: Array<[number, number]>) => {
+  let x = 0;
+  const front = list.map(([w, y]) => ({ x0Ft: x, x1Ft: (x += w), yFt: y }));
+  return { kind: "wall" as const, widthFt: x, depthFt: Math.max(...list.map((q) => q[1])), back: [{ x0Ft: 0, x1Ft: x, yFt: 0 }], front };
+};
+variants.push(["deck with a bay in the middle of its front, fascia, composite rail, stairs off the bay", { structure: "deck", shape: parts([[7, 9], [10, 12], [7, 9]]), heightIn: 48, rail: { ...base.rail, type: "composite" }, decking: { ...base.decking, fascia: "match" }, stairs: stairs("front", 12, 4) } as Patch]);
+variants.push(["deck stepping down to the right in three parts, two-board border, aluminum rail", { structure: "deck", shape: parts([[8, 16], [8, 12], [8, 8]]), heightIn: 36, rail: { ...base.rail, type: "aluminum" }, decking: { ...base.decking, fascia: "match", border: 2 }, stairs: stairs("right", 4, 4) } as Patch]);
+variants.push(["U-shaped front on its own posts, flush beams, cedar rail, one-board border", { structure: "deck", placement: "beside", shape: parts([[6, 16], [12, 10], [6, 16]]), heightIn: 60, rail: { ...base.rail, type: "cedar" }, framing: { ...base.framing, beamStyle: "flush" }, decking: { ...base.decking, fascia: "match", border: 1 }, stairs: [] } as Patch]);
+variants.push(["a bay and the deck round the right corner, double rim", { structure: "deck", shape: parts([[8, 12], [10, 16], [12, 12]]), heightIn: 96, house: { ...base.house, rightFt: -8, wrapRightFt: 8 }, rail: { ...base.rail, type: "aluminum" }, framing: { ...base.framing, doubleRim: true }, decking: { ...base.decking, fascia: "match" }, stairs: [] } as Patch]);
 for (const [name, p] of variants) cases.push({ name, design: applyDeckPatch(base, p) });
 
 /**

@@ -104,6 +104,7 @@ import {
   type StairDesign,
   type StairTurn,
   type Structure,
+ FRONT_LIMITS, frontParts, shapeWithFront,
 } from "@/lib/deck/design";
 import { priceDeck, deckNotes, deckScope } from "@/lib/deck/pricing";
 import { railWords } from "@/lib/deck/rails";
@@ -1240,6 +1241,13 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
   const front = design.shape.kind === "rect" ? design.shape.front : undefined;
   // How far the deck runs past each corner of the house, and the one door that moves it (lib/deck/house).
   const pastHouse = deckPast(design.house);
+  // THE FRONT, PART BY PART (2026-11-14; lib/deck/design FrontPart): the parts as the list shows them, and the one door
+  // that sets them — the deck is as wide as the parts together and as deep as the deepest.
+  const partsFront = design.shape.kind === "wall" && design.shape.front ? design.shape.front : null;
+  const partsList = (partsFront ?? []).map((q) => ({ widthFt: q.x1Ft - q.x0Ft, yFt: q.yFt }));
+  const setFrontParts = (list: Array<{ widthFt: number; yFt: number }>) => patch({ shape: shapeWithFront(design.shape, list) });
+  /** A new part beside this one: 6 ft wide, 4 ft nearer the house — or farther out, where nearer leaves no deck. */
+  const newPartBy = (q: { widthFt: number; yFt: number } | undefined) => ({ widthFt: 6, yFt: !q ? design.shape.depthFt : q.yFt - 4 >= DECK_LIMITS.depthFt.min + 2 ? q.yFt - 4 : Math.min(DECK_LIMITS.depthFt.max, q.yFt + 4) });
   const goPast = (side: "left" | "right", pastFt: number, wrapFt: number) => {
     const r = setDeckPast(design.house, design.shape, side, pastFt, wrapFt, { minWidthFt: DECK_LIMITS.widthFt.min, maxWidthFt: DECK_LIMITS.widthFt.max });
     patch({ house: r.house, shape: r.shape });
@@ -1523,9 +1531,20 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
       <div className="v1-size-group" role="group" aria-label="Deck footprint">
         <Answers
           label="Shape"
-          value={design.shape.kind}
+          value={partsFront ? "parts" : design.shape.kind}
           onChange={(k) => {
-            if (k === design.shape.kind || k === "wall") return;
+            if (k === (partsFront ? "parts" : design.shape.kind) || k === "wall") return;
+            // THE FRONT IN PARTS (2026-11-14): an L keeps its two fronts as two parts; any other deck starts with a bay —
+            // its middle third 4 ft farther out — to be made whatever is wanted in the list below.
+            if (k === "parts") {
+              const now = frontParts(design.shape);
+              const W0 = design.shape.widthFt;
+              const side = Math.max(FRONT_LIMITS.partFt, Math.round(W0 / 3));
+              const bay = W0 - 2 * side >= FRONT_LIMITS.partFt ? [{ widthFt: side, yFt: design.shape.depthFt }, { widthFt: W0 - 2 * side, yFt: Math.min(DECK_LIMITS.depthFt.max, design.shape.depthFt + 4) }, { widthFt: side, yFt: design.shape.depthFt }] : [{ widthFt: W0 / 2, yFt: Math.min(DECK_LIMITS.depthFt.max, design.shape.depthFt + 4) }, { widthFt: W0 / 2, yFt: design.shape.depthFt }];
+              return setFrontParts(now.length > 1 ? now.map((q) => ({ widthFt: q.x1Ft - q.x0Ft, yFt: q.yFt })) : bay);
+            }
+            // A rectangle asked for while the front is in parts: one straight front, the wall straight behind it.
+            if (k === "rect" && partsFront) return patch({ shape: { kind: "rect", widthFt: design.shape.widthFt, depthFt: design.shape.depthFt }, house: { ...levelUnderDeck(design.house, design.shape), leftFt: Math.max(0, design.house.leftFt), rightFt: Math.max(0, design.house.rightFt) } });
             // A rectangle asked for while the deck follows the wall: the wall under it goes straight, and the deck with it
             // (and where the deck ran past the house's corner, the wall is behind the whole of it again).
             if (k === "rect" && design.shape.kind === "wall") return patch({ house: { ...levelUnderDeck(design.house, design.shape), leftFt: Math.max(0, design.house.leftFt), rightFt: Math.max(0, design.house.rightFt) } });
@@ -1534,7 +1553,8 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
           options={[
             { value: "rect", label: "Rectangle", sub: "Four straight sides" },
             { value: "L", label: "L-shaped", sub: "One corner cut away" },
-            ...(design.shape.kind === "wall" ? [pastHouse.leftFt > 0 || pastHouse.rightFt > 0 ? { value: "wall" as const, label: pastHouse.wrapLeftFt > 0 || pastHouse.wrapRightFt > 0 ? "Round the house" : "Past the house", sub: "It runs on past the house's corner" } : { value: "wall" as const, label: "Follows the wall", sub: "Its back steps with the house" }] : []),
+            { value: "parts" as const, label: "Any shape", sub: "The front set part by part" },
+            ...(design.shape.kind === "wall" && !partsFront ? [pastHouse.leftFt > 0 || pastHouse.rightFt > 0 ? { value: "wall" as const, label: pastHouse.wrapLeftFt > 0 || pastHouse.wrapRightFt > 0 ? "Round the house" : "Past the house", sub: "It runs on past the house's corner" } : { value: "wall" as const, label: "Follows the wall", sub: "Its back steps with the house" }] : []),
           ]}
         />
         <div className="v1-grid2">
@@ -1559,7 +1579,45 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
             </div>
             <p className="v1-hint">A back corner is where the house steps out into the deck — a bump-out or a bay.</p>
           </div>
-        ) : design.shape.kind === "wall" && !design.shape.back.some((b) => !b.open && Math.abs(b.yFt) > 0.01) ? null : design.shape.kind === "wall" ? (
+        ) : null}
+        {partsFront ? (
+          <div className="v1-sub" data-deck-front-parts>
+            <p className="v1-hint">
+              <b>The front, part by part</b> — left to right as you look at the deck from the yard. Each part is as wide as you set and stands that far out from the house: a bay that comes out, a side that stops short, a T, a U, steps down one side.
+            </p>
+            <div className="v1-rows">
+              {partsFront.map((q, i) => (
+                <div key={i} className="v1-item" data-deck-front-part={i + 1}>
+                  <div className="v1-item-head">
+                    <span className="v1-item-title">
+                      Part {i + 1} — {feetText(q.x1Ft - q.x0Ft)} ft wide, {feetText(q.yFt)} ft out
+                    </span>
+                    <button type="button" className="v1-btn v1-btn-sm v1-btn-danger" onClick={() => setFrontParts(partsList.filter((_, k) => k !== i))} data-deck-front-part-remove>
+                      Remove
+                    </button>
+                  </div>
+                  <div className="v1-grid2">
+                    <Field label="How wide" aside="ft">
+                      <NumberInput label={`Part ${i + 1}: how wide, feet`} value={q.x1Ft - q.x0Ft} parse={parseFeet} format={feetText} min={FRONT_LIMITS.partFt} max={DECK_LIMITS.widthFt.max} onCommit={(n2) => setFrontParts(partsList.map((x, k) => (k === i ? { ...x, widthFt: n2 } : x)))} />
+                    </Field>
+                    <Field label="Out from the house" aside="ft">
+                      <NumberInput label={`Part ${i + 1}: how far out from the house, feet`} value={q.yFt} parse={parseFeet} format={feetText} min={DECK_LIMITS.depthFt.min} max={DECK_LIMITS.depthFt.max} onCommit={(n2) => setFrontParts(partsList.map((x, k) => (k === i ? { ...x, yFt: n2 } : x)))} />
+                    </Field>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="v1-row-acts">
+              <button type="button" className="v1-btn v1-btn-sm" disabled={partsFront.length >= FRONT_LIMITS.parts} onClick={() => setFrontParts([newPartBy(partsList[0]), ...partsList])} data-deck-front-part-add="left">
+                <Plus size={15} strokeWidth={2.5} aria-hidden="true" /> A part at the left end
+              </button>
+              <button type="button" className="v1-btn v1-btn-sm" disabled={partsFront.length >= FRONT_LIMITS.parts} onClick={() => setFrontParts([...partsList, newPartBy(partsList[partsList.length - 1])])} data-deck-front-part-add="right">
+                <Plus size={15} strokeWidth={2.5} aria-hidden="true" /> A part at the right end
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {design.shape.kind === "L" ? null : design.shape.kind === "wall" && !design.shape.back.some((b) => !b.open && Math.abs(b.yFt) > 0.01) ? null : design.shape.kind === "wall" ? (
           <div className="v1-sub" data-deck-follows-wall>
             <p className="v1-hint">
               <b>The back follows the house wall</b> — {wallDeckWords(design.shape)}. It reaches into a set-back, its ledger on that wall, and steps around a bump-out. Move the wall in the drawing and the deck follows.

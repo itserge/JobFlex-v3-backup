@@ -58,7 +58,7 @@ const roofSet = z
 const COMMAND = z.discriminatedUnion("do", [
   z.object({ do: z.literal("size"), width: amount.optional(), depth: amount.optional(), areaSqFt: z.number().positive().max(2400).optional(), square: z.boolean().optional(), from: z.enum(["left", "right", "house"]).optional() }),
   z.object({ do: z.literal("height"), in: amount }),
-  z.object({ do: z.literal("shape"), kind: z.enum(["rect", "L", "curve", "clipped"]), corner: z.enum(["front-left", "front-right", "back-left", "back-right"]).optional(), notchWidthFt: z.number().positive().optional(), notchDepthFt: z.number().positive().optional(), bulgeFt: z.number().positive().optional(), clipFt: z.number().positive().optional() }),
+  z.object({ do: z.literal("shape"), kind: z.enum(["rect", "L", "curve", "clipped", "parts"]), corner: z.enum(["front-left", "front-right", "back-left", "back-right"]).optional(), notchWidthFt: z.number().positive().optional(), notchDepthFt: z.number().positive().optional(), bulgeFt: z.number().positive().optional(), clipFt: z.number().positive().optional(), preset: z.enum(["t", "u", "left", "right"]).optional(), partWidthFt: z.number().positive().optional(), outFt: z.number().positive().optional() }),
   z.object({ do: z.literal("slide"), ft: z.union([z.number().finite(), z.literal("center")]) }),
   z.object({ do: z.literal("placement"), to: z.enum(["attached", "beside", "detached"]) }),
   z.object({ do: z.literal("wall"), to: z.enum(["wood-rim", "engineered-rim", "foam-sheathing", "concrete", "brick-veneer", "hollow-block", "cantilever", "open-truss", "sip-icf", "unknown"]) }),
@@ -176,7 +176,7 @@ export function checkCommands(raw: unknown): { cmds: DeckCommand[]; dropped: num
 export const COMMAND_GUIDE = `Commands (JSON objects, "do" picks the kind). Amounts: {"to":n} sets, {"by":n} changes by n (negative = less), {"times":n} scales.
 size {width?, depth?: amount in FEET (width along the house, depth out from it); areaSqFt?; square?; from?: "left"|"right" (which end grows) | "house" (the deck as wide as the whole house wall)}
 height {in: amount in INCHES (deck floor above ground)}
-shape {kind: rect|L|curve|clipped, corner?: front-left|front-right|back-left|back-right, notchWidthFt?, notchDepthFt?, bulgeFt?, clipFt?}
+shape {kind: rect|L|curve|clipped|parts, corner?: front-left|front-right|back-left|back-right, notchWidthFt?, notchDepthFt?, bulgeFt?, clipFt?, preset?: t|u|left|right, partWidthFt?, outFt?} (parts = the front set part by part: preset t — the middle comes out; u — the two ends come out; left / right — that half stands farther out; partWidthFt = the part that comes out, outFt = how far)
 slide {ft: number (+ right, − left) or "center"}  — moves the deck along the house wall
 placement {to: attached|beside|detached}; wall {to: wood-rim|engineered-rim|foam-sheathing|concrete|brick-veneer|hollow-block|cantilever|open-truss|sip-icf|unknown}
 structure {to: deck|covered-deck|gazebo|pergola}; floor {to: deck|slab|existing|ground} (gazebo/pergola only; slab = a NEW slab poured and priced, existing = a slab or patio already there, no concrete priced)

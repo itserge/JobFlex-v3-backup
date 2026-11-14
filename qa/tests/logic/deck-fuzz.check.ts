@@ -4,7 +4,7 @@
 // zero-size parts that made a scene unreadable, and a normalize drift — all fixed the same day.
 //   NODE_PATH="" npx tsx --tsconfig tsconfig.json qa/tests/logic/deck-fuzz.check.ts [nInRails] [nJunk]
 //   NODE_PATH="" npx tsx --tsconfig tsconfig.json qa/tests/logic/deck-fuzz.check.ts --repro A40 B5293 [--json]
-import { defaultDeckDesign, normalizeDeckDesign, structureWords, sizeWords, FIXTURE_KINDS, STRUCTURES, FLOORS, ROOF_KINDS, ROOF_PLAN_SHAPES, ROOFINGS, GUTTER_KINDS, PLACEMENTS, NOTCH_CORNERS, type DeckDesign } from "../../../src/lib/deck/design";
+import { defaultDeckDesign, normalizeDeckDesign, shapeZones, structureWords, sizeWords, FIXTURE_KINDS, STRUCTURES, FLOORS, ROOF_KINDS, ROOF_PLAN_SHAPES, ROOFINGS, GUTTER_KINDS, PLACEMENTS, NOTCH_CORNERS, type DeckDesign } from "../../../src/lib/deck/design";
 import { priceDeck, deckScope, deckNotes } from "../../../src/lib/deck/pricing";
 import { writeFileSync } from "node:fs";
 import { applyDeckPatch, deckChecks } from "../../../src/lib/deck/checks";
@@ -41,7 +41,17 @@ function randomWall(r: Rng, depthHint: number): unknown {
   const back = xs.slice(0, -1).map((x0, i) => ({ x0Ft: x0, x1Ft: xs[i + 1], yFt: r() < 0.3 ? 0 : r() < 0.5 ? -odd(r, 0, r() < 0.1 ? 30 : 16) : odd(r, 0, r() < 0.1 ? depthFt + 4 : Math.max(0, depthFt - 3)) }));
   // (Parts said to be past the house's corner — 2026-11-14 — anywhere at all: the house decides, and the reader holds them to it.)
   if (r() < 0.2) for (const b of back as Array<Record<string, unknown>>) if (r() < 0.4) b.open = pick(r, [true, true, "yes", 1]);
+  // …and a front set part by part (2026-11-14), its cuts and its distances as random as the back's.
+  if (r() < 0.35) return { kind: "wall", widthFt, depthFt, back, front: randomFront(r, widthFt, depthFt) };
   return { kind: "wall", widthFt, depthFt, back };
+}
+
+/** A front in 1–9 parts: widths from a sliver up, standing from under the wall to past the deck's depth. */
+function randomFront(r: Rng, widthFt: number, depthFt: number): unknown {
+  const n = int(r, 1, 9);
+  const cuts = Array.from({ length: n - 1 }, () => odd(r, 0, widthFt)).sort((a, b) => a - b);
+  const xs = [0, ...cuts, r() < 0.9 ? widthFt : widthFt + 5];
+  return xs.slice(0, -1).map((x0, i) => ({ x0Ft: x0, x1Ft: xs[i + 1], yFt: r() < 0.1 ? pick(r, [-3, 0, 99, "x"]) : odd(r, 2, depthFt + 6) }));
 }
 
 /** A whole random design whose deck follows a stepped house wall. */
@@ -109,6 +119,8 @@ function randomDesign(r: Rng): unknown {
   d.extras.items = r() < 0.7 ? [] : Array.from({ length: int(r, 1, 45) }, (_, i) => ({ id: r() < 0.9 ? `o${i}` : pick(r, ["", "BAD ID", "o1"]), name: pick(r, NAMES), qty: odd(r, -1, 500), unit: pick(r, ["ea", "pcs", "ft", "sq ft", "bags", "yd"]), price: odd(r, -1, 5000) }));
   d.rail.customName = r() < 0.3 ? pick(r, NAMES) : "";
   for (const f of d.electrical.fixtures) if (r() < 0.2) f.custom = { name: pick(r, NAMES), price: odd(r, 0, 3000) };
+  // …and a front set part by part over a straight wall (2026-11-14): any deck, now and then.
+  if (r() < 0.15) d.shape = { kind: "wall", widthFt: d.shape.widthFt, depthFt: d.shape.depthFt, back: [{ x0Ft: 0, x1Ft: d.shape.widthFt, yFt: 0 }], front: randomFront(r, Number(d.shape.widthFt), Number(d.shape.depthFt)) };
   // …and the deck run past a corner of the house and back along its side (2026-11-14) — in the rails and well out of
   // them. (Last, so every design before this draws the numbers it always drew.)
   if (r() < 0.3) {
@@ -165,6 +177,18 @@ function exercise(d: DeckDesign, tag: string, out: string[]) {
     if (Math.abs(openL - Math.max(0, -d.house.leftFt)) > 0.05 || Math.abs(openR - Math.max(0, -d.house.rightFt)) > 0.05) out.push(`the deck's open ends (${openL}, ${openR}) are not the house's (${d.house.leftFt}, ${d.house.rightFt})  [${tag}]`);
     if (back.some((b, i) => b.open && i > 0 && i < back.length - 1)) out.push(`an open part in the middle of the deck  [${tag}]`);
     if (back.some((b) => b.open && b.yFt > 0)) out.push(`an open part in front of the house line  [${tag}]`);
+    // A FRONT IN PARTS (2026-11-14): every rectangle of the deck has 3 ft of deck in it front to back and is no
+    // narrower than a part may be; the deck is as deep as its deepest part; the parts tile its width.
+    if (d.shape.kind === "wall" && d.shape.front) {
+      const fr = d.shape.front;
+      if (Math.abs(Math.max(...fr.map((q) => q.yFt)) - d.shape.depthFt) > 0.01) out.push(`the deck's depth ${d.shape.depthFt} is not its deepest part's  [${tag}]`);
+      if (fr[0].x0Ft !== 0 || Math.abs(fr[fr.length - 1].x1Ft - W) > 0.01 || fr.some((q, i) => i > 0 && Math.abs(q.x0Ft - fr[i - 1].x1Ft) > 0.01)) out.push(`the front's parts do not tile the deck's width  [${tag}]`);
+      for (const z of shapeZones(d.shape)) {
+        if (z.y1 - z.y0 < 36 - 0.6) out.push(`a part of the deck ${z.y1 - z.y0} in. front to back  [${tag}]`);
+        // (A sliver of the WALL — a chimney, a pilaster — is stepped around as it always was; the front never cuts one.)
+        if (z.x1 - z.x0 < 6 && !back.some((b) => Math.abs(b.x0Ft * 12 - z.x0) < 0.6 && Math.abs(b.x1Ft * 12 - z.x1) < 0.6)) out.push(`a part of the deck ${z.x1 - z.x0} in. wide  [${tag}]`);
+      }
+    }
     const f0 = pkg.structure.frame;
     if (f0) {
       const x0 = -d.house.leftFt * 12 - 0.6;

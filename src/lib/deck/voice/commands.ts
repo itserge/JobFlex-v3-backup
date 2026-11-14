@@ -140,7 +140,9 @@ export type StairTurnSaid = "add" | "remove" | "straight" | "left" | "right" | "
 export type DeckCommand =
   | { do: "size"; width?: Amount; depth?: Amount; areaSqFt?: number; square?: boolean; from?: "left" | "right" | "house" }
   | { do: "height"; in: Amount }
-  | { do: "shape"; kind: "rect" | "L" | "curve" | "clipped"; corner?: NotchCorner; notchWidthFt?: number; notchDepthFt?: number; bulgeFt?: number; clipFt?: number }
+  // `parts` (2026-11-14): the front set part by part — a T (the middle comes out), a U (the two ends come out), or
+  // deeper on one side; `partWidthFt` the part that comes out, `outFt` how far.
+  | { do: "shape"; kind: "rect" | "L" | "curve" | "clipped" | "parts"; corner?: NotchCorner; notchWidthFt?: number; notchDepthFt?: number; bulgeFt?: number; clipFt?: number; preset?: "t" | "u" | "left" | "right"; partWidthFt?: number; outFt?: number }
   | { do: "slide"; ft: number | "center" }
   | { do: "placement"; to: Placement }
   | { do: "wall"; to: WallTypeId }
