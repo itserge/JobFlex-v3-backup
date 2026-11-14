@@ -1312,6 +1312,18 @@ function readSite(c: string): Read {
 /*  Extras: tear-out, drainage                                         */
 /* ------------------------------------------------------------------ */
 
+/** Skirting under the deck (2026-11-14; lib/deck/skirt): "add lattice skirting", "skirt it in deck boards", "close in the underside", "hide the posts". */
+const SKIRT_WORDS = /\bskirt(?:ing|ed|s)?\b|\blattice (?:under|below|underneath|beneath)\b|\b(?:close|enclose|box) (?:in |off |up )?(?:the )?(?:under ?side|bottom|space (?:under|below)|area (?:under|below))\b|\bhide (?:the )?(?:posts|frame|framing|under ?side|space under)\b/;
+/** What a skirt is made of, said after a "with": "skirt the deck with deck boards". */
+const SKIRT_OF = /^(?:the |some |)(?:deck(?:ing)? |composite |matching |horizontal |solid |wood(?:en)? |framed |)(?:boards?|lattice|slats?)\b/;
+
+/** Lattice unless boards are named. (Read before the roof's rule, which owns "lattice" as a wall between a roof's posts.) */
+function readSkirt(c: string): Read {
+  if (!SKIRT_WORDS.test(c)) return null;
+  const off = isRemove(c) || /\bno skirt(?:ing)?\b|\bwithout (?:a |any )?skirt(?:ing)?\b|\bopen under(?:neath)?\b/.test(c);
+  return read([{ do: "extras", skirt: off ? "none" : /\bboards?\b|\bhorizontal\b|\bsolid\b|\bslat(?:s|ted)?\b|\bmatch(?:ing|es)?\b|\bcomposite\b/.test(c) && !/\blattice\b/.test(c) ? "boards" : "lattice" }], "deck");
+}
+
 function readExtras(c: string): Read {
   if (/\b(?:tear(?:ing)? (?:out|off|down)|demo(?:lish|lition|ing)?|rip(?:ping)? out|(?:remove|take down|haul away) (?:the )?(?:old|existing) deck|old deck (?:out|removed|gone)|existing deck)\b/.test(c)) {
     if (/\bno demo\b|\bnothing to tear out\b|\bno old deck\b/.test(c)) return read([{ do: "extras", demoSqFt: 0 }], "deck");
@@ -1734,6 +1746,8 @@ export function readClause(raw: string, ctx: ParseContext): ClauseRead {
   if (custom) return { text, ...custom, unknown: false };
   const show = readShow(c);
   if (show) return { text, ...show, unknown: false };
+  const skirt = readSkirt(c);
+  if (skirt) return { text, ...skirt, unknown: false };
   // A clause that names a part to change is read by that part's rule; "show me", "at night" and the like by the view.
   const head = headOf(c, ctx.design.structure !== "deck");
   const own = head ? DETECTORS[head] : null;
@@ -1806,7 +1820,9 @@ function readParts(text: string, ctx0: ParseContext): { clauses: ClauseRead[]; c
     if (ownVerb) verb = ownVerb;
     // Kept whole: a question, a what-if, a taught phrase, and a roof's name that has "with" in it ("a hip with gables").
     const whole = /^(?:when(?:ever)? i say|if i say|when i tell you|what if|what about|how about|how much|show me (?:it )?with)\b/.test(trimClause(part)) || QUESTION_HEAD.test(trimClause(part)) || ROOF_KIND_WORDS.some(([re]) => /\bwith\b/.test(re.exec(trimClause(part))?.[0] ?? ""));
-    const withParts = whole ? [part] : trimClause(part).split(/\s+(?:with|along with|together with|including|that has|which has|having)\s+/);
+    const withParts0 = whole ? [part] : trimClause(part).split(/\s+(?:with|along with|together with|including|that has|which has|having)\s+/);
+    // "Skirt the deck with deck boards": the "with" names what the skirt is made of — one command, not two.
+    const withParts = withParts0.length === 2 && SKIRT_WORDS.test(withParts0[0]) && SKIRT_OF.test(withParts0[1]) ? [part] : withParts0;
     let reads: ClauseRead[] | null = null;
     if (withParts.length > 1) {
       let wctx = ctx;

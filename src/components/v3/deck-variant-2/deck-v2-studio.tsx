@@ -106,6 +106,7 @@ import type { DeckEdit, DeckPick, SceneHighlight } from "@/components/estimator/
 import { fieldLight, type FieldFocus } from "@/lib/deck/fieldParts";
 import type { PlanEdgeHit } from "@/components/v3/deck-estimator-blueprint/deck-plan";
 import { nearestStairEdge } from "@/components/v3/deck-estimator-blueprint/deck-plan";
+import { SKIRT_KINDS, SKIRT_LABEL } from "@/lib/deck/skirt";
 import { CUSTOM, CUSTOM_LABEL, CustomBox, Field, FieldScope, Fold, NameInput, NumberInput, Scope, Seg, Toggle, ago, cx, feetText, intText, money, parseFeet, parseInches, priceShow, priceText, type FieldScopeValue } from "./deck-v2-controls";
 import { DeckV2Plan, type Part, type PartHit } from "./deck-v2-plan";
 import { DeckV2ClientLinks } from "./deck-v2-client";
@@ -1551,6 +1552,10 @@ export function DeckV2Studio({ initialBook, homeState, initialAddress, clientId,
           <NumberInput label="Waste allowance on the boards, percent" value={design.decking.wastePct} parse={intText} format={String} min={0} max={30} onCommit={(n2) => patch({ decking: { wastePct: n2 } })} />
         </Field>
       </div>
+      {/* Skirting under the deck (2026-11-14; lib/deck/skirt): the first of the luxury options. */}
+      <Field label="Skirting under the deck" wide aside={design.extras.skirt ? (pkg.structure.skirt ? `${Math.round(pkg.structure.skirt.lf)} ft, up to ${pkg.structure.skirt.heightIn} in. high` : "the deck is too low for it") : undefined}>
+        <Seg label="Skirting under the deck" value={design.extras.skirt ?? "none"} onChange={(v) => patch({ extras: { skirt: v === "none" ? undefined : v } })} options={SKIRT_KINDS.map((v) => ({ value: v, label: SKIRT_LABEL[v] }))} />
+      </Field>
       {design.custom.fastening ? (
         <CustomBox slot="fastening" title="Fastening" product={design.custom.fastening} unit="sq ft of deck" fresh={freshCustom === "fastening"} onDone={freshDone} onChange={(p) => setCustom("fastening", p)} onBack={() => setCustom("fastening", undefined)} note="Priced per square foot of deck — screws or clips and their bits, all in.">
           {frame.decking.hiddenFasteners ? (

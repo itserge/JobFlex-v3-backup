@@ -53,6 +53,7 @@ import { openingChecks } from "./openingChecks";
 import { deckPast, pastWords } from "./house";
 import { railHeldWords, railMountLine } from "./rails";
 import { borderWords } from "./surface";
+import { SKIRT_GAP_IN, SKIRT_GROUND_CLEAR_IN, SKIRT_MIN_IN } from "./skirt";
 
 /** A change to a design, part by part; anything left out stays as it is. */
 export type DeckPatch = {
@@ -194,6 +195,24 @@ export function deckChecks(s: DeckStructure): DeckCheck[] {
   // The picture-frame border, said where the builder looks (2026-11-13): how wide, how far, what goes under it.
   const bordered = frame && s.surface && s.surface.border > 0 ? s.surface : null;
   if (bordered) add({ id: "decking-border", level: "pass", part: "Decking", text: `${borderWords(bordered).replace(/^a /, "A ")}: mitred at the corners${bordered.borderBackingIn.length ? `, with a joist added under its inner edge along the sides (${Math.round(bordered.borderBackingIn.reduce((a, v) => a + v, 0) / 12)} ft of ${frame!.joistSize})` : ""}${bordered.product.border ? `, bought apart in ${bordered.product.border.name}` : ", cut from the deck's own boards"}.`, rule: "The decking maker's installation guide" });
+  // SKIRTING (2026-11-14; lib/deck/skirt): what hangs under the deck, said where the builder looks — and where none
+  // could. (Ids clear of lib/deck/settle AUTO_FIX: a finish the builder chose, not a size to settle.)
+  if (frame && design.extras.skirt) {
+    const sk = s.skirt;
+    const what = design.extras.skirt === "lattice" ? "Lattice in a 1x4 border" : `The deck's own boards laid level, ${SKIRT_GAP_IN} in. apart`;
+    if (!sk) {
+      add({ id: "deck-skirt-none", level: "warn", part: "Skirting", text: `No skirting is drawn: no open edge has ${SKIRT_MIN_IN} in. between the frame and the ground (a skirt leaves ${SKIRT_GROUND_CLEAR_IN} in. of air over the soil, and wide steps close the edges they run along). A deck this low is closed by its fascia; the price has no skirting in it.`, fix: { label: "Take the skirting off", patch: { extras: { skirt: undefined } } } });
+    } else {
+      const bays = sk.panels.length;
+      const stepped = new Set(sk.panels.map((q) => Math.round(q.bottomIn))).size > 1;
+      add({
+        id: "deck-skirt",
+        level: "pass",
+        part: "Skirting",
+        text: `${what} under ${Math.round(sk.lf)} ft of the deck's open edges — ${bays} ${bays === 1 ? "bay" : "bays"}, 8 ft long at most, up to ${sk.heightIn} in. high (${Math.round(sk.sqFt)} sq ft) — on a treated 2x4 frame: a rail fastened under the rim, a rail a hand above the ground, an upright every ${design.extras.skirt === "boards" ? 2 : 4} ft. It stops ${SKIRT_GROUND_CLEAR_IN} in. clear of the soil so it cannot wick water${stepped ? ", stepping down bay by bay with the ground" : ""}${sk.roundPosts ? `; it is cut round the ${sk.roundPosts === 1 ? "post that stands" : `${sk.roundPosts} posts that stand`} at the deck's edge` : ""}. Hang one bay on hinges to get under the deck.${sk.lowFt > 0 ? ` Left off ${Math.round(sk.lowFt)} ft of edge where the frame is less than ${SKIRT_MIN_IN} in. above the ground.` : ""}${design.extras.skirt === "boards" ? " The gaps between the boards are the frame's air: do not close them, and keep the ground under the deck sloped to drain." : ""}`,
+      });
+    }
+  }
   if (s.lower) deckFrameChecks(s.lower.frame, add, null, s.lower.place === "under" ? "Lower deck — " : "Lower level — ");
   // A DOUBLE DECK (2026-11-13; lib/deck/structure): what the two decks on one set of posts came to.
   if (frame && design.lower.on && design.lower.place === "under") doubleDeckChecks(s, add);

@@ -9,7 +9,9 @@ import { priceDeck, deckScope, deckNotes } from "../../../src/lib/deck/pricing";
 import { writeFileSync } from "node:fs";
 import { applyDeckPatch, deckChecks } from "../../../src/lib/deck/checks";
 import { deckGrips, moveGrip } from "../../../src/lib/deck/byHand";
-import { buildStructure } from "../../../src/lib/deck/structure";
+import { buildStructure, structureLevels } from "../../../src/lib/deck/structure";
+import { POST_ACTUAL_IN } from "../../../src/lib/deck/codeTables";
+import { SKIRT_BAY_MAX_IN, SKIRT_CLEAR_IN, SKIRT_GROUND_CLEAR_IN, SKIRT_MIN_IN, SKIRT_THICK_IN, type SkirtPanel } from "../../../src/lib/deck/skirt";
 import { deckScene, parseDeckScene, sceneBuildLayers, SCENE_LAYERS, SCENE_MAX_BOXES, SCENE_MAX_FOOTINGS, SCENE_MAX_DIAGONALS, SCENE_MAX_POLYS } from "../../../src/lib/deck/scene";
 import { deckElevation, elevationOverlay, defaultPlacement } from "../../../src/lib/deck/elevation";
 import { deckConvertSchema } from "../../../src/lib/deck/convertSchema";
@@ -161,6 +163,40 @@ const stats = { maxBoxes: 0, maxBytes: 0, maxLines: 0, maxScope: 0, maxNotes: 0,
 const ownKey = (k: string, d: DeckDesign) =>
   k.startsWith("custom.fixture.") ? !!d.electrical.fixtures.find((f) => f.id === k.slice("custom.fixture.".length))?.custom : k.startsWith("custom.") ? !!(d.custom as any)[k.slice("custom.".length)] : k.startsWith("own.") ? d.extras.items.some((it) => it.id === k.slice("own.".length)) : false;
 
+/** SKIRTING (2026-11-14): asked for on two designs in five (and as junk on a few) — by the design's own number, so the random stream every other option is drawn from stays what it was. */
+function skirtFor(tag: string, raw: unknown): unknown {
+  const i = Number(tag.slice(1));
+  if (!raw || typeof raw !== "object" || Array.isArray(raw) || !Number.isFinite(i)) return raw;
+  const o = raw as Record<string, unknown>;
+  const skirt = i % 97 === 0 ? "brick" : i % 5 === 1 ? "lattice" : i % 5 === 3 ? "boards" : undefined;
+  if (!skirt || (o.extras !== undefined && (typeof o.extras !== "object" || o.extras === null))) return raw;
+  return { ...o, extras: { ...((o.extras as object) ?? {}), skirt } };
+}
+type Pt = { x: number; y: number };
+/** A skirt bay as it lies in plan: a thin rectangle outside the deck's edge. */
+const skirtQuad = (p: SkirtPanel): Pt[] => [SKIRT_CLEAR_IN, SKIRT_CLEAR_IN + SKIRT_THICK_IN].flatMap((o, k) => { const a = { x: p.x0 + p.outX * o, y: p.y0 + p.outY * o }, b = { x: p.x1 + p.outX * o, y: p.y1 + p.outY * o }; return k === 0 ? [a, b] : [b, a]; });
+/** Do two convex shapes overlap by more than a hair (separating axes)? */
+const quadsOverlap = (A: Pt[], B: Pt[], eps = 0.01) => {
+  for (const poly of [A, B]) for (let i = 0; i < poly.length; i++) {
+    const p = poly[i], q = poly[(i + 1) % poly.length];
+    const nx = q.y - p.y, ny = p.x - q.x, len = Math.hypot(nx, ny) || 1;
+    const pa = A.map((v) => (v.x * nx + v.y * ny) / len), pb = B.map((v) => (v.x * nx + v.y * ny) / len);
+    if (Math.max(...pa) <= Math.min(...pb) + eps || Math.max(...pb) <= Math.min(...pa) + eps) return false;
+  }
+  return true;
+};
+
+/** Does an outline cross itself? (A junk wall can make one: a corner cut through a sliver of the wall. Nothing laid along its edges can be told apart there.) */
+const ringCrossesItself = (ring: Pt[]) => {
+  const side = (a: Pt, b: Pt, c: Pt) => Math.sign((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
+  for (let i = 0; i < ring.length; i++) for (let j = i + 2; j < ring.length; j++) {
+    if (i === 0 && j === ring.length - 1) continue;
+    const a = ring[i], b = ring[(i + 1) % ring.length], c = ring[j], e = ring[(j + 1) % ring.length];
+    if (side(a, b, c) * side(a, b, e) < 0 && side(c, e, a) * side(c, e, b) < 0) return true;
+  }
+  return false;
+};
+
 function exercise(d: DeckDesign, tag: string, out: string[]) {
   const t0 = Date.now();
   const d2 = normalizeDeckDesign(JSON.parse(JSON.stringify(d)));
@@ -168,6 +204,29 @@ function exercise(d: DeckDesign, tag: string, out: string[]) {
   if (drift) out.push(`normalize drifts: ${drift}  [${tag}]`);
   const pkg = priceDeck(d);
   if (!(Number.isFinite(pkg.subtotal) && pkg.subtotal >= 0)) out.push(`subtotal bad: ${pkg.subtotal}  [${tag}]`);
+  // SKIRTING (2026-11-14; lib/deck/skirt): where it hangs it is priced; every bay is 8 ft at most and a foot or more
+  // high, a hand above the ground under it, through no post, across no other bay; where none could hang, that is said.
+  {
+    const s0 = pkg.structure;
+    const sk = s0.skirt;
+    if (d.extras.skirt && s0.frame && !sk && !deckChecks(s0).some((c) => c.id === "deck-skirt-none")) out.push(`skirting asked for, none built, nothing said  [${tag}]`);
+    if (sk && !d.extras.skirt) out.push(`skirting built that was not asked for  [${tag}]`);
+    if (sk) {
+      if (!pkg.lines.some((l) => l.id === "deck-skirt" && l.quantity > 0 && l.unitPrice > 0)) out.push(`skirting built but not priced  [${tag}]`);
+      if (!(sk.sqFt > 0 && sk.lf > 0 && sk.frameLf > 0 && (sk.kind === "boards") === (sk.boardLf > 0))) out.push(`skirting's figures are off: ${sk.sqFt} sq ft, ${sk.lf} ft, frame ${sk.frameLf}, boards ${sk.boardLf}  [${tag}]`);
+      const posts = structureLevels(s0).flatMap((l) => l.frame.posts.map((q) => { const h = Math.max(...(POST_ACTUAL_IN[q.size] ?? [5.5, 5.5])) / 2; const x = q.x + l.offsetXIn, y = q.y + l.offsetYIn; return [{ x: x - h, y: y - h }, { x: x + h, y: y - h }, { x: x + h, y: y + h }, { x: x - h, y: y + h }]; }));
+      const quads = sk.panels.map(skirtQuad);
+      const tangled = ringCrossesItself(shapeOutline(d.shape));
+      for (const [k, p] of sk.panels.entries()) {
+        const h = p.topIn - p.bottomIn;
+        if (!(p.lengthIn > 6 && p.lengthIn <= SKIRT_BAY_MAX_IN + 0.01)) { out.push(`a skirt bay ${p.lengthIn.toFixed(1)} in. long  [${tag}]`); break; }
+        if (!(h >= SKIRT_MIN_IN - 0.01)) { out.push(`a skirt bay ${h.toFixed(1)} in. high  [${tag}]`); break; }
+        if ([0, 0.5, 1].some((t) => p.bottomIn < s0.groundAt(p.x0 + (p.x1 - p.x0) * t, p.y0 + (p.y1 - p.y0) * t) + SKIRT_GROUND_CLEAR_IN - 0.01)) { out.push(`a skirt bay in the ground  [${tag}]`); break; }
+        if (posts.some((q) => quadsOverlap(quads[k], q))) { out.push(`a skirt bay through a post  [${tag}]`); break; }
+        if (!tangled && quads.some((q, j) => j > k && sk.panels[j].bottomIn < p.topIn && p.bottomIn < sk.panels[j].topIn && quadsOverlap(quads[k], q))) { out.push(`two skirt bays cross  [${tag}]`); break; }
+      }
+    }
+  }
   // PAST THE HOUSE'S CORNER (2026-11-14): the deck's shape and the house agree — a part past a corner is an open one,
   // exactly as far as the house says — and no ledger hangs where no wall stands.
   {
@@ -284,7 +343,7 @@ if (process.argv[2] === "--repro") {
   for (const tag of process.argv.slice(3)) {
     const i = Number(tag.slice(1));
     const raw = tag[0] === "A" ? randomDesign(rngOf(1000 + i)) : tag[0] === "W" ? wallDesign(i) : (() => { const r = rngOf(50000 + i); return mutate(r, normalizeDeckDesign(randomDesign(r))); })();
-    const d = normalizeDeckDesign(raw);
+    const d = normalizeDeckDesign(skirtFor(tag, raw));
     // --dump: the design alone, before anything is built from it (for one that kills the process when built).
     if (process.argv.includes("--dump")) { console.log(JSON.stringify(d)); continue; }
     console.log(`\n=== ${tag}: ${structureWords(d)} · ${sizeWords(d)} · h ${d.heightIn} in · placement ${d.placement} · floor ${d.floor} · roof ${d.roof.kind}/${d.roof.plan.shape} · stairs ${d.stairs.length} · rail ${d.rail.type} · lower ${d.lower.on} · fixtures ${d.electrical.fixtures.length} · front ${d.shape.kind === "rect" ? d.shape.front?.kind : "L"}`);
@@ -306,7 +365,7 @@ const run = (tag: string, raw: unknown) => {
   // A design that kills the process outright (an array grown past what V8 holds) leaves its name here: FUZZ_TRACE=<file>.
   if (process.env.FUZZ_TRACE) writeFileSync(process.env.FUZZ_TRACE, tag);
   let d: DeckDesign;
-  try { d = normalizeDeckDesign(raw); } catch (e) { trouble.push(`normalize THREW: ${e instanceof Error ? e.message : String(e)}  [${tag}]`); return; }
+  try { d = normalizeDeckDesign(skirtFor(tag, raw)); } catch (e) { trouble.push(`normalize THREW: ${e instanceof Error ? e.message : String(e)}  [${tag}]`); return; }
   try { exercise(d, tag, trouble); } catch (e) { trouble.push(`THREW: ${e instanceof Error ? (e.stack ?? e.message).split("\n").slice(0, 3).join(" | ") : String(e)}  [${tag}]`); }
 };
 const started = Date.now();

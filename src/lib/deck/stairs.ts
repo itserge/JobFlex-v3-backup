@@ -358,6 +358,22 @@ export interface StairInput {
   postSize: PostSize;
 }
 
+/** Where a stair leaves its deck: O at its top-left looking down it, u along its width, nrm the way it runs out. */
+function stairSetOut(stair: StairDesign, level: Pick<StairLevel, "x0" | "y0" | "widthIn" | "frontAt">): { O: V2; u: V2; nrm: V2 } {
+  const w = Math.round(stair.widthFt * 12);
+  const at = Math.round(stair.atFt * 12);
+  if (stair.side === "front") return { O: { x: level.x0 + at - w / 2, y: level.y0 + level.frontAt(at) }, u: { x: 1, y: 0 }, nrm: { x: 0, y: 1 } };
+  if (stair.side === "left") return { O: { x: level.x0, y: level.y0 + at + w / 2 }, u: { x: 0, y: -1 }, nrm: { x: -1, y: 0 } };
+  return { O: { x: level.x0 + level.widthIn, y: level.y0 + at - w / 2 }, u: { x: 0, y: 1 }, nrm: { x: 1, y: 0 } };
+}
+
+/** The stretch of the deck's edge a stair's top stands on, plan in. (lib/deck/skirt leaves it open). */
+export function stairTopEdge(stair: StairDesign, level: Pick<StairLevel, "x0" | "y0" | "widthIn" | "frontAt">): { x0: number; y0: number; x1: number; y1: number } {
+  const { O, u } = stairSetOut(stair, level);
+  const w = Math.round(stair.widthFt * 12);
+  return { x0: O.x, y0: O.y, x1: O.x + u.x * w, y1: O.y + u.y * w };
+}
+
 export function buildStair(input: StairInput): StairBuild {
   const { stair, level, product, rail, design } = input;
   const members: StairMember[] = [];
@@ -370,22 +386,7 @@ export function buildStair(input: StairInput): StairBuild {
   const boardPitch = product.widthIn + product.gapIn;
 
   // The stair's own frame: O at its top-left looking down it, u along the width, n outward.
-  let O: V2;
-  let u: V2;
-  let nrm: V2;
-  if (stair.side === "front") {
-    O = { x: level.x0 + at - w / 2, y: level.y0 + level.frontAt(at) };
-    u = { x: 1, y: 0 };
-    nrm = { x: 0, y: 1 };
-  } else if (stair.side === "left") {
-    O = { x: level.x0, y: level.y0 + at + w / 2 };
-    u = { x: 0, y: -1 };
-    nrm = { x: -1, y: 0 };
-  } else {
-    O = { x: level.x0 + W, y: level.y0 + at - w / 2 };
-    u = { x: 0, y: 1 };
-    nrm = { x: 1, y: 0 };
-  }
+  const { O, u, nrm } = stairSetOut(stair, level);
   const P = (a: number, b: number): V2 => ({ x: O.x + u.x * a + nrm.x * b, y: O.y + u.y * a + nrm.y * b });
   const narrow = w < 36;
   const id = stair.id;

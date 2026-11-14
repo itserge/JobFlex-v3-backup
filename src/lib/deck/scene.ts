@@ -35,6 +35,7 @@ import type { StairMember } from "./stairs";
 import type { RailMember } from "./rails";
 import { BASE_PLATE_IN, BASE_PLATE_THICK_IN, railMountCallout, railPostWords, railWords } from "./rails";
 import { electricalWords } from "./electrical";
+import { SKIRT_BOARD_IN, SKIRT_BORDER_IN, SKIRT_CLEAR_IN, SKIRT_GAP_IN, SKIRT_THICK_IN } from "./skirt";
 import { HOUSE_MATERIALS, HOUSE_ROOFS, houseHandles, houseScene, settleSceneOpenings, type HouseMaterial, type HouseRoof } from "./house";
 import { railColorOf, speciesWords } from "./catalog";
 
@@ -596,6 +597,65 @@ export function deckScene(s: DeckStructure): DeckScene {
       });
     }
     for (const p of f.posts) footings.push([r3(p.x + ox), r3(p.y + oy), r3(p.footing.padIn), r3(p.footing.padThickIn), r3(p.footing.pierIn), r3(p.footing.depthIn - p.footing.groundIn), r3(p.footing.topIn + p.footing.groundIn)]);
+  }
+
+  /* ── Skirting under the deck (2026-11-14; lib/deck/skirt) ───────────── */
+  if (s.skirt) {
+    const sk = s.skirt;
+    const T = SKIRT_THICK_IN;
+    const boardTag = tagFor("skirt board", "deck board", 0, `Skirting: the deck's own boards laid level under the rim, ${SKIRT_GAP_IN}-in. gaps so the frame behind breathes, on a treated 2x4 frame with an upright every 2 ft; a hand clear of the ground. One bay hangs on hinges, to get under the deck.`);
+    const borderTag = tagFor("skirt frame", "1x4", 0, "Skirting: lattice in a 1x4 border, bay by bay (8 ft at most), on a treated 2x4 frame hung under the rim; a hand clear of the ground. One bay hangs on hinges, to get under the deck.");
+    const slatTag = tagFor("skirt lattice", "lattice", 0, "Lattice: it lets the air through, so the frame under the deck stays dry.");
+    // (Drawn a little coarser than the sheet is woven: the look, without thousands of slats on a big deck.)
+    const slatPitch = sk.sqFt > 400 ? 7 : 4.5;
+    const R2 = Math.SQRT2;
+    for (const p of sk.panels) {
+      const len = p.lengthIn;
+      const ux = (p.x1 - p.x0) / len;
+      const uy = (p.y1 - p.y0) / len;
+      const h = p.topIn - p.bottomIn;
+      /** A point of the bay: `a` along it, `d` out from the rim's face. */
+      const at = (a: number, d: number): [number, number] => [p.x0 + ux * a + p.outX * (SKIRT_CLEAR_IN + d), p.y0 + uy * a + p.outY * (SKIRT_CLEAR_IN + d)];
+      const [mx, my] = at(len / 2, T / 2);
+      if (sk.kind === "boards") {
+        // From the rim down, the last board ripped to stop a hand above the ground.
+        const pitch = SKIRT_BOARD_IN + SKIRT_GAP_IN;
+        for (let z = p.topIn; z - p.bottomIn > 1; z -= pitch) {
+          const bh = Math.min(SKIRT_BOARD_IN, z - p.bottomIn);
+          box("fascia", mx, my, z - bh / 2, len, T, bh, boardTag, 0, p.yaw, 0);
+        }
+        continue;
+      }
+      // The border: a rail top and bottom, a stile at each end between them.
+      const B = SKIRT_BORDER_IN;
+      box("fascia", mx, my, p.topIn - B / 2, len, T, B, borderTag, 0, p.yaw, 0);
+      box("fascia", mx, my, p.bottomIn + B / 2, len, T, B, borderTag, 0, p.yaw, 0);
+      if (!(h > 2 * B + 1 && len > 2 * B + 1)) continue;
+      for (const a of [B / 2, len - B / 2]) {
+        const [sx, sy] = at(a, T / 2);
+        box("fascia", sx, sy, (p.topIn + p.bottomIn) / 2, B, T, h - 2 * B, borderTag, 0, p.yaw, 0);
+      }
+      // The slats: two layers crossing at 45°, inside the border's thickness, their ends tucked an inch behind it.
+      const tuck = 1;
+      const w0 = len - 2 * B + 2 * tuck;
+      const h0 = h - 2 * B + 2 * tuck;
+      const step = slatPitch * R2;
+      const count = Math.max(1, Math.floor((w0 + h0) / step));
+      const first = (w0 + h0 - (count - 1) * step) / 2;
+      for (let k = 0; k < count; k++) {
+        const c = first + k * step;
+        for (const rising of [true, false]) {
+          // Rising: s − t = c − h0. Falling: s + t = c. (s along the bay, t up, both inside the tucked opening.)
+          const sA = rising ? Math.max(0, c - h0) : Math.max(0, c - h0);
+          const sB = rising ? Math.min(w0, c) : Math.min(w0, c);
+          if (!(sB - sA > 2)) continue;
+          const tA = rising ? sA - (c - h0) : c - sA;
+          const tB = rising ? sB - (c - h0) : c - sB;
+          const [cx, cy] = at(B - tuck + (sA + sB) / 2, rising ? 0.25 : 0.5);
+          box("fascia", cx, cy, p.bottomIn + B - tuck + (tA + tB) / 2, (sB - sA) * R2, 0.2, 1.5, slatTag, 0, p.yaw, rising ? Math.PI / 4 : -Math.PI / 4);
+        }
+      }
+    }
   }
 
   /* ── The stairs ───────────────────────────────────────────────────── */

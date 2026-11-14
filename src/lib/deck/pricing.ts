@@ -29,6 +29,7 @@ import { footingDepthIn, type BuildOptions, type DeckFrame } from "./frame";
 import { roofByHandWords, roofWords, type RoofFrame } from "./roof";
 import { buildStructure, structureLevels, type DeckStructure } from "./structure";
 import { deckTakeoff, type BomLine, type BomStep, type DeckTakeoff } from "./takeoff";
+import { SKIRT_GAP_IN } from "./skirt";
 import { isExampleSource, deckRate, type ResolvedRate } from "./rates";
 import { railType, speciesWords } from "./catalog";
 import { OC_POST } from "./ocLumber";
@@ -237,11 +238,31 @@ export function priceStructure(s: DeckStructure, opts: DeckPriceOptions = {}): D
       });
     }
 
-    // Fascia.
+    // Fascia. (The skirting's panels are bought with the fascia and priced on their own line.)
+    const isSkirt = (l: PricedBomLine) => l.id.includes("skirt");
+    const notSkirt = (l: PricedBomLine) => !isSkirt(l);
     const fasciaFt = levels.reduce((a, l) => a + l.surface.fascia.lf, 0);
     if (fasciaFt > 0) {
       const w = work("labor.fascia", fasciaFt);
-      line({ id: "deck-fascia", name: "Fascia on the open edges", quantity: Math.round(fasciaFt * 10) / 10, unit: "ln ft", material: stepMaterial("fascia"), labor: w.amount, exampleMaterial: stepExample("fascia"), exampleLabor: w.example });
+      line({ id: "deck-fascia", name: "Fascia on the open edges", quantity: Math.round(fasciaFt * 10) / 10, unit: "ln ft", material: stepMaterial("fascia", notSkirt), labor: w.amount, exampleMaterial: stepExample("fascia", notSkirt), exampleLabor: w.example });
+    }
+
+    // Skirting under the deck (2026-11-14; lib/deck/skirt): its panels or boards and the frame behind them, hung like
+    // the framed panels between a roof's posts.
+    if (s.skirt) {
+      const sk = s.skirt;
+      const w = work("labor.walls", sk.sqFt);
+      line({
+        id: "deck-skirt",
+        name: `Skirting under the deck — ${sk.kind === "lattice" ? "lattice in a border" : "the deck's boards laid level"}`,
+        description: `${Math.round(sk.lf)} ft of open edge, up to ${sk.heightIn} in. high, on a treated 2x4 frame hung under the rim; a hand clear of the ground${sk.kind === "boards" ? `, ${SKIRT_GAP_IN}-in. gaps between the boards for air` : ""}; one bay on hinges, to get under the deck`,
+        quantity: Math.max(1, Math.round(sk.sqFt)),
+        unit: "sqft",
+        material: stepMaterial("fascia", isSkirt),
+        labor: w.amount,
+        exampleMaterial: stepExample("fascia", isSkirt),
+        exampleLabor: w.example,
+      });
     }
 
     // The step between the levels (a low drop is a step the lower deck itself makes; the trim and the riser are the work).
@@ -475,6 +496,7 @@ export function deckScope(pkg: DeckPackage, where?: string | null): string[] {
     out.push(`Electrical: ${electricalWords(el).toLowerCase()} — ${[...new Set(el.fixtures.map((f) => FIXTURE_LABEL[f.kind].toLowerCase()))].join(", ")}, on ${plural(el.circuits.length, "new circuit")} from the panel, weatherproof boxes and GFCI protection, by a licensed electrician.`);
     if (el.byClient.length) out.push(`${el.byClient.length === 1 ? "One fixture" : `${el.byClient.length} fixtures`} (${[...new Set(el.byClient.map((f) => FIXTURE_LABEL[f.kind].toLowerCase()))].join(", ")}) to be chosen and bought by you; we wire the boxes and hang them.`);
   }
+  if (s.skirt) out.push(`Skirting under the deck on its open sides (${Math.round(s.skirt.lf)} ft): ${s.skirt.kind === "lattice" ? "lattice in a border" : "the deck's own boards laid level, with gaps for air"}, on a treated frame, stopped a hand above the ground, with one hinged panel to get under the deck.`);
   if (design.extras.underDeckDrain) out.push("An under-deck drainage system keeps the space below the deck dry.");
   if (design.extras.demoSqFt > 0) out.push(`Tear-out and haul-away of the existing deck, ${design.extras.demoSqFt} sq ft.`);
   out.push("Layout squared and checked before digging; site cleaned when the work is done.");

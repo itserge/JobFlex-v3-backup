@@ -164,7 +164,7 @@ export type DeckCommand =
   // `past` (2026-11-14): the DECK run past a corner of the house — `ft` beyond the corner, `backFt` back along the
   // house's side (`wrap` = a wrap-around said without a length), `off` = back to the corner.
   | { do: "house"; storeys?: 1 | 2; roof?: HouseRoof; siding?: SidingId; roofColour?: RoofColourId; wall?: QuickWall; leftFt?: Amount; rightFt?: Amount; widthFt?: number; past?: DeckPastSaid }
-  | { do: "extras"; demoSqFt?: number | "deck"; stainless?: boolean; drain?: boolean }
+  | { do: "extras"; demoSqFt?: number | "deck"; stainless?: boolean; drain?: boolean; skirt?: "lattice" | "boards" | "none" }
   | { do: "item"; op: "add" | "remove"; name: string; qty?: number; unit?: OwnUnit; price?: number }
   /** A product of the shop's own in one of the studio's lists ("our own boards, Azek Timbertech, at 9 dollars a foot"). */
   | { do: "custom"; slot: CustomSlot; name: string; price: number }
@@ -346,7 +346,6 @@ export const NOT_DRAWN: ReadonlyArray<[RegExp, string]> = [
   [/\bhammock\b/, "Hammock posts"],
   [/\bswing\b|\bporch swing\b/, "Porch swing"],
   [/\bgate\b|\bdog gate\b|\bbaby gate\b/, "Rail gate"],
-  [/\bskirting\b|\bskirt\b|\blattice skirt(?:ing)?\b/, "Deck skirting"],
   [/\bshade sail\b|\bsun ?shade\b|\bawning\b|\bretractable\b/, "Retractable awning"],
   [/\bstorage\b|\bshed\b|\bunder[- ]deck storage\b/, "Storage"],
   [/\bramp\b|\bwheelchair\b|\bada\b/, "Ramp"],

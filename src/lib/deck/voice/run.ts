@@ -741,8 +741,18 @@ export function runCommand(d0: DeckDesign, cmd: DeckCommand, env: RunEnv = {}): 
         if (cmd.drain && d.heightIn < 84) return no(`An under-deck drain makes a dry room below a high deck — this one is ${inWords(d.heightIn)} up. It needs about 7 ft under it.`);
         said.push(cmd.drain ? "An under-deck drainage system — a dry space below." : "No under-deck drainage.");
       }
+      if (cmd.skirt !== undefined) {
+        p.skirt = cmd.skirt === "none" ? undefined : cmd.skirt;
+        if (cmd.skirt === "none") said.push(d.extras.skirt ? "Took the skirting off — the deck is open underneath." : "There is no skirting on this deck.");
+        else {
+          // Said as built: how much of it, or why none could be hung.
+          const built = buildStructure(patchDesign(d, { extras: p }, settle)).skirt;
+          if (!built) return no(`Skirting needs a foot between the frame and the ground, and this deck is ${inWords(d.heightIn)} up — too low for it. Its fascia closes the edge.`);
+          said.push(`${cmd.skirt === "lattice" ? "Lattice skirting in a border" : "Skirting in the deck's own boards, laid level with gaps for air"} under ${Math.round(built.lf)} ft of open edge, up to ${built.heightIn} in. high, a hand clear of the ground${built.lowFt > 0 ? ` (left off ${Math.round(built.lowFt)} ft where the deck is too low)` : ""}. Hang one bay on hinges to get under the deck.`);
+        }
+      }
       const next = patchDesign(d, { extras: p }, settle);
-      return out(next, said, { flash: cmd.demoSqFt !== undefined ? [{ label: "Tear out an old deck" }] : [] });
+      return out(next, said, { flash: cmd.demoSqFt !== undefined ? [{ label: "Tear out an old deck" }] : cmd.skirt !== undefined ? [{ label: "Skirting under the deck" }] : [], ...(cmd.skirt && cmd.skirt !== "none" ? { view: { look: "yard" as const } } : {}) });
     }
     case "item": {
       const items = [...d.extras.items];

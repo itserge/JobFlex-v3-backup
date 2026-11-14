@@ -684,6 +684,8 @@ export interface DeckDesign {
     underDeckDrain: boolean;
     /** Items of the contractor's own, outside every list (2026-10-12). */
     items: OwnItem[];
+    /** Skirting under the deck (2026-11-14; lib/deck/skirt): framed lattice, or boards laid level, hung under the rim along every open edge. Absent = none. */
+    skirt?: "lattice" | "boards";
   };
   /** The railing (M3) — "none" leaves the edges open. */
   rail: RailDesign;
@@ -1274,6 +1276,7 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
       stainless: ex.stainless === true,
       underDeckDrain: ex.underDeckDrain === true && heightIn >= 84,
       items: normalizeOwnItems(ex.items),
+      ...(ex.skirt === "lattice" || ex.skirt === "boards" ? { skirt: ex.skirt } : {}),
     },
     rail,
     stairs,

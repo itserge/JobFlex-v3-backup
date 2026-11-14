@@ -20,6 +20,7 @@
 
 import { PIER_BLOCK, STOCK_LENGTHS_FT, type DeckFrame, type Stick, type StickRole } from "./frame";
 import type { DeckSurface } from "./surface";
+import { SKIRT_GAP_IN } from "./skirt";
 import { LEDGER_FASTENER_LABEL, ftIn, type LedgerFastener } from "./codeTables";
 import { POST_HARDWARE_FACTOR, STAINLESS_FACTOR, lumberKey, tubeFactor } from "./rates";
 import { isCompositeFraming } from "./catalog";
@@ -360,6 +361,21 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
     if (design.extras.underDeckDrain && !lower) {
       push({ id: "under-deck-drain", step: "drainage", kind: "hardware", label: "Under-deck drainage: troughs, gutter and downspout", qty: Math.round(frame.areaSqFt), unit: "sq ft", note: "a dry room under the deck", rateKey: "trim.underDeckDrain", rateQty: Math.round(frame.areaSqFt), factor: 1 });
     }
+  }
+
+  /* ── Skirting under the deck (2026-11-14; lib/deck/skirt) ───────────── */
+  // Bought with the fascia, priced on a line of its own (every id here says "skirt").
+  if (s.skirt) {
+    const sk = s.skirt;
+    const where = `${Math.round(sk.lf)} ft of open edge, up to ${sk.heightIn} in. high`;
+    if (sk.kind === "lattice") {
+      push({ id: "skirt-panels", step: "fascia", kind: "boards", label: "Skirting: lattice in a border, by the bay", qty: Math.ceil(sk.sqFt), unit: "sq ft", note: where, rateKey: "trim.lattice", rateQty: sk.sqFt, factor: 1 });
+    } else if (s.surface) {
+      // The deck's own boards, 12-footers, a tenth over for the cuts.
+      const boards = Math.ceil((sk.boardLf * 1.1) / 12 - 1e-9);
+      push({ id: "skirt-boards", step: "fascia", kind: "boards", label: `${s.surface.product.label} × 12 ft — skirting`, qty: boards, unit: "pcs", note: `${where}; laid level, ${SKIRT_GAP_IN}-in. gaps`, rateKey: `deck.${s.surface.product.id}`, rateQty: boards * 12, factor: 1 });
+    }
+    lumber("fascia", "skirting frame", "2x4", 8, Math.ceil((sk.frameLf * 1.1) / 8 - 1e-9), true, `a rail under the rim, one a hand off the ground, an upright every ${sk.kind === "boards" ? 2 : 4} ft`, "skirt-frame");
   }
 
   /* ── The stairs ───────────────────────────────────────────────────── */
