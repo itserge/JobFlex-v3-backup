@@ -102,6 +102,10 @@ const wideFront = buildStructure(mk({ heightIn: 40, rail: { ...d0.rail, type: "a
 check("wide steps along the front close it themselves: the skirt is on the two ends only", !!wideFront.skirt && wideFront.stairs[0].kind === "box" && wideFront.skirt.panels.every((p) => !(near(p.y0, 144, 0.9) && near(p.y1, 144, 0.9))) && near(wideFront.skirt.lf, 24, 0.3), `${wideFront.skirt?.lf} ft`);
 const wideAll = buildStructure(mk({ heightIn: 40, rail: { ...d0.rail, type: "aluminum" }, stairs: [{ ...defaultStair("s1", "front", 8), wrap: true, wrapSides: 3 }] }));
 check("wide steps round the front and both ends: nothing left to skirt, and the checks say so with the way out", wideAll.skirt === null && deckChecks(wideAll).some((c) => c.id === "deck-skirt-none" && c.level === "warn" && !!c.fix));
+// (Low box steps on a plain rectangle are set out by side names, not along the outline: the same rule holds.)
+const boxFront = buildStructure(mk({ heightIn: 23, rail: { ...d0.rail, type: "none" }, stairs: [{ ...defaultStair("s1", "front", 8), wrap: true, wrapSides: 1 }] }));
+const boxAll = buildStructure(mk({ heightIn: 23, rail: { ...d0.rail, type: "none" }, stairs: [{ ...defaultStair("s1", "front", 8), wrap: true, wrapSides: 3 }] }));
+check("low box steps on a plain rectangle close their edges too: along the front, the skirt is on the two ends; round three sides, none", boxFront.stairs[0].kind === "box" && !boxFront.stairs[0].wide && !!boxFront.skirt && boxFront.skirt.panels.every((p) => !(near(p.y0, 144, 0.9) && near(p.y1, 144, 0.9))) && near(boxFront.skirt.lf, 24, 0.3) && boxAll.skirt === null, `${boxFront.skirt?.lf} / ${boxAll.skirt?.lf}`);
 const lowD = mk({ heightIn: 16 });
 const low = buildStructure(lowD);
 const lowCheck = deckChecks(low).find((c) => c.id === "deck-skirt-none");

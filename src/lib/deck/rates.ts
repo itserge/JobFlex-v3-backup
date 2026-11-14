@@ -165,6 +165,10 @@ export const DECK_RATES: readonly DeckRateDef[] = [
   { key: "conc.paver", label: "Paver, 12 in., on sand", unit: "ea", price: 3.6, group: "concrete", basis: "vinyl", min: 0.2, max: 60 },
   labor("lighting", "Set and wire one light", "ea", 28, 500),
   labor("stepDown", "Build the step between two levels", "ft", 18),
+  // ── Built-in benches and planter boxes (2026-11-14; lib/deck/builtins). EXAMPLE prices.
+  labor("bench", "Build a built-in bench", "ft", 34),
+  labor("benchBack", "Add a back to a built-in bench", "ft", 16),
+  labor("planter", "Build a planter box", "ft", 48),
   // ── Walls, lights, drainage and engineered beams for the roof (M3). EXAMPLE prices.
   trim("screen", "Screen panels, framed, between posts", "sq ft", 9.5),
   trim("screenDoor", "Screen door, hung", "ea", 420, "vinyl", 5000),

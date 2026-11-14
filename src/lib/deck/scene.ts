@@ -36,6 +36,7 @@ import type { RailMember } from "./rails";
 import { BASE_PLATE_IN, BASE_PLATE_THICK_IN, railMountCallout, railPostWords, railWords } from "./rails";
 import { electricalWords } from "./electrical";
 import { SKIRT_BOARD_IN, SKIRT_BORDER_IN, SKIRT_CLEAR_IN, SKIRT_GAP_IN, SKIRT_THICK_IN } from "./skirt";
+import { BENCH_BACK_IN, BENCH_SEAT_IN, type BuiltInMember } from "./builtins";
 import { HOUSE_MATERIALS, HOUSE_ROOFS, houseHandles, houseScene, settleSceneOpenings, type HouseMaterial, type HouseRoof } from "./house";
 import { railColorOf, speciesWords } from "./catalog";
 
@@ -354,6 +355,8 @@ export const ROOF_MEMBER_LAYER: Record<RoofMember["role"], SceneLayer> = {
 };
 const ROOF_PLANE_LAYER: Record<RoofPlane["kind"], SceneLayer> = { sheathing: "sheathing", roofing: "roofing", ceiling: "ceiling", soffit: "trim", slab: "slab", wall: "wall", screen: "screen", louver: "roofing", fixture: "light" };
 const STAIR_LAYER: Record<StairMember["role"], SceneLayer> = { stringer: "stair", tread: "stair", riser: "stair", kicker: "stair", "stair-post": "stair", "stair-beam": "stair", "landing-frame": "stair", "landing-tread": "stair", "box-frame": "stair", "box-tread": "stair", "stair-rail": "rail", "stair-rail-post": "rail", "stair-baluster": "rail", pad: "slab" };
+/** Built-ins: boards as the deck's, aprons as its fascia, legs and cleats as its frame, a planter's soil dark. */
+const BUILT_IN_LAYER: Record<BuiltInMember["role"], SceneLayer> = { "bench seat": "decking", "bench back": "decking", "bench cap": "decking", "bench apron": "fascia", "bench leg": "post", "bench back post": "post", "bench cleat": "joist", "planter board": "decking", "planter cap": "fascia", "planter soil": "spa" };
 const RAIL_LAYER: Record<RailMember["role"], SceneLayer> = { "rail-post": "rail", "rail-top": "rail", "rail-bottom": "rail", "rail-cap": "rail", baluster: "rail", cable: "rail", "rail-panel": "glass", mesh: "rail" };
 /** The rail parts a scene's `railInfill` colour is for: the infill, not the frame. */
 export const RAIL_INFILL_ROLE = /^(?:lower level )?(?:baluster|stair baluster|cable|mesh)$/;
@@ -656,6 +659,36 @@ export function deckScene(s: DeckStructure): DeckScene {
         }
       }
     }
+  }
+
+  /* ── Built-in benches and planter boxes (2026-11-14; lib/deck/builtins) ── */
+  for (const bi of s.builtIns) {
+    if (!bi.built) continue;
+    const noteFor = (role: BuiltInMember["role"]): string => {
+      switch (role) {
+        case "bench seat":
+          return `Built-in bench: three deck boards for the seat, ${BENCH_SEAT_IN} in. above the deck, two screws into every cleat.`;
+        case "bench apron":
+          return "Fascia apron under the seat's edge, mitred at the corners.";
+        case "bench leg":
+          return "4x4 leg, treated: screwed down through the deck boards into solid blocking between the joists.";
+        case "bench cleat":
+          return "2x4 cleat across the legs, laid flat: the seat boards are screwed to it.";
+        case "bench back post":
+          return `4x4 back post, treated, ${BENCH_BACK_IN} in. above the deck: carried down beside a joist and through-bolted, or on a rated post base over blocking. A bench's back is not a guard.`;
+        case "bench back":
+          return "Deck board across the back posts' faces.";
+        case "bench cap":
+          return "Cap board on the back posts, screwed down into each.";
+        case "planter board":
+          return "Planter box: deck boards on a treated 2x4 frame, on feet that keep it off the deck's boards so water runs out under it.";
+        case "planter cap":
+          return "Cap board round the planter's rim.";
+        default:
+          return "Planting soil in a liner with drain holes. Wet soil is heavy: see the checks for what this box weighs.";
+      }
+    };
+    for (const m of bi.members) box(BUILT_IN_LAYER[m.role], m.cx, m.cy, m.cz, m.sx, m.sy, m.sz, tagFor(m.role, m.nominal, m.lengthIn, noteFor(m.role)), 0, m.yaw, 0);
   }
 
   /* ── The stairs ───────────────────────────────────────────────────── */

@@ -33,7 +33,7 @@ import { BOX_FRAME_NOMINAL, STRINGER_NOMINAL } from "./stairs";
 import { BALUSTER_NOMINAL, METAL_BALUSTER_SPACING_IN, RAIL_CAP_NOMINAL, RAIL_POST_NOMINAL, RAIL_TOP_NOMINAL, infillWords, railHeldWords, railNamed } from "./rails";
 import { FIXTURE_LABEL, type FixtureKind } from "./design";
 
-export type BomStep = "footings" | "ledger" | "framing" | "decking" | "fascia" | "stairs" | "rails" | "drainage" | "slab" | "roof-posts" | "roof-frame" | "roof-deck" | "roofing" | "trim" | "ceiling" | "gutters" | "walls" | "cupola" | "electrical" | "own";
+export type BomStep = "footings" | "ledger" | "framing" | "decking" | "fascia" | "stairs" | "rails" | "builtins" | "drainage" | "slab" | "roof-posts" | "roof-frame" | "roof-deck" | "roofing" | "trim" | "ceiling" | "gutters" | "walls" | "cupola" | "electrical" | "own";
 export const BOM_STEP_LABEL: Record<BomStep, string> = {
   footings: "Footings and posts",
   ledger: "Ledger and flashing",
@@ -42,6 +42,7 @@ export const BOM_STEP_LABEL: Record<BomStep, string> = {
   fascia: "Fascia",
   stairs: "Stairs",
   rails: "Railing",
+  builtins: "Benches and planters",
   drainage: "Under-deck drainage",
   slab: "Concrete slab",
   "roof-posts": "Roof posts",
@@ -56,7 +57,7 @@ export const BOM_STEP_LABEL: Record<BomStep, string> = {
   electrical: "Electrical and accessories",
   own: "Your own items",
 };
-export const BOM_STEP_ORDER: readonly BomStep[] = ["slab", "footings", "ledger", "framing", "decking", "fascia", "stairs", "rails", "drainage", "roof-posts", "roof-frame", "roof-deck", "roofing", "trim", "ceiling", "gutters", "walls", "cupola", "electrical", "own"];
+export const BOM_STEP_ORDER: readonly BomStep[] = ["slab", "footings", "ledger", "framing", "decking", "fascia", "stairs", "rails", "builtins", "drainage", "roof-posts", "roof-frame", "roof-deck", "roofing", "trim", "ceiling", "gutters", "walls", "cupola", "electrical", "own"];
 
 export interface BomLine {
   id: string;
@@ -376,6 +377,34 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
       push({ id: "skirt-boards", step: "fascia", kind: "boards", label: `${s.surface.product.label} × 12 ft — skirting`, qty: boards, unit: "pcs", note: `${where}; laid level, ${SKIRT_GAP_IN}-in. gaps`, rateKey: `deck.${s.surface.product.id}`, rateQty: boards * 12, factor: 1 });
     }
     lumber("fascia", "skirting frame", "2x4", 8, Math.ceil((sk.frameLf * 1.1) / 8 - 1e-9), true, `a rail under the rim, one a hand off the ground, an upright every ${sk.kind === "boards" ? 2 : 4} ft`, "skirt-frame");
+  }
+
+  /* ── Built-in benches and planter boxes (2026-11-14; lib/deck/builtins) ── */
+  // The deck's own boards and fascia, treated legs and frames; every id says "bench" or "planter" (the price's two lines).
+  if (s.surface && s.frame) {
+    const product = s.surface.product;
+    const fasciaKey = product.family === "composite" || product.family === "pvc" ? "fascia.composite" : "fascia.wood";
+    const benches = s.builtIns.filter((b) => b.built && b.kind !== "planter");
+    const planters = s.builtIns.filter((b) => b.built && b.kind === "planter");
+    const tenth = (lf: number, stockFt: number) => Math.ceil((lf * 1.1) / stockFt - 1e-9);
+    const sumOf = (list: typeof benches, f: (b: (typeof benches)[number]) => number) => list.reduce((a, b) => a + f(b), 0);
+    if (benches.length) {
+      const backs = benches.filter((b) => b.kind === "bench-back").length;
+      const ft = Math.round(sumOf(benches, (b) => b.lengthIn) / 12);
+      const boards = tenth(sumOf(benches, (b) => b.boardLf), 12);
+      push({ id: "bench-boards", step: "builtins", kind: "boards", label: `${product.label} × 12 ft — bench seats${backs ? " and backs" : ""}`, qty: boards, unit: "pcs", note: `${benches.length === 1 ? "one bench" : `${benches.length} benches`}, ${ft} ft in all`, rateKey: `deck.${product.id}`, rateQty: boards * 12, factor: 1 });
+      const aprons = tenth(sumOf(benches, (b) => b.apronLf), 12);
+      push({ id: "bench-apron", step: "builtins", kind: "boards", label: `Fascia, ${fasciaKey === "fascia.composite" ? "composite" : "wood"} 1x6 × 12 ft — bench aprons`, qty: aprons, unit: "pcs", note: "under the seat's edge all round", rateKey: fasciaKey, rateQty: aprons * 12, factor: 0.6 });
+      lumber("builtins", "bench legs and back posts", "4x4", 8, tenth(sumOf(benches, (b) => b.postLf), 8), false, "two legs to a support, a support every 4 ft", "bench-posts");
+      lumber("builtins", "bench cleats", "2x4", 8, tenth(sumOf(benches, (b) => b.frameLf), 8), false, "one across each pair of legs", "bench-cleats");
+      const supports = sumOf(benches, (b) => b.supports);
+      lumber("builtins", "blocking under the benches", s.frame.joistSize, frameStocks[0], tenth((supports * 2 * s.frame.spacingIn) / 12, frameStocks[0]), false, `two blocks between the joists under each of the ${supports} supports`, "bench-blocking", oc);
+    }
+    if (planters.length) {
+      const boards = tenth(sumOf(planters, (b) => b.boardLf), 12);
+      push({ id: "planter-boards", step: "builtins", kind: "boards", label: `${product.label} × 12 ft — planter boxes`, qty: boards, unit: "pcs", note: `${planters.length === 1 ? "one box" : `${planters.length} boxes`}: three boards high, a cap board round the rim`, rateKey: `deck.${product.id}`, rateQty: boards * 12, factor: 1 });
+      lumber("builtins", "planter frames", "2x4", 8, tenth(sumOf(planters, (b) => b.frameLf), 8), false, "an upright at each corner and every 32 in., two sleepers under the box", "planter-frame");
+    }
   }
 
   /* ── The stairs ───────────────────────────────────────────────────── */

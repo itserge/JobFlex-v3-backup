@@ -166,6 +166,8 @@ export type DeckCommand =
   | { do: "house"; storeys?: 1 | 2; roof?: HouseRoof; siding?: SidingId; roofColour?: RoofColourId; wall?: QuickWall; leftFt?: Amount; rightFt?: Amount; widthFt?: number; past?: DeckPastSaid }
   | { do: "extras"; demoSqFt?: number | "deck"; stainless?: boolean; drain?: boolean; skirt?: "lattice" | "boards" | "none" }
   | { do: "item"; op: "add" | "remove"; name: string; qty?: number; unit?: OwnUnit; price?: number }
+  /** A built-in bench or planter box along one edge (2026-11-14; lib/deck/builtins). `at`: which end of that edge it stands toward. */
+  | { do: "builtin"; op: "add" | "remove"; kind: "bench" | "bench-back" | "planter"; side?: "front" | "left" | "right"; lengthFt?: number; at?: "left" | "centre" | "right" }
   /** A product of the shop's own in one of the studio's lists ("our own boards, Azek Timbertech, at 9 dollars a foot"). */
   | { do: "custom"; slot: CustomSlot; name: string; price: number }
   | { do: "sample"; id: string }
@@ -195,7 +197,7 @@ export type DeckCommand =
 export type CommandKind = DeckCommand["do"];
 
 /** Commands that change the design (the rest look, answer or steer). */
-export const CHANGES: ReadonlySet<CommandKind> = new Set<CommandKind>(["custom", "size", "height", "shape", "slide", "placement", "wall", "structure", "floor", "roof", "decking", "framing", "ledger", "footing", "site", "rail", "stairs", "lower", "spa", "fixture", "electrical", "house", "extras", "item", "sample", "autofix", "reset"]);
+export const CHANGES: ReadonlySet<CommandKind> = new Set<CommandKind>(["custom", "size", "height", "shape", "slide", "placement", "wall", "structure", "floor", "roof", "decking", "framing", "ledger", "footing", "site", "rail", "stairs", "lower", "spa", "fixture", "electrical", "house", "extras", "item", "builtin", "sample", "autofix", "reset"]);
 
 /* ------------------------------------------------------------------ */
 /*  The words for the catalog's own things                            */
@@ -336,8 +338,6 @@ export const NOT_DRAWN: ReadonlyArray<[RegExp, string]> = [
   [/\bfire ?pits?\b|\bfire ?bowls?\b|\bfire ?table\b/, "Fire pit"],
   [/\bfire ?place\b|\bchimney\b/, "Outdoor fireplace"],
   [/\bpool\b|\bswimming pool\b/, "Pool"],
-  [/\bplanters?\b|\bplanter box(?:es)?\b|\bflower box(?:es)?\b/, "Planter boxes"],
-  [/\bbench(?:es)?\b|\bbuilt[- ]in (?:seating|bench)\b|\bseating\b/, "Built-in bench"],
   [/\bgrill\b|\bbbq\b|\bbarbecue\b|\bgrill station\b/, "Grill station"],
   [/\boutdoor kitchen\b|\bkitchen\b|\bsink\b|\bcountertops?\b/, "Outdoor kitchen"],
   [/\bbar\b|\bbar top\b|\bbar counter\b/, "Bar counter"],

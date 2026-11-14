@@ -172,6 +172,17 @@ function skirtFor(tag: string, raw: unknown): unknown {
   if (!skirt || (o.extras !== undefined && (typeof o.extras !== "object" || o.extras === null))) return raw;
   return { ...o, extras: { ...((o.extras as object) ?? {}), skirt } };
 }
+/** BUILT-IN BENCHES AND PLANTERS (2026-11-14): on one design in four, by the design's own number (the random stream stays what it was); junk on a few. */
+function builtInsFor(tag: string, raw: unknown): unknown {
+  const i = Number(tag.slice(1));
+  if (!raw || typeof raw !== "object" || Array.isArray(raw) || !Number.isFinite(i) || i % 4 !== 2) return raw;
+  const o = raw as Record<string, unknown>;
+  if (o.extras !== undefined && (typeof o.extras !== "object" || o.extras === null)) return raw;
+  const kinds = ["bench", "bench-back", "planter"];
+  const sides = ["front", "left", "right"];
+  const list: unknown[] = i % 86 === 2 ? [null, "x", { kind: "sofa" }, { kind: "bench", side: 7, atFt: "a", lengthFt: -3 }, { id: "BAD ID", kind: "planter", atFt: 1e9, lengthFt: 1e9 }] : Array.from({ length: 1 + (i % 5) }, (_, k) => ({ id: `q${k}`, kind: kinds[(i + k) % 3], side: sides[(Math.floor(i / 3) + k) % 3], atFt: ((i * 7 + k * 5) % 41) / 2, lengthFt: 2 + ((i + k * 3) % 17) * 1.5 }));
+  return { ...o, extras: { ...((o.extras as object) ?? {}), builtIns: list } };
+}
 type Pt = { x: number; y: number };
 /** A skirt bay as it lies in plan: a thin rectangle outside the deck's edge. */
 const skirtQuad = (p: SkirtPanel): Pt[] => [SKIRT_CLEAR_IN, SKIRT_CLEAR_IN + SKIRT_THICK_IN].flatMap((o, k) => { const a = { x: p.x0 + p.outX * o, y: p.y0 + p.outY * o }, b = { x: p.x1 + p.outX * o, y: p.y1 + p.outY * o }; return k === 0 ? [a, b] : [b, a]; });
@@ -225,6 +236,34 @@ function exercise(d: DeckDesign, tag: string, out: string[]) {
         if (posts.some((q) => quadsOverlap(quads[k], q))) { out.push(`a skirt bay through a post  [${tag}]`); break; }
         if (!tangled && quads.some((q, j) => j > k && sk.panels[j].bottomIn < p.topIn && p.bottomIn < sk.panels[j].topIn && quadsOverlap(quads[k], q))) { out.push(`two skirt bays cross  [${tag}]`); break; }
       }
+    }
+  }
+  // BUILT-IN BENCHES AND PLANTERS (2026-11-14; lib/deck/builtins): each one asked for is built or said not to be; one
+  // built stands on the deck, its parts above the boards with real sizes, across no other; and it is priced.
+  {
+    const s0 = pkg.structure;
+    const asked = d.extras.builtIns ?? [];
+    if (asked.length !== s0.builtIns.length && s0.frame && s0.surface) out.push(`${asked.length} built-ins asked for, ${s0.builtIns.length} answered  [${tag}]`);
+    if (s0.builtIns.length) {
+      const ring = shapeOutline(d.shape);
+      const tangled = ringCrossesItself(ring);
+      const inside = (x: number, y: number) => { let c = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const a = ring[i], b = ring[j]; if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) c = !c; } return c; };
+      const ids = new Set(deckChecks(s0).map((c) => c.id));
+      for (const b of s0.builtIns) {
+        if (!ids.has(`builtin-${b.design.id}`)) { out.push(`a built-in with nothing said of it  [${tag}]`); break; }
+        if (!b.built) { if (b.members.length || !b.why) { out.push(`a built-in not built, yet drawn or unexplained  [${tag}]`); break; } continue; }
+        if (!(b.lengthIn >= 24 - 0.01 && b.lengthIn <= b.design.lengthFt * 12 + 0.01)) { out.push(`a built-in ${b.lengthIn} in. long, asked ${b.design.lengthFt} ft  [${tag}]`); break; }
+        if (b.members.some((m) => !(m.sx > 0 && m.sy > 0 && m.sz > 0) || ![m.cx, m.cy, m.cz, m.yaw].every(Number.isFinite) || m.cz - m.sz / 2 < s0.frame!.surfaceIn - 0.01)) { out.push(`a built-in's part with no size, or under the boards  [${tag}]`); break; }
+        // (Its middle and the middles of its ends: on an outline with a curved or stepped front a corner may hang a hair past a chord.)
+        const mid = (p: Pt, q: Pt) => ({ x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 });
+        const c = mid(b.footprint[0], b.footprint[2]);
+        if (!tangled && ![c, mid(mid(b.footprint[0], b.footprint[3]), c), mid(mid(b.footprint[1], b.footprint[2]), c)].every((p) => inside(p.x, p.y))) { out.push(`a built-in off the deck  [${tag}]`); break; }
+        if (b.flags.overlaps.length) { out.push(`two built-ins on the same boards  [${tag}]`); break; }
+        if (b.kind === "planter" && !(b.weightLb > 0 && b.psf > 0 && b.soilCuFt > 0)) { out.push(`a planter with no weight  [${tag}]`); break; }
+      }
+      const built = s0.builtIns.filter((b) => b.built);
+      if (built.some((b) => b.kind !== "planter") !== pkg.lines.some((l) => l.id === "deck-benches")) out.push(`benches built and priced do not agree  [${tag}]`);
+      if (built.some((b) => b.kind === "planter") !== pkg.lines.some((l) => l.id === "deck-planters")) out.push(`planters built and priced do not agree  [${tag}]`);
     }
   }
   // PAST THE HOUSE'S CORNER (2026-11-14): the deck's shape and the house agree — a part past a corner is an open one,
@@ -343,7 +382,7 @@ if (process.argv[2] === "--repro") {
   for (const tag of process.argv.slice(3)) {
     const i = Number(tag.slice(1));
     const raw = tag[0] === "A" ? randomDesign(rngOf(1000 + i)) : tag[0] === "W" ? wallDesign(i) : (() => { const r = rngOf(50000 + i); return mutate(r, normalizeDeckDesign(randomDesign(r))); })();
-    const d = normalizeDeckDesign(skirtFor(tag, raw));
+    const d = normalizeDeckDesign(builtInsFor(tag, skirtFor(tag, raw)));
     // --dump: the design alone, before anything is built from it (for one that kills the process when built).
     if (process.argv.includes("--dump")) { console.log(JSON.stringify(d)); continue; }
     console.log(`\n=== ${tag}: ${structureWords(d)} · ${sizeWords(d)} · h ${d.heightIn} in · placement ${d.placement} · floor ${d.floor} · roof ${d.roof.kind}/${d.roof.plan.shape} · stairs ${d.stairs.length} · rail ${d.rail.type} · lower ${d.lower.on} · fixtures ${d.electrical.fixtures.length} · front ${d.shape.kind === "rect" ? d.shape.front?.kind : "L"}`);
@@ -365,7 +404,7 @@ const run = (tag: string, raw: unknown) => {
   // A design that kills the process outright (an array grown past what V8 holds) leaves its name here: FUZZ_TRACE=<file>.
   if (process.env.FUZZ_TRACE) writeFileSync(process.env.FUZZ_TRACE, tag);
   let d: DeckDesign;
-  try { d = normalizeDeckDesign(skirtFor(tag, raw)); } catch (e) { trouble.push(`normalize THREW: ${e instanceof Error ? e.message : String(e)}  [${tag}]`); return; }
+  try { d = normalizeDeckDesign(builtInsFor(tag, skirtFor(tag, raw))); } catch (e) { trouble.push(`normalize THREW: ${e instanceof Error ? e.message : String(e)}  [${tag}]`); return; }
   try { exercise(d, tag, trouble); } catch (e) { trouble.push(`THREW: ${e instanceof Error ? (e.stack ?? e.message).split("\n").slice(0, 3).join(" | ") : String(e)}  [${tag}]`); }
 };
 const started = Date.now();

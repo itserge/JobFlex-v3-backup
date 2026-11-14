@@ -134,6 +134,7 @@ import { HouseWallPlan } from "@/components/v3/deck-estimator-blueprint/house-wa
 import { DeckKindPicker } from "@/components/v3/deck-estimator-blueprint/deck-kind-picker";
 import { DeckPlan, type PlanEdgeHit, nearestStairEdge } from "@/components/v3/deck-estimator-blueprint/deck-plan";
 import { SKIRT_KINDS, SKIRT_LABEL } from "@/lib/deck/skirt";
+import { BUILT_IN_KINDS, BUILT_IN_LABEL, BUILT_IN_LIMITS, BUILT_IN_SIDES, BUILT_IN_SIDE_LABEL, defaultBuiltIn, type BuiltIn } from "@/lib/deck/builtins";
 import { Answers, CUSTOM, CUSTOM_LABEL, CustomBox, Field, FieldScope, More, NameInput, NumberInput, Scope, Seg, Stepper, Toggle, ago, cx, feetText, intText, money, parseFeet, parseInches, priceShow, priceText, type FieldScopeValue } from "./deck-v1-parts";
 import { DeckV1Send, type SendPrefill } from "./deck-v1-send";
 import { PartCardView, PartDoneLine, TakenOutLine, usePartLight, type PartDone, type PickedPart } from "./deck-v1-pick";
@@ -3002,6 +3003,8 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
       </>
     ) : null;
 
+  const builtIns = design.extras.builtIns ?? [];
+  const setBuiltIns = (list: BuiltIn[]) => patch({ extras: { builtIns: list } });
   const extrasStep = () => (
     <>
       <p className="v1-lead">Tap what it gets. Each goes where it usually does — or place it in the 3D.</p>
@@ -3113,6 +3116,57 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
             {structure.electrical.lv ? ` · ${structure.electrical.lv.transformers} transformer${structure.electrical.lv.transformers > 1 ? "s" : ""}` : ""}
             {structure.electrical.trenchFt ? ` · ${structure.electrical.trenchFt} ft of trench` : ""}. Turn on Night under the 3D to see them lit.
           </p>
+        </div>
+      ) : null}
+      {/* BUILT-IN BENCHES AND PLANTERS (2026-11-14; lib/deck/builtins): each along one edge, in the deck's own boards. */}
+      {withDeck ? (
+        <div data-deck-builtins>
+          <h3 className="v1-h3">Built-in benches and planters</h3>
+          <p className="v1-hint">Built into the deck in its own boards, each along one edge: just inside the railing where there is one. Add one, then say which edge, where along it and how long.</p>
+          <div className="v1-fix-grid">
+            {BUILT_IN_KINDS.map((k) => (
+              <button key={k} type="button" className="v1-add v1-add-small" disabled={builtIns.length >= BUILT_IN_LIMITS.count} onClick={() => setBuiltIns([...builtIns, defaultBuiltIn(`b${builtIns.length + 1}-${Date.now().toString(36).slice(-3)}`, k, design.shape.widthFt)])} data-deck-builtin-add={k}>
+                <Plus size={16} strokeWidth={2.5} aria-hidden="true" />
+                <span>{BUILT_IN_LABEL[k]}</span>
+              </button>
+            ))}
+          </div>
+          <div className="v1-rows">
+            {builtIns.map((b, i) => {
+              const built = structure.builtIns.find((x) => x.design.id === b.id);
+              const setB = (p: Partial<BuiltIn>) => setBuiltIns(builtIns.map((x) => (x.id === b.id ? { ...x, ...p } : x)));
+              const name = `${BUILT_IN_LABEL[b.kind]} ${i + 1}`;
+              const along = b.side === "front" ? design.shape.widthFt : design.shape.depthFt;
+              return (
+                <div key={b.id} className="v1-item" data-deck-builtin={b.id}>
+                  <div className="v1-item-head">
+                    <span className="v1-item-title">
+                      {BUILT_IN_LABEL[b.kind]}
+                      <span className="v1-item-sub">{built?.built ? `${feetText(Math.round((built.lengthIn / 12) * 2) / 2)} ft along the ${BUILT_IN_SIDE_LABEL[b.side].toLowerCase()}${built.flags.shortened ? " — as long as that edge allows" : ""}${built.kind === "planter" ? ` · about ${Math.round(built.weightLb / 10) * 10} lb full` : ""}` : `not built: ${built?.why ?? "no room"}`}</span>
+                    </span>
+                    <button type="button" className="v1-btn v1-btn-sm v1-btn-danger" onClick={() => setBuiltIns(builtIns.filter((x) => x.id !== b.id))} data-deck-builtin-remove>
+                      Remove
+                    </button>
+                  </div>
+                  <div className="v1-grid3">
+                    <Field label="Along the">
+                      <select className="v1-sel" value={b.side} aria-label={`${name}: which edge`} onChange={(e) => setB({ side: e.target.value as BuiltIn["side"], atFt: (e.target.value === "front" ? design.shape.widthFt : design.shape.depthFt) / 2 })}>
+                        {BUILT_IN_SIDES.map((sd) => (
+                          <option key={sd} value={sd}>{BUILT_IN_SIDE_LABEL[sd]}</option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="Its middle" aside={b.side === "front" ? "ft from the left end" : "ft out from the house"}>
+                      <NumberInput label={`${name}: its middle, feet ${b.side === "front" ? "from the deck's left end" : "out from the house"}`} value={b.atFt} parse={parseFeet} format={feetText} min={0} max={along} onCommit={(n2) => setB({ atFt: n2 })} />
+                    </Field>
+                    <Field label="How long" aside="ft">
+                      <NumberInput label={`${name}: how long, feet`} value={b.lengthFt} parse={parseFeet} format={feetText} min={BUILT_IN_LIMITS.lengthFt.min} max={b.kind === "planter" ? BUILT_IN_LIMITS.planterFt.max : BUILT_IN_LIMITS.lengthFt.max} onCommit={(n2) => setB({ lengthFt: n2 })} />
+                    </Field>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       ) : null}
       {withDeck ? (

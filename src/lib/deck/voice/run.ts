@@ -52,6 +52,7 @@ import { DECK_SAMPLES } from "../samples";
 import { autoFixDesign, settleDesign } from "../settle";
 import { deckLoadForSnow } from "../site";
 import { buildStructure } from "../structure";
+import { BUILT_IN_LABEL, BUILT_IN_LIMITS, builtInWords, defaultBuiltIn, type BuiltIn } from "../builtins";
 import { COLORS, FIXTURE_SAY, type Amount, type DeckCommand, type DeckingSet, type Look, type RoofSet, type StairTurnSaid } from "./commands";
 import { stairDirAfter, stairTurnWords, type StairDir } from "../stairs";
 import { firstSentence, ftWords, halfFt, inWords } from "./words";
@@ -753,6 +754,34 @@ export function runCommand(d0: DeckDesign, cmd: DeckCommand, env: RunEnv = {}): 
       }
       const next = patchDesign(d, { extras: p }, settle);
       return out(next, said, { flash: cmd.demoSqFt !== undefined ? [{ label: "Tear out an old deck" }] : cmd.skirt !== undefined ? [{ label: "Skirting under the deck" }] : [], ...(cmd.skirt && cmd.skirt !== "none" ? { view: { look: "yard" as const } } : {}) });
+    }
+    case "builtin": {
+      // A built-in bench or planter box (lib/deck/builtins): set on its edge, and said as it was built.
+      const list = [...(d.extras.builtIns ?? [])];
+      const label = BUILT_IN_LABEL[cmd.kind].toLowerCase();
+      if (cmd.op === "remove") {
+        const benchLike = (k: BuiltIn["kind"]) => (cmd.kind === "planter" ? k === "planter" : k !== "planter");
+        const left = list.filter((b) => !(benchLike(b.kind) && (!cmd.side || b.side === cmd.side)));
+        if (left.length === list.length) return no(`There's no ${cmd.kind === "planter" ? "planter box" : "bench"}${cmd.side ? ` along the ${cmd.side === "front" ? "front" : `${cmd.side} end`}` : ""} on this deck.`);
+        const gone = list.length - left.length;
+        return out(patchDesign(d, { extras: { builtIns: left } }, settle), [`Took ${gone === 1 ? `the ${cmd.kind === "planter" ? "planter box" : "bench"}` : `${gone} ${cmd.kind === "planter" ? "planter boxes" : "benches"}`} off.`], { flash: [{ label: "Built-in benches and planters" }] });
+      }
+      if (!hasDeck(d)) return no(`A ${label} is built into a deck's boards — this design has no deck under it.`);
+      if (list.length >= BUILT_IN_LIMITS.count) return no(`That's ${BUILT_IN_LIMITS.count} built-ins already — the most the studio draws. Take one off first.`);
+      const side = cmd.side ?? "front";
+      const along = side === "front" ? d.shape.widthFt : d.shape.depthFt;
+      const base = defaultBuiltIn("", cmd.kind, d.shape.widthFt);
+      const lengthFt = cmd.lengthFt ?? (side === "front" ? base.lengthFt : Math.min(base.lengthFt, Math.max(BUILT_IN_LIMITS.lengthFt.min, halfFt(along - 2))));
+      // Toward an end of its edge: the engine keeps it on the edge, clear of the corner. (An end runs out from the house: "right" is its far, front end.)
+      const atFt = cmd.at === "left" ? lengthFt / 2 : cmd.at === "right" ? along - lengthFt / 2 : along / 2;
+      let id = "";
+      for (let n2 = list.length + 1; !id; n2++) if (!list.some((b) => b.id === `b${n2}`)) id = `b${n2}`;
+      const next = patchDesign(d, { extras: { builtIns: [...list, { id, kind: cmd.kind, side, atFt, lengthFt }] } }, settle);
+      const built = buildStructure(next).builtIns.find((b) => b.design.id === id);
+      if (!built?.built) return no(`A ${label} along the ${side === "front" ? "front" : `${side} end`} does not fit: ${built?.why ?? "no room there"}.`);
+      const words = builtInWords(built).replace(/^a /, "A ").replace(/^an /, "An ");
+      const more = built.kind === "planter" ? ` in the deck's own boards, ${Math.round(built.heightIn)} in. high — about ${Math.round(built.weightLb / 10) * 10} lb full of wet soil${built.overBeam ? ", over a beam line" : "; no beam runs under it, so see the checks"}` : `: the seat 18 in. up, three boards deep, on ${built.supports} supports${built.kind === "bench-back" ? ", with a capped back 36 in. tall" : ""}`;
+      return out(next, [`${words}${more}.${built.flags.shortened && cmd.lengthFt !== undefined ? ` ${built.flags.beside ? "Beside the other built-in there is room for" : "That edge has room for"} ${Math.round((built.lengthIn / 12) * 10) / 10} ft.` : ""}${built.flags.onStair ? " It stands across a stair's top — move one of them." : ""}`], { flash: [{ label: "Built-in benches and planters" }], view: { look: "yard" as const } });
     }
     case "item": {
       const items = [...d.extras.items];
