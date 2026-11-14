@@ -13,6 +13,9 @@ import { answerAssistant, askAssistant, loadAssistantFeed, loadAssistantTasks } 
 import { DEFAULT_SPEECH_LANG, isSpeechLang, type AssistantFeed, type FeedAction, type FeedMessage, type SpeechLang } from "@/lib/assistant/shared";
 import type { SpeedReadout } from "@/lib/assistant/words";
 
+/** What the ears say as they hand a spoken request on (use-deck-speech, onHandOn). */
+type HandOn = { sinceVoiceMs: number | null; heardMs: number | null; ears: "meter" | "timed"; rest: boolean };
+
 export type AssistantState = {
   feed: AssistantFeed | null;
   /** The person's words waiting for an answer (shown before the server has them). */
@@ -40,7 +43,7 @@ export type AssistantState = {
   /** The last turn as it was timed — shown while the new engine is on. */
   speed: SpeedReadout | null;
   /** The ears are handing a request on (their timing of it), and a reply's sound started. */
-  noteHandOn: (t: { sinceVoiceMs: number | null; heardMs: number | null }) => void;
+  noteHandOn: (t: HandOn) => void;
   noteVoiceStart: () => void;
   load: () => void;
   loadTasks: () => void;
@@ -139,9 +142,9 @@ export function useAssistant(): AssistantState {
   const fast = useSyncExternalStore(subscribeFast, readFast, () => false);
   const [speed, setSpeed] = useState<SpeedReadout | null>(null);
   /** The ears' last hand-on (and when), and when the last answer arrived — the readout's two ends. */
-  const handOn = useRef<{ sinceVoiceMs: number | null; heardMs: number | null; at: number } | null>(null);
+  const handOn = useRef<(HandOn & { at: number }) | null>(null);
   const answeredAt = useRef(0);
-  const noteHandOn = useCallback((t: { sinceVoiceMs: number | null; heardMs: number | null }) => {
+  const noteHandOn = useCallback((t: HandOn) => {
     handOn.current = { ...t, at: Date.now() };
   }, []);
   const noteVoiceStart = useCallback(() => {
@@ -246,7 +249,7 @@ export function useAssistant(): AssistantState {
         }
         takeFeed(r.feed);
         answeredAt.current = r.speed ? Date.now() : 0;
-        setSpeed(r.speed ? { sentMs: ears?.sinceVoiceMs ?? null, heardMs: ears?.heardMs ?? null, answeredMs: Date.now() - asked, voiceMs: null, server: r.speed } : null);
+        setSpeed(r.speed ? { sentMs: ears?.sinceVoiceMs ?? null, heardMs: ears?.heardMs ?? null, answeredMs: Date.now() - asked, voiceMs: null, ears: ears?.ears, rest: ears?.rest, server: r.speed } : null);
         if (r.running) void runBuild(r.running, r.feed);
         return r.reply;
       } catch {

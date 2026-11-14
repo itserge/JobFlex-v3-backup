@@ -110,6 +110,8 @@ export interface TurnSpeed {
   rounds: number;
   model: string | null;
   engine: OperatorEngine;
+  /** the share of the prompt OpenAI had kept ready from the turn before (its prompt cache), 0–100; null: not told */
+  cachedPct?: number | null;
 }
 
 /** Seconds to one decimal, as the readout prints them: 1840 → "1.8 s". */
@@ -125,6 +127,10 @@ export interface SpeedReadout {
   answeredMs: number;
   /** from the answer arriving to its sound starting; null when it was not read out (typed, muted) or not yet */
   voiceMs: number | null;
+  /** spoken: how the pause was noticed — the microphone's level meter, or (no level could be read) timed pieces */
+  ears?: "meter" | "timed";
+  /** spoken: the words sounded unfinished, so the rest of the sentence was waited for */
+  rest?: boolean;
   server: TurnSpeed | null;
 }
 
@@ -132,9 +138,15 @@ export interface SpeedReadout {
  *  2 rounds, gpt-6-luna) · voice after 0.5 s"; a typed turn says only how long the answer took. */
 export function speedLine(r: SpeedReadout): string {
   // A turn answered without the model (a yes, a no, an undo) has no model part.
-  const brain = r.server && r.server.rounds ? ` (model ${secs(r.server.modelMs)}, ${r.server.rounds} round${r.server.rounds === 1 ? "" : "s"}${r.server.model ? `, ${r.server.model}` : ""})` : "";
+  const cache = r.server && typeof r.server.cachedPct === "number" ? `, cache ${r.server.cachedPct}%` : "";
+  const brain = r.server && r.server.rounds ? ` (model ${secs(r.server.modelMs)}, ${r.server.rounds} round${r.server.rounds === 1 ? "" : "s"}${r.server.model ? `, ${r.server.model}` : ""}${cache})` : "";
   const answered = `answered in ${secs(r.answeredMs)}${brain}`;
-  if (r.sentMs === null) return `Speed test · ${answered}${r.voiceMs !== null ? ` · voice after ${secs(r.voiceMs)}` : ""}`;
+  const voice = r.voiceMs !== null ? ` · voice after ${secs(r.voiceMs)}` : "";
+  const wrote = r.heardMs !== null ? `written down in ${secs(r.heardMs)}` : "";
+  // No level could be read from the microphone: there is no last word to count from, and the line says so.
+  if (r.ears === "timed") return `Speed test · the microphone's level could not be read, heard in timed pieces${wrote ? ` (${wrote})` : ""} · ${answered}${voice}`;
+  if (r.sentMs === null) return `Speed test · ${answered}${voice}`;
   const total = r.sentMs + r.answeredMs + (r.voiceMs ?? 0);
-  return `Speed test · ${secs(total)} from your last word to ${r.voiceMs !== null ? "its voice" : "the answer"} · sent after ${secs(r.sentMs)}${r.heardMs !== null ? ` (written down in ${secs(r.heardMs)})` : ""} · ${answered}${r.voiceMs !== null ? ` · voice after ${secs(r.voiceMs)}` : ""}`;
+  const notes = [wrote, r.rest ? "waited for the rest of the sentence" : ""].filter(Boolean).join(", ");
+  return `Speed test · ${secs(total)} from your last word to ${r.voiceMs !== null ? "its voice" : "the answer"} · sent after ${secs(r.sentMs)}${notes ? ` (${notes})` : ""} · ${answered}${voice}`;
 }

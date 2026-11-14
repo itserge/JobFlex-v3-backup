@@ -54,14 +54,18 @@
 //   model, reasoning_effort and parallel_tool_calls are kept. POST /__fake/ears {refuse:[models], refuseKeywords:bool,
 //   refuseChat:[models], refuseParallel:bool} makes a model answer 404 (or 400 for the keywords / the several-at-once),
 //   and GET /__fake/ears reads it all back — so a check can see the ladder fall a step at a time.
+//   {queue:[…]} gives the takes their words one by one and silence ("") after the last — a quiet room on timed
+//   takes; {delayMs} is how long a take is being written down.
 //   NODE_PATH="" npx --no-install tsx qa/fixtures/assistant-fake-openai.ts     (FAKE_OPENAI_PORT, default 4601)
 import http from "node:http";
 import { readBudgetText } from "../../src/lib/projectBudgetImport";
 
 const PORT = Number(process.env.FAKE_OPENAI_PORT || 4601);
 /** The Operator's new engine on the stand: what the ears "hear", which models refuse, and what was asked of them. */
-const ears: { text: string; refuse: string[]; refuseKeywords: boolean; refuseChat: string[]; refuseParallel: boolean; heard: Array<{ model: string; languages: string[]; language: string | null; keywords: string[]; prompt: boolean }>; chats: Array<{ model: string; effort: string | null; parallel: boolean | null; temperature: number | null; systemStart: string }> } = {
+const ears: { text: string; queue: string[] | null; delayMs: number; refuse: string[]; refuseKeywords: boolean; refuseChat: string[]; refuseParallel: boolean; heard: Array<{ model: string; languages: string[]; language: string | null; keywords: string[]; prompt: boolean }>; chats: Array<{ model: string; effort: string | null; parallel: boolean | null; temperature: number | null; systemStart: string }> } = {
   text: "How many proposals are waiting?",
+  queue: null,
+  delayMs: 0,
   refuse: [],
   refuseKeywords: false,
   refuseChat: [],
@@ -1174,8 +1178,10 @@ http
       if (req.url?.startsWith("/__fake/ears")) {
         if ((req.method ?? "GET").toUpperCase() === "POST") {
           const set = JSON.parse(raw || "{}") as Partial<typeof ears> & { reset?: boolean };
-          if (set.reset) Object.assign(ears, { refuse: [], refuseKeywords: false, refuseChat: [], refuseParallel: false, heard: [], chats: [] });
+          if (set.reset) Object.assign(ears, { queue: null, delayMs: 0, refuse: [], refuseKeywords: false, refuseChat: [], refuseParallel: false, heard: [], chats: [] });
           if (typeof set.text === "string") ears.text = set.text;
+          if (Array.isArray(set.queue)) ears.queue = set.queue.map(String);
+          if (typeof set.delayMs === "number") ears.delayMs = Math.max(0, set.delayMs);
           if (Array.isArray(set.refuse)) ears.refuse = set.refuse;
           if (typeof set.refuseKeywords === "boolean") ears.refuseKeywords = set.refuseKeywords;
           if (Array.isArray(set.refuseChat)) ears.refuseChat = set.refuseChat;
@@ -1198,7 +1204,11 @@ http
           res.end(JSON.stringify({ error: { message: "Unknown parameter: 'keywords'.", code: "unknown_parameter" } }));
           return;
         }
-        res.end(JSON.stringify({ text: ears.text }));
+        // A queue: one take, one entry — and silence ("") once it has run out, as a quiet room is written down.
+        const heardText = ears.queue ? (ears.queue.shift() ?? "") : ears.text;
+        const heardEnd = () => res.end(JSON.stringify({ text: heardText }));
+        if (ears.delayMs) setTimeout(heardEnd, ears.delayMs);
+        else heardEnd();
         return;
       }
       if (/\/models\/[\w.-]+$/.test(req.url ?? "") && (req.method ?? "GET").toUpperCase() === "GET") {
