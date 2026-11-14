@@ -130,6 +130,18 @@ check("the wall, in a line", wallWords(wrap.shape, wrap.house) === "The deck run
 console.log("── rails, boards, fascia: the open edges all round");
 check("the rail runs along the open back and the outer side, never beside the house's side wall", sW.rails.segments.some((g) => Math.abs(g.y0 - -120) < 9 && Math.abs(g.y1 - -120) < 9) && !sW.rails.segments.some((g) => Math.abs(g.x0 - 288) < 9 && Math.abs(g.x1 - 288) < 9 && Math.min(g.y0, g.y1) < -12), JSON.stringify(sW.rails.segments.slice(0, 2)));
 check("…74 ft of guard, as the open edge", Math.abs(sW.rails.lf - 74) < 4, `${sW.rails.lf}`);
+// A lower level in front of a deck past the corner (2026-11-14): it was handed the main deck's reach past the corner
+// and read back with a wing of its own — built back under the main deck, and counted in the price.
+const withLower = (d: DeckDesign) => normalizeDeckDesign({ ...d, heightIn: 60, lower: { ...d0.lower, on: true, place: "front", widthFt: 12, depthFt: 8, dropIn: 21 } });
+const lowWing = buildStructure(withLower(past(base, "right", 6, 8)));
+const lowPlain = buildStructure(withLower(base));
+check("a lower level in front of a deck round the corner is its own plain rectangle: 12 × 8 ft, nothing under the main deck", !!lowWing.lower && lowWing.lower.frame.zones.length === 1 && lowWing.lower.frame.areaSqFt === 96 && lowWing.lower.frame.zones[0].zone.y0 === 0 && lowWing.lower.frame.areaSqFt === lowPlain.lower!.frame.areaSqFt && lowWing.lower.frame.posts.length === lowPlain.lower!.frame.posts.length, JSON.stringify(lowWing.lower?.frame.zones.map((z) => [z.zone.x0, z.zone.y0, z.zone.x1, z.zone.y1])));
+check("…railed on its three open edges only", lowWing.rails.segments.filter((g) => g.level === "lower").every((g) => Math.min(g.y0, g.y1) >= lowWing.lower!.offsetYIn - 1));
+// Straight past the corner, no wing (2026-11-14): the back is ONE line — the house behind most of it, nothing behind
+// the last 6 ft. Read by its middle it was all "house" and that stretch had no guard on a deck 4 ft up.
+const sStraight = buildStructure(past(base, "right", 6));
+check("straight past the corner with no wing: the open back stretch past the house is railed too", sStraight.rails.segments.some((g) => Math.abs(g.y0) < 9 && Math.abs(g.y1) < 9 && Math.min(g.x0, g.x1) > 288 - 9 && Math.max(g.x0, g.x1) > 360 - 9) && !sStraight.rails.segments.some((g) => Math.abs(g.y0) < 9 && Math.abs(g.y1) < 9 && Math.min(g.x0, g.x1) < 288 - 9), JSON.stringify(sStraight.rails.segments.map((g) => [Math.round(g.x0), Math.round(g.y0), Math.round(g.x1), Math.round(g.y1)])));
+check("…its guard as long as its open edge: 12 + 30 + 12 + 6 ft", Math.abs(sStraight.rails.lf - 60) < 3 && Math.abs(sStraight.surface!.fascia.lf - 60) < 0.6 || sStraight.surface!.fascia.lf === 0, `${sStraight.rails.lf}`);
 const bordered = buildStructure(normalizeDeckDesign({ ...wrap, decking: { ...wrap.decking, border: 1, fascia: "match" } }));
 check("a picture-frame border runs along the open back too, not along the house", bordered.surface!.borderEdges.some((e) => Math.abs(e.y0 - -120) < 0.5 && Math.abs(e.y1 - -120) < 0.5) && !bordered.surface!.borderEdges.some((e) => Math.abs(e.x0 - 288) < 0.5 && Math.abs(e.x1 - 288) < 0.5) && !bordered.surface!.borderEdges.some((e) => Math.abs(e.y0) < 0.5 && Math.abs(e.y1) < 0.5));
 check("…and fascia covers every open edge", bordered.surface!.fascia.lf === 74);

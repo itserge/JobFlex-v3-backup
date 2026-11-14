@@ -29,6 +29,7 @@ import { defaultHouse, fitDeckEnds, normalizeHouse, type HouseDesign } from "./h
  * design reads as a bare deck; a v2 one keeps every choice it made.
  */
 import { deckCodeFor } from "./stateCodes";
+import { normalizeBuiltIns, type BuiltIn } from "./builtins";
 
 export const DECK_DESIGN_VERSION = 3;
 
@@ -684,6 +685,10 @@ export interface DeckDesign {
     underDeckDrain: boolean;
     /** Items of the contractor's own, outside every list (2026-10-12). */
     items: OwnItem[];
+    /** Skirting under the deck (2026-11-14; lib/deck/skirt): framed lattice, or boards laid level, hung under the rim along every open edge. Absent = none. */
+    skirt?: "lattice" | "boards";
+    /** Built-in benches and planter boxes (2026-11-14; lib/deck/builtins), each along one edge of the deck. Absent = none. */
+    builtIns?: BuiltIn[];
   };
   /** The railing (M3) — "none" leaves the edges open. */
   rail: RailDesign;
@@ -1205,6 +1210,8 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
   const beamRaw = typeof f.beam === "string" ? f.beam : "auto";
   const beam: BeamSize | "auto" = beamsBuilt === "solid" ? (isSolidBeam(beamRaw) ? beamRaw : "auto") : (BUILT_UP_CHOICES as readonly string[]).includes(beamRaw) ? (beamRaw as BuiltUpBeam) : "auto";
   const overhangFt = f.overhangFt === "auto" || f.overhangFt === undefined ? "auto" : toInch(clamp(num(f.overhangFt, 0), DECK_LIMITS.overhangFt.min, DECK_LIMITS.overhangFt.max));
+  // Built-in benches and planters (lib/deck/builtins): kept only where there is a deck to stand them on.
+  const builtIns = structure === "deck" || structure === "covered-deck" || floor === "deck" ? normalizeBuiltIns(ex.builtIns, shape.widthFt, shape.depthFt) : [];
   const railFt = ex.railFt === "auto" || ex.railFt === undefined ? "auto" : Math.round(clamp(num(ex.railFt, 0), DECK_LIMITS.railFt.min, DECK_LIMITS.railFt.max) * 10) / 10;
   const heightIn = Math.round(clamp(num(r.heightIn, d.heightIn), DECK_LIMITS.heightIn.min, DECK_LIMITS.heightIn.max) * 4) / 4;
   const lower = normalizeLower(r.lower, shape, heightIn);
@@ -1274,6 +1281,8 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
       stainless: ex.stainless === true,
       underDeckDrain: ex.underDeckDrain === true && heightIn >= 84,
       items: normalizeOwnItems(ex.items),
+      ...(ex.skirt === "lattice" || ex.skirt === "boards" ? { skirt: ex.skirt } : {}),
+      ...(builtIns.length ? { builtIns } : {}),
     },
     rail,
     stairs,

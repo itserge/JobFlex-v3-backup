@@ -182,6 +182,8 @@ export interface RailInput {
   stairs: StairBuild[];
   /** A covered deck's roof posts, in plan, with half their width: a top-mounted rail that comes to one runs into it — the roof's post is the rail's post there. */
   roofPosts?: ReadonlyArray<{ x: number; y: number; halfIn: number }>;
+  /** Stretches of the main deck's edge where something else stands in the rail's place (a privacy screen, lib/deck/builtins): no rail there. */
+  gaps?: ReadonlyArray<{ x0: number; y0: number; x1: number; y1: number }>;
 }
 
 export function buildRails(input: RailInput): RailBuild {
@@ -281,6 +283,15 @@ export function buildRails(input: RailInput): RailBuild {
         const lo = Math.min(t0, t1);
         const hi = Math.max(t0, t1);
         if (hi > 0 && lo < L) openings.push([Math.max(0, lo), Math.min(L, hi)]);
+      }
+      // …and what stands in the rail's place along it (a privacy screen): the rail stops a hand short of each of its ends.
+      if (level.id === "upper") {
+        for (const g of input.gaps ?? []) {
+          if (Math.abs((g.x0 - side.x0) * uy - (g.y0 - side.y0) * ux) > 1.5 || Math.abs((g.x1 - side.x0) * uy - (g.y1 - side.y0) * ux) > 1.5) continue;
+          const t0 = (g.x0 - side.x0) * ux + (g.y0 - side.y0) * uy;
+          const t1 = (g.x1 - side.x0) * ux + (g.y1 - side.y0) * uy;
+          if (Math.max(t0, t1) > 0 && Math.min(t0, t1) < L) openings.push([Math.max(0, Math.min(t0, t1)), Math.min(L, Math.max(t0, t1))]);
+        }
       }
       if (level.stepDown && side.side === "front" && level.stepDown.dropIn <= GUARD_REQUIRED_ABOVE_IN) {
         const t0 = (level.stepDown.x0 - side.x0) * ux;

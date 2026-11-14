@@ -53,6 +53,8 @@ import { openingChecks } from "./openingChecks";
 import { deckPast, pastWords } from "./house";
 import { railHeldWords, railMountLine } from "./rails";
 import { borderWords } from "./surface";
+import { SKIRT_GAP_IN, SKIRT_GROUND_CLEAR_IN, SKIRT_MIN_IN } from "./skirt";
+import { BENCH_BACK_IN, BENCH_SEAT_IN, BUILT_IN_LABEL, SCREEN_GAP_IN, SCREEN_WIND_PSF, builtInWords } from "./builtins";
 
 /** A change to a design, part by part; anything left out stays as it is. */
 export type DeckPatch = {
@@ -194,6 +196,69 @@ export function deckChecks(s: DeckStructure): DeckCheck[] {
   // The picture-frame border, said where the builder looks (2026-11-13): how wide, how far, what goes under it.
   const bordered = frame && s.surface && s.surface.border > 0 ? s.surface : null;
   if (bordered) add({ id: "decking-border", level: "pass", part: "Decking", text: `${borderWords(bordered).replace(/^a /, "A ")}: mitred at the corners${bordered.borderBackingIn.length ? `, with a joist added under its inner edge along the sides (${Math.round(bordered.borderBackingIn.reduce((a, v) => a + v, 0) / 12)} ft of ${frame!.joistSize})` : ""}${bordered.product.border ? `, bought apart in ${bordered.product.border.name}` : ", cut from the deck's own boards"}.`, rule: "The decking maker's installation guide" });
+  // BUILT-IN BENCHES AND PLANTERS (2026-11-14; lib/deck/builtins): what each is and what it runs into, said where the
+  // builder looks. (Ids clear of lib/deck/settle AUTO_FIX: the builder's own choices.)
+  if (frame) {
+    const guarded = s.rails.required;
+    for (const b of s.builtIns) {
+      const PART = "Benches and planters";
+      const name = builtInWords(b).replace(/^a /, "A ").replace(/^an /, "An ");
+      const others = (design.extras.builtIns ?? []).filter((x) => x.id !== b.design.id);
+      if (!b.built) {
+        add({ id: `builtin-${b.design.id}`, level: "warn", part: PART, text: `The ${BUILT_IN_LABEL[b.kind].toLowerCase()} asked for along the ${b.design.side === "front" ? "front" : `${b.design.side} end`} is not built: ${b.why}. It is not in the price.`, fix: { label: "Take it off", patch: { extras: { builtIns: others } } } });
+        continue;
+      }
+      const fitted = b.flags.shortened ? ` It was asked for ${b.design.lengthFt} ft long; ${b.flags.beside ? "beside the other built-in there is room for" : "that edge has room for"} ${Math.round((b.lengthIn / 12) * 10) / 10} ft.` : "";
+      if (b.kind === "screen") {
+        const hFt = Math.round(((b.heightIn - 1) / 12) * 2) / 2;
+        const tall = hFt > 6;
+        add({
+          id: `builtin-${b.design.id}`,
+          level: tall ? "warn" : "pass",
+          part: PART,
+          text: `${name}: the deck's own boards across ${b.posts} ${b.postSize} posts no more than 6 ft apart, ${SCREEN_GAP_IN} in. between the boards, a cap board on top (${Math.round(b.sqFt)} sq ft). ${s.rails.on ? "It stands on the railing's line in the railing's place" : "It stands at the deck's edge"}${guarded ? " and is the guard along its stretch (taller than 36 in., no gap a 4-in. ball passes)" : ""}.${fitted} A screen catches wind like a fence: at ${SCREEN_WIND_PSF} psf each post takes about ${Math.round(b.windLb / 10) * 10} lb, which turns it with about ${Math.round(b.windFtLb / 10) * 10} ft-lb where it meets the deck — so each post is one piece from under the deck, through-bolted twice beside a joist or the rim over solid blocking (never screwed to the boards), and the deck's bracing takes the push.${tall ? ` Over 6 ft it is past what a deck's frame holds by rule of thumb: have an engineer size its posts and their connection, and ask the building office — many limit a screen's height.` : ""}`,
+          rule: "IRC R301.2.1 · R312.1",
+        });
+      } else if (b.kind === "planter") {
+        add({
+          id: `builtin-${b.design.id}`,
+          level: b.overBeam ? "pass" : "warn",
+          part: PART,
+          text: `${name}, ${b.depthIn} in. deep and ${Math.round(b.heightIn)} in. high, in the deck's own boards.${fitted} Full of wet soil it holds about ${Math.round(b.soilCuFt)} cu ft and weighs about ${Math.round(b.weightLb / 10) * 10} lb — ${b.psf} psf on the boards under it, where the deck is framed for a ${frame.load} psf live load. ${b.overBeam ? "It stands over a beam line, so that weight goes down at the posts." : "No beam runs under it: move it over a beam line, or double the joists under it and block between them."} Line it, drill drain holes, and keep it on its feet so water runs out from under it.`,
+          rule: "IRC R507.2 · Table R301.5",
+        });
+      } else {
+        const seat = `the seat ${BENCH_SEAT_IN} in. above the deck, three boards deep, on ${b.supports} supports (4x4 legs under a 2x4 cleat, no more than 4 ft apart) with solid blocking between the joists under each`;
+        const guardNote = guarded
+          ? b.kind === "bench-back"
+            ? " Its back is not a guard: the railing behind it still does that work, and a seat beside a guard is a step up for a child — some building offices want the guard 36 in. above the seat there (the code measured it so until 2012). Ask before you build."
+            : " A seat beside a guard is a step up for a child: the code measures the guard from the deck, but some building offices want it 36 in. above the seat there (the code measured it so until 2012). Ask before you build, or set the bench away from the edge."
+          : "";
+        add({ id: `builtin-${b.design.id}`, level: "pass", part: PART, text: `${name}: ${seat}${b.kind === "bench-back" ? `; a back of two boards and a cap on 4x4 posts ${BENCH_BACK_IN} in. tall, each bolted to the frame` : ""}.${fitted}${guardNote}` });
+      }
+      if (b.flags.onStair) add({ id: `builtin-${b.design.id}-stair`, level: "fail", part: PART, text: `${name} stands across the top of a stair: nobody can get down it. Move one of them along the edge, or shorten the ${b.kind === "planter" ? "planter" : b.kind === "screen" ? "screen" : "bench"}.`, fix: { label: "Take it off", patch: { extras: { builtIns: others } } } });
+      if (b.flags.onSteps) add({ id: `builtin-${b.design.id}-steps`, level: "warn", part: PART, text: `${name} stands along an edge the wide steps run on: the steps behind it lead nowhere. Wrap the steps round fewer sides, or move it to an edge without steps.` });
+      if (b.flags.overlaps.length && b.flags.overlaps.some((id) => id > b.design.id)) add({ id: `builtin-${b.design.id}-overlap`, level: "warn", part: PART, text: `${name} and another built-in stand on the same boards. Shorten one, or move it along its edge, so the two meet without crossing.` });
+    }
+  }
+  // SKIRTING (2026-11-14; lib/deck/skirt): what hangs under the deck, said where the builder looks — and where none
+  // could. (Ids clear of lib/deck/settle AUTO_FIX: a finish the builder chose, not a size to settle.)
+  if (frame && design.extras.skirt) {
+    const sk = s.skirt;
+    const what = design.extras.skirt === "lattice" ? "Lattice in a 1x4 border" : `The deck's own boards laid level, ${SKIRT_GAP_IN} in. apart`;
+    if (!sk) {
+      add({ id: "deck-skirt-none", level: "warn", part: "Skirting", text: `No skirting is drawn: no open edge has ${SKIRT_MIN_IN} in. between the frame and the ground (a skirt leaves ${SKIRT_GROUND_CLEAR_IN} in. of air over the soil, and wide steps close the edges they run along). A deck this low is closed by its fascia; the price has no skirting in it.`, fix: { label: "Take the skirting off", patch: { extras: { skirt: undefined } } } });
+    } else {
+      const bays = sk.panels.length;
+      const stepped = new Set(sk.panels.map((q) => Math.round(q.bottomIn))).size > 1;
+      add({
+        id: "deck-skirt",
+        level: "pass",
+        part: "Skirting",
+        text: `${what} under ${Math.round(sk.lf)} ft of the deck's open edges — ${bays} ${bays === 1 ? "bay" : "bays"}, 8 ft long at most, up to ${sk.heightIn} in. high (${Math.round(sk.sqFt)} sq ft) — on a treated 2x4 frame: a rail fastened under the rim, a rail a hand above the ground, an upright every ${design.extras.skirt === "boards" ? 2 : 4} ft. It stops ${SKIRT_GROUND_CLEAR_IN} in. clear of the soil so it cannot wick water${stepped ? ", stepping down bay by bay with the ground" : ""}${sk.roundPosts ? `; it is cut round the ${sk.roundPosts === 1 ? "post that stands" : `${sk.roundPosts} posts that stand`} at the deck's edge` : ""}. Hang one bay on hinges to get under the deck.${sk.lowFt > 0 ? ` Left off ${Math.round(sk.lowFt)} ft of edge where the frame is less than ${SKIRT_MIN_IN} in. above the ground.` : ""}${design.extras.skirt === "boards" ? " The gaps between the boards are the frame's air: do not close them, and keep the ground under the deck sloped to drain." : ""}`,
+      });
+    }
+  }
   if (s.lower) deckFrameChecks(s.lower.frame, add, null, s.lower.place === "under" ? "Lower deck — " : "Lower level — ");
   // A DOUBLE DECK (2026-11-13; lib/deck/structure): what the two decks on one set of posts came to.
   if (frame && design.lower.on && design.lower.place === "under") doubleDeckChecks(s, add);

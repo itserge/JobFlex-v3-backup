@@ -29,6 +29,8 @@ import { footingDepthIn, type BuildOptions, type DeckFrame } from "./frame";
 import { roofByHandWords, roofWords, type RoofFrame } from "./roof";
 import { buildStructure, structureLevels, type DeckStructure } from "./structure";
 import { deckTakeoff, type BomLine, type BomStep, type DeckTakeoff } from "./takeoff";
+import { SKIRT_GAP_IN } from "./skirt";
+import { BENCH_SEAT_IN, PLANTER_DEPTH_IN, SCREEN_GAP_IN, builtInWords } from "./builtins";
 import { isExampleSource, deckRate, type ResolvedRate } from "./rates";
 import { railType, speciesWords } from "./catalog";
 import { OC_POST } from "./ocLumber";
@@ -237,11 +239,86 @@ export function priceStructure(s: DeckStructure, opts: DeckPriceOptions = {}): D
       });
     }
 
-    // Fascia.
+    // Fascia. (The skirting's panels are bought with the fascia and priced on their own line.)
+    const isSkirt = (l: PricedBomLine) => l.id.includes("skirt");
+    const notSkirt = (l: PricedBomLine) => !isSkirt(l);
     const fasciaFt = levels.reduce((a, l) => a + l.surface.fascia.lf, 0);
     if (fasciaFt > 0) {
       const w = work("labor.fascia", fasciaFt);
-      line({ id: "deck-fascia", name: "Fascia on the open edges", quantity: Math.round(fasciaFt * 10) / 10, unit: "ln ft", material: stepMaterial("fascia"), labor: w.amount, exampleMaterial: stepExample("fascia"), exampleLabor: w.example });
+      line({ id: "deck-fascia", name: "Fascia on the open edges", quantity: Math.round(fasciaFt * 10) / 10, unit: "ln ft", material: stepMaterial("fascia", notSkirt), labor: w.amount, exampleMaterial: stepExample("fascia", notSkirt), exampleLabor: w.example });
+    }
+
+    // Built-in benches and planter boxes (2026-11-14; lib/deck/builtins): a line for the benches, a line for the boxes.
+    {
+      const benches = s.builtIns.filter((b) => b.built && (b.kind === "bench" || b.kind === "bench-back"));
+      const planters = s.builtIns.filter((b) => b.built && b.kind === "planter");
+      const screens = s.builtIns.filter((b) => b.built && b.kind === "screen");
+      if (screens.length) {
+        const isScreen = (l: PricedBomLine) => l.id.includes("screen");
+        const sqFt = Math.round(screens.reduce((a, b) => a + b.sqFt, 0));
+        const w = work("labor.screen", sqFt);
+        line({
+          id: "deck-screens",
+          name: screens.length === 1 ? "Privacy screen" : `${screens.length} privacy screens`,
+          description: `${screens.map((b) => builtInWords(b).replace(/^an? /, "")).join("; ")} — the deck's own boards across ${[...new Set(screens.map((b) => b.postSize))].join(" and ")} posts no more than 6 ft apart, ${SCREEN_GAP_IN} in. between the boards, a cap board on top; each post in one piece from under the deck, through-bolted to the frame over solid blocking`,
+          quantity: Math.max(1, sqFt),
+          unit: "sqft",
+          material: stepMaterial("builtins", isScreen),
+          labor: w.amount,
+          exampleMaterial: stepExample("builtins", isScreen),
+          exampleLabor: w.example,
+        });
+      }
+      const ftOf = (list: typeof benches) => Math.round((list.reduce((a, b) => a + b.lengthIn, 0) / 12) * 2) / 2;
+      if (benches.length) {
+        const backs = benches.filter((b) => b.kind === "bench-back");
+        const isBench = (l: PricedBomLine) => l.id.includes("bench");
+        const w = sum(work("labor.bench", ftOf(benches)), backs.length ? work("labor.benchBack", ftOf(backs)) : none);
+        line({
+          id: "deck-benches",
+          name: `${benches.length === 1 ? "Built-in bench" : `${benches.length} built-in benches`}${backs.length === benches.length ? " with a back" : backs.length ? `, ${backs.length} with a back` : ""}`,
+          description: `${benches.map((b) => builtInWords(b).replace(/^an? /, "")).join("; ")} — the seat ${BENCH_SEAT_IN} in. above the deck in the deck's own boards, on 4x4 legs no more than 4 ft apart, a fascia apron under its edge, blocking between the joists under every support`,
+          quantity: ftOf(benches),
+          unit: "ln ft",
+          material: stepMaterial("builtins", isBench),
+          labor: w.amount,
+          exampleMaterial: stepExample("builtins", isBench),
+          exampleLabor: w.example,
+        });
+      }
+      if (planters.length) {
+        const isPlanter = (l: PricedBomLine) => l.id.includes("planter");
+        const w = work("labor.planter", ftOf(planters));
+        line({
+          id: "deck-planters",
+          name: planters.length === 1 ? "Planter box" : `${planters.length} planter boxes`,
+          description: `${planters.map((b) => builtInWords(b).replace(/^an? /, "")).join("; ")} — ${PLANTER_DEPTH_IN} in. deep, three boards high in the deck's own boards on a treated frame, a cap board round the rim; lined, with drain holes; soil and plants by the owner`,
+          quantity: ftOf(planters),
+          unit: "ln ft",
+          material: stepMaterial("builtins", isPlanter),
+          labor: w.amount,
+          exampleMaterial: stepExample("builtins", isPlanter),
+          exampleLabor: w.example,
+        });
+      }
+    }
+
+    // Skirting under the deck (2026-11-14; lib/deck/skirt): its panels or boards and the frame behind them, hung like
+    // the framed panels between a roof's posts.
+    if (s.skirt) {
+      const sk = s.skirt;
+      const w = work("labor.walls", sk.sqFt);
+      line({
+        id: "deck-skirt",
+        name: `Skirting under the deck — ${sk.kind === "lattice" ? "lattice in a border" : "the deck's boards laid level"}`,
+        description: `${Math.round(sk.lf)} ft of open edge, up to ${sk.heightIn} in. high, on a treated 2x4 frame hung under the rim; a hand clear of the ground${sk.kind === "boards" ? `, ${SKIRT_GAP_IN}-in. gaps between the boards for air` : ""}; one bay on hinges, to get under the deck`,
+        quantity: Math.max(1, Math.round(sk.sqFt)),
+        unit: "sqft",
+        material: stepMaterial("fascia", isSkirt),
+        labor: w.amount,
+        exampleMaterial: stepExample("fascia", isSkirt),
+        exampleLabor: w.example,
+      });
     }
 
     // The step between the levels (a low drop is a step the lower deck itself makes; the trim and the riser are the work).
@@ -475,6 +552,8 @@ export function deckScope(pkg: DeckPackage, where?: string | null): string[] {
     out.push(`Electrical: ${electricalWords(el).toLowerCase()} — ${[...new Set(el.fixtures.map((f) => FIXTURE_LABEL[f.kind].toLowerCase()))].join(", ")}, on ${plural(el.circuits.length, "new circuit")} from the panel, weatherproof boxes and GFCI protection, by a licensed electrician.`);
     if (el.byClient.length) out.push(`${el.byClient.length === 1 ? "One fixture" : `${el.byClient.length} fixtures`} (${[...new Set(el.byClient.map((f) => FIXTURE_LABEL[f.kind].toLowerCase()))].join(", ")}) to be chosen and bought by you; we wire the boxes and hang them.`);
   }
+  for (const b of s.builtIns) if (b.built) out.push(b.kind === "screen" ? `${builtInWords(b).replace(/^a /, "A ").replace(/^an /, "An ")}: the deck's own boards across ${b.postSize} posts, with a cap board; the posts bolted through the deck's frame.` : b.kind === "planter" ? `${builtInWords(b).replace(/^a /, "A ").replace(/^an /, "An ")}, in the deck's own boards with a cap round the rim, lined and drained. Soil and plants are not included.` : `${builtInWords(b).replace(/^a /, "A ").replace(/^an /, "An ")}, built in: the seat in the deck's own boards on treated legs, a fascia apron under its edge${b.kind === "bench-back" ? ", a capped back behind it" : ""}.`);
+  if (s.skirt) out.push(`Skirting under the deck on its open sides (${Math.round(s.skirt.lf)} ft): ${s.skirt.kind === "lattice" ? "lattice in a border" : "the deck's own boards laid level, with gaps for air"}, on a treated frame, stopped a hand above the ground, with one hinged panel to get under the deck.`);
   if (design.extras.underDeckDrain) out.push("An under-deck drainage system keeps the space below the deck dry.");
   if (design.extras.demoSqFt > 0) out.push(`Tear-out and haul-away of the existing deck, ${design.extras.demoSqFt} sq ft.`);
   out.push("Layout squared and checked before digging; site cleaned when the work is done.");
