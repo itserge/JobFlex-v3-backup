@@ -63,10 +63,12 @@ import {
   type JoistSize,
   type LoadPsf,
   type PostSize,
+  type FramingGroup,
   type SpacingIn,
   type SpeciesGroup,
 } from "./codeTables";
-import { deckingProduct, framingSpecies, wallType, type DeckingProduct, type FramingSpecies, type WallType } from "./catalog";
+import { deckingProduct, framingSpecies, isCompositeFraming, wallType, type DeckingProduct, type FramingSpecies, type WallType } from "./catalog";
+import { OC_BEAM_LAST_FT, OC_BLOCKING_MAX_FT, OC_POST, ocBeamMaxSpanIn, ocPostMaxAreaSqFt } from "./ocLumber";
 import { BUILT_UP_CHOICES, frontEdgeAt, isSolidBeam, normalizeDeckDesign, shapeAreaSqFt, shapeEdges, shapeOutline, shapeZones, type BeamKind, type BeamSize, type BeamStyle, type DeckDesign, type DeckEdge, type Zone, spaRectIn } from "./design";
 import { ringEdges } from "./ringEdges";
 import { deckingColor, deckingLook, deckingNamed } from "./deckingColors";
@@ -98,7 +100,7 @@ export const PIER_BLOCK = { baseIn: 12, topIn: 7 } as const;
 /** Form tubes as they are sold, inches across. */
 const TUBE_SIZES_IN = [8, 10, 12, 14, 16, 18, 20, 22, 24, 28, 30, 36] as const;
 /** The pier under each post size: wide enough for the post and its base. */
-const PIER_FOR_POST_IN: Record<PostSize, number> = { "4x4": 8, "4x6": 10, "6x6": 12, "8x8": 14 };
+const PIER_FOR_POST_IN: Record<PostSize, number> = { "4x4": 8, "4x6": 10, "6x6": 12, "8x8": 14, [OC_POST]: 10 };
 /** Cubic feet in an 80-lb bag of concrete mix. */
 export const BAG_CUFT = 0.6;
 /** AWC's knee brace: a 2x4 from 2 ft down the post to 2 ft out along the beam. */
@@ -179,7 +181,8 @@ export interface Beam {
   spec: BeamSpec;
   /** The joist span its table is entered with, ft, and which table that is. */
   tableSpanFt: number;
-  table: "IRC" | "DCA6";
+  /** The code's beam tables, AWC's solid-beam table, or Owens Corning's (read at the length of joist it carries). */
+  table: "IRC" | "DCA6" | "OC";
   /** It carries joists on both sides — outside the code's single-span beam table. */
   bothSides: boolean;
   /** The longest span between posts its table allows, inches (0 = beyond the table). */
@@ -262,7 +265,8 @@ export interface DeckFrame {
   species: FramingSpecies;
   decking: DeckingProduct;
   wall: WallType;
-  group: SpeciesGroup;
+  /** The rule book the frame is read on: a code species row, or "OC" (Owens Corning's tables). */
+  group: FramingGroup;
   load: LoadPsf;
   zones: ZoneFrame[];
   edges: DeckEdge[];
@@ -308,6 +312,8 @@ export interface DeckFrame {
     /** Structural screws, rim to joist ends: three each. */
     rimScrews: number;
     lateralTies: number;
+    /** OC framing: posts notched for a 2-ply beam and screwed to it (no post cap), per the installation guide. */
+    notchedPosts: number;
   };
   /** Rows of blocking: where, and how many pieces. */
   blockingRows: Array<{ y: number; zoneId: Zone["id"]; pieces: number; why: "beam" | "mid-span" | "maker" | "curve" }>;
@@ -340,6 +346,8 @@ export interface BuildOptions {
    * table as the deck area that weighs the same (`loadLb ÷ (load + 10 psf)`).
    */
   extraPosts?: Array<{ id: string; x: number; y: number; size: PostSize; loadLb: number }>;
+  /** The roof's own species row — its posts are sawn wood even over an OC deck. */
+  extraPostsGroup?: SpeciesGroup;
   /** The ground's height under a point of the plan, inches (M3: the site's slope). Flat when left out. */
   groundAt?: (x: number, y: number) => number;
 }
@@ -441,7 +449,7 @@ function layoutZone(zone: Zone, back: "ledger" | "beam", cIn: number, middle: nu
 }
 
 /** Inside the joist table; with a beam style, also every beam it lands on inside a beam table. */
-function zoneInsideTable(l: Omit<ZoneFrame, "ok">, size: JoistSize, spacing: SpacingIn, group: SpeciesGroup, load: LoadPsf, extraFrontIn = 0, beamsOf: BeamStyle | null = null): boolean {
+function zoneInsideTable(l: Omit<ZoneFrame, "ok">, size: JoistSize, spacing: SpacingIn, group: FramingGroup, load: LoadPsf, extraFrontIn = 0, beamsOf: BeamStyle | null = null): boolean {
   if (l.spansIn.length === 0 || l.spansIn.some((s) => !(s > 0))) return false;
   const max = joistMaxSpanIn(load, group, size, spacing);
   if (l.spansIn.some((s) => s > max)) return false;
@@ -459,6 +467,12 @@ function zoneInsideTable(l: Omit<ZoneFrame, "ok">, size: JoistSize, spacing: Spa
   for (let i = 0; i < l.beamYs.length; i++) {
     const isBack = l.back === "beam" && i === 0;
     const isFront = i === l.beamYs.length - 1;
+    if (group === "OC") {
+      // Owens Corning's beam tables are read at the length of joist the beam carries, and stop at 11 ft.
+      const joistFt = isBack ? first + l.backCantIn / 12 : isFront ? last + (l.frontCantIn + extraFrontIn) / 12 : (2 * whole[i + offset]) / 12;
+      if (joistFt > OC_BEAM_LAST_FT + 1e-6) return false;
+      continue;
+    }
     const eff = isBack ? effectiveJoistSpanFt(first, l.backCantIn / 12) : isFront ? effectiveJoistSpanFt(last, l.frontCantIn / 12) : effectiveSpanFromTributaryFt(whole[i + offset] / 12);
     if (eff > BEAM_TABLE_LAST_EFF_FT + 1e-6) return false;
   }
@@ -492,7 +506,7 @@ interface JoistPlan {
  * beams, then the overhang nearest the one asked for. One overhang for the
  * whole deck, so the beams of two rectangles that share a front line up.
  */
-function planJoists(zones: Zone[], backs: Array<"ledger" | "beam">, style: BeamStyle, size: JoistSize, spacing: SpacingIn, group: SpeciesGroup, load: LoadPsf, overhang: number | "auto", extraFrontIn = 0): JoistPlan {
+function planJoists(zones: Zone[], backs: Array<"ledger" | "beam">, style: BeamStyle, size: JoistSize, spacing: SpacingIn, group: FramingGroup, load: LoadPsf, overhang: number | "auto", extraFrontIn = 0): JoistPlan {
   const shallow = Math.min(...zones.map((z) => z.y1 - z.y0));
   const want = style === "flush" ? 0 : overhang === "auto" ? autoOverhangIn(shallow) : Math.round(overhang * 12);
   // A bowed front hangs farther at its middle: the beam comes in until the whole bow is inside the table.
@@ -581,6 +595,11 @@ interface BeamLine {
   /** The joist span the IRC table is entered with (effective), and the one AWC's is (real). */
   ircFt: number;
   dcaFt: number;
+  /**
+   * The length of joist Owens Corning's beam table is entered with: an end beam's span and overhang (the guide's
+   * "length of joist"), a middle beam's strip of deck doubled (the joist length that loads a beam the same).
+   */
+  ocFt: number;
   /** Strip of deck it carries, ft. */
   tributaryFt: number;
   bothSides: boolean;
@@ -597,10 +616,10 @@ function beamLines(z: ZoneFrame, style: BeamStyle): BeamLine[] {
     const isBack = z.back === "beam" && i === 0;
     const isFront = i === z.beamYs.length - 1;
     const share = cut[i + offset] / 12;
-    if (isBack) return { zoneId: z.zone.id, y, x0: z.zone.x0, x1: z.zone.x1, role: "back", ircFt: effectiveJoistSpanFt(spans[0], z.backCantIn / 12), dcaFt: spans[0], tributaryFt: share, bothSides: false };
-    if (isFront) return { zoneId: z.zone.id, y, x0: z.zone.x0, x1: z.zone.x1, role: "front", ircFt: effectiveJoistSpanFt(lastSpan, z.frontCantIn / 12), dcaFt: lastSpan, tributaryFt: share, bothSides: false };
+    if (isBack) return { zoneId: z.zone.id, y, x0: z.zone.x0, x1: z.zone.x1, role: "back", ircFt: effectiveJoistSpanFt(spans[0], z.backCantIn / 12), dcaFt: spans[0], ocFt: spans[0] + z.backCantIn / 12, tributaryFt: share, bothSides: false };
+    if (isFront) return { zoneId: z.zone.id, y, x0: z.zone.x0, x1: z.zone.x1, role: "front", ircFt: effectiveJoistSpanFt(lastSpan, z.frontCantIn / 12), dcaFt: lastSpan, ocFt: lastSpan + z.frontCantIn / 12, tributaryFt: share, bothSides: false };
     const eff = effectiveSpanFromTributaryFt(whole[i + offset] / 12);
-    return { zoneId: z.zone.id, y, x0: z.zone.x0, x1: z.zone.x1, role: "middle", ircFt: eff, dcaFt: eff, tributaryFt: share, bothSides: true };
+    return { zoneId: z.zone.id, y, x0: z.zone.x0, x1: z.zone.x1, role: "middle", ircFt: eff, dcaFt: eff, ocFt: (2 * whole[i + offset]) / 12, tributaryFt: share, bothSides: true };
   });
 }
 
@@ -713,6 +732,8 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
   const decking: DeckingProduct = { ...decking0, label: deckingNamed(design.custom.decking ? design.custom.decking.name : decking0.label, look.name), color: look.hex, ...(look.name ? { colorName: look.name } : {}), ...(look.hex2 ? { color2: look.hex2 } : {}), ...(border ? { border } : {}) };
   const wall = wallType(design.wall);
   const group = species.group;
+  // OC LUMBER (2026-11-12): sized on Owens Corning's tables, bought on its own price rows.
+  const composite = isCompositeFraming(species);
   const load = design.loadPsf;
   const zones = shapeZones(design.shape);
   const edges = shapeEdges(design.shape, design.placement);
@@ -746,8 +767,9 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
   const beamKindAsked = design.framing.beamKind;
   const solidOk = solidBeamTabulated(load, group);
   const beamKind: BeamKind = beamKindAsked === "solid" && !solidOk ? "built-up" : beamKindAsked;
+  // OC framing is always built up (Owens Corning prints no solid beam): no note, the switch says it.
   const beamKindNote =
-    beamKindAsked === "solid" && !solidOk
+    beamKindAsked === "solid" && !solidOk && !composite
       ? group === "SP"
         ? "Solid 4x beams have no printed span table for Southern pine — beams are built up from 2x lumber, which the code tabulates."
         : `Solid 4x beams are tabulated for the 40 psf load only — at ${load} psf the beams are built up from 2x lumber, which the code tabulates.`
@@ -756,7 +778,9 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
   const beamChoices: BeamSize[] = askedBeam ? [askedBeam] : beamKind === "solid" ? [...SOLID_BEAMS] : [...BUILT_UP_CHOICES];
 
   const price = (key: string) => deckRate(key, opts.rates, opts.market).price;
-  const postSetCost = price("labor.footing") + 4 * price("conc.bag") + price("hw.postBase") + price("hw.postCap") + 3 * price(lumberKey(design.framing.post));
+  // A post's own lumber, about 3 ft of it: the built-up OC post is three boards.
+  const postLumber = design.framing.post === OC_POST ? 3 * price(lumberKey("2x6", true)) : price(lumberKey(design.framing.post));
+  const postSetCost = price("labor.footing") + 4 * price("conc.bag") + price("hw.postBase") + price("hw.postCap") + 3 * postLumber;
 
   /** The strips of deck each beam carries, kept for its posts' areas. */
   const strips = new Map<string, BeamLine[]>();
@@ -806,6 +830,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       const lengthIn = line.x1 - line.x0;
       const ircFt = Math.max(...line.segs.map((s) => s.ircFt));
       const dcaFt = Math.max(...line.segs.map((s) => s.dcaFt));
+      const ocFt = Math.max(...line.segs.map((s) => s.ocFt));
       const bothSides = line.segs.some((s) => s.bothSides);
       const room = joistBottomIn - footingTopIn;
       // NO POST OVER THE TABLE (2026-10-11, owner: "offer fixes or auto fix" — a post carried 195 sq ft): a post carries
@@ -813,14 +838,20 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       // 160 sq ft. So the posts stand no farther apart than that allows, whatever the beam could span (2% short of the
       // limit, for the rounding of the areas).
       const stripFt = Math.max(0.5, ...line.segs.map((s) => s.tributaryFt));
-      const areaSpanIn = Math.floor(((POST_TABLE_MAX_AREA * 0.98) / stripFt) * 12);
+      // An OC post carries what Owens Corning's listing says under that beam (5,500 lb under 2 plies, 8,250 under 3).
+      const areaSpanFor = (plies: number) => Math.floor(((Math.min(POST_TABLE_MAX_AREA, composite ? ocPostMaxAreaSqFt(load, plies) : Infinity) * 0.98) / stripFt) * 12);
       type Option = { spec: BeamSpec; maxSpanIn: number; posts: ReturnType<typeof layoutPosts>; cost: number };
       const options: Option[] = beamChoices.map((size) => {
         const spec = beamSpec(size);
-        const maxSpanIn = spec.kind === "solid" ? solidBeamMaxSpanIn(load, group, size as (typeof SOLID_BEAMS)[number], dcaFt) : builtUpBeamMaxSpanIn(load, group, size as (typeof BUILT_UP_CHOICES)[number], ircFt);
+        const maxSpanIn =
+          spec.kind === "solid"
+            ? solidBeamMaxSpanIn(load, group, size as (typeof SOLID_BEAMS)[number], dcaFt)
+            : group === "OC"
+              ? ocBeamMaxSpanIn(load, size as (typeof BUILT_UP_CHOICES)[number], ocFt)
+              : builtUpBeamMaxSpanIn(load, group, size as (typeof BUILT_UP_CHOICES)[number], ircFt);
         // …nor farther apart than the builder set by hand (2026-11-13) — closer posts may let a lighter beam do.
-        const posts = layoutPosts(lengthIn, maxSpanIn > 0 ? Math.min(maxSpanIn, areaSpanIn, spacingByHandIn || Infinity) : maxSpanIn, style);
-        return { spec, maxSpanIn, posts, cost: (lengthIn / 12) * spec.plies * price(lumberKey(spec.stock)) + posts.count * postSetCost };
+        const posts = layoutPosts(lengthIn, maxSpanIn > 0 ? Math.min(maxSpanIn, areaSpanFor(spec.plies), spacingByHandIn || Infinity) : maxSpanIn, style);
+        return { spec, maxSpanIn, posts, cost: (lengthIn / 12) * spec.plies * price(lumberKey(spec.stock, composite)) + posts.count * postSetCost };
       });
       const cheapest = (list: Option[]) => list.reduce((m, o) => (o.cost < m.cost - 0.005 || (Math.abs(o.cost - m.cost) <= 0.005 && o.spec.depthIn < m.spec.depthIn) ? o : m));
       const deepest = (list: Option[]) => list.reduce((m, o) => (o.spec.depthIn > m.spec.depthIn || (o.spec.depthIn === m.spec.depthIn && o.spec.plies > m.spec.plies) ? o : m));
@@ -857,7 +888,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       // moved or added freely, and one "taken away" that the beam needs comes back in the middle of the span it left.
       const mine = pinsByLine.get(i) ?? [];
       if (mine.length) {
-        const limit = pick.maxSpanIn > 0 ? Math.min(pick.maxSpanIn, areaSpanIn, spacingByHandIn || Infinity) : Infinity;
+        const limit = pick.maxSpanIn > 0 ? Math.min(pick.maxSpanIn, areaSpanFor(pick.spec.plies), spacingByHandIn || Infinity) : Infinity;
         let xs: number[] = [];
         for (const m of mine.map((q) => Math.max(line.x0 + 1, Math.min(line.x1 - 1, q.x))).sort((a, b) => a - b)) if (!xs.some((q) => Math.abs(q - m) < postW + 1)) xs.push(m);
         const own = xs.slice();
@@ -908,8 +939,8 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
         style,
         role: line.role,
         spec,
-        tableSpanFt: spec.kind === "solid" ? dcaFt : ircFt,
-        table: spec.kind === "solid" ? "DCA6" : "IRC",
+        tableSpanFt: spec.kind === "solid" ? dcaFt : group === "OC" ? ocFt : ircFt,
+        table: spec.kind === "solid" ? "DCA6" : group === "OC" ? "OC" : "IRC",
         bothSides,
         maxSpanIn: pick.maxSpanIn,
         postXs,
@@ -961,7 +992,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
           size: design.framing.post,
           heightIn,
           tributarySqFt,
-          maxHeightIn: postMaxHeightIn(load, group, design.framing.post, tributarySqFt),
+          maxHeightIn: postMaxHeightIn(load, group, design.framing.post, tributarySqFt, beam.spec.plies),
           corner: k === 0 || k === beam.postXs.length - 1,
           ...(pinAt.has(`${beam.id}:${Math.round(x * 100)}`) ? { by: { kind: "pin" as const, id: pinAt.get(`${beam.id}:${Math.round(x * 100)}`) as string } } : {}),
           footing,
@@ -982,7 +1013,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
         size: rp.size,
         heightIn: 0,
         tributarySqFt,
-        maxHeightIn: postMaxHeightIn(load, group, rp.size, tributarySqFt),
+        maxHeightIn: postMaxHeightIn(load, group === "OC" ? (opts.extraPostsGroup ?? "DF") : group, rp.size, tributarySqFt),
         corner: false,
         footing,
         roof: true,
@@ -995,7 +1026,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
     const sticks: Stick[] = [];
     const near = (bottomIn: number) => bottomIn < GROUND_CONTACT_WITHIN_IN;
     const joistGround = near(joistBottomIn);
-    const hardware = { hangers: 0, doubleHangers: 0, ties: 0, postBases: 0, postCaps: 0, braces: 0, rimScrews: 0, lateralTies: 0 };
+    const hardware = { hangers: 0, doubleHangers: 0, ties: 0, postBases: 0, postCaps: 0, braces: 0, rimScrews: 0, lateralTies: 0, notchedPosts: 0 };
     /** Braces the tables' layout would set that the contractor took out by hand. */
     let bracesLeftOut = 0;
     const rimPlies = (exposed: boolean) => (design.framing.doubleRim && exposed ? 2 : 1);
@@ -1161,9 +1192,12 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       const [w, d] = POST_ACTUAL_IN[p.size];
       hardware.postBases += 1;
       if (p.roof) continue;
-      // A beam that sits right on its footing needs the base, no post and no cap.
+      // A beam that sits right on its footing needs the base, no post and no cap. Over OC posts a 2-ply beam sits in a
+      // notch cut in the post and is screwed to it; a 3-ply one sits on top in a cap (the installation guide, step 4).
       if (p.heightIn >= 1) {
-        hardware.postCaps += 1;
+        const plies = beams.find((b) => b.id === p.beamId)?.spec.plies ?? 3;
+        if (composite && plies === 2) hardware.notchedPosts += 1;
+        else hardware.postCaps += 1;
         sticks.push({ role: "post", nominal: p.size, lengthIn: p.heightIn, cx: p.x, cy: p.y, cz: p.footing.groundIn + p.footing.topIn + p.heightIn / 2, sx: w, sy: d, sz: p.heightIn, ground: true, of: p.beamId });
       }
     }
@@ -1188,7 +1222,9 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       const supports = [zf.back === "ledger" ? z.y0 + THICK_2X_IN : zf.beamYs[0], ...(zf.back === "ledger" ? zf.beamYs : zf.beamYs.slice(1))];
       for (let i = 0; i + 1 < supports.length; i++) {
         const span = supports[i + 1] - supports[i];
-        const makerRows = decking.blockingRowsMaxFt ? Math.max(0, Math.ceil(span / (decking.blockingRowsMaxFt * 12) - 1e-9) - 1) : 0;
+        // Rows the decking's maker asks for, and OC framing's own: blocking every 4 to 5 ft.
+        const rowsEvery = Math.min(decking.blockingRowsMaxFt ?? Infinity, composite ? OC_BLOCKING_MAX_FT : Infinity);
+        const makerRows = Number.isFinite(rowsEvery) ? Math.max(0, Math.ceil(span / (rowsEvery * 12) - 1e-9) - 1) : 0;
         const midRows = design.framing.blocking === "mid-span" && span > 96 ? 1 : 0;
         const n = Math.max(makerRows, midRows);
         for (let k = 1; k <= n; k++) rows.push({ y: supports[i] + (span * k) / (n + 1), why: makerRows >= midRows && makerRows > 0 ? "maker" : "mid-span" });

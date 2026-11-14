@@ -22,7 +22,8 @@ import type { Route } from "next";
 import { createWheelMotion, wheelPixels } from "@/lib/smooth-wheel";
 import { AlertTriangle, Check, ChevronDown, ChevronRight, ExternalLink, FileText, Lock, Maximize2, Mic, Minimize2, Plus, RotateCcw, Send, X } from "lucide-react";
 import { resolveMarket, parseStateZip, type MarketSnapshot } from "@/lib/fence/market";
-import { DECKING, DECKING_BRAND_LABEL, DECKING_BRAND_ORDER, DECKING_FAMILY_LABEL, DECKING_FAMILY_ORDER, FRAMING_SPECIES, RAIL_TYPES, WALL_TYPES, defaultDecking, defaultFramingSpecies, deckingProduct, treatedDecking, wallType, type DeckingFamily, type DeckingProduct } from "@/lib/deck/catalog";
+import { DECKING, DECKING_BRAND_LABEL, DECKING_BRAND_ORDER, DECKING_FAMILY_LABEL, DECKING_FAMILY_ORDER, FRAMING_SPECIES, OC_LUMBER_ID, RAIL_TYPES, WALL_TYPES, WOOD_FRAMING_SPECIES, defaultDecking, defaultFramingSpecies, deckingProduct, isCompositeFraming, treatedDecking, wallType, type DeckingFamily, type DeckingProduct } from "@/lib/deck/catalog";
+import { OC_POST, OC_SOURCES } from "@/lib/deck/ocLumber";
 import { regionalPicks, regionalWords } from "@/lib/deck/regional";
 import { frameBottomIn, openingLevel } from "@/lib/deck/openingChecks";
 import { LEDGER_FASTENER_LABEL, LOADS, POST_SIZES, SOLID_BEAMS, ftIn, solidBeamTabulated, type LoadPsf, type SoilPsf } from "@/lib/deck/codeTables";
@@ -459,6 +460,8 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
   const doorFloor = React.useCallback((o: { kind: "window" | "door" | "slider" | "garage"; sillFt: number; heightFt: number }) => (pkg.structure.frame ? openingLevel(o, pkg.structure.design.heightIn, frameBottomIn(pkg.structure.design.heightIn, pkg.structure.frame.joistSize)) : "deck"), [pkg.structure]);
   const frame = pkg.frame;
   const roof = pkg.roof;
+  // Framed in Owens Corning OC Lumber (2026-11-12).
+  const ocFrame = isCompositeFraming(design.framing.species);
   const checks = React.useMemo(() => deckChecks(structure), [structure]);
   const summary = checkSummary(checks);
   const fixableCount = React.useMemo(() => autoFixable(checks), [checks]);
@@ -1139,12 +1142,12 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
   const speciesOptions = React.useMemo(() => (
     <>
       <optgroup label="Pressure-treated">
-        {FRAMING_SPECIES.filter((f) => f.treated).map((f) => (
+        {WOOD_FRAMING_SPECIES.filter((f) => f.treated).map((f) => (
           <option key={f.id} value={f.id}>{f.label}</option>
         ))}
       </optgroup>
       <optgroup label="Naturally durable, not treated">
-        {FRAMING_SPECIES.filter((f) => !f.treated).map((f) => (
+        {WOOD_FRAMING_SPECIES.filter((f) => !f.treated).map((f) => (
           <option key={f.id} value={f.id}>{f.label}</option>
         ))}
       </optgroup>
@@ -1911,13 +1914,38 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
         ) : null}
         </Scope>
         <Scope step="Frame">
+        {/* WOOD OR OC COMPOSITE (2026-11-12, owner: "like it's a wood, or it's a OC composite framing, so make it smart"):
+            OC Lumber is sized on Owens Corning's own tables, built up and screwed the maker's way. */}
+        <Field label="Framing" wide>
+          <Seg
+            label="Framing"
+            value={ocFrame ? "oc" : "wood"}
+            onChange={(v) =>
+              v === "oc"
+                ? // The maker's way: doubled band joists; no joist tape — OC Lumber does not rot under a screw hole.
+                  patch({ framing: { species: OC_LUMBER_ID, beam: "auto", post: OC_POST, doubleRim: true, joistTape: false }, custom: { species: undefined } }, ["species"])
+                : patch({ framing: { species: defaultFramingSpecies(pickState), post: "6x6", beam: "auto", joistTape: true } }, ["species"])
+            }
+            options={[{ value: "wood", label: "Wood" }, { value: "oc", label: "OC composite" }]}
+          />
+        </Field>
+        {ocFrame ? (
+          <div className="v1-call" data-deck-oc-frame>
+            <b>Owens Corning OC Lumber</b>
+            <span>{frame.species.note}</span>
+            <span>
+              <a href={OC_SOURCES.spans.url} target="_blank" rel="noreferrer">Span tables</a> · <a href={OC_SOURCES.listing.url} target="_blank" rel="noreferrer">Listing 2302-42</a> · <a href={OC_SOURCES.guide.url} target="_blank" rel="noreferrer">Install guide</a>
+            </span>
+          </div>
+        ) : (
         <Field label="Framing lumber" wide>
           <select className="v1-sel" value={design.custom.species ? CUSTOM : design.framing.species} onChange={(e) => (e.target.value === CUSTOM ? pickCustom("species") : patch({ framing: { species: e.target.value as DeckDesign["framing"]["species"] }, custom: { species: undefined } }, ["species"]))} data-deck-pick="species">
             {speciesOptions}
             <option value={CUSTOM}>{CUSTOM_LABEL}</option>
           </select>
         </Field>
-        {design.custom.species ? (
+        )}
+        {ocFrame ? null : design.custom.species ? (
           <CustomBox slot="species" title="Framing lumber" product={design.custom.species} unit={null} fresh={freshCustom === "species"} onDone={freshDone} onChange={(p) => setCustom("species", p)} onBack={() => setCustom("species", undefined)} note={`Named as typed on the plans and the material list. It spans by the code's tables for ${(FRAMING_SPECIES.find((f) => f.id === design.framing.species)?.label ?? "the lumber below").toLowerCase()} and is priced as that.`}>
             <Field label="Spans and prices as" wide>
               <select className="v1-sel" value={design.framing.species} onChange={(e) => patch({ framing: { species: e.target.value as DeckDesign["framing"]["species"] } }, ["species"])} data-deck-like="species">
@@ -1985,7 +2013,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
         </More>
         </Scope>
         <Scope step="Frame">
-        <More title="The frame — the code tables pick it" now={`${frame.joistSize} @ ${frame.spacingIn}" · ${[...new Set(frame.beams.map((b) => b.spec.size))].join(", ")} ${frame.beamStyle === "flush" ? "flush beam" : "beam"} · ${design.framing.post} posts`} id="frame-more">
+        <More title={ocFrame ? "The frame — Owens Corning's tables pick it" : "The frame — the code tables pick it"} now={`${frame.joistSize} @ ${frame.spacingIn}" · ${[...new Set(frame.beams.map((b) => b.spec.size))].join(", ")} ${frame.beamStyle === "flush" ? "flush beam" : "beam"} · ${ocFrame ? "3-ply 2x6 OC" : design.framing.post} posts`} id="frame-more">
           <Field label="Joists" aside={design.framing.joist === "auto" ? `picked: ${frame.joistSize}` : undefined} wide>
             <Seg label="Joists" value={design.framing.joist} onChange={(v) => patch({ framing: { joist: v } })} options={[{ value: "auto", label: "Auto" }, ...(["2x6", "2x8", "2x10", "2x12"] as const).map((j) => ({ value: j, label: j }))]} />
           </Field>
@@ -2002,11 +2030,17 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
               </select>
             </Field>
             <Field label="Posts">
-              <select className="v1-sel" value={design.framing.post} onChange={(e) => patch({ framing: { post: e.target.value as DeckDesign["framing"]["post"] } })}>
-                {POST_SIZES.map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
+              {ocFrame ? (
+                <select className="v1-sel" value={OC_POST} disabled aria-describedby="oc-post-note">
+                  <option value={OC_POST}>3-ply 2x6 OC (the maker&apos;s post)</option>
+                </select>
+              ) : (
+                <select className="v1-sel" value={design.framing.post} onChange={(e) => patch({ framing: { post: e.target.value as DeckDesign["framing"]["post"] } })}>
+                  {POST_SIZES.map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              )}
             </Field>
           </div>
           <Field label="Beams" aside={design.framing.beamStyle === "auto" ? (frame.beamStyle === "flush" ? "picked: flush" : "picked: under the joists") : undefined} wide>
@@ -2030,7 +2064,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
           </div>
           {frame.beamKindNote ? <p className="v1-call v1-call-warn" data-deck-beam-note>{frame.beamKindNote}</p> : null}
           <div className="v1-toggles">
-            <Toggle checked={design.framing.doubleRim} onChange={(v) => patch({ framing: { doubleRim: v } })}>Doubled rim and outside joists</Toggle>
+            <Toggle checked={design.framing.doubleRim} onChange={(v) => patch({ framing: { doubleRim: v } })}>{ocFrame ? "Doubled band joists and rim (Owens Corning's way)" : "Doubled rim and outside joists"}</Toggle>
             <Toggle checked={design.framing.joistTape} onChange={(v) => patch({ framing: { joistTape: v } })}>Joist tape on every top</Toggle>
             <Toggle checked={design.framing.braces} onChange={(v) => patch({ framing: { braces: v } })}>Knee braces at corner posts over 2 ft</Toggle>
             <Toggle checked={design.framing.blocking === "mid-span"} onChange={(v) => patch({ framing: { blocking: v ? "mid-span" : "auto" } })}>Mid-span blocking on spans over 8 ft</Toggle>

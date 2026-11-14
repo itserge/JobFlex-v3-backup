@@ -458,6 +458,9 @@ export function runCommand(d0: DeckDesign, cmd: DeckCommand, env: RunEnv = {}): 
       }
       if (f.species) {
         p.species = f.species;
+        // OC composite framing (2026-11-12): the maker's own way — doubled band joists, built-up beams, the OC post.
+        if (f.species === "oc-lumber") Object.assign(p, { doubleRim: true, beam: "auto", joistTape: false });
+        else if (d.framing.species === "oc-lumber") Object.assign(p, { post: "6x6", beam: "auto" });
         flash.push({ label: "Framing lumber" });
         light = { label: "Framing lumber" };
       }

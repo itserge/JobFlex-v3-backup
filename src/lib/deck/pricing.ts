@@ -30,7 +30,8 @@ import { roofByHandWords, roofWords, type RoofFrame } from "./roof";
 import { buildStructure, structureLevels, type DeckStructure } from "./structure";
 import { deckTakeoff, type BomLine, type BomStep, type DeckTakeoff } from "./takeoff";
 import { isExampleSource, deckRate, type ResolvedRate } from "./rates";
-import { railType } from "./catalog";
+import { railType, speciesWords } from "./catalog";
+import { OC_POST } from "./ocLumber";
 import { GUARD_REQUIRED_ABOVE_IN, LEDGER_FASTENER_LABEL, RISER_MAX_IN, ftIn } from "./codeTables";
 import { codeWords } from "./stateCodes";
 import { type CustomSlot, CEILING_LABEL, FASCIA_FINISH_LABEL, FIXTURE_LABEL, GUTTER_LABEL, PLACEMENT_LABEL, ROOFING_LABEL, ROOF_KIND_LABEL, WALL_FILL_LABEL, sizeWords, structureWords, type DeckDesign } from "./design";
@@ -186,8 +187,8 @@ export function priceStructure(s: DeckStructure, opts: DeckPriceOptions = {}): D
       const w2 = work("labor.pierBlock", posts - poured);
       const pads = [...new Set(allPosts.filter((p) => p.footing.type === "poured").map((p) => p.footing.padIn))].sort((a, b) => a - b);
       const description = poured
-        ? `Poured concrete, ${pads.length > 1 ? `${pads[0]}–${pads[pads.length - 1]}` : pads[0]} in. across and ${footingDepthIn(design)} in. deep; ${first && first.heightIn >= 1 ? `${design.framing.post} posts on stand-off bases` : "beams set on post bases"}${roofPostsOnDeck ? `; ${plural(roofPostsOnDeck, "footing")} under the roof's posts` : ""}${twoLevels ? "; the lower level's footings among them" : ""}${s.gradePct >= 2 ? `; the ground falls ${s.gradePct}% under the deck, so the downhill posts are longer` : ""}`
-        : `Precast pier blocks under ${design.framing.post} posts`;
+        ? `Poured concrete, ${pads.length > 1 ? `${pads[0]}–${pads[pads.length - 1]}` : pads[0]} in. across and ${footingDepthIn(design)} in. deep; ${first && first.heightIn >= 1 ? `${design.framing.post === OC_POST ? "OC Lumber posts (three 2x6 boards each)" : `${design.framing.post} posts`} on stand-off bases` : "beams set on post bases"}${roofPostsOnDeck ? `; ${plural(roofPostsOnDeck, "footing")} under the roof's posts` : ""}${twoLevels ? "; the lower level's footings among them" : ""}${s.gradePct >= 2 ? `; the ground falls ${s.gradePct}% under the deck, so the downhill posts are longer` : ""}`
+        : `Precast pier blocks under ${design.framing.post === OC_POST ? "OC Lumber posts" : `${design.framing.post} posts`}`;
       line({ id: "deck-footings", name: `Footings and posts — ${plural(posts, "footing")}`, description, quantity: posts, unit: "ea", material: stepMaterial("footings"), labor: w1.amount + w2.amount, exampleMaterial: stepExample("footings"), exampleLabor: w1.example + w2.example });
     }
 
@@ -207,7 +208,7 @@ export function priceStructure(s: DeckStructure, opts: DeckPriceOptions = {}): D
       const front = design.shape.kind === "rect" ? design.shape.front : undefined;
       line({
         id: "deck-framing",
-        name: `Framing — ${frame.species.short.toLowerCase()}${twoLevels ? ", two levels" : ""}`,
+        name: `Framing — ${speciesWords(frame.species)}${twoLevels ? ", two levels" : ""}`,
         description: `${frame.joistSize} joists ${frame.spacingIn} in. on center; ${beamSizes.join(" and ")} ${frame.beamStyle === "flush" ? "flush " : ""}${beamSizes.length === 1 && levels.length === 1 && frame.beams.length === 1 ? "beam" : "beams"}${design.framing.doubleRim ? "; doubled rim and outside joists" : ""}${design.framing.joistTape ? "; joist tape" : ""}${front?.kind === "curve" ? `; the front bowed out ${front.bulgeFt} ft on a laminated rim, joists cut to the arc` : front?.kind === "clipped" ? `; corners clipped ${front.clipFt} ft` : ""}${twoLevels ? `; the lower level ${design.lower.widthFt} × ${design.lower.depthFt} ft, ${ftIn(design.lower.dropIn)} down` : ""}; hangers, ties and blocking`,
         quantity: deckArea,
         unit: "sqft",
@@ -440,9 +441,10 @@ export function deckScope(pkg: DeckPackage, where?: string | null): string[] {
     out.push(`Build a ${sizeWords(design)} ${design.structure === "covered-deck" ? "covered deck" : "deck"} (${Math.round(pkg.areaSqFt)} sq ft), ${height} above the ground${where ? `, at ${where}` : ""} — ${PLACEMENT_LABEL[design.placement].split(" — ")[0].toLowerCase()}${design.placement === "attached" ? ", carried on a ledger" : design.placement === "beside" ? ", standing on its own posts" : ""}.`);
     const allPosts = structureLevels(s).flatMap((l) => l.frame.posts);
     const poured = allPosts.filter((p) => p.footing.type === "poured").length;
-    out.push(poured ? `${plural(poured, "poured concrete footing")}, ${footingDepthIn(design)} in. deep, sized for the load each one carries; ${design.framing.post} posts on metal bases, held off the concrete${s.gradePct >= 2 ? `; the posts cut to the ground's fall` : ""}.` : `${plural(allPosts.length, "precast pier block")} under ${design.framing.post} posts.`);
+    const postWords = design.framing.post === OC_POST ? "OC Lumber posts (three 2x6 boards screwed together)" : `${design.framing.post} posts`;
+    out.push(poured ? `${plural(poured, "poured concrete footing")}, ${footingDepthIn(design)} in. deep, sized for the load each one carries; ${postWords} on metal bases, held off the concrete${s.gradePct >= 2 ? `; the posts cut to the ground's fall` : ""}.` : `${plural(allPosts.length, "precast pier block")} under ${postWords}.`);
     const beamSizes = [...new Set(frame.beams.map((b) => b.spec.size))].join(" and ");
-    out.push(`Frame in ${frame.species.short.toLowerCase()}: ${frame.joistSize} joists ${frame.spacingIn} in. on center on ${frame.beams.length === 1 ? `a ${beamSizes} beam` : `${beamSizes} beams`}${frame.beamStyle === "flush" ? " set flush with the joists" : ""}, metal hangers and ties at every connection${design.framing.doubleRim ? ", doubled rim and outside joists" : ""}${design.framing.joistTape ? ", protective tape on every joist top" : ""}.`);
+    out.push(`Frame in ${frame.group === "OC" ? "Owens Corning OC Lumber, a glass-fiber composite that does not rot or rust, screwed together with stainless screws" : speciesWords(frame.species)}: ${frame.joistSize} joists ${frame.spacingIn} in. on center on ${frame.beams.length === 1 ? `a ${beamSizes} beam` : `${beamSizes} beams`}${frame.beamStyle === "flush" ? " set flush with the joists" : ""}, metal hangers and ties at every connection${design.framing.doubleRim ? ", doubled rim and outside joists" : ""}${design.framing.joistTape ? ", protective tape on every joist top" : ""}.`);
     if (frame.ledgers.length) out.push(`Ledger fastened to the house with ${LEDGER_FASTENER_LABEL[design.ledger.fastener]}, flashed above and behind so water cannot reach the house framing, and tied to the house against sideways movement.`);
     if (s.lower) out.push(`A lower level in front, ${design.lower.widthFt} × ${design.lower.depthFt} ft, ${ftIn(s.lower.dropIn)} down, framed the same way on its own posts.`);
     out.push(`${frame.decking.label} decking${takeoff.surface.pattern === "diagonal" ? ", laid on the diagonal" : takeoff.surface.pattern === "herringbone" ? ", laid in a herringbone" : ""}${takeoff.surface.border ? ` with a ${takeoff.surface.border === 2 ? "double " : ""}picture-frame border${takeoff.surface.product.border ? ` in ${takeoff.surface.product.border.name}` : ""}` : ""}, fastened with ${takeoff.surface.fastening === "hidden" ? "hidden fasteners" : "coated deck screws"}${takeoff.surface.fascia.on ? "; fascia boards on the open edges" : ""}.`);
@@ -485,7 +487,7 @@ export function deckNotes(pkg: DeckPackage): string[] {
   // The code it is checked against — the state's own edition (lib/deck/stateCodes); the building office's edition and amendments govern.
   out.push(codeWords(s.code));
   if (frame) {
-    out.push(`Framing sized from the deck tables of the International Residential Code (Section R507)${frame.beams.some((b) => b.table === "DCA6") ? " and the American Wood Council's DCA 6 guide" : ""} for a ${design.loadPsf} psf load${design.site.groundSnowPsf > 40 ? ` (the ${design.site.groundSnowPsf} psf ground snow here)` : ""}. The building department has the final word; permit fees and engineered drawings are not included.`);
+    out.push(`${frame.group === "OC" ? "Framing sized from Owens Corning's OC Lumber span tables (September 2024) and DrJ Engineering's listing 2302-42 — OC Lumber is not in the code's deck tables, so the building department reviews it as an alternative material" : `Framing sized from the deck tables of the International Residential Code (Section R507)${frame.beams.some((b) => b.table === "DCA6") ? " and the American Wood Council's DCA 6 guide" : ""}`} for a ${design.loadPsf} psf load${design.site.groundSnowPsf > 40 ? ` (the ${design.site.groundSnowPsf} psf ground snow here)` : ""}. The building department has the final word; permit fees and engineered drawings are not included.`);
     out.push(`Footings assume soil that bears ${design.soilPsf.toLocaleString("en-US")} psf${design.placement === "attached" ? ` and a frost depth of ${design.frostIn} in.` : ""}; rock, fill or a deeper frost line changes them.${s.gradePct >= 2 ? ` The ground's fall (${s.gradePct}%) is as read or typed; the real grade is checked on site.` : ""}`);
     if (design.site.termite === "very-heavy" || design.site.termite === "moderate-heavy") out.push(`Termite hazard here is ${TERMITE_LABEL[design.site.termite]}: ground-contact lumber near the soil and clearance at the posts are in the plan.`);
   }

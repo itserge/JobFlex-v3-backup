@@ -35,7 +35,7 @@ import type { RailMember } from "./rails";
 import { BASE_PLATE_IN, BASE_PLATE_THICK_IN, railMountCallout, railPostWords, railWords } from "./rails";
 import { electricalWords } from "./electrical";
 import { HOUSE_MATERIALS, HOUSE_ROOFS, houseHandles, houseScene, type HouseMaterial, type HouseRoof } from "./house";
-import { railColorOf } from "./catalog";
+import { railColorOf, speciesWords } from "./catalog";
 
 export const DECK_SCENE_VERSION = 3;
 
@@ -201,7 +201,7 @@ export interface DeckScene {
   /** `decking2`: the second tone of a streaked board (2026-11-09) — the 3D lays the boards in both. `railInfill`: the
    *  rail's infill where it is not the frame's colour — stainless cable, black metal balusters, a wire mesh. `border`
    *  (and `border2`): a picture-frame border in a second colour. `railCap`: a deck board on a kit rail, in the deck's colour. */
-  colors: { frame: string; decking: string; fascia: string; roofing: string; rail: string; decking2?: string; railInfill?: string; border?: string; border2?: string; railCap?: string };
+  colors: { frame: string; decking: string; fascia: string; roofing: string; rail: string; decking2?: string; railInfill?: string; border?: string; border2?: string; railCap?: string; roofFrame?: string };
   /** What the client reads under the picture. */
   facts: string;
 }
@@ -211,8 +211,9 @@ const r4 = (rad: number) => Math.round(rad * 10000) / 10000;
 const LEAN: Record<string, number> = { "x:1": 1, "x:-1": 2, "y:1": 3, "y:-1": 4 };
 const deg = (rad: number) => `${Math.round(Math.abs(rad) * (180 / Math.PI) * 10) / 10}°`;
 
-/** Treated lumber's green-brown, or the heartwood's own colour. */
+/** Treated lumber's green-brown, or the heartwood's own colour — OC Lumber's standard black (2026-11-12). */
 function frameColor(speciesId: string, group: string): string {
+  if (speciesId === "oc-lumber") return "#2b2b2a";
   if (speciesId === "redwood") return "#a4573e";
   if (speciesId === "western-cedar") return "#b5764a";
   return group === "SP" ? "#a59863" : "#9d8c62";
@@ -433,7 +434,7 @@ export function deckScene(s: DeckStructure): DeckScene {
     const noteFor = (st: typeof f.sticks[number]): string => {
       switch (st.role) {
         case "joist":
-          return `${lvl}${st.nominal} joist, ${f.spacingIn} in. on centre, ${f.species.short.toLowerCase()}. Square-cut both ends; ${f.beamStyle === "flush" ? "hung in a hanger at each beam" : f.design.placement === "attached" ? "a hanger at the ledger, a hurricane tie at each beam" : "a hurricane tie at each beam"}.`;
+          return `${lvl}${st.nominal} joist, ${f.spacingIn} in. on centre, ${speciesWords(f.species)}. Square-cut both ends; ${f.beamStyle === "flush" ? "hung in a hanger at each beam" : f.design.placement === "attached" ? "a hanger at the ledger, a hurricane tie at each beam" : "a hurricane tie at each beam"}.`;
         case "rim":
           return st.curved ? `${lvl}Curved rim: three plies of ½-in. treated plywood bent to the arc, glued and screwed to every joist end.` : `${lvl}${st.nominal} rim across the joist ends${st.yaw ? ", mitred at the clipped corner (22.5° each face)" : ""}: three structural screws into each joist.`;
         case "ledger":
@@ -984,9 +985,11 @@ export function deckScene(s: DeckStructure): DeckScene {
   if (el.on) factParts.push(electricalWords(el).split(" · ")[0]);
   const deckColor = s.surface?.product.color ?? "#a58a5c";
   const frameC = frameColor(design.framing.species, frame?.group ?? roof?.group ?? "SP");
+  // Over an OC frame the roof and a wood railing are sawn wood: they keep wood's colour.
+  const woodC = design.framing.species === "oc-lumber" ? frameColor(roof?.species.id ?? "hem-fir", roof?.group ?? "DF") : frameC;
   const deckColor2 = s.surface?.product.color2;
   const borderLook = s.surface?.border ? s.surface.product.border : undefined;
-  const colors: DeckScene["colors"] = { frame: frameC, decking: deckColor, fascia: deckColor, roofing: roofingColor(design.roof.roofing), rail: railColor(design.rail.type, deckColor, frameC, design.rail.color), ...(deckColor2 ? { decking2: deckColor2 } : {}), ...(rails.on && rails.infillColor ? { railInfill: rails.infillColor } : {}), ...(borderLook ? { border: borderLook.color, ...(borderLook.color2 ? { border2: borderLook.color2 } : {}) } : s.surface?.border ? { border: shadeHex(deckColor, BORDER_SAME_COLOUR_SHADE), ...(deckColor2 ? { border2: shadeHex(deckColor2, BORDER_SAME_COLOUR_SHADE) } : {}) } : {}), ...(rails.on && rails.drinkLf ? { railCap: deckColor } : {}) };
+  const colors: DeckScene["colors"] = { frame: frameC, decking: deckColor, fascia: deckColor, roofing: roofingColor(design.roof.roofing), rail: railColor(design.rail.type, deckColor, woodC, design.rail.color), ...(woodC !== frameC ? { roofFrame: woodC } : {}), ...(deckColor2 ? { decking2: deckColor2 } : {}), ...(rails.on && rails.infillColor ? { railInfill: rails.infillColor } : {}), ...(borderLook ? { border: borderLook.color, ...(borderLook.color2 ? { border2: borderLook.color2 } : {}) } : s.surface?.border ? { border: shadeHex(deckColor, BORDER_SAME_COLOUR_SHADE), ...(deckColor2 ? { border2: shadeHex(deckColor2, BORDER_SAME_COLOUR_SHADE) } : {}) } : {}), ...(rails.on && rails.drinkLf ? { railCap: deckColor } : {}) };
   const slope = design.site.slope;
   const ground = slope.outDropIn || slope.acrossDropIn ? { outDropFt: r3(slope.outDropIn), acrossDropFt: r3(slope.acrossDropIn) } : null;
   // The handles (edit mode): the deck's width, depth and height at its front-right corner, the roof's eave, each stair along its edge, the lower level's depth.
@@ -1236,7 +1239,7 @@ export function parseDeckScene(raw: unknown): DeckScene | null {
     ground,
     glows,
     handles,
-    colors: { frame: color(c.frame, "#9d8c62"), decking: color(c.decking, "#a58a5c"), fascia: color(c.fascia, "#a58a5c"), roofing: color(c.roofing, "#565250"), rail: color(c.rail, "#9d8c62"), ...(typeof c.decking2 === "string" && HEX.test(c.decking2) ? { decking2: c.decking2 } : {}), ...(typeof c.railInfill === "string" && HEX.test(c.railInfill) ? { railInfill: c.railInfill } : {}), ...(typeof c.border === "string" && HEX.test(c.border) ? { border: c.border } : {}), ...(typeof c.border2 === "string" && HEX.test(c.border2) ? { border2: c.border2 } : {}), ...(typeof c.railCap === "string" && HEX.test(c.railCap) ? { railCap: c.railCap } : {}) },
+    colors: { frame: color(c.frame, "#9d8c62"), decking: color(c.decking, "#a58a5c"), fascia: color(c.fascia, "#a58a5c"), roofing: color(c.roofing, "#565250"), rail: color(c.rail, "#9d8c62"), ...(typeof c.decking2 === "string" && HEX.test(c.decking2) ? { decking2: c.decking2 } : {}), ...(typeof c.railInfill === "string" && HEX.test(c.railInfill) ? { railInfill: c.railInfill } : {}), ...(typeof c.border === "string" && HEX.test(c.border) ? { border: c.border } : {}), ...(typeof c.border2 === "string" && HEX.test(c.border2) ? { border2: c.border2 } : {}), ...(typeof c.railCap === "string" && HEX.test(c.railCap) ? { railCap: c.railCap } : {}), ...(typeof c.roofFrame === "string" && HEX.test(c.roofFrame) ? { roofFrame: c.roofFrame } : {}) },
     facts: typeof r.facts === "string" ? r.facts.slice(0, 200) : "",
   };
 }

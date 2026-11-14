@@ -16,7 +16,8 @@
 
 import { parseWallRead, type JogOffer, type WallRead } from "./photoFit";
 import { LOADS, POST_SIZES, SOILS, SOLID_BEAMS, SPACINGS, JOIST_SIZES, type BuiltUpBeam, type JoistSize, type LedgerFastener, type LoadPsf, type PostSize, type SoilPsf, type SolidBeam, type SpacingIn } from "./codeTables";
-import { DECKING, FRAMING_SPECIES, RAIL_TYPES, WALL_TYPES, defaultDecking, defaultFramingSpecies, railColors, wallType, type FramingSpeciesId, type RailTypeId, type WallTypeId } from "./catalog";
+import { DECKING, FRAMING_SPECIES, RAIL_TYPES, WALL_TYPES, defaultDecking, defaultFramingSpecies, isCompositeFraming, railColors, wallType, type FramingSpeciesId, type RailTypeId, type WallTypeId } from "./catalog";
+import { OC_POST } from "./ocLumber";
 import { deckingColors } from "./deckingColors";
 import { SLOPE_LIMITS, flatSlope, type SiteSlope, type TermiteHazard } from "./site";
 import { defaultHouse, normalizeHouse, type HouseDesign } from "./house";
@@ -891,9 +892,15 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
   const roof = normalizeRoof(r.roof, structure, floor, placement, shape);
   const photo = normalizePhoto(r.photo);
 
+  const species = oneOf(f.species, FRAMING_SPECIES.map((s) => s.id), d.framing.species);
+  // OC LUMBER (2026-11-12): Owens Corning tabulates beams built up of two or three boards and one post — three 2x6
+  // OC boards screwed together — so a composite frame always has the OC post (a wood frame never does) and its beams
+  // are built up. The wood frame's own beam kind is kept as chosen, so going back to wood brings it back.
+  const composite = isCompositeFraming(species);
   const beamKind = oneOf(f.beamKind, ["solid", "built-up"] as const, d.framing.beamKind);
+  const beamsBuilt = composite ? "built-up" : beamKind;
   const beamRaw = typeof f.beam === "string" ? f.beam : "auto";
-  const beam: BeamSize | "auto" = beamKind === "solid" ? (isSolidBeam(beamRaw) ? beamRaw : "auto") : (BUILT_UP_CHOICES as readonly string[]).includes(beamRaw) ? (beamRaw as BuiltUpBeam) : "auto";
+  const beam: BeamSize | "auto" = beamsBuilt === "solid" ? (isSolidBeam(beamRaw) ? beamRaw : "auto") : (BUILT_UP_CHOICES as readonly string[]).includes(beamRaw) ? (beamRaw as BuiltUpBeam) : "auto";
   const overhangFt = f.overhangFt === "auto" || f.overhangFt === undefined ? "auto" : toInch(clamp(num(f.overhangFt, 0), DECK_LIMITS.overhangFt.min, DECK_LIMITS.overhangFt.max));
   const railFt = ex.railFt === "auto" || ex.railFt === undefined ? "auto" : Math.round(clamp(num(ex.railFt, 0), DECK_LIMITS.railFt.min, DECK_LIMITS.railFt.max) * 10) / 10;
   const heightIn = Math.round(clamp(num(r.heightIn, d.heightIn), DECK_LIMITS.heightIn.min, DECK_LIMITS.heightIn.max) * 4) / 4;
@@ -920,13 +927,13 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
     soilPsf: oneOf(num(r.soilPsf, d.soilPsf), SOILS, d.soilPsf) as SoilPsf,
     frostIn: Math.round(clamp(num(r.frostIn, d.frostIn), DECK_LIMITS.frostIn.min, DECK_LIMITS.frostIn.max)),
     framing: {
-      species: oneOf(f.species, FRAMING_SPECIES.map((s) => s.id), d.framing.species),
+      species,
       joist: f.joist === "auto" ? "auto" : oneOf(f.joist, JOIST_SIZES, "auto" as JoistSize | "auto"),
       spacingIn: f.spacingIn === "auto" ? "auto" : (oneOf(num(f.spacingIn, 0), SPACINGS, "auto" as SpacingIn | "auto") as SpacingIn | "auto"),
       beamStyle: oneOf(f.beamStyle, ["auto", "dropped", "flush"] as const, d.framing.beamStyle),
       beamKind,
       beam,
-      post: oneOf(f.post, POST_SIZES, d.framing.post),
+      post: composite ? OC_POST : oneOf(f.post, POST_SIZES, d.framing.post),
       overhangFt,
       doubleRim: typeof f.doubleRim === "boolean" ? f.doubleRim : d.framing.doubleRim,
       joistTape: typeof f.joistTape === "boolean" ? f.joistTape : d.framing.joistTape,

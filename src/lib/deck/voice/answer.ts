@@ -8,6 +8,7 @@
 import { BAG_CUFT } from "../frame";
 import type { DeckCheck } from "../checks";
 import { PERMIT_EXEMPT, ftIn } from "../codeTables";
+import { postWords } from "../ocLumber";
 import { DECKING, deckingProduct } from "../catalog";
 import { electricalWords } from "../electrical";
 import { ROOFING_LABEL, ROOF_KIND_LABEL, STAIR_LANDING_LABEL, hasDeck, sizeWords, structureWords, shapeAreaSqFt } from "../design";
@@ -126,7 +127,7 @@ export function answer(q: Question, about: string, pkg: DeckPackage, checks: rea
       if (!fr) return { say: s.roof ? `${plural(s.roof.posts.length, "post")} hold the roof, ${d.roof.post}.` : "No posts here." };
       const deckPosts = fr.posts.filter((p) => !p.roof);
       const tallest = Math.max(0, ...deckPosts.map((p) => p.heightIn));
-      return { say: `${plural(deckPosts.length, "post")}, ${d.framing.post}, the tallest ${ftIn(tallest)} from the footing to the beam.${s.roof ? ` The roof stands on ${plural(s.roof.posts.length, "post")} of its own, ${d.roof.post}.` : ""}`, light: { label: "Posts", step: "Frame" }, view: { xray: true } };
+      return { say: `${plural(deckPosts.length, "post")}, ${postWords(d.framing.post)}, the tallest ${ftIn(tallest)} from the footing to the beam.${s.roof ? ` The roof stands on ${plural(s.roof.posts.length, "post")} of its own, ${d.roof.post}.` : ""}`, light: { label: "Posts", step: "Frame" }, view: { xray: true } };
     }
     case "ledger": {
       if (!fr || !fr.ledgers.length) return { say: d.placement === "attached" ? "No ledger was laid." : "No ledger — it stands on its own posts." };

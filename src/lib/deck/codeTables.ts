@@ -26,13 +26,24 @@
 //
 // This is estimating grade. The building department decides.
 
-import { BEAM_ROWS, FOOTING_ROWS, JOIST_ROWS, LEDGER_ROWS, POST_ROWS, type BuiltUpBeam, type JoistSize, type LoadPsf, type PostSize, type SpeciesGroup } from "./codeTables.data";
+import { BEAM_ROWS, FOOTING_ROWS, JOIST_ROWS, LEDGER_ROWS, POST_ROWS, type BuiltUpBeam, type JoistSize, type LoadPsf, type PostSize as WoodPostSize, type SpeciesGroup } from "./codeTables.data";
+import { OC_POST, OC_POST_ACTUAL_IN, OC_RULE, ocJoistMaxCantileverIn, ocJoistMaxSpanIn, ocPostMaxHeightIn } from "./ocLumber";
 
-export type { BuiltUpBeam, JoistSize, LoadPsf, PostSize, SpeciesGroup };
+export type { BuiltUpBeam, JoistSize, LoadPsf, SpeciesGroup, WoodPostSize };
+
+/**
+ * The rule book a frame is read on: one of the code's three species rows for
+ * sawn wood, or "OC" — Owens Corning's own tables for its composite framing
+ * (lib/deck/ocLumber, 2026-11-12). The code's tables never speak for OC.
+ */
+export type FramingGroup = SpeciesGroup | "OC";
+/** A post: sawn lumber the code tabulates, or the built-up OC post (three 2x6 OC boards). */
+export type PostSize = WoodPostSize | typeof OC_POST;
 
 export const LOADS: readonly LoadPsf[] = [40, 50, 60, 70];
 export const JOIST_SIZES: readonly JoistSize[] = ["2x6", "2x8", "2x10", "2x12"];
-export const POST_SIZES: readonly PostSize[] = ["4x4", "4x6", "6x6", "8x8"];
+/** The sawn posts the code tabulates — what a wood frame offers. */
+export const POST_SIZES: readonly WoodPostSize[] = ["4x4", "4x6", "6x6", "8x8"];
 export type SpacingIn = 12 | 16 | 24;
 export const SPACINGS: readonly SpacingIn[] = [12, 16, 24];
 /** Soil that bears 1,500, 2,000 or 3,000 psf and more (Table R401.4.1). */
@@ -68,6 +79,14 @@ export const RULE = {
   fasteners: "IRC Table R507.2.3",
 } as const;
 
+export type RuleBook = { -readonly [K in keyof typeof RULE]: string };
+
+/** The rule names a frame's numbers are printed with: the code's, or Owens Corning's where OC framing replaces them. */
+export function rulesFor(group: FramingGroup): RuleBook {
+  if (group !== "OC") return RULE;
+  return { ...RULE, joist: OC_RULE.joist, cantilever: OC_RULE.cantilever, beam: OC_RULE.beam, beamCantilever: OC_RULE.beamCantilever, post: OC_RULE.post, bracing: OC_RULE.bracing, treatment: OC_RULE.treatment, fasteners: OC_RULE.fasteners, hangers: OC_RULE.hangers, restraint: OC_RULE.hangers, flushBeam: OC_RULE.beam };
+}
+
 /* ------------------------------------------------------------------ */
 /*  Lumber as it measures                                              */
 /* ------------------------------------------------------------------ */
@@ -88,6 +107,7 @@ export const POST_ACTUAL_IN: Record<PostSize, readonly [number, number]> = {
   "4x6": [3.5, 5.5],
   "6x6": [5.5, 5.5],
   "8x8": [7.5, 7.5],
+  [OC_POST]: OC_POST_ACTUAL_IN,
 };
 
 /* ------------------------------------------------------------------ */
@@ -126,7 +146,8 @@ const SPACING_COL: Record<SpacingIn, number> = { 12: 0, 16: 1, 24: 2 };
 const BACK_SPANS_FT = [4, 6, 8, 10, 12, 14, 16, 18] as const;
 
 /** The longest span of a joist, inches. */
-export function joistMaxSpanIn(load: LoadPsf, group: SpeciesGroup, size: JoistSize, spacing: SpacingIn): number {
+export function joistMaxSpanIn(load: LoadPsf, group: FramingGroup, size: JoistSize, spacing: SpacingIn): number {
+  if (group === "OC") return ocJoistMaxSpanIn(load, size, spacing);
   return JOIST_ROWS[load][group][size].span[SPACING_COL[spacing]];
 }
 
@@ -137,7 +158,8 @@ export function joistMaxSpanIn(load: LoadPsf, group: SpeciesGroup, size: JoistSi
  * keeps that quarter — the table's own slope, and the limit AWC's guide
  * states outright.
  */
-export function joistMaxCantileverIn(load: LoadPsf, group: SpeciesGroup, size: JoistSize, backSpanFt: number): number {
+export function joistMaxCantileverIn(load: LoadPsf, group: FramingGroup, size: JoistSize, backSpanFt: number): number {
+  if (group === "OC") return ocJoistMaxCantileverIn(backSpanFt);
   if (!(backSpanFt > 0)) return 0;
   if (backSpanFt < BACK_SPANS_FT[0]) return Math.floor((backSpanFt * 12) / 4);
   return Math.floor(readRow(BACK_SPANS_FT, JOIST_ROWS[load][group][size].cant, backSpanFt) + 1e-9);
@@ -221,12 +243,13 @@ const DCA6_SOLID_ROWS: Record<SolidBeam, readonly number[]> = {
 };
 
 /** Whether the solid-beam table speaks for this species and load at all. */
-export function solidBeamTabulated(load: LoadPsf, group: SpeciesGroup): boolean {
-  return load === 40 && group !== "SP";
+export function solidBeamTabulated(load: LoadPsf, group: FramingGroup): boolean {
+  // Owens Corning prints beams of two and three 2x OC boards only.
+  return load === 40 && group !== "SP" && group !== "OC";
 }
 
 /** The longest span of a solid 4x beam between posts, inches (0 = not in the table). */
-export function solidBeamMaxSpanIn(load: LoadPsf, group: SpeciesGroup, beam: SolidBeam, joistSpanFt: number): number {
+export function solidBeamMaxSpanIn(load: LoadPsf, group: FramingGroup, beam: SolidBeam, joistSpanFt: number): number {
   if (!solidBeamTabulated(load, group)) return 0;
   return readRow(EFFECTIVE_SPANS_FT, DCA6_SOLID_ROWS[beam], joistSpanFt, true);
 }
@@ -244,8 +267,14 @@ export const POST_TABLE_MAX_IN = 14 * 12;
 /** The largest area one post may carry in the table. */
 export const POST_TABLE_MAX_AREA = 160;
 
-/** The tallest post for the deck area it carries, inches (0 = not permitted / beyond the table). */
-export function postMaxHeightIn(load: LoadPsf, group: SpeciesGroup, size: PostSize, tributarySqFt: number): number {
+/**
+ * The tallest post for the deck area it carries, inches (0 = not permitted / beyond the table). The built-up OC post
+ * is read on Owens Corning's listing (what it carries under a 2- or a 3-ply beam, 9 ft at most); the code's table
+ * has no row for it, and a sawn post has none in Owens Corning's.
+ */
+export function postMaxHeightIn(load: LoadPsf, group: FramingGroup, size: PostSize, tributarySqFt: number, beamPlies = 3): number {
+  if (size === OC_POST) return group === "OC" ? ocPostMaxHeightIn(load, tributarySqFt, beamPlies) : 0;
+  if (group === "OC") return 0;
   return Math.floor(readRow(POST_AREAS_SQFT, POST_ROWS[load][group][size], Math.max(tributarySqFt, 0.01)) + 1e-9);
 }
 

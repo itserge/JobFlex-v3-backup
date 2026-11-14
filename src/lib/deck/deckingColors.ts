@@ -107,6 +107,10 @@ export const DECKING_COLORS: Readonly<Record<string, readonly BoardColor[]>> = {
   "calibamboo-truorganics": [c("Denali", "#937264", "#806357"), c("Yosemite", "#6c6a6d", "#79777a"), c("Glacier", "#c2c1c8", "#adabb4"), c("Sedona", "#90624a", "#9c6e56")],
   // Armadillo composite decking (Evolution + Essential series) — https://armadillodeck.com/armadillo-composite-decking/
   "armadillo-expression": [c("Bourbon", "#412c23", "#563f35", "Evolution Series"), c("Firewood", "#9f6849", "#7b4c33", "Evolution Series"), c("Linen", "#dddacf", "#c7c3b8", "Evolution Series"), c("Silverstone", "#c1c6c9", "#a0a5a9", "Evolution Series"), c("Mesa", "#8d5140", "#703d2e", "Evolution Series"), c("Steel Wool", "#8c8c8c", "#6f6f6f", "Evolution Series"), c("Twilight", "#867573", "#6a5c5a", "Evolution Series"), c("Sand Storm", "#c6b5a9", "#a29286", "Evolution Series"), c("Dovetail", "#c7cbce", "#9da1a5", "Essential Series"), c("Saw Grass", "#c7b7aa", "#9b8e85", "Essential Series"), c("Saloon", "#463026", "#5d4438", "Essential Series"), c("Thunder", "#8a8d94", "#6c6f76", "Essential Series")],
+  // Owens Corning Marine Grade decking — the colours The Deck Store sells it in, Nov 2026 (swatches sampled):
+  // https://deckstore.com/collections/owens-corning
+  "oc-marine-54x6": [c("Gobi", "#b2a095"), c("Saddlestone", "#a37f6c"), c("Mink", "#c7b8aa"), c("Stratus", "#bab9b7"), c("Sanddollar", "#ded3c7"), c("Shale", "#d5d4d3")],
+  "oc-marine-2x6": [c("Gobi", "#b2a095"), c("Saddlestone", "#a37f6c"), c("Mink", "#c7b8aa"), c("Stratus", "#bab9b7"), c("Sanddollar", "#ded3c7"), c("Shale", "#d5d4d3")],
   /* COLOURS:END */
 };
 
