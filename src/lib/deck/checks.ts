@@ -50,6 +50,7 @@ import { POST_ACTUAL_IN, STAIR_MIN_WIDTH_IN } from "./codeTables";
 import { FRAMING_SPECIES, defaultFramingSpecies, speciesWords } from "./catalog";
 import { cite, codeWords, inFrac, stateName } from "./stateCodes";
 import { openingChecks } from "./openingChecks";
+import { deckPast, pastWords } from "./house";
 import { railHeldWords, railMountLine } from "./rails";
 import { borderWords } from "./surface";
 
@@ -158,6 +159,24 @@ export function deckChecks(s: DeckStructure): DeckCheck[] {
     frame.beamLinesNotSet.forEach((nb, i) => add({ id: `deck-beam-not-set-${i + 1}`, level: "info", part: "Joists", text: `A middle beam set by hand could not be placed: ${nb.why}.`, fix: { label: "Take that beam off", patch: { framing: { beamLines: design.framing.beamLines.filter((x) => x.id !== nb.id), pins: design.framing.pins.filter((x) => x.line !== nb.id) } } } }));
     const backBeam = typeof design.framing.backOverhangFt === "number" ? frame.zones.find((z) => z.back === "beam") : undefined;
     if (backBeam && frame.beamStyle === "dropped") add({ id: "deck-beam-back-set", level: "pass", part: "Joists", text: `The beam by the house stands ${ftIn(Math.round(backBeam.beamYs[0] - backBeam.zone.y0))} in from the deck's back edge, as set by hand.` });
+  }
+  // PAST THE HOUSE'S CORNER (2026-11-14 — the owner: "go back past the house, on the sides… extend to the right and to
+  // the left outside the house wall"): said where the builder looks — what stands there, and that nothing hangs in the
+  // air. (An id clear of lib/deck/settle AUTO_FIX: it is the builder's choice, not a size to settle.)
+  if (frame && design.placement !== "detached") {
+    const past = deckPast(design.house);
+    const openZones = frame.zones.filter((z) => z.zone.open);
+    if ((past.leftFt > 0 || past.rightFt > 0) && openZones.length) {
+      const wing = past.wrapLeftFt > 0 || past.wrapRightFt > 0;
+      const onLedger = design.placement === "attached";
+      add({
+        id: "deck-past-house",
+        level: "pass",
+        part: "Past the house",
+        text: `${pastWords(past)} No wall stands behind ${openZones.length === 1 ? "that part" : "those parts"}, so ${onLedger ? "the ledger stops at the corner and " : ""}the joists there rest on a beam and posts of their own at the back${wing ? "; beside the house's side wall the deck's edge joist runs along the wall and nothing is fastened to it" : ""}. Every open edge there is railed and finished like the rest of the deck.`,
+        rule: "IRC R507.5 · R507.6",
+      });
+    }
   }
   // The picture-frame border, said where the builder looks (2026-11-13): how wide, how far, what goes under it.
   const bordered = frame && s.surface && s.surface.border > 0 ? s.surface : null;

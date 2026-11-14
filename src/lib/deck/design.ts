@@ -20,7 +20,7 @@ import { DECKING, FRAMING_SPECIES, RAIL_TYPES, WALL_TYPES, defaultDecking, defau
 import { OC_POST } from "./ocLumber";
 import { deckingColors } from "./deckingColors";
 import { SLOPE_LIMITS, flatSlope, type SiteSlope, type TermiteHazard } from "./site";
-import { defaultHouse, normalizeHouse, type HouseDesign } from "./house";
+import { defaultHouse, fitDeckEnds, normalizeHouse, type HouseDesign } from "./house";
 
 /**
  * v2 (2026-10-10): `structure`, `floor`, `roof` and `photo` joined the design.
@@ -66,6 +66,14 @@ export interface BackPart {
   x0Ft: number;
   x1Ft: number;
   yFt: number;
+  /**
+   * PAST THE HOUSE'S CORNER (2026-11-14 — the owner: "if I want to go back past the house, on the sides… the deck can
+   * extend to the right and to the left outside the house wall"). No wall stands behind this part: the deck has run
+   * past the corner, so its back is an open edge on a beam and posts, not a ledger. `yFt` is then zero or negative —
+   * how far the part reaches BACK beside the house's side wall (a wrap-around deck). Only the deck's first and last
+   * parts can be open (a house is one piece), and never all of them.
+   */
+  open?: true;
 }
 
 export type DeckShape =
@@ -892,36 +900,55 @@ function normalizeShape(raw: unknown, fallback: DeckShape): DeckShape {
   };
 }
 
-/** The narrowest part a deck follows the wall into; the most a deck reaches back behind the house line, ft. */
-export const BACK_LIMITS = { partFt: 2, reachFt: 16 } as const;
+/**
+ * The narrowest part a deck follows the wall into; the most a deck reaches back behind the house line into a set-back;
+ * and the most a part past the house's corner runs back along the house's side (2026-11-14), ft.
+ */
+export const BACK_LIMITS = { partFt: 2, reachFt: 16, wrapFt: 24 } as const;
 
 /**
  * A wall deck's back parts made buildable: in order, end to end over the deck's width, to the inch; each part leaves a
  * leg of at least `legFt` in front of it and reaches back no farther than `reachFt` (nor past the 40-ft depth);
  * neighbours at the same line are one part. Null when that leaves the back straight — the deck is a rectangle.
+ * A part past the house's corner (`open`) is kept only at an end of the deck, with a walled part left between: it
+ * stands at the house line or behind it (never in front), back `wrapFt` at most.
  */
 export function normalizeBack(raw: unknown, widthFt: number, depthFt: number): BackPart[] | null {
   if (!Array.isArray(raw)) return null;
-  const lo = -Math.min(BACK_LIMITS.reachFt, DECK_LIMITS.depthFt.max - depthFt);
+  const room = DECK_LIMITS.depthFt.max - depthFt;
+  const lo = -Math.min(BACK_LIMITS.reachFt, room);
+  const loOpen = -Math.min(BACK_LIMITS.wrapFt, room);
   const hi = depthFt - DECK_LIMITS.legFt.min;
   const cuts = raw
     .map((v) => obj(v))
-    .map((b) => ({ x0: num(b.x0Ft, NaN), x1: num(b.x1Ft, NaN), y: num(b.yFt, 0) }))
+    .map((b) => ({ x0: num(b.x0Ft, NaN), x1: num(b.x1Ft, NaN), y: num(b.yFt, 0), open: b.open === true }))
     .filter((b) => Number.isFinite(b.x0) && Number.isFinite(b.x1) && b.x1 > b.x0)
     .sort((a, b) => a.x0 - b.x0);
   if (!cuts.length) return null;
+  // Open only at the ends, with wall between them: a deck with no wall behind any of it does not hang on this house
+  // (a rectangle, then), and a part marked open between two walled ones is a walled one.
+  const firstWall = cuts.findIndex((c) => !c.open);
+  if (firstWall < 0) return null;
+  const lastWall = cuts.length - 1 - [...cuts].reverse().findIndex((c) => !c.open);
+  cuts.forEach((c, i) => {
+    if (i > firstWall && i < lastWall) c.open = false;
+  });
   const out: BackPart[] = [];
   let x = 0;
   for (let i = 0; i < cuts.length; i++) {
     const x1 = i === cuts.length - 1 ? widthFt : toInch(clamp(cuts[i].x1, x, widthFt));
     if (x1 - x < 1 / 12) continue;
-    const y = toInch(clamp(cuts[i].y, lo, hi));
+    const open = cuts[i].open;
+    const y = toInch(open ? clamp(cuts[i].y, loOpen, 0) : clamp(cuts[i].y, lo, hi));
     const last = out[out.length - 1];
-    if (last && Math.abs(last.yFt - y) < 1 / 24) last.x1Ft = x1;
-    else out.push({ x0Ft: x, x1Ft: x1, yFt: y });
+    // Two open parts side by side are one (the first's line); a walled part joins its like at the same line.
+    if (last && !!last.open === open && (open || Math.abs(last.yFt - y) < 1 / 24)) last.x1Ft = x1;
+    else out.push({ x0Ft: x, x1Ft: x1, yFt: y, ...(open ? { open: true as const } : {}) });
     x = x1;
   }
   if (out.length && out[out.length - 1].x1Ft < widthFt) out[out.length - 1].x1Ft = widthFt;
+  // (The cuts ran out before the wall did: what is left is all open — no wall, no wall deck.)
+  if (!out.some((b) => !b.open)) return null;
   if (out.length < 2 && (!out.length || Math.abs(out[0].yFt) < 1 / 24)) return null;
   return out;
 }
@@ -950,7 +977,11 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
   // A deck and a covered deck stand on the deck; a gazebo or a pergola on whatever was chosen.
   const floor: Floor = structure === "deck" || structure === "covered-deck" ? "deck" : oneOf(r.floor, FLOORS, d.floor);
   // The deck's own shape first: the roof follows it, or carries its size off the deck.
-  const shape = normalizeShape(r.shape, d.shape);
+  // (…and the house with it: a deck whose end runs past a corner of the house has no wall behind it there — the shape
+  // says so whichever of the two changed last, so nothing downstream hangs a ledger in the air. 2026-11-14.)
+  const shape0 = normalizeShape(r.shape, d.shape);
+  const house = normalizeHouse(r.house, shape0);
+  const shape = fitDeckEnds(shape0, house);
   const roof = normalizeRoof(r.roof, structure, floor, placement, shape);
   const photo = normalizePhoto(r.photo);
 
@@ -1044,7 +1075,7 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
     floor,
     roof,
     photo,
-    house: normalizeHouse(r.house, shape),
+    house,
     custom: normalizeCustom(r.custom),
   };
 }
@@ -1575,6 +1606,8 @@ export interface Zone {
   x1: number;
   y0: number;
   y1: number;
+  /** No house wall behind it (2026-11-14): the deck past the house's corner — its back on a beam, an open edge. */
+  open?: true;
 }
 
 /**
@@ -1587,7 +1620,8 @@ export function shapeZones(shape: DeckShape): Zone[] {
   const D = Math.round(shape.depthFt * 12);
   if (shape.kind === "rect") return [{ id: "a", x0: 0, x1: W, y0: 0, y1: D }];
   // A deck that follows the wall: one zone per part of its back, each framed off the wall behind it.
-  if (shape.kind === "wall") return shape.back.map((b, i) => ({ id: String.fromCharCode(97 + i), x0: Math.round(b.x0Ft * 12), x1: Math.round(b.x1Ft * 12), y0: Math.round(b.yFt * 12), y1: D }));
+  // (A part past the house's corner is framed off a beam of its own — `open`.)
+  if (shape.kind === "wall") return shape.back.map((b, i) => ({ id: String.fromCharCode(97 + i), x0: Math.round(b.x0Ft * 12), x1: Math.round(b.x1Ft * 12), y0: Math.round(b.yFt * 12), y1: D, ...(b.open ? { open: true as const } : {}) }));
   const nw = Math.round(shape.notch.widthFt * 12);
   const nd = Math.round(shape.notch.depthFt * 12);
   const left = shape.notch.corner.endsWith("left");
@@ -1626,11 +1660,15 @@ export function shapeEdges(shape: DeckShape, placement: Placement): DeckEdge[] {
   if (shape.kind === "wall") {
     // Every part's back lies on the wall, and so does each face where the wall steps between two parts — the side of
     // a bump-out, or of the set-back the deck reaches into.
+    // PAST THE HOUSE'S CORNER (2026-11-14): an open part's back is an open edge. The face between two parts is the
+    // house's wherever a wall stands on its far side — the part that starts farther out is walled (a bump-out's side,
+    // a set-back's, or the house's own SIDE wall where the deck runs back beside it); it is open air where that part
+    // is past the corner.
     const out: DeckEdge[] = [];
     zones.forEach((z, i) => {
-      out.push(edge(z.x0, z.y0, z.x1, z.y0, "back", true));
+      out.push(edge(z.x0, z.y0, z.x1, z.y0, "back", !z.open));
       const n = zones[i + 1];
-      if (n && n.y0 !== z.y0) out.push(edge(z.x1, Math.min(z.y0, n.y0), z.x1, Math.max(z.y0, n.y0), n.y0 > z.y0 ? "right" : "left", true));
+      if (n && n.y0 !== z.y0) out.push(edge(z.x1, Math.min(z.y0, n.y0), z.x1, Math.max(z.y0, n.y0), n.y0 > z.y0 ? "right" : "left", !(n.y0 > z.y0 ? n : z).open));
     });
     out.push(edge(0, D, W, D, "front", false));
     out.push(edge(0, zones[0].y0, 0, D, "left", false));
@@ -1734,7 +1772,11 @@ export function sizeWords(design: DeckDesign): string {
   }
   const front = s.kind === "rect" && s.front && s.front.kind !== "straight" ? (s.front.kind === "curve" ? " curved front" : " clipped corners") : "";
   const lower = isDoubleDeck(design) ? " double deck" : design.lower.on && design.lower.place === "front" && s.kind !== "L" ? " two levels" : "";
-  if (s.kind === "wall") return `${ft(s.widthFt)} × ${ft(s.depthFt)} following the house wall${lower}`;
+  if (s.kind === "wall") {
+    const ends = s.back.filter((b) => b.open);
+    const how = !ends.length ? "following the house wall" : ends.some((b) => b.yFt < 0) ? "wrapping round the house" : "running past the house's corner";
+    return `${ft(s.widthFt)} × ${ft(s.depthFt)} ${how}${lower}`;
+  }
   return s.kind === "rect" ? `${ft(s.widthFt)} × ${ft(s.depthFt)}${front}${lower}` : `${ft(s.widthFt)} × ${ft(s.depthFt)} L-shaped${isDoubleDeck(design) ? lower : ""}`;
 }
 

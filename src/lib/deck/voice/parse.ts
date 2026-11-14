@@ -26,6 +26,7 @@ import {
   SIDING_WORDS,
   type Amount,
   type DeckCommand,
+  type DeckPastSaid,
   type DeckingSet,
   type FramingSet,
   type Look,
@@ -1025,7 +1026,39 @@ function readRoof(c: string, ctx: ParseContext): Read {
 /*  The house behind the deck                                          */
 /* ------------------------------------------------------------------ */
 
+/**
+ * THE DECK PAST A CORNER OF THE HOUSE (2026-11-14): "run the deck 6 ft past the house on the right", "wrap it round the
+ * left side 10 ft", "8 ft past the corner and 12 back along the side", "stop at the corner". The house past the DECK
+ * ("the house runs 4 ft past the deck") is the wall's own reach, read below. With no side said it is the right one —
+ * what is said back names it, and the other.
+ */
+function readPast(c: string): DeckPastSaid | null {
+  if (/\b(?:steps?|stairs?|rails?|railings?|border|lights?|roof|gutters?)\b/.test(c)) return null;
+  const HOUSE = "(?:house|home|building)";
+  const pastSaid = new RegExp(`\\b(?:past|beyond|outside(?: of)?) (?:the |its |of the )?(?:${HOUSE}(?:'s)?(?: (?:wall|corners?|(?:left|right) (?:corner|side|end)))?|(?:left |right |both |two |2 )?corners?(?: of the ${HOUSE})?|(?:left|right|both) (?:sides?|ends?) of the ${HOUSE}|(?:${HOUSE} )?walls?)\\b`).test(c);
+  const wrapSaid = new RegExp(`\\bwrap(?:s|ped|ping)?\\b|\\bwrap ?around\\b|\\b(?:around|round) (?:the |its )?(?:${HOUSE}(?:'s)?(?: (?:left |right )?(?:corners?|sides?))?|(?:(?:left|right|both) )?(?:sides?|corners?) of the ${HOUSE})\\b|\\bback (?:along|down|beside|alongside|next to) (?:the |its )?(?:${HOUSE}|(?:left |right |${HOUSE}(?:'s)? )?(?:sides?|walls?))\\b|\\b(?:along|down|beside|alongside) the (?:left |right )?sides? of the ${HOUSE}\\b`).test(c);
+  const off = new RegExp(`\\b(?:stops?|ends?) (?:the deck |it )?at the (?:${HOUSE}(?:'s)? )?corners?\\b|\\b(?:do not|don't|dont|not|no longer|never) (?:go|run|extend|wrap|continue)\\w*(?: (?:the deck|it))? (?:past|around|round|beyond)\\b|\\bno wrap ?around\\b|\\bno wrap\\b|\\b(?:remove|take off|take out|drop|lose|undo|delete|get rid of) (?:the |that )?wrap(?: ?around)?\\b`).test(c);
+  if (!pastSaid && !wrapSaid && !off) return null;
+  // "The house runs 4 ft past the deck" is the wall's reach, not the deck's.
+  if (!wrapSaid && !off && /\b(?:past|beyond) the deck\b/.test(c)) return null;
+  const side: DeckPastSaid["side"] = /\bboth\b|\beach\b|\beither\b|\b(?:two|2) (?:sides|corners|ends)\b/.test(c) || (/\bleft\b/.test(c) && /\bright\b/.test(c)) ? "both" : /\bleft\b/.test(c) ? "left" : /\bright\b/.test(c) ? "right" : off ? "both" : "right";
+  if (off) return { side, off: true };
+  const NUM = "(\\d+(?:\\.\\d+)?)(?: ft)?";
+  const pastN = new RegExp(`${NUM} (?:more |further |farther |out )?(?:past|beyond|outside)\\b`).exec(c);
+  const backN = new RegExp(`${NUM} (?:back|along|down|deep|long|beside|alongside)\\b`).exec(c) ?? new RegExp(`\\b(?:back|wrap\\w*|around|round|along|sides?)\\b[^\\d]{0,48}${NUM}`).exec(c);
+  const out: DeckPastSaid = { side };
+  if (pastN) out.ft = Number(pastN[1]);
+  if (wrapSaid) {
+    // A length said after "back / along / around" is how far back — unless it is the one already read as "past".
+    if (backN && !(pastN && backN.index >= pastN.index && backN.index <= pastN.index + pastN[0].length)) out.backFt = Number(backN[1]);
+    else out.wrap = true;
+  }
+  return out;
+}
+
 function readHouse(c: string, ctx: ParseContext): Read {
+  const pastCmd = readPast(c);
+  if (pastCmd) return read([{ do: "house", past: pastCmd }], "house");
   const houseSaid = /\b(?:house|home|siding)\b/.test(c);
   const storeys = /\b(?:1|one|single) story\b|\branch\b|\brambler\b|\bbungalow\b/.test(c) ? 1 : /\b(?:2|two) story\b|\bcolonial\b|\btwo floors\b/.test(c) ? 2 : undefined;
   const wall = /\bbump ?out (?:on|at|to) the right\b|\bright bump ?out\b|\bbump ?out right\b/.test(c) ? "bump-right" : /\bbump ?out (?:on|at|to) the left\b|\bleft bump ?out\b|\bbump ?out left\b/.test(c) ? "bump-left" : /\b(?:nook|inside corner|between two walls|tucked in|recessed|in a corner)\b/.test(c) ? "nook" : /\b(?:straight (?:wall|back wall)|flat wall|no bump ?outs?|plain wall|remove the bump ?out)\b/.test(c) ? "straight" : undefined;

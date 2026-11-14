@@ -351,6 +351,13 @@ variants.push(["stair with a landing, a quarter turn, aluminum rail", { structur
 variants.push(["stair with a switchback landing, cedar rail", { structure: "deck", shape: rect(16, 12), heightIn: 132, rail: { ...base.rail, type: "cedar" }, stairs: turned([[66, "back-right"]]) } as Patch]);
 variants.push(["stair with two landings turning the same way, composite rail", { structure: "deck", shape: rect(20, 12), heightIn: 126, rail: { ...base.rail, type: "composite" }, stairs: turned([[84, "right"], [42, "right"]]) } as Patch]);
 variants.push(["stair with a straight landing and then a turn", { structure: "deck", shape: rect(16, 12), heightIn: 108, rail: { ...base.rail, type: "aluminum" }, stairs: turned([[72, "straight"], [36, "left"]]) } as Patch]);
+// PAST THE HOUSE'S CORNER (2026-11-14): the deck runs on past a corner of the house and back along its side — a part
+// with a beam of its own at the back beside a part on the ledger; the rim, the fascia, the border and the rail along
+// the open back edge, and the edge joist against the house's side wall.
+variants.push(["deck 6 ft past the house's right corner, aluminum rail, fascia", { structure: "deck", shape: rect(26, 12), heightIn: 48, house: { ...base.house, rightFt: -6 }, rail: { ...base.rail, type: "aluminum" }, decking: { ...base.decking, fascia: "match" }, stairs: stairs("front", 6, 4) } as Patch]);
+variants.push(["wrap-around deck: 8 ft past the right corner, 10 ft back, border, composite rail", { structure: "deck", shape: rect(30, 12), heightIn: 48, house: { ...base.house, rightFt: -8, wrapRightFt: 10 }, rail: { ...base.rail, type: "composite" }, decking: { ...base.decking, fascia: "match", border: 1 }, stairs: stairs("front", 6, 4) } as Patch]);
+variants.push(["deck round both corners of the house, second storey, cedar rail, double rim", { structure: "deck", shape: rect(40, 12), heightIn: 108, house: { ...base.house, storeys: 2, leftFt: -6, rightFt: -8, wrapLeftFt: 8, wrapRightFt: 12 }, rail: { ...base.rail, type: "cedar" }, framing: { ...base.framing, doubleRim: true }, decking: { ...base.decking, fascia: "match" }, stairs: [] } as Patch]);
+variants.push(["wrap-around deck on its own posts, flush beams, two-board border", { structure: "deck", placement: "beside", shape: rect(28, 14), heightIn: 30, house: { ...base.house, leftFt: -6, wrapLeftFt: 12 }, rail: { ...base.rail, type: "none" }, framing: { ...base.framing, beamStyle: "flush" }, decking: { ...base.decking, fascia: "match", border: 2 }, stairs: [] } as Patch]);
 for (const [name, p] of variants) cases.push({ name, design: applyDeckPatch(base, p) });
 
 /**

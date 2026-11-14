@@ -240,7 +240,9 @@ export function deckSurface(frame: DeckFrame): DeckSurface {
   // The border's edges, read once: which carry it, how they meet at the corners, and the bands of deck they cover.
   const bEdges = borderBoards > 0 ? ringEdges(outline) : [];
   const nB = bEdges.length;
-  const isHouse = (e: RingEdge) => (e.A.y < 0.5 && e.B.y < 0.5 && againstHouse) || frame.edges.some((fe) => fe.house && Math.abs((e.A.x + e.B.x) / 2 - (fe.x0 + fe.x1) / 2) < 0.6 && Math.abs((e.A.y + e.B.y) / 2 - (fe.y0 + fe.y1) / 2) < 0.6);
+  const onEdge = (e: RingEdge, fe: DeckFrame["edges"][number]) => Math.abs((e.A.x + e.B.x) / 2 - (fe.x0 + fe.x1) / 2) < 0.6 && Math.abs((e.A.y + e.B.y) / 2 - (fe.y0 + fe.y1) / 2) < 0.6;
+  // (Past the house's corner — 2026-11-14 — a back edge is an open one: the frame's own edges say which.)
+  const isHouse = (e: RingEdge) => (e.A.y < 0.5 && e.B.y < 0.5 && againstHouse && !frame.edges.some((fe) => !fe.house && fe.side === "back" && onEdge(e, fe))) || frame.edges.some((fe) => fe.house && onEdge(e, fe));
   const on = bEdges.map((e) => e.length >= 2 && !isHouse(e));
   const square = bEdges.map((e) => Math.abs(e.ux) < 1e-6 || Math.abs(e.uy) < 1e-6);
   const trimA = bEdges.map(() => 0);

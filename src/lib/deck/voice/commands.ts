@@ -127,6 +127,14 @@ export type StairAt = "left" | "center" | "right" | "house" | "out" | { ft: numb
  * on from it — to the left or the right AS THE DECK IS SEEN from the yard, toward the house, out to the yard, back
  * beside the flight above, or straight on. `turnAtIn` is the landing's height above the ground.
  */
+/** "Run the deck 6 ft past the house on the right", "wrap it round the left side 10 ft", "stop at the corner". */
+export interface DeckPastSaid {
+  side: "left" | "right" | "both";
+  ft?: number;
+  backFt?: number;
+  wrap?: boolean;
+  off?: boolean;
+}
 export type StairTurnSaid = "add" | "remove" | "straight" | "left" | "right" | "house" | "yard" | "back";
 
 export type DeckCommand =
@@ -151,7 +159,9 @@ export type DeckCommand =
   | { do: "spa"; on?: boolean; width?: Amount; depth?: Amount; align?: Align }
   | { do: "fixture"; op: "add" | "remove" | "set"; kind: FixtureKind; qty?: Amount; supply?: FixtureSupply; volts240?: boolean }
   | { do: "electrical"; timer?: boolean; feedFt?: number; panelSide?: "left" | "right" }
-  | { do: "house"; storeys?: 1 | 2; roof?: HouseRoof; siding?: SidingId; roofColour?: RoofColourId; wall?: QuickWall; leftFt?: Amount; rightFt?: Amount; widthFt?: number }
+  // `past` (2026-11-14): the DECK run past a corner of the house — `ft` beyond the corner, `backFt` back along the
+  // house's side (`wrap` = a wrap-around said without a length), `off` = back to the corner.
+  | { do: "house"; storeys?: 1 | 2; roof?: HouseRoof; siding?: SidingId; roofColour?: RoofColourId; wall?: QuickWall; leftFt?: Amount; rightFt?: Amount; widthFt?: number; past?: DeckPastSaid }
   | { do: "extras"; demoSqFt?: number | "deck"; stainless?: boolean; drain?: boolean }
   | { do: "item"; op: "add" | "remove"; name: string; qty?: number; unit?: OwnUnit; price?: number }
   /** A product of the shop's own in one of the studio's lists ("our own boards, Azek Timbertech, at 9 dollars a foot"). */

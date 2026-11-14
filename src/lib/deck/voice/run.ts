@@ -41,7 +41,7 @@ import {
 } from "../design";
 import { patchDesign, patchRoof, switchStructure } from "../edit";
 import type { FieldFocus } from "../fieldParts";
-import { HOUSE_ROOF_LABEL, QUICK_WALL_LABEL, ROOF_COLOURS, SIDINGS, houseForShape, quickWall, resizeDeckLeft, shiftHouseThings, slideDeck } from "../house";
+import { HOUSE_ROOF_LABEL, QUICK_WALL_LABEL, ROOF_COLOURS, SIDINGS, deckPast, houseForShape, pastWords, quickWall, resizeDeckLeft, setDeckPast, shiftHouseThings, slideDeck } from "../house";
 import type { DeckPriceOptions } from "../pricing";
 import { railMountLine } from "../rails";
 import { railMountFor, type RailSectionKey } from "../design";
@@ -658,9 +658,38 @@ export function runCommand(d0: DeckDesign, cmd: DeckCommand, env: RunEnv = {}): 
         said.push(cmd.widthFt > d.shape.widthFt ? `The house ${ftWords(cmd.widthFt)} wide — the deck centered on it, ${ftWords(past / 2)} of wall past each end.` : "The house wall is no wider than the deck.");
       }
       if (cmd.leftFt || cmd.rightFt) {
-        if (cmd.leftFt) house = { ...house, leftFt: halfFt(clamp(amt(house.leftFt, cmd.leftFt), 0, 60)) };
-        if (cmd.rightFt) house = { ...house, rightFt: halfFt(clamp(amt(house.rightFt, cmd.rightFt), 0, 60)) };
-        said.push(`The house runs ${ftWords(house.leftFt)} past the deck on the left and ${ftWords(house.rightFt)} on the right.`);
+        // (The wall's own reach: said of an end the deck had run past, the wall is behind that end again.)
+        if (cmd.leftFt) house = { ...house, leftFt: halfFt(clamp(amt(Math.max(0, house.leftFt), cmd.leftFt), 0, 60)) };
+        if (cmd.rightFt) house = { ...house, rightFt: halfFt(clamp(amt(Math.max(0, house.rightFt), cmd.rightFt), 0, 60)) };
+        const reach = (v: number, end: string) => (v < 0 ? `the deck runs ${ftWords(-v)} past it on the ${end}` : `it runs ${ftWords(v)} past the deck on the ${end}`);
+        said.push(house.leftFt < 0 || house.rightFt < 0 ? `The house: ${reach(house.leftFt, "left")}, ${reach(house.rightFt, "right")}.` : `The house runs ${ftWords(house.leftFt)} past the deck on the left and ${ftWords(house.rightFt)} on the right.`);
+      }
+      // THE DECK PAST A CORNER OF THE HOUSE (2026-11-14 — the owner: "go back past the house, on the sides… extend to
+      // the right and to the left outside the house wall"). The house stays; the deck's end moves out past the corner
+      // and, for a wrap-around, back along the house's side. Said with no length: 6 ft past, 8 ft back.
+      let shape: DeckShape | null = null;
+      if (cmd.past) {
+        const ends = cmd.past.side === "both" ? (["left", "right"] as const) : ([cmd.past.side] as const);
+        const before = deckPast(house);
+        for (const end of ends) {
+          const now = deckPast(house);
+          const cur = end === "left" ? now.leftFt : now.rightFt;
+          const curBack = end === "left" ? now.wrapLeftFt : now.wrapRightFt;
+          const ft = cmd.past.off ? 0 : (cmd.past.ft ?? (cur > 0 ? cur : 6));
+          const back = cmd.past.off ? 0 : (cmd.past.backFt ?? (cmd.past.wrap ? (curBack > 0 ? curBack : 8) : curBack));
+          const r = setDeckPast(house, shape ?? d.shape, end, ft, back, { minWidthFt: DECK_LIMITS.widthFt.min, maxWidthFt: DECK_LIMITS.widthFt.max });
+          house = r.house;
+          shape = r.shape;
+        }
+        const fitted = patchDesign(d, { house, shape: shape ?? d.shape }, settle);
+        const after = deckPast(fitted.house);
+        const was = before.leftFt > 0 || before.rightFt > 0;
+        if (after.leftFt > 0 || after.rightFt > 0) {
+          said.push(`${pastWords(after)} There it stands on its own beam and posts — ${ftWords(fitted.shape.widthFt)} along the house now.`);
+          // (Said with no side and no length, it is the right corner at the usual size: the other choices, in a line.)
+          if (cmd.past.side === "right" && !was && cmd.past.ft === undefined && cmd.past.backFt === undefined) said.push("Say \"on the left\" or \"both sides\" for the other corner, and how many feet.");
+        } else said.push(was ? `The deck stops at the house's corner again — ${ftWords(fitted.shape.widthFt)} along the house.` : "The deck does not run past the house.");
+        return out(fitted, said, { flash: [{ label: cmd.past.side === "left" ? "Past the left corner" : "Past the right corner" }], view: { reset: true } });
       }
       const next = patchDesign(d, { house }, settle);
       return out(next, said, { flash: cmd.wall ? [{ label: "The wall's shape" }] : cmd.siding ? [{ label: "Siding" }] : cmd.roofColour ? [{ label: "Roof colour" }] : [{ label: "Storeys" }], view: { reset: true } });

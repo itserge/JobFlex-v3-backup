@@ -831,7 +831,10 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
   const joistTopIn = surfaceIn - decking.thickIn;
   const footingTopIn = design.footing.type === "pier-block" ? PIER_BLOCK.topIn : design.footing.aboveGradeIn;
   const fits = (size: JoistSize) => joistTopIn - joistDepthIn(size) >= MIN_FRAME_CLEAR_IN;
-  const backs: Array<"ledger" | "beam"> = zones.map(() => (attached ? "ledger" : "beam"));
+  // PAST THE HOUSE'S CORNER (2026-11-14): a part of the deck with no wall behind it stands on a beam of its own there,
+  // however the rest of the deck meets the house.
+  const backs: Array<"ledger" | "beam"> = zones.map((z) => (attached && !z.open ? "ledger" : "beam"));
+  const anyBackBeam = backs.includes("beam");
 
   // Joist sizes to try: the one asked for, or the smallest that both fits
   // under the deck and spans. A 2x6 is offered only where a 2x8 will not fit.
@@ -881,7 +884,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
   const attempt = (style: BeamStyle, mayFail: boolean): DeckFrame | null => {
     strips.clear();
     // A flush beam is the deck's edge: only a dropped back beam can stand in from it.
-    const hand: HandBeams = { backIn: style === "dropped" && !attached && typeof design.framing.backOverhangFt === "number" ? Math.round(design.framing.backOverhangFt * 12) : null, lines: handLines };
+    const hand: HandBeams = { backIn: style === "dropped" && anyBackBeam && typeof design.framing.backOverhangFt === "number" ? Math.round(design.framing.backOverhangFt * 12) : null, lines: handLines };
     let plan: JoistPlan | null = null;
     for (const size of sizes) {
       const p = follow ? followPlan(follow, style, size) : planJoists(zones, backs, style, size, spacingIn, group, load, design.framing.overhangFt, bulgeIn, hand);
@@ -1191,7 +1194,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       const frontBeam = zoneBeams[zoneBeams.length - 1];
       const middleBeams = zoneBeams.slice(backBeam ? 1 : 0, -1);
       const frontExposed = edges.some((e) => e.side === "front" && !e.house && Math.abs(e.y0 - z.y1) < 0.01 && e.x0 < z.x1 && e.x1 > z.x0);
-      const backExposed = design.placement === "detached";
+      const backExposed = design.placement === "detached" || !!z.open;
       const frontRim = style === "dropped" ? rimPlies(frontExposed) * THICK_2X_IN : 0;
       const backRim = style === "dropped" && zf.back === "beam" ? rimPlies(backExposed) * THICK_2X_IN : 0;
       const start = zf.back === "ledger" ? z.y0 + THICK_2X_IN : style === "flush" && backBeam ? z.y0 + backBeam.spec.thickIn : z.y0 + backRim;
@@ -1269,6 +1272,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
     if (attached) {
       const runs: Array<{ y: number; x0: number; x1: number; spanFt: number }> = [];
       for (const zf of [...plan.zones].sort((p, q) => p.zone.y0 - q.zone.y0 || p.zone.x0 - q.zone.x0)) {
+        if (zf.back !== "ledger") continue;
         const spanFt = zf.spansIn[0] / 12;
         const m = runs.find((r) => Math.abs(r.y - zf.zone.y0) < 0.01 && Math.abs(r.x1 - zf.zone.x0) < 0.01);
         if (m) {

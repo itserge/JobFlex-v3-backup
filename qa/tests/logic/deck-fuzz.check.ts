@@ -39,6 +39,8 @@ function randomWall(r: Rng, depthHint: number): unknown {
   const cuts = Array.from({ length: n - 1 }, () => odd(r, 1, widthFt - 1)).sort((a, b) => a - b);
   const xs = [0, ...cuts, widthFt];
   const back = xs.slice(0, -1).map((x0, i) => ({ x0Ft: x0, x1Ft: xs[i + 1], yFt: r() < 0.3 ? 0 : r() < 0.5 ? -odd(r, 0, r() < 0.1 ? 30 : 16) : odd(r, 0, r() < 0.1 ? depthFt + 4 : Math.max(0, depthFt - 3)) }));
+  // (Parts said to be past the house's corner — 2026-11-14 — anywhere at all: the house decides, and the reader holds them to it.)
+  if (r() < 0.2) for (const b of back as Array<Record<string, unknown>>) if (r() < 0.4) b.open = pick(r, [true, true, "yes", 1]);
   return { kind: "wall", widthFt, depthFt, back };
 }
 
@@ -107,6 +109,12 @@ function randomDesign(r: Rng): unknown {
   d.extras.items = r() < 0.7 ? [] : Array.from({ length: int(r, 1, 45) }, (_, i) => ({ id: r() < 0.9 ? `o${i}` : pick(r, ["", "BAD ID", "o1"]), name: pick(r, NAMES), qty: odd(r, -1, 500), unit: pick(r, ["ea", "pcs", "ft", "sq ft", "bags", "yd"]), price: odd(r, -1, 5000) }));
   d.rail.customName = r() < 0.3 ? pick(r, NAMES) : "";
   for (const f of d.electrical.fixtures) if (r() < 0.2) f.custom = { name: pick(r, NAMES), price: odd(r, 0, 3000) };
+  // …and the deck run past a corner of the house and back along its side (2026-11-14) — in the rails and well out of
+  // them. (Last, so every design before this draws the numbers it always drew.)
+  if (r() < 0.3) {
+    d.house = { ...d.house, leftFt: r() < 0.5 ? odd(r, -40, 10) : d.house.leftFt, rightFt: r() < 0.6 ? odd(r, -40, 10) : d.house.rightFt, wrapLeftFt: pick(r, [undefined, 0, odd(r, -2, 30), "x"]), wrapRightFt: pick(r, [undefined, 0, odd(r, -2, 30)]) };
+    if (r() < 0.4) d.house.jogs = Array.from({ length: int(r, 1, 4) }, (_, i) => ({ id: `j${i + 1}`, atFt: odd(r, -6, 64), dir: pick(r, ["toward", "away"]), depthFt: odd(r, 0, 14) }));
+  }
   return d;
 }
 
@@ -147,6 +155,24 @@ function exercise(d: DeckDesign, tag: string, out: string[]) {
   if (drift) out.push(`normalize drifts: ${drift}  [${tag}]`);
   const pkg = priceDeck(d);
   if (!(Number.isFinite(pkg.subtotal) && pkg.subtotal >= 0)) out.push(`subtotal bad: ${pkg.subtotal}  [${tag}]`);
+  // PAST THE HOUSE'S CORNER (2026-11-14): the deck's shape and the house agree — a part past a corner is an open one,
+  // exactly as far as the house says — and no ledger hangs where no wall stands.
+  {
+    const W = d.shape.widthFt;
+    const back = d.shape.kind === "wall" ? d.shape.back : [];
+    const openL = back[0]?.open ? back[0].x1Ft : 0;
+    const openR = back.length && back[back.length - 1].open ? W - back[back.length - 1].x0Ft : 0;
+    if (Math.abs(openL - Math.max(0, -d.house.leftFt)) > 0.05 || Math.abs(openR - Math.max(0, -d.house.rightFt)) > 0.05) out.push(`the deck's open ends (${openL}, ${openR}) are not the house's (${d.house.leftFt}, ${d.house.rightFt})  [${tag}]`);
+    if (back.some((b, i) => b.open && i > 0 && i < back.length - 1)) out.push(`an open part in the middle of the deck  [${tag}]`);
+    if (back.some((b) => b.open && b.yFt > 0)) out.push(`an open part in front of the house line  [${tag}]`);
+    const f0 = pkg.structure.frame;
+    if (f0) {
+      const x0 = -d.house.leftFt * 12 - 0.6;
+      const x1 = (W + d.house.rightFt) * 12 + 0.6;
+      for (const l of f0.ledgers) if (l.x0 < x0 || l.x1 > x1) out.push(`a ledger ${l.x0}..${l.x1} runs past the house (${x0}..${x1})  [${tag}]`);
+      for (const z of f0.zones) if (z.zone.open && z.back !== "beam") out.push(`a part past the house's corner hangs on a ledger  [${tag}]`);
+    }
+  }
   // BY HAND (2026-11-13; lib/deck/byHand): a post or a beam taken hold of and moved — to its line's ends and a few
   // inches along — is still in the hand afterwards (the same name), where it was put, and the deck still builds.
   if (Number(tag.replace(/\D/g, "")) % 4 === 0) {
