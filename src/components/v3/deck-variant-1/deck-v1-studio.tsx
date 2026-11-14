@@ -1824,6 +1824,15 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
             </Field>
           ) : null}
         </div>
+        {design.house.covers?.length ? (
+          // A porch roof kept from the photo (2026-11-13): drawn as an existing cover — taken off here when it goes after all.
+          <div className="v1-row-acts" data-deck-house-covers>
+            <span className="v1-meta">The porch roof from the photo is drawn as an existing cover (nothing is priced or framed from it).</span>
+            <button type="button" className="v1-btn v1-btn-sm v1-btn-quiet" onClick={() => setHouse({ covers: null })}>
+              Take it off
+            </button>
+          </div>
+        ) : null}
         {design.house.openings ? (
           <div className="v1-row-acts" data-deck-house-openings>
             <span className="v1-meta">The windows and doors stand where the photo showed them.</span>

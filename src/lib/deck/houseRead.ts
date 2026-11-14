@@ -71,6 +71,10 @@ export interface HouseRead extends WallRead {
   outline?: Pt[];
   /** The stretches of the wall that have a height or a roof of their own; absent when every part stands under the main roof. */
   heights?: ReadHeight[];
+  /** What stands in front of the wall (2026-11-13): an old deck, its stairs, a porch roof, a tree — each with the box
+   *  it covers. Left out of the house that is built, and out of every pass that reads the wall off the picture's own
+   *  pixels (lib/deck/houseInFront). Absent on an older read, or when nothing stands there. */
+  lookPast?: HouseLookPast[];
 }
 
 const MAX_WINDOWS = 30;
@@ -195,6 +199,7 @@ export function parseHouseRead(raw: unknown): HouseRead | null {
   const saved = (Array.isArray(r.heights) ? r.heights : []).map((x) => { const sp = span(x, 0.01); return sp ? { ...sp, ...heightOf(obj(x)) } : null; }).filter((x): x is ReadHeight => !!x);
   const told = sections.filter((x) => (x.storeys === 1 && wall.storeys !== 1) || x.roof !== null || x.wing).map((x) => ({ x0: r3(x.x0), x1: r3(x.x1), storeys: x.storeys, roof: x.roof, wing: x.wing }));
   const heights = (saved.length ? saved : told).filter((x) => x.storeys !== null || x.roof !== null || x.wing).slice(0, 6);
+  const lookPast = parseLookPast(r.lookPast);
   return {
     ...wall,
     windows: clearOfDoors,
@@ -204,7 +209,26 @@ export function parseHouseRead(raw: unknown): HouseRead | null {
     colours: { siding: hex(c.siding), roof: hex(c.roof), trim: hex(c.trim) },
     ...(outline.length >= 3 ? { outline } : {}),
     ...(heights.length ? { heights } : {}),
+    ...(lookPast.length ? { lookPast } : {}),
   };
+}
+
+/** What stands in front of the wall, as the model or a saved read gives it: each a kind and a box inside the picture. */
+function parseLookPast(raw: unknown): HouseLookPast[] {
+  return (Array.isArray(raw) ? raw : [])
+    .map((x): HouseLookPast | null => {
+      const o = obj(x);
+      const kind = LOOK_PAST_KINDS.find((k) => k === o.kind);
+      if (!kind || ![o.x0, o.x1, o.y0, o.y1].every((v) => typeof v === "number" && Number.isFinite(v))) return null;
+      const x0 = r3(clamp(Math.min(o.x0 as number, o.x1 as number), 0, 1)), x1 = r3(clamp(Math.max(o.x0 as number, o.x1 as number), 0, 1));
+      const y0 = r3(clamp(Math.min(o.y0 as number, o.y1 as number), 0, 1)), y1 = r3(clamp(Math.max(o.y0 as number, o.y1 as number), 0, 1));
+      if (x1 - x0 <= 0.01 || y1 - y0 <= 0.01) return null;
+      // An old deck's floor: a line inside its own box (a hand's width of slack either way), else not known.
+      const floor = kind === "old-deck" && typeof o.floor === "number" && Number.isFinite(o.floor) && o.floor > y0 - 0.02 && o.floor < y1 + 0.02 ? r3(clamp(o.floor, 0, 1)) : null;
+      return { kind, x0, y0, x1, y1, ...(floor !== null ? { floor } : {}) };
+    })
+    .filter((b): b is HouseLookPast => !!b)
+    .slice(0, 12);
 }
 
 /** A house read kept in a design: checked again on the way back in; an older read without the house's fields still loads. */
@@ -223,12 +247,33 @@ export function mapHouseRead(read: HouseRead, wallMap: (r: WallRead) => WallRead
     const tc = pt({ x: cx, y: b.top });
     return { x0: r3(Math.min(bl.x, br.x)), x1: r3(Math.max(bl.x, br.x)), bottom: r3(bc.y), top: r3(Math.min(tc.y, bc.y - 0.001)) };
   };
+  // A stretch of the wall keeps its place along the wall's foot.
+  const baseY = (x: number) => read.base.left.y + ((read.base.right.y - read.base.left.y) * (x - read.base.left.x)) / Math.max(1e-6, read.base.right.x - read.base.left.x);
+  const alongBase = (x: number) => r3(pt({ x, y: baseY(x) }).x);
+  const heights = read.heights?.map((h) => ({ ...h, x0: alongBase(h.x0), x1: alongBase(h.x1) })).filter((h) => h.x1 - h.x0 > 0.01);
+  // What stands in front of the wall: the box round its four corners as they land; an old deck's floor at its middle.
+  const lookPast = read.lookPast
+    ?.map((b): HouseLookPast => {
+      const c = [pt({ x: b.x0, y: b.y0 }), pt({ x: b.x1, y: b.y0 }), pt({ x: b.x0, y: b.y1 }), pt({ x: b.x1, y: b.y1 })];
+      const f = b.floor !== undefined ? pt({ x: (b.x0 + b.x1) / 2, y: b.floor }).y : null;
+      return {
+        kind: b.kind,
+        x0: r3(clamp(Math.min(...c.map((p) => p.x)), 0, 1)),
+        x1: r3(clamp(Math.max(...c.map((p) => p.x)), 0, 1)),
+        y0: r3(clamp(Math.min(...c.map((p) => p.y)), 0, 1)),
+        y1: r3(clamp(Math.max(...c.map((p) => p.y)), 0, 1)),
+        ...(f !== null && Number.isFinite(f) ? { floor: r3(clamp(f, 0, 1)) } : {}),
+      };
+    })
+    .filter((b) => b.x1 - b.x0 > 0.01 && b.y1 - b.y0 > 0.01);
   return {
     ...wall,
     doors: read.doors.map((d) => ({ ...boxOf(d), kind: d.kind })),
     roof: read.roof,
     material: read.material,
     colours: read.colours,
+    ...(heights?.length ? { heights } : {}),
+    ...(lookPast?.length ? { lookPast } : {}),
     ...(read.outline
       ? {
           outline: read.outline.map((p) => {
@@ -558,6 +603,7 @@ export function readFromCrop(read: HouseRead, crop: ReadCrop): HouseRead {
     scaleLine: read.scaleLine ? { ...read.scaleLine, a: P(read.scaleLine.a), b: P(read.scaleLine.b) } : null,
     bars: { top: 0, bottom: 0 },
     ...(read.outline ? { outline: read.outline.map(P) } : {}),
+    ...(read.lookPast ? { lookPast: read.lookPast.map((b) => ({ ...b, x0: X(b.x0), x1: X(b.x1), y0: Y(b.y0), y1: Y(b.y1), ...(b.floor !== undefined ? { floor: Y(b.floor) } : {}) })) } : {}),
   };
 }
 
@@ -605,7 +651,31 @@ export function mergeLooks(wide: HouseRead, close: HouseRead | null): HouseRead 
     note: close.note ?? wide.note,
     // The silhouette from the whole picture: the close look's is cut at the cut's edges.
     ...(wide.outline ? { outline: wide.outline } : {}),
+    ...lookPastOfLooks(wide, close),
   };
+}
+
+/**
+ * What stands in front of the wall, from the two looks: the whole picture's list (it sees the yard), each thing's box
+ * widened by the close look's of the same kind on the same spot, an old deck's floor taken from the close look (the
+ * line is read finer there); what only the close look saw is added.
+ */
+function lookPastOfLooks(wide: HouseRead, close: HouseRead): { lookPast?: HouseLookPast[] } {
+  const share = (a: HouseLookPast, b: HouseLookPast) => {
+    const i = Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
+    return i / Math.max(1e-9, Math.min((a.x1 - a.x0) * (a.y1 - a.y0), (b.x1 - b.x0) * (b.y1 - b.y0)));
+  };
+  const near = close.lookPast ?? [];
+  const used = new Set<HouseLookPast>();
+  const out = (wide.lookPast ?? []).map((b): HouseLookPast => {
+    const twin = near.find((c) => !used.has(c) && c.kind === b.kind && share(b, c) >= 0.4);
+    if (!twin) return b;
+    used.add(twin);
+    const floor = twin.floor ?? b.floor;
+    return { kind: b.kind, x0: Math.min(b.x0, twin.x0), x1: Math.max(b.x1, twin.x1), y0: Math.min(b.y0, twin.y0), y1: Math.max(b.y1, twin.y1), ...(floor !== undefined ? { floor } : {}) };
+  });
+  out.push(...near.filter((c) => !used.has(c)));
+  return out.length ? { lookPast: out.slice(0, 12) } : {};
 }
 
 /* ------------------------------------------------------------------ */
@@ -641,6 +711,9 @@ export interface HouseLookPast {
   y0: number;
   x1: number;
   y1: number;
+  /** An old deck's walking surface where it meets the house wall — the line a door onto it stands on — as a fraction
+   *  of the picture's height (2026-11-13). Absent for every other kind, and when the model could not see it. */
+  floor?: number;
 }
 
 export const houseReadSchema = z.object({
@@ -658,7 +731,7 @@ export const houseReadSchema = z.object({
   roof: z.object({ kind: z.enum(["hip", "gable-side", "gable-end", "shed", "flat"]).nullable(), pitch: z.number().nullable() }),
   material: z.enum(["lap", "brick", "stucco", "board-batten", "stone", "shingle"]).nullable(),
   colours: z.object({ siding: z.string().nullable(), roof: z.string().nullable(), trim: z.string().nullable() }),
-  lookPast: z.array(z.object({ kind: z.enum(LOOK_PAST_KINDS), x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number() })),
+  lookPast: z.array(z.object({ kind: z.enum(LOOK_PAST_KINDS), x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number(), floorY: z.number().nullable() })),
   bars: z.object({ top: z.number(), bottom: z.number() }),
   confidence: z.number(),
   note: z.string().nullable(),
@@ -677,7 +750,9 @@ WINDOWS: EVERY window in the wall, both storeys: the outside edges of its frame 
 PATIO: a concrete patio or slab at the wall's base, its ends along the wall (only to know where a deck would go); null when none.
 ROOF: the MAIN roof of the house — hip (slopes on every side), gable-side (the ridge runs along this wall, triangles at the sides), gable-end (a triangle of wall faces the camera), shed, flat; pitch in inches of rise per foot when you can judge it (a usual house is 4 to 8), else null. A lower roof over one part of the wall is said in that part's section, not here.
 MATERIAL: what most of the wall is clad in (lap = horizontal siding, vinyl or fiber cement). COLOURS: your best guess at the real colours as "#rrggbb" in plain daylight (not the sunset, not the shadow), null when you cannot say.
-LOOK PAST, NEVER READ AS THE WALL: a porch roof or a covered patio's roof standing out in front of the wall, its posts and beams, an awning, a pergola, an old deck and its railing, stairs, a slab, a fence, a hedge, trees, a neighbour's house, a car. None of them is a step in the wall, an edge of the wall or its eave: a porch roof's low edge is not the eave; its post is not a corner. Read the house wall behind them — and list each such thing in "lookPast" with the box it covers, so the builder can keep it out of the picture.
+LOOK PAST, NEVER READ AS THE WALL: a porch roof or a covered patio's roof standing out in front of the wall, its posts and beams, an awning, a pergola, an old deck and its railing, stairs, a slab, a fence, a hedge, trees, a neighbour's house, a car. None of them is a step in the wall, an edge of the wall or its eave: a porch roof's low edge is not the eave; its post is not a corner; an old deck's floor or its top rail is not the wall's base. Read the house wall BEHIND them — and list each such thing in "lookPast" with the box it covers, so the builder can leave it out of the model.
+AN OLD DECK (a raised porch floor or a landing with its railing counts) will be torn out and a new deck built in its place, so it must not shape anything you read: box the WHOLE of it — its floor, its railing, its posts and its skirt down to the ground — kind "old-deck"; its stairs in a box of their own, kind "stairs". "floorY" is the y of the old deck's WALKING SURFACE where it meets the house wall — the line a door onto it stands on, seen under or through the railing (when the far edge of the floor is hidden, the top of the deck's front edge); null for every other kind, and when you cannot see it. The wall's BASE runs behind the deck at the GROUND, never along the deck's floor or its rail: carry the ground line across from where the foot of the wall shows beside the deck or under it. A door that opens onto the old deck is boxed down to that floor line, behind the railing; windows seen through the railing are boxed whole.
+A PORCH ROOF, a patio cover or an awning: box the ROOF itself — from where it meets the house wall to its front edge — not its posts.
 BARS: black bands or a phone's status bar at the top and the bottom of the picture, in pixels of height; 0 when none. CONFIDENCE: how sure you are of the corners, the steps and the windows. NOTE: one short sentence a deck builder should know (a meter or a dryer vent on the wall, the ground sloping), else null.
 Rules: a standard exterior door is about 80 inches tall and a usual window about 3 to 4 ft wide — use them to judge sizes; never invent a door, a window or a step you cannot see.`;
 
@@ -715,6 +790,7 @@ export function fromStructured(s: HouseReadStructured, w: number, h: number): Re
     confidence: s.confidence,
     note: s.note,
     outline: s.outline ? s.outline.map(P) : null,
+    lookPast: lookPastOf(s, w, h),
   };
 }
 
@@ -724,7 +800,7 @@ export function lookPastOf(s: HouseReadStructured, w: number, h: number): HouseL
   const X = (x: number) => clamp(px ? x / Math.max(1, w) : x, 0, 1);
   const Y = (y: number) => clamp(px ? y / Math.max(1, h) : y, 0, 1);
   return s.lookPast
-    .map((b) => ({ kind: b.kind, x0: r3(X(Math.min(b.x0, b.x1))), x1: r3(X(Math.max(b.x0, b.x1))), y0: r3(Y(Math.min(b.y0, b.y1))), y1: r3(Y(Math.max(b.y0, b.y1))) }))
+    .map((b): HouseLookPast => ({ kind: b.kind, x0: r3(X(Math.min(b.x0, b.x1))), x1: r3(X(Math.max(b.x0, b.x1))), y0: r3(Y(Math.min(b.y0, b.y1))), y1: r3(Y(Math.max(b.y0, b.y1))), ...(b.kind === "old-deck" && typeof b.floorY === "number" && Number.isFinite(b.floorY) ? { floor: r3(Y(b.floorY)) } : {}) }))
     .filter((b) => b.x1 - b.x0 > 0.01 && b.y1 - b.y0 > 0.01)
     .slice(0, 12);
 }
