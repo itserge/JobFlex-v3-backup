@@ -9,6 +9,8 @@
 // createdAt is that moment.
 import { db } from "@/lib/db";
 import { getPlanCatalog } from "@/lib/planCatalogServer";
+import { readToolCatalog } from "@/lib/toolPlans/prices";
+import { isToolsSlug } from "@/lib/toolPlans/shared";
 
 const FRESH_MS = 60 * 60 * 1000;
 
@@ -44,7 +46,10 @@ export async function metaStartTrialEvent(organizationId: string, now = new Date
     ]);
     const plan = catalog.find((p) => p.slug === slug);
     const yearly = price?.interval === "YEAR";
-    const cents = price?.unitAmountCents ?? (yearly ? plan?.yearlyPriceCents : plan?.priceCents) ?? null;
+    // A new plan ("tools-…", lib/toolPlans) has no catalog row and no PlanPrice: its monthly price in force. Without
+    // this every new-plan trial (the Plans switch, 2026-11-11) priced at null and Meta heard no StartTrial at all.
+    const toolsCents = !price && isToolsSlug(slug) ? (await readToolCatalog()).plans.find((p) => p.slug === slug)?.cents : undefined;
+    const cents = price?.unitAmountCents ?? toolsCents ?? (yearly ? plan?.yearlyPriceCents : plan?.priceCents) ?? null;
     if (!cents || cents <= 0) return null;
     const value = cents / 100;
     return { organizationId, value, currency: "USD", predictedLtv: yearly ? value : Math.round(value * 12 * 100) / 100, contentName: slug };
