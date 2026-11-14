@@ -4,13 +4,18 @@
 // browser half (components/dashboard/MetaStartTrial) sends it once per company. No Conversions API copy.
 //
 // DUE only on the live site (VERCEL_ENV=production, where layout.tsx loads the pixel), for a Stripe subscription
-// (not a grant or a manual one) that is TRIALING and began within the hour — so a deploy never fires it for the
-// companies already on a trial. A sign-up writes the subscription row when its trial starts, so the row's
-// createdAt is that moment.
+// (not a grant or a manual one) that is TRIALING and whose CARD WENT IN within the hour — so a deploy never fires it
+// for the companies already on a trial.
+//
+// STARTTRIAL = THE CUSTOMER GAVE A CARD (owner, 2026-11-13). A card sign-up gave it on Stripe's page as its
+// subscription was made (the row's createdAt). A card-less trial (lib/cardlessTrial, Admin → Trials) gave none at
+// sign-up — no StartTrial then — and sends it when it adds one during the trial (its record's cardAt). A card-less
+// trial that never adds a card never sends it.
 import { db } from "@/lib/db";
 import { getPlanCatalog } from "@/lib/planCatalogServer";
 import { readToolCatalog } from "@/lib/toolPlans/prices";
 import { isToolsSlug } from "@/lib/toolPlans/shared";
+import { readCardlessRecord } from "@/lib/trialState";
 
 const FRESH_MS = 60 * 60 * 1000;
 
@@ -44,7 +49,10 @@ export async function metaStartTrialEvent(organizationId: string, now = new Date
   }
   if (!sub || sub.provider !== "STRIPE" || !sub.externalSubId || sub.status !== "TRIALING") return null;
   if (!sub.trialEndsAt || sub.trialEndsAt <= now) return null;
-  if (now.getTime() - sub.createdAt.getTime() > FRESH_MS) return null;
+  // When the card went in: a card-less trial's cardAt (none yet = not due), else the card sign-up's subscription row.
+  const cardless = await readCardlessRecord(organizationId);
+  const cardAt = cardless ? (cardless.cardAt ? new Date(cardless.cardAt) : null) : sub.createdAt;
+  if (!cardAt || Number.isNaN(cardAt.getTime()) || now.getTime() - cardAt.getTime() > FRESH_MS) return null;
   const slug = sub.plan.toLowerCase();
   const price = await planPrice(slug, sub.stripePriceId).catch((err) => {
     console.warn("[metaStartTrial] price read failed:", err instanceof Error ? err.message : err);
