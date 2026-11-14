@@ -388,6 +388,12 @@ variants.push(["steps along the front of a bay with cut corners, low deck, fasci
 variants.push(["steps round three sides of an L, border", { structure: "deck", shape: { kind: "L", widthFt: 24, depthFt: 16, notch: { corner: "front-right", widthFt: 10, depthFt: 6 } }, heightIn: 14, rail: { ...base.rail, type: "none" }, decking: { ...base.decking, fascia: "match", border: 1 }, stairs: wrapSteps(3) } as Patch]);
 variants.push(["free-standing deck with two cut corners, steps all the way round", { structure: "deck", placement: "detached", shape: cut([[24, 14, 4, 4]]), heightIn: 20, rail: { ...base.rail, type: "none" }, decking: { ...base.decking, fascia: "match" }, stairs: wrapSteps(4) } as Patch]);
 variants.push(["a U-shaped front, steps along the front and both ends, a deck round the right corner", { structure: "deck", shape: parts([[6, 16], [12, 10], [6, 16]]), heightIn: 18, house: { ...base.house, rightFt: -8, wrapRightFt: 8 }, rail: { ...base.rail, type: "none" }, decking: { ...base.decking, fascia: "match" }, stairs: wrapSteps(3) } as Patch]);
+// WIDE STEPS ON STRINGERS (2026-11-14): past three risers — the stringers square to every edge, the one along each
+// corner's mitre, the sleeper under their feet, the handrail's posts on the treads.
+variants.push(["wide steps on stringers round three sides of a rectangle, 36 in. up, aluminum rail", { structure: "deck", shape: rect(24, 12), heightIn: 36, rail: { ...base.rail, type: "aluminum" }, decking: { ...base.decking, fascia: "match" }, stairs: wrapSteps(3) } as Patch]);
+variants.push(["wide steps on stringers along the front of a bay with cut corners, 44 in. up, cedar rail", { structure: "deck", shape: cut([[7, 12], [10, 18, 3, 3], [7, 12]]), heightIn: 44, rail: { ...base.rail, type: "cedar" }, decking: { ...base.decking, fascia: "match" }, stairs: wrapSteps(1) } as Patch]);
+variants.push(["wide steps on stringers all round a free-standing deck with cut corners, 40 in. up", { structure: "deck", placement: "detached", shape: cut([[24, 14, 4, 4]]), heightIn: 40, rail: { ...base.rail, type: "composite" }, decking: { ...base.decking, fascia: "match" }, stairs: wrapSteps(4) } as Patch]);
+variants.push(["wide steps on stringers round an L, 30 in. up, no rail", { structure: "deck", shape: { kind: "L", widthFt: 24, depthFt: 16, notch: { corner: "front-right", widthFt: 10, depthFt: 6 } }, heightIn: 30, rail: { ...base.rail, type: "none" }, stairs: wrapSteps(3) } as Patch]);
 for (const [name, p] of variants) cases.push({ name, design: applyDeckPatch(base, p) });
 
 /**

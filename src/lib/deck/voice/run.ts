@@ -1240,7 +1240,7 @@ function runStairs(d: DeckDesign, cmd: Extract<DeckCommand, { do: "stairs" }>, s
   if (cmd.op === "add") {
     if (list.length >= STAIR_LIMITS.count) return no(`That's the most stairs a deck takes here (${STAIR_LIMITS.count}).`);
     if (cmd.level === "lower" && !d.lower.on) return no("There's no lower level yet — say \"add a lower level\" first.", { pending: { ask: "Add a lower level?", yes: [{ do: "lower", on: true }] } });
-    if (cmd.wrap && d.heightIn > 24) return no(`Box steps wrap a low deck — up to 3 steps. At ${inWords(d.heightIn)} it needs a regular stair. Add one down the front?`, { pending: { ask: "A regular stair down the front?", yes: [{ do: "stairs", op: "add", side: "front" }] } });
+    if (cmd.wrap && d.heightIn > 52) return no(`Steps that wrap the deck go seven risers at most — about 4 ft. At ${inWords(d.heightIn)} it needs a regular stair. Add one down the front?`, { pending: { ask: "A regular stair down the front?", yes: [{ do: "stairs", op: "add", side: "front" }] } });
     const sides: StairSide[] = cmd.count === 2 && !cmd.side ? ["left", "right"] : Array.from({ length: Math.max(1, Math.min(cmd.count ?? 1, STAIR_LIMITS.count - list.length)) }, () => cmd.side ?? (cmd.wrap ? "front" : "front"));
     let stairs = [...list];
     const added: StairDesign[] = [];

@@ -394,6 +394,15 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
         const fb = fts.reduce((a, f) => a + f.bags, 0);
         if (fb) push({ id: "stair-footing-concrete", step: "stairs", kind: "concrete", label: "Concrete mix for the stair footings, 80-lb bags", qty: fb, unit: "bags", rateKey: "conc.bag", rateQty: fb, factor: 1 });
       }
+    } else if (st.wide) {
+      // WIDE STEPS ON STRINGERS (2026-11-14; more than three risers): cut stringers along every edge the steps follow,
+      // their tops on connectors at the rim, their feet on a treated sleeper over gravel.
+      const stringers = lfOf(new Array<number>(st.stringers.count).fill(st.stringers.lengthIn), [10, 12, 14, 16, 18, 20]);
+      lumber("stairs", "stair stringers", STRINGER_NOMINAL, stringers.stockFt, stringers.boards, true, `${st.stringers.count} cut, ${ftIn(st.stringers.lengthIn)} each, ${st.stringers.spacingIn} in. apart along ${Math.round(st.wide.lengthIn / 12)} ft of the deck's edge${st.wide.hips ? `, ${st.wide.hips} of them along the corners' mitres` : ""}`, "stringer");
+      hw("stringer-connectors", "stairs", "Stair stringer connectors", st.hardware.stringerConnectors, "hw.stringerConnector");
+      const sleeper = Math.ceil((st.wide.sleeperLf * 1.05) / 12 - 1e-9);
+      if (sleeper > 0) lumber("stairs", "sleeper under the steps' feet", "2x6", 12, sleeper, true, `${Math.round(st.wide.sleeperLf)} ft along the lowest step, on compacted gravel`, "kicker");
+      push({ id: "box-gravel", step: "stairs", kind: "concrete", label: "Gravel base under the steps", qty: st.gravelSqFt, unit: "sq ft", rateKey: "conc.gravel", rateQty: st.gravelSqFt, factor: 1 });
     } else {
       const frames = lfOf([st.boxFrameLf * 12], [8, 10, 12, 16]);
       void frames;

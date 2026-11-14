@@ -81,8 +81,11 @@ console.log("── stairs");
   // Box steps.
   const box = buildStructure(base({ heightIn: 20, placement: "detached", shape: { kind: "rect", widthFt: 12, depthFt: 12 }, stairs: [{ ...defaultStair("s1", "front", 6), wrap: true, wrapSides: 4 }] })).stairs[0];
   check("a 20-in. deck wrapped on four sides: 3 risers, 2 levels of 2x6 box frames, blocks over gravel, no rail", box.kind === "box" && box.risers === 3 && box.treads === 2 && box.members.filter((m) => m.role === "box-frame").length === 8 && box.boxBlocks > 8 && box.gravelSqFt > 20 && box.rail.sides === 0 && box.footprint.length === 4 && box.footprint[0].x < 0);
-  const tooTall = buildStructure(base({ heightIn: 40, stairs: [{ ...defaultStair("s1", "front", 8), wrap: true, wrapSides: 1 }] }));
-  check("box steps asked for on a 40-in. deck are framed as a flight and the strip says why, with the fix", tooTall.stairs[0].kind === "flight" && tooTall.stairs[0].flags.tooTallForBox && deckChecks(tooTall).some((c) => c.id === "stair-s1-box" && c.level === "fail" && !!c.fix));
+  // (2026-11-14: past three risers steps that wrap the deck stand on stringers — to seven risers; see deck-steps-around.check.ts.)
+  const wide = buildStructure(base({ heightIn: 40, stairs: [{ ...defaultStair("s1", "front", 8), wrap: true, wrapSides: 1 }] }));
+  check("steps wrapping a 40-in. deck are wide steps on stringers — six risers, no box frames", wide.stairs[0].kind === "box" && !!wide.stairs[0].wide && wide.stairs[0].risers === 6 && wide.stairs[0].stringers.count > 10 && wide.stairs[0].boxFrameLf === 0 && !wide.stairs[0].flags.tooTallForBox);
+  const tooTall = buildStructure(base({ heightIn: 60, stairs: [{ ...defaultStair("s1", "front", 8), wrap: true, wrapSides: 1 }] }));
+  check("asked for on a 60-in. deck (eight risers) they are framed as a flight and the strip says why, with the fix", tooTall.stairs[0].kind === "flight" && tooTall.stairs[0].flags.tooTallForBox && deckChecks(tooTall).some((c) => c.id === "stair-s1-box" && c.level === "fail" && !!c.fix));
   const words = deckScope(pkg, "118 Cedar Ln");
   check("the scope says the stair in the client's words", words.some((w) => /4-ft-wide stair down the front: 13 risers of 7\.\d\d in\./.test(w)));
 }

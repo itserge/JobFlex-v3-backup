@@ -2628,7 +2628,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                 ) : null}
                 {st.side === "front" ? (
                   <>
-                    <Toggle checked={st.wrap} onChange={(v) => set({ wrap: v })}>Box steps wrapping the deck (three risers at most)</Toggle>
+                    <Toggle checked={st.wrap} onChange={(v) => set({ wrap: v })}>Wide steps wrapping the deck (seven risers at most)</Toggle>
                     {/* The steps follow the deck's own edges (2026-11-14): the whole front — every part of it, cut corners,
                         the sides of a bay; the front and the deck's two ends; or every open edge. */}
                     {st.wrap ? <Seg label="Wrap how many sides" value={st.wrapSides} onChange={(v) => set({ wrapSides: v })} options={[{ value: 1, label: "Front" }, { value: 3, label: "Front and both ends" }, ...(design.placement === "detached" || (design.shape.kind === "wall" && design.shape.back.some((b) => b.open)) ? [{ value: 4 as const, label: "All round" }] : [])]} /> : null}

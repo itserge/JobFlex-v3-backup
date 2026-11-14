@@ -1685,7 +1685,7 @@ export function DeckV2Studio({ initialBook, homeState, initialAddress, clientId,
                     </div>
                     {st.side === "front" ? (
                       <div className="v2-toggles">
-                        <Toggle checked={st.wrap} onChange={(v) => setStairs((list) => list.map((x) => (x.id === st.id ? { ...x, wrap: v } : x)))}>Box steps wrapping the deck (three risers at most)</Toggle>
+                        <Toggle checked={st.wrap} onChange={(v) => setStairs((list) => list.map((x) => (x.id === st.id ? { ...x, wrap: v } : x)))}>Wide steps wrapping the deck (seven risers at most)</Toggle>
                         {st.wrap ? <Seg small label="Wrap how many sides" value={st.wrapSides} onChange={(v) => setStairs((list) => list.map((x) => (x.id === st.id ? { ...x, wrapSides: v } : x)))} options={[{ value: 1, label: "Front" }, { value: 3, label: "Three sides" }, ...(design.placement === "detached" ? [{ value: 4 as const, label: "All four" }] : [])]} /> : null}
                       </div>
                     ) : null}
