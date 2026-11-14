@@ -24,6 +24,7 @@ import { AudioLines, Headphones, Keyboard, Mic, Pencil, Send, Square, Volume2, V
 import { useDeckSpeech } from "@/components/v3/deck-voice/use-deck-speech";
 import { BUILD_STEPS, PIN_TOOLS, stepIndex, type FeedAction, type FeedMessage } from "@/lib/assistant/shared";
 import { forSpeech, shownBody, type AssistantState } from "./use-assistant";
+import { speedLine } from "@/lib/assistant/words";
 import { Dial, type DialMode } from "./dial";
 import { TaskList, TOOL_LABEL, stampOf, type Tone } from "./task-list";
 import "./operator.css";
@@ -52,7 +53,7 @@ type Drawing = DeckDrawingData | FenceDrawingData | RoofDrawingData;
 const STAMP: Record<Tone, string> = { warn: "yel", ok: "mnt", bad: "red", quiet: "dim", info: "wht" };
 
 export const OperatorSheet = forwardRef<OperatorHandle, Props>(function OperatorSheet({ state, variant, start = null, onClose }, ref) {
-  const { feed, pending, busy, isBusy, building, landed, error, tasks, muted, setMuted, lang, load, loadTasks, ask, answer } = state;
+  const { feed, pending, busy, isBusy, building, landed, error, tasks, muted, setMuted, lang, fast, speed, noteHandOn, noteVoiceStart, load, loadTasks, ask, answer } = state;
   const [tab, setTab] = useState<"talk" | "tasks">("talk");
   const [heard, setHeard] = useState("");
   const [voiceError, setVoiceError] = useState<string | null>(null);
@@ -107,6 +108,9 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
     [ask, sendQueued],
   );
 
+  // The ears' way of listening never changes in the middle of a conversation: the switch (remembered on this device,
+  // refreshed by every feed) is taken up only while the microphone is off (under the ears).
+  const [earsFast, setEarsFast] = useState(fast);
   const speech = useDeckSpeech({
     // The language they speak to it in (Settings → AI Operator; English unless they picked another) — never the
     // phone's own: a Russian phone heard English addresses as Russian (2026-11-06).
@@ -155,7 +159,15 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
     // An iPhone's own recogniser goes deaf after the first reply (2026-11-07): there it records and the server writes
     // it down (use-deck-speech, "the server's ears").
     appleServerEars: true,
+    // The new engine (2026-11-13, platform admins while it is tested): the server's ears on every device — they are
+    // given the company's own words — a shorter wait after the last word, and each turn timed for the readout.
+    serverEarsAlways: earsFast,
+    quick: earsFast,
+    onHandOn: noteHandOn,
+    onVoiceStart: noteVoiceStart,
   });
+  // Taken up while rendering, when the microphone is off (React's own way to follow a value from outside).
+  if (fast !== earsFast && speech.mic === "off" && speech.hearing === "off" && !speech.speaking) setEarsFast(fast);
   const listening = speech.mic === "listening" || speech.mic === "recording";
   /** The server's ears are writing down what was just said (live: while the microphone stays on). */
   const writing = speech.mic === "sending" || speech.writing;
@@ -446,6 +458,11 @@ export const OperatorSheet = forwardRef<OperatorHandle, Props>(function Operator
               <p className="op-tx">{heard || (writing ? "Writing that down…" : speech.voiced ? "Hearing you…" : "Listening — just talk.")}</p>
               <p className="op-under">{isHolding ? "Let go to send · slide off to cancel" : live ? "Take your time — it answers when you're done · tap the dial to end" : "It sends when you pause"}</p>
             </div>
+          ) : null}
+          {fast && speed && !busy ? (
+            <p className="op-speed" data-operator-speed>
+              {speedLine(speed)}
+            </p>
           ) : null}
           {error ? (
             <p className="op-error" role="alert">

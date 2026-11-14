@@ -33,7 +33,14 @@ export function MetaStartTrial({ event }: { event: MetaStartTrialEvent }) {
         if (Date.now() - started < WAIT_MS) timer = window.setTimeout(send, 200);
         return;
       }
-      fbq("track", "StartTrial", { value: event.value, currency: event.currency, predicted_ltv: event.predictedLtv, content_name: event.contentName });
+      // An unpriced trial (lib/metaStartTrial) still counts: the event goes without a value rather than not at all.
+      fbq(
+        "track",
+        "StartTrial",
+        event.value === null
+          ? { content_name: event.contentName }
+          : { value: event.value, currency: event.currency, predicted_ltv: event.predictedLtv, content_name: event.contentName },
+      );
       sentHere.add(key);
       try {
         window.localStorage.setItem(key, "1");

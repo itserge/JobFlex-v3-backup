@@ -21,6 +21,7 @@ import { ArrowUp, AudioLines, Mic, Square } from "lucide-react";
 import { useDeckSpeech } from "@/components/v3/deck-voice/use-deck-speech";
 import { isBuild, PIN_TOOLS, SCHEDULED_TOOLS, TOOL_LABEL, type ActionStatus, type FeedAction, type FeedMessage } from "@/lib/assistant/shared";
 import { forSpeech, shownBody, type AssistantState } from "./use-assistant";
+import { speedLine } from "@/lib/assistant/words";
 import s from "./assistant.module.css";
 
 const EXAMPLES: Array<{ label: string; text: string; fill?: boolean }> = [
@@ -62,7 +63,7 @@ export function Conversation({
   autoFocus?: boolean;
   variant: "panel" | "page";
 }) {
-  const { feed, pending, busy, isBusy, building, landed, error, lang, ask, answer } = state;
+  const { feed, pending, busy, isBusy, building, landed, error, lang, fast, speed, noteHandOn, noteVoiceStart, ask, answer } = state;
   const [text, setText] = useState("");
   const [talk, setTalk] = useState(false);
   const [heard, setHeard] = useState("");
@@ -84,6 +85,9 @@ export function Conversation({
     if (then) void talkTurn(then);
   };
 
+  // The ears' way of listening never changes in the middle of a conversation: the switch (remembered on this device,
+  // refreshed by every feed) is taken up only while the microphone is off (under the ears).
+  const [earsFast, setEarsFast] = useState(fast);
   const speech = useDeckSpeech({
     // The language they speak to it in (Settings → AI Operator; English unless they picked another).
     lang,
@@ -107,7 +111,16 @@ export function Conversation({
     streamSpeech: true,
     // An iPad's own recogniser goes deaf after the first reply, as an iPhone's does (2026-11-07): the server's ears.
     appleServerEars: true,
+    // The new engine (2026-11-13, platform admins while it is tested): the server's ears here too — they are given the
+    // company's own words — a shorter wait after the last word, and each turn timed for the readout.
+    serverEarsAlways: earsFast,
+    quick: earsFast,
+    onHandOn: noteHandOn,
+    onVoiceStart: noteVoiceStart,
   });
+  // Taken up while rendering, when the microphone is off (React's own way to follow a value from outside).
+  if (fast !== earsFast && speech.mic === "off" && speech.hearing === "off" && !speech.speaking) setEarsFast(fast);
+
   useEffect(() => {
     sayRef.current = speech.say;
   });
@@ -311,6 +324,11 @@ export function Conversation({
         </button>
       </form>
       {voiceError ? <p className={s.micError}>{voiceError}</p> : null}
+      {fast && speed && !busy ? (
+        <p className={s.usage} data-operator-speed>
+          {speedLine(speed)}
+        </p>
+      ) : null}
       {feed?.usage.limit ? (
         <p className={s.usage}>
           {feed.usage.used} of {feed.usage.limit} requests this month

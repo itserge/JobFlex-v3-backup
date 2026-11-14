@@ -8,6 +8,7 @@ import "server-only";
 // someone who never linked a phone (they get it in the app only).
 import { db } from "@/lib/db";
 import { DEFAULT_SPEECH_LANG, isSpeechLang, type SpeechLang } from "@/lib/assistant/shared";
+import { MY_WORDS_MAX, tidyWords, type OperatorEngine } from "@/lib/assistant/words";
 
 export interface AssistantPrefs {
   /** projects: the Overview's projects paragraph in it (part 2, 2026-11-09) — on unless they turn it off. */
@@ -16,9 +17,14 @@ export interface AssistantPrefs {
   alerts: { proposalOpened: boolean; newLead: boolean; promises: boolean };
   /** The language they speak to the Operator in: the ears listen for it. */
   lang: SpeechLang;
+  /** The speed test (2026-11-13): the new ears and brain, or the ones before; null = the person's default
+   *  (lib/assistant/words engineFor — platform admins only for now). */
+  engine: OperatorEngine | null;
+  /** Their own words — names, brands, streets — given to the new ears so an accent doesn't lose them. */
+  words: string[];
 }
 
-export const DEFAULT_PREFS: AssistantPrefs = { briefing: { on: false, time: "06:30", projects: true }, alerts: { proposalOpened: false, newLead: false, promises: true }, lang: DEFAULT_SPEECH_LANG };
+export const DEFAULT_PREFS: AssistantPrefs = { briefing: { on: false, time: "06:30", projects: true }, alerts: { proposalOpened: false, newLead: false, promises: true }, lang: DEFAULT_SPEECH_LANG, engine: null, words: [] };
 
 const PREFIX = "assistant:prefs:";
 const keyOf = (organizationId: string, userId: string) => `${PREFIX}${organizationId}:${userId}`;
@@ -28,12 +34,14 @@ const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 export function parsePrefs(raw: string | null | undefined): AssistantPrefs {
   if (!raw) return DEFAULT_PREFS;
   try {
-    const v = JSON.parse(raw) as Partial<{ briefing: Partial<AssistantPrefs["briefing"]>; alerts: Partial<AssistantPrefs["alerts"]>; lang: unknown }>;
+    const v = JSON.parse(raw) as Partial<{ briefing: Partial<AssistantPrefs["briefing"]>; alerts: Partial<AssistantPrefs["alerts"]>; lang: unknown; engine: unknown; words: unknown }>;
     const time = typeof v.briefing?.time === "string" && TIME_RE.test(v.briefing.time) ? v.briefing.time : DEFAULT_PREFS.briefing.time;
     return {
       briefing: { on: v.briefing?.on === true, time, projects: v.briefing?.projects !== false },
       alerts: { proposalOpened: v.alerts?.proposalOpened === true, newLead: v.alerts?.newLead === true, promises: v.alerts?.promises !== false },
       lang: isSpeechLang(v.lang) ? v.lang : DEFAULT_SPEECH_LANG,
+      engine: v.engine === "new" || v.engine === "classic" ? v.engine : null,
+      words: Array.isArray(v.words) ? tidyWords(v.words, MY_WORDS_MAX) : [],
     };
   } catch {
     return DEFAULT_PREFS;

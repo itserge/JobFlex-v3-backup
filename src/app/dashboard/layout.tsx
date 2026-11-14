@@ -136,7 +136,7 @@ export default async function DashboardBlueprintLayout({
   let paymentFailed = false;
   // Came in by the short sign-up (lib/signupAutoPlan): "you're on Professional — change it any time", for the owner.
   let autoWelcome: AutoPlanWelcomeView | null = null;
-  // Meta's StartTrial, due on the live site in the first hour of a Stripe trial (lib/metaStartTrial).
+  // Meta's StartTrial, due on the live site in the hour after a trial's card went in (lib/metaStartTrial).
   let startTrial: MetaStartTrialEvent | null = null;
   // Meta's CompleteRegistration, due on the live site in the first hour of a company (lib/metaCompleteRegistration).
   let registered: MetaCompleteRegistrationEvent | null = null;
