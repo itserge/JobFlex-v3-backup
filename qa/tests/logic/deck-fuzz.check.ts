@@ -89,6 +89,10 @@ function randomDesign(r: Rng): unknown {
     d.lower = { ...d.lower, on: true, place: pick(r, ["under", "under", "under", "front", "sideways"]), heightIn: odd(r, 0, 150) };
     if (r() < 0.7) d.heightIn = Math.round(Number(d.lower.heightIn)) + int(r, 70, 170);
   }
+  // …stairs with landings at any heights, turning any way (2026-11-14), and the braces' timber.
+  if (Array.isArray(d.stairs) && r() < 0.45) for (const st of d.stairs as any[]) st.landings = Array.from({ length: int(r, 1, 7) }, (_, i) => ({ id: `t${i + 1}`, heightIn: odd(r, 0, Math.max(40, Number(d.heightIn) + 20)), turn: pick(r, ["straight", "left", "right", "back-left", "back-right", "up"]) }));
+  d.framing.braceSize = pick(r, ["auto", "auto", "2x4", "4x4", "6x6", "8x8", "x"]);
+  d.roof.braceSize = pick(r, ["auto", "auto", "4x4", "6x6", "8x8", 3]);
   d.rail.mountBy = r() < 0.6 ? {} : Object.fromEntries(["upper-front", "upper-left", "upper-right", "upper-back", "lower-front", "lower-left"].filter(() => r() < 0.4).map((k) => [k, pick(r, ["top", "side"])]));
   if (r() < 0.45) {
     d.roof.openings = Array.from({ length: int(r, 1, 7) }, (_, i) => ({ id: `o${i + 1}`, side: pick(r, ["front", "left", "right", "back"]), atFt: odd(r, -2, 62), widthFt: odd(r, 1, 20), door: bool(r) }));

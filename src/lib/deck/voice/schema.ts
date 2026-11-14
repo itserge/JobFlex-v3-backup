@@ -136,6 +136,8 @@ const COMMAND = z.discriminatedUnion("do", [
     level: z.enum(["upper", "lower"]).optional(),
     count: z.number().int().min(1).max(2).optional(),
     flip: z.boolean().optional(),
+    turn: z.enum(["add", "remove", "straight", "left", "right", "house", "yard", "back"]).optional(),
+    turnAtIn: z.number().min(8).max(348).optional(),
   }),
   z.object({ do: z.literal("lower"), on: z.boolean().optional(), width: amount.optional(), depth: amount.optional(), dropIn: amount.optional(), align: align.optional(), place: z.enum(["front", "under"]).optional(), heightIn: amount.optional() }),
   z.object({ do: z.literal("spa"), on: z.boolean().optional(), width: amount.optional(), depth: amount.optional(), align: align.optional() }),
@@ -184,7 +186,7 @@ framing {set: {species?, joist?: 2x6|2x8|2x10|2x12|auto|up|down, spacingIn?: 12|
 ledger {fastener?: lag|bolt|ledgerlok|sdws|anchor, lateral?: two|four}; footing {type?: poured|pier-block, aboveGradeIn?, frostAlways?}
 site {frostIn?: amount (inches), snowPsf?, loadPsf?: 40|50|60|70, soilPsf?: 1500|2000|3000, outDropIn?, acrossDropIn?, state?: two letters}
 rail {set: {type?: none|treated|cedar|composite|vinyl|aluminum|cable|glass|custom, heightIn?: 36|42, infill?: balusters|cable|glass|panel|horizontal, postSpacingFt?: 4|6|8, cap?, customPerFt?, mount?: top|side (posts on the deck boards | on the outside of the rim, the fascia), mountSide?: front|left|right|back (that side only)}}
-stairs {op: add|remove|change, which?: {side}|{index}|last|all|only, side?: front|left|right, at?: left|center|right|house|out|{ft}|{by}, width?: amount (feet), wrap?, wrapSides?: 1|3|4, landing?: pad|patio|grade, handrail?: auto|both|one|none, level?: upper|lower, count?: 1|2}
+stairs {op: add|remove|change, which?: {side}|{index}|last|all|only, side?: front|left|right, at?: left|center|right|house|out|{ft}|{by}, width?: amount (feet), wrap?, wrapSides?: 1|3|4, landing?: pad|patio|grade, handrail?: auto|both|one|none, level?: upper|lower, count?: 1|2, turn?: add|remove|straight|left|right|house|yard|back, turnAtIn?} (turn: a LANDING on the stair — op change; add = a landing in the middle of the tallest flight; left/right = which way the stairs go on from it as the deck is seen from the yard; house/yard = toward or away from the house; back = a switchback; remove = take every landing out; turnAtIn = the landing's height above the ground, inches)
 lower {on?, place?: front|under, width?, depth?, dropIn?, align?: left|centre|right, heightIn?} (place under = a DOUBLE DECK: a second deck of the same size under this one, first floor and second floor; heightIn = that lower deck's height above the ground, inches); spa {on?, width?, depth?, align?} (hot tub spot 5–10 ft)
 fixture {op: add|remove|set, kind: led-strip|post-cap|step-light|string-light|sconce|ceiling-light|chandelier|fan|outlet|heater|flood, qty?: amount, supply?: we|client, volts240?}
 electrical {timer?, feedFt?, panelSide?}; house {storeys?: 1|2, roof?: hip|gable, siding?: white|cream|grey|blue|sage, roofColour?: charcoal|brown|slate|forest|terracotta, wall?: straight|bump-right|bump-left|nook, leftFt?/rightFt?: amount (how far the house wall runs past the deck's ends), widthFt? (the house's whole width)}

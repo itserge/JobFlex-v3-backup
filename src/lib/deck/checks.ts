@@ -44,7 +44,7 @@ import { DOUBLE_DECK_HEADROOM_IN, DOUBLE_DECK_STOREY_IN, FIXTURE_LABEL, GUTTER_L
 import { STAIR_POST_CLEAR_IN, type RoofFrame } from "./roof";
 import { RULE_HIP, RULE_RAFTER, RULE_RIDGE, RULE_ROOF_LOAD, RULE_TIES } from "./roofTables";
 import { BETWEEN_LEVELS_STAIR_ID, betweenLevelsStair, type DeckStructure } from "./structure";
-import { stairRules } from "./stairs";
+import { FLIGHT_MAX_RISE_IN, LANDING_DEPTH_IN, STAIR_HEADROOM_IN, stairRules, stairTurnWords } from "./stairs";
 import { SNOW_TABLE_MAX_PSF, TERMITE_LABEL, deckLoadForSnow, roofLoadForSnow } from "./site";
 import { POST_ACTUAL_IN, STAIR_MIN_WIDTH_IN } from "./codeTables";
 import { FRAMING_SPECIES, defaultFramingSpecies, speciesWords } from "./catalog";
@@ -799,6 +799,27 @@ function guardAndStairChecks(s: DeckStructure, add: (c: DeckCheck) => void): voi
         if (st.rail.sides === 0 && (st.rail.wanted > 0 || design.rail.type === "none")) add({ id: `${tag}-handrail`, level: "fail", part: where, text: `${plural(st.risers, "riser")}: a graspable handrail 34 to 38 in. above the nosings is required${st.guard ? ", and guards on both open sides" : ""}. ${design.rail.type === "none" ? "Choose a railing to put one on." : "None is on this stair."}`, rule: SR.handrail, fix: design.rail.type === "none" ? { label: "Add a treated-wood railing", patch: { rail: { type: "treated" } } } : { label: st.guard ? "Rails on both sides" : "A handrail on one side", patch: { stairs: design.stairs.map((d) => (d.id === st.design.id ? { ...d, handrail: st.guard ? "both" : "one" } : d)) } } });
         else if (st.guard && st.rail.sides < 2) add({ id: `${tag}-handrail`, level: "warn", part: where, text: `The stair is more than 30 in. up: both open sides want a guard, not one handrail.`, rule: SR.guard, fix: { label: "Rails on both sides", patch: { stairs: design.stairs.map((d) => (d.id === st.design.id ? { ...d, handrail: "both" } : d)) } } });
         else add({ id: `${tag}-handrail`, level: "pass", part: where, text: `${st.rail.sides === 2 ? "Rails on both sides" : "A handrail on one side"}, ${plural(st.rail.posts, "post")}, 36 in. above the nosings.`, rule: SR.handrail });
+      }
+      // THE LANDINGS (2026-11-14; lib/deck/stairs): what the way down came to — the flights, each landing on its posts —
+      // and what it must not do: turn into the house, or run back under the deck with no room to walk there.
+      if (st.landings.length) {
+        const tallest = Math.max(...st.flights.map((f) => f.riseIn));
+        add({
+          id: `${tag}-landings`,
+          level: "pass",
+          part: where,
+          text: `${plural(st.flights.length, "flight")} and ${plural(st.landings.length, "landing")}: ${st.landings.map((l) => `${ftIn(Math.round(l.heightIn))} up, ${ftIn(l.widthIn)} × ${ftIn(l.depthIn)} on ${plural(l.posts, "post")}${l.auto ? " (the code asks for it)" : `, then ${stairTurnWords(l.dir, l.turn).toLowerCase()}`}`).join("; ")}. The tallest flight climbs ${ftIn(Math.round(tallest))} (${ftIn(FLIGHT_MAX_RISE_IN)} at most); each landing is as wide as the stair and ${LANDING_DEPTH_IN} in. deep at least, on its own footings.`,
+          rule: SR.landing,
+        });
+      }
+      st.flags.landingsLeftOut.forEach((lid, k) => {
+        const asked = st.design.landings.find((l) => l.id === lid);
+        add({ id: `${tag}-landing-out-${k + 1}`, level: "info", part: where, text: `A landing asked for ${asked ? ftIn(asked.heightIn) : "there"} above the ground has no room on this stair: a landing stands a foot at least from the deck, the ground and the next landing.`, rule: SR.landing, fix: { label: "Take that landing off", patch: { stairs: design.stairs.map((d) => (d.id === st.design.id ? { ...d, landings: d.landings.filter((l) => l.id !== lid) } : d)) } } });
+      });
+      if (st.flags.hitsHouse) add({ id: `${tag}-house`, level: "fail", part: where, text: "The stair turns into the house's wall. Turn it the other way at its landing, or move the stair along the deck.", rule: SR.width });
+      if (st.flags.underDeckClearIn !== null) {
+        if (st.flags.underDeckClearIn < STAIR_HEADROOM_IN) add({ id: `${tag}-headroom`, level: "warn", part: where, text: `The stair runs back under the deck with ${ftIn(st.flags.underDeckClearIn)} over its treads to the deck's joists: ${ftIn(STAIR_HEADROOM_IN)} is wanted to walk there. Turn it the other way, or put the landing lower.`, rule: cite(code, "R311.7.2", "6 ft 8 in. of headroom over a stair") });
+        else add({ id: `${tag}-headroom`, level: "pass", part: where, text: `The stair runs back under the deck with ${ftIn(st.flags.underDeckClearIn)} over its treads to the deck's joists (${ftIn(STAIR_HEADROOM_IN)} at least).`, rule: cite(code, "R311.7.2", "6 ft 8 in. of headroom over a stair") });
       }
     } else add({ id: `${tag}-box`, level: "pass", part: where, text: `${plural(st.treads, "level")} of 2x6 box frames wrapping ${st.design.wrapSides === 4 ? "all four sides" : st.design.wrapSides === 3 ? "three sides" : "the front"}, the lowest on ${plural(st.boxBlocks, "block")} over gravel, treads of the deck's boards.`, rule: SR.box });
   });

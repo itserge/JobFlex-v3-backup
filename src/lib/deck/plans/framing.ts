@@ -178,8 +178,9 @@ export function framingPlan(m: PlanModel, sc: ArchScale, refs: FramingRefs = {},
   k.dim(0, D, W, D, -0.62);
   stairs.forEach((st) => {
     if (st.design.side !== "front" || st.footprint.length < 3) return;
-    const sx0 = Math.min(...st.footprint.map((q) => q.x));
-    const sx1 = Math.max(...st.footprint.map((q) => q.x));
+    // (Placed by the edge it leaves the deck by: a stair that turns at a landing spreads wider than that.)
+    const sx0 = Math.min(st.footprint[0].x, st.footprint[1].x);
+    const sx1 = Math.max(st.footprint[0].x, st.footprint[1].x);
     const sy1 = Math.max(...st.footprint.map((q) => q.y));
     k.chain([[0, sy1], [sx0, sy1], [sx1, sy1]], -0.3);
   });

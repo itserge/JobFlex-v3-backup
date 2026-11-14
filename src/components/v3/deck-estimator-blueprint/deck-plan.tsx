@@ -308,11 +308,17 @@ export function DeckPlan({
             {treads.map((m, i) => (
               <rect key={i} x={m.cx - m.sx / 2} y={m.cy - m.sy / 2} width={m.sx} height={m.sy} fill="none" stroke="var(--ink-soft)" strokeWidth={lw * 0.6} transform={m.yaw ? `rotate(${(m.yaw * 180) / Math.PI} ${m.cx} ${m.cy})` : undefined} />
             ))}
-            {st.kind === "flight" && st.footprint[0] && st.footprint[3] ? (
-              <line x1={(st.footprint[0].x + st.footprint[1].x) / 2} y1={(st.footprint[0].y + st.footprint[1].y) / 2} x2={(st.footprint[2].x + st.footprint[3].x) / 2} y2={(st.footprint[2].y + st.footprint[3].y) / 2} stroke="var(--blueprint)" strokeWidth={lw} markerEnd="url(#arrow)" />
+            {/* The way down (2026-11-14): one arrow along the stair's own line, through every landing and turn. */}
+            {st.kind === "flight" && st.path.length > 1 ? (
+              <polyline points={st.path.map((q) => `${q.x},${q.y}`).join(" ")} fill="none" stroke="var(--blueprint)" strokeWidth={lw} markerEnd="url(#arrow)" data-deck-plan-stair-path={st.landings.length} />
             ) : null}
-            <text x={st.footprint.reduce((a, p) => a + p.x, 0) / st.footprint.length} y={st.footprint.reduce((a, p) => a + p.y, 0) / st.footprint.length + font * 0.35} fontSize={font * 0.8} textAnchor="middle" className={s.planNote}>
-              {st.kind === "box" ? `box steps · ${st.risers} risers` : `${st.widthIn / 12} ft stair · ${st.risers} risers`}
+            {st.landings.map((l) => (
+              <text key={`ld${l.id}`} x={l.x} y={l.y + font * 0.3} fontSize={font * 0.62} textAnchor="middle" className={s.planNote} stroke="var(--paper)" strokeWidth={font * 0.22} paintOrder="stroke" data-deck-plan-landing={l.id}>
+                {`landing ${ftIn(Math.round(l.heightIn))} up`}
+              </text>
+            ))}
+            <text x={st.landings.length ? (st.path[0].x + st.path[1].x) / 2 : st.footprint.reduce((a, p) => a + p.x, 0) / st.footprint.length} y={(st.landings.length ? (st.path[0].y + st.path[1].y) / 2 : st.footprint.reduce((a, p) => a + p.y, 0) / st.footprint.length) + font * 0.35} fontSize={font * 0.8} textAnchor="middle" className={s.planNote}>
+              {st.kind === "box" ? `box steps · ${st.risers} risers` : `${st.widthIn / 12} ft stair · ${st.risers} risers${st.landings.length ? ` · ${st.landings.length} ${st.landings.length === 1 ? "landing" : "landings"}` : ""}`}
             </text>
           </g>
         );

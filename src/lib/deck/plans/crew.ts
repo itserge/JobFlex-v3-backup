@@ -6,7 +6,7 @@
 // called out), how to lay out a stringer (the framing square's two numbers,
 // the drop at the bottom, the throat that must stay), and the order of the
 // work with the inspections where they fall and this deck's own numbers.
-import type { StairBuild } from "../stairs";
+import { firstFlightOf, type StairBuild } from "../stairs";
 import { STRINGER_DEPTH_IN, TREAD_NOSING_IN } from "../stairs";
 import type { MaterialList } from "../materialList";
 import { LEDGER_FASTENER_LABEL } from "../codeTables";
@@ -94,7 +94,9 @@ export interface StringerLayout {
   spacing: number;
 }
 
-export function stringerLayout(st: StairBuild, treadThick: number): StringerLayout {
+export function stringerLayout(whole: StairBuild, treadThick: number): StringerLayout {
+  // A stair with landings (2026-11-14): the layout is its first flight's — each flight is cut to its own rise.
+  const st = firstFlightOf(whole);
   const rise = st.riserIn;
   const run = st.runIn;
   const hyp = Math.hypot(rise, run);
@@ -212,7 +214,7 @@ export function buildSequence(m: PlanModel, list: MaterialList): BuildPhase[] {
         ? `Set the post bases; build each post from three 2x6 OC boards, #10 x 4" stainless screws 8" apart, staggered, from both faces; stand them; cut each in place to the beam's underside (about ${ftInFrac(Math.max(6, (m.posts[0]?.post.heightIn ?? 12) - 1), 8)}) — a 2-ply beam sits in a notch cut in the post, a 3-ply beam in a post cap.`
         : `Set the post bases; stand the ${d.framing.post} posts; cut each in place to the beam's underside (about ${ftInFrac(Math.max(6, (m.posts[0]?.post.heightIn ?? 12) - 1), 8)}).`,
       ...f.beams.map((b) => `Beam ${m.beamTag.get(b.id) ?? ""}: ${beamLabel(b)} on post caps, splices over posts only, crowned up.`),
-      ...(f.hardware.braces ? [`Knee braces at the ${f.hardware.braces} corner posts, 2 ft down and 2 ft out, a 1/2" lag each end.`] : []),
+      ...(f.hardware.braces ? [`Knee braces${f.sticks.find((st) => st.role === "brace")?.nominal && f.sticks.find((st) => st.role === "brace")?.nominal !== "2x4" ? ` (${f.sticks.find((st) => st.role === "brace")?.nominal})` : ""} at the ${f.hardware.braces} corner posts, 2 ft down and 2 ft out, a 1/2" lag each end.`] : []),
       // A DOUBLE DECK (2026-11-13): the lower deck's beams go into the posts before the upper frame goes on.
       ...(s.lower?.place === "under"
         ? [

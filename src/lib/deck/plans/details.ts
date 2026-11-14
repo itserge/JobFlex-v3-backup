@@ -8,7 +8,7 @@
 // not draw: the ledger's fastener pattern with the code's edge distances, the
 // stair's stringer at the rim, and a section through the stair with every
 // riser and tread dimensioned.
-import type { StairBuild } from "../stairs";
+import { firstFlightOf, type StairBuild } from "../stairs";
 import { TREAD_NOSING_IN, STRINGER_DEPTH_IN, HANDRAIL_HEIGHT_IN } from "../stairs";
 import { detailDrawings, lateralDevices, type DetailDrawing, type DrawItem } from "../permit";
 import { LEDGER_FASTENER_LABEL } from "../codeTables";
@@ -154,6 +154,10 @@ function stringerDetail(m: PlanModel, st: StairBuild): PlanDetail {
       `${st.stringers.count} ${st.stringers.nominal} P.T. cut stringers at ${st.stringers.spacingIn}" on centre (${st.stringers.spacingIn < 16 ? "composite treads ask for 12" : "16"}"), each hung on the rim with a sloped stringer connector and its listed fasteners — ${st.hardware.stringerConnectors} in all.`,
       `At least 5" of solid stringer below every cut (the throat); a cut stringer spans no more than 6 ft between supports${st.midSupport ? " — this one has a beam on posts midway" : ""} (AWC DCA 6).`,
       `At the foot a treated 2x4 kicker anchored to the ${st.pad ? "pad" : "landing"}; the stringers notched over it and fastened.`,
+      // The landings (2026-11-14): each flight cut to its own rise, each landing on its own posts and footings.
+      ...(st.landings.length
+        ? [`${st.flights.length} flights: ${st.flights.map((fl) => `${fl.risers} risers of ${inFrac(fl.riserIn)}`).join(", ")} — each flight's stringers cut to its own rise, hung on the landing's frame as on the deck's rim. ${st.landings.length === 1 ? "The landing" : "Landings"}: ${st.landings.map((l) => `${ftInFrac(l.heightIn, 8)} above grade, ${ftInFrac(l.widthIn, 8)} × ${ftInFrac(l.depthIn, 8)}, a 2x8 frame with joists at 16" on ${l.posts} posts`).join("; ")}; guarded on its open sides where it stands more than 30" up.`]
+        : []),
     ],
     build: (sc) => {
       const k = new Sketch(sc.k);
@@ -194,7 +198,11 @@ function stringerDetail(m: PlanModel, st: StairBuild): PlanDetail {
 }
 
 /* ── The section through a stair ────────────────────────────────────────── */
-export function stairSection(m: PlanModel, st: StairBuild, n: number, sc: ArchScale): View {
+export function stairSection(m: PlanModel, whole: StairBuild, n: number, sc: ArchScale): View {
+  // A stair with landings (2026-11-14): the section is its first flight's, down to the first landing — drawn on its
+  // frame, not on the ground; the other flights are cut the same way to their own rise (the notes list them).
+  const st = firstFlightOf(whole);
+  const firstLanding = whole.landings[0] ?? null;
   const k = new Sketch(sc.k);
   const p = (v: number) => k.p(v);
   const f = m.f;
@@ -234,9 +242,16 @@ export function stairSection(m: PlanModel, st: StairBuild, n: number, sc: ArchSc
     k.leader(totalRun - 6 + padLen * 0.55, -(landZ - st.pad.thickIn), totalRun - 6 + padLen * 0.55 - p(0.15), -(landZ - st.pad.thickIn) + p(0.32), [`${inFrac(st.pad.thickIn)} CONC. LANDING (SP)`], "dot", "sm");
   }
   k.rect(totalRun + 0.25, -(landZ + 1.5), 3.5, 1.5, "medium", "wood");
-  // The ground.
-  k.rect(-stub, -(landZ - (st.pad?.thickIn ?? 0)), totalRun + padLen + stub + 12, p(0.07), null, "earth");
-  k.line(-stub, -(landZ - (st.pad?.thickIn ?? 0)), totalRun + padLen + 12, -(landZ - (st.pad?.thickIn ?? 0)), "heavy");
+  if (firstLanding) {
+    // The landing the flight comes down to: its boards on a 2x8 frame, on posts (the framing plan has them).
+    k.rect(totalRun, -landZ, padLen, t, "medium", "wood");
+    k.rect(totalRun, -(landZ - t), padLen, 7.25, "light", "wood");
+    k.text(totalRun + padLen / 2, -(landZ - t - 7.25) + p(0.16), `LANDING ${Math.round(firstLanding.widthIn / 12 * 10) / 10}' × ${Math.round(firstLanding.depthIn / 12 * 10) / 10}' ON ${firstLanding.posts} POSTS`, "sm", { anchor: "middle", tone: "muted" });
+  } else {
+    // The ground.
+    k.rect(-stub, -(landZ - (st.pad?.thickIn ?? 0)), totalRun + padLen + stub + 12, p(0.07), null, "earth");
+    k.line(-stub, -(landZ - (st.pad?.thickIn ?? 0)), totalRun + padLen + 12, -(landZ - (st.pad?.thickIn ?? 0)), "heavy");
+  }
   // The handrail, 36" over the nosing line.
   if (st.rail.sides > 0) {
     const nose = (x: number) => S - (x / Math.max(1, totalRun + run)) * (S - landZ);
@@ -258,7 +273,7 @@ export function stairSection(m: PlanModel, st: StairBuild, n: number, sc: ArchSc
   if (st.midSupport) k.text(totalRun * 0.45, -(landZ + 3), "BEAM ON POSTS AT MID-RUN (SF1)", "sm", { anchor: "middle", tone: "muted" });
   k.datum(totalRun + padLen + p(0.25), -S, "T.O. DECK", `+${ftInFrac(S, 8)}`);
   k.datum(totalRun + padLen + p(0.25), -landZ, "LANDING", `+${ftInFrac(Math.max(0, landZ), 8)}`);
-  return k.view(`stair-${n}`, `Stair ${n} section`, sc.label);
+  return k.view(`stair-${n}`, firstLanding ? `Stair ${n} section — the first of ${whole.flights.length} flights` : `Stair ${n} section`, sc.label);
 }
 
 export { lateralDevices };
