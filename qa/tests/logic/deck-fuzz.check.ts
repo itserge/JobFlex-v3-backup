@@ -70,7 +70,7 @@ function randomDesign(r: Rng): unknown {
   const d: any = JSON.parse(JSON.stringify(defaultDeckDesign({ state: pick(r, ["NY", "TX", "CA", "MN", "FL", "WA", null]) })));
   const w = odd(r, 4, 60), dep = odd(r, 4, 40);
   d.shape = r() < 0.7
-    ? { kind: "rect", widthFt: w, depthFt: dep, front: r() < 0.5 ? undefined : { kind: pick(r, ["straight", "curve", "clipped"]), bulgeFt: odd(r, 1, 8), clipFt: odd(r, 1, 6) } }
+    ? { kind: "rect", widthFt: w, depthFt: dep, front: r() < 0.5 ? undefined : { kind: pick(r, ["straight", "curve", "clipped"]), bulgeFt: r() < 0.15 ? 0 : odd(r, 1, 8), clipFt: odd(r, 1, 6), ...(r() < 0.35 ? { leftFt: odd(r, 0, 8) } : {}), ...(r() < 0.35 ? { rightFt: odd(r, 0, 8) } : {}), ...(r() < 0.3 ? { backFt: odd(r, 0, 8) } : {}) } }
     : { kind: "L", widthFt: Math.max(w, 8), depthFt: Math.max(dep, 8), notch: { corner: pick(r, NOTCH_CORNERS), widthFt: odd(r, 2, Math.max(2, w - 3)), depthFt: odd(r, 2, Math.max(2, dep - 3)) } };
   d.placement = pick(r, PLACEMENTS); d.wall = pick(r, ids(WALL_TYPES)); d.heightIn = r() < 0.3 ? int(r, 4, 30) : int(r, 4, 360);
   d.loadPsf = pick(r, [40, 50, 60, 70]); d.soilPsf = pick(r, [1500, 2000, 3000]); d.frostIn = int(r, 0, 96);

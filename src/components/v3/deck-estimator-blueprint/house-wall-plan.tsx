@@ -44,7 +44,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { DECK_LIMITS, shapeOutline, type DeckShape } from "@/lib/deck/design";
-import { BOW_STEP_FT, bowOf, bowPatch, bowRadiusWords } from "@/lib/deck/curve";
+import { BOW_SIDE_WORDS, BOW_STEP_FT, bowApex, bowOf, bowPatch, bowRadiusWords, bowedSides } from "@/lib/deck/curve";
 import {
   FRONT_HAND,
   clipFrontCorner,
@@ -655,9 +655,9 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
     } else if (d.kind === "deck-front") {
       const depthFt = clamp(half(p.y), DECK_LIMITS.depthFt.min, DECK_LIMITS.depthFt.max);
       if (depthFt !== D) onChange({ shape: { ...shape, depthFt } });
-    } else if (d.kind === "bow") {
-      // THE BOW BY HAND (2026-11-15): the round handle rides the arc's middle — out, the front bows more; in, less.
-      const next = bowPatch({ shape }, "front", p.y - D);
+    } else if (d.kind === "bow" && d.id) {
+      // THE BOW BY HAND (2026-11-15): the round handle rides the arc's middle — out, the side bows more; in, less.
+      const next = bowPatch({ shape }, d.id, d.id === "front" ? p.y - D : d.id === "back" ? -p.y : d.id === "left" ? -p.x : p.x - W);
       if (next) onChange({ shape: next.shape });
     } else if (d.kind === "deck-left") {
       // The deck's left end is the drawing's origin: as it moves, the house (and the pointer's frame, held from the
@@ -1143,33 +1143,44 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
         </rect>
       )}
       {/* THE BOW BY HAND (2026-11-15 — the owner: "I click on the radius — make me a toggle to move out and move in"):
-          a round handle on the arc's own middle. Out, the front bows more (a tighter radius); in, less. */}
-      {bowed ? (
-        <circle
-          cx={W / 2}
-          cy={D + bowOf(shape, "front")}
-          r={handleR}
-          className={cx(s.wallDeckHandle, s.wallDeckHandleNS)}
-          onPointerDown={(e) => start(e, "bow", { kind: "deck" })}
-          onKeyDown={(e) => {
-            const by = e.key === "ArrowDown" || e.key === "+" || e.key === "=" ? BOW_STEP_FT : e.key === "ArrowUp" || e.key === "-" ? -BOW_STEP_FT : 0;
-            const next = by ? bowPatch({ shape }, "front", bowOf(shape, "front") + by) : null;
-            if (!next) return;
-            e.preventDefault();
-            remember(house, shape);
-            onChange({ shape: next.shape });
-          }}
-          onFocus={() => setPick({ kind: "deck" })}
-          data-deck-wall-handle="bow"
-          data-deck-bow-ft={bowOf(shape, "front")}
-          tabIndex={0}
-          role="slider"
-          aria-label={`The bow of the front: ${ft(bowOf(shape, "front"))} at the middle, ${bowRadiusWords(shape, "front")}`}
-          aria-valuenow={bowOf(shape, "front")}
-        >
-          <title>The bow: pull out for more, push in for less</title>
-        </circle>
-      ) : null}
+          a round handle on the middle of every bowed side. Out, that side bows more (a tighter radius); in, less. */}
+      {bowed
+        ? bowedSides(shape).map((side) => {
+            const at = bowApex(shape, side);
+            const now = bowOf(shape, side);
+            // The arrow key that points out of the deck across this side bows it more.
+            const more = side === "front" ? "ArrowDown" : side === "back" ? "ArrowUp" : side === "left" ? "ArrowLeft" : "ArrowRight";
+            const less = side === "front" ? "ArrowUp" : side === "back" ? "ArrowDown" : side === "left" ? "ArrowRight" : "ArrowLeft";
+            return (
+              <circle
+                key={`bow${side}`}
+                cx={at.x / 12}
+                cy={at.y / 12}
+                r={handleR}
+                className={cx(s.wallDeckHandle, side === "front" || side === "back" ? s.wallDeckHandleNS : undefined)}
+                onPointerDown={(e) => start(e, "bow", { kind: "deck" }, { id: side })}
+                onKeyDown={(e) => {
+                  const by = e.key === more || e.key === "+" || e.key === "=" ? BOW_STEP_FT : e.key === less || e.key === "-" ? -BOW_STEP_FT : 0;
+                  const next = by ? bowPatch({ shape }, side, now + by) : null;
+                  if (!next) return;
+                  e.preventDefault();
+                  remember(house, shape);
+                  onChange({ shape: next.shape });
+                }}
+                onFocus={() => setPick({ kind: "deck" })}
+                data-deck-wall-handle="bow"
+                data-deck-bow-side={side}
+                data-deck-bow-ft={now}
+                tabIndex={0}
+                role="slider"
+                aria-label={`The bow of ${BOW_SIDE_WORDS[side]}: ${ft(now)} at the middle, ${bowRadiusWords(shape, side)}`}
+                aria-valuenow={now}
+              >
+                <title>The bow: pull out for more, push in for less</title>
+              </circle>
+            );
+          })
+        : null}
       {fparts.slice(0, -1).map((q, i) => {
         const nx = fparts[i + 1];
         const a = stepPick(i);

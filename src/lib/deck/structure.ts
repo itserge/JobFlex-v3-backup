@@ -17,7 +17,7 @@ import { buildDeckFrame, type BuildOptions, type DeckFrame, PIER_BLOCK } from ".
 import { buildRoofFrame, roofPostsForDeck, type RoofFrame, type StairOpening } from "./roof";
 import { deckSurface, type DeckSurface } from "./surface";
 import { buildStair, stairTopEdge, type StairBuild, type StairLevel } from "./stairs";
-import { frontChain } from "./curve";
+import { frontChain, sideChain } from "./curve";
 import { POST_ACTUAL_IN } from "./codeTables";
 import { buildRails, type RailBuild, type RailLevel } from "./rails";
 import { buildSkirt, type SkirtBuild, type SkirtLevelInput } from "./skirt";
@@ -26,7 +26,7 @@ import { buildElectrical, type ElectricalBuild } from "./electrical";
 import { defaultFramingSpecies, framingSpecies } from "./catalog";
 import { groundAt as slopeGroundAt, slopeGradePct } from "./site";
 import { houseForLower, lowerFloor, lowerSharing } from "./doubleDeck";
-import { defaultStair, frontEdgeAt, hasDeck, hasLowerLevel, hasRoof, isDoubleDeck, normalizeDeckDesign, shapeOutline, shapeZones, type DeckDesign, type DeckEdge, type StairDesign } from "./design";
+import { defaultStair, frontEdgeAt, shapeBows, hasDeck, hasLowerLevel, hasRoof, isDoubleDeck, normalizeDeckDesign, shapeOutline, shapeZones, type DeckDesign, type DeckEdge, type StairDesign, type DeckShape } from "./design";
 import { deckCodeFor, type DeckStateCode } from "./stateCodes";
 
 /** The lower level: its own frame and boards, placed in front of the main deck. */
@@ -93,6 +93,19 @@ function edgeFor(edges: readonly DeckEdge[], A: { x: number; y: number }, B: { x
   return null;
 }
 
+/** The bowed side (not the front) a piece of the outline belongs to: both its ends on that side's arc. Null for any other piece. */
+function bowSideOf(shape: DeckShape, A: { x: number; y: number }, B: { x: number; y: number }): "left" | "right" | "back" | null {
+  const bows = shapeBows(shape);
+  if (!(bows.left > 0 || bows.right > 0 || bows.back > 0)) return null;
+  const W = Math.round(shape.widthFt * 12);
+  const D = Math.round(shape.depthFt * 12);
+  const within = (p: { x: number; y: number }) => p.y > -0.01 && p.y < D + 0.01;
+  if (bows.left > 0 && A.x < 0.01 && B.x < 0.01 && within(A) && within(B)) return "left";
+  if (bows.right > 0 && A.x > W - 0.01 && B.x > W - 0.01 && within(A) && within(B)) return "right";
+  if (bows.back > 0 && A.y < 0.01 && B.y < 0.01) return "back";
+  return null;
+}
+
 /** A rail's view of a level: its outline's sides with the house's (and the step's) marked. */
 function railLevelOf(id: "upper" | "lower", frame: DeckFrame, offsetX: number, offsetY: number, groundAt: (x: number, y: number) => number, stepDown: RailLevel["stepDown"], backIsStep: boolean): RailLevel {
   const ring = shapeOutline(frame.design.shape).map((p) => ({ x: p.x + offsetX, y: p.y + offsetY }));
@@ -131,7 +144,8 @@ function railLevelOf(id: "upper" | "lower", frame: DeckFrame, offsetX: number, o
       }
       continue;
     }
-    const side: RailLevel["sides"][number]["side"] = e ? e.side : onBack ? "back" : "front";
+    // (A piece of a bowed side or back — 2026-11-15 — is that side's, not the front's.)
+    const side: RailLevel["sides"][number]["side"] = e ? e.side : (bowSideOf(frame.design.shape, { x: A.x - offsetX, y: A.y - offsetY }, { x: B.x - offsetX, y: B.y - offsetY }) ?? (onBack ? "back" : "front"));
     const house = e ? e.house : onBack && backIsStep;
     sides.push({ x0: A.x, y0: A.y, x1: B.x, y1: B.y, house: house || (onBack && backIsStep), side });
   }
@@ -265,9 +279,10 @@ export function buildStructure(raw: DeckDesign, opts: StructureOptions = {}): De
     const plain = design.shape.kind === "rect" && (!design.shape.front || design.shape.front.kind === "straight");
     // (A flight is seated on the edge as the deck is drawn — a bow, a corner cut at an angle; 2026-11-15, lib/deck/edgeSeat.
     // The lower floor of a double deck on its own outline: a lower floor shaped on its own has its own front.)
-    const chains = { front: frontChain(design.shape) };
+    const chains = { front: frontChain(design.shape), left: sideChain(design.shape, "left"), right: sideChain(design.shape, "right") };
+    const at = (chain: Array<{ x: number; y: number }>) => (lower ? chain.map((q) => ({ x: q.x + lower.offsetXIn, y: q.y + lower.offsetYIn })) : chain);
     const upper: StairLevel = { id: "upper", surfaceIn: frame.surfaceIn, joistBottomIn: frame.joistBottomIn, x0: 0, y0: 0, widthIn: W, depthIn: D, frontAt: (x) => frontEdgeAt(design.shape, x), sides: railLevelOf("upper", frame, 0, 0, groundAt, null, false).sides, plain, chains };
-    const lowerLevel: StairLevel | null = lower ? { id: "lower", surfaceIn: lower.frame.surfaceIn, joistBottomIn: lower.frame.joistBottomIn, x0: lower.offsetXIn, y0: lower.offsetYIn, widthIn: Math.round(design.lower.widthFt * 12), depthIn: Math.round(design.lower.depthFt * 12), frontAt: lower.place === "under" ? (x) => frontEdgeAt(lower.design.shape, x) : () => Math.round(design.lower.depthFt * 12), ...(lower.place === "under" ? { chains: { front: frontChain(lower.design.shape).map((q) => ({ x: q.x + lower.offsetXIn, y: q.y + lower.offsetYIn })) } } : {}) } : null;
+    const lowerLevel: StairLevel | null = lower ? { id: "lower", surfaceIn: lower.frame.surfaceIn, joistBottomIn: lower.frame.joistBottomIn, x0: lower.offsetXIn, y0: lower.offsetYIn, widthIn: Math.round(design.lower.widthFt * 12), depthIn: Math.round(design.lower.depthFt * 12), frontAt: lower.place === "under" ? (x) => frontEdgeAt(lower.design.shape, x) : () => Math.round(design.lower.depthFt * 12), ...(lower.place === "under" ? { chains: { front: at(frontChain(lower.design.shape)), left: at(sideChain(lower.design.shape, "left")), right: at(sideChain(lower.design.shape, "right")) } } : {}) } : null;
     const build = (st: StairDesign, level: StairLevel) =>
       buildStair({ design, stair: st, level, lowerLevel: level.id === "upper" ? lowerLevel : null, product: frame.decking, rail: design.rail, groundAt, riserMaxIn: code.riserMaxIn, postSize: design.framing.post === "8x8" ? "6x6" : design.framing.post === "4x6" ? "4x4" : design.framing.post });
     const put = (st: StairDesign, level: StairLevel) => {

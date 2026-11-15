@@ -30,7 +30,7 @@
 
 import { BRACE_ABOVE_IN, JOIST_SIZES, POST_ACTUAL_IN, POST_SIZES, SOLID_BEAMS, SPACINGS, ftIn } from "./codeTables";
 import { wallType } from "./catalog";
-import { BOW_SIDES, bowLimits, bowOf, bowRadiusWords, withBow } from "./curve";
+import { BOW_SIDES, BOW_SIDE_LABEL, BOW_SIDE_WORDS, bowLimits, bowOf, bowRadiusWords, withBow } from "./curve";
 import { addBeam, addPostUnder, addRoofPost, deckGrips, gripOfPart, removeBeamLine, removePost, roofCornerSides, roofSideOf, type DeckGrip } from "./byHand";
 import { applyDeckPatch, deckChecks, type DeckPatch } from "./checks";
 import { BUILT_UP_CHOICES, braceSizesFor, RAIL_MOUNT_LABEL, RAIL_MOUNT_WORDS, RAIL_SECTION_LABEL, ROOF_POST_LIMITS, ROOF_SIDE_LABEL, defaultRoofOpening, type DeckDesign, type RailSectionKey, type RoofDesign } from "./design";
@@ -491,7 +491,7 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
         for (const v of offers) {
           const next = withBow(d.shape, side, v);
           if (!next) continue;
-          choices.push({ id: `bow-${side}-${Math.round(v * 12)}`, tone: "size", row: `Bow of the ${side} — out for a tighter curve, in for a gentler one`, label: ftIn(Math.round(v * 12)), note: `The ${side} bows out ${ftIn(Math.round(v * 12))} at its middle: ${bowRadiusWords(next, side)}.`, patch: { shape: next }, current: v === now });
+          choices.push({ id: `bow-${side}-${Math.round(v * 12)}`, tone: "size", row: `Bow of ${BOW_SIDE_WORDS[side]} — out for a tighter curve, in for a gentler one`, label: ftIn(Math.round(v * 12)), note: `${BOW_SIDE_LABEL[side]} bowed out ${ftIn(Math.round(v * 12))} at its middle: ${bowRadiusWords(next, side)}.`, patch: { shape: next }, current: v === now });
         }
       }
       return card("Rim", "The rim closes the joists' ends and takes the rail posts' bolts.", choices, "The joists' ends are fastened to it: it stays.");

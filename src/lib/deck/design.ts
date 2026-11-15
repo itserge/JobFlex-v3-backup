@@ -54,6 +54,51 @@ export interface FrontProfile {
   kind: FrontKind;
   bulgeFt: number;
   clipFt: number;
+  /**
+   * THE OTHER SIDES, BOWED (2026-11-15 — the owner: "choose which side I want the radius on — four sides, three sides,
+   * or side one, two, three, four"). With `kind: "curve"`, how far the deck's left side, its right side and — on a
+   * deck that stands free of the house — its back bow out at their middles, ft. Absent: that side is straight.
+   * `bulgeFt` is the front's own bow, and may then be 0 (a straight front between bowed sides).
+   */
+  leftFt?: number;
+  rightFt?: number;
+  backFt?: number;
+}
+/** A side of the deck that can bow out: the front, the two sides, and the back of a deck that stands free of the house. */
+export type BowSide = "front" | "left" | "right" | "back";
+export const BOW_SIDES: readonly BowSide[] = ["front", "left", "right", "back"];
+
+/**
+ * A circular arc across a chord `chord` long that rises `rise` at its middle: how far it stands off the chord at `t`
+ * along it (any one unit). Nothing at the chord's two ends, or past them.
+ */
+export function arcRiseAt(chord: number, rise: number, t: number): number {
+  if (!(rise > 0) || !(t > 0) || !(t < chord)) return 0;
+  const half = chord / 2;
+  const R = (half * half) / (2 * rise) + rise / 2;
+  const d = t - half;
+  return Math.max(0, Math.sqrt(Math.max(0, R * R - d * d)) - (R - rise));
+}
+
+/** How far each side bows at its middle, ft — 0 where it is straight (and on any deck that is not a bowed rectangle). */
+export function shapeBows(shape: DeckShape): Record<BowSide, number> {
+  const f = shape.kind === "rect" && shape.front?.kind === "curve" ? shape.front : null;
+  return { front: f ? f.bulgeFt : 0, left: f?.leftFt ?? 0, right: f?.rightFt ?? 0, back: f?.backFt ?? 0 };
+}
+
+/**
+ * How far a bowed side stands out past its own straight line, inches, at `tIn` along it: along the house for the front
+ * and the back (from the deck's left end), out from the house for the two sides.
+ */
+export function sideBowAt(shape: DeckShape, side: BowSide, tIn: number): number {
+  const bow = shapeBows(shape)[side] * 12;
+  if (!(bow > 0)) return 0;
+  return arcRiseAt(Math.round((side === "front" || side === "back" ? shape.widthFt : shape.depthFt) * 12), bow, tIn);
+}
+
+/** The short straight pieces a bowed side is drawn in: eight along the house, four to eight (always even) out from it. */
+export function bowPieces(shape: DeckShape, side: BowSide): number {
+  return side === "front" || side === "back" ? 8 : 2 * Math.max(2, Math.min(4, Math.round(shape.depthFt / 4)));
 }
 export const FRONT_LABEL: Record<FrontKind, string> = { straight: "Straight", curve: "Curved (bowed out)", clipped: "Clipped corners" };
 
@@ -909,6 +954,16 @@ const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object"
 /** To the nearest inch, in feet — a typed 12.3333 stays 12'-4". */
 const toInch = (ft: number) => Math.round(ft * 12) / 12;
 
+/** The back bows only on a deck that stands free of the house: against the house it is the house's own line. */
+function backBowOnlyFree(shape: DeckShape, placement: Placement): DeckShape {
+  if (placement === "detached" || shape.kind !== "rect" || !shape.front?.backFt) return shape;
+  const { backFt: _back, ...front } = shape.front;
+  void _back;
+  // (A straight front whose only bow was its back: a plain rectangle.)
+  if (front.kind === "curve" && !(front.bulgeFt > 0) && !front.leftFt && !front.rightFt) return { kind: "rect", widthFt: shape.widthFt, depthFt: shape.depthFt };
+  return { ...shape, front };
+}
+
 function normalizeShape(raw: unknown, fallback: DeckShape): DeckShape {
   const r = obj(raw);
   const widthFt = toInch(clamp(num(r.widthFt, fallback.widthFt), DECK_LIMITS.widthFt.min, DECK_LIMITS.widthFt.max));
@@ -926,9 +981,20 @@ function normalizeShape(raw: unknown, fallback: DeckShape): DeckShape {
     const kind = oneOf(f.kind, ["straight", "curve", "clipped"] as const, "straight");
     if (kind === "straight") return { kind: "rect", widthFt, depthFt };
     // A bow no deeper than a third of the width stays an arc a crew can bend; a clip leaves at least 2 ft of straight front.
-    const bulgeFt = toInch(clamp(num(f.bulgeFt, 2), DECK_LIMITS.bulgeFt.min, Math.min(DECK_LIMITS.bulgeFt.max, widthFt / 3)));
     const clipFt = toInch(clamp(num(f.clipFt, 2), DECK_LIMITS.clipFt.min, Math.min(DECK_LIMITS.clipFt.max, (widthFt - 2) / 2, depthFt - 2)));
-    return { kind: "rect", widthFt, depthFt, front: { kind, bulgeFt, clipFt } };
+    // THE OTHER SIDES (2026-11-15): each bowed no deeper than a third of its own length. A front between bowed sides
+    // may be straight (a bow of 0); with no side bowed the front keeps a bow, as it always did.
+    const bowOn = (v: unknown, lengthFt: number) => {
+      const n = kind === "curve" ? num(v, 0) : 0;
+      const most = Math.floor(Math.min(DECK_LIMITS.bulgeFt.max, lengthFt / 3) * 12) / 12;
+      return n > 0 && most >= DECK_LIMITS.bulgeFt.min ? toInch(clamp(n, DECK_LIMITS.bulgeFt.min, most)) : 0;
+    };
+    const leftFt = bowOn(f.leftFt, depthFt);
+    const rightFt = bowOn(f.rightFt, depthFt);
+    const backFt = bowOn(f.backFt, widthFt);
+    const said = num(f.bulgeFt, 2);
+    const bulgeFt = kind === "curve" && (leftFt || rightFt || backFt) && !(said > 0) ? 0 : toInch(clamp(said, DECK_LIMITS.bulgeFt.min, Math.min(DECK_LIMITS.bulgeFt.max, widthFt / 3)));
+    return { kind: "rect", widthFt, depthFt, front: { kind, bulgeFt, clipFt, ...(leftFt ? { leftFt } : {}), ...(rightFt ? { rightFt } : {}), ...(backFt ? { backFt } : {}) } };
   }
   const n = obj(r.notch);
   const corner = oneOf(n.corner, NOTCH_CORNERS, "front-right");
@@ -1210,7 +1276,7 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
   // The deck's own shape first: the roof follows it, or carries its size off the deck.
   // (…and the house with it: a deck whose end runs past a corner of the house has no wall behind it there — the shape
   // says so whichever of the two changed last, so nothing downstream hangs a ledger in the air. 2026-11-14.)
-  const shape0 = normalizeShape(r.shape, d.shape);
+  const shape0 = backBowOnlyFree(normalizeShape(r.shape, d.shape), placement);
   const house = normalizeHouse(r.house, shape0);
   const shape = fitDeckEnds(shape0, house);
   const roof = normalizeRoof(r.roof, structure, floor, placement, shape);
@@ -1769,7 +1835,9 @@ export function frontEdgeAt(shape: DeckShape, xIn: number): number {
     if (xIn > W - c) return D - (xIn - (W - c));
     return D;
   }
+  // (A front between bowed sides may itself be straight — 2026-11-15.)
   const s = shape.front.bulgeFt * 12;
+  if (!(s > 0)) return D;
   const half = W / 2;
   const R = (half * half) / (2 * s) + s / 2;
   const dx = xIn - half;
@@ -1779,10 +1847,25 @@ export function frontEdgeAt(shape: DeckShape, xIn: number): number {
 
 /** The curve's radius, ft, for the bend check (Infinity when the front is not a curve). */
 export function frontRadiusFt(shape: DeckShape): number {
-  if (shape.kind !== "rect" || !shape.front || shape.front.kind !== "curve") return Infinity;
+  if (shape.kind !== "rect" || !shape.front || shape.front.kind !== "curve" || !(shape.front.bulgeFt > 0)) return Infinity;
   const half = shape.widthFt / 2;
   const s = shape.front.bulgeFt;
   return Math.round(((half * half) / (2 * s) + s / 2) * 10) / 10;
+}
+
+/** A bowed side's radius, ft (Infinity where it is straight). */
+export function bowSideRadiusFt(shape: DeckShape, side: BowSide): number {
+  const s = shapeBows(shape)[side];
+  if (!(s > 0)) return Infinity;
+  const half = (side === "front" || side === "back" ? shape.widthFt : shape.depthFt) / 2;
+  return Math.round(((half * half) / (2 * s) + s / 2) * 10) / 10;
+}
+
+/** A side's own length, inches: its arc where it bows, its straight line where it does not. */
+export function bowSideLengthIn(shape: DeckShape, side: BowSide): number {
+  const chord = Math.round((side === "front" || side === "back" ? shape.widthFt : shape.depthFt) * 12);
+  const R = bowSideRadiusFt(shape, side) * 12;
+  return Number.isFinite(R) ? 2 * R * Math.asin(Math.min(1, chord / 2 / R)) : chord;
 }
 
 /** The front edge's length, inches: the arc, or the clipped line, or the width. */
@@ -1794,6 +1877,7 @@ export function frontEdgeLengthIn(shape: DeckShape): number {
     return W - 2 * c + 2 * c * Math.SQRT2;
   }
   const R = frontRadiusFt(shape) * 12;
+  if (!Number.isFinite(R)) return W;
   const half = W / 2;
   return 2 * R * Math.asin(Math.min(1, half / R));
 }
@@ -1934,7 +2018,10 @@ export function shapeEdges(shape: DeckShape, placement: Placement): DeckEdge[] {
   if (shape.kind === "rect") {
     // A clipped front shortens the sides; a bowed one lengthens the front (its real length is the arc's).
     const clip = shape.front?.kind === "clipped" ? shape.front.clipFt * 12 : 0;
-    return [edge(0, 0, W, 0, "back", true), edge(W, 0, W, D - clip, "right", false), edge(0, D, W, D, "front", false, frontEdgeLengthIn(shape)), edge(0, 0, 0, D - clip, "left", false)];
+    // (…and a bowed side or back — 2026-11-15 — is as long as its arc.)
+    const bows = shapeBows(shape);
+    const arc = (side: BowSide) => (bows[side] > 0 ? bowSideLengthIn(shape, side) : undefined);
+    return [edge(0, 0, W, 0, "back", true, arc("back")), edge(W, 0, W, D - clip, "right", false, arc("right")), edge(0, D, W, D, "front", false, frontEdgeLengthIn(shape)), edge(0, 0, 0, D - clip, "left", false, arc("left"))];
   }
   if (shape.kind === "wall") {
     // Every part's back lies on the wall, and so does each face where the wall steps between two parts — the side of
@@ -2006,12 +2093,29 @@ export function shapeOutline(shape: DeckShape): Array<{ x: number; y: number }> 
       return [{ x: 0, y: 0 }, { x: W, y: 0 }, { x: W, y: D - c }, { x: W - c, y: D }, { x: c, y: D }, { x: 0, y: D - c }];
     }
     if (shape.front && shape.front.kind === "curve") {
-      // The bow as a run of short straight pieces, right to left along the front.
-      const n = 8;
-      const pts: Array<{ x: number; y: number }> = [{ x: 0, y: 0 }, { x: W, y: 0 }];
-      for (let k = 0; k <= n; k++) {
-        const x = W - (W * k) / n;
-        pts.push({ x, y: frontEdgeAt(shape, x) });
+      // Each bow as a run of short straight pieces (2026-11-15: the sides and a free deck's back bow too). Round the
+      // deck: the back left to right, the right side out from the house, the front right to left, the left side back.
+      const bows = shapeBows(shape);
+      const pts: Array<{ x: number; y: number }> = [{ x: 0, y: 0 }];
+      if (bows.back > 0) {
+        const n = bowPieces(shape, "back");
+        for (let k = 1; k < n; k++) pts.push({ x: (W * k) / n, y: -sideBowAt(shape, "back", (W * k) / n) });
+      }
+      pts.push({ x: W, y: 0 });
+      if (bows.right > 0) {
+        const n = bowPieces(shape, "right");
+        for (let k = 1; k < n; k++) pts.push({ x: W + sideBowAt(shape, "right", (D * k) / n), y: (D * k) / n });
+      }
+      if (bows.front > 0) {
+        const n = bowPieces(shape, "front");
+        for (let k = 0; k <= n; k++) {
+          const x = W - (W * k) / n;
+          pts.push({ x, y: frontEdgeAt(shape, x) });
+        }
+      } else pts.push({ x: W, y: D }, { x: 0, y: D });
+      if (bows.left > 0) {
+        const n = bowPieces(shape, "left");
+        for (let k = 1; k < n; k++) pts.push({ x: -sideBowAt(shape, "left", D - (D * k) / n), y: D - (D * k) / n });
       }
       return pts;
     }
@@ -2070,9 +2174,13 @@ export function shapeAreaSqFt(shape: DeckShape): number {
   if (shape.kind !== "rect" || !shape.front || shape.front.kind === "straight") return rect;
   if (shape.front.kind === "clipped") return rect - shape.front.clipFt * shape.front.clipFt;
   // The circular segment outside the chord: R²·acos((R−s)/R) − (R−s)·√(2Rs − s²).
-  const R = frontRadiusFt(shape);
-  const s = shape.front.bulgeFt;
-  const seg = R * R * Math.acos(Math.min(1, (R - s) / R)) - (R - s) * Math.sqrt(Math.max(0, 2 * R * s - s * s));
+  // …one for every bowed side (2026-11-15).
+  let seg = 0;
+  for (const side of BOW_SIDES) {
+    const R = bowSideRadiusFt(shape, side);
+    const s = shapeBows(shape)[side];
+    if (Number.isFinite(R) && s > 0) seg += R * R * Math.acos(Math.min(1, (R - s) / R)) - (R - s) * Math.sqrt(Math.max(0, 2 * R * s - s * s));
+  }
   return Math.round((rect + seg) * 100) / 100;
 }
 
@@ -2088,7 +2196,8 @@ export function sizeWords(design: DeckDesign): string {
     if (p.shape === "hexagon" || p.shape === "octagon") return `${ft(p.acrossFt)} ${p.shape}`;
     return p.shape === "square" ? `${ft(p.widthFt)} square` : `${ft(p.widthFt)} × ${ft(p.depthFt)}`;
   }
-  const front = s.kind === "rect" && s.front && s.front.kind !== "straight" ? (s.front.kind === "curve" ? " curved front" : " clipped corners") : "";
+  const bowed = BOW_SIDES.filter((side) => shapeBows(s)[side] > 0);
+  const front = s.kind === "rect" && s.front && s.front.kind !== "straight" ? (s.front.kind === "curve" ? (bowed.length === 1 && bowed[0] === "front" ? " curved front" : bowed.length === 4 ? " curved all round" : bowed.length === 3 && !bowed.includes("back") ? " curved front and sides" : bowed.length === 2 && bowed.includes("left") && bowed.includes("right") ? " curved sides" : ` curved ${bowed.map((b) => (b === "left" || b === "right" ? `${b} side` : b)).join(" and ")}`) : " clipped corners") : "";
   const lower = isDoubleDeck(design) ? " double deck" : design.lower.on && design.lower.place === "front" && s.kind !== "L" ? " two levels" : "";
   if (s.kind === "wall") {
     const ends = s.back.filter((b) => b.open);

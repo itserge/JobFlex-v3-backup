@@ -27,7 +27,7 @@ import type { DeckSurface } from "./surface";
 import { FLASH_LEG_IN, type RoofMember, type RoofPlane } from "./roof";
 import { POST_ACTUAL_IN, ftIn } from "./codeTables";
 import { deckGrips } from "./byHand";
-import { BOW_SIDES, bowOf, bowRadiusWords } from "./curve";
+import { BOW_SIDES, BOW_SIDE_WORDS, bowApex, bowOf, bowRadiusWords } from "./curve";
 import { ROOFING_LABEL, hasDeck, shapeOutline, sizeWords, structureWords, type DeckDesign, spaRectIn } from "./design";
 import { outsideRunOn, ringEdges } from "./ringEdges";
 import type { DeckStructure } from "./structure";
@@ -1194,9 +1194,14 @@ export function deckScene(s: DeckStructure): DeckScene {
     // THE BOW (2026-11-15 — the owner: "I click on the radius — make me a toggle to move out and move in, to make a
     // bigger radius or a smaller radius"): a knob on the arc's own middle. Pulled out the side bows more, pushed in
     // less — a foot of travel a foot of bow (lib/deck/curve bowPatch).
+    // (Every bowed side has its own — 2026-11-15: the left side's and a free deck's back travel away from the deck as
+    // their bow grows, so they follow the hand the other way.)
     for (const side of BOW_SIDES) {
       const bow = bowOf(design.shape, side);
-      if (bow > 0) handles.push({ kind: "bow", id: side, x: r3(Wd / 2), y: r3(Dd + bow * 12), z: r3(frame.surfaceIn + 1), axis: "y", value: bow, perUnit: 1, label: `Bow of the ${side} — ${bowRadiusWords(design.shape, side)}` });
+      if (!(bow > 0)) continue;
+      const at = bowApex(design.shape, side);
+      const along = side === "front" || side === "back";
+      handles.push({ kind: "bow", id: side, x: r3(at.x), y: r3(at.y), z: r3(frame.surfaceIn + 1), axis: along ? "y" : "x", value: bow, perUnit: 1, ...(side === "left" || side === "back" ? { follow: -1 } : {}), label: `Bow of ${BOW_SIDE_WORDS[side]} — ${bowRadiusWords(design.shape, side)}` });
     }
     handles.push({ kind: "height", id: "height", x: r3(Wd), y: r3(Dd), z: r3(frame.surfaceIn), axis: "z", value: design.heightIn, perUnit: 1 / 12, label: "Deck height" });
     if (s.lower && s.lower.place === "front") handles.push({ kind: "lower-depth", id: "lower-depth", x: r3(s.lower.offsetXIn + (design.lower.widthFt * 12) / 2), y: r3(s.lower.offsetYIn + design.lower.depthFt * 12), z: r3(s.lower.frame.surfaceIn + 1), axis: "y", value: design.lower.depthFt, perUnit: 1, label: "Lower level depth" });
