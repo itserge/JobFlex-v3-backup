@@ -124,11 +124,18 @@ function doubleDeckChecks(s: DeckStructure, add: (c: DeckCheck) => void): void {
     return;
   }
   const posts = frame.posts.filter((p) => !p.roof).length;
+  // SHAPED ON ITS OWN (2026-11-14; lib/deck/doubleDeck): seated in the upper deck's posts where its beams meet them, on
+  // posts of its own elsewhere — said as it is.
+  const own = !!design.lower.shape;
+  const ownPosts = lower.frame.posts.filter((p) => !p.roof).length;
+  const seats = lower.frame.seats.length;
   add({
     id: "double-deck",
     level: "pass",
     part: PART,
-    text: `Two decks on one set of posts: the lower one ${ftIn(design.lower.heightIn)} above the ground, the upper one ${ftIn(apart)} above it. The lower deck's ${plural(lower.frame.beams.length, "beam")} ${lower.frame.beams.length === 1 ? "stands" : "stand"} on the upper deck's own ${lower.frame.beams.length === 1 ? "line" : "lines"} and ${lower.frame.beams.length === 1 ? "is" : "are"} let into its ${plural(posts, "post")} where they pass — ${plural(lower.frame.seats.length, "seat")}, two 1/2-in. through bolts each. The posts and their footings are sized for both decks.`,
+    text: own
+      ? `Two decks, the lower one shaped on its own: ${ftIn(design.lower.heightIn)} above the ground, ${lower.frame.areaSqFt} sq ft, the upper one ${ftIn(apart)} above it. ${seats ? `Where the upper deck's posts stand inside it, its beams are let into them — ${plural(seats, "seat")}, two 1/2-in. through bolts each — and those posts and their footings are sized for both decks` : "None of the upper deck's posts stands where its beams run, so it shares none of them"}${ownPosts ? `; elsewhere it stands on ${plural(ownPosts, "post")} of its own, each on its own footing` : ""}.`
+      : `Two decks on one set of posts: the lower one ${ftIn(design.lower.heightIn)} above the ground, the upper one ${ftIn(apart)} above it. The lower deck's ${plural(lower.frame.beams.length, "beam")} ${lower.frame.beams.length === 1 ? "stands" : "stand"} on the upper deck's own ${lower.frame.beams.length === 1 ? "line" : "lines"} and ${lower.frame.beams.length === 1 ? "is" : "are"} let into its ${plural(posts, "post")} where they pass — ${plural(lower.frame.seats.length, "seat")}, two 1/2-in. through bolts each. The posts and their footings are sized for both decks.`,
     rule: "IRC R507.4, R507.5.2 · a beam bears on its post; a post and its footing carry every deck above them",
   });
   // Room to walk under the upper deck: its lowest beam or joist over the lower deck's boards.

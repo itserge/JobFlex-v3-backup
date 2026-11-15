@@ -131,7 +131,8 @@ import { addBeam, deckGrips, gripAtFor, gripShownIn, moveGrip, partOfGrip, remov
 import type { Flash } from "@/lib/deck/voice/run";
 import type { DeckVoiceHost } from "@/components/v3/deck-voice/deck-voice";
 import { fieldLight, type FieldFocus } from "@/lib/deck/fieldParts";
-import { HouseWallPlan } from "@/components/v3/deck-estimator-blueprint/house-wall-plan";
+import { HouseWallPlan, type WallChange } from "@/components/v3/deck-estimator-blueprint/house-wall-plan";
+import { houseForLower, lowerFloor, lowerWallChange, upperWallChange } from "@/lib/deck/doubleDeck";
 import { DeckKindPicker } from "@/components/v3/deck-estimator-blueprint/deck-kind-picker";
 import { DeckPlan, type PlanEdgeHit, nearestStairEdge } from "@/components/v3/deck-estimator-blueprint/deck-plan";
 import { SKIRT_KINDS, SKIRT_LABEL } from "@/lib/deck/skirt";
@@ -597,6 +598,33 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
   const ph = useDeckPhoto({ design, patch, scene, view, setView });
   /* ── the house built from its photo (2026-10-23): the wall, its windows and doors ── */
   const hp = useHousePhoto({ design, patch, clientId, onBuilt: () => setView("3d") });
+  /* ── a double deck shaped level by level (2026-11-14; lib/deck/doubleDeck): which deck the wall drawing shapes ── */
+  const double = design.lower.on && design.lower.place === "under";
+  const [wallLevelPicked, setWallLevel] = React.useState<"upper" | "lower">("upper");
+  const wallLevel = double ? wallLevelPicked : "upper";
+  const lowerNow = lowerFloor(design);
+  const wallShape = wallLevel === "lower" ? lowerNow.shape : design.shape;
+  const wallHouse = wallLevel === "lower" ? houseForLower(design.house, design.shape.widthFt, lowerNow) : design.house;
+  const onWall = (n2: WallChange) => patch(wallLevel === "lower" ? lowerWallChange(design, n2) : upperWallChange(design, n2));
+  const wallLevelSwitch = double ? (
+    <div className="v1-wall-level" data-deck-wall-level={wallLevel}>
+      <Seg label="Which deck the drawing shapes" value={wallLevel} onChange={setWallLevel} options={[{ value: "upper", label: "Upper deck" }, { value: "lower", label: "Lower deck" }]} />
+      <span className="v1-meta">
+        {wallLevel === "upper"
+          ? lowerNow.own
+            ? "The upper deck. The lower one keeps its own shape."
+            : "The upper deck — the lower one follows it until you shape it."
+          : lowerNow.own
+            ? "The lower deck, shaped on its own."
+            : "The lower deck — drag it to give it its own shape."}
+      </span>
+      {wallLevel === "lower" && lowerNow.own ? (
+        <button type="button" className="v1-btn v1-btn-sm v1-btn-quiet" onClick={() => patch({ lower: { ...design.lower, shape: undefined, offsetFt: undefined } })} data-deck-wall-lower-same>
+          Same as the upper
+        </button>
+      ) : null}
+    </div>
+  ) : null;
   const openWallLarge = () => {
     setView("wall");
     if (typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches) viewerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1761,8 +1789,10 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                 </Field>
               </div>
               <p className="v1-hint">
-                {structure.lower?.place === "under"
-                  ? `The same outline as the deck above, framed on the same lines: ${structure.lower.frame.joistSize} joists, ${[...new Set(structure.lower.frame.beams.map((b) => b.spec.size))].join(" and ")} ${structure.lower.frame.beams.length === 1 ? "beam" : "beams"} let into the same posts — no posts or footings of its own. The posts and footings are sized for both decks. A stair can leave either deck: pick “The lower deck” on the stair.`
+                {structure.lower?.place === "under" && design.lower.shape
+                  ? `Shaped on its own (${design.lower.shape.widthFt} × ${design.lower.shape.depthFt} ft, on the drawing above: Lower deck): ${structure.lower.frame.joistSize} joists, ${[...new Set(structure.lower.frame.beams.map((b) => b.spec.size))].join(" and ")} ${structure.lower.frame.beams.length === 1 ? "beam" : "beams"} — let into the upper deck's posts where they meet (${structure.lower.frame.seats.length}), on ${structure.lower.frame.posts.length} ${structure.lower.frame.posts.length === 1 ? "post" : "posts"} of its own elsewhere. A stair can leave either deck: pick “The lower deck” on the stair.`
+                  : structure.lower?.place === "under"
+                  ? `The same outline as the deck above — shape it on its own on the drawing (Lower deck) — framed on the same lines: ${structure.lower.frame.joistSize} joists, ${[...new Set(structure.lower.frame.beams.map((b) => b.spec.size))].join(" and ")} ${structure.lower.frame.beams.length === 1 ? "beam" : "beams"} let into the same posts — no posts or footings of its own. The posts and footings are sized for both decks. A stair can leave either deck: pick “The lower deck” on the stair.`
                   : `The two decks need at least ${ftIn(LOWER_LIMITS.storeyIn)} between them, floor to floor: raise the upper deck or bring the lower one down — the checks offer both.`}
               </p>
             </Scope>
@@ -1905,9 +1935,11 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
   const houseBlock = () => scene.house ? (
     <>
       <HousePhotoCard hp={hp} design={design} />
-      <Field label="The back wall and the deck, seen from above — drag anything" wide lights={null}>
+      {/* (Above the field, not in it: the field is a label, and a click anywhere in the drawing would press its first button.) */}
+      {wallLevelSwitch}
+      <Field label={double ? `The back wall and the ${wallLevel} deck, seen from above — drag anything` : "The back wall and the deck, seen from above — drag anything"} wide lights={null}>
         <div className="v1-wall-small" onPointerDownCapture={quiet} data-deck-wall-quiet>
-          <HouseWallPlan shape={design.shape} house={design.house} onChange={(n2) => patch({ ...(n2.shape ? { shape: n2.shape } : {}), ...(n2.house ? { house: n2.house } : {}) })} onOpenLarge={openWallLarge} doorFloor={doorFloor} />
+          <HouseWallPlan key={wallLevel} shape={wallShape} house={wallHouse} onChange={onWall} onOpenLarge={openWallLarge} doorFloor={doorFloor} deckName={double ? `the ${wallLevel} deck` : undefined} />
         </div>
       </Field>
       <p className={houseNotes(design.shape, design.house).length ? "v1-call v1-call-bad" : "v1-hint"} data-deck-wall-words>
@@ -4018,7 +4050,8 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
             <div className={cx("v1-view-box", view === "wall" && "is-wall")}>
               {view === "wall" ? (
                 <div className="v1-wall-large" onPointerDownCapture={quiet} data-deck-wall-large-view>
-                  <HouseWallPlan size="large" shape={design.shape} house={design.house} onChange={(n2) => patch({ ...(n2.shape ? { shape: n2.shape } : {}), ...(n2.house ? { house: n2.house } : {}) })} doorFloor={doorFloor} />
+                  {wallLevelSwitch}
+                  <HouseWallPlan key={wallLevel} size="large" shape={wallShape} house={wallHouse} onChange={onWall} doorFloor={doorFloor} deckName={double ? `the ${wallLevel} deck` : undefined} />
                 </div>
               ) : view === "3d" ? (
                 <>
@@ -4062,8 +4095,10 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                 <PhotoViewBox ph={ph} design={design} patch={patch} what={what} />
               ) : (
                 <div className="v1-plan-wrap">
+                  {double && lowerNow.own ? wallLevelSwitch : null}
                   <DeckPlan
                     structure={structure}
+                    level={wallLevel}
                     placing={placing?.kind === "stair" ? "stair" : null}
                     onPlaceStair={placeStair}
                     grips={viewOnly ? undefined : grips}

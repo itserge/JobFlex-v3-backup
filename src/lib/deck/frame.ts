@@ -91,6 +91,8 @@ export const MIN_FRAME_CLEAR_IN = 1.5;
 export const GROUND_CONTACT_WITHIN_IN = 6;
 /** No joist layout is tried with more middle beams than this. */
 const MAX_MIDDLE_BEAMS = 4;
+/** How near a lower floor's post must fall to an upper deck's post to be that post (a double deck shaped level by level). */
+export const SEAT_NEAR_IN = 6;
 /** The default overhang past the outer beam: a fifth of the depth, to the half foot, 2 ft at most. */
 export function autoOverhangIn(depthIn: number): number {
   return Math.min(24, Math.floor(depthIn / 5 / 6) * 6);
@@ -407,6 +409,12 @@ export interface BuildOptions {
    */
   carries?: number;
   follow?: DeckFrame;
+  /**
+   * A double deck's lower floor shaped ON ITS OWN (2026-11-14; lib/deck/doubleDeck): the upper deck's posts that stand
+   * inside it, in its own inches. A post of its own that falls on one of them is that post — its beam sits in a seat
+   * let into it, no post or footing of its own; everywhere else it stands on posts of its own.
+   */
+  seatOn?: Array<{ x: number; y: number }>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1074,7 +1082,13 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       const cheapest = (list: Option[]) => list.reduce((m, o) => (o.cost < m.cost - 0.005 || (Math.abs(o.cost - m.cost) <= 0.005 && o.spec.depthIn < m.spec.depthIn) ? o : m));
       const deepest = (list: Option[]) => list.reduce((m, o) => (o.spec.depthIn > m.spec.depthIn || (o.spec.depthIn === m.spec.depthIn && o.spec.plies > m.spec.plies) ? o : m));
       // (Hung on given posts, a beam must reach from one to the next: a size that does not is no choice.)
-      const tabulated = options.filter((o) => o.maxSpanIn > 0 && (!over || o.maxSpanIn >= over.spanIn - 0.01));
+      const tabulatedAll = options.filter((o) => o.maxSpanIn > 0 && (!over || o.maxSpanIn >= over.spanIn - 0.01));
+      // (A lower floor shaped on its own, on a line of the upper deck's: its beam reaches from one of the upper's posts
+      // to the next where a size can — those posts are there anyway — rather than standing on more of its own between.)
+      const seatXs = opts.seatOn ? (pinsByLine.get(i) ?? []).map((q) => q.x).filter((x) => opts.seatOn!.some((q) => Math.abs(q.x - x) <= SEAT_NEAR_IN && Math.abs(q.y - line.y) <= SEAT_NEAR_IN)).sort((a, b) => a - b) : [];
+      const seatGap = seatXs.length > 1 ? seatXs.slice(1).reduce((m, x, k) => Math.max(m, x - seatXs[k]), 0) : 0;
+      const reaching = seatGap ? tabulatedAll.filter((o) => Math.min(o.maxSpanIn, areaSpanFor(o.spec.plies)) >= seatGap - 0.01) : [];
+      const tabulated = reaching.length ? reaching : tabulatedAll;
       let pick: Option;
       if (tabulated.length === 0) {
         // Nothing in the table carries this: the deepest is drawn, and flagged.
@@ -1235,6 +1249,11 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       // Under a beam that sits lower than the footings usually stand, the concrete stops under the beam.
       const topIn = Math.min(footingTopIn, Math.max(0, beam.bottomIn));
       beam.postXs.forEach((x, k) => {
+        // On a post of the upper deck (a double deck's lower floor shaped on its own): a seat in it, not a post.
+        if (opts.seatOn?.some((q) => Math.abs(q.x - x) <= SEAT_NEAR_IN && Math.abs(q.y - beam.y) <= SEAT_NEAR_IN)) {
+          seats.push({ beamId: beam.id, x, y: beam.y });
+          return;
+        }
         const tributarySqFt = Math.round(areas[k] * carries * 10) / 10;
         // The ground under this post: a downhill post is taller, its footing deeper in the picture.
         const zg = groundAt(x, beam.y);
@@ -1636,7 +1655,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       beamsByHand,
       beamLinesNotSet,
       carries,
-      hung: !!follow,
+      hung: !!follow || seats.length > 0,
       seats,
       cornerBeams,
       tieAt,

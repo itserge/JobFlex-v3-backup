@@ -261,7 +261,7 @@ function PadBtn({ label, action, disabled, primary, hold, test, onRun, onHoldSta
   );
 }
 
-export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLarge, doorFloor }: { shape: DeckShape; house: HouseDesign; onChange: (next: WallChange) => void; size?: "small" | "large"; onOpenLarge?: () => void; /** Which floor a door is on against the deck (2026-11-13): a door under a second-storey deck reads "door below". */ doorFloor?: (o: NonNullable<HouseDesign["openings"]>[number]) => "below" | "deck" | "above" }) {
+export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLarge, doorFloor, deckName = "the deck" }: { shape: DeckShape; house: HouseDesign; onChange: (next: WallChange) => void; size?: "small" | "large"; onOpenLarge?: () => void; /** What the deck is called on the drawing (a double deck's: "the upper deck", "the lower deck"). */ deckName?: string; /** Which floor a door is on against the deck (2026-11-13): a door under a second-storey deck reads "door below". */ doorFloor?: (o: NonNullable<HouseDesign["openings"]>[number]) => "below" | "deck" | "above" }) {
   const [full, setFull] = React.useState(false);
   const roomy = size === "large" || full;
   const W = shape.widthFt;
@@ -854,7 +854,7 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
     const one = !shaped && !bowed ? fspecs[0] : null;
     padBody = (
       <>
-        <span className={s.wallPadTitle} data-deck-wall-picked="deck">The deck · {ft(W)} × {ft(D)}{shaped ? ` · its front in ${fparts.length} parts` : ""}</span>
+        <span className={s.wallPadTitle} data-deck-wall-picked="deck">{deckName.charAt(0).toUpperCase() + deckName.slice(1)} · {ft(W)} × {ft(D)}{shaped ? ` · its front in ${fparts.length} parts` : ""}</span>
         {padBtn("◀ Slide left", { kind: "deck-slide", by: -0.5 })}
         {padBtn("Slide right ▶", { kind: "deck-slide", by: 0.5 })}
         {padBtn("Wider + 6 in.", { kind: "deck-width", by: 0.5 })}
@@ -1019,7 +1019,7 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
       })}
       {house.leftFt >= 1.5 ? dim(xMin, 0, deepestIn(xMin, 0) + font * 1.6, `${ft(house.leftFt)} past`, "left") : null}
       {house.rightFt >= 1.5 ? dim(W, xMax, deepestIn(W, xMax) + font * 1.6, `${ft(house.rightFt)} past`, "right") : null}
-      <text x={W / 2} y={deckMidY - font * 0.3} fontSize={font} textAnchor="middle" className={s.wallLabel}>the deck</text>
+      <text x={W / 2} y={deckMidY - font * 0.3} fontSize={font} textAnchor="middle" className={s.wallLabel}>{deckName}</text>
       <text x={W / 2} y={deckMidY + font * 1.1} fontSize={font * 0.9} textAnchor="middle" className={s.wallNote}>{ft(W)} × {ft(D)}</text>
       {shaped
         ? fparts.map((q) => {

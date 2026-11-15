@@ -21,6 +21,7 @@
 // flips Z. A `dim` is a dimension string with ticks and its label.
 
 import { ftIn, LEDGER_FASTENER_LABEL, RULE, rulesFor } from "./codeTables";
+import { lowerFloor, lowerFloorWords } from "./doubleDeck";
 import { OC_POST, OC_RULE, OC_SOURCES } from "./ocLumber";
 import { RULE_RAFTER } from "./roofTables";
 import type { DeckDesign, RailMount } from "./design";
@@ -677,7 +678,7 @@ export function permitNotes(s: DeckStructure, local: string[] = [], edition: str
     // A DOUBLE DECK (2026-11-13): the lower deck on the upper deck's posts.
     if (s.lower?.place === "under") {
       const lf = s.lower.frame;
-      out.push(`Double deck: a lower deck ${ftIn(d.lower.heightIn)} above grade under the upper one, the same outline, framed on the same lines — ${lf.joistSize} joists at ${lf.spacingIn} in., ${[...new Set(lf.beams.map((b) => b.spec.size))].join(" and ")} ${lf.beams.length === 1 ? "beam" : "beams"}. Each lower beam sits in a seat let 1 1/2 in. per ply into its post and is fastened with two 1/2-in. through bolts with washers (${lf.seats.length} seats); the posts run in one piece from the footings to the upper beams, and the posts and footings are sized for the area of both decks. The lower deck's ledger, hangers and lateral connection as the upper deck's (${R.post}; ${R.beam}).`);
+      out.push(`Double deck: a lower deck ${ftIn(d.lower.heightIn)} above grade under the upper one, ${d.lower.shape ? `${lowerFloorWords(lowerFloor(d))}, its beams on the upper deck's lines where they pass over it and on posts of its own elsewhere` : "the same outline, framed on the same lines"} — ${lf.joistSize} joists at ${lf.spacingIn} in., ${[...new Set(lf.beams.map((b) => b.spec.size))].join(" and ")} ${lf.beams.length === 1 ? "beam" : "beams"}. Each lower beam sits in a seat let 1 1/2 in. per ply into its post and is fastened with two 1/2-in. through bolts with washers (${lf.seats.length} seats); the posts run in one piece from the footings to the upper beams, and the posts and footings are sized for the area of both decks. The lower deck's ledger, hangers and lateral connection as the upper deck's (${R.post}; ${R.beam}).`);
     }
     out.push(`Decking: ${f.decking.label}${s.surface?.border ? `, with ${borderWords(s.surface)} — blocked under its inner edge along the sides` : ""}, fastened to its maker's instructions; joist spacing ${f.spacingIn} in. (the boards allow ${f.deckingMaxSpacingIn} in.) (${RULE.decking}).`);
   }
