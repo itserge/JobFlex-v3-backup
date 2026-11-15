@@ -787,6 +787,16 @@
 .jf-lp .lp-hero h1 { color: #fff; }
 .jf-lp .lp-hero .lp-cta--solid { background: #fff; color: #0d0f12; }
 .jf-lp .lp-hero .lp-cta--solid:hover { background: #e8e8e4; }
+/* The Deck Studio ad's end-card button (owner, 2026-11-15): its blue, a white
+   edge and a hard blueprint shadow. #2d6ed7 rather than the ad's lighter fill:
+   white type on it reads 4.9:1. */
+.jf-lp .lp-hero .lp-cta--blue {
+  background: #2d6ed7;
+  color: #fff;
+  border: 2px solid #fff;
+  box-shadow: 5px 5px 0 #1854a0;
+}
+.jf-lp .lp-hero .lp-cta--blue:hover { background: #255fbd; }
 .jf-lp .lp-hero .lp-cta--ghost {
   background: transparent;
   border-color: rgba(255, 255, 255, 0.35);
