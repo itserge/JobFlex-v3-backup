@@ -41,9 +41,19 @@
   letter-spacing: -0.025em;
   text-wrap: balance;
 }
+/* The variant's line under the title (decking, owner 2026-11-15). */
+.jf-lp .lp-fold-sub {
+  margin: 12px auto 0;
+  max-width: 40rem;
+  font-size: 15px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.74);
+  text-wrap: pretty;
+}
 @media (min-width: 640px) {
   .jf-lp .lp-fold-screen { --lp-fold-foot: 24px; --lp-fold-gap-max: 120px; padding-top: 28px; }
   .jf-lp .lp-fold-h1 { max-width: none; font-size: clamp(32px, 3.5vw, 54px); line-height: 1.04; }
+  .jf-lp .lp-fold-sub { margin-top: 16px; font-size: 18px; }
 }
 
 /* The film's line over it, a size down from the line under the button. */
