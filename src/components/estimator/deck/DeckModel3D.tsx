@@ -28,6 +28,7 @@
 // camera stands in the yard.
 import * as React from "react";
 import * as THREE from "three";
+import { boxPlace, placeSeeds, ringPlace } from "@/lib/deck/boardTone";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { BORDER_BOARD_ROLE, RAIL_CAP_ROLE, RAIL_INFILL_ROLE, SCENE_LAYERS, sceneBuildLayers, memberBoxCorners, memberIsSawn, MEMBER_BOX_FACES, type DeckScene, type SceneHandle, type SceneLayer, type SceneLegend } from "@/lib/deck/scene";
@@ -1361,6 +1362,19 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       const rank = SCENE_LAYERS.map((name) => order.indexOf(name));
       const legendOf = (i: number): SceneLegend | null => (s.tags.length === s.boxes.length && s.tags[i] >= 0 ? s.legend[s.tags[i]] ?? null : null);
 
+      // EVERY BOARD'S SHADE GOES WITH ITS PLACE (owner, 2026-11-14: "when moving the deck, reshaping and cutting the
+      // corners, the decking on the 3D gets discoloured… keep the decking material steady in colour"). It went with the
+      // board's number in this list — which changes whenever anything before it does (a joist more, a post moved, a
+      // corner cut) — so every change dealt the floor a new hand of shades. Now: its row and which board of that row it
+      // is (lib/deck/boardTone), the square boards and the cut ones worked out together.
+      const deckBoxes: number[] = [];
+      s.boxes.forEach((b, i) => {
+        if (b[0] === DECKING) deckBoxes.push(i);
+      });
+      const cutBoards = (s.diagonal?.boards ?? []).map((ring, i) => ringPlace(ring, s.diagonal?.zs?.[i] ?? s.heightFt));
+      const floorSeeds = placeSeeds([...deckBoxes.map((i) => boxPlace(s.boxes[i][1], s.boxes[i][2], s.boxes[i][4], s.boxes[i][5], s.boxes[i][3])), ...cutBoards.map((c) => c.place)]);
+      const boardSeed = new Map<number, number>(deckBoxes.map((i, k) => [i, floorSeeds[k]]));
+      const cutSeeds = floorSeeds.slice(deckBoxes.length);
       const layers: Built["layers"] = SCENE_LAYERS.map(() => []);
       const braces: THREE.Mesh[] = [];
       const m4 = new THREE.Matrix4();
@@ -1439,7 +1453,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
             // slid by depth²÷length and the ends stood square, so rafters met at the ridge overlapping, 2026-10-11).
             boxMatrix(b, legendOf(bi)?.role ?? null, ox, oz, m4);
             mesh.setMatrixAt(k, m4);
-            mesh.setColorAt(k, L === LIGHT && s.glows.some((g) => Math.abs(g[0] - b[1]) < 0.05 && Math.abs(g[1] - b[2]) < 0.05 && Math.abs(g[2] - b[3]) < 0.05) ? new THREE.Color(s.glows.find((g) => Math.abs(g[0] - b[1]) < 0.05 && Math.abs(g[1] - b[2]) < 0.05 && Math.abs(g[2] - b[3]) < 0.05)![3]).lerp(new THREE.Color(0xffffff), 0.45) : L === DECKING ? (borderColor && BORDER_BOARD_ROLE.test(legendOf(bi)?.role ?? "") ? streaked(borderColor, borderColor2, bi + L * 97, 0.045) : streaked(base, deckColor2, bi + L * 97, 0.045)) : jitter(base, bi + L * 97, L === TRIM || L === GUTTER || L === HARDWARE ? 0.01 : 0.03));
+            mesh.setColorAt(k, L === LIGHT && s.glows.some((g) => Math.abs(g[0] - b[1]) < 0.05 && Math.abs(g[1] - b[2]) < 0.05 && Math.abs(g[2] - b[3]) < 0.05) ? new THREE.Color(s.glows.find((g) => Math.abs(g[0] - b[1]) < 0.05 && Math.abs(g[1] - b[2]) < 0.05 && Math.abs(g[2] - b[3]) < 0.05)![3]).lerp(new THREE.Color(0xffffff), 0.45) : L === DECKING ? (borderColor && BORDER_BOARD_ROLE.test(legendOf(bi)?.role ?? "") ? streaked(borderColor, borderColor2, boardSeed.get(bi) ?? bi, 0.045) : streaked(base, deckColor2, boardSeed.get(bi) ?? bi, 0.045)) : jitter(base, bi + L * 97, L === TRIM || L === GUTTER || L === HARDWARE ? 0.01 : 0.03));
             centres[bi] = [new THREE.Vector3(b[1] - ox, b[3], b[2] - oz), Math.max(b[4], b[5], b[6])];
           });
           mesh.instanceMatrix.needsUpdate = true;
@@ -1567,10 +1581,16 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       };
 
       // Boards cut to a shape (a bow, a clip, a diagonal): each ring a thin prism, all in one geometry.
+      // THE SAME BOARD AS THE SQUARE ONES (owner, 2026-11-14: "when reshaping and cutting the corners the decking on the
+      // 3D gets discoloured… keep the decking material steady in colour"). These were painted in the bare colour while
+      // the square boards wear the grain — a pale, flat patch wherever the deck was cut. They take the boards' own
+      // material now, the grain laid along each board (lib/deck/boardTone ringPlace), and a shade that goes with the
+      // board's place on the deck, as a square board's does — not with its number in the list.
       let diagonal: Built["diagonal"] = null;
       if (s.diagonal && s.diagonal.boards.length) {
         const positions: number[] = [];
         const colors: number[] = [];
+        const uvs: number[] = [];
         const index: number[] = [];
         const ends: number[] = [];
         s.diagonal.boards.forEach((ring, bi) => {
@@ -1578,11 +1598,14 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           const bottom = top - s.diagonal!.thickFt;
           const n = ring.length / 2;
           const start = positions.length / 3;
-          const c = borderColor && borderRings.has(bi) ? streaked(borderColor, borderColor2, bi, 0.045) : streaked(deckColor, deckColor2, bi, 0.045);
+          const place = cutBoards[bi];
+          const seed = cutSeeds[bi] ?? bi;
+          const c = borderColor && borderRings.has(bi) ? streaked(borderColor, borderColor2, seed, 0.045) : streaked(deckColor, deckColor2, seed, 0.045);
           for (const y of [top, bottom]) {
             for (let k = 0; k < n; k++) {
               positions.push(ring[k * 2] - ox, y, ring[k * 2 + 1] - oz);
               colors.push(c.r, c.g, c.b);
+              uvs.push(place.uv[k * 2], place.uv[k * 2 + 1]);
             }
           }
           for (let k = 1; k + 1 < n; k++) {
@@ -1599,9 +1622,15 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         const geo = new THREE.BufferGeometry();
         geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
         geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+        geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
         geo.setIndex(index);
         geo.computeVertexNormals();
-        const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0, flatShading: true, side: THREE.DoubleSide });
+        // The boards' material (white under the grain, as rough, as bright), told its colour corner by corner.
+        const mat = mats[DECKING].clone();
+        mat.vertexColors = true;
+        mat.flatShading = true;
+        mat.side = THREE.DoubleSide;
+        mat.userData.base = mats[DECKING].userData.base;
         owned.push(geo, mat);
         fade.push(mat);
         const mesh = new THREE.Mesh(geo, mat);
@@ -1610,7 +1639,8 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         mesh.userData.layer = DECKING;
         group.add(mesh);
         diagonal = { mesh, ends };
-      }
+        mount.dataset.deck3dCutBoards = `${s.diagonal.boards.length}:${mat.map ? "grain" : "plain"}`;
+      } else delete mount.dataset.deck3dCutBoards;
 
       // The roof's faces, the ceiling, the soffit, a slab, glass, screens, walls: flat polygons, one geometry per layer.
       const polys: Built["polys"] = SCENE_LAYERS.map(() => null);
