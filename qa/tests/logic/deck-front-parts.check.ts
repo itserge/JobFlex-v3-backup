@@ -222,5 +222,14 @@ check("the footing plan shades what the angled beam's posts carry: its own post'
 const v6 = say(tee, "clip the corners 3 feet");
 check("\"clip the corners 3 feet\" on a deck in parts: every corner that stands out — the bay's two and the deck's two ends — the parts as they were", v6.design.shape.kind === "wall" && v6.design.shape.front!.length === 3 && frontClips(v6.design.shape).length === 4 && /cut at 45°/.test(v6.said), v6.said);
 
+// (2026-11-14, found by the flicker check after main's ties change.) Where a front beam ends and the angled beam under
+// a cut starts — one post under both — a joist there gets ONE tie, drawn and counted once.
+{
+  const base2 = normalizeDeckDesign({ ...d0, shape: { kind: "rect", widthFt: 24, depthFt: 14 }, heightIn: 48 });
+  const prow = buildStructure(patchDesign(base2, { shape: shapeWithFront(base2.shape, [{ widthFt: 6, yFt: 10 }, { widthFt: 12, yFt: 16, clipLeftFt: 6, clipRightFt: 6 }, { widthFt: 6, yFt: 10 }]) })).frame!;
+  const doubled = prow.tieAt.filter((a, i) => prow.tieAt.some((c, k) => k !== i && Math.abs(c.x - a.x) < 0.01 && Math.abs(c.y - a.y) < 4)).length;
+  check("a joist where a front beam meets the angled beam under a cut gets one tie, counted once", prow.cornerBeams.length > 0 && doubled === 0 && prow.hardware.ties === prow.tieAt.reduce((a, t) => a + t.n, 0), `${doubled} doubled`);
+}
+
 console.log(bad ? `\n${bad} FAILED` : "\nALL PASS");
 process.exit(bad ? 1 : 0);
