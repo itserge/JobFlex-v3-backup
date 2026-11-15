@@ -14,7 +14,7 @@ import { deckScene } from "../../../src/lib/deck/scene";
 import { permitPages } from "../../../src/lib/deck/permit";
 import { AUTO_FIX } from "../../../src/lib/deck/settle";
 import { DECK_RATES } from "../../../src/lib/deck/rates";
-import { BENCH_BACK_IN, BENCH_SEAT_IN, BENCH_SUPPORT_MAX_IN, BUILT_IN_INSET_IN, BUILT_IN_LIMITS, PLANTER_DEPTH_IN, SOIL_LB_PER_CUFT, defaultBuiltIn, type BuiltIn, type BuiltInBuild } from "../../../src/lib/deck/builtins";
+import { BENCH_BACK_IN, BENCH_SEAT_IN, BENCH_SUPPORT_MAX_IN, BUILT_IN_INSET_IN, BUILT_IN_LIMITS, KITCHEN_DEPTH_IN, KITCHEN_HEIGHT_IN, PLANTER_DEPTH_IN, SOIL_LB_PER_CUFT, defaultBuiltIn, planGap, type BuiltIn, type BuiltInBuild } from "../../../src/lib/deck/builtins";
 import { parseUtterance } from "../../../src/lib/deck/voice/parse";
 import { runCommand } from "../../../src/lib/deck/voice/run";
 
@@ -148,6 +148,49 @@ const scrBom = pS.takeoff.lines.filter((l) => l.step === "builtins");
 check("the list: the deck's boards, 6x6 posts in one piece, two through-bolts a post, blocking behind them", scrBom.some((l) => l.id === "screen-boards") && scrBom.some((l) => /screen-posts/.test(l.id) && l.rateKey === "lf.6x6" && l.qty === 3) && scrBom.some((l) => l.id === "screen-post-bolts" && l.qty === 6) && scrBom.some((l) => /screen-blocking/.test(l.id)) && scrBom.every((l) => DECK_RATES.some((r) => r.key === l.rateKey)) && DECK_RATES.some((r) => r.key === "labor.screen"), scrBom.map((l) => `${l.id} ${l.qty}`).join());
 check("the scope names it", deckScope(pS).some((t) => /privacy screen 6 ft high along the left end/.test(t)));
 
+/* ── 5c. An outdoor kitchen island ───────────────────────────────────── */
+const big = (over: Record<string, unknown> = {}, builtIns: unknown = []) => mk({ shape: { kind: "rect", widthFt: 24, depthFt: 16 }, ...over }, builtIns);
+const kitD = big({}, [{ id: "k1", kind: "kitchen", side: "front", atFt: 19, lengthFt: 8 }]);
+const sK = buildStructure(kitD);
+const kit = sK.builtIns[0];
+const SK = sK.frame!.surfaceIn;
+check("an 8-ft outdoor kitchen along the front: an island 30 in. deep and 36 in. high, just inside the railing", kit.built && kit.kind === "kitchen" && kit.lengthIn === 96 && kit.depthIn === KITCHEN_DEPTH_IN && kit.heightIn === KITCHEN_HEIGHT_IN && near(Math.max(...ys(kit)), 192 - BUILT_IN_INSET_IN.top));
+check("clad in the deck's boards on all four sides, a top for stone, a grill built in at its middle", roles(kit, "kitchen board").length >= 20 && roles(kit, "kitchen top").length === 1 && near(roles(kit, "kitchen top")[0].cz + roles(kit, "kitchen top")[0].sz / 2, SK + KITCHEN_HEIGHT_IN) && roles(kit, "kitchen grill").length === 1 && near(roles(kit, "kitchen grill")[0].cx, (Math.min(...xs(kit)) + Math.max(...xs(kit))) / 2) && roles(kit, "kitchen grill")[0].cz > SK + KITCHEN_HEIGHT_IN);
+check("its weight with a stone top and a grill is worked out", near(kit.weightLb, Math.round((20 * 96 * 30) / 144 + (20 * 96) / 12 + 250), 1) && kit.psf === Math.round(kit.weightLb / 20));
+const under = sK.frame!.joists.filter((j) => !j.sister && j.x >= Math.min(...xs(kit)) - 2 && j.x <= Math.max(...xs(kit)) + 2).length;
+check("the joists under it are doubled their whole length", kit.sisters === under && kit.sisters >= 5 && near(kit.sisterLf, kit.sisters * 16, 0.5), `${kit.sisters} of ${under}, ${kit.sisterLf} ft`);
+check("the part that burns is the grill, not the island", kit.hot.length === 4 && Math.max(...kit.hot.map((q) => q.x)) - Math.min(...kit.hot.map((q) => q.x)) === 30);
+const kitCheck = deckChecks(sK).find((c) => c.id === "builtin-k1");
+check("the check: what it is, what it weighs, the joists doubled, the grill's jacket and clearances, the trades", kitCheck?.level === "pass" && /weighs about \d+ lb/.test(kitCheck.text) && /joists under it are doubled/.test(kitCheck.text) && /insulated jacket/.test(kitCheck.text) && /licensed trades/.test(kitCheck.text), kitCheck?.text ?? "");
+const kitWall = buildStructure(big({ rail: { ...d0.rail, type: "cedar" } }, [{ id: "k1", kind: "kitchen", side: "left", atFt: 2, lengthFt: 6 }]));
+const wallCheck = deckChecks(kitWall).find((c) => c.id === "builtin-k1");
+check("at the house wall: a warning — how near the grill stands to the siding, and what to do", wallCheck?.level === "warn" && /The grill stands \d+ in\. from the house wall/.test(wallCheck.text) && /3 ft away/.test(wallCheck.text));
+check("…and a railing that burns behind the grill is named", /The cedar railing is \d+ in\. behind the grill/.test(wallCheck?.text ?? "") && !/railing is/.test(kitCheck?.text ?? ""));
+const pK = priceDeck(kitD);
+const kLine = pK.lines.find((l) => l.id === "deck-kitchen");
+const kBom = pK.takeoff.lines.filter((l) => /kitchen/.test(l.id));
+check("priced by the foot on a line of its own: the boards, the frame, the doubled joists and the labour", !!kLine && kLine.quantity === 8 && kLine.unit === "ln ft" && kLine.materialCost > 0 && kLine.laborCost > 0 && kBom.some((l) => l.id === "kitchen-boards") && kBom.some((l) => /kitchen-frame/.test(l.id)) && kBom.some((l) => /kitchen-sisters/.test(l.id) && new RegExp(sK.frame!.joistSize).test(l.label)) && kBom.every((l) => DECK_RATES.some((r) => r.key === l.rateKey)) && DECK_RATES.some((r) => r.key === "labor.kitchen"), kBom.map((l) => `${l.id} ${l.qty}`).join());
+check("the scope says what is not included", deckScope(pK).some((t) => /outdoor kitchen island along the front/.test(t) && /The top, the grill, gas and power are not included/.test(t)));
+
+/* ── 5d. A gas fire table ────────────────────────────────────────────── */
+const fireD = big({}, [{ id: "f1", kind: "fire", side: "front", atFt: 8, lengthFt: 4, inFt: 6 }]);
+const sFi = buildStructure(fireD);
+const fi = sFi.builtIns[0];
+check("a 4-ft fire table 6 ft in from the front: out on the deck, its middle 6 ft from the edge", fi.built && fi.kind === "fire" && fi.lengthIn === 48 && fi.depthIn === 24 && near((Math.min(...ys(fi)) + Math.max(...ys(fi))) / 2, 192 - 72) && near((Math.min(...xs(fi)) + Math.max(...xs(fi))) / 2, 96));
+check("square up to 3½ ft, 2 ft deep when longer", one(big({}, [{ id: "f1", kind: "fire", side: "front", atFt: 8, lengthFt: 3, inFt: 6 }]), "f1").depthIn === 36 && fi.depthIn === 24);
+check("drawn — a base, a top, the burner — and all of it is the part that burns", roles(fi, "fire base").length === 1 && roles(fi, "fire top").length === 1 && roles(fi, "fire burner").length === 1 && fi.hot.length === 4 && fi.heightIn === 24);
+const pF = priceDeck(fireD);
+check("nothing is built or priced for it: the table is by others — the price is the deck's", near(pF.subtotal, priceDeck(big()).subtotal, 0.001) && !pF.takeoff.lines.some((l) => /fire/.test(l.id)) && deckScope(pF).some((t) => /place for a 4-ft gas fire table/.test(t) && /not included/.test(t)));
+const fiCheck = deckChecks(sFi).find((c) => c.id === "builtin-f1");
+check("the check: by others, a heat shield under it, 36 in. clear, gas only", fiCheck?.level === "pass" && /by others/.test(fiCheck.text) && /heat shield/.test(fiCheck.text) && /nothing stands nearer here\./.test(fiCheck.text) && /Gas only/.test(fiCheck.text) && !/\.\./.test(fiCheck.text), fiCheck?.text ?? "");
+const crowded = buildStructure(big({}, [{ id: "s1", kind: "screen", side: "left", atFt: 8, lengthFt: 30, heightFt: 6 }, B("bench", "front", 6, 8), { id: "f1", kind: "fire", side: "front", atFt: 4, lengthFt: 3, inFt: 3.5 }]));
+const crowdCheck = deckChecks(crowded).find((c) => c.id === "builtin-f1");
+check("what stands nearer than 36 in. is measured and named: a warning", crowdCheck?.level === "warn" && /nearer than that here: a privacy screen \d+ in\., a bench \d+ in\./.test(crowdCheck.text) && !/in\.\./.test(crowdCheck.text), crowdCheck?.text ?? "");
+const roofedD = big({ structure: "covered-deck" }, [{ id: "k1", kind: "kitchen", side: "front", atFt: 19, lengthFt: 8 }, { id: "f1", kind: "fire", side: "front", atFt: 8, lengthFt: 5, inFt: 7 }]);
+const roofedChecks = deckChecks(buildStructure(roofedD));
+check("under a roof: both are warnings — a hood over the grill, a unit listed for a cover and the room above the flame", roofedChecks.find((c) => c.id === "builtin-k1")?.level === "warn" && /vent hood/.test(roofedChecks.find((c) => c.id === "builtin-k1")?.text ?? "") && roofedChecks.find((c) => c.id === "builtin-f1")?.level === "warn" && /listed for use under a cover/.test(roofedChecks.find((c) => c.id === "builtin-f1")?.text ?? "") && /less than the 8 ft most ask/.test(roofedChecks.find((c) => c.id === "builtin-f1")?.text ?? ""));
+check("a fire table asked for farther in than the deck is deep: not built, and that is said", !one(big({}, [{ id: "f1", kind: "fire", side: "front", atFt: 8, lengthFt: 4, inFt: 30 }]), "f1").built);
+
 /* ── 6. The price, the list, the words ───────────────────────────────── */
 const allD = mk({}, [B("bench", "front", 10, 8), B("bench-back", "left", 6, 6, "b2"), B("planter", "front", 18, 4, "b3")]);
 const p0 = priceDeck(mk());
@@ -222,6 +265,13 @@ check("\"an 8 ft long privacy screen 5 ft high on the left\"", v9.design.extras.
 check("\"take the privacy screen off\"", say(v8.design, "take the privacy screen off").design.extras.builtIns === undefined);
 const roofed = normalizeDeckDesign({ ...plain, structure: "covered-deck" });
 check("under a roof, privacy screens stay the roof's walls", (say(roofed, "add privacy screens").design.extras.builtIns ?? []).length === 0);
+const v10 = say(big(), "add an outdoor kitchen");
+check("\"add an outdoor kitchen\": an island toward the right of the front, said with its weight", v10.design.extras.builtIns?.[0]?.kind === "kitchen" && v10.design.extras.builtIns[0].side === "front" && /outdoor kitchen island along the front/.test(v10.said) && /joists under it are doubled/.test(v10.said) && /by others/.test(v10.said), v10.said);
+const v11 = say(big(), "add a fire pit");
+check("\"add a fire pit\": a gas fire table's place — and gas only", v11.design.extras.builtIns?.[0]?.kind === "fire" && /place for a 4-ft gas fire table/.test(v11.said) && /Gas only/.test(v11.said) && v11.design.extras.items.length === 0, v11.said);
+check("\"a 5 ft fire table 8 ft in\"", (() => { const b = say(big(), "add a 5 ft long fire table 8 ft in").design.extras.builtIns?.[0]; return b?.kind === "fire" && b.lengthFt === 5 && b.inFt === 8; })(), JSON.stringify(say(big(), "add a 5 ft long fire table 8 ft in").design.extras.builtIns));
+check("\"take the fire table off\", \"remove the outdoor kitchen\"", say(v11.design, "take the fire table off").design.extras.builtIns === undefined && say(v10.design, "remove the outdoor kitchen").design.extras.builtIns === undefined);
+check("the gap between two shapes in plan is measured edge to edge", near(planGap([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }], [{ x: 13, y: 14 }, { x: 20, y: 14 }, { x: 20, y: 20 }, { x: 13, y: 20 }]), 5) && planGap([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }], [{ x: 5, y: 5 }, { x: 20, y: 5 }, { x: 20, y: 20 }, { x: 5, y: 20 }]) === 0);
 const v7 = say(normalizeDeckDesign({ ...plain, structure: "pergola", floor: "ground" }), "add a bench");
 check("on a pergola standing on the ground: not built, and why", v7.refused && /no deck/.test(v7.said), v7.said);
 

@@ -1294,8 +1294,13 @@ export function DeckV2Studio({ initialBook, homeState, initialAddress, clientId,
                       <NumberInput label={`${name}: its middle, feet ${b.side === "front" ? "from the deck's left end" : "out from the house"}`} value={b.atFt} parse={parseFeet} format={feetText} min={0} max={b.side === "front" ? design.shape.widthFt : design.shape.depthFt} onCommit={(n2) => setB({ atFt: n2 })} />
                     </Field>
                     <Field label="How long" aside="ft">
-                      <NumberInput label={`${name}: how long, feet`} value={b.lengthFt} parse={parseFeet} format={feetText} min={BUILT_IN_LIMITS.lengthFt.min} max={b.kind === "planter" ? BUILT_IN_LIMITS.planterFt.max : BUILT_IN_LIMITS.lengthFt.max} onCommit={(n2) => setB({ lengthFt: n2 })} />
+                      <NumberInput label={`${name}: how long, feet`} value={b.lengthFt} parse={parseFeet} format={feetText} min={b.kind === "kitchen" ? BUILT_IN_LIMITS.kitchenFt.min : b.kind === "fire" ? BUILT_IN_LIMITS.fireFt.min : BUILT_IN_LIMITS.lengthFt.min} max={b.kind === "planter" ? BUILT_IN_LIMITS.planterFt.max : b.kind === "kitchen" ? BUILT_IN_LIMITS.kitchenFt.max : b.kind === "fire" ? BUILT_IN_LIMITS.fireFt.max : BUILT_IN_LIMITS.lengthFt.max} onCommit={(n2) => setB({ lengthFt: n2 })} />
                     </Field>
+                    {b.kind === "fire" ? (
+                      <Field label="How far in" aside="ft from that edge to its middle">
+                        <NumberInput label={`${name}: how far in from the edge, feet`} value={b.inFt ?? 6} parse={parseFeet} format={feetText} min={BUILT_IN_LIMITS.inFt.min} max={BUILT_IN_LIMITS.inFt.max} onCommit={(n2) => setB({ inFt: n2 })} />
+                      </Field>
+                    ) : null}
                     {b.kind === "screen" ? (
                       <Field label="How high" aside="ft above the deck">
                         <NumberInput label={`${name}: how high, feet above the deck`} value={b.heightFt ?? SCREEN_DEFAULT_FT} parse={parseFeet} format={feetText} min={BUILT_IN_LIMITS.screenFt.min} max={BUILT_IN_LIMITS.screenFt.max} onCommit={(n2) => setB({ heightFt: n2 })} />

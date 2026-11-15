@@ -285,7 +285,12 @@ console.log("── commands read from what was said");
     ["call it Johnson backyard deck", (c) => has(c, "name")?.title === "Johnson Backyard Deck"],
     ["the address is 1840 meadow glen drive allen tx 75002", (c) => has(c, "address")?.text === "1840 Meadow Glen Drive Allen TX 75002"],
     // Things the studio does not draw
-    ["add a fire pit", (c) => has(c, "wish")?.item === "Fire pit"],
+    // (2026-11-14: a fire pit and an outdoor kitchen are drawn — lib/deck/builtins; a pool is not.)
+    ["add a pool", (c) => has(c, "wish")?.item === "Pool"],
+    ["add a fire pit", (c) => { const b = has(c, "builtin"); return b?.kind === "fire" && b.op === "add"; }],
+    ["add an outdoor kitchen", (c) => has(c, "builtin")?.kind === "kitchen"],
+    ["put a grill island on the left side", (c) => { const b = has(c, "builtin"); return b?.kind === "kitchen" && b.side === "left"; }],
+    ["level with the kitchen door", (c) => !has(c, "builtin")],
     ["add a bench for 450 dollars", (c) => has(c, "item")?.price === 450],
     ["add 2 planters at $150 each", (c) => has(c, "item")?.qty === 2 && has(c, "item")?.price === 150],
     ["add a fire pit", (c) => has(c, "item")?.price === 1200, d, { items: { "fire pit": { name: "Fire pit", unit: "ea", price: 1200 } } }],
@@ -432,10 +437,10 @@ console.log("── carried out on the design");
   r = say("how much concrete do I need");
   const bags = priceDeck(d).bom.filter((l) => l.kind === "concrete" && l.unit === "bags").reduce((a, l) => a + l.qty, 0);
   check("the concrete answer is the material list's bags", new RegExp(`About ${bags.toLocaleString("en-US")} bags`).test(r.say), r.say);
-  r = say("add a fire pit");
-  check("a fire pit is noted and its price asked", !!r.meta.wish && /cost/.test(r.say) && !!r.pending, r.say);
+  r = say("add a hammock");
+  check("a hammock is noted and its price asked", !!r.meta.wish && /cost/.test(r.say) && !!r.pending, r.say);
   r = say("1200 dollars");
-  check("the price said puts it on as the shop's item, remembered", d.extras.items.some((i) => i.name === "Fire pit" && i.price === 1200) && r.meta.remember?.price === 1200, r.say);
+  check("the price said puts it on as the shop's item, remembered", d.extras.items.some((i) => i.name === "Hammock posts" && i.price === 1200) && r.meta.remember?.price === 1200, r.say);
   r = say("start over");
   check("start over asks first", !!r.pending && !r.design, r.say);
   r = say("yes");

@@ -75,10 +75,12 @@ const praised = hear("I love it", d, freshVoiceState());
 check("…and the studio says so", /Glad you like it/.test(praised.say) && !praised.design);
 
 console.log("── what a client wants that the studio can't draw goes into their note");
-const pit = hear("I want a fire pit", d, freshVoiceState());
-const gp = clientGate(pit.ran, "I want a fire pit");
-check("\"I want a fire pit\" → a note, not \"your contractor's side\"", gp.keep.length === 0 && gp.wishes.length === 1 && gp.say === "I've added a fire pit to your notes for your contractor. Anything else?", gp.say ?? "");
-check("…written in the note as \"Fire pit\"", noteLine(gp.wishes[0]) === "Fire pit", noteLine(gp.wishes[0] ?? ""));
+// (2026-11-14: a fire pit is drawn now — a gas fire table's place, lib/deck/builtins; a pool is still a wish.)
+const pit = hear("I want a pool", d, freshVoiceState());
+const gp = clientGate(pit.ran, "I want a pool");
+check("\"I want a pool\" → a note, not \"your contractor's side\"", gp.keep.length === 0 && gp.wishes.length === 1 && gp.say === "I've added a pool to your notes for your contractor. Anything else?", gp.say ?? "");
+check("…written in the note as \"Pool\"", noteLine(gp.wishes[0]) === "Pool", noteLine(gp.wishes[0] ?? ""));
+check("\"I want a fire pit\" places a gas fire table", hear("I want a fire pit", d, freshVoiceState()).ran.some((c) => c.do === "builtin" && c.kind === "fire"));
 const priced = clientGate([{ do: "item", op: "add", name: "Outdoor kitchen", price: 9000 }], "add an outdoor kitchen for 9000 dollars");
 check("a priced item from a client: its name goes to the note, never its price", priced.wishes[0] === "Outdoor kitchen" && !NUMBERISH.test(priced.say ?? "") && /an outdoor kitchen/.test(priced.say ?? ""), priced.say ?? "");
 const two = clientGate([{ do: "wish", text: "a bench", item: "Bench" }, { do: "wish", text: "built-in benches", item: "Built-in benches" }, { do: "stairs", op: "add" } as DeckCommand], "x");
@@ -105,10 +107,10 @@ check("a covered deck's \"privacy walls\" stay its walls; \"lattice for privacy\
 check("\"a privacy screen\", \"a privacy trellis\" (one thing), \"lights\" (many)", CLIENT_SAYS.wish(["Privacy screen", "Privacy trellis", "Lights"]) === "I've added a privacy screen, a privacy trellis and lights to your notes for your contractor. Anything else?", CLIENT_SAYS.wish(["Privacy screen", "Privacy trellis", "Lights"]));
 
 console.log("── a waiting price takes a price, not any number");
-const pitAsk = hear("I want a fire pit", d, freshVoiceState());
-check("the contractor is asked the fire pit's price", !!pitAsk.pending && /price/i.test(pitAsk.pending.ask), pitAsk.pending?.ask);
+const pitAsk = hear("I want a pool", d, freshVoiceState());
+check("the contractor is asked the pool's price", !!pitAsk.pending && /price/i.test(pitAsk.pending.ask), pitAsk.pending?.ask);
 const stray = hear("privacy on one side", d, pitAsk.state);
-check("\"privacy on one side\" is not the fire pit at $1", !stray.ran.some((c) => c.do === "item"), JSON.stringify(stray.ran));
+check("\"privacy on one side\" is not the pool at $1", !stray.ran.some((c) => c.do === "item"), JSON.stringify(stray.ran));
 for (const [said, n] of [["1,200 dollars", 1200], ["twelve hundred", 1200], ["about 900", 900], ["$450", 450]] as const) {
   const r = hear(said, d, pitAsk.state);
   check(`"${said}" prices it at $${n}`, r.ran.length === 1 && r.ran[0].do === "item" && r.ran[0].price === n, JSON.stringify(r.ran));

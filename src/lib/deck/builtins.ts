@@ -21,9 +21,9 @@
 //     stands matters (over a beam line, or on doubled joists).
 import { ringEdges } from "./ringEdges";
 
-export type BuiltInKind = "bench" | "bench-back" | "planter" | "screen";
-export const BUILT_IN_KINDS: readonly BuiltInKind[] = ["bench", "bench-back", "planter", "screen"];
-export const BUILT_IN_LABEL: Record<BuiltInKind, string> = { bench: "Bench", "bench-back": "Bench with a back", planter: "Planter box", screen: "Privacy screen" };
+export type BuiltInKind = "bench" | "bench-back" | "planter" | "screen" | "kitchen" | "fire";
+export const BUILT_IN_KINDS: readonly BuiltInKind[] = ["bench", "bench-back", "planter", "screen", "kitchen", "fire"];
+export const BUILT_IN_LABEL: Record<BuiltInKind, string> = { bench: "Bench", "bench-back": "Bench with a back", planter: "Planter box", screen: "Privacy screen", kitchen: "Outdoor kitchen", fire: "Fire table" };
 export type BuiltInSide = "front" | "left" | "right";
 export const BUILT_IN_SIDES: readonly BuiltInSide[] = ["front", "left", "right"];
 export const BUILT_IN_SIDE_LABEL: Record<BuiltInSide, string> = { front: "Front", left: "Left end", right: "Right end" };
@@ -37,9 +37,35 @@ export interface BuiltIn {
   lengthFt: number;
   /** A privacy screen's height above the boards, ft (screens only). */
   heightFt?: number;
+  /** A fire table: how far in from that edge its middle stands, ft (fire tables only). */
+  inFt?: number;
 }
 
-export const BUILT_IN_LIMITS = { count: 8, lengthFt: { min: 2, max: 30 }, planterFt: { min: 2, max: 10 }, screenFt: { min: 3, max: 8 } } as const;
+export const BUILT_IN_LIMITS = { count: 8, lengthFt: { min: 2, max: 30 }, planterFt: { min: 2, max: 10 }, screenFt: { min: 3, max: 8 }, kitchenFt: { min: 4, max: 16 }, fireFt: { min: 2.5, max: 6 }, inFt: { min: 2, max: 30 } } as const;
+/**
+ * AN OUTDOOR KITCHEN AND A FIRE TABLE (2026-11-14 — the owner picked them next of the luxury options). Two things a
+ * high-end deck has that the studio could only note as a blank item: a grill island, and a gas fire table.
+ *   · THE KITCHEN is an island along an edge: 30 in. deep and 36 in. high, framed in treated 2x4 and clad in the
+ *     deck's boards, with a top for stone and a place for a built-in grill (the top, the grill, gas and power are by
+ *     others). What it weighs with a stone top and a grill is worked out, and the joists under it are doubled.
+ *   · THE FIRE TABLE is a listed gas appliance (by others), drawn where it will stand — a place along an edge and a
+ *     distance in from it — so what stands near it and over it can be measured: the studio builds nothing for it.
+ * What burns near either one is the checks' business (lib/deck/checks): `hot` is the part that burns.
+ */
+export const KITCHEN_DEPTH_IN = 30;
+export const KITCHEN_HEIGHT_IN = 36;
+export const KITCHEN_TOP_IN = 2;
+/** A stone top, lb per sq ft; the island's frame and cladding, lb per ft; a built-in grill and what is kept round it, lb. */
+export const KITCHEN_TOP_PSF = 20;
+export const KITCHEN_CARCASS_LB_PER_FT = 20;
+export const KITCHEN_GRILL_LB = 250;
+export const FIRE_HEIGHT_IN = 24;
+/** A gas fire table: about this heavy at 4 ft, and this much more a foot. */
+export const FIRE_LB = 300;
+export const FIRE_LB_PER_FT = 40;
+/** What most makers ask between a flame and anything that burns, in.: beside a gas fire table or a grill; over a fire table. */
+export const HOT_CLEAR_IN = 36;
+export const HOT_OVERHEAD_IN = 96;
 /** A privacy screen as most are built: 6 ft above the boards. */
 export const SCREEN_DEFAULT_FT = 6;
 /** Its posts: no farther apart than this; 4x4 up to this height, 6x6 above it; how far their outer face stands inside the deck's edge (a top-mounted rail post's own line). */
@@ -75,6 +101,9 @@ export function defaultBuiltIn(id: string, kind: BuiltInKind, widthFt: number): 
   if (kind === "planter") return { id, kind, side: "front", atFt: half(Math.min(widthFt / 2, 3)), lengthFt: 4 };
   // (A screen goes where the neighbours are: along an end, its whole length unless said.)
   if (kind === "screen") return { id, kind, side: "left", atFt: 0, lengthFt: 8, heightFt: SCREEN_DEFAULT_FT };
+  // (A kitchen toward the right of the front, away from the door; a fire table out in the middle.)
+  if (kind === "kitchen") return { id, kind, side: "front", atFt: half(Math.max(widthFt / 2, widthFt - 5)), lengthFt: Math.min(8, Math.max(BUILT_IN_LIMITS.kitchenFt.min, half(widthFt - 4))) };
+  if (kind === "fire") return { id, kind, side: "front", atFt: half(widthFt / 2), lengthFt: 4, inFt: 6 };
   return { id, kind, side: "front", atFt: half(widthFt / 2), lengthFt: Math.min(8, Math.max(BUILT_IN_LIMITS.lengthFt.min, half(widthFt - 4))) };
 }
 
@@ -92,13 +121,21 @@ export function normalizeBuiltIns(raw: unknown, widthFt: number, depthFt: number
     for (let n = i + 1; !id; n++) if (!seen.has(`b${n}`)) id = `b${n}`;
     seen.add(id);
     const along = side === "front" ? widthFt : depthFt;
-    const max = kind === "planter" ? BUILT_IN_LIMITS.planterFt.max : BUILT_IN_LIMITS.lengthFt.max;
-    out.push({ id, kind, side, atFt: half(clamp(num(o.atFt, along / 2), 0, along)), lengthFt: half(clamp(num(o.lengthFt, kind === "planter" ? 4 : 8), BUILT_IN_LIMITS.lengthFt.min, max)), ...(kind === "screen" ? { heightFt: half(clamp(num(o.heightFt, SCREEN_DEFAULT_FT), BUILT_IN_LIMITS.screenFt.min, BUILT_IN_LIMITS.screenFt.max)) } : {}) });
+    const lim = kind === "planter" ? { min: BUILT_IN_LIMITS.lengthFt.min, max: BUILT_IN_LIMITS.planterFt.max } : kind === "kitchen" ? BUILT_IN_LIMITS.kitchenFt : kind === "fire" ? BUILT_IN_LIMITS.fireFt : BUILT_IN_LIMITS.lengthFt;
+    out.push({
+      id,
+      kind,
+      side,
+      atFt: half(clamp(num(o.atFt, along / 2), 0, along)),
+      lengthFt: half(clamp(num(o.lengthFt, kind === "planter" || kind === "fire" ? 4 : 8), lim.min, lim.max)),
+      ...(kind === "screen" ? { heightFt: half(clamp(num(o.heightFt, SCREEN_DEFAULT_FT), BUILT_IN_LIMITS.screenFt.min, BUILT_IN_LIMITS.screenFt.max)) } : {}),
+      ...(kind === "fire" ? { inFt: half(clamp(num(o.inFt, 6), BUILT_IN_LIMITS.inFt.min, BUILT_IN_LIMITS.inFt.max)) } : {}),
+    });
   });
   return out;
 }
 
-export type BuiltInRole = "bench leg" | "bench cleat" | "bench seat" | "bench apron" | "bench back post" | "bench back" | "bench cap" | "planter board" | "planter cap" | "planter soil" | "screen post" | "screen board" | "screen cap";
+export type BuiltInRole = "bench leg" | "bench cleat" | "bench seat" | "bench apron" | "bench back post" | "bench back" | "bench cap" | "planter board" | "planter cap" | "planter soil" | "screen post" | "screen board" | "screen cap" | "kitchen board" | "kitchen top" | "kitchen grill" | "fire base" | "fire top" | "fire burner";
 
 /** One stick or board of a built-in: a box `sx` long along `yaw`, `sy` across, `sz` high, centred at (cx, cy, cz) — plan inches, z above the house-line ground. */
 export interface BuiltInMember {
@@ -145,6 +182,11 @@ export interface BuiltInBuild {
   sqFt: number;
   windLb: number;
   windFtLb: number;
+  /** A kitchen or a fire table: the part that burns (the grill; the whole table), its four corners in plan — empty for the rest. */
+  hot: Array<{ x: number; y: number }>;
+  /** A kitchen: the joists under it that are doubled, and their feet. */
+  sisters: number;
+  sisterLf: number;
   /** What it was fitted to, or runs into. */
   flags: { shortened: boolean; /** Shortened to stop at another built-in's face. */ beside: boolean; onStair: boolean; onSteps: boolean; overlaps: string[] };
 }
@@ -168,6 +210,8 @@ export interface BuiltInsInput {
   only?: "screens" | "rest";
   /** The joists' depth, in. (a screen's posts run down beside them). */
   joistDepthIn?: number;
+  /** The deck's joists (not the sisters already beside some): where each runs, for the ones a kitchen's weight doubles. */
+  joists?: ReadonlyArray<{ x: number; y0: number; y1: number }>;
 }
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
@@ -193,7 +237,7 @@ export function buildBuiltIns(input: BuiltInsInput): BuiltInBuild[] {
     }
     return c;
   };
-  const empty = (it: BuiltIn, why: string): BuiltInBuild => ({ design: it, kind: it.kind, built: false, why, footprint: [], lengthIn: 0, depthIn: 0, heightIn: 0, members: [], boardLf: 0, apronLf: 0, postLf: 0, frameLf: 0, supports: 0, soilCuFt: 0, weightLb: 0, psf: 0, overBeam: false, posts: 0, postSize: "", sqFt: 0, windLb: 0, windFtLb: 0, flags: { shortened: false, beside: false, onStair: false, onSteps: false, overlaps: [] } });
+  const empty = (it: BuiltIn, why: string): BuiltInBuild => ({ design: it, kind: it.kind, built: false, why, footprint: [], lengthIn: 0, depthIn: 0, heightIn: 0, members: [], boardLf: 0, apronLf: 0, postLf: 0, frameLf: 0, supports: 0, soilCuFt: 0, weightLb: 0, psf: 0, overBeam: false, posts: 0, postSize: "", sqFt: 0, windLb: 0, windFtLb: 0, hot: [], sisters: 0, sisterLf: 0, flags: { shortened: false, beside: false, onStair: false, onSteps: false, overlaps: [] } });
 
   for (const it of input.items) {
     if ((it.kind === "screen") !== (input.only === "screens")) continue;
@@ -234,11 +278,14 @@ export function buildBuiltIns(input: BuiltInsInput): BuiltInBuild[] {
     const inY = -e.outY;
     const mount = input.railAt(sd.x0, sd.y0, sd.x1, sd.y1);
     // (A screen stands on the rail's own line, in the rail's place; the rest stand inside whatever is there.)
-    const inset = screen ? SCREEN_EDGE_IN : BUILT_IN_INSET_IN[mount];
-    const depth = screen ? postIn + T : it.kind === "planter" ? PLANTER_DEPTH_IN : it.kind === "bench-back" ? seatDepth + 3.5 : seatDepth;
+    const fire = it.kind === "fire";
+    // (A fire table is square up to 3½ ft, 2 ft deep when longer; it stands out on the deck, its middle `inFt` from the edge.)
+    const fireDepth = it.lengthFt * 12 <= 42 ? it.lengthFt * 12 : 24;
+    const depth = screen ? postIn + T : fire ? fireDepth : it.kind === "kitchen" ? KITCHEN_DEPTH_IN : it.kind === "planter" ? PLANTER_DEPTH_IN : it.kind === "bench-back" ? seatDepth + 3.5 : seatDepth;
+    const inset = screen ? SCREEN_EDGE_IN : fire ? Math.max(BUILT_IN_INSET_IN[mount] + 12, (it.inFt ?? 6) * 12 - depth / 2) : BUILT_IN_INSET_IN[mount];
     // 2. Kept on its edge: clear of the next edge's own rail (or of what stands along it) at a corner that turns round the deck.
     const prev = edges[(pick - 1 + n) % n];
-    const cornerIn = screen ? SCREEN_CORNER_IN : inset;
+    const cornerIn = screen ? SCREEN_CORNER_IN : fire ? BUILT_IN_INSET_IN[mount] + 12 : inset;
     // (Against the house there is no rail to keep clear of: it runs up to the wall.)
     const lo = prev.turnAtB > 0.3 && !sides[(pick - 1 + n) % n].house ? cornerIn : 0.5;
     const hi = e.length - (e.turnAtB > 0.3 && !sides[(pick + 1) % n].house ? cornerIn : 0.5);
@@ -322,8 +369,56 @@ export function buildBuiltIns(input: BuiltInsInput): BuiltInBuild[] {
     let sqFt = 0;
     let windLb = 0;
     let windFtLb = 0;
+    let hot: Array<{ x: number; y: number }> = [];
+    let sisters = 0;
+    let sisterIn = 0;
 
-    if (screen) {
+    if (it.kind === "kitchen") {
+      // The island: the deck's boards round a 2x4 frame, set in 1½ in. under the top's edge; a 2-in. top for stone; a
+      // grill built in at its middle, toward the back.
+      const lip = 1.5;
+      const top = KITCHEN_HEIGHT_IN - KITCHEN_TOP_IN;
+      const foot = 0.75;
+      heightIn = KITCHEN_HEIGHT_IN;
+      const carcassLen = len - 2 * lip;
+      const carcassDepth = depth - 2 * lip;
+      for (let z = foot; top - z > 1; z += W + G) {
+        const bh = Math.min(W, top - z);
+        put("kitchen board", board.nominal, carcassLen, mid, lip + T / 2, z + bh / 2, carcassLen, T, bh);
+        put("kitchen board", board.nominal, carcassLen, mid, depth - lip - T / 2, z + bh / 2, carcassLen, T, bh);
+        put("kitchen board", board.nominal, carcassDepth - 2 * T, a0 + lip + T / 2, depth / 2, z + bh / 2, T, carcassDepth - 2 * T, bh);
+        put("kitchen board", board.nominal, carcassDepth - 2 * T, a1 - lip - T / 2, depth / 2, z + bh / 2, T, carcassDepth - 2 * T, bh);
+        boardIn += 2 * carcassLen + 2 * (carcassDepth - 2 * T);
+      }
+      put("kitchen top", "stone top", len, mid, depth / 2, top + KITCHEN_TOP_IN / 2, len, depth, KITCHEN_TOP_IN);
+      const grillW = len >= 60 ? 30 : 24;
+      const grillD = 22;
+      const grillB = lip + 2 + grillD / 2;
+      put("kitchen grill", "built-in grill", grillW, mid, grillB, KITCHEN_HEIGHT_IN + 4.5, grillW, grillD, 9);
+      hot = [P(mid - grillW / 2, grillB - grillD / 2), P(mid + grillW / 2, grillB - grillD / 2), P(mid + grillW / 2, grillB + grillD / 2), P(mid - grillW / 2, grillB + grillD / 2)];
+      // The frame: a plate top and bottom along both long sides, an upright every 16 in. in each, a cross piece at every third.
+      const uprights = 2 * (Math.ceil(carcassLen / 16 - 1e-9) + 1);
+      frameIn += 4 * carcassLen + uprights * (top - foot) + Math.ceil(uprights / 6) * carcassDepth * 2;
+      weightLb = (KITCHEN_TOP_PSF * len * depth) / 144 + (KITCHEN_CARCASS_LB_PER_FT * len) / 12 + KITCHEN_GRILL_LB;
+      psf = weightLb / ((len * depth) / 144);
+      // The joists under it, doubled their whole length: the ones that pass under its footprint.
+      const fx = footprint.map((q) => q.x);
+      const fy = footprint.map((q) => q.y);
+      for (const j of input.joists ?? []) {
+        if (j.x < Math.min(...fx) - 2 || j.x > Math.max(...fx) + 2 || j.y1 < Math.min(...fy) || j.y0 > Math.max(...fy)) continue;
+        sisters += 1;
+        sisterIn += j.y1 - j.y0;
+      }
+    } else if (fire) {
+      // A gas fire table (by others), drawn so what stands near it can be measured: a base, a top, the burner's pan.
+      heightIn = FIRE_HEIGHT_IN;
+      put("fire base", "fire table", len - 6, mid, depth / 2, (FIRE_HEIGHT_IN - 2) / 2, len - 6, depth - 6, FIRE_HEIGHT_IN - 2);
+      put("fire top", "fire table", len, mid, depth / 2, FIRE_HEIGHT_IN - 1, len, depth, 2);
+      put("fire burner", "burner", len - 12, mid, depth / 2, FIRE_HEIGHT_IN + 0.25, Math.max(6, len - 12), Math.max(6, depth - 12), 0.5);
+      hot = footprint.map((q) => ({ ...q }));
+      weightLb = FIRE_LB + Math.max(0, len / 12 - 4) * FIRE_LB_PER_FT;
+      psf = weightLb / ((len * depth) / 144);
+    } else if (screen) {
       // Posts no more than 6 ft apart, the deck's boards across their inner faces from 2 in. above the deck to the
       // top, ¾ in. between them; a cap board on the posts.
       heightIn = screenH + T;
@@ -427,7 +522,7 @@ export function buildBuiltIns(input: BuiltInsInput): BuiltInBuild[] {
         boardIn += 3 * len;
       }
     }
-    out.push({ design: it, kind: it.kind, built: true, footprint, lengthIn: r2(len), depthIn: r2(depth), heightIn: r2(heightIn), members, boardLf: r2(boardIn / 12), apronLf: r2(apronIn / 12), postLf: r2(postLen / 12), frameLf: r2(frameIn / 12), supports, soilCuFt: r2(soilCuFt), weightLb: Math.round(weightLb), psf: Math.round(psf), overBeam, posts, postSize: screen ? postSize : "", sqFt: r2(sqFt), windLb: Math.round(windLb), windFtLb: Math.round(windFtLb), flags: { shortened, beside, onStair, onSteps, overlaps: [] } });
+    out.push({ design: it, kind: it.kind, built: true, footprint, lengthIn: r2(len), depthIn: r2(depth), heightIn: r2(heightIn), members, boardLf: r2(boardIn / 12), apronLf: r2(apronIn / 12), postLf: r2(postLen / 12), frameLf: r2(frameIn / 12), supports, soilCuFt: r2(soilCuFt), weightLb: Math.round(weightLb), psf: Math.round(psf), overBeam, posts, postSize: screen ? postSize : "", sqFt: r2(sqFt), windLb: Math.round(windLb), windFtLb: Math.round(windFtLb), hot: hot.map((q) => ({ x: r2(q.x), y: r2(q.y) })), sisters, sisterLf: r2(sisterIn / 12), flags: { shortened, beside, onStair, onSteps, overlaps: [] } });
   }
 
   // 3. Two that stand on the same boards.
@@ -457,6 +552,35 @@ export function buildBuiltIns(input: BuiltInsInput): BuiltInBuild[] {
 /** "an 8-ft bench along the front" */
 export function builtInWords(b: BuiltInBuild): string {
   const ft = Math.round((b.lengthIn / 12) * 2) / 2;
-  const what = b.kind === "screen" ? `privacy screen ${Math.round(((b.heightIn - 1) / 12) * 2) / 2} ft high` : b.kind === "planter" ? "planter box" : b.kind === "bench-back" ? "bench with a back" : "bench";
+  if (b.kind === "fire") return `${/^(8|11|18)/.test(String(ft)) ? "an" : "a"} ${ft}-ft gas fire table ${Math.round((b.design.inFt ?? 6) * 2) / 2} ft in from the ${b.design.side === "front" ? "front" : `${b.design.side} end`}`;
+  const what = b.kind === "kitchen" ? "outdoor kitchen island" : b.kind === "screen" ? `privacy screen ${Math.round(((b.heightIn - 1) / 12) * 2) / 2} ft high` : b.kind === "planter" ? "planter box" : b.kind === "bench-back" ? "bench with a back" : "bench";
   return `${/^(8|11|18)/.test(String(ft)) ? "an" : "a"} ${ft}-ft ${what} along the ${b.design.side === "front" ? "front" : `${b.design.side} end`}`;
+}
+
+/** The least distance between two convex shapes in plan, in. (0 where they touch or cross). */
+export function planGap(A: ReadonlyArray<{ x: number; y: number }>, B: ReadonlyArray<{ x: number; y: number }>): number {
+  if (!A.length || !B.length) return Infinity;
+  const seg = (p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }) => {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const l2 = dx * dx + dy * dy;
+    const t = l2 > 0 ? Math.min(1, Math.max(0, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2)) : 0;
+    return Math.hypot(p.x - a.x - dx * t, p.y - a.y - dy * t);
+  };
+  const inside = (p: { x: number; y: number }, poly: ReadonlyArray<{ x: number; y: number }>) => {
+    if (poly.length < 3) return false;
+    let c = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const a = poly[i];
+      const b = poly[j];
+      if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) c = !c;
+    }
+    return c;
+  };
+  if (A.some((p) => inside(p, B)) || B.some((p) => inside(p, A))) return 0;
+  let best = Infinity;
+  const edgesOf = (poly: ReadonlyArray<{ x: number; y: number }>) => (poly.length === 2 ? [[poly[0], poly[1]] as const] : poly.map((p, i) => [p, poly[(i + 1) % poly.length]] as const));
+  for (const p of A) for (const [a, b] of edgesOf(B)) best = Math.min(best, seg(p, a, b));
+  for (const p of B) for (const [a, b] of edgesOf(A)) best = Math.min(best, seg(p, a, b));
+  return best;
 }

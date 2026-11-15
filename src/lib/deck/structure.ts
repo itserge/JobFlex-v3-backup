@@ -313,6 +313,10 @@ export function buildStructure(raw: DeckDesign, opts: StructureOptions = {}): De
           stairTops: stairTops.filter((t) => t.level === "upper"),
           beams: [...frame.beams.map((b) => ({ x0: b.x0, y0: b.y, x1: b.x1, y1: b.y })), ...frame.cornerBeams.map((b) => ({ x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 }))],
           joistDepthIn: frame.joistTopIn - frame.joistBottomIn,
+          joists: frame.joists.filter((j) => !j.sister).flatMap((j) => {
+            const z = frame.zones.find((q) => q.zone.id === j.zoneId)?.zone;
+            return z ? [{ x: j.x, y0: z.y0, y1: z.y1 }] : [];
+          }),
         }
       : null;
   const screens: BuiltInBuild[] = builtInInput ? buildBuiltIns({ ...builtInInput, only: "screens", railAt: () => "none", wrapped: wrappedEdges }) : [];

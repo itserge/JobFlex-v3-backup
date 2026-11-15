@@ -8,7 +8,7 @@
 
 import { DECKING, deckingProduct, treatedDecking, wallType, type DeckingProduct } from "../catalog";
 import { JOIST_SIZES } from "../codeTables";
-import { applyDeckPatch, type DeckPatch } from "../checks";
+import { applyDeckPatch, deckChecks, type DeckPatch } from "../checks";
 import {
   DECK_LIMITS,
   ELECTRICAL_LIMITS,
@@ -761,8 +761,8 @@ export function runCommand(d0: DeckDesign, cmd: DeckCommand, env: RunEnv = {}): 
       const label = BUILT_IN_LABEL[cmd.kind].toLowerCase();
       if (cmd.op === "remove") {
         // (Said of a bench, it takes both kinds of bench.)
-        const benchLike = (k: BuiltIn["kind"]) => (cmd.kind === "planter" || cmd.kind === "screen" ? k === cmd.kind : k === "bench" || k === "bench-back");
-        const [one, many] = cmd.kind === "planter" ? ["planter box", "planter boxes"] : cmd.kind === "screen" ? ["privacy screen", "privacy screens"] : ["bench", "benches"];
+        const benchLike = (k: BuiltIn["kind"]) => (cmd.kind === "bench" || cmd.kind === "bench-back" ? k === "bench" || k === "bench-back" : k === cmd.kind);
+        const [one, many] = cmd.kind === "planter" ? ["planter box", "planter boxes"] : cmd.kind === "screen" ? ["privacy screen", "privacy screens"] : cmd.kind === "kitchen" ? ["outdoor kitchen", "outdoor kitchens"] : cmd.kind === "fire" ? ["fire table", "fire tables"] : ["bench", "benches"];
         const left = list.filter((b) => !(benchLike(b.kind) && (!cmd.side || b.side === cmd.side)));
         if (left.length === list.length) return no(`There's no ${one}${cmd.side ? ` along the ${cmd.side === "front" ? "front" : `${cmd.side} end`}` : ""} on this deck.`);
         const gone = list.length - left.length;
@@ -776,14 +776,17 @@ export function runCommand(d0: DeckDesign, cmd: DeckCommand, env: RunEnv = {}): 
       // (A screen with no length said runs its whole edge.)
       const lengthFt = cmd.lengthFt ?? (cmd.kind === "screen" ? Math.min(BUILT_IN_LIMITS.lengthFt.max, Math.max(BUILT_IN_LIMITS.lengthFt.min, halfFt(along))) : side === "front" ? base.lengthFt : Math.min(base.lengthFt, Math.max(BUILT_IN_LIMITS.lengthFt.min, halfFt(along - 2))));
       // Toward an end of its edge: the engine keeps it on the edge, clear of the corner. (An end runs out from the house: "right" is its far, front end.)
-      const atFt = cmd.at === "left" ? lengthFt / 2 : cmd.at === "right" ? along - lengthFt / 2 : along / 2;
+      // (A kitchen with no place said goes where the studio's own button puts it: toward the right of the front.)
+      const atFt = cmd.at === "left" ? lengthFt / 2 : cmd.at === "right" ? along - lengthFt / 2 : cmd.kind === "kitchen" && !cmd.side && !cmd.at ? base.atFt : along / 2;
       let id = "";
       for (let n2 = list.length + 1; !id; n2++) if (!list.some((b) => b.id === `b${n2}`)) id = `b${n2}`;
-      const next = patchDesign(d, { extras: { builtIns: [...list, { id, kind: cmd.kind, side, atFt, lengthFt, ...(cmd.kind === "screen" ? { heightFt: cmd.heightFt ?? SCREEN_DEFAULT_FT } : {}) }] } }, settle);
+      const next = patchDesign(d, { extras: { builtIns: [...list, { id, kind: cmd.kind, side, atFt, lengthFt, ...(cmd.kind === "screen" ? { heightFt: cmd.heightFt ?? SCREEN_DEFAULT_FT } : {}), ...(cmd.kind === "fire" ? { inFt: cmd.inFt ?? 6 } : {}) }] } }, settle);
       const built = buildStructure(next).builtIns.find((b) => b.design.id === id);
       if (!built?.built) return no(`A ${label} along the ${side === "front" ? "front" : `${side} end`} does not fit: ${built?.why ?? "no room there"}.`);
-      const words = builtInWords(built).replace(/^a /, "A ").replace(/^an /, "An ");
-      const more = built.kind === "screen" ? `: the deck's own boards across ${built.posts} ${built.postSize} posts, in the railing's place there. It catches wind like a fence — about ${Math.round(built.windLb / 10) * 10} lb on each post — so every post runs down and bolts to the frame${(cmd.heightFt ?? SCREEN_DEFAULT_FT) > 6 ? "; over 6 ft, have an engineer size them" : ""}` : built.kind === "planter" ? ` in the deck's own boards, ${Math.round(built.heightIn)} in. high — about ${Math.round(built.weightLb / 10) * 10} lb full of wet soil${built.overBeam ? ", over a beam line" : "; no beam runs under it, so see the checks"}` : `: the seat 18 in. up, three boards deep, on ${built.supports} supports${built.kind === "bench-back" ? ", with a capped back 36 in. tall" : ""}`;
+      const words = built.kind === "fire" ? `A place for ${builtInWords(built)}` : builtInWords(built).replace(/^a /, "A ").replace(/^an /, "An ");
+      // (A kitchen or a fire table: whether the checks have a warning for it — what stands too near, what is over it.)
+      const flagged = (built.kind === "kitchen" || built.kind === "fire") && deckChecks(buildStructure(next)).some((c) => c.id === `builtin-${id}` && c.level === "warn");
+      const more = built.kind === "kitchen" ? `: 30 in. deep and 36 in. high, in the deck's own boards — about ${Math.round(built.weightLb / 10) * 10} lb with a stone top and a grill, so the ${built.sisters} joists under it are doubled. The top, the grill, gas and power are by others${flagged ? ". The checks have a warning for where it stands" : ""}` : built.kind === "fire" ? ` — the table itself is by others, and nothing is built for it. Keep 36 in. clear of anything that burns${flagged ? "; the checks name what stands nearer" : ""}. Gas only on a deck` : built.kind === "screen" ? `: the deck's own boards across ${built.posts} ${built.postSize} posts, in the railing's place there. It catches wind like a fence — about ${Math.round(built.windLb / 10) * 10} lb on each post — so every post runs down and bolts to the frame${(cmd.heightFt ?? SCREEN_DEFAULT_FT) > 6 ? "; over 6 ft, have an engineer size them" : ""}` : built.kind === "planter" ? ` in the deck's own boards, ${Math.round(built.heightIn)} in. high — about ${Math.round(built.weightLb / 10) * 10} lb full of wet soil${built.overBeam ? ", over a beam line" : "; no beam runs under it, so see the checks"}` : `: the seat 18 in. up, three boards deep, on ${built.supports} supports${built.kind === "bench-back" ? ", with a capped back 36 in. tall" : ""}`;
       return out(next, [`${words}${more}.${built.flags.shortened && cmd.lengthFt !== undefined ? ` ${built.flags.beside ? "Beside the other built-in there is room for" : "That edge has room for"} ${Math.round((built.lengthIn / 12) * 10) / 10} ft.` : ""}${built.flags.onStair ? " It stands across a stair's top — move one of them." : ""}`], { flash: [{ label: "Built-in benches and planters" }], view: { look: "yard" as const } });
     }
     case "item": {

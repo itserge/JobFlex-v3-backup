@@ -186,9 +186,9 @@ function builtInsFor(tag: string, raw: unknown): unknown {
   if (!raw || typeof raw !== "object" || Array.isArray(raw) || !Number.isFinite(i) || i % 4 !== 2) return raw;
   const o = raw as Record<string, unknown>;
   if (o.extras !== undefined && (typeof o.extras !== "object" || o.extras === null)) return raw;
-  const kinds = ["bench", "bench-back", "planter", "screen"];
+  const kinds = ["bench", "bench-back", "planter", "screen", "kitchen", "fire"];
   const sides = ["front", "left", "right"];
-  const list: unknown[] = i % 86 === 2 ? [null, "x", { kind: "sofa" }, { kind: "bench", side: 7, atFt: "a", lengthFt: -3 }, { id: "BAD ID", kind: "planter", atFt: 1e9, lengthFt: 1e9 }] : Array.from({ length: 1 + (i % 5) }, (_, k) => ({ id: `q${k}`, kind: kinds[(i + k) % 4], side: sides[(Math.floor(i / 3) + k) % 3], atFt: ((i * 7 + k * 5) % 41) / 2, lengthFt: 2 + ((i + k * 3) % 17) * 1.5, heightFt: 2 + ((i + k) % 8) }));
+  const list: unknown[] = i % 86 === 2 ? [null, "x", { kind: "sofa" }, { kind: "bench", side: 7, atFt: "a", lengthFt: -3 }, { id: "BAD ID", kind: "planter", atFt: 1e9, lengthFt: 1e9 }] : Array.from({ length: 1 + (i % 5) }, (_, k) => ({ id: `q${k}`, kind: kinds[(i + k) % 6], side: sides[(Math.floor(i / 3) + k) % 3], atFt: ((i * 7 + k * 5) % 41) / 2, lengthFt: 2 + ((i + k * 3) % 17) * 1.5, heightFt: 2 + ((i + k) % 8), inFt: 1 + ((i * 3 + k) % 14) }));
   return { ...o, extras: { ...((o.extras as object) ?? {}), builtIns: list } };
 }
 type Pt = { x: number; y: number };
@@ -283,6 +283,8 @@ function exercise(d: DeckDesign, tag: string, out: string[]) {
         if (!tangled && ![c, mid(mid(b.footprint[0], b.footprint[3]), c), mid(mid(b.footprint[1], b.footprint[2]), c)].every((p) => inside(p.x, p.y))) { out.push(`a built-in off the deck  [${tag}]`); break; }
         if (b.flags.overlaps.length) { out.push(`two built-ins on the same boards  [${tag}]`); break; }
         if (b.kind === "planter" && !(b.weightLb > 0 && b.psf > 0 && b.soilCuFt > 0)) { out.push(`a planter with no weight  [${tag}]`); break; }
+        if (b.kind === "kitchen" && !(b.weightLb > 0 && b.hot.length === 4 && b.sisterLf >= 0 && pkg.lines.some((l) => l.id === "deck-kitchen"))) { out.push(`a kitchen with no weight, no grill or no price  [${tag}]`); break; }
+        if (b.kind === "fire" && !(b.weightLb > 0 && b.hot.length === 4)) { out.push(`a fire table with no weight or no flame  [${tag}]`); break; }
         if (b.kind === "screen" && !(b.posts >= 2 && b.sqFt > 0 && b.windLb > 0 && (b.postSize === "4x4" || b.postSize === "6x6"))) { out.push(`a screen with no posts or no wind  [${tag}]`); break; }
       }
       const built = s0.builtIns.filter((b) => b.built);

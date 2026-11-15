@@ -356,7 +356,7 @@ export const ROOF_MEMBER_LAYER: Record<RoofMember["role"], SceneLayer> = {
 const ROOF_PLANE_LAYER: Record<RoofPlane["kind"], SceneLayer> = { sheathing: "sheathing", roofing: "roofing", ceiling: "ceiling", soffit: "trim", slab: "slab", wall: "wall", screen: "screen", louver: "roofing", fixture: "light" };
 const STAIR_LAYER: Record<StairMember["role"], SceneLayer> = { stringer: "stair", tread: "stair", riser: "stair", kicker: "stair", "stair-post": "stair", "stair-beam": "stair", "landing-frame": "stair", "landing-tread": "stair", "box-frame": "stair", "box-tread": "stair", "stair-rail": "rail", "stair-rail-post": "rail", "stair-baluster": "rail", pad: "slab" };
 /** Built-ins: boards as the deck's, aprons as its fascia, legs and cleats as its frame, a planter's soil dark. */
-const BUILT_IN_LAYER: Record<BuiltInMember["role"], SceneLayer> = { "bench seat": "decking", "bench back": "decking", "bench cap": "decking", "bench apron": "fascia", "bench leg": "post", "bench back post": "post", "bench cleat": "joist", "planter board": "decking", "planter cap": "fascia", "planter soil": "spa", "screen post": "post", "screen board": "decking", "screen cap": "fascia" };
+const BUILT_IN_LAYER: Record<BuiltInMember["role"], SceneLayer> = { "bench seat": "decking", "bench back": "decking", "bench cap": "decking", "bench apron": "fascia", "bench leg": "post", "bench back post": "post", "bench cleat": "joist", "planter board": "decking", "planter cap": "fascia", "planter soil": "spa", "screen post": "post", "screen board": "decking", "screen cap": "fascia", "kitchen board": "decking", "kitchen top": "slab", "kitchen grill": "hardware", "fire base": "slab", "fire top": "slab", "fire burner": "spa" };
 const RAIL_LAYER: Record<RailMember["role"], SceneLayer> = { "rail-post": "rail", "rail-top": "rail", "rail-bottom": "rail", "rail-cap": "rail", baluster: "rail", cable: "rail", "rail-panel": "glass", mesh: "rail" };
 /** The rail parts a scene's `railInfill` colour is for: the infill, not the frame. */
 export const RAIL_INFILL_ROLE = /^(?:lower level )?(?:baluster|stair baluster|cable|mesh)$/;
@@ -691,6 +691,17 @@ export function deckScene(s: DeckStructure): DeckScene {
           return `Privacy screen: the deck's boards across the posts' inner faces, ${SCREEN_GAP_IN} in. apart, two screws at every post.`;
         case "screen cap":
           return "Cap board on the screen's posts.";
+        case "kitchen board":
+          return "Outdoor kitchen island: the deck's boards round a treated 2x4 frame. The island is framed in wood, so a built-in grill sits in its maker's insulated jacket.";
+        case "kitchen top":
+          return "The island's top — stone or concrete, by others. Its weight is in the checks, and the joists under the island are doubled for it.";
+        case "kitchen grill":
+          return "A built-in grill (by others), shown so what stands near it can be measured: keep the maker's clearance to anything that burns. Gas and power by licensed trades.";
+        case "fire base":
+        case "fire top":
+          return "A gas fire table (by others), shown where it will stand: a listed gas appliance on the pad or heat shield the decking's maker accepts. Never a wood fire on a deck.";
+        case "fire burner":
+          return "The burner: nothing that burns within 36 in. of it, and 8 ft clear above it where there is a roof.";
         default:
           return "Planting soil in a liner with drain holes. Wet soil is heavy: see the checks for what this box weighs.";
       }
