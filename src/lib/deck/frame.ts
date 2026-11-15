@@ -329,6 +329,13 @@ export interface DeckFrame {
   seats: Array<{ beamId: string; x: number; y: number }>;
   /** The angled beams under corners cut at 45° (2026-11-14; see CornerBeam). */
   cornerBeams: CornerBeam[];
+  /**
+   * Where a joist sits on a dropped beam — each one tie (two on a doubled joist), inches: x the joist's line, y where it
+   * crosses the beam (an angled beam's line too). A beam stopped short of a corner cut at an angle carries no joist
+   * past its end, and a joist cut short of a beam by the corner does not reach it (2026-11-14: ties were drawn and
+   * counted on every joist along every beam's line, and stood in the air past the cut).
+   */
+  tieAt: Array<{ x: number; y: number; n: 1 | 2 }>;
   /** Levels, inches above the ground. */
   surfaceIn: number;
   joistTopIn: number;
@@ -1308,6 +1315,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
     const near = (bottomIn: number) => bottomIn < GROUND_CONTACT_WITHIN_IN;
     const joistGround = near(joistBottomIn);
     const hardware = { hangers: 0, doubleHangers: 0, ties: 0, postBases: 0, postCaps: 0, braces: 0, rimScrews: 0, lateralTies: 0, notchedPosts: 0, beamSeats: 0 };
+    const tieAt: DeckFrame["tieAt"] = [];
     /** Braces the tables' layout would set that the contractor took out by hand. */
     let bracesLeftOut = 0;
     const rimPlies = (exposed: boolean) => (design.framing.doubleRim && exposed ? 2 : 1);
@@ -1394,7 +1402,21 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
         // Hangers: at the ledger, and at both faces of every flush beam it meets.
         if (zf.back === "ledger") hang(1);
         if (style === "flush") hang((backBeam ? 1 : 0) + 1 + 2 * middleBeams.length);
-        else hardware.ties += (doubled ? 2 : 1) * zoneBeams.length;
+        else {
+          // A tie where the joist really sits on a beam: one that runs under it, that it reaches — and the angled beam
+          // under a corner cut at 45°, where it crosses that.
+          const n: 1 | 2 = doubled ? 2 : 1;
+          const tie = (y: number) => {
+            hardware.ties += n;
+            tieAt.push({ x: j.x, y, n });
+          };
+          for (const b of zoneBeams) if (j.x >= b.x0 - 0.5 && j.x <= b.x1 + 0.5 && end >= b.y - b.spec.thickIn / 2 && start <= b.y + b.spec.thickIn / 2) tie(b.y);
+          for (const cb of cornerBeams) {
+            if (Math.abs(cb.x1 - cb.x0) < 1 || j.x < Math.min(cb.x0, cb.x1) - 0.5 || j.x > Math.max(cb.x0, cb.x1) + 0.5) continue;
+            const y = cb.y0 + ((j.x - cb.x0) / (cb.x1 - cb.x0)) * (cb.y1 - cb.y0);
+            if (y >= z.y0 && y <= z.y1 && end >= y - cb.spec.thickIn / 2 && start <= y) tie(y);
+          }
+        }
       }
 
       // Rim boards across the joist ends (a flush beam is its own rim).
@@ -1614,6 +1636,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       hung: !!follow,
       seats,
       cornerBeams,
+      tieAt,
       surfaceIn,
       joistTopIn,
       joistBottomIn,
