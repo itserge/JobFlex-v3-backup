@@ -38,7 +38,6 @@ import { railMountLine } from "./rails";
 import type { RoofMember } from "./roof";
 import { ROOF_MEMBER_LAYER, SCENE_LAYERS, type DeckScene, type SceneLayer } from "./scene";
 import { settleDesign } from "./settle";
-import { ACCESSORY_TURN_DEG, edgeAccessory, turnAccessory } from "./accessories";
 import { BUILT_IN_LABEL, builtInWords, planGap } from "./builtins";
 import type { FinishTarget, PartFinish } from "./finish";
 
@@ -640,21 +639,12 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
               : bi.kind === "fire"
                 ? "A place for a gas fire table the client buys: the checks keep what burns clear of it."
                 : "A bench of deck boards on treated legs.";
-      // MOVED BY HAND (2026-11-14; lib/deck/accessories): turned here, put back along its edge — dragged in the 3D itself
-      // with Edit in 3D. A privacy screen stands in the railing's place: it slides along the edges and does not turn.
-      const choices: PartChoice[] = [];
-      if (bi.kind !== "screen") {
-        for (const [by, label] of [[-ACCESSORY_TURN_DEG, `Turn it ${ACCESSORY_TURN_DEG}° to the left`], [ACCESSORY_TURN_DEG, `Turn it ${ACCESSORY_TURN_DEG}° to the right`], [90, "Turn it a quarter turn"]] as const) {
-          const p = turnAccessory(s, ref.id, by);
-          if (p) choices.push({ id: `turn${by}`, tone: "swap", label, patch: p });
-        }
-        if (bi.design.spot) {
-          const p = edgeAccessory(s, ref.id);
-          if (p) choices.push({ id: "edge", tone: "swap", label: "Put it back along the nearest edge", patch: p });
-        }
-      }
-      choices.push({ id: "remove", tone: "remove", label: `Remove this ${title.toLowerCase()}`, patch: { extras: { builtIns: (d.extras.builtIns ?? []).filter((x) => x.id !== ref.id) } } });
-      const move = bi.kind === "screen" ? " With Edit in 3D, drag it to another edge." : " With Edit in 3D, drag it anywhere on the deck — let go by the railing and it lines up there.";
+      // MOVED IN THE 3D ITSELF (2026-11-15 — the owner: "I don't want that press-button move"): clicked, the picture holds
+      // still and it is dragged and turned there (lib/deck/accessories) — no Turn choices on the card, which opens from
+      // Options on the bar that names the accessory in the hand. A privacy screen stands in the railing's place: it
+      // slides along the edges and does not turn.
+      const choices: PartChoice[] = [{ id: "remove", tone: "remove", label: `Remove this ${title.toLowerCase()}`, patch: { extras: { builtIns: (d.extras.builtIns ?? []).filter((x) => x.id !== ref.id) } } }];
+      const move = bi.kind === "screen" ? " Drag it in the 3D to another edge." : " To move it, click it in the 3D: drag it anywhere on the deck, turn it by the round handle — brought to the railing, it turns and lines up there.";
       const c = card(title, `${does} ${builtInWords(bi).replace(/^./, (ch) => ch.toUpperCase())}.${move}`, choices);
       // (Boards of its own — lib/deck/finish — on a bench, a planter or a screen.)
       return bi.kind === "kitchen" || bi.kind === "fire" ? c : { ...c, finish: { target: { kind: "built-in", id: ref.id }, now: bi.design.finish ?? null, ...deckBoardNow(s) } };

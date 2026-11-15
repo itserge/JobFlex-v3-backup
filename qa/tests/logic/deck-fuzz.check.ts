@@ -12,7 +12,7 @@ import { deckGrips, moveGrip } from "../../../src/lib/deck/byHand";
 import { buildStructure, structureLevels } from "../../../src/lib/deck/structure";
 import { POST_ACTUAL_IN } from "../../../src/lib/deck/codeTables";
 import { BUILT_IN_INSET_IN, planGap } from "../../../src/lib/deck/builtins";
-import { moveAccessory, placeAccessory, turnAccessory } from "../../../src/lib/deck/accessories";
+import { moveAccessory, turnAccessoryTo } from "../../../src/lib/deck/accessories";
 import { SKIRT_BAY_MAX_IN, SKIRT_CLEAR_IN, SKIRT_GROUND_CLEAR_IN, SKIRT_MIN_IN, SKIRT_THICK_IN, type SkirtPanel } from "../../../src/lib/deck/skirt";
 import { deckScene, parseDeckScene, sceneBuildLayers, SCENE_LAYERS, SCENE_MAX_BOXES, SCENE_MAX_FOOTINGS, SCENE_MAX_DIAGONALS, SCENE_MAX_POLYS } from "../../../src/lib/deck/scene";
 import { deckElevation, elevationOverlay, defaultPlacement } from "../../../src/lib/deck/elevation";
@@ -293,14 +293,15 @@ function exercise(d: DeckDesign, tag: string, out: string[]) {
         if (b.kind === "screen" && !(b.posts >= 2 && b.sqFt > 0 && b.windLb > 0 && (b.postSize === "4x4" || b.postSize === "6x6"))) { out.push(`a screen with no posts or no wind  [${tag}]`); break; }
       }
       const built = s0.builtIns.filter((b) => b.built);
-      // MOVED BY HAND (lib/deck/accessories): a drag, a turn or a click that answers with a change leaves it built.
+      // MOVED BY HAND (lib/deck/accessories): a drag, a turn to any angle, a press across the deck or a drag out past the railing that answers with a change leaves it built.
       if (Number(tag.slice(1)) % 6 === 2) {
         const first = built[0];
         if (first) {
           const tries: Array<[string, ReturnType<typeof moveAccessory>]> = [
             ["drag", moveAccessory(s0, first.design.id, first.footprint[0].x + 37, first.footprint[0].y - 29)],
-            ["turn", turnAccessory(s0, first.design.id, 45)],
-            ["place", placeAccessory(s0, first.design.id, 96, 60)],
+            ["turn", turnAccessoryTo(s0, first.design.id, 33 + (Number(tag.slice(1)) % 7) * 47)],
+            ["send", moveAccessory(s0, first.design.id, 96, 60)],
+            ["past", moveAccessory(s0, first.design.id, first.footprint[0].x + 400, first.footprint[0].y + 15)],
           ];
           for (const [what, p] of tries) {
             if (!p) continue;

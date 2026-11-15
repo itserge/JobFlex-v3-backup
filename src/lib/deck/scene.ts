@@ -37,6 +37,7 @@ import { BASE_PLATE_IN, BASE_PLATE_THICK_IN, railMountCallout, railPostWords, ra
 import { electricalWords } from "./electrical";
 import { SKIRT_BOARD_IN, SKIRT_BORDER_IN, SKIRT_CLEAR_IN, SKIRT_GAP_IN, SKIRT_THICK_IN } from "./skirt";
 import { BENCH_BACK_IN, BENCH_SEAT_IN, BUILT_IN_LABEL, SCREEN_GAP_IN, type BuiltInMember } from "./builtins";
+import { accessoryPose } from "./accessories";
 import { finishProduct, type PartFinish } from "./finish";
 import { HOUSE_MATERIALS, HOUSE_ROOFS, houseHandles, houseScene, settleSceneOpenings, type HouseMaterial, type HouseRoof } from "./house";
 import { railColorOf, speciesWords } from "./catalog";
@@ -156,6 +157,14 @@ export interface SceneHandle {
   grab?: [number, number, number, number, number, number];
   /** How a builder reads that value: `sign × (value − origin)` inches `from` ("from the deck's left end"). */
   shown?: { origin: number; sign: 1 | -1; from: string };
+  /**
+   * AN ACCESSORY IN THE HAND (2026-11-15): its footprint's four corners on the plan in order round it [x0, y0, … x3,
+   * y3], ft (0→1 its length, 0→3 its depth) — and its turn, degrees (its length runs that way; its front a quarter turn
+   * to the left of it; none on a privacy screen, which does not turn). The 3D outlines it, takes hold of it by it and
+   * turns it about its middle.
+   */
+  foot?: number[];
+  turn?: number;
 }
 
 /** One kind of part: what it is, how it is cut, what fastens it. The 3D shows this when a part is touched. */
@@ -242,7 +251,9 @@ function handleGrab(o: Record<string, unknown>): Pick<SceneHandle, "grab" | "sho
   if (!Array.isArray(g) || g.length !== 6 || !g.every((v) => typeof v === "number" && Number.isFinite(v) && Math.abs(v) < 500)) return {};
   const sh = (o.shown && typeof o.shown === "object" ? o.shown : null) as Record<string, unknown> | null;
   const shown = sh && typeof sh.origin === "number" && Number.isFinite(sh.origin) && (sh.sign === 1 || sh.sign === -1) && typeof sh.from === "string" ? { origin: sh.origin, sign: sh.sign as 1 | -1, from: sh.from.slice(0, 60) } : undefined;
-  return { grab: g as [number, number, number, number, number, number], ...(shown ? { shown } : {}) };
+  const foot = Array.isArray(o.foot) && o.foot.length === 8 && o.foot.every((v) => typeof v === "number" && Number.isFinite(v) && Math.abs(v) < 500) ? (o.foot as number[]) : undefined;
+  const turn = typeof o.turn === "number" && Number.isFinite(o.turn) && Math.abs(o.turn) <= 720 ? o.turn : undefined;
+  return { grab: g as [number, number, number, number, number, number], ...(shown ? { shown } : {}), ...(foot ? { foot } : {}), ...(turn !== undefined ? { turn } : {}) };
 }
 const r4 = (rad: number) => Math.round(rad * 10000) / 10000;
 const LEAN: Record<string, number> = { "x:1": 1, "x:-1": 2, "y:1": 3, "y:-1": 4 };
@@ -1254,7 +1265,8 @@ export function deckScene(s: DeckStructure): DeckScene {
       const z1 = z0 + Math.max(4, b.heightIn);
       const cx = (b.footprint[0].x + b.footprint[2].x) / 2;
       const cy = (b.footprint[0].y + b.footprint[2].y) / 2;
-      handles.push({ kind: "builtin", id: b.design.id, x: r3(cx), y: r3(cy), z: r3((z0 + z1) / 2), axis: "xy", value: Math.round(cx * 2) / 2, value2: Math.round(cy * 2) / 2, perUnit: 1 / 12, label: BUILT_IN_LABEL[b.kind], grab: [r3(x0), r3(y0), r3(z0), r3(x1), r3(y1), r3(z1)] });
+      const pose = accessoryPose(b);
+      handles.push({ kind: "builtin", id: b.design.id, x: r3(cx), y: r3(cy), z: r3((z0 + z1) / 2), axis: "xy", value: Math.round(cx * 2) / 2, value2: Math.round(cy * 2) / 2, perUnit: 1 / 12, label: BUILT_IN_LABEL[b.kind], grab: [r3(x0), r3(y0), r3(z0), r3(x1), r3(y1), r3(z1)], foot: b.footprint.flatMap((q) => [r3(q.x), r3(q.y)]), ...(b.kind === "screen" ? {} : { turn: pose?.turnDeg ?? 0 }) });
     }
   }
   return {
