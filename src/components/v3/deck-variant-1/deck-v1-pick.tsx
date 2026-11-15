@@ -14,7 +14,8 @@ import { gripShownIn, type DeckGrip } from "@/lib/deck/byHand";
 import { ftIn } from "@/lib/deck/codeTables";
 import { applyDeckPatch } from "@/lib/deck/checks";
 import type { DeckDesign } from "@/lib/deck/design";
-import { partBoxes, partCard, tryChoice, type PartCard, type PartChoice, type PartOutcome, type PartRef, type TakenOut } from "@/lib/deck/parts";
+import { finishPatch, partBoxes, partCard, tryChoice, type PartCard, type PartChoice, type PartOutcome, type PartRef, type TakenOut } from "@/lib/deck/parts";
+import { finishColors, finishLines, finishWords, sameFinish, type PartFinish } from "@/lib/deck/finish";
 import type { DeckPackage, DeckPriceOptions } from "@/lib/deck/pricing";
 import type { DeckScene, SceneLegend } from "@/lib/deck/scene";
 import type { SceneHighlight } from "@/components/estimator/deck/DeckModel3D";
@@ -71,7 +72,8 @@ export function PartCardView({
   canZoom?: boolean;
   onZoom: (zoomIn: boolean) => void;
   onClose: () => void;
-  onApply: (next: DeckDesign, done: PartDone) => void;
+  /** `keep`: the card stays open on this part (its boards changed: a colour may be picked next). */
+  onApply: (next: DeckDesign, done: PartDone, keep?: PartRef) => void;
   /** A choice that takes out every part of the kind is under the pointer (or not any more). */
   onWhole: (on: boolean) => void;
   /** The part is moved to a place of the builder's: inches, as the card reads them (lib/deck/byHand gripShownIn). */
@@ -151,6 +153,20 @@ export function PartCardView({
         </p>
       ) : null}
 
+      {card?.finish ? (
+        <FinishControl
+          key={`${card.finish.target.kind}:${card.finish.target.id}`}
+          finish={card.finish}
+          design={design}
+          pkg={pkg}
+          opts={opts}
+          onPick={(o, text) => {
+            onWhole(false);
+            onApply(o.design, { before: design, text }, card.ref);
+          }}
+        />
+      ) : null}
+
       {card?.place ? <PlaceControl key={`${card.place.kind}:${card.place.id}:${gripShownIn(card.place)}`} grip={card.place} onMove={(v) => onPlace(card.place!, v)} /> : null}
 
       {main.length ? (
@@ -226,6 +242,83 @@ export function PartCardView({
       ))}
 
       {locked && ref ? <p className="v1-pick-how">A saved deck opens view-only here: its parts can be looked at, not changed.</p> : null}
+    </div>
+  );
+}
+
+/**
+ * ITS BOARDS (2026-11-14 — the owner: "click the steps around in the 3D and replace the material or the colour; the same
+ * with the bench"; lib/deck/finish). The line its boards are — the deck's own, or any line of the catalog — and the
+ * colour of that line, each colour a swatch. Every pick is tried first, so what it does to the price is said with it.
+ */
+function FinishControl({ finish, design, pkg, opts, onPick }: { finish: NonNullable<PartCard["finish"]>; design: DeckDesign; pkg: DeckPackage; opts: DeckPriceOptions; onPick: (o: PartOutcome, text: string) => void }) {
+  const lines = React.useMemo(() => finishLines(), []);
+  const now = finish.now;
+  // The line its boards are, and the colour: its own — or, the deck's own, the deck's line and colour.
+  const line = now ? now.product : finish.deckProduct;
+  const colorNow = now ? now.color : finish.deckColor;
+  const colors = React.useMemo(() => finishColors(line), [line]);
+  const what = finish.target.kind === "stair" ? "the steps" : "it";
+  const pick = (f: PartFinish | null) => {
+    if (sameFinish(f, now)) return;
+    const o = tryChoice(design, { patch: finishPatch(design, finish.target, f) }, opts, pkg);
+    const delta = Math.abs(o.delta) < 0.5 ? "same price" : o.delta < 0 ? `saves ${money(Math.abs(o.delta))}` : `adds ${money(o.delta)}`;
+    onPick(o, `Boards for ${what}: ${f ? finishWords(f) : "the deck's own"} — ${delta}.`);
+  };
+  return (
+    <div className="v1-finish" data-deck-finish={finish.target.kind} data-deck-finish-now={now ? `${now.product}${now.color ? `.${now.color}` : ""}` : "deck"}>
+      <span className="v1-h4">Its boards</span>
+      <p className="v1-finish-now">{now ? finishWords(now) : `The deck's own — ${finish.deck}`}</p>
+      <label className="v1-finish-pick">
+        <span>Material</span>
+        <select
+          className="v1-in"
+          value={now ? now.product : ""}
+          onChange={(e) => pick(e.target.value ? { product: e.target.value, color: "" } : null)}
+          data-deck-finish-material
+        >
+          <option value="">Same as the deck</option>
+          {lines.map((g) => (
+            <optgroup key={g.family} label={g.label}>
+              {g.products.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+      </label>
+      {colors.length ? (
+        <div className="v1-finish-colors" role="group" aria-label="Colour">
+          <span className="v1-finish-label">Colour</span>
+          <div className="v1-chips">
+            {colors.map((c) => {
+              const on = c.id === colorNow;
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  className={cx("v1-chip", "v1-swatch-chip", on && "is-on")}
+                  aria-pressed={on}
+                  onClick={() => pick(!now && c.id === finish.deckColor ? null : { product: line, color: c.id })}
+                  data-deck-finish-color={c.id}
+                >
+                  <span className="v1-swatch" style={{ background: c.hex2 ? `linear-gradient(135deg, ${c.hex} 0 55%, ${c.hex2} 55% 100%)` : c.hex }} aria-hidden="true" />
+                  <span>{c.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <p className="v1-finish-hint">{now ? "This line comes in one tone." : "Pick a line above to choose a colour of its own."}</p>
+      )}
+      {now ? (
+        <button type="button" className="v1-btn v1-btn-sm v1-btn-quiet" onClick={() => pick(null)} data-deck-finish-reset>
+          Back to the deck&apos;s own boards
+        </button>
+      ) : null}
     </div>
   );
 }

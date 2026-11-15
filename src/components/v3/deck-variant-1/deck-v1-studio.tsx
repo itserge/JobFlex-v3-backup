@@ -140,7 +140,7 @@ import { Answers, CUSTOM, CUSTOM_LABEL, CustomBox, Field, FieldScope, More, Name
 import { DeckV1Send, type SendPrefill } from "./deck-v1-send";
 import { PartCardView, PartDoneLine, TakenOutLine, usePartLight, type PartDone, type PickedPart } from "./deck-v1-pick";
 import { BoardColorPicker, BorderColorPicker, RailColorPicker } from "./deck-v1-colors";
-import { partAt, takenOut, type TakenOut } from "@/lib/deck/parts";
+import { partAt, takenOut, type PartRef, type TakenOut } from "@/lib/deck/parts";
 import { DeckAddonDialog, DeckPreviewBanner } from "@/components/v3/deck-addon/deck-addon";
 import type { AddonInterval } from "@/lib/deckAddon";
 import { PHOTO_ENABLED, PhotoFileInput, PhotoSection, PhotoTools, PhotoViewBox, PhotoWhere, useDeckPhoto, type V1View } from "./deck-v1-photo";
@@ -534,7 +534,9 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
   // change to the design redraws the scene and the old box number means nothing, so the card closes with it.
   // …unless the part is a post or a beam being moved by hand (`grip`, lib/deck/byHand): that card stays on its part
   // through every move, by the part's own name.
-  const [picked, setPicked] = React.useState<{ legend: SceneLegend | null; point: [number, number, number]; boxIdx: number | null; layer: string | null; scene: DeckScene | null; grip?: { kind: GripKind; id: string } } | null>(null);
+  // …and (2026-11-14) a stair's or a built-in's card stays open by the part's name (`keep`) after its boards change, so a
+  // colour can be picked next; a step round a shaped deck is a board cut to a shape — `ringIdx` says which.
+  const [picked, setPicked] = React.useState<{ legend: SceneLegend | null; point: [number, number, number]; boxIdx: number | null; ringIdx?: number | null; layer: string | null; scene: DeckScene | null; grip?: { kind: GripKind; id: string }; keep?: PartRef } | null>(null);
   const [partWhole, setPartWhole] = React.useState(false);
   const [partDone, setPartDone] = React.useState<PartDone | null>(null);
   const scene = React.useMemo(() => deckScene(structure), [structure]);
@@ -548,7 +550,8 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
   const beamToAdd = React.useMemo(() => addBeam(structure), [structure]);
   const pickedPart = React.useMemo<PickedPart | null>(() => {
     if (!picked) return null;
-    if (picked.scene === scene) return { legend: picked.legend, point: picked.point, ref: partAt(structure, scene, picked.boxIdx, picked.layer) };
+    if (picked.scene === scene) return { legend: picked.legend, point: picked.point, ref: partAt(structure, scene, picked.boxIdx, picked.layer, picked.ringIdx) };
+    if (picked.keep) return { legend: picked.legend, point: picked.point, ref: picked.keep };
     const g = picked.grip ? grips.find((q) => q.kind === picked.grip?.kind && q.id === picked.grip?.id) : undefined;
     return g ? { legend: picked.legend, point: [g.x / 12, g.y / 12, picked.point[2]], ref: partOfGrip(g) } : null;
   }, [picked, scene, structure, grips]);
@@ -756,8 +759,10 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
         return;
       }
       setPartWhole(false);
-      if (pick && (pick.legend || typeof pick.boxIdx === "number") && pick.layer !== "ground" && pick.layer !== "house") {
-        setPicked({ legend: pick.legend, point: pick.point, boxIdx: pick.boxIdx ?? null, layer: pick.layer, scene: sceneRef.current });
+      // (A board cut to a shape is a part to pick only when it is a step's: a cut board of the deck is just a board.)
+      const ringPart = typeof pick?.ringIdx === "number" && sceneRef.current ? partAt(structure, sceneRef.current, null, pick.layer, pick.ringIdx) : null;
+      if (pick && (pick.legend || typeof pick.boxIdx === "number" || ringPart) && pick.layer !== "ground" && pick.layer !== "house") {
+        setPicked({ legend: pick.legend, point: pick.point, boxIdx: pick.boxIdx ?? null, ringIdx: pick.ringIdx ?? null, layer: pick.layer, scene: sceneRef.current });
         setPartDone(null);
       } else setPicked(null);
   };
@@ -1118,7 +1123,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
   };
   const slotPrice = (slot: CustomSlot): number => {
     const ids: Record<CustomSlot, (id: string, step: BomStep) => boolean> = {
-      decking: (id, step) => (step === "decking" && id.startsWith("boards-")) || (step === "stairs" && id.startsWith("tread-boards-")),
+      decking: (id, step) => (step === "decking" && id.startsWith("boards-")) || (step === "stairs" && id.startsWith("tread-boards-") && !id.startsWith("tread-boards-own-")),
       fastening: (id) => id === "deck-fasteners",
       fascia: (id) => id === "fascia" || id === "riser-boards",
       roofing: (id) => id === "shingles" || id === "shakes" || id === "metal-panels",
@@ -4107,11 +4112,11 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                   setPartWhole(false);
                 }}
                 onWhole={setPartWhole}
-                onApply={(next, done) => {
+                onApply={(next, done, keep) => {
                   dirty.current = true;
                   setDesign(next);
                   setPartDone(done);
-                  setPicked(null);
+                  setPicked((was) => (keep && was ? { ...was, keep } : null));
                 }}
                 onPlace={(g, v) => placeGrip(g, v, true)}
               />

@@ -978,6 +978,15 @@
 .jf-deck-v1 .v1-place-num input { width: 64px; min-width: 0; text-align: right; }
 .jf-deck-v1 .v1-place-from { font-size: 13.5px; color: var(--ink-muted); flex: 1 1 140px; min-width: 0; }
 .jf-deck-v1 .v1-place-hint { margin: 0; font-size: 13px; line-height: 1.45; color: var(--ink-muted); }
+/* Its boards (2026-11-14): a stair's or a built-in's own line and colour. */
+.jf-deck-v1 .v1-finish { display: grid; gap: 8px; padding: 10px 12px; background: var(--paper-deep); border: 1.5px solid var(--ink-line); border-radius: var(--r-sm); }
+.jf-deck-v1 .v1-finish-now { margin: 0; font-size: 14px; font-weight: 700; }
+.jf-deck-v1 .v1-finish-pick { display: grid; gap: 4px; font-size: 13px; color: var(--ink-muted); }
+.jf-deck-v1 .v1-finish-pick select { width: 100%; max-width: 420px; }
+.jf-deck-v1 .v1-finish-colors { display: grid; gap: 6px; }
+.jf-deck-v1 .v1-finish-label { font-size: 13px; color: var(--ink-muted); }
+.jf-deck-v1 .v1-finish-hint { margin: 0; font-size: 13px; line-height: 1.45; color: var(--ink-muted); }
+.jf-deck-v1 .v1-finish .v1-btn { justify-self: start; }
 .jf-deck-v1 .v1-size { cursor: pointer; }
 .jf-deck-v1 .v1-size:disabled { cursor: default; }
 .jf-deck-v1 .v1-size.is-refused { color: var(--ink-muted); border-color: var(--ink-line); background: var(--paper); text-decoration: line-through; cursor: not-allowed; }

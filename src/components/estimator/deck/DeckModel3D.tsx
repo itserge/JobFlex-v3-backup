@@ -59,6 +59,8 @@ export interface DeckPick {
   mount: "post" | "header" | "rail" | "deck" | "ceiling" | "wall" | "stair" | "peak";
   /** The scene's box that was touched (lib/deck/parts names the part from it); null for a flat face, the ground or the house. */
   boxIdx?: number | null;
+  /** A board cut to a shape that was touched (2026-11-14): its ring in the scene's `diagonal` — a step that follows the deck's outline is named from it. */
+  ringIdx?: number | null;
 }
 
 export interface DeckModel3DProps {
@@ -1274,6 +1276,22 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       const borderColor = s.colors.border ? new THREE.Color(s.colors.border) : null;
       const borderColor2 = s.colors.border2 ? new THREE.Color(s.colors.border2) : null;
       const borderRings = new Set(s.diagonal?.border ?? []);
+      // BOARDS OF THEIR OWN (2026-11-14; lib/deck/finish): a stair's treads and risers, a built-in's boards, in the line
+      // and colour picked for them — each board still a touch lighter or darker than the next, as the deck's are.
+      const paintBox = new Map<number, { c: THREE.Color; c2: THREE.Color | null }>();
+      const paintRing = new Map<number, { c: THREE.Color; c2: THREE.Color | null }>();
+      for (const pt of s.paints ?? []) {
+        const look = { c: new THREE.Color(pt.hex), c2: pt.hex2 ? new THREE.Color(pt.hex2) : null };
+        for (const i of pt.boxes) paintBox.set(i, look);
+        for (const i of pt.rings) paintRing.set(i, look);
+      }
+      /** A box's colour when it is a board of its own: the deck's boards streaked, a riser or an apron a shade under. */
+      const ownPaint = (bi: number, L: number): THREE.Color | null => {
+        const own = paintBox.get(bi);
+        if (!own) return null;
+        if (L === DECKING) return streaked(own.c, own.c2, bi + L * 97, 0.045);
+        return jitter(tone(own.c, L === FASCIA ? -0.05 : -0.02), bi + L * 97, 0.03);
+      };
       const roofColor = new THREE.Color(s.colors.roofing ?? "#565250");
       const railColor = new THREE.Color(s.colors.rail ?? s.colors.frame);
       const metalRoof = s.colors.roofing === "#6f7478" || s.colors.roofing === "#3f4a55";
@@ -1439,7 +1457,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
             // slid by depth²÷length and the ends stood square, so rafters met at the ridge overlapping, 2026-10-11).
             boxMatrix(b, legendOf(bi)?.role ?? null, ox, oz, m4);
             mesh.setMatrixAt(k, m4);
-            mesh.setColorAt(k, L === LIGHT && s.glows.some((g) => Math.abs(g[0] - b[1]) < 0.05 && Math.abs(g[1] - b[2]) < 0.05 && Math.abs(g[2] - b[3]) < 0.05) ? new THREE.Color(s.glows.find((g) => Math.abs(g[0] - b[1]) < 0.05 && Math.abs(g[1] - b[2]) < 0.05 && Math.abs(g[2] - b[3]) < 0.05)![3]).lerp(new THREE.Color(0xffffff), 0.45) : L === DECKING ? (borderColor && BORDER_BOARD_ROLE.test(legendOf(bi)?.role ?? "") ? streaked(borderColor, borderColor2, bi + L * 97, 0.045) : streaked(base, deckColor2, bi + L * 97, 0.045)) : jitter(base, bi + L * 97, L === TRIM || L === GUTTER || L === HARDWARE ? 0.01 : 0.03));
+            mesh.setColorAt(k, ownPaint(bi, L) ?? (L === LIGHT && s.glows.some((g) => Math.abs(g[0] - b[1]) < 0.05 && Math.abs(g[1] - b[2]) < 0.05 && Math.abs(g[2] - b[3]) < 0.05) ? new THREE.Color(s.glows.find((g) => Math.abs(g[0] - b[1]) < 0.05 && Math.abs(g[1] - b[2]) < 0.05 && Math.abs(g[2] - b[3]) < 0.05)![3]).lerp(new THREE.Color(0xffffff), 0.45) : L === DECKING ? (borderColor && BORDER_BOARD_ROLE.test(legendOf(bi)?.role ?? "") ? streaked(borderColor, borderColor2, bi + L * 97, 0.045) : streaked(base, deckColor2, bi + L * 97, 0.045)) : jitter(base, bi + L * 97, L === TRIM || L === GUTTER || L === HARDWARE ? 0.01 : 0.03)));
             centres[bi] = [new THREE.Vector3(b[1] - ox, b[3], b[2] - oz), Math.max(b[4], b[5], b[6])];
           });
           mesh.instanceMatrix.needsUpdate = true;
@@ -1578,7 +1596,8 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           const bottom = top - s.diagonal!.thickFt;
           const n = ring.length / 2;
           const start = positions.length / 3;
-          const c = borderColor && borderRings.has(bi) ? streaked(borderColor, borderColor2, bi, 0.045) : streaked(deckColor, deckColor2, bi, 0.045);
+          const ringOwn = paintRing.get(bi);
+          const c = ringOwn ? streaked(ringOwn.c, ringOwn.c2, bi, 0.045) : borderColor && borderRings.has(bi) ? streaked(borderColor, borderColor2, bi, 0.045) : streaked(deckColor, deckColor2, bi, 0.045);
           for (const y of [top, bottom]) {
             for (let k = 0; k < n; k++) {
               positions.push(ring[k * 2] - ox, y, ring[k * 2 + 1] - oz);
@@ -2650,6 +2669,12 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         boxIdx = entry?.boxIdx[hit.instanceId] ?? null;
         if (boxIdx !== null && s.tags.length === s.boxes.length && s.tags[boxIdx] >= 0) legend = s.legend[s.tags[boxIdx]] ?? null;
         return { pick: { legend, layer: layerName, point, mount: MOUNT_OF[layerName] ?? "deck", boxIdx }, boxIdx, mesh: obj, instanceId: hit.instanceId, calloutLegend: null };
+      }
+      if (content.diagonal && obj === content.diagonal.mesh && hit.faceIndex !== undefined && hit.faceIndex !== null) {
+        // A board cut to a shape: which ring, by the face index (2026-11-14 — a step round a shaped deck is one).
+        const idxEnd = (hit.faceIndex + 1) * 3;
+        const ringIdx = content.diagonal.ends.findIndex((e) => idxEnd <= e);
+        return { pick: { legend, layer: layerName, point, mount: MOUNT_OF[layerName] ?? "deck", boxIdx: null, ringIdx: ringIdx >= 0 ? ringIdx : null }, boxIdx: null, mesh: null, instanceId: null, calloutLegend: null };
       }
       if (typeof obj.userData.boxIdx === "number") {
         boxIdx = obj.userData.boxIdx as number;

@@ -1158,7 +1158,7 @@ export function DeckV5Studio({ initialBook, homeState, initialAddress, clientId,
   /** What the list's choice costs now, in the slot's unit: where the shop's own product starts. */
   const slotPrice = (slot: CustomSlot): number => {
     const ids: Record<CustomSlot, (id: string, step: BomStep) => boolean> = {
-      decking: (id, step) => (step === "decking" && id.startsWith("boards-")) || (step === "stairs" && id.startsWith("tread-boards-")),
+      decking: (id, step) => (step === "decking" && id.startsWith("boards-")) || (step === "stairs" && id.startsWith("tread-boards-") && !id.startsWith("tread-boards-own-")),
       fastening: (id) => id === "deck-fasteners",
       fascia: (id) => id === "fascia" || id === "riser-boards",
       roofing: (id) => id === "shingles" || id === "shakes" || id === "metal-panels",
