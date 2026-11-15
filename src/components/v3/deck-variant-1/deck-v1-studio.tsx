@@ -112,6 +112,7 @@ import { railWords } from "@/lib/deck/rails";
 import { electricalWords } from "@/lib/deck/electrical";
 import { siteFromAddress, SLOPE_LIMITS, TERMITE_LABEL } from "@/lib/deck/site";
 import { applyDeckPatch, checkSummary, deckChecks, type DeckCheck, type DeckPatch } from "@/lib/deck/checks";
+import { addOpening, openingsReal } from "@/lib/deck/wallOpenings";
 import { deckScene, sceneBuildLayers, SCENE_LAYER_LABEL, type DeckScene, type SceneLegend } from "@/lib/deck/scene";
 import { BOM_STEP_LABEL, FIXTURE_RATE, type BomStep } from "@/lib/deck/takeoff";
 import { STORE_SURVEY, storePrice } from "@/lib/deck/storePrices";
@@ -2025,12 +2026,60 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
             </button>
           </div>
         ) : null}
-        {design.house.openings ? (
-          <div className="v1-row-acts" data-deck-house-openings>
-            <span className="v1-meta">The windows and doors stand where the photo showed them.</span>
-            <button type="button" className="v1-btn v1-btn-sm v1-btn-quiet" onClick={() => setHouse({ openings: null })}>
-              Draw them by rule instead
-            </button>
+        {/* THE WALL'S WINDOWS AND DOORS (2026-11-15 — the owner: "double click on the window and move it anywhere I want
+            it… change the sliding door for a triple sliding door, 4 doors, or a single regular door… make the size"):
+            each is taken in the hand in the 3D itself (lib/deck/wallOpenings). Here: what the wall is now — drawn by
+            rule, arranged by hand as a picture, or the real one the deck is checked against — one more to add, and
+            the way back to the rule. */}
+        {design.placement !== "detached" && structure.frame ? (
+          <div className="v1-openings" data-deck-house-openings={design.house.openings ? (design.house.openingsSketch ? "sketch" : "real") : "rule"}>
+            <p className="v1-meta">
+              {!design.house.openings
+                ? "The windows and doors are drawn by rule. Click one in the 3D to move it, change its size or swap it — or add one here."
+                : design.house.openingsSketch
+                  ? "The windows and doors are arranged by hand, as a picture: click one in the 3D to move it, size it or swap it. The deck is not checked against them."
+                  : design.house.photo
+                    ? "The windows and doors stand where the photo showed them. Click one in the 3D to move it, size it or swap it."
+                    : "These are the house's real windows and doors: the deck is checked against them. Click one in the 3D to move it, size it or swap it."}
+            </p>
+            <div className="v1-row-acts">
+              {(
+                [
+                  ["window", "Window"],
+                  ["door", "Door"],
+                  ["slider2", "Sliding door"],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className="v1-btn v1-btn-sm"
+                  onClick={() => {
+                    const made = addOpening(structure, key);
+                    if (made) patch(made.patch);
+                  }}
+                  data-deck-opening-add={key}
+                >
+                  <Plus size={15} strokeWidth={2.5} aria-hidden="true" /> {label}
+                </button>
+              ))}
+              {design.house.openings ? (
+                <button type="button" className="v1-btn v1-btn-sm v1-btn-quiet" onClick={() => setHouse({ openings: null, openingsSketch: undefined })} data-deck-openings-rule>
+                  Draw them by rule again
+                </button>
+              ) : null}
+            </div>
+            {design.house.openings ? (
+              <Toggle
+                checked={!design.house.openingsSketch}
+                onChange={(v) => {
+                  const p = openingsReal(structure, v);
+                  if (p) patch(p);
+                }}
+              >
+                These are the house&apos;s real windows and doors — check the deck against them
+              </Toggle>
+            ) : null}
           </div>
         ) : null}
         {/* THE WALL'S LOCK (2026-11-14): locked, the wall's shape below is held — only the deck moves around it. */}

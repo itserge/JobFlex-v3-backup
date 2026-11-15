@@ -155,8 +155,11 @@ console.log("— a house drawn by rule: the door on the deck's floor, every row 
   // upper row of windows — and that row is the one on the door's floor.
   const covered = byRule(114, 24, { structure: "covered-deck", roof: { ...d0.roof, kind: "gable", attach: "wall" } });
   const cDoor = covered.door!;
-  const onDoor = (covered.windows ?? []).filter((w) => Math.abs(w[0] - cDoor[0]) < cDoor[1] / 2 + 1.5 + w[2] / 2 - 0.01 && w[4] < 9.5 + cDoor[2] + 1);
-  check("a covered second-storey deck: windows stand on the door's floor, each side of it", (covered.windows ?? []).some((w) => w[0] < cDoor[0]) && (covered.windows ?? []).some((w) => w[0] > cDoor[0]) && (covered.windows ?? []).every((w) => w[4] > 9.5), covered.windows);
+  const onDoor = (covered.windows ?? []).filter((w) => Math.abs(w[0] - cDoor[0]) < cDoor[1] / 2 + 1.5 + w[2] / 2 - 0.01 && w[4] < 9.5 + cDoor[2] + 1 && w[4] + w[3] > 9.5 - 1);
+  // (The floor UNDER the deck has a row of its own since 2026-11-15 — sills 3 ft up, under the deck's frame: lib/deck/house.)
+  const doorFloor = (covered.windows ?? []).filter((w) => w[4] > 9.5);
+  const below = (covered.windows ?? []).filter((w) => w[4] <= 9.5);
+  check("a covered second-storey deck: windows stand on the door's floor, each side of it", doorFloor.some((w) => w[0] < cDoor[0]) && doorFloor.some((w) => w[0] > cDoor[0]) && below.every((w) => Math.abs(w[4] - 3) < 0.01 && w[4] + w[3] < 9.5 - 1.5), covered.windows);
   check("…none of them on the door or inside its trim", onDoor.length === 0 && clear(rowsOf(covered, 9.5)), onDoor);
   const upper2 = byRule(114, 24, { house: { ...d0.house, storeys: 2 } });
   check("a second-storey deck on a two-storey house: the same", clear(rowsOf(upper2, 9.5)) && (upper2.windows ?? []).length > 0, upper2.windows);

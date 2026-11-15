@@ -48,8 +48,8 @@ export interface DeckEdit {
 }
 
 /** The short name beside each edit knob, and which names win a crowded spot (the deck's own size first, the house last). */
-const KNOB_NAME: Record<SceneHandle["kind"], string> = { width: "Width", "width-left": "Width", depth: "Depth", height: "Height", eave: "Post height", pitch: "Pitch", "roof-width": "Roof width", "roof-depth": "Roof depth", "lower-depth": "Lower level", stair: "Move stairs", "stair-width": "Stair width", jog: "Wall step", "house-left": "House corner", "house-right": "House corner", post: "Move post", beam: "Move beam", "roof-post": "Move roof post" , builtin: "Accessory" };
-const KNOB_RANK: Record<SceneHandle["kind"], number> = { width: 0, "width-left": 0.5, depth: 1, height: 2, eave: 3, pitch: 4, "roof-width": 5, "roof-depth": 6, "lower-depth": 7, "stair-width": 8, stair: 9, "house-left": 10, "house-right": 11, jog: 12, post: 13, beam: 14, "roof-post": 15 , builtin: 20 };
+const KNOB_NAME: Record<SceneHandle["kind"], string> = { width: "Width", "width-left": "Width", depth: "Depth", height: "Height", eave: "Post height", pitch: "Pitch", "roof-width": "Roof width", "roof-depth": "Roof depth", "lower-depth": "Lower level", stair: "Move stairs", "stair-width": "Stair width", jog: "Wall step", "house-left": "House corner", "house-right": "House corner", post: "Move post", beam: "Move beam", "roof-post": "Move roof post" , builtin: "Accessory", opening: "Window or door" };
+const KNOB_RANK: Record<SceneHandle["kind"], number> = { width: 0, "width-left": 0.5, depth: 1, height: 2, eave: 3, pitch: 4, "roof-width": 5, "roof-depth": 6, "lower-depth": 7, "stair-width": 8, stair: 9, "house-left": 10, "house-right": 11, jog: 12, post: 13, beam: 14, "roof-post": 15 , builtin: 20, opening: 21 };
 
 /** What a touch landed on, for the studio's label and the fixture placer. */
 export interface DeckPick {
@@ -1879,11 +1879,12 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
          * over another opening (a transom): a plain board under it, no sill and apron across that opening's head;
          * `under` = another stands right over it: no head cap.
          */
-        const windowAt = (x: number, w: number, h: number, y: number, face: number, over = false, under = false) => {
+        const windowAt = (x: number, w: number, h: number, y: number, face: number, over = false, under = false, panels?: number) => {
           const z0 = face - oz;
           onWall(glassMat, x, y + h / 2, w, h, z0, -0.02, 0.06);
           const bar = (bx: number, by: number, bw: number, bh: number) => onWall(trimMat, bx, by, bw, bh, z0, 0.03, 0.1);
-          const sashes = Math.max(1, Math.round(w / 3.2));
+          // (Set by hand, 2026-11-15: a single, double or triple window shows that many sashes whatever its width.)
+          const sashes = panels && panels >= 1 ? Math.min(4, Math.round(panels)) : Math.max(1, Math.round(w / 3.2));
           if (h >= 2.5) bar(x, y + h / 2, w, 0.08);
           if (sashes > 1) for (let i = 1; i < sashes; i++) bar(x - w / 2 + (w * i) / sashes, y + h / 2, 0.08, h);
           else if (w >= 2 && h >= 1.5) bar(x, y + h / 2, 0.08, h);
@@ -1899,10 +1900,11 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           if (!under) onWall(trimMat, x, y + h + 0.3, w + 0.62, 0.22, z0, -0.02, 0.2);
         };
         /** A sliding door: glass in leaves, each in its frame — a stile at both ends, a meeting stile between leaves, the top rail, the taller bottom rail — and the pull on the stile it closes on. */
-        const sliderAt = (x: number, w: number, h: number, y: number, face: number) => {
+        const sliderAt = (x: number, w: number, h: number, y: number, face: number, panels?: number) => {
           const z0 = face - oz;
           onWall(glassMat, x, y + h / 2, w, h, z0, -0.02, 0.06);
-          const leaves = Math.min(4, Math.max(2, Math.round(w / 3.5)));
+          // (Set by hand, 2026-11-15: a sliding door of 2, 3 or 4 panels shows that many leaves whatever its width.)
+          const leaves = panels && panels >= 2 ? Math.min(4, Math.round(panels)) : Math.min(4, Math.max(2, Math.round(w / 3.5)));
           const stile = Math.min(0.2, w / 8);
           const frame = (bx: number, by: number, bw: number, bh: number) => onWall(trimMat, bx, by, bw, bh, z0, 0.03, 0.1);
           for (const side of [-1, 1]) frame(x + side * (w / 2 - stile / 2), y + h / 2, stile, h);
@@ -1914,15 +1916,23 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           threshold(x, w, y, z0);
         };
         /** A door: a painted slab, a glass lite in its top half in a frame of its own, a panel under it, the knob on the latch side. */
-        const doorAt = (x: number, w: number, h: number, y: number, face: number) => {
+        const doorAt = (x: number, w: number, h: number, y: number, face: number, panels?: number) => {
           const z0 = face - oz;
           onWall(doorMat, x, y + h / 2, w, h, z0, -0.02, 0.07);
-          if (h >= 4.5) {
-            onWall(trimMat, x, y + h * 0.7, w * 0.56 + 0.14, h * 0.36 + 0.14, z0, 0.03, 0.1);
-            onWall(glassMat, x, y + h * 0.7, w * 0.56, h * 0.36, z0, 0.05, 0.13);
-            onWall(railMat, x, y + h * 0.26, w * 0.62, h * 0.3, z0, 0.03, 0.1);
-            onWall(handleMat, x + w * 0.39, y + 3, 0.1, 0.1, z0, 0.05, 0.19);
+          // A DOUBLE DOOR (2026-11-15, set by hand): two leaves, each with its lite and panel, their knobs where they
+          // meet, a thin astragal between them.
+          const leaves = panels === 2 && w >= 3.5 ? 2 : 1;
+          const lw = w / leaves;
+          for (let i = 0; i < leaves; i++) {
+            const lx = x - w / 2 + lw * (i + 0.5);
+            if (h >= 4.5) {
+              onWall(trimMat, lx, y + h * 0.7, lw * 0.56 + 0.14, h * 0.36 + 0.14, z0, 0.03, 0.1);
+              onWall(glassMat, lx, y + h * 0.7, lw * 0.56, h * 0.36, z0, 0.05, 0.13);
+              onWall(railMat, lx, y + h * 0.26, lw * 0.62, h * 0.3, z0, 0.03, 0.1);
+              onWall(handleMat, lx + (leaves === 2 ? (i === 0 ? 1 : -1) : 1) * lw * 0.39, y + 3, 0.1, 0.1, z0, 0.05, 0.19);
+            }
           }
+          if (leaves === 2) onWall(trimMat, x, y + h / 2, 0.06, h, z0, 0.07, 0.11);
           casing(x, w, y, y + h, z0);
           threshold(x, w, y, z0);
         };
@@ -1936,8 +1946,8 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         };
         // What stands in the wall: the doors where the photo showed them, on their own thresholds — or the one door onto
         // the deck, drawn by rule (a wide one slides, a narrow one swings) — and the windows.
-        const openings: Array<{ kind: "window" | "door" | "slider" | "garage"; x: number; w: number; h: number; y: number; face: number }> = [];
-        if (H.doors) for (const [dx, face, dw, dh, sill, kind] of H.doors) openings.push({ kind: kind === 1 ? "slider" : kind === 2 ? "garage" : "door", x: dx, w: dw, h: dh, y: sill, face });
+        const openings: Array<{ kind: "window" | "door" | "slider" | "garage"; x: number; w: number; h: number; y: number; face: number; panels?: number }> = [];
+        if (H.doors) for (const [dx, face, dw, dh, sill, kind, panels] of H.doors) openings.push({ kind: kind === 1 ? "slider" : kind === 2 ? "garage" : "door", x: dx, w: dw, h: dh, y: sill, face, panels });
         else if (H.door) {
           const [dx, dw, dh, face = 0] = H.door;
           openings.push({ kind: dw >= 5 ? "slider" : "door", x: dx, w: dw, h: dh, y: s.heightFt, face });
@@ -1950,17 +1960,17 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
             }
           }
         }
-        for (const [wx, face, ww, wh, sill] of H.windows ?? []) openings.push({ kind: "window", x: wx, w: ww, h: wh, y: sill, face });
+        for (const [wx, face, ww, wh, sill, panels] of H.windows ?? []) openings.push({ kind: "window", x: wx, w: ww, h: wh, y: sill, face, panels });
         /** Two openings in one column of the same face, the first right under the second. */
         const stacked = (lower: (typeof openings)[number], upper: (typeof openings)[number]) =>
           lower !== upper && Math.abs(lower.face - upper.face) < 0.05 && Math.min(lower.x + lower.w / 2, upper.x + upper.w / 2) - Math.max(lower.x - lower.w / 2, upper.x - upper.w / 2) > -CASING && upper.y >= lower.y + lower.h - 0.01 && upper.y - (lower.y + lower.h) < 0.6;
         for (const o of openings) {
-          if (o.kind === "window") windowAt(o.x, o.w, o.h, o.y, o.face, openings.some((l) => stacked(l, o)), openings.some((u) => stacked(o, u)));
-          else if (o.kind === "slider") sliderAt(o.x, o.w, o.h, o.y, o.face);
+          if (o.kind === "window") windowAt(o.x, o.w, o.h, o.y, o.face, openings.some((l) => stacked(l, o)), openings.some((u) => stacked(o, u)), o.panels);
+          else if (o.kind === "slider") sliderAt(o.x, o.w, o.h, o.y, o.face, o.panels);
           else if (o.kind === "garage") garageAt(o.x, o.w, o.h, o.y, o.face);
-          else doorAt(o.x, o.w, o.h, o.y, o.face);
+          else doorAt(o.x, o.w, o.h, o.y, o.face, o.panels);
         }
-        mount.dataset.deck3dOpenings = openings.map((o) => `${o.kind}@${o.x}`).join(" ");
+        mount.dataset.deck3dOpenings = openings.map((o) => `${o.kind}${o.panels ? o.panels : ""}@${o.x}`).join(" ");
       }
 
       // The fixtures' light at night: a few real lights, the rest glow.
@@ -2981,7 +2991,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         if (!k) return;
         const h = m.userData.handle as SceneHandle;
         m.getWorldPosition(knobV);
-        knobT.copy(knobV).add(KNOB_AXIS[h.axis === "xy" ? "x" : h.axis]);
+        knobT.copy(knobV).add(KNOB_AXIS[h.axis === "xy" || h.axis === "xz" ? "x" : h.axis]);
         knobV.project(camera);
         knobT.project(camera);
         const off = knobV.z > 1 || Math.abs(knobV.x) > 1.05 || Math.abs(knobV.y) > 1.05;

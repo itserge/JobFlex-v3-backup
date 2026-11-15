@@ -868,7 +868,7 @@ function roofChecks(roof: RoofFrame, design: DeckDesign, frame: DeckFrame | null
     const meetIn = roof.ledger ? roof.ledger.zIn : roof.peakIn;
     const above = meetIn - roof.floorIn;
     // The windows themselves are checked when the house carries them (lib/deck/openingChecks, "roof-openings").
-    const known = !!design.house.openings?.length;
+    const known = !!design.house.openings?.length && !design.house.openingsSketch;
     add({ id: "roof-wall-height", level: "info", part: "On the house", text: `The roof meets the house ${ftIn(Math.round(above))} above the ${roof.floor === "deck" ? "deck" : "floor"} (${ftIn(Math.round(meetIn))} above the ground). Check it clears ${known ? "" : "the windows and "}the house's own eave; the siding there is cut back and flashed (${Math.round(roof.wallFt)} ft).`, rule: "IRC R903.2" });
     // The flashing where the roof meets the siding, and the water's way off the wall (owner, 2026-11-07).
     const fl = roof.wallFlashing;

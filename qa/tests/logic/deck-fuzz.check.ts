@@ -19,6 +19,7 @@ import { deckElevation, elevationOverlay, defaultPlacement } from "../../../src/
 import { deckConvertSchema } from "../../../src/lib/deck/convertSchema";
 import { DECK_RATES } from "../../../src/lib/deck/rates";
 import { FRAMING_SPECIES, DECKING, WALL_TYPES, RAIL_TYPES } from "../../../src/lib/deck/catalog";
+import { addOpening, editOpening, wallOpenings } from "../../../src/lib/deck/wallOpenings";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const nA = Number(process.argv[2] ?? 3000), nB = Number(process.argv[3] ?? 3000);
@@ -318,6 +319,38 @@ function exercise(d: DeckDesign, tag: string, out: string[]) {
         if (s0.rails.segments.some((g) => g.level === "upper" && Math.abs((g.x0 - p0.x) * uy - (g.y0 - p0.y) * ux) < 4 && Math.abs((g.x1 - p0.x) * uy - (g.y1 - p0.y) * ux) < 4 && Math.max((g.x0 - p0.x) * ux + (g.y0 - p0.y) * uy, (g.x1 - p0.x) * ux + (g.y1 - p0.y) * uy) > 1 && Math.min((g.x0 - p0.x) * ux + (g.y0 - p0.y) * uy, (g.x1 - p0.x) * ux + (g.y1 - p0.y) * uy) < L - 1)) { out.push(`a rail runs through a privacy screen  [${tag}]`); break; }
       }
       if (built.some((b) => b.kind === "planter") !== pkg.lines.some((l) => l.id === "deck-planters")) out.push(`planters built and priced do not agree  [${tag}]`);
+    }
+  }
+  // THE WALL'S WINDOWS AND DOORS (2026-11-15; lib/deck/wallOpenings): each drawn one has a name of its own and stands on
+  // the wall; one moved, swapped, sized or added by hand leaves a wall that still draws — every opening still named,
+  // none of them two on one spot — and the wall is then a list.
+  {
+    const s0 = buildStructure(d);
+    const wall = wallOpenings(s0);
+    if (wall) {
+      const names = wall.drawn.map((o) => o.id);
+      if (new Set(names).size !== names.length) out.push(`two windows or doors of one name  [${tag}]`);
+      const reach = { x0: -d.house.leftFt - 0.01, x1: d.shape.widthFt + d.house.rightFt + 0.01 };
+      if (wall.drawn.some((o) => !(o.w > 0 && o.h > 0 && o.sill >= -0.01 && o.x - o.w / 2 >= reach.x0 - 0.3 && o.x + o.w / 2 <= reach.x1 + 0.3))) out.push(`a window or a door off the wall  [${tag}]`);
+      if (Number(tag.slice(1)) % 5 === 3 && wall.drawn.length) {
+        const pickAt = wall.drawn[Number(tag.slice(1)) % wall.drawn.length];
+        const tries: Array<[string, ReturnType<typeof editOpening>]> = [
+          ["moved", editOpening(s0, pickAt.id, { xFt: pickAt.x + 2.25, sillFt: pickAt.sill + 1.5 })],
+          ["swapped", editOpening(s0, pickAt.id, { choice: pickAt.kind === "window" ? "window3" : "slider4" })],
+          ["sized", editOpening(s0, pickAt.id, { widthFt: pickAt.w + 3.5, heightFt: pickAt.h - 0.75 })],
+          ["added", addOpening(s0, "door2")?.patch ?? null],
+        ];
+        for (const [what, p] of tries) {
+          if (!p) continue;
+          const dn = applyDeckPatch(d, p);
+          const after = wallOpenings(buildStructure(dn));
+          if (!after || !dn.house.openings) { out.push(`a window or door ${what} by hand left no wall to draw  [${tag}]`); break; }
+          if (new Set(after.drawn.map((o) => o.id)).size !== after.drawn.length) { out.push(`a window or door ${what} by hand: two of one name  [${tag}]`); break; }
+          const hit = after.drawn.some((a, i) => after.drawn.some((b, j) => j > i && Math.abs(a.face - b.face) < 0.05 && Math.min(a.x + a.w / 2, b.x + b.w / 2) - Math.max(a.x - a.w / 2, b.x - b.w / 2) > 0.02 && Math.min(a.sill + a.h, b.sill + b.h) - Math.max(a.sill, b.sill) > 0.02));
+          if (hit) { out.push(`a window or door ${what} by hand: two drawn on one spot  [${tag}]`); break; }
+          if (what !== "added" && pickAt.kind !== "garage" && wall.byRule && !after.drawn.some((o) => o.id === pickAt.id) && after.list.some((o) => o.id === pickAt.id) && what === "moved") { out.push(`a window or door moved by hand is gone from the picture  [${tag}]`); break; }
+        }
+      }
     }
   }
   // PAST THE HOUSE'S CORNER (2026-11-14): the deck's shape and the house agree — a part past a corner is an open one,
