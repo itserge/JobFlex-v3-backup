@@ -38,7 +38,9 @@ for (const t of TUTORIALS) {
 check("clock: 0:00 · 3:27 · 1:02:03", clock(0) === "0:00" && clock(207.9) === "3:27" && clock(3723) === "1:02:03");
 check("minutes: 8 min, never 0", minutes(506) === "8 min" && minutes(20) === "1 min");
 const deck = tutorialBySlug("deck-studio")!;
-check("chapterAt: the chapter started, the one before at its edge", chapterAt(deck, 0) === 0 && chapterAt(deck, 208) === 6 && chapterAt(deck, 206.9) === 6 && chapterAt(deck, 206) === 5);
+// (the Deck Studio film, v2 of 2026-11-15: its seventh row, "What a deck has", starts at 3:35)
+check("chapterAt: the chapter started, the one before at its edge", chapterAt(deck, 0) === 0 && chapterAt(deck, 216) === 6 && chapterAt(deck, 214.9) === 6 && chapterAt(deck, 214) === 5);
+check("the Deck Studio film is its second version: 16 chapters after the opening, 11½ minutes", deck.version === "v2" && deck.chapters.length === 17 && deck.duration === 689 && tutorialFile(deck, "mp4") === "tutorials/deck-studio-v2.mp4");
 check("an unknown slug opens nothing", tutorialBySlug("nope") === null && tutorialBySlug(null) === null);
 
 console.log(bad ? `\n${bad} failed` : "\nall ok");
