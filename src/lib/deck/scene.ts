@@ -37,6 +37,7 @@ import { BASE_PLATE_IN, BASE_PLATE_THICK_IN, railMountCallout, railPostWords, ra
 import { electricalWords } from "./electrical";
 import { SKIRT_BOARD_IN, SKIRT_BORDER_IN, SKIRT_CLEAR_IN, SKIRT_GAP_IN, SKIRT_THICK_IN } from "./skirt";
 import { BENCH_BACK_IN, BENCH_SEAT_IN, BUILT_IN_LABEL, SCREEN_GAP_IN, type BuiltInMember } from "./builtins";
+import { accessoryPose } from "./accessories";
 import { finishProduct, type PartFinish } from "./finish";
 import { HOUSE_MATERIALS, HOUSE_ROOFS, OPENING_LABEL, houseHandles, houseScene, openingPanels, settleSceneOpenings, type DrawnOpening, type HouseMaterial, type HouseRoof } from "./house";
 import { houseDrawn } from "./wallOpenings";
@@ -159,6 +160,14 @@ export interface SceneHandle {
   shown?: { origin: number; sign: 1 | -1; from: string };
   /** A WINDOW OR A DOOR IN THE HAND (2026-11-15; lib/deck/wallOpenings): what it is, its size (ft) and how many panels it shows. */
   open?: { kind: "window" | "door" | "slider" | "garage"; w: number; h: number; panels: number };
+  /**
+   * AN ACCESSORY IN THE HAND (2026-11-15): its footprint's four corners on the plan in order round it [x0, y0, … x3,
+   * y3], ft (0→1 its length, 0→3 its depth) — and its turn, degrees (its length runs that way; its front a quarter turn
+   * to the left of it; none on a privacy screen, which does not turn). The 3D outlines it, takes hold of it by it and
+   * turns it about its middle.
+   */
+  foot?: number[];
+  turn?: number;
 }
 
 /** One kind of part: what it is, how it is cut, what fastens it. The 3D shows this when a part is touched. */
@@ -247,7 +256,9 @@ function handleGrab(o: Record<string, unknown>): Pick<SceneHandle, "grab" | "sho
   const shown = sh && typeof sh.origin === "number" && Number.isFinite(sh.origin) && (sh.sign === 1 || sh.sign === -1) && typeof sh.from === "string" ? { origin: sh.origin, sign: sh.sign as 1 | -1, from: sh.from.slice(0, 60) } : undefined;
   const op = (o.open && typeof o.open === "object" ? o.open : null) as Record<string, unknown> | null;
   const open = op && (op.kind === "window" || op.kind === "door" || op.kind === "slider" || op.kind === "garage") && typeof op.w === "number" && typeof op.h === "number" && typeof op.panels === "number" && [op.w, op.h, op.panels].every((v) => Number.isFinite(v) && (v as number) > 0 && (v as number) < 60) ? { kind: op.kind, w: op.w, h: op.h, panels: Math.round(op.panels) } : undefined;
-  return { grab: g as [number, number, number, number, number, number], ...(shown ? { shown } : {}), ...(open ? { open } : {}) };
+  const foot = Array.isArray(o.foot) && o.foot.length === 8 && o.foot.every((v) => typeof v === "number" && Number.isFinite(v) && Math.abs(v) < 500) ? (o.foot as number[]) : undefined;
+  const turn = typeof o.turn === "number" && Number.isFinite(o.turn) && Math.abs(o.turn) <= 720 ? o.turn : undefined;
+  return { grab: g as [number, number, number, number, number, number], ...(shown ? { shown } : {}), ...(open ? { open } : {}), ...(foot ? { foot } : {}), ...(turn !== undefined ? { turn } : {}) };
 }
 const r4 = (rad: number) => Math.round(rad * 10000) / 10000;
 const LEAN: Record<string, number> = { "x:1": 1, "x:-1": 2, "y:1": 3, "y:-1": 4 };
@@ -1265,7 +1276,8 @@ export function deckScene(s: DeckStructure): DeckScene {
       const z1 = z0 + Math.max(4, b.heightIn);
       const cx = (b.footprint[0].x + b.footprint[2].x) / 2;
       const cy = (b.footprint[0].y + b.footprint[2].y) / 2;
-      handles.push({ kind: "builtin", id: b.design.id, x: r3(cx), y: r3(cy), z: r3((z0 + z1) / 2), axis: "xy", value: Math.round(cx * 2) / 2, value2: Math.round(cy * 2) / 2, perUnit: 1 / 12, label: BUILT_IN_LABEL[b.kind], grab: [r3(x0), r3(y0), r3(z0), r3(x1), r3(y1), r3(z1)] });
+      const pose = accessoryPose(b);
+      handles.push({ kind: "builtin", id: b.design.id, x: r3(cx), y: r3(cy), z: r3((z0 + z1) / 2), axis: "xy", value: Math.round(cx * 2) / 2, value2: Math.round(cy * 2) / 2, perUnit: 1 / 12, label: BUILT_IN_LABEL[b.kind], grab: [r3(x0), r3(y0), r3(z0), r3(x1), r3(y1), r3(z1)], foot: b.footprint.flatMap((q) => [r3(q.x), r3(q.y)]), ...(b.kind === "screen" ? {} : { turn: pose?.turnDeg ?? 0 }) });
     }
   }
   // EACH WINDOW AND DOOR IS ITS OWN HANDLE (2026-11-15; lib/deck/wallOpenings): taken hold of in the 3D, moved along

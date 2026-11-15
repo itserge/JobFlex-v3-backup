@@ -1,9 +1,10 @@
-// ACCESSORIES IN GROUPS, MOVED BY HAND (2026-11-14; lib/deck/builtins, lib/deck/accessories) — the owner: "make separate
-// accessories, that way it will be understandable" and "make it movable on 3D: accessory drag and turn and place".
+// ACCESSORIES IN GROUPS, MOVED BY HAND (2026-11-14, 2026-11-15; lib/deck/builtins, lib/deck/accessories) — the owner:
+// "make separate accessories, that way it will be understandable", then "I don't want that press-button move… click on
+// the accessory, everything gets frozen, and I just drag it on the deck wherever I want it. Make it super smart."
 // The accessories fall into three groups (seating and planters; privacy screen; outdoor kitchen and fire), each with its
 // own heading in the studio and in the checks. Any accessory but a privacy screen can stand on a spot of its own — its
-// middle and its turn — dragged there in the 3D, turned 45° at a time, or put where a click lands; let go with its back
-// to an edge near where it would stand along it and it lines up against that edge. A screen slides along the edges.
+// middle and its turn — dragged there in the 3D and turned to any angle by its round handle; brought to the railing it
+// turns to sit with its back to it and lines up against that edge. A screen slides along the edges.
 // The engine checks a spot as it checks an edge: all of it on the deck, clear of the railing, out of a stair's landing.
 //   npx --no-install tsx --tsconfig tsconfig.json qa/tests/logic/deck-accessories.check.ts
 import { defaultDeckDesign, defaultStair, normalizeDeckDesign, shapeOutline, type DeckDesign } from "../../../src/lib/deck/design";
@@ -13,7 +14,7 @@ import { priceDeck } from "../../../src/lib/deck/pricing";
 import { deckScene, parseDeckScene } from "../../../src/lib/deck/scene";
 import { partAt, partCard } from "../../../src/lib/deck/parts";
 import { ACCESSORY_GROUPS, ACCESSORY_GROUP_KINDS, ACCESSORY_GROUP_LABEL, BUILT_IN_INSET_IN, BUILT_IN_KINDS, STAIR_LANDING_IN, accessoryGroupOf, planGap, type BuiltIn, type BuiltInBuild } from "../../../src/lib/deck/builtins";
-import { ACCESSORY_TURN_DEG, accessoryPose, edgeAccessory, moveAccessory, placeAccessory, turnAccessory } from "../../../src/lib/deck/accessories";
+import { accessoryPose, moveAccessory, snapTurn, turnAccessoryTo } from "../../../src/lib/deck/accessories";
 import { parseUtterance } from "../../../src/lib/deck/voice/parse";
 import { deckingColors } from "../../../src/lib/deck/deckingColors";
 
@@ -92,48 +93,74 @@ check("dragged to the middle: it stands there, turned as it was", b1.built && !!
 d = apply(d, moveAccessory(s, "b1", 500, 84));
 s = buildStructure(d);
 b1 = one(d, "b1");
-check("dragged far off the deck: it stops at the last place it fits, clear of the railing", b1.built && b1.footprint.every((p) => inRing(p.x, p.y)) && clearOfEdges(b1) >= BUILT_IN_INSET_IN.top - 0.6 && clearOfEdges(b1) < BUILT_IN_INSET_IN.top + 2, `${clearOfEdges(b1)}`);
+check("dragged out past the right railing: it turns to sit with its back to it, lined up against that end", b1.built && !b1.design.spot && b1.design.side === "right" && near(b1.design.atFt, 7, 0.5) && near(Math.max(...b1.footprint.map((p) => p.x)), 240 - BUILT_IN_INSET_IN.top, 0.05) && b1.footprint.every((p) => inRing(p.x, p.y)), JSON.stringify(b1.design));
+check("…its length along that end now, its front into the deck", accessoryPose(b1)!.turnDeg === 90, JSON.stringify(accessoryPose(b1)));
 d = apply(d, moveAccessory(s, "b1", 150, 160));
 s = buildStructure(d);
 b1 = one(d, "b1");
-check("let go with its back to the front rail, near where it would stand along it: it lines up there", b1.built && !b1.design.spot && b1.design.side === "front" && near(b1.design.atFt, 12.5, 0.5) && near(Math.max(...b1.footprint.map((p) => p.y)), 168 - BUILT_IN_INSET_IN.top, 0.05), JSON.stringify(b1.design));
+check("brought to the front rail: it turns back and lines up there", b1.built && !b1.design.spot && b1.design.side === "front" && near(b1.design.atFt, 12.5, 0.5) && near(Math.max(...b1.footprint.map((p) => p.y)), 168 - BUILT_IN_INSET_IN.top, 0.05), JSON.stringify(b1.design));
+d = apply(d, moveAccessory(s, "b1", 22, 84));
+s = buildStructure(d);
+b1 = one(d, "b1");
+check("brought to the left end, where the privacy screen stands (not past it): the same — with its back to the screen, clear of it", b1.built && !b1.design.spot && b1.design.side === "left" && near(Math.min(...b1.footprint.map((p) => p.x)), BUILT_IN_INSET_IN.screen, 0.05) && accessoryPose(b1)!.turnDeg === 270, JSON.stringify([b1.design, accessoryPose(b1)]));
+d = apply(d, moveAccessory(s, "b1", 60, 84));
+s = buildStructure(d);
+b1 = one(d, "b1");
+check("pulled a little way off the rail: it comes away, turned as it stood there", b1.built && !!b1.design.spot && near(accessoryPose(b1)!.x, 60, 0.5) && accessoryPose(b1)!.turnDeg === 270, JSON.stringify(accessoryPose(b1)));
 const sMove = moveAccessory(s, "s1", 238, 90);
 const s1 = one(apply(d, sMove), "s1");
 check("a privacy screen dragged across: it goes to the nearest edge, at that place along it — never a spot", !!sMove && s1.built && s1.design.side === "right" && !s1.design.spot && near(s1.design.atFt, 7.5, 0.5));
 const fMove = moveAccessory(s, "f1", 120, 163);
 const f1 = one(apply(d, fMove), "f1");
 check("a fire table never lines up against an edge: it stays out on the deck", !!fMove && f1.built && !!f1.design.spot);
+// One turned on purpose keeps its turn by the railing — unless its back already faces it.
+const turnedAt = (turnDeg: number) => {
+  const dd = mk([{ id: "b1", kind: "bench", side: "front", atFt: 6, lengthFt: 6, spot: { x: 120, y: 84, turnDeg } }]);
+  return one(apply(dd, moveAccessory(buildStructure(dd), "b1", 120, 146)), "b1");
+};
+check("a bench turned 30° off square, brought to the front rail: it keeps its turn (stopped where it fits)", turnedAt(210).built && !!turnedAt(210).design.spot && accessoryPose(turnedAt(210))!.turnDeg === 210, JSON.stringify(turnedAt(210).design));
+check("…one whose back already faces the rail within 25°: it squares up against it", turnedAt(195).built && !turnedAt(195).design.spot && turnedAt(195).design.side === "front", JSON.stringify(turnedAt(195).design));
+const colours0 = deckingColors("trex-transcend-lineage");
+const ownBoards = mk([{ id: "b1", kind: "bench", side: "front", atFt: 12, lengthFt: 6, finish: { product: "trex-transcend-lineage", color: colours0[1]?.id } }]);
+const kept = one(apply(ownBoards, moveAccessory(buildStructure(ownBoards), "b1", 500, 84)), "b1");
+check("a bench in boards of its own keeps them when it lines up against another edge", kept.built && kept.design.side === "right" && kept.design.finish?.product === "trex-transcend-lineage" && !!ownBoards.extras.builtIns![0].finish, JSON.stringify(kept.design));
 
-/* ── 5. Turned ───────────────────────────────────────────────────────── */
+/* ── 5. Turned by its round handle: to any angle ─────────────────────── */
 d = mk([{ id: "b1", kind: "bench", side: "front", atFt: 10, lengthFt: 8 }, { id: "s1", kind: "screen", side: "left", atFt: 6, lengthFt: 30 }]);
 s = buildStructure(d);
 const before = accessoryPose(s.builtIns[0])!;
-const turned = apply(d, turnAccessory(s, "b1", ACCESSORY_TURN_DEG));
+const turned = apply(d, turnAccessoryTo(s, "b1", before.turnDeg + 45));
 const tb = one(turned, "b1");
 check("turned 45° along the front rail: it does not fit there turned, so it is moved in until it does", tb.built && accessoryPose(tb)!.turnDeg === (before.turnDeg + 45) % 360 && accessoryPose(tb)!.y < before.y - 5 && clearOfEdges(tb) >= BUILT_IN_INSET_IN.top - 0.6, JSON.stringify(accessoryPose(tb)));
-const tb2 = one(apply(turned, turnAccessory(buildStructure(turned), "b1", -ACCESSORY_TURN_DEG)), "b1");
+const tb2 = one(apply(turned, turnAccessoryTo(buildStructure(turned), "b1", before.turnDeg)), "b1");
 check("…turned back: square again, where it was moved to", tb2.built && accessoryPose(tb2)!.turnDeg === before.turnDeg);
-check("a privacy screen does not turn", turnAccessory(s, "s1", 45) === null);
+check("a privacy screen does not turn", turnAccessoryTo(s, "s1", 45) === null);
+const mid = mk([{ id: "b1", kind: "bench", side: "front", atFt: 6, lengthFt: 6, spot: { x: 120, y: 84, turnDeg: 180 } }]);
+const midS = buildStructure(mid);
+const toDeg = (deg: number) => accessoryPose(one(apply(mid, turnAccessoryTo(midS, "b1", deg)), "b1"))!.turnDeg;
+check("any angle, to the degree: 213° is 213°", toDeg(213) === 213, `${toDeg(213)}`);
+check("held square to the deck's edges within 6°: 176° and 185° are 180°, 95° is 90°", toDeg(176) === 180 && toDeg(185) === 180 && toDeg(95) === 90, `${toDeg(176)} ${toDeg(185)} ${toDeg(95)}`);
+check("held to an eighth of a turn within 4°: 47° is 45°; 52° stays 52°", toDeg(47) === 45 && toDeg(52) === 52 && snapTurn(midS, -43) === 315, `${toDeg(47)} ${toDeg(52)} ${snapTurn(midS, -43)}`);
+const byRail = mk([{ id: "b1", kind: "bench", side: "front", atFt: 6, lengthFt: 6, spot: { x: 120, y: 146, turnDeg: 172 } }]);
+const squared = one(apply(byRail, turnAccessoryTo(buildStructure(byRail), "b1", 178)), "b1");
+check("turned with its back to the railing it stands by: it lines up against that edge", one(byRail, "b1").built && squared.built && !squared.design.spot && squared.design.side === "front", JSON.stringify(squared.design));
 
-/* ── 6. Placed where a click lands, and back along an edge ───────────── */
+/* ── 6. A press on the deck with one in the hand: it goes there ───────── */
 d = mk([{ id: "k1", kind: "kitchen", side: "front", atFt: 14, lengthFt: 6 }]);
 s = buildStructure(d);
-const placed = one(apply(d, placeAccessory(s, "k1", 60, 40)), "k1");
-check("placed by a click near the house: it stands there, turned as it was", placed.built && !!placed.design.spot && near(accessoryPose(placed)!.x, 60, 0.5) && near(accessoryPose(placed)!.y, 40, 0.5));
-const pushed = one(apply(d, placeAccessory(s, "k1", 236, 90)), "k1");
-check("placed by a click on the railing: moved in until it fits", pushed.built && clearOfEdges(pushed) >= BUILT_IN_INSET_IN.top - 0.6 && accessoryPose(pushed)!.x < 236);
-const back = apply(apply(d, placeAccessory(s, "k1", 60, 40)), null);
-const backB = one(apply(back, edgeAccessory(buildStructure(back), "k1")), "k1");
-check("back along an edge: the nearest open edge, at that place along it", backB.built && !backB.design.spot && backB.design.side === "left");
-check("one along an edge has no edge to go back to", edgeAccessory(s, "k1") === null);
+const placed = one(apply(d, moveAccessory(s, "k1", 60, 40)), "k1");
+check("sent near the house: it stands there, turned as it was", placed.built && !!placed.design.spot && near(accessoryPose(placed)!.x, 60, 0.5) && near(accessoryPose(placed)!.y, 40, 0.5) && accessoryPose(placed)!.turnDeg === 180, JSON.stringify(accessoryPose(placed)));
+const pushed = one(apply(d, moveAccessory(s, "k1", 236, 90)), "k1");
+check("sent onto the right railing: against it, clear of it", pushed.built && !pushed.design.spot && pushed.design.side === "right" && clearOfEdges(pushed) >= BUILT_IN_INSET_IN.top - 0.6, JSON.stringify(pushed.design));
 
 /* ── 7. The 3D ───────────────────────────────────────────────────────── */
 const sc = deckScene(buildStructure(freeD));
 const h = sc.handles.filter((q) => q.kind === "builtin");
 check("each accessory is its own handle, dragged both ways: its middle, its box to take hold of", h.length === 1 && h[0].axis === "xy" && h[0].id === "b1" && near(h[0].value, 120, 0.5) && near(h[0].value2 ?? -1, 84, 0.5) && !!h[0].grab && h[0].grab[0] < 120 / 12 && h[0].grab[3] > 120 / 12);
+check("…with its outline on the plan (four corners, turned with it) and its turn, for the 3D to outline and turn it", h[0].foot?.length === 8 && h[0].turn === 45 && near(Math.hypot(h[0].foot[2] - h[0].foot[0], h[0].foot[3] - h[0].foot[1]), 6, 0.01) && near((h[0].foot[0] + h[0].foot[4]) / 2, 10, 0.05) && near((h[0].foot[1] + h[0].foot[5]) / 2, 7, 0.05), JSON.stringify(h[0]));
 const round = parseDeckScene(JSON.parse(JSON.stringify(sc)));
 const rh = round?.handles.find((q) => q.kind === "builtin");
-check("…and read back from the saved scene with both numbers", rh?.axis === "xy" && near(rh.value2 ?? -1, 84, 0.5));
+check("…and read back from the saved scene with both numbers, its outline and its turn", rh?.axis === "xy" && near(rh.value2 ?? -1, 84, 0.5) && rh.foot?.length === 8 && rh.turn === 45);
 check("a deck with no accessories has no such handle", !deckScene(buildStructure(mk([]))).handles.some((q) => q.kind === "builtin"));
 const st = buildStructure(freeD);
 const seatIdx = sc.boxes.findIndex((_, i) => sc.legend[sc.tags[i]]?.role === "bench seat");
@@ -141,14 +168,12 @@ const ref = partAt(st, sc, seatIdx);
 check("clicking the bench in the 3D names it", ref?.kind === "built-in" && ref.id === "b1", JSON.stringify(ref));
 const card = partCard(st, ref!);
 const labels = card.choices.map((c) => c.label);
-check("its card: turn it left, right, a quarter turn; back along an edge; remove it — and its boards (a line and colour of its own)", card.title === "Bench" && labels.some((l) => /45° to the left/.test(l)) && labels.some((l) => /45° to the right/.test(l)) && labels.some((l) => /quarter turn/.test(l)) && labels.some((l) => /back along the nearest edge/.test(l)) && labels.some((l) => /Remove this bench/.test(l)) && !!card.finish, labels.join(" | "));
-const right = card.choices.find((c) => /45° to the right/.test(c.label))!;
-check("…its turn does what it says", accessoryPose(one(applyDeckPatch(freeD, right.patch), "b1"))!.turnDeg === 90);
+check("its card: no Turn or Place choices any more (it is dragged and turned in the 3D itself) — remove it, and its boards", card.title === "Bench" && !labels.some((l) => /Turn|edge|Place/i.test(l)) && labels.some((l) => /Remove this bench/.test(l)) && !!card.finish && /drag it anywhere on the deck/.test(card.does), `${labels.join(" | ")} · ${card.does}`);
 const scSc = deckScene(all);
 const screenRef = partAt(all, scSc, scSc.boxes.findIndex((_, i) => scSc.legend[scSc.tags[i]]?.role === "screen board"));
-check("a privacy screen's card has no turn", screenRef?.kind === "built-in" && !partCard(all, screenRef).choices.some((c) => /Turn/.test(c.label)));
+check("a privacy screen: no turn on its handle, and its card says to drag it to another edge", screenRef?.kind === "built-in" && scSc.handles.find((q) => q.kind === "builtin" && q.id === "s1")?.turn === undefined && scSc.handles.find((q) => q.kind === "builtin" && q.id === "b1")?.turn === 180 && /another edge/.test(partCard(all, screenRef).does), partCard(all, screenRef!).does);
 const kitRef = partAt(all, scSc, scSc.boxes.findIndex((_, i) => scSc.legend[scSc.tags[i]]?.role === "kitchen top"));
-check("a kitchen island's card turns it, and offers no boards of its own (it is clad in the deck's)", kitRef?.kind === "built-in" && partCard(all, kitRef).choices.some((c) => /Turn/.test(c.label)) && !partCard(all, kitRef).finish);
+check("a kitchen island's card offers no boards of its own (it is clad in the deck's)", kitRef?.kind === "built-in" && !partCard(all, kitRef).finish);
 
 /* ── 7b. With a bench in boards of its own (lib/deck/finish) ──────────── */
 const lineup = (finish: unknown) => priceDeck(mk([{ id: "b1", kind: "bench", side: "front", atFt: 6, lengthFt: 6, ...(finish ? { finish } : {}) }, { id: "k1", kind: "kitchen", side: "right", atFt: 6, lengthFt: 6 }])).takeoff.lines.filter((l) => /^kitchen-/.test(l.id) || /kitchen/.test(l.id)).map((l) => `${l.id}:${l.qty}`).join();
