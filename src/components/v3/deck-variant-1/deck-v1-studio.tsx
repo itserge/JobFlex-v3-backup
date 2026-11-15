@@ -20,7 +20,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Route } from "next";
 import { createWheelMotion, wheelPixels } from "@/lib/smooth-wheel";
-import { AlertTriangle, Check, ChevronDown, ChevronRight, ExternalLink, FileText, Lock, LockOpen, Maximize2, Mic, Minimize2, Plus, RotateCcw, RotateCw, Send, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronRight, ExternalLink, FileText, Lock, LockOpen, Maximize2, Mic, Minimize2, Plus, RotateCcw, Send, X } from "lucide-react";
 import { resolveMarket, parseStateZip, type MarketSnapshot } from "@/lib/fence/market";
 import { leftEndPatch } from "@/lib/deck/frontByHand";
 import { BOW_SIDE_LABEL, BOW_SIDE_WORDS, bowLimits, bowOf, bowPatch, bowRadiusWords, bowSidesFor, bowedSides, toggleBow, withBow } from "@/lib/deck/curve";
@@ -138,12 +138,12 @@ import { DeckKindPicker } from "@/components/v3/deck-estimator-blueprint/deck-ki
 import { DeckPlan, type PlanEdgeHit, nearestStairEdge } from "@/components/v3/deck-estimator-blueprint/deck-plan";
 import { SKIRT_KINDS, SKIRT_LABEL } from "@/lib/deck/skirt";
 import { ACCESSORY_GROUPS, ACCESSORY_GROUP_KINDS, ACCESSORY_GROUP_LABEL, BUILT_IN_LABEL, BUILT_IN_LIMITS, BUILT_IN_SIDES, BUILT_IN_SIDE_LABEL, SCREEN_DEFAULT_FT, accessoryGroupOf, defaultBuiltIn, type BuiltIn } from "@/lib/deck/builtins";
-import { ACCESSORY_TURN_DEG, edgeAccessory, moveAccessory, placeAccessory, turnAccessory, turnWords } from "@/lib/deck/accessories";
+import { moveAccessory, turnAccessoryTo, turnWords } from "@/lib/deck/accessories";
 
 /** What each group of accessories is, in a line (the Accessories step). */
 const ACCESSORY_GROUP_HINT: Record<(typeof ACCESSORY_GROUPS)[number], string> = {
   seating: "A bench, a bench with a back, or a planter box — the checks give a planter's weight full of wet soil.",
-  privacy: "The deck's own boards on posts, standing in the railing's place along an edge. It slides along the edges; it does not turn.",
+  privacy: "The deck's own boards on posts, standing in the railing's place along an edge. In the 3D it slides along the edges; it does not turn.",
   kitchen: "A grill island (the top, the grill, gas and power are by others), and a place for a gas fire table the client buys — the checks keep what burns clear of both.",
 };
 import { Answers, CUSTOM, CUSTOM_LABEL, CustomBox, Field, FieldScope, More, NameInput, NumberInput, Scope, Seg, Stepper, Toggle, ago, cx, feetText, intText, money, parseFeet, parseInches, priceShow, priceText, type FieldScopeValue } from "./deck-v1-parts";
@@ -236,7 +236,7 @@ const TIERS: ReadonlyArray<{ id: "good" | "better" | "best"; name: string; decki
 ];
 const LEVEL_LABEL: Record<DeckCheck["level"], string> = { fail: "Fix", warn: "Check", info: "Note", pass: "Pass" };
 
-type Placing = null | { kind: "stair" } | { kind: "fixture"; id: string } | { kind: "accessory"; id: string };
+type Placing = null | { kind: "stair" } | { kind: "fixture"; id: string };
 
 /* ── The steps ───────────────────────────────────────────────────────────────────────────────────────────────── */
 type StepId = "size" | "kind" | "house" | "materials" | "stairs" | "accessories" | "roof" | "extras" | "checks" | "package";
@@ -748,10 +748,10 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
           if (p) patch(p, ["by-hand"]);
           break;
         }
-        // AN ACCESSORY DRAGGED ACROSS THE DECK (2026-11-14; lib/deck/accessories): as far as it fits, lined up against
-        // an edge when let go by one.
+        // AN ACCESSORY IN THE HAND (2026-11-14, 2026-11-15; lib/deck/accessories): dragged across the deck as far as it
+        // fits — brought to the railing, turned to face it and lined up there — or turned by its round handle.
         case "builtin": {
-          const p = moveAccessory(structure, e.id, e.value, e.value2 ?? 0);
+          const p = typeof e.turn === "number" ? turnAccessoryTo(structure, e.id, e.turn) : moveAccessory(structure, e.id, e.value, e.value2 ?? 0);
           if (p) patch(p);
           break;
         }
@@ -805,13 +805,6 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
         const hit = nearestStairEdge(structure, pick.point[0] * 12, pick.point[1] * 12, Number.POSITIVE_INFINITY);
         if (!hit) return;
         setStairs((list) => [...list, { ...defaultStair(`s${list.length + 1}-${Date.now().toString(36).slice(-3)}`, hit.side, hit.atFt), level: hit.level }]);
-        setPlacing(null);
-        return;
-      }
-      if (placing?.kind === "accessory") {
-        if (!pick) return;
-        const p = placeAccessory(structure, placing.id, pick.point[0] * 12, pick.point[1] * 12);
-        if (p) patch(p);
         setPlacing(null);
         return;
       }
@@ -3145,28 +3138,21 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
 
   const builtIns = design.extras.builtIns ?? [];
   const setBuiltIns = (list: BuiltIn[]) => patch({ extras: { builtIns: list } });
-  /** A move of the accessories by hand (lib/deck/accessories), when it has somewhere to go. */
-  const moveBy = (p: DeckPatch | null) => {
-    if (p) patch(p);
-  };
   /**
-   * THE ACCESSORIES (2026-11-14 — the owner: "make separate accessories, that way it will be understandable" and "make
-   * it movable on 3D: drag and turn and place"). A step of its own, each kind of accessory under its own heading with
-   * its own buttons; each card can turn its accessory, put it where a click in the 3D lands, or put it back along an
-   * edge — and with Edit in 3D any of them is dragged across the deck.
+   * THE ACCESSORIES (2026-11-14 — the owner: "make separate accessories, that way it will be understandable"). A step of
+   * its own, each kind of accessory under its own heading with its own buttons. MOVED IN THE 3D ITSELF (2026-11-15 —
+   * "I don't want that press-button move… click on the accessory, everything gets frozen, and I just drag it"): no
+   * Turn or Place buttons — a click on one in the 3D holds the picture still and puts it in the hand (DeckModel3D).
    */
   const accessoryCard = (b: BuiltIn, i: number) => {
     const built = structure.builtIns.find((x) => x.design.id === b.id);
     const setB = (p: Partial<BuiltIn>) => setBuiltIns(builtIns.map((x) => (x.id === b.id ? { ...x, ...p } : x)));
     const name = `${BUILT_IN_LABEL[b.kind]} ${i + 1}`;
     const along = b.side === "front" ? design.shape.widthFt : design.shape.depthFt;
-    const placingThis = placing?.kind === "accessory" && placing.id === b.id;
     const lenText = built?.built ? feetText(Math.round((built.lengthIn / 12) * 2) / 2).replace(/^(\d+(?:\.\d+)?)$/, "$1 ft") : "";
     const turned = built ? turnWords(built) : "";
     const where = b.spot ? `placed on the deck by hand${turned ? `, ${turned}` : ""}` : `along the ${BUILT_IN_SIDE_LABEL[b.side].toLowerCase()}${built?.flags.shortened ? " — as long as that edge allows" : ""}`;
     const facts = !built?.built ? "" : built.kind === "planter" ? ` · about ${Math.round(built.weightLb / 10) * 10} lb full` : built.kind === "screen" ? ` · ${built.posts} ${built.postSize} posts, in the railing's place` : built.kind === "kitchen" ? ` · about ${Math.round(built.weightLb / 10) * 10} lb with a stone top and a grill, ${built.sisters} joists doubled under it` : built.kind === "fire" ? `${b.spot ? "" : ` · ${feetText(b.inFt ?? 6)} ft in`} · the table is by others` : "";
-    const left = b.kind === "screen" ? null : turnAccessory(structure, b.id, -ACCESSORY_TURN_DEG);
-    const right = b.kind === "screen" ? null : turnAccessory(structure, b.id, ACCESSORY_TURN_DEG);
     return (
       <div key={b.id} className="v1-item" data-deck-builtin={b.id}>
         <div className="v1-item-head">
@@ -3207,41 +3193,12 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
             </Field>
           ) : null}
         </div>
-        <div className="v1-row-acts" data-deck-accessory-acts={b.id}>
-          {b.kind !== "screen" ? (
-            <>
-              <button type="button" className="v1-btn v1-btn-sm" disabled={!left} onClick={() => moveBy(left)} aria-label={`${name}: turn ${ACCESSORY_TURN_DEG}° to the left`} data-deck-accessory-turn="left">
-                <RotateCcw size={15} strokeWidth={2.5} aria-hidden="true" /> Turn left
-              </button>
-              <button type="button" className="v1-btn v1-btn-sm" disabled={!right} onClick={() => moveBy(right)} aria-label={`${name}: turn ${ACCESSORY_TURN_DEG}° to the right`} data-deck-accessory-turn="right">
-                <RotateCw size={15} strokeWidth={2.5} aria-hidden="true" /> Turn right
-              </button>
-            </>
-          ) : null}
-          <button
-            type="button"
-            className={cx("v1-btn", "v1-btn-sm", placingThis && "is-on")}
-            aria-pressed={placingThis}
-            onClick={() => {
-              setPlacing(placingThis ? null : { kind: "accessory", id: b.id });
-              setView("3d");
-            }}
-            data-deck-accessory-place={b.id}
-          >
-            {placingThis ? "Click the deck in the 3D…" : "Place in 3D"}
-          </button>
-          {b.spot ? (
-            <button type="button" className="v1-btn v1-btn-sm v1-btn-quiet" onClick={() => moveBy(edgeAccessory(structure, b.id))} data-deck-accessory-edge={b.id}>
-              Back along an edge
-            </button>
-          ) : null}
-        </div>
       </div>
     );
   };
   const accessoriesStep = () => (
     <div data-deck-builtins>
-      <p className="v1-lead">Built into the deck in its own boards. Each one starts along an edge; to move one, tap <b>Edit in 3D</b> under the picture and drag it anywhere on the deck — or use Turn and Place in 3D on its card. The checks say what each weighs and what must stay clear of a stair, a grill or a flame.</p>
+      <p className="v1-lead">Built into the deck in its own boards. Each one starts along an edge. To move one, <b>click it in the 3D</b>: the picture holds still, and you drag it anywhere on the deck — turn it by the round handle beside it. Bring it to the railing and it turns and lines up there. Click the yard or <b>Done</b> when it is where you want it; <b>Options</b> beside Done has its boards and Remove. The checks say what each weighs and what must stay clear of a stair, a grill or a flame.</p>
       {ACCESSORY_GROUPS.map((g) => {
         const mine = builtIns.map((b, i) => ({ b, i })).filter(({ b }) => accessoryGroupOf(b.kind) === g);
         return (
@@ -4132,14 +4089,6 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                   {placing?.kind === "stair" ? (
                     <div className="v1-banner" data-deck-placing="stair-3d">
                       <span>Click the deck where the stairs go — they take the nearest open edge.</span>
-                      <button type="button" className="v1-btn v1-btn-sm" onClick={() => setPlacing(null)}>
-                        Cancel
-                      </button>
-                    </div>
-                  ) : null}
-                  {placing?.kind === "accessory" ? (
-                    <div className="v1-banner" data-deck-placing="accessory">
-                      <span>Click the deck where the {BUILT_IN_LABEL[builtIns.find((b) => b.id === placing.id)?.kind ?? "bench"].toLowerCase()} goes — it is moved in from the railing if it does not fit there.</span>
                       <button type="button" className="v1-btn v1-btn-sm" onClick={() => setPlacing(null)}>
                         Cancel
                       </button>

@@ -1673,7 +1673,12 @@ function normalizeStairs(raw: unknown, legacyExtras: Record<string, unknown>, sh
   const out: StairDesign[] = [];
   // (A front set part by part, 2026-11-14: a side is as long as the END part stands out, and a front stair stays on one part.)
   const ends = shape.kind === "wall" && shape.front ? shape.front : null;
-  const sideLength = (side: StairSide, level: "upper" | "lower") => (level === "lower" ? (side === "front" ? lower.widthFt : lower.depthFt) : side === "front" ? shape.widthFt : ends ? (side === "left" ? ends[0].yFt : ends[ends.length - 1].yFt) : shape.depthFt);
+  // (A double deck's lower floor, 2026-11-15: its OWN outline — shaped on its own, or the upper deck's — so a stair on
+  // it stays on one part of ITS front, and a side stair on its end part's own length.)
+  const lowerOutline = lower.place === "under" ? (lower.shape ?? shape) : null;
+  const lowerEnds = lowerOutline && lowerOutline.kind === "wall" && lowerOutline.front ? lowerOutline.front : null;
+  const sideLength = (side: StairSide, level: "upper" | "lower") =>
+    level === "lower" ? (side === "front" ? lower.widthFt : lowerEnds ? (side === "left" ? lowerEnds[0].yFt : lowerEnds[lowerEnds.length - 1].yFt) : lower.depthFt) : side === "front" ? shape.widthFt : ends ? (side === "left" ? ends[0].yFt : ends[ends.length - 1].yFt) : shape.depthFt;
   const one = (v: unknown, i: number): StairDesign | null => {
     const s = obj(v);
     const side = oneOf(s.side, ["front", "left", "right"] as const, "front");
@@ -1681,8 +1686,9 @@ function normalizeStairs(raw: unknown, legacyExtras: Record<string, unknown>, sh
     const widthFt = Math.round(clamp(num(s.widthFt, 4), STAIR_LIMITS.widthFt.min, STAIR_LIMITS.widthFt.max) * 2) / 2;
     const L = sideLength(side, level);
     let atFt = toInch(clamp(num(s.atFt, L / 2), widthFt / 2, Math.max(widthFt / 2, L - widthFt / 2)));
-    if (ends && side === "front" && level === "upper") {
-      const part = ends.find((q) => atFt >= q.x0Ft && atFt <= q.x1Ft) ?? ends[ends.length - 1];
+    const frontParts = level === "upper" ? ends : lowerEnds;
+    if (frontParts && side === "front") {
+      const part = frontParts.find((q) => atFt >= q.x0Ft && atFt <= q.x1Ft) ?? frontParts[frontParts.length - 1];
       atFt = part.x1Ft - part.x0Ft >= widthFt ? toInch(clamp(atFt, part.x0Ft + widthFt / 2, part.x1Ft - widthFt / 2)) : toInch((part.x0Ft + part.x1Ft) / 2);
     }
     const wrap = s.wrap === true && side === "front";

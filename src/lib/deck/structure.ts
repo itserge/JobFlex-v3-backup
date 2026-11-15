@@ -277,12 +277,32 @@ export function buildStructure(raw: DeckDesign, opts: StructureOptions = {}): De
   if (frame && surface) {
     // (Steps that wrap the deck follow its own outline wherever it is not a plain rectangle — 2026-11-14.)
     const plain = design.shape.kind === "rect" && (!design.shape.front || design.shape.front.kind === "straight");
-    // (A flight is seated on the edge as the deck is drawn — a bow, a corner cut at an angle; 2026-11-15, lib/deck/edgeSeat.
-    // The lower floor of a double deck on its own outline: a lower floor shaped on its own has its own front.)
+    // (A flight is seated on the edge as the deck is drawn — a bow, a corner cut at an angle; 2026-11-15, lib/deck/edgeSeat.)
     const chains = { front: frontChain(design.shape), left: sideChain(design.shape, "left"), right: sideChain(design.shape, "right") };
-    const at = (chain: Array<{ x: number; y: number }>) => (lower ? chain.map((q) => ({ x: q.x + lower.offsetXIn, y: q.y + lower.offsetYIn })) : chain);
     const upper: StairLevel = { id: "upper", surfaceIn: frame.surfaceIn, joistBottomIn: frame.joistBottomIn, x0: 0, y0: 0, widthIn: W, depthIn: D, frontAt: (x) => frontEdgeAt(design.shape, x), sides: railLevelOf("upper", frame, 0, 0, groundAt, null, false).sides, plain, chains };
-    const lowerLevel: StairLevel | null = lower ? { id: "lower", surfaceIn: lower.frame.surfaceIn, joistBottomIn: lower.frame.joistBottomIn, x0: lower.offsetXIn, y0: lower.offsetYIn, widthIn: Math.round(design.lower.widthFt * 12), depthIn: Math.round(design.lower.depthFt * 12), frontAt: lower.place === "under" ? (x) => frontEdgeAt(lower.design.shape, x) : () => Math.round(design.lower.depthFt * 12), ...(lower.place === "under" ? { chains: { front: at(frontChain(lower.design.shape)), left: at(sideChain(lower.design.shape, "left")), right: at(sideChain(lower.design.shape, "right")) } } : {}) } : null;
+    // A DOUBLE DECK'S LOWER FLOOR IS ITS OWN OUTLINE (owner, 2026-11-15, a lower deck shaped on its own under a deeper
+    // upper deck: "check why the steps are separated"). Its stairs took the UPPER deck's front line — on a lower deck
+    // 10½ ft deep under one 15 ft deep they stood 4½ ft out in the yard. They leave from the lower floor's own front
+    // (its own shape, lib/deck/doubleDeck), and steps that wrap it follow its own outline where it is not a plain
+    // rectangle, as the upper deck's do.
+    const lowerShape = lower?.place === "under" ? lower.design.shape : null;
+    const lowerAt = (chain: Array<{ x: number; y: number }>) => (lower ? chain.map((q) => ({ x: q.x + lower.offsetXIn, y: q.y + lower.offsetYIn })) : chain);
+    const lowerPlain = !lowerShape || (lowerShape.kind === "rect" && (!lowerShape.front || lowerShape.front.kind === "straight"));
+    const lowerLevel: StairLevel | null = lower
+      ? {
+          id: "lower",
+          surfaceIn: lower.frame.surfaceIn,
+          joistBottomIn: lower.frame.joistBottomIn,
+          x0: lower.offsetXIn,
+          y0: lower.offsetYIn,
+          widthIn: Math.round(design.lower.widthFt * 12),
+          depthIn: Math.round(design.lower.depthFt * 12),
+          frontAt: lowerShape ? (x) => frontEdgeAt(lowerShape, x) : () => Math.round(design.lower.depthFt * 12),
+          ...(lowerShape && !lowerPlain ? { sides: railLevelOf("lower", lower.frame, lower.offsetXIn, lower.offsetYIn, groundAt, null, false).sides, plain: false } : {}),
+          // (…and its flights are seated on its own edges, where it stands.)
+          ...(lowerShape ? { chains: { front: lowerAt(frontChain(lowerShape)), left: lowerAt(sideChain(lowerShape, "left")), right: lowerAt(sideChain(lowerShape, "right")) } } : {}),
+        }
+      : null;
     const build = (st: StairDesign, level: StairLevel) =>
       buildStair({ design, stair: st, level, lowerLevel: level.id === "upper" ? lowerLevel : null, product: frame.decking, rail: design.rail, groundAt, riserMaxIn: code.riserMaxIn, postSize: design.framing.post === "8x8" ? "6x6" : design.framing.post === "4x6" ? "4x4" : design.framing.post });
     const put = (st: StairDesign, level: StairLevel) => {
