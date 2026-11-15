@@ -20,7 +20,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Route } from "next";
 import { createWheelMotion, wheelPixels } from "@/lib/smooth-wheel";
-import { AlertTriangle, Check, ChevronDown, ChevronRight, ExternalLink, FileText, Lock, Maximize2, Mic, Minimize2, Plus, RotateCcw, RotateCw, Send, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronRight, ExternalLink, FileText, Lock, LockOpen, Maximize2, Mic, Minimize2, Plus, RotateCcw, RotateCw, Send, X } from "lucide-react";
 import { resolveMarket, parseStateZip, type MarketSnapshot } from "@/lib/fence/market";
 import { leftEndPatch } from "@/lib/deck/frontByHand";
 import { DECKING, DECKING_BRAND_LABEL, DECKING_BRAND_ORDER, DECKING_FAMILY_LABEL, DECKING_FAMILY_ORDER, FRAMING_SPECIES, OC_LUMBER_ID, RAIL_TYPES, WALL_TYPES, WOOD_FRAMING_SPECIES, defaultDecking, defaultFramingSpecies, deckingProduct, isCompositeFraming, treatedDecking, wallType, type DeckingFamily, type DeckingProduct } from "@/lib/deck/catalog";
@@ -352,6 +352,9 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
     [settle],
   );
   const setHouse = React.useCallback((p: Partial<HouseDesign>) => patch({ house: p }), [patch]);
+  // THE WALL LOCKED (2026-11-14; lib/deck/house HouseDesign.locked): the 3D's button, the drawing's, the House step's.
+  const wallLocked = !!design.house.locked;
+  const toggleWallLock = () => setHouse({ locked: !design.house.locked });
   const rp = React.useCallback(
     (p: Partial<RoofDesign>) => {
       dirty.current = true;
@@ -1913,7 +1916,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
       <p className={houseNotes(design.shape, design.house).length ? "v1-call v1-call-bad" : "v1-hint"} data-deck-wall-words>
         {wallWords(design.shape, design.house)}
       </p>
-      <More title="The house and its wall" now={houseWords(design.house)} id="house-more">
+      <More title="The house and its wall" now={`${houseWords(design.house)}${wallLocked ? " · 🔒 wall locked" : ""}`} id="house-more">
         <div className="v1-grid2">
           <Field label="Storeys">
             <Seg label="Storeys" value={String(design.house.storeys)} onChange={(v) => setHouse({ storeys: v === "2" ? 2 : 1 })} options={[{ value: "1", label: "One" }, { value: "2", label: "Two" }]} />
@@ -1998,54 +2001,64 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
             </button>
           </div>
         ) : null}
-        <Field label="The wall's shape" wide>
-          <div className="v1-chips" role="group" aria-label="The wall's shape">
-            {QUICK_WALLS.map((k) => (
-              <button key={k} type="button" className={cx("v1-chip", quickWallOf(design.shape, design.house) === k && "is-on")} aria-pressed={quickWallOf(design.shape, design.house) === k} onClick={() => setHouse(quickWall(k, design.shape, design.house))} data-deck-wall-quick={k}>
-                {QUICK_WALL_LABEL[k]}
-              </button>
-            ))}
-          </div>
-        </Field>
-        <div className="v1-grid2">
-          <Field label="Wall past the left end" aside="ft" lights={lightsFor({ kind: "left" })}>
-            <NumberInput label="Wall past the left end, feet" value={Math.max(0, design.house.leftFt)} parse={parseFeet} format={feetText} min={HOUSE_LIMITS.extendFt.min} max={HOUSE_LIMITS.extendFt.max} onCommit={(n2) => setHouse({ leftFt: n2 })} />
-          </Field>
-          <Field label="Wall past the right end" aside="ft" lights={lightsFor({ kind: "right" })}>
-            <NumberInput label="Wall past the right end, feet" value={Math.max(0, design.house.rightFt)} parse={parseFeet} format={feetText} min={HOUSE_LIMITS.extendFt.min} max={HOUSE_LIMITS.extendFt.max} onCommit={(n2) => setHouse({ rightFt: n2 })} />
-          </Field>
-        </div>
-        <div className="v1-rows" data-deck-house-jogs>
-          {design.house.jogs.map((j, i) => (
-            <div key={j.id} className="v1-item" data-deck-house-jog={j.id}>
-              <div className="v1-item-head">
-                <span className="v1-item-title">Step {i + 1} — {stepWords(j, design.shape)}</span>
-                <button type="button" className="v1-btn v1-btn-sm v1-btn-danger" onClick={() => setHouse({ jogs: design.house.jogs.filter((x) => x.id !== j.id) })} data-deck-house-jog-remove>
-                  Remove
-                </button>
-              </div>
-              <div className="v1-grid3">
-                <Field label="From the left end" aside="ft" lights={lightsFor({ kind: "step", id: j.id })}>
-                  <NumberInput label="Step at, feet from the deck's left end" value={j.atFt} parse={parseFeet} format={feetText} min={-design.house.leftFt + 1} max={design.shape.widthFt + design.house.rightFt - 1} onCommit={(n2) => setHouse({ jogs: design.house.jogs.map((x) => (x.id === j.id ? { ...x, atFt: n2 } : x)) })} />
-                </Field>
-                <Field label="The wall to its right" lights={lightsFor({ kind: "part", id: j.id })}>
-                  <select className="v1-sel" value={j.dir} onChange={(e) => setHouse({ jogs: design.house.jogs.map((x) => (x.id === j.id ? { ...x, dir: e.target.value as HouseJog["dir"] } : x)) })}>
-                    <option value="toward">Comes out</option>
-                    <option value="away">Steps back</option>
-                  </select>
-                </Field>
-                <Field label="By" aside="ft" lights={lightsFor({ kind: "part", id: j.id })}>
-                  <NumberInput label="By, feet" value={j.depthFt} parse={parseFeet} format={feetText} min={HOUSE_LIMITS.depthFt.min} max={HOUSE_LIMITS.depthFt.max} onCommit={(n2) => setHouse({ jogs: design.house.jogs.map((x) => (x.id === j.id ? { ...x, depthFt: n2 } : x)) })} />
-                </Field>
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="v1-row-acts">
-          <button type="button" className="v1-btn v1-btn-sm" disabled={design.house.jogs.length >= HOUSE_LIMITS.jogs} onClick={() => setHouse({ jogs: [...design.house.jogs, { id: nextJogId(design.house.jogs), atFt: Math.max(2, design.shape.widthFt - 4), dir: "toward", depthFt: 3 }] })} data-deck-house-add-jog>
-            <Plus size={15} strokeWidth={2.5} aria-hidden="true" /> Add a step in the wall
+        {/* THE WALL'S LOCK (2026-11-14): locked, the wall's shape below is held — only the deck moves around it. */}
+        <div className={cx("v1-lockbar", wallLocked && "is-locked")} data-deck-wall-lockbar={wallLocked ? "locked" : "open"}>
+          {wallLocked ? <Lock size={16} strokeWidth={2.5} aria-hidden="true" /> : <LockOpen size={16} strokeWidth={2.5} aria-hidden="true" />}
+          <span>{wallLocked ? (design.house.photo ? "The wall is locked as the photo showed it. The deck moves and grows around it — past the house's corner when you pull it past." : "The wall is locked: the deck moves and grows around it — past the house's corner when you pull it past.") : "Shape the wall, then lock it so nothing dragged by accident moves it."}</span>
+          <button type="button" className={cx("v1-btn", "v1-btn-sm", !wallLocked && "v1-btn-primary")} onClick={toggleWallLock} data-deck-wall-lock-step>
+            {wallLocked ? "Unlock the wall" : "Lock the wall"}
           </button>
         </div>
+        <fieldset className="v1-lockset" disabled={wallLocked} data-deck-wall-fields={wallLocked ? "locked" : "open"}>
+          <Field label="The wall's shape" wide>
+            <div className="v1-chips" role="group" aria-label="The wall's shape">
+              {QUICK_WALLS.map((k) => (
+                <button key={k} type="button" className={cx("v1-chip", quickWallOf(design.shape, design.house) === k && "is-on")} aria-pressed={quickWallOf(design.shape, design.house) === k} onClick={() => setHouse(quickWall(k, design.shape, design.house))} data-deck-wall-quick={k}>
+                  {QUICK_WALL_LABEL[k]}
+                </button>
+              ))}
+            </div>
+          </Field>
+          <div className="v1-grid2">
+            <Field label="Wall past the left end" aside="ft" lights={lightsFor({ kind: "left" })}>
+              <NumberInput label="Wall past the left end, feet" value={Math.max(0, design.house.leftFt)} parse={parseFeet} format={feetText} min={HOUSE_LIMITS.extendFt.min} max={HOUSE_LIMITS.extendFt.max} onCommit={(n2) => setHouse({ leftFt: n2 })} />
+            </Field>
+            <Field label="Wall past the right end" aside="ft" lights={lightsFor({ kind: "right" })}>
+              <NumberInput label="Wall past the right end, feet" value={Math.max(0, design.house.rightFt)} parse={parseFeet} format={feetText} min={HOUSE_LIMITS.extendFt.min} max={HOUSE_LIMITS.extendFt.max} onCommit={(n2) => setHouse({ rightFt: n2 })} />
+            </Field>
+          </div>
+          <div className="v1-rows" data-deck-house-jogs>
+            {design.house.jogs.map((j, i) => (
+              <div key={j.id} className="v1-item" data-deck-house-jog={j.id}>
+                <div className="v1-item-head">
+                  <span className="v1-item-title">Step {i + 1} — {stepWords(j, design.shape)}</span>
+                  <button type="button" className="v1-btn v1-btn-sm v1-btn-danger" onClick={() => setHouse({ jogs: design.house.jogs.filter((x) => x.id !== j.id) })} data-deck-house-jog-remove>
+                    Remove
+                  </button>
+                </div>
+                <div className="v1-grid3">
+                  <Field label="From the left end" aside="ft" lights={lightsFor({ kind: "step", id: j.id })}>
+                    <NumberInput label="Step at, feet from the deck's left end" value={j.atFt} parse={parseFeet} format={feetText} min={-design.house.leftFt + 1} max={design.shape.widthFt + design.house.rightFt - 1} onCommit={(n2) => setHouse({ jogs: design.house.jogs.map((x) => (x.id === j.id ? { ...x, atFt: n2 } : x)) })} />
+                  </Field>
+                  <Field label="The wall to its right" lights={lightsFor({ kind: "part", id: j.id })}>
+                    <select className="v1-sel" value={j.dir} onChange={(e) => setHouse({ jogs: design.house.jogs.map((x) => (x.id === j.id ? { ...x, dir: e.target.value as HouseJog["dir"] } : x)) })}>
+                      <option value="toward">Comes out</option>
+                      <option value="away">Steps back</option>
+                    </select>
+                  </Field>
+                  <Field label="By" aside="ft" lights={lightsFor({ kind: "part", id: j.id })}>
+                    <NumberInput label="By, feet" value={j.depthFt} parse={parseFeet} format={feetText} min={HOUSE_LIMITS.depthFt.min} max={HOUSE_LIMITS.depthFt.max} onCommit={(n2) => setHouse({ jogs: design.house.jogs.map((x) => (x.id === j.id ? { ...x, depthFt: n2 } : x)) })} />
+                  </Field>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="v1-row-acts">
+            <button type="button" className="v1-btn v1-btn-sm" disabled={design.house.jogs.length >= HOUSE_LIMITS.jogs} onClick={() => setHouse({ jogs: [...design.house.jogs, { id: nextJogId(design.house.jogs), atFt: Math.max(2, design.shape.widthFt - 4), dir: "toward", depthFt: 3 }] })} data-deck-house-add-jog>
+              <Plus size={15} strokeWidth={2.5} aria-hidden="true" /> Add a step in the wall
+            </button>
+          </div>
+        </fieldset>
       </More>
     </>
   ) : null;
@@ -4109,6 +4122,13 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                   <button type="button" className={cx("v1-btn", "v1-btn-primary", "v1-edit3d", editing && "is-on")} aria-pressed={editing} onClick={() => { setEditing((x) => !x); setHoverPick(null); }} data-deck-edit>
                     {editing ? <><Check size={16} strokeWidth={2.5} aria-hidden="true" /> Done</> : "Edit in 3D"}
                   </button>
+                  {/* THE WALL'S LOCK (2026-11-14): in sight on the 3D, beside Edit in 3D — locked, the wall has no knobs. */}
+                  {structure.frame && design.placement !== "detached" && !viewOnly ? (
+                    <button type="button" className={cx("v1-btn", "v1-wall-lock", wallLocked && "is-locked")} aria-pressed={wallLocked} onClick={toggleWallLock} title={wallLocked ? "The house wall is locked: only the deck moves. Tap to unlock it and move the wall." : "Lock the house wall so nothing dragged can move it."} data-deck-wall-lock={wallLocked ? "locked" : "open"}>
+                      {wallLocked ? <Lock size={16} strokeWidth={2.5} aria-hidden="true" /> : <LockOpen size={16} strokeWidth={2.5} aria-hidden="true" />}
+                      {wallLocked ? "Wall locked" : "Lock the wall"}
+                    </button>
+                  ) : null}
                   {structure.frame && !editing ? (
                     <button type="button" className={cx("v1-btn", placing?.kind === "stair" && "is-on")} aria-pressed={placing?.kind === "stair"} disabled={design.stairs.length >= STAIR_LIMITS.count} onClick={() => setPlacing(placing?.kind === "stair" ? null : { kind: "stair" })} data-deck-3d-add-stair>
                       {placing?.kind === "stair" ? "Click the deck…" : "Add stairs"}
@@ -4119,7 +4139,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                 {editing && !placing ? (
                   <p className="v1-edit-hint" data-deck-editing>
                     <span className="v1-edit-hint-knob" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 12h16M8 7.5 3.5 12 8 16.5M16 7.5l4.5 4.5-4.5 4.5" /></svg></span>
-                    <span>Drag a knob the way its arrow points — or take hold of a post or a beam itself and pull it, an inch at a time. The price follows.</span>
+                    <span>Drag a knob the way its arrow points — or take hold of a post or a beam itself and pull it, an inch at a time. The price follows.{wallLocked && design.placement !== "detached" ? " The house wall is locked, so it has no knobs: pull the deck past its corner and the deck runs on beyond it." : ""}</span>
                   </p>
                 ) : null}
                 <div className="v1-playback" hidden={editing && !placing}>

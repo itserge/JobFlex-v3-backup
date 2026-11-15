@@ -33,6 +33,14 @@
 // it a round one that slides along the deck, every corner that stands out a
 // diamond that cuts it at an angle. All of it is lib/deck/frontByHand: each
 // move ends on a front set part by part, which the engine already builds.
+//
+// THE WALL LOCKED (2026-11-14 — owner: "when the wall is set or built from a
+// picture, lock it: only the deck works around it… make a visible button on
+// the 3D and on the drawing to lock and unlock it"). Locked (house.locked),
+// the wall's grips, steps and ends are not drawn and a drag on the wall moves
+// nothing — the pad says the wall is locked, with Unlock beside it. The deck
+// still slides and grows; pulled past the wall's end it runs on past the
+// house's corner (lib/deck/house lockedEnd), the house stays where it is.
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { DECK_LIMITS, shapeOutline, type DeckShape } from "@/lib/deck/design";
@@ -161,7 +169,11 @@ type PadAction =
   | { kind: "front-clip"; index: number; side: "left" | "right"; by: number }
   | { kind: "front-straight" };
 
+/** The pad's actions that change the house wall itself — none of them run while the wall is locked. */
+const WALL_ACTIONS: ReadonlySet<PadAction["kind"]> = new Set<PadAction["kind"]>(["part-move", "part-shift", "part-level", "jog-move", "jog-depth", "jog-flip", "jog-remove", "end", "add-step", "straight"]);
+
 function perform(a: PadAction, house: HouseDesign, shape: DeckShape): WallChange | null {
+  if (house.locked && WALL_ACTIONS.has(a.kind)) return null;
   const W = shape.widthFt;
   const D = shape.depthFt;
   const jog = (id: string) => house.jogs.find((j) => j.id === id);
@@ -264,6 +276,7 @@ function PadBtn({ label, action, disabled, primary, hold, test, onRun, onHoldSta
 export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLarge, doorFloor }: { shape: DeckShape; house: HouseDesign; onChange: (next: WallChange) => void; size?: "small" | "large"; onOpenLarge?: () => void; /** Which floor a door is on against the deck (2026-11-13): a door under a second-storey deck reads "door below". */ doorFloor?: (o: NonNullable<HouseDesign["openings"]>[number]) => "below" | "deck" | "above" }) {
   const [full, setFull] = React.useState(false);
   const roomy = size === "large" || full;
+  const wallLocked = !!house.locked;
   const W = shape.widthFt;
   const D = shape.depthFt;
   const parts = wallParts(house, shape);
@@ -533,6 +546,13 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
   const start = (e: React.PointerEvent<SVGElement>, kind: DragKind, pickHere: WallPick | null, extra: { id?: string; part?: number; index?: number; side?: "left" | "right"; at0?: number; clip0?: number; sideBack?: number } = {}) => {
     const svg = svgRef.current;
     if (!svg || e.button !== 0) return;
+    // A LOCKED WALL is not dragged: the touch picks it, and the pad says it is locked (with Unlock).
+    if (wallLocked && (kind === "part" || kind === "jog" || kind === "left" || kind === "right")) {
+      if (pickHere) setPick(pickHere);
+      setNotice(null);
+      e.preventDefault();
+      return;
+    }
     const rect = svg.getBoundingClientRect();
     const vb = { ...view };
     const f = feetAt(rect, vb, e.clientX, e.clientY);
@@ -717,6 +737,7 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
     if (d && d.kind === "pan" && !d.moved) setPick(null);
   };
   const key = (e: React.KeyboardEvent<SVGElement>, a: WallPick) => {
+    if (wallLocked && (a.kind === "part" || a.kind === "jog" || a.kind === "end") && e.key !== "Escape") return;
     if (e.key === "Escape") {
       if (pick) {
         e.stopPropagation();
@@ -772,7 +793,8 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
 
   /* ── what the pad shows ── */
   const fit = deckShapeForHouse(shape, house);
-  const fixes = fit.note ? wallFixes(shape, house, LIMITS) : [];
+  // (A locked wall: only the fixes that leave the wall as it is.)
+  const fixes = fit.note ? wallFixes(shape, house, LIMITS).filter((f) => !wallLocked || !f.house || JSON.stringify({ ...f.house, locked: true }) === JSON.stringify({ ...house, locked: true })) : [];
   const partPick = (a: number): WallPick => ({ kind: "part", index: a, n: parts.length });
   const hovered = (a: WallPick) => samePick(hover, a);
   const picked = (a: WallPick) => samePick(pick, a);
@@ -786,7 +808,20 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
     <PadBtn key={`${a.kind}:${label}`} label={label} action={a} disabled={opts.disabled} primary={opts.primary} hold={opts.hold !== false} test={opts.test} onRun={run} onHoldStart={holdStart} onHoldStop={holdStop} />
   );
   let padBody: React.ReactNode;
-  if (pickedPart) {
+  const lockToggle = (
+    <button type="button" className={cx(s.wallPadBtn, s.wallLockBtn, wallLocked && s.wallLockOn, !wallLocked && house.jogs.length > 0 && s.wallPadBtnPrimary)} onClick={() => { remember(house, shape); onChange({ house: { ...house, locked: !wallLocked } }); }} aria-pressed={wallLocked} data-deck-wall-lock-btn={wallLocked ? "locked" : "open"}>
+      {wallLocked ? "🔒 Wall locked — unlock" : "🔓 Lock the wall"}
+    </button>
+  );
+  if (wallLocked && padPick && (padPick.kind === "part" || padPick.kind === "jog" || padPick.kind === "end")) {
+    padBody = (
+      <>
+        <span className={s.wallPadTitle} data-deck-wall-picked="locked">🔒 The house wall is locked</span>
+        <span className={s.wallPadHint}>{house.photo ? "It stands as the photo showed it. " : ""}Nothing dragged moves it: the deck moves and grows around it, and pulled past the wall&apos;s end it runs on past the house&apos;s corner. To change the wall, unlock it.</span>
+        {lockToggle}
+      </>
+    );
+  } else if (pickedPart) {
     const { index, part } = pickedPart;
     const locked = index === refIdx;
     padBody = (
@@ -1003,7 +1038,7 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
           );
         })}
       {/* The words on the drawing: the house, each part's width and depth, the deck and its two dimensions, the wall's reach past the deck. */}
-      <text x={(xMin + xMax) / 2} y={Math.min(0, ...depths) - font * 3.6} fontSize={font} textAnchor="middle" className={s.wallLabel}>the house</text>
+      <text x={(xMin + xMax) / 2} y={Math.min(0, ...depths) - font * 3.6} fontSize={font} textAnchor="middle" className={s.wallLabel}>{wallLocked ? "🔒 the house · wall locked" : "the house"}</text>
       {parts.map((p, i) => {
         const mid = (p.x0 + p.x1) / 2;
         const depthWord = Math.abs(p.depthFt) < 0.01 ? (i === refIdx ? "house line" : "level") : `${p.depthFt > 0 ? "out" : "back"} ${ft(Math.abs(p.depthFt))}`;
@@ -1046,8 +1081,8 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
         <line x1={depthX - font * 0.45} y1={D} x2={depthX + font * 0.45} y2={D} />
         <text x={depthOnRight ? depthX + font * 0.5 : depthX - font * 0.5} y={D / 2 + font * 0.35} fontSize={font * 0.9} textAnchor={depthOnRight ? "start" : "end"} className={s.wallDimText}>{ft(D)}</text>
       </g>
-      {/* The wall's parts: a grip on each, the part the deck stands on marked as the house line. */}
-      {parts.map((p, i) => {
+      {/* The wall's parts: a grip on each, the part the deck stands on marked as the house line. (None while the wall is locked.) */}
+      {(wallLocked ? [] : parts).map((p, i) => {
         const w = clamp((p.x1 - p.x0) * 0.45, 1 / z, (roomy ? 2 : 2.6) / z);
         const cxp = (p.x0 + p.x1) / 2;
         const locked = i === refIdx;
@@ -1059,7 +1094,7 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
         );
       })}
       {/* The steps: each drags sideways. */}
-      {house.jogs.map((j) => {
+      {(wallLocked ? [] : house.jogs).map((j) => {
         const y = Math.max(depthAt(j.atFt - 0.01), depthAt(j.atFt + 0.01));
         const a: WallPick = { kind: "jog", id: j.id };
         return (
@@ -1069,7 +1104,7 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
         );
       })}
       {/* The house's two ends: wider or narrower. */}
-      {(["left", "right"] as const).map((side) => {
+      {(wallLocked ? [] : (["left", "right"] as const)).map((side) => {
         const x = side === "left" ? xMin : xMax;
         const y = depthAt(side === "left" ? x + 0.01 : x - 0.01);
         const tip = side === "left" ? x - handleR * 1.6 : x + handleR * 1.6;
@@ -1126,7 +1161,7 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
         <title>Slide the deck along the wall</title>
       </rect>
       {/* A + where a step would go (the large drawings only — the small one is crowded; the pad's + does the same). */}
-      {roomy && canAdd && (padPick?.kind === "part" || padPick?.kind === "deck") ? (
+      {roomy && canAdd && !wallLocked && (padPick?.kind === "part" || padPick?.kind === "deck") ? (
         <g className={s.wallPlus} onClick={() => run({ kind: "add-step", atFt: plusX })} data-deck-wall-plus={plusX} role="button" tabIndex={0} aria-label={`Add a step in the wall at ${ft(plusX)}`} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); run({ kind: "add-step", atFt: plusX }); } }}>
           <circle cx={plusX + handleR * 2.6} cy={depthAt(plusX) + (padPick?.kind === "deck" ? handleR * 2.6 : -handleR * 2.6)} r={handleR * 0.85} />
           <text x={plusX + handleR * 2.6} y={depthAt(plusX) + (padPick?.kind === "deck" ? handleR * 2.6 : -handleR * 2.6) + font * 0.38} fontSize={font * 1.1} textAnchor="middle">+</text>
@@ -1152,6 +1187,9 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
               </button>
             ) : null}
             {!full ? <button type="button" className={s.wallZoomBtn} onClick={() => setFull(true)} data-deck-wall-fullscreen>⤢ Full screen</button> : null}
+            <button type="button" className={cx(s.wallZoomBtn, wallLocked && s.wallZoomOn)} aria-pressed={wallLocked} onClick={() => { remember(house, shape); onChange({ house: { ...house, locked: !wallLocked } }); }} title={wallLocked ? "The house wall is locked: only the deck moves. Unlock to move the wall." : "Lock the house wall so nothing dragged moves it"} data-deck-wall-lock-top={wallLocked ? "locked" : "open"}>
+              {wallLocked ? "🔒 Unlock wall" : "🔓 Lock wall"}
+            </button>
           </div>
         ) : null}
       </div>
@@ -1163,8 +1201,9 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
           </span>
         ) : null}
         <span className={s.wallPadSep} aria-hidden="true" />
-        {padBtn("+ Add a step", { kind: "add-step", atFt: plusX }, { hold: false, disabled: !canAdd, test: "add-step" })}
-        {padBtn("Straight wall", { kind: "straight" }, { hold: false, disabled: !house.jogs.length, test: "straight" })}
+        {lockToggle}
+        {padBtn("+ Add a step", { kind: "add-step", atFt: plusX }, { hold: false, disabled: !canAdd || wallLocked, test: "add-step" })}
+        {padBtn("Straight wall", { kind: "straight" }, { hold: false, disabled: !house.jogs.length || wallLocked, test: "straight" })}
         {padBtn("Straight front", { kind: "front-straight" }, { hold: false, disabled: !frontIsShaped(shape), test: "front-straight" })}
         <button type="button" className={s.wallPadBtn} onClick={undo} disabled={undoN === 0} data-deck-wall-undo>↶ Undo</button>
         {!roomy && onOpenLarge ? <button type="button" className={s.wallPadBtn} onClick={onOpenLarge} data-deck-wall-large>Show it large ↗</button> : null}
