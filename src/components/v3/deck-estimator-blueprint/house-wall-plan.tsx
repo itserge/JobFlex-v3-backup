@@ -74,6 +74,7 @@ import {
   setSectionDepth,
   settleOpenings,
   resizeDeckLeft,
+  resizeDeckRight,
   shiftWallPart,
   slideDeck,
   wallFixes,
@@ -709,7 +710,9 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
       let next: { house: HouseDesign; shape: DeckShape };
       if (d.byHouse || inn <= 0) {
         const w = clamp(half(B.shape.widthFt - inn), DECK_LIMITS.widthFt.min, DECK_LIMITS.widthFt.max);
-        const ended = left ? resizeDeckLeft(B.house, B.shape, w, DECK_LIMITS.widthFt.min, DECK_LIMITS.widthFt.max) : { house: B.house, shape: { ...B.shape, widthFt: w } };
+        // (Both ends are worked out from the drag's START with the house they leave — a locked wall stays, a photo's wall
+        // gives up what the deck took: a house sent back as it was at the start undid that with every move, 2026-11-15.)
+        const ended = left ? resizeDeckLeft(B.house, B.shape, w, DECK_LIMITS.widthFt.min, DECK_LIMITS.widthFt.max) : resizeDeckRight(B.house, B.shape, w, DECK_LIMITS.widthFt.min, DECK_LIMITS.widthFt.max);
         next = { house: ended.house, shape: resizeFrontEnd(B.shape, left ? "left" : "right", ended.shape.widthFt) };
         setNotice(null);
       } else {
