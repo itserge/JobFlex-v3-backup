@@ -26,7 +26,7 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { Camera, ImagePlus, RotateCcw, Users, X } from "lucide-react";
 import type { DeckDesign } from "@/lib/deck/design";
-import type { DeckPatch } from "@/lib/deck/checks";
+import { applyDeckPatch, type DeckPatch } from "@/lib/deck/checks";
 import { COVER_LIMITS, COVER_OUT_DEFAULT_FT, PART_ROOFS, PART_ROOF_LABEL, isHouseHex, settleOpenings, type HousePhoto, type PartRoof } from "@/lib/deck/house";
 import {
   addReadDoor,
@@ -58,6 +58,8 @@ import { type WallJog, AUTO_STRAIGHTEN_PCT, applyHomography, obliqueness, transf
 import { applyDepthVerdicts, type DepthRelief } from "@/lib/deck/houseDepthApply";
 import { deckClientPhotoData, deckClientPhotos, deckPhotoHref, readHouseCorner, readHouseDepth, readHousePhoto, uploadDeckPhoto, type ClientPhoto, type DeckPhotoResult, type HouseCornerRead, type HouseDepthResult, type HousePhotoRead } from "@/actions/deckEstimator";
 import { applyCornerVerdict, cornerCrop, unresolvedSteps } from "@/lib/deck/houseCorner";
+import { decidedWords, keepUnseenJogs, settleEave, settleOpenCorners, type CornerDecided, type CornerLean } from "@/lib/deck/houseSettle";
+import { roofClearOfWindows, type RoofFit } from "@/lib/deck/houseFit";
 import { LEFT_OUT_TAG, leftOut, oldDeckOf, removeInFront, settleBehindDeck } from "@/lib/deck/houseInFront";
 import { cropPhoto, shrinkPhoto, straightenPhoto, trimLetterbox } from "@/components/v3/deck-estimator-blueprint/deck-photo";
 import { NumberInput, Toggle, cx, feetText, parseFeet } from "./deck-v1-parts";
@@ -81,7 +83,7 @@ export interface HouseReview {
   /** The picture could not be read: the lines are a start to drag onto the wall. */
   byHand: string | null;
   /** How it was read: the looks taken, the model, the lines the picture's own edges moved. */
-  how?: { looks: number; model: string; snapped: number; split: number; /** The wall's steps measured off the photo's own pixels (lib/deck/wallSteps) — 0 when the photo didn't show them and the model's read stands. */ stepsFromPhoto?: number; /** Windows read off the picture itself (lib/deck/photoSnap findWindows), 0 when the model's boxes were lined up instead (2026-10-25). */ windowsFromPhoto?: number; /** Why the photo's pixels said nothing about the steps, and how many corners they found anyway (2026-10-24). */ stepsWhy?: WallStepsWhy; cornersFromPhoto?: number; /** The steps were read on the clean picture, before it was straightened (the warp, made from the model's leaning lines, loses the corners). */ stepsBeforeWarp?: boolean; /** The model's lines leaned this much, percent — enough to straighten — but the photo's own rows of windows ran parallel: kept square (2026-10-24). */ squareOn?: number; /** What the depth map did (2026-10-26): how many parts of the wall it set out or back, how many of those it turned round, how many raised or sunk parts it saw. */ corners?: { asked: number; set: number; gone: number }; depth?: { sections: number; flipped: number; relief: number } } | null;
+  how?: { /** The wall's top line stood at the roof's top and was brought down to the eave; the corners decided at the first read (lib/deck/houseSettle, 2026-11-14). */ eaveDown?: boolean; decided?: CornerDecided[]; looks: number; model: string; snapped: number; split: number; /** The wall's steps measured off the photo's own pixels (lib/deck/wallSteps) — 0 when the photo didn't show them and the model's read stands. */ stepsFromPhoto?: number; /** Windows read off the picture itself (lib/deck/photoSnap findWindows), 0 when the model's boxes were lined up instead (2026-10-25). */ windowsFromPhoto?: number; /** Why the photo's pixels said nothing about the steps, and how many corners they found anyway (2026-10-24). */ stepsWhy?: WallStepsWhy; cornersFromPhoto?: number; /** The steps were read on the clean picture, before it was straightened (the warp, made from the model's leaning lines, loses the corners). */ stepsBeforeWarp?: boolean; /** The model's lines leaned this much, percent — enough to straighten — but the photo's own rows of windows ran parallel: kept square (2026-10-24). */ squareOn?: number; /** What the depth map did (2026-10-26): how many parts of the wall it set out or back, how many of those it turned round, how many raised or sunk parts it saw. */ corners?: { asked: number; set: number; gone: number }; depth?: { sections: number; flipped: number; relief: number } } | null;
   /** The wall's relief the depth map found — a bay, a chimney, a recessed entry — as boxes in the picture's fractions, for the 3D's raised and sunk parts. */
   relief?: DepthRelief[];
 }
@@ -113,6 +115,8 @@ export interface HousePhotoState {
   review: HouseReview | null;
   setReview: React.Dispatch<React.SetStateAction<HouseReview | null>>;
   built: PhotoHouse | null;
+  /** A covered deck's roof brought clear of the windows on the house the review shows, when it would cross one (lib/deck/houseFit). */
+  roofFit: RoofFit | null;
   thumb: string | null;
   /** The two hidden file inputs, as callback refs (the elements are kept in state): a picture, and the phone's camera. */
   setFileInput: (el: HTMLInputElement | null) => void;
@@ -242,17 +246,18 @@ function depthWords(d: { sections: number; flipped: number; relief: number }): s
 }
 
 /** What the review says when the photo's pixels didn't settle the wall's steps. */
-function stepsWhyWords(why: WallStepsWhy | undefined, corners: number): string {
+function stepsWhyWords(why: WallStepsWhy | undefined, corners: number, decided = false): string {
   const found = corners ? `${corners} corner${corners === 1 ? "" : "s"} found` : "no corner found";
+  const tap = decided ? "" : " — tap a part to set it out or back";
   switch (why) {
     case "no-eave":
       return "the wall's steps as the model read them (no eave line to read the photo by)";
     case "no-corners":
       return "the wall's steps as the model read them (no corner showed up both storeys of the photo)";
     case "no-band":
-      return `${found} in the photo, its eave's shadow not plain enough to tell which way — tap a part to set it out or back`;
+      return `${found} in the photo, its eave's shadow not plain enough to tell which way${tap}`;
     case "flat":
-      return `${found} in the photo, its eave level across them — tap a part to set it out or back`;
+      return `${found} in the photo, its eave level across them${tap}`;
     default:
       return "the wall's steps as the model read them";
   }
@@ -325,10 +330,22 @@ export function useHousePhoto({
             measured: review.measured,
             keepCovers: review.keepCover === true,
             coverOutFt: review.coverOutFt ?? null,
+            // No door seen: the deck is brought down from where it stands now, under the window sills (2026-11-14).
+            deckHeightIn: design.heightIn,
           })
         : null,
-    [review, design.shape.widthFt, design.house],
+    [review, design.shape.widthFt, design.house, design.heightIn],
   );
+  // THE ROOF CLEAR OF THE WINDOWS FROM THE START (2026-11-14, lib/deck/houseFit): on the house the review shows, at
+  // the height it sets, a covered deck's roof that would meet the wall across a window is brought under it.
+  const roofFit = React.useMemo(() => {
+    if (!review || !built || design.structure === "deck") return null;
+    try {
+      return roofClearOfWindows(applyDeckPatch(design, { house: built.house, ...(review.useHeight && built.heightIn ? { heightIn: built.heightIn } : {}) }));
+    } catch {
+      return null;
+    }
+  }, [review, built, design]);
 
   const fromFile = async (file: File) => {
     setBusy("Reading the picture…");
@@ -354,6 +371,7 @@ export function useHousePhoto({
       let squareOn: number | null = null;
       let levelSlope: number | null = null;
       let stepsFromPhoto = false;
+      let eaveDown = false;
       let relief: DepthRelief[] | undefined;
       let gray0: Awaited<ReturnType<typeof grayOf>> = null;
       if (res.ok) {
@@ -381,6 +399,13 @@ export function useHousePhoto({
         // photoObliqueness): its rows of window heads run parallel when the shot is square-on. Then the model's lines
         // are turned to the wall's own way across the picture, and nothing is warped.
         gray0 = await grayOf(clean.file).catch(() => null);
+        // THE WALL'S TOP LINE IS THE EAVE, NOT THE ROOF'S TOP (2026-11-14 — owner: "render the whole picture uploaded
+        // with the roof"; the reader had given the roof's top, and a wall sized by its storeys came out a fifth too
+        // small). A line far above the highest windows' heads is brought down to the eave — onto the picture's own
+        // edge there (lib/deck/houseSettle).
+        const eaveSet = settleEave(read, gray0);
+        read = eaveSet.read;
+        eaveDown = eaveSet.moved;
         // THE STEPS OFF THE CLEAN PICTURE FIRST (2026-10-24 — owner, the same photo a fourth time: "it's still wrong"):
         // when the photo's rows of windows can't say the shot is square-on (the model missed some), the model's leaning
         // lines have the square-on photo straightened, and on the warped picture the corner boards lean and no corner
@@ -442,7 +467,8 @@ export function useHousePhoto({
           const steps = straightened !== null && earlyJogs ? earlyJogs : report.steps ? report.steps.jogs : earlyJogs;
           const beforeWarp = !!steps && steps === earlyJogs && straightened !== null;
           stepsFromPhoto = !!steps;
-          if (steps) read = { ...read, jogs: steps };
+          // …beside the model's own where the photo could not look (behind a porch roof, an old deck: lib/deck/houseSettle).
+          if (steps) read = { ...read, jogs: keepUnseenJogs(steps, read.jogs, read) };
           else {
             const dividers = report.dividers.length ? report.dividers : early?.dividers.length ? carry(early.dividers) : [];
             if (dividers.length) read = { ...read, jogs: dividers };
@@ -476,6 +502,7 @@ export function useHousePhoto({
         // by itself — a close cut round that one line, one question (lib/deck/houseCorner). The answer makes it a step,
         // or takes it away when it is no corner at all; "unclear" leaves it to be tapped. From the right, so that one
         // taken away leaves the others where they were counted.
+        const leans: CornerLean[] = [];
         if (api.corner) {
           let asked = 0, set = 0, gone = 0;
           for (const i of unresolvedSteps(read).slice(-3).reverse()) {
@@ -489,13 +516,23 @@ export function useHousePhoto({
             const ans = await api.corner(cf).catch(() => null);
             asked++;
             if (!ans?.ok) continue;
+            const cornerX = read.jogs[i]?.x;
             const applied = applyCornerVerdict(read, i, ans.answer);
             read = applied.read;
             if (applied.did === "step") set++;
             else if (applied.did === "removed") gone++;
+            else if (typeof cornerX === "number") leans.push({ x: cornerX, verdict: ans.answer.verdict, stepFt: ans.answer.stepFt ?? null, confidence: ans.answer.confidence });
           }
           if (asked) how = { ...(how ?? { looks, model: res.model, snapped: 0, split: 0 }), corners: { asked, set, gone } };
         }
+        // EVERY CORNER DECIDED AT THE FIRST READ (2026-11-14 — owner: "it should be at the very first time already
+        // identified, and in some cases you just marked it's out or in"). A corner none of the passes above could say
+        // the way of was left a divider to tap. Now it is decided by the best word there is — the close look's own
+        // leaning, the model's first read of the wall's parts (set aside when the photo's corners replaced its steps),
+        // a roof over one side, the wall's shape — and the review says what was decided (lib/deck/houseSettle).
+        const settled = settleOpenCorners(read, { model: modelSections, leans });
+        read = settled.read;
+        if (eaveDown || settled.decided.length) how = { ...(how ?? { looks, model: res.model, snapped: 0, split: 0 }), ...(eaveDown ? { eaveDown: true } : {}), ...(settled.decided.length ? { decided: settled.decided } : {}) };
       } else
         byHand = res.configured
           ? `${res.error} Drag the lines onto the wall, then add the windows and the door.`
@@ -585,6 +622,7 @@ export function useHousePhoto({
     };
     const p: DeckPatch = { house: { ...built.house, photo: review.url ? kept : null } };
     if (review.useHeight && built.heightIn) p.heightIn = built.heightIn;
+    if (roofFit) p.roof = roofFit.roof;
     const veneer = built.house.material === "brick" || built.house.material === "stone";
     if (veneer && review.veneer) p.wall = "brick-veneer";
     patch(p, ["house-photo", ...(p.heightIn ? ["height"] : [])]);
@@ -629,6 +667,7 @@ export function useHousePhoto({
     review,
     setReview,
     built,
+    roofFit,
     thumb,
     setFileInput,
     setCamInput,
@@ -924,7 +963,7 @@ export function HousePhotoReview({ hp, design }: { hp: HousePhotoState; design: 
             <div>
               <h3 className="v1-h3">Here&rsquo;s what I see</h3>
               <span className="v1-meta">
-                {r.byHand ? "Marked by hand" : `Read off the photo${r.how ? ` in ${r.how.looks === 2 ? "two looks" : "one look"}${r.how.windowsFromPhoto ? `, its ${r.how.windowsFromPhoto} windows read off the picture` : r.how.snapped ? ", lined up with its edges" : ""}${r.how.stepsFromPhoto ? `, the wall's steps measured off the photo${r.how.stepsBeforeWarp ? " before it was straightened" : ""}` : r.how.stepsFromPhoto === 0 ? `, ${stepsWhyWords(r.how.stepsWhy, r.how.cornersFromPhoto ?? 0)}` : ""}${r.how.squareOn ? ", shot square-on — not straightened" : ""}${r.how.depth ? depthWords(r.how.depth) : ""}${r.how.corners ? cornerWords(r.how.corners) : ""} (${r.how.model})` : ""}${b?.leftOut ? ` · ${b.leftOut} left out` : ""}${r.straightened ? ` · straightened (the shot was ${r.straightened}% off square)` : ""}`} — drag any line that&rsquo;s off; tap a part
+                {r.byHand ? "Marked by hand" : `Read off the photo${r.how ? ` in ${r.how.looks === 2 ? "two looks" : "one look"}${r.how.windowsFromPhoto ? `, its ${r.how.windowsFromPhoto} windows read off the picture` : r.how.snapped ? ", lined up with its edges" : ""}${r.how.stepsFromPhoto ? `, the wall's steps measured off the photo${r.how.stepsBeforeWarp ? " before it was straightened" : ""}` : r.how.stepsFromPhoto === 0 ? `, ${stepsWhyWords(r.how.stepsWhy, r.how.cornersFromPhoto ?? 0, !!r.how.decided?.length)}` : ""}${r.how.eaveDown ? ", the wall's top line brought down from the roof's top to the eave" : ""}${r.how.decided ? decidedWords(r.how.decided) : ""}${r.how.squareOn ? ", shot square-on — not straightened" : ""}${r.how.depth ? depthWords(r.how.depth) : ""}${r.how.corners ? cornerWords(r.how.corners) : ""} (${r.how.model})` : ""}${b?.leftOut ? ` · ${b.leftOut} left out` : ""}${r.straightened ? ` · straightened (the shot was ${r.straightened}% off square)` : ""}`} — drag any line that&rsquo;s off; tap a part
                 of the wall to set it out or back. Select a window or door to move it, resize its corners, or change its bounds below.
               </span>
             </div>
@@ -1234,10 +1273,19 @@ export function HousePhotoReview({ hp, design }: { hp: HousePhotoState; design: 
                 <Toggle checked={r.useHeight} onChange={(on) => hp.setReview((v) => (v ? { ...v, useHeight: on } : v))}>
                   {b.heightBy === "old-deck" ? (
                     <>Set the new deck&rsquo;s floor where the old deck&rsquo;s is — {b.heightIn} in. off the ground (now {design.heightIn} in.)</>
+                  ) : b.heightBy === "windows" ? (
+                    <>
+                      No door seen — set the deck low, {b.heightIn} in. off the ground, so its boards stay under the window sills{b.sillIn !== null ? ` (the lowest is ${b.sillIn} in. up)` : ""} — now {design.heightIn} in.
+                    </>
                   ) : (
                     <>Set the deck&rsquo;s floor from the door — {b.heightIn} in. (an inch under its threshold; now {design.heightIn} in.)</>
                   )}
                 </Toggle>
+              ) : null}
+              {hp.roofFit ? (
+                <p className="v1-meta" data-deck-house-roof-fit>
+                  {hp.roofFit.words}
+                </p>
               ) : null}
               {b?.porch ? (
                 <div className="v1-hp-cover" data-deck-house-cover={r.keepCover ? "kept" : "out"}>

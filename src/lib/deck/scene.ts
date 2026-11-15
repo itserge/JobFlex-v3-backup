@@ -526,9 +526,12 @@ export function deckScene(s: DeckStructure): DeckScene {
         if (b.style === "flush") {
           hanger(j.x + ox, b.y + oy - b.spec.thickIn / 2 - 0.9, -1, flanges);
           if (b.role === "middle") hanger(j.x + ox, b.y + oy + b.spec.thickIn / 2 + 0.9, 1, flanges);
-        } else box("hardware", j.x + ox + 1.2, b.y + oy, f.joistBottomIn - 0.1, 1.2, 2.5, 3, tieTag);
+        }
       }
     }
+    // The ties where a joist sits on a dropped beam — the frame's own list (lib/deck/frame tieAt), so the 3D shows the
+    // ties the material list counts: none past a beam cut back at a corner, one on each joist over an angled beam.
+    for (const t of f.tieAt ?? []) box("hardware", t.x + ox + 1.2, t.y + oy, f.joistBottomIn - 0.1, 1.2, 2.5, 3, tieTag);
     if (f.joists.length && f.beams.length) {
       const j0 = f.joists[Math.floor(f.joists.length / 2)];
       const zf = f.zones.find((z) => z.zone.id === j0.zoneId);

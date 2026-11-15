@@ -630,6 +630,40 @@ const BUMP_PIECE: Record<HouseRoof, number> = { hip: ROOF_PIECE.bumpHip, gable: 
  * clear of the door — or, for a house built from a photo, the windows and
  * doors where they are, each on the part of the wall it stands in.
  */
+/** The house's main wall: the face most of the wall's length is on (the nearer the house line when two are as long). */
+export function mainFaceFt(parts: ReadonlyArray<Pick<WallPart, "x0" | "x1" | "depthFt">>): number {
+  const faceWidth = new Map<number, number>();
+  for (const p of parts) faceWidth.set(p.depthFt, (faceWidth.get(p.depthFt) ?? 0) + (p.x1 - p.x0));
+  let mainFace = 0;
+  let widest = -1;
+  for (const [d, w] of faceWidth) if (w > widest + 1e-9 || (Math.abs(w - widest) < 1e-9 && Math.abs(d) < Math.abs(mainFace))) [mainFace, widest] = [d, w];
+  return mainFace;
+}
+
+/**
+ * A window of the UPPER storey: its sill above where a ground-floor window's would be and its head above a storey of
+ * wall — by the wall's own height when the photo gave it (the eave), by the usual storey otherwise.
+ */
+export function isUpperWindow(o: Pick<HouseOpening, "kind" | "sillFt" | "heightFt">, eaveHeightFt?: number | null): boolean {
+  if (o.kind !== "window") return false;
+  const two = eaveHeightFt && eaveHeightFt >= 14 ? eaveHeightFt : 2 * STOREY_FT;
+  return o.sillFt > 0.42 * two && o.sillFt + o.heightFt > 0.6 * two;
+}
+/**
+ * A "ONE-STOREY" PART LEVEL WITH THE WALL ABOVE IT (2026-11-14, owner, of a two-storey wall with a porch roof on a post
+ * in front of its right half: "it looks like it's falling apart"). The reader took the porch roof for a low roof over
+ * a room and said that half one storey — NOT a wing, the taller wall standing above it. Standing level with the rest
+ * of the wall, it was built as a wing anyway: the main roof stopped short of it and a lean-to rose over the whole depth
+ * of the house. But a room under a low roof stands FORWARD of the wall above it, and the picture's own windows said
+ * the rest: a row of upper windows stood in that stretch. A part level with the wall, not marked a wing, with upper
+ * windows in it is that wall, two storeys tall, with something in front of its ground floor (a porch roof, a roof
+ * band). A part marked a wing (nothing but sky above its roof) is still one; so is a one-storey part with no upper
+ * windows in it (the review's own "One storey", set by hand on a house drawn without them).
+ */
+export function upperWindowsOver(openings: ReadonlyArray<Pick<HouseOpening, "kind" | "xFt" | "sillFt" | "heightFt">> | null | undefined, x0: number, x1: number, eaveHeightFt?: number | null): number {
+  return (openings ?? []).filter((o) => o.xFt > x0 && o.xFt < x1 && isUpperWindow(o, eaveHeightFt)).length;
+}
+
 export function houseScene(shape: DeckShape, house: HouseDesign, ctx: { deckHeightFt: number; peakFt: number; mainEdge: { x0: number; x1: number } | null }): HouseScene {
   const parts = impliedParts(wallParts(house, shape), shape, house);
   const storeyTop = (n: number) => n * STOREY_FT + 0.5;
@@ -639,11 +673,7 @@ export function houseScene(shape: DeckShape, house: HouseDesign, ctx: { deckHeig
   // on — the whole length of the house under ONE roof; a part that comes out stands in front of the body as a block of
   // its own under its own roof (one storey on a two-storey house unless it was seen as tall as the house); a part set
   // back is the body's own wall, set back under the roof's eave.
-  const faceWidth = new Map<number, number>();
-  for (const p of parts) faceWidth.set(p.depthFt, (faceWidth.get(p.depthFt) ?? 0) + (p.x1 - p.x0));
-  let mainFace = 0;
-  let widest = -1;
-  for (const [d, w] of faceWidth) if (w > widest + 1e-9 || (Math.abs(w - widest) < 1e-9 && Math.abs(d) < Math.abs(mainFace))) [mainFace, widest] = [d, w];
+  const mainFace = mainFaceFt(parts);
   const pitch = roofPitch(house);
   const blocks: number[][] = [];
   const roofs: number[][] = [];
@@ -657,10 +687,12 @@ export function houseScene(shape: DeckShape, house: HouseDesign, ctx: { deckHeig
   const kinds = parts.map((p, i) => {
     const own = housePartAt(house, i);
     const out = p.depthFt > mainFace + 0.5;
-    const low = house.storeys === 2 && (own?.storeys ? own.storeys === 1 : out && house.bumpOuts !== "full");
+    // …never low where it is level with the wall, not marked a wing, and upper windows stand in it (a porch roof read as a room)
+    const tall = !out && own?.storeys === 1 && own.wing !== true && upperWindowsOver(house.openings, p.x0, p.x1, house.eaveHeightFt) > 0;
+    const low = !tall && house.storeys === 2 && (own?.storeys ? own.storeys === 1 : out && house.bumpOuts !== "full");
     // a low part that does not come out has no taller wall to stand in front of: it is a wing whether marked or not
     const wing = low && (own?.wing === true || !out);
-    return { own, out, low, wing };
+    return { own: tall ? null : own, out, low, wing };
   });
   // the main roof: one over every run of parts that are not wings
   for (let i = 0; i < parts.length; ) {
@@ -676,8 +708,13 @@ export function houseScene(shape: DeckShape, house: HouseDesign, ctx: { deckHeig
     if (wing) {
       // the wing: one block from the back of the house to its own face, under its own roof
       blocks.push([p.x0, r2(mainFace - HOUSE_BODY_FT), p.x1, p.depthFt, lowH]);
+      // A wing has no taller wall for a lean-to to climb: its one slope runs the house's whole depth, and at a lean-to's
+      // pitch it rose eight feet — past the main roof's eave, open at both ends (2026-11-14). It rises no more than
+      // three feet over that depth.
       const kind: HouseRoof = own?.roof ?? (house.roof === "gable-end" ? "gable" : house.roof);
-      roofs.push([ROOF_PIECE[kind], p.x0, r2(mainFace - HOUSE_BODY_FT), p.x1, p.depthFt, lowH, ownPitch(own?.roof)]);
+      const depth = p.depthFt - (mainFace - HOUSE_BODY_FT);
+      const wingPitch = kind === "shed" ? Math.min(ownPitch(own?.roof), r2(36 / Math.max(depth, 6))) : ownPitch(own?.roof);
+      roofs.push([ROOF_PIECE[kind], p.x0, r2(mainFace - HOUSE_BODY_FT), p.x1, p.depthFt, lowH, wingPitch]);
       partH.push(lowH);
       above.push(null);
       return;

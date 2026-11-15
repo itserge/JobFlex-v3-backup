@@ -223,9 +223,33 @@ export function wallCorners(read: HouseRead, g: Gray, gx?: Float32Array): number
   // the entry door ran on up the side of the window over it, an edge up both storeys, and read as a corner with the
   // wall to its right "back 2 ft"). A column on an opening's edge — within 1½ % of the wall's span — is the frame.
   const edge = Math.max(4, span * 0.015);
-  const frames = [...read.windows.flatMap((o) => [o.x0, o.x1]), ...read.doors.flatMap((o) => [o.x0, o.x1])].map((x) => x * w);
+  const boxes = [...read.windows.map((o) => ({ x0: o.x0, x1: o.x1, top: o.head, bottom: o.sill })), ...read.doors.map((o) => ({ x0: o.x0, x1: o.x1, top: o.top, bottom: o.bottom }))];
+  const frames = boxes.flatMap((o) => [o.x0, o.x1]).map((x) => x * w);
+  // …unless the edge also stands where no opening is (2026-11-14, the owner's photo: the bump-out's corner board stood
+  // eight pixels from a window's side, was taken for that window's frame, and the corner went unseen). A real corner
+  // runs the whole storey; a frame only as far as its opening. So a column beside a frame is still a corner when, in
+  // every storey, at least half its rows are clear of the openings beside it and the edge shows in most of those.
+  const clearOfFrames = (x: number) => {
+    const near = boxes.filter((o) => x >= o.x0 * w - edge && x <= o.x1 * w + edge);
+    for (const [a, b] of bands) {
+      const top = eaveAt(x) + H * a;
+      const bot = eaveAt(x) + H * b;
+      let on = 0;
+      let n = 0;
+      let all = 0;
+      for (let y = Math.round(top); y < bot; y++) {
+        all++;
+        if (hidden(x / w, y / h) || near.some((o) => y >= o.top * h - 3 && y <= o.bottom * h + 3)) continue;
+        n++;
+        const i = y * w + x;
+        if (Math.max(G[i - 1], G[i], G[i + 1]) > T) on++;
+      }
+      if (n < all * 0.5 || on / n < 0.72) return false;
+    }
+    return true;
+  };
   return picks
-    .filter((p) => !frames.some((fx) => Math.abs(fx - p.x) <= edge))
+    .filter((p) => !frames.some((fx) => Math.abs(fx - p.x) <= edge) || clearOfFrames(p.x))
     .sort((a, b) => b.s - a.s)
     .slice(0, 4)
     .map((p) => r3(p.x / w))
