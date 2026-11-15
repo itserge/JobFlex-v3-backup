@@ -12,7 +12,7 @@ import { buildStructure } from "@/lib/deck/structure";
 import { applyDeckPatch, deckChecks, type DeckPatch } from "@/lib/deck/checks";
 import { deckScene, parseDeckScene } from "@/lib/deck/scene";
 import { DOOR_CHOICES, WINDOW_CHOICES, houseScene, openingChoiceOf, openingPanels, ruleOpenings, type DrawnOpening } from "@/lib/deck/house";
-import { addOpening, editOpening, houseDrawn, openingsReal, realOpenings, removeOpening, wallOpenings } from "@/lib/deck/wallOpenings";
+import { addOpening, addOpeningAt, editOpening, houseDrawn, openingsReal, realOpenings, removeOpening, wallOpenings } from "@/lib/deck/wallOpenings";
 
 let bad = 0;
 const check = (name: string, ok: boolean, detail: unknown = "") => {
@@ -156,6 +156,49 @@ const addedDoor = moreDoor ? drawnOf(apply(low, moreDoor.patch)).find((o) => o.i
 check("a door added with no place given: on the deck's floor, in the first clear place from the deck's middle", !!addedDoor && addedDoor.kind === "door" && near(addedDoor.sill, 3, 0.01) && drawnOf(apply(low, moreDoor!.patch)).filter((o) => o.kind !== "window").length === 2, addedDoor);
 check("an opening that is not on the wall: nothing to do", editOpening(buildStructure(low), "nope", { xFt: 3 }) === null && removeOpening(buildStructure(low), "nope") === null);
 check("a deck off the house has no wall to arrange", wallOpenings(buildStructure(mk({ placement: "detached" }))) === null && editOpening(buildStructure(mk({ placement: "detached" })), "d1", { xFt: 3 }) === null);
+
+/* ── 10b. Put where the wall was clicked ───────────────────────────────── */
+// (The owner: "I just select door or window and click on the wall where it's supposed to be, and you find the right
+// spot — in line with the deck if it's a door, or in line with the window — and then I can move it or adjust the size.")
+{
+  const without = (dn: DeckDesign, ...ids: string[]) => ids.reduce((acc, id2) => apply(acc, removeOpening(buildStructure(acc), id2)), dn);
+  const put = (dn: DeckDesign, key: string, x: number, z: number) => {
+    const made = addOpeningAt(buildStructure(dn), key, x, z);
+    const after = made ? apply(dn, made.patch) : dn;
+    return { made, d: after, o: made ? drawnOf(after).find((q) => q.id === made.id) : undefined, listed: made ? after.house.openings?.find((q) => q.id === made.id) : undefined };
+  };
+  // The low deck's wall: the door d1 at 8 ft on the deck's floor (3 ft up); a row at 4.2 ft (w1–w4); the upper row at 12.5 ft, every 5 ft (w5–w10).
+  const gap = without(low, "w8");
+  const inRow = put(gap, "window", 9.2, 14);
+  check("a window clicked in the upper row, where one is missing: in line with that row — its sill and its height — where it was clicked", !!inRow.o && near(inRow.o.sill, 12.5, 0.01) && near(inRow.o.h, 4, 0.01) && near(inRow.o.x, 9.2, 0.05) && near(inRow.o.w, 3, 0.01), inRow.o);
+  check("…the wall is a list now, a sketch; the new one has a name of its own", inRow.d.house.openingsSketch === true && !!inRow.made && !first.some((o) => o.id === inRow.made!.id));
+  const col = put(without(low, "w9"), "window", 14.8, 14);
+  check("clicked within 9 in. of the middle of a window on the row below: it goes straight over that one", !!col.o && near(col.o.x, 15, 0.01) && near(col.o.sill, 12.5, 0.01), col.o);
+  const between = put(without(low, "w8"), "window", 9.3, 10.4);
+  check("clicked between the two rows (a full window fits in neither gap): it goes into the nearer row, in line with it", !!between.o && near(between.o.sill, 12.5, 0.01) && near(between.o.x, 9.3, 0.05), between.o);
+  const tight = put(without(low, "w8"), "window", 8.2, 14);
+  check("clicked half onto its neighbour: it lands beside it, the casings' room between", !!tight.o && tight.o.x - 1.5 >= 4.5 + 1.5 + 0.44 && tight.o.x < 9.2, tight.o);
+  check("clicked in a row with no room within 5 ft: nothing is added", put(low, "window", 12, 14).made === null && put(low, "window3", 12, 14).made === null);
+  const bare = mk({ house: { ...d0.house, storeys: 1, leftFt: 8, rightFt: 8, jogs: [], openings: [{ id: "a", kind: "slider", xFt: 8, widthFt: 6, heightFt: 6.67, sillFt: 3 }] } });
+  const alone = put(bare, "window", 13, 7.7);
+  check("a window clicked on a bare stretch, no row there: its middle under the pointer — its sill 3 ft above the deck's floor when that is within a foot (and it follows that floor)", !!alone.o && near(alone.o.sill, 6, 0.01) && near(alone.o.h, 4, 0.01) && alone.listed?.floor === "deck" && near(alone.listed.upFt ?? 0, 3, 0.01), [alone.o, alone.listed]);
+  const free = put(bare, "window2", 19, 6.6);
+  check("…farther from any floor's usual sill: where it was clicked, by its own height; a double window is 6 ft with 2 sashes", !!free.o && near(free.o.sill, 4.6, 0.02) && free.listed?.floor === undefined && near(free.o.w, 6, 0.01) && free.o.panels === 2, [free.o, free.listed]);
+  // Doors.
+  const noDoor = without(low, "d1");
+  const mid = put(noDoor, "slider2", 8.4, 5);
+  check("a sliding door clicked over the deck, within 9 in. of the deck's middle: on the deck's floor, on its middle", !!mid.o && near(mid.o.x, 8, 0.01) && near(mid.o.sill, 3, 0.01) && mid.o.kind === "slider" && mid.listed?.floor === "deck", [mid.o, mid.listed]);
+  const end = put(noDoor, "door", 15.7, 5);
+  check("a door clicked at the deck's very end: kept wholly on the deck's stretch of the wall (it opens onto the deck, not past it)", !!end.o && near(end.o.x + end.o.w / 2, 16 - 0.25, 0.02) && near(end.o.sill, 3, 0.01), end.o);
+  const side = put(low, "door", 21, 4);
+  check("a door clicked beside the deck: at the ground, where it was clicked (no deck floor to stand on there)", !!side.o && near(side.o.x, 21, 0.02) && near(side.o.sill, 0, 0.01) && side.listed?.floor === undefined, [side.o, side.listed]);
+  const second = put(low, "door", 9, 5);
+  check("a door clicked onto the deck's own door: it lands beside it, still on the deck", !!second.o && (second.o.x + 1.5 <= 5 - 0.44 || second.o.x - 1.5 >= 11 + 0.44) && second.o.x - 1.5 >= 0.2 && second.o.x + 1.5 <= 15.8 && near(second.o.sill, 3, 0.01), second.o);
+  const upper = put(dbl, "door", 2.6, 12);
+  const lower = put(dbl, "door", 2.6, 4);
+  check("a double deck, a door clicked at the upper floor's height: on the upper deck's floor; at the lower floor's height: on the lower floor", !!upper.o && near(upper.o.sill, 10.5, 0.01) && upper.listed?.floor === "deck" && !!lower.o && near(lower.o.sill, 1.5, 0.01) && lower.listed?.floor === "lower", [upper.o, lower.o]);
+  check("no such choice, or no wall: nothing", addOpeningAt(buildStructure(low), "nope", 3, 5) === null && addOpeningAt(buildStructure(mk({ placement: "detached" })), "door", 3, 5) === null);
+}
 
 /* ── 11. The 3D: a handle each, and their panels ───────────────────────── */
 const sc = deckScene(buildStructure(tri.d));

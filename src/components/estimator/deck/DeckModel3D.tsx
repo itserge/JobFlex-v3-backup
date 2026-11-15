@@ -125,6 +125,12 @@ export interface DeckModel3DProps {
    * change, and the card's own Zoom flies in when asked.
    */
   flyOnClick?: boolean;
+  /**
+   * TAKE THIS ONE IN THE HAND (2026-11-15): a window or a door just put on the wall by a click (or an accessory) — a new
+   * `token` takes it, as a click on it would, as soon as the picture shows it. So "click the wall where the window
+   * goes" leaves the window in the hand, to move or size at once.
+   */
+  hold?: { token: number; kind: "builtin" | "opening"; id: string } | null;
 }
 
 /**
@@ -788,7 +794,7 @@ interface Built {
   dispose: () => void;
 }
 
-export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = false, night = false, connections = false, placing = false, className, label, resetToken = 0, onPick, focus = null, look = null, edit = false, onEdit, backdrop = null , highlight = null, viewControls = false, flyOnClick = true }: DeckModel3DProps) {
+export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = false, night = false, connections = false, placing = false, className, label, resetToken = 0, onPick, focus = null, look = null, edit = false, onEdit, backdrop = null , highlight = null, viewControls = false, flyOnClick = true, hold = null }: DeckModel3DProps) {
   const mountRef = React.useRef<HTMLDivElement>(null);
   /** Where the view bar sits, read when the scene is set up (a host keeps one place). */
   const viewControlsRef = React.useRef(viewControls);
@@ -809,7 +815,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
     editCbRef.current = onEdit;
   }, [onPick, onEdit]);
   /** Set by the mount effect: rebuild from the scene, re-apply what is standing, go back to the first view, fly somewhere. */
-  const api = React.useRef<{ rebuild: () => void; rebuildSoon: () => void; apply: () => void; reset: () => void; flyTo: (p: [number, number, number], size?: number) => void; lookFrom: (from: DeckLook) => void; highlight: () => void } | null>(null);
+  const api = React.useRef<{ rebuild: () => void; rebuildSoon: () => void; apply: () => void; reset: () => void; flyTo: (p: [number, number, number], size?: number) => void; lookFrom: (from: DeckLook) => void; highlight: () => void; hold: (key: string) => void } | null>(null);
 
   React.useEffect(() => {
     if (resetToken) api.current?.reset();
@@ -831,6 +837,13 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
     if (lookToken && lookSide) api.current?.lookFrom(lookSide);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- a new token moves the camera; the side alone does not
   }, [lookToken]);
+  // A new token takes that window, door or accessory in the hand.
+  const holdToken = hold?.token ?? 0;
+  const holdKey = hold ? `${hold.kind}:${hold.id}` : "";
+  React.useEffect(() => {
+    if (holdToken && holdKey) api.current?.hold(holdKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- a new token takes it; the same one is not taken twice
+  }, [holdToken]);
   // The lit part follows its value, not the parent's fresh object.
   const highlightRef = React.useRef(highlight);
   const highlightKey = highlight ? JSON.stringify(highlight) : "";
@@ -1210,6 +1223,9 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
     let turning: { id: string; angle: number; last: number } | null = null;
     // Set further down, once the picking is: outline the accessory in the hand after a rebuild (or let it go when it is gone).
     let showLive = () => {};
+    // One the host asked to be taken in the hand (the `hold` prop): taken as soon as the picture shows it.
+    let pendingHold: string | null = null;
+    let tryHold = () => {};
     // THE GRABBED EDGE STAYS UNDER THE POINTER (owner, 2026-10-18). The scene stands on the deck's centre, so a wider
     // deck used to slide the house one way and the knob the other: the knob fell behind the pointer and the size ran
     // ahead of the hand. While a knob is held the origin is pinned where the drag began, so only the grabbed edge
@@ -2654,6 +2670,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       apply();
       api.current?.highlight();
       showLive();
+      tryHold();
     };
     /** Rebuild once the page has painted: after the next frame's paint, coalescing every call until then. */
     const rebuildSoon = () => {
@@ -2805,7 +2822,19 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       invalidate();
     };
 
-    api.current = { rebuild, rebuildSoon, apply, reset: () => frame(true), flyTo, lookFrom, highlight };
+    api.current = {
+      rebuild,
+      rebuildSoon,
+      apply,
+      reset: () => frame(true),
+      flyTo,
+      lookFrom,
+      highlight,
+      hold: (key) => {
+        pendingHold = key;
+        tryHold();
+      },
+    };
     rebuild();
     highlight();
 
@@ -3028,6 +3057,14 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       clearHover();
       pickRef.current?.(null, "hover");
       showLive();
+    };
+    // Asked for by the host (the `hold` prop): taken once the picture has it — a new one is there only after the rebuild.
+    tryHold = () => {
+      if (!pendingHold || !content) return;
+      const key = pendingHold;
+      if (!content.liveBoxes.some((m) => liveKey(m.userData.handle as SceneHandle) === key)) return;
+      pendingHold = null;
+      if (live !== key) takeLive(key);
     };
     /** The accessory under the pointer — where it is what the pointer really touches (nothing solid in front of it); the one already in the hand, anywhere over it. */
     const liveAt = (clientX: number, clientY: number): THREE.Mesh | null => {

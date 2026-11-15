@@ -113,7 +113,7 @@ import { railWords } from "@/lib/deck/rails";
 import { electricalWords } from "@/lib/deck/electrical";
 import { siteFromAddress, SLOPE_LIMITS, TERMITE_LABEL } from "@/lib/deck/site";
 import { applyDeckPatch, checkSummary, deckChecks, type DeckCheck, type DeckPatch } from "@/lib/deck/checks";
-import { addOpening, editOpening, openingsReal, removeOpening } from "@/lib/deck/wallOpenings";
+import { addOpeningAt, editOpening, openingsReal, removeOpening } from "@/lib/deck/wallOpenings";
 import { deckScene, sceneBuildLayers, SCENE_LAYER_LABEL, type DeckScene, type SceneLegend } from "@/lib/deck/scene";
 import { BOM_STEP_LABEL, FIXTURE_RATE, type BomStep } from "@/lib/deck/takeoff";
 import { STORE_SURVEY, storePrice } from "@/lib/deck/storePrices";
@@ -240,7 +240,7 @@ const TIERS: ReadonlyArray<{ id: "good" | "better" | "best"; name: string; decki
 ];
 const LEVEL_LABEL: Record<DeckCheck["level"], string> = { fail: "Fix", warn: "Check", info: "Note", pass: "Pass" };
 
-type Placing = null | { kind: "stair" } | { kind: "fixture"; id: string };
+type Placing = null | { kind: "stair" } | { kind: "fixture"; id: string } | { kind: "opening"; choice: string; miss?: "wall" | "room" };
 
 /* ── The steps ───────────────────────────────────────────────────────────────────────────────────────────────── */
 type StepId = "size" | "kind" | "house" | "materials" | "stairs" | "accessories" | "roof" | "extras" | "checks" | "package";
@@ -648,6 +648,16 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
   const [hoverPick, setHoverPick] = React.useState<DeckPick | null>(null);
   const [focus, setFocus] = React.useState<[number, number, number] | [number, number, number, number] | null>(null);
   const [placing, setPlacing] = React.useState<Placing>(null);
+  // A WINDOW OR A DOOR PUT BY A CLICK ON THE WALL (2026-11-15 — the owner: "I just select door or window and click on the
+  // wall where it's supposed to be, and you find the right spot… and then I can move it or adjust the size"): the kind
+  // last used of each (a 3-panel slider once chosen is what "Add door" puts next), and the one the 3D takes in the hand.
+  const lastOpening = React.useRef<{ door: string; window: string }>({ door: "door", window: "window" });
+  const [hold, setHold] = React.useState<{ token: number; kind: "builtin" | "opening"; id: string } | null>(null);
+  const placeOpening = (family: "door" | "window", choice?: string) => {
+    const key = choice ?? lastOpening.current[family];
+    setPlacing(placing?.kind === "opening" && placing.choice === key ? null : { kind: "opening", choice: key });
+    setView("3d");
+  };
   const [editing, setEditing] = React.useState(false);
   // THE PHONE (owner, 2026-10-18: the deck estimator's own handheld design). The structure rides at the top of the
   // screen, compact, while the steps scroll under it, so every change is seen as it is made; "Full view" opens the
@@ -765,7 +775,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
           const p = e.remove
             ? removeOpening(structure, e.id)
             : e.choice
-              ? editOpening(structure, e.id, { choice: e.choice })
+              ? (((lastOpening.current[e.choice.startsWith("window") ? "window" : "door"] = e.choice), editOpening(structure, e.id, { choice: e.choice })))
               : typeof e.w === "number"
                 ? editOpening(structure, e.id, { xFt: e.value, widthFt: e.w })
                 : typeof e.h === "number"
@@ -817,6 +827,24 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
           const next = pick?.legend ? pick : null;
           return sameLegend(prev?.legend, next?.legend) ? prev : next;
         });
+        return;
+      }
+      // A window or a door: where the house wall was clicked — in line with its row, or on the floor there (lib/deck/
+      // wallOpenings addOpeningAt) — and in the hand at once. A click off the wall, or where there is no room, says so.
+      if (placing?.kind === "opening") {
+        if (!pick) return;
+        if (pick.layer !== "house") {
+          setPlacing({ ...placing, miss: "wall" });
+          return;
+        }
+        const made = addOpeningAt(structure, placing.choice, pick.point[0], pick.point[2]);
+        if (!made) {
+          setPlacing({ ...placing, miss: "room" });
+          return;
+        }
+        patch(made.patch);
+        setHold({ token: Date.now(), kind: "opening", id: made.id });
+        setPlacing(null);
         return;
       }
       if (placing?.kind === "stair") {
@@ -2096,7 +2124,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
           <div className="v1-openings" data-deck-house-openings={design.house.openings ? (design.house.openingsSketch ? "sketch" : "real") : "rule"}>
             <p className="v1-meta">
               {!design.house.openings
-                ? "The windows and doors are drawn by rule. Click one in the 3D to move it, change its size or swap it — or add one here."
+                ? "The windows and doors are drawn by rule. Click one in the 3D to move it, change its size or swap it. To add one, pick it here (or Add window / Add door under the picture), then click the house wall where it goes."
                 : design.house.openingsSketch
                   ? "The windows and doors are arranged by hand, as a picture: click one in the 3D to move it, size it or swap it. The deck is not checked against them."
                   : design.house.photo
@@ -2115,10 +2143,8 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                   key={key}
                   type="button"
                   className="v1-btn v1-btn-sm"
-                  onClick={() => {
-                    const made = addOpening(structure, key);
-                    if (made) patch(made.patch);
-                  }}
+                  onClick={() => placeOpening(key === "window" ? "window" : "door", key)}
+                  aria-pressed={placing?.kind === "opening" && placing.choice === key}
                   data-deck-opening-add={key}
                 >
                   <Plus size={15} strokeWidth={2.5} aria-hidden="true" /> {label}
@@ -4142,7 +4168,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                 </div>
               ) : view === "3d" ? (
                 <>
-                  <Lit3D hover={hover} structure={structure} focusLit={focusLit} wallLit={wallLit} voiceLit={voiceLit ?? partLit} look={look} flyOnClick={false} viewControls="top-right" scene={scene} built={built} xray={xray} backdrop={ph.backdrop} night={night} connections={connections} placing={placing?.kind === "fixture" || placing?.kind === "stair"} edit={editing} onEdit={onEditStable} resetToken={resetToken} focus={focus} onPick={onPickStable} className="v1-canvas" label={`The ${what.toLowerCase()} in 3D: ${scene.facts}`} />
+                  <Lit3D hover={hover} structure={structure} focusLit={focusLit} wallLit={wallLit} voiceLit={voiceLit ?? partLit} look={look} flyOnClick={false} viewControls="top-right" scene={scene} built={built} xray={xray} backdrop={ph.backdrop} night={night} connections={connections} placing={placing?.kind === "fixture" || placing?.kind === "stair" || placing?.kind === "opening"} hold={hold} edit={editing} onEdit={onEditStable} resetToken={resetToken} focus={focus} onPick={onPickStable} className="v1-canvas" label={`The ${what.toLowerCase()} in 3D: ${scene.facts}`} />
                   {hoverPick?.legend && !placing ? (
                     <div className="v1-tag" data-deck-hover>
                       <b>
@@ -4156,6 +4182,22 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                   {placing?.kind === "stair" ? (
                     <div className="v1-banner" data-deck-placing="stair-3d">
                       <span>Click the deck where the stairs go — they take the nearest open edge.</span>
+                      <button type="button" className="v1-btn v1-btn-sm" onClick={() => setPlacing(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  ) : null}
+                  {placing?.kind === "opening" ? (
+                    <div className="v1-banner" data-deck-placing="opening" data-deck-placing-miss={placing.miss ?? ""}>
+                      <span>
+                        {placing.miss === "wall"
+                          ? "That was not the house wall — click the wall itself, where it goes."
+                          : placing.miss === "room"
+                            ? "No room for it there — click a clearer stretch of the wall, or take a window off first."
+                            : placing.choice.startsWith("window")
+                              ? "Click the house wall where the window goes — it lines up with the windows beside it."
+                              : "Click the house wall where the door goes — it stands on the deck's floor there (or the floor below, or the ground beside the deck)."}
+                      </span>
                       <button type="button" className="v1-btn v1-btn-sm" onClick={() => setPlacing(null)}>
                         Cancel
                       </button>
@@ -4234,6 +4276,17 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                     <button type="button" className={cx("v1-btn", placing?.kind === "stair" && "is-on")} aria-pressed={placing?.kind === "stair"} disabled={design.stairs.length >= STAIR_LIMITS.count} onClick={() => setPlacing(placing?.kind === "stair" ? null : { kind: "stair" })} data-deck-3d-add-stair>
                       {placing?.kind === "stair" ? "Click the deck…" : "Add stairs"}
                     </button>
+                  ) : null}
+                  {/* A WINDOW OR A DOOR, put by a click on the wall (2026-11-15). */}
+                  {structure.frame && design.placement !== "detached" && !editing && !viewOnly ? (
+                    <>
+                      <button type="button" className={cx("v1-btn", placing?.kind === "opening" && placing.choice.startsWith("window") && "is-on")} aria-pressed={placing?.kind === "opening" && placing.choice.startsWith("window")} onClick={() => placeOpening("window")} data-deck-3d-add-opening="window">
+                        {placing?.kind === "opening" && placing.choice.startsWith("window") ? "Click the wall…" : "Add window"}
+                      </button>
+                      <button type="button" className={cx("v1-btn", placing?.kind === "opening" && !placing.choice.startsWith("window") && "is-on")} aria-pressed={placing?.kind === "opening" && !placing.choice.startsWith("window")} onClick={() => placeOpening("door")} data-deck-3d-add-opening="door">
+                        {placing?.kind === "opening" && !placing.choice.startsWith("window") ? "Click the wall…" : "Add door"}
+                      </button>
+                    </>
                   ) : null}
                 </div>
                 {/* The edit hint sits in the tool row, not over the scene, so it never hides a knob. */}
