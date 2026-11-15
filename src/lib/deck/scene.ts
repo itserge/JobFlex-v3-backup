@@ -25,7 +25,8 @@
 import type { DeckFrame } from "./frame";
 import type { DeckSurface } from "./surface";
 import { FLASH_LEG_IN, type RoofMember, type RoofPlane } from "./roof";
-import { ftIn } from "./codeTables";
+import { POST_ACTUAL_IN, ftIn } from "./codeTables";
+import { deckGrips } from "./byHand";
 import { ROOFING_LABEL, hasDeck, shapeOutline, sizeWords, structureWords, type DeckDesign, spaRectIn } from "./design";
 import { outsideRunOn, ringEdges } from "./ringEdges";
 import type { DeckStructure } from "./structure";
@@ -34,7 +35,11 @@ import type { StairMember } from "./stairs";
 import type { RailMember } from "./rails";
 import { BASE_PLATE_IN, BASE_PLATE_THICK_IN, railMountCallout, railPostWords, railWords } from "./rails";
 import { electricalWords } from "./electrical";
-import { HOUSE_MATERIALS, HOUSE_ROOFS, houseHandles, houseScene, type HouseMaterial, type HouseRoof } from "./house";
+import { SKIRT_BOARD_IN, SKIRT_BORDER_IN, SKIRT_CLEAR_IN, SKIRT_GAP_IN, SKIRT_THICK_IN } from "./skirt";
+import { BENCH_BACK_IN, BENCH_SEAT_IN, BUILT_IN_LABEL, SCREEN_GAP_IN, type BuiltInMember } from "./builtins";
+import { accessoryPose } from "./accessories";
+import { finishProduct, type PartFinish } from "./finish";
+import { HOUSE_MATERIALS, HOUSE_ROOFS, houseHandles, houseScene, settleSceneOpenings, type HouseMaterial, type HouseRoof } from "./house";
 import { railColorOf, speciesWords } from "./catalog";
 
 export const DECK_SCENE_VERSION = 3;
@@ -128,20 +133,38 @@ export const SCENE_MAX_GLOWS = 120;
 
 /** A handle: dragging it along `axis` (scene feet) changes `kind` from `value` by the distance dragged. */
 export interface SceneHandle {
-  kind: "width" | "depth" | "height" | "eave" | "stair" | "stair-width" | "lower-depth" | "roof-width" | "roof-depth" | "pitch" | "jog" | "house-left" | "house-right";
+  kind: "width" | "width-left" | "depth" | "height" | "eave" | "stair" | "stair-width" | "lower-depth" | "roof-width" | "roof-depth" | "pitch" | "jog" | "house-left" | "house-right" | "post" | "beam" | "roof-post" | "builtin";
   id: string;
   x: number;
   y: number;
   z: number;
-  axis: "x" | "y" | "z";
+  /** "xy": dragged across the deck, both ways (2026-11-14: an accessory) — `value` along the house, `value2` out from it. */
+  axis: "x" | "y" | "z" | "xy";
   /** The design's number the handle moves: feet for sizes, inches for heights. */
   value: number;
+  /** An "xy" handle's second number: out from the house, inches. */
+  value2?: number;
   /** Feet of drag per unit of value (12 for an inches value). */
   perUnit: number;
   /** The handle's own travel per unit of value where a change grows both ways about a centre (0.5 for a stair's
    *  width); the drag is divided by it so the knob stays under the pointer. 1 when absent. */
   follow?: number;
   label: string;
+  /**
+   * BY HAND (2026-11-13; lib/deck/byHand): a post or a beam is taken hold of by the part itself — this is its box
+   * (x0, y0, z0, x1, y1, z1, feet), and it has no knob. Its value is inches along its line.
+   */
+  grab?: [number, number, number, number, number, number];
+  /** How a builder reads that value: `sign × (value − origin)` inches `from` ("from the deck's left end"). */
+  shown?: { origin: number; sign: 1 | -1; from: string };
+  /**
+   * AN ACCESSORY IN THE HAND (2026-11-15): its footprint's four corners on the plan in order round it [x0, y0, … x3,
+   * y3], ft (0→1 its length, 0→3 its depth) — and its turn, degrees (its length runs that way; its front a quarter turn
+   * to the left of it; none on a privacy screen, which does not turn). The 3D outlines it, takes hold of it by it and
+   * turns it about its middle.
+   */
+  foot?: number[];
+  turn?: number;
 }
 
 /** One kind of part: what it is, how it is cut, what fastens it. The 3D shows this when a part is touched. */
@@ -204,9 +227,34 @@ export interface DeckScene {
   colors: { frame: string; decking: string; fascia: string; roofing: string; rail: string; decking2?: string; railInfill?: string; border?: string; border2?: string; railCap?: string; roofFrame?: string };
   /** What the client reads under the picture. */
   facts: string;
+  /**
+   * BOARDS OF THEIR OWN (2026-11-14; lib/deck/finish): a stair's treads and risers, a built-in's boards in a line and
+   * colour of their own — each paint its colour (and a streaked board's second tone) and the boxes and cut rings that
+   * wear it. Absent = every board is the deck's.
+   */
+  paints?: ScenePaint[];
+}
+/** A board of its own in the 3D: its colour, its second tone, which boxes (`boxes`) and cut rings (`rings`, of `diagonal`) it is, and whose (a stair's or a built-in's id). */
+export interface ScenePaint {
+  hex: string;
+  hex2?: string;
+  boxes: number[];
+  rings: number[];
+  of: string;
 }
 
 const r3 = (inches: number) => Math.round((inches / 12) * 1000) / 1000;
+
+/** A saved handle's box and reading (SceneHandle.grab, .shown), where they are whole. */
+function handleGrab(o: Record<string, unknown>): Pick<SceneHandle, "grab" | "shown"> {
+  const g = o.grab;
+  if (!Array.isArray(g) || g.length !== 6 || !g.every((v) => typeof v === "number" && Number.isFinite(v) && Math.abs(v) < 500)) return {};
+  const sh = (o.shown && typeof o.shown === "object" ? o.shown : null) as Record<string, unknown> | null;
+  const shown = sh && typeof sh.origin === "number" && Number.isFinite(sh.origin) && (sh.sign === 1 || sh.sign === -1) && typeof sh.from === "string" ? { origin: sh.origin, sign: sh.sign as 1 | -1, from: sh.from.slice(0, 60) } : undefined;
+  const foot = Array.isArray(o.foot) && o.foot.length === 8 && o.foot.every((v) => typeof v === "number" && Number.isFinite(v) && Math.abs(v) < 500) ? (o.foot as number[]) : undefined;
+  const turn = typeof o.turn === "number" && Number.isFinite(o.turn) && Math.abs(o.turn) <= 720 ? o.turn : undefined;
+  return { grab: g as [number, number, number, number, number, number], ...(shown ? { shown } : {}), ...(foot ? { foot } : {}), ...(turn !== undefined ? { turn } : {}) };
+}
 const r4 = (rad: number) => Math.round(rad * 10000) / 10000;
 const LEAN: Record<string, number> = { "x:1": 1, "x:-1": 2, "y:1": 3, "y:-1": 4 };
 const deg = (rad: number) => `${Math.round(Math.abs(rad) * (180 / Math.PI) * 10) / 10}°`;
@@ -336,12 +384,17 @@ export const ROOF_MEMBER_LAYER: Record<RoofMember["role"], SceneLayer> = {
 };
 const ROOF_PLANE_LAYER: Record<RoofPlane["kind"], SceneLayer> = { sheathing: "sheathing", roofing: "roofing", ceiling: "ceiling", soffit: "trim", slab: "slab", wall: "wall", screen: "screen", louver: "roofing", fixture: "light" };
 const STAIR_LAYER: Record<StairMember["role"], SceneLayer> = { stringer: "stair", tread: "stair", riser: "stair", kicker: "stair", "stair-post": "stair", "stair-beam": "stair", "landing-frame": "stair", "landing-tread": "stair", "box-frame": "stair", "box-tread": "stair", "stair-rail": "rail", "stair-rail-post": "rail", "stair-baluster": "rail", pad: "slab" };
+/** The members of a stair and of a built-in that are BOARDS — what a board of its own changes (lib/deck/finish); the frames stay treated lumber. */
+const STAIR_BOARDS: ReadonlySet<StairMember["role"]> = new Set<StairMember["role"]>(["tread", "riser", "landing-tread", "box-tread"]);
+const BUILT_IN_BOARDS: ReadonlySet<BuiltInMember["role"]> = new Set<BuiltInMember["role"]>(["bench seat", "bench back", "bench cap", "bench apron", "planter board", "planter cap", "screen board", "screen cap"]);
+/** Built-ins: boards as the deck's, aprons as its fascia, legs and cleats as its frame, a planter's soil dark. */
+const BUILT_IN_LAYER: Record<BuiltInMember["role"], SceneLayer> = { "bench seat": "decking", "bench back": "decking", "bench cap": "decking", "bench apron": "fascia", "bench leg": "post", "bench back post": "post", "bench cleat": "joist", "planter board": "decking", "planter cap": "fascia", "planter soil": "spa", "screen post": "post", "screen board": "decking", "screen cap": "fascia", "kitchen board": "decking", "kitchen top": "slab", "kitchen grill": "hardware", "fire base": "slab", "fire top": "slab", "fire burner": "spa" };
 const RAIL_LAYER: Record<RailMember["role"], SceneLayer> = { "rail-post": "rail", "rail-top": "rail", "rail-bottom": "rail", "rail-cap": "rail", baluster: "rail", cable: "rail", "rail-panel": "glass", mesh: "rail" };
 /** The rail parts a scene's `railInfill` colour is for: the infill, not the frame. */
 export const RAIL_INFILL_ROLE = /^(?:lower level )?(?:baluster|stair baluster|cable|mesh)$/;
 /** A rail's cap (a kit rail's deck-board drink rail is drawn in the scene's `railCap` colour), and a border board. */
 export const RAIL_CAP_ROLE = /^(?:lower level )?rail cap$/;
-export const BORDER_BOARD_ROLE = /^(?:lower level )?border board$/;
+export const BORDER_BOARD_ROLE = /^(?:lower level )?(?:border|breaker) board$/;
 /**
  * A picture-frame border in the deck's OWN colour (2026-11-13 — a deck builder: "turning the border on changes nothing
  * in the 3D"): the same boards, laid along the edges, were drawn in the same colour with seams under a pixel wide —
@@ -418,6 +471,22 @@ export function deckScene(s: DeckStructure): DeckScene {
   let heightIn = 0;
   const shapedBoards: number[][] = [];
   const shapedZs: number[] = [];
+  // Boards of their own (lib/deck/finish): one paint per stair or built-in that has them.
+  const paints: ScenePaint[] = [];
+  const deckBoard = s.surface?.product ?? s.frame?.decking ?? null;
+  const paintOf = (of: string, f: PartFinish | undefined): ScenePaint | null => {
+    if (!f || !deckBoard) return null;
+    const p = finishProduct(deckBoard, f);
+    const paint: ScenePaint = { hex: p.color, ...(p.color2 ? { hex2: p.color2 } : {}), boxes: [], rings: [], of };
+    paints.push(paint);
+    return paint;
+  };
+  /** A box laid, and — when it is a board of its own — told to its paint. */
+  const boxIn = (paint: ScenePaint | null, ...args: Parameters<typeof box>) => {
+    const at = boxes.length;
+    box(...args);
+    if (paint && boxes.length > at) paint.boxes.push(at);
+  };
   const borderRings: number[] = [];
 
   /* ── The deck, level by level ──────────────────────────────────────── */
@@ -446,7 +515,7 @@ export function deckScene(s: DeckStructure): DeckScene {
         case "blocking":
           return `${lvl}${st.nominal} blocking between the joists, square-cut to the bay, toe-nailed.`;
         case "brace":
-          return `${lvl}2x4 knee brace cut at 45° both ends, a ½-in. lag at each end.`;
+          return `${lvl}${st.nominal} knee brace cut at 45° both ends, a ½-in. lag at each end.`;
         default:
           return st.role;
       }
@@ -502,9 +571,12 @@ export function deckScene(s: DeckStructure): DeckScene {
         if (b.style === "flush") {
           hanger(j.x + ox, b.y + oy - b.spec.thickIn / 2 - 0.9, -1, flanges);
           if (b.role === "middle") hanger(j.x + ox, b.y + oy + b.spec.thickIn / 2 + 0.9, 1, flanges);
-        } else box("hardware", j.x + ox + 1.2, b.y + oy, f.joistBottomIn - 0.1, 1.2, 2.5, 3, tieTag);
+        }
       }
     }
+    // The ties where a joist sits on a dropped beam — the frame's own list (lib/deck/frame tieAt), so the 3D shows the
+    // ties the material list counts: none past a beam cut back at a corner, one on each joist over an angled beam.
+    for (const t of f.tieAt ?? []) box("hardware", t.x + ox + 1.2, t.y + oy, f.joistBottomIn - 0.1, 1.2, 2.5, 3, tieTag);
     if (f.joists.length && f.beams.length) {
       const j0 = f.joists[Math.floor(f.joists.length / 2)];
       const zf = f.zones.find((z) => z.zone.id === j0.zoneId);
@@ -543,7 +615,8 @@ export function deckScene(s: DeckStructure): DeckScene {
     const boardZ = f.surfaceIn - surface.product.thickIn / 2;
     const boardTag = tagFor(`${lvl}deck board`, surface.product.nominal, 0, `${surface.product.label}, ${surface.product.gapIn}-in. gaps, ${surface.fastening === "hidden" ? "hidden clips in the grooves" : "two coated screws at every joist"}${surface.pattern !== "straight" ? `, laid ${surface.pattern === "diagonal" ? "on the diagonal" : "in a herringbone"}` : ""}.`);
     const borderTag = tagFor(`${lvl}border board`, surface.product.nominal, 0, `Picture-frame border${surface.product.border ? ` in ${surface.product.border.name}` : ""}, ${surface.border === 2 ? "two boards" : "one board"} wide along every open edge: mitred 45° at the corners, two screws or plugs at every joist, blocking under its inner edge where it runs with the joists.${surface.product.border ? "" : " In the deck's own colour — drawn a shade deeper so the frame reads."}`);
-    for (const p of surface.pieces) box("decking", p.cx + ox, p.cy + oy, boardZ, p.sx, p.sy, surface.product.thickIn, p.border ? borderTag : boardTag, 0, p.yaw ?? 0, 0);
+    const breakerTag = surface.breakers.length ? tagFor(`${lvl}breaker board`, surface.product.nominal, 0, `Breaker board${surface.product.border ? ` in ${surface.product.border.name}` : ""}: laid across the field, out from the house — every row stops against it, so no row has a butt joint. Under it: a joist under each row of board ends and solid blocking between the two every 16 in.; two screws or plugs at every block.${surface.product.border ? "" : " In the deck's own colour — drawn a shade deeper so it reads."}`) : -1;
+    for (const p of surface.pieces) box("decking", p.cx + ox, p.cy + oy, boardZ, p.sx, p.sy, surface.product.thickIn, p.breaker ? breakerTag : p.border ? borderTag : boardTag, 0, p.yaw ?? 0, 0);
     surface.shaped.forEach((ring, ri) => {
       // The border's own cut pieces, in a second colour: the 3D is told which rings they are.
       if (surface.border > 0 && ri >= surface.shapedBorderFrom) borderRings.push(shapedBoards.length);
@@ -579,6 +652,113 @@ export function deckScene(s: DeckStructure): DeckScene {
       });
     }
     for (const p of f.posts) footings.push([r3(p.x + ox), r3(p.y + oy), r3(p.footing.padIn), r3(p.footing.padThickIn), r3(p.footing.pierIn), r3(p.footing.depthIn - p.footing.groundIn), r3(p.footing.topIn + p.footing.groundIn)]);
+  }
+
+  /* ── Skirting under the deck (2026-11-14; lib/deck/skirt) ───────────── */
+  if (s.skirt) {
+    const sk = s.skirt;
+    const T = SKIRT_THICK_IN;
+    const boardTag = tagFor("skirt board", "deck board", 0, `Skirting: the deck's own boards laid level under the rim, ${SKIRT_GAP_IN}-in. gaps so the frame behind breathes, on a treated 2x4 frame with an upright every 2 ft; a hand clear of the ground. One bay hangs on hinges, to get under the deck.`);
+    const borderTag = tagFor("skirt frame", "1x4", 0, "Skirting: lattice in a 1x4 border, bay by bay (8 ft at most), on a treated 2x4 frame hung under the rim; a hand clear of the ground. One bay hangs on hinges, to get under the deck.");
+    const slatTag = tagFor("skirt lattice", "lattice", 0, "Lattice: it lets the air through, so the frame under the deck stays dry.");
+    // (Drawn a little coarser than the sheet is woven: the look, without thousands of slats on a big deck.)
+    const slatPitch = sk.sqFt > 400 ? 7 : 4.5;
+    const R2 = Math.SQRT2;
+    for (const p of sk.panels) {
+      const len = p.lengthIn;
+      const ux = (p.x1 - p.x0) / len;
+      const uy = (p.y1 - p.y0) / len;
+      const h = p.topIn - p.bottomIn;
+      /** A point of the bay: `a` along it, `d` out from the rim's face. */
+      const at = (a: number, d: number): [number, number] => [p.x0 + ux * a + p.outX * (SKIRT_CLEAR_IN + d), p.y0 + uy * a + p.outY * (SKIRT_CLEAR_IN + d)];
+      const [mx, my] = at(len / 2, T / 2);
+      if (sk.kind === "boards") {
+        // From the rim down, the last board ripped to stop a hand above the ground.
+        const pitch = SKIRT_BOARD_IN + SKIRT_GAP_IN;
+        for (let z = p.topIn; z - p.bottomIn > 1; z -= pitch) {
+          const bh = Math.min(SKIRT_BOARD_IN, z - p.bottomIn);
+          box("fascia", mx, my, z - bh / 2, len, T, bh, boardTag, 0, p.yaw, 0);
+        }
+        continue;
+      }
+      // The border: a rail top and bottom, a stile at each end between them.
+      const B = SKIRT_BORDER_IN;
+      box("fascia", mx, my, p.topIn - B / 2, len, T, B, borderTag, 0, p.yaw, 0);
+      box("fascia", mx, my, p.bottomIn + B / 2, len, T, B, borderTag, 0, p.yaw, 0);
+      if (!(h > 2 * B + 1 && len > 2 * B + 1)) continue;
+      for (const a of [B / 2, len - B / 2]) {
+        const [sx, sy] = at(a, T / 2);
+        box("fascia", sx, sy, (p.topIn + p.bottomIn) / 2, B, T, h - 2 * B, borderTag, 0, p.yaw, 0);
+      }
+      // The slats: two layers crossing at 45°, inside the border's thickness, their ends tucked an inch behind it.
+      const tuck = 1;
+      const w0 = len - 2 * B + 2 * tuck;
+      const h0 = h - 2 * B + 2 * tuck;
+      const step = slatPitch * R2;
+      const count = Math.max(1, Math.floor((w0 + h0) / step));
+      const first = (w0 + h0 - (count - 1) * step) / 2;
+      for (let k = 0; k < count; k++) {
+        const c = first + k * step;
+        for (const rising of [true, false]) {
+          // Rising: s − t = c − h0. Falling: s + t = c. (s along the bay, t up, both inside the tucked opening.)
+          const sA = rising ? Math.max(0, c - h0) : Math.max(0, c - h0);
+          const sB = rising ? Math.min(w0, c) : Math.min(w0, c);
+          if (!(sB - sA > 2)) continue;
+          const tA = rising ? sA - (c - h0) : c - sA;
+          const tB = rising ? sB - (c - h0) : c - sB;
+          const [cx, cy] = at(B - tuck + (sA + sB) / 2, rising ? 0.25 : 0.5);
+          box("fascia", cx, cy, p.bottomIn + B - tuck + (tA + tB) / 2, (sB - sA) * R2, 0.2, 1.5, slatTag, 0, p.yaw, rising ? Math.PI / 4 : -Math.PI / 4);
+        }
+      }
+    }
+  }
+
+  /* ── Built-in benches and planter boxes (2026-11-14; lib/deck/builtins) ── */
+  for (const bi of s.builtIns) {
+    if (!bi.built) continue;
+    const noteFor = (role: BuiltInMember["role"]): string => {
+      switch (role) {
+        case "bench seat":
+          return `Built-in bench: three deck boards for the seat, ${BENCH_SEAT_IN} in. above the deck, two screws into every cleat.`;
+        case "bench apron":
+          return "Fascia apron under the seat's edge, mitred at the corners.";
+        case "bench leg":
+          return "4x4 leg, treated: screwed down through the deck boards into solid blocking between the joists.";
+        case "bench cleat":
+          return "2x4 cleat across the legs, laid flat: the seat boards are screwed to it.";
+        case "bench back post":
+          return `4x4 back post, treated, ${BENCH_BACK_IN} in. above the deck: carried down beside a joist and through-bolted, or on a rated post base over blocking. A bench's back is not a guard.`;
+        case "bench back":
+          return "Deck board across the back posts' faces.";
+        case "bench cap":
+          return "Cap board on the back posts, screwed down into each.";
+        case "planter board":
+          return "Planter box: deck boards on a treated 2x4 frame, on feet that keep it off the deck's boards so water runs out under it.";
+        case "planter cap":
+          return "Cap board round the planter's rim.";
+        case "screen post":
+          return `Privacy screen post, treated ${bi.postSize}: one piece from under the deck to the cap — run down beside a joist or the rim and through-bolted twice, with solid blocking behind it. It holds the wind, not just the boards: about ${bi.windLb} lb on each post in a strong wind.`;
+        case "screen board":
+          return `Privacy screen: the deck's boards across the posts' inner faces, ${SCREEN_GAP_IN} in. apart, two screws at every post.`;
+        case "screen cap":
+          return "Cap board on the screen's posts.";
+        case "kitchen board":
+          return "Outdoor kitchen island: the deck's boards round a treated 2x4 frame. The island is framed in wood, so a built-in grill sits in its maker's insulated jacket.";
+        case "kitchen top":
+          return "The island's top — stone or concrete, by others. Its weight is in the checks, and the joists under the island are doubled for it.";
+        case "kitchen grill":
+          return "A built-in grill (by others), shown so what stands near it can be measured: keep the maker's clearance to anything that burns. Gas and power by licensed trades.";
+        case "fire base":
+        case "fire top":
+          return "A gas fire table (by others), shown where it will stand: a listed gas appliance on the pad or heat shield the decking's maker accepts. Never a wood fire on a deck.";
+        case "fire burner":
+          return "The burner: nothing that burns within 36 in. of it, and 8 ft clear above it where there is a roof.";
+        default:
+          return "Planting soil in a liner with drain holes. Wet soil is heavy: see the checks for what this box weighs.";
+      }
+    };
+    const paint = paintOf(bi.design.id, bi.design.finish);
+    for (const m of bi.members) boxIn(BUILT_IN_BOARDS.has(m.role) ? paint : null, BUILT_IN_LAYER[m.role], m.cx, m.cy, m.cz, m.sx, m.sy, m.sz, tagFor(m.role, m.nominal, m.lengthIn, noteFor(m.role)), 0, m.yaw, 0);
   }
 
   /* ── The stairs ───────────────────────────────────────────────────── */
@@ -619,7 +799,15 @@ export function deckScene(s: DeckStructure): DeckScene {
           return m.role;
       }
     };
-    for (const m of st.members) box(STAIR_LAYER[m.role], m.cx, m.cy, m.cz, m.sx, m.sy, m.sz, tagFor(m.role.replace(/-/g, " "), m.nominal, m.lengthIn, noteFor(m)), 0, m.yaw, m.tilt);
+    const stairPaint = paintOf(st.design.id, st.design.finish);
+    for (const m of st.members) boxIn(STAIR_BOARDS.has(m.role) ? stairPaint : null, STAIR_LAYER[m.role], m.cx, m.cy, m.cz, m.sx, m.sy, m.sz, tagFor(m.role.replace(/-/g, " "), m.nominal, m.lengthIn, noteFor(m)), 0, m.yaw, m.tilt);
+    // Steps that follow the deck's outline (2026-11-14): their tread boards, each a flat ring at its own height, mitred
+    // where two edges meet — drawn as the deck's cut boards are.
+    for (const t of st.treadRings ?? []) {
+      if (stairPaint) stairPaint.rings.push(shapedBoards.length);
+      shapedBoards.push(t.ring.map((v) => r3(v)));
+      shapedZs.push(r3(t.z));
+    }
     for (const ft of st.footings) footings.push([r3(ft.x), r3(ft.y), r3(ft.padIn), r3(ft.padThickIn), r3(ft.pierIn), r3(ft.depthIn - ft.groundIn), r3(ft.topIn + ft.groundIn)]);
     const top = st.members.find((m) => m.role === "stringer");
     if (top && st.kind === "flight") {
@@ -628,7 +816,12 @@ export function deckScene(s: DeckStructure): DeckScene {
         const dx = Math.cos(m.yaw) * (m.sx / 2) * Math.cos(m.tilt);
         const dy = Math.sin(m.yaw) * (m.sx / 2) * Math.cos(m.tilt);
         const dz = Math.sin(m.tilt) * (m.sx / 2);
-        box("hardware", m.cx - dx, m.cy - dy, m.cz - dz + 2, 2, 2.5, 6, connTag);
+        // On the rim's outer face, round the stringer's head (2026-11-14: the head stood inside the rim, and the
+        // connector with it): its back a quarter inch into the rim (never in the head's own cut face), a shade
+        // narrower across the stringer than the rail post beside it, so no face of the one lies in a face of the other.
+        const out = 1;
+        const alongX = Math.abs(Math.cos(m.yaw)) > Math.abs(Math.sin(m.yaw));
+        box("hardware", m.cx - dx + Math.cos(m.yaw) * out, m.cy - dy + Math.sin(m.yaw) * out, m.cz - dz + 2, alongX ? 2.5 : 1.75, alongX ? 1.75 : 2.5, 6, connTag);
       }
       callout(top.cx - Math.cos(top.yaw) * (top.sx / 2) * Math.cos(top.tilt), top.cy - Math.sin(top.yaw) * (top.sx / 2) * Math.cos(top.tilt), top.cz - Math.sin(top.tilt) * (top.sx / 2) + 2, "connection", "Stair stringers at the rim", `${st.stringers.count} 2x12 stringers on galvanized stringer connectors at the rim (never on screws alone), cut ${st.risers} × ${st.riserIn.toFixed(2)} in. rise over ${st.runIn} in. run — ${slopeDeg}; a treated kicker at the foot, ${st.pad ? "bolted to the pad" : "on the landing"}.`);
     }
@@ -710,7 +903,7 @@ export function deckScene(s: DeckStructure): DeckScene {
         case "roof-post":
           return `${m.nominal} roof post, ${roof.floor === "deck" ? "from its own footing up through the deck" : roof.floor === "slab" ? "on a base anchored to the slab" : "on its footing"}, capped for the header.`;
         case "roof-brace":
-          return "4x4 knee brace, 45° cuts both ends, a ½-in. lag each end — holds the roof square.";
+          return `${m.nominal} knee brace, 45° cuts both ends, a ½-in. lag each end — holds the roof square.`;
         case "purlin":
           return "2x4 purlin across the rafters at 24 in., the metal panels screwed to it.";
         case "slat":
@@ -988,8 +1181,8 @@ export function deckScene(s: DeckStructure): DeckScene {
   // Over an OC frame the roof and a wood railing are sawn wood: they keep wood's colour.
   const woodC = design.framing.species === "oc-lumber" ? frameColor(roof?.species.id ?? "hem-fir", roof?.group ?? "DF") : frameC;
   const deckColor2 = s.surface?.product.color2;
-  const borderLook = s.surface?.border ? s.surface.product.border : undefined;
-  const colors: DeckScene["colors"] = { frame: frameC, decking: deckColor, fascia: deckColor, roofing: roofingColor(design.roof.roofing), rail: railColor(design.rail.type, deckColor, woodC, design.rail.color), ...(woodC !== frameC ? { roofFrame: woodC } : {}), ...(deckColor2 ? { decking2: deckColor2 } : {}), ...(rails.on && rails.infillColor ? { railInfill: rails.infillColor } : {}), ...(borderLook ? { border: borderLook.color, ...(borderLook.color2 ? { border2: borderLook.color2 } : {}) } : s.surface?.border ? { border: shadeHex(deckColor, BORDER_SAME_COLOUR_SHADE), ...(deckColor2 ? { border2: shadeHex(deckColor2, BORDER_SAME_COLOUR_SHADE) } : {}) } : {}), ...(rails.on && rails.drinkLf ? { railCap: deckColor } : {}) };
+  const borderLook = s.surface?.border || s.surface?.breakers.length ? s.surface.product.border : undefined;
+  const colors: DeckScene["colors"] = { frame: frameC, decking: deckColor, fascia: deckColor, roofing: roofingColor(design.roof.roofing), rail: railColor(design.rail.type, deckColor, woodC, design.rail.color), ...(woodC !== frameC ? { roofFrame: woodC } : {}), ...(deckColor2 ? { decking2: deckColor2 } : {}), ...(rails.on && rails.infillColor ? { railInfill: rails.infillColor } : {}), ...(borderLook ? { border: borderLook.color, ...(borderLook.color2 ? { border2: borderLook.color2 } : {}) } : s.surface?.border || s.surface?.breakers.length ? { border: shadeHex(deckColor, BORDER_SAME_COLOUR_SHADE), ...(deckColor2 ? { border2: shadeHex(deckColor2, BORDER_SAME_COLOUR_SHADE) } : {}) } : {}), ...(rails.on && rails.drinkLf ? { railCap: deckColor } : {}) };
   const slope = design.site.slope;
   const ground = slope.outDropIn || slope.acrossDropIn ? { outDropFt: r3(slope.outDropIn), acrossDropFt: r3(slope.acrossDropIn) } : null;
   // The handles (edit mode): the deck's width, depth and height at its front-right corner, the roof's eave, each stair along its edge, the lower level's depth.
@@ -998,9 +1191,18 @@ export function deckScene(s: DeckStructure): DeckScene {
     const Wd = Math.max(...frame.zones.map((z) => z.zone.x1));
     const Dd = Math.max(...frame.zones.map((z) => z.zone.y1));
     handles.push({ kind: "width", id: "width", x: r3(Wd), y: r3(Dd / 2), z: r3(frame.surfaceIn + 1), axis: "x", value: design.shape.widthFt, perUnit: 1, label: "Width along the house" });
+    // THE LEFT END TOO (2026-11-14 — the owner: "there is no toggle on the left side that moves the left side of the
+    // deck"): the same width, taken hold of at the other end. It travels a foot LEFT for every foot wider (`follow`
+    // −1), and the house stays where it is (lib/deck/frontByHand leftEndPatch). Not on a deck in the yard, which has
+    // no house to stay put against — its one Width knob is enough.
+    if (design.placement !== "detached") {
+      const X0 = Math.min(...frame.zones.map((z) => z.zone.x0));
+      const sideD = Math.max(...frame.zones.filter((z) => z.zone.x0 <= X0 + 0.5).map((z) => z.zone.y1));
+      handles.push({ kind: "width-left", id: "width-left", x: r3(X0), y: r3(sideD / 2), z: r3(frame.surfaceIn + 1), axis: "x", value: design.shape.widthFt, perUnit: 1, follow: -1, label: "Width — the deck's left end" });
+    }
     handles.push({ kind: "depth", id: "depth", x: r3(Wd / 2), y: r3(Dd), z: r3(frame.surfaceIn + 1), axis: "y", value: design.shape.depthFt, perUnit: 1, label: "Depth out from the house" });
     handles.push({ kind: "height", id: "height", x: r3(Wd), y: r3(Dd), z: r3(frame.surfaceIn), axis: "z", value: design.heightIn, perUnit: 1 / 12, label: "Deck height" });
-    if (s.lower) handles.push({ kind: "lower-depth", id: "lower-depth", x: r3(s.lower.offsetXIn + (design.lower.widthFt * 12) / 2), y: r3(s.lower.offsetYIn + design.lower.depthFt * 12), z: r3(s.lower.frame.surfaceIn + 1), axis: "y", value: design.lower.depthFt, perUnit: 1, label: "Lower level depth" });
+    if (s.lower && s.lower.place === "front") handles.push({ kind: "lower-depth", id: "lower-depth", x: r3(s.lower.offsetXIn + (design.lower.widthFt * 12) / 2), y: r3(s.lower.offsetYIn + design.lower.depthFt * 12), z: r3(s.lower.frame.surfaceIn + 1), axis: "y", value: design.lower.depthFt, perUnit: 1, label: "Lower level depth" });
   }
   if (roof) {
     const corner = roof.posts.find((p) => p.corner) ?? roof.posts[0];
@@ -1029,7 +1231,45 @@ export function deckScene(s: DeckStructure): DeckScene {
     const c = st.footprint[2];
     if (st.kind === "flight" && c) handles.push({ kind: "stair-width", id: st.design.id, x: r3((b.x + c.x) / 2), y: r3((b.y + c.y) / 2), z: r3(top - st.riseIn / 2), axis: st.design.side === "front" ? "x" : "y", value: st.design.widthFt, perUnit: 1, follow: 0.5, label: "Stair width" });
   }
-  if (house && frame) for (const h of houseHandles(design.shape, design.house, (frame.surfaceIn + 2) / 12)) handles.push(h);
+  // (A LOCKED wall — 2026-11-14 — has no knobs: nothing dragged by accident moves it. Unlocked, its steps and corners are offered.)
+  if (house && frame && !design.house.locked) for (const h of houseHandles(design.shape, design.house, (frame.surfaceIn + 2) / 12)) handles.push(h);
+  // BY HAND (2026-11-13; lib/deck/byHand): every post and beam that can be moved is a handle of its own, taken hold of
+  // by the part itself and slid along its beam, its side or the joists an inch at a time. Last in the list: they have
+  // no knob, and the knobs' lists run beside the handles' from the start.
+  for (const g of deckGrips(s)) {
+    if (g.fixed) continue;
+    let b: [number, number, number, number, number, number] | null = null;
+    if (g.kind === "post" && frame) {
+      const p = frame.posts.find((q) => q.id === g.part);
+      const [w, dp] = p ? POST_ACTUAL_IN[p.size] ?? [5.5, 5.5] : [0, 0];
+      if (p) b = [p.x - w / 2, p.y - dp / 2, p.footing.groundIn + p.footing.topIn, p.x + w / 2, p.y + dp / 2, p.footing.groundIn + p.footing.topIn + p.heightIn];
+    } else if (g.kind === "beam" && frame) {
+      const m = frame.beams.find((q) => q.id === g.part);
+      if (m) b = [m.x0, m.y - m.spec.thickIn / 2, m.bottomIn, m.x1, m.y + m.spec.thickIn / 2, m.bottomIn + m.spec.depthIn];
+    } else if (g.kind === "roof-post" && roof) {
+      const p = roof.posts.find((q) => q.id === g.part);
+      const [w, dp] = p ? POST_ACTUAL_IN[p.size] ?? [5.5, 5.5] : [0, 0];
+      if (p) b = [p.x - w / 2, p.y - dp / 2, p.bottomIn, p.x + w / 2, p.y + dp / 2, p.topIn];
+    }
+    if (!b) continue;
+    handles.push({ kind: g.kind, id: g.id, x: r3((b[0] + b[3]) / 2), y: r3((b[1] + b[4]) / 2), z: r3((b[2] + b[5]) / 2), axis: g.axis, value: g.at, perUnit: 1 / 12, label: g.label, grab: [r3(b[0]), r3(b[1]), r3(b[2]), r3(b[3]), r3(b[4]), r3(b[5])], shown: { origin: g.origin, sign: g.sign, from: g.from } });
+  }
+  // ACCESSORIES BY HAND (2026-11-14; lib/deck/accessories): each built one is its own handle — taken hold of by the
+  // thing itself and dragged across the deck, both ways at once (its middle, inches).
+  if (s.frame) {
+    for (const b of s.builtIns) {
+      if (!b.built || b.footprint.length !== 4) continue;
+      const xs = b.footprint.map((q) => q.x);
+      const ys = b.footprint.map((q) => q.y);
+      const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+      const z0 = s.frame.surfaceIn;
+      const z1 = z0 + Math.max(4, b.heightIn);
+      const cx = (b.footprint[0].x + b.footprint[2].x) / 2;
+      const cy = (b.footprint[0].y + b.footprint[2].y) / 2;
+      const pose = accessoryPose(b);
+      handles.push({ kind: "builtin", id: b.design.id, x: r3(cx), y: r3(cy), z: r3((z0 + z1) / 2), axis: "xy", value: Math.round(cx * 2) / 2, value2: Math.round(cy * 2) / 2, perUnit: 1 / 12, label: BUILT_IN_LABEL[b.kind], grab: [r3(x0), r3(y0), r3(z0), r3(x1), r3(y1), r3(z1)], foot: b.footprint.flatMap((q) => [r3(q.x), r3(q.y)]), ...(b.kind === "screen" ? {} : { turn: pose?.turnDeg ?? 0 }) });
+    }
+  }
   return {
     v: DECK_SCENE_VERSION,
     widthFt: r3(Math.max(width, 48)),
@@ -1051,6 +1291,7 @@ export function deckScene(s: DeckStructure): DeckScene {
     handles,
     colors,
     facts: factParts.join(" · "),
+    ...(paints.some((pt) => pt.boxes.length || pt.rings.length) ? { paints: paints.filter((pt) => pt.boxes.length || pt.rings.length).map((pt) => ({ ...pt, rings: pt.rings.filter((i) => i < SCENE_MAX_DIAGONALS) })) } : {}),
   };
 }
 
@@ -1137,7 +1378,8 @@ export function parseDeckScene(raw: unknown): DeckScene | null {
       polys.push(n);
     }
   }
-  const outline = Array.isArray(r.outline) && r.outline.length >= 6 && r.outline.length <= 40 && r.outline.length % 2 === 0 ? numbers(r.outline, r.outline.length) : null;
+  // (Up to 80 corners — 2026-11-14: a deck in parts, its back stepping with the wall and its front part by part, has more than the 20 a rectangle, an L or a bowed front ever had.)
+  const outline = Array.isArray(r.outline) && r.outline.length >= 6 && r.outline.length <= 160 && r.outline.length % 2 === 0 ? numbers(r.outline, r.outline.length) : null;
   if (!outline) return null;
   let house: DeckScene["house"] = null;
   const h = (r.house && typeof r.house === "object" ? r.house : null) as Record<string, unknown> | null;
@@ -1161,9 +1403,15 @@ export function parseDeckScene(raw: unknown): DeckScene | null {
     // Built from a photo (2026-10-23): the doors and the cladding — malformed ones dropped.
     if (Array.isArray(h.doors)) house.doors = h.doors.map((d) => numbers(d, 6)).filter((d): d is number[] => !!d).slice(0, 8);
     if (typeof h.material === "string" && (HOUSE_MATERIALS as readonly string[]).includes(h.material)) house.material = h.material as HouseMaterial;
+    // A scene saved before 2026-11-13 can hold a window inside a door: none on another's spot (lib/deck/house).
+    if (house.windows || house.doors) {
+      const clear = settleSceneOpenings(house.windows, house.doors);
+      if (clear.windows) house.windows = clear.windows;
+      if (clear.doors) house.doors = clear.doors;
+    }
     // The roofs over the body and its bump-outs (2026-10-23): all of them or none (a roof per block, as before).
     if (Array.isArray(h.roofs) && h.roofs.length <= 16) {
-      const roofs = h.roofs.map((x) => numbers(x, 7)).filter((x): x is number[] => !!x && Number.isInteger(x[0]) && x[0] >= 0 && x[0] <= 8);
+      const roofs = h.roofs.map((x) => numbers(x, 7)).filter((x): x is number[] => !!x && Number.isInteger(x[0]) && x[0] >= 0 && x[0] <= 9);
       if (roofs.length && roofs.length === h.roofs.length) house.roofs = roofs;
     }
   }
@@ -1210,16 +1458,28 @@ export function parseDeckScene(raw: unknown): DeckScene | null {
     }
     const gr = (r.ground && typeof r.ground === "object" ? r.ground : null) as Record<string, unknown> | null;
     if (gr && fin(gr.outDropFt) && fin(gr.acrossDropFt) && inside(gr.outDropFt, -10, 10) && inside(gr.acrossDropFt, -10, 10)) ground = { outDropFt: gr.outDropFt, acrossDropFt: gr.acrossDropFt };
-    if (Array.isArray(r.handles) && r.handles.length <= 40) {
+    if (Array.isArray(r.handles) && r.handles.length <= 240) {
       for (const h of r.handles) {
         const o = (h && typeof h === "object" ? h : null) as Record<string, unknown> | null;
-        if (!o || typeof o.kind !== "string" || typeof o.id !== "string" || !fin(o.x) || !fin(o.y) || !fin(o.z) || !fin(o.value) || !fin(o.perUnit) || (o.axis !== "x" && o.axis !== "y" && o.axis !== "z")) continue;
-        handles.push({ kind: o.kind as SceneHandle["kind"], id: o.id.slice(0, 20), x: o.x, y: o.y, z: o.z, axis: o.axis, value: o.value, perUnit: o.perUnit, ...(fin(o.follow) && o.follow > 0 && o.follow <= 1 ? { follow: o.follow } : {}), label: typeof o.label === "string" ? o.label.slice(0, 60) : "" });
+        if (!o || typeof o.kind !== "string" || typeof o.id !== "string" || !fin(o.x) || !fin(o.y) || !fin(o.z) || !fin(o.value) || !fin(o.perUnit) || (o.axis !== "x" && o.axis !== "y" && o.axis !== "z" && o.axis !== "xy")) continue;
+        handles.push({ kind: o.kind as SceneHandle["kind"], id: o.id.slice(0, 20), x: o.x, y: o.y, z: o.z, axis: o.axis, value: o.value, ...(fin(o.value2) ? { value2: o.value2 } : {}), perUnit: o.perUnit, ...(fin(o.follow) && ((o.follow > 0 && o.follow <= 1) || o.follow === -1) ? { follow: o.follow } : {}), label: typeof o.label === "string" ? o.label.slice(0, 60) : "", ...handleGrab(o) });
       }
     }
   }
   const c = (r.colors && typeof r.colors === "object" ? r.colors : {}) as Record<string, unknown>;
   const color = (x: unknown, fallback: string) => (typeof x === "string" && HEX.test(x) ? x : fallback);
+  // Boards of their own: a colour, and whole numbers inside the boxes and the rings — malformed ones dropped.
+  const paints: ScenePaint[] = [];
+  if (Array.isArray(r.paints)) {
+    for (const raw of r.paints.slice(0, 32)) {
+      const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+      if (typeof o.hex !== "string" || !HEX.test(o.hex)) continue;
+      const ints = (x: unknown, n: number) => (Array.isArray(x) ? [...new Set(x.filter((i): i is number => Number.isInteger(i) && (i as number) >= 0 && (i as number) < n))] : []);
+      const pBoxes = ints(o.boxes, boxes.length);
+      const pRings = ints(o.rings, diagonal?.boards.length ?? 0);
+      if (pBoxes.length || pRings.length) paints.push({ hex: o.hex, ...(typeof o.hex2 === "string" && HEX.test(o.hex2) ? { hex2: o.hex2 } : {}), boxes: pBoxes, rings: pRings, of: typeof o.of === "string" ? o.of.slice(0, 20) : "" });
+    }
+  }
   return {
     v: DECK_SCENE_VERSION,
     widthFt: r.widthFt,
@@ -1241,6 +1501,7 @@ export function parseDeckScene(raw: unknown): DeckScene | null {
     handles,
     colors: { frame: color(c.frame, "#9d8c62"), decking: color(c.decking, "#a58a5c"), fascia: color(c.fascia, "#a58a5c"), roofing: color(c.roofing, "#565250"), rail: color(c.rail, "#9d8c62"), ...(typeof c.decking2 === "string" && HEX.test(c.decking2) ? { decking2: c.decking2 } : {}), ...(typeof c.railInfill === "string" && HEX.test(c.railInfill) ? { railInfill: c.railInfill } : {}), ...(typeof c.border === "string" && HEX.test(c.border) ? { border: c.border } : {}), ...(typeof c.border2 === "string" && HEX.test(c.border2) ? { border2: c.border2 } : {}), ...(typeof c.railCap === "string" && HEX.test(c.railCap) ? { railCap: c.railCap } : {}), ...(typeof c.roofFrame === "string" && HEX.test(c.roofFrame) ? { roofFrame: c.roofFrame } : {}) },
     facts: typeof r.facts === "string" ? r.facts.slice(0, 200) : "",
+    ...(paints.length ? { paints } : {}),
   };
 }
 
@@ -1334,8 +1595,10 @@ export function memberBoxCorners(b: readonly number[], role: string | null): Sce
     w = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
     if (w[2] < 0) w = [-w[0], -w[1], -w[2]];
     su = L;
-    sv = Math.min(alongX ? sy : sx, 0.3);
-    sw = 0.3;
+    // Its two faces: a 2x4 is its thickness by 3 1/2 in., as it always was; a heavier brace (2026-11-14) is square.
+    const thick = alongX ? sy : sx;
+    sv = thick > 0.31 ? Math.min(thick, 0.7) : Math.min(thick, 0.3);
+    sw = thick > 0.31 ? sv : 0.3;
     tilt = Math.atan2(sz, Math.abs(run));
     isBrace = true;
   } else {

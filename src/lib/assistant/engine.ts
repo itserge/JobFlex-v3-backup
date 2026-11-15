@@ -15,7 +15,9 @@ import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/reso
 import { zodFunction } from "openai/helpers/zod";
 import type { z } from "zod";
 import { db } from "@/lib/db";
-import { getOpenAI, isOpenAIEnabled, isReasoningModelName, resolveOpenAIModel, samplingOptions } from "@/lib/sdk/openai";
+import { ensureModel, getOpenAI, isOpenAIEnabled, isReasoningModelName, resolveOpenAIModel, samplingOptions } from "@/lib/sdk/openai";
+import { operatorEngine } from "@/lib/assistant/speed";
+import { NEW_BRAIN_MODEL, brainOptions, type OperatorEngine, type TurnSpeed } from "@/lib/assistant/words";
 import { noteRequestOrg } from "@/lib/trialMeter";
 import { checkPlanLimit } from "@/lib/limitsEngine";
 import { isUnlimited } from "@/lib/planLimits";
@@ -52,16 +54,23 @@ export interface TurnResult {
   /** A build left to run after the reply (a minute's AI estimate): the caller runs it — lib/assistant/runner
    *  runAndReport — or the minute job does. */
   running?: string | null;
+  /** How long the turn took and on which engine — for the admin's readout while the new engine is tested. */
+  speed?: TurnSpeed;
 }
 
 // ── the system prompt ───────────────────────────────────────────────────────
 
 /** The prompt for a turn: the rules, then what the tools shown this turn can do (lib/assistant/registry), then the moment. */
-export function systemPrompt(actor: AssistantActor, now: Date, waiting: string | null, built: string[] = [], tools: readonly AnyTool[] = TOOLS, records = "", spoken = false): string {
+export function systemPrompt(actor: AssistantActor, now: Date, waiting: string | null, built: string[] = [], tools: readonly AnyTool[] = TOOLS, records = "", spoken = false, fast: { words: readonly string[] } | null = null): string {
   const short = actor.channel === "sms" ? "one or two text messages, under 300 characters" : "a few short lines";
+  // THE NEW ENGINE (2026-11-13) puts what never changes first — the rules and what the tools do — and the moment
+  // (who, when, what waits) last: OpenAI keeps a prompt's unchanged opening ready (prompt caching), and the clock on
+  // the second line used to make every turn's prompt new from there on. The words are the same; only their order.
+  const who = `You are the JobFlex AI Operator for ${actor.orgName}, a contracting business. You help ${actor.userName} (role ${actor.role}) run the business by talking or texting.`;
+  const when = `Now: ${nowWords(now, actor.timezone)} (${actor.timezone}). Today's date is ${dayOf(now, actor.timezone)}.`;
   return [
-    `You are the JobFlex AI Operator for ${actor.orgName}, a contracting business. You help ${actor.userName} (role ${actor.role}) run the business by talking or texting.`,
-    `Now: ${nowWords(now, actor.timezone)} (${actor.timezone}). Today's date is ${dayOf(now, actor.timezone)}.`,
+    fast ? "You are the JobFlex AI Operator for a contracting business. You help the person run the business by talking or texting. Who they are and what time it is come after these rules." : who,
+    fast ? "" : when,
     "RULES",
     "- Names, ids, dates, counts and money come only from tool results. Never guess a number, a price, a date or an id.",
     "- Look things up with the tools before you answer.",
@@ -79,6 +88,9 @@ export function systemPrompt(actor: AssistantActor, now: Date, waiting: string |
     spoken
       ? "- SPOKEN: this is a live conversation and your reply is read aloud. Answer in the person's language, in one short sentence — two at most, under 30 words. Lead with the answer or the read-back. No greeting, no list of what you can do, never 'let me know'. If you did not understand, or something essential is missing, ask one short question instead.\n- SPOKEN, LET THEM FINISH (the owner, 2026-11-07): if what they said stops mid-sentence (it ends in '…' or on a word like 'to', 'from', 'for', 'the'), reply only 'Go on.' — never guess the rest or ask about it. When a message continues one they cut off just before ('Create me a proposal from…' then 'Smart Proposal, epoxy garage floor, 400 square feet'), read the two as ONE request. Do what they asked as soon as you have what the tool needs (an estimate needs the job and its size; the client is optional) — ask about anything optional after it's done, not before."
       : `- Answer in the person's language. Be brief: ${short}. Plain sentences, a short list at most, no headings, no tables.`,
+    fast ? `THIS CONVERSATION\n${who}\n${when}` : "",
+    // What they said was written down by a speech model: their own words settle a name it only came close to.
+    fast?.words.length ? `THEIR OWN WORDS (names and terms this person uses — when a word they said sounds like one of these, it is this one): ${fast.words.join(", ")}` : "",
     waiting ? `WAITING FOR THEIR ANSWER: "${waiting}". If they now say yes in other words, tell them to tap Do it (in the app) or reply YES.` : "",
     built.length ? `ESTIMATES BUILT LATELY (newest first):\n${built.map((b, i) => `${i + 1}. ${b}`).join("\n")}` : "",
     records,
@@ -102,6 +114,17 @@ function openAiToolsFor(tools: readonly AnyTool[]): ChatCompletionTool[] {
   toolDefs.set(key, defs);
   return defs;
 }
+
+// The new engine's brain, across turns: whether it takes several tool calls at once, and until when it is left alone
+// after refusing a request outright (a model this key does not have, a parameter it does not take).
+const NEW_BRAIN_REST_MS = 10 * 60_000;
+let newBrainParallel = true;
+let newBrainOffUntil = 0;
+/** The API said no to the request itself (not a network blip or a rate limit, which say nothing about the model). */
+const apiRefused = (err: unknown): boolean => {
+  const status = (err as { status?: unknown })?.status;
+  return status === 400 || status === 403 || status === 404;
+};
 
 // ── keeping it ──────────────────────────────────────────────────────────────
 
@@ -367,20 +390,30 @@ export async function handleTurn(input: TurnInput): Promise<TurnResult> {
   const t0 = Date.now();
   let modelMs = 0;
   let rounds = 0;
+  /** The prompt's tokens over the turn's rounds, and how many of them OpenAI had kept ready (its prompt cache). */
+  let promptTokens = 0;
+  let cachedTokens = 0;
   /** The request counted toward the plan's limit — written while the model reads, finished before the reply is kept. */
   let marked: Promise<unknown> = Promise.resolve();
 
   /** The reply, kept with the card it belongs to: the read-back waiting for a yes, else the build it reports. */
+  /** The engine this turn runs on and the model that answered (the new engine is platform admins' while it is tested). */
+  let engine: OperatorEngine = "classic";
+  let answeredBy: string | null = null;
   const say = async (reply: string, proposed: FeedAction | null = null, cardId: string | null = null): Promise<TurnResult> => {
     await marked;
     await keep(actor, "OUT", reply, { actionId: proposed?.id ?? cardId });
-    if (rounds) console.info(`[assistant] turn ${Date.now() - t0} ms · model ${modelMs} ms in ${rounds} round${rounds === 1 ? "" : "s"}${input.spoken ? " · spoken" : ""}`);
-    return { reply, proposed };
+    const turnMs = Date.now() - t0;
+    const cachedPct = promptTokens ? Math.round((cachedTokens / promptTokens) * 100) : null;
+    if (rounds) console.info(`[assistant] turn ${turnMs} ms · model ${modelMs} ms in ${rounds} round${rounds === 1 ? "" : "s"}${answeredBy ? ` · ${answeredBy}` : ""}${cachedPct === null ? "" : ` · cache ${cachedPct}% of ${promptTokens}`}${input.spoken ? " · spoken" : ""}`);
+    return { reply, proposed, speed: { turnMs, modelMs, rounds, model: answeredBy, engine, cachedPct } };
   };
 
   let quick = quickReply(text);
   // Read together, not one after another (2026-11-07: every one was a round trip to the database before the model).
-  const [inbound, closed, awaiting] = await Promise.all([keep(actor, "IN", text, { externalId: input.externalId ?? null }), refusal(actor, "today", false), openAwaiting(actor, now)]);
+  const [inbound, closed, awaiting, engineNow] = await Promise.all([keep(actor, "IN", text, { externalId: input.externalId ?? null }), refusal(actor, "today", false), openAwaiting(actor, now), operatorEngine(actor.organizationId, actor.userId)]);
+  // Known from the start, so a turn answered without the model (a yes, a no, an undo) is timed for the readout too.
+  engine = engineNow;
   if (closed) return say(closed);
 
   // Four digits alone are a PIN only when a read-back waits for one; otherwise they answer the model ("2200 sq ft").
@@ -426,7 +459,7 @@ export async function handleTurn(input: TurnInput): Promise<TurnResult> {
 
   // ── the model's turn ──
   // The limit, and everything the model is given, read together.
-  const [limit, history, built, workset, live, resolved] = await Promise.all([
+  const [limit, history, built, workset, live, resolved, prefs] = await Promise.all([
     checkPlanLimit(actor.organizationId, "assistantCommands", 1, { actorId: actor.userId }),
     db.assistantMessage.findMany({
       where: { organizationId: actor.organizationId, userId: actor.userId, id: { not: inbound.id } },
@@ -440,6 +473,7 @@ export async function handleTurn(input: TurnInput): Promise<TurnResult> {
     // The tools this turn: the registry's live ones — not retired, not switched off, their services configured.
     modelTools(),
     isOpenAIEnabled() ? resolveOpenAIModel().catch(() => null) : Promise.resolve(null),
+    readPrefs(actor.organizationId, actor.userId).catch(() => null),
     // The model speaks now: a digit after this may answer its own "1 or 2?", so the kept numbers go — before any tool
     // runs, so a list a tool keeps this turn (project_overview, projects_overview) is the one that stays.
     forgetPicks(actor.organizationId, actor.userId).catch(() => undefined),
@@ -452,8 +486,9 @@ export async function handleTurn(input: TurnInput): Promise<TurnResult> {
   // A briefing's numbered question is a request of its own.
   marked = Promise.all([db.assistantMessage.update({ where: { id: inbound.id }, data: { countsAsCommand: quick?.kind !== "digit" || picked } }), noteRequestOrg(actor.organizationId).catch(() => undefined)]);
   const records = worksetPrompt(workset);
+  const fast = engine === "new";
   const messages: ChatCompletionMessageParam[] = [
-    { role: "system", content: systemPrompt(actor, now, awaiting?.readback ?? null, built, live, records, input.spoken === true) },
+    { role: "system", content: systemPrompt(actor, now, awaiting?.readback ?? null, built, live, records, input.spoken === true, fast ? { words: prefs?.words ?? [] } : null) },
     ...history.reverse().map((m): ChatCompletionMessageParam => (m.direction === "IN" ? { role: "user", content: m.body } : { role: "assistant", content: m.body })),
     { role: "user", content: ask },
   ];
@@ -466,9 +501,14 @@ export async function handleTurn(input: TurnInput): Promise<TurnResult> {
     return say("The AI Operator couldn't start just now. Try again in a minute.");
   }
   if (!resolved) return say("The AI Operator couldn't start just now. Try again in a minute.");
-  const model = resolved;
   // A model that thinks before it answers (gpt-5, the o-series) thinks briefly here: a person is waiting, often out loud.
-  const effort = isReasoningModelName(model) ? { reasoning_effort: "low" as const } : {};
+  const effort = isReasoningModelName(resolved) ? { reasoning_effort: "low" as const } : {};
+  // THE NEW ENGINE'S BRAIN (2026-11-13): OpenAI's current fast model, its thinking off (a tool call over Chat
+  // Completions needs that), several look-ups in one round. When this key has no such model, or it refuses the
+  // request, the turn is answered by the model before — and the new one is left alone for ten minutes.
+  const wanted = fast && Date.now() > newBrainOffUntil ? process.env.ASSISTANT_MODEL?.trim() || NEW_BRAIN_MODEL : null;
+  let model = wanted && wanted !== resolved && (await ensureModel(wanted)) ? wanted : resolved;
+  const classicOptions = { ...(await samplingOptions(0.2)), ...effort };
 
   /** The read-backs this turn planned, in order. */
   const chain: FeedAction[] = [];
@@ -491,17 +531,34 @@ export async function handleTurn(input: TurnInput): Promise<TurnResult> {
     let message;
     try {
       const m0 = Date.now();
-      const completion = await client.chat.completions.create({
-        model,
-        ...(await samplingOptions(0.2)),
-        ...effort,
-        messages,
-        tools: openAiToolsFor(live),
-        tool_choice: "auto",
-        parallel_tool_calls: false,
-      });
+      const tools = openAiToolsFor(live);
+      const askModel = (m: string, parallel: boolean) =>
+        client.chat.completions.create({ model: m, ...(fast ? brainOptions(m) : classicOptions), messages, tools, tool_choice: "auto", parallel_tool_calls: parallel });
+      let completion;
+      if (model === resolved) completion = await askModel(resolved, false);
+      else {
+        try {
+          completion = await askModel(model, newBrainParallel);
+        } catch (err) {
+          if (!apiRefused(err)) throw err;
+          // Refused as asked: once more without the several-at-once, then the model before.
+          console.warn(`[assistant] ${model} refused the request (${(err as { status?: unknown })?.status}): ${err instanceof Error ? err.message.slice(0, 200) : ""}`);
+          const plain = newBrainParallel ? await askModel(model, false).catch((again) => (apiRefused(again) ? null : Promise.reject(again))) : null;
+          if (plain) {
+            newBrainParallel = false;
+            completion = plain;
+          } else {
+            newBrainOffUntil = Date.now() + NEW_BRAIN_REST_MS;
+            model = resolved;
+            completion = await askModel(resolved, false);
+          }
+        }
+      }
       modelMs += Date.now() - m0;
       rounds++;
+      promptTokens += completion.usage?.prompt_tokens ?? 0;
+      cachedTokens += completion.usage?.prompt_tokens_details?.cached_tokens ?? 0;
+      answeredBy = model;
       message = completion.choices[0]?.message;
     } catch (err) {
       console.warn(`[assistant] model call failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -593,22 +650,28 @@ async function callTool(
 // ── what the panel shows ────────────────────────────────────────────────────
 
 export async function readFeed(actor: AssistantActor, now = new Date()): Promise<AssistantFeed> {
-  const awaiting = await openAwaiting(actor, now);
-  const rows = await db.assistantMessage.findMany({
-    where: { organizationId: actor.organizationId, userId: actor.userId },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: 40,
-    select: { id: true, direction: true, body: true, createdAt: true, actionId: true },
-  });
+  // Read together, not one after another (2026-11-13): the conversation comes back with every answer, and each of
+  // these was a round trip to the database before the reply could be shown or said.
+  const [awaiting, rows, status, prefs, engine] = await Promise.all([
+    openAwaiting(actor, now),
+    db.assistantMessage.findMany({
+      where: { organizationId: actor.organizationId, userId: actor.userId },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: 40,
+      select: { id: true, direction: true, body: true, createdAt: true, actionId: true },
+    }),
+    checkPlanLimit(actor.organizationId, "assistantCommands", 1, { actorId: actor.userId }).catch(() => null),
+    readPrefs(actor.organizationId, actor.userId).catch(() => null),
+    operatorEngine(actor.organizationId, actor.userId),
+  ]);
   const ids = [...new Set(rows.map((r) => r.actionId).filter((x): x is string => Boolean(x)))];
   const actions = ids.length ? await db.assistantAction.findMany({ where: { id: { in: ids }, organizationId: actor.organizationId } }) : [];
   const byId = new Map(actions.map((a) => [a.id, feedAction(a)]));
-  const status = await checkPlanLimit(actor.organizationId, "assistantCommands", 1, { actorId: actor.userId }).catch(() => null);
-  const prefs = await readPrefs(actor.organizationId, actor.userId).catch(() => null);
   return {
     messages: rows.reverse().map((r) => ({ id: r.id, direction: r.direction === "IN" ? "IN" : "OUT", body: r.body, createdAt: r.createdAt.toISOString(), action: r.actionId ? byId.get(r.actionId) ?? null : null })),
     awaiting: awaiting ? feedAction(awaiting) : null,
     usage: { used: status?.used ?? 0, limit: status && !isUnlimited(status.limit) ? status.limit : null },
     lang: prefs?.lang ?? DEFAULT_SPEECH_LANG,
+    fast: engine === "new",
   };
 }

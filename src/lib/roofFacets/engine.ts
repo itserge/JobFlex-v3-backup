@@ -23,6 +23,7 @@ import { buildGraph, collapseShort, pruneDangling, straightenChains, traceFaces,
 import { findPlanes, outlineAxesDeg, priorsInWindow, type Plane, type RoofSegmentPx } from "./planes";
 import { fillRings, pointInRing, registerOutline, ringArea, sharpenCorners, type Pt } from "./raster";
 import { roofOutline } from "./roofOutline";
+import { ROUND_TAG, bendRound, coneZ, findCones, type Cone } from "./round";
 
 /**
  * What an edge is. STEP and WALL are both a roof meeting a wall between two roof levels: STEP where the line climbs
@@ -70,6 +71,11 @@ export interface EngineFacet {
   areaM2: number;
   /** true when one of Google's segments stands behind the plane */
   google: boolean;
+  /**
+   * A round roof (a turret's cone): its peak and radius in raster pixels. `plane` then only carries the cone's fall
+   * (in `gx`) so that `slope` and the area come out right; it is not a plane and has no facing.
+   */
+  round?: { cx: number; cy: number; r: number };
 }
 
 export interface EngineEdge {
@@ -160,6 +166,19 @@ export function buildFacets(input: EngineInput): EngineResult | null {
     if (squared) ring = squared.ring.map((p) => ({ x: p.x - x0, y: p.y - y0 }));
   }
   if (ringArea(ring) < 0) ring.reverse();
+  // Round roofs (./round): a cone is read off the height map inside the outline as it stands; the outline is then bent
+  // round it where its corners hugged the turret, and the rest of the cone's circle is drawn inside the roof.
+  const cones: Cone[] = findCones(z, w, h, fillRings([ring], w, h) as Uint8Array, px);
+  const roundPts = new Set<Pt>();
+  const roundInner: Pt[][] = [];
+  for (const c of cones) {
+    const bent = bendRound(ring, c, px);
+    ring = bent.ring;
+    for (const q of bent.arc) roundPts.add(q);
+    roundInner.push(bent.inner);
+    input.trace?.push(`a round roof was found: ${(c.r * px * 3.28084).toFixed(1)} ft across the radius, ${((c.k / px) * 12).toFixed(1)}/12${bent.arc.length ? "; the outline was bent round it" : ""}`);
+  }
+  if (ringArea(ring) < 0) ring.reverse();
   const inside = fillRings([ring], w, h) as Uint8Array;
   let roofPx = 0, builtPx = 0;
   for (let i = 0; i < inside.length; i++) if (inside[i]) { roofPx++; builtPx += building[i]; }
@@ -186,11 +205,14 @@ export function buildFacets(input: EngineInput): EngineResult | null {
       input.trace?.push(`${Math.round((n / roofPx) * 100)}% of the outline is not roof in Google's mask (trees over it, mostly): the planes run on under it`);
     }
   }
+  const onCone = (c: Cone, x: number, y: number) => Math.hypot(x + 0.5 - c.cx, y + 0.5 - c.cy) <= c.r && z[y * w + x] <= coneZ(c, x + 0.5, y + 0.5) + 0.3;
   const field = findPlanes({ w, h, z, inside, ignore, pixelSizeM: px, axisDeg, axesDeg, priors, trace: input.trace });
-  if (!field.planes.length) return null;
+  if (!field.planes.length && !cones.length) return null;
   // planes over CONTINUOUS window pixels (a pixel's centre is its index + 0.5)
   const planes = field.planes.map((p) => ({ ...p, c: p.c - 0.5 * (p.gx + p.gy) }));
   const label = field.label;
+  /** label → the cone it stands for (a cone takes a place among the planes so that cells can be given to it) */
+  const coneOf = new Map<number, Cone>();
 
   // ── 4. lines ──
   const { segs: lines, seams, placed } = linesBetween(planes, label, z, w, h, px, axesDeg, input.trace);
@@ -201,9 +223,43 @@ export function buildFacets(input: EngineInput): EngineResult | null {
     const joined = alignRuns(lines, px, onWall);
     if (joined) input.trace?.push(`${joined} line(s) that ran on from another within a foot of its line were set on that line`);
   }
+  // The cones take their discs: one label each, after the lines between the flat planes were read (a cone has no
+  // crossing line with a plane — its edge is its circle), and the circle's part inside the roof joins the lines.
+  cones.forEach((c, ci) => {
+    const q = planes.length;
+    planes.push({ id: q, gx: c.k, gy: 0, c: 0, n: 0, cx: c.cx, cy: c.cy, rms: 0, prior: false });
+    coneOf.set(q, c);
+    // The flat pieces the plane finder made of the cone itself (planes that lie mostly in its disc) are dissolved into
+    // it, and the lines between them go. A plane of the house that reaches into the disc keeps the pixels where the
+    // height map sits nearer to it than to the cone — the line between the two is where the two surfaces cross.
+    const inDisc = new Map<number, number>(), all = new Map<number, number>();
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x, cur = label[i];
+      if (cur < 0 || coneOf.has(cur)) continue;
+      all.set(cur, (all.get(cur) ?? 0) + 1);
+      if (inside[i] && onCone(c, x, y)) inDisc.set(cur, (inDisc.get(cur) ?? 0) + 1);
+    }
+    const dissolved = new Set<number>();
+    for (const [cur, n] of inDisc) if (n > (all.get(cur) ?? 0) * 0.5) dissolved.add(cur);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (!inside[i] || !onCone(c, x, y)) continue;
+      const cur = label[i], pl = cur >= 0 && !coneOf.has(cur) && !dissolved.has(cur) ? planes[cur] : null;
+      if (pl && Math.abs(z[i] - (pl.gx * (x + 0.5) + pl.gy * (y + 0.5) + pl.c)) < Math.abs(z[i] - coneZ(c, x + 0.5, y + 0.5))) continue;
+      label[i] = q;
+    }
+    if (dissolved.size) {
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const t = lines[i].tag;
+        if (t >= 0 && (dissolved.has(Math.floor(t / 4096)) || dissolved.has(t % 4096))) lines.splice(i, 1);
+      }
+    }
+    const pts = roundInner[ci];
+    for (let i = 0; i + 1 < pts.length; i++) lines.push({ a: pts[i], b: pts[i + 1], outline: false, tag: ROUND_TAG });
+  });
 
   // ── 5. arrange ──
-  const outlineSegs: Seg[] = ring.map((p, i) => ({ a: p, b: ring[(i + 1) % ring.length], outline: true, tag: -1 }));
+  const outlineSegs: Seg[] = ring.map((p, i) => { const b = ring[(i + 1) % ring.length]; return { a: p, b, outline: true, tag: roundPts.has(p) && roundPts.has(b) ? ROUND_TAG : -1 }; });
   const TOL = 1.2;
   const build = (extra: Seg[]): Graph => {
     const g = buildGraph([...outlineSegs, ...lines, ...extra], TOL);
@@ -298,19 +354,23 @@ export function buildFacets(input: EngineInput): EngineResult | null {
 
   // ── 6. name and measure ──
   const facePlane = lab.map((q) => (q >= 0 ? planes[q] : null));
+  const faceCone = lab.map((q) => coneOf.get(q) ?? null);
   const facets: EngineFacet[] = tf.faces.map((f, k) => {
     const p = facePlane[k] ?? { gx: 0, gy: 0, c: 0, prior: false };
     const slope = Math.hypot(p.gx, p.gy) / px;
     const planM2 = f.area * px * px;
+    const cone = faceCone[k];
     return {
       outer: f.outer,
       holes: f.holes,
       plane: { gx: p.gx, gy: p.gy, c: p.c },
       slope,
-      azimuthDeg: slope < 0.02 ? null : ((Math.atan2(-p.gx, p.gy) * 180) / Math.PI + 360) % 360,
+      azimuthDeg: slope < 0.02 || cone ? null : ((Math.atan2(-p.gx, p.gy) * 180) / Math.PI + 360) % 360,
       planM2,
+      // a cone's skin is its disc's area over the cosine of its slope, exactly as a plane's
       areaM2: planM2 * Math.sqrt(1 + slope * slope),
       google: (p as Plane).prior === true,
+      ...(cone ? { round: { cx: cone.cx + x0, cy: cone.cy + y0, r: cone.r } } : {}),
     };
   });
   let edges: EngineEdge[] = g.edges.map((e, ei) => {
@@ -324,7 +384,20 @@ export function buildFacets(input: EngineInput): EngineResult | null {
     const into = (p: { gx: number; gy: number }, n: Pt) => (p.gx * n.x + p.gy * n.y) / px;
     let type: FacetEdgeType = "EAVE";
     let run = 0;
-    if (pl && pr) {
+    const cl = left >= 0 ? faceCone[left] : null, cr = right >= 0 ? faceCone[right] : null;
+    if (cl || cr) {
+      // A round roof's edge: its eave where the outside is beyond it; where it meets a flat face, a valley when the
+      // two surfaces meet in height there (the face's own fall along the line gives the valley's length), else a
+      // wall above or below it.
+      const other = cl && cr ? null : cl ? pr : pl;
+      const cone = (cl ?? cr)!;
+      if (other) {
+        const mid = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 };
+        const dz = Math.abs(other.gx * mid.x + other.gy * mid.y + other.c - coneZ(cone, mid.x, mid.y));
+        run = along(other);
+        type = dz <= 0.5 ? "VALLEY" : Math.abs(run) >= 0.08 ? "STEP" : "WALL";
+      } else if (cl && cr) type = "VALLEY";
+    } else if (pl && pr) {
       const zAt = (p: { gx: number; gy: number; c: number }, q: Pt) => p.gx * q.x + p.gy * q.y + p.c;
       const mid = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 };
       const qa = lab[left], qb = lab[right];
@@ -418,7 +491,8 @@ export function buildFacets(input: EngineInput): EngineResult | null {
     if (q < 0) continue;
     const p = planes[q];
     const x = (i % w) + 0.5, y = ((i / w) | 0) + 0.5;
-    const d = Math.min(0.6, Math.abs(z[i] - (p.gx * x + p.gy * y + p.c)) / Math.sqrt(1 + (p.gx * p.gx + p.gy * p.gy) / (px * px)));
+    const cone = coneOf.get(q);
+    const d = Math.min(0.6, Math.abs(z[i] - (cone ? coneZ(cone, x, y) : p.gx * x + p.gy * y + p.c)) / Math.sqrt(1 + (p.gx * p.gx + p.gy * p.gy) / (px * px)));
     // "sits on it": within a quarter of a metre, square to the roof — a tree or a chimney does not
     if (d <= 0.25) agreeN++;
     missSq += d * d; missN++;
@@ -431,7 +505,7 @@ export function buildFacets(input: EngineInput): EngineResult | null {
     quality: {
       agree: agreeN / roofPx,
       rmsM: Math.sqrt(missSq / Math.max(1, missN)),
-      planes: planes.length,
+      planes: planes.length - cones.length,
       googlePlanes: planes.filter((p) => p.prior).length,
       googleSegments: input.priors.length,
       outlineM2: Math.abs(ringArea(ring)) * px * px,

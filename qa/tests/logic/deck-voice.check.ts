@@ -285,7 +285,12 @@ console.log("── commands read from what was said");
     ["call it Johnson backyard deck", (c) => has(c, "name")?.title === "Johnson Backyard Deck"],
     ["the address is 1840 meadow glen drive allen tx 75002", (c) => has(c, "address")?.text === "1840 Meadow Glen Drive Allen TX 75002"],
     // Things the studio does not draw
-    ["add a fire pit", (c) => has(c, "wish")?.item === "Fire pit"],
+    // (2026-11-14: a fire pit and an outdoor kitchen are drawn — lib/deck/builtins; a pool is not.)
+    ["add a pool", (c) => has(c, "wish")?.item === "Pool"],
+    ["add a fire pit", (c) => { const b = has(c, "builtin"); return b?.kind === "fire" && b.op === "add"; }],
+    ["add an outdoor kitchen", (c) => has(c, "builtin")?.kind === "kitchen"],
+    ["put a grill island on the left side", (c) => { const b = has(c, "builtin"); return b?.kind === "kitchen" && b.side === "left"; }],
+    ["level with the kitchen door", (c) => !has(c, "builtin")],
     ["add a bench for 450 dollars", (c) => has(c, "item")?.price === 450],
     ["add 2 planters at $150 each", (c) => has(c, "item")?.qty === 2 && has(c, "item")?.price === 150],
     ["add a fire pit", (c) => has(c, "item")?.price === 1200, d, { items: { "fire pit": { name: "Fire pit", unit: "ea", price: 1200 } } }],
@@ -432,10 +437,10 @@ console.log("── carried out on the design");
   r = say("how much concrete do I need");
   const bags = priceDeck(d).bom.filter((l) => l.kind === "concrete" && l.unit === "bags").reduce((a, l) => a + l.qty, 0);
   check("the concrete answer is the material list's bags", new RegExp(`About ${bags.toLocaleString("en-US")} bags`).test(r.say), r.say);
-  r = say("add a fire pit");
-  check("a fire pit is noted and its price asked", !!r.meta.wish && /cost/.test(r.say) && !!r.pending, r.say);
+  r = say("add a hammock");
+  check("a hammock is noted and its price asked", !!r.meta.wish && /cost/.test(r.say) && !!r.pending, r.say);
   r = say("1200 dollars");
-  check("the price said puts it on as the shop's item, remembered", d.extras.items.some((i) => i.name === "Fire pit" && i.price === 1200) && r.meta.remember?.price === 1200, r.say);
+  check("the price said puts it on as the shop's item, remembered", d.extras.items.some((i) => i.name === "Hammock posts" && i.price === 1200) && r.meta.remember?.price === 1200, r.say);
   r = say("start over");
   check("start over asks first", !!r.pending && !r.design, r.say);
   r = say("yes");
@@ -530,8 +535,10 @@ console.log("── the runner holds the engine's rails");
   check("a ledger on brick veneer is refused, with the code's reason", brick.design.placement !== "attached" && /veneer/.test(brick.said.join(" ")), brick.said.join(" "));
   const fan = runCommand(d, { do: "fixture", op: "add", kind: "fan" });
   check("a fan with no roof asks to add one", fan.refused === true && !!fan.pending, fan.said.join(" "));
-  const box = runCommand(d, { do: "stairs", op: "add", wrap: true });
-  check("box steps on a 3-ft deck are refused, a flight offered", box.refused === true && box.pending?.yes[0].do === "stairs");
+  // (2026-11-14: steps that wrap the deck go to seven risers, on stringers past three.)
+  const box = runCommand({ ...d, heightIn: 60 }, { do: "stairs", op: "add", wrap: true });
+  check("steps wrapping a 5-ft deck are refused, a flight offered", box.refused === true && box.pending?.yes[0].do === "stairs");
+  check("…on a 3-ft deck they are added", runCommand({ ...d, heightIn: 36 }, { do: "stairs", op: "add", wrap: true }).design.stairs.some((x) => x.wrap));
   const gazebo = runCommand(switchStructure(d, "covered-deck"), { do: "roof", set: { kind: "pyramid" } });
   check("a pyramid roof on a covered deck is built as a gazebo — and on a rectangle said to frame as a hip, with a square offered", gazebo.design.structure === "gazebo" && gazebo.design.roof.kind === "pyramid" && /short ridge — a hip roof/.test(gazebo.said.join(" ")) && gazebo.pending?.yes[0].do === "roof", gazebo.said.join(" "));
   const joists = runCommand(base({ shape: { kind: "rect", widthFt: 16, depthFt: 16 } }), { do: "framing", set: { joist: "2x6" } });

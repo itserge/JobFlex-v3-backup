@@ -63,7 +63,7 @@
 import { POST_ACTUAL_IN, THICK_2X_IN, DRESSED_DEPTH_IN, JOIST_SIZES, SOLID_BEAMS, builtUpBeamMaxSpanIn, solidBeamMaxSpanIn, solidBeamTabulated, joistDepthIn, postMaxHeightIn, POST_TABLE_MAX_AREA, type JoistSize, type PostSize, type SpeciesGroup } from "./codeTables";
 import { CEILING_FACTOR, ROOF_DEAD_PSF, RW_FACTOR, rafterMaxSpanIn, roofLoadFor, type RafterGroup, type RoofLoad } from "./roofTables";
 import { beamSpec, footingFor, type BeamSpec, type Footing } from "./frame";
-import { BUILT_UP_CHOICES, ROOF_DOOR_LEAF_FT, isPolygonShape, isSolidBeam, type BeamSize, type DeckDesign, type RoofDesign, type RoofKind, type RoofOpening, type RoofPin, type RoofSide, type WallFill, type Zone } from "./design";
+import { BRACE_ACTUAL_IN, BUILT_UP_CHOICES, ROOF_DOOR_LEAF_FT, braceSizeFor, isPolygonShape, isSolidBeam, type BeamSize, type DeckDesign, type RoofDesign, type RoofKind, type RoofOpening, type RoofPin, type RoofSide, type WallFill, type Zone } from "./design";
 import { roofLoadForSnow } from "./site";
 import type { FramingSpecies } from "./catalog";
 import { deckRate, lumberKey, type DeckRateBook } from "./rates";
@@ -471,6 +471,12 @@ export interface RoofFrame {
   pins: Array<{ id: string; side: RoofSide; x: number; y: number }>;
   /** What could not be set, and why — said, never dropped in silence. */
   notPlaced: Array<{ kind: "post" | "opening"; id: string; why: string }>;
+  /**
+   * The sides a post or an opening set by hand is measured along (2026-11-13; lib/deck/byHand): where each starts —
+   * its left end (front, back) or its house end (left, right) — the way it runs, and its length, inches. A side the
+   * roof hangs on the house by has none; a round or many-sided roof has none at all.
+   */
+  sides: Partial<Record<RoofSide, { x: number; y: number; ux: number; uy: number; lengthIn: number }>>;
   flags: {
     rafterBeyondTable: boolean;
     headerBeyondTable: string[];
@@ -586,7 +592,10 @@ export function roofRing(design: DeckDesign, deck: DeckUnder | null): { pts: V2[
   let y1: number;
   if (p.shape === "follows-deck" && deck) {
     // The full-depth leg of the deck, posts just inside its edges; on the wall the back posts give way to the ledger.
-    const z = deck.zones[0];
+    // (Where the deck runs past the house's corner — 2026-11-14 — the roof keeps to the part with wall behind it, the
+    // widest: a roof hung on the house cannot hang past it.)
+    const walled = deck.zones.filter((q) => !q.open);
+    const z = walled.length < deck.zones.length && walled.length ? walled.reduce((m, q) => (q.x1 - q.x0 > m.x1 - m.x0 + 0.5 ? q : m)) : deck.zones[0];
     x0 = z.x0 + POST_INSET_IN;
     x1 = z.x1 - POST_INSET_IN;
     y0 = wall ? 0 : Math.max(z.y0 + POST_INSET_IN, backIn);
@@ -620,9 +629,11 @@ export function roofRing(design: DeckDesign, deck: DeckUnder | null): { pts: V2[
           y0 = backIn;
         }
       }
-      // Posts stay on the deck.
-      x0 = Math.max(POST_INSET_IN, x0);
-      x1 = Math.min(dw - POST_INSET_IN, x1);
+      // Posts stay on the deck — and a roof on the wall stays on the wall, where the deck runs past the house's corner.
+      const walled = zs.filter((q) => !q.open);
+      const onWall = wall && walled.length < zs.length && walled.length > 0;
+      x0 = Math.max(POST_INSET_IN + (onWall ? Math.min(...walled.map((q) => q.x0)) : 0), x0);
+      x1 = Math.min((onWall ? Math.max(...walled.map((q) => q.x1)) : dw) - POST_INSET_IN, x1);
       // A square stays square: where the deck cut its depth, its width comes in to match, about its centre.
       if (p.shape === "square" && x1 - x0 > y1 - y0 + 0.5) {
         const mid = (x0 + x1) / 2;
@@ -1357,6 +1368,19 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
     const t = Math.max(0, Math.min(L, atIn));
     return { s: fromStart ? t : L - t, L };
   };
+  const sides: RoofFrame["sides"] = {};
+  for (const side of ["front", "left", "right", "back"] as const) {
+    const k = sideEdge(side);
+    if (k < 0) continue;
+    const A = ring[k];
+    const B = ring[(k + postEvery) % n];
+    const L = len(sub(B, A));
+    if (!(L > 1)) continue;
+    const fromStart = side === "front" || side === "back" ? A.x <= B.x : A.y <= B.y;
+    const a = fromStart ? A : B;
+    const b = fromStart ? B : A;
+    sides[side] = { x: a.x, y: a.y, ux: (b.x - a.x) / L, uy: (b.y - a.y) / L, lengthIn: L };
+  }
   const edgeOf = (k: number): UserEdge => {
     const e = userEdges.get(k) ?? { posts: [], keeps: [], opens: [], pins: [] };
     userEdges.set(k, e);
@@ -2543,6 +2567,9 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
   let braces = 0;
   let bracesLeftOut = 0;
   const bracesOff = new Set(r.bracesOff ?? []);
+  // The braces' timber (2026-11-14): the 4x4 they always were, or the builder's 6x6 or 8x8 — never larger than the post.
+  const braceNominal = braceSizeFor(r.braceSize, r.post, "4x4");
+  const braceFace = BRACE_ACTUAL_IN[braceNominal][0];
   if (r.braces) {
     for (const p of posts) {
       if (p.heightIn < BRACE_LEG_IN * 2) continue;
@@ -2564,7 +2591,7 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
             bracesLeftOut++;
             continue;
           }
-          members.push({ role: "roof-brace", nominal: "4x4", lengthIn: L, cx: ex, cy: ey, cz: under - BRACE_LEG_IN / 2, sx: L, sy: 3.5, sz: 3.5, yaw, tilt: Math.PI / 4, x0: p.x, y0: p.y, x1: p.x + u.x * d * BRACE_LEG_IN, y1: p.y + u.y * d * BRACE_LEG_IN, of: key });
+          members.push({ role: "roof-brace", nominal: braceNominal, lengthIn: L, cx: ex, cy: ey, cz: under - BRACE_LEG_IN / 2, sx: L, sy: braceFace, sz: braceFace, yaw, tilt: Math.PI / 4, x0: p.x, y0: p.y, x1: p.x + u.x * d * BRACE_LEG_IN, y1: p.y + u.y * d * BRACE_LEG_IN, of: key });
           braces++;
         }
       }
@@ -2871,6 +2898,7 @@ export function buildRoofFrame(design: DeckDesign, species: FramingSpecies, grou
     openings: openingsBuilt,
     pins: pinsBuilt,
     notPlaced,
+    sides,
     bracesLeftOut,
     postsInStair,
     flags: {

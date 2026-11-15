@@ -8,11 +8,12 @@
 
 import { DECKING, deckingProduct, treatedDecking, wallType, type DeckingProduct } from "../catalog";
 import { JOIST_SIZES } from "../codeTables";
-import { applyDeckPatch, type DeckPatch } from "../checks";
+import { applyDeckPatch, deckChecks, type DeckPatch } from "../checks";
 import {
   DECK_LIMITS,
   ELECTRICAL_LIMITS,
   FIXTURE_LABEL,
+  DOUBLE_DECK_STOREY_IN,
   LOWER_LIMITS,
   PLACEMENT_LABEL,
   ROOFING_LABEL,
@@ -26,7 +27,11 @@ import {
   defaultFixture,
   defaultStair,
   hasDeck,
+  isDoubleDeck,
   shapeAreaSqFt,
+  shapeWithFront,
+  frontParts,
+  FRONT_LIMITS,
   sizeWords,
   type DeckDesign,
   type DeckShape,
@@ -34,11 +39,12 @@ import {
   type RoofDesign,
   type RoofKind,
   type StairDesign,
+  type StairTurnKind,
   type StairSide,
 } from "../design";
 import { patchDesign, patchRoof, switchStructure } from "../edit";
 import type { FieldFocus } from "../fieldParts";
-import { HOUSE_ROOF_LABEL, QUICK_WALL_LABEL, ROOF_COLOURS, SIDINGS, houseForShape, quickWall, resizeDeckLeft, shiftHouseThings, slideDeck } from "../house";
+import { HOUSE_ROOF_LABEL, QUICK_WALL_LABEL, ROOF_COLOURS, SIDINGS, deckPast, houseForShape, pastWords, quickWall, resizeDeckLeft, setDeckPast, shiftHouseThings, slideDeck } from "../house";
 import type { DeckPriceOptions } from "../pricing";
 import { railMountLine } from "../rails";
 import { railMountFor, type RailSectionKey } from "../design";
@@ -46,7 +52,9 @@ import { DECK_SAMPLES } from "../samples";
 import { autoFixDesign, settleDesign } from "../settle";
 import { deckLoadForSnow } from "../site";
 import { buildStructure } from "../structure";
-import { COLORS, FIXTURE_SAY, type Amount, type DeckCommand, type DeckingSet, type Look, type RoofSet } from "./commands";
+import { BUILT_IN_LABEL, BUILT_IN_LIMITS, SCREEN_DEFAULT_FT, builtInWords, defaultBuiltIn, type BuiltIn } from "../builtins";
+import { COLORS, FIXTURE_SAY, type Amount, type DeckCommand, type DeckingSet, type Look, type RoofSet, type StairTurnSaid } from "./commands";
+import { stairDirAfter, stairTurnWords, type StairDir } from "../stairs";
 import { firstSentence, ftWords, halfFt, inWords } from "./words";
 
 export interface RunEnv extends DeckPriceOptions {
@@ -69,7 +77,7 @@ function carryRoof(next: DeckDesign, old: RoofDesign | null, fromStructure: stri
 }
 
 export type ViewChange = Partial<{ tab: "3d" | "plan" | "wall"; xray: boolean; night: boolean; connections: boolean; build: "play" | "stop" | "done"; full: boolean; reset: boolean; look: Look; edit: boolean }>;
-export type GoStep = "kind" | "size" | "house" | "materials" | "stairs" | "roof" | "extras" | "checks" | "package";
+export type GoStep = "kind" | "size" | "house" | "materials" | "stairs" | "accessories" | "roof" | "extras" | "checks" | "package";
 
 /** A field of the form to flash where it was changed, inside its section when the label is not unique. */
 export interface Flash {
@@ -364,9 +372,32 @@ export function runCommand(d0: DeckDesign, cmd: DeckCommand, env: RunEnv = {}): 
       } else if (cmd.kind === "curve") {
         shape = { kind: "rect", ...base, front: { kind: "curve", bulgeFt: cmd.bulgeFt ?? 2, clipFt: 2 } };
         words = "a curved front";
+      } else if (cmd.kind === "clipped" && s.kind === "wall" && s.front) {
+        // A deck in parts (2026-11-14): every corner that stands out is cut — the parts stay as they are.
+        const c = clamp(cmd.clipFt ?? 2, FRONT_LIMITS.clipFt.min, FRONT_LIMITS.clipFt.max);
+        shape = shapeWithFront(s, s.front.map((q) => ({ widthFt: q.x1Ft - q.x0Ft, yFt: q.yFt, clipLeftFt: c, clipRightFt: c })));
+        words = `every corner that stands out cut at 45°, ${ftWords(c)}`;
       } else if (cmd.kind === "clipped") {
         shape = { kind: "rect", ...base, front: { kind: "clipped", bulgeFt: 2, clipFt: cmd.clipFt ?? 2 } };
         words = "the front corners clipped at 45°";
+      } else if (cmd.kind === "parts") {
+        // THE FRONT IN PARTS (2026-11-14): from the deck's own size — the part named comes out past the rest.
+        const W = s.widthFt;
+        const near = Math.min(...frontParts(s).map((q) => q.yFt));
+        const far = clamp(near + clamp(cmd.outFt ?? 4, 1, 20), DECK_LIMITS.depthFt.min, DECK_LIMITS.depthFt.max);
+        const preset = cmd.preset ?? "t";
+        const part = halfFt(clamp(cmd.partWidthFt ?? (preset === "t" ? W / 3 : preset === "u" ? W / 4 : W / 2), FRONT_LIMITS.partFt, W - FRONT_LIMITS.partFt * (preset === "left" || preset === "right" ? 1 : 2)));
+        const list =
+          preset === "t"
+            ? [{ widthFt: (W - part) / 2, yFt: near }, { widthFt: part, yFt: far }, { widthFt: (W - part) / 2, yFt: near }]
+            : preset === "u"
+              ? [{ widthFt: part, yFt: far }, { widthFt: W - 2 * part, yFt: near }, { widthFt: part, yFt: far }]
+              : preset === "left"
+                ? [{ widthFt: part, yFt: far }, { widthFt: W - part, yFt: near }]
+                : [{ widthFt: W - part, yFt: near }, { widthFt: part, yFt: far }];
+        if (W < 3 * FRONT_LIMITS.partFt && preset !== "left" && preset !== "right") return no("It's too narrow to cut its front in three parts — make it wider first.");
+        shape = shapeWithFront(s, list);
+        words = preset === "t" ? "T-shaped" : preset === "u" ? "U-shaped" : `deeper on the ${preset}`;
       } else {
         shape = { kind: "rect", ...base };
         words = "a plain rectangle";
@@ -378,6 +409,11 @@ export function runCommand(d0: DeckDesign, cmd: DeckCommand, env: RunEnv = {}): 
       else if (cmd.kind === "L" && got.kind !== "L") return no("It's too small to cut a corner out and keep both legs at least 3 ft — make it bigger first.");
       if (cmd.kind === "curve" && got.kind === "rect" && got.front?.kind === "curve") said[0] = `A curved front, bowed out ${ftWords(got.front.bulgeFt)} at the middle.`;
       if (cmd.kind === "clipped" && got.kind === "rect" && got.front?.kind === "clipped") said[0] = `The front corners clipped ${ftWords(got.front.clipFt)} at 45°.`;
+      if (cmd.kind === "parts") {
+        if (!(got.kind === "wall" && got.front)) return no("That leaves the front straight — say how far the part comes out, at least a foot.");
+        said[0] = `Made it ${words}: ${got.front.map((q) => `${ftWords(q.x1Ft - q.x0Ft)} wide, ${ftWords(q.yFt)} out`).join("; ")} — left to right. ${Math.round(shapeAreaSqFt(got))} sq ft.`;
+        return out(next, said, { flash: [{ label: "Shape" }], light: { label: "Shape", step: "step-shape" } });
+      }
       const label = cmd.kind === "L" ? "Corner cut away" : "The front edge";
       return out(next, said, { flash: [{ label }], light: { label, step: "step-shape" } });
     }
@@ -569,10 +605,21 @@ export function runCommand(d0: DeckDesign, cmd: DeckCommand, env: RunEnv = {}): 
         return out(next, ["Took the lower level off — one level now."], { view: { reset: true } });
       }
       const L = d.lower;
-      const p: DeckPatch["lower"] = { on: cmd.on ?? L.on };
+      // A DOUBLE DECK (2026-11-13): a deck of the same size under this one. The upper deck is raised, where it must be,
+      // to leave a storey between the two.
+      if (cmd.place === "under" || (L.on && L.place === "under" && cmd.place !== "front" && (cmd.heightIn || cmd.on))) {
+        const lowerH = Math.round(clamp(cmd.heightIn ? amt(L.heightIn, cmd.heightIn) : L.heightIn, LOWER_LIMITS.heightIn.min, LOWER_LIMITS.heightIn.max));
+        const upperH = Math.max(d.heightIn, lowerH + DOUBLE_DECK_STOREY_IN);
+        const next = patchDesign(d, { heightIn: upperH, lower: { on: true, place: "under", heightIn: lowerH } }, settle);
+        if (!isDoubleDeck(next)) return no("This deck can't take a second deck under it — it needs a storey between the two.");
+        return out(next, [`A double deck: a second deck of the same size under this one, ${inWords(lowerH)} above the ground${next.heightIn !== d.heightIn ? `. The upper deck is raised to ${inWords(next.heightIn)} to leave a storey between them` : ""}. Its beams are let into the same posts, and the posts and footings are sized for both decks.`], { view: { reset: true } });
+      }
+      const p: DeckPatch["lower"] = { on: cmd.on ?? L.on, ...(cmd.place === "front" || L.place === "under" ? { place: "front" as const } : {}) };
       if (cmd.width) p.widthFt = toInch(clamp(amt(L.widthFt, cmd.width), LOWER_LIMITS.widthFt.min, LOWER_LIMITS.widthFt.max));
       if (cmd.depth) p.depthFt = toInch(clamp(amt(L.depthFt, cmd.depth), LOWER_LIMITS.depthFt.min, LOWER_LIMITS.depthFt.max));
       if (cmd.dropIn) p.dropIn = Math.round(clamp(amt(L.dropIn, cmd.dropIn), LOWER_LIMITS.dropIn.min, LOWER_LIMITS.dropIn.max) * 4) / 4;
+      // "the lower level 2 ft off the ground" — a level in front: that is its drop from the deck.
+      else if (cmd.heightIn) p.dropIn = Math.round(clamp(d.heightIn - amt(d.heightIn - L.dropIn, cmd.heightIn), LOWER_LIMITS.dropIn.min, LOWER_LIMITS.dropIn.max) * 4) / 4;
       if (cmd.align) p.align = cmd.align;
       const next = patchDesign(d, { lower: p }, settle);
       if (!next.lower.on) return no(d.shape.kind === "L" ? "An L-shaped deck can't take a lower level here — make it a rectangle first." : d.heightIn <= LOWER_LIMITS.dropIn.min + 4 ? `At ${inWords(d.heightIn)} it's too low for a step down — raise the deck first.` : "A curved front can't take a lower level — straighten it first.");
@@ -615,6 +662,9 @@ export function runCommand(d0: DeckDesign, cmd: DeckCommand, env: RunEnv = {}): 
       return out(patchDesign(d, { electrical: p }, settle), said, { flash: [{ label: "Panel to the structure" }], light: { label: "Panel to the structure", step: "step-electrical" } });
     }
     case "house": {
+      // A LOCKED WALL (2026-11-14) is not reshaped by voice either: its look still changes, its shape and its reach do
+      // not until it is unlocked. (The deck past its corner is the deck's move: the house stays — that one goes on.)
+      if (d.house.locked && (cmd.wall || cmd.widthFt || cmd.leftFt || cmd.rightFt)) return no("The house wall is locked, so it stays as it is. Tap \"Unlock the wall\" — on the drawing from above, under the 3D, or in the House step — then say it again.");
       let house = { ...d.house };
       const said: string[] = [];
       if (cmd.storeys) {
@@ -643,9 +693,38 @@ export function runCommand(d0: DeckDesign, cmd: DeckCommand, env: RunEnv = {}): 
         said.push(cmd.widthFt > d.shape.widthFt ? `The house ${ftWords(cmd.widthFt)} wide — the deck centered on it, ${ftWords(past / 2)} of wall past each end.` : "The house wall is no wider than the deck.");
       }
       if (cmd.leftFt || cmd.rightFt) {
-        if (cmd.leftFt) house = { ...house, leftFt: halfFt(clamp(amt(house.leftFt, cmd.leftFt), 0, 60)) };
-        if (cmd.rightFt) house = { ...house, rightFt: halfFt(clamp(amt(house.rightFt, cmd.rightFt), 0, 60)) };
-        said.push(`The house runs ${ftWords(house.leftFt)} past the deck on the left and ${ftWords(house.rightFt)} on the right.`);
+        // (The wall's own reach: said of an end the deck had run past, the wall is behind that end again.)
+        if (cmd.leftFt) house = { ...house, leftFt: halfFt(clamp(amt(Math.max(0, house.leftFt), cmd.leftFt), 0, 60)) };
+        if (cmd.rightFt) house = { ...house, rightFt: halfFt(clamp(amt(Math.max(0, house.rightFt), cmd.rightFt), 0, 60)) };
+        const reach = (v: number, end: string) => (v < 0 ? `the deck runs ${ftWords(-v)} past it on the ${end}` : `it runs ${ftWords(v)} past the deck on the ${end}`);
+        said.push(house.leftFt < 0 || house.rightFt < 0 ? `The house: ${reach(house.leftFt, "left")}, ${reach(house.rightFt, "right")}.` : `The house runs ${ftWords(house.leftFt)} past the deck on the left and ${ftWords(house.rightFt)} on the right.`);
+      }
+      // THE DECK PAST A CORNER OF THE HOUSE (2026-11-14 — the owner: "go back past the house, on the sides… extend to
+      // the right and to the left outside the house wall"). The house stays; the deck's end moves out past the corner
+      // and, for a wrap-around, back along the house's side. Said with no length: 6 ft past, 8 ft back.
+      let shape: DeckShape | null = null;
+      if (cmd.past) {
+        const ends = cmd.past.side === "both" ? (["left", "right"] as const) : ([cmd.past.side] as const);
+        const before = deckPast(house);
+        for (const end of ends) {
+          const now = deckPast(house);
+          const cur = end === "left" ? now.leftFt : now.rightFt;
+          const curBack = end === "left" ? now.wrapLeftFt : now.wrapRightFt;
+          const ft = cmd.past.off ? 0 : (cmd.past.ft ?? (cur > 0 ? cur : 6));
+          const back = cmd.past.off ? 0 : (cmd.past.backFt ?? (cmd.past.wrap ? (curBack > 0 ? curBack : 8) : curBack));
+          const r = setDeckPast(house, shape ?? d.shape, end, ft, back, { minWidthFt: DECK_LIMITS.widthFt.min, maxWidthFt: DECK_LIMITS.widthFt.max });
+          house = r.house;
+          shape = r.shape;
+        }
+        const fitted = patchDesign(d, { house, shape: shape ?? d.shape }, settle);
+        const after = deckPast(fitted.house);
+        const was = before.leftFt > 0 || before.rightFt > 0;
+        if (after.leftFt > 0 || after.rightFt > 0) {
+          said.push(`${pastWords(after)} There it stands on its own beam and posts — ${ftWords(fitted.shape.widthFt)} along the house now.`);
+          // (Said with no side and no length, it is the right corner at the usual size: the other choices, in a line.)
+          if (cmd.past.side === "right" && !was && cmd.past.ft === undefined && cmd.past.backFt === undefined) said.push("Say \"on the left\" or \"both sides\" for the other corner, and how many feet.");
+        } else said.push(was ? `The deck stops at the house's corner again — ${ftWords(fitted.shape.widthFt)} along the house.` : "The deck does not run past the house.");
+        return out(fitted, said, { flash: [{ label: cmd.past.side === "left" ? "Past the left corner" : "Past the right corner" }], view: { reset: true } });
       }
       const next = patchDesign(d, { house }, settle);
       return out(next, said, { flash: cmd.wall ? [{ label: "The wall's shape" }] : cmd.siding ? [{ label: "Siding" }] : cmd.roofColour ? [{ label: "Roof colour" }] : [{ label: "Storeys" }], view: { reset: true } });
@@ -666,8 +745,52 @@ export function runCommand(d0: DeckDesign, cmd: DeckCommand, env: RunEnv = {}): 
         if (cmd.drain && d.heightIn < 84) return no(`An under-deck drain makes a dry room below a high deck — this one is ${inWords(d.heightIn)} up. It needs about 7 ft under it.`);
         said.push(cmd.drain ? "An under-deck drainage system — a dry space below." : "No under-deck drainage.");
       }
+      if (cmd.skirt !== undefined) {
+        p.skirt = cmd.skirt === "none" ? undefined : cmd.skirt;
+        if (cmd.skirt === "none") said.push(d.extras.skirt ? "Took the skirting off — the deck is open underneath." : "There is no skirting on this deck.");
+        else {
+          // Said as built: how much of it, or why none could be hung.
+          const built = buildStructure(patchDesign(d, { extras: p }, settle)).skirt;
+          if (!built) return no(`Skirting needs a foot between the frame and the ground, and this deck is ${inWords(d.heightIn)} up — too low for it. Its fascia closes the edge.`);
+          said.push(`${cmd.skirt === "lattice" ? "Lattice skirting in a border" : "Skirting in the deck's own boards, laid level with gaps for air"} under ${Math.round(built.lf)} ft of open edge, up to ${built.heightIn} in. high, a hand clear of the ground${built.lowFt > 0 ? ` (left off ${Math.round(built.lowFt)} ft where the deck is too low)` : ""}. Hang one bay on hinges to get under the deck.`);
+        }
+      }
       const next = patchDesign(d, { extras: p }, settle);
-      return out(next, said, { flash: cmd.demoSqFt !== undefined ? [{ label: "Tear out an old deck" }] : [] });
+      return out(next, said, { flash: cmd.demoSqFt !== undefined ? [{ label: "Tear out an old deck" }] : cmd.skirt !== undefined ? [{ label: "Skirting under the deck" }] : [], ...(cmd.skirt && cmd.skirt !== "none" ? { view: { look: "yard" as const } } : {}) });
+    }
+    case "builtin": {
+      // A built-in bench or planter box (lib/deck/builtins): set on its edge, and said as it was built.
+      const list = [...(d.extras.builtIns ?? [])];
+      const label = BUILT_IN_LABEL[cmd.kind].toLowerCase();
+      if (cmd.op === "remove") {
+        // (Said of a bench, it takes both kinds of bench.)
+        const benchLike = (k: BuiltIn["kind"]) => (cmd.kind === "bench" || cmd.kind === "bench-back" ? k === "bench" || k === "bench-back" : k === cmd.kind);
+        const [one, many] = cmd.kind === "planter" ? ["planter box", "planter boxes"] : cmd.kind === "screen" ? ["privacy screen", "privacy screens"] : cmd.kind === "kitchen" ? ["outdoor kitchen", "outdoor kitchens"] : cmd.kind === "fire" ? ["fire table", "fire tables"] : ["bench", "benches"];
+        const left = list.filter((b) => !(benchLike(b.kind) && (!cmd.side || b.side === cmd.side)));
+        if (left.length === list.length) return no(`There's no ${one}${cmd.side ? ` along the ${cmd.side === "front" ? "front" : `${cmd.side} end`}` : ""} on this deck.`);
+        const gone = list.length - left.length;
+        return out(patchDesign(d, { extras: { builtIns: left } }, settle), [`Took ${gone === 1 ? `the ${one}` : `${gone} ${many}`} off.`]);
+      }
+      if (!hasDeck(d)) return no(`A ${label} is built into a deck's boards — this design has no deck under it.`);
+      if (list.length >= BUILT_IN_LIMITS.count) return no(`That's ${BUILT_IN_LIMITS.count} built-ins already — the most the studio draws. Take one off first.`);
+      const side = cmd.side ?? (cmd.kind === "screen" ? "left" : "front");
+      const along = side === "front" ? d.shape.widthFt : d.shape.depthFt;
+      const base = defaultBuiltIn("", cmd.kind, d.shape.widthFt);
+      // (A screen with no length said runs its whole edge.)
+      const lengthFt = cmd.lengthFt ?? (cmd.kind === "screen" ? Math.min(BUILT_IN_LIMITS.lengthFt.max, Math.max(BUILT_IN_LIMITS.lengthFt.min, halfFt(along))) : side === "front" ? base.lengthFt : Math.min(base.lengthFt, Math.max(BUILT_IN_LIMITS.lengthFt.min, halfFt(along - 2))));
+      // Toward an end of its edge: the engine keeps it on the edge, clear of the corner. (An end runs out from the house: "right" is its far, front end.)
+      // (A kitchen with no place said goes where the studio's own button puts it: toward the right of the front.)
+      const atFt = cmd.at === "left" ? lengthFt / 2 : cmd.at === "right" ? along - lengthFt / 2 : cmd.kind === "kitchen" && !cmd.side && !cmd.at ? base.atFt : along / 2;
+      let id = "";
+      for (let n2 = list.length + 1; !id; n2++) if (!list.some((b) => b.id === `b${n2}`)) id = `b${n2}`;
+      const next = patchDesign(d, { extras: { builtIns: [...list, { id, kind: cmd.kind, side, atFt, lengthFt, ...(cmd.kind === "screen" ? { heightFt: cmd.heightFt ?? SCREEN_DEFAULT_FT } : {}), ...(cmd.kind === "fire" ? { inFt: cmd.inFt ?? 6 } : {}) }] } }, settle);
+      const built = buildStructure(next).builtIns.find((b) => b.design.id === id);
+      if (!built?.built) return no(`A ${label} along the ${side === "front" ? "front" : `${side} end`} does not fit: ${built?.why ?? "no room there"}.`);
+      const words = built.kind === "fire" ? `A place for ${builtInWords(built)}` : builtInWords(built).replace(/^a /, "A ").replace(/^an /, "An ");
+      // (A kitchen or a fire table: whether the checks have a warning for it — what stands too near, what is over it.)
+      const flagged = (built.kind === "kitchen" || built.kind === "fire") && deckChecks(buildStructure(next)).some((c) => c.id === `builtin-${id}` && c.level === "warn");
+      const more = built.kind === "kitchen" ? `: 30 in. deep and 36 in. high, in the deck's own boards — about ${Math.round(built.weightLb / 10) * 10} lb with a stone top and a grill, so the ${built.sisters} joists under it are doubled. The top, the grill, gas and power are by others${flagged ? ". The checks have a warning for where it stands" : ""}` : built.kind === "fire" ? ` — the table itself is by others, and nothing is built for it. Keep 36 in. clear of anything that burns${flagged ? "; the checks name what stands nearer" : ""}. Gas only on a deck` : built.kind === "screen" ? `: the deck's own boards across ${built.posts} ${built.postSize} posts, in the railing's place there. It catches wind like a fence — about ${Math.round(built.windLb / 10) * 10} lb on each post — so every post runs down and bolts to the frame${(cmd.heightFt ?? SCREEN_DEFAULT_FT) > 6 ? "; over 6 ft, have an engineer size them" : ""}` : built.kind === "planter" ? ` in the deck's own boards, ${Math.round(built.heightIn)} in. high — about ${Math.round(built.weightLb / 10) * 10} lb full of wet soil${built.overBeam ? ", over a beam line" : "; no beam runs under it, so see the checks"}` : `: the seat 18 in. up, three boards deep, on ${built.supports} supports${built.kind === "bench-back" ? ", with a capped back 36 in. tall" : ""}`;
+      return out(next, [`${words}${more}.${built.flags.shortened && cmd.lengthFt !== undefined ? ` ${built.flags.beside ? "Beside the other built-in there is room for" : "That edge has room for"} ${Math.round((built.lengthIn / 12) * 10) / 10} ft.` : ""}${built.flags.onStair ? " It stands across a stair's top — move one of them." : ""}`], { view: { look: "yard" as const } });
     }
     case "item": {
       const items = [...d.extras.items];
@@ -1048,6 +1171,19 @@ function runDecking(d: DeckDesign, s: DeckingSet, env: RunEnv, settle: (x: DeckD
     said.push(s.border ? `A picture-frame border, ${plural(s.border, "row")} of boards along every open edge — toned a shade deeper in the 3D so the frame shows.` : "No border.");
     flash.push({ label: "Picture-frame border" });
   }
+  if (s.breakers !== undefined) {
+    // Breaker boards go with boards laid straight: asked for on a diagonal or a herringbone, the boards go straight too.
+    const straight = (p.decking?.pattern ?? d.decking.pattern) === "straight";
+    p.decking = { ...(p.decking ?? {}), breakers: s.breakers === 0 ? undefined : s.breakers, ...(s.breakers && !straight ? { pattern: "straight" as const, diagonal: false } : {}) };
+    if (s.breakers === 0) said.push(d.decking.breakers ? "No breaker boards — the rows run the deck's whole width." : "There are no breaker boards on this deck.");
+    else {
+      const built = buildStructure(patchDesign(d, p, settle)).surface;
+      if (!built?.breakers.length) return no("A breaker board does not fit this deck: the boards beside it would be shorter than 2 ft, or its front is bowed or clipped.");
+      const longestStockFt = Math.max(...built.product.lengthsFt);
+      said.push(`${built.breakers.length === 1 ? "A breaker board across the middle" : "Two breaker boards at the thirds"}, out from the house: every row stops against ${built.breakers.length === 1 ? "it" : "them"}, so the longest board in a row is ${ftWords(Math.round((built.longestRowIn / 12) * 4) / 4)}${built.longestRowIn > longestStockFt * 12 + 0.5 ? ` — still longer than a ${longestStockFt}-ft board, so those rows are spliced` : " and no row has a butt joint"}. Two joists and blocking go under ${built.breakers.length === 1 ? "it" : "each"}.${!straight ? " The boards are laid straight for it." : ""}`);
+    }
+    flash.push({ label: "Breaker boards" });
+  }
   if (s.fastening) {
     p.decking = { ...(p.decking ?? {}), fastening: s.fastening };
     const prod = product ?? now;
@@ -1117,6 +1253,41 @@ function runRail(d: DeckDesign, s: import("./commands").RailSet, settle: (x: Dec
   return out(next, said, { touched, flash: [{ label: s.mount ? "How the posts are mounted" : s.heightIn ? "Rail height" : "Your railing" }] });
 }
 
+/**
+ * A landing on a stair, as it was said (2026-11-14). "Add" — or a height, or the first time a turn is asked for — puts a
+ * new landing in the middle of the tallest flight (or at the height said); a turn alone re-turns the last landing.
+ * Left and right are as the deck is SEEN from the yard, so they are worked out from the way the flight above runs.
+ */
+function stairTurned(d: DeckDesign, st: StairDesign, turn: StairTurnSaid, atIn?: number): StairDesign {
+  if (turn === "remove") return { ...st, landings: [] };
+  const b = buildStructure(d).stairs.find((x) => x.design.id === st.id);
+  if (!b || b.kind !== "flight" || !b.flights.length) return st;
+  const mine = b.landings.filter((l) => !l.auto);
+  const fresh = turn === "add" || atIn !== undefined || mine.length === 0;
+  const startDir: StairDir = st.side === "front" ? "out" : st.side;
+  const dirOfFlight = (k: number): StairDir => (k <= 0 ? startDir : stairDirAfter(b.landings[k - 1]?.dir ?? startDir, b.landings[k - 1]?.turn ?? "straight"));
+  let landings = st.landings;
+  let id: string;
+  let dirIn: StairDir;
+  if (fresh) {
+    if (landings.length >= STAIR_LIMITS.landings) return st;
+    const k = atIn !== undefined ? Math.max(0, b.flights.findIndex((f) => atIn < f.topIn && atIn > f.topIn - f.riseIn)) : b.flights.reduce((m, f, i) => (f.riseIn > b.flights[m].riseIn ? i : m), 0);
+    const f = b.flights[k];
+    id = `t${[1, 2, 3, 4, 5, 6, 7, 8, 9].find((n) => !landings.some((l) => l.id === `t${n}`)) ?? 9}`;
+    dirIn = dirOfFlight(k);
+    landings = [...landings, { id, heightIn: Math.round(atIn ?? f.topIn - f.riseIn / 2), turn: "straight" }];
+  } else {
+    const last = mine[mine.length - 1];
+    id = last.id;
+    dirIn = last.dir;
+  }
+  // "Add" alone: the first landing turns toward the open yard, a later one runs straight on.
+  const said: StairTurnSaid = turn === "add" ? (mine.length ? "straight" : st.side === "front" ? (st.atFt * 12 < (d.shape.widthFt * 12) / 2 ? "left" : "right") : "yard") : turn;
+  const wanted: StairDir | null = said === "left" ? "left" : said === "right" ? "right" : said === "house" ? "in" : said === "yard" ? "out" : null;
+  const rel: StairTurnKind = said === "straight" ? "straight" : said === "back" ? "back-left" : (["left", "right"] as const).find((q) => stairDirAfter(dirIn, q) === wanted) ?? (said === "left" || said === "right" ? said : "straight");
+  return { ...st, landings: landings.map((l) => (l.id === id ? { ...l, turn: rel } : l)) };
+}
+
 function runStairs(d: DeckDesign, cmd: Extract<DeckCommand, { do: "stairs" }>, settle: (x: DeckDesign) => DeckDesign, out: Out, no: No): Outcome {
   if (!hasDeck(d)) return no("There's no deck to step down from.");
   const list = d.stairs;
@@ -1130,7 +1301,7 @@ function runStairs(d: DeckDesign, cmd: Extract<DeckCommand, { do: "stairs" }>, s
   if (cmd.op === "add") {
     if (list.length >= STAIR_LIMITS.count) return no(`That's the most stairs a deck takes here (${STAIR_LIMITS.count}).`);
     if (cmd.level === "lower" && !d.lower.on) return no("There's no lower level yet — say \"add a lower level\" first.", { pending: { ask: "Add a lower level?", yes: [{ do: "lower", on: true }] } });
-    if (cmd.wrap && d.heightIn > 24) return no(`Box steps wrap a low deck — up to 3 steps. At ${inWords(d.heightIn)} it needs a regular stair. Add one down the front?`, { pending: { ask: "A regular stair down the front?", yes: [{ do: "stairs", op: "add", side: "front" }] } });
+    if (cmd.wrap && d.heightIn > 52) return no(`Steps that wrap the deck go seven risers at most — about 4 ft. At ${inWords(d.heightIn)} it needs a regular stair. Add one down the front?`, { pending: { ask: "A regular stair down the front?", yes: [{ do: "stairs", op: "add", side: "front" }] } });
     const sides: StairSide[] = cmd.count === 2 && !cmd.side ? ["left", "right"] : Array.from({ length: Math.max(1, Math.min(cmd.count ?? 1, STAIR_LIMITS.count - list.length)) }, () => cmd.side ?? (cmd.wrap ? "front" : "front"));
     let stairs = [...list];
     const added: StairDesign[] = [];
@@ -1190,6 +1361,7 @@ function runStairs(d: DeckDesign, cmd: Extract<DeckCommand, { do: "stairs" }>, s
     if (cmd.landing) s2.landing = cmd.landing;
     if (cmd.handrail) s2.handrail = cmd.handrail;
     if (cmd.level) s2.level = cmd.level;
+    if (cmd.turn) s2 = stairTurned(d, s2, cmd.turn, cmd.turnAtIn);
     return s2;
   });
   const next = patchDesign(d, { stairs }, settle);
@@ -1205,6 +1377,13 @@ function runStairs(d: DeckDesign, cmd: Extract<DeckCommand, { do: "stairs" }>, s
   if (cmd.width) said.push(`Stairs ${ftWords(t.widthFt)} wide.`);
   if (cmd.wrap !== undefined) said.push(t.wrap ? "Box steps along the front." : "A regular flight.");
   if (cmd.landing) said.push(cmd.landing === "pad" ? "Onto a new concrete pad." : cmd.landing === "patio" ? "Onto the existing patio." : "Onto pavers.");
+  if (cmd.turn) {
+    const built = buildStructure(next).stairs.find((x) => x.design.id === t.id);
+    const mine = built?.landings.filter((l) => !l.auto) ?? [];
+    if (cmd.turn === "remove") said.push(built?.landings.length ? "Took the landings out — the code's own stays: this stair climbs more than 12 ft 3 in." : "Took the landings out: one straight flight.");
+    else if (!mine.length) said.push("There's no room for a landing on that stair — it needs a foot clear of the deck and the ground.");
+    else said.push(`${mine.length === 1 ? "A landing" : `${mine.length} landings`} — ${mine.map((l) => `${inWords(Math.round(l.heightIn))} up, then ${stairTurnWords(l.dir, l.turn).toLowerCase()}`).join("; ")}. ${built!.flights.length} flights, ${built!.risers} risers; each landing on its own posts.`);
+  }
   if (cmd.handrail) said.push(cmd.handrail === "both" ? "Handrails on both sides." : cmd.handrail === "one" ? "One handrail." : cmd.handrail === "none" ? "No handrail — the code wants one at 4 risers or more." : "Handrails where the code wants them.");
   const detail = stairWords(next, t.id);
   if (detail && (cmd.width || cmd.side)) said.push(`${detail[0].toUpperCase()}${detail.slice(1)}.`);

@@ -12,7 +12,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AudioLines, Copy, MessageSquareText, Phone } from "lucide-react";
-import { clearAssistantPin, loadAssistantPhone, setAssistantOpen, setAssistantPhoneOn, setAssistantPin, setAssistantPrefs, startAssistantLink, unlinkAssistantPhone, type AssistantPhoneView } from "@/actions/assistant";
+import { clearAssistantPin, loadAssistantPhone, setAssistantOpen, setAssistantPhoneOn, setAssistantPin, setAssistantPrefs, setAssistantSpeed, startAssistantLink, unlinkAssistantPhone, type AssistantPhoneView } from "@/actions/assistant";
 import type { AssistantPrefs } from "@/lib/assistant/prefs";
 import { BRIEFING_TIMES, SPEECH_LANGS, clock12, type SpeechLang } from "@/lib/assistant/shared";
 import { openAssistant } from "./events";
@@ -34,6 +34,8 @@ export function AssistantSettings({ mobile = false }: { mobile?: boolean }) {
   // The PIN for money (2026-11-05): typed once here, hashed on the server, never shown again.
   const [pinDraft, setPinDraft] = useState("");
   const [pinOpen, setPinOpen] = useState(false);
+  // The speed test's own words (2026-11-13): the box's text while it is edited; null = as saved.
+  const [wordsDraft, setWordsDraft] = useState<string | null>(null);
   const wasLinked = useRef<string | null>(null);
 
   const load = useCallback(() => {
@@ -86,6 +88,13 @@ export function AssistantSettings({ mobile = false }: { mobile?: boolean }) {
     });
 
   const savePrefs = (next: AssistantPrefs) => run(async () => setView(await setAssistantPrefs(next)));
+  /** The speed test: the engine picked, with the words as they stand in the box. */
+  const saveSpeed = (engine: "new" | "classic") =>
+    run(async () => {
+      const next = await setAssistantSpeed({ engine, words: wordsDraft ?? view?.speed?.words.join("\n") ?? "" });
+      setView(next);
+      setWordsDraft(null);
+    });
   // A stored time off the list (an older value) reads and saves as the default, so a switch never fails on it.
   const briefTime = view && BRIEFING_TIMES.includes(view.prefs.briefing.time) ? view.prefs.briefing.time : "06:30";
 
@@ -142,6 +151,44 @@ export function AssistantSettings({ mobile = false }: { mobile?: boolean }) {
             >
               {view.preview.openToAll ? "Back to platform admins only" : "Open the AI Operator to every account"}
             </button>
+          </div>
+        ) : null}
+
+        {view.speed ? (
+          <div className={s.section} data-operator-speed-card>
+            <h4 className={s.h}>Speed test (platform admins only)</h4>
+            <p className={s.text}>
+              {view.speed.engine === "new"
+                ? "You are on the new engine: it listens through JobFlex's own ears on every device, knows your company's names and streets, thinks on OpenAI's newest fast model and waits less after you stop talking. Each answer shows how long it took."
+                : "You are on the engine before. Switch to the new one to compare."}
+            </p>
+            <div className={s.actions} role="group" aria-label="Operator engine">
+              <button type="button" className={view.speed.engine === "new" ? s.primary : s.secondary} aria-pressed={view.speed.engine === "new"} disabled={busy} data-operator-engine="new" onClick={() => saveSpeed("new")}>
+                New engine
+              </button>
+              <button type="button" className={view.speed.engine === "classic" ? s.primary : s.secondary} aria-pressed={view.speed.engine === "classic"} disabled={busy} data-operator-engine="classic" onClick={() => saveSpeed("classic")}>
+                Engine before
+              </button>
+            </div>
+            <label className={s.rowMain} htmlFor="operator-my-words">
+              My words
+            </label>
+            <p className={s.rowSub}>Names, brands and streets it gets wrong — one a line. The new ears are given them, with your crew, your newest clients and their streets.</p>
+            <textarea
+              id="operator-my-words"
+              className={s.words}
+              rows={4}
+              maxLength={4000}
+              placeholder={"Snohomish\nPresidential shingles\nDmitriy"}
+              value={wordsDraft ?? view.speed.words.join("\n")}
+              disabled={busy}
+              onChange={(e) => setWordsDraft(e.target.value)}
+            />
+            <div className={s.actions}>
+              <button type="button" className={s.secondary} disabled={busy || wordsDraft === null} data-operator-words-save onClick={() => saveSpeed(view.speed!.engine)}>
+                Save my words
+              </button>
+            </div>
           </div>
         ) : null}
 

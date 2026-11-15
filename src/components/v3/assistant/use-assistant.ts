@@ -11,6 +11,10 @@
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { answerAssistant, askAssistant, loadAssistantFeed, loadAssistantTasks } from "@/actions/assistant";
 import { DEFAULT_SPEECH_LANG, isSpeechLang, type AssistantFeed, type FeedAction, type FeedMessage, type SpeechLang } from "@/lib/assistant/shared";
+import type { SpeedReadout } from "@/lib/assistant/words";
+
+/** What the ears say as they hand a spoken request on (use-deck-speech, onHandOn). */
+type HandOn = { sinceVoiceMs: number | null; heardMs: number | null; ears: "meter" | "timed"; rest: boolean };
 
 export type AssistantState = {
   feed: AssistantFeed | null;
@@ -33,6 +37,14 @@ export type AssistantState = {
   /** The language they speak to it in (Settings → AI Operator), remembered on this device so the ears have it before
    *  the conversation loads; every feed that arrives refreshes it. */
   lang: SpeechLang;
+  /** The new engine is on for this person (the speed test, platform admins): the ears go through the server on every
+   *  device and wait less. Remembered on this device, like the language, so the ears have it before the feed loads. */
+  fast: boolean;
+  /** The last turn as it was timed — shown while the new engine is on. */
+  speed: SpeedReadout | null;
+  /** The ears are handing a request on (their timing of it), and a reply's sound started. */
+  noteHandOn: (t: HandOn) => void;
+  noteVoiceStart: () => void;
   load: () => void;
   loadTasks: () => void;
   /** Sends a request; the reply's words, or null when it didn't go through. A build's first words come back at once.
@@ -90,6 +102,33 @@ function rememberLang(lang: SpeechLang) {
   window.dispatchEvent(new Event(LANG_EVENT));
 }
 
+const FAST_KEY = "jf-operator-fast";
+const FAST_EVENT = "jf-operator-fast";
+function readFast(): boolean {
+  try {
+    return typeof window !== "undefined" && window.localStorage.getItem(FAST_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+function subscribeFast(onChange: () => void) {
+  window.addEventListener(FAST_EVENT, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener(FAST_EVENT, onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+function rememberFast(fast: boolean) {
+  if (readFast() === fast) return;
+  try {
+    window.localStorage.setItem(FAST_KEY, fast ? "1" : "0");
+  } catch {
+    /* no storage here */
+  }
+  window.dispatchEvent(new Event(FAST_EVENT));
+}
+
 export function useAssistant(): AssistantState {
   const [feed, setFeed] = useState<AssistantFeed | null>(null);
   const [pending, setPending] = useState<string | null>(null);
@@ -100,6 +139,20 @@ export function useAssistant(): AssistantState {
   const [tasks, setTasks] = useState<FeedAction[] | null>(null);
   const muted = useSyncExternalStore(subscribeMuted, readMuted, () => false);
   const lang = useSyncExternalStore(subscribeLang, readLang, () => DEFAULT_SPEECH_LANG);
+  const fast = useSyncExternalStore(subscribeFast, readFast, () => false);
+  const [speed, setSpeed] = useState<SpeedReadout | null>(null);
+  /** The ears' last hand-on (and when), and when the last answer arrived — the readout's two ends. */
+  const handOn = useRef<(HandOn & { at: number }) | null>(null);
+  const answeredAt = useRef(0);
+  const noteHandOn = useCallback((t: HandOn) => {
+    handOn.current = { ...t, at: Date.now() };
+  }, []);
+  const noteVoiceStart = useCallback(() => {
+    if (!answeredAt.current) return;
+    const voiceMs = Date.now() - answeredAt.current;
+    answeredAt.current = 0;
+    setSpeed((s) => (s && s.voiceMs === null ? { ...s, voiceMs } : s));
+  }, []);
   const loading = useRef(false);
   const runs = useRef(0);
   const out = useRef(false);
@@ -118,6 +171,7 @@ export function useAssistant(): AssistantState {
   const takeFeed = useCallback((f: AssistantFeed) => {
     setFeed(f);
     rememberLang(f.lang);
+    rememberFast(f.fast === true);
   }, []);
 
   const load = useCallback(() => {
@@ -184,12 +238,18 @@ export function useAssistant(): AssistantState {
       setPending(t);
       setError(null);
       try {
+        const asked = Date.now();
+        // The ears handed this on a moment ago (a spoken turn): their timing belongs to it.
+        const ears = opts?.spoken && handOn.current && asked - handOn.current.at < 4000 ? handOn.current : null;
+        handOn.current = null;
         const r = await askAssistant({ text: t, ...(opts?.spoken ? { spoken: true } : {}) });
         if (!r.ok) {
           setError(r.error);
           return null;
         }
         takeFeed(r.feed);
+        answeredAt.current = r.speed ? Date.now() : 0;
+        setSpeed(r.speed ? { sentMs: ears?.sinceVoiceMs ?? null, heardMs: ears?.heardMs ?? null, answeredMs: Date.now() - asked, voiceMs: null, ears: ears?.ears, rest: ears?.rest, server: r.speed } : null);
         if (r.running) void runBuild(r.running, r.feed);
         return r.reply;
       } catch {
@@ -228,7 +288,7 @@ export function useAssistant(): AssistantState {
     [takeFeed],
   );
 
-  return { feed, pending, busy, isBusy, building, landed, error, tasks, muted, setMuted, lang, load, loadTasks, ask, answer };
+  return { feed, pending, busy, isBusy, building, landed, error, tasks, muted, setMuted, lang, fast, speed, noteHandOn, noteVoiceStart, load, loadTasks, ask, answer };
 }
 
 /** A reply as it is read out: the read-back's tap prompt becomes a spoken one, a dash range "to", money in whole

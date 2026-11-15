@@ -20,6 +20,9 @@
 
 import { PIER_BLOCK, STOCK_LENGTHS_FT, type DeckFrame, type Stick, type StickRole } from "./frame";
 import type { DeckSurface } from "./surface";
+import { SKIRT_GAP_IN } from "./skirt";
+import { SCREEN_GAP_IN } from "./builtins";
+import { finishFasciaKey, finishKey, finishProduct } from "./finish";
 import { LEDGER_FASTENER_LABEL, ftIn, type LedgerFastener } from "./codeTables";
 import { POST_HARDWARE_FACTOR, STAINLESS_FACTOR, lumberKey, tubeFactor } from "./rates";
 import { isCompositeFraming } from "./catalog";
@@ -32,7 +35,7 @@ import { BOX_FRAME_NOMINAL, STRINGER_NOMINAL } from "./stairs";
 import { BALUSTER_NOMINAL, METAL_BALUSTER_SPACING_IN, RAIL_CAP_NOMINAL, RAIL_POST_NOMINAL, RAIL_TOP_NOMINAL, infillWords, railHeldWords, railNamed } from "./rails";
 import { FIXTURE_LABEL, type FixtureKind } from "./design";
 
-export type BomStep = "footings" | "ledger" | "framing" | "decking" | "fascia" | "stairs" | "rails" | "drainage" | "slab" | "roof-posts" | "roof-frame" | "roof-deck" | "roofing" | "trim" | "ceiling" | "gutters" | "walls" | "cupola" | "electrical" | "own";
+export type BomStep = "footings" | "ledger" | "framing" | "decking" | "fascia" | "stairs" | "rails" | "builtins" | "drainage" | "slab" | "roof-posts" | "roof-frame" | "roof-deck" | "roofing" | "trim" | "ceiling" | "gutters" | "walls" | "cupola" | "electrical" | "own";
 export const BOM_STEP_LABEL: Record<BomStep, string> = {
   footings: "Footings and posts",
   ledger: "Ledger and flashing",
@@ -41,6 +44,7 @@ export const BOM_STEP_LABEL: Record<BomStep, string> = {
   fascia: "Fascia",
   stairs: "Stairs",
   rails: "Railing",
+  builtins: "Benches and planters",
   drainage: "Under-deck drainage",
   slab: "Concrete slab",
   "roof-posts": "Roof posts",
@@ -55,7 +59,7 @@ export const BOM_STEP_LABEL: Record<BomStep, string> = {
   electrical: "Electrical and accessories",
   own: "Your own items",
 };
-export const BOM_STEP_ORDER: readonly BomStep[] = ["slab", "footings", "ledger", "framing", "decking", "fascia", "stairs", "rails", "drainage", "roof-posts", "roof-frame", "roof-deck", "roofing", "trim", "ceiling", "gutters", "walls", "cupola", "electrical", "own"];
+export const BOM_STEP_ORDER: readonly BomStep[] = ["slab", "footings", "ledger", "framing", "decking", "fascia", "stairs", "rails", "builtins", "drainage", "roof-posts", "roof-frame", "roof-deck", "roofing", "trim", "ceiling", "gutters", "walls", "cupola", "electrical", "own"];
 
 export interface BomLine {
   id: string;
@@ -291,6 +295,8 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
     hw("post-bases", "footings", ocPost ? "Post bases for 3-ply 2x6 OC posts (4 1/2 × 5 1/2 in.), 2,000-lb uplift" : `Post bases, ${design.framing.post}`, deckBases, "hw.postBase", postFactor);
     hw("anchor-bolts", "footings", "Anchor bolts for the post bases", poured.length, "hw.anchorBolt");
     hw("post-caps", "footings", ocPost ? "Beam-to-post caps for 3-ply OC beams, 2,000-lb uplift" : `Post caps, ${design.framing.post}`, hardware.postCaps, "hw.postCap", postFactor);
+    // A double deck's lower floor (2026-11-13): each beam sits in a seat let into a post of the upper deck, through-bolted.
+    hw("beam-seats", "framing", "Through bolts, 1/2 in. with washers and nuts — the lower deck's beams to the posts", hardware.beamSeats * 2, "hw.bolt", 1, "ea", `two at each of the ${hardware.beamSeats} seats let into the posts`);
 
     // The ledger: its fasteners, the flashing over it, the membrane behind and above, the ties to the house.
     const ledgerFasteners = frame.ledgers.reduce((a, l) => a + l.fasteners, 0);
@@ -348,7 +354,12 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
     }
     // A border in a second colour is its own order, named with its colour (2026-11-10).
     for (const st of surface.borderStock) {
-      push({ id: `boards-border-${st.lengthFt}`, step: "decking", kind: "boards", label: `${surface.product.border?.label ?? surface.product.label} × ${st.lengthFt} ft — border`, qty: st.count, unit: "pcs", note: `${surface.border === 2 ? "double" : "single"} picture-frame border, ${Math.round(surface.borderLf)} ft of board`, rateKey: `deck.${surface.product.id}`, rateQty: st.count * st.lengthFt, factor: 1 });
+      push({ id: `boards-border-${st.lengthFt}`, step: "decking", kind: "boards", label: `${surface.product.border?.label ?? surface.product.label} × ${st.lengthFt} ft — border`, qty: st.count, unit: "pcs", note: [surface.border ? `${surface.border === 2 ? "double" : "single"} picture-frame border, ${Math.round(surface.borderLf)} ft of board` : "", surface.breakers.length ? `${surface.breakers.length === 1 ? "one breaker board" : "two breaker boards"}, ${Math.round(surface.breakerLf)} ft` : ""].filter(Boolean).join("; "), rateKey: `deck.${surface.product.id}`, rateQty: st.count * st.lengthFt, factor: 1 });
+    }
+    // What a breaker board lies on (2026-11-14): a joist under each row of board ends, and blocks between the two.
+    if (surface.breakerBackingIn.length) {
+      const bk = lfOf(surface.breakerBackingIn, [8, 10, 12, 16, 20]);
+      lumber("framing", "framing under the breaker boards", frame.joistSize, bk.stockFt, bk.boards, false, `${surface.breakers.length === 1 ? "one breaker" : "two breakers"}: a joist under each row of board ends and one length cut into blocks between them`, "breaker-backing");
     }
     hw("deck-fasteners", "decking", surface.fastening === "hidden" ? "Hidden clips and screws" : "Deck screws", Math.round(frame.areaSqFt), surface.fastening === "hidden" ? "fast.hidden" : "fast.screws", 1, "sq ft", surface.fastening === "hidden" ? `about ${surface.crossings} clips` : `about ${surface.crossings * 2} screws`);
     if (surface.fascia.on) {
@@ -357,6 +368,88 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
     }
     if (design.extras.underDeckDrain && !lower) {
       push({ id: "under-deck-drain", step: "drainage", kind: "hardware", label: "Under-deck drainage: troughs, gutter and downspout", qty: Math.round(frame.areaSqFt), unit: "sq ft", note: "a dry room under the deck", rateKey: "trim.underDeckDrain", rateQty: Math.round(frame.areaSqFt), factor: 1 });
+    }
+  }
+
+  /* ── Skirting under the deck (2026-11-14; lib/deck/skirt) ───────────── */
+  // Bought with the fascia, priced on a line of its own (every id here says "skirt").
+  if (s.skirt) {
+    const sk = s.skirt;
+    const where = `${Math.round(sk.lf)} ft of open edge, up to ${sk.heightIn} in. high`;
+    if (sk.kind === "lattice") {
+      push({ id: "skirt-panels", step: "fascia", kind: "boards", label: "Skirting: lattice in a border, by the bay", qty: Math.ceil(sk.sqFt), unit: "sq ft", note: where, rateKey: "trim.lattice", rateQty: sk.sqFt, factor: 1 });
+    } else if (s.surface) {
+      // The deck's own boards, 12-footers, a tenth over for the cuts.
+      const boards = Math.ceil((sk.boardLf * 1.1) / 12 - 1e-9);
+      push({ id: "skirt-boards", step: "fascia", kind: "boards", label: `${s.surface.product.label} × 12 ft — skirting`, qty: boards, unit: "pcs", note: `${where}; laid level, ${SKIRT_GAP_IN}-in. gaps`, rateKey: `deck.${s.surface.product.id}`, rateQty: boards * 12, factor: 1 });
+    }
+    lumber("fascia", "skirting frame", "2x4", 8, Math.ceil((sk.frameLf * 1.1) / 8 - 1e-9), true, `a rail under the rim, one a hand off the ground, an upright every ${sk.kind === "boards" ? 2 : 4} ft`, "skirt-frame");
+  }
+
+  /* ── Built-in benches and planter boxes (2026-11-14; lib/deck/builtins) ── */
+  // The deck's own boards and fascia, treated legs and frames; every id says "bench" or "planter" (the price's two lines).
+  // BOARDS OF THEIR OWN (2026-11-14; lib/deck/finish): the built-ins in each board are bought as a line of their own —
+  // the deck's boards first under the ids they always had, then each other board, its id keyed by line and colour.
+  const ownBoards = new Map<string, typeof s.builtIns>();
+  for (const b of s.builtIns) {
+    const k = b.design.finish ? finishKey(b.design.finish) : "";
+    ownBoards.set(k, [...(ownBoards.get(k) ?? []), b]);
+  }
+  if (s.surface && s.frame) for (const [boardKey, inBoard] of [...ownBoards].sort((x, y) => (x[0] === "" ? -1 : y[0] === "" ? 1 : x[0].localeCompare(y[0])))) {
+    const product = finishProduct(s.surface.product, inBoard[0].design.finish);
+    const fasciaKey = finishFasciaKey(product);
+    const own = boardKey ? `-${boardKey}` : "";
+    const benches = inBoard.filter((b) => b.built && (b.kind === "bench" || b.kind === "bench-back"));
+    const screens = inBoard.filter((b) => b.built && b.kind === "screen");
+    const planters = inBoard.filter((b) => b.built && b.kind === "planter");
+    const tenth = (lf: number, stockFt: number) => Math.ceil((lf * 1.1) / stockFt - 1e-9);
+    const sumOf = (list: typeof benches, f: (b: (typeof benches)[number]) => number) => list.reduce((a, b) => a + f(b), 0);
+    if (benches.length) {
+      const backs = benches.filter((b) => b.kind === "bench-back").length;
+      const ft = Math.round(sumOf(benches, (b) => b.lengthIn) / 12);
+      const boards = tenth(sumOf(benches, (b) => b.boardLf), 12);
+      push({ id: `bench-boards${own}`, step: "builtins", kind: "boards", label: `${product.label} × 12 ft — bench seats${backs ? " and backs" : ""}`, qty: boards, unit: "pcs", note: `${benches.length === 1 ? "one bench" : `${benches.length} benches`}, ${ft} ft in all`, rateKey: `deck.${product.id}`, rateQty: boards * 12, factor: 1 });
+      const aprons = tenth(sumOf(benches, (b) => b.apronLf), 12);
+      push({ id: `bench-apron${own}`, step: "builtins", kind: "boards", label: `Fascia, ${fasciaKey === "fascia.composite" ? "composite" : "wood"} 1x6 × 12 ft — bench aprons`, qty: aprons, unit: "pcs", note: "under the seat's edge all round", rateKey: fasciaKey, rateQty: aprons * 12, factor: 0.6 });
+      lumber("builtins", "bench legs and back posts", "4x4", 8, tenth(sumOf(benches, (b) => b.postLf), 8), false, "two legs to a support, a support every 4 ft", "bench-posts");
+      lumber("builtins", "bench cleats", "2x4", 8, tenth(sumOf(benches, (b) => b.frameLf), 8), false, "one across each pair of legs", "bench-cleats");
+      const supports = sumOf(benches, (b) => b.supports);
+      lumber("builtins", "blocking under the benches", s.frame.joistSize, frameStocks[0], tenth((supports * 2 * s.frame.spacingIn) / 12, frameStocks[0]), false, `two blocks between the joists under each of the ${supports} supports`, "bench-blocking", oc);
+    }
+    if (screens.length) {
+      const boards = tenth(sumOf(screens, (b) => b.boardLf), 12);
+      push({ id: `screen-boards${own}`, step: "builtins", kind: "boards", label: `${product.label} × 12 ft — privacy screen`, qty: boards, unit: "pcs", note: `${Math.round(sumOf(screens, (b) => b.sqFt))} sq ft of screen: boards across the posts ${SCREEN_GAP_IN} in. apart, a cap board on top`, rateKey: `deck.${product.id}`, rateQty: boards * 12, factor: 1 });
+      // Posts in one piece from under the deck to the cap, each in the stock length that covers it.
+      for (const size of ["4x4", "6x6"] as const) {
+        const of = screens.filter((b) => b.postSize === size);
+        const count = sumOf(of, (b) => b.posts);
+        if (!count) continue;
+        const longest = Math.max(...of.map((b) => b.postLf / b.posts));
+        const stockFt = [8, 10, 12, 16].find((v) => v >= longest) ?? 16;
+        lumber("builtins", "privacy screen posts", size, stockFt, count, false, "one piece from under the deck to the cap", "screen-posts");
+        hw("screen-post-bolts", "builtins", "1/2-in. through-bolts — privacy screen posts to the frame", count * 2, "hw.bolt", 1, "ea", "two to a post, through solid blocking");
+      }
+      const posts = sumOf(screens, (b) => b.posts);
+      lumber("builtins", "blocking behind the screen posts", s.frame.joistSize, frameStocks[0], tenth((posts * 2 * s.frame.spacingIn) / 12, frameStocks[0]), false, `two blocks at each of the ${posts} posts`, "screen-blocking", oc);
+    }
+    // (A kitchen island is clad in the deck's own boards: it is counted once, with them.)
+    const kitchens = inBoard.filter((b) => b.built && b.kind === "kitchen");
+    if (kitchens.length) {
+      const boards = tenth(sumOf(kitchens, (b) => b.boardLf), 12);
+      push({ id: "kitchen-boards", step: "builtins", kind: "boards", label: `${product.label} × 12 ft — outdoor kitchen island`, qty: boards, unit: "pcs", note: `${Math.round(sumOf(kitchens, (b) => b.lengthIn) / 12)} ft of island, clad on all four sides`, rateKey: `deck.${product.id}`, rateQty: boards * 12, factor: 1 });
+      lumber("builtins", "outdoor kitchen frame", "2x4", 8, tenth(sumOf(kitchens, (b) => b.frameLf), 8), false, "plates top and bottom, an upright every 16 in.", "kitchen-frame");
+      // The joists under it, doubled their whole length — one more of each, in the stock that covers it.
+      const sisters = sumOf(kitchens, (b) => b.sisters);
+      if (sisters) {
+        const each = sumOf(kitchens, (b) => b.sisterLf) / sisters;
+        const stockFt = frameStocks.find((v) => v >= each) ?? frameStocks[frameStocks.length - 1];
+        lumber("builtins", "joists doubled under the outdoor kitchen", s.frame.joistSize, stockFt, Math.ceil((sisters * each) / stockFt - 1e-9), false, `${sisters} joists under the island, each with a sister its whole length`, "kitchen-sisters", oc);
+      }
+    }
+    if (planters.length) {
+      const boards = tenth(sumOf(planters, (b) => b.boardLf), 12);
+      push({ id: `planter-boards${own}`, step: "builtins", kind: "boards", label: `${product.label} × 12 ft — planter boxes`, qty: boards, unit: "pcs", note: `${planters.length === 1 ? "one box" : `${planters.length} boxes`}: three boards high, a cap board round the rim`, rateKey: `deck.${product.id}`, rateQty: boards * 12, factor: 1 });
+      lumber("builtins", "planter frames", "2x4", 8, tenth(sumOf(planters, (b) => b.frameLf), 8), false, "an upright at each corner and every 32 in., two sleepers under the box", "planter-frame");
     }
   }
 
@@ -392,6 +485,15 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
         const fb = fts.reduce((a, f) => a + f.bags, 0);
         if (fb) push({ id: "stair-footing-concrete", step: "stairs", kind: "concrete", label: "Concrete mix for the stair footings, 80-lb bags", qty: fb, unit: "bags", rateKey: "conc.bag", rateQty: fb, factor: 1 });
       }
+    } else if (st.wide) {
+      // WIDE STEPS ON STRINGERS (2026-11-14; more than three risers): cut stringers along every edge the steps follow,
+      // their tops on connectors at the rim, their feet on a treated sleeper over gravel.
+      const stringers = lfOf(new Array<number>(st.stringers.count).fill(st.stringers.lengthIn), [10, 12, 14, 16, 18, 20]);
+      lumber("stairs", "stair stringers", STRINGER_NOMINAL, stringers.stockFt, stringers.boards, true, `${st.stringers.count} cut, ${ftIn(st.stringers.lengthIn)} each, ${st.stringers.spacingIn} in. apart along ${Math.round(st.wide.lengthIn / 12)} ft of the deck's edge${st.wide.hips ? `, ${st.wide.hips} of them along the corners' mitres` : ""}`, "stringer");
+      hw("stringer-connectors", "stairs", "Stair stringer connectors", st.hardware.stringerConnectors, "hw.stringerConnector");
+      const sleeper = Math.ceil((st.wide.sleeperLf * 1.05) / 12 - 1e-9);
+      if (sleeper > 0) lumber("stairs", "sleeper under the steps' feet", "2x6", 12, sleeper, true, `${Math.round(st.wide.sleeperLf)} ft along the lowest step, on compacted gravel`, "kicker");
+      push({ id: "box-gravel", step: "stairs", kind: "concrete", label: "Gravel base under the steps", qty: st.gravelSqFt, unit: "sq ft", rateKey: "conc.gravel", rateQty: st.gravelSqFt, factor: 1 });
     } else {
       const frames = lfOf([st.boxFrameLf * 12], [8, 10, 12, 16]);
       void frames;
@@ -400,15 +502,19 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
       push({ id: "box-blocks", step: "stairs", kind: "concrete", label: "Precast blocks under the lowest step", qty: st.boxBlocks, unit: "ea", rateKey: "conc.pierBlock", rateQty: st.boxBlocks, factor: 1 });
       push({ id: "box-gravel", step: "stairs", kind: "concrete", label: "Gravel base under the steps", qty: st.gravelSqFt, unit: "sq ft", rateKey: "conc.gravel", rateQty: st.gravelSqFt, factor: 1 });
     }
-    // Treads of the deck's boards, riser boards of fascia stock.
-    if (product && st.treadBoardLf > 0) {
-      const longest = Math.max(...product.lengthsFt);
+    // Treads of the deck's boards — or of the stair's own (2026-11-14; lib/deck/finish), a line of their own — riser
+    // boards of the fascia stock that goes with them.
+    const stairBoard = product ? finishProduct(product, st.design.finish) : undefined;
+    const own = st.design.finish ? `own-${finishKey(st.design.finish)}-` : "";
+    if (stairBoard && st.treadBoardLf > 0) {
+      const longest = Math.max(...stairBoard.lengthsFt);
       const treadBoards = Math.ceil((st.treadBoardLf * 1.1) / longest - 1e-9);
-      push({ id: `tread-boards-${longest}`, step: "stairs", kind: "boards", label: `${product.label} × ${longest} ft — treads`, qty: treadBoards, unit: "pcs", note: `${st.treads + (st.landing ? 1 : 0)} treads, 10% waste`, rateKey: `deck.${product.id}`, rateQty: treadBoards * longest, factor: 1 });
+      push({ id: `tread-boards-${own}${longest}`, step: "stairs", kind: "boards", label: `${stairBoard.label} × ${longest} ft — treads`, qty: treadBoards, unit: "pcs", note: `${st.treads + (st.landing ? 1 : 0)} treads, 10% waste`, rateKey: `deck.${stairBoard.id}`, rateQty: treadBoards * longest, factor: 1 });
     }
     if (st.riserBoardLf > 0) {
       const riserBoards = Math.ceil((st.riserBoardLf * 1.1) / 12 - 1e-9);
-      push({ id: "riser-boards", step: "stairs", kind: "boards", label: `Riser boards, ${product && (product.family === "composite" || product.family === "pvc") ? "composite" : "wood"} 1x8 × 12 ft`, qty: riserBoards, unit: "pcs", rateKey: product && (product.family === "composite" || product.family === "pvc") ? "fascia.composite" : "fascia.wood", rateQty: riserBoards * 12, factor: 0.8 });
+      const composite = !!stairBoard && finishFasciaKey(stairBoard) === "fascia.composite";
+      push({ id: `riser-boards${own ? `-${own.slice(0, -1)}` : ""}`, step: "stairs", kind: "boards", label: `Riser boards, ${composite ? "composite" : "wood"} 1x8 × 12 ft${own && stairBoard?.colorName ? ` in ${stairBoard.colorName}` : ""}`, qty: riserBoards, unit: "pcs", rateKey: composite ? "fascia.composite" : "fascia.wood", rateQty: riserBoards * 12, factor: 0.8 });
     }
     hw(`stair-screws-${tag}`, "stairs", "Tread and riser screws", Math.max(1, st.hardware.treadScrewsSqFt), "fast.screws", 1, "sq ft");
   }
@@ -712,7 +818,7 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
       l.factor = 1;
       if (label !== undefined) l.label = label;
     };
-    if (cu.decking && ((l.step === "decking" && l.id.startsWith("boards-")) || (l.step === "stairs" && l.id.startsWith("tread-boards-")) || l.id === "rail-drink-boards")) own("decking");
+    if (cu.decking && ((l.step === "decking" && l.id.startsWith("boards-")) || (l.step === "stairs" && l.id.startsWith("tread-boards-") && !l.id.startsWith("tread-boards-own-")) || l.id === "rail-drink-boards")) own("decking");
     else if (cu.fastening && l.id === "deck-fasteners") own("fastening", cu.fastening.name);
     else if (cu.fascia && (l.id === "fascia" || l.id === "riser-boards")) own("fascia", `${cu.fascia.name} × 12 ft${l.id === "riser-boards" ? " — risers" : ""}`);
     else if (cu.roofing && roof && (l.id === "shingles" || l.id === "shakes" || l.id === "metal-panels")) {

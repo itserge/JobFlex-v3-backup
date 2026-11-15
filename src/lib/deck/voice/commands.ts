@@ -82,6 +82,8 @@ export interface DeckingSet {
   thick?: "54" | "2x6";
   pattern?: DeckPattern;
   border?: 0 | 1 | 2;
+  /** Breaker boards across the field (2026-11-14; lib/deck/surface): none, one in the middle, two at the thirds. */
+  breakers?: 0 | 1 | 2;
   fastening?: "auto" | "screws" | "hidden";
   fascia?: "auto" | "none" | "match";
   wastePct?: number;
@@ -122,10 +124,27 @@ export type StairPick = { side: StairSide } | { index: number } | "last" | "all"
 /** Where along its edge: an end, the middle, a distance from the start of the edge, or a slide by so much. */
 export type StairAt = "left" | "center" | "right" | "house" | "out" | { ft: number } | { by: number };
 
+/**
+ * A LANDING ON A STAIR, AS IT IS SAID (2026-11-14): "add a landing", "take the landings out", or the way the stairs go
+ * on from it — to the left or the right AS THE DECK IS SEEN from the yard, toward the house, out to the yard, back
+ * beside the flight above, or straight on. `turnAtIn` is the landing's height above the ground.
+ */
+/** "Run the deck 6 ft past the house on the right", "wrap it round the left side 10 ft", "stop at the corner". */
+export interface DeckPastSaid {
+  side: "left" | "right" | "both";
+  ft?: number;
+  backFt?: number;
+  wrap?: boolean;
+  off?: boolean;
+}
+export type StairTurnSaid = "add" | "remove" | "straight" | "left" | "right" | "house" | "yard" | "back";
+
 export type DeckCommand =
   | { do: "size"; width?: Amount; depth?: Amount; areaSqFt?: number; square?: boolean; from?: "left" | "right" | "house" }
   | { do: "height"; in: Amount }
-  | { do: "shape"; kind: "rect" | "L" | "curve" | "clipped"; corner?: NotchCorner; notchWidthFt?: number; notchDepthFt?: number; bulgeFt?: number; clipFt?: number }
+  // `parts` (2026-11-14): the front set part by part — a T (the middle comes out), a U (the two ends come out), or
+  // deeper on one side; `partWidthFt` the part that comes out, `outFt` how far.
+  | { do: "shape"; kind: "rect" | "L" | "curve" | "clipped" | "parts"; corner?: NotchCorner; notchWidthFt?: number; notchDepthFt?: number; bulgeFt?: number; clipFt?: number; preset?: "t" | "u" | "left" | "right"; partWidthFt?: number; outFt?: number }
   | { do: "slide"; ft: number | "center" }
   | { do: "placement"; to: Placement }
   | { do: "wall"; to: WallTypeId }
@@ -138,14 +157,19 @@ export type DeckCommand =
   | { do: "footing"; type?: FootingType; aboveGradeIn?: number; frostAlways?: boolean }
   | { do: "site"; frostIn?: Amount; snowPsf?: number; loadPsf?: LoadPsf; soilPsf?: SoilPsf; outDropIn?: number; acrossDropIn?: number; state?: string }
   | { do: "rail"; set: RailSet }
-  | { do: "stairs"; op: "add" | "remove" | "change"; which?: StairPick; side?: StairSide; at?: StairAt; width?: Amount; wrap?: boolean; wrapSides?: 1 | 3 | 4; landing?: StairLanding; handrail?: Handrail; level?: "upper" | "lower"; count?: number; flip?: boolean }
-  | { do: "lower"; on?: boolean; width?: Amount; depth?: Amount; dropIn?: Amount; align?: Align }
+  | { do: "stairs"; op: "add" | "remove" | "change"; which?: StairPick; side?: StairSide; at?: StairAt; width?: Amount; wrap?: boolean; wrapSides?: 1 | 3 | 4; landing?: StairLanding; handrail?: Handrail; level?: "upper" | "lower"; count?: number; flip?: boolean; turn?: StairTurnSaid; turnAtIn?: number }
+  // `place: "under"` is a DOUBLE DECK (2026-11-13): a deck of the same size under this one; `heightIn` — how high that lower deck stands above the ground.
+  | { do: "lower"; on?: boolean; width?: Amount; depth?: Amount; dropIn?: Amount; align?: Align; place?: "front" | "under"; heightIn?: Amount }
   | { do: "spa"; on?: boolean; width?: Amount; depth?: Amount; align?: Align }
   | { do: "fixture"; op: "add" | "remove" | "set"; kind: FixtureKind; qty?: Amount; supply?: FixtureSupply; volts240?: boolean }
   | { do: "electrical"; timer?: boolean; feedFt?: number; panelSide?: "left" | "right" }
-  | { do: "house"; storeys?: 1 | 2; roof?: HouseRoof; siding?: SidingId; roofColour?: RoofColourId; wall?: QuickWall; leftFt?: Amount; rightFt?: Amount; widthFt?: number }
-  | { do: "extras"; demoSqFt?: number | "deck"; stainless?: boolean; drain?: boolean }
+  // `past` (2026-11-14): the DECK run past a corner of the house — `ft` beyond the corner, `backFt` back along the
+  // house's side (`wrap` = a wrap-around said without a length), `off` = back to the corner.
+  | { do: "house"; storeys?: 1 | 2; roof?: HouseRoof; siding?: SidingId; roofColour?: RoofColourId; wall?: QuickWall; leftFt?: Amount; rightFt?: Amount; widthFt?: number; past?: DeckPastSaid }
+  | { do: "extras"; demoSqFt?: number | "deck"; stainless?: boolean; drain?: boolean; skirt?: "lattice" | "boards" | "none" }
   | { do: "item"; op: "add" | "remove"; name: string; qty?: number; unit?: OwnUnit; price?: number }
+  /** A built-in bench or planter box along one edge (2026-11-14; lib/deck/builtins). `at`: which end of that edge it stands toward. */
+  | { do: "builtin"; op: "add" | "remove"; kind: "bench" | "bench-back" | "planter" | "screen" | "kitchen" | "fire"; side?: "front" | "left" | "right"; lengthFt?: number; at?: "left" | "centre" | "right"; /** A privacy screen's height, ft. */ heightFt?: number; /** A fire table: how far in from the edge, ft. */ inFt?: number }
   /** A product of the shop's own in one of the studio's lists ("our own boards, Azek Timbertech, at 9 dollars a foot"). */
   | { do: "custom"; slot: CustomSlot; name: string; price: number }
   | { do: "sample"; id: string }
@@ -159,7 +183,7 @@ export type DeckCommand =
   | { do: "whatif"; then: DeckCommand[]; words: string }
   | { do: "compare"; options: Array<{ words: string; then: DeckCommand[] }> }
   | { do: "open"; what: "permit" | "yard" | "installer" | "package" | "checks" }
-  | { do: "go"; to: "kind" | "size" | "house" | "materials" | "stairs" | "roof" | "extras" | "checks" | "package" }
+  | { do: "go"; to: "kind" | "size" | "house" | "materials" | "stairs" | "accessories" | "roof" | "extras" | "checks" | "package" }
   | { do: "name"; title: string }
   | { do: "address"; text: string }
   | { do: "save" }
@@ -175,7 +199,7 @@ export type DeckCommand =
 export type CommandKind = DeckCommand["do"];
 
 /** Commands that change the design (the rest look, answer or steer). */
-export const CHANGES: ReadonlySet<CommandKind> = new Set<CommandKind>(["custom", "size", "height", "shape", "slide", "placement", "wall", "structure", "floor", "roof", "decking", "framing", "ledger", "footing", "site", "rail", "stairs", "lower", "spa", "fixture", "electrical", "house", "extras", "item", "sample", "autofix", "reset"]);
+export const CHANGES: ReadonlySet<CommandKind> = new Set<CommandKind>(["custom", "size", "height", "shape", "slide", "placement", "wall", "structure", "floor", "roof", "decking", "framing", "ledger", "footing", "site", "rail", "stairs", "lower", "spa", "fixture", "electrical", "house", "extras", "item", "builtin", "sample", "autofix", "reset"]);
 
 /* ------------------------------------------------------------------ */
 /*  The words for the catalog's own things                            */
@@ -313,25 +337,23 @@ export const FIXTURE_SAY: Record<FixtureKind, [string, string]> = {
 
 /** Things people ask for that the studio has no drawing of (yet): said back by name, priced as the contractor's own item. */
 export const NOT_DRAWN: ReadonlyArray<[RegExp, string]> = [
-  [/\bfire ?pits?\b|\bfire ?bowls?\b|\bfire ?table\b/, "Fire pit"],
   [/\bfire ?place\b|\bchimney\b/, "Outdoor fireplace"],
   [/\bpool\b|\bswimming pool\b/, "Pool"],
-  [/\bplanters?\b|\bplanter box(?:es)?\b|\bflower box(?:es)?\b/, "Planter boxes"],
-  [/\bbench(?:es)?\b|\bbuilt[- ]in (?:seating|bench)\b|\bseating\b/, "Built-in bench"],
-  [/\bgrill\b|\bbbq\b|\bbarbecue\b|\bgrill station\b/, "Grill station"],
-  [/\boutdoor kitchen\b|\bkitchen\b|\bsink\b|\bcountertops?\b/, "Outdoor kitchen"],
+  // (An outdoor kitchen island and a gas fire table are drawn — lib/deck/builtins, read before this list.)
+  [/\bsink\b|\bcountertops?\b/, "Sink and countertop"],
   [/\bbar\b|\bbar top\b|\bbar counter\b/, "Bar counter"],
   [/\btv\b|\btelevision\b/, "TV mount"],
   [/\bspeakers?\b|\bsound system\b|\baudio\b/, "Outdoor speakers"],
   [/\bhammock\b/, "Hammock posts"],
   [/\bswing\b|\bporch swing\b/, "Porch swing"],
   [/\bgate\b|\bdog gate\b|\bbaby gate\b/, "Rail gate"],
-  [/\bskirting\b|\bskirt\b|\blattice skirt(?:ing)?\b/, "Deck skirting"],
   [/\bshade sail\b|\bsun ?shade\b|\bawning\b|\bretractable\b/, "Retractable awning"],
   [/\bstorage\b|\bshed\b|\bunder[- ]deck storage\b/, "Storage"],
   [/\bramp\b|\bwheelchair\b|\bada\b/, "Ramp"],
   // An open deck's privacy ("privacy on one side", "more privacy" — lib/deck/voice/words EVERYDAY); a covered deck's
   // "privacy walls / panels / screens" are its walls (parse ROOF_WORDS) and never reach this list.
+  // (On an OPEN deck "a privacy fence / screen" is drawn — a privacy screen on its edge, lib/deck/builtins, read before
+  // this list; what is left here is the same wish on a design with a roof over it.)
   [/\bprivacy fence\b/, "Privacy screen"],
   [/\btrellis\b|\bprivacy trellis\b/, "Privacy trellis"],
   [/\bhot water\b|\bwater line\b|\bhose bib\b|\bspigot\b/, "Water line"],

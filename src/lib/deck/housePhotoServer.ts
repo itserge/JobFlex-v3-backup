@@ -17,6 +17,7 @@ import { logServerError } from "@/lib/server-events";
 import { runVisionStructured, type VisionEffort } from "@/lib/sdk/openaiVision";
 import { ensureModel, friendlyAIError, getVisionModel, isOpenAIEnabled } from "@/lib/sdk/openai";
 import { HOUSE_READ_PROMPT_PX, HOUSE_ZOOM_NOTE_PX, fromStructured, houseReadSchema, lookPastOf, parseHouseRead, type HouseLookPast, type HouseRead, type HouseSubject, type SubjectKind } from "@/lib/deck/houseRead";
+import { HOUSE_CORNER_PROMPT, houseCornerSchema, type HouseCornerAnswer } from "@/lib/deck/houseCorner";
 import { putPrivate } from "@/lib/media/privateStore";
 import { mediaHref } from "@/lib/media/signedLink";
 
@@ -135,5 +136,42 @@ export async function readHouseImage(form: FormData, logAs: { organizationId: st
   } catch (err) {
     logServerError("deck-house-read", err, { kind: "action", organizationId: logAs.organizationId });
     return { ok: false, error: friendlyAIError(err, "deck-house-read"), configured: true };
+  }
+}
+
+/** One corner of the wall, asked about by itself (lib/deck/houseCorner). */
+export type HouseCornerRead = { ok: true; answer: HouseCornerAnswer; model: string } | { ok: false; error: string; configured: boolean };
+
+/**
+ * THE CORNER LOOK (2026-11-13): a close cut of the picture round one vertical line of the wall, and one question —
+ * which side of it stands nearer the camera. The form carries the cut (`file`), its size in pixels (`w`, `h`) and the
+ * line's x in it (`x`, the cut's middle). The answer is laid on the read in the browser (applyCornerVerdict).
+ */
+export async function readHouseCornerImage(form: FormData, logAs: { organizationId: string }): Promise<HouseCornerRead> {
+  const p = photoOf(form);
+  if (!p.ok) return { ok: false, error: p.error, configured: true };
+  if (!isOpenAIEnabled()) return { ok: false, error: "Reading the picture needs the AI key on the server.", configured: false };
+  const w = Math.round(Number(form.get("w"))), h = Math.round(Number(form.get("h"))), x = Math.round(Number(form.get("x")));
+  if (![w, h, x].every(Number.isFinite) || w < 16 || h < 16 || w > 20000 || h > 20000 || x < 0 || x > w) return { ok: false, error: "The picture's size could not be read.", configured: true };
+  try {
+    const dataUrl = `data:${p.file.type};base64,${Buffer.from(await p.file.arrayBuffer()).toString("base64")}`;
+    const models = houseModels();
+    const fallback = getVisionModel();
+    const model = (await ensureModel(models.close)) ? models.close : fallback;
+    const answer = await runVisionStructured({
+      schema: houseCornerSchema,
+      name: "house_corner",
+      model,
+      effort: models.effort,
+      detail: "original",
+      systemPrompt: HOUSE_CORNER_PROMPT,
+      userPrompt: `The picture is ${w} × ${h} pixels. The line in question runs up the wall at x = ${x} (the middle of the picture's width). Which side of it stands nearer the camera? Answer in the schema.`,
+      imageUrl: dataUrl,
+    });
+    if (!answer) return { ok: false, error: "The corner could not be read.", configured: true };
+    return { ok: true, answer, model };
+  } catch (err) {
+    logServerError("deck-house-corner", err, { kind: "action", organizationId: logAs.organizationId });
+    return { ok: false, error: "The corner could not be read.", configured: true };
   }
 }

@@ -9,6 +9,9 @@
 import type { Pt } from "./raster";
 import { pointInRing, ringArea } from "./raster";
 
+/** The tag of a round roof's chords (./round sets it): straightenChains keeps their corners. */
+export const ROUND_EDGE = -9;
+
 export interface Seg {
   a: Pt;
   b: Pt;
@@ -332,10 +335,15 @@ export function straightenChains(g: Graph, tolInner: number, tolOutline: number)
     const t = Math.min(1, Math.max(0, ((p.x - a.x) * dx + (p.y - a.y) * dy) / L));
     return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
   };
+  // a round roof's edge is a curve drawn as chords: its corners are the curve, not noise
+  const round = new Set<number>();
+  for (const e of edges) if (e.tag === ROUND_EDGE) { round.add(e.a); round.add(e.b); }
   const simplify = (vs: number[], tol: number): number[] => {
     const keep = new Uint8Array(vs.length);
     keep[0] = keep[vs.length - 1] = 1;
-    const stack: Array<[number, number]> = [[0, vs.length - 1]];
+    const stack: Array<[number, number]> = [];
+    let from = 0;
+    for (let k = 1; k < vs.length; k++) if (k === vs.length - 1 || round.has(vs[k])) { keep[k] = 1; stack.push([from, k]); from = k; }
     while (stack.length) {
       const [i, j] = stack.pop()!;
       let worst = -1, wd = tol;
@@ -395,7 +403,7 @@ export function straightenChains(g: Graph, tolInner: number, tolOutline: number)
       const id = a < b ? `${a}-${b}` : `${b}-${a}`;
       if (seen.has(id)) continue;
       seen.add(id);
-      out.push({ a, b, outline: ch.outline, tag: ch.tag });
+      out.push({ a, b, outline: ch.outline, tag: round.has(a) && round.has(b) ? ROUND_EDGE : ch.tag });
     }
   }
   return { verts, edges: out };

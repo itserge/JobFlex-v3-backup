@@ -31,6 +31,7 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import type { Route } from "next";
 import { resolveMarket, parseStateZip, type MarketSnapshot } from "@/lib/fence/market";
+import { leftEndPatch } from "@/lib/deck/frontByHand";
 import { DECKING, DECKING_BRAND_LABEL, DECKING_BRAND_ORDER, DECKING_FAMILY_LABEL, DECKING_FAMILY_ORDER, FRAMING_SPECIES, RAIL_TYPES, WALL_TYPES, defaultDecking, defaultFramingSpecies, treatedDecking, wallType, type DeckingFamily, type DeckingProduct } from "@/lib/deck/catalog";
 import { regionalPicks, regionalWords } from "@/lib/deck/regional";
 import { LEDGER_FASTENER_LABEL, LOADS, POST_SIZES, SOLID_BEAMS, ftIn, solidBeamTabulated, type LoadPsf, type SoilPsf } from "@/lib/deck/codeTables";
@@ -737,6 +738,12 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
         case "width":
           patch({ shape: { ...design.shape, widthFt: Math.min(DECK_LIMITS.widthFt.max, Math.max(DECK_LIMITS.widthFt.min, toHalfFt(e.value))) } });
           break;
+        case "width-left": {
+          // (2026-11-14) The deck's LEFT end: the house stays put, the left part of a front in parts takes the change.
+          const moved = leftEndPatch(design, e.value);
+          if (moved) patch(moved);
+          break;
+        }
         case "depth":
           patch({ shape: { ...design.shape, depthFt: Math.min(DECK_LIMITS.depthFt.max, Math.max(DECK_LIMITS.depthFt.min, toHalfFt(e.value))) } });
           break;
@@ -1419,7 +1426,7 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
   /** What the list's choice costs now, in the slot's unit: where the shop's own product starts. */
   const slotPrice = (slot: CustomSlot): number => {
     const ids: Record<CustomSlot, (id: string, step: BomStep) => boolean> = {
-      decking: (id, step) => (step === "decking" && id.startsWith("boards-")) || (step === "stairs" && id.startsWith("tread-boards-")),
+      decking: (id, step) => (step === "decking" && id.startsWith("boards-")) || (step === "stairs" && id.startsWith("tread-boards-") && !id.startsWith("tread-boards-own-")),
       fastening: (id) => id === "deck-fasteners",
       fascia: (id) => id === "fascia" || id === "riser-boards",
       roofing: (id) => id === "shingles" || id === "shakes" || id === "metal-panels",

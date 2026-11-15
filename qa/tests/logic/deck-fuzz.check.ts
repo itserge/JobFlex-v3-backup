@@ -4,9 +4,16 @@
 // zero-size parts that made a scene unreadable, and a normalize drift — all fixed the same day.
 //   NODE_PATH="" npx tsx --tsconfig tsconfig.json qa/tests/logic/deck-fuzz.check.ts [nInRails] [nJunk]
 //   NODE_PATH="" npx tsx --tsconfig tsconfig.json qa/tests/logic/deck-fuzz.check.ts --repro A40 B5293 [--json]
-import { defaultDeckDesign, normalizeDeckDesign, structureWords, sizeWords, FIXTURE_KINDS, STRUCTURES, FLOORS, ROOF_KINDS, ROOF_PLAN_SHAPES, ROOFINGS, GUTTER_KINDS, PLACEMENTS, NOTCH_CORNERS, type DeckDesign } from "../../../src/lib/deck/design";
+import { defaultDeckDesign, frontClips, normalizeDeckDesign, shapeOutline, shapeZones, structureWords, sizeWords, FIXTURE_KINDS, STRUCTURES, FLOORS, ROOF_KINDS, ROOF_PLAN_SHAPES, ROOFINGS, GUTTER_KINDS, PLACEMENTS, NOTCH_CORNERS, type DeckDesign } from "../../../src/lib/deck/design";
 import { priceDeck, deckScope, deckNotes } from "../../../src/lib/deck/pricing";
-import { deckChecks } from "../../../src/lib/deck/checks";
+import { writeFileSync } from "node:fs";
+import { applyDeckPatch, deckChecks } from "../../../src/lib/deck/checks";
+import { deckGrips, moveGrip } from "../../../src/lib/deck/byHand";
+import { buildStructure, structureLevels } from "../../../src/lib/deck/structure";
+import { POST_ACTUAL_IN } from "../../../src/lib/deck/codeTables";
+import { BUILT_IN_INSET_IN, planGap } from "../../../src/lib/deck/builtins";
+import { moveAccessory, turnAccessoryTo } from "../../../src/lib/deck/accessories";
+import { SKIRT_BAY_MAX_IN, SKIRT_CLEAR_IN, SKIRT_GROUND_CLEAR_IN, SKIRT_MIN_IN, SKIRT_THICK_IN, type SkirtPanel } from "../../../src/lib/deck/skirt";
 import { deckScene, parseDeckScene, sceneBuildLayers, SCENE_LAYERS, SCENE_MAX_BOXES, SCENE_MAX_FOOTINGS, SCENE_MAX_DIAGONALS, SCENE_MAX_POLYS } from "../../../src/lib/deck/scene";
 import { deckElevation, elevationOverlay, defaultPlacement } from "../../../src/lib/deck/elevation";
 import { deckConvertSchema } from "../../../src/lib/deck/convertSchema";
@@ -36,7 +43,20 @@ function randomWall(r: Rng, depthHint: number): unknown {
   const cuts = Array.from({ length: n - 1 }, () => odd(r, 1, widthFt - 1)).sort((a, b) => a - b);
   const xs = [0, ...cuts, widthFt];
   const back = xs.slice(0, -1).map((x0, i) => ({ x0Ft: x0, x1Ft: xs[i + 1], yFt: r() < 0.3 ? 0 : r() < 0.5 ? -odd(r, 0, r() < 0.1 ? 30 : 16) : odd(r, 0, r() < 0.1 ? depthFt + 4 : Math.max(0, depthFt - 3)) }));
+  // (Parts said to be past the house's corner — 2026-11-14 — anywhere at all: the house decides, and the reader holds them to it.)
+  if (r() < 0.2) for (const b of back as Array<Record<string, unknown>>) if (r() < 0.4) b.open = pick(r, [true, true, "yes", 1]);
+  // …and a front set part by part (2026-11-14), its cuts and its distances as random as the back's.
+  if (r() < 0.35) return { kind: "wall", widthFt, depthFt, back, front: randomFront(r, widthFt, depthFt) };
   return { kind: "wall", widthFt, depthFt, back };
+}
+
+/** A front in 1–9 parts: widths from a sliver up, standing from under the wall to past the deck's depth. */
+function randomFront(r: Rng, widthFt: number, depthFt: number): unknown {
+  const n = int(r, 1, 9);
+  const cuts = Array.from({ length: n - 1 }, () => odd(r, 0, widthFt)).sort((a, b) => a - b);
+  const xs = [0, ...cuts, r() < 0.9 ? widthFt : widthFt + 5];
+  // …its corners cut at an angle now and then (2026-11-14): any size, on any part, whether the corner stands out or not.
+  return xs.slice(0, -1).map((x0, i) => ({ x0Ft: x0, x1Ft: xs[i + 1], yFt: r() < 0.1 ? pick(r, [-3, 0, 99, "x"]) : odd(r, 2, depthFt + 6), ...(r() < 0.3 ? { clipLeftFt: pick(r, [odd(r, 0, 14), 2, 4, -1, "x"]) } : {}), ...(r() < 0.3 ? { clipRightFt: pick(r, [odd(r, 0, 14), 3, 6, 99]) } : {}) }));
 }
 
 /** A whole random design whose deck follows a stepped house wall. */
@@ -75,6 +95,21 @@ function randomDesign(r: Rng): unknown {
     d.framing.pins = Array.from({ length: int(r, 1, 26) }, (_, i) => ({ id: `k${i + 1}`, beam: pick(r, ["front", "middle", "back", "side"]), atFt: odd(r, -3, 64) }));
     d.framing.postSpacingFt = pick(r, ["auto", 3, 4, 6, 8, 14, 1, 40]);
   }
+  // …and the beams by hand (2026-11-13): middle beams at places of their own, posts tied to them, the back beam's overhang.
+  if (r() < 0.35) {
+    d.framing.beamLines = Array.from({ length: int(r, 1, 7) }, (_, i) => ({ id: `l${i + 1}`, atFt: odd(r, -2, dep + 3), zones: pick(r, [[], ["a"], ["b"], ["a", "b"], ["q"], "x"]) }));
+    d.framing.backOverhangFt = pick(r, ["auto", 0, 0.5, 1, 2.25, 4, 9, -1]);
+    if (r() < 0.5) d.framing.pins = [...(Array.isArray(d.framing.pins) ? d.framing.pins : []), ...Array.from({ length: int(r, 1, 4) }, (_, i) => ({ id: `t${i + 1}`, beam: "middle", line: pick(r, ["l1", "l2", "l9"]), atFt: odd(r, 0, w) }))];
+  }
+  // …and a double deck (2026-11-13): a second deck under this one, a storey down — or not quite a storey.
+  if (r() < 0.2) {
+    d.lower = { ...d.lower, on: true, place: pick(r, ["under", "under", "under", "front", "sideways"]), heightIn: odd(r, 0, 150) };
+    if (r() < 0.7) d.heightIn = Math.round(Number(d.lower.heightIn)) + int(r, 70, 170);
+  }
+  // …stairs with landings at any heights, turning any way (2026-11-14), and the braces' timber.
+  if (Array.isArray(d.stairs) && r() < 0.45) for (const st of d.stairs as any[]) st.landings = Array.from({ length: int(r, 1, 7) }, (_, i) => ({ id: `t${i + 1}`, heightIn: odd(r, 0, Math.max(40, Number(d.heightIn) + 20)), turn: pick(r, ["straight", "left", "right", "back-left", "back-right", "up"]) }));
+  d.framing.braceSize = pick(r, ["auto", "auto", "2x4", "4x4", "6x6", "8x8", "x"]);
+  d.roof.braceSize = pick(r, ["auto", "auto", "4x4", "6x6", "8x8", 3]);
   d.rail.mountBy = r() < 0.6 ? {} : Object.fromEntries(["upper-front", "upper-left", "upper-right", "upper-back", "lower-front", "lower-left"].filter(() => r() < 0.4).map((k) => [k, pick(r, ["top", "side"])]));
   if (r() < 0.45) {
     d.roof.openings = Array.from({ length: int(r, 1, 7) }, (_, i) => ({ id: `o${i + 1}`, side: pick(r, ["front", "left", "right", "back"]), atFt: odd(r, -2, 62), widthFt: odd(r, 1, 20), door: bool(r) }));
@@ -89,6 +124,14 @@ function randomDesign(r: Rng): unknown {
   d.extras.items = r() < 0.7 ? [] : Array.from({ length: int(r, 1, 45) }, (_, i) => ({ id: r() < 0.9 ? `o${i}` : pick(r, ["", "BAD ID", "o1"]), name: pick(r, NAMES), qty: odd(r, -1, 500), unit: pick(r, ["ea", "pcs", "ft", "sq ft", "bags", "yd"]), price: odd(r, -1, 5000) }));
   d.rail.customName = r() < 0.3 ? pick(r, NAMES) : "";
   for (const f of d.electrical.fixtures) if (r() < 0.2) f.custom = { name: pick(r, NAMES), price: odd(r, 0, 3000) };
+  // …and a front set part by part over a straight wall (2026-11-14): any deck, now and then.
+  if (r() < 0.15) d.shape = { kind: "wall", widthFt: d.shape.widthFt, depthFt: d.shape.depthFt, back: [{ x0Ft: 0, x1Ft: d.shape.widthFt, yFt: 0 }], front: randomFront(r, Number(d.shape.widthFt), Number(d.shape.depthFt)) };
+  // …and the deck run past a corner of the house and back along its side (2026-11-14) — in the rails and well out of
+  // them. (Last, so every design before this draws the numbers it always drew.)
+  if (r() < 0.3) {
+    d.house = { ...d.house, leftFt: r() < 0.5 ? odd(r, -40, 10) : d.house.leftFt, rightFt: r() < 0.6 ? odd(r, -40, 10) : d.house.rightFt, wrapLeftFt: pick(r, [undefined, 0, odd(r, -2, 30), "x"]), wrapRightFt: pick(r, [undefined, 0, odd(r, -2, 30)]) };
+    if (r() < 0.4) d.house.jogs = Array.from({ length: int(r, 1, 4) }, (_, i) => ({ id: `j${i + 1}`, atFt: odd(r, -6, 64), dir: pick(r, ["toward", "away"]), depthFt: odd(r, 0, 14) }));
+  }
   return d;
 }
 
@@ -122,6 +165,59 @@ const stats = { maxBoxes: 0, maxBytes: 0, maxLines: 0, maxScope: 0, maxNotes: 0,
 const ownKey = (k: string, d: DeckDesign) =>
   k.startsWith("custom.fixture.") ? !!d.electrical.fixtures.find((f) => f.id === k.slice("custom.fixture.".length))?.custom : k.startsWith("custom.") ? !!(d.custom as any)[k.slice("custom.".length)] : k.startsWith("own.") ? d.extras.items.some((it) => it.id === k.slice("own.".length)) : false;
 
+/** SKIRTING (2026-11-14): asked for on two designs in five (and as junk on a few) — by the design's own number, so the random stream every other option is drawn from stays what it was. */
+function skirtFor(tag: string, raw: unknown): unknown {
+  const i = Number(tag.slice(1));
+  if (!raw || typeof raw !== "object" || Array.isArray(raw) || !Number.isFinite(i)) return raw;
+  const o = raw as Record<string, unknown>;
+  const skirt = i % 97 === 0 ? "brick" : i % 5 === 1 ? "lattice" : i % 5 === 3 ? "boards" : undefined;
+  if (!skirt || (o.extras !== undefined && (typeof o.extras !== "object" || o.extras === null))) return raw;
+  return { ...o, extras: { ...((o.extras as object) ?? {}), skirt } };
+}
+/** BREAKER BOARDS (2026-11-14): asked for on one design in three, by the design's own number (the random stream stays what it was). */
+function breakersFor(tag: string, raw: unknown): unknown {
+  const i = Number(tag.slice(1));
+  if (!raw || typeof raw !== "object" || Array.isArray(raw) || !Number.isFinite(i) || i % 3 !== 1) return raw;
+  const o = raw as Record<string, unknown>;
+  if (o.decking !== undefined && (typeof o.decking !== "object" || o.decking === null)) return raw;
+  return { ...o, decking: { ...((o.decking as object) ?? {}), breakers: i % 91 === 1 ? 7 : 1 + (Math.floor(i / 3) % 2) } };
+}
+/** BUILT-IN BENCHES AND PLANTERS (2026-11-14): on one design in four, by the design's own number (the random stream stays what it was); junk on a few. */
+function builtInsFor(tag: string, raw: unknown): unknown {
+  const i = Number(tag.slice(1));
+  if (!raw || typeof raw !== "object" || Array.isArray(raw) || !Number.isFinite(i) || i % 4 !== 2) return raw;
+  const o = raw as Record<string, unknown>;
+  if (o.extras !== undefined && (typeof o.extras !== "object" || o.extras === null)) return raw;
+  const kinds = ["bench", "bench-back", "planter", "screen", "kitchen", "fire"];
+  const sides = ["front", "left", "right"];
+  const list: unknown[] = i % 86 === 2 ? [null, "x", { kind: "sofa" }, { kind: "bench", side: 7, atFt: "a", lengthFt: -3 }, { id: "BAD ID", kind: "planter", atFt: 1e9, lengthFt: 1e9 }] : Array.from({ length: 1 + (i % 5) }, (_, k) => ({ id: `q${k}`, kind: kinds[(i + k) % 6], side: sides[(Math.floor(i / 3) + k) % 3], atFt: ((i * 7 + k * 5) % 41) / 2, lengthFt: 2 + ((i + k * 3) % 17) * 1.5, heightFt: 2 + ((i + k) % 8), inFt: 1 + ((i * 3 + k) % 14), ...((i + k) % 3 === 0 ? { spot: { x: ((i * 37 + k * 53) % 600) - 60, y: ((i * 29 + k * 41) % 480) - 60, turnDeg: ((i + k) * 15) % 360 } } : {}) }));
+  return { ...o, extras: { ...((o.extras as object) ?? {}), builtIns: list } };
+}
+type Pt = { x: number; y: number };
+/** A skirt bay as it lies in plan: a thin rectangle outside the deck's edge. */
+const skirtQuad = (p: SkirtPanel): Pt[] => [SKIRT_CLEAR_IN, SKIRT_CLEAR_IN + SKIRT_THICK_IN].flatMap((o, k) => { const a = { x: p.x0 + p.outX * o, y: p.y0 + p.outY * o }, b = { x: p.x1 + p.outX * o, y: p.y1 + p.outY * o }; return k === 0 ? [a, b] : [b, a]; });
+/** Do two convex shapes overlap by more than a hair (separating axes)? */
+const quadsOverlap = (A: Pt[], B: Pt[], eps = 0.01) => {
+  for (const poly of [A, B]) for (let i = 0; i < poly.length; i++) {
+    const p = poly[i], q = poly[(i + 1) % poly.length];
+    const nx = q.y - p.y, ny = p.x - q.x, len = Math.hypot(nx, ny) || 1;
+    const pa = A.map((v) => (v.x * nx + v.y * ny) / len), pb = B.map((v) => (v.x * nx + v.y * ny) / len);
+    if (Math.max(...pa) <= Math.min(...pb) + eps || Math.max(...pb) <= Math.min(...pa) + eps) return false;
+  }
+  return true;
+};
+
+/** Does an outline cross itself? (A junk wall can make one: a corner cut through a sliver of the wall. Nothing laid along its edges can be told apart there.) */
+const ringCrossesItself = (ring: Pt[]) => {
+  const side = (a: Pt, b: Pt, c: Pt) => Math.sign((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
+  for (let i = 0; i < ring.length; i++) for (let j = i + 2; j < ring.length; j++) {
+    if (i === 0 && j === ring.length - 1) continue;
+    const a = ring[i], b = ring[(i + 1) % ring.length], c = ring[j], e = ring[(j + 1) % ring.length];
+    if (side(a, b, c) * side(a, b, e) < 0 && side(c, e, a) * side(c, e, b) < 0) return true;
+  }
+  return false;
+};
+
 function exercise(d: DeckDesign, tag: string, out: string[]) {
   const t0 = Date.now();
   const d2 = normalizeDeckDesign(JSON.parse(JSON.stringify(d)));
@@ -129,6 +225,163 @@ function exercise(d: DeckDesign, tag: string, out: string[]) {
   if (drift) out.push(`normalize drifts: ${drift}  [${tag}]`);
   const pkg = priceDeck(d);
   if (!(Number.isFinite(pkg.subtotal) && pkg.subtotal >= 0)) out.push(`subtotal bad: ${pkg.subtotal}  [${tag}]`);
+  // SKIRTING (2026-11-14; lib/deck/skirt): where it hangs it is priced; every bay is 8 ft at most and a foot or more
+  // high, a hand above the ground under it, through no post, across no other bay; where none could hang, that is said.
+  {
+    const s0 = pkg.structure;
+    const sk = s0.skirt;
+    if (d.extras.skirt && s0.frame && !sk && !deckChecks(s0).some((c) => c.id === "deck-skirt-none")) out.push(`skirting asked for, none built, nothing said  [${tag}]`);
+    if (sk && !d.extras.skirt) out.push(`skirting built that was not asked for  [${tag}]`);
+    if (sk) {
+      if (!pkg.lines.some((l) => l.id === "deck-skirt" && l.quantity > 0 && l.unitPrice > 0)) out.push(`skirting built but not priced  [${tag}]`);
+      if (!(sk.sqFt > 0 && sk.lf > 0 && sk.frameLf > 0 && (sk.kind === "boards") === (sk.boardLf > 0))) out.push(`skirting's figures are off: ${sk.sqFt} sq ft, ${sk.lf} ft, frame ${sk.frameLf}, boards ${sk.boardLf}  [${tag}]`);
+      const posts = structureLevels(s0).flatMap((l) => l.frame.posts.map((q) => { const h = Math.max(...(POST_ACTUAL_IN[q.size] ?? [5.5, 5.5])) / 2; const x = q.x + l.offsetXIn, y = q.y + l.offsetYIn; return [{ x: x - h, y: y - h }, { x: x + h, y: y - h }, { x: x + h, y: y + h }, { x: x - h, y: y + h }]; }));
+      const quads = sk.panels.map(skirtQuad);
+      const tangled = ringCrossesItself(shapeOutline(d.shape));
+      for (const [k, p] of sk.panels.entries()) {
+        const h = p.topIn - p.bottomIn;
+        if (!(p.lengthIn > 6 && p.lengthIn <= SKIRT_BAY_MAX_IN + 0.01)) { out.push(`a skirt bay ${p.lengthIn.toFixed(1)} in. long  [${tag}]`); break; }
+        if (!(h >= SKIRT_MIN_IN - 0.01)) { out.push(`a skirt bay ${h.toFixed(1)} in. high  [${tag}]`); break; }
+        if ([0, 0.5, 1].some((t) => p.bottomIn < s0.groundAt(p.x0 + (p.x1 - p.x0) * t, p.y0 + (p.y1 - p.y0) * t) + SKIRT_GROUND_CLEAR_IN - 0.01)) { out.push(`a skirt bay in the ground  [${tag}]`); break; }
+        if (posts.some((q) => quadsOverlap(quads[k], q))) { out.push(`a skirt bay through a post  [${tag}]`); break; }
+        if (!tangled && quads.some((q, j) => j > k && sk.panels[j].bottomIn < p.topIn && p.bottomIn < sk.panels[j].topIn && quadsOverlap(quads[k], q))) { out.push(`two skirt bays cross  [${tag}]`); break; }
+      }
+    }
+  }
+  // BREAKER BOARDS (2026-11-14; lib/deck/surface): where they are laid, no field board lies across one and none beside
+  // one is a stub; each runs inside the deck; where one asked for is not laid, that is said. On both levels.
+  for (const lv of structureLevels(pkg.structure)) {
+    const sf = lv.surface;
+    const asked = lv.frame.design.decking.breakers ?? 0;
+    if (sf.breakers.length > asked || sf.breakersLeftOut !== asked - sf.breakers.length) { out.push(`breaker boards laid ${sf.breakers.length}, asked ${asked}, left out ${sf.breakersLeftOut}  [${tag}]`); break; }
+    if (!sf.breakers.length) continue;
+    const w = sf.product.widthIn;
+    if (sf.pieces.some((p) => !p.border && sf.breakers.some((b) => p.cx - p.sx / 2 < b.x + w / 2 - 0.01 && p.cx + p.sx / 2 > b.x - w / 2 + 0.01 && p.cy > b.y0 && p.cy < b.y1))) { out.push(`a deck board lies across a breaker board  [${tag}]`); break; }
+    if (sf.breakers.some((b) => !(b.y1 - b.y0 > 12) || ![b.x, b.y0, b.y1].every(Number.isFinite)) || !(sf.breakerLf > 0) || sf.breakerBackingIn.length !== 3 * sf.breakers.length) { out.push(`a breaker board with no length, or nothing under it  [${tag}]`); break; }
+    // (On the deck: a hand either side of it, near both its ends, lies in one of the deck's rectangles — it may stand on the line where two of them meet.)
+    const onDeck = (x: number, y: number) => lv.frame.zones.some((z) => x > z.zone.x0 - 0.01 && x < z.zone.x1 + 0.01 && y > z.zone.y0 - 0.01 && y < z.zone.y1 + 0.01);
+    if (sf.breakers.some((b) => ![b.y0 + 1, b.y1 - 1].every((y) => onDeck(b.x - 4, y) && onDeck(b.x + 4, y)))) { out.push(`a breaker board off the deck  [${tag}]`); break; }
+  }
+  if (pkg.structure.surface && (d.decking.breakers ?? 0) > 0 && !deckChecks(pkg.structure).some((c) => c.id === "decking-breaker" || c.id === "decking-breaker-none")) out.push(`breaker boards asked for, nothing said  [${tag}]`);
+  // BUILT-IN BENCHES AND PLANTERS (2026-11-14; lib/deck/builtins): each one asked for is built or said not to be; one
+  // built stands on the deck, its parts above the boards with real sizes, across no other; and it is priced.
+  {
+    const s0 = pkg.structure;
+    const asked = d.extras.builtIns ?? [];
+    if (asked.length !== s0.builtIns.length && s0.frame && s0.surface) out.push(`${asked.length} built-ins asked for, ${s0.builtIns.length} answered  [${tag}]`);
+    if (s0.builtIns.length) {
+      const ring = shapeOutline(d.shape);
+      const tangled = ringCrossesItself(ring);
+      const inside = (x: number, y: number) => { let c = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const a = ring[i], b = ring[j]; if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) c = !c; } return c; };
+      const ids = new Set(deckChecks(s0).map((c) => c.id));
+      for (const b of s0.builtIns) {
+        if (!ids.has(`builtin-${b.design.id}`)) { out.push(`a built-in with nothing said of it  [${tag}]`); break; }
+        if (!b.built) { if (b.members.length || !b.why) { out.push(`a built-in not built, yet drawn or unexplained  [${tag}]`); break; } continue; }
+        if (!(b.lengthIn >= 24 - 0.01 && b.lengthIn <= b.design.lengthFt * 12 + 0.01)) { out.push(`a built-in ${b.lengthIn} in. long, asked ${b.design.lengthFt} ft  [${tag}]`); break; }
+        if (b.members.some((m) => !(m.sx > 0 && m.sy > 0 && m.sz > 0) || ![m.cx, m.cy, m.cz, m.yaw].every(Number.isFinite) || m.cz - m.sz / 2 < s0.frame!.surfaceIn - 0.01)) { out.push(`a built-in's part with no size, or under the boards  [${tag}]`); break; }
+        // (Its middle and the middles of its ends: on an outline with a curved or stepped front a corner may hang a hair past a chord.)
+        const mid = (p: Pt, q: Pt) => ({ x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 });
+        const c = mid(b.footprint[0], b.footprint[2]);
+        if (!tangled && ![c, mid(mid(b.footprint[0], b.footprint[3]), c), mid(mid(b.footprint[1], b.footprint[2]), c)].every((p) => inside(p.x, p.y))) { out.push(`a built-in off the deck  [${tag}]`); break; }
+        if (b.flags.overlaps.length && !b.design.spot && s0.builtIns.some((o) => b.flags.overlaps.includes(o.design.id) && !o.design.spot)) { out.push(`two built-ins along edges on the same boards  [${tag}]`); break; }
+        // One placed by hand: all of it on the deck and clear of every open edge by what stands there.
+        // (The outline's own sides — a bowed front's chords, not the frame's one straight front.)
+        if (b.design.spot && s0.accessoryInput && s0.accessoryInput.sides.some((e) => !e.house && planGap(b.footprint, [{ x: e.x0, y: e.y0 }, { x: e.x1, y: e.y1 }]) < BUILT_IN_INSET_IN.none - 0.02)) { out.push(`an accessory placed by hand over an edge  [${tag}]`); break; }
+        if (b.kind === "planter" && !(b.weightLb > 0 && b.psf > 0 && b.soilCuFt > 0)) { out.push(`a planter with no weight  [${tag}]`); break; }
+        if (b.kind === "kitchen" && !(b.weightLb > 0 && b.hot.length === 4 && b.sisterLf >= 0 && pkg.lines.some((l) => l.id === "deck-kitchen"))) { out.push(`a kitchen with no weight, no grill or no price  [${tag}]`); break; }
+        if (b.kind === "fire" && !(b.weightLb > 0 && b.hot.length === 4)) { out.push(`a fire table with no weight or no flame  [${tag}]`); break; }
+        if (b.kind === "screen" && !(b.posts >= 2 && b.sqFt > 0 && b.windLb > 0 && (b.postSize === "4x4" || b.postSize === "6x6"))) { out.push(`a screen with no posts or no wind  [${tag}]`); break; }
+      }
+      const built = s0.builtIns.filter((b) => b.built);
+      // MOVED BY HAND (lib/deck/accessories): a drag, a turn to any angle, a press across the deck or a drag out past the railing that answers with a change leaves it built.
+      if (Number(tag.slice(1)) % 6 === 2) {
+        const first = built[0];
+        if (first) {
+          const tries: Array<[string, ReturnType<typeof moveAccessory>]> = [
+            ["drag", moveAccessory(s0, first.design.id, first.footprint[0].x + 37, first.footprint[0].y - 29)],
+            ["turn", turnAccessoryTo(s0, first.design.id, 33 + (Number(tag.slice(1)) % 7) * 47)],
+            ["send", moveAccessory(s0, first.design.id, 96, 60)],
+            ["past", moveAccessory(s0, first.design.id, first.footprint[0].x + 400, first.footprint[0].y + 15)],
+          ];
+          for (const [what, p] of tries) {
+            if (!p) continue;
+            const after = buildStructure(applyDeckPatch(d, p)).builtIns.find((q) => q.design.id === first.design.id);
+            if (!after?.built) { out.push(`an accessory ${what} by hand left it unbuilt: ${after?.why}  [${tag}]`); break; }
+          }
+        }
+      }
+      if (built.some((b) => b.kind === "bench" || b.kind === "bench-back") !== pkg.lines.some((l) => l.id === "deck-benches")) out.push(`benches built and priced do not agree  [${tag}]`);
+      if (built.some((b) => b.kind === "screen") !== pkg.lines.some((l) => l.id === "deck-screens")) out.push(`screens built and priced do not agree  [${tag}]`);
+      // A screen stands in the rail's place: no rail post of the main deck within its stretch.
+      for (const b of built.filter((q) => q.kind === "screen")) {
+        const [p0, p1] = b.footprint;
+        const L = Math.hypot(p1.x - p0.x, p1.y - p0.y) || 1, ux = (p1.x - p0.x) / L, uy = (p1.y - p0.y) / L;
+        if (s0.rails.segments.some((g) => g.level === "upper" && Math.abs((g.x0 - p0.x) * uy - (g.y0 - p0.y) * ux) < 4 && Math.abs((g.x1 - p0.x) * uy - (g.y1 - p0.y) * ux) < 4 && Math.max((g.x0 - p0.x) * ux + (g.y0 - p0.y) * uy, (g.x1 - p0.x) * ux + (g.y1 - p0.y) * uy) > 1 && Math.min((g.x0 - p0.x) * ux + (g.y0 - p0.y) * uy, (g.x1 - p0.x) * ux + (g.y1 - p0.y) * uy) < L - 1)) { out.push(`a rail runs through a privacy screen  [${tag}]`); break; }
+      }
+      if (built.some((b) => b.kind === "planter") !== pkg.lines.some((l) => l.id === "deck-planters")) out.push(`planters built and priced do not agree  [${tag}]`);
+    }
+  }
+  // PAST THE HOUSE'S CORNER (2026-11-14): the deck's shape and the house agree — a part past a corner is an open one,
+  // exactly as far as the house says — and no ledger hangs where no wall stands.
+  {
+    const W = d.shape.widthFt;
+    const back = d.shape.kind === "wall" ? d.shape.back : [];
+    const openL = back[0]?.open ? back[0].x1Ft : 0;
+    const openR = back.length && back[back.length - 1].open ? W - back[back.length - 1].x0Ft : 0;
+    if (Math.abs(openL - Math.max(0, -d.house.leftFt)) > 0.05 || Math.abs(openR - Math.max(0, -d.house.rightFt)) > 0.05) out.push(`the deck's open ends (${openL}, ${openR}) are not the house's (${d.house.leftFt}, ${d.house.rightFt})  [${tag}]`);
+    if (back.some((b, i) => b.open && i > 0 && i < back.length - 1)) out.push(`an open part in the middle of the deck  [${tag}]`);
+    if (back.some((b) => b.open && b.yFt > 0)) out.push(`an open part in front of the house line  [${tag}]`);
+    // A FRONT IN PARTS (2026-11-14): every rectangle of the deck has 3 ft of deck in it front to back and is no
+    // narrower than a part may be; the deck is as deep as its deepest part; the parts tile its width.
+    if (d.shape.kind === "wall" && d.shape.front) {
+      const fr = d.shape.front;
+      if (Math.abs(Math.max(...fr.map((q) => q.yFt)) - d.shape.depthFt) > 0.01) out.push(`the deck's depth ${d.shape.depthFt} is not its deepest part's  [${tag}]`);
+      if (fr[0].x0Ft !== 0 || Math.abs(fr[fr.length - 1].x1Ft - W) > 0.01 || fr.some((q, i) => i > 0 && Math.abs(q.x0Ft - fr[i - 1].x1Ft) > 0.01)) out.push(`the front's parts do not tile the deck's width  [${tag}]`);
+      for (const z of shapeZones(d.shape)) {
+        if (z.y1 - z.y0 < 36 - 0.6) out.push(`a part of the deck ${z.y1 - z.y0} in. front to back  [${tag}]`);
+        // (A sliver of the WALL — a chimney, a pilaster — is stepped around as it always was; the front never cuts one.)
+        if (z.x1 - z.x0 < 6 && !back.some((b) => Math.abs(b.x0Ft * 12 - z.x0) < 0.6 && Math.abs(b.x1Ft * 12 - z.x1) < 0.6)) out.push(`a part of the deck ${z.x1 - z.x0} in. wide  [${tag}]`);
+      }
+    }
+    const f0 = pkg.structure.frame;
+    // CORNERS CUT AT AN ANGLE (2026-11-14): with the beams under the joists, no post of the deck stands outside the
+    // deck's own outline — a beam stops inside a cut, an angled beam carries a deep one.
+    if (f0 && f0.beamStyle === "dropped" && d.shape.kind === "wall" && d.shape.front && d.framing.pins.length === 0) {
+      const ring = shapeOutline(d.shape);
+      const inRing = (x: number, y: number) => { let c = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const a = ring[i], b = ring[j]; if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) c = !c; } return c; };
+      // (Under a corner that is cut away; and an angled beam's own posts anywhere but on the deck.)
+      const cutAway = frontClips(d.shape);
+      const outP = f0.posts.filter((q) => !q.roof && (cutAway.some((k) => k.dir * (q.x - k.x) >= 0 && k.y - q.y >= 0 && k.dir * (q.x - k.x) + (k.y - q.y) < k.c - 1) || (/^c\d+p/.test(q.id) && !inRing(q.x, q.y))));
+      if (outP.length) out.push(`a post stands outside the deck: ${outP[0].id} (${Math.round(outP[0].x)}, ${Math.round(outP[0].y)})  [${tag}]`);
+      for (const q of d.shape.front) if ((q.clipLeftFt ?? 0) + (q.clipRightFt ?? 0) > q.x1Ft - q.x0Ft + 0.01 || (q.clipLeftFt ?? 0) < 0 || (q.clipRightFt ?? 0) < 0) out.push(`a part's cuts are more than the part  [${tag}]`);
+    }
+    if (f0) {
+      const x0 = -d.house.leftFt * 12 - 0.6;
+      const x1 = (W + d.house.rightFt) * 12 + 0.6;
+      for (const l of f0.ledgers) if (l.x0 < x0 || l.x1 > x1) out.push(`a ledger ${l.x0}..${l.x1} runs past the house (${x0}..${x1})  [${tag}]`);
+      for (const z of f0.zones) if (z.zone.open && z.back !== "beam") out.push(`a part past the house's corner hangs on a ledger  [${tag}]`);
+    }
+  }
+  // BY HAND (2026-11-13; lib/deck/byHand): a post or a beam taken hold of and moved — to its line's ends and a few
+  // inches along — is still in the hand afterwards (the same name), where it was put, and the deck still builds.
+  if (Number(tag.replace(/\D/g, "")) % 4 === 0) {
+    const grips = deckGrips(pkg.structure).filter((g) => !g.fixed);
+    const tried = [grips[0], grips[Math.floor(grips.length / 2)], grips[grips.length - 1]].filter((g, i, a) => g && a.indexOf(g) === i);
+    for (const g of tried) {
+      for (const at of [g.min, g.at + 7, g.max]) {
+        const p = moveGrip(pkg.structure, g.kind, g.id, at, grips);
+        if (!p) continue;
+        const d3 = normalizeDeckDesign(applyDeckPatch(d, p));
+        const s3 = buildStructure(d3);
+        // (The front and the house-side beam go by the part of the deck they run under: on a deck whose beams met on one line before the move, that part can be another after it.)
+        const g3 = deckGrips(s3).find((q) => q.kind === g.kind && (q.id === g.id || (g.id.includes(":") && !g.id.startsWith("open:") && q.id.startsWith(`${g.id.split(":")[0]}:`))));
+        const want = Math.min(g.max, Math.max(g.min, at));
+        if (!g3) out.push(`moved by hand, then not in the hand: a ${g.kind} ${g.id.replace(/[-\d.]+/g, "#")} of ${g.label}  [${tag}]`);
+        else if (!g.id.includes(":") && g.kind !== "roof-post" && Math.abs(g3.at - want) > (g.kind === "post" ? 9 : 0.6)) out.push(`moved by hand, not where it was put: a ${g.kind} of ${g.label} asked ${want} stands ${g3.at}  [${tag}]`);
+        deckScene(s3);
+      }
+    }
+  }
   if (Math.abs(pkg.materialSubtotal + pkg.laborSubtotal - pkg.subtotal) > 1) out.push(`halves ≠ total: ${pkg.materialSubtotal} + ${pkg.laborSubtotal} vs ${pkg.subtotal}  [${tag}]`);
   if (pkg.lines.length < 1 || pkg.lines.length > 60) out.push(`lines count ${pkg.lines.length}  [${tag}]`);
   for (const l of pkg.lines) {
@@ -184,7 +437,9 @@ if (process.argv[2] === "--repro") {
   for (const tag of process.argv.slice(3)) {
     const i = Number(tag.slice(1));
     const raw = tag[0] === "A" ? randomDesign(rngOf(1000 + i)) : tag[0] === "W" ? wallDesign(i) : (() => { const r = rngOf(50000 + i); return mutate(r, normalizeDeckDesign(randomDesign(r))); })();
-    const d = normalizeDeckDesign(raw);
+    const d = normalizeDeckDesign(breakersFor(tag, builtInsFor(tag, skirtFor(tag, raw))));
+    // --dump: the design alone, before anything is built from it (for one that kills the process when built).
+    if (process.argv.includes("--dump")) { console.log(JSON.stringify(d)); continue; }
     console.log(`\n=== ${tag}: ${structureWords(d)} · ${sizeWords(d)} · h ${d.heightIn} in · placement ${d.placement} · floor ${d.floor} · roof ${d.roof.kind}/${d.roof.plan.shape} · stairs ${d.stairs.length} · rail ${d.rail.type} · lower ${d.lower.on} · fixtures ${d.electrical.fixtures.length} · front ${d.shape.kind === "rect" ? d.shape.front?.kind : "L"}`);
     const pkg = priceDeck(d);
     const scene = deckScene(pkg.structure);
@@ -201,8 +456,10 @@ if (process.argv[2] === "--repro") {
 
 const trouble: string[] = [];
 const run = (tag: string, raw: unknown) => {
+  // A design that kills the process outright (an array grown past what V8 holds) leaves its name here: FUZZ_TRACE=<file>.
+  if (process.env.FUZZ_TRACE) writeFileSync(process.env.FUZZ_TRACE, tag);
   let d: DeckDesign;
-  try { d = normalizeDeckDesign(raw); } catch (e) { trouble.push(`normalize THREW: ${e instanceof Error ? e.message : String(e)}  [${tag}]`); return; }
+  try { d = normalizeDeckDesign(breakersFor(tag, builtInsFor(tag, skirtFor(tag, raw)))); } catch (e) { trouble.push(`normalize THREW: ${e instanceof Error ? e.message : String(e)}  [${tag}]`); return; }
   try { exercise(d, tag, trouble); } catch (e) { trouble.push(`THREW: ${e instanceof Error ? (e.stack ?? e.message).split("\n").slice(0, 3).join(" | ") : String(e)}  [${tag}]`); }
 };
 const started = Date.now();

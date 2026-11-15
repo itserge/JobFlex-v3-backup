@@ -1,4 +1,4 @@
-// GET /api/admin/roof-lab/picture?id=<measurementId>&kind=photo|relief
+// GET /api/admin/roof-lab/picture?id=<measurementId>&kind=photo|relief|ortho
 //
 // The picture the roof facet lab draws on (2026-11-11): Google's aerial photograph of the roof, or its height map
 // shaded as a relief — both cut to the same patch of ground the drawing's own frame names (lib/roofFacets/server).
@@ -6,7 +6,7 @@
 // admin's own browser may keep it for a day.
 
 import { requirePlatformAdmin } from "@/lib/orgContext";
-import { roofLabPicture } from "@/lib/roofFacets/server";
+import { roofLabOrtho, roofLabPicture } from "@/lib/roofFacets/server";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -23,9 +23,16 @@ export async function GET(req: Request) {
   }
   const url = new URL(req.url);
   const id = url.searchParams.get("id") ?? "";
-  const kind = url.searchParams.get("kind") === "photo" ? "photo" : "relief";
+  const asked = url.searchParams.get("kind");
+  const kind = asked === "photo" ? "photo" : "relief";
   if (!id || id.length > 64) return Response.json({ error: "Which roof?" }, { status: 400, headers: NO_STORE });
   try {
+    if (asked === "ortho") {
+      // EagleView's own aerial picture of the parcel, as they sent it; where it lies goes in a header
+      const o = await roofLabOrtho(id);
+      if (!o.ok) return Response.json({ error: o.reason }, { status: 404, headers: NO_STORE });
+      return new Response(new Uint8Array(o.bytes), { headers: { "Content-Type": o.contentType, "Cache-Control": "private, max-age=3600", "X-Roof-Bbox": o.bbox.join(","), ...(o.shotDate ? { "X-Roof-Shot": o.shotDate } : {}) } });
+    }
     const r = await roofLabPicture(id, kind);
     if (!r.ok) return Response.json({ error: r.reason }, { status: 404, headers: NO_STORE });
     return new Response(new Uint8Array(r.png), { headers: { "Content-Type": "image/png", "Cache-Control": "private, max-age=86400" } });

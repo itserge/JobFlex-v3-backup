@@ -8,10 +8,11 @@ import { actorForSession } from "@/lib/assistant/actor";
 import { approve, callOff, handleTurn, readFeed } from "@/lib/assistant/engine";
 import { SPEECH_LANGS, type AssistantFeed, type FeedAction, type SpeechLang } from "@/lib/assistant/shared";
 import type { AssistantPrefs } from "@/lib/assistant/prefs";
+import type { OperatorEngine, TurnSpeed } from "@/lib/assistant/words";
 import { db } from "@/lib/db";
 
 /** `running`: a build left to run after the reply (a minute's AI estimate) — the panel runs it next (/api/assistant/run). */
-export type AskResult = { ok: true; reply: string; feed: AssistantFeed; running?: string | null } | { ok: false; error: string };
+export type AskResult = { ok: true; reply: string; feed: AssistantFeed; running?: string | null; speed?: TurnSpeed | null } | { ok: false; error: string };
 
 const askInput = z.object({ text: z.string().trim().min(1).max(1200), spoken: z.boolean().optional() });
 const answerInput = z.object({ actionId: z.string().min(1).max(64), answer: z.enum(["yes", "no"]), pin: z.string().regex(/^\d{4}$/).optional() });
@@ -21,7 +22,8 @@ export async function askAssistant(raw: unknown): Promise<AskResult> {
   if (!parsed.success) return { ok: false, error: "Say or type what you need." };
   const actor = await actorForSession();
   const turn = await handleTurn({ actor, text: parsed.data.text, spoken: parsed.data.spoken });
-  return { ok: true, reply: turn.reply, feed: await readFeed(actor), running: turn.running ?? null };
+  // How long it took, for the readout — only while this person is on the new engine (lib/assistant/speed).
+  return { ok: true, reply: turn.reply, feed: await readFeed(actor), running: turn.running ?? null, speed: turn.speed?.engine === "new" ? turn.speed : null };
 }
 
 /** "Do it" / "Cancel" on a read-back in the panel. The answer is kept in the
@@ -72,6 +74,8 @@ export interface AssistantPhoneView {
   pin: { set: boolean };
   /** The morning briefing and the alerts this person turned on (lib/assistant/prefs). */
   prefs: AssistantPrefs;
+  /** Platform admins only, while it is tested (2026-11-13): which engine they talk to, and their own words for the ears. */
+  speed: { engine: OperatorEngine; words: string[] } | null;
 }
 
 /** Should this person see the Assistant's rows: it is open to them, and their role has it. Never throws. */
@@ -121,7 +125,31 @@ export async function loadAssistantPhone(): Promise<AssistantPhoneView> {
     preview,
     pin: { set: closed ? false : await hasPin(actor.organizationId, actor.userId) },
     prefs: closed ? DEFAULT_PREFS : await readPrefs(actor.organizationId, actor.userId),
+    speed: admin?.isPlatformAdmin && !closed ? await speedView(actor.organizationId, actor.userId) : null,
   };
+}
+
+async function speedView(organizationId: string, userId: string): Promise<{ engine: OperatorEngine; words: string[] }> {
+  const { readPrefs } = await import("@/lib/assistant/prefs");
+  const { engineFor } = await import("@/lib/assistant/words");
+  const prefs = await readPrefs(organizationId, userId);
+  return { engine: engineFor(true, prefs.engine), words: prefs.words };
+}
+
+/** The speed test (2026-11-13, owner: "understand me better and speak back faster"): the new ears and brain or the
+ *  ones before, and the person's own words the new ears are given. Platform admins only while it is tested. */
+export async function setAssistantSpeed(raw: unknown): Promise<AssistantPhoneView> {
+  const input = z.object({ engine: z.enum(["new", "classic"]), words: z.string().max(4000) }).parse(raw);
+  const { requirePlatformAdmin } = await import("@/lib/orgContext");
+  await requirePlatformAdmin();
+  const actor = await actorForSession();
+  const { readPrefs, writePrefs } = await import("@/lib/assistant/prefs");
+  const { parseMyWords } = await import("@/lib/assistant/words");
+  const { forgetOperatorSpeed } = await import("@/lib/assistant/speed");
+  const before = await readPrefs(actor.organizationId, actor.userId);
+  await writePrefs(actor.organizationId, actor.userId, { ...before, engine: input.engine, words: parseMyWords(input.words) });
+  forgetOperatorSpeed(actor.organizationId, actor.userId);
+  return loadAssistantPhone();
 }
 
 /** The morning briefing and the alerts: the person's own switches (2026-11-05). Turning the briefing on after its time
@@ -148,6 +176,9 @@ export async function setAssistantPrefs(raw: unknown): Promise<AssistantPhoneVie
     // …and one that doesn't know the promise reminders yet (Smart CRM part 4) keeps those.
     alerts: { ...input.alerts, promises: input.alerts.promises ?? before.alerts.promises },
     lang: input.lang ?? before.lang,
+    // The speed test's switch and words have their own action (setAssistantSpeed): this form keeps them.
+    engine: before.engine,
+    words: before.words,
   });
   if (input.briefing.on && (!before.briefing.on || before.briefing.time !== input.briefing.time)) {
     const now = new Date();

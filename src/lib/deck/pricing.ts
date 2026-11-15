@@ -29,6 +29,8 @@ import { footingDepthIn, type BuildOptions, type DeckFrame } from "./frame";
 import { roofByHandWords, roofWords, type RoofFrame } from "./roof";
 import { buildStructure, structureLevels, type DeckStructure } from "./structure";
 import { deckTakeoff, type BomLine, type BomStep, type DeckTakeoff } from "./takeoff";
+import { SKIRT_GAP_IN } from "./skirt";
+import { BENCH_SEAT_IN, KITCHEN_DEPTH_IN, KITCHEN_HEIGHT_IN, PLANTER_DEPTH_IN, SCREEN_GAP_IN, builtInWords } from "./builtins";
 import { isExampleSource, deckRate, type ResolvedRate } from "./rates";
 import { railType, speciesWords } from "./catalog";
 import { OC_POST } from "./ocLumber";
@@ -208,7 +210,7 @@ export function priceStructure(s: DeckStructure, opts: DeckPriceOptions = {}): D
       const front = design.shape.kind === "rect" ? design.shape.front : undefined;
       line({
         id: "deck-framing",
-        name: `Framing — ${speciesWords(frame.species)}${twoLevels ? ", two levels" : ""}`,
+        name: `Framing — ${speciesWords(frame.species)}${s.lower?.place === "under" ? ", a double deck" : twoLevels ? ", two levels" : ""}`,
         description: `${frame.joistSize} joists ${frame.spacingIn} in. on center; ${beamSizes.join(" and ")} ${frame.beamStyle === "flush" ? "flush " : ""}${beamSizes.length === 1 && levels.length === 1 && frame.beams.length === 1 ? "beam" : "beams"}${design.framing.doubleRim ? "; doubled rim and outside joists" : ""}${design.framing.joistTape ? "; joist tape" : ""}${front?.kind === "curve" ? `; the front bowed out ${front.bulgeFt} ft on a laminated rim, joists cut to the arc` : front?.kind === "clipped" ? `; corners clipped ${front.clipFt} ft` : ""}${twoLevels ? `; the lower level ${design.lower.widthFt} × ${design.lower.depthFt} ft, ${ftIn(design.lower.dropIn)} down` : ""}; hangers, ties and blocking`,
         quantity: deckArea,
         unit: "sqft",
@@ -237,11 +239,103 @@ export function priceStructure(s: DeckStructure, opts: DeckPriceOptions = {}): D
       });
     }
 
-    // Fascia.
+    // Fascia. (The skirting's panels are bought with the fascia and priced on their own line.)
+    const isSkirt = (l: PricedBomLine) => l.id.includes("skirt");
+    const notSkirt = (l: PricedBomLine) => !isSkirt(l);
     const fasciaFt = levels.reduce((a, l) => a + l.surface.fascia.lf, 0);
     if (fasciaFt > 0) {
       const w = work("labor.fascia", fasciaFt);
-      line({ id: "deck-fascia", name: "Fascia on the open edges", quantity: Math.round(fasciaFt * 10) / 10, unit: "ln ft", material: stepMaterial("fascia"), labor: w.amount, exampleMaterial: stepExample("fascia"), exampleLabor: w.example });
+      line({ id: "deck-fascia", name: "Fascia on the open edges", quantity: Math.round(fasciaFt * 10) / 10, unit: "ln ft", material: stepMaterial("fascia", notSkirt), labor: w.amount, exampleMaterial: stepExample("fascia", notSkirt), exampleLabor: w.example });
+    }
+
+    // Built-in benches and planter boxes (2026-11-14; lib/deck/builtins): a line for the benches, a line for the boxes.
+    {
+      const benches = s.builtIns.filter((b) => b.built && (b.kind === "bench" || b.kind === "bench-back"));
+      const planters = s.builtIns.filter((b) => b.built && b.kind === "planter");
+      const screens = s.builtIns.filter((b) => b.built && b.kind === "screen");
+      if (screens.length) {
+        const isScreen = (l: PricedBomLine) => l.id.includes("screen");
+        const sqFt = Math.round(screens.reduce((a, b) => a + b.sqFt, 0));
+        const w = work("labor.screen", sqFt);
+        line({
+          id: "deck-screens",
+          name: screens.length === 1 ? "Privacy screen" : `${screens.length} privacy screens`,
+          description: `${screens.map((b) => builtInWords(b).replace(/^an? /, "")).join("; ")} — the deck's own boards across ${[...new Set(screens.map((b) => b.postSize))].join(" and ")} posts no more than 6 ft apart, ${SCREEN_GAP_IN} in. between the boards, a cap board on top; each post in one piece from under the deck, through-bolted to the frame over solid blocking`,
+          quantity: Math.max(1, sqFt),
+          unit: "sqft",
+          material: stepMaterial("builtins", isScreen),
+          labor: w.amount,
+          exampleMaterial: stepExample("builtins", isScreen),
+          exampleLabor: w.example,
+        });
+      }
+      const kitchens = s.builtIns.filter((b) => b.built && b.kind === "kitchen");
+      if (kitchens.length) {
+        const isKitchen = (l: PricedBomLine) => l.id.includes("kitchen");
+        const ft = Math.round((kitchens.reduce((a, b) => a + b.lengthIn, 0) / 12) * 2) / 2;
+        const w = work("labor.kitchen", ft);
+        line({
+          id: "deck-kitchen",
+          name: kitchens.length === 1 ? "Outdoor kitchen island" : `${kitchens.length} outdoor kitchen islands`,
+          description: `${kitchens.map((b) => builtInWords(b).replace(/^an? /, "")).join("; ")} — ${KITCHEN_DEPTH_IN} in. deep and ${KITCHEN_HEIGHT_IN} in. high, framed in treated 2x4 and clad in the deck's own boards, the joists under it doubled; the top, the grill, gas and power are not included`,
+          quantity: ft,
+          unit: "ln ft",
+          material: stepMaterial("builtins", isKitchen),
+          labor: w.amount,
+          exampleMaterial: stepExample("builtins", isKitchen),
+          exampleLabor: w.example,
+        });
+      }
+      const ftOf = (list: typeof benches) => Math.round((list.reduce((a, b) => a + b.lengthIn, 0) / 12) * 2) / 2;
+      if (benches.length) {
+        const backs = benches.filter((b) => b.kind === "bench-back");
+        const isBench = (l: PricedBomLine) => l.id.includes("bench");
+        const w = sum(work("labor.bench", ftOf(benches)), backs.length ? work("labor.benchBack", ftOf(backs)) : none);
+        line({
+          id: "deck-benches",
+          name: `${benches.length === 1 ? "Built-in bench" : `${benches.length} built-in benches`}${backs.length === benches.length ? " with a back" : backs.length ? `, ${backs.length} with a back` : ""}`,
+          description: `${benches.map((b) => builtInWords(b).replace(/^an? /, "")).join("; ")} — the seat ${BENCH_SEAT_IN} in. above the deck in the deck's own boards, on 4x4 legs no more than 4 ft apart, a fascia apron under its edge, blocking between the joists under every support`,
+          quantity: ftOf(benches),
+          unit: "ln ft",
+          material: stepMaterial("builtins", isBench),
+          labor: w.amount,
+          exampleMaterial: stepExample("builtins", isBench),
+          exampleLabor: w.example,
+        });
+      }
+      if (planters.length) {
+        const isPlanter = (l: PricedBomLine) => l.id.includes("planter");
+        const w = work("labor.planter", ftOf(planters));
+        line({
+          id: "deck-planters",
+          name: planters.length === 1 ? "Planter box" : `${planters.length} planter boxes`,
+          description: `${planters.map((b) => builtInWords(b).replace(/^an? /, "")).join("; ")} — ${PLANTER_DEPTH_IN} in. deep, three boards high in the deck's own boards on a treated frame, a cap board round the rim; lined, with drain holes; soil and plants by the owner`,
+          quantity: ftOf(planters),
+          unit: "ln ft",
+          material: stepMaterial("builtins", isPlanter),
+          labor: w.amount,
+          exampleMaterial: stepExample("builtins", isPlanter),
+          exampleLabor: w.example,
+        });
+      }
+    }
+
+    // Skirting under the deck (2026-11-14; lib/deck/skirt): its panels or boards and the frame behind them, hung like
+    // the framed panels between a roof's posts.
+    if (s.skirt) {
+      const sk = s.skirt;
+      const w = work("labor.walls", sk.sqFt);
+      line({
+        id: "deck-skirt",
+        name: `Skirting under the deck — ${sk.kind === "lattice" ? "lattice in a border" : "the deck's boards laid level"}`,
+        description: `${Math.round(sk.lf)} ft of open edge, up to ${sk.heightIn} in. high, on a treated 2x4 frame hung under the rim; a hand clear of the ground${sk.kind === "boards" ? `, ${SKIRT_GAP_IN}-in. gaps between the boards for air` : ""}; one bay on hinges, to get under the deck`,
+        quantity: Math.max(1, Math.round(sk.sqFt)),
+        unit: "sqft",
+        material: stepMaterial("fascia", isSkirt),
+        labor: w.amount,
+        exampleMaterial: stepExample("fascia", isSkirt),
+        exampleLabor: w.example,
+      });
     }
 
     // The step between the levels (a low drop is a step the lower deck itself makes; the trim and the riser are the work).
@@ -265,11 +359,13 @@ export function priceStructure(s: DeckStructure, opts: DeckPriceOptions = {}): D
     const boxes = s.stairs.filter((st) => st.kind === "box");
     const w = sum(
       ...flights.map((st) => work("stairs.labor", st.risers * (st.widthIn / 12))),
-      ...boxes.map((st) => work("stairs.boxLabor", st.boxFrameLf)),
+      // (Wide steps on stringers are built as a stair as wide as the edge they follow: so many risers, so many feet.)
+      ...boxes.map((st) => (st.wide ? work("stairs.labor", st.risers * (st.wide.lengthIn / 12)) : work("stairs.boxLabor", st.boxFrameLf))),
       work("stairs.pad", s.stairs.filter((st) => st.pad).length),
-      work("stairs.landing", s.stairs.filter((st) => st.landing || st.midSupport).length),
+      // (Every landing is framed and posted; a stair with a beam under a long flight and no landing counts once, as it did.)
+      work("stairs.landing", s.stairs.reduce((a, st) => a + (st.landings.length || (st.midSupport ? 1 : 0)), 0)),
     );
-    const words = s.stairs.map((st) => (st.kind === "box" ? `box steps wrapping ${st.design.wrapSides === 4 ? "four sides" : st.design.wrapSides === 3 ? "three sides" : "the front"} (${plural(st.risers, "riser")})` : `a ${st.widthIn / 12}-ft flight of ${plural(st.risers, "riser")} down the ${st.design.side}${st.lands === "lower-deck" ? " to the lower level" : st.design.landing === "pad" ? " onto a new pad" : st.design.landing === "patio" ? " onto the patio" : " onto pavers"}${st.landing ? ", a landing midway" : st.midSupport ? ", a beam midway" : ""}${st.rail.sides ? `, ${st.rail.sides === 2 ? "rails both sides" : "a handrail"}` : ""}`));
+    const words = s.stairs.map((st) => (st.kind === "box" ? `${st.wide ? "wide steps on stringers" : "box steps"} wrapping ${st.design.wrapSides === 4 ? "four sides" : st.design.wrapSides === 3 ? "three sides" : "the front"} (${plural(st.risers, "riser")})` : `a ${st.widthIn / 12}-ft flight of ${plural(st.risers, "riser")} down the ${st.design.side}${st.lands === "lower-deck" ? " to the lower level" : st.design.landing === "pad" ? " onto a new pad" : st.design.landing === "patio" ? " onto the patio" : " onto pavers"}${st.landings.length > 1 ? `, ${st.landings.length} landings on the way down${st.landings.some((l) => l.turn !== "straight") ? ", turning" : ""}` : st.landing ? (st.landings[0]?.turn !== "straight" ? ", a landing and a turn midway" : ", a landing midway") : st.midSupport ? ", a beam midway" : ""}${st.rail.sides ? `, ${st.rail.sides === 2 ? "rails both sides" : "a handrail"}` : ""}`));
     line({ id: "deck-stairs", name: `Stairs — ${plural(s.stairs.length, "stair")}, ${plural(stairSteps, "riser")}`, description: `${words.length > 3 ? `${words.slice(0, 3).join("; ")}; and ${plural(words.length - 3, "more stair")}` : words.join("; ")}. ${flights.length ? `2x12 stringers ${flights[0].stringers.spacingIn} in. apart, treads of the deck's boards, riser boards` : "2x6 box frames on blocks over gravel, treads of the deck's boards"}`, quantity: stairSteps, unit: "ea", material: stepMaterial("stairs"), labor: w.amount, exampleMaterial: stepExample("stairs"), exampleLabor: w.example });
   }
 
@@ -446,7 +542,9 @@ export function deckScope(pkg: DeckPackage, where?: string | null): string[] {
     const beamSizes = [...new Set(frame.beams.map((b) => b.spec.size))].join(" and ");
     out.push(`Frame in ${frame.group === "OC" ? "Owens Corning OC Lumber, a glass-fiber composite that does not rot or rust, screwed together with stainless screws" : speciesWords(frame.species)}: ${frame.joistSize} joists ${frame.spacingIn} in. on center on ${frame.beams.length === 1 ? `a ${beamSizes} beam` : `${beamSizes} beams`}${frame.beamStyle === "flush" ? " set flush with the joists" : ""}, metal hangers and ties at every connection${design.framing.doubleRim ? ", doubled rim and outside joists" : ""}${design.framing.joistTape ? ", protective tape on every joist top" : ""}.`);
     if (frame.ledgers.length) out.push(`Ledger fastened to the house with ${LEDGER_FASTENER_LABEL[design.ledger.fastener]}, flashed above and behind so water cannot reach the house framing, and tied to the house against sideways movement.`);
-    if (s.lower) out.push(`A lower level in front, ${design.lower.widthFt} × ${design.lower.depthFt} ft, ${ftIn(s.lower.dropIn)} down, framed the same way on its own posts.`);
+    if (s.lower?.place === "under" && design.lower.shape) out.push(`A double deck: a second deck under it shaped on its own — ${ftIn(design.lower.shape.widthFt * 12)} × ${ftIn(design.lower.shape.depthFt * 12)}, ${Math.round(s.lower.frame.areaSqFt)} sq ft — ${ftIn(design.lower.heightIn)} above the ground and ${ftIn(s.lower.dropIn)} below the upper one. Its beams are let into the upper deck's posts where they meet${s.lower.frame.posts.length ? ` and stand on ${s.lower.frame.posts.length} posts of its own elsewhere` : ""}; the shared posts and their footings are sized for both decks.`);
+    else if (s.lower?.place === "under") out.push(`A double deck: a second deck of the same size under it, ${ftIn(design.lower.heightIn)} above the ground and ${ftIn(s.lower.dropIn)} below the upper one, framed the same way. Its beams are let into the same posts, which with their footings are sized to carry both decks.`);
+    else if (s.lower) out.push(`A lower level in front, ${design.lower.widthFt} × ${design.lower.depthFt} ft, ${ftIn(s.lower.dropIn)} down, framed the same way on its own posts.`);
     out.push(`${frame.decking.label} decking${takeoff.surface.pattern === "diagonal" ? ", laid on the diagonal" : takeoff.surface.pattern === "herringbone" ? ", laid in a herringbone" : ""}${takeoff.surface.border ? ` with a ${takeoff.surface.border === 2 ? "double " : ""}picture-frame border${takeoff.surface.product.border ? ` in ${takeoff.surface.product.border.name}` : ""}` : ""}, fastened with ${takeoff.surface.fastening === "hidden" ? "hidden fasteners" : "coated deck screws"}${takeoff.surface.fascia.on ? "; fascia boards on the open edges" : ""}.`);
   } else if (roof) {
     out.push(`Build a ${structureWords(design)}${where ? ` at ${where}` : ""}, ${roof.floor === "slab" ? `on a new 4-in. concrete slab (${roof.slab?.sqFt ?? 0} sq ft)` : roof.floor === "existing" ? "on the existing concrete slab or patio (no concrete in this price; it must be sound and at least 4 in. thick)" : "on poured footings"}${roof.attach === "wall" ? ", against the house" : ""}.`);
@@ -466,12 +564,14 @@ export function deckScope(pkg: DeckPackage, where?: string | null): string[] {
     if (roof.openings.length || roof.pins.length) out.push(`${roofByHandWords(roof).replace(/^a /, "A ")}; the headers sized for the spans they make.`);
   }
   if (pkg.railFt > 0) out.push(`${railWords(s.rails).replace(/^(\d)/, "$1")}.`);
-  for (const st of s.stairs) out.push(st.kind === "box" ? `Box steps wrapping ${st.design.wrapSides === 4 ? "all four sides" : st.design.wrapSides === 3 ? "three sides" : "the front"}, ${plural(st.risers, "riser")} of ${st.riserIn.toFixed(2)} in.` : `A ${st.widthIn / 12}-ft-wide stair down the ${st.design.side}: ${plural(st.risers, "riser")} of ${st.riserIn.toFixed(2)} in., treads ${st.runIn + 1} in. deep${st.lands === "lower-deck" ? ", onto the lower level" : st.design.landing === "pad" ? ", onto a new concrete pad" : st.design.landing === "patio" ? ", onto the existing patio" : ", onto pavers"}${st.rail.sides ? `, ${st.rail.sides === 2 ? "rails on both sides" : "a handrail"}` : ""}.`);
+  for (const st of s.stairs) out.push(st.kind === "box" ? `${st.wide ? "Wide steps on cut stringers" : "Box steps"} wrapping ${st.design.wrapSides === 4 ? "all four sides" : st.design.wrapSides === 3 ? "three sides" : "the front"}, ${plural(st.risers, "riser")} of ${st.riserIn.toFixed(2)} in.` : `A ${st.widthIn / 12}-ft-wide stair down the ${st.design.side}: ${plural(st.risers, "riser")} of ${st.riserIn.toFixed(2)} in., treads ${st.runIn + 1} in. deep${st.lands === "lower-deck" ? ", onto the lower level" : st.design.landing === "pad" ? ", onto a new concrete pad" : st.design.landing === "patio" ? ", onto the existing patio" : ", onto pavers"}${st.rail.sides ? `, ${st.rail.sides === 2 ? "rails on both sides" : "a handrail"}` : ""}.`);
   if (s.electrical.on) {
     const el = s.electrical;
     out.push(`Electrical: ${electricalWords(el).toLowerCase()} — ${[...new Set(el.fixtures.map((f) => FIXTURE_LABEL[f.kind].toLowerCase()))].join(", ")}, on ${plural(el.circuits.length, "new circuit")} from the panel, weatherproof boxes and GFCI protection, by a licensed electrician.`);
     if (el.byClient.length) out.push(`${el.byClient.length === 1 ? "One fixture" : `${el.byClient.length} fixtures`} (${[...new Set(el.byClient.map((f) => FIXTURE_LABEL[f.kind].toLowerCase()))].join(", ")}) to be chosen and bought by you; we wire the boxes and hang them.`);
   }
+  for (const b of s.builtIns) if (b.built) out.push(b.kind === "kitchen" ? `${builtInWords(b).replace(/^a /, "A ").replace(/^an /, "An ")}, framed and clad in the deck's own boards, the joists under it doubled for a stone top and a grill. The top, the grill, gas and power are not included.` : b.kind === "fire" ? `A place for ${builtInWords(b)} is shown on the drawing. The table, its pad and the gas line are not included.` : b.kind === "screen" ? `${builtInWords(b).replace(/^a /, "A ").replace(/^an /, "An ")}: the deck's own boards across ${b.postSize} posts, with a cap board; the posts bolted through the deck's frame.` : b.kind === "planter" ? `${builtInWords(b).replace(/^a /, "A ").replace(/^an /, "An ")}, in the deck's own boards with a cap round the rim, lined and drained. Soil and plants are not included.` : `${builtInWords(b).replace(/^a /, "A ").replace(/^an /, "An ")}, built in: the seat in the deck's own boards on treated legs, a fascia apron under its edge${b.kind === "bench-back" ? ", a capped back behind it" : ""}.`);
+  if (s.skirt) out.push(`Skirting under the deck on its open sides (${Math.round(s.skirt.lf)} ft): ${s.skirt.kind === "lattice" ? "lattice in a border" : "the deck's own boards laid level, with gaps for air"}, on a treated frame, stopped a hand above the ground, with one hinged panel to get under the deck.`);
   if (design.extras.underDeckDrain) out.push("An under-deck drainage system keeps the space below the deck dry.");
   if (design.extras.demoSqFt > 0) out.push(`Tear-out and haul-away of the existing deck, ${design.extras.demoSqFt} sq ft.`);
   out.push("Layout squared and checked before digging; site cleaned when the work is done.");

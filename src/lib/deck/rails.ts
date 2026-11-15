@@ -182,6 +182,8 @@ export interface RailInput {
   stairs: StairBuild[];
   /** A covered deck's roof posts, in plan, with half their width: a top-mounted rail that comes to one runs into it — the roof's post is the rail's post there. */
   roofPosts?: ReadonlyArray<{ x: number; y: number; halfIn: number }>;
+  /** Stretches of the main deck's edge where something else stands in the rail's place (a privacy screen, lib/deck/builtins): no rail there. */
+  gaps?: ReadonlyArray<{ x0: number; y0: number; x1: number; y1: number }>;
 }
 
 export function buildRails(input: RailInput): RailBuild {
@@ -235,7 +237,9 @@ export function buildRails(input: RailInput): RailBuild {
     type Side = RailLevel["sides"][number];
     const lengthOf = (sd: Side) => Math.hypot(sd.x1 - sd.x0, sd.y1 - sd.y0);
     // Box steps wrap a side: no rail there (the deck is low by definition).
-    const railed = (sd: Side) => !sd.house && lengthOf(sd) >= 12 && !wraps.some((w) => w.design.wrapSides === 4 || (w.design.wrapSides === 3 && sd.side !== "back") || (w.design.wrapSides === 1 && sd.side === "front"));
+    // (Steps that follow the deck's own outline name the stretches of edge they run along — 2026-11-14.)
+    const onSteps = (w: (typeof wraps)[number], sd: Side) => (w.wrapped ? w.wrapped.some((g) => Math.abs(g.x0 - sd.x0) < 0.6 && Math.abs(g.y0 - sd.y0) < 0.6 && Math.abs(g.x1 - sd.x1) < 0.6 && Math.abs(g.y1 - sd.y1) < 0.6) : w.design.wrapSides === 4 || (w.design.wrapSides === 3 && sd.side !== "back") || (w.design.wrapSides === 1 && sd.side === "front"));
+    const railed = (sd: Side) => !sd.house && lengthOf(sd) >= 12 && !wraps.some((w) => onSteps(w, sd));
     const keyOf = (sd: Side) => `${level.id}-${sd.side}`;
     /**
      * Where a TOP-MOUNTED run's line meets its neighbour's at a corner, inches along this side from the corner (2026-11-13):
@@ -279,6 +283,15 @@ export function buildRails(input: RailInput): RailBuild {
         const lo = Math.min(t0, t1);
         const hi = Math.max(t0, t1);
         if (hi > 0 && lo < L) openings.push([Math.max(0, lo), Math.min(L, hi)]);
+      }
+      // …and what stands in the rail's place along it (a privacy screen): the rail stops a hand short of each of its ends.
+      if (level.id === "upper") {
+        for (const g of input.gaps ?? []) {
+          if (Math.abs((g.x0 - side.x0) * uy - (g.y0 - side.y0) * ux) > 1.5 || Math.abs((g.x1 - side.x0) * uy - (g.y1 - side.y0) * ux) > 1.5) continue;
+          const t0 = (g.x0 - side.x0) * ux + (g.y0 - side.y0) * uy;
+          const t1 = (g.x1 - side.x0) * ux + (g.y1 - side.y0) * uy;
+          if (Math.max(t0, t1) > 0 && Math.min(t0, t1) < L) openings.push([Math.max(0, Math.min(t0, t1)), Math.min(L, Math.max(t0, t1))]);
+        }
       }
       if (level.stepDown && side.side === "front" && level.stepDown.dropIn <= GUARD_REQUIRED_ABOVE_IN) {
         const t0 = (level.stepDown.x0 - side.x0) * ux;

@@ -24,7 +24,7 @@
 // in front of it (a porch roof, an old deck, a patio) is not taken off the photo (owner, 2026-10-23: "read just a shape
 // of that back wall and don't show existing deck or porch roofs, just shape and windows"). Without them the house is
 // drawn by rule, as before.
-import { BACK_LIMITS, DECK_LIMITS, normalizeBack, type DeckShape } from "./design";
+import { BACK_LIMITS, DECK_LIMITS, normalizeBack, partsShape, type BackPart, type DeckShape } from "./design";
 import { normalizeHouseRead, type HouseRead } from "./houseRead";
 
 /** The house's roof (2026-10-23, the shapes a photo shows): a hip, a gable with its ridge along the back wall (the triangles
@@ -47,14 +47,50 @@ export interface HouseJog {
   dir: JogDir;
   depthFt: number;
 }
+/**
+ * A PART OF THE WALL WITH ITS OWN HEIGHT AND ROOF (2026-11-13, owner, of a photo of a two-storey house whose right
+ * half is one storey under a low roof of its own: "when you convert the picture to 3D, use the same roof … make it
+ * smart to understand the jogs"). Until now every part stood under the house's one roof, a bump-out one storey or
+ * full height for the whole house at once.
+ *   storeys  how many storeys of wall THIS part's own face has. Absent = the old rule: as tall as the house, a
+ *            bump-out by `bumpOuts`.
+ *   roof     the part's own roof when it stands lower than the house's (or comes out under a roof of its own):
+ *            a lean-to against the taller wall ("shed"), a hip, a gable, a flat roof. Absent = the house's kind.
+ *   wing     the part is ALL the house there is at that spot — a one-storey wing beside the two-storey block, no
+ *            taller wall behind or above it. Absent = a one-storey part in front of the taller house (its upper
+ *            windows stay on the wall above it).
+ */
+export type PartRoof = "hip" | "gable" | "shed" | "flat";
+export const PART_ROOFS: readonly PartRoof[] = ["shed", "hip", "gable", "flat"];
+export const PART_ROOF_LABEL: Record<PartRoof, string> = { shed: "Lean-to", hip: "Hip", gable: "Gable", flat: "Flat" };
+export interface HousePart {
+  storeys?: 1 | 2;
+  roof?: PartRoof;
+  wing?: true;
+}
+/** A part's own entry, when the list still matches the wall's parts (a step added or taken away since makes it stale: it is then ignored). */
+export function housePartAt(house: Pick<HouseDesign, "parts" | "jogs">, i: number): HousePart | null {
+  return house.parts && house.parts.length === house.jogs.length + 1 ? (house.parts[i] ?? null) : null;
+}
+
 export interface HouseDesign {
   storeys: 1 | 2;
   /** Ground to eave at the photo's scale. Absent on houses drawn by rule. */
   eaveHeightFt?: number;
   roof: HouseRoof;
-  /** How far the back wall runs past the deck's left and right ends, ft. */
+  /**
+   * How far the back wall runs past the deck's left and right ends, ft. NEGATIVE (2026-11-14) where the deck runs past
+   * the house instead: −6 = the house's corner stands 6 ft inside the deck's end, and the deck goes on past it.
+   */
   leftFt: number;
   rightFt: number;
+  /**
+   * AROUND THE CORNER (2026-11-14 — the owner: "go back past the house, on the sides"): where the deck runs past a
+   * corner of the house, how far it goes BACK from the house line along the house's side wall, ft. Absent = it stops
+   * at the house line.
+   */
+  wrapLeftFt?: number;
+  wrapRightFt?: number;
   jogs: HouseJog[];
   /** The look (2026-10-11, "the client would say: this is my house"): the siding's colour and the roof's — a preset, or (2026-10-23) the house's own colour off a photo. */
   siding: SidingId | HouseHex;
@@ -65,11 +101,40 @@ export interface HouseDesign {
   pitch?: number;
   /** A two-storey house's bump-outs: one storey tall (the rule) or as tall as the house (as a photo shows them). Absent = one storey. */
   bumpOuts?: "low" | "full";
+  /** Each part of the wall, left to right (one more than the steps), where it has a height or a roof of its own; null = by the rule. */
+  parts?: Array<HousePart | null> | null;
   /** The windows and doors where they really are (2026-10-23, built from a photo). Absent or null = drawn by rule: a door on the deck's main back edge, windows every 5 ft. */
   openings?: HouseOpening[] | null;
   /** The photo the house was built from. */
   photo?: HousePhoto | null;
+  /**
+   * THE WALL LOCKED (2026-11-14 — the owner: "when the house wall is set, or built from a picture, lock it: only the deck
+   * works around it, the wall does not move… when the deck goes past the locked wall, you don't expand the house, you
+   * expand the deck beyond the wall… if you need to adjust the back wall, unlock it"). Locked, nothing the deck does
+   * moves the wall: a wider deck runs past the house's corner instead of stretching the house, and the wall's own
+   * handles (its parts, steps and ends) are not offered. Built from a photo, a wall is locked. Absent = unlocked.
+   */
+  locked?: boolean;
+  /** A porch roof on posts that stays (2026-11-13, kept from the photo): drawn as an existing cover. Absent or null = none. */
+  covers?: HouseCover[] | null;
 }
+
+/**
+ * AN EXISTING COVER (2026-11-13): a porch roof on posts the photo showed in front of the wall, which the contractor
+ * said stays. Not a part of the wall and not a part of the new deck: a lean-to slab against the house on its own
+ * posts, drawn so the client sees their house — nothing is priced or framed from it.
+ */
+export interface HouseCover {
+  /** Its two ends along the house, ft in the deck's frame. */
+  x0Ft: number;
+  x1Ft: number;
+  /** How far it comes out from the wall, ft (a photo taken square-on cannot say: 10 ft unless set). */
+  outFt: number;
+  /** Its front edge above the ground, ft. */
+  heightFt: number;
+}
+export const COVER_LIMITS = { count: 2, widthFt: { min: 3, max: 60 }, outFt: { min: 4, max: 24 }, heightFt: { min: 6.5, max: 14 } } as const;
+export const COVER_OUT_DEFAULT_FT = 10;
 
 /** A colour of the house's own, "#rrggbb". */
 export type HouseHex = `#${string}`;
@@ -128,7 +193,15 @@ export const sidingHex = (id: SidingId | HouseHex) => (isHouseHex(id) ? id.toLow
 export const roofHex = (id: RoofColourId | HouseHex) => (isHouseHex(id) ? id.toLowerCase() : (ROOF_COLOURS.find((c) => c.id === id)?.hex ?? ROOF_COLOURS[0].hex));
 
 /** A step shallower than half a foot is no step: it is dropped, which is how a wall dragged level loses its step. */
-export const HOUSE_LIMITS = { extendFt: { min: 0, max: 60 }, depthFt: { min: 0.5, max: 12 }, jogs: 6 } as const;
+export const HOUSE_LIMITS = {
+  extendFt: { min: 0, max: 60 },
+  depthFt: { min: 0.5, max: 12 },
+  jogs: 6,
+  /** The deck past a corner of the house (2026-11-14): 2 ft at least (less is no part of a deck to frame — the design's BACK_LIMITS.partFt), 30 at most; the wall keeps 4 ft of the deck. */
+  pastFt: { min: 2, max: 30, keepFt: 4 },
+  /** …and back along the house's side wall (the design's BACK_LIMITS.wrapFt; plain numbers here — this module and the design's load each other). */
+  wrapFt: { min: 0, max: 24 },
+} as const;
 /** Floor to floor. */
 export const STOREY_FT = 9.5;
 /** How deep the house is drawn behind its back wall. */
@@ -153,9 +226,17 @@ export function normalizeHouse(raw: unknown, shape: DeckShape): HouseDesign {
   const r = obj(raw);
   const storeys: 1 | 2 = r.storeys === 2 ? 2 : 1;
   const roof: HouseRoof = HOUSE_ROOFS.includes(r.roof as HouseRoof) ? (r.roof as HouseRoof) : "hip";
-  const leftFt = half(clamp(num(r.leftFt, d.leftFt), HOUSE_LIMITS.extendFt.min, HOUSE_LIMITS.extendFt.max));
-  const rightFt = half(clamp(num(r.rightFt, d.rightFt), HOUSE_LIMITS.extendFt.min, HOUSE_LIMITS.extendFt.max));
   const W = shape.widthFt;
+  // PAST THE HOUSE'S CORNER (2026-11-14): a negative reach is the deck running on past the corner — 2 ft at least (a
+  // corner dragged a hair inside the deck's end stays AT its end), 30 at most, and the two ends together leave the
+  // wall 4 ft of the deck.
+  const P = HOUSE_LIMITS.pastFt;
+  const reach = (v: unknown, fallback: number, room: number) => {
+    const n = half(clamp(num(v, fallback), -Math.max(0, Math.min(P.max, room)), HOUSE_LIMITS.extendFt.max));
+    return n < 0 && n > -P.min ? 0 : n;
+  };
+  const leftFt = reach(r.leftFt, d.leftFt, Math.floor((W - P.keepFt) * 2) / 2);
+  const rightFt = reach(r.rightFt, d.rightFt, Math.floor((W - P.keepFt - Math.max(0, -leftFt)) * 2) / 2);
   const seen = new Set<string>();
   const jogs: HouseJog[] = (Array.isArray(r.jogs) ? r.jogs : [])
     .map((j, i) => {
@@ -174,12 +255,42 @@ export function normalizeHouse(raw: unknown, shape: DeckShape): HouseDesign {
   // The steps are kept exactly as given: the read-back never adds one for a back notch (the studio does that once, when
   // a design opens) and never drops one (a step just removed must stay removed, so the deck can go back to a rectangle).
   const out: HouseDesign = { storeys, roof, leftFt, rightFt, jogs: spaced, siding, roofColour };
+  if (r.locked === true) out.locked = true;
   // What a photo brought (2026-10-23) — only when it is there, so a house without it reads back exactly as before.
   if (HOUSE_MATERIALS.includes(r.material as HouseMaterial) && r.material !== "lap") out.material = r.material as HouseMaterial;
   if (typeof r.pitch === "number" && Number.isFinite(r.pitch)) out.pitch = half(clamp(r.pitch, HOUSE_PITCH_LIMITS.min, HOUSE_PITCH_LIMITS.max));
   if (r.bumpOuts === "full") out.bumpOuts = "full";
+  // The parts' own heights and roofs: kept only while they still line up with the steps as read back.
+  if (Array.isArray(r.parts) && Array.isArray(r.jogs) && spaced.length === r.jogs.length && r.parts.length === spaced.length + 1) {
+    const parts = r.parts.map((raw): HousePart | null => {
+      const o = obj(raw);
+      const part: HousePart = {};
+      if (o.storeys === 1 || o.storeys === 2) part.storeys = o.storeys;
+      if (PART_ROOFS.includes(o.roof as PartRoof)) part.roof = o.roof as PartRoof;
+      if (o.wing === true) part.wing = true;
+      return part.storeys || part.roof || part.wing ? part : null;
+    });
+    if (parts.some(Boolean)) out.parts = parts;
+  }
   if (typeof r.eaveHeightFt === "number" && Number.isFinite(r.eaveHeightFt) && r.eaveHeightFt >= 4 && r.eaveHeightFt <= 60) out.eaveHeightFt = toInchFt(r.eaveHeightFt);
   if (Array.isArray(r.openings)) out.openings = normalizeOpenings(r.openings, -leftFt, W + rightFt);
+  // How far back along the house's side — only where the deck is past that corner, and no deeper than a deck goes.
+  const wrap = (v: unknown) => half(clamp(num(v, 0), HOUSE_LIMITS.wrapFt.min, Math.max(0, Math.min(HOUSE_LIMITS.wrapFt.max, Math.floor((DECK_LIMITS.depthFt.max - shape.depthFt) * 2) / 2))));
+  if (leftFt < 0 && wrap(r.wrapLeftFt) > 0) out.wrapLeftFt = wrap(r.wrapLeftFt);
+  if (rightFt < 0 && wrap(r.wrapRightFt) > 0) out.wrapRightFt = wrap(r.wrapRightFt);
+  if (Array.isArray(r.covers)) {
+    const C = COVER_LIMITS;
+    const covers = r.covers
+      .map((c): HouseCover | null => {
+        const o = obj(c);
+        const x0 = num(o.x0Ft, NaN), x1 = num(o.x1Ft, NaN);
+        if (!Number.isFinite(x0) || !Number.isFinite(x1) || x1 - x0 < C.widthFt.min || x1 - x0 > C.widthFt.max) return null;
+        return { x0Ft: half(x0), x1Ft: half(x1), outFt: half(clamp(num(o.outFt, COVER_OUT_DEFAULT_FT), C.outFt.min, C.outFt.max)), heightFt: half(clamp(num(o.heightFt, 8), C.heightFt.min, C.heightFt.max)) };
+      })
+      .filter((c): c is HouseCover => !!c && c.x1Ft > -leftFt - 0.5 && c.x0Ft < W + rightFt + 0.5)
+      .slice(0, C.count);
+    if (covers.length) out.covers = covers;
+  }
   const photo = normalizeHousePhoto(r.photo);
   if (photo) out.photo = photo;
   return out;
@@ -214,10 +325,11 @@ function normalizeHousePhoto(raw: unknown): HousePhoto | null {
 }
 
 /** The windows and the doors moved along the house by `d` ft in the deck's feet (the deck slid with the house still). */
-export function shiftHouseThings(house: HouseDesign, d: number): Pick<HouseDesign, "openings" | "photo"> {
-  const out: Pick<HouseDesign, "openings" | "photo"> = {};
+export function shiftHouseThings(house: HouseDesign, d: number): Pick<HouseDesign, "openings" | "photo" | "covers"> {
+  const out: Pick<HouseDesign, "openings" | "photo" | "covers"> = {};
   if (house.openings) out.openings = house.openings.map((o) => ({ ...o, xFt: toInchFt(o.xFt + d) }));
   else if (house.openings === null) out.openings = null;
+  if (house.covers) out.covers = house.covers.map((c) => ({ ...c, x0Ft: half(c.x0Ft + d), x1Ft: half(c.x1Ft + d) }));
   if (house.photo) out.photo = { ...house.photo, deckAtFt: r2(house.photo.deckAtFt - d) };
   return out;
 }
@@ -291,13 +403,19 @@ export function deckShapeForHouse(shape: DeckShape, house: HouseDesign): { shape
   const W = shape.widthFt;
   const D = shape.depthFt;
   const under = partsUnderDeck(wallParts(house, shape), W);
+  // Past a corner of the house (2026-11-14): the deck follows what wall there is, and stands on its own beyond it.
+  const past = deckPast(house);
+  if (past.leftFt > 0 || past.rightFt > 0) return followWall(shape, under, past);
   const out = under.filter((p) => p.depthFt > 0.5);
   const back = under.filter((p) => p.depthFt < -0.5);
   const hasBackNotch = shape.kind === "L" && shape.notch.corner.startsWith("back");
+  // A FRONT SET PART BY PART (2026-11-14) stays the deck's whatever the wall does behind it: the deck keeps its parts
+  // along a straight wall, and follows a stepped one part by part (no corner notch in its place).
+  const parted = shape.kind === "wall" && shape.front ? shape.front : null;
   // A wall brought level takes away the notch, or the steps the deck followed.
-  const rect = (): DeckShape => (hasBackNotch || shape.kind === "wall" ? { kind: "rect", widthFt: W, depthFt: D } : shape);
+  const rect = (): DeckShape => (parted ? partsOn(W, D, [{ x0Ft: 0, x1Ft: W, yFt: 0 }], parted) : hasBackNotch || shape.kind === "wall" ? { kind: "rect", widthFt: W, depthFt: D } : shape);
   if (!out.length && !back.length) return { shape: rect(), note: null };
-  if (!back.length && out.length === 1) {
+  if (!back.length && out.length === 1 && !parted) {
     const t = out[0];
     if (t.x0 <= 0.01 && t.x1 >= W - 0.01) return { shape: rect(), note: null };
     const atRight = t.x1 >= W - 0.01 && t.x0 > 0.01;
@@ -308,12 +426,14 @@ export function deckShapeForHouse(shape: DeckShape, house: HouseDesign): { shape
 }
 
 /** The deck's back made to follow every part of the wall under it — or the shape kept, with what stops it in a note. */
-function followWall(shape: DeckShape, under: WallPart[]): { shape: DeckShape; note: string | null } {
+function followWall(shape: DeckShape, under: WallPart[], past: DeckPast | null = null): { shape: DeckShape; note: string | null } {
   const W = shape.widthFt;
   const D = shape.depthFt;
   const front = shape.kind === "rect" ? shape.front : undefined;
   const frontCut = shape.kind === "L" && shape.notch.corner.startsWith("front");
-  if ((front && front.kind !== "straight") || frontCut) {
+  const shapedFront = (front && front.kind !== "straight") || frontCut;
+  // (Past a corner there is no wall to hang on: the deck takes the straight front that lets it stand there, and says so.)
+  if (shapedFront && !past) {
     return { shape, note: `The wall steps under the deck — the deck follows the wall's steps with a straight front. Make the front straight${frontCut ? " (no corner cut at the front)" : ""}, or move the step past the deck's end.` };
   }
   // Past its limits the deck is HELD there (normalizeBack clamps) and the note says so, as the L holds its notch.
@@ -333,9 +453,86 @@ function followWall(shape: DeckShape, under: WallPart[]): { shape: DeckShape; no
     const near = [under[i - 1], under[i + 1]].filter((q): q is WallPart => !!q).map((q) => q.depthFt);
     return { ...p, depthFt: Math.max(p.depthFt, ...near) };
   });
-  const back = normalizeBack(parts.map((p) => ({ x0Ft: p.x0, x1Ft: p.x1, yFt: p.depthFt })), W, D);
-  if (!back) return { shape: { kind: "rect", widthFt: W, depthFt: D }, note };
-  return { shape: { kind: "wall", widthFt: W, depthFt: D, back }, note };
+  const walled = parts.map((p) => ({ x0Ft: p.x0, x1Ft: p.x1, yFt: p.depthFt }));
+  const parted = shape.kind === "wall" && shape.front ? shape.front : null;
+  if (!past) {
+    const back = normalizeBack(walled, W, D);
+    if (!back) return { shape: parted ? partsOn(W, D, [{ x0Ft: 0, x1Ft: W, yFt: 0 }], parted) : { kind: "rect", widthFt: W, depthFt: D }, note };
+    return { shape: partsOn(W, D, back, parted), note };
+  }
+  // The parts past the house's corners: no wall behind them, back along the house's side as far as was asked.
+  const back = normalizeBack(
+    [
+      ...(past.leftFt > 0 ? [{ x0Ft: 0, x1Ft: past.leftFt, yFt: -past.wrapLeftFt, open: true }] : []),
+      ...walled,
+      ...(past.rightFt > 0 ? [{ x0Ft: W - past.rightFt, x1Ft: W, yFt: -past.wrapRightFt, open: true }] : []),
+    ],
+    W,
+    D,
+  );
+  if (!back) return { shape: parted ? partsOn(W, D, [{ x0Ft: 0, x1Ft: W, yFt: 0 }], parted) : { kind: "rect", widthFt: W, depthFt: D }, note };
+  if (parted) return { shape: partsOn(W, D, back, parted), note };
+  const pastNote = shapedFront ? `The deck runs past the house's corner — there it stands on its own beam and posts, with a straight front${frontCut ? " (no corner cut at the front)" : ""}.` : null;
+  return { shape: { kind: "wall", widthFt: W, depthFt: D, back }, note: note ?? pastNote };
+}
+
+/** A deck in parts on this back: its front's own parts held against it (a front that comes out straight is left off; a straight back with it, and the deck is a rectangle). */
+function partsOn(W: number, D: number, back: BackPart[], front: ReadonlyArray<{ x0Ft: number; x1Ft: number; yFt: number }> | null): DeckShape {
+  return partsShape(W, D, back, front);
+}
+
+/** How far the deck runs past each corner of the house, and back along its side there, ft (0 = the wall reaches the deck's end). */
+export interface DeckPast {
+  leftFt: number;
+  rightFt: number;
+  wrapLeftFt: number;
+  wrapRightFt: number;
+}
+export function deckPast(house: HouseDesign): DeckPast {
+  const leftFt = Math.max(0, -house.leftFt);
+  const rightFt = Math.max(0, -house.rightFt);
+  return { leftFt, rightFt, wrapLeftFt: leftFt > 0 ? (house.wrapLeftFt ?? 0) : 0, wrapRightFt: rightFt > 0 ? (house.wrapRightFt ?? 0) : 0 };
+}
+
+/**
+ * THE DECK'S ENDS AND THE HOUSE'S CORNERS AGREE (2026-11-14), whatever changed last: a deck whose end is past a corner
+ * of the house has no wall behind it there — never a ledger in the air — and a deck the wall has grown back behind
+ * hangs on it again. A design with the wall behind the whole deck (every design before this) is returned untouched.
+ */
+export function fitDeckEnds(shape: DeckShape, house: HouseDesign): DeckShape {
+  const past = deckPast(house);
+  const open = shape.kind === "wall" ? shape.back : [];
+  const openLeft = open[0]?.open ? open[0].x1Ft : 0;
+  const last = open[open.length - 1];
+  const openRight = last?.open ? shape.widthFt - last.x0Ft : 0;
+  const wrapOf = (b: { yFt: number } | undefined) => (b ? -b.yFt : 0);
+  const same = (a: number, b: number) => Math.abs(a - b) < 1 / 24;
+  if (same(past.leftFt, openLeft) && same(past.rightFt, openRight) && (!openLeft || same(past.wrapLeftFt, wrapOf(open[0]))) && (!openRight || same(past.wrapRightFt, wrapOf(last)))) return shape;
+  return deckShapeForHouse(shape, house).shape;
+}
+
+/**
+ * The deck run past a corner of the house (2026-11-14), the house staying where it stands: its end on that side goes
+ * `pastFt` beyond the corner and `wrapFt` back along the house's side wall; 0 brings an end that was past back TO the
+ * corner. The deck is widened or narrowed by the difference — at the left end everything measured from that end
+ * shifts with it.
+ */
+export function setDeckPast(house: HouseDesign, shape: DeckShape, side: "left" | "right", pastFt: number, wrapFt: number, limits: { minWidthFt: number; maxWidthFt: number }): { house: HouseDesign; shape: DeckShape } {
+  const P = HOUSE_LIMITS.pastFt;
+  const want0 = half(clamp(pastFt, 0, P.max));
+  const want = want0 > 0 && want0 < P.min ? P.min : want0;
+  const now = side === "left" ? house.leftFt : house.rightFt;
+  // ("Not past" said of an end that is not past: nothing to do — a deck that stops short of the corner stays where it is.)
+  if (want === 0 && now >= 0) return { house, shape };
+  // The deck's end moves out by the wall it passes plus what it runs past the corner — within the widths a deck comes in.
+  const grow = clamp(now + want, limits.minWidthFt - shape.widthFt, limits.maxWidthFt - shape.widthFt);
+  const widthFt = half(shape.widthFt + grow);
+  const reach = half(now - (widthFt - shape.widthFt));
+  const wrap = reach < 0 ? half(clamp(wrapFt, 0, HOUSE_LIMITS.wrapFt.max)) : 0;
+  // (No wrap is said as `undefined`, not left out: a patch is laid OVER the house, and a key left out would keep the old one.)
+  if (side === "right") return { house: { ...house, rightFt: reach, wrapRightFt: wrap > 0 ? wrap : undefined }, shape: { ...shape, widthFt } };
+  const d = widthFt - shape.widthFt; // the left end moves LEFT by this much
+  return { house: { ...house, leftFt: reach, wrapLeftFt: wrap > 0 ? wrap : undefined, jogs: house.jogs.map((j) => ({ ...j, atFt: half(j.atFt + d) })), ...shiftHouseThings(house, d) }, shape: { ...shape, widthFt } };
 }
 
 /** A bump-out at one end of the deck: the L's back notch, as before 2026-10-19. */
@@ -355,6 +552,9 @@ function endNotch(shape: DeckShape, t: WallPart, atRight: boolean, rect: () => D
  * deck set back to a rectangle loses the step that notched it.
  */
 export function houseForShape(house: HouseDesign, shape: DeckShape, opts: { drop?: boolean } = {}): HouseDesign {
+  // (A deck in parts follows the wall as it is: its shape asks nothing of the house. Nor of a locked wall: the deck
+  // follows it as it stands — 2026-11-14.)
+  if (shape.kind === "wall" || house.locked) return house;
   const W = shape.widthFt;
   const want = shape.kind === "L" && shape.notch.corner.startsWith("back") ? shape.notch : null;
   const underBefore = partsUnderDeck(wallParts(house, shape), W).filter((p) => p.depthFt > 0.5);
@@ -425,8 +625,11 @@ export interface HouseScene {
 }
 
 /** A roof's piece in the scene: 0 hip, 1 gable (ridge along the wall), 2 gable to the yard, 3 shed (down toward the
- *  yard), 4 flat — over the body; 5 hip, 6 gable, 7 shed, 8 flat — a bump-out's, its back against the body. */
-export const ROOF_PIECE = { hip: 0, gable: 1, "gable-end": 2, shed: 3, flat: 4, bumpHip: 5, bumpGable: 6, bumpShed: 7, bumpFlat: 8 } as const;
+ *  yard), 4 flat — over the body; 5 hip, 6 gable, 7 shed, 8 flat — a bump-out's, its back against the body; 9 an
+ *  existing cover (2026-11-13): a lean-to slab against the wall on posts of its own, open under it. */
+export const ROOF_PIECE = { hip: 0, gable: 1, "gable-end": 2, shed: 3, flat: 4, bumpHip: 5, bumpGable: 6, bumpShed: 7, bumpFlat: 8, cover: 9 } as const;
+/** An existing cover's fall, inches per foot: a porch roof is low-sloped. */
+export const COVER_PITCH = 2;
 const BUMP_PIECE: Record<HouseRoof, number> = { hip: ROOF_PIECE.bumpHip, gable: ROOF_PIECE.bumpGable, "gable-end": ROOF_PIECE.bumpGable, shed: ROOF_PIECE.bumpShed, flat: ROOF_PIECE.bumpFlat };
 
 /**
@@ -437,6 +640,40 @@ const BUMP_PIECE: Record<HouseRoof, number> = { hip: ROOF_PIECE.bumpHip, gable: 
  * clear of the door — or, for a house built from a photo, the windows and
  * doors where they are, each on the part of the wall it stands in.
  */
+/** The house's main wall: the face most of the wall's length is on (the nearer the house line when two are as long). */
+export function mainFaceFt(parts: ReadonlyArray<Pick<WallPart, "x0" | "x1" | "depthFt">>): number {
+  const faceWidth = new Map<number, number>();
+  for (const p of parts) faceWidth.set(p.depthFt, (faceWidth.get(p.depthFt) ?? 0) + (p.x1 - p.x0));
+  let mainFace = 0;
+  let widest = -1;
+  for (const [d, w] of faceWidth) if (w > widest + 1e-9 || (Math.abs(w - widest) < 1e-9 && Math.abs(d) < Math.abs(mainFace))) [mainFace, widest] = [d, w];
+  return mainFace;
+}
+
+/**
+ * A window of the UPPER storey: its sill above where a ground-floor window's would be and its head above a storey of
+ * wall — by the wall's own height when the photo gave it (the eave), by the usual storey otherwise.
+ */
+export function isUpperWindow(o: Pick<HouseOpening, "kind" | "sillFt" | "heightFt">, eaveHeightFt?: number | null): boolean {
+  if (o.kind !== "window") return false;
+  const two = eaveHeightFt && eaveHeightFt >= 14 ? eaveHeightFt : 2 * STOREY_FT;
+  return o.sillFt > 0.42 * two && o.sillFt + o.heightFt > 0.6 * two;
+}
+/**
+ * A "ONE-STOREY" PART LEVEL WITH THE WALL ABOVE IT (2026-11-14, owner, of a two-storey wall with a porch roof on a post
+ * in front of its right half: "it looks like it's falling apart"). The reader took the porch roof for a low roof over
+ * a room and said that half one storey — NOT a wing, the taller wall standing above it. Standing level with the rest
+ * of the wall, it was built as a wing anyway: the main roof stopped short of it and a lean-to rose over the whole depth
+ * of the house. But a room under a low roof stands FORWARD of the wall above it, and the picture's own windows said
+ * the rest: a row of upper windows stood in that stretch. A part level with the wall, not marked a wing, with upper
+ * windows in it is that wall, two storeys tall, with something in front of its ground floor (a porch roof, a roof
+ * band). A part marked a wing (nothing but sky above its roof) is still one; so is a one-storey part with no upper
+ * windows in it (the review's own "One storey", set by hand on a house drawn without them).
+ */
+export function upperWindowsOver(openings: ReadonlyArray<Pick<HouseOpening, "kind" | "xFt" | "sillFt" | "heightFt">> | null | undefined, x0: number, x1: number, eaveHeightFt?: number | null): number {
+  return (openings ?? []).filter((o) => o.xFt > x0 && o.xFt < x1 && isUpperWindow(o, eaveHeightFt)).length;
+}
+
 export function houseScene(shape: DeckShape, house: HouseDesign, ctx: { deckHeightFt: number; peakFt: number; mainEdge: { x0: number; x1: number } | null }): HouseScene {
   const parts = impliedParts(wallParts(house, shape), shape, house);
   const storeyTop = (n: number) => n * STOREY_FT + 0.5;
@@ -446,29 +683,82 @@ export function houseScene(shape: DeckShape, house: HouseDesign, ctx: { deckHeig
   // on — the whole length of the house under ONE roof; a part that comes out stands in front of the body as a block of
   // its own under its own roof (one storey on a two-storey house unless it was seen as tall as the house); a part set
   // back is the body's own wall, set back under the roof's eave.
-  const faceWidth = new Map<number, number>();
-  for (const p of parts) faceWidth.set(p.depthFt, (faceWidth.get(p.depthFt) ?? 0) + (p.x1 - p.x0));
-  let mainFace = 0;
-  let widest = -1;
-  for (const [d, w] of faceWidth) if (w > widest + 1e-9 || (Math.abs(w - widest) < 1e-9 && Math.abs(d) < Math.abs(mainFace))) [mainFace, widest] = [d, w];
+  const mainFace = mainFaceFt(parts);
   const pitch = roofPitch(house);
   const blocks: number[][] = [];
-  const roofs: number[][] = [[ROOF_PIECE[house.roof], r2(Math.min(...parts.map((p) => p.x0))), r2(mainFace - HOUSE_BODY_FT), r2(Math.max(...parts.map((p) => p.x1))), mainFace, mainH, pitch]];
+  const roofs: number[][] = [];
   /** Each part's wall height (its block's, or its bump-out's). */
   const partH: number[] = [];
-  for (const p of parts) {
+  /** Over a one-storey part standing in front of the taller house: the wall above it (its face, its top), where its upper windows are. */
+  const above: Array<{ face: number; top: number; from: number } | null> = [];
+  // EACH PART BY WHAT IT IS (2026-11-13): as tall as the house under the main roof; one storey in front of the taller
+  // house under a roof of its own (a lean-to unless seen otherwise); or a one-storey WING beside the taller block —
+  // all the house there is at that spot, under its own roof, the main roof ending where the wing begins.
+  const kinds = parts.map((p, i) => {
+    const own = housePartAt(house, i);
     const out = p.depthFt > mainFace + 0.5;
+    // …never low where it is level with the wall, not marked a wing, and upper windows stand in it (a porch roof read as a room)
+    const tall = !out && own?.storeys === 1 && own.wing !== true && upperWindowsOver(house.openings, p.x0, p.x1, house.eaveHeightFt) > 0;
+    const low = !tall && house.storeys === 2 && (own?.storeys ? own.storeys === 1 : out && house.bumpOuts !== "full");
+    // a low part that does not come out has no taller wall to stand in front of: it is a wing whether marked or not
+    const wing = low && (own?.wing === true || !out);
+    return { own: tall ? null : own, out, low, wing };
+  });
+  // the main roof: one over every run of parts that are not wings
+  for (let i = 0; i < parts.length; ) {
+    if (kinds[i].wing) { i++; continue; }
+    let j = i;
+    while (j + 1 < parts.length && !kinds[j + 1].wing) j++;
+    roofs.push([ROOF_PIECE[house.roof], parts[i].x0, r2(mainFace - HOUSE_BODY_FT), parts[j].x1, mainFace, mainH, pitch]);
+    i = j + 1;
+  }
+  parts.forEach((p, i) => {
+    const { own, out, low, wing } = kinds[i];
+    const ownPitch = (kind: PartRoof | undefined) => (kind === "flat" ? HOUSE_PITCH_DEFAULT.flat : kind === "shed" ? Math.min(pitch, 4) : pitch);
+    if (wing) {
+      // the wing: one block from the back of the house to its own face, under its own roof
+      blocks.push([p.x0, r2(mainFace - HOUSE_BODY_FT), p.x1, p.depthFt, lowH]);
+      // A wing has no taller wall for a lean-to to climb: its one slope runs the house's whole depth, and at a lean-to's
+      // pitch it rose eight feet — past the main roof's eave, open at both ends (2026-11-14). It rises no more than
+      // three feet over that depth.
+      const kind: HouseRoof = own?.roof ?? (house.roof === "gable-end" ? "gable" : house.roof);
+      const depth = p.depthFt - (mainFace - HOUSE_BODY_FT);
+      const wingPitch = kind === "shed" ? Math.min(ownPitch(own?.roof), r2(36 / Math.max(depth, 6))) : ownPitch(own?.roof);
+      roofs.push([ROOF_PIECE[kind], p.x0, r2(mainFace - HOUSE_BODY_FT), p.x1, p.depthFt, lowH, wingPitch]);
+      partH.push(lowH);
+      above.push(null);
+      return;
+    }
     blocks.push([p.x0, r2(mainFace - HOUSE_BODY_FT), p.x1, out ? mainFace : p.depthFt, mainH]);
     if (out) {
-      const h = house.storeys === 2 && house.bumpOuts !== "full" ? lowH : mainH;
+      const h = low ? lowH : mainH;
       blocks.push([p.x0, mainFace, p.x1, p.depthFt, h]);
-      roofs.push([BUMP_PIECE[house.roof], p.x0, mainFace, p.x1, p.depthFt, h, pitch]);
+      roofs.push([own?.roof ? BUMP_PIECE[own.roof] : BUMP_PIECE[house.roof], p.x0, mainFace, p.x1, p.depthFt, h, own?.roof ? ownPitch(own.roof) : pitch]);
       partH.push(h);
-    } else partH.push(mainH);
+      // the upper storey's windows over a low part are on the house's wall behind it, above where the low roof
+      // meets that wall (a lean-to climbs all the way to it; a hip or a gable to its ridge)
+      const kind = own?.roof ?? (house.roof === "gable-end" ? "gable" : house.roof);
+      const run = kind === "shed" ? p.depthFt - mainFace : kind === "flat" ? 0 : kind === "gable" ? (p.x1 - p.x0) / 2 : Math.min(p.depthFt - mainFace, (p.x1 - p.x0) / 2);
+      const meets = h + (run * (own?.roof ? ownPitch(own.roof) : pitch)) / 12 + 0.5;
+      above.push(low && own?.storeys === 1 ? { face: mainFace, top: mainH, from: r2(meets) } : null);
+    } else {
+      partH.push(mainH);
+      above.push(null);
+    }
+  });
+  // AN EXISTING COVER KEPT FROM THE PHOTO (2026-11-13): against the face of the part its middle stands over, its front
+  // edge at its own height — never climbing past that part's wall where it meets it.
+  for (const c of (house.covers ?? []).slice(0, COVER_LIMITS.count)) {
+    const mid = (c.x0Ft + c.x1Ft) / 2;
+    const i = Math.max(0, parts.findIndex((p) => mid >= p.x0 - 1e-6 && mid <= p.x1 + 1e-6));
+    const face = parts[i].depthFt;
+    const rise = (c.outFt * COVER_PITCH) / 12;
+    const front = r2(clamp(Math.min(c.heightFt, partH[i] - rise - 0.4), COVER_LIMITS.heightFt.min, COVER_LIMITS.heightFt.max));
+    roofs.push([ROOF_PIECE.cover, c.x0Ft, face, c.x1Ft, r2(face + c.outFt), front, COVER_PITCH]);
   }
   const look = { storeys: house.storeys, roof: house.roof, siding: sidingHex(house.siding), roofColour: roofHex(house.roofColour), roofs, ...(house.material && house.material !== "lap" ? { material: house.material } : {}) };
   if (house.openings) {
-    const placed = placeOpenings(house.openings, parts, partH, house.eaveHeightFt !== undefined);
+    const placed = placeOpenings(house.openings, parts, partH, house.eaveHeightFt !== undefined, above);
     const ref = ctx.mainEdge ? (ctx.mainEdge.x0 + ctx.mainEdge.x1) / 2 : referenceX(shape);
     const main = placed.doors.slice().sort((a, b) => Math.abs(a[0] - ref) - Math.abs(b[0] - ref))[0];
     return { blocks, heightFt: mainH, door: main ? [main[0], main[2], main[3], main[1]] : null, windows: placed.windows, doors: placed.doors, ...look };
@@ -481,6 +771,10 @@ export function houseScene(shape: DeckShape, house: HouseDesign, ctx: { deckHeig
   const door = span >= doorW + 2 ? [r2((edge.x0 + edge.x1) / 2), doorW, 6.67, underRef.depthFt] : null;
   // Windows: 3 ft wide, 4 ft tall, every 5 ft along the free runs of each face (the door and its trim left clear),
   // the sills above the deck's floor on the first storey.
+  // The door stands on the deck's floor, whichever storey that is: EVERY row of windows whose height comes within a
+  // foot of the door leaves it and its trim clear (owner, 2026-11-14: "still a mess with doors and windows" — a
+  // second-storey deck's door stood in the middle of the upper row of windows, which only the first row kept clear).
+  const doorY = door ? { y0: ctx.deckHeightFt, y1: ctx.deckHeightFt + door[2] } : null;
   const windows: number[][] = [];
   const WIN_W = 3;
   const PITCH = 5;
@@ -494,7 +788,7 @@ export function houseScene(shape: DeckShape, house: HouseDesign, ctx: { deckHeig
       const wh = Math.min(4, top - sill);
       if (wh < 2) continue;
       const runs: Array<{ x0: number; x1: number }> = [];
-      if (door && st === 1 && p === underRef) {
+      if (door && doorY && p === underRef && sill < doorY.y1 + 1 && sill + wh > doorY.y0 - 1) {
         const d0 = door[0] - door[1] / 2 - 1.5;
         const d1 = door[0] + door[1] / 2 + 1.5;
         runs.push({ x0: p.x0, x1: Math.min(p.x1, d0) }, { x0: Math.max(p.x0, d1), x1: p.x1 });
@@ -504,20 +798,137 @@ export function houseScene(shape: DeckShape, house: HouseDesign, ctx: { deckHeig
       }
     }
   });
-  return { blocks, heightFt: mainH, door, windows: windows.slice(0, 60), ...look };
+  // And none of them on the door's spot or on another's, whatever the rows above did (settleOpeningRects): the door
+  // stands, a window in its way is cut back or left out.
+  const rects: OpeningRect[] = [
+    ...(door && doorY ? [{ kind: (door[1] >= 5 ? "slider" : "door") as OpeningKind, x0: door[0] - door[1] / 2, x1: door[0] + door[1] / 2, y0: doorY.y0, y1: doorY.y1, face: door[3] }] : []),
+    ...windows.map((w) => ({ kind: "window" as OpeningKind, x0: w[0] - w[2] / 2, x1: w[0] + w[2] / 2, y0: w[4], y1: w[4] + w[3], face: w[1] })),
+  ];
+  const stood = settleOpeningRects(rects).slice(door ? 1 : 0);
+  const clear = windows.flatMap((w, i) => {
+    const r = stood[i];
+    if (!r) return [];
+    const j = i + (door ? 1 : 0);
+    const same = r.x0 === rects[j].x0 && r.x1 === rects[j].x1 && r.y0 === rects[j].y0 && r.y1 === rects[j].y1;
+    return [same ? w : [r2((r.x0 + r.x1) / 2), w[1], r2(r.x1 - r.x0), r2(r.y1 - r.y0), r2(r.y0)]];
+  });
+  return { blocks, heightFt: mainH, door, windows: clear.slice(0, 60), ...look };
 }
 
 /** The wall part an opening stands in: the one its middle is over. */
 const partAt = (parts: WallPart[], x: number) => parts.findIndex((p) => x >= p.x0 - 1e-6 && x <= p.x1 + 1e-6);
 
+/* ── Windows and doors that run into each other ─────────────────────── */
+
+/** A window or a door as a rectangle on its wall, ft: x along the house, y up from the ground; `face` = the wall face it stands on. */
+export interface OpeningRect {
+  kind: OpeningKind;
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+  face?: number;
+}
+/** The least wall between two openings, ft. Side by side: a casing each (6 in.), which a window's sill horn stays inside. One over the
+ *  other: the two casings meeting as one band (3 in.) — a transom over a door. */
+export const OPENING_GAP_FT = { side: 0.5, over: 0.25 } as const;
+/** A gap this much short of the rule still stands (the design keeps its openings to the inch). */
+const GAP_SLACK_FT = 0.045;
+/** The least left of an opening that is cut back: this much of its side, and this share of what it was. */
+const OPENING_MIN_FT = 0.75;
+const OPENING_MIN_SHARE = 0.4;
+/** The narrowest a door is cut to before it is left out. */
+const DOOR_MIN_FT: Record<Exclude<OpeningKind, "window">, number> = { door: 2, slider: 4, garage: 6 };
+
+/**
+ * No two openings on one spot of the wall (owner, 2026-11-13: "the glass and doors on the 3D are messy" — a photo's
+ * read had put a window inside the sliding door and another under its edge, and the 3D drew every one of them).
+ * Doors stand first, the largest first; then the windows, the largest first. An opening that lies mostly inside one
+ * already standing is that one's own glass, or the same opening read twice: left out. One that only runs into it is
+ * cut back to leave the casings their room, on the side that costs it least — and left out when too little of it
+ * would be left. A door is never cut in height: its threshold and its head stay where they are.
+ * One entry per rectangle given, in the order given: the rectangle as it stands, or null.
+ */
+export function settleOpeningRects<T extends OpeningRect>(rects: readonly T[]): Array<T | null> {
+  const area = (r: OpeningRect) => Math.max(0, r.x1 - r.x0) * Math.max(0, r.y1 - r.y0);
+  const rank = (r: OpeningRect) => (r.kind === "window" ? 1 : 0);
+  const order = rects.map((_, i) => i).sort((a, b) => rank(rects[a]) - rank(rects[b]) || area(rects[b]) - area(rects[a]) || a - b);
+  const out: Array<T | null> = rects.map(() => null);
+  const standing: T[] = [];
+  for (const i of order) {
+    const full = area(rects[i]);
+    if (!(full > 0)) continue;
+    const door = rects[i].kind !== "window";
+    const minW = rects[i].kind === "window" ? OPENING_MIN_FT : DOOR_MIN_FT[rects[i].kind as Exclude<OpeningKind, "window">];
+    const fits = (c: OpeningRect) => c.x1 - c.x0 >= minW - 1e-9 && c.y1 - c.y0 >= OPENING_MIN_FT - 1e-9 && area(c) >= OPENING_MIN_SHARE * full - 1e-9;
+    let r: T | null = { ...rects[i] };
+    for (const k of standing) {
+      if (!r) break;
+      if (Math.abs((k.face ?? 0) - (r.face ?? 0)) > 0.05) continue;
+      const ox = Math.min(r.x1, k.x1) - Math.max(r.x0, k.x0);
+      const oy = Math.min(r.y1, k.y1) - Math.max(r.y0, k.y0);
+      // Far enough apart, side by side or one over the other.
+      if (ox <= -(OPENING_GAP_FT.side - GAP_SLACK_FT) || oy <= -(OPENING_GAP_FT.over - GAP_SLACK_FT)) continue;
+      const shared = Math.max(0, ox) * Math.max(0, oy);
+      if (shared >= 0.5 * Math.min(area(r), area(k))) {
+        r = null;
+        break;
+      }
+      const cuts: T[] = [
+        { ...r, x0: Math.max(r.x0, k.x1 + OPENING_GAP_FT.side) },
+        { ...r, x1: Math.min(r.x1, k.x0 - OPENING_GAP_FT.side) },
+        ...(door ? [] : [{ ...r, y0: Math.max(r.y0, k.y1 + OPENING_GAP_FT.over) }, { ...r, y1: Math.min(r.y1, k.y0 - OPENING_GAP_FT.over) }]),
+      ].filter(fits);
+      r = cuts.sort((a, b) => area(b) - area(a))[0] ?? null;
+    }
+    if (r) {
+      standing.push(r);
+      out[i] = r;
+    }
+  }
+  return out;
+}
+
+/** The design's windows and doors with none on another's spot (see settleOpeningRects): what the code checks read, and what a photo's read is kept as. */
+export function settleOpenings(openings: readonly HouseOpening[]): HouseOpening[] {
+  const rects = openings.map((o) => ({ kind: o.kind, x0: o.xFt - o.widthFt / 2, x1: o.xFt + o.widthFt / 2, y0: o.sillFt, y1: o.sillFt + o.heightFt }));
+  const out: HouseOpening[] = [];
+  settleOpeningRects(rects).forEach((r, i) => {
+    if (!r) return;
+    const o = openings[i];
+    const same = Math.abs(r.x0 - rects[i].x0) < 1e-9 && Math.abs(r.x1 - rects[i].x1) < 1e-9 && Math.abs(r.y0 - rects[i].y0) < 1e-9 && Math.abs(r.y1 - rects[i].y1) < 1e-9;
+    out.push(same ? o : { ...o, xFt: toInchFt((r.x0 + r.x1) / 2), widthFt: toInchFt(r.x1 - r.x0), heightFt: toInchFt(r.y1 - r.y0), sillFt: toInchFt(r.y0) });
+  });
+  return out;
+}
+
+/**
+ * A drawn house's windows [x, face, w, h, sill] and doors [x, face, w, h, sill, kind] with none on another's spot — a
+ * scene saved before 2026-11-13 can still hold a window inside a door.
+ */
+export function settleSceneOpenings(windows: number[][] | undefined, doors: number[][] | undefined): { windows?: number[][]; doors?: number[][] } {
+  const KIND: OpeningKind[] = ["door", "slider", "garage"];
+  const rows = [...(doors ?? []).map((d) => ({ row: d, door: true })), ...(windows ?? []).map((w) => ({ row: w, door: false }))];
+  const rects = rows.map(({ row, door }) => ({ kind: door ? (KIND[row[5]] ?? "door") : ("window" as OpeningKind), x0: row[0] - row[2] / 2, x1: row[0] + row[2] / 2, y0: row[4], y1: row[4] + row[3], face: row[1] }));
+  const settled = settleOpeningRects(rects);
+  if (settled.every((r, i) => r === rects[i] || (!!r && r.x0 === rects[i].x0 && r.x1 === rects[i].x1 && r.y0 === rects[i].y0 && r.y1 === rects[i].y1))) return { windows, doors };
+  const out = { windows: [] as number[][], doors: [] as number[][] };
+  settled.forEach((r, i) => {
+    if (!r) return;
+    const row = [r2((r.x0 + r.x1) / 2), rows[i].row[1], r2(r.x1 - r.x0), r2(r.y1 - r.y0), r2(r.y0)];
+    if (rows[i].door) out.doors.push([...row, rows[i].row[5]]);
+    else out.windows.push(row);
+  });
+  return { windows: windows ? out.windows : undefined, doors: doors ? out.doors : undefined };
+}
+
 /**
  * Real windows and doors on the wall: each on the part its middle stands in, narrowed to stay a hand's width inside
  * that part, dropped when it would stand above that part's wall (an upper-storey window over a one-storey bump-out)
- * or when nothing of it is left.
+ * or when nothing of it is left — and none of them on another's spot (settleOpeningRects).
  */
-function placeOpenings(openings: HouseOpening[], parts: WallPart[], partH: number[], fromPhoto = false): { windows: number[][]; doors: number[][] } {
-  const windows: number[][] = [];
-  const doors: number[][] = [];
+function placeOpenings(openings: HouseOpening[], parts: WallPart[], partH: number[], fromPhoto = false, above: ReadonlyArray<{ face: number; top: number; from: number } | null> = []): { windows: number[][]; doors: number[][] } {
+  const placed: OpeningRect[] = [];
   for (const o of openings) {
     const i = partAt(parts, o.xFt);
     if (i < 0) continue;
@@ -529,14 +940,28 @@ function placeOpenings(openings: HouseOpening[], parts: WallPart[], partH: numbe
     // A window that starts above the part's top stands over a lower part's roof — no window of this wall. One that
     // starts inside the part but runs into the frieze (a transom just under the eave, read off a photo) is brought
     // down to fit under it rather than left out (2026-10-25).
-    if (o.sillFt >= top) continue;
+    if (o.sillFt >= top) {
+      // …unless the house's own wall stands above that roof (a one-storey part in front of a two-storey house): a
+      // window up there is the upper storey's, on the wall behind, clear of the low roof's top edge (2026-11-13).
+      const up = above[i];
+      if (!up || o.kind !== "window") continue;
+      const y0 = Math.max(o.sillFt, up.from), y1 = Math.min(o.sillFt + o.heightFt, up.top - (fromPhoto ? 0 : 0.6));
+      if (y1 - y0 >= 0.75) placed.push({ kind: o.kind, x0, x1, y0, y1, face: up.face });
+      continue;
+    }
     const sill = !fromPhoto && o.sillFt + o.heightFt > top ? Math.max(0, top - o.heightFt) : o.sillFt;
     const h = Math.min(o.heightFt, top - sill);
     if (h < 0.75) continue;
-    const row = [r2((x0 + x1) / 2), p.depthFt, r2(x1 - x0), r2(h), r2(sill)];
-    if (o.kind === "window") windows.push(row);
+    placed.push({ kind: o.kind, x0, x1, y0: sill, y1: sill + h, face: p.depthFt });
+  }
+  const windows: number[][] = [];
+  const doors: number[][] = [];
+  for (const r of settleOpeningRects(placed)) {
+    if (!r) continue;
+    const row = [r2((r.x0 + r.x1) / 2), r.face ?? 0, r2(r.x1 - r.x0), r2(r.y1 - r.y0), r2(r.y0)];
+    if (r.kind === "window") windows.push(row);
     // The door's kind for the 3D: 0 a door, 1 a sliding door, 2 a garage door (2026-10-26).
-    else doors.push([...row, o.kind === "slider" ? 1 : o.kind === "garage" ? 2 : 0]);
+    else doors.push([...row, r.kind === "slider" ? 1 : r.kind === "garage" ? 2 : 0]);
   }
   return { windows: windows.slice(0, 60), doors: doors.slice(0, 8) };
 }
@@ -582,7 +1007,7 @@ export function wallHighlight(shape: DeckShape, house: HouseDesign, focus: WallF
     const mid = (Math.min(...boxes.map((bx) => bx[0])) + Math.max(...boxes.map((bx) => bx[3]))) / 2;
     const extra = isLeft ? house.leftFt : house.rightFt;
     const end = isLeft ? "left" : "right";
-    const text = extra > 0 ? `${feetWords(extra)} of wall past the deck's ${end} end` : `The wall ends at the deck's ${end} end`;
+    const text = extra > 0 ? `${feetWords(extra)} of wall past the deck's ${end} end` : extra < 0 ? `The deck runs ${feetWords(-extra)} past the house's ${end} corner` : `The wall ends at the deck's ${end} end`;
     return { boxes, tag: { x: mid, y: Math.max(...boxes.map((bx) => bx[4])) + 0.3, z: top + 1.2, text } };
   }
   const n = house.jogs.findIndex((j) => j.id === focus.id);
@@ -670,9 +1095,19 @@ export function wallWords(shape: DeckShape, house: HouseDesign): string {
   const fit = deckShapeForHouse(shape, house);
   if (fit.note) return fit.note;
   if (quickWallOf(shape, house) === "nook") return "The deck sits in a nook: the house wraps both its ends, its back edge on the wall.";
+  const past = deckPast(house);
+  if (fit.shape.kind === "wall" && (past.leftFt > 0 || past.rightFt > 0)) return `${pastWords(past)} There it stands on its own beam and posts — no ledger.`;
+  if (fit.shape.kind === "wall" && !fit.shape.back.some((b) => Math.abs(b.yFt) > 0.01)) return house.jogs.length ? "The wall's steps are past the deck's ends — the deck's back edge runs straight along the house." : "A straight wall behind the deck.";
   if (fit.shape.kind === "wall") return `The deck follows the wall, ${wallDeckWords(fit.shape)}.`;
   if (fit.shape.kind === "L" && fit.shape.notch.corner.startsWith("back")) return `The deck wraps the bump-out at its ${fit.shape.notch.corner === "back-right" ? "right" : "left"} end: a ${ftWords(fit.shape.notch.widthFt)} × ${ftWords(fit.shape.notch.depthFt)} notch, framed around it.`;
   return house.jogs.length ? "The wall's steps are past the deck's ends — the deck's back edge runs straight along the house." : "A straight wall behind the deck.";
+}
+
+/** "The deck runs 6 ft past the house's right corner and 10 ft back along its side." */
+export function pastWords(past: DeckPast): string {
+  const one = (end: "left" | "right", p: number, w: number) => `${ftWords(p)} past the house's ${end} corner${w > 0 ? ` and ${ftWords(w)} back along its side` : ""}`;
+  const ends = [past.leftFt > 0 ? one("left", past.leftFt, past.wrapLeftFt) : null, past.rightFt > 0 ? one("right", past.rightFt, past.wrapRightFt) : null].filter((v): v is string => !!v);
+  return ends.length ? `The deck runs ${ends.join(", and ")}.` : "";
 }
 
 /** A step, in words: where it is and what the wall does there. */
@@ -836,23 +1271,57 @@ export function moveJogTo(house: HouseDesign, shape: DeckShape, id: string, xFt:
 export function slideDeck(house: HouseDesign, deltaFt: number): HouseDesign {
   // The deck right by d with the house still: more wall past its left end by d, less past its right — both held between
   // 0 and the most a wall reaches; the steps, fixed in the world, move the other way in the deck's feet.
-  const lo = Math.max(-house.leftFt, house.rightFt - HOUSE_LIMITS.extendFt.max);
-  const hi = Math.min(HOUSE_LIMITS.extendFt.max - house.leftFt, house.rightFt);
+  // (An end already past its corner may go farther past, or come back; one on the wall stays on it.)
+  const floor = (v: number) => (v < 0 ? -HOUSE_LIMITS.pastFt.max : 0);
+  const lo = Math.max(floor(house.leftFt) - house.leftFt, house.rightFt - HOUSE_LIMITS.extendFt.max);
+  const hi = Math.min(HOUSE_LIMITS.extendFt.max - house.leftFt, house.rightFt - floor(house.rightFt));
   const d = half(clamp(deltaFt, lo, hi));
   if (d === 0) return house;
   return { ...house, leftFt: half(house.leftFt + d), rightFt: half(house.rightFt - d), jogs: house.jogs.map((j) => ({ ...j, atFt: half(j.atFt - d) })), ...shiftHouseThings(house, -d) };
 }
 
 /**
+ * THE DECK'S END MOVED AGAINST A LOCKED WALL (2026-11-14): the house stays exactly where it is and the deck's end goes
+ * where it was taken — past the house's corner when it is taken past it (the deck runs on beyond the wall on its own
+ * beam, lib/deck/house deckPast), back onto the wall when it is brought back. Never a sliver past the corner: an end
+ * less than 2 ft past it stops AT the corner until it is taken 2 ft past (the least part of a deck to frame), and it
+ * goes 30 ft past at most; the wall keeps 4 ft of the deck. `side` is the end that moves; `widthFt` the width asked.
+ * Returns the width the deck can have and the wall's reach past that end (negative = the deck past the corner).
+ */
+export function lockedEnd(house: HouseDesign, shape: DeckShape, side: "left" | "right", widthFt: number): { widthFt: number; reachFt: number } {
+  const P = HOUSE_LIMITS.pastFt;
+  const W = shape.widthFt;
+  const reach0 = side === "left" ? house.leftFt : house.rightFt;
+  const otherPast = Math.max(0, -(side === "left" ? house.rightFt : house.leftFt));
+  // No narrower than the wall needs: 4 ft of the deck on the wall beside a deck past the other corner.
+  const w = Math.max(widthFt, otherPast + P.keepFt);
+  let reach = clamp(half(reach0 - (w - W)), -P.max, HOUSE_LIMITS.extendFt.max);
+  // No sliver past the corner: nearer the corner stops at it, nearer 2 ft past goes 2 ft past.
+  if (reach < 0 && reach > -P.min) reach = reach > -P.min / 2 ? 0 : -P.min;
+  return { widthFt: half(W + reach0 - reach), reachFt: reach };
+}
+
+/**
  * The deck's LEFT end moved to a new width while its right end stays put: the house stays too, so the wall's left
- * reach and every step shift by the change. Returns the shape and the house together.
+ * reach and every step shift by the change. Returns the shape and the house together. Against a LOCKED wall the end
+ * may go past the house's corner (lockedEnd).
  */
 export function resizeDeckLeft(house: HouseDesign, shape: DeckShape, newWidthFt: number, minWidthFt: number, maxWidthFt: number): { house: HouseDesign; shape: DeckShape } {
+  if (house.locked) {
+    const want = half(clamp(newWidthFt, minWidthFt, maxWidthFt));
+    const end = lockedEnd(house, shape, "left", want);
+    const w2 = clamp(end.widthFt, minWidthFt, maxWidthFt);
+    const d = shape.widthFt - w2;
+    if (d === 0) return { house, shape };
+    const moved = { ...house, leftFt: half(house.leftFt + d), jogs: house.jogs.map((j) => ({ ...j, atFt: half(j.atFt - d) })), ...shiftHouseThings(house, -d) };
+    if (moved.leftFt >= 0) delete moved.wrapLeftFt;
+    return { house: moved, shape: { ...shape, widthFt: w2 } };
+  }
   const W = shape.widthFt;
   const w2 = half(clamp(newWidthFt, minWidthFt, maxWidthFt));
   const d = W - w2; // the left end moves right by this much
   if (d === 0) return { house, shape };
-  const leftFt = clamp(half(house.leftFt + d), HOUSE_LIMITS.extendFt.min, HOUSE_LIMITS.extendFt.max);
+  const leftFt = clamp(half(house.leftFt + d), house.leftFt < 0 ? -HOUSE_LIMITS.pastFt.max : HOUSE_LIMITS.extendFt.min, HOUSE_LIMITS.extendFt.max);
   const moved = { ...house, leftFt, jogs: house.jogs.map((j) => ({ ...j, atFt: half(j.atFt - d) })), ...shiftHouseThings(house, -d) };
   return { house: moved, shape: { ...shape, widthFt: w2 } };
 }
@@ -886,14 +1355,14 @@ export function shiftWallPart(house: HouseDesign, shape: DeckShape, part: number
   } else {
     // The first part: the house's left end moves with it, between 0 and the most a wall reaches past the deck.
     lo = Math.max(lo, -(L.max - house.leftFt));
-    hi = Math.min(hi, house.leftFt - L.min);
+    hi = Math.min(hi, Math.max(0, house.leftFt - L.min));
   }
   if (rightI < n) {
     const j = house.jogs[rightI];
     hi = Math.min(hi, (rightI + 1 < n ? house.jogs[rightI + 1].atFt - 1 : W + house.rightFt - 1) - j.atFt);
   } else {
     // The last part: the house's right end moves with it.
-    lo = Math.max(lo, -(house.rightFt - L.min));
+    lo = Math.max(lo, -Math.max(0, house.rightFt - L.min));
     hi = Math.min(hi, L.max - house.rightFt);
   }
   const d = half(clamp(d0, lo, hi));

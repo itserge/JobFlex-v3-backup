@@ -757,6 +757,20 @@
 .quiet { display: contents; }
 
 /* The doors and windows on the wall, from a photo of the house (2026-10-23). */
+/* The wall's lock (2026-11-14): the pad's toggle, dark while the wall is locked. */
+.wallLockBtn { font-weight: 800; }
+.wallLockOn, :global(.jf-blueprint .content) .wallLockOn { background: var(--ink); border-color: var(--ink); color: #fff; }
+.wallLockOn:hover, :global(.jf-blueprint .content) .wallLockOn:hover { color: #fff; background: color-mix(in srgb, var(--ink) 85%, #fff); }
+/* The deck's own edges, shaped by hand (2026-11-14): a wide strip over each edge takes the hand; it shows under the pointer. */
+.wallEdge { fill: none; stroke: transparent; stroke-linecap: butt; cursor: ns-resize; pointer-events: stroke; }
+.wallEdgeSide { fill: none; stroke: transparent; stroke-linecap: butt; cursor: ew-resize; pointer-events: stroke; }
+.wallEdge:hover, .wallEdgeSide:hover { stroke: rgba(24, 84, 160, 0.3); }
+.wallEdgeOn { stroke: rgba(24, 84, 160, 0.22); }
+.wallDeckHandleNS { cursor: ns-resize; }
+/* A dimension's lines are read, not held: one drawn across a side of the deck no longer takes the hand from it. */
+.wallDim { pointer-events: none; }
+.wallCorner { fill: #fff; stroke: var(--blueprint); stroke-width: 1.6; vector-effect: non-scaling-stroke; cursor: nwse-resize; outline: none; }
+.wallCorner:hover { fill: #dbe7f5; }
 .wallOpeningText { fill: var(--ink-muted); font-family: var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; pointer-events: none; }
 .wallWin { stroke: var(--blueprint); stroke-width: 4; vector-effect: non-scaling-stroke; stroke-linecap: butt; }
 .wallDoor { stroke: var(--ink); stroke-width: 7; vector-effect: non-scaling-stroke; stroke-linecap: butt; }

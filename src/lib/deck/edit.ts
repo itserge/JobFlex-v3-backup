@@ -8,8 +8,8 @@
 // Moved here from the studio (components/v3/deck-variant-1/deck-v1-studio.tsx), which now calls them.
 
 import { applyDeckPatch, type DeckPatch } from "./checks";
-import { defaultRoofDesign, type DeckDesign, type RoofDesign, type RoofKind, type Structure } from "./design";
-import { HOUSE_LIMITS, deckShapeForHouse, houseForShape } from "./house";
+import { DECK_LIMITS, defaultRoofDesign, type DeckDesign, type RoofDesign, type RoofKind, type Structure } from "./design";
+import { HOUSE_LIMITS, deckShapeForHouse, houseForShape, lockedEnd, shiftHouseThings } from "./house";
 import { resizes, roofResizes } from "./settle";
 
 /** The roof shapes each structure offers. A covered deck: shed, gable, hip; a gazebo: its own; a pergola: slats. */
@@ -23,7 +23,22 @@ export const KINDS_FOR: Record<Structure, RoofKind[]> = {
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 /** A patch laid over the design: the house and the deck agree after it, and a resize settles the frame. */
-export function patchDesign(d: DeckDesign, p: DeckPatch, settle: (next: DeckDesign) => DeckDesign = (x) => x): DeckDesign {
+export function patchDesign(d: DeckDesign, p0: DeckPatch, settle: (next: DeckDesign) => DeckDesign = (x) => x): DeckDesign {
+  // A PLAIN SHAPE PICKED WHILE THE DECK RAN PAST THE HOUSE'S CORNER (2026-11-14) — a rectangle, an L, a bowed or a
+  // clipped front: those hang on the wall, so the wall is behind the whole deck again (the house's corners go back out
+  // to the deck's ends). Without this the pick would be undone at once: a deck past a corner keeps the shape that lets
+  // it stand there.
+  const pastNow = d.house.leftFt < 0 || d.house.rightFt < 0;
+  // …but a LOCKED wall (2026-11-14) does not move for a shape: the deck comes back to the wall — its ends to the house's
+  // corners, the house where it was.
+  const pullIn = (): DeckPatch => {
+    const pl = Math.max(0, -d.house.leftFt);
+    const pr = Math.max(0, -d.house.rightFt);
+    const shape = p0.shape!;
+    const widthFt = Math.max(DECK_LIMITS.widthFt.min, (shape.widthFt ?? d.shape.widthFt) - pl - pr);
+    return { ...p0, shape: { ...shape, widthFt }, house: { leftFt: Math.max(0, d.house.leftFt), rightFt: Math.max(0, d.house.rightFt), jogs: d.house.jogs.map((j) => ({ ...j, atFt: j.atFt - pl })), ...shiftHouseThings(d.house, -pl) } };
+  };
+  const p: DeckPatch = p0.shape && p0.shape.kind !== "wall" && !p0.house && pastNow ? (d.house.locked ? pullIn() : { ...p0, house: { leftFt: Math.max(0, d.house.leftFt), rightFt: Math.max(0, d.house.rightFt) } }) : p0;
   let next = applyDeckPatch(d, p);
   // THE HOUSE AND THE DECK AGREE (lib/deck/house).
   if (p.house) {
@@ -34,7 +49,14 @@ export function patchDesign(d: DeckDesign, p: DeckPatch, settle: (next: DeckDesi
     // A house built from its photo is the real wall (2026-10-23): a wider or narrower deck does not stretch it — the
     // wall past the deck's right end gives up or takes what the deck took.
     const grew = next.shape.widthFt - d.shape.widthFt;
-    if (resized && grew && d.house.photo) next = applyDeckPatch(next, { house: { rightFt: Math.min(HOUSE_LIMITS.extendFt.max, Math.max(HOUSE_LIMITS.extendFt.min, d.house.rightFt - grew)) } });
+    // (A deck already past that corner goes farther past it, or comes back: the wall stays the photo's.)
+    // A LOCKED WALL (2026-11-14) stays where it is whatever the deck does: the deck's right end goes past the house's
+    // corner when taken past it — never a sliver past it (lib/deck/house lockedEnd) — and the deck's width is what that allows.
+    if (resized && grew && d.house.locked) {
+      // (A wrap back along the side goes by itself when the end is on the wall again: the house's read-back keeps it only past a corner.)
+      const end = lockedEnd(d.house, d.shape, "right", next.shape.widthFt);
+      next = applyDeckPatch(next, { shape: { ...next.shape, widthFt: end.widthFt }, house: { rightFt: end.reachFt } });
+    } else if (resized && grew && d.house.photo) next = applyDeckPatch(next, { house: { rightFt: Math.min(HOUSE_LIMITS.extendFt.max, Math.max(d.house.rightFt < 0 ? -HOUSE_LIMITS.pastFt.max : HOUSE_LIMITS.extendFt.min, d.house.rightFt - grew)) } });
     if (resized) {
       const fit = deckShapeForHouse(next.shape, next.house);
       if (!same(fit.shape, next.shape)) next = applyDeckPatch(next, { shape: fit.shape });

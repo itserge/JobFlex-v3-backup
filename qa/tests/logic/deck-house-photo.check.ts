@@ -10,6 +10,7 @@ import { HOUSE_READ_PROMPT, HOUSE_READ_PROMPT_PX, fromStructured, mergeLooks, re
 import { applyDepthVerdicts } from "@/lib/deck/houseDepthApply";
 import { houseFromPhoto, houseScale, dominantColour, colourZones, paintable } from "@/lib/deck/houseFromPhoto";
 import { defaultHouse, houseScene, normalizeHouse, slideDeck } from "@/lib/deck/house";
+import { sectionHeights, setSectionHeight } from "@/lib/deck/houseRead";
 import { defaultDeckDesign, type DeckShape } from "@/lib/deck/design";
 import { patchDesign } from "@/lib/deck/edit";
 import { buildStructure } from "@/lib/deck/structure";
@@ -83,14 +84,14 @@ const S: HouseReadStructured = {
   base: { left: toPx(RAW.base.left), right: toPx(RAW.base.right) },
   eave: { left: toPx(RAW.eave.left), right: toPx(RAW.eave.right) },
   storeys: 2,
-  sections: [{ x0: fx(25) * W, x1: fx(148) * W, outFt: 0, why: "corner boards at both ends" }, { x0: fx(148) * W, x1: fx(372) * W, outFt: 2, why: "its own eave in front of the main eave" }, { x0: fx(372) * W, x1: fx(597) * W, outFt: 0, why: "the main wall" }],
+  sections: [{ x0: fx(25) * W, x1: fx(148) * W, outFt: 0, storeys: 2, roof: "main", wing: false, why: "corner boards at both ends" }, { x0: fx(148) * W, x1: fx(372) * W, outFt: 2, storeys: 2, roof: "main", wing: false, why: "its own eave in front of the main eave" }, { x0: fx(372) * W, x1: fx(597) * W, outFt: 0, storeys: 2, roof: "main", wing: false, why: "the main wall" }],
   doors: [],
   windows: RAW.windows.map((w) => ({ x0: w.x0 * W, x1: w.x1 * W, sill: w.sill * H, head: w.head * H })),
   patio: { x0: RAW.patio.x0 * W, x1: RAW.patio.x1 * W },
   roof: { kind: "hip", pitch: 5 },
   material: "lap",
   colours: { siding: "#7D7B76", roof: "#3c3d40", trim: null },
-  lookPast: [{ kind: "porch-roof", x0: 358, y0: 740 - 380, x1: 655, y1: 775 - 380 }],
+  lookPast: [{ kind: "porch-roof", x0: 358, y0: 740 - 380, x1: 655, y1: 775 - 380, floorY: null }],
   bars: { top: 0, bottom: 0 },
   confidence: 0.8,
   note: null,
@@ -131,7 +132,7 @@ check("a step added divides the wider part and changes nothing yet", divided.jog
 const moved = moveHouseMark(divided, "jog-0", { x: fx(148), y: read.base.left.y });
 const shaped = setSectionOut(moved, 1, 2);
 check("dragged to the corner and the middle set out: left and right on the main wall, the middle out 2 ft", readSections(shaped).map((x) => x.outFt).join(",") === "0,2,0", JSON.stringify(readSections(shaped)));
-check("the prompt says a lower roof over the ground storey of part of the wall is not a bump-out", /lean-to/.test(HOUSE_READ_PROMPT) && /GROUND storey/.test(HOUSE_READ_PROMPT) && /lean-to/.test(HOUSE_READ_PROMPT_PX) && /GROUND storey/.test(HOUSE_READ_PROMPT_PX));
+check("the prompt tells a room under a low roof (a section of one storey) from an open porch cover and a roof band (never a section)", /lean-to/.test(HOUSE_READ_PROMPT) && /GROUND storey/.test(HOUSE_READ_PROMPT) && /GROUND storey/.test(HOUSE_READ_PROMPT_PX) && /A ROOM under it/.test(HOUSE_READ_PROMPT_PX) && /An OPEN porch or patio cover/.test(HOUSE_READ_PROMPT_PX) && /roof band or skirt/.test(HOUSE_READ_PROMPT_PX) && /"wing" is true/.test(HOUSE_READ_PROMPT_PX));
 const flatTwo = addReadJog(addReadJog({ ...read, jogs: [] }));
 check("a step added to a flat wall goes in its middle; a second splits the wider half, never on the first", flatTwo.jogs.length === 2 && Math.abs(flatTwo.jogs[0].x - flatTwo.jogs[1].x) > 0.1, JSON.stringify(flatTwo.jogs.map((j) => j.x)));
 check("half-foot steps, held to 8 ft either way", setSectionOut(read, 1, 12).jogs[0].depthFt === 8 && setSectionOut(read, 1, 2.3).jogs[0].depthFt === 2.5);
@@ -262,6 +263,49 @@ check("a sunset's orange is held to a paint's colour", sr - sb < 140, sunset);
 const z = colourZones(read, W, H);
 const w0 = read.windows[0];
 check("the wall is sampled between its base and its eave, never on a window", z.wall(0.3, 0.585) && !z.wall((w0.x0 + w0.x1) / 2, (w0.head + w0.sill) / 2) && !z.wall(0.4, 0.2) && !!z.roof && z.roof(0.4, read.eave!.left.y - 0.03));
+
+// ── each part's own height and roof (owner, 2026-11-13: "when you convert the picture to 3D, use the same roof") ──
+{
+  // the same wall, its middle part read as a ROOM one storey tall under a lean-to, standing 6 ft in front of the wall above
+  const S1: HouseReadStructured = { ...S, sections: S.sections.map((x, i) => (i === 1 ? { ...x, outFt: 6, storeys: 1, roof: "lean-to" as const, wing: false } : x)) };
+  const r1 = parseHouseRead(fromStructured(S1, W, H))!;
+  check("a one-storey section under a lean-to is kept with the read, as a stretch of the picture", r1.heights?.length === 1 && r1.heights[0].storeys === 1 && r1.heights[0].roof === "shed" && !r1.heights[0].wing && near(r1.heights[0].x0, fx(148), 0.01), JSON.stringify(r1.heights));
+  check("each part knows its own: only the middle one", sectionHeights(r1).map((h) => (h ? `${h.storeys}${h.roof}` : "-")).join(",") === "-,1shed,-");
+  check("a saved read keeps it", parseHouseRead(JSON.parse(JSON.stringify(r1)))?.heights?.[0].roof === "shed");
+  const b1 = houseFromPhoto({ read: r1, photoW: W, photoH: H, deckWidthFt: Wd, house: design.house })!;
+  check("the house built from it: the middle part one storey under a lean-to, the rest by the rule", JSON.stringify(b1.house.parts) === JSON.stringify([null, { storeys: 1, roof: "shed" }, null]) && b1.house.jogs[0].depthFt === 6, JSON.stringify(b1.house.parts));
+  check("…and said in words", /the middle part one storey under a lean-to roof/.test(b1.facts.find((f) => f.id === "storeys")!.value) && !/as tall as the house/.test(b1.facts.find((f) => f.id === "steps")!.value), b1.facts.find((f) => f.id === "storeys")!.value);
+  const built1 = patchDesign(design, { house: b1.house });
+  const s1 = houseScene(built1.shape, built1.house, { deckHeightFt: 3, peakFt: 0, mainEdge: null });
+  const tall = Math.max(...s1.blocks.map((x) => x[4])), front = s1.blocks.find((x) => x[3] > x[1] && x[1] === s1.blocks[0][3]);
+  check("in 3D the room is a low block in front of the two-storey house", !!front && front[4] < tall - 6 && s1.blocks.filter((x) => x[4] === tall).length === 3, JSON.stringify(s1.blocks));
+  check("…under its own lean-to, the main hip over the whole house behind it", s1.roofs?.length === 2 && s1.roofs[0][0] === 0 && s1.roofs[1][0] === 7 && s1.roofs[1][5] === front![4], JSON.stringify(s1.roofs));
+  const upper = s1.windows.filter((w) => w[4] > front![4]);
+  check("the upper storey's windows over the room stay, on the house's wall behind it", s1.windows.length === 14 && upper.some((w) => w[1] === front![1] && w[0] > front![0] && w[0] < front![2]), `${s1.windows.length} windows`);
+  check("a house read back keeps its parts while they match its steps, and drops them when a step is gone", normalizeHouse(JSON.parse(JSON.stringify(built1.house)), built1.shape).parts?.[1]?.roof === "shed" && normalizeHouse({ ...JSON.parse(JSON.stringify(built1.house)), jogs: built1.house.jogs.slice(0, 1) }, built1.shape).parts === undefined);
+
+  // the right part a one-storey WING beside the two-storey block, under its own hip
+  const S2: HouseReadStructured = { ...S, sections: S.sections.map((x, i) => (i === 2 ? { ...x, storeys: 1, roof: "hip" as const, wing: true } : x)) };
+  const r2 = parseHouseRead(fromStructured(S2, W, H))!;
+  const b2 = houseFromPhoto({ read: r2, photoW: W, photoH: H, deckWidthFt: Wd, house: design.house })!;
+  const built2 = patchDesign(design, { house: b2.house });
+  const s2 = houseScene(built2.shape, built2.house, { deckHeightFt: 3, peakFt: 0, mainEdge: null });
+  const mainRoof = s2.roofs!.find((x) => x[5] === Math.max(...s2.roofs!.map((q) => q[5])) && x[0] === 0)!, wingRoof = s2.roofs!.find((x) => x[5] < mainRoof[5] && x[0] === 0);
+  check("a one-storey wing is built as a wing", b2.house.parts?.[2]?.storeys === 1 && b2.house.parts[2]?.wing === true && /the right part one storey under its own hip roof \(a wing\)/.test(b2.facts.find((f) => f.id === "storeys")!.value), JSON.stringify(b2.house.parts));
+  check("in 3D the main roof ends where the wing begins, and the wing has its own lower hip", !!wingRoof && near(mainRoof[3], wingRoof[1], 0.01) && wingRoof[3] > wingRoof[1] + 5 && s2.blocks.some((x) => x[0] === wingRoof[1] && x[4] === wingRoof[5]), JSON.stringify(s2.roofs));
+  check("no upper window is drawn over the wing", s2.windows.every((w) => !(w[0] > wingRoof![1] && w[4] > wingRoof![5])));
+
+  // by hand in the review: tap a part, One storey; then back
+  const tapped = setSectionHeight(pxRead, 1, { storeys: 1, roof: "gable", wing: false });
+  check("a part set to one storey under a gable by hand", sectionHeights(tapped)[1]?.roof === "gable" && sectionHeights(tapped)[0] === null && sectionHeights(tapped)[2] === null);
+  check("…follows its part when the step beside it is dragged", sectionHeights(moveHouseMark(tapped, "jog-0", { x: fx(170), y: tapped.base.left.y }))[1]?.roof === "gable");
+  check("…and put back under the main roof leaves nothing behind", setSectionHeight(tapped, 1, null).heights === undefined);
+  // a one-storey house has no lower part: only a roof of its own is kept
+  const one = houseFromPhoto({ read: { ...r1, storeys: 1 }, photoW: W, photoH: H, deckWidthFt: Wd, house: design.house })!;
+  check("on a one-storey house the part keeps its own roof and no height", JSON.stringify(one.house.parts) === JSON.stringify([null, { roof: "shed" }, null]));
+  // the old rule still stands where nothing was seen
+  check("with nothing seen, a house built from a photo has no parts of its own", b.house.parts === null || b.house.parts === undefined);
+}
 
 console.log(bad ? `\n${bad} FAILED` : "\nALL PASS");
 process.exit(bad ? 1 : 0);

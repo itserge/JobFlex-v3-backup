@@ -29,6 +29,7 @@
 
 import type { WallJog } from "./photoFit";
 import type { HouseRead } from "./houseRead";
+import { inFrontAt } from "./houseInFront";
 import { gradients, type Gray } from "./photoSnap";
 
 export type PartState = "out" | "back" | "level" | "unknown";
@@ -163,7 +164,10 @@ export function photoObliqueness(read: HouseRead, g: Gray): { slope: number; obl
 }
 
 /** The corners of the wall: columns where an edge stands up through every storey of it. Fractions across the
- *  picture, left to right. */
+ *  picture, left to right. What stands in front of the wall — an old deck and its railing, a porch roof and the posts
+ *  under it, a tree (the read's `lookPast`, 2026-11-13) — is not the wall: its rows are left out of each column, and a
+ *  storey that shows less than a third of itself at a column says nothing there, so no corner is found behind it (the
+ *  model's own read of the wall stands, and a corner it saw is looked at by itself — lib/deck/houseCorner). */
 export function wallCorners(read: HouseRead, g: Gray, gx?: Float32Array): number[] {
   if (!read.eave) return [];
   const { w, h } = g;
@@ -175,9 +179,10 @@ export function wallCorners(read: HouseRead, g: Gray, gx?: Float32Array): number
   const baseAt = (px: number) => lineY(read.base, px / w) * h;
   const H = baseAt((xL + xR) / 2) - eaveAt((xL + xR) / 2);
   if (H < 40) return [];
+  const hidden = inFrontAt(read, { under: true });
   // What counts as an edge: well above the wall's own texture (lap siding stands in lines across, not up).
   const sample: number[] = [];
-  for (let y = Math.round(eaveAt((xL + xR) / 2) + H * 0.1); y < baseAt((xL + xR) / 2) - H * 0.1; y += 3) for (let x = xL; x < xR; x += 3) sample.push(G[y * w + x]);
+  for (let y = Math.round(eaveAt((xL + xR) / 2) + H * 0.1); y < baseAt((xL + xR) / 2) - H * 0.1; y += 3) for (let x = xL; x < xR; x += 3) if (!hidden(x / w, y / h)) sample.push(G[y * w + x]);
   sample.sort((a, b) => a - b);
   const T = clamp(3 * (sample[Math.floor(sample.length / 2)] ?? 0.02), 0.04, 0.12);
   const bands = read.storeys === 2 ? [[0.06, 0.46], [0.54, 0.94]] : [[0.08, 0.92]];
@@ -188,11 +193,16 @@ export function wallCorners(read: HouseRead, g: Gray, gx?: Float32Array): number
       const bot = eaveAt(x) + H * b;
       let on = 0;
       let n = 0;
+      let all = 0;
       for (let y = Math.round(top); y < bot; y++) {
+        all++;
+        if (hidden(x / w, y / h)) continue;
         const i = y * w + x;
         n++;
         if (Math.max(G[i - 1], G[i], G[i + 1]) > T) on++;
       }
+      // A storey mostly behind something says nothing at this column — and a corner nobody can see is not found.
+      if (n < Math.max(6, all * 0.34)) return 0;
       worst = Math.min(worst, n ? on / n : 0);
     }
     return worst;
@@ -213,9 +223,33 @@ export function wallCorners(read: HouseRead, g: Gray, gx?: Float32Array): number
   // the entry door ran on up the side of the window over it, an edge up both storeys, and read as a corner with the
   // wall to its right "back 2 ft"). A column on an opening's edge — within 1½ % of the wall's span — is the frame.
   const edge = Math.max(4, span * 0.015);
-  const frames = [...read.windows.flatMap((o) => [o.x0, o.x1]), ...read.doors.flatMap((o) => [o.x0, o.x1])].map((x) => x * w);
+  const boxes = [...read.windows.map((o) => ({ x0: o.x0, x1: o.x1, top: o.head, bottom: o.sill })), ...read.doors.map((o) => ({ x0: o.x0, x1: o.x1, top: o.top, bottom: o.bottom }))];
+  const frames = boxes.flatMap((o) => [o.x0, o.x1]).map((x) => x * w);
+  // …unless the edge also stands where no opening is (2026-11-14, the owner's photo: the bump-out's corner board stood
+  // eight pixels from a window's side, was taken for that window's frame, and the corner went unseen). A real corner
+  // runs the whole storey; a frame only as far as its opening. So a column beside a frame is still a corner when, in
+  // every storey, at least half its rows are clear of the openings beside it and the edge shows in most of those.
+  const clearOfFrames = (x: number) => {
+    const near = boxes.filter((o) => x >= o.x0 * w - edge && x <= o.x1 * w + edge);
+    for (const [a, b] of bands) {
+      const top = eaveAt(x) + H * a;
+      const bot = eaveAt(x) + H * b;
+      let on = 0;
+      let n = 0;
+      let all = 0;
+      for (let y = Math.round(top); y < bot; y++) {
+        all++;
+        if (hidden(x / w, y / h) || near.some((o) => y >= o.top * h - 3 && y <= o.bottom * h + 3)) continue;
+        n++;
+        const i = y * w + x;
+        if (Math.max(G[i - 1], G[i], G[i + 1]) > T) on++;
+      }
+      if (n < all * 0.5 || on / n < 0.72) return false;
+    }
+    return true;
+  };
   return picks
-    .filter((p) => !frames.some((fx) => Math.abs(fx - p.x) <= edge))
+    .filter((p) => !frames.some((fx) => Math.abs(fx - p.x) <= edge) || clearOfFrames(p.x))
     .sort((a, b) => b.s - a.s)
     .slice(0, 4)
     .map((p) => r3(p.x / w))
@@ -237,9 +271,12 @@ function eaveProfile(read: HouseRead, g: Gray, x0: number, x1: number, lo: numbe
   const a = Math.round(x0 * w);
   const b = Math.round(x1 * w);
   const cols: number[] = [];
+  const hidden = inFrontAt(read);
   for (let x = a; x < b; x++) {
     const fx = x / w;
     const yE = lineY(read.eave!, fx);
+    // a tree or a porch roof across the eave here: this column shows none of it
+    if (hidden(fx, yE)) continue;
     if (read.windows.some((win) => fx >= win.x0 - 0.004 && fx <= win.x1 + 0.004 && (win.head - yE) * h < hi && (win.sill - yE) * h > lo)) continue;
     cols.push(x);
   }

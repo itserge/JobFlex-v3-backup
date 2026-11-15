@@ -13,6 +13,7 @@
 // Owner: "stairs placed by pointing." In placing mode a click near an open
 // edge tells the studio which edge, how far along, and which level.
 import * as React from "react";
+import type { DeckGrip } from "@/lib/deck/byHand";
 import type { DeckFrame } from "@/lib/deck/frame";
 import type { DeckStructure } from "@/lib/deck/structure";
 import { structureLevels } from "@/lib/deck/structure";
@@ -60,16 +61,52 @@ const FIXTURE_MARK: Record<string, string> = { "led-strip": "L", "post-cap": "c"
  * `show`: "all" (the studio), "floor" (the permit set's floor framing plan: no roof over it, the posts and footings
  * named) or "roof" (the roof framing plan alone, the deck as a faint outline under it).
  */
-export function DeckPlan({ structure, placing = null, onPlaceStair, show = "all", marks = [] }: { structure: DeckStructure; placing?: "stair" | null; onPlaceStair?: (hit: PlanEdgeHit) => void; show?: "all" | "floor" | "roof"; /** Points to call out on the plan, deck inches (the permit set's lateral devices, 2026-10-20). */ marks?: ReadonlyArray<{ x: number; y: number; label: string }> }) {
+export function DeckPlan({
+  structure,
+  placing = null,
+  onPlaceStair,
+  show = "all",
+  marks = [],
+  grips,
+  onMoveGrip,
+  onPickGrip,
+  level = "upper",
+}: {
+  structure: DeckStructure;
+  placing?: "stair" | null;
+  onPlaceStair?: (hit: PlanEdgeHit) => void;
+  show?: "all" | "floor" | "roof";
+  /** Points to call out on the plan, deck inches (the permit set's lateral devices, 2026-10-20). */
+  marks?: ReadonlyArray<{ x: number; y: number; label: string }>;
+  /**
+   * MOVED BY HAND (2026-11-13; lib/deck/byHand): the posts and beams that can be taken hold of. With `onMoveGrip` each
+   * is dragged on the plan — a post along its beam or its side, a beam along the joists — an inch at a time; a click
+   * without a pull is `onPickGrip` (the studio opens the part's card, to type its place).
+   */
+  grips?: readonly DeckGrip[];
+  onMoveGrip?: (grip: DeckGrip, at: number, done: boolean) => void;
+  onPickGrip?: (grip: DeckGrip) => void;
+  /** A double deck whose lower floor is shaped on its own (2026-11-14; lib/deck/doubleDeck): which deck's frame is drawn. */
+  level?: "upper" | "lower";
+}) {
   const { frame: frameIn, roof: roofIn } = structure;
   const frame = show === "roof" ? null : frameIn;
-  const roof = show === "floor" ? null : roofIn;
+  // (The lower deck's own plan has no roof over it: the roof is the upper deck's.)
+  const lowerPlan = level === "lower" && structure.lower?.place === "under" && !!structure.design.lower.shape;
+  const roof = show === "floor" || lowerPlan ? null : roofIn;
   const outlineOnly = show === "roof" ? frameIn : null;
-  const levels = structureLevels(structure);
+  // A DOUBLE DECK (2026-11-13): the lower deck is framed on the upper deck's own lines, so one plan is both — drawn
+  // once, with a word saying so (two frames laid on one another were unreadable).
+  const under = structure.lower?.place === "under" ? structure.lower : null;
+  // …unless it was shaped on its own (2026-11-14): then each deck has a plan of its own, picked by `level`.
+  const ownLower = !!under && !!structure.design.lower.shape;
+  const lowerOnly = ownLower && level === "lower";
+  const levels = structureLevels(structure).filter((l) => (lowerOnly ? l.id === "lower" : !(under && l.id === "lower")));
+  const underNote = !under || lowerOnly ? "" : ownLower ? `double deck · lower deck shaped on its own: its own plan` : `double deck · the lower deck ${ftIn(under.frame.surfaceIn)} high, framed on the same lines: ${under.frame.joistSize} @ ${under.frame.spacingIn}", ${[...new Set(under.frame.beams.map((b) => b.spec.size))].join(" and ")} ${under.frame.beams.length === 1 ? "beam" : "beams"} let into the posts`;
   const svgRef = React.useRef<SVGSVGElement>(null);
   const eave = roof?.eaveRing ?? [];
   // The roof's framing plan draws no stairs (2026-11-13): their footprints made its frame larger and the roof smaller.
-  const drawnStairs = show === "roof" ? [] : structure.stairs;
+  const drawnStairs = show === "roof" ? [] : lowerPlan ? structure.stairs.filter((st) => st.level === "lower") : structure.stairs;
   const xs = [...levels.flatMap((l) => l.frame.zones.flatMap((z) => [z.zone.x0 + l.offsetXIn, z.zone.x1 + l.offsetXIn])), ...eave.map((p) => p.x), ...(roof ? [0] : []), ...drawnStairs.flatMap((st) => st.footprint.map((p) => p.x))];
   const ys = [...levels.flatMap((l) => l.frame.zones.flatMap((z) => [z.zone.y0 + l.offsetYIn, z.zone.y1 + l.offsetYIn])), ...eave.map((p) => p.y), ...(roof ? [0] : []), ...drawnStairs.flatMap((st) => st.footprint.map((p) => p.y))];
   const minX = Math.min(...xs, 0);
@@ -88,6 +125,56 @@ export function DeckPlan({ structure, placing = null, onPlaceStair, show = "all"
   const roofNote = roof ? (roof.trusses ? `trusses @ ${roof.trusses.spacingIn}" o.c. · ${ftIn(roof.trusses.spanIn)} span` : `${roof.rafters.size} rafters @ ${roof.rafters.spacingIn}" o.c.`) : "";
   const vb = `${minX - pad} ${minY - pad - (onHouse ? houseBand : 0)} ${maxX - minX + pad * 2} ${maxY - minY + pad * 2 + (onHouse ? houseBand : 0)}`;
   const roofMembers = (roles: string[]) => (roof ? roof.members.filter((m) => roles.includes(m.role)) : []);
+
+  // A PULL ON THE PLAN. The pointer's travel along the part's own line, read in the plan's inches; the listeners
+  // are the window's, so the pull goes on while the plan re-draws under it (every inch re-frames the deck).
+  const moveRef = React.useRef(onMoveGrip);
+  const pickGripRef = React.useRef(onPickGrip);
+  React.useEffect(() => {
+    moveRef.current = onMoveGrip;
+    pickGripRef.current = onPickGrip;
+  });
+  const pull = React.useRef<{ grip: DeckGrip; x: number; y: number; last: number; moved: boolean } | null>(null);
+  const [held, setHeld] = React.useState<{ kind: DeckGrip["kind"]; id: string } | null>(null);
+  const toPlan = (clientX: number, clientY: number) => {
+    const ctm = svgRef.current?.getScreenCTM();
+    return ctm ? new DOMPoint(clientX, clientY).matrixTransform(ctm.inverse()) : null;
+  };
+  const gripDown = (e: React.PointerEvent<SVGRectElement>, grip: DeckGrip) => {
+    if (placing || e.button > 0) return;
+    const at = toPlan(e.clientX, e.clientY);
+    if (!at) return;
+    e.preventDefault();
+    e.stopPropagation();
+    pull.current = { grip, x: at.x, y: at.y, last: grip.at, moved: false };
+    setHeld({ kind: grip.kind, id: grip.id });
+    const move = (ev: PointerEvent) => {
+      const d = pull.current;
+      const now = toPlan(ev.clientX, ev.clientY);
+      if (!d || !now) return;
+      const next = Math.round(d.grip.at + (d.grip.axis === "x" ? now.x - d.x : now.y - d.y));
+      if (next === d.last) return;
+      d.last = next;
+      d.moved = true;
+      moveRef.current?.(d.grip, next, false);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      const d = pull.current;
+      pull.current = null;
+      setHeld(null);
+      if (!d) return;
+      if (d.moved) moveRef.current?.(d.grip, d.last, true);
+      else pickGripRef.current?.(d.grip);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  };
+  const liveGrips = onMoveGrip && grips && show === "all" && !lowerPlan ? grips.filter((g) => !g.fixed) : [];
+  const heldGrip = held ? liveGrips.find((g) => g.kind === held.kind && g.id === held.id) : undefined;
 
   /** A click in placing mode: the nearest open edge of a level, and where along it. */
   const onClick = (e: React.MouseEvent<SVGSVGElement>) => {
@@ -132,6 +219,23 @@ export function DeckPlan({ structure, placing = null, onPlaceStair, show = "all"
         {f.beams.map((b) => (
           <rect key={b.id} x={b.x0 + ox} y={b.y + oy - b.spec.thickIn / 2} width={b.x1 - b.x0} height={b.spec.thickIn} fill={b.style === "flush" ? "var(--paper-deep)" : "none"} stroke="var(--blueprint)" strokeWidth={lw * 1.6} strokeDasharray={b.style === "dropped" ? `${lw * 6} ${lw * 3}` : undefined} />
         ))}
+        {/* The angled beams under corners cut at 45° (2026-11-14): the same dashed line as the beams they meet. */}
+        {f.cornerBeams.map((c) => {
+          const len = Math.hypot(c.x1 - c.x0, c.y1 - c.y0) || 1;
+          const nx = (-(c.y1 - c.y0) / len) * (c.spec.thickIn / 2);
+          const ny = ((c.x1 - c.x0) / len) * (c.spec.thickIn / 2);
+          return (
+            <polygon
+              key={c.id}
+              points={`${c.x0 + nx + ox},${c.y0 + ny + oy} ${c.x1 + nx + ox},${c.y1 + ny + oy} ${c.x1 - nx + ox},${c.y1 - ny + oy} ${c.x0 - nx + ox},${c.y0 - ny + oy}`}
+              fill="none"
+              stroke="var(--blueprint)"
+              strokeWidth={lw * 1.6}
+              strokeDasharray={`${lw * 6} ${lw * 3}`}
+              data-deck-plan-corner-beam={c.id}
+            />
+          );
+        })}
         {sticks("joist").map((j, i) => rect(j, `j${i}`, "var(--paper-deep)", "var(--ink-soft)"))}
         {sticks("rim").map((r, i) => rect(r, `r${i}`, r.curved ? "var(--blueprint)" : "var(--paper-deep)", "var(--ink-soft)"))}
         {sticks("blocking").map((b, i) => rect(b, `k${i}`, "var(--muted-light)"))}
@@ -180,6 +284,11 @@ export function DeckPlan({ structure, placing = null, onPlaceStair, show = "all"
             {lower ? `lower level · ${f.joistSize} @ ${f.spacingIn}" · ${ftIn(f.surfaceIn)} high` : joistNote}
           </text>
         ) : null}
+        {!lower && underNote && show !== "roof" ? (
+          <text x={W / 2 + ox} y={(f.zones[0].zone.y0 + (f.beams[0]?.y ?? D)) / 2 + oy + font * 1.25} fontSize={font * 0.7} textAnchor="middle" className={s.planNote} data-deck-plan-double>
+            {underNote}
+          </text>
+        ) : null}
       </g>
     );
   };
@@ -215,7 +324,7 @@ export function DeckPlan({ structure, placing = null, onPlaceStair, show = "all"
       {outlineOnly ? <polygon points={shapeOutline(outlineOnly.design.shape).map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke="var(--muted-light)" strokeWidth={lw * 1.4} strokeDasharray={`${lw * 6} ${lw * 4}`} /> : null}
       {frame ? levels.map((l) => levelDrawing(l.frame, l.offsetXIn, l.offsetYIn, l.id === "lower", l.surface)) : null}
       {/* The stairs: the footprint and every tread line. */}
-      {(show === "roof" ? [] : structure.stairs).map((st) => {
+      {drawnStairs.map((st) => {
         const pts = st.footprint.map((p) => `${p.x},${p.y}`).join(" ");
         const treads = st.members.filter((m) => m.role === "tread" || m.role === "box-tread" || m.role === "landing-tread");
         return (
@@ -224,11 +333,17 @@ export function DeckPlan({ structure, placing = null, onPlaceStair, show = "all"
             {treads.map((m, i) => (
               <rect key={i} x={m.cx - m.sx / 2} y={m.cy - m.sy / 2} width={m.sx} height={m.sy} fill="none" stroke="var(--ink-soft)" strokeWidth={lw * 0.6} transform={m.yaw ? `rotate(${(m.yaw * 180) / Math.PI} ${m.cx} ${m.cy})` : undefined} />
             ))}
-            {st.kind === "flight" && st.footprint[0] && st.footprint[3] ? (
-              <line x1={(st.footprint[0].x + st.footprint[1].x) / 2} y1={(st.footprint[0].y + st.footprint[1].y) / 2} x2={(st.footprint[2].x + st.footprint[3].x) / 2} y2={(st.footprint[2].y + st.footprint[3].y) / 2} stroke="var(--blueprint)" strokeWidth={lw} markerEnd="url(#arrow)" />
+            {/* The way down (2026-11-14): one arrow along the stair's own line, through every landing and turn. */}
+            {st.kind === "flight" && st.path.length > 1 ? (
+              <polyline points={st.path.map((q) => `${q.x},${q.y}`).join(" ")} fill="none" stroke="var(--blueprint)" strokeWidth={lw} markerEnd="url(#arrow)" data-deck-plan-stair-path={st.landings.length} />
             ) : null}
-            <text x={st.footprint.reduce((a, p) => a + p.x, 0) / st.footprint.length} y={st.footprint.reduce((a, p) => a + p.y, 0) / st.footprint.length + font * 0.35} fontSize={font * 0.8} textAnchor="middle" className={s.planNote}>
-              {st.kind === "box" ? `box steps · ${st.risers} risers` : `${st.widthIn / 12} ft stair · ${st.risers} risers`}
+            {st.landings.map((l) => (
+              <text key={`ld${l.id}`} x={l.x} y={l.y + font * 0.3} fontSize={font * 0.62} textAnchor="middle" className={s.planNote} stroke="var(--paper)" strokeWidth={font * 0.22} paintOrder="stroke" data-deck-plan-landing={l.id}>
+                {`landing ${ftIn(Math.round(l.heightIn))} up`}
+              </text>
+            ))}
+            <text x={st.landings.length ? (st.path[0].x + st.path[1].x) / 2 : st.footprint.reduce((a, p) => a + p.x, 0) / st.footprint.length} y={(st.landings.length ? (st.path[0].y + st.path[1].y) / 2 : st.footprint.reduce((a, p) => a + p.y, 0) / st.footprint.length) + font * 0.35} fontSize={font * 0.8} textAnchor="middle" className={s.planNote}>
+              {st.kind === "box" ? `box steps · ${st.risers} risers` : `${st.widthIn / 12} ft stair · ${st.risers} risers${st.landings.length ? ` · ${st.landings.length} ${st.landings.length === 1 ? "landing" : "landings"}` : ""}`}
             </text>
           </g>
         );
@@ -395,6 +510,29 @@ export function DeckPlan({ structure, placing = null, onPlaceStair, show = "all"
         <text x={(minX + maxX) / 2} y={minY - pad * 0.45 - (onHouse ? houseBand : 0)} fontSize={font * 1.1} textAnchor="middle" className={s.planNote}>
           Click an open edge to put the stairs there
         </text>
+      ) : null}
+      {liveGrips.length && !placing ? (
+        <g data-deck-plan-grips={liveGrips.length}>
+          <style>{`.dk-plan-grip{fill:var(--blueprint);fill-opacity:0;stroke:var(--blueprint);stroke-opacity:0;touch-action:none}.dk-plan-grip:hover,.dk-plan-grip[data-held]{fill-opacity:.16;stroke-opacity:.95}`}</style>
+          {/* The beams first, the posts over them: where a post stands on its beam, the post is what the pointer takes. */}
+          {[...liveGrips.filter((g) => g.kind === "beam"), ...liveGrips.filter((g) => g.kind !== "beam")].map((g, i) => {
+            const beam = g.kind === "beam" ? frameIn?.beams.find((b) => b.id === g.part) : undefined;
+            if (g.kind === "beam" && !beam) return null;
+            const r = Math.max(5.5, font * 0.62);
+            const box = beam ? { x: beam.x0, y: g.y - Math.max(3.2, font * 0.36), w: beam.x1 - beam.x0, h: 2 * Math.max(3.2, font * 0.36) } : { x: g.x - r, y: g.y - r, w: 2 * r, h: 2 * r };
+            const on = held?.kind === g.kind && held.id === g.id;
+            return (
+              <rect key={`${g.kind}:${g.id}:${i}`} className="dk-plan-grip" x={box.x} y={box.y} width={box.w} height={box.h} rx={lw * 2} strokeWidth={lw * 1.4} style={{ cursor: g.axis === "x" ? "ew-resize" : "ns-resize" }} onPointerDown={(e) => gripDown(e, g)} onClick={(e) => e.stopPropagation()} data-deck-plan-grip={g.kind} data-deck-plan-grip-id={g.id} data-held={on ? "" : undefined}>
+                <title>{`${g.label} — drag it, or click it to type its place`}</title>
+              </rect>
+            );
+          })}
+          {heldGrip ? (
+            <text x={heldGrip.x} y={heldGrip.y - font * 1.1} fontSize={font * 0.95} textAnchor="middle" className={s.planNote} stroke="var(--paper)" strokeWidth={font * 0.3} paintOrder="stroke" pointerEvents="none" data-deck-plan-grip-read>
+              {`${ftIn(Math.max(0, heldGrip.sign * (heldGrip.at - heldGrip.origin)))} ${heldGrip.from}`}
+            </text>
+          ) : null}
+        </g>
       ) : null}
     </svg>
   );

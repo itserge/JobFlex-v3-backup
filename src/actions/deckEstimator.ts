@@ -26,7 +26,7 @@ import { logServerError } from "@/lib/server-events";
 import { runVisionJson } from "@/lib/sdk/openaiVision";
 import { friendlyAIError, isOpenAIEnabled } from "@/lib/sdk/openai";
 import { parseWallRead, WALL_READ_PROMPT, type WallRead } from "@/lib/deck/photoFit";
-import { keepHousePhoto, photoOf, readHouseImage, type DeckPhotoResult, type HousePhotoRead } from "@/lib/deck/housePhotoServer";
+import { keepHousePhoto, photoOf, readHouseCornerImage, readHouseImage, type DeckPhotoResult, type HouseCornerRead, type HousePhotoRead } from "@/lib/deck/housePhotoServer";
 import { readHouseDepthImage, type HouseDepthResult } from "@/lib/deck/houseDepth";
 import { foldersOrgMayRead, orgMayReadFolder } from "@/lib/home/files";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
@@ -84,7 +84,7 @@ export async function saveDeckRateBook(raw: unknown): Promise<{ ok: true; book: 
 
 /* ── The photo of the house (M2, 2026-10-10) ───────────────────────── */
 
-export type { DeckPhotoResult, HousePhotoRead } from "@/lib/deck/housePhotoServer";
+export type { DeckPhotoResult, HouseCornerRead, HousePhotoRead } from "@/lib/deck/housePhotoServer";
 export type { HouseDepthResult } from "@/lib/deck/houseDepth";
 
 /**
@@ -151,6 +151,18 @@ export async function readHouseDepth(form: FormData): Promise<HouseDepthResult> 
   const g = await gate("design");
   if (!g.ok) return { ok: false, error: g.error, configured: true };
   return readHouseDepthImage(form, { organizationId: g.organizationId });
+}
+
+/**
+ * ONE CORNER OF THE WALL, LOOKED AT BY ITSELF (2026-11-13, owner: "make it more smart to understand and read the
+ * jogs"): where the picture shows a corner but not which side of it stands forward, a close cut round that corner is
+ * read on its own (lib/deck/houseCorner; lib/deck/housePhotoServer readHouseCornerImage). The studio lays the answer
+ * on the read.
+ */
+export async function readHouseCorner(form: FormData): Promise<HouseCornerRead> {
+  const g = await gate("design");
+  if (!g.ok) return { ok: false, error: g.error, configured: true };
+  return readHouseCornerImage(form, { organizationId: g.organizationId });
 }
 
 export interface ClientPhoto {

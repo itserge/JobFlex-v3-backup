@@ -12,6 +12,11 @@ import { fromUtm, latLngToPixel, pixelToUtm, toUtm, type RasterFrame } from "../
 import { facetLetter, facingWord, pitchLabel, toFacetModel } from "../../../src/lib/roofFacets/model";
 import { sharpenCorners } from "../../../src/lib/roofFacets/raster";
 import { roofOutline } from "../../../src/lib/roofFacets/roofOutline";
+import { snapToPhoto } from "../../../src/lib/roofFacets/photoSnap";
+import { findCones } from "../../../src/lib/roofFacets/round";
+import { cutPhoto, orthoOnGrid, photoSlide, type GridPhoto } from "../../../src/lib/roofFacets/evPhoto";
+import { decodePng, encodePng } from "../../../src/lib/roofFacets/png";
+import { deflateSync } from "node:zlib";
 import { buildStructureFootprints } from "../../../src/lib/roofRecon/footprint";
 
 let bad = 0;
@@ -373,6 +378,136 @@ check("an outline of two points draws nothing", buildFacets({ ...raster(gable), 
   const res = buildFacets({ dsm, mask, outline: toPx(steep.outline), priors: [], squareOutline: false });
   const f = res ? feetOf(res) : ({} as Record<FacetEdgeType, number>);
   check("a very steep ridge is a ridge, not a wall between two roofs", res != null && res.facets.length === 2 && near(planOf(res, "RIDGE"), 12, 0.6) && !(f.WALL > 0) && !(f.STEP > 0), res ? `${res.facets.length} facets ${JSON.stringify(Object.fromEntries(Object.entries(f).map(([k, v]) => [k, Math.round(v as number)])))}` : "nothing");
+}
+
+// ── a round roof (owner, 2026-11-13, of a house with a turret: "looks like it doesn't read the round roofs") ──
+{
+  // the gable house with a turret on its west wall: a cone 2.5 m in radius, 4.8/12, its peak 1.5 m out from the wall
+  const CX = 7.5, CY = 15, R = 2.5, K = 0.4;
+  const turret: Roof = {
+    name: "turret",
+    // the outline as an aerial vendor traces it: the circle cut into a few straight walls
+    outline: [{ x: 9, y: 11 }, { x: 21, y: 11 }, { x: 21, y: 19 }, { x: 9, y: 19 }, { x: 9, y: 17 }, { x: 7.5, y: 17.6 }, { x: 5.6, y: 16.5 }, { x: 4.9, y: 15 }, { x: 5.6, y: 13.5 }, { x: 7.5, y: 12.4 }, { x: 9, y: 13 }],
+    height: (x, y) => {
+      const house = gable.height(x, y), d = Math.hypot(x - CX, y - CY);
+      const cone = d <= R ? EAVE + K * (R - d) : null;
+      return house == null ? cone : cone == null ? house : Math.max(house, cone);
+    },
+  };
+  const { dsm, mask } = raster(turret);
+  const res = buildFacets({ dsm, mask, outline: toPx(turret.outline), priors: [], register: false, squareOutline: false });
+  const round = res?.facets.filter((f) => f.round) ?? [];
+  // the cone's plan: its disc less the part the house's roof stands over (beyond the wall, 1.5 m from the peak)
+  const plan = Math.PI * R * R - (R * R * Math.acos(1.5 / R) - 1.5 * Math.sqrt(R * R - 1.5 * 1.5));
+  check("a turret's cone is one round facet beside the house's two", res != null && round.length === 1 && res.facets.length === 3, res ? `${res.facets.length} facets, ${round.length} round` : "no result");
+  check("the round facet's size and pitch are the cone's", round.length === 1 && near(round[0].planM2, plan, plan * 0.25) && near(round[0].slope, K, 0.05) && round[0].azimuthDeg === null, round[0] ? `${round[0].planM2.toFixed(1)} m2 (the cone ${plan.toFixed(1)}), ${(round[0].slope * 12).toFixed(1)}/12` : "");
+  const ri = res ? res.facets.indexOf(round[0]) : -1;
+  const eaves = res ? res.edges.filter((e) => e.type === "EAVE" && (e.left === ri || e.right === ri)) : [];
+  const off = res ? Math.max(0, ...eaves.flatMap((e) => [e.a, e.b]).map((v) => Math.abs(Math.hypot(res.vertices[v].x * PX - CX, res.vertices[v].y * PX - CY) - R))) : 9;
+  // (the eave is drawn a little inside where the height map ends it: a real height map reads a roof's edge fat, and
+  // the allowance was set on the first real turret, held against its photograph)
+  check("its eave is drawn as the curve it is, on the circle", eaves.length >= 6 && off < 0.45, `${eaves.length} chords, ${off.toFixed(2)} m off the circle at the worst`);
+  // a hip roof's peak is not a round roof
+  const flat = raster(hip);
+  const all = new Uint8Array(W * H).fill(1);
+  check("a hip roof is not taken for a round one", findCones(flat.dsm.data, W, H, all, PX).length === 0 && (buildFacets({ ...flat, outline: toPx(hip.outline), priors: [] })?.facets.every((f) => !f.round) ?? false));
+}
+
+// ── the lines set on the photograph (owner, 2026-11-13: "it's offset — not following the roof") ──
+{
+  // the gable, and a photograph in which the roof's edge lies 0.3 m inside where the soft height map reads it, and
+  // the ridge 0.2 m south of the planes' crossing
+  const { dsm, mask } = raster(gable);
+  const res = buildFacets({ dsm, mask, outline: toPx(gable.outline), priors: [], register: false, squareOutline: false })!;
+  const rgb = new Uint8Array(W * H * 3);
+  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
+    const x = (c + 0.5) * PX, y = (r + 0.5) * PX;
+    const on = inRect(x, y, [9.3, 11.3, 20.7, 18.7]);
+    const v = !on ? 60 : y < 15.2 ? 150 : 200;
+    rgb[(r * W + c) * 3] = rgb[(r * W + c) * 3 + 1] = rgb[(r * W + c) * 3 + 2] = v;
+  }
+  const before = area(res);
+  const rep = snapToPhoto(res, { width: W, height: H, data: rgb, toPhoto: (q) => q, scale: 1 }, dsm);
+  const xs = res.vertices.map((v) => v.x * PX), ys = res.vertices.map((v) => v.y * PX);
+  const ridgeY = res.edges.filter((e) => e.type === "RIDGE").flatMap((e) => [res.vertices[e.a].y * PX, res.vertices[e.b].y * PX]);
+  check("the walls are set on the roof's edge in the photograph", rep.moved >= 4 && near(Math.min(...xs), 9.3, 0.08) && near(Math.max(...xs), 20.7, 0.08) && near(Math.min(...ys), 11.3, 0.08) && near(Math.max(...ys), 18.7, 0.08), `${rep.moved} of ${rep.lines} lines moved; x ${Math.min(...xs).toFixed(2)}..${Math.max(...xs).toFixed(2)}, y ${Math.min(...ys).toFixed(2)}..${Math.max(...ys).toFixed(2)}`);
+  check("the ridge is set on the ridge in the photograph", ridgeY.length > 0 && ridgeY.every((y) => near(y, 15.2, 0.1)), ridgeY.map((y) => y.toFixed(2)).join(" "));
+  const box = (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys));
+  check("the drawing is measured again and still has no cracks", watertight(res, box) && area(res) < before && near(area(res), 11.4 * 7.4 * SL, 1.5), `${area(res).toFixed(1)} m2 (was ${before.toFixed(1)})`);
+  // a photograph with nothing to see moves nothing
+  const res2 = buildFacets({ dsm, mask, outline: toPx(gable.outline), priors: [], register: false, squareOutline: false })!;
+  const blank = new Uint8Array(W * H * 3).fill(128);
+  check("a photograph that shows no edge moves nothing", snapToPhoto(res2, { width: W, height: H, data: blank, toPhoto: (q) => q, scale: 1 }, dsm).moved === 0 && near(area(res2), before, 1e-6));
+}
+
+// ── EagleView's own picture, laid on the height map's grid and lined up with Google's (owner, 2026-11-13: "do it") ──
+{
+  // a picture comes as a PNG: the reader gives back what the writer wrote…
+  const w = 5, h = 4;
+  const px = Uint8Array.from({ length: w * h * 3 }, (_, i) => (i * 37 + 11) % 256);
+  const back = decodePng(encodePng(px, w, h));
+  check("a PNG is read back as it was written", back.width === w && back.height === h && back.data.every((v, i) => v === px[i]));
+  // …and every way a PNG may pack a row (none, left, up, average, Paeth), with an alpha channel to drop
+  const rgba = Uint8Array.from({ length: w * 5 * 4 }, (_, i) => (i * 53 + 7) % 256);
+  const raw = Buffer.alloc((w * 4 + 1) * 5);
+  for (let y = 0; y < 5; y++) {
+    raw[y * (w * 4 + 1)] = y;
+    for (let i = 0; i < w * 4; i++) {
+      const at = (yy: number, ii: number) => (yy < 0 || ii < 0 ? 0 : rgba[yy * w * 4 + ii]);
+      const a = at(y, i - 4), up = at(y - 1, i), c = at(y - 1, i - 4), v = rgba[y * w * 4 + i];
+      const paeth = () => { const p = a + up - c, pa = Math.abs(p - a), pb = Math.abs(p - up), pc = Math.abs(p - c); return pa <= pb && pa <= pc ? a : pb <= pc ? up : c; };
+      raw[y * (w * 4 + 1) + 1 + i] = (v - [0, a, up, (a + up) >> 1, paeth()][y]) & 255;
+    }
+  }
+  const chunk = (type: string, data: Uint8Array) => { const b = Buffer.alloc(12 + data.length); b.writeUInt32BE(data.length, 0); b.write(type, 4, "latin1"); b.set(data, 8); return b; };
+  const head = Buffer.alloc(13); head.writeUInt32BE(w, 0); head.writeUInt32BE(5, 4); head[8] = 8; head[9] = 6;
+  const five = decodePng(Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", head), chunk("IDAT", deflateSync(raw)), chunk("IEND", new Uint8Array(0))]));
+  check("…whichever way its rows are packed, alpha dropped", five.width === w && five.height === 5 && five.data.every((v, i) => v === rgba[Math.floor(i / 3) * 4 + (i % 3)]));
+  let threw = false;
+  try { decodePng(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])); } catch { threw = true; }
+  check("what is not a PNG is refused, not guessed at", threw);
+
+  // one scene, seen by two cameras: "Google's" photo on the grid, and "EagleView's" picture of the same ground, twice
+  // as sharp, placed by its own corners 0.7 m east and 0.9 m north of where it belongs
+  const frame: RasterFrame = { originX: 560000, originY: 5276000, pixelSizeM: 0.1, epsg: 32610 };
+  const scene = (x: number, y: number): number => {
+    // raster pixels; a roof 14 m x 9 m with two faces, a flat part with a curb, a chimney; a path on the ground
+    if (x < 60 || x >= 200 || y < 70 || y >= 160) return Math.abs(x + y - 250) < 6 ? 150 : 70 + 12 * Math.sin(x * 0.11) * Math.cos(y * 0.07);
+    if (x >= 100 && x < 150 && y >= 95 && y < 135) return x < 103 || x >= 147 || y < 98 || y >= 132 ? 30 : 215;
+    if (x >= 170 && x < 178 && y >= 80 && y < 88) return 20;
+    return y < 115 ? 120 : 165;
+  };
+  const area = { x0: 20, y0: 30, x1: 240, y1: 200 };
+  const aw = area.x1 - area.x0, ah = area.y1 - area.y0;
+  const google: GridPhoto = { width: aw, height: ah, data: new Uint8Array(aw * ah * 3), scale: 1, x0: area.x0, y0: area.y0 };
+  const on = new Uint8Array(aw * ah);
+  for (let y = 0; y < ah; y++) for (let x = 0; x < aw; x++) {
+    const v = scene(area.x0 + x + 0.5, area.y0 + y + 0.5);
+    google.data.fill(v, (y * aw + x) * 3, (y * aw + x) * 3 + 3);
+    on[y * aw + x] = area.x0 + x >= 60 && area.x0 + x < 200 && area.y0 + y >= 70 && area.y0 + y < 160 ? 1 : 0;
+  }
+  // the picture covers the whole tile and more; its pixels are 5 cm
+  const cornerA = fromUtm(frame.originX - 5, frame.originY + 5, 32610), cornerB = fromUtm(frame.originX + 35, frame.originY - 30, 32610);
+  const bbox: [number, number, number, number] = [cornerA.lng, cornerB.lat, cornerB.lng, cornerA.lat];
+  const EW = 800, EH = 700, ev = new Uint8Array(EW * EH * 3);
+  const DX = 7, DY = -9; // the picture shows at (x + 7, y - 9) what the grid has at (x, y)
+  for (let j = 0; j < EH; j++) for (let i = 0; i < EW; i++) {
+    const lng = bbox[0] + ((i + 0.5) / EW) * (bbox[2] - bbox[0]), lat = bbox[3] - ((j + 0.5) / EH) * (bbox[3] - bbox[1]);
+    const q = latLngToPixel(frame, lat, lng);
+    ev.fill(scene(q.x - DX, q.y - DY), (j * EW + i) * 3, (j * EW + i) * 3 + 3);
+  }
+  const img = { width: EW, height: EH, data: ev, bbox };
+  const slide = photoSlide(google, orthoOnGrid(img, frame, area, 1), on);
+  check("EagleView's picture is lined up with Google's: the slide between them is found", slide.clear && near(slide.dx, DX, 0.6) && near(slide.dy, DY, 0.6), `${slide.dx.toFixed(2)}, ${slide.dy.toFixed(2)} (true ${DX}, ${DY}); peak ${slide.peak.toFixed(1)}x`);
+  const lined = orthoOnGrid(img, frame, area, 2, slide);
+  // the curb's corner and the chimney, where the grid has them
+  const at = (p: GridPhoto, x: number, y: number) => p.data[(Math.floor((y - p.y0) * p.scale) * p.width + Math.floor((x - p.x0) * p.scale)) * 3];
+  check("…and laid on the grid at twice the sharpness, it shows the roof where the height map has it", lined.scale === 2 && lined.width === aw * 2 && near(at(lined, 125, 115), 215, 12) && near(at(lined, 174, 84), 20, 25) && near(at(lined, 80, 100), 120, 12) && near(at(lined, 80, 140), 165, 12), `${at(lined, 125, 115)} ${at(lined, 174, 84)} ${at(lined, 80, 100)} ${at(lined, 80, 140)}`);
+  const win = cutPhoto(lined, { x0: 100, y0: 95, x1: 150, y1: 135 });
+  check("the page's picture is cut from it at the photo's own sharpness", win.width === 100 && win.height === 80 && near(win.data[(40 * 100 + 50) * 3], 215, 12));
+  // a picture of somewhere else is not lined up at all
+  const other = { width: EW, height: EH, data: Uint8Array.from({ length: EW * EH * 3 }, (_, i) => 90 + 60 * Math.sin(Math.floor(i / 3) * 0.37) * Math.cos(Math.floor(i / 3 / EW) * 0.91)), bbox };
+  check("a picture that does not show this roof is not lined up", !photoSlide(google, orthoOnGrid(other, frame, area, 1), on).clear);
 }
 
 console.log(bad ? `\n${bad} FAILED` : "\nall passed");

@@ -476,6 +476,9 @@ export interface AssistantFeed {
   usage: { used: number; limit: number | null };
   /** The language the person speaks to it in (Settings → AI Operator): what the ears listen for. */
   lang: SpeechLang;
+  /** The new engine is on for this person (lib/assistant/speed): the page listens through the server's ears on
+   *  every device, waits less after they stop, and shows how long each turn took. */
+  fast?: boolean;
 }
 
 /** A text message in the plain GSM alphabet (2026-11-05): one ×, — or curly quote turns a whole text into UCS-2,

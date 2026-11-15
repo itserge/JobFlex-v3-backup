@@ -26,6 +26,7 @@ import {
   SIDING_WORDS,
   type Amount,
   type DeckCommand,
+  type DeckPastSaid,
   type DeckingSet,
   type FramingSet,
   type Look,
@@ -35,6 +36,7 @@ import {
   type RoofSet,
   type StairAt,
   type StairPick,
+  type StairTurnSaid,
 } from "./commands";
 import { QUESTION_HEAD, halfFt, normalizeSpeech, phraseKey, splitClauses, trimClause } from "./words";
 
@@ -161,12 +163,14 @@ const RAIL_TOP_MOUNT = /\b(?:top|surface|deck)[- ]?mount(?:ed|ing|s)?\b|\bmount(
 const RAIL_SIDE_MOUNT = /\b(?:side|fascia|rim)[- ]?mount(?:ed|ing|s)?\b|\bmount(?:ed)? (?:it |them |the posts |the rail(?:ing)?s? )?(?:on|to) the (?:side|fascia|rim)\b|\bposts on the (?:fascia|rim|outside)\b/;
 const SPA_WORDS = /\b(?:hot tub|spa|tub)\b/;
 const LOWER_WORDS = /\b(?:lower (?:level|deck|platform|landing|tier|section|part)|second level|bottom level|two levels?|2 levels?|two[- ]tier(?:ed)?(?: deck)?|multi[- ]?level|step[- ]?down (?:deck|platform|level|section)|tiered deck|split[- ]level deck|landing (?:deck|platform))\b/;
+/** A DOUBLE DECK (2026-11-13): one deck over another — "a double deck, like first floor and second floor". */
+const DOUBLE_WORDS = /\b(?:double[- ]?deck(?:er)?s?|(?:two|2)[- ]?stor(?:e)?y deck|stacked decks?|(?:a |another |second )?deck (?:below|underneath|beneath|under (?:it|this one|this deck|the deck|the main deck))|deck (?:on|at) (?:both|two) floors|(?:first|ground)[- ]floor deck (?:and|with|under|below) (?:a |the )?(?:second|upper)|upper and lower decks?|deck over (?:a |another )?deck)\b/;
 const FIX_WORDS = new RegExp(FIXTURE_WORDS.map(([re]) => re.source).join("|"));
 const LIGHT_WORDS = /\b(?:lights?|lighting|lamps?|leds?|bulbs?)\b/;
 const ROOF_WORDS = /\b(?:roofs?|roofing|pitch|rafters?|ridge|shingles?|shakes|gutters?|downspouts?|ceiling|eaves?|headers?|cupola|soffit|covered|cover(?:ing)?|porch|patio cover|shelter|pergola|gazebo|pavilion|trellis|arbor|slats?|louver(?:ed)?|screen(?:ed)?(?: in| porch| room)?|screens|lattice|privacy (?:walls?|panels?|screens?)|walls between|metal roof|tin roof|standing seam|overhead|more shade|less shade|more sun|less sun|pagoda|gambrel|dutch gable|pyramid|purlins?|rake boards?|rakes)\b/;
 const OVERHANG_WORD = /\boverhangs?\b/;
 const HOUSE_WORDS = /\b(?:house|home|siding|bump ?out|nook|ranch|rambler|colonial|bungalow|(?:1|2|one|two|single) story)\b/;
-const DECKING_WORDS = /\b(?:decking|deck boards?|boards?|planks?|surface|floor ?boards?|flooring|walking surface|border|picture ?frame|fascia|fasteners?|clips|pattern|herringbone|chevron|diagonal(?:ly)?|waste)\b/;
+const DECKING_WORDS = /\b(?:decking|deck boards?|boards?|planks?|surface|floor ?boards?|flooring|walking surface|border|picture ?frame|breakers?|butt joints?|fascia|fasteners?|clips|pattern|herringbone|chevron|diagonal(?:ly)?|waste)\b/;
 const FRAME_WORDS = /\b(?:joists?|beams?|girders?|posts?|framing|frame|ledger|footings?|footers?|piers?|blocking|braces?|bracing|rim|cantilever|lumber|hardware|concrete|sonotube|lags?|bolts?|hold ?downs?|stainless|galvanized|species|fir|pine|spf|spruce)\b/;
 
 /** The subject named first in the clause decides which rule reads it first. */
@@ -182,6 +186,7 @@ function headOf(c: string, roofed = false): Subject | null {
   push("rail", at(RAIL_WORDS));
   push("spa", at(SPA_WORDS));
   push("lower", at(LOWER_WORDS));
+  push("lower", at(DOUBLE_WORDS));
   push("roof", at(ROOF_WORDS));
   if (roofed) push("roof", at(OVERHANG_WORD));
   if (ADD_VERB.test(c) || /\b(?:timer|photocell)\b/.test(c)) push("fixture", at(LIGHT_WORDS));
@@ -461,10 +466,10 @@ function readPlaces(c: string): Read {
   if (/\b(?:save (?:it |this )?(?:as )?(?:a )?proposal|make (?:a |the )?proposal|create (?:a |the )?proposal|turn (?:it|this) into a proposal|convert (?:it |this )?(?:to|into) (?:a )?proposal|write (?:up )?(?:a |the )?proposal)\b/.test(c)) return read([{ do: "save" }], null);
   if (/\b(?:price breakdown|the package|line items|the price list|package (?:and|&) price|break ?down the price|itemi[sz]ed|send (?:it )?to (?:the )?(?:client|customer|homeowner))\b/.test(c)) return read([{ do: "open", what: "package" }], null);
   if (/\b(?:code checks|the checks|check ?list|show (?:me )?the (?:problems|issues|fails))\b/.test(c)) return read([{ do: "open", what: "checks" }], null);
-  const go = /^(?:go to|scroll to|jump to|take me to|open) (?:the )?(size|type|kind|house|materials?|stairs?(?: and rails?)?|rails?|roof|lights|extras|electrical|checks?|package|price) ?(?:section|step|part|page|tab)?$/.exec(c);
+  const go = /^(?:go to|scroll to|jump to|take me to|open) (?:the )?(size|type|kind|house|materials?|stairs?(?: and rails?)?|rails?|accessor(?:y|ies)|roof|lights|extras|electrical|checks?|package|price) ?(?:section|step|part|page|tab)?$/.exec(c);
   if (go) {
     const w = go[1];
-    const to = /size/.test(w) ? "size" : /type|kind/.test(w) ? "kind" : /house/.test(w) ? "house" : /material/.test(w) ? "materials" : /stair|rail/.test(w) ? "stairs" : /roof/.test(w) ? "roof" : /light|extra|electric/.test(w) ? "extras" : /check/.test(w) ? "checks" : "package";
+    const to = /size/.test(w) ? "size" : /type|kind/.test(w) ? "kind" : /house/.test(w) ? "house" : /material/.test(w) ? "materials" : /stair|rail/.test(w) ? "stairs" : /accessor/.test(w) ? "accessories" : /roof/.test(w) ? "roof" : /light|extra|electric/.test(w) ? "extras" : /check/.test(w) ? "checks" : "package";
     return read([{ do: "go", to }], null);
   }
   if (/^(?:start (?:over|fresh|again|from scratch|a new (?:one|deck))|new (?:deck|design)|clear (?:it|everything|the design|all)|reset (?:it|everything|the (?:design|deck)|all)|from scratch|blank (?:slate|deck)|wipe it(?: out)?|begin again|start a new deck)$/.test(c)) return read([{ do: "reset" }], null);
@@ -493,12 +498,38 @@ function stairSide(c: string): { side?: StairSide; at?: StairAt; both?: boolean 
 }
 
 function readStairs(c: string, ctx: ParseContext): Read {
-  if (!STAIR_WORDS.test(c)) return null;
+  // "…with a landing 5 ft up" is cut off from its stairs by the "with": on a deck that has stairs, a landing is theirs
+  // (it was read as the DECK going 5 ft up).
+  const landingAlone = /\blandings?\b/.test(c) && ctx.design.stairs.length > 0 && !LOWER_WORDS.test(c) && !/\b(?:concrete|pad|patio|pavers?)\b/.test(c);
+  if (!STAIR_WORDS.test(c) && !landingAlone) return null;
   // "Two steps down to a lower level" is how far down the lower level sits, not a stair.
   if (LOWER_WORDS.test(c) && /\b(?:\d+|one|two|three|a) steps? down\b/.test(c)) return null;
   if (FIX_WORDS.test(c) && !/\bhandrails?\b/.test(c)) return null;
   const d = ctx.design;
   const n = d.stairs.length;
+  // LANDINGS (2026-11-14): "add a landing", "split the stairs with a landing 5 ft up", "turn the stairs left",
+  // "make the stairs a switchback", "take the landing out". (A "concrete landing" is the pad at the foot, read below.)
+  const landingSaid = /\blandings?\b/.test(c) && !/\b(?:concrete|pad|patio|pavers?) (?:landing|pad)\b|\blanding (?:pad|on|onto)\b/.test(c);
+  const turnSaid = /\b(?:turns?|turning|switch[- ]?backs?|u[- ]?turn|dog[- ]?leg(?:ged)?|l[- ]shaped?)\b/.test(c);
+  if (n > 0 && (landingSaid || turnSaid)) {
+    if (landingSaid && (isRemove(c) || /\bno landings?\b|\bstraight (?:stairs?|flight|run)\b|\bone (?:straight )?flight\b/.test(c))) return read([{ do: "stairs", op: "change", turn: "remove" }], "stairs");
+    const turn: StairTurnSaid = /\bswitch[- ]?backs?\b|\bu[- ]?turn\b|\bdog[- ]?leg|\bturn(?:s|ing)? (?:it |them |the (?:stairs?|steps) )?(?:back|around)\b|\bback (?:toward|to|under) the (?:deck|house)\b/.test(c)
+      ? "back"
+      : /\bleft\b/.test(c)
+        ? "left"
+        : /\bright\b/.test(c)
+          ? "right"
+          : /\b(?:toward|towards|to) the house\b/.test(c)
+            ? "house"
+            : /\baway from the house\b|\b(?:toward|towards|to|into|out to) the yard\b/.test(c)
+              ? "yard"
+              : /\bstraight\b/.test(c)
+                ? "straight"
+                : "add";
+    const h = /(\d+(?:\.\d+)?)( ft| in)? (?:up|high|off the ground|above the ground|from the ground|above grade)\b|\bat (\d+(?:\.\d+)?)( ft| in)\b/.exec(c);
+    const hv = h ? Number(h[1] ?? h[3]) * ((h[2] ?? h[4]) === " in" ? 1 : 12) : undefined;
+    return read([{ do: "stairs", op: "change", turn, ...(hv && hv >= 8 && hv <= 348 ? { turnAtIn: Math.round(hv) } : {}) }], "stairs");
+  }
   const where = stairSide(c);
   const lower = /\b(?:from|off|on|to|for) (?:the )?lower (?:level|deck)\b|\blower (?:level )?(?:stairs|steps)\b/.test(c) ? "lower" : undefined;
   const wrap = /\b(?:wrap(?:[- ]?around)?|box steps?|steps? all (?:the way )?around|full[- ]width (?:steps|stairs)|cascad(?:e|ing) (?:steps|stairs)|bleacher (?:steps|stairs)|step down all (?:the way )?around|around the (?:deck|front)|steps? along the (?:whole |entire )?front|(?:whole|entire|full) front)\b/.test(c);
@@ -691,8 +722,19 @@ function readSpa(c: string, ctx: ParseContext): Read {
 }
 
 function readLower(c: string, ctx: ParseContext): Read {
+  // A double deck: a second deck under this one. "…with the lower deck 2 ft off the ground" sets how high it stands.
+  if (DOUBLE_WORDS.test(c)) {
+    if (isRemove(c) || /\b(?:one deck|single deck|just one deck|no double)\b/.test(c)) return read([{ do: "lower", on: false }], "lower");
+    const cmd: Extract<DeckCommand, { do: "lower" }> = { do: "lower", on: true, place: "under" };
+    const h = /(\d+(?:\.\d+)?)( ft| in)? (?:off|above|over|from) (?:the )?(?:ground|grade|yard|grass)\b/.exec(c);
+    if (h) cmd.heightIn = { to: h[2] === " ft" || (!h[2] && Number(h[1]) <= 8) ? Number(h[1]) * 12 : Number(h[1]) };
+    return read([cmd], "lower");
+  }
   if (!LOWER_WORDS.test(c)) return null;
   if (isRemove(c) || /\b(?:one level|single level|just one level)\b/.test(c)) return read([{ do: "lower", on: false }], "lower");
+  // "the lower deck 2 ft off the ground": how high it stands — a double deck's lower floor, or what a step-down level's drop comes to.
+  const offGround = /(\d+(?:\.\d+)?)( ft| in)? (?:off|above|over|from) (?:the )?(?:ground|grade|yard|grass)\b/.exec(c);
+  if (offGround) return read([{ do: "lower", heightIn: { to: offGround[2] === " ft" || (!offGround[2] && Number(offGround[1]) <= 8) ? Number(offGround[1]) * 12 : Number(offGround[1]) } }], "lower");
   const cmd: Extract<DeckCommand, { do: "lower" }> = { do: "lower" };
   if (!ctx.design.lower.on || ADD_VERB.test(c)) cmd.on = true;
   const drop = /(\d+(?:\.\d+)?)( ft| in)? (?:down|lower|drop|below|step(?: down)?)\b|\bdrop (?:of |it )?(\d+(?:\.\d+)?)( ft| in)?/.exec(c);
@@ -984,7 +1026,39 @@ function readRoof(c: string, ctx: ParseContext): Read {
 /*  The house behind the deck                                          */
 /* ------------------------------------------------------------------ */
 
+/**
+ * THE DECK PAST A CORNER OF THE HOUSE (2026-11-14): "run the deck 6 ft past the house on the right", "wrap it round the
+ * left side 10 ft", "8 ft past the corner and 12 back along the side", "stop at the corner". The house past the DECK
+ * ("the house runs 4 ft past the deck") is the wall's own reach, read below. With no side said it is the right one —
+ * what is said back names it, and the other.
+ */
+function readPast(c: string): DeckPastSaid | null {
+  if (/\b(?:steps?|stairs?|rails?|railings?|border|lights?|roof|gutters?)\b/.test(c)) return null;
+  const HOUSE = "(?:house|home|building)";
+  const pastSaid = new RegExp(`\\b(?:past|beyond|outside(?: of)?) (?:the |its |of the )?(?:${HOUSE}(?:'s)?(?: (?:wall|corners?|(?:left|right) (?:corner|side|end)))?|(?:left |right |both |two |2 )?corners?(?: of the ${HOUSE})?|(?:left|right|both) (?:sides?|ends?) of the ${HOUSE}|(?:${HOUSE} )?walls?)\\b`).test(c);
+  const wrapSaid = new RegExp(`\\bwrap(?:s|ped|ping)?\\b|\\bwrap ?around\\b|\\b(?:around|round) (?:the |its )?(?:${HOUSE}(?:'s)?(?: (?:left |right )?(?:corners?|sides?))?|(?:(?:left|right|both) )?(?:sides?|corners?) of the ${HOUSE})\\b|\\bback (?:along|down|beside|alongside|next to) (?:the |its )?(?:${HOUSE}|(?:left |right |${HOUSE}(?:'s)? )?(?:sides?|walls?))\\b|\\b(?:along|down|beside|alongside) the (?:left |right )?sides? of the ${HOUSE}\\b`).test(c);
+  const off = new RegExp(`\\b(?:stops?|ends?) (?:the deck |it )?at the (?:${HOUSE}(?:'s)? )?corners?\\b|\\b(?:do not|don't|dont|not|no longer|never) (?:go|run|extend|wrap|continue)\\w*(?: (?:the deck|it))? (?:past|around|round|beyond)\\b|\\bno wrap ?around\\b|\\bno wrap\\b|\\b(?:remove|take off|take out|drop|lose|undo|delete|get rid of) (?:the |that )?wrap(?: ?around)?\\b`).test(c);
+  if (!pastSaid && !wrapSaid && !off) return null;
+  // "The house runs 4 ft past the deck" is the wall's reach, not the deck's.
+  if (!wrapSaid && !off && /\b(?:past|beyond) the deck\b/.test(c)) return null;
+  const side: DeckPastSaid["side"] = /\bboth\b|\beach\b|\beither\b|\b(?:two|2) (?:sides|corners|ends)\b/.test(c) || (/\bleft\b/.test(c) && /\bright\b/.test(c)) ? "both" : /\bleft\b/.test(c) ? "left" : /\bright\b/.test(c) ? "right" : off ? "both" : "right";
+  if (off) return { side, off: true };
+  const NUM = "(\\d+(?:\\.\\d+)?)(?: ft)?";
+  const pastN = new RegExp(`${NUM} (?:more |further |farther |out )?(?:past|beyond|outside)\\b`).exec(c);
+  const backN = new RegExp(`${NUM} (?:back|along|down|deep|long|beside|alongside)\\b`).exec(c) ?? new RegExp(`\\b(?:back|wrap\\w*|around|round|along|sides?)\\b[^\\d]{0,48}${NUM}`).exec(c);
+  const out: DeckPastSaid = { side };
+  if (pastN) out.ft = Number(pastN[1]);
+  if (wrapSaid) {
+    // A length said after "back / along / around" is how far back — unless it is the one already read as "past".
+    if (backN && !(pastN && backN.index >= pastN.index && backN.index <= pastN.index + pastN[0].length)) out.backFt = Number(backN[1]);
+    else out.wrap = true;
+  }
+  return out;
+}
+
 function readHouse(c: string, ctx: ParseContext): Read {
+  const pastCmd = readPast(c);
+  if (pastCmd) return read([{ do: "house", past: pastCmd }], "house");
   const houseSaid = /\b(?:house|home|siding)\b/.test(c);
   const storeys = /\b(?:1|one|single) story\b|\branch\b|\brambler\b|\bbungalow\b/.test(c) ? 1 : /\b(?:2|two) story\b|\bcolonial\b|\btwo floors\b/.test(c) ? 2 : undefined;
   const wall = /\bbump ?out (?:on|at|to) the right\b|\bright bump ?out\b|\bbump ?out right\b/.test(c) ? "bump-right" : /\bbump ?out (?:on|at|to) the left\b|\bleft bump ?out\b|\bbump ?out left\b/.test(c) ? "bump-left" : /\b(?:nook|inside corner|between two walls|tucked in|recessed|in a corner)\b/.test(c) ? "nook" : /\b(?:straight (?:wall|back wall)|flat wall|no bump ?outs?|plain wall|remove the bump ?out)\b/.test(c) ? "straight" : undefined;
@@ -1087,7 +1161,10 @@ function readDecking(c: string, ctx: ParseContext): Read {
   else if (/\b(?:herringbone|chevron|zig ?zag)\b/.test(c)) set.pattern = "herringbone";
   else if (/\b(?:straight|parallel(?: to the house)?|regular pattern|normal pattern|standard pattern|perpendicular|straight boards)\b/.test(c) && /\b(?:boards?|decking|pattern|lay|run)\b/.test(c)) set.pattern = "straight";
   if (/\b(?:double (?:picture[- ]?frame|border)|two (?:rows? of )?borders?|2 (?:rows? of )?borders?|double[- ]framed|2 border)\b/.test(c)) set.border = 2;
-  else if (/\b(?:picture[- ]?frame(?:d)?|borders?|framed edge|breaker boards?)\b/.test(c)) set.border = isRemove(c) ? 0 : 1;
+  else if (/\b(?:picture[- ]?frame(?:d)?|borders?|framed edge)\b/.test(c)) set.border = isRemove(c) ? 0 : 1;
+  // Breaker boards (2026-11-14; lib/deck/surface): a board across the field, the rows stopping against it. (They were
+  // read as a border — a different thing: the border runs the edges.)
+  if (/\b(?:breaker|divider|dividing|transition|seam|feature) (?:boards?|strips?)\b|\bbreakers?\b|\bno butt joints?\b|\bwithout butt joints?\b/.test(c)) set.breakers = (isRemove(c) || /^no (?:breaker|divider)/.test(c)) && !/\bbutt joints?\b/.test(c) ? 0 : /\b(?:two|2|double|pair of|thirds)\b/.test(c) ? 2 : 1;
   if (/\b(?:hidden (?:fasteners?|clips?|screws?)|hide (?:the )?(?:screws|fasteners|screw heads)|clips|no (?:visible )?screws|(?:don't|do not) (?:want to )?see (?:the |any )?screws|camo|cortex|plugs|invisible fasteners?|screwless)\b/.test(c)) set.fastening = "hidden";
   else if (/\b(?:face[- ]?screw(?:ed|s)?|screws|face[- ]?fasten(?:ed)?|top screwed|deck screws)\b/.test(c)) set.fastening = "screws";
   if (/\bfascia\b|\brim (?:cover|boards?)\b|\bskirt boards?\b/.test(c)) set.fascia = isRemove(c) ? "none" : "match";
@@ -1238,6 +1315,76 @@ function readSite(c: string): Read {
 /*  Extras: tear-out, drainage                                         */
 /* ------------------------------------------------------------------ */
 
+/** Skirting under the deck (2026-11-14; lib/deck/skirt): "add lattice skirting", "skirt it in deck boards", "close in the underside", "hide the posts". */
+const SKIRT_WORDS = /\bskirt(?:ing|ed|s)?\b|\blattice (?:under|below|underneath|beneath)\b|\b(?:close|enclose|box) (?:in |off |up )?(?:the )?(?:under ?side|bottom|space (?:under|below)|area (?:under|below))\b|\bhide (?:the )?(?:posts|frame|framing|under ?side|space under)\b/;
+/** What a skirt is made of, said after a "with": "skirt the deck with deck boards". */
+const SKIRT_OF = /^(?:the |some |)(?:deck(?:ing)? |composite |matching |horizontal |solid |wood(?:en)? |framed |)(?:boards?|lattice|slats?)\b/;
+
+/** Lattice unless boards are named. (Read before the roof's rule, which owns "lattice" as a wall between a roof's posts.) */
+function readSkirt(c: string): Read {
+  if (!SKIRT_WORDS.test(c)) return null;
+  const off = isRemove(c) || /\bno skirt(?:ing)?\b|\bwithout (?:a |any )?skirt(?:ing)?\b|\bopen under(?:neath)?\b/.test(c);
+  return read([{ do: "extras", skirt: off ? "none" : /\bboards?\b|\bhorizontal\b|\bsolid\b|\bslat(?:s|ted)?\b|\bmatch(?:ing|es)?\b|\bcomposite\b/.test(c) && !/\blattice\b/.test(c) ? "boards" : "lattice" }], "deck");
+}
+
+/** Built-in benches and planter boxes (2026-11-14; lib/deck/builtins). With a price said they stay the shop's own item (readItem). */
+const BENCH_WORDS = /\bbench(?:es)?\b|\bbuilt[- ]in seat(?:s|ing)?\b|\bseating\b/;
+const PLANTER_WORDS = /\bplanters?\b|\bplanter box(?:es)?\b|\bflower box(?:es)?\b/;
+/** A privacy screen on an OPEN deck's edge. (Under a roof, "privacy walls / screens" are the roof's walls: its own rule.) */
+const SCREEN_WORDS = /\bprivacy (?:screens?|fences?|walls?|panels?|slats)\b|\bscreen wall\b|\bslat(?:ted)? (?:screen|wall)s?\b/;
+/** An outdoor kitchen / grill island, and a gas fire table (2026-11-14). (The house's own kitchen — "at the kitchen door" — is not one.) */
+const KITCHEN_WORDS = /\boutdoor kitchens?\b|\bkitchen island\b|\b(?:grill|bbq|barbecue|barbeque) (?:island|station|area|spot)\b|\bbuilt[- ]in (?:grill|bbq)\b|\b(?:grill|bbq|barbecue|barbeque)\b/;
+const FIRE_WORDS = /\bfire ?(?:tables?|pits?|bowls?|features?)\b|\bgas fire\b/;
+function readBuiltIn(c: string, ctx: ParseContext): Read {
+  const planter = PLANTER_WORDS.test(c);
+  const screen = !planter && ctx.design.structure === "deck" && SCREEN_WORDS.test(c);
+  const fireT = !planter && !screen && FIRE_WORDS.test(c);
+  const kitchen = !planter && !screen && !fireT && KITCHEN_WORDS.test(c);
+  if ((!planter && !screen && !fireT && !kitchen && !BENCH_WORDS.test(c)) || money(c) !== null) return null;
+  // A thing the shop has its own remembered item and price for ("fire pit" at $1,200) stays the shop's item.
+  if (ctx.items && Object.keys(ctx.items).some((k) => k.length >= 3 && c.includes(k))) return null;
+  type B = Extract<DeckCommand, { do: "builtin" }>;
+  if (kitchen || fireT) {
+    const kind: B["kind"] = kitchen ? "kitchen" : "fire";
+    const lr = (/\bleft\b/.test(c) ? 1 : 0) + (/\bright\b/.test(c) ? 2 : 0);
+    const side = lr === 1 ? "left" : lr === 2 ? "right" : /\bfront\b/.test(c) ? "front" : undefined;
+    if (isRemove(c) || /^no /.test(c)) return read([{ do: "builtin", op: "remove", kind, ...(side ? { side } : {}) }], "deck");
+    // "6 ft in" / "6 ft from the edge" is how far in a fire table stands; another length said is its own.
+    const inM = fireT ? /(\d+(?:\.\d+)?) ft (?:in\b|from the (?:edge|rail|railing|front|side|end))/.exec(c) : null;
+    const lenM = /(\d+(?:\.\d+)?) ft (?:long|wide)\b/.exec(c) ?? (inM ? null : /(\d+(?:\.\d+)?) ft\b/.exec(c));
+    return read([{ do: "builtin", op: "add", kind, ...(side ? { side } : {}), ...(lenM ? { lengthFt: Math.round(Number(lenM[1]) * 2) / 2 } : !/\bkitchen\b/.test(c) && kitchen ? { lengthFt: 5 } : {}), ...(inM ? { inFt: Math.round(Number(inM[1]) * 2) / 2 } : {}), ...(/\b(?:middle|cent(?:er|re))\b/.test(c) ? { at: "centre" as const } : {}) }], "deck");
+  }
+  if (screen) {
+    const lr = (/\bleft\b/.test(c) ? 1 : 0) + (/\bright\b/.test(c) ? 2 : 0);
+    if (isRemove(c) || /^no /.test(c)) return read([{ do: "builtin", op: "remove", kind: "screen", ...(lr === 1 ? { side: "left" } : lr === 2 ? { side: "right" } : /\bfront\b/.test(c) ? { side: "front" } : {}) }], "deck");
+    // "6 ft high" is its height; another length said is how long it runs.
+    const high = /(\d+(?:\.\d+)?) ft (?:high|tall)\b/.exec(c);
+    const long = /(\d+(?:\.\d+)?) ft (?:long|wide|of)\b/.exec(c) ?? (high ? null : /(\d+(?:\.\d+)?) ft\b/.exec(c));
+    const one = (side: NonNullable<B["side"]>): B => ({ do: "builtin", op: "add", kind: "screen", side, ...(long ? { lengthFt: Math.min(30, Math.max(2, Math.round(Number(long[1]) * 2) / 2)) } : {}), ...(high ? { heightFt: Math.min(8, Math.max(3, Math.round(Number(high[1]) * 2) / 2)) } : {}) });
+    if (lr === 3 || /\bboth (?:sides|ends)\b|\beach (?:side|end)\b/.test(c)) return read([one("left"), one("right")], "deck");
+    return read([one(lr === 2 ? "right" : lr === 1 ? "left" : /\bfront\b/.test(c) ? "front" : "left")], "deck");
+  }
+  const kind: B["kind"] = planter ? "planter" : /\bback(?:s|rests?|ed)?\b/.test(c) && !/\bbackless\b|\b(?:no|without (?:a |any )?) ?back(?:s|rests?)?\b/.test(c) ? "bench-back" : "bench";
+  const left = /\bleft\b/.test(c);
+  const right = /\bright\b/.test(c);
+  const both = /\bboth (?:sides|ends|corners)\b|\beach (?:side|end|corner)\b|\b(?:the |two |2 |front )corners\b|\b(?:two|2|a pair of|a couple of) (?:benches|planters|planter boxes|flower boxes)\b/.test(c);
+  if (isRemove(c) || /^no /.test(c)) return read([{ do: "builtin", op: "remove", kind, ...(left !== right ? { side: left ? "left" : "right" } : /\bfront\b/.test(c) ? { side: "front" } : {}) }], "deck");
+  const ft = nums(c).find((x) => x.unit === "ft" || x.unit === "in");
+  const long = /\b(?:full|whole|entire) (?:length|front|side|edge|width)\b|\ball the way (?:across|along)\b|\bend to end\b/.test(c) ? 30 : ft ? Math.round(ftOf(ft) * 2) / 2 : undefined;
+  const len = long !== undefined ? { lengthFt: Math.min(30, Math.max(2, long)) } : {};
+  const add = (side: NonNullable<B["side"]>, at?: B["at"]): B => ({ do: "builtin", op: "add", kind, side, ...len, ...(at ? { at } : {}) });
+  // A corner: planters stand at the front's ends; a corner bench is two benches that meet there.
+  const corner = /\bcorners?\b|\bl[- ]shaped?\b|\bwrap(?:s|ping)?[- ]?(?:around)?\b/.test(c);
+  if (planter) {
+    if (both) return read([add("front", "left"), add("front", "right")], "deck");
+    if (corner || /\bfront\b/.test(c)) return read([add("front", right ? "right" : left ? "left" : corner ? "left" : "centre")], "deck");
+    return read([add(left ? "left" : right ? "right" : "front", left || right ? "centre" : "left")], "deck");
+  }
+  if (corner) return read([add(left ? "left" : "right", "right"), add("front", left ? "left" : "right")], "deck");
+  if (both || /\ball (?:three )?sides\b|\ball (?:the way )?a?round\b|\bthree sides\b/.test(c)) return read(/\ball|three/.test(c) && !both ? [add("left"), add("front"), add("right")] : [add("left"), add("right")], "deck");
+  return read([add(left ? "left" : right ? "right" : "front")], "deck");
+}
+
 function readExtras(c: string): Read {
   if (/\b(?:tear(?:ing)? (?:out|off|down)|demo(?:lish|lition|ing)?|rip(?:ping)? out|(?:remove|take down|haul away) (?:the )?(?:old|existing) deck|old deck (?:out|removed|gone)|existing deck)\b/.test(c)) {
     if (/\bno demo\b|\bnothing to tear out\b|\bno old deck\b/.test(c)) return read([{ do: "extras", demoSqFt: 0 }], "deck");
@@ -1279,12 +1426,23 @@ function readShape(c: string, ctx: ParseContext): Read {
     return read([{ do: "shape", kind: "clipped", clipFt: v ?? undefined }], "deck");
   }
   if (/\b(?:rectangle|rectangular|straight (?:front|edge)|square corners|plain shape|regular shape|normal shape|box shape|simple shape|no (?:curve|notch|cutout|clip|angles?)|square it off)\b/.test(c)) return read([{ do: "shape", kind: "rect" }], "deck");
+  // THE FRONT IN PARTS (2026-11-14): "make it T-shaped", "a U shape", "a bump-out in the middle 8 by 4", "the left
+  // side 4 feet deeper". (A bump-out of the HOUSE is the wall's, read with the house.)
+  const tee = /\bt[- ]?shaped?\b|\bt shape\b|\b(?:bump ?out|bay|extension|section|part) (?:in|at|on) the (?:middle|center|centre)(?: of the (?:front|deck))?\b|\b(?:middle|center|centre)(?: part| section| third)? (?:sticks?|comes?|pushed|pushes|bumps?|stands?|goes|go) (?:out|farther|further)\b/.test(c);
+  const yoo = /\bu[- ]?shaped?\b|\bu shape\b|\b(?:both|the two|2) (?:ends|sides) (?:stick|come|pushed|push|bump|stand|go) (?:out|farther|further)\b/.test(c);
+  const sideOut = /\b(left|right) (?:side|half|end|part)(?: of the deck)?(?: is| goes| stands| comes| sticks)? (?:\d+(?:\.\d+)? (?:ft )?)?(?:deeper|farther out|further out|longer|out farther|out further)\b|\bdeeper on the (left|right)\b/.exec(c);
+  if ((tee || yoo || sideOut) && !/\b(?:house|wall|roof|stairs?|steps?)\b/.test(c)) {
+    const p = pair(c);
+    const one = lengthFt(c);
+    return read([{ do: "shape", kind: "parts", preset: tee ? "t" : yoo ? "u" : ((sideOut?.[1] ?? sideOut?.[2]) as "left" | "right"), partWidthFt: p ? ftOf(p.a) : undefined, outFt: p ? ftOf(p.b) : (one ?? undefined) }], "deck");
+  }
+  if (/\b(?:any|custom|free|own) shape\b|\bstepped front\b|\bfront in parts\b/.test(c)) return read([{ do: "shape", kind: "parts", preset: "t" }], "deck");
   return null;
 }
 
 function readSlide(c: string): Read {
   if (!/\b(?:move|slide|shift|scoot|push|center|centre)\b/.test(c)) return null;
-  if (!/\b(?:deck|it|the whole thing)\b/.test(c) || STAIR_WORDS.test(c) || SPA_WORDS.test(c) || LOWER_WORDS.test(c)) return null;
+  if (!/\b(?:deck|it|the whole thing)\b/.test(c) || STAIR_WORDS.test(c) || SPA_WORDS.test(c) || LOWER_WORDS.test(c) || DOUBLE_WORDS.test(c)) return null;
   if (/\b(?:center|centre|middle)\b/.test(c) && /\b(?:house|wall|on the house)\b/.test(c)) return read([{ do: "slide", ft: "center" }], "deck");
   const dir = /\bleft\b/.test(c) ? -1 : /\bright\b/.test(c) ? 1 : 0;
   if (!dir) return null;
@@ -1649,6 +1807,10 @@ export function readClause(raw: string, ctx: ParseContext): ClauseRead {
   if (custom) return { text, ...custom, unknown: false };
   const show = readShow(c);
   if (show) return { text, ...show, unknown: false };
+  const skirt = readSkirt(c);
+  if (skirt) return { text, ...skirt, unknown: false };
+  const builtIn = readBuiltIn(c, ctx);
+  if (builtIn) return { text, ...builtIn, unknown: false };
   // A clause that names a part to change is read by that part's rule; "show me", "at night" and the like by the view.
   const head = headOf(c, ctx.design.structure !== "deck");
   const own = head ? DETECTORS[head] : null;
@@ -1721,7 +1883,10 @@ function readParts(text: string, ctx0: ParseContext): { clauses: ClauseRead[]; c
     if (ownVerb) verb = ownVerb;
     // Kept whole: a question, a what-if, a taught phrase, and a roof's name that has "with" in it ("a hip with gables").
     const whole = /^(?:when(?:ever)? i say|if i say|when i tell you|what if|what about|how about|how much|show me (?:it )?with)\b/.test(trimClause(part)) || QUESTION_HEAD.test(trimClause(part)) || ROOF_KIND_WORDS.some(([re]) => /\bwith\b/.test(re.exec(trimClause(part))?.[0] ?? ""));
-    const withParts = whole ? [part] : trimClause(part).split(/\s+(?:with|along with|together with|including|that has|which has|having)\s+/);
+    const withParts0 = whole ? [part] : trimClause(part).split(/\s+(?:with|along with|together with|including|that has|which has|having)\s+/);
+    // "Skirt the deck with deck boards": the "with" names what the skirt is made of — one command, not two.
+    // "A bench with a back on the left side": the back is the bench's own.
+    const withParts = withParts0.length === 2 && ((SKIRT_WORDS.test(withParts0[0]) && SKIRT_OF.test(withParts0[1])) || (BENCH_WORDS.test(withParts0[0]) && /^(?:a |the |its |)(?:back|backs|backrests?)\b/.test(withParts0[1]))) ? [part] : withParts0;
     let reads: ClauseRead[] | null = null;
     if (withParts.length > 1) {
       let wctx = ctx;

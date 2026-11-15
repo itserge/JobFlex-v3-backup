@@ -12,6 +12,7 @@ import { applyDeckPatch, deckChecks } from "../../../src/lib/deck/checks";
 import { deckScene } from "../../../src/lib/deck/scene";
 import { partAt, partCard, tryChoice } from "../../../src/lib/deck/parts";
 import { AUTO_FIX, settleDesign } from "../../../src/lib/deck/settle";
+import { moveGrip } from "../../../src/lib/deck/byHand";
 
 let bad = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -65,9 +66,9 @@ const mid = st.frame!.posts.find((p) => Math.round(p.x) === 96)!;
 const box = sc.boxes.findIndex((b, i) => sc.legend[sc.tags[i]]?.role === "post" && Math.abs(b[1] * 12 - mid.x) < 0.7 && Math.abs(b[2] * 12 - mid.y) < 0.7);
 const card = partCard(st, partAt(st, sc, box)!);
 const ids = card.choices.map((c) => c.id);
-check("click a post: slide it a foot either way, or add a post under its beam", ["pin-slide--12", "pin-slide-12", "pin-add"].every((id) => ids.includes(id)), ids.join());
-const slid = tryChoice(auto, card.choices.find((c) => c.id === "pin-slide-12")!).design;
-check("…slid a foot to the right: it stands at 9 ft, the end posts where they were — all three now the builder's; the span it widened to 8 ft is past the beam's 7'-5\", so a post stands in its middle", xs(slid).join() === "12,60,108,180" && frameOf(slid).posts.filter((p) => p.by).length === 3 && loud(slid).length === 0, xs(slid).join());
+check("click a post: its place is on its card to type or nudge by the inch (2026-11-13: it was a slide of a foot), and a post can be added under its beam", card.place?.kind === "post" && card.place.at === 96 && ids.includes("pin-add") && !ids.some((id) => /slide/.test(id)), ids.join());
+const slid = settleDesign(applyDeckPatch(auto, moveGrip(st, "post", card.place!.id, 108)!)).design;
+check("…moved a foot to the right: it stands at 9 ft, the end posts where they were — all three now the builder's; the span it widened to 8 ft is past the beam's 7'-5\", so a post stands in its middle", xs(slid).join() === "12,60,108,180" && frameOf(slid).posts.filter((p) => p.by).length === 3 && loud(slid).length === 0, xs(slid).join());
 const added = tryChoice(auto, card.choices.find((c) => c.id === "pin-add")!).design;
 check("…a post added: in the middle of the longest span — 12 / 54 / 96 / 180, four posts under the beam and no stray one at its end", xs(added).join() === "12,54,96,180" && frameOf(added).posts.filter((p) => p.by).length === 4 && loud(added).length === 0, xs(added).join());
 const st2 = buildStructure(slid);
@@ -81,7 +82,7 @@ check("…take the slid post off: the 14-ft span it leaves is past the beam's ta
 console.log("── kept, and the studio's own fixes leave it alone");
 const saved = normalizeDeckDesign(JSON.parse(JSON.stringify(mk({ pins: [pin("a", 5), pin("b", 11.5, "middle")], postSpacingFt: 6 }))));
 check("kept through a save: the posts, their beams, the spacing", JSON.stringify(saved.framing.pins) === JSON.stringify([pin("a", 5), pin("b", 11.5, "middle")]) && saved.framing.postSpacingFt === 6);
-const junk = normalizeDeckDesign({ ...auto, framing: { ...auto.framing, pins: [null, 4, { atFt: "x" }, { atFt: 5, beam: "side" }, { id: "a", atFt: 6 }, { id: "a", atFt: 7 }, { atFt: -3 }, ...new Array(40).fill({ atFt: 3 })], postSpacingFt: 99 } });
+const junk = normalizeDeckDesign({ ...auto, framing: { ...auto.framing, pins: [null, 4, { atFt: "x" }, { atFt: 5, beam: "side" }, { id: "a", atFt: 6 }, { id: "a", atFt: 7 }, { atFt: -3 }, ...new Array(80).fill({ atFt: 3 })], postSpacingFt: 99 } });
 check("junk is not kept: no place, no post; an unknown beam is the front; no two with one id; no more than the list holds; the spacing inside its limits", junk.framing.pins.length === DECK_POST_LIMITS.pins && junk.framing.pins[0].beam === "front" && new Set(junk.framing.pins.map((p) => p.id)).size === junk.framing.pins.length && junk.framing.pins.every((p) => p.atFt >= 0) && junk.framing.postSpacingFt === DECK_POST_LIMITS.spacingFt.max);
 check("an old design, saved before any of this, is framed as it was", JSON.stringify(frameOf(normalizeDeckDesign(JSON.parse(JSON.stringify({ ...auto, framing: { ...auto.framing, pins: undefined, postSpacingFt: undefined } })))).posts) === JSON.stringify(frameOf(auto).posts));
 check("these checks are the builder's: the studio's auto-fix never touches them, and settling keeps the posts", ["deck-posts-set-b1", "deck-post-spacing", "deck-post-not-set-1"].every((id) => !AUTO_FIX.test(id)) && JSON.stringify(settleDesign(three).design.framing.pins) === JSON.stringify(three.framing.pins));

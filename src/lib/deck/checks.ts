@@ -40,18 +40,22 @@ import {
 } from "./codeTables";
 import { OC_BLOCKING_MAX_FT, OC_GUIDE_MAX_POSTS, OC_POST_MAX_HEIGHT_IN, OC_RULE, OC_SOURCES, ocPostCapacityLb } from "./ocLumber";
 import { GROUND_CONTACT_WITHIN_IN, MIN_FRAME_CLEAR_IN, PIER_BLOCK, footingDepthIn, type DeckFrame } from "./frame";
-import { FIXTURE_LABEL, GUTTER_LABEL, ROOFING_LABEL, STAIR_LIMITS, WALL_FILL_LABEL, defaultStair, frontRadiusFt, normalizeDeckDesign, type DeckDesign, spaRectIn } from "./design";
+import { DOUBLE_DECK_HEADROOM_IN, DOUBLE_DECK_STOREY_IN, FIXTURE_LABEL, GUTTER_LABEL, LOWER_LIMITS, ROOFING_LABEL, STAIR_LIMITS, WALL_FILL_LABEL, defaultStair, frontRadiusFt, normalizeDeckDesign, type DeckDesign, spaRectIn } from "./design";
 import { STAIR_POST_CLEAR_IN, type RoofFrame } from "./roof";
 import { RULE_HIP, RULE_RAFTER, RULE_RIDGE, RULE_ROOF_LOAD, RULE_TIES } from "./roofTables";
 import { BETWEEN_LEVELS_STAIR_ID, betweenLevelsStair, type DeckStructure } from "./structure";
-import { stairRules } from "./stairs";
+import { FLIGHT_MAX_RISE_IN, LANDING_DEPTH_IN, STAIR_HEADROOM_IN, WRAP_STEP_MAX_RISERS, stairRules, stairTurnWords } from "./stairs";
 import { SNOW_TABLE_MAX_PSF, TERMITE_LABEL, deckLoadForSnow, roofLoadForSnow } from "./site";
 import { POST_ACTUAL_IN, STAIR_MIN_WIDTH_IN } from "./codeTables";
 import { FRAMING_SPECIES, defaultFramingSpecies, speciesWords } from "./catalog";
 import { cite, codeWords, inFrac, stateName } from "./stateCodes";
 import { openingChecks } from "./openingChecks";
+import { deckPast, pastWords } from "./house";
 import { railHeldWords, railMountLine } from "./rails";
-import { borderWords } from "./surface";
+import { borderWords, breakerWords } from "./surface";
+import { SKIRT_GAP_IN, SKIRT_GROUND_CLEAR_IN, SKIRT_MIN_IN } from "./skirt";
+import { ACCESSORY_GROUP_LABEL, STAIR_LANDING_IN, accessoryGroupOf } from "./builtins";
+import { BENCH_BACK_IN, BENCH_SEAT_IN, BUILT_IN_LABEL, FIRE_HEIGHT_IN, HOT_CLEAR_IN, HOT_OVERHEAD_IN, KITCHEN_DEPTH_IN, KITCHEN_HEIGHT_IN, SCREEN_GAP_IN, SCREEN_WIND_PSF, builtInWords, planGap } from "./builtins";
 
 /** A change to a design, part by part; anything left out stays as it is. */
 export type DeckPatch = {
@@ -70,6 +74,11 @@ export function applyDeckPatch(design: DeckDesign, patch: DeckPatch): DeckDesign
   // photo supplies both fields together and must retain its own vertical scale.
   if (patch.house?.storeys !== undefined && patch.house.storeys !== design.house.storeys && !("eaveHeightFt" in patch.house)) {
     delete (out.house as Record<string, unknown>).eaveHeightFt;
+  }
+  // The parts' own heights and roofs go with the steps they were read between: a step added or taken away by hand
+  // (the House step) without them leaves them describing another wall, so they go (2026-11-13).
+  if (patch.house?.jogs !== undefined && !("parts" in patch.house) && patch.house.jogs.length !== design.house.jogs.length) {
+    delete (out.house as Record<string, unknown>).parts;
   }
   return normalizeDeckDesign(out);
 }
@@ -90,6 +99,58 @@ export interface DeckCheck {
 
 const plural = (n: number, w: string, many = `${w}s`) => `${n} ${n === 1 ? w : many}`;
 
+/**
+ * A DOUBLE DECK (2026-11-13 — the owner: "a double deck, like first floor and second floor"). The lower deck hangs on
+ * the upper deck's posts: its beams on the upper deck's own lines, let into the posts where they pass. Said here: that
+ * it is so, the room to stand between the two, and the posts a beam can be let into. Where the two heights leave no
+ * storey between them the lower deck is not built — and that is said, with the way to make room. (Ids clear of
+ * lib/deck/settle AUTO_FIX: these are the builder's to answer.)
+ */
+function doubleDeckChecks(s: DeckStructure, add: (c: DeckCheck) => void): void {
+  const { design, frame, lower } = s;
+  if (!frame) return;
+  const PART = "Double deck";
+  const apart = design.heightIn - design.lower.heightIn;
+  if (!lower || lower.place !== "under") {
+    const storey = design.lower.heightIn + DOUBLE_DECK_STOREY_IN;
+    add({
+      id: "double-deck-room",
+      level: "fail",
+      part: PART,
+      text: `The upper deck stands ${ftIn(Math.max(0, apart))} above the lower one, floor to floor: under ${ftIn(LOWER_LIMITS.storeyIn)} there is no room to stand under its frame, so the lower deck is not built.`,
+      fix: { label: `Raise the upper deck to ${ftIn(storey)}`, patch: { heightIn: storey } },
+      ...(design.heightIn - LOWER_LIMITS.storeyIn >= LOWER_LIMITS.heightIn.min ? { alts: [{ label: `Set the lower deck ${ftIn(design.heightIn - LOWER_LIMITS.storeyIn)} above the ground`, patch: { lower: { heightIn: design.heightIn - LOWER_LIMITS.storeyIn } } }] } : {}),
+    });
+    return;
+  }
+  const posts = frame.posts.filter((p) => !p.roof).length;
+  // SHAPED ON ITS OWN (2026-11-14; lib/deck/doubleDeck): seated in the upper deck's posts where its beams meet them, on
+  // posts of its own elsewhere — said as it is.
+  const own = !!design.lower.shape;
+  const ownPosts = lower.frame.posts.filter((p) => !p.roof).length;
+  const seats = lower.frame.seats.length;
+  add({
+    id: "double-deck",
+    level: "pass",
+    part: PART,
+    text: own
+      ? `Two decks, the lower one shaped on its own: ${ftIn(design.lower.heightIn)} above the ground, ${lower.frame.areaSqFt} sq ft, the upper one ${ftIn(apart)} above it. ${seats ? `Where the upper deck's posts stand inside it, its beams are let into them — ${plural(seats, "seat")}, two 1/2-in. through bolts each — and those posts and their footings are sized for both decks` : "None of the upper deck's posts stands where its beams run, so it shares none of them"}${ownPosts ? `; elsewhere it stands on ${plural(ownPosts, "post")} of its own, each on its own footing` : ""}.`
+      : `Two decks on one set of posts: the lower one ${ftIn(design.lower.heightIn)} above the ground, the upper one ${ftIn(apart)} above it. The lower deck's ${plural(lower.frame.beams.length, "beam")} ${lower.frame.beams.length === 1 ? "stands" : "stand"} on the upper deck's own ${lower.frame.beams.length === 1 ? "line" : "lines"} and ${lower.frame.beams.length === 1 ? "is" : "are"} let into its ${plural(posts, "post")} where they pass — ${plural(lower.frame.seats.length, "seat")}, two 1/2-in. through bolts each. The posts and their footings are sized for both decks.`,
+    rule: "IRC R507.4, R507.5.2 · a beam bears on its post; a post and its footing carry every deck above them",
+  });
+  // Room to walk under the upper deck: its lowest beam or joist over the lower deck's boards.
+  const beamLow = Math.min(...frame.beams.map((b) => b.bottomIn));
+  const clear = Math.round(Math.min(frame.joistBottomIn, beamLow) - lower.frame.surfaceIn);
+  const what = beamLow < frame.joistBottomIn - 0.5 ? "beams" : "joists";
+  if (clear < DOUBLE_DECK_HEADROOM_IN) {
+    const to = design.heightIn + (DOUBLE_DECK_HEADROOM_IN - clear);
+    add({ id: "double-deck-headroom", level: "warn", part: PART, text: `${ftIn(clear)} clear on the lower deck, under the upper deck's ${what}: ${ftIn(DOUBLE_DECK_HEADROOM_IN)} is wanted to walk under them.`, rule: "IRC R305.1 · 6 ft 8 in. under beams", fix: { label: `Raise the upper deck to ${ftIn(to)}`, patch: { heightIn: to } } });
+  } else add({ id: "double-deck-headroom", level: "pass", part: PART, text: `${ftIn(clear)} clear on the lower deck, under the upper deck's ${what} (${ftIn(DOUBLE_DECK_HEADROOM_IN)} at least).`, rule: "IRC R305.1 · 6 ft 8 in. under beams" });
+  // A seat is cut into the post: a 4x4 or a 4x6 has no wood left beside it.
+  if (design.framing.post === "4x4" || design.framing.post === "4x6") add({ id: "double-deck-posts", level: "fail", part: PART, text: `A beam is let into a post only where the post is a 6x6 or larger: a ${design.framing.post} has too little wood left beside the seat to carry the deck above.`, rule: "IRC R507.5.2 · beam bearing on a notched 6x6 post", fix: { label: "Use 6x6 posts", patch: { framing: { post: "6x6" } } } });
+  else if (frame.group === "OC") add({ id: "double-deck-posts", level: "warn", part: PART, text: "Owens Corning lists its built-up post under one beam. A second deck's beams let into its side are outside that listing: an engineer details the connection.", rule: OC_RULE.post });
+}
+
 export function deckChecks(s: DeckStructure): DeckCheck[] {
   const { design, frame, roof } = s;
   const out: DeckCheck[] = [];
@@ -101,11 +162,193 @@ export function deckChecks(s: DeckStructure): DeckCheck[] {
     for (const h of frame.postsByHand) add({ id: `deck-posts-set-${h.beamId}`, level: "pass", part: "Beams", text: `${plural(h.mine, "post")} under the ${h.role} beam set by hand${h.added ? `; ${plural(h.added, "more post")} ${h.added === 1 ? "stands" : "stand"} where its spans and its ends need ${h.added === 1 ? "it" : "them"}` : ""}. The beam is checked on the spans they make.`, rule: "IRC Table R507.5 · beam ends, a quarter of the span beside them" });
     if (typeof design.framing.postSpacingFt === "number") add({ id: "deck-post-spacing", level: "pass", part: "Beams", text: `Posts under the beams no farther apart than ${design.framing.postSpacingFt} ft, as set by hand: ${plural(frame.posts.filter((p) => !p.roof).length, "post")} — never fewer than the beam's table asks for.` });
     frame.pinsNotSet.forEach((np, i) => add({ id: `deck-post-not-set-${i + 1}`, level: "info", part: "Beams", text: `A post set by hand could not be placed: ${np.why}.`, fix: { label: "Take that post off", patch: { framing: { pins: design.framing.pins.filter((x) => x.id !== np.id) } } } }));
+    // THE BEAMS SET BY HAND (2026-11-13; lib/deck/byHand): the joists land on the builder's middle beams and on one
+    // more only where a span between them is past the joist table; the beam by the house at its own overhang.
+    const hand = frame.beamsByHand;
+    if (hand.mine) add({ id: "deck-beams-set", level: "pass", part: "Joists", text: `${plural(hand.mine, "middle beam")} set by hand${hand.added ? `; ${plural(hand.added, "more beam")} ${hand.added === 1 ? "stands" : "stand"} where the joists' span needs ${hand.added === 1 ? "it" : "them"}` : ""}. The ${frame.joistSize} joists at ${frame.spacingIn} in. are checked on the spans the beams make.`, rule: "IRC Table R507.6 · joist spans and overhangs" });
+    frame.beamLinesNotSet.forEach((nb, i) => add({ id: `deck-beam-not-set-${i + 1}`, level: "info", part: "Joists", text: `A middle beam set by hand could not be placed: ${nb.why}.`, fix: { label: "Take that beam off", patch: { framing: { beamLines: design.framing.beamLines.filter((x) => x.id !== nb.id), pins: design.framing.pins.filter((x) => x.line !== nb.id) } } } }));
+    const backBeam = typeof design.framing.backOverhangFt === "number" ? frame.zones.find((z) => z.back === "beam") : undefined;
+    if (backBeam && frame.beamStyle === "dropped") add({ id: "deck-beam-back-set", level: "pass", part: "Joists", text: `The beam by the house stands ${ftIn(Math.round(backBeam.beamYs[0] - backBeam.zone.y0))} in from the deck's back edge, as set by hand.` });
+  }
+  // PAST THE HOUSE'S CORNER (2026-11-14 — the owner: "go back past the house, on the sides… extend to the right and to
+  // the left outside the house wall"): said where the builder looks — what stands there, and that nothing hangs in the
+  // air. (An id clear of lib/deck/settle AUTO_FIX: it is the builder's choice, not a size to settle.)
+  if (frame && design.placement !== "detached") {
+    const past = deckPast(design.house);
+    const openZones = frame.zones.filter((z) => z.zone.open);
+    if ((past.leftFt > 0 || past.rightFt > 0) && openZones.length) {
+      const wing = past.wrapLeftFt > 0 || past.wrapRightFt > 0;
+      const onLedger = design.placement === "attached";
+      add({
+        id: "deck-past-house",
+        level: "pass",
+        part: "Past the house",
+        text: `${pastWords(past)} No wall stands behind ${openZones.length === 1 ? "that part" : "those parts"}, so ${onLedger ? "the ledger stops at the corner and " : ""}the joists there rest on a beam and posts of their own at the back${wing ? "; beside the house's side wall the deck's edge joist runs along the wall and nothing is fastened to it" : ""}. Every open edge there is railed and finished like the rest of the deck.`,
+        rule: "IRC R507.5 · R507.6",
+      });
+    }
+  }
+  // CORNERS CUT AT AN ANGLE (2026-11-14): what carries them, said where the builder looks. (Ids clear of AUTO_FIX.)
+  if (frame && frame.cornerBeams.length) {
+    const n = frame.cornerBeams.length;
+    const longest = frame.cornerBeams.reduce((m, c) => (c.lengthIn > m.lengthIn ? c : m));
+    const past = frame.cornerBeams.filter((c) => !(c.maxSpanIn > 0) || c.lengthIn > c.maxSpanIn + 0.5);
+    add({
+      id: "deck-corner-beams",
+      level: past.length ? "warn" : "pass",
+      part: "Beams",
+      text: `${n === 1 ? "The corner cut at an angle has" : `The ${n} corners cut at an angle each have`} an angled ${longest.spec.size} beam under the cut — parallel to it, the joists hanging the same overhang past it as past the front beam — from the post at the front beam's end to a post of its own by the deck's side${n > 1 ? "" : ""}; the longest is ${ftIn(Math.round(longest.lengthIn))}. The joists there are cut to the angled rim.${past.length ? ` ${past.length === 1 ? "One is" : `${past.length} are`} longer than that size spans between two posts on its table: stand a post under its middle, pick a deeper beam, or have it sized.` : ""}`,
+      rule: "IRC R507.5",
+    });
   }
   // The picture-frame border, said where the builder looks (2026-11-13): how wide, how far, what goes under it.
   const bordered = frame && s.surface && s.surface.border > 0 ? s.surface : null;
   if (bordered) add({ id: "decking-border", level: "pass", part: "Decking", text: `${borderWords(bordered).replace(/^a /, "A ")}: mitred at the corners${bordered.borderBackingIn.length ? `, with a joist added under its inner edge along the sides (${Math.round(bordered.borderBackingIn.reduce((a, v) => a + v, 0) / 12)} ft of ${frame!.joistSize})` : ""}${bordered.product.border ? `, bought apart in ${bordered.product.border.name}` : ", cut from the deck's own boards"}.`, rule: "The decking maker's installation guide" });
-  if (s.lower) deckFrameChecks(s.lower.frame, add, null, "Lower level — ");
+  // BUILT-IN BENCHES AND PLANTERS (2026-11-14; lib/deck/builtins): what each is and what it runs into, said where the
+  // builder looks. (Ids clear of lib/deck/settle AUTO_FIX: the builder's own choices.)
+  if (frame) {
+    const guarded = s.rails.required;
+    for (const b of s.builtIns) {
+      // (Each kind under its own heading, as the studio's Accessories step groups them — 2026-11-14.)
+      const PART = ACCESSORY_GROUP_LABEL[accessoryGroupOf(b.kind)];
+      const byHand = !!b.design.spot;
+      // A seat placed by hand away from every open edge is not beside a guard.
+      const besideGuard = !byHand || frame.edges.some((e) => !e.house && planGap(b.footprint, [{ x: e.x0, y: e.y0 }, { x: e.x1, y: e.y1 }]) < 24);
+      const name = builtInWords(b).replace(/^a /, "A ").replace(/^an /, "An ");
+      const others = (design.extras.builtIns ?? []).filter((x) => x.id !== b.design.id);
+      if (!b.built) {
+        add({ id: `builtin-${b.design.id}`, level: "warn", part: PART, text: `The ${BUILT_IN_LABEL[b.kind].toLowerCase()} asked for along the ${b.design.side === "front" ? "front" : `${b.design.side} end`} is not built: ${b.why}. It is not in the price.`, fix: { label: "Take it off", patch: { extras: { builtIns: others } } } });
+        continue;
+      }
+      const fitted = b.flags.shortened ? ` It was asked for ${b.design.lengthFt} ft long; ${b.flags.beside ? "beside the other built-in there is room for" : "that edge has room for"} ${Math.round((b.lengthIn / 12) * 10) / 10} ft.` : "";
+      if (b.kind === "kitchen" || b.kind === "fire") {
+        // WHAT BURNS NEAR IT (the grill; the whole fire table): the house wall, a railing that burns, the other
+        // built-ins, the roof over it. Measured, not guessed.
+        const segOf = (e: { x0: number; y0: number; x1: number; y1: number }) => [{ x: e.x0, y: e.y0 }, { x: e.x1, y: e.y1 }];
+        const houseIn = Math.min(Infinity, ...frame.edges.filter((e) => e.house).map((e) => planGap(b.hot, segOf(e))));
+        const railBurns = s.rails.on && ["treated", "cedar", "composite", "vinyl"].includes(design.rail.type);
+        const railIn = railBurns ? Math.min(Infinity, ...frame.edges.filter((e) => !e.house).map((e) => planGap(b.hot, segOf(e)))) : Infinity;
+        const nearOnes = s.builtIns.filter((o) => o.built && o.design.id !== b.design.id && o.kind !== "fire").map((o) => ({ o, gap: planGap(b.hot, o.footprint) }));
+        const cx = b.hot.reduce((a, q) => a + q.x, 0) / (b.hot.length || 1);
+        const cy = b.hot.reduce((a, q) => a + q.y, 0) / (b.hot.length || 1);
+        const ring = roof?.eaveRing ?? [];
+        let roofed = false;
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) if (ring[i].y > cy !== ring[j].y > cy && cx < ((ring[j].x - ring[i].x) * (cy - ring[i].y)) / (ring[j].y - ring[i].y) + ring[i].x) roofed = !roofed;
+        const overheadIn = roofed && roof ? roof.headerBottomIn - (frame.surfaceIn + b.heightIn) : Infinity;
+        const inches = (v: number) => `${Math.round(v)} in.`;
+        const what = (k: string) => (k === "screen" ? "privacy screen" : k === "planter" ? "planter box" : k === "kitchen" ? "kitchen island" : "bench");
+        if (b.kind === "kitchen") {
+          const tooNear = nearOnes.filter((q) => q.gap < 24);
+          const warn = houseIn < HOT_CLEAR_IN || roofed || tooNear.some((q) => q.o.kind === "screen") || railIn < 12;
+          add({
+            id: `builtin-${b.design.id}`,
+            level: warn ? "warn" : "pass",
+            part: PART,
+            text:
+              `${name}: an island ${KITCHEN_DEPTH_IN} in. deep and ${KITCHEN_HEIGHT_IN} in. high, framed in treated 2x4 and clad in the deck's boards, with a top for stone and a place for a built-in grill (the top, the grill, gas and power are by others).${fitted}` +
+              ` With a stone top and a grill it weighs about ${Math.round(b.weightLb / 10) * 10} lb — ${b.psf} psf where it stands, on a deck framed for a ${frame.load} psf live load: ${b.sisters ? `the ${b.sisters} joists under it are doubled their whole length (in the material list)` : "double the joists under it"}.` +
+              ` The island is framed in wood, so the grill goes in its maker's insulated jacket, and the maker's clearances to anything that burns hold — commonly 24 in. behind and beside the grill.` +
+              (houseIn < HOT_CLEAR_IN ? ` The grill stands ${inches(houseIn)} from the house wall: siding scorches and vinyl melts — keep it 3 ft away at the least (fire officials say 10 ft). Move the island along its edge, or shorten it.` : "") +
+              (railIn < 24 ? ` The ${design.rail.type === "treated" ? "wood" : design.rail.type} railing is ${inches(railIn)} behind the grill: most makers ask 24 in. to a railing that burns, or a non-combustible back on the island.` : "") +
+              tooNear.map((q) => ` A ${what(q.o.kind)} stands ${inches(q.gap)} from the grill.`).join("") +
+              (roofed ? ` It stands under the roof: a grill there needs a vent hood listed for it and the maker's clearance to the ceiling (${ftIn(Math.round(overheadIn))} above the island's top here).` : "") +
+              ` Gas line and outlet by licensed trades, under their own permits.`,
+            rule: "The grill maker's installation manual · IRC R507.2",
+          });
+        } else {
+          const nearBurn = [
+            ...(houseIn < HOT_CLEAR_IN ? [`the house wall ${inches(houseIn)}`] : []),
+            ...(railIn < HOT_CLEAR_IN ? [`the ${design.rail.type === "treated" ? "wood" : design.rail.type} railing ${inches(railIn)}`] : []),
+            ...nearOnes.filter((q) => q.gap < HOT_CLEAR_IN).map((q) => `a ${what(q.o.kind)} ${inches(q.gap)}`),
+          ];
+          const warn = houseIn < HOT_CLEAR_IN || railIn < 24 || nearOnes.some((q) => q.gap < (q.o.kind === "screen" || q.o.kind === "kitchen" ? HOT_CLEAR_IN : 24)) || roofed;
+          const soft = frame.decking.family === "composite" || frame.decking.family === "pvc";
+          add({
+            id: `builtin-${b.design.id}`,
+            level: warn ? "warn" : "pass",
+            part: PART,
+            text:
+              `${name.replace(/^A /, "A place for a ").replace(/^An /, "A place for an ")} (the table is by others): a listed gas appliance ${Math.round(b.lengthIn)} × ${Math.round(b.depthIn)} in. and ${FIRE_HEIGHT_IN} in. high, about ${Math.round(b.weightLb / 10) * 10} lb — no framing is added for it.${fitted}` +
+              ` Stand it on the pad or heat shield the decking's maker accepts${soft ? " — composite and PVC boards soften and stain with heat" : ""}.` +
+              ` Most makers ask ${HOT_CLEAR_IN} in. between the table and anything that burns${nearBurn.length ? `; nearer than that here: ${nearBurn.join(", ")}` : " — nothing stands nearer here."}` +
+              (roofed ? ` It stands under the roof: only a unit listed for use under a cover, with the maker's clearance above it — ${ftIn(Math.round(overheadIn))} here${overheadIn < HOT_OVERHEAD_IN ? `, less than the ${HOT_OVERHEAD_IN / 12} ft most ask` : ""}.` : "") +
+              ` Gas only: a wood fire does not belong on a deck — embers, and most building offices keep open fires 15 to 25 ft from a structure. Gas line by a licensed trade.`,
+            rule: "The appliance's listing and manual (ANSI Z21.97) · the decking maker's guide",
+          });
+        }
+      } else if (b.kind === "screen") {
+        const hFt = Math.round(((b.heightIn - 1) / 12) * 2) / 2;
+        const tall = hFt > 6;
+        add({
+          id: `builtin-${b.design.id}`,
+          level: tall ? "warn" : "pass",
+          part: PART,
+          text: `${name}: the deck's own boards across ${b.posts} ${b.postSize} posts no more than 6 ft apart, ${SCREEN_GAP_IN} in. between the boards, a cap board on top (${Math.round(b.sqFt)} sq ft). ${s.rails.on ? "It stands on the railing's line in the railing's place" : "It stands at the deck's edge"}${guarded ? " and is the guard along its stretch (taller than 36 in., no gap a 4-in. ball passes)" : ""}.${fitted} A screen catches wind like a fence: at ${SCREEN_WIND_PSF} psf each post takes about ${Math.round(b.windLb / 10) * 10} lb, which turns it with about ${Math.round(b.windFtLb / 10) * 10} ft-lb where it meets the deck — so each post is one piece from under the deck, through-bolted twice beside a joist or the rim over solid blocking (never screwed to the boards), and the deck's bracing takes the push.${tall ? ` Over 6 ft it is past what a deck's frame holds by rule of thumb: have an engineer size its posts and their connection, and ask the building office — many limit a screen's height.` : ""}`,
+          rule: "IRC R301.2.1 · R312.1",
+        });
+      } else if (b.kind === "planter") {
+        add({
+          id: `builtin-${b.design.id}`,
+          level: b.overBeam ? "pass" : "warn",
+          part: PART,
+          text: `${name}, ${b.depthIn} in. deep and ${Math.round(b.heightIn)} in. high, in the deck's own boards.${fitted} Full of wet soil it holds about ${Math.round(b.soilCuFt)} cu ft and weighs about ${Math.round(b.weightLb / 10) * 10} lb — ${b.psf} psf on the boards under it, where the deck is framed for a ${frame.load} psf live load. ${b.overBeam ? "It stands over a beam line, so that weight goes down at the posts." : "No beam runs under it: move it over a beam line, or double the joists under it and block between them."} Line it, drill drain holes, and keep it on its feet so water runs out from under it.`,
+          rule: "IRC R507.2 · Table R301.5",
+        });
+      } else {
+        const seat = `the seat ${BENCH_SEAT_IN} in. above the deck, three boards deep, on ${b.supports} supports (4x4 legs under a 2x4 cleat, no more than 4 ft apart) with solid blocking between the joists under each`;
+        const guardNote = guarded && besideGuard
+          ? b.kind === "bench-back"
+            ? " Its back is not a guard: the railing behind it still does that work, and a seat beside a guard is a step up for a child — some building offices want the guard 36 in. above the seat there (the code measured it so until 2012). Ask before you build."
+            : " A seat beside a guard is a step up for a child: the code measures the guard from the deck, but some building offices want it 36 in. above the seat there (the code measured it so until 2012). Ask before you build, or set the bench away from the edge."
+          : "";
+        add({ id: `builtin-${b.design.id}`, level: "pass", part: PART, text: `${name}: ${seat}${b.kind === "bench-back" ? `; a back of two boards and a cap on 4x4 posts ${BENCH_BACK_IN} in. tall, each bolted to the frame` : ""}.${fitted}${guardNote}` });
+      }
+      if (b.flags.onStair && byHand) add({ id: `builtin-${b.design.id}-stair`, level: "fail", part: PART, text: `${name} stands within ${STAIR_LANDING_IN} in. of the top of a stair: the code wants a clear landing there, as wide as the stair and ${STAIR_LANDING_IN} in. deep. Drag it farther from the stair in the 3D.`, fix: { label: "Take it off", patch: { extras: { builtIns: others } } } });
+      else if (b.flags.onStair) add({ id: `builtin-${b.design.id}-stair`, level: "fail", part: PART, text: `${name} stands across the top of a stair: nobody can get down it. Move one of them along the edge, or shorten the ${b.kind === "planter" ? "planter" : b.kind === "screen" ? "screen" : b.kind === "kitchen" ? "island" : b.kind === "fire" ? "table" : "bench"}.`, fix: { label: "Take it off", patch: { extras: { builtIns: others } } } });
+      if (b.flags.onSteps) add({ id: `builtin-${b.design.id}-steps`, level: "warn", part: PART, text: byHand ? `${name} stands at an edge the wide steps run on: it blocks the way down there. Drag it in from that edge.` : `${name} stands along an edge the wide steps run on: the steps behind it lead nowhere. Wrap the steps round fewer sides, or move it to an edge without steps.` });
+      if (b.flags.overlaps.length && b.flags.overlaps.some((id) => id > b.design.id)) add({ id: `builtin-${b.design.id}-overlap`, level: "warn", part: PART, text: `${name} and another accessory stand on the same boards. ${byHand || s.builtIns.some((o) => b.flags.overlaps.includes(o.design.id) && o.design.spot) ? "Drag one of them clear in the 3D" : "Shorten one, or move it along its edge"}, so the two do not cross.` });
+    }
+  }
+  // SKIRTING (2026-11-14; lib/deck/skirt): what hangs under the deck, said where the builder looks — and where none
+  // could. (Ids clear of lib/deck/settle AUTO_FIX: a finish the builder chose, not a size to settle.)
+  if (frame && design.extras.skirt) {
+    const sk = s.skirt;
+    const what = design.extras.skirt === "lattice" ? "Lattice in a 1x4 border" : `The deck's own boards laid level, ${SKIRT_GAP_IN} in. apart`;
+    if (!sk) {
+      add({ id: "deck-skirt-none", level: "warn", part: "Skirting", text: `No skirting is drawn: no open edge has ${SKIRT_MIN_IN} in. between the frame and the ground (a skirt leaves ${SKIRT_GROUND_CLEAR_IN} in. of air over the soil, and wide steps close the edges they run along). A deck this low is closed by its fascia; the price has no skirting in it.`, fix: { label: "Take the skirting off", patch: { extras: { skirt: undefined } } } });
+    } else {
+      const bays = sk.panels.length;
+      const stepped = new Set(sk.panels.map((q) => Math.round(q.bottomIn))).size > 1;
+      add({
+        id: "deck-skirt",
+        level: "pass",
+        part: "Skirting",
+        text: `${what} under ${Math.round(sk.lf)} ft of the deck's open edges — ${bays} ${bays === 1 ? "bay" : "bays"}, 8 ft long at most, up to ${sk.heightIn} in. high (${Math.round(sk.sqFt)} sq ft) — on a treated 2x4 frame: a rail fastened under the rim, a rail a hand above the ground, an upright every ${design.extras.skirt === "boards" ? 2 : 4} ft. It stops ${SKIRT_GROUND_CLEAR_IN} in. clear of the soil so it cannot wick water${stepped ? ", stepping down bay by bay with the ground" : ""}${sk.roundPosts ? `; it is cut round the ${sk.roundPosts === 1 ? "post that stands" : `${sk.roundPosts} posts that stand`} at the deck's edge` : ""}. Hang one bay on hinges to get under the deck.${sk.lowFt > 0 ? ` Left off ${Math.round(sk.lowFt)} ft of edge where the frame is less than ${SKIRT_MIN_IN} in. above the ground.` : ""}${design.extras.skirt === "boards" ? " The gaps between the boards are the frame's air: do not close them, and keep the ground under the deck sloped to drain." : ""}`,
+      });
+    }
+  }
+  // BREAKER BOARDS (2026-11-14; lib/deck/surface): what they do to the rows, what goes under them — and where one
+  // asked for could not be laid. (Ids clear of AUTO_FIX: a finish the builder chose.)
+  if (frame && s.surface && design.decking.breakers) {
+    const sf = s.surface;
+    const longestStockIn = Math.max(...sf.product.lengthsFt) * 12;
+    if (sf.breakers.length) {
+      const spliced = sf.longestRowIn > longestStockIn + 0.5;
+      add({
+        id: "decking-breaker",
+        level: "pass",
+        part: "Decking",
+        text: `${breakerWords(sf).replace(/^a /, "A ").replace(/^two /, "Two ")}, laid out from the house (${Math.round(sf.breakerLf)} ft of board): every row of the field stops against ${sf.breakers.length === 1 ? "it" : "them"}, so the longest board in a row is ${ftIn(Math.round(sf.longestRowIn))}${spliced ? ` — still longer than a ${Math.round(longestStockIn / 12)}-ft board, so those rows are spliced over a joist${sf.breakers.length === 1 ? "; a second breaker would make every row one board" : ""}` : " and no row has a butt joint"}. Under ${sf.breakers.length === 1 ? "it" : "each"}: a joist under each row of board ends and solid blocking between the two every 16 in. (${Math.round(sf.breakerBackingIn.reduce((a, v) => a + v, 0) / 12)} ft of ${frame.joistSize} added); leave the maker's gap at the board ends against it.${sf.breakersLeftOut > 0 ? ` One of the two asked for is left out: the boards beside it would be shorter than 2 ft.` : ""}`,
+        ...(spliced && sf.breakers.length === 1 ? { fix: { label: "Two breaker boards", patch: { decking: { breakers: 2 as const } } } } : {}),
+      });
+    } else {
+      const front = design.shape.kind === "rect" ? design.shape.front : undefined;
+      add({ id: "decking-breaker-none", level: "warn", part: "Decking", text: `No breaker board is laid: ${front && front.kind !== "straight" ? "under a bowed or clipped front the rows are cut to the front's line, and a board across them is not drawn" : "the field is too narrow — the boards beside it would be shorter than 2 ft"}. It is not in the price.`, fix: { label: "Take the breaker board off", patch: { decking: { breakers: undefined } } } });
+    }
+  }
+  if (s.lower) deckFrameChecks(s.lower.frame, add, null, s.lower.place === "under" ? "Lower deck — " : "Lower level — ");
+  // A DOUBLE DECK (2026-11-13; lib/deck/structure): what the two decks on one set of posts came to.
+  if (frame && design.lower.on && design.lower.place === "under") doubleDeckChecks(s, add);
   if (roof) roofChecks(roof, design, frame, add);
   siteChecks(s, add);
   codeCheck(s, add);
@@ -196,7 +439,8 @@ function deckFrameChecks(frame: DeckFrame, addRaw: (c: DeckCheck) => void, roof:
       fix: bigger ? { label: `Use ${bigger} joists`, patch: { framing: { joist: bigger } } } : { label: "Let the studio size the joists", patch: { framing: { joist: "auto", spacingIn: "auto", overhangFt: "auto" } } },
     });
   }
-  if (design.framing.joist === "auto" && middleBeams > 0 && worstSpan <= maxSpan) {
+  // (Middle beams the builder placed are said by "deck-beams-set": the joists then land where they were put.)
+  if (design.framing.joist === "auto" && middleBeams > 0 && worstSpan <= maxSpan && frame.beamsByHand.mine === 0) {
     add({ id: "joist-middle-beam", level: "info", part: "Joists", text: `No joist in the table reaches across this deck in one span at ${frame.spacingIn} in., so ${middleBeams === 1 ? "a middle beam carries" : `${middleBeams} middle beams carry`} them.`, rule: R.joist });
   }
   for (const z of frame.zones) {
@@ -211,7 +455,7 @@ function deckFrameChecks(frame: DeckFrame, addRaw: (c: DeckCheck) => void, roof:
           part: "Joists",
           text: allowed > 0 ? `Joists run ${ftIn(cant)} past the ${where} beam; the table allows ${ftIn(allowed)} behind a ${ftIn(backSpanIn)} span.` : `The table allows no overhang for a ${frame.joistSize} behind a ${ftIn(backSpanIn)} span.`,
           rule: R.cantilever,
-          fix: { label: "Let the studio set the overhang", patch: { framing: { overhangFt: "auto" } } },
+          fix: { label: "Let the studio set the overhang", patch: { framing: { overhangFt: "auto", backOverhangFt: "auto" } } },
         });
     };
     checkCant(z.frontCantIn + frame.frontExtraCantIn, z.spansIn[z.spansIn.length - 1], front?.kind === "curve" ? "outer beam at the middle of the bow" : "outer", `joist-overhang-${z.zone.id}`);
@@ -731,19 +975,50 @@ function guardAndStairChecks(s: DeckStructure, add: (c: DeckCheck) => void): voi
   stairs.forEach((st, i) => {
     const tag = `stair-${st.design.id}`;
     const where = `${st.kind === "box" ? "Box steps" : `Stair ${i + 1}`} (${st.design.side})`;
-    if (st.flags.tooTallForBox) add({ id: `${tag}-box`, level: "fail", part: where, text: `Box steps go three risers at most; this climb is ${plural(st.risers, "riser")}. It is framed as a flight.`, rule: SR.box, fix: { label: "Make it a flight", patch: { stairs: design.stairs.map((d) => (d.id === st.design.id ? { ...d, wrap: false } : d)) } } });
+    if (st.flags.tooTallForBox) add({ id: `${tag}-box`, level: "fail", part: where, text: `Steps that wrap the deck go ${st.level === "lower" ? "three" : WRAP_STEP_MAX_RISERS} risers at most; this climb is ${plural(st.risers, "riser")}. It is framed as a flight.`, rule: SR.box, fix: { label: "Make it a flight", patch: { stairs: design.stairs.map((d) => (d.id === st.design.id ? { ...d, wrap: false } : d)) } } });
     if (st.risers === 0) {
       if (st.lands === "lower-deck") add({ id: `${tag}-step`, level: "info", part: where, text: "The lower level is one step down here: nothing to build but the riser's trim." });
       return;
     }
     add({ id: `${tag}-riser`, level: "pass", part: where, text: `${plural(st.risers, "riser")} of ${st.riserIn.toFixed(2)} in. (${inFrac(code.riserMaxIn)} at most), treads ${st.runIn + 1} in. deep with a 1-in. nosing (${code.treadMinIn} in. at least), ${st.widthIn} in. wide${st.lands === "lower-deck" ? ", landing on the lower level" : st.design.landing === "pad" ? ", onto a new pad" : st.design.landing === "patio" ? ", onto the patio" : ", onto pavers"}.`, rule: `${SR.riser} · ${SR.tread}` });
     if (st.widthIn < STAIR_MIN_WIDTH_IN) add({ id: `${tag}-width`, level: "fail", part: where, text: `${st.widthIn} in. wide: the code asks for 36 in. clear.`, rule: SR.width, fix: { label: "Make it 3 ft wide", patch: { stairs: design.stairs.map((d) => (d.id === st.design.id ? { ...d, widthFt: 3 } : d)) } } });
+    // WIDE STEPS ON STRINGERS (2026-11-14): how they stand, the handrail four risers ask for, and the two ends of a run
+    // that stops at the deck's corners on a tall deck. (Ids clear of lib/deck/settle AUTO_FIX.)
+    if (st.kind === "box" && st.wide) {
+      add({ id: `${tag}-wide`, level: "pass", part: where, text: `Past three risers the steps stand on stringers, not boxes: ${plural(st.stringers.count, "2x12 cut stringer")} ${st.stringers.spacingIn} in. apart along ${Math.round(st.wide.lengthIn / 12)} ft of the deck's edge${st.wide.hips ? `, one along the mitre at each of the ${plural(st.wide.hips, "corner")} they turn` : ""} — ${ftIn(st.stringers.lengthIn)} each, on connectors at the rim, their feet on a treated 2x6 sleeper over compacted gravel.`, rule: SR.stringer });
+      if (st.risers >= HANDRAIL_FROM_RISERS) {
+        if (st.rail.sides === 0) add({ id: `${tag}-handrail`, level: "fail", part: where, text: `${plural(st.risers, "riser")}: a graspable handrail 34 to 38 in. above the nosings is required on a stair of four risers or more — one rail down the steps is enough. ${design.rail.type === "none" ? "Choose a railing to put one on." : "None is on these steps."}`, rule: SR.handrail, fix: design.rail.type === "none" ? { label: "Add a wood railing", patch: { rail: { type: "treated" } } } : { label: "A handrail down the steps", patch: { stairs: design.stairs.map((d) => (d.id === st.design.id ? { ...d, handrail: "one" } : d)) } } });
+        else add({ id: `${tag}-handrail`, level: "pass", part: where, text: `A handrail down the steps where the stair is set along the front: two posts, the rail 36 in. above the nosings.`, rule: SR.handrail });
+      }
+      if (st.wide.openEnds && st.riseIn > GUARD_REQUIRED_ABOVE_IN) add({ id: `${tag}-ends`, level: "warn", part: where, text: `The steps stop at the deck's corners, and their two ends are open — more than 30 in. up at the top. Run them round the deck's ends as well, or close each end with a guard.`, rule: SR.guard, fix: { label: "Round the front and both ends", patch: { stairs: design.stairs.map((d) => (d.id === st.design.id ? { ...d, wrapSides: 3 } : d)) } } });
+    }
     if (st.kind === "flight") {
       add({ id: `${tag}-stringers`, level: "pass", part: where, text: `${plural(st.stringers.count, "2x12 cut stringer")} ${st.stringers.spacingIn} in. apart (${frame.decking.family === "pvc" ? "PVC treads want 10" : frame.decking.family === "composite" || frame.decking.family === "mineral" ? "composite treads want 12" : "wood treads take 16"}), ${ftIn(st.stringers.lengthIn)} each, on connectors at the rim and a treated kicker${st.pad ? " bolted to the pad" : ""}${st.midSupport ? "; a 2x8 beam on two posts midway — a cut stringer spans 6 ft at most" : ""}${st.landing ? "; a landing midway — a flight climbs 12 ft 3 in. at most" : ""}.`, rule: `${SR.stringer}${st.landing ? ` · ${SR.landing}` : ""}` });
       if (st.risers >= HANDRAIL_FROM_RISERS) {
         if (st.rail.sides === 0 && (st.rail.wanted > 0 || design.rail.type === "none")) add({ id: `${tag}-handrail`, level: "fail", part: where, text: `${plural(st.risers, "riser")}: a graspable handrail 34 to 38 in. above the nosings is required${st.guard ? ", and guards on both open sides" : ""}. ${design.rail.type === "none" ? "Choose a railing to put one on." : "None is on this stair."}`, rule: SR.handrail, fix: design.rail.type === "none" ? { label: "Add a treated-wood railing", patch: { rail: { type: "treated" } } } : { label: st.guard ? "Rails on both sides" : "A handrail on one side", patch: { stairs: design.stairs.map((d) => (d.id === st.design.id ? { ...d, handrail: st.guard ? "both" : "one" } : d)) } } });
         else if (st.guard && st.rail.sides < 2) add({ id: `${tag}-handrail`, level: "warn", part: where, text: `The stair is more than 30 in. up: both open sides want a guard, not one handrail.`, rule: SR.guard, fix: { label: "Rails on both sides", patch: { stairs: design.stairs.map((d) => (d.id === st.design.id ? { ...d, handrail: "both" } : d)) } } });
         else add({ id: `${tag}-handrail`, level: "pass", part: where, text: `${st.rail.sides === 2 ? "Rails on both sides" : "A handrail on one side"}, ${plural(st.rail.posts, "post")}, 36 in. above the nosings.`, rule: SR.handrail });
+      }
+      // THE LANDINGS (2026-11-14; lib/deck/stairs): what the way down came to — the flights, each landing on its posts —
+      // and what it must not do: turn into the house, or run back under the deck with no room to walk there.
+      if (st.landings.length) {
+        const tallest = Math.max(...st.flights.map((f) => f.riseIn));
+        add({
+          id: `${tag}-landings`,
+          level: "pass",
+          part: where,
+          text: `${plural(st.flights.length, "flight")} and ${plural(st.landings.length, "landing")}: ${st.landings.map((l) => `${ftIn(Math.round(l.heightIn))} up, ${ftIn(l.widthIn)} × ${ftIn(l.depthIn)} on ${plural(l.posts, "post")}${l.auto ? " (the code asks for it)" : `, then ${stairTurnWords(l.dir, l.turn).toLowerCase()}`}`).join("; ")}. The tallest flight climbs ${ftIn(Math.round(tallest))} (${ftIn(FLIGHT_MAX_RISE_IN)} at most); each landing is as wide as the stair and ${LANDING_DEPTH_IN} in. deep at least, on its own footings.`,
+          rule: SR.landing,
+        });
+      }
+      st.flags.landingsLeftOut.forEach((lid, k) => {
+        const asked = st.design.landings.find((l) => l.id === lid);
+        add({ id: `${tag}-landing-out-${k + 1}`, level: "info", part: where, text: `A landing asked for ${asked ? ftIn(asked.heightIn) : "there"} above the ground has no room on this stair: a landing stands a foot at least from the deck, the ground and the next landing.`, rule: SR.landing, fix: { label: "Take that landing off", patch: { stairs: design.stairs.map((d) => (d.id === st.design.id ? { ...d, landings: d.landings.filter((l) => l.id !== lid) } : d)) } } });
+      });
+      if (st.flags.hitsHouse) add({ id: `${tag}-house`, level: "fail", part: where, text: "The stair turns into the house's wall. Turn it the other way at its landing, or move the stair along the deck.", rule: SR.width });
+      if (st.flags.underDeckClearIn !== null) {
+        if (st.flags.underDeckClearIn < STAIR_HEADROOM_IN) add({ id: `${tag}-headroom`, level: "warn", part: where, text: `The stair runs back under the deck with ${ftIn(st.flags.underDeckClearIn)} over its treads to the deck's joists: ${ftIn(STAIR_HEADROOM_IN)} is wanted to walk there. Turn it the other way, or put the landing lower.`, rule: cite(code, "R311.7.2", "6 ft 8 in. of headroom over a stair") });
+        else add({ id: `${tag}-headroom`, level: "pass", part: where, text: `The stair runs back under the deck with ${ftIn(st.flags.underDeckClearIn)} over its treads to the deck's joists (${ftIn(STAIR_HEADROOM_IN)} at least).`, rule: cite(code, "R311.7.2", "6 ft 8 in. of headroom over a stair") });
       }
     } else add({ id: `${tag}-box`, level: "pass", part: where, text: `${plural(st.treads, "level")} of 2x6 box frames wrapping ${st.design.wrapSides === 4 ? "all four sides" : st.design.wrapSides === 3 ? "three sides" : "the front"}, the lowest on ${plural(st.boxBlocks, "block")} over gravel, treads of the deck's boards.`, rule: SR.box });
   });

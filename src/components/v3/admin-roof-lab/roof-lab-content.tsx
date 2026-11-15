@@ -303,7 +303,7 @@ export function RoofLabStage({ id, drawing, startView }: { id: string; drawing: 
           <img
             key={`${id}-${shown}`}
             className={r.pic}
-            src={`/api/admin/roof-lab/picture?id=${encodeURIComponent(id)}&kind=${shown}`}
+            src={`/api/admin/roof-lab/picture?id=${encodeURIComponent(id)}&kind=${shown}${shown === "photo" && drawing.photoFrom ? `&from=${drawing.photoFrom}` : ""}`}
             alt={shown === "photo" ? "Aerial photo of the roof" : "Height map of the roof, shaded"}
             onError={() => { if (shown === "photo") setPhotoFailed(true); }}
           />
@@ -440,7 +440,7 @@ export function RoofLabStage({ id, drawing, startView }: { id: string; drawing: 
                   <span className={r.letterBox}>{f.letter}</span>
                 </td>
                 <td className={r.keep}>{f.part}</td>
-                <td className={r.keep}>{f.facing ? (FACING_WORDS[f.facing] ?? f.facing) : "—"}</td>
+                <td className={r.keep}>{f.round ? "Round" : f.facing ? (FACING_WORDS[f.facing] ?? f.facing) : "—"}</td>
                 <td className={r.num}>{f.pitchLabel}</td>
                 <td className={r.num}>{whole(f.areaSqft)}</td>
                 <td className={r.num}>{(f.areaSqft / 100).toFixed(2)}</td>
@@ -509,6 +509,11 @@ export function RoofLabStage({ id, drawing, startView }: { id: string; drawing: 
               : `EagleView's outline was moved ${Math.abs(model.shiftFt.east)} ft ${model.shiftFt.east >= 0 ? "east" : "west"} and ${Math.abs(model.shiftFt.north)} ft ${model.shiftFt.north >= 0 ? "north" : "south"} to sit on Google's height map. `}
             Imagery: {drawing.imagery.quality ?? "unknown quality"}
             {drawing.imagery.date ? `, flown ${drawing.imagery.date}` : ""}.
+            {drawing.photoFrom === "eagleview"
+              ? ` The aerial photo is EagleView's own${drawing.photoDate ? `, flown ${drawing.photoDate}` : ""} (2 in a pixel), lined up with the height map.`
+              : drawing.photoFrom === "google"
+                ? " The aerial photo is Google's."
+                : ""}
           </p>
         </div>
       </div>

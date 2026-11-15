@@ -22,9 +22,45 @@
 //
 // Three sizes: small in the House step, large in the viewer's "House & deck"
 // view (zoom and pan there), and full screen over the page.
+//
+// THE DECK'S OWN EDGES, THE SAME WAY (2026-11-14 — owner: "make the front and
+// the sides of the deck reshape with the toggles in and out like the back wall
+// works… move it any shape I want. And make it smart"). The front edge pulled
+// out or pushed in anywhere: a section comes with the hand — a bay, a notch.
+// A side pushed in: from where it was grabbed to the front the deck stops
+// short, the corner comes off square; grabbed by the house, or pulled out, the
+// whole end moves. Every part of the front has its own handle, every step in
+// it a round one that slides along the deck, every corner that stands out a
+// diamond that cuts it at an angle. All of it is lib/deck/frontByHand: each
+// move ends on a front set part by part, which the engine already builds.
+//
+// THE WALL LOCKED (2026-11-14 — owner: "when the wall is set or built from a
+// picture, lock it: only the deck works around it… make a visible button on
+// the 3D and on the drawing to lock and unlock it"). Locked (house.locked),
+// the wall's grips, steps and ends are not drawn and a drag on the wall moves
+// nothing — the pad says the wall is locked, with Unlock beside it. The deck
+// still slides and grows; pulled past the wall's end it runs on past the
+// house's corner (lib/deck/house lockedEnd), the house stays where it is.
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { DECK_LIMITS, shapeOutline, type DeckShape } from "@/lib/deck/design";
+import {
+  FRONT_HAND,
+  clipFrontCorner,
+  cutSideAt,
+  frontCorners,
+  frontIsShaped,
+  frontPartWords,
+  frontSpecs,
+  frontWhyWords,
+  levelFrontPart,
+  moveFrontPart,
+  moveFrontStep,
+  pullFrontAt,
+  removeFrontStep,
+  resizeFrontEnd,
+  straightFront,
+} from "@/lib/deck/frontByHand";
 import {
   HOUSE_LIMITS,
   addStepAt,
@@ -35,6 +71,7 @@ import {
   pullSectionAt,
   referencePartIndex,
   setSectionDepth,
+  settleOpenings,
   resizeDeckLeft,
   shiftWallPart,
   slideDeck,
@@ -60,16 +97,25 @@ export interface WallChange {
 }
 
 /** What is picked on the drawing. A part carries the wall's part count: when a step merges away the pick lapses. */
-export type WallPick = { kind: "part"; index: number; n: number } | { kind: "jog"; id: string } | { kind: "end"; side: "left" | "right" } | { kind: "deck" };
+export type WallPick =
+  | { kind: "part"; index: number; n: number }
+  | { kind: "jog"; id: string }
+  | { kind: "end"; side: "left" | "right" }
+  | { kind: "deck" }
+  /** A part of the deck's front, and a step between two of them (2026-11-14) — each carries the front's part count, as a wall part does. */
+  | { kind: "front"; index: number; n: number }
+  | { kind: "fstep"; index: number; n: number };
 function samePick(a: WallPick | null, b: WallPick | null): boolean {
   if (!a || !b || a.kind !== b.kind) return false;
   if (a.kind === "part" && b.kind === "part") return a.index === b.index && a.n === b.n;
   if (a.kind === "jog" && b.kind === "jog") return a.id === b.id;
   if (a.kind === "end" && b.kind === "end") return a.side === b.side;
+  if ((a.kind === "front" && b.kind === "front") || (a.kind === "fstep" && b.kind === "fstep")) return a.index === b.index && a.n === b.n;
   return a.kind === "deck";
 }
 
-type DragKind = "jog" | "left" | "right" | "part" | "deck-right" | "deck-left" | "deck-front" | "deck-slide" | "pan";
+type DragKind = "jog" | "left" | "right" | "part" | "deck-right" | "deck-left" | "deck-front" | "deck-slide" | "pan" | "front-part" | "front-pull" | "front-step" | "side-left" | "side-right" | "corner";
+const sameShape = (a: DeckShape, b: DeckShape) => a === b || JSON.stringify(a) === JSON.stringify(b);
 interface Drag {
   kind: DragKind;
   id?: string;
@@ -90,6 +136,12 @@ interface Drag {
   axis: "x" | "y" | null;
   /** The house line pulled out or pushed in where it was grabbed: the section that made, followed to the end of the drag. */
   section?: WallSection;
+  /** The deck's own edges (2026-11-14): the front part or step grabbed; a corner's part, end and cut at the start; a step's place at the start; a side grabbed by the house (the whole end moves). */
+  index?: number;
+  side?: "left" | "right";
+  at0?: number;
+  clip0?: number;
+  byHouse?: boolean;
   before: { house: HouseDesign; shape: DeckShape };
   pan0: { x: number; y: number };
 }
@@ -108,12 +160,24 @@ type PadAction =
   | { kind: "deck-width"; by: number }
   | { kind: "deck-depth"; by: number }
   | { kind: "add-step"; atFt: number }
-  | { kind: "straight" };
+  | { kind: "straight" }
+  | { kind: "front-move"; index: number; by: number }
+  | { kind: "front-level"; index: number }
+  | { kind: "front-step"; index: number; by: number }
+  | { kind: "front-step-remove"; index: number }
+  /** `by` 0 makes the corner square again. */
+  | { kind: "front-clip"; index: number; side: "left" | "right"; by: number }
+  | { kind: "front-straight" };
+
+/** The pad's actions that change the house wall itself — none of them run while the wall is locked. */
+const WALL_ACTIONS: ReadonlySet<PadAction["kind"]> = new Set<PadAction["kind"]>(["part-move", "part-shift", "part-level", "jog-move", "jog-depth", "jog-flip", "jog-remove", "end", "add-step", "straight"]);
 
 function perform(a: PadAction, house: HouseDesign, shape: DeckShape): WallChange | null {
+  if (house.locked && WALL_ACTIONS.has(a.kind)) return null;
   const W = shape.widthFt;
   const D = shape.depthFt;
   const jog = (id: string) => house.jogs.find((j) => j.id === id);
+  const changed = (next: DeckShape): WallChange | null => (sameShape(next, shape) ? null : { shape: next });
   switch (a.kind) {
     case "part-move": {
       const h = moveWallPart(house, shape, a.index, a.by);
@@ -167,6 +231,24 @@ function perform(a: PadAction, house: HouseDesign, shape: DeckShape): WallChange
     }
     case "straight":
       return house.jogs.length ? { house: { ...house, jogs: [] } } : null;
+    case "front-move":
+      return changed(moveFrontPart(shape, a.index, a.by));
+    case "front-level":
+      return changed(levelFrontPart(shape, a.index));
+    case "front-step": {
+      const at = frontSpecs(shape).slice(0, a.index + 1).reduce((t, q) => t + q.widthFt, 0);
+      return changed(moveFrontStep(shape, a.index, at + a.by));
+    }
+    case "front-step-remove":
+      return changed(removeFrontStep(shape, a.index));
+    case "front-clip": {
+      const q = frontSpecs(shape)[a.index];
+      const now = (a.side === "left" ? q?.clipLeftFt : q?.clipRightFt) ?? 0;
+      // (A cut starts at a foot: half a foot of angle is no corner a saw makes.)
+      return changed(clipFrontCorner(shape, a.index, a.side, a.by === 0 ? 0 : now === 0 ? 1 : now + a.by));
+    }
+    case "front-straight":
+      return changed(straightFront(shape));
     default:
       return null;
   }
@@ -191,9 +273,10 @@ function PadBtn({ label, action, disabled, primary, hold, test, onRun, onHoldSta
   );
 }
 
-export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLarge, doorFloor }: { shape: DeckShape; house: HouseDesign; onChange: (next: WallChange) => void; size?: "small" | "large"; onOpenLarge?: () => void; /** Which floor a door is on against the deck (2026-11-13): a door under a second-storey deck reads "door below". */ doorFloor?: (o: NonNullable<HouseDesign["openings"]>[number]) => "below" | "deck" | "above" }) {
+export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLarge, doorFloor, deckName = "the deck" }: { shape: DeckShape; house: HouseDesign; onChange: (next: WallChange) => void; size?: "small" | "large"; onOpenLarge?: () => void; /** What the deck is called on the drawing (a double deck's: "the upper deck", "the lower deck"). */ deckName?: string; /** Which floor a door is on against the deck (2026-11-13): a door under a second-storey deck reads "door below". */ doorFloor?: (o: NonNullable<HouseDesign["openings"]>[number]) => "below" | "deck" | "above" }) {
   const [full, setFull] = React.useState(false);
   const roomy = size === "large" || full;
+  const wallLocked = !!house.locked;
   const W = shape.widthFt;
   const D = shape.depthFt;
   const parts = wallParts(house, shape);
@@ -250,7 +333,7 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
   // against the house — its left end pulled, the deck slid along the wall — the view moves with the origin by as much
   // as the deck moved, and the house (or, at the house's end, the house's end with the deck's) stays under the hand.
   const [held, setHeld] = React.useState<{ view: typeof view; kind: DragKind; widthFt: number; leftFt: number; pick: WallPick | null } | null>(null);
-  const shown = held ? { ...held.view, x: held.view.x + (held.kind === "deck-left" ? W - held.widthFt : held.kind === "deck-slide" ? held.leftFt - house.leftFt : 0) } : view;
+  const shown = held ? { ...held.view, x: held.view.x + (held.kind === "deck-left" || held.kind === "side-left" ? W - held.widthFt : held.kind === "deck-slide" ? held.leftFt - house.leftFt : 0) } : view;
   // The type and the handles keep their size on screen when zoomed: zooming in makes room, not bigger letters.
   const font = font0 / z;
   const handleR = handle0 / z;
@@ -267,6 +350,10 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
     if (pick.kind === "jog") {
       const j = house.jogs.find((k) => k.id === pick.id);
       return j ? { x: j.atFt, y: depthAt(j.atFt) } : null;
+    }
+    if (pick.kind === "front" || pick.kind === "fstep") {
+      const q = pick.n === fparts.length ? fparts[pick.index] : undefined;
+      return q ? { x: pick.kind === "front" ? q.mid : q.x1, y: q.y } : null;
     }
     const x = pick.side === "left" ? xMin : xMax;
     return { x, y: depthAt(pick.side === "left" ? x + 0.01 : x - 0.01) };
@@ -329,6 +416,31 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
   const deepestIn = (a: number, b: number) => Math.max(0, ...parts.filter((p) => p.x1 > a && p.x0 < b).map((p) => p.depthFt));
   const deckMidY = D / 2;
   const gridId = React.useId().replace(/:/g, "");
+  // THE DECK'S FRONT, PART BY PART (lib/deck/frontByHand): where each part's front stands, and the corners that stand out.
+  const fspecs = frontSpecs(shape);
+  const fparts = fspecs.map((q, i) => {
+    const x0 = fspecs.slice(0, i).reduce((t, o) => t + o.widthFt, 0);
+    const cl = q.clipLeftFt ?? 0;
+    const cr = q.clipRightFt ?? 0;
+    // `mid`: the middle of what is left of the part's straight front between its corners' cuts — where its handle and
+    // its words go (the middle of a part with a 6-ft cut corner is out in the yard).
+    return { i, x0, x1: x0 + q.widthFt, y: q.yFt, cl, cr, mid: (x0 + cl + x0 + q.widthFt - cr) / 2, straight: q.widthFt - cl - cr };
+  });
+  /** More than one part: each has its own handle and its own words (one straight front is the deck's depth). */
+  const shaped = fparts.length > 1;
+  const bowed = shape.kind === "rect" && shape.front?.kind === "curve";
+  const corners = bowed ? [] : frontCorners(shape).filter((k) => k.out);
+  /** A side of the deck as it is drawn: from where it leaves the house to the front corner (or to where that corner's cut begins). */
+  const sideOf = (x: number) => {
+    const ys = outline.filter((pt) => Math.abs(pt.x - x) < 0.01).map((pt) => pt.y);
+    return ys.length >= 2 ? { y0: Math.min(...ys), y1: Math.max(...ys) } : null;
+  };
+  const sideLeft = sideOf(0);
+  const sideRight = sideOf(W);
+  /** Where an end's handle sits: half way along that side as it is drawn (an end part that stops short has a short side). */
+  const endMidY = (side: { y0: number; y1: number } | null) => (side ? (side.y0 + side.y1) / 2 : deckMidY);
+  const frontPick = (i: number): WallPick => (shaped ? { kind: "front", index: i, n: fparts.length } : { kind: "deck" });
+  const stepPick = (i: number): WallPick => ({ kind: "fstep", index: i, n: fparts.length });
 
   const [pick, setPick] = React.useState<WallPick | null>(null);
   /** A word on a drag that could not do what it was asked (no steps left, no room). */
@@ -431,13 +543,25 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
     const oy = rect.top + (rect.height - vb.h * k) / 2;
     return { x: vb.x + (clientX - ox) / k, y: vb.y + (clientY - oy) / k, k };
   };
-  const start = (e: React.PointerEvent<SVGElement>, kind: DragKind, pickHere: WallPick | null, extra: { id?: string; part?: number } = {}) => {
+  const start = (e: React.PointerEvent<SVGElement>, kind: DragKind, pickHere: WallPick | null, extra: { id?: string; part?: number; index?: number; side?: "left" | "right"; at0?: number; clip0?: number; sideBack?: number } = {}) => {
     const svg = svgRef.current;
     if (!svg || e.button !== 0) return;
+    // A LOCKED WALL is not dragged: the touch picks it, and the pad says it is locked (with Unlock).
+    if (wallLocked && (kind === "part" || kind === "jog" || kind === "left" || kind === "right")) {
+      if (pickHere) setPick(pickHere);
+      setNotice(null);
+      e.preventDefault();
+      return;
+    }
     const rect = svg.getBoundingClientRect();
     const vb = { ...view };
     const f = feetAt(rect, vb, e.clientX, e.clientY);
-    drag.current = { kind, id: extra.id, part: extra.part, parts: parts.length, rect, vb, x0: e.clientX, y0: e.clientY, fx0: f.x, fy0: f.y, appliedX: 0, appliedY: 0, moved: false, axis: null, before: { house, shape }, pan0: { x: px, y: py } };
+    drag.current = {
+      kind, id: extra.id, part: extra.part, parts: parts.length, rect, vb, x0: e.clientX, y0: e.clientY, fx0: f.x, fy0: f.y, appliedX: 0, appliedY: 0, moved: false, axis: null, before: { house, shape }, pan0: { x: px, y: py },
+      index: extra.index, side: extra.side, at0: extra.at0, clip0: extra.clip0,
+      // A side grabbed by the house moves the deck's whole end: that stretch hangs on the wall, there is no corner to take off.
+      byHouse: extra.sideBack !== undefined && f.y - extra.sideBack < FRONT_HAND.byHouseFt,
+    };
     if (pickHere) setPick(pickHere);
     setNotice(null);
     if (kind !== "pan") setHeld({ view: vb, kind, widthFt: W, leftFt: house.leftFt, pick });
@@ -534,8 +658,9 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
       // The deck's left end is the drawing's origin: as it moves, the house (and the pointer's frame, held from the
       // start) shifts under it — so the width is taken from where the drag began, not from the width of the moment
       // (that fed back on itself: the deck ran away at a foot a frame — owner, 2026-10-24: "it slides so fast").
+      // (A front in parts: the LEFT part takes the change — the others stay where they are against the house.)
       const next = resizeDeckLeft(house, shape, half(d.before.shape.widthFt - (p.x - d.fx0)), DECK_LIMITS.widthFt.min, DECK_LIMITS.widthFt.max);
-      if (next.shape !== shape) onChange(next);
+      if (next.shape !== shape) onChange({ house: next.house, shape: resizeFrontEnd(shape, "left", next.shape.widthFt) });
     } else if (d.kind === "deck-slide") {
       // The deck slides by how far it was pulled, wherever it was grabbed.
       const want = half(p.x - d.fx0);
@@ -545,6 +670,64 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
         if (next !== house) onChange({ house: next });
         d.appliedX = want;
       }
+    } else if (d.kind === "front-part" && d.index !== undefined) {
+      // THE DECK'S OWN EDGES (2026-11-14). Every one of these is worked from the shape the drag BEGAN on and how far
+      // the hand has gone since (lib/deck/frontByHand) — nothing drifts, and a hand brought back leaves the deck as it was.
+      const want = half(p.y - d.fy0);
+      if (want === d.appliedY) return;
+      d.appliedY = want;
+      const next = moveFrontPart(d.before.shape, d.index, want);
+      if (!sameShape(next, shape)) onChange({ shape: next });
+    } else if (d.kind === "front-pull") {
+      // The front edge pulled out or pushed in where it was grabbed: a section comes with the hand — a bay, a notch.
+      const want = half(p.y - d.fy0);
+      if (want === d.appliedY) return;
+      d.appliedY = want;
+      const made = pullFrontAt(d.before.shape, d.fx0, want);
+      if ("why" in made) {
+        setNotice(frontWhyWords(made.why));
+        return;
+      }
+      setNotice(null);
+      if (!sameShape(made.shape, shape)) onChange({ shape: made.shape });
+    } else if (d.kind === "front-step" && d.index !== undefined && d.at0 !== undefined) {
+      const next = moveFrontStep(d.before.shape, d.index, d.at0 + (p.x - d.fx0));
+      if (!sameShape(next, shape)) onChange({ shape: next });
+    } else if (d.kind === "side-left" || d.kind === "side-right") {
+      // A SIDE: pushed in away from the house, the corner comes off square from where it was grabbed to the front;
+      // grabbed by the house, or pulled outward, the deck's whole end moves (the house stays put).
+      const left = d.kind === "side-left";
+      const inn = half(left ? p.x - d.fx0 : d.fx0 - p.x);
+      if (inn === d.appliedX) return;
+      d.appliedX = inn;
+      const B = d.before;
+      let next: { house: HouseDesign; shape: DeckShape };
+      if (d.byHouse || inn <= 0) {
+        const w = clamp(half(B.shape.widthFt - inn), DECK_LIMITS.widthFt.min, DECK_LIMITS.widthFt.max);
+        const ended = left ? resizeDeckLeft(B.house, B.shape, w, DECK_LIMITS.widthFt.min, DECK_LIMITS.widthFt.max) : { house: B.house, shape: { ...B.shape, widthFt: w } };
+        next = { house: ended.house, shape: resizeFrontEnd(B.shape, left ? "left" : "right", ended.shape.widthFt) };
+        setNotice(null);
+      } else {
+        const cut = cutSideAt(B.shape, left ? "left" : "right", d.fy0, inn);
+        if ("why" in cut) {
+          setNotice(frontWhyWords(cut.why));
+          return;
+        }
+        setNotice(null);
+        next = { house: B.house, shape: cut.shape };
+      }
+      const houseMoved = next.house !== house && JSON.stringify(next.house) !== JSON.stringify(house);
+      if (houseMoved || !sameShape(next.shape, shape)) onChange({ ...(houseMoved ? { house: next.house } : {}), shape: next.shape });
+    } else if (d.kind === "corner" && d.index !== undefined && d.side) {
+      // A corner pulled toward the deck, along the front or back along the side: cut at an angle by that much.
+      const inX = d.side === "left" ? p.x - d.fx0 : d.fx0 - p.x;
+      const c = Math.max(0, half((d.clip0 ?? 0) + Math.max(inX, d.fy0 - p.y)));
+      // (appliedY marks that a cut has been sent: the first move always is.)
+      if (d.appliedY === 1 && c === d.appliedX) return;
+      d.appliedX = c;
+      d.appliedY = 1;
+      const next = clipFrontCorner(d.before.shape, d.index, d.side, c);
+      if (!sameShape(next, shape)) onChange({ shape: next });
     }
   };
   const up = () => {
@@ -554,6 +737,7 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
     if (d && d.kind === "pan" && !d.moved) setPick(null);
   };
   const key = (e: React.KeyboardEvent<SVGElement>, a: WallPick) => {
+    if (wallLocked && (a.kind === "part" || a.kind === "jog" || a.kind === "end") && e.key !== "Escape") return;
     if (e.key === "Escape") {
       if (pick) {
         e.stopPropagation();
@@ -576,6 +760,11 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
     } else if (a.kind === "deck") {
       if (L || R) act = { kind: "deck-slide", by: R ? by : -by };
       else if (U || Dn) act = { kind: "deck-depth", by: Dn ? by : -by };
+    } else if (a.kind === "front") {
+      if (U || Dn) act = { kind: "front-move", index: a.index, by: Dn ? by : -by };
+    } else if (a.kind === "fstep") {
+      if (L || R) act = { kind: "front-step", index: a.index, by: R ? by : -by };
+      else if (e.key === "Delete" || e.key === "Backspace") act = { kind: "front-step-remove", index: a.index };
     }
     if (act) {
       e.preventDefault();
@@ -589,7 +778,7 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
     if (which === "right" && (L || R)) ch = perform({ kind: "deck-width", by: R ? by : -by }, house, shape);
     else if (which === "left" && (L || R)) {
       const next = resizeDeckLeft(house, shape, W + (L ? by : -by), DECK_LIMITS.widthFt.min, DECK_LIMITS.widthFt.max);
-      ch = next.shape !== shape ? next : null;
+      ch = next.shape !== shape ? { house: next.house, shape: resizeFrontEnd(shape, "left", next.shape.widthFt) } : null;
     } else if (which === "front" && (U || Dn)) ch = perform({ kind: "deck-depth", by: Dn ? by : -by }, house, shape);
     else if (e.key === "Escape" && pick) {
       e.stopPropagation();
@@ -604,7 +793,8 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
 
   /* ── what the pad shows ── */
   const fit = deckShapeForHouse(shape, house);
-  const fixes = fit.note ? wallFixes(shape, house, LIMITS) : [];
+  // (A locked wall: only the fixes that leave the wall as it is.)
+  const fixes = fit.note ? wallFixes(shape, house, LIMITS).filter((f) => !wallLocked || !f.house || JSON.stringify({ ...f.house, locked: true }) === JSON.stringify({ ...house, locked: true })) : [];
   const partPick = (a: number): WallPick => ({ kind: "part", index: a, n: parts.length });
   const hovered = (a: WallPick) => samePick(hover, a);
   const picked = (a: WallPick) => samePick(pick, a);
@@ -618,7 +808,20 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
     <PadBtn key={`${a.kind}:${label}`} label={label} action={a} disabled={opts.disabled} primary={opts.primary} hold={opts.hold !== false} test={opts.test} onRun={run} onHoldStart={holdStart} onHoldStop={holdStop} />
   );
   let padBody: React.ReactNode;
-  if (pickedPart) {
+  const lockToggle = (
+    <button type="button" className={cx(s.wallPadBtn, s.wallLockBtn, wallLocked && s.wallLockOn, !wallLocked && house.jogs.length > 0 && s.wallPadBtnPrimary)} onClick={() => { remember(house, shape); onChange({ house: { ...house, locked: !wallLocked } }); }} aria-pressed={wallLocked} data-deck-wall-lock-btn={wallLocked ? "locked" : "open"}>
+      {wallLocked ? "🔒 Wall locked — unlock" : "🔓 Lock the wall"}
+    </button>
+  );
+  if (wallLocked && padPick && (padPick.kind === "part" || padPick.kind === "jog" || padPick.kind === "end")) {
+    padBody = (
+      <>
+        <span className={s.wallPadTitle} data-deck-wall-picked="locked">🔒 The house wall is locked</span>
+        <span className={s.wallPadHint}>{house.photo ? "It stands as the photo showed it. " : ""}Nothing dragged moves it: the deck moves and grows around it, and pulled past the wall&apos;s end it runs on past the house&apos;s corner. To change the wall, unlock it.</span>
+        {lockToggle}
+      </>
+    );
+  } else if (pickedPart) {
     const { index, part } = pickedPart;
     const locked = index === refIdx;
     padBody = (
@@ -654,20 +857,58 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
         {padBtn(padPick.side === "left" ? "Narrower ▶" : "Wider ▶", { kind: "end", side: padPick.side, by: padPick.side === "left" ? -0.5 : 0.5 })}
       </>
     );
-  } else if (padPick?.kind === "deck") {
+  } else if (padPick?.kind === "front" && padPick.n === fparts.length && fspecs[padPick.index]) {
+    const i = padPick.index;
+    const q = fspecs[i];
+    const canCut = (side: "left" | "right") => corners.some((k) => k.part === i && k.side === side);
     padBody = (
       <>
-        <span className={s.wallPadTitle} data-deck-wall-picked="deck">The deck · {ft(W)} × {ft(D)}</span>
+        <span className={s.wallPadTitle} data-deck-wall-picked="front">Front part {i + 1} of {fparts.length} · {frontPartWords(q)}</span>
+        {padBtn("▲ In 6 in.", { kind: "front-move", index: i, by: -0.5 })}
+        {padBtn("▼ Out 6 in.", { kind: "front-move", index: i, by: 0.5 })}
+        {canCut("left") ? padBtn(q.clipLeftFt ? "Left corner cut + 6 in." : "Cut the left corner", { kind: "front-clip", index: i, side: "left", by: 0.5 }, { test: "front-clip-left" }) : null}
+        {q.clipLeftFt ? padBtn("Left corner square", { kind: "front-clip", index: i, side: "left", by: 0 }, { hold: false, test: "front-square-left" }) : null}
+        {canCut("right") ? padBtn(q.clipRightFt ? "Right corner cut + 6 in." : "Cut the right corner", { kind: "front-clip", index: i, side: "right", by: 0.5 }, { test: "front-clip-right" }) : null}
+        {q.clipRightFt ? padBtn("Right corner square", { kind: "front-clip", index: i, side: "right", by: 0 }, { hold: false, test: "front-square-right" }) : null}
+        {padBtn("Level with the part beside it", { kind: "front-level", index: i }, { hold: false })}
+      </>
+    );
+  } else if (padPick?.kind === "fstep" && padPick.n === fparts.length && fparts[padPick.index + 1]) {
+    const i = padPick.index;
+    const a = fparts[i];
+    const b = fparts[i + 1];
+    padBody = (
+      <>
+        <span className={s.wallPadTitle} data-deck-wall-picked="fstep">Step in the deck&apos;s front at {ft(a.x1)} · {ft(a.y)} out on its left, {ft(b.y)} on its right</span>
+        {padBtn("◀ Left 6 in.", { kind: "front-step", index: i, by: -0.5 })}
+        {padBtn("Right 6 in. ▶", { kind: "front-step", index: i, by: 0.5 })}
+        {padBtn("Remove this step", { kind: "front-step-remove", index: i }, { hold: false })}
+      </>
+    );
+  } else if (padPick?.kind === "deck") {
+    const one = !shaped && !bowed ? fspecs[0] : null;
+    padBody = (
+      <>
+        <span className={s.wallPadTitle} data-deck-wall-picked="deck">{deckName.charAt(0).toUpperCase() + deckName.slice(1)} · {ft(W)} × {ft(D)}{shaped ? ` · its front in ${fparts.length} parts` : ""}</span>
         {padBtn("◀ Slide left", { kind: "deck-slide", by: -0.5 })}
         {padBtn("Slide right ▶", { kind: "deck-slide", by: 0.5 })}
         {padBtn("Wider + 6 in.", { kind: "deck-width", by: 0.5 })}
         {padBtn("Narrower − 6 in.", { kind: "deck-width", by: -0.5 })}
         {padBtn("Deeper + 6 in.", { kind: "deck-depth", by: 0.5 })}
         {padBtn("Shallower − 6 in.", { kind: "deck-depth", by: -0.5 })}
+        {one && corners.some((k) => k.side === "left") ? padBtn(one.clipLeftFt ? "Left corner cut + 6 in." : "Cut the left corner", { kind: "front-clip", index: 0, side: "left", by: 0.5 }, { test: "front-clip-left" }) : null}
+        {one?.clipLeftFt ? padBtn("Left corner square", { kind: "front-clip", index: 0, side: "left", by: 0 }, { hold: false, test: "front-square-left" }) : null}
+        {one && corners.some((k) => k.side === "right") ? padBtn(one.clipRightFt ? "Right corner cut + 6 in." : "Cut the right corner", { kind: "front-clip", index: 0, side: "right", by: 0.5 }, { test: "front-clip-right" }) : null}
+        {one?.clipRightFt ? padBtn("Right corner square", { kind: "front-clip", index: 0, side: "right", by: 0 }, { hold: false, test: "front-square-right" }) : null}
+        <span className={s.wallPadHint}>Drag the deck&apos;s front edge in or out anywhere: a bay or a notch comes with you. Push a side in and that corner comes off square; pull a corner&apos;s ◆ to cut it at an angle.</span>
       </>
     );
   } else {
-    padBody = <span className={s.wallPadHint} data-deck-wall-picked="none">Drag the wall in or out anywhere to shape the house — a bump-out or a nook comes with you. Or tap a part, a step, a house end or the deck and move it with these buttons (hold to keep going) or the arrow keys.</span>;
+    padBody = (
+      <span className={s.wallPadHint} data-deck-wall-picked="none">
+        Drag the wall in or out anywhere to shape the house — a bump-out or a nook comes with you. The deck the same: drag its front edge in or out anywhere for a bay or a notch, push a side in to take a corner off, pull a corner&apos;s ◆ to cut it at an angle. Or tap a part, a step, a house end or the deck and move it with these buttons (hold to keep going) or the arrow keys.
+      </span>
+    );
   }
 
   const strip = (p: WallPart, i: number) => {
@@ -754,8 +995,34 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
         data-deck-wall-deck
       />
       <polyline points={pts.join(" ")} className={s.wallLine} pointerEvents="none" />
+      {/* THE DECK'S OWN EDGES (2026-11-14): the front in or out anywhere, a side pushed in, a step slid along — a wide strip over each edge takes the hand. */}
+      {bowed
+        ? null
+        : fparts.map((q) => (
+            <line key={`fe${q.i}`} x1={q.x0 + q.cl} x2={q.x1 - q.cr} y1={q.y} y2={q.y} strokeWidth={handleR * 1.5} className={cx(s.wallEdge, shaped && picked(frontPick(q.i)) && s.wallEdgeOn)} onPointerDown={(e) => start(e, "front-pull", frontPick(q.i))} data-deck-front-edge={q.i} aria-hidden="true">
+              <title>Drag the front in or out here: a bay or a notch comes with you</title>
+            </line>
+          ))}
+      {fparts.slice(0, -1).map((q, i) => {
+        const nx = fparts[i + 1];
+        return (
+          <line key={`fs${i}`} x1={q.x1} x2={q.x1} y1={Math.min(q.y, nx.y)} y2={Math.max(q.y, nx.y)} strokeWidth={handleR * 1.5} className={cx(s.wallEdgeSide, picked(stepPick(i)) && s.wallEdgeOn)} onPointerDown={(e) => start(e, "front-step", stepPick(i), { index: i, at0: q.x1 })} data-deck-front-step-edge={i} aria-hidden="true">
+            <title>Drag this step along the deck</title>
+          </line>
+        );
+      })}
+      {sideLeft ? (
+        <line x1={0} x2={0} y1={sideLeft.y0} y2={sideLeft.y1} strokeWidth={handleR * 1.5} className={s.wallEdgeSide} onPointerDown={(e) => start(e, "side-left", { kind: "deck" }, { sideBack: sideLeft.y0 })} data-deck-side-edge="left" aria-hidden="true">
+          <title>Push this side in to take the corner off — by the house, or pulled out, the deck&apos;s whole end moves</title>
+        </line>
+      ) : null}
+      {sideRight ? (
+        <line x1={W} x2={W} y1={sideRight.y0} y2={sideRight.y1} strokeWidth={handleR * 1.5} className={s.wallEdgeSide} onPointerDown={(e) => start(e, "side-right", { kind: "deck" }, { sideBack: sideRight.y0 })} data-deck-side-edge="right" aria-hidden="true">
+          <title>Push this side in to take the corner off — by the house, or pulled out, the deck&apos;s whole end moves</title>
+        </line>
+      ) : null}
       {/* The doors and the ground-floor windows where the photo showed them, on the wall line. */}
-      {(house.openings ?? [])
+      {settleOpenings(house.openings ?? [])
         .filter((o) => o.kind !== "window" || o.sillFt < 8)
         .map((o) => {
           const face = faceAt(o.xFt);
@@ -771,7 +1038,7 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
           );
         })}
       {/* The words on the drawing: the house, each part's width and depth, the deck and its two dimensions, the wall's reach past the deck. */}
-      <text x={(xMin + xMax) / 2} y={Math.min(0, ...depths) - font * 3.6} fontSize={font} textAnchor="middle" className={s.wallLabel}>the house</text>
+      <text x={(xMin + xMax) / 2} y={Math.min(0, ...depths) - font * 3.6} fontSize={font} textAnchor="middle" className={s.wallLabel}>{wallLocked ? "🔒 the house · wall locked" : "the house"}</text>
       {parts.map((p, i) => {
         const mid = (p.x0 + p.x1) / 2;
         const depthWord = Math.abs(p.depthFt) < 0.01 ? (i === refIdx ? "house line" : "level") : `${p.depthFt > 0 ? "out" : "back"} ${ft(Math.abs(p.depthFt))}`;
@@ -787,8 +1054,26 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
       })}
       {house.leftFt >= 1.5 ? dim(xMin, 0, deepestIn(xMin, 0) + font * 1.6, `${ft(house.leftFt)} past`, "left") : null}
       {house.rightFt >= 1.5 ? dim(W, xMax, deepestIn(W, xMax) + font * 1.6, `${ft(house.rightFt)} past`, "right") : null}
-      <text x={W / 2} y={deckMidY - font * 0.3} fontSize={font} textAnchor="middle" className={s.wallLabel}>the deck</text>
+      <text x={W / 2} y={deckMidY - font * 0.3} fontSize={font} textAnchor="middle" className={s.wallLabel}>{deckName}</text>
       <text x={W / 2} y={deckMidY + font * 1.1} fontSize={font * 0.9} textAnchor="middle" className={s.wallNote}>{ft(W)} × {ft(D)}</text>
+      {shaped
+        ? fparts.map((q) => {
+            const wide = q.x1 - q.x0;
+            const out = `out ${ft(q.y)}`;
+            const need = Math.max(ft(wide).length * 0.54, out.length * 0.492) * font + font * 0.3;
+            const mid = q.mid;
+            const base = q.y - sq - font * 0.55;
+            // Not where it is too narrow for the words (a front mostly cut away at its corners has no room for them
+            // inside the deck), nor over "the deck" and its size in the middle.
+            if (q.straight < need || (Math.abs(mid - W / 2) < need / 2 + font * 4 && base - font * 2 < deckMidY + font * 2.9 && base > deckMidY - font * 1.4)) return null;
+            return (
+              <g key={`ft${q.i}`} className={s.wallPartText} data-deck-front-label={q.i}>
+                <text x={mid} y={base - font * 1.05} fontSize={font * 0.82} textAnchor="middle">{ft(wide)}</text>
+                <text x={mid} y={base} fontSize={font * 0.8} textAnchor="middle" className={s.wallNote}>{out}</text>
+              </g>
+            );
+          })
+        : null}
       {dim(0, W, D + font * 1.1, ft(W), "width")}
       <g className={s.wallDim} data-deck-wall-dim="depth">
         <line x1={depthX} y1={0} x2={depthX} y2={D} />
@@ -796,8 +1081,8 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
         <line x1={depthX - font * 0.45} y1={D} x2={depthX + font * 0.45} y2={D} />
         <text x={depthOnRight ? depthX + font * 0.5 : depthX - font * 0.5} y={D / 2 + font * 0.35} fontSize={font * 0.9} textAnchor={depthOnRight ? "start" : "end"} className={s.wallDimText}>{ft(D)}</text>
       </g>
-      {/* The wall's parts: a grip on each, the part the deck stands on marked as the house line. */}
-      {parts.map((p, i) => {
+      {/* The wall's parts: a grip on each, the part the deck stands on marked as the house line. (None while the wall is locked.) */}
+      {(wallLocked ? [] : parts).map((p, i) => {
         const w = clamp((p.x1 - p.x0) * 0.45, 1 / z, (roomy ? 2 : 2.6) / z);
         const cxp = (p.x0 + p.x1) / 2;
         const locked = i === refIdx;
@@ -809,7 +1094,7 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
         );
       })}
       {/* The steps: each drags sideways. */}
-      {house.jogs.map((j) => {
+      {(wallLocked ? [] : house.jogs).map((j) => {
         const y = Math.max(depthAt(j.atFt - 0.01), depthAt(j.atFt + 0.01));
         const a: WallPick = { kind: "jog", id: j.id };
         return (
@@ -819,7 +1104,7 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
         );
       })}
       {/* The house's two ends: wider or narrower. */}
-      {(["left", "right"] as const).map((side) => {
+      {(wallLocked ? [] : (["left", "right"] as const)).map((side) => {
         const x = side === "left" ? xMin : xMax;
         const y = depthAt(side === "left" ? x + 0.01 : x - 0.01);
         const tip = side === "left" ? x - handleR * 1.6 : x + handleR * 1.6;
@@ -832,20 +1117,51 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
         );
       })}
       {/* The deck: its ends and its front edge drag its size; its body or its grip slides it along the wall. */}
-      <rect x={W - sq} y={deckMidY - sq} width={sq * 2} height={sq * 2} rx={sq * 0.3} className={s.wallDeckHandle} onPointerDown={(e) => start(e, "deck-right", { kind: "deck" })} onKeyDown={(e) => deckKey(e, "right")} onFocus={() => setPick({ kind: "deck" })} data-deck-wall-handle="deck-right" tabIndex={0} role="slider" aria-label="The deck's right end" aria-valuenow={W}>
+      <rect x={W - sq} y={endMidY(sideRight) - sq} width={sq * 2} height={sq * 2} rx={sq * 0.3} className={s.wallDeckHandle} onPointerDown={(e) => start(e, "deck-right", { kind: "deck" })} onKeyDown={(e) => deckKey(e, "right")} onFocus={() => setPick({ kind: "deck" })} data-deck-wall-handle="deck-right" tabIndex={0} role="slider" aria-label="The deck's right end" aria-valuenow={W}>
         <title>The deck&apos;s right end: wider or narrower</title>
       </rect>
-      <rect x={-sq} y={deckMidY - sq} width={sq * 2} height={sq * 2} rx={sq * 0.3} className={s.wallDeckHandle} onPointerDown={(e) => start(e, "deck-left", { kind: "deck" })} onKeyDown={(e) => deckKey(e, "left")} onFocus={() => setPick({ kind: "deck" })} data-deck-wall-handle="deck-left" tabIndex={0} role="slider" aria-label="The deck's left end" aria-valuenow={0}>
+      <rect x={-sq} y={endMidY(sideLeft) - sq} width={sq * 2} height={sq * 2} rx={sq * 0.3} className={s.wallDeckHandle} onPointerDown={(e) => start(e, "deck-left", { kind: "deck" })} onKeyDown={(e) => deckKey(e, "left")} onFocus={() => setPick({ kind: "deck" })} data-deck-wall-handle="deck-left" tabIndex={0} role="slider" aria-label="The deck's left end" aria-valuenow={0}>
         <title>The deck&apos;s left end: the house stays put</title>
       </rect>
-      <rect x={W / 2 - sq} y={D - sq} width={sq * 2} height={sq * 2} rx={sq * 0.3} className={s.wallDeckHandle} onPointerDown={(e) => start(e, "deck-front", { kind: "deck" })} onKeyDown={(e) => deckKey(e, "front")} onFocus={() => setPick({ kind: "deck" })} data-deck-wall-handle="deck-front" tabIndex={0} role="slider" aria-label="The deck's front edge" aria-valuenow={D}>
-        <title>The deck&apos;s front edge: deeper or shallower</title>
-      </rect>
+      {shaped ? (
+        fparts.map((q) => {
+          const a = frontPick(q.i);
+          return (
+            <rect key={`fh${q.i}`} x={q.mid - sq} y={q.y - sq} width={sq * 2} height={sq * 2} rx={sq * 0.3} className={cx(s.wallDeckHandle, s.wallDeckHandleNS, picked(a) && s.wallSel)} onPointerDown={(e) => start(e, "front-part", a, { index: q.i })} onKeyDown={(e) => key(e, a)} onFocus={() => setPick(a)} data-deck-wall-handle="front-part" data-deck-front-part={q.i} tabIndex={0} role="slider" aria-label={`Front part ${q.i + 1}: ${frontPartWords(fspecs[q.i])}`} aria-valuenow={q.y}>
+              <title>This part of the front: in or out</title>
+            </rect>
+          );
+        })
+      ) : (
+        <rect x={(bowed ? W / 2 : (fparts[0]?.mid ?? W / 2)) - sq} y={D - sq} width={sq * 2} height={sq * 2} rx={sq * 0.3} className={cx(s.wallDeckHandle, s.wallDeckHandleNS)} onPointerDown={(e) => start(e, "deck-front", { kind: "deck" })} onKeyDown={(e) => deckKey(e, "front")} onFocus={() => setPick({ kind: "deck" })} data-deck-wall-handle="deck-front" tabIndex={0} role="slider" aria-label="The deck's front edge" aria-valuenow={D}>
+          <title>The deck&apos;s front edge: deeper or shallower</title>
+        </rect>
+      )}
+      {fparts.slice(0, -1).map((q, i) => {
+        const nx = fparts[i + 1];
+        const a = stepPick(i);
+        return (
+          <circle key={`fc${i}`} cx={q.x1} cy={(q.y + nx.y) / 2} r={handleR * 0.8} className={cx(s.wallDeckHandle, picked(a) && s.wallSel)} onPointerDown={(e) => start(e, "front-step", a, { index: i, at0: q.x1 })} onKeyDown={(e) => key(e, a)} onFocus={() => setPick(a)} data-deck-wall-handle="front-step" data-deck-front-step={i} tabIndex={0} role="slider" aria-label={`Step in the deck's front at ${ft(q.x1)}`} aria-valuenow={q.x1}>
+            <title>Drag along the deck · Delete removes the step</title>
+          </circle>
+        );
+      })}
+      {corners.map((k) => {
+        const dir = k.side === "left" ? 1 : -1;
+        const hx = k.x + (dir * k.clipFt) / 2;
+        const hy = k.y - k.clipFt / 2;
+        const r = sq * 0.66;
+        return (
+          <polygon key={`fk${k.part}${k.side}`} points={`${hx},${hy - r} ${hx + r},${hy} ${hx},${hy + r} ${hx - r},${hy}`} className={s.wallCorner} onPointerDown={(e) => start(e, "corner", frontPick(k.part), { index: k.part, side: k.side, clip0: k.clipFt })} data-deck-wall-handle="corner" data-deck-corner={`${k.part}${k.side}`} data-deck-corner-cut={k.clipFt} aria-hidden="true">
+            <title>{k.clipFt ? "Pull to cut this corner more, push back to make it square" : "Pull toward the deck to cut this corner at an angle"}</title>
+          </polygon>
+        );
+      })}
       <rect x={W / 2 - handleR * 1.6} y={deckMidY + font * 1.7} width={handleR * 3.2} height={handleR * 1.1} rx={handleR * 0.5} className={cx(s.wallGrip, picked({ kind: "deck" }) && s.wallSel)} onPointerDown={(e) => start(e, "deck-slide", { kind: "deck" })} data-deck-wall-handle="deck-slide" aria-hidden="true">
         <title>Slide the deck along the wall</title>
       </rect>
       {/* A + where a step would go (the large drawings only — the small one is crowded; the pad's + does the same). */}
-      {roomy && canAdd && (padPick?.kind === "part" || padPick?.kind === "deck") ? (
+      {roomy && canAdd && !wallLocked && (padPick?.kind === "part" || padPick?.kind === "deck") ? (
         <g className={s.wallPlus} onClick={() => run({ kind: "add-step", atFt: plusX })} data-deck-wall-plus={plusX} role="button" tabIndex={0} aria-label={`Add a step in the wall at ${ft(plusX)}`} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); run({ kind: "add-step", atFt: plusX }); } }}>
           <circle cx={plusX + handleR * 2.6} cy={depthAt(plusX) + (padPick?.kind === "deck" ? handleR * 2.6 : -handleR * 2.6)} r={handleR * 0.85} />
           <text x={plusX + handleR * 2.6} y={depthAt(plusX) + (padPick?.kind === "deck" ? handleR * 2.6 : -handleR * 2.6) + font * 0.38} fontSize={font * 1.1} textAnchor="middle">+</text>
@@ -856,7 +1172,7 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
 
   const zi = ZOOMS.indexOf(zoom as (typeof ZOOMS)[number]);
   const content = (
-    <div className={cx(s.wallPlan, roomy && s.wallPlanLarge, full && s.wallPlanFull)} data-deck-wall-plan data-size={full ? "full" : size} data-deck-wall-parts={parts.length}>
+    <div className={cx(s.wallPlan, roomy && s.wallPlanLarge, full && s.wallPlanFull)} data-deck-wall-plan data-size={full ? "full" : size} data-deck-wall-parts={parts.length} data-deck-front-parts={fparts.map((q) => `${q.x1 - q.x0}@${q.y}`).join(" ")}>
       <div className={s.wallStage}>
         {drawing}
         {roomy ? (
@@ -871,6 +1187,9 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
               </button>
             ) : null}
             {!full ? <button type="button" className={s.wallZoomBtn} onClick={() => setFull(true)} data-deck-wall-fullscreen>⤢ Full screen</button> : null}
+            <button type="button" className={cx(s.wallZoomBtn, wallLocked && s.wallZoomOn)} aria-pressed={wallLocked} onClick={() => { remember(house, shape); onChange({ house: { ...house, locked: !wallLocked } }); }} title={wallLocked ? "The house wall is locked: only the deck moves. Unlock to move the wall." : "Lock the house wall so nothing dragged moves it"} data-deck-wall-lock-top={wallLocked ? "locked" : "open"}>
+              {wallLocked ? "🔒 Unlock wall" : "🔓 Lock wall"}
+            </button>
           </div>
         ) : null}
       </div>
@@ -882,8 +1201,10 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
           </span>
         ) : null}
         <span className={s.wallPadSep} aria-hidden="true" />
-        {padBtn("+ Add a step", { kind: "add-step", atFt: plusX }, { hold: false, disabled: !canAdd, test: "add-step" })}
-        {padBtn("Straight wall", { kind: "straight" }, { hold: false, disabled: !house.jogs.length, test: "straight" })}
+        {lockToggle}
+        {padBtn("+ Add a step", { kind: "add-step", atFt: plusX }, { hold: false, disabled: !canAdd || wallLocked, test: "add-step" })}
+        {padBtn("Straight wall", { kind: "straight" }, { hold: false, disabled: !house.jogs.length || wallLocked, test: "straight" })}
+        {padBtn("Straight front", { kind: "front-straight" }, { hold: false, disabled: !frontIsShaped(shape), test: "front-straight" })}
         <button type="button" className={s.wallPadBtn} onClick={undo} disabled={undoN === 0} data-deck-wall-undo>↶ Undo</button>
         {!roomy && onOpenLarge ? <button type="button" className={s.wallPadBtn} onClick={onOpenLarge} data-deck-wall-large>Show it large ↗</button> : null}
         {!roomy ? <button type="button" className={cx(s.wallPadBtn, s.wallPadBtnPrimary)} onClick={() => setFull(true)} data-deck-wall-fullscreen>⤢ Full screen</button> : null}

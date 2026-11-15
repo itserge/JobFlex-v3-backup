@@ -26,7 +26,10 @@ import { buildFacets } from "./engine";
 import { isUtm, latLngToPixel, type RasterFrame } from "./geo";
 import { toFacetModel, type FacetModel } from "./model";
 import { roofOutline } from "./roofOutline";
-import { encodePng } from "./png";
+import { snapToPhoto } from "./photoSnap";
+import { cutPhoto, orthoOnGrid, photoSlide, tileOnGrid, type GridArea, type GridPhoto } from "./evPhoto";
+import { decodePng, encodePng } from "./png";
+import { orthoImage } from "@/lib/roofPictureFetch";
 
 /** The patch of ground a lab picture shows: the UTM corner of its top-left pixel and its size. East grows right, north falls. */
 export interface PictureWindow {
@@ -40,8 +43,12 @@ export interface RoofLabDrawing {
   model: FacetModel;
   window: PictureWindow;
   imagery: { quality: string | null; date: string | null; pixelSizeM: number };
-  /** whether an aerial photograph can be asked for (a link on file and a Google key) */
+  /** whether there is an aerial photograph to draw on */
   photo: boolean;
+  /** whose photograph it is: EagleView's own (when the measurement came with one and it could be lined up), else Google's */
+  photoFrom: "eagleview" | "google" | null;
+  /** the day EagleView's picture was flown, as they give it */
+  photoDate: string | null;
 }
 
 interface Loaded {
@@ -50,7 +57,8 @@ interface Loaded {
   layers: DataLayerUrls;
   solar: { id: string; lat: number; lng: number; radiusM: number };
   drawing: RoofLabDrawing;
-  rgb?: RgbRaster | null;
+  /** the photograph the lines were set on and the page draws on, on the height map's grid */
+  photo: GridPhoto | null;
 }
 
 /** Under this share of the outline showing a building in the height map, there is no roof there to read. */
@@ -212,6 +220,53 @@ async function load(measurementId: string): Promise<{ ok: true; v: Loaded } | Fa
 
   const result = buildFacets({ dsm, mask: sameGrid ? mask : null, outline, register: !fromGoogle, priors, trace: notes });
   if (!result || !result.facets.length) return { ok: false, reason: "The height map shows no roof planes inside the roof's outline here (the outline may fall off the saved tile)." };
+  // The lines are then set on the edges Google's photograph of the same tile shows (./photoSnap; owner, 2026-11-13:
+  // "it's offset, not following the roof" — the height map is soft at an edge, the photograph is not). One GeoTIFF,
+  // kept for the picture the page asks for next; without it the drawing stands as the height map gave it.
+  const rgb = await aerialPhoto(layers, { lat: solar.lat, lng: solar.lng, radiusM: Number(/#r(\d+)$/.exec(solar.addressKey)?.[1]) || Math.round((dsm.width * dsm.pixelSizeM) / 2) }, dsm.epsg);
+  // the patch of the grid the photograph is kept for: the drawing and 8 m all round (the page's picture is the
+  // drawing and 5 m, measured after the lines have moved)
+  const area: GridArea = (() => {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const q of result.vertices) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); }
+    const pad = Math.round(8 / dsm.pixelSizeM);
+    return { x0: Math.max(0, Math.floor(x0) - pad), y0: Math.max(0, Math.floor(y0) - pad), x1: Math.min(dsm.width, Math.ceil(x1) + pad), y1: Math.min(dsm.height, Math.ceil(y1) + pad) };
+  })();
+  let photo: GridPhoto | null = rgb && rgb.pixelSizeM <= dsm.pixelSizeM * 2.01 ? tileOnGrid(rgb, frame, area) : null;
+  let photoFrom: RoofLabDrawing["photoFrom"] = photo ? "google" : null;
+  let photoDate: string | null = null;
+  // EagleView's own picture of the parcel, when this measurement came with one (./evPhoto): twice as sharp as
+  // Google's. It is lined up against Google's photograph, and used only when that lining-up is clear.
+  const ortho = (instant?.imagery ?? [])
+    .filter((im) => im.view === "ortho" && im.bbox && im.masked === false)
+    .sort((a, b) => (b.bbox![2] - b.bbox![0]) * (b.bbox![3] - b.bbox![1]) - (a.bbox![2] - a.bbox![0]) * (a.bbox![3] - a.bbox![1]))[0];
+  if (ortho?.bbox && photo && Math.abs(photo.scale - 1) < 0.01 && sameGrid) {
+    try {
+      const got = await orthoImage(ortho.token);
+      const img = { ...decodePng(got.bytes), bbox: ortho.bbox };
+      const aw = area.x1 - area.x0, ah = area.y1 - area.y0;
+      const on = new Uint8Array(aw * ah);
+      for (let y = 0; y < ah; y++) for (let x = 0; x < aw; x++) on[y * aw + x] = mask.data[(y + area.y0) * mask.width + x + area.x0] > 0 ? 1 : 0;
+      const slide = photoSlide(photo, orthoOnGrid(img, frame, area, 1), on);
+      const ftOf = (pxl: number) => (Math.abs(pxl) * dsm.pixelSizeM * 3.28084).toFixed(1);
+      if (slide.clear) {
+        photo = orthoOnGrid(img, frame, area, 2, slide);
+        photoFrom = "eagleview";
+        photoDate = ortho.shotDate ?? null;
+        notes.push(`EagleView's own aerial picture${photoDate ? ` (flown ${photoDate})` : ""} is the photograph here: placed by its own corners it sat ${ftOf(slide.dx)} ft ${slide.dx >= 0 ? "east" : "west"} and ${ftOf(slide.dy)} ft ${slide.dy >= 0 ? "south" : "north"} of Google's, and was lined up with it`);
+      } else {
+        notes.push("EagleView's own aerial picture could not be lined up with the height map here (a steep roof photographed at a slant leans in the picture; so do trees over the roof), so Google's photograph is used");
+      }
+    } catch (err) {
+      console.warn("[roof-lab] EagleView's picture was not used:", err instanceof Error ? err.message : err);
+    }
+  }
+  if (photo) {
+    const ph = photo;
+    const rep = snapToPhoto(result, { width: ph.width, height: ph.height, data: ph.data, scale: ph.scale, toPhoto: (q) => ({ x: (q.x - ph.x0) * ph.scale, y: (q.y - ph.y0) * ph.scale }) }, dsm);
+    const ft = (pxl: number) => (pxl * dsm.pixelSizeM * 3.28084).toFixed(1);
+    if (rep.moved) notes.push(`${rep.moved} of the drawing's ${rep.lines} straight lines were set on the edge the aerial photograph shows (${ft(rep.meanPx)} ft on average, ${ft(rep.maxPx)} ft at the most)`);
+  }
   // Google's elevation can be years older than the house. Where it shows no building under the outline there are no
   // facets to read, and a drawing made of the ground and the trees would be worse than none.
   if (!fromGoogle && result.quality.buildingShare < NO_BUILDING_SHARE) {
@@ -247,8 +302,11 @@ async function load(measurementId: string): Promise<{ ok: true; v: Loaded } | Fa
       model,
       window,
       imagery: { quality: insights?.imageryQuality ?? layers.imageryQuality ?? null, date: solar.imageryDate ?? null, pixelSizeM: px },
-      photo: isSolarEnabled() && Boolean(layers.rgbUrl),
+      photo: photo != null,
+      photoFrom,
+      photoDate,
     },
+    photo,
   };
   remember(measurementId, v);
   return { ok: true, v };
@@ -282,19 +340,45 @@ function reliefPng(dsm: Raster, w: PictureWindow): Buffer {
   return encodePng(out, W, H);
 }
 
-/** Google's aerial photograph over `w`, at the photograph's own resolution. */
-function photoPng(rgb: RgbRaster, w: PictureWindow): Buffer {
-  const px = rgb.pixelSizeM;
-  const x0 = Math.round((w.e0 - rgb.originX) / px), y0 = Math.round((rgb.originY - w.n0) / px);
-  const W = Math.round(w.widthM / px), H = Math.round(w.heightM / px);
-  const out = new Uint8Array(W * H * 3);
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const sx = x0 + x, sy = y0 + y;
-    if (sx < 0 || sy < 0 || sx >= rgb.width || sy >= rgb.height) continue;
-    const i = (sy * rgb.width + sx) * 3, o = (y * W + x) * 3;
-    out[o] = rgb.data[i]; out[o + 1] = rgb.data[i + 1]; out[o + 2] = rgb.data[i + 2];
+/**
+ * Google's aerial photograph of a tile, or null: the link saved with the height map first (Google's links age), a
+ * fresh answer for the same tile second. Never throws.
+ */
+async function aerialPhoto(layers: DataLayerUrls, tile: { lat: number; lng: number; radiusM: number }, epsg: number | null): Promise<RgbRaster | null> {
+  if (!isSolarEnabled()) return null;
+  for (const url of [layers.rgbUrl, null]) {
+    try {
+      const link = url ?? (await getDataLayers(tile.lat, tile.lng, tile.radiusM)).rgbUrl;
+      if (!link) continue;
+      const rgb = await fetchRgbRaster(link);
+      if (rgb.epsg != null && rgb.epsg !== epsg) continue;
+      return rgb;
+    } catch (err) {
+      console.warn("[roof-lab] aerial photograph fetch failed:", err instanceof Error ? err.message : err);
+    }
   }
-  return encodePng(out, W, H);
+  return null;
+}
+
+/**
+ * EagleView's own aerial picture of a measurement's parcel (their widest clear ortho), with where it lies — for the
+ * lab to be checked against (2026-11-13, the first day their imagery pack answered). Bytes as EagleView sent them.
+ */
+export async function roofLabOrtho(measurementId: string): Promise<{ ok: true; bytes: Uint8Array; contentType: string; bbox: [number, number, number, number]; shotDate: string | null } | Fail> {
+  const row = await db.roofMeasurement.findUnique({ where: { id: measurementId }, select: { instantJson: true } });
+  if (!row?.instantJson) return { ok: false, reason: "That measurement has no EagleView answer." };
+  let instant: InstantRoofData;
+  try { instant = JSON.parse(row.instantJson) as InstantRoofData; } catch { return { ok: false, reason: "The saved EagleView answer could not be read." }; }
+  const wide = (instant.imagery ?? [])
+    .filter((im) => im.view === "ortho" && im.bbox && im.masked === false)
+    .sort((a, b) => (b.bbox![2] - b.bbox![0]) * (b.bbox![3] - b.bbox![1]) - (a.bbox![2] - a.bbox![0]) * (a.bbox![3] - a.bbox![1]))[0];
+  if (!wide?.bbox) return { ok: false, reason: "EagleView sent no aerial picture with this measurement (measure the roof again now that their imagery is on)." };
+  try {
+    const img = await orthoImage(wide.token);
+    return { ok: true, bytes: img.bytes, contentType: img.contentType, bbox: wide.bbox, shotDate: wide.shotDate ?? null };
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : "EagleView did not return the picture." };
+  }
 }
 
 /** One of the lab's two pictures of a measurement's roof, as PNG bytes. */
@@ -303,23 +387,9 @@ export async function roofLabPicture(measurementId: string, kind: "photo" | "rel
   if (!r.ok) return r;
   const v = r.v;
   if (kind === "relief") return { ok: true, png: reliefPng(v.dsm, v.drawing.window) };
-  if (!isSolarEnabled()) return { ok: false, reason: "No Google key is set, so the aerial photograph cannot be fetched." };
-  if (v.rgb === undefined) {
-    v.rgb = null;
-    // The link saved with the height map first; Google's links age, so a fresh answer for the same tile second.
-    for (const url of [v.layers.rgbUrl, null]) {
-      try {
-        const link = url ?? (await getDataLayers(v.solar.lat, v.solar.lng, v.solar.radiusM)).rgbUrl;
-        if (!link) continue;
-        const rgb = await fetchRgbRaster(link);
-        if (rgb.epsg != null && rgb.epsg !== v.dsm.epsg) continue;
-        v.rgb = rgb;
-        break;
-      } catch (err) {
-        console.warn("[roof-lab] aerial photograph fetch failed:", err instanceof Error ? err.message : err);
-      }
-    }
-  }
-  if (!v.rgb) return { ok: false, reason: "Google did not return the aerial photograph for this tile." };
-  return { ok: true, png: photoPng(v.rgb, v.drawing.window) };
+  if (!v.photo) return { ok: false, reason: isSolarEnabled() ? "Google did not return the aerial photograph for this tile." : "No Google key is set, so the aerial photograph cannot be fetched." };
+  const w = v.drawing.window, px = v.dsm.pixelSizeM;
+  const wx0 = Math.round((w.e0 - v.dsm.originX) / px), wy0 = Math.round((v.dsm.originY - w.n0) / px);
+  const cut = cutPhoto(v.photo, { x0: wx0, y0: wy0, x1: wx0 + Math.round(w.widthM / px), y1: wy0 + Math.round(w.heightM / px) });
+  return { ok: true, png: encodePng(cut.data, cut.width, cut.height) };
 }

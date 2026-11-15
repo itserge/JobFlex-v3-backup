@@ -14,9 +14,9 @@
 // Houses drawn by rule (no openings) are not checked: their doors and windows are a picture, not a measurement.
 // Estimating grade — the building department decides.
 
-import { DECK_LIMITS, ROOF_LIMITS, spaRectIn, type DeckDesign } from "./design";
+import { DECK_LIMITS, LOWER_LIMITS, ROOF_LIMITS, spaRectIn, type DeckDesign } from "./design";
 import { DRESSED_DEPTH_IN, ftIn, joistDepthIn } from "./codeTables";
-import type { HouseOpening } from "./house";
+import { settleOpenings, type HouseOpening } from "./house";
 import type { DeckStructure } from "./structure";
 import type { RoofFrame } from "./roof";
 import type { DeckCheck } from "./checks";
@@ -87,7 +87,8 @@ export function roofAtWall(roof: RoofFrame, design: DeckDesign): { x0: number; x
 
 export function openingChecks(s: DeckStructure, add: (c: DeckCheck) => void): void {
   const { design, frame, roof } = s;
-  const all = design.house.openings;
+  // The openings as they stand on the wall: a window read inside a door, or twice, is no window of its own (2026-11-13).
+  const all = design.house.openings ? settleOpenings(design.house.openings) : null;
   if (!all?.length || design.placement === "detached" || !frame) return;
   const W = design.shape.widthFt * 12;
   const deck = { x0: 0, x1: W };
@@ -139,6 +140,29 @@ export function openingChecks(s: DeckStructure, add: (c: DeckCheck) => void): vo
     }
   }
 
+  /* ── A DOUBLE DECK (2026-11-13): the floor below's door opens onto the LOWER deck — it is that deck's door ── */
+  const lowerDeck = s.lower?.place === "under" ? s.lower : null;
+  const onLower: string[] = [];
+  if (lowerDeck) {
+    const lTop = lowerDeck.frame.surfaceIn;
+    const lBottom = frameBottomIn(lTop, lowerDeck.frame.joistSize);
+    doors
+      .filter((d) => level(d) === "below" && openingLevel(d, lTop, lBottom) !== "below")
+      .forEach((d, i) => {
+        onLower.push(d.id);
+        const id = `lower-door-threshold${i ? `-${i + 1}` : ""}`;
+        const th = Math.round(d.sillFt * 12 * 4) / 4;
+        const drop = th - lTop;
+        const what = WHAT[d.kind];
+        const set = Math.round(th - UNDER_THRESHOLD_IN);
+        const fix = set >= LOWER_LIMITS.heightIn.min && set <= top - LOWER_LIMITS.storeyIn && set !== lTop ? { label: `Set the lower deck at ${set} in.`, patch: { lower: { heightIn: set } } } : undefined;
+        if (drop < 0) add({ id, level: "fail", part: PART, text: `The lower deck's surface stands ${inches(-drop)} above the threshold of the ${what} it serves (${where(d)}): rain runs in under the door. Keep its boards about ${UNDER_THRESHOLD_IN} in. under the threshold.`, rule: "IRC R311.3.1 · R507.2.4", fix });
+        else if (drop < 0.5) add({ id, level: "warn", part: PART, text: `The lower deck's surface is level with the threshold of the ${what} it serves (${where(d)}) — no room for the flashing under the door. About ${UNDER_THRESHOLD_IN} in. under it is the usual mark.`, rule: "IRC R311.3.1 · R507.2.4", fix });
+        else if (drop <= STEP_NO_SWING_IN) add({ id, level: "pass", part: PART, text: `The ${what} ${where(d)} is on the floor below: it opens onto the lower deck, whose surface sits ${inches(drop)} under its threshold.`, rule: "IRC R311.3.1" });
+        else add({ id, level: "warn", part: PART, text: `The lower deck sits ${inches(drop)} under the threshold of the ${what} on the floor below (${where(d)}) — past the 7¾ in. the code allows for the step at a door. Raise the lower deck, or build a landing step at the door.`, rule: "IRC R311.3.1", fix });
+      });
+  }
+
   /* ── Doors on the floor below: under the deck, and what can stand in their way there ── */
   const under = onDeck.filter((o) => o.kind !== "window" && level(o) === "below");
   if (under.length) {
@@ -159,7 +183,7 @@ export function openingChecks(s: DeckStructure, add: (c: DeckCheck) => void): vo
         add({ id: `door-under-beam${n}`, level: "warn", part: PART, text: `The deck's beam by the house runs ${inches(beam.y)} out from the wall with its underside ${ftIn(Math.round(beam.bottomIn))} off the ground — ${ftIn(Math.round(beam.bottomIn - th))} over the threshold of the ${what} on the floor below (${where(d)}). Walking out under it wants ${ftIn(HEAD_ROOM_IN)} of head room: raise the deck, or carry that end on the house.`, rule: "IRC R311.2" });
       }
     });
-    const free = under.filter((d) => !blocked.includes(d.id));
+    const free = under.filter((d) => !blocked.includes(d.id) && !onLower.includes(d.id));
     if (free.length) {
       const room = Math.min(...free.map((d) => bottom - d.sillFt * 12));
       const which = free.length === 1 ? `The ${WHAT[free[0].kind]} ${where(free[0])} is on the floor below: it opens` : `${free.length} doors (${places(free)}) are on the floor below: they open`;

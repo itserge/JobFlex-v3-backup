@@ -30,13 +30,19 @@
 
 import { BRACE_ABOVE_IN, JOIST_SIZES, POST_ACTUAL_IN, POST_SIZES, SOLID_BEAMS, SPACINGS, ftIn } from "./codeTables";
 import { wallType } from "./catalog";
+import { addBeam, addPostUnder, addRoofPost, deckGrips, gripOfPart, removeBeamLine, removePost, roofCornerSides, roofSideOf, type DeckGrip } from "./byHand";
 import { applyDeckPatch, deckChecks, type DeckPatch } from "./checks";
-import { BUILT_UP_CHOICES, DECK_POST_LIMITS, RAIL_MOUNT_LABEL, RAIL_MOUNT_WORDS, RAIL_SECTION_LABEL, ROOF_POST_LIMITS, defaultRoofOpening, type DeckDesign, type DeckPostPin, type RailSectionKey, type RoofDesign, type RoofSide } from "./design";
+import { BUILT_UP_CHOICES, braceSizesFor, RAIL_MOUNT_LABEL, RAIL_MOUNT_WORDS, RAIL_SECTION_LABEL, ROOF_POST_LIMITS, ROOF_SIDE_LABEL, defaultRoofOpening, type DeckDesign, type RailSectionKey, type RoofDesign } from "./design";
 import { priceDeck, type DeckPackage, type DeckPriceOptions } from "./pricing";
 import { railMountLine } from "./rails";
 import type { RoofMember } from "./roof";
 import { ROOF_MEMBER_LAYER, SCENE_LAYERS, type DeckScene, type SceneLayer } from "./scene";
 import { settleDesign } from "./settle";
+import { BUILT_IN_LABEL, builtInWords, planGap } from "./builtins";
+import type { FinishTarget, PartFinish } from "./finish";
+
+/** The scene roles that are an accessory's own parts (lib/deck/scene). */
+const ACCESSORY_ROLE = /^(?:bench (?:seat|back|cap|apron|leg|cleat|back post)|planter (?:board|cap|soil)|screen (?:post|board|cap)|kitchen (?:board|top|grill)|fire (?:base|top|burner))$/;
 import { BETWEEN_LEVELS_STAIR_ID, LOWER_KEY, buildStructure, structureLevels, type DeckStructure } from "./structure";
 
 /* ------------------------------------------------------------------ */
@@ -65,7 +71,9 @@ export type PartKind =
   | "fascia"
   | "gutter"
   | "ceiling"
-  | "walls";
+  | "walls"
+  /** An accessory built into the deck — a bench, a planter box, a privacy screen, a kitchen island, a fire table (lib/deck/builtins). */
+  | "built-in";
 
 export interface PartRef {
   kind: PartKind;
@@ -120,7 +128,14 @@ function roofPart(s: DeckStructure, m: RoofMember): PartRef | null {
  * layer alone (the ceiling, a wall panel, a glass rail panel). Null for a part with nothing to choose (a board, a
  * shingle, a bolt).
  */
-export function partAt(s: DeckStructure, scene: DeckScene, boxIdx: number | null | undefined, layer?: SceneLayer | string | null): PartRef | null {
+export function partAt(s: DeckStructure, scene: DeckScene, boxIdx: number | null | undefined, layer?: SceneLayer | string | null, ringIdx?: number | null): PartRef | null {
+  // A board cut to a shape (2026-11-14): a step round a shaped deck is a stair's — the scene says whose it is.
+  if (typeof ringIdx === "number" && ringIdx >= 0) {
+    const of = scene.paints?.find((pt) => pt.rings.includes(ringIdx))?.of;
+    if (of && s.stairs.some((st) => st.design.id === of)) return { kind: "stair", id: of };
+    const ringOf = stairOfRing(s, scene, ringIdx);
+    return ringOf ? { kind: "stair", id: ringOf } : null;
+  }
   const b = typeof boxIdx === "number" ? scene.boxes[boxIdx] : undefined;
   const name: SceneLayer | undefined = b ? SCENE_LAYERS[b[0]] : (SCENE_LAYERS as readonly string[]).includes(layer ?? "") ? (layer as SceneLayer) : undefined;
   if (!name) return null;
@@ -131,6 +146,24 @@ export function partAt(s: DeckStructure, scene: DeckScene, boxIdx: number | null
     return null;
   }
   const [x, y, z] = [b[1] * 12, b[2] * 12, b[3] * 12];
+
+  // AN ACCESSORY (2026-11-14; lib/deck/builtins): a bench's, a planter's, a screen's, a kitchen's or a fire table's own
+  // part, drawn on the deck's own layers — named by its role: the one whose footprint holds the box's middle (else the
+  // nearest of its parts).
+  const role = typeof boxIdx === "number" && scene.tags.length === scene.boxes.length && scene.tags[boxIdx] >= 0 ? scene.legend[scene.tags[boxIdx]]?.role ?? "" : "";
+  if (ACCESSORY_ROLE.test(role)) {
+    const hit = s.builtIns.find((q) => q.built && planGap(q.footprint, [{ x, y }]) < 1);
+    if (hit) return { kind: "built-in", id: hit.design.id };
+    let best: { id: string; d: number } | null = null;
+    for (const bi of s.builtIns) {
+      for (const m of bi.members) {
+        const d = near(m.cx, m.cy, m.cz, x, y, z);
+        if (d > 1.5 || (best && best.d <= d)) continue;
+        best = { id: bi.design.id, d };
+      }
+    }
+    return best ? { kind: "built-in", id: best.id } : null;
+  }
 
   if (DECK_LAYERS.includes(name)) {
     let best: { ref: PartRef; d: number } | null = null;
@@ -188,6 +221,19 @@ export function partAt(s: DeckStructure, scene: DeckScene, boxIdx: number | null
   return null;
 }
 
+/** The stair whose step a board cut to a shape is (a step round a shaped deck), by its ring's place against the stairs' own rings. */
+function stairOfRing(s: DeckStructure, scene: DeckScene, ringIdx: number): string | null {
+  const ring = scene.diagonal?.boards[ringIdx];
+  if (!ring) return null;
+  for (const st of s.stairs) {
+    for (const t of st.treadRings ?? []) {
+      // (The stair's rings are inches; the scene's, feet.)
+      if (t.ring.length === ring.length && t.ring.every((v, i) => Math.abs(v / 12 - ring[i]) < 0.01)) return st.design.id;
+    }
+  }
+  return null;
+}
+
 /**
  * The rail's section a box belongs to (2026-11-13): a level and the side its run stands along — "upper-front" — so one
  * side can be mounted another way than the rest. A stair's rail is the whole rail.
@@ -200,24 +246,6 @@ function railPart(s: DeckStructure, x: number, y: number, z: number): PartRef {
     best = { id: m.of, d };
   }
   return { kind: "rail", id: best?.id ?? "" };
-}
-
-/** The side of the roof a post stands on and its place along it, as design.roof's posts and openings are measured: feet from the side's left end (front, back) or its house end (left, right). */
-function roofSideOf(roof: NonNullable<DeckStructure["roof"]>, post: { x: number; y: number }): { side: RoofSide; atFt: number; lengthFt: number } | null {
-  const ringH = roof.headers.filter((h) => !h.cross);
-  if (!ringH.length) return null;
-  const minX = Math.min(...ringH.flatMap((h) => [h.x0, h.x1]));
-  const maxY = Math.max(...ringH.flatMap((h) => [h.y0, h.y1]));
-  for (const h of ringH) {
-    const horiz = Math.abs(h.y0 - h.y1) < 0.5;
-    const vert = Math.abs(h.x0 - h.x1) < 0.5;
-    if (!horiz && !vert) continue;
-    const on = horiz ? Math.abs(post.y - h.y0) < 0.6 && post.x > Math.min(h.x0, h.x1) + 1 && post.x < Math.max(h.x0, h.x1) - 1 : Math.abs(post.x - h.x0) < 0.6 && post.y > Math.min(h.y0, h.y1) + 1 && post.y < Math.max(h.y0, h.y1) - 1;
-    if (!on) continue;
-    const side: RoofSide = horiz ? (Math.abs(h.y0 - maxY) < 1 ? "front" : "back") : Math.abs(h.x0 - minX) < 1 ? "left" : "right";
-    return { side, atFt: ((horiz ? post.x : post.y) - (horiz ? Math.min(h.x0, h.x1) : Math.min(h.y0, h.y1))) / 12, lengthFt: h.lengthIn / 12 };
-  }
-  return null;
 }
 
 /** Every box of the scene that is this same part (a beam's plies, a post's two halves) — what the 3D lights. */
@@ -261,6 +289,26 @@ export interface PartCard {
   /** Why it cannot simply come out, when it cannot. */
   stays?: string;
   choices: PartChoice[];
+  /** MOVED BY HAND (2026-11-13; lib/deck/byHand): a post or a beam that can be slid — where it stands, to type or nudge by the inch. */
+  place?: DeckGrip;
+  /** BOARDS OF ITS OWN (2026-11-14; lib/deck/finish): a stair or a built-in whose boards can be another line or colour — which, and the board now (null = the deck's own). */
+  finish?: { target: FinishTarget; now: PartFinish | null; deck: string; deckProduct: string; deckColor: string };
+}
+
+/** The deck's own board, as a card offers it beside a board of its own: its name with its colour, its line, its colour. */
+const deckBoardNow = (s: DeckStructure) => ({ deck: s.surface?.product.label ?? s.frame?.decking.label ?? "the deck's boards", deckProduct: s.design.decking.product, deckColor: s.design.decking.color });
+
+/** A stair's or a built-in's boards set to a board of their own (`f`), or back to the deck's (null): the patch. */
+export function finishPatch(d: DeckDesign, target: FinishTarget, f: PartFinish | null): DeckPatch {
+  const set = <T extends { id: string; finish?: PartFinish }>(list: readonly T[]): T[] =>
+    list.map((x) => {
+      if (x.id !== target.id) return x;
+      const { finish: _old, ...rest } = x;
+      void _old;
+      return (f ? { ...rest, finish: f } : rest) as T;
+    });
+  if (target.kind === "stair") return { stairs: set(d.stairs) };
+  return { extras: { builtIns: set(d.extras.builtIns ?? []) } };
 }
 
 const plural = (n: number, w: string, many = `${w}s`) => `${n} ${n === 1 ? w : many}`;
@@ -330,15 +378,22 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
   const roof = s.roof;
   const lower = ref.level === "lower";
   const f = lower ? s.lower?.frame ?? null : s.frame;
-  const lvl = lower ? "lower-level " : "";
-  const card = (title: string, does: string, choices: PartChoice[], stays?: string): PartCard => ({ ref, title, does, choices, ...(stays ? { stays } : {}) });
+  // (A double deck's lower floor is "the lower deck": it hangs on the main deck's posts — 2026-11-13.)
+  const under = lower && s.lower?.place === "under";
+  const lvl = under ? "lower-deck " : lower ? "lower-level " : "";
+  const card = (title: string, does: string, choices: PartChoice[], stays?: string, place?: DeckGrip | null): PartCard => ({ ref, title, does, choices, ...(stays ? { stays } : {}), ...(place && !place.fixed ? { place } : {}) });
 
   switch (ref.kind) {
     case "deck-brace": {
       const n = (s.frame?.hardware.braces ?? 0) + (s.lower?.frame.hardware.braces ?? 0);
       const choices: PartChoice[] = [{ id: "one", tone: "remove", label: "Remove this brace", patch: { framing: { bracesOff: withKey(d.framing.bracesOff, ref.id) } } }];
       if (n > 1) choices.push({ id: "all", tone: "remove", label: `Remove all ${n} deck braces`, patch: { framing: { braces: false, bracesOff: [] } }, whole: true });
-      return card("Knee brace", `A 2x4 at 45° from the post up to the ${f?.beamStyle === "flush" ? "frame" : "beam"}: it keeps a tall post from racking sideways. The American Wood Council's deck guide puts one at every corner post over ${BRACE_ABOVE_IN / 12} ft.`, choices);
+      // THE BRACE'S TIMBER (2026-11-14 — the owner: "if it's a 6 by 6 brace, I can change it for 4 by 4, or 8 by 8 if the
+      // post is 8 by 8"): a row of sizes, none larger than the post.
+      const size = f?.sticks.find((st) => st.role === "brace")?.nominal ?? "2x4";
+      const sizes = f?.group === "OC" ? [] : braceSizesFor(d.framing.post, "2x4");
+      if (sizes.length > 1) choices.push(...sizeRow("Brace size — every deck brace", "brace-size", sizes, d.framing.braceSize, (v) => (v === "auto" ? "Auto" : String(v)), (v) => ({ framing: { braceSize: v as DeckDesign["framing"]["braceSize"] } })));
+      return card("Knee brace", `A ${size} at 45° from the post up to the ${f?.beamStyle === "flush" ? "frame" : "beam"}: it keeps a tall post from racking sideways. The American Wood Council's deck guide puts one at every corner post over ${BRACE_ABOVE_IN / 12} ft.${sizes.length > 1 ? ` It can be a heavier timber — up to the post's own ${d.framing.post === "4x6" ? "4x4" : d.framing.post}.` : ""}`, choices);
     }
 
     case "deck-beam": {
@@ -347,8 +402,8 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
       const many = f.beams.length > 1;
       const choices: PartChoice[] = [];
       let stays: string | undefined;
-      const title = `${lvl ? "Lower-level " : ""}${beam.role === "front" ? "front beam" : beam.role === "middle" ? "middle beam" : "beam by the house"}`.replace(/^./, (c) => c.toUpperCase());
-      let does = `${beam.spec.size} ${beam.style === "flush" ? "flush beam (the joists hang on it)" : "beam under the joists"} on ${plural(beam.postXs.length, "post")}, ${ftIn(beam.spanIn)} between them. `;
+      const title = `${under ? "Lower-deck " : lvl ? "Lower-level " : ""}${beam.role === "front" ? "front beam" : beam.role === "middle" ? "middle beam" : "beam by the house"}`.replace(/^./, (c) => c.toUpperCase());
+      let does = `${beam.spec.size} ${beam.style === "flush" ? "flush beam (the joists hang on it)" : "beam under the joists"} ${under ? "let into" : "on"} ${plural(beam.postXs.length, "post")}${under ? " of the upper deck" : ""}, ${ftIn(beam.spanIn)} between them. `;
       if (beam.role === "middle") {
         does += "It is here because the joists, at the size and spacing set, do not span the whole depth in one piece.";
         if (!lower && (d.framing.joist !== "auto" || d.framing.spacingIn !== "auto")) choices.push({ id: "re-span", tone: "remove", label: "Remove this beam — re-span the joists", note: "The joist size and spacing go back to the tables' own pick: a deeper joist, or joists closer together, that spans without a beam in the middle.", patch: { framing: { joist: "auto", spacingIn: "auto" } }, works: (after) => (after.frame?.beams.length ?? 0) < f.beams.length });
@@ -357,17 +412,28 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
         does += "This side stands on its own posts instead of hanging on the house.";
         const w = wallType(d.wall);
         if (!lower && d.placement === "beside" && w.ledger) choices.push({ id: "ledger", tone: "remove", label: "Remove it — hang this side on the house", note: "A ledger bolted to the house's rim carries this side instead: no beam, posts or footings along the wall.", patch: { placement: "attached" }, works: (after) => (after.frame?.ledgers.length ?? 0) > 0 });
-        else stays = lower ? "The lower level stands on its own beams, front and back." : d.placement === "detached" ? "The deck stands out in the yard: this beam is one of the two it stands on." : `${w.label}: ${w.why}`;
+        else stays = under ? "The lower deck's beams stand on the upper deck's own lines, let into its posts: move the upper deck's beam and this one goes with it." : lower ? "The lower level stands on its own beams, front and back." : d.placement === "detached" ? "The deck stands out in the yard: this beam is one of the two it stands on." : `${w.label}: ${w.why}`;
       } else {
         does += "It carries the outer ends of the joists down to the posts.";
         stays = "The joists' outer ends rest on it: it cannot come out. Its size, and how many posts it needs, can change.";
+      }
+      // BY HAND (2026-11-13; lib/deck/byHand): the beam slides along the joists — on the card, to the inch — one more
+      // can be stood under the joists, and one the builder placed can be taken off again.
+      const grip = lower ? null : gripOfPart(s, ref);
+      if (!lower) {
+        if (beam.by) choices.push({ id: "line-off", tone: "remove", label: "Remove this beam — it was set by hand", note: "Its posts go with it. If the joists cannot span what it leaves, deeper joists or a beam in the middle of the span carry them.", patch: removeBeamLine(s, beam.by.id) ?? {} });
+        if (beam.role === "front" && d.framing.overhangFt !== "auto") choices.push({ id: "front-auto", tone: "swap", label: "Let the studio place this beam", note: "It goes back to where the joist table puts it.", patch: { framing: { overhangFt: "auto" } } });
+        if (beam.role === "back" && d.framing.backOverhangFt !== "auto") choices.push({ id: "back-auto", tone: "swap", label: "Let the studio place this beam", note: "It goes back to as far in as the front beam.", patch: { framing: { backOverhangFt: "auto" } } });
+        const more = addBeam(s, beam.id);
+        if (more) choices.push({ id: "line-add", tone: "add", label: "Add a beam under the joists", note: `In the middle of the joists' longest span, ${ftIn(Math.round(more.spanIn))} now. The joists and the beams are sized again for the shorter spans.`, patch: more.patch });
+        if (grip?.fixed) does += ` ${grip.fixed}`;
       }
       if (!lower) {
         const sizes: readonly string[] = f.beamKind === "solid" ? SOLID_BEAMS : BUILT_UP_CHOICES;
         choices.push(...sizeRow(many ? "Beam size — every beam" : "Beam size", "beam", sizes, d.framing.beam, (v) => (v === "auto" ? "Auto" : String(v)), (v) => ({ framing: { beam: v as DeckDesign["framing"]["beam"] } })));
         choices.push(beam.style === "dropped" ? { id: "flush", tone: "swap", label: "Make the beams flush with the joists", note: "The beam moves up into the joists' plane and they hang on it in hangers: nothing below the frame but the posts.", patch: { framing: { beamStyle: "flush" } } } : { id: "dropped", tone: "swap", label: "Drop the beams under the joists", note: "The joists sit on top of the beam and may run past it.", patch: { framing: { beamStyle: "dropped" } } });
       }
-      return card(title, does, choices, stays);
+      return card(title, does, choices, stays, grip);
     }
 
     case "deck-post": {
@@ -376,21 +442,16 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
       if (!f || !post || !beam) return card("Post", "A post under the deck.", []);
       const choices: PartChoice[] = [];
       let stays: string | undefined;
-      // BY HAND (2026-11-13; design.framing.pins). A post can be slid, one can be added, and one set by hand taken off:
-      // the beam then stands on the posts as placed — and on more only where its spans or its ends need one.
-      if (!lower) {
-        const role = beam.role;
-        const others = d.framing.pins.filter((pn) => !(pn.beam === role && pn.atFt * 12 >= beam.x0 - 0.5 && pn.atFt * 12 <= beam.x1 + 0.5));
-        const pinsOf = (xs: number[]): DeckPostPin[] => [...others, ...xs.map((x) => ({ id: `${role[0]}${Math.round(x)}`, beam: role, atFt: Math.round(x) / 12 }))];
-        const byHand = f.posts.filter((q) => q.beamId === beam.id && q.by).map((q) => q.x);
-        const taken = byHand.length > 0;
-        // What the builder's posts are now: theirs where the beam is already by hand, every post of it where it is not yet.
-        const now = taken ? byHand : beam.postXs;
-        const here = now.findIndex((x) => Math.abs(x - post.x) < 0.5);
-        if (post.by) choices.push({ id: "pin-off", tone: "remove", label: "Remove this post — it was set by hand", note: "If the beam needs a post in the span it leaves, one stands in the middle of it.", patch: { framing: { pins: pinsOf(now.filter((_, k) => k !== here)) } } });
-        if (here >= 0) for (const by of [-12, 12]) choices.push({ id: `pin-slide-${by}`, tone: "swap", label: `Slide this post 1 ft to the ${by < 0 ? "left" : "right"}`, note: taken ? undefined : "The beam's posts stay where they are, as posts set by hand; this one moves.", patch: { framing: { pins: pinsOf(now.map((x, k) => (k === here ? Math.max(beam.x0 + 1, Math.min(beam.x1 - 1, x + by)) : x))) } } });
-        const gaps = beam.postXs.slice(1).map((x, k) => ({ at: (x + beam.postXs[k]) / 2, w: x - beam.postXs[k] })).sort((a, b) => b.w - a.w);
-        if (gaps.length && d.framing.pins.length < DECK_POST_LIMITS.pins) choices.push({ id: "pin-add", tone: "add", label: "Add a post under this beam", note: `In the middle of its longest span, ${ftIn(Math.round(gaps[0].w))} now.`, patch: { framing: { pins: pinsOf([...now, gaps[0].at]) } } });
+      // BY HAND (2026-11-13; design.framing.pins, lib/deck/byHand). A post slides along its beam — on the card, to the
+      // inch — one can be added, and one set by hand taken off: the beam then stands on the posts as placed, and on
+      // more only where its spans or its ends need one.
+      const grips = lower ? [] : deckGrips(s);
+      const grip = lower ? null : gripOfPart(s, ref, grips);
+      if (grip) {
+        const off = post.by ? removePost(s, grip.id, grips) : null;
+        if (off) choices.push({ id: "pin-off", tone: "remove", label: "Remove this post — it was set by hand", note: "If the beam needs a post in the span it leaves, one stands in the middle of it.", patch: off });
+        const more = addPostUnder(s, beam.id, grips);
+        if (more) choices.push({ id: "pin-add", tone: "add", label: "Add a post under this beam", note: `In the middle of its longest span, ${ftIn(Math.round(more.spanIn))} now.`, patch: more.patch });
       }
       if (lower) stays = "The lower level's posts follow its own beams.";
       else if (post.by) stays = undefined;
@@ -401,7 +462,7 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
         else stays = "No beam in the code's table spans farther between posts here: they stay, or an engineer sizes the beam.";
       }
       if (!lower) choices.push(...sizeRow("Post size — every post", "post", POST_SIZES, d.framing.post, (v) => String(v), (v) => ({ framing: { post: v as DeckDesign["framing"]["post"] } })).filter((c) => c.id !== "post-auto"));
-      return card(`${lvl ? "Lower-level post" : "Post"}`, `${post.size} post, ${ftIn(post.heightIn)} tall, carrying ${Math.round(post.tributarySqFt)} sq ft of deck down to its footing.`, choices, stays);
+      return card(`${lvl ? "Lower-level post" : "Post"}`, `${post.size} post, ${ftIn(post.heightIn)} tall, carrying ${Math.round(post.tributarySqFt)} sq ft of ${!lower && f.carries > 1 ? "the two decks — the lower deck's beam is let into it —" : "deck"} down to its footing.`, choices, stays, grip);
     }
 
     case "joist": {
@@ -435,7 +496,10 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
       const n = roof.hardware.braces;
       const choices: PartChoice[] = [{ id: "one", tone: "remove", label: "Remove this brace", patch: roofPatch({ bracesOff: withKey(d.roof.bracesOff, ref.id) }) }];
       if (n > 1) choices.push({ id: "all", tone: "remove", label: `Remove all ${n} roof braces`, patch: roofPatch({ braces: false, bracesOff: [] }), whole: true });
-      return card("Roof knee brace", `A 4x4 at 45° from the post up to the beam: the braces are what hold ${roof.attach === "free" ? "a free-standing roof" : "the roof"} square against wind and racking.`, choices);
+      const rsize = roof.members.find((m) => m.role === "roof-brace")?.nominal ?? "4x4";
+      const rsizes = braceSizesFor(d.roof.post, "4x4");
+      if (rsizes.length > 1) choices.push(...sizeRow("Brace size — every roof brace", "rbrace-size", rsizes, d.roof.braceSize, (v) => (v === "auto" ? "Auto" : String(v)), (v) => roofPatch({ braceSize: v as RoofDesign["braceSize"] })));
+      return card("Roof knee brace", `A ${rsize} at 45° from the post up to the beam: the braces are what hold ${roof.attach === "free" ? "a free-standing roof" : "the roof"} square against wind and racking.${rsizes.length > 1 ? ` It can be as heavy as the ${d.roof.post} post.` : d.roof.post === "4x4" ? " On a 4x4 post it is a 4x4: a larger post takes a larger brace." : ""}`, choices);
     }
 
     case "roof-beam": {
@@ -521,14 +585,21 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
       const built = opening ? roof.openings.find((x) => x.id === opening.id) : undefined;
       if (pin) {
         choices.push({ id: "pin-off", tone: "remove", label: "Remove this post — it was set by hand", note: "The header is sized again for the span it leaves; if no header reaches, the roof puts a post back where the span needs one.", patch: roofPatch({ pins: d.roof.pins.filter((x) => x.id !== pin.id) }) });
-        for (const by of [-1, 1]) choices.push({ id: `pin-slide-${by}`, tone: "swap", label: `Slide it 1 ft ${by < 0 ? (pin.side === "front" || pin.side === "back" ? "to the left" : "toward the house") : pin.side === "front" || pin.side === "back" ? "to the right" : "away from the house"}`, patch: roofPatch({ pins: d.roof.pins.map((x) => (x.id === pin.id ? { ...x, atFt: Math.max(0, x.atFt + by) } : x)) }) });
       } else if (opening) {
         choices.push({ id: "opening-off", tone: "remove", label: "Remove the opening — its two posts go with it", note: "The side goes back to the posts its spans ask for.", patch: roofPatch({ openings: d.roof.openings.filter((x) => x.id !== opening.id) }) });
         for (const w of [3, 4, 5, 6, 8]) choices.push({ id: `opening-${w}`, tone: "size", label: `${w} ft`, patch: roofPatch({ openings: d.roof.openings.map((x) => (x.id === opening.id ? { ...x, widthFt: w } : x)) }), current: opening.widthFt === w, row: "The opening's clear width" });
         choices.push({ id: "opening-door", tone: "swap", label: opening.door ? "Leave it open — the door comes later" : "Hang a screen door in it now", note: opening.door ? undefined : "A door hangs only where the walls between the posts are screen.", patch: roofPatch({ openings: d.roof.openings.map((x) => (x.id === opening.id ? { ...x, door: !x.door } : x)) }) });
-        for (const by of [-1, 1]) choices.push({ id: `opening-slide-${by}`, tone: "swap", label: `Slide the opening 1 ft ${by < 0 ? (opening.side === "front" || opening.side === "back" ? "to the left" : "toward the house") : opening.side === "front" || opening.side === "back" ? "to the right" : "away from the house"}`, patch: roofPatch({ openings: d.roof.openings.map((x) => (x.id === opening.id ? { ...x, atFt: Math.max(0, x.atFt + by) } : x)) }) });
+      }
+      // BY HAND (2026-11-13; lib/deck/byHand): a post between two corners slides along its side — on the card, to the
+      // inch (an opening's post takes the opening with it) — and one more can be stood on a side.
+      const rgrips = deckGrips(s);
+      const rgrip = gripOfPart(s, ref, rgrips);
+      for (const side of post.corner ? roofCornerSides(roof, post) : rgrip?.side ? [rgrip.side] : []) {
+        const more = addRoofPost(s, side, rgrips);
+        if (more) choices.push({ id: `rpin-add-${side}`, tone: "add", label: `Add a post on the ${ROOF_SIDE_LABEL[side].toLowerCase()}`, note: `In the middle of the longest stretch between two posts there, ${ftIn(Math.round(more.spanIn))} now. The beam over it is sized again for the shorter spans.`, patch: more.patch });
       }
       if (post.corner) stays = "A corner post: the roof stands on it.";
+      else if (rgrip?.fixed) stays = rgrip.fixed;
       else if (pin || opening) stays = undefined;
       else {
         const at = roofSideOf(roof, post);
@@ -543,12 +614,40 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
         else stays = "No beam in the list spans this side without it: it stays, or an engineer sizes the beam.";
       }
       choices.push(...sizeRow("Post size — every roof post", "rpost", ["4x4", "6x6", "8x8"] as const, d.roof.post, (v) => String(v), (v) => roofPatch({ post: v as RoofDesign["post"] })).filter((c) => c.id !== "rpost-auto"));
-      return card(pin ? "Roof post — set by hand" : opening ? `Roof post — at the ${built ? ftIn(Math.round(built.widthIn)) : `${opening.widthFt}-ft`} opening` : "Roof post", `${post.size} post, ${ftIn(post.heightIn)} tall, bringing about ${Math.round(post.loadLb / 10) * 10} lb of roof down to ${post.bearing === "deck" ? "its own footing under the deck" : post.bearing === "ground" ? "its footing" : "the slab"}.`, choices, stays);
+      return card(pin ? "Roof post — set by hand" : opening ? `Roof post — at the ${built ? ftIn(Math.round(built.widthIn)) : `${opening.widthFt}-ft`} opening` : "Roof post", `${post.size} post, ${ftIn(post.heightIn)} tall, bringing about ${Math.round(post.loadLb / 10) * 10} lb of roof down to ${post.bearing === "deck" ? "its own footing under the deck" : post.bearing === "ground" ? "its footing" : "the slab"}.`, choices, stays, rgrip);
     }
 
     case "stair": {
       if (ref.id === BETWEEN_LEVELS_STAIR_ID) return card("Steps between the levels", "The steps from the main deck down to the lower level.", [], "The lower level is more than one step down: it needs these steps. Put a stair of your own there to replace them.");
-      return card("Stairs", "A flight of stairs with its stringers, treads and landing.", [{ id: "remove", tone: "remove", label: "Remove this stair", patch: { stairs: d.stairs.filter((x) => x.id !== ref.id) } }]);
+      const st = s.stairs.find((x) => x.design.id === ref.id);
+      const wrap = st?.design.wrap;
+      const c = card(wrap ? "Steps round the deck" : "Stairs", wrap ? "Box steps wrapping the deck's open sides: a frame of treated lumber under treads of deck boards." : "A flight of stairs with its stringers, treads and landing.", [{ id: "remove", tone: "remove", label: wrap ? "Remove these steps" : "Remove this stair", patch: { stairs: d.stairs.filter((x) => x.id !== ref.id) } }]);
+      return st ? { ...c, finish: { target: { kind: "stair", id: ref.id }, now: st.design.finish ?? null, ...deckBoardNow(s) } } : c;
+    }
+
+    case "built-in": {
+      const bi = s.builtIns.find((x) => x.design.id === ref.id);
+      if (!bi) return card("Accessory", "Built into the deck.", []);
+      const title = BUILT_IN_LABEL[bi.kind];
+      const does =
+        bi.kind === "screen"
+          ? "A privacy screen of deck boards across posts carried down into the frame."
+          : bi.kind === "planter"
+            ? "A planter box of deck boards on a treated frame, standing on the boards."
+            : bi.kind === "kitchen"
+              ? "An outdoor kitchen island of deck boards round a treated frame, with a top and a grill by others; the joists under it are doubled."
+              : bi.kind === "fire"
+                ? "A place for a gas fire table the client buys: the checks keep what burns clear of it."
+                : "A bench of deck boards on treated legs.";
+      // MOVED IN THE 3D ITSELF (2026-11-15 — the owner: "I don't want that press-button move"): clicked, the picture holds
+      // still and it is dragged and turned there (lib/deck/accessories) — no Turn choices on the card, which opens from
+      // Options on the bar that names the accessory in the hand. A privacy screen stands in the railing's place: it
+      // slides along the edges and does not turn.
+      const choices: PartChoice[] = [{ id: "remove", tone: "remove", label: `Remove this ${title.toLowerCase()}`, patch: { extras: { builtIns: (d.extras.builtIns ?? []).filter((x) => x.id !== ref.id) } } }];
+      const move = bi.kind === "screen" ? " Drag it in the 3D to another edge." : " To move it, click it in the 3D: drag it anywhere on the deck, turn it by the round handle — brought to the railing, it turns and lines up there.";
+      const c = card(title, `${does} ${builtInWords(bi).replace(/^./, (ch) => ch.toUpperCase())}.${move}`, choices);
+      // (Boards of its own — lib/deck/finish — on a bench, a planter or a screen.)
+      return bi.kind === "kitchen" || bi.kind === "fire" ? c : { ...c, finish: { target: { kind: "built-in", id: ref.id }, now: bi.design.finish ?? null, ...deckBoardNow(s) } };
     }
 
     case "rail": {

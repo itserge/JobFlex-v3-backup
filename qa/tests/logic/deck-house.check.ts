@@ -20,7 +20,9 @@ const plain = defaultHouse();
 
 // ── the design read back
 const n = normalizeHouse({ storeys: 2, roof: "gable", leftFt: 99, rightFt: -3, jogs: [{ atFt: 12, dir: "toward", depthFt: 40 }, { atFt: 12.2, dir: "away", depthFt: 2 }, { atFt: 30, dir: "toward", depthFt: 2 }] }, rect);
-check("storeys and roof read; the wall's reach and a step's depth held to their limits", n.storeys === 2 && n.roof === "gable" && n.leftFt === 60 && n.rightFt === 0 && n.jogs[0].depthFt === 12, JSON.stringify(n));
+// (2026-11-14: a negative reach is the deck running past the house's corner — kept from 2 ft; a hair under is the deck ending AT the corner. See deck-past-house.check.ts.)
+check("storeys and roof read; the wall's reach and a step's depth held to their limits", n.storeys === 2 && n.roof === "gable" && n.leftFt === 60 && n.rightFt === -3 && n.jogs[0].depthFt === 12, JSON.stringify(n));
+check("…a corner a foot inside the deck's end is the deck ending at the corner", normalizeHouse({ leftFt: 4, rightFt: -1 }, rect).rightFt === 0);
 check("a step on top of another, or past the wall's end, is dropped; ids given", n.jogs.length === 1 && n.jogs[0].id === "j1", JSON.stringify(n.jogs));
 check("nothing given: one storey, a hip, 4 ft past each end, a straight wall", JSON.stringify(normalizeHouse(undefined, rect)) === JSON.stringify(plain));
 

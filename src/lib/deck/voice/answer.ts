@@ -157,7 +157,7 @@ export function answer(q: Question, about: string, pkg: DeckPackage, checks: rea
       if (!hasDeck(d)) return { say: `${sizeWords(d)} — ${Math.round(pkg.areaSqFt)} sq ft under it.` };
       const area = Math.round(shapeAreaSqFt(d.shape));
       const lowerArea = d.lower.on ? Math.round(d.lower.widthFt * d.lower.depthFt) : 0;
-      return { say: `${sizeWords(d)} — ${area} sq ft${lowerArea ? `, plus ${lowerArea} on the lower level` : ""}. ${ftWords(d.shape.widthFt)} along the house, ${ftWords(d.shape.depthFt)} out from it.`, light: { label: "Along the house", step: "step-shape" } };
+      return { say: `${sizeWords(d)} — ${area} sq ft${lowerArea ? `, plus ${lowerArea} on the lower ${d.lower.place === "under" ? "deck" : "level"}` : ""}. ${ftWords(d.shape.widthFt)} along the house, ${ftWords(d.shape.depthFt)} out from it.`, light: { label: "Along the house", step: "step-shape" } };
     }
     case "height": {
       if (!hasDeck(d)) return { say: `It stands ${d.floor === "slab" ? "on a new slab" : d.floor === "existing" ? "on the existing slab" : "on the ground"}; the headers are ${inWords(d.roof.eaveHeightIn)} up.` };
@@ -228,7 +228,7 @@ export function answer(q: Question, about: string, pkg: DeckPackage, checks: rea
     case "spa":
       return { say: d.spa.on ? `A ${ftWords(d.spa.widthFt)} × ${ftWords(d.spa.depthFt)} hot-tub spot at the ${d.spa.align === "centre" ? "middle" : d.spa.align}, the joists under it doubled — a filled tub is about 100 psf.` : "No hot-tub spot yet. Want one? The frame under it gets doubled for the water.", pending: d.spa.on ? null : { ask: "Add a hot-tub spot?", yes: [{ do: "spa", on: true }] }, light: d.spa.on ? { label: "Where the tub stands" } : null };
     case "lower":
-      return { say: d.lower.on ? `A lower level, ${ftWords(d.lower.widthFt)} × ${ftWords(d.lower.depthFt)}, ${inWords(d.lower.dropIn)} below the main deck.` : "One level. Say \"add a lower level\" for a step-down platform." };
+      return { say: d.lower.on && d.lower.place === "under" ? `A double deck: a second deck of the same size under this one, ${inWords(d.lower.heightIn)} above the ground and ${inWords(d.lower.dropIn)} below the upper deck, on the same posts.` : d.lower.on ? `A lower level, ${ftWords(d.lower.widthFt)} × ${ftWords(d.lower.depthFt)}, ${inWords(d.lower.dropIn)} below the main deck.` : "One level. Say \"add a lower level\" for a step-down platform." };
     case "colors": {
       const now = deckingProduct(d.decking.product);
       const line = DECKING.filter((p) => (now.brand ? p.brand === now.brand : p.family === now.family));

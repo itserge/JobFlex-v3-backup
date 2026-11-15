@@ -21,6 +21,7 @@
 // flips Z. A `dim` is a dimension string with ticks and its label.
 
 import { ftIn, LEDGER_FASTENER_LABEL, RULE, rulesFor } from "./codeTables";
+import { lowerFloor, lowerFloorWords } from "./doubleDeck";
 import { OC_POST, OC_RULE, OC_SOURCES } from "./ocLumber";
 import { RULE_RAFTER } from "./roofTables";
 import type { DeckDesign, RailMount } from "./design";
@@ -86,7 +87,11 @@ export function permitPages(s: DeckStructure): PermitPage[] {
 /** The post the section cuts through: the first beam's first post (the deck's front line), else the first post. */
 export function sectionPost(frame: DeckFrame): Post | null {
   const front = frame.beams.find((b) => b.role === "front") ?? frame.beams[0];
-  return (front && frame.posts.find((p) => p.beamId === front.id)) ?? frame.posts[0] ?? null;
+  // Where the deck runs past the house's corner (2026-11-14) the section is cut through the part ON the wall — the
+  // wall, the ledger and a joist from one to the other are what it shows.
+  const walled = frame.zones.filter((z) => !z.zone.open).map((z) => z.zone);
+  const onWall = (p: Post) => walled.length === frame.zones.length || walled.some((z) => p.x >= z.x0 && p.x <= z.x1);
+  return (front && (frame.posts.find((p) => p.beamId === front.id && onWall(p)) ?? frame.posts.find((p) => p.beamId === front.id))) ?? frame.posts[0] ?? null;
 }
 
 /**
@@ -670,6 +675,11 @@ export function permitNotes(s: DeckStructure, local: string[] = [], edition: str
     } else out.push(`Free-standing: the deck stands on its own posts and beams, braced both ways at the posts — detail 7/S-501 (${RULE.selfSupporting}; ${R.bracing}).`);
     out.push(`Joists ${f.group === "OC" ? "OC Lumber " : ""}${f.joistSize} at ${f.spacingIn} in. on center; a hanger at every joist end on a ledger or a flush beam, a tie at every joist on a dropped beam (${R.hangers}; ${R.restraint}).`);
     out.push(d.framing.post === OC_POST ? `Posts built up of three 2x6 OC boards, 9 ft at most and braced; beams of two or three OC boards bear fully on the posts (${R.post}; ${R.beam}).` : `Posts ${d.framing.post} in metal post bases and caps; beams bear fully on the posts, never toe-nailed (${R.post}; ${R.beam}).`);
+    // A DOUBLE DECK (2026-11-13): the lower deck on the upper deck's posts.
+    if (s.lower?.place === "under") {
+      const lf = s.lower.frame;
+      out.push(`Double deck: a lower deck ${ftIn(d.lower.heightIn)} above grade under the upper one, ${d.lower.shape ? `${lowerFloorWords(lowerFloor(d))}, its beams on the upper deck's lines where they pass over it and on posts of its own elsewhere` : "the same outline, framed on the same lines"} — ${lf.joistSize} joists at ${lf.spacingIn} in., ${[...new Set(lf.beams.map((b) => b.spec.size))].join(" and ")} ${lf.beams.length === 1 ? "beam" : "beams"}. Each lower beam sits in a seat let 1 1/2 in. per ply into its post and is fastened with two 1/2-in. through bolts with washers (${lf.seats.length} seats); the posts run in one piece from the footings to the upper beams, and the posts and footings are sized for the area of both decks. The lower deck's ledger, hangers and lateral connection as the upper deck's (${R.post}; ${R.beam}).`);
+    }
     out.push(`Decking: ${f.decking.label}${s.surface?.border ? `, with ${borderWords(s.surface)} — blocked under its inner edge along the sides` : ""}, fastened to its maker's instructions; joist spacing ${f.spacingIn} in. (the boards allow ${f.deckingMaxSpacingIn} in.) (${RULE.decking}).`);
   }
   if (s.rails.on) out.push(`Guards ${s.rails.heightIn} in. high where the walking surface is more than 30 in. above grade; no opening passes a 4-in. sphere; guard posts ${railHeldWords(s.rails)}${s.rails.sidePosts && s.rails.postKind !== "metal" ? ", the rim blocked" : ""}; the top rail resists 200 lb (${RULE.guard}; IRC Table R301.5).`);

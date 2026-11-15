@@ -289,7 +289,7 @@ export function roofReportData(input: RoofReportInput): RoofReportData {
     roofAgeYears: main?.roofAgeYears ?? null,
     lines,
     confidence: model.confidence,
-    facetsTable: model.facets.map((f) => ({ letter: f.letter, part: f.part, pitch: f.pitchLabel, facing: f.facing ? FACING_WORDS[f.facing] ?? f.facing : "—", areaSqft: Math.round(f.areaSqft) })),
+    facetsTable: model.facets.map((f) => ({ letter: f.letter, part: f.part, pitch: f.pitchLabel, facing: f.round ? "Round" : f.facing ? FACING_WORDS[f.facing] ?? f.facing : "—", areaSqft: Math.round(f.areaSqft) })),
     plan,
     photo: { widthM: w.widthM, heightM: w.heightM, outline: photoOutline, date: input.imagery.date },
     waste,

@@ -48,11 +48,33 @@
 //   sign); the contractor's own words ("WHAT THE CONTRACTOR WANTS") → take out the elevations / materials, a note, the
 //   septic tank on the site plan, a deeper footing for the studio. The Responses API with web_search (POST /v1/responses)
 //   → Knox County's deck checklist with two cited links.
+//   The Operator's new engine (2026-11-13, lib/assistant/speed): POST /v1/audio/transcriptions writes a take down as
+//   the words set by POST /__fake/ears {text} ("How many proposals are waiting?" until set) and keeps what it was
+//   asked (model, languages, keywords, prompt); GET /v1/models/<id> says the model is there; every chat request's
+//   model, reasoning_effort and parallel_tool_calls are kept. POST /__fake/ears {refuse:[models], refuseKeywords:bool,
+//   refuseChat:[models], refuseParallel:bool} makes a model answer 404 (or 400 for the keywords / the several-at-once),
+//   and GET /__fake/ears reads it all back — so a check can see the ladder fall a step at a time.
+//   {queue:[…]} gives the takes their words one by one and silence ("") after the last — a quiet room on timed
+//   takes; {delayMs} is how long a take is being written down.
 //   NODE_PATH="" npx --no-install tsx qa/fixtures/assistant-fake-openai.ts     (FAKE_OPENAI_PORT, default 4601)
 import http from "node:http";
 import { readBudgetText } from "../../src/lib/projectBudgetImport";
 
 const PORT = Number(process.env.FAKE_OPENAI_PORT || 4601);
+/** The Operator's new engine on the stand: what the ears "hear", which models refuse, and what was asked of them. */
+const ears: { text: string; queue: string[] | null; delayMs: number; refuse: string[]; refuseKeywords: boolean; refuseChat: string[]; refuseParallel: boolean; heard: Array<{ model: string; languages: string[]; language: string | null; keywords: string[]; prompt: boolean }>; chats: Array<{ model: string; effort: string | null; parallel: boolean | null; temperature: number | null; systemStart: string }> } = {
+  text: "How many proposals are waiting?",
+  queue: null,
+  delayMs: 0,
+  refuse: [],
+  refuseKeywords: false,
+  refuseChat: [],
+  refuseParallel: false,
+  heard: [],
+  chats: [],
+};
+/** A form field of a multipart body read as text (the audio's bytes are noise around it; the fields survive). */
+const formFields = (raw: string, name: string): string[] => [...raw.matchAll(new RegExp(`name="${name.replace(/[[\]]/g, "\\$&")}"\r\n\r\n([^\r]*)\r\n`, "g"))].map((m) => m[1]);
 /** 0.3 s of silence, 24 kHz mono MP3 (ffmpeg anullsrc). */
 const SILENT_MP3 = Buffer.from("SUQzBAAAAAAAIlRTU0UAAAAOAAADTGF2ZjYyLjMuMTAwAAAAAAAAAAAAAAD/84TAAAAAAAAAAAAASW5mbwAAAA8AAAAPAAAGYAAtLS0tLS08PDw8PDw8S0tLS0tLWlpaWlpaWmlpaWlpaWl4eHh4eHiHh4eHh4eHlpaWlpaWlqWlpaWlpbS0tLS0tLTDw8PDw8PD0tLS0tLS4eHh4eHh4fDw8PDw8PD///////8AAAAATGF2YzYyLjExAAAAAAAAAAAAAAAAJANgAAAAAAAABmBrl8IEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/80TEAAAAA0gAAAAATEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy7/80TEUwAAA0gAAAAAMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy7/80TEpgAAA0gAAAAAMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy7/80TErAAAA0gAAAAAMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy7/80TErAAAA0gAAAAAMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy7/80TErAAAA0gAAAAAMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy7/80TErAAAA0gAAAAAMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy7/80TErAAAA0gAAAAAMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy7/80TErAAAA0gAAAAAMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy7/80TErAAAA0gAAAAAMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy7/80TErAAAA0gAAAAAMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy7/80TErAAAA0gAAAAAMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy7/80TErAAAA0gAAAAAMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/80TErAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/80TErAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=", "base64");
 const DAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
@@ -1152,6 +1174,53 @@ http
         return;
       }
       res.setHeader("content-type", "application/json");
+      // The Operator's new engine (2026-11-13): the control and the read-back, the ears, and "is this model there".
+      if (req.url?.startsWith("/__fake/ears")) {
+        if ((req.method ?? "GET").toUpperCase() === "POST") {
+          const set = JSON.parse(raw || "{}") as Partial<typeof ears> & { reset?: boolean };
+          if (set.reset) Object.assign(ears, { queue: null, delayMs: 0, refuse: [], refuseKeywords: false, refuseChat: [], refuseParallel: false, heard: [], chats: [] });
+          if (typeof set.text === "string") ears.text = set.text;
+          if (Array.isArray(set.queue)) ears.queue = set.queue.map(String);
+          if (typeof set.delayMs === "number") ears.delayMs = Math.max(0, set.delayMs);
+          if (Array.isArray(set.refuse)) ears.refuse = set.refuse;
+          if (typeof set.refuseKeywords === "boolean") ears.refuseKeywords = set.refuseKeywords;
+          if (Array.isArray(set.refuseChat)) ears.refuseChat = set.refuseChat;
+          if (typeof set.refuseParallel === "boolean") ears.refuseParallel = set.refuseParallel;
+        }
+        res.end(JSON.stringify(ears));
+        return;
+      }
+      if (req.url?.includes("/audio/transcriptions")) {
+        const model = formFields(raw, "model")[0] ?? "";
+        const keywords = formFields(raw, "keywords[]");
+        ears.heard.push({ model, languages: formFields(raw, "languages[]"), language: formFields(raw, "language")[0] ?? null, keywords, prompt: formFields(raw, "prompt").length > 0 });
+        if (ears.refuse.includes(model)) {
+          res.statusCode = 404;
+          res.end(JSON.stringify({ error: { message: `The model \`${model}\` does not exist`, code: "model_not_found" } }));
+          return;
+        }
+        if (ears.refuseKeywords && keywords.length) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ error: { message: "Unknown parameter: 'keywords'.", code: "unknown_parameter" } }));
+          return;
+        }
+        // A queue: one take, one entry — and silence ("") once it has run out, as a quiet room is written down.
+        const heardText = ears.queue ? (ears.queue.shift() ?? "") : ears.text;
+        const heardEnd = () => res.end(JSON.stringify({ text: heardText }));
+        if (ears.delayMs) setTimeout(heardEnd, ears.delayMs);
+        else heardEnd();
+        return;
+      }
+      if (/\/models\/[\w.-]+$/.test(req.url ?? "") && (req.method ?? "GET").toUpperCase() === "GET") {
+        const id = (req.url ?? "").split("/").pop() ?? "";
+        if (ears.refuseChat.includes(id) && ears.refuse.includes(id)) {
+          res.statusCode = 404;
+          res.end(JSON.stringify({ error: { message: `The model \`${id}\` does not exist`, code: "model_not_found" } }));
+          return;
+        }
+        res.end(JSON.stringify({ id, object: "model" }));
+        return;
+      }
       // Ramp's Bill Pay (part 5a).
       if (req.url?.startsWith("/developer/v1") || req.url?.startsWith("/__fake/ramp/")) {
         const out = fakeRampRoute(req.method ?? "GET", req.url, raw);
@@ -1183,7 +1252,23 @@ http
       }
       if (req.url?.includes("/chat/completions")) {
         try {
-          const body = JSON.parse(raw || "{}") as { messages?: Msg[]; tools?: unknown[]; response_format?: { type?: string; json_schema?: { name?: string } } };
+          const body = JSON.parse(raw || "{}") as { messages?: Msg[]; tools?: unknown[]; response_format?: { type?: string; json_schema?: { name?: string } }; model?: string; reasoning_effort?: string; parallel_tool_calls?: boolean; temperature?: number };
+          // The Operator's turns (they carry tools): what was asked is kept, and a model set to refuse does.
+          if (Array.isArray(body.tools) && body.tools.length) {
+            const system = (body.messages ?? []).find((m) => m.role === "system");
+            ears.chats.push({ model: body.model ?? "", effort: body.reasoning_effort ?? null, parallel: body.parallel_tool_calls ?? null, temperature: body.temperature ?? null, systemStart: typeof system?.content === "string" ? system.content.slice(0, 60) : "" });
+            if (ears.chats.length > 200) ears.chats.shift();
+            if (ears.refuseChat.includes(body.model ?? "")) {
+              res.statusCode = 404;
+              res.end(JSON.stringify({ error: { message: `The model \`${body.model}\` does not exist`, code: "model_not_found" } }));
+              return;
+            }
+            if (ears.refuseParallel && body.parallel_tool_calls === true) {
+              res.statusCode = 400;
+              res.end(JSON.stringify({ error: { message: "Unsupported parameter: 'parallel_tool_calls'.", code: "unsupported_parameter" } }));
+              return;
+            }
+          }
           // The estimate reader and the comparer (the subcontractors plan, part 2).
           if (body.response_format?.type === "json_schema" && body.response_format.json_schema?.name === "quote_read") {
             res.end(JSON.stringify(reply(JSON.stringify(fakeQuoteRead(body.messages ?? [])))));

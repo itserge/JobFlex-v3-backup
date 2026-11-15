@@ -83,7 +83,7 @@ const STAIRS_PLAIN: Array<[string, Partial<FieldFocus>?]> = [
   ["Railing"], ["Height"], ["Infill"], ["Posts apart"], ["Your railing"], ["Your rail price, installed"], ["Tear out an old deck"],
   ["A flat 2x6 drink cap"], ["Rail on the lower level too"], ["Stainless connectors — within 300 ft of salt water"],
   ["Down the", { stair: "s1" }], ["Centred at", { stair: "s1" }], ["Width", { stair: "s1" }], ["Width", { stair: "s2" }], ["Lands on", { stair: "s1" }], ["Handrail", { stair: "s1" }],
-  ["Box steps wrapping the deck (three risers at most)", { stair: "s1" }],
+  ["Wide steps wrapping the deck (seven risers at most)", { stair: "s1" }],
 ];
 const stairsLit = STAIRS_PLAIN.filter(([label, more]) => lit({ label, step: "step-stairs", ...(more ?? {}) }) !== null);
 check(`the stairs and railing step lights nothing (${STAIRS_PLAIN.length} fields and ticks)`, stairsLit.length === 0, stairsLit.map(([l]) => l).join(", ") || "all plain");

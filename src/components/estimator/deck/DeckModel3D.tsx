@@ -28,6 +28,7 @@
 // camera stands in the yard.
 import * as React from "react";
 import * as THREE from "three";
+import { boxPlace, placeSeeds, ringPlace } from "@/lib/deck/boardTone";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { BORDER_BOARD_ROLE, RAIL_CAP_ROLE, RAIL_INFILL_ROLE, SCENE_LAYERS, sceneBuildLayers, memberBoxCorners, memberIsSawn, MEMBER_BOX_FACES, type DeckScene, type SceneHandle, type SceneLayer, type SceneLegend } from "@/lib/deck/scene";
@@ -40,13 +41,17 @@ export interface DeckEdit {
   kind: SceneHandle["kind"];
   id: string;
   value: number;
+  /** An "xy" handle's second number (an accessory dragged across the deck: out from the house, inches). */
+  value2?: number;
+  /** An accessory turned by its round handle (2026-11-15): its new turn, degrees — `value`/`value2` are then its middle as it was. */
+  turn?: number;
   /** The pointer came up: the last value of this drag. */
   done: boolean;
 }
 
 /** The short name beside each edit knob, and which names win a crowded spot (the deck's own size first, the house last). */
-const KNOB_NAME: Record<SceneHandle["kind"], string> = { width: "Width", depth: "Depth", height: "Height", eave: "Post height", pitch: "Pitch", "roof-width": "Roof width", "roof-depth": "Roof depth", "lower-depth": "Lower level", stair: "Move stairs", "stair-width": "Stair width", jog: "Wall step", "house-left": "House corner", "house-right": "House corner" };
-const KNOB_RANK: Record<SceneHandle["kind"], number> = { width: 0, depth: 1, height: 2, eave: 3, pitch: 4, "roof-width": 5, "roof-depth": 6, "lower-depth": 7, "stair-width": 8, stair: 9, "house-left": 10, "house-right": 11, jog: 12 };
+const KNOB_NAME: Record<SceneHandle["kind"], string> = { width: "Width", "width-left": "Width", depth: "Depth", height: "Height", eave: "Post height", pitch: "Pitch", "roof-width": "Roof width", "roof-depth": "Roof depth", "lower-depth": "Lower level", stair: "Move stairs", "stair-width": "Stair width", jog: "Wall step", "house-left": "House corner", "house-right": "House corner", post: "Move post", beam: "Move beam", "roof-post": "Move roof post" , builtin: "Accessory" };
+const KNOB_RANK: Record<SceneHandle["kind"], number> = { width: 0, "width-left": 0.5, depth: 1, height: 2, eave: 3, pitch: 4, "roof-width": 5, "roof-depth": 6, "lower-depth": 7, "stair-width": 8, stair: 9, "house-left": 10, "house-right": 11, jog: 12, post: 13, beam: 14, "roof-post": 15 , builtin: 20 };
 
 /** What a touch landed on, for the studio's label and the fixture placer. */
 export interface DeckPick {
@@ -59,6 +64,8 @@ export interface DeckPick {
   mount: "post" | "header" | "rail" | "deck" | "ceiling" | "wall" | "stair" | "peak";
   /** The scene's box that was touched (lib/deck/parts names the part from it); null for a flat face, the ground or the house. */
   boxIdx?: number | null;
+  /** A board cut to a shape that was touched (2026-11-14): its ring in the scene's `diagonal` — a step that follows the deck's outline is named from it. */
+  ringIdx?: number | null;
 }
 
 export interface DeckModel3DProps {
@@ -757,6 +764,8 @@ interface Built {
   callouts: THREE.Sprite[];
   /** The edit handles, one mesh each, with the handle they stand for. */
   handles: THREE.Mesh[];
+  /** Each accessory's unseen box, turned with it (2026-11-15): taken in the hand by a click, in Edit in 3D or not. */
+  liveBoxes: THREE.Mesh[];
   /** The DOM knob over each handle (same order). */
   knobs: HTMLButtonElement[];
   /** Each knob's short name, and the dashed leader back to its handle when the knob is pushed off it (same order). */
@@ -901,8 +910,45 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
 .dk-views svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 @media (pointer:coarse){.dk-views button{min-width:44px;height:44px;padding:0 9px}.dk-views button[data-view^="turn-"]{display:none}}
 @media (prefers-reduced-motion:reduce){.dk-views button{transition:none}}
+[data-deck-knobs] .dk-turn{position:absolute;left:0;top:0;width:calc(var(--dk) + 4px);height:calc(var(--dk) + 4px);margin:calc((var(--dk) + 4px) / -2) 0 0 calc((var(--dk) + 4px) / -2);box-sizing:border-box;border-radius:50%;border:2px solid #fff;background:#f5a623;color:#0f2747;display:none;place-items:center;padding:0;box-shadow:0 0 0 1px rgba(10,34,70,.45),0 2px 6px rgba(0,0,0,.32);pointer-events:auto;touch-action:none;cursor:grab}
+[data-deck-knobs] .dk-turn svg{width:62%;height:62%;display:block;pointer-events:none}
+[data-deck-knobs] .dk-turn:hover,[data-deck-knobs] .dk-turn[data-active]{background:#ffbf47;box-shadow:0 0 0 4px rgba(245,166,35,.35),0 2px 8px rgba(0,0,0,.38)}
+[data-deck-knobs] .dk-turn[data-active]{cursor:grabbing}
+[data-deck-knobs] .dk-turn:focus-visible{outline:2px solid #1854a0;outline-offset:3px}
+[data-deck-knobs] .dk-live{position:absolute;left:10px;bottom:10px;display:none;align-items:center;gap:8px;max-width:min(560px,calc(100% - 150px));box-sizing:border-box;padding:7px 7px 7px 12px;border-radius:2px;background:rgba(15,39,71,.95);color:#fff;font:600 12.5px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.3);pointer-events:auto}
+[data-deck-knobs] .dk-live span{min-width:0}
+[data-deck-knobs] .dk-live b{font-weight:800}
+[data-deck-knobs] .dk-live button{flex:none;height:32px;padding:0 14px;border:0;border-radius:2px;background:#fff;color:#0f2747;font:800 12px/1 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
+[data-deck-knobs] .dk-live button[data-deck-live-more]{background:transparent;color:#fff;box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.7);padding:0 10px}
+[data-deck-knobs] .dk-live button:focus-visible{outline:2px solid #f5a623;outline-offset:2px}
+@media (pointer:coarse){[data-deck-knobs] .dk-live button{height:44px}}
 </style><svg class="dk-leaders" aria-hidden="true"></svg>`;
     const leaderLayer = knobLayer.querySelector("svg") as SVGSVGElement;
+    // The accessory in the hand: its round turn handle, and the bar that names it with Done (2026-11-15).
+    const turnKnob = document.createElement("button");
+    turnKnob.type = "button";
+    turnKnob.className = "dk-turn";
+    turnKnob.dataset.deckTurn = "";
+    turnKnob.setAttribute("aria-label", "Turn it — drag round, or press the arrow keys");
+    turnKnob.title = "Drag round to turn it";
+    turnKnob.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4.5h-4.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    knobLayer.appendChild(turnKnob);
+    const liveBar = document.createElement("div");
+    liveBar.className = "dk-live";
+    liveBar.dataset.deckLiveBar = "";
+    liveBar.setAttribute("role", "status");
+    const liveText = document.createElement("span");
+    const liveMore = document.createElement("button");
+    liveMore.type = "button";
+    liveMore.textContent = "Options";
+    liveMore.title = "Its boards, or remove it";
+    liveMore.dataset.deckLiveMore = "";
+    const liveDone = document.createElement("button");
+    liveDone.type = "button";
+    liveDone.textContent = "Done";
+    liveDone.dataset.deckLiveDone = "";
+    liveBar.append(liveText, liveMore, liveDone);
+    knobLayer.appendChild(liveBar);
     mount.appendChild(knobLayer);
     // The canvas is the picture; with a view bar beside it the box is a group, so the buttons are read too.
     if (viewControlsRef.current) {
@@ -1099,20 +1145,37 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
     const invalidate = () => { dirty = true; requestFrame(); };
     let content: Built | null = null;
     // A handle drag: the pointer's movement along the handle's axis, read on a plane through the handle; `last` is the value last sent.
-    let drag: { handle: SceneHandle; plane: THREE.Plane; start: THREE.Vector3; last: number } | null = null;
+    let drag: { handle: SceneHandle; plane: THREE.Plane; start: THREE.Vector3; last: number; last2?: number } | null = null;
+    // A post or a beam the pointer went down on (SceneHandle.grab), not yet pulled: a pull moves it, letting go is a click.
+    let grabDown: { mesh: THREE.Mesh; x: number; y: number } | null = null;
+    // THE ACCESSORY IN THE HAND (2026-11-15 — the owner: "if I click on the accessory, everything gets frozen, and I just
+    // drag it on the deck wherever I want it… when I unclick, everything starts working again"; no Turn buttons): its id
+    // while it is held. The camera stands still; it is outlined, with a round turn handle on a ring round it; a press on
+    // the deck moves it there and it follows the pointer; a click off the deck, Done or Esc lets it go.
+    let live: string | null = null;
+    // Pressed on an accessory, not yet pulled: a pull drags it at once; letting go leaves it in the hand. (No card opens
+    // on that click: a card under the picture would re-size it, and the accessory would slip from under the pointer —
+    // its card, with its boards and Remove, opens from Options on the bar.)
+    let liveDown: { mesh: THREE.Mesh; x: number; y: number } | null = null;
+    // Its round handle held: the turn the pointer gives now, and the one last sent (degrees).
+    let turning: { id: string; angle: number; last: number } | null = null;
+    // Set further down, once the picking is: outline the accessory in the hand after a rebuild (or let it go when it is gone).
+    let showLive = () => {};
     // THE GRABBED EDGE STAYS UNDER THE POINTER (owner, 2026-10-18). The scene stands on the deck's centre, so a wider
     // deck used to slide the house one way and the knob the other: the knob fell behind the pointer and the size ran
     // ahead of the hand. While a knob is held the origin is pinned where the drag began, so only the grabbed edge
     // moves — by exactly the drag; the rebuild after letting go re-centres (and re-frames) as before.
     let pinned: { ox: number; oz: number } | null = null;
-    const origin = (s: { widthFt: number; depthFt: number }) => pinned ?? { ox: s.widthFt / 2, oz: s.depthFt / 2 };
+    // (The deck's LEFT end, 2026-11-14: the scene is measured from that end, so while it is pulled the pinned origin
+    // goes with it by as much as the deck has grown — the house stays where it was and the end stays under the hand.)
+    const origin = (s: { widthFt: number; depthFt: number }) => (pinned ? { ox: pinned.ox + (drag && drag.handle.kind === "width-left" ? s.widthFt - drag.handle.value : 0), oz: pinned.oz } : { ox: s.widthFt / 2, oz: s.depthFt / 2 });
     // The knob that had the keyboard, so a rebuild hands it back.
     let focusedKnob: string | null = null;
     // The knob under the pointer, focused or held: its name shows first, with its size, in blue.
     let hotKnob: string | null = null;
     const textRuler = document.createElement("canvas").getContext("2d");
     const setKnobLabel = (tag: HTMLSpanElement, h: SceneHandle, hot: boolean) => {
-      const sized = h.kind === "width" || h.kind === "depth" || h.kind === "height" || h.kind === "eave" || h.kind === "pitch" || h.kind === "roof-width" || h.kind === "roof-depth" || h.kind === "lower-depth" || h.kind === "stair-width";
+      const sized = h.kind === "width" || h.kind === "width-left" || h.kind === "depth" || h.kind === "height" || h.kind === "eave" || h.kind === "pitch" || h.kind === "roof-width" || h.kind === "roof-depth" || h.kind === "lower-depth" || h.kind === "stair-width";
       const now = h.kind === "pitch" ? `${Math.round(h.value)}:12` : h.perUnit === 1 ? `${Math.round(h.value * 2) / 2} ft` : `${Math.round(h.value)} in`;
       tag.textContent = hot && sized ? `${KNOB_NAME[h.kind]} · ${now}` : KNOB_NAME[h.kind];
       if (hot) tag.dataset.hot = "";
@@ -1270,6 +1333,22 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       const borderColor = s.colors.border ? new THREE.Color(s.colors.border) : null;
       const borderColor2 = s.colors.border2 ? new THREE.Color(s.colors.border2) : null;
       const borderRings = new Set(s.diagonal?.border ?? []);
+      // BOARDS OF THEIR OWN (2026-11-14; lib/deck/finish): a stair's treads and risers, a built-in's boards, in the line
+      // and colour picked for them — each board still a touch lighter or darker than the next, as the deck's are.
+      const paintBox = new Map<number, { c: THREE.Color; c2: THREE.Color | null }>();
+      const paintRing = new Map<number, { c: THREE.Color; c2: THREE.Color | null }>();
+      for (const pt of s.paints ?? []) {
+        const look = { c: new THREE.Color(pt.hex), c2: pt.hex2 ? new THREE.Color(pt.hex2) : null };
+        for (const i of pt.boxes) paintBox.set(i, look);
+        for (const i of pt.rings) paintRing.set(i, look);
+      }
+      /** A box's colour when it is a board of its own: the deck's boards streaked, a riser or an apron a shade under. */
+      const ownPaint = (bi: number, L: number): THREE.Color | null => {
+        const own = paintBox.get(bi);
+        if (!own) return null;
+        if (L === DECKING) return streaked(own.c, own.c2, boardSeed.get(bi) ?? bi + L * 97, 0.045);
+        return jitter(tone(own.c, L === FASCIA ? -0.05 : -0.02), bi + L * 97, 0.03);
+      };
       const roofColor = new THREE.Color(s.colors.roofing ?? "#565250");
       const railColor = new THREE.Color(s.colors.rail ?? s.colors.frame);
       const metalRoof = s.colors.roofing === "#6f7478" || s.colors.roofing === "#3f4a55";
@@ -1357,6 +1436,19 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       const rank = SCENE_LAYERS.map((name) => order.indexOf(name));
       const legendOf = (i: number): SceneLegend | null => (s.tags.length === s.boxes.length && s.tags[i] >= 0 ? s.legend[s.tags[i]] ?? null : null);
 
+      // EVERY BOARD'S SHADE GOES WITH ITS PLACE (owner, 2026-11-14: "when moving the deck, reshaping and cutting the
+      // corners, the decking on the 3D gets discoloured… keep the decking material steady in colour"). It went with the
+      // board's number in this list — which changes whenever anything before it does (a joist more, a post moved, a
+      // corner cut) — so every change dealt the floor a new hand of shades. Now: its row and which board of that row it
+      // is (lib/deck/boardTone), the square boards and the cut ones worked out together.
+      const deckBoxes: number[] = [];
+      s.boxes.forEach((b, i) => {
+        if (b[0] === DECKING) deckBoxes.push(i);
+      });
+      const cutBoards = (s.diagonal?.boards ?? []).map((ring, i) => ringPlace(ring, s.diagonal?.zs?.[i] ?? s.heightFt));
+      const floorSeeds = placeSeeds([...deckBoxes.map((i) => boxPlace(s.boxes[i][1], s.boxes[i][2], s.boxes[i][4], s.boxes[i][5], s.boxes[i][3])), ...cutBoards.map((c) => c.place)]);
+      const boardSeed = new Map<number, number>(deckBoxes.map((i, k) => [i, floorSeeds[k]]));
+      const cutSeeds = floorSeeds.slice(deckBoxes.length);
       const layers: Built["layers"] = SCENE_LAYERS.map(() => []);
       const braces: THREE.Mesh[] = [];
       const m4 = new THREE.Matrix4();
@@ -1435,7 +1527,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
             // slid by depth²÷length and the ends stood square, so rafters met at the ridge overlapping, 2026-10-11).
             boxMatrix(b, legendOf(bi)?.role ?? null, ox, oz, m4);
             mesh.setMatrixAt(k, m4);
-            mesh.setColorAt(k, L === LIGHT && s.glows.some((g) => Math.abs(g[0] - b[1]) < 0.05 && Math.abs(g[1] - b[2]) < 0.05 && Math.abs(g[2] - b[3]) < 0.05) ? new THREE.Color(s.glows.find((g) => Math.abs(g[0] - b[1]) < 0.05 && Math.abs(g[1] - b[2]) < 0.05 && Math.abs(g[2] - b[3]) < 0.05)![3]).lerp(new THREE.Color(0xffffff), 0.45) : L === DECKING ? (borderColor && BORDER_BOARD_ROLE.test(legendOf(bi)?.role ?? "") ? streaked(borderColor, borderColor2, bi + L * 97, 0.045) : streaked(base, deckColor2, bi + L * 97, 0.045)) : jitter(base, bi + L * 97, L === TRIM || L === GUTTER || L === HARDWARE ? 0.01 : 0.03));
+            mesh.setColorAt(k, ownPaint(bi, L) ?? (L === LIGHT && s.glows.some((g) => Math.abs(g[0] - b[1]) < 0.05 && Math.abs(g[1] - b[2]) < 0.05 && Math.abs(g[2] - b[3]) < 0.05) ? new THREE.Color(s.glows.find((g) => Math.abs(g[0] - b[1]) < 0.05 && Math.abs(g[1] - b[2]) < 0.05 && Math.abs(g[2] - b[3]) < 0.05)![3]).lerp(new THREE.Color(0xffffff), 0.45) : L === DECKING ? (borderColor && BORDER_BOARD_ROLE.test(legendOf(bi)?.role ?? "") ? streaked(borderColor, borderColor2, boardSeed.get(bi) ?? bi, 0.045) : streaked(base, deckColor2, boardSeed.get(bi) ?? bi, 0.045)) : jitter(base, bi + L * 97, L === TRIM || L === GUTTER || L === HARDWARE ? 0.01 : 0.03)));
             centres[bi] = [new THREE.Vector3(b[1] - ox, b[3], b[2] - oz), Math.max(b[4], b[5], b[6])];
           });
           mesh.instanceMatrix.needsUpdate = true;
@@ -1563,10 +1655,16 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       };
 
       // Boards cut to a shape (a bow, a clip, a diagonal): each ring a thin prism, all in one geometry.
+      // THE SAME BOARD AS THE SQUARE ONES (owner, 2026-11-14: "when reshaping and cutting the corners the decking on the
+      // 3D gets discoloured… keep the decking material steady in colour"). These were painted in the bare colour while
+      // the square boards wear the grain — a pale, flat patch wherever the deck was cut. They take the boards' own
+      // material now, the grain laid along each board (lib/deck/boardTone ringPlace), and a shade that goes with the
+      // board's place on the deck, as a square board's does — not with its number in the list.
       let diagonal: Built["diagonal"] = null;
       if (s.diagonal && s.diagonal.boards.length) {
         const positions: number[] = [];
         const colors: number[] = [];
+        const uvs: number[] = [];
         const index: number[] = [];
         const ends: number[] = [];
         s.diagonal.boards.forEach((ring, bi) => {
@@ -1574,11 +1672,16 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           const bottom = top - s.diagonal!.thickFt;
           const n = ring.length / 2;
           const start = positions.length / 3;
-          const c = borderColor && borderRings.has(bi) ? streaked(borderColor, borderColor2, bi, 0.045) : streaked(deckColor, deckColor2, bi, 0.045);
+          const place = cutBoards[bi];
+          const seed = cutSeeds[bi] ?? bi;
+          // (A step's own board — lib/deck/finish — before the border's and the deck's colour.)
+          const ringOwn = paintRing.get(bi);
+          const c = ringOwn ? streaked(ringOwn.c, ringOwn.c2, seed, 0.045) : borderColor && borderRings.has(bi) ? streaked(borderColor, borderColor2, seed, 0.045) : streaked(deckColor, deckColor2, seed, 0.045);
           for (const y of [top, bottom]) {
             for (let k = 0; k < n; k++) {
               positions.push(ring[k * 2] - ox, y, ring[k * 2 + 1] - oz);
               colors.push(c.r, c.g, c.b);
+              uvs.push(place.uv[k * 2], place.uv[k * 2 + 1]);
             }
           }
           for (let k = 1; k + 1 < n; k++) {
@@ -1595,9 +1698,15 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         const geo = new THREE.BufferGeometry();
         geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
         geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+        geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
         geo.setIndex(index);
         geo.computeVertexNormals();
-        const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0, flatShading: true, side: THREE.DoubleSide });
+        // The boards' material (white under the grain, as rough, as bright), told its colour corner by corner.
+        const mat = mats[DECKING].clone();
+        mat.vertexColors = true;
+        mat.flatShading = true;
+        mat.side = THREE.DoubleSide;
+        mat.userData.base = mats[DECKING].userData.base;
         owned.push(geo, mat);
         fade.push(mat);
         const mesh = new THREE.Mesh(geo, mat);
@@ -1606,7 +1715,8 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         mesh.userData.layer = DECKING;
         group.add(mesh);
         diagonal = { mesh, ends };
-      }
+        mount.dataset.deck3dCutBoards = `${s.diagonal.boards.length}:${mat.map ? "grain" : "plain"}`;
+      } else delete mount.dataset.deck3dCutBoards;
 
       // The roof's faces, the ceiling, the soffit, a slab, glass, screens, walls: flat polygons, one geometry per layer.
       const polys: Built["polys"] = SCENE_LAYERS.map(() => null);
@@ -1698,15 +1808,14 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           g.fillRect(0, 0, 8, 64);
         });
         const glassMat = new THREE.MeshStandardMaterial({ color: 0xffffff, map: glassTex, roughness: 0.28, metalness: 0, envMapIntensity: 1.1 });
-        // The jamb — the rim between the casing and the pane, a shade of shadow, so the glass reads set back into the
-        // wall (the wall is one solid block: its depth is drawn, not cut).
-        const jambMat = new THREE.MeshStandardMaterial({ color: 0x3d4148, roughness: 0.9 });
+        // A knob, a sliding door's pull: dark metal, so it reads on a white door.
+        const handleMat = new THREE.MeshStandardMaterial({ color: 0x2c2e33, roughness: 0.45, metalness: 0.55 });
         owned.push(glassTex);
         const trimMat = new THREE.MeshStandardMaterial({ color: TRIM_WHITE, roughness: 0.8 });
         const doorMat = new THREE.MeshStandardMaterial({ color: 0xf1eee6, roughness: 0.7 });
         // A garage door's rails: a shade under its panel, so the sections read without a lite (2026-10-26).
         const railMat = new THREE.MeshStandardMaterial({ color: 0xd9d5cc, roughness: 0.85 });
-        owned.push(wallMat, baseMat, roofMat, glassMat, jambMat, trimMat, doorMat, railMat);
+        owned.push(wallMat, baseMat, roofMat, glassMat, handleMat, trimMat, doorMat, railMat);
         const height = H.heightFt;
         const band = Math.min(1.5, Math.max(0.5, s.heightFt - 0.6));
         const blocks = H.blocks.map((b) => ({ x0: b[0], y0: b[1], x1: b[2], y1: b[3], h: b[4] ?? height }));
@@ -1785,72 +1894,127 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           part(geo.slopes, roofMat, 1, 1, 1, cx, eave, cz, true);
           if (geo.ends) {
             owned.push(geo.ends);
-            part(geo.ends, wallMat, 1, 1, 1, cx, eave, cz);
+            // an existing cover (9) is open at its ends: no wall under its slope
+            if (kind !== 9) part(geo.ends, wallMat, 1, 1, 1, cx, eave, cz);
+          }
+          // AN EXISTING COVER (9, 2026-11-13 — a porch roof kept from the photo): its posts under the front edge, one
+          // at each end and no more than 10 ft apart, and the beam they carry.
+          if (kind === 9) {
+            const n = Math.max(2, Math.ceil(w / 10) + 1);
+            for (let i = 0; i < n; i++) part(null, trimMat, 0.5, eave - 0.7, 0.5, x0 + 0.25 + ((w - 0.5) * i) / (n - 1) - ox, (eave - 0.7) / 2, y1 - 0.25 - oz, true);
+            part(null, trimMat, w, 0.7, 0.45, cx, eave - 0.35, y1 - 0.25 - oz, true);
           }
           // Fascia along the eaves: along the house where the slopes come down to it; along the sides of a hip, of a
           // gable to the yard and of a bump-out's gable.
-          const along = kind === 0 || kind === 1 || kind === 3 || kind === 5 || kind === 7;
+          const along = kind === 0 || kind === 1 || kind === 3 || kind === 5 || kind === 7 || kind === 9;
           const sides = kind === 0 || kind === 2 || kind === 5 || kind === 6;
           if (along) part(null, trimMat, rw, 0.55, 0.16, cx, eave - 0.05, cz + rd / 2);
           if (along && !bump && kind !== 3) part(null, trimMat, rw, 0.55, 0.16, cx, eave - 0.05, cz - rd / 2);
           if (sides) for (const sx of [-1, 1]) part(null, trimMat, 0.16, 0.55, rd, cx + (sx * rw) / 2, eave - 0.05, cz);
         }
-        // The door onto the deck and the windows: trim, glass, mullions.
-        const opening = (x: number, w: number, h: number, y: number, door: boolean, face: number) => {
-          const z0 = face - oz;
-          part(null, trimMat, w + 0.5, h + 0.5, 0.12, x - ox, y + h / 2, z0 + 0.03);
-          part(null, jambMat, w + 0.14, h + 0.14, 0.13, x - ox, y + h / 2, z0 + 0.035);
-          part(null, glassMat, w, h, 0.14, x - ox, y + h / 2, z0 + 0.04);
-          // A window's mullions: one up the middle to about 5 ft wide, then one every sash of about 3 ft (a long
-          // window read off a photo is one frame with its sashes, 2026-10-27), and the meeting rail across.
-          const sashes = door ? 1 : Math.max(1, Math.round(w / 3.2));
-          const bars: number[][] = door ? [[x - ox, y + h / 2, 0.1, h]] : [[x - ox, y + h / 2, w, 0.08]];
-          if (!door) {
-            if (sashes === 1) bars.push([x - ox, y + h / 2, 0.08, h]);
-            else for (let i = 1; i < sashes; i++) bars.push([x - ox - w / 2 + (w * i) / sashes, y + h / 2, 0.08, h]);
-          }
-          for (const [bx, by, bw, bh] of bars) part(null, trimMat, bw, bh, 0.16, bx, by, z0 + 0.05);
-          if (door) part(null, glassMat, 0.08, 0.5, 0.2, x - ox + 0.35, y + 3, z0 + 0.12);
-          else {
-            // A head cap over the casing, the sill with its nose, the apron under it.
-            part(null, trimMat, w + 0.62, 0.22, 0.22, x - ox, y + h + 0.3, z0 + 0.08);
-            part(null, trimMat, w + 0.7, 0.18, 0.34, x - ox, y - 0.09, z0 + 0.14);
-            part(null, trimMat, w + 0.46, 0.3, 0.1, x - ox, y - 0.33, z0 + 0.02);
-          }
+        // THE DOORS AND THE WINDOWS (drawn again 2026-11-13 — owner: "the glass and doors on the 3D are messy"). Every part
+        // stands at a depth of its own off the wall, so no face lies on another and nothing flickers: the glass 0.06 ft
+        // out, a sash's bars and a door leaf's frame 0.1, the casing 0.16, the head cap 0.2, the sill's nose 0.34. The
+        // casing is a FRAME of boards round the glass, not a plate behind it: the pane sits back in it by real depth.
+        const CASING = 0.25;
+        /** A box on the wall whose face is at z0: centred on (x, y), w × h, from `back` to `front` off that face. */
+        const onWall = (mat: THREE.Material, x: number, y: number, w: number, h: number, z0: number, back: number, front: number) => part(null, mat, w, h, front - back, x - ox, y, z0 + (back + front) / 2);
+        /** The casing round an opening x wide from y0 up to y1: its two sides and its head board. */
+        const casing = (x: number, w: number, y0: number, y1: number, z0: number) => {
+          for (const side of [-1, 1]) onWall(trimMat, x + side * (w / 2 + CASING / 2), (y0 + y1 + CASING) / 2, CASING, y1 + CASING - y0, z0, -0.02, 0.16);
+          onWall(trimMat, x, y1 + CASING / 2, w, CASING, z0, -0.02, 0.16);
         };
-        if (H.doors) {
-          // The doors where the photo showed them, on their own thresholds: a sliding door is glass with its meeting
-          // rail; a door is a painted slab with a glass lite in its top half, its knob on the latch side.
-          for (const [dx, face, dw, dh, sill, kind] of H.doors) {
-            if (kind === 1) opening(dx, dw, dh, sill, true, face);
-            else if (kind === 2) {
-              // A garage door (2026-10-26): one flat panel the width of the opening, its rails as shaded lines, no lite.
-              const z0 = face - oz;
-              part(null, trimMat, dw + 0.5, dh + 0.3, 0.12, dx - ox, sill + (dh + 0.3) / 2, z0 + 0.03);
-              part(null, doorMat, dw - 0.1, dh - 0.05, 0.14, dx - ox, sill + dh / 2, z0 + 0.04);
-              const rails = Math.max(2, Math.round(dh / 1.75));
-              for (let i = 1; i < rails; i++) part(null, railMat, dw - 0.3, 0.07, 0.16, dx - ox, sill + (dh * i) / rails, z0 + 0.05);
-            } else {
-              const z0 = face - oz;
-              part(null, trimMat, dw + 0.5, dh + 0.3, 0.12, dx - ox, sill + (dh + 0.3) / 2, z0 + 0.03);
-              part(null, doorMat, dw - 0.1, dh - 0.05, 0.14, dx - ox, sill + dh / 2, z0 + 0.04);
-              part(null, glassMat, dw * 0.55, dh * 0.38, 0.16, dx - ox, sill + dh * 0.7, z0 + 0.05);
-              part(null, trimMat, 0.08, 0.3, 0.2, dx - ox + dw * 0.36, sill + 3, z0 + 0.12);
-            }
+        /** A door's threshold, out over the deck's boards. */
+        const threshold = (x: number, w: number, y: number, z0: number) => onWall(railMat, x, y + 0.04, w + 2 * CASING, 0.08, z0, -0.02, 0.24);
+        /**
+         * A window. Its bars: the meeting rail across when it is tall enough to be two sashes, one bar up the middle to
+         * about 5 ft wide, then one every sash of about 3 ft (a long window read off a photo is one frame with its
+         * sashes, 2026-10-27) — a small pane (a transom, a bath window) keeps its glass clear. `over` = it stands right
+         * over another opening (a transom): a plain board under it, no sill and apron across that opening's head;
+         * `under` = another stands right over it: no head cap.
+         */
+        const windowAt = (x: number, w: number, h: number, y: number, face: number, over = false, under = false) => {
+          const z0 = face - oz;
+          onWall(glassMat, x, y + h / 2, w, h, z0, -0.02, 0.06);
+          const bar = (bx: number, by: number, bw: number, bh: number) => onWall(trimMat, bx, by, bw, bh, z0, 0.03, 0.1);
+          const sashes = Math.max(1, Math.round(w / 3.2));
+          if (h >= 2.5) bar(x, y + h / 2, w, 0.08);
+          if (sashes > 1) for (let i = 1; i < sashes; i++) bar(x - w / 2 + (w * i) / sashes, y + h / 2, 0.08, h);
+          else if (w >= 2 && h >= 1.5) bar(x, y + h / 2, 0.08, h);
+          if (over) {
+            casing(x, w, y - 0.12, y + h, z0);
+            onWall(trimMat, x, y - 0.06, w, 0.12, z0, -0.02, 0.16);
+          } else {
+            casing(x, w, y, y + h, z0);
+            // The sill with its nose and horns, the apron under it.
+            onWall(trimMat, x, y - 0.09, w + 0.66, 0.18, z0, -0.02, 0.34);
+            onWall(trimMat, x, y - 0.33, w + 0.46, 0.3, z0, -0.02, 0.1);
           }
-        } else if (H.door) {
+          if (!under) onWall(trimMat, x, y + h + 0.3, w + 0.62, 0.22, z0, -0.02, 0.2);
+        };
+        /** A sliding door: glass in leaves, each in its frame — a stile at both ends, a meeting stile between leaves, the top rail, the taller bottom rail — and the pull on the stile it closes on. */
+        const sliderAt = (x: number, w: number, h: number, y: number, face: number) => {
+          const z0 = face - oz;
+          onWall(glassMat, x, y + h / 2, w, h, z0, -0.02, 0.06);
+          const leaves = Math.min(4, Math.max(2, Math.round(w / 3.5)));
+          const stile = Math.min(0.2, w / 8);
+          const frame = (bx: number, by: number, bw: number, bh: number) => onWall(trimMat, bx, by, bw, bh, z0, 0.03, 0.1);
+          for (const side of [-1, 1]) frame(x + side * (w / 2 - stile / 2), y + h / 2, stile, h);
+          for (let i = 1; i < leaves; i++) frame(x - w / 2 + (w * i) / leaves, y + h / 2, stile * 1.2, h);
+          frame(x, y + h - stile / 2, w, stile);
+          frame(x, y + 0.15, w, 0.3);
+          if (h >= 4.5) onWall(handleMat, x + w / 2 - stile / 2, y + 3.1, 0.07, 0.6, z0, 0.08, 0.17);
+          casing(x, w, y, y + h, z0);
+          threshold(x, w, y, z0);
+        };
+        /** A door: a painted slab, a glass lite in its top half in a frame of its own, a panel under it, the knob on the latch side. */
+        const doorAt = (x: number, w: number, h: number, y: number, face: number) => {
+          const z0 = face - oz;
+          onWall(doorMat, x, y + h / 2, w, h, z0, -0.02, 0.07);
+          if (h >= 4.5) {
+            onWall(trimMat, x, y + h * 0.7, w * 0.56 + 0.14, h * 0.36 + 0.14, z0, 0.03, 0.1);
+            onWall(glassMat, x, y + h * 0.7, w * 0.56, h * 0.36, z0, 0.05, 0.13);
+            onWall(railMat, x, y + h * 0.26, w * 0.62, h * 0.3, z0, 0.03, 0.1);
+            onWall(handleMat, x + w * 0.39, y + 3, 0.1, 0.1, z0, 0.05, 0.19);
+          }
+          casing(x, w, y, y + h, z0);
+          threshold(x, w, y, z0);
+        };
+        /** A garage door (2026-10-26): one flat panel the width of the opening, its rails as shaded lines, no lite. */
+        const garageAt = (x: number, w: number, h: number, y: number, face: number) => {
+          const z0 = face - oz;
+          onWall(doorMat, x, y + h / 2, w, h, z0, -0.02, 0.07);
+          const rails = Math.max(2, Math.round(h / 1.75));
+          for (let i = 1; i < rails; i++) onWall(railMat, x, y + (h * i) / rails, w - 0.3, 0.07, z0, 0.03, 0.1);
+          casing(x, w, y, y + h, z0);
+        };
+        // What stands in the wall: the doors where the photo showed them, on their own thresholds — or the one door onto
+        // the deck, drawn by rule (a wide one slides, a narrow one swings) — and the windows.
+        const openings: Array<{ kind: "window" | "door" | "slider" | "garage"; x: number; w: number; h: number; y: number; face: number }> = [];
+        if (H.doors) for (const [dx, face, dw, dh, sill, kind] of H.doors) openings.push({ kind: kind === 1 ? "slider" : kind === 2 ? "garage" : "door", x: dx, w: dw, h: dh, y: sill, face });
+        else if (H.door) {
           const [dx, dw, dh, face = 0] = H.door;
-          opening(dx, dw, dh, s.heightFt, true, face);
+          openings.push({ kind: dw >= 5 ? "slider" : "door", x: dx, w: dw, h: dh, y: s.heightFt, face });
           if (!H.windows) {
             // An older scene: a window each side of the door.
             const main = H.blocks[0];
             for (const side of [-1, 1]) {
               const wx = dx + side * (dw / 2 + 4.5);
-              if (wx - 1.5 > Math.max(main[0], 0) && wx + 1.5 < Math.min(main[2], s.widthFt)) opening(wx, 3, 4, s.heightFt + 2.7, false, 0);
+              if (wx - 1.5 > Math.max(main[0], 0) && wx + 1.5 < Math.min(main[2], s.widthFt)) openings.push({ kind: "window", x: wx, w: 3, h: 4, y: s.heightFt + 2.7, face: 0 });
             }
           }
         }
-        for (const [wx, face, ww, wh, sill] of H.windows ?? []) opening(wx, ww, wh, sill, false, face);
+        for (const [wx, face, ww, wh, sill] of H.windows ?? []) openings.push({ kind: "window", x: wx, w: ww, h: wh, y: sill, face });
+        /** Two openings in one column of the same face, the first right under the second. */
+        const stacked = (lower: (typeof openings)[number], upper: (typeof openings)[number]) =>
+          lower !== upper && Math.abs(lower.face - upper.face) < 0.05 && Math.min(lower.x + lower.w / 2, upper.x + upper.w / 2) - Math.max(lower.x - lower.w / 2, upper.x - upper.w / 2) > -CASING && upper.y >= lower.y + lower.h - 0.01 && upper.y - (lower.y + lower.h) < 0.6;
+        for (const o of openings) {
+          if (o.kind === "window") windowAt(o.x, o.w, o.h, o.y, o.face, openings.some((l) => stacked(l, o)), openings.some((u) => stacked(o, u)));
+          else if (o.kind === "slider") sliderAt(o.x, o.w, o.h, o.y, o.face);
+          else if (o.kind === "garage") garageAt(o.x, o.w, o.h, o.y, o.face);
+          else doorAt(o.x, o.w, o.h, o.y, o.face);
+        }
+        mount.dataset.deck3dOpenings = openings.map((o) => `${o.kind}@${o.x}`).join(" ");
       }
 
       // The fixtures' light at night: a few real lights, the rest glow.
@@ -1907,9 +2071,25 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       const handleMat = new THREE.MeshStandardMaterial({ color: 0x1854a0, roughness: 0.35, metalness: 0.1, emissive: new THREE.Color(0x1854a0), emissiveIntensity: 0.25 });
       owned.push(handleGeo, handleMat);
       const handles: THREE.Mesh[] = [];
+      // A POST OR A BEAM IS ITS OWN HANDLE (2026-11-13; SceneHandle.grab): an unseen box around the part, a little
+      // larger than it (a finger's width more on a touch screen), that the pointer takes hold of. No knob.
+      const grabMat = new THREE.MeshBasicMaterial({ visible: false });
+      owned.push(grabMat);
+      const pad = coarse ? 0.3 : 0.06;
       for (const h of s.handles) {
-        const m = new THREE.Mesh(handleGeo, handleMat);
-        m.position.set(h.x - ox, h.z + 0.3, h.y - oz);
+        if (h.kind === "builtin") continue;
+        let m: THREE.Mesh;
+        if (h.grab) {
+          const [x0, y0, z0, x1, y1, z1] = h.grab;
+          const geo = new THREE.BoxGeometry(Math.max(0.05, x1 - x0) + 2 * pad, Math.max(0.05, z1 - z0) + 2 * pad, Math.max(0.05, y1 - y0) + 2 * pad);
+          owned.push(geo);
+          m = new THREE.Mesh(geo, grabMat);
+          m.position.set((x0 + x1) / 2 - ox, (z0 + z1) / 2, (y0 + y1) / 2 - oz);
+          m.userData.grab = true;
+        } else {
+          m = new THREE.Mesh(handleGeo, handleMat);
+          m.position.set(h.x - ox, h.z + 0.3, h.y - oz);
+        }
         m.userData.handle = h;
         m.userData.layer = -3;
         m.visible = false;
@@ -1917,11 +2097,36 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         group.add(m);
         handles.push(m);
       }
+      // AN ACCESSORY IS TAKEN IN THE HAND BY ITSELF (2026-11-15): an unseen box over its footprint, turned with it and as
+      // high as it stands — the pointer takes hold of it there, in Edit in 3D or not.
+      const liveBoxes: THREE.Mesh[] = [];
+      for (const h of s.handles) {
+        if (h.kind !== "builtin" || !h.grab) continue;
+        const [gx0, gy0, z0, gx1, gy1, z1] = h.grab;
+        const f = h.foot && h.foot.length === 8 ? h.foot : null;
+        const len = f ? Math.hypot(f[2] - f[0], f[3] - f[1]) : gx1 - gx0;
+        const dep = f ? Math.hypot(f[6] - f[0], f[7] - f[1]) : gy1 - gy0;
+        const geo = new THREE.BoxGeometry(Math.max(0.2, len) + 2 * pad, Math.max(0.2, z1 - z0) + 2 * pad, Math.max(0.2, dep) + 2 * pad);
+        owned.push(geo);
+        const m = new THREE.Mesh(geo, grabMat);
+        m.position.set((f ? (f[0] + f[4]) / 2 : (gx0 + gx1) / 2) - ox, (z0 + z1) / 2, (f ? (f[1] + f[5]) / 2 : (gy0 + gy1) / 2) - oz);
+        m.rotation.y = f ? -Math.atan2(f[3] - f[1], f[2] - f[0]) : 0;
+        m.userData.live = true;
+        m.userData.handle = h;
+        m.userData.layer = -3;
+        m.userData.size = [len, dep, z0];
+        group.add(m);
+        liveBoxes.push(m);
+      }
       const knobs: HTMLButtonElement[] = [];
       const knobLabels: HTMLSpanElement[] = [];
       const leaders: SVGGElement[] = [];
-      handles.forEach((m, i) => {
-        const h = s.handles[i];
+      // The post or beam in the hand, read again where it stands now: its place shows as it moves.
+      const held = drag?.handle.grab && drag.handle.kind !== "builtin" ? s.handles.find((q) => q.kind === drag?.handle.kind && q.id === drag?.handle.id) : undefined;
+      if (held) queueMicrotask(() => hoverHandle(held));
+      handles.forEach((m) => {
+        const h = m.userData.handle as SceneHandle;
+        if (h.grab) return;
         const key = `${h.kind}:${h.id}`;
         const leader = document.createElementNS("http://www.w3.org/2000/svg", "g");
         leader.innerHTML = `<line/><circle r="3.5"/>`;
@@ -2126,6 +2331,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         knobs,
         knobLabels,
         leaders,
+        liveBoxes,
         centres,
         scene: s,
         dispose: () => {
@@ -2203,10 +2409,10 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         for (const t of content.knobLabels) t.style.display = "none";
         for (const l of content.leaders) l.style.display = "none";
       }
-      if (!editRef.current && drag) {
+      if (!editRef.current && drag && drag.handle.kind !== "builtin") {
         setDragging(null);
         drag = null;
-        orbit.enabled = true;
+        orbit.enabled = !live;
         renderer.domElement.style.cursor = "";
       }
       renderer.domElement.style.cursor = placingRef.current ? "crosshair" : "";
@@ -2373,6 +2579,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       if (resized && !drag) frame(false);
       apply();
       api.current?.highlight();
+      showLive();
     };
     /** Rebuild once the page has painted: after the next frame's paint, coalescing every call until then. */
     const rebuildSoon = () => {
@@ -2549,7 +2756,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           return { pick: { legend: lg, layer: null, point: [sp.position.x + ox, sp.position.z + oz, sp.position.y], mount: "deck" }, boxIdx: null, mesh: null, instanceId: null, calloutLegend: sp.userData.legend as number };
         }
       }
-      const hits = ray.intersectObjects(content.group.children.filter((o) => o.visible && !(o instanceof THREE.Sprite) && !(o instanceof THREE.LineSegments) && !o.userData.dims), true);
+      const hits = ray.intersectObjects(content.group.children.filter((o) => o.visible && !(o instanceof THREE.Sprite) && !(o instanceof THREE.LineSegments) && !o.userData.dims && !o.userData.grab && !o.userData.live), true);
       // X-RAY IS SEE-THROUGH TO THE FINGER TOO (2026-11-09): with the boards, the roofing, the trim and the ceiling faded,
       // a touch goes through them to the frame behind — the rafter tie under the shingles, the beam behind the fascia —
       // so a part of the frame can be picked (and taken out or swapped) without turning the picture inside out.
@@ -2573,6 +2780,12 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         boxIdx = entry?.boxIdx[hit.instanceId] ?? null;
         if (boxIdx !== null && s.tags.length === s.boxes.length && s.tags[boxIdx] >= 0) legend = s.legend[s.tags[boxIdx]] ?? null;
         return { pick: { legend, layer: layerName, point, mount: MOUNT_OF[layerName] ?? "deck", boxIdx }, boxIdx, mesh: obj, instanceId: hit.instanceId, calloutLegend: null };
+      }
+      if (content.diagonal && obj === content.diagonal.mesh && hit.faceIndex !== undefined && hit.faceIndex !== null) {
+        // A board cut to a shape: which ring, by the face index (2026-11-14 — a step round a shaped deck is one).
+        const idxEnd = (hit.faceIndex + 1) * 3;
+        const ringIdx = content.diagonal.ends.findIndex((e) => idxEnd <= e);
+        return { pick: { legend, layer: layerName, point, mount: MOUNT_OF[layerName] ?? "deck", boxIdx: null, ringIdx: ringIdx >= 0 ? ringIdx : null }, boxIdx: null, mesh: null, instanceId: null, calloutLegend: null };
       }
       if (typeof obj.userData.boxIdx === "number") {
         boxIdx = obj.userData.boxIdx as number;
@@ -2601,9 +2814,285 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       const rect = renderer.domElement.getBoundingClientRect();
       pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
       ray.setFromCamera(pointer, camera);
-      const hits = ray.intersectObjects(content.handles.filter((h) => h.visible), false);
-      return (hits[0]?.object as THREE.Mesh | undefined) ?? null;
+      const hits = ray.intersectObjects(content.handles.filter((h) => h.visible && !h.userData.grab), false);
+      if (hits[0]) return hits[0].object as THREE.Mesh;
+      // A post or a beam, taken hold of by itself — only where it is what the pointer really touches: nothing solid
+      // in front of it (the boards over a post seen from above), X-ray's faded layers aside.
+      const grabs = ray.intersectObjects(content.handles.filter((h) => h.visible && h.userData.grab), false);
+      if (!grabs[0]) return null;
+      const through = (o: THREE.Object3D) => xrayRef.current && typeof o.userData.layer === "number" && FADES.has(o.userData.layer as number);
+      const solid = ray
+        .intersectObjects(content.group.children.filter((o) => o.visible && !(o instanceof THREE.Sprite) && !(o instanceof THREE.LineSegments) && !o.userData.dims && !o.userData.grab && !o.userData.live && o.userData.layer !== -3), true)
+        .find((h) => h.object.visible && (h.object as THREE.Mesh).isMesh && !through(h.object));
+      if (!solid) return null;
+      // The nearest grab whose part is the thing hit: the solid point lies inside its box.
+      const box = new THREE.Box3();
+      for (const g of grabs) {
+        if (g.distance > solid.distance + 0.02) break;
+        box.setFromObject(g.object);
+        if (box.containsPoint(solid.point)) return g.object as THREE.Mesh;
+      }
+      return null;
     };
+    // ── THE ACCESSORY IN THE HAND (2026-11-15) ────────────────────────────────────────────────────────────────────────
+    const liveLine = new THREE.LineBasicMaterial({ color: 0x2f7bff, depthTest: false, transparent: true, opacity: 0.95 });
+    const liveRing = new THREE.LineDashedMaterial({ color: 0xf5a623, depthTest: false, transparent: true, opacity: 0.95, dashSize: 0.32, gapSize: 0.2 });
+    let liveViz: { group: THREE.Group; geos: THREE.BufferGeometry[]; radius: number; surface: number } | null = null;
+    const liveBox = (): THREE.Mesh | null => (live && content ? (content.liveBoxes.find((m) => (m.userData.handle as SceneHandle).id === live) ?? null) : null);
+    const clearLiveViz = () => {
+      if (!liveViz) return;
+      liveViz.group.removeFromParent();
+      for (const g of liveViz.geos) g.dispose();
+      liveViz = null;
+    };
+    /** Let it go: the camera works again. */
+    const dropLive = () => {
+      if (!live) return;
+      live = null;
+      liveDown = null;
+      turning = null;
+      clearLiveViz();
+      liveBar.style.display = "none";
+      turnKnob.style.display = "none";
+      delete turnKnob.dataset.active;
+      delete mount.dataset.deckLive;
+      if (!drag) orbit.enabled = true;
+      renderer.domElement.style.cursor = "";
+      invalidate();
+    };
+    // Outlined through whatever stands in front of it, with a dashed ring on the deck round it (the turn handle rides
+    // on that ring, at its front) and a bar that names it. Drawn again after every rebuild — it moved.
+    showLive = () => {
+      clearLiveViz();
+      if (!live) return;
+      const box = liveBox();
+      if (!box || !content) {
+        dropLive();
+        return;
+      }
+      const h = box.userData.handle as SceneHandle;
+      const [len, dep, z0] = box.userData.size as [number, number, number];
+      const g = new THREE.Group();
+      g.userData.live = true;
+      const geos: THREE.BufferGeometry[] = [];
+      const edges = new THREE.EdgesGeometry(box.geometry);
+      geos.push(edges);
+      const wire = new THREE.LineSegments(edges, liveLine);
+      wire.position.copy(box.position);
+      wire.rotation.copy(box.rotation);
+      wire.renderOrder = 20;
+      g.add(wire);
+      const radius = Math.hypot(len, dep) / 2 + 0.7;
+      const turns = typeof h.turn === "number";
+      if (turns) {
+        const pts: THREE.Vector3[] = [];
+        for (let k = 0; k < 72; k++) {
+          const a = (k / 72) * Math.PI * 2;
+          pts.push(new THREE.Vector3(box.position.x + Math.cos(a) * radius, z0 + 0.04, box.position.z + Math.sin(a) * radius));
+        }
+        const rg = new THREE.BufferGeometry().setFromPoints(pts);
+        geos.push(rg);
+        const ring = new THREE.LineLoop(rg, liveRing);
+        ring.computeLineDistances();
+        ring.renderOrder = 20;
+        g.add(ring);
+      }
+      content.group.add(g);
+      liveViz = { group: g, geos, radius, surface: z0 };
+      const off = turns ? Math.round(h.turn as number) % 90 : 0;
+      liveText.textContent = "";
+      const name = document.createElement("b");
+      name.textContent = `${h.label}${off ? ` · turned ${off}°` : ""}`;
+      liveText.append(name, turns ? " — drag it anywhere on the deck. The round handle turns it." : " — drag it to any open edge of the deck.");
+      liveBar.style.display = "flex";
+      if (!turns) turnKnob.style.display = "none";
+      mount.dataset.deckLive = h.id;
+      invalidate();
+    };
+    /** Taken in the hand: the camera stands still until it is let go. */
+    const takeLive = (id: string) => {
+      live = id;
+      turning = null;
+      orbit.enabled = false;
+      stopSpin();
+      clearHover();
+      pickRef.current?.(null, "hover");
+      showLive();
+    };
+    /** The accessory under the pointer — where it is what the pointer really touches (nothing solid in front of it); the one already in the hand, anywhere over it. */
+    const liveAt = (clientX: number, clientY: number): THREE.Mesh | null => {
+      if (!content || !content.liveBoxes.length) return null;
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+      ray.setFromCamera(pointer, camera);
+      const through = (o: THREE.Object3D) => xrayRef.current && typeof o.userData.layer === "number" && FADES.has(o.userData.layer as number);
+      const solid = ray
+        .intersectObjects(content.group.children.filter((o) => o.visible && !(o instanceof THREE.Sprite) && !(o instanceof THREE.LineSegments) && !o.userData.dims && !o.userData.grab && !o.userData.live && o.userData.layer !== -3), true)
+        .find((h) => h.object.visible && (h.object as THREE.Mesh).isMesh && !through(h.object));
+      if (solid) {
+        // The thing touched is the accessory's when it lies over its footprint, from the deck's boards up to 3 ft above
+        // its own top (what stands on it is it too — the grill on a kitchen island, a bench's back).
+        const local = new THREE.Vector3();
+        for (const m of content.liveBoxes) {
+          const prm = (m.geometry as THREE.BoxGeometry).parameters;
+          m.worldToLocal(local.copy(solid.point));
+          if (Math.abs(local.x) <= prm.width / 2 + 0.01 && local.y >= -prm.height / 2 - 0.01 && local.y <= prm.height / 2 + 3 && Math.abs(local.z) <= prm.depth / 2 + 0.01) return m;
+        }
+      }
+      const boxes = ray.intersectObjects(content.liveBoxes, false);
+      if (!solid) return boxes.length ? (boxes[0].object as THREE.Mesh) : null;
+      const held = live ? boxes.find((g) => (g.object.userData.handle as SceneHandle).id === live) : undefined;
+      return held ? (held.object as THREE.Mesh) : null;
+    };
+    /** Where the pointer meets the deck's walking surface (scene feet), and that point in the picture — null off the deck's outline. */
+    const deckPoint = (clientX: number, clientY: number, surface: number): { x: number; y: number; at: THREE.Vector3 } | null => {
+      if (!content) return null;
+      const at = planePoint(clientX, clientY, new THREE.Plane(new THREE.Vector3(0, 1, 0), -surface));
+      if (!at) return null;
+      const { ox, oz } = origin(content.scene);
+      const x = at.x + ox;
+      const y = at.z + oz;
+      const ring = content.scene.outline;
+      let inside = false;
+      for (let i = 0, j = ring.length - 2; i + 1 < ring.length; j = i, i += 2) {
+        if (ring[i + 1] > y !== ring[j + 1] > y && x < ((ring[j] - ring[i]) * (y - ring[i + 1])) / (ring[j + 1] - ring[i + 1]) + ring[i]) inside = !inside;
+      }
+      return inside ? { x, y, at } : null;
+    };
+    /** In the hand, a press on the deck itself: it goes there, and follows the pointer from there. */
+    const liveJump = (e: PointerEvent): boolean => {
+      const box = liveBox();
+      if (!box) return false;
+      const h = box.userData.handle as SceneHandle;
+      const surface = (box.userData.size as number[])[2];
+      const p = deckPoint(e.clientX, e.clientY, surface);
+      if (!p) return false;
+      const vx = Math.round(p.x * 24) / 2;
+      const vy = Math.round(p.y * 24) / 2;
+      drag = { handle: { ...h, value: vx, value2: vy }, plane: new THREE.Plane(new THREE.Vector3(0, 1, 0), -surface), start: p.at, last: vx, last2: vy };
+      setDragging(`${h.kind}:${h.id}`);
+      pinned = origin(sceneRef.current);
+      orbit.enabled = false;
+      renderer.domElement.style.cursor = "grabbing";
+      try {
+        renderer.domElement.setPointerCapture(e.pointerId);
+      } catch {
+        /* the drag still works while the pointer stays over the canvas */
+      }
+      editCbRef.current?.({ kind: h.kind, id: h.id, value: vx, value2: vy, done: false });
+      return true;
+    };
+    // ITS ROUND HANDLE: dragged round its middle, it turns to face where the pointer is — any angle (the engine holds
+    // it square to the deck's edges when near, lib/deck/accessories snapTurn); the arrow keys turn it 15° at a time.
+    const wrap360 = (deg: number) => ((Math.round(deg) % 360) + 360) % 360;
+    const turnApart = (a: number, b: number) => {
+      const d = Math.abs(wrap360(a - b));
+      return Math.min(d, 360 - d);
+    };
+    const sendTurn = (deg: number, done: boolean) => {
+      const h = liveBox()?.userData.handle as SceneHandle | undefined;
+      if (h) editCbRef.current?.({ kind: h.kind, id: h.id, value: h.value, value2: h.value2 ?? 0, turn: wrap360(deg), done });
+    };
+    const turnFromPointer = (clientX: number, clientY: number): number | null => {
+      const box = liveBox();
+      if (!box || !liveViz) return null;
+      const p = planePoint(clientX, clientY, new THREE.Plane(new THREE.Vector3(0, 1, 0), -liveViz.surface));
+      if (!p) return null;
+      const dx = p.x - box.position.x;
+      const dz = p.z - box.position.z;
+      if (Math.hypot(dx, dz) < 0.15) return null;
+      // The handle stands at its front — a quarter turn to the left of the way its length runs.
+      return wrap360((Math.atan2(dz, dx) * 180) / Math.PI - 90);
+    };
+    const turnEnd = (send: boolean) => {
+      if (!turning) return;
+      const t = turning.angle;
+      turning = null;
+      delete turnKnob.dataset.active;
+      if (send) sendTurn(t, true);
+      invalidate();
+    };
+    turnKnob.addEventListener("pointerdown", (e) => {
+      const h = liveBox()?.userData.handle as SceneHandle | undefined;
+      if (!h || typeof h.turn !== "number") return;
+      e.preventDefault();
+      turning = { id: h.id, angle: h.turn, last: h.turn };
+      turnKnob.dataset.active = "";
+      try {
+        turnKnob.setPointerCapture(e.pointerId);
+      } catch {
+        /* it still turns while the pointer stays over the handle */
+      }
+    });
+    turnKnob.addEventListener("pointermove", (e) => {
+      if (!turning) return;
+      const t = turnFromPointer(e.clientX, e.clientY);
+      if (t === null) return;
+      turning.angle = t;
+      invalidate();
+      if (turnApart(t, turning.last) < 2) return;
+      turning.last = t;
+      sendTurn(t, false);
+    });
+    turnKnob.addEventListener("pointerup", () => turnEnd(true));
+    turnKnob.addEventListener("pointercancel", () => turnEnd(false));
+    turnKnob.addEventListener("keydown", (e) => {
+      const dir = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+      const h = liveBox()?.userData.handle as SceneHandle | undefined;
+      if (!dir || !h || typeof h.turn !== "number") return;
+      e.preventDefault();
+      sendTurn(h.turn + dir * (e.shiftKey ? 45 : 15), true);
+    });
+    const liveLetGo = () => {
+      if (!live) return;
+      dropLive();
+      pickRef.current?.(null, "click");
+    };
+    liveDone.addEventListener("click", liveLetGo);
+    /** The accessory in the hand as a part to open a card on: one of its own boxes, where it stands now (the host names the accessory from it). */
+    const livePick = (): DeckPick | null => {
+      const h = liveBox()?.userData.handle as SceneHandle | undefined;
+      const f = h?.foot;
+      if (!content || !h || !h.grab || !f || f.length !== 8) return null;
+      const s = content.scene;
+      const inFoot = (x: number, y: number) => {
+        let c = false;
+        for (let i = 0, j = 6; i < 8; j = i, i += 2) if (f[i + 1] > y !== f[j + 1] > y && x < ((f[j] - f[i]) * (y - f[i + 1])) / (f[j + 1] - f[i + 1]) + f[i]) c = !c;
+        return c;
+      };
+      const [, , z0, , , z1] = h.grab;
+      const i = s.tags.length === s.boxes.length ? s.boxes.findIndex((b, k) => s.tags[k] >= 0 && b[3] > z0 + 0.02 && b[3] < z1 + 0.5 && inFoot(b[1], b[2]) && /^(?:bench|planter|screen|kitchen|fire) /.test(s.legend[s.tags[k]]?.role ?? "")) : -1;
+      if (i < 0) return null;
+      const layerName = SCENE_LAYERS[s.boxes[i][0]];
+      return { legend: s.legend[s.tags[i]] ?? null, layer: layerName, point: [s.boxes[i][1], s.boxes[i][2], s.boxes[i][3]], mount: MOUNT_OF[layerName] ?? "deck", boxIdx: i };
+    };
+    liveMore.addEventListener("click", () => {
+      const pick = livePick();
+      if (pick) pickRef.current?.(pick, "click");
+    });
+    const onLiveKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && live && !drag) liveLetGo();
+    };
+    window.addEventListener("keydown", onLiveKey);
+    const liveV = new THREE.Vector3();
+    /** The turn handle onto the screen: on the ring, at the accessory's front (where the pointer holds it, while it is turned). */
+    const placeLive = () => {
+      const box = liveBox();
+      const h = box?.userData.handle as SceneHandle | undefined;
+      if (!box || !h || !liveViz || typeof h.turn !== "number") {
+        turnKnob.style.display = "none";
+        return;
+      }
+      const t = ((turning ? turning.angle : h.turn) * Math.PI) / 180;
+      liveV.set(box.position.x - Math.sin(t) * liveViz.radius, liveViz.surface + 0.05, box.position.z + Math.cos(t) * liveViz.radius).project(camera);
+      if (liveV.z > 1 || Math.abs(liveV.x) > 1.05 || Math.abs(liveV.y) > 1.05) {
+        turnKnob.style.display = "none";
+        return;
+      }
+      turnKnob.style.display = "grid";
+      turnKnob.style.transform = `translate(${(((liveV.x + 1) / 2) * renderer.domElement.clientWidth).toFixed(1)}px, ${(((1 - liveV.y) / 2) * renderer.domElement.clientHeight).toFixed(1)}px)`;
+    };
+
     const dragStart = (mesh: THREE.Mesh, clientX: number, clientY: number) => {
       const h = mesh.userData.handle as SceneHandle;
       const at = mesh.getWorldPosition(new THREE.Vector3());
@@ -2611,17 +3100,34 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       const plane = h.axis === "z" ? new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3(camera.position.x - at.x, 0, camera.position.z - at.z).normalize(), at) : new THREE.Plane(new THREE.Vector3(0, 1, 0), -at.y);
       const start = planePoint(clientX, clientY, plane);
       if (!start) return;
-      drag = { handle: h, plane, start, last: h.value };
+      drag = { handle: h, plane, start, last: h.value, ...(h.axis === "xy" ? { last2: h.value2 ?? 0 } : {}) };
       setDragging(`${h.kind}:${h.id}`);
       pinned = origin(sceneRef.current);
       orbit.enabled = false;
-      renderer.domElement.style.cursor = h.axis === "z" ? "ns-resize" : "move";
+      renderer.domElement.style.cursor = h.grab ? "grabbing" : h.axis === "z" ? "ns-resize" : "move";
     };
     const dragMove = (clientX: number, clientY: number, done: boolean) => {
       if (!drag) return;
       const p = planePoint(clientX, clientY, drag.plane);
       if (!p) return;
       const h = drag.handle;
+      // ACROSS THE DECK (2026-11-14: an accessory): both ways at once — along the house and out from it.
+      if (h.axis === "xy") {
+        const vx = h.value + (p.x - drag.start.x) / h.perUnit;
+        const vy = (h.value2 ?? 0) + (p.z - drag.start.z) / h.perUnit;
+        if (!done && Math.hypot(vx - drag.last, vy - (drag.last2 ?? h.value2 ?? 0)) < 2) return;
+        drag.last = vx;
+        drag.last2 = vy;
+        editCbRef.current?.({ kind: h.kind, id: h.id, value: vx, value2: vy, done });
+        if (done) {
+          drag = null;
+          setDragging(null);
+          pinned = null;
+          orbit.enabled = !live;
+          renderer.domElement.style.cursor = "";
+        }
+        return;
+      }
       const d = h.axis === "x" ? p.x - drag.start.x : h.axis === "y" ? p.z - drag.start.z : p.y - drag.start.y;
       // `follow`: a handle on something that grows both ways about its centre (a stair's width) travels half the
       // change, so the change is twice the drag to keep it under the pointer.
@@ -2634,7 +3140,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         drag = null;
         setDragging(null);
         pinned = null;
-        orbit.enabled = true;
+        orbit.enabled = !live;
         renderer.domElement.style.cursor = "";
       }
     };
@@ -2656,14 +3162,15 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
     };
     const hoverHandle = (h: SceneHandle) => {
       clearHover();
-      const now = h.kind === "pitch" ? `${Math.round(h.value)}:12` : h.perUnit === 1 ? `${Math.round(h.value * 2) / 2} ft` : `${Math.round(h.value)} in.`;
-      pickRef.current?.({ legend: { role: h.label, nominal: now, lengthFt: 0, count: 1, note: "Drag the knob, or press the arrow keys." }, layer: null, point: [h.x, h.y, h.z], mount: "deck" }, "hover");
+      const now = h.axis === "xy" ? "drag it across the deck" : h.shown ? `${feetInches(Math.max(0, h.shown.sign * (h.value - h.shown.origin)) / 12)} ${h.shown.from}` : h.kind === "pitch" ? `${Math.round(h.value)}:12` : h.perUnit === 1 ? `${Math.round(h.value * 2) / 2} ft` : `${Math.round(h.value)} in.`;
+      pickRef.current?.({ legend: { role: h.label, nominal: now, lengthFt: 0, count: 1, note: h.axis === "xy" ? "Drag it anywhere on the deck; turn it by the round handle. Bring it to the railing and it turns and lines up there." : h.grab ? "Drag it to move it, an inch at a time — or click it to type its place." : "Drag the knob, or press the arrow keys." }, layer: null, point: [h.x, h.y, h.z], mount: "deck" }, "hover");
     };
     const knobKey = (e: KeyboardEvent, h: SceneHandle) => {
       const dir = e.key === "ArrowRight" || e.key === "ArrowUp" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowDown" ? -1 : 0;
       if (!dir) return;
       e.preventDefault();
-      const step = (h.perUnit === 1 ? 0.5 : 1) * (e.shiftKey ? 4 : 1);
+      // (A knob that travels against its value — the deck's left end — goes the way its arrow key points.)
+      const step = (h.perUnit === 1 ? 0.5 : 1) * (e.shiftKey ? 4 : 1) * ((h.follow ?? 1) < 0 && h.axis === "x" ? -1 : 1);
       editCbRef.current?.({ kind: h.kind, id: h.id, value: h.value + dir * step, done: true });
     };
     const onMove = (e: PointerEvent) => {
@@ -2671,11 +3178,55 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         dragMove(e.clientX, e.clientY, false);
         return;
       }
+      // An accessory held and now pulled: it goes with the pointer at once.
+      if (liveDown) {
+        if (Math.hypot(e.clientX - liveDown.x, e.clientY - liveDown.y) < 4) return;
+        const g = liveDown;
+        liveDown = null;
+        downAt = null;
+        dragStart(g.mesh, g.x, g.y);
+        if (drag) {
+          try {
+            renderer.domElement.setPointerCapture(e.pointerId);
+          } catch {
+            /* the drag still works while the pointer stays over the canvas */
+          }
+          dragMove(e.clientX, e.clientY, false);
+        }
+        return;
+      }
+      // With one in the hand the picture is still: the pointer only says what a press would do.
+      if (live) {
+        if (!coarse && !downAt) {
+          const box = liveBox();
+          renderer.domElement.style.cursor = liveAt(e.clientX, e.clientY) ? "grab" : box && deckPoint(e.clientX, e.clientY, (box.userData.size as number[])[2]) ? "move" : "default";
+        }
+        return;
+      }
+      // A post or a beam held and now pulled: the drag starts where the pointer went down. Let go without pulling and
+      // it was a click — its card opens, with its place to type.
+      if (grabDown) {
+        if (Math.hypot(e.clientX - grabDown.x, e.clientY - grabDown.y) < 5) return;
+        const g = grabDown;
+        grabDown = null;
+        downAt = null;
+        dragStart(g.mesh, g.x, g.y);
+        if (drag) {
+          try {
+            renderer.domElement.setPointerCapture(e.pointerId);
+          } catch {
+            /* the drag still works while the pointer stays over the canvas */
+          }
+          dragMove(e.clientX, e.clientY, false);
+        } else orbit.enabled = !live;
+        return;
+      }
       if (editRef.current && !downAt) {
         const hm = handleAt(e.clientX, e.clientY);
         if (hm) {
-          renderer.domElement.style.cursor = (hm.userData.handle as SceneHandle).axis === "z" ? "ns-resize" : "move";
-          hoverHandle(hm.userData.handle as SceneHandle);
+          const h = hm.userData.handle as SceneHandle;
+          renderer.domElement.style.cursor = h.grab ? "grab" : h.axis === "z" ? "ns-resize" : "move";
+          hoverHandle(h);
           return;
         }
       }
@@ -2700,7 +3251,31 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       pickRef.current?.(r.pick, "hover");
     };
     const onDown = (e: PointerEvent) => {
+      // AN ACCESSORY (2026-11-15): a press on one takes it in the hand — the picture holds still — and a pull drags it;
+      // with one in the hand, a press on the deck sends it there; a click anywhere else lets it go.
+      if (!placingRef.current) {
+        const acc = liveAt(e.clientX, e.clientY);
+        if (acc) {
+          const id = (acc.userData.handle as SceneHandle).id;
+          if (live !== id) takeLive(id);
+          liveDown = { mesh: acc, x: e.clientX, y: e.clientY };
+          orbit.enabled = false;
+          downAt = { x: e.clientX, y: e.clientY, t: performance.now() };
+          return;
+        }
+        if (live) {
+          if (!liveJump(e)) downAt = { x: e.clientX, y: e.clientY, t: performance.now() };
+          return;
+        }
+      } else if (live) dropLive();
       const hm = handleAt(e.clientX, e.clientY);
+      if (hm && hm.userData.grab) {
+        // Held, not yet pulled: the view stays still under it; a click still reaches the part.
+        grabDown = { mesh: hm, x: e.clientX, y: e.clientY };
+        orbit.enabled = false;
+        downAt = { x: e.clientX, y: e.clientY, t: performance.now() };
+        return;
+      }
       if (hm) {
         dragStart(hm, e.clientX, e.clientY);
         try {
@@ -2715,6 +3290,23 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
     const onUp = (e: PointerEvent) => {
       if (drag) {
         dragMove(e.clientX, e.clientY, true);
+        return;
+      }
+      if (grabDown) {
+        grabDown = null;
+        orbit.enabled = !live;
+      }
+      // The accessory pressed and let go without a pull: it stays in the hand.
+      if (liveDown) {
+        liveDown = null;
+        downAt = null;
+        return;
+      }
+      // With one in the hand, a click off the deck lets it go: the picture moves again.
+      if (live) {
+        const dn = downAt;
+        downAt = null;
+        if (dn && Math.hypot(e.clientX - dn.x, e.clientY - dn.y) <= 6) liveLetGo();
         return;
       }
       const d = downAt;
@@ -2735,16 +3327,21 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       pickRef.current?.(r.pick, "click");
     };
     const onLeave = () => {
-      if (drag) return;
+      if (drag || live) return;
       clearHover();
       pickRef.current?.(null, "hover");
     };
     const onCancel = () => {
+      liveDown = null;
+      if (grabDown) {
+        grabDown = null;
+        orbit.enabled = !live;
+      }
       if (drag) {
         drag = null;
         setDragging(null);
         pinned = null;
-        orbit.enabled = true;
+        orbit.enabled = !live;
         renderer.domElement.style.cursor = "";
       }
     };
@@ -2777,7 +3374,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         if (!k) return;
         const h = m.userData.handle as SceneHandle;
         m.getWorldPosition(knobV);
-        knobT.copy(knobV).add(KNOB_AXIS[h.axis]);
+        knobT.copy(knobV).add(KNOB_AXIS[h.axis === "xy" ? "x" : h.axis]);
         knobV.project(camera);
         knobT.project(camera);
         const off = knobV.z > 1 || Math.abs(knobV.x) > 1.05 || Math.abs(knobV.y) > 1.05;
@@ -2925,6 +3522,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           retired = [];
         }
         if (content && editRef.current) placeKnobs();
+        if (live) placeLive();
       }
       if (moved) requestFrame();
       else if (lit && !calm && !raf) {
@@ -2993,6 +3591,10 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       renderer.domElement.removeEventListener("pointerup", onUp);
       renderer.domElement.removeEventListener("pointerleave", onLeave);
       renderer.domElement.removeEventListener("pointercancel", onCancel);
+      window.removeEventListener("keydown", onLiveKey);
+      clearLiveViz();
+      liveLine.dispose();
+      liveRing.dispose();
       stopSpin();
       renderer.domElement.removeEventListener("pointerdown", stopSpin);
       orbit.dispose();

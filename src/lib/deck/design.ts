@@ -20,7 +20,7 @@ import { DECKING, FRAMING_SPECIES, RAIL_TYPES, WALL_TYPES, defaultDecking, defau
 import { OC_POST } from "./ocLumber";
 import { deckingColors } from "./deckingColors";
 import { SLOPE_LIMITS, flatSlope, type SiteSlope, type TermiteHazard } from "./site";
-import { defaultHouse, normalizeHouse, type HouseDesign } from "./house";
+import { defaultHouse, fitDeckEnds, normalizeHouse, type HouseDesign } from "./house";
 
 /**
  * v2 (2026-10-10): `structure`, `floor`, `roof` and `photo` joined the design.
@@ -29,6 +29,8 @@ import { defaultHouse, normalizeHouse, type HouseDesign } from "./house";
  * design reads as a bare deck; a v2 one keeps every choice it made.
  */
 import { deckCodeFor } from "./stateCodes";
+import { normalizeBuiltIns, type BuiltIn } from "./builtins";
+import { normalizeFinish as finishOf, type PartFinish } from "./finish";
 
 export const DECK_DESIGN_VERSION = 3;
 
@@ -66,12 +68,44 @@ export interface BackPart {
   x0Ft: number;
   x1Ft: number;
   yFt: number;
+  /**
+   * PAST THE HOUSE'S CORNER (2026-11-14 — the owner: "if I want to go back past the house, on the sides… the deck can
+   * extend to the right and to the left outside the house wall"). No wall stands behind this part: the deck has run
+   * past the corner, so its back is an open edge on a beam and posts, not a ledger. `yFt` is then zero or negative —
+   * how far the part reaches BACK beside the house's side wall (a wrap-around deck). Only the deck's first and last
+   * parts can be open (a house is one piece), and never all of them.
+   */
+  open?: true;
+}
+
+/**
+ * THE FRONT, PART BY PART (2026-11-14 — the owner: "change shape of the front deck and sides, it's not just only
+ * squares, but it's not only L shape, but you can basically do anything"). One part of the deck's FRONT edge: from
+ * `x0Ft` to `x1Ft` (the deck's feet from its left end) the front stands `yFt` out from the house line — a bay that
+ * comes out, a wing that stops short, a T, a U, steps down a side. The deck's `depthFt` is its deepest part's. The
+ * back (`back`) and the front are cut where either steps: each stretch between two cuts is one rectangle of deck,
+ * framed off its own back to its own front.
+ */
+export interface FrontPart {
+  x0Ft: number;
+  x1Ft: number;
+  yFt: number;
+  /**
+   * ANGLED CORNERS (2026-11-14 — the owner's pictures: decks whose corners are cut at an angle). The part's front
+   * corner at its left / right end cut off at 45°, this many feet along the front and as many back along the side.
+   * Only a corner that stands OUT can be cut — the deck's own end, or where this part stands farther out than its
+   * neighbour. Two cuts that meet in the middle of a part make a point (a prow).
+   */
+  clipLeftFt?: number;
+  clipRightFt?: number;
 }
 
 export type DeckShape =
   | { kind: "rect"; widthFt: number; depthFt: number; front?: FrontProfile }
   | { kind: "L"; widthFt: number; depthFt: number; notch: { corner: NotchCorner; widthFt: number; depthFt: number } }
-  | { kind: "wall"; widthFt: number; depthFt: number; back: BackPart[] };
+  // "wall" — a deck in PARTS side by side: its back follows the house wall part by part (and may run past the house's
+  // corner), its front stands where each part's is set. (The name is the first thing it did, 2026-10-19.)
+  | { kind: "wall"; widthFt: number; depthFt: number; back: BackPart[]; front?: FrontPart[] };
 
 /**
  * How the deck meets the house:
@@ -222,6 +256,8 @@ export interface RoofDesign {
   soffit: boolean;
   gutters: { kind: GutterKind; guards: boolean };
   braces: boolean;
+  /** The braces' timber (2026-11-14 — the owner: "if it's a 6 by 6 brace, I can change it for 4 by 4, or 8 by 8 if the post is 8 by 8"): "auto" is the 4x4 it always was. Never larger than the post it braces. */
+  braceSize: BraceSize | "auto";
   /** Knee braces taken out one by one in the 3D (2026-11-09; lib/deck/parts): each a post and the way its brace runs. */
   bracesOff: string[];
   /**
@@ -299,8 +335,34 @@ export interface StairDesign {
   wrapSides: 1 | 3 | 4;
   landing: StairLanding;
   handrail: Handrail;
+  /**
+   * LANDINGS ON THE WAY DOWN (2026-11-14 — the owner: "split it with the landing, and turn the second part to the right
+   * or to the left… add more landings at any height to turn it somewhere, fully adjustable"). Each a platform on its
+   * own posts at a height of the builder's, and which way the stairs go on from it. None: one straight flight — a
+   * flight past the code's 12 ft 3 in. still gets a straight landing by itself.
+   */
+  landings: StairTurn[];
+  /**
+   * BOARDS OF ITS OWN (2026-11-14 — the owner: "click the steps around in the 3D and replace the material or the colour";
+   * lib/deck/finish): its treads, landings and risers in a line and colour of their own. Absent = the deck's own.
+   */
+  finish?: PartFinish;
 }
-export const STAIR_LIMITS = { widthFt: { min: 3, max: 12 }, count: 6 } as const;
+/**
+ * Which way the stairs go on from a landing, as you walk DOWN them: straight on, a quarter turn to the left or the
+ * right, or back the way they came beside the flight above (a switchback) on its left or its right.
+ */
+export type StairTurnKind = "straight" | "left" | "right" | "back-left" | "back-right";
+export const STAIR_TURNS: readonly StairTurnKind[] = ["straight", "left", "right", "back-left", "back-right"];
+export const STAIR_TURN_LABEL: Record<StairTurnKind, string> = { straight: "Straight on", left: "Turn left", right: "Turn right", "back-left": "Back, on the left", "back-right": "Back, on the right" };
+/** A landing of a stair: how high its boards stand above the ground (the deck's own datum), and the turn it makes. */
+export interface StairTurn {
+  id: string;
+  heightIn: number;
+  turn: StairTurnKind;
+}
+/** `landings`: the most a stair takes; `landingHeightIn`: how high one may stand; `landingApartIn`: the least between two landings, or a landing and the deck or the ground — two risers. */
+export const STAIR_LIMITS = { widthFt: { min: 3, max: 12 }, count: 6, landings: 5, landingHeightIn: { min: 8, max: 348 }, landingApartIn: 12 } as const;
 
 export type RailInfill = "balusters" | "cable" | "glass" | "panel" | "horizontal" | "mesh";
 export const RAIL_INFILL_LABEL: Record<RailInfill, string> = { balusters: "Balusters", cable: "Cable", glass: "Glass panels", panel: "Panels", horizontal: "Horizontal rails", mesh: "Wire mesh panels" };
@@ -375,16 +437,37 @@ export interface SiteDesign {
   state: string | null;
 }
 
-/** A second, lower deck in front of the main one, a step or a short stair down. */
+/**
+ * A second, lower deck. "front": in front of the main one, a step or a short stair down. "under" (2026-11-13 — the
+ * owner: "a double deck, like first floor and second floor"): a DOUBLE DECK — a deck under the main one, a first-floor
+ * deck under a second-floor one, its beams let into the same posts. Its drop is the difference between the two heights
+ * (kept so by the normaliser), so everything that reads a lower level reads this one too.
+ * ITS OWN OUTLINE (2026-11-14 — the owner: "when it's a double deck and I need to reshape the upper deck, show lower /
+ * upper on the drawing to reshape and adjust it"): `shape` is the lower floor's own outline and `offsetFt` where its
+ * left end stands along the house from the main deck's left end — absent, it is the main deck's outline, under it
+ * (and follows every change to it). Its width and depth are its own outline's.
+ */
 export interface LowerLevel {
   on: boolean;
+  place: "front" | "under";
   widthFt: number;
   depthFt: number;
   /** How far below the main deck it sits, inches. */
   dropIn: number;
   align: "left" | "centre" | "right";
+  /** A double deck's lower floor: how high its boards stand above the ground, inches (its own door's threshold). */
+  heightIn: number;
+  /** A double deck's lower floor shaped on its own (lib/deck/doubleDeck): its outline, in its own feet. */
+  shape?: DeckShape;
+  /** …and where its left end stands along the house, ft from the main deck's left end (− = farther left). */
+  offsetFt?: number;
 }
-export const LOWER_LIMITS = { widthFt: { min: 4, max: 60 }, depthFt: { min: 4, max: 30 }, dropIn: { min: 4, max: 96 } } as const;
+/** `storeyIn`: the least from one deck's boards up to the other's for a double deck to be one — room to stand under the upper deck's frame. */
+export const LOWER_LIMITS = { widthFt: { min: 4, max: 60 }, depthFt: { min: 4, max: 30 }, dropIn: { min: 4, max: 96 }, heightIn: { min: 6, max: 144 }, storeyIn: 90 } as const;
+/** The clear height wanted under the upper deck's frame, boards to the underside of its lowest beam or joist (R305.1's 6 ft 8 in. under beams). */
+export const DOUBLE_DECK_HEADROOM_IN = 80;
+/** The storey a double deck is given when it is asked for on a deck too low for one: 9 ft, floor to floor. */
+export const DOUBLE_DECK_STOREY_IN = 108;
 
 /** A hot-tub spot on the deck: where the tub will stand, and the frame
  *  under it doubled for the water it holds. The tub itself is by others. */
@@ -549,6 +632,8 @@ export interface DeckDesign {
     blocking: "auto" | "mid-span";
     /** Knee braces at corner posts over 2 ft (AWC's guide). */
     braces: boolean;
+    /** The braces' timber (2026-11-14): "auto" is the 2x4 it always was; a 4x4, 6x6 or 8x8 where the builder wants the heavier look — never larger than the post it braces. */
+    braceSize: BraceSize | "auto";
     /** Braces taken out one by one in the 3D (2026-11-09; lib/deck/parts): each a post and the way its brace leans. */
     bracesOff: string[];
     /**
@@ -559,6 +644,15 @@ export interface DeckDesign {
      */
     pins: DeckPostPin[];
     postSpacingFt: number | "auto";
+    /**
+     * THE BEAMS BY HAND (2026-11-13 — the owner: "move beams and posts by hand, drag them anywhere, or type the inches").
+     * `beamLines`: middle beams stood at the builder's own places, to the inch. The joists land on THOSE — and on one
+     * more only where a span between them is past the joist table, so a beam can be moved, added or taken off freely.
+     * `backOverhangFt`: how far the joists run past a free-standing deck's house-side beam ("auto" = as the front).
+     * The front beam's place is `overhangFt`.
+     */
+    beamLines: DeckBeamLine[];
+    backOverhangFt: number | "auto";
   };
   ledger: {
     fastener: LedgerFastener;
@@ -579,6 +673,8 @@ export interface DeckDesign {
     pattern: DeckPattern;
     /** Picture-frame border boards around the edge: none, one or two. */
     border: 0 | 1 | 2;
+    /** Breaker boards (2026-11-14; lib/deck/surface): one or two boards laid ACROSS the field — out from the house, in the border's colour — that cut every row into shorter boards, so no row has a butt joint. Absent = none. Straight-laid boards only. */
+    breakers?: 1 | 2;
     fastening: "auto" | "screws" | "hidden";
     fascia: "auto" | "none" | "match";
     wastePct: number;
@@ -604,6 +700,10 @@ export interface DeckDesign {
     underDeckDrain: boolean;
     /** Items of the contractor's own, outside every list (2026-10-12). */
     items: OwnItem[];
+    /** Skirting under the deck (2026-11-14; lib/deck/skirt): framed lattice, or boards laid level, hung under the rim along every open edge. Absent = none. */
+    skirt?: "lattice" | "boards";
+    /** Built-in benches and planter boxes (2026-11-14; lib/deck/builtins), each along one edge of the deck. Absent = none. */
+    builtIns?: BuiltIn[];
   };
   /** The railing (M3) — "none" leaves the edges open. */
   rail: RailDesign;
@@ -688,6 +788,7 @@ export function defaultRoofDesign(structure: Structure = "covered-deck"): RoofDe
     soffit: false,
     gutters: { kind: structure === "covered-deck" ? "k5" : "none", guards: false },
     braces: true,
+    braceSize: "auto",
     bracesOff: [],
     headersOff: [],
     slats: { size: "2x2", spacingIn: 12 },
@@ -705,9 +806,19 @@ export interface DeckPostPin {
   id: string;
   beam: "front" | "middle" | "back";
   atFt: number;
+  /** The middle beam it stands under, when that beam was itself placed by hand (its id in framing.beamLines): the post goes with its beam wherever the beam is moved. */
+  line?: string;
 }
+/** A middle beam set by hand: its place, feet from the house line (the deck's back edge; behind it — a minus — under a part of a deck that follows the wall back), and the parts of the deck (shapeZones' ids) it runs under — none named: every part it fits in. */
+export interface DeckBeamLine {
+  id: string;
+  atFt: number;
+  zones: string[];
+}
+/** No two beams closer than a foot, centre to centre: each stands on footings of its own. */
+export const DECK_BEAM_LIMITS = { lines: 12, atFt: { min: -60, max: 60 }, gapIn: 12 } as const;
 export const DECK_BEAM_LABEL: Record<DeckPostPin["beam"], string> = { front: "Front beam", middle: "Middle beam", back: "Back beam" };
-export const DECK_POST_LIMITS = { pins: 24, atFt: { min: 0, max: 60 }, spacingFt: { min: 3, max: 14 } } as const;
+export const DECK_POST_LIMITS = { pins: 48, atFt: { min: 0, max: 60 }, spacingFt: { min: 3, max: 14 } } as const;
 
 /** The railing a deck starts with: none chosen — the checks ask for one where the height requires it. */
 export function defaultRailDesign(): RailDesign {
@@ -716,11 +827,11 @@ export function defaultRailDesign(): RailDesign {
 
 /** A flight of stairs where a contractor usually puts one: down the front, in the middle, 4 ft wide, onto a new pad. */
 export function defaultStair(id = "s1", side: StairSide = "front", atFt = 0): StairDesign {
-  return { id, side, atFt, widthFt: 4, level: "upper", wrap: false, wrapSides: 1, landing: "pad", handrail: "auto" };
+  return { id, side, atFt, widthFt: 4, level: "upper", wrap: false, wrapSides: 1, landing: "pad", handrail: "auto", landings: [] };
 }
 
 export function defaultLowerLevel(): LowerLevel {
-  return { on: false, widthFt: 12, depthFt: 8, dropIn: 7.5, align: "centre" };
+  return { on: false, place: "front", widthFt: 12, depthFt: 8, dropIn: 7.5, align: "centre", heightIn: 18 };
 }
 
 export function defaultSite(): SiteDesign {
@@ -761,9 +872,12 @@ export function defaultDeckDesign(opts: { state?: string | null; frostIn?: numbe
       joistTape: true,
       blocking: "auto",
       braces: true,
+      braceSize: "auto",
       bracesOff: [],
       pins: [],
       postSpacingFt: "auto",
+      beamLines: [],
+      backOverhangFt: "auto",
     },
     ledger: { fastener: "lag", lateral: "two" },
     footing: { type: "poured", aboveGradeIn: 3, frostAlways: false },
@@ -799,9 +913,12 @@ function normalizeShape(raw: unknown, fallback: DeckShape): DeckShape {
   const widthFt = toInch(clamp(num(r.widthFt, fallback.widthFt), DECK_LIMITS.widthFt.min, DECK_LIMITS.widthFt.max));
   const depthFt = toInch(clamp(num(r.depthFt, fallback.depthFt), DECK_LIMITS.depthFt.min, DECK_LIMITS.depthFt.max));
   if (r.kind === "wall") {
-    const back = normalizeBack(r.back, widthFt, depthFt);
-    if (back) return { kind: "wall", widthFt, depthFt, back };
-    return { kind: "rect", widthFt, depthFt };
+    // (The deck's depth changed over a front in parts — the size box, the 3D's knob, "make it 16 deep": the parts that
+    // stood farthest out go to the new depth; the others stay where they are, no farther out than it.)
+    const said = Array.isArray(r.front) ? r.front.map((v) => obj(v)) : null;
+    const deepest = said ? said.reduce((m, q) => Math.max(m, num(q.yFt, -Infinity)), -Infinity) : -Infinity;
+    const rawFront = said && Number.isFinite(deepest) && Math.abs(deepest - depthFt) > 1 / 24 ? said.map((q) => (Math.abs(num(q.yFt, NaN) - deepest) < 1 / 24 ? { ...q, yFt: depthFt } : q)) : r.front;
+    return partsShape(widthFt, depthFt, r.back, rawFront);
   }
   if (r.kind !== "L") {
     const f = obj(r.front);
@@ -830,38 +947,240 @@ function normalizeShape(raw: unknown, fallback: DeckShape): DeckShape {
   };
 }
 
-/** The narrowest part a deck follows the wall into; the most a deck reaches back behind the house line, ft. */
-export const BACK_LIMITS = { partFt: 2, reachFt: 16 } as const;
+/**
+ * The narrowest part a deck follows the wall into; the most a deck reaches back behind the house line into a set-back;
+ * and the most a part past the house's corner runs back along the house's side (2026-11-14), ft.
+ */
+export const BACK_LIMITS = { partFt: 2, reachFt: 16, wrapFt: 24 } as const;
 
 /**
  * A wall deck's back parts made buildable: in order, end to end over the deck's width, to the inch; each part leaves a
  * leg of at least `legFt` in front of it and reaches back no farther than `reachFt` (nor past the 40-ft depth);
  * neighbours at the same line are one part. Null when that leaves the back straight — the deck is a rectangle.
+ * A part past the house's corner (`open`) is kept only at an end of the deck, with a walled part left between: it
+ * stands at the house line or behind it (never in front), back `wrapFt` at most.
  */
 export function normalizeBack(raw: unknown, widthFt: number, depthFt: number): BackPart[] | null {
   if (!Array.isArray(raw)) return null;
-  const lo = -Math.min(BACK_LIMITS.reachFt, DECK_LIMITS.depthFt.max - depthFt);
+  const room = DECK_LIMITS.depthFt.max - depthFt;
+  const lo = -Math.min(BACK_LIMITS.reachFt, room);
+  const loOpen = -Math.min(BACK_LIMITS.wrapFt, room);
   const hi = depthFt - DECK_LIMITS.legFt.min;
   const cuts = raw
     .map((v) => obj(v))
-    .map((b) => ({ x0: num(b.x0Ft, NaN), x1: num(b.x1Ft, NaN), y: num(b.yFt, 0) }))
+    .map((b) => ({ x0: num(b.x0Ft, NaN), x1: num(b.x1Ft, NaN), y: num(b.yFt, 0), open: b.open === true }))
     .filter((b) => Number.isFinite(b.x0) && Number.isFinite(b.x1) && b.x1 > b.x0)
     .sort((a, b) => a.x0 - b.x0);
   if (!cuts.length) return null;
+  // Open only at the ends, with wall between them: a deck with no wall behind any of it does not hang on this house
+  // (a rectangle, then), and a part marked open between two walled ones is a walled one.
+  const firstWall = cuts.findIndex((c) => !c.open);
+  if (firstWall < 0) return null;
+  const lastWall = cuts.length - 1 - [...cuts].reverse().findIndex((c) => !c.open);
+  cuts.forEach((c, i) => {
+    if (i > firstWall && i < lastWall) c.open = false;
+  });
   const out: BackPart[] = [];
   let x = 0;
   for (let i = 0; i < cuts.length; i++) {
     const x1 = i === cuts.length - 1 ? widthFt : toInch(clamp(cuts[i].x1, x, widthFt));
     if (x1 - x < 1 / 12) continue;
-    const y = toInch(clamp(cuts[i].y, lo, hi));
+    const open = cuts[i].open;
+    const y = toInch(open ? clamp(cuts[i].y, loOpen, 0) : clamp(cuts[i].y, lo, hi));
+    const last = out[out.length - 1];
+    // Two open parts side by side are one (the first's line); a walled part joins its like at the same line.
+    if (last && !!last.open === open && (open || Math.abs(last.yFt - y) < 1 / 24)) last.x1Ft = x1;
+    else out.push({ x0Ft: x, x1Ft: x1, yFt: y, ...(open ? { open: true as const } : {}) });
+    x = x1;
+  }
+  if (out.length && out[out.length - 1].x1Ft < widthFt) out[out.length - 1].x1Ft = widthFt;
+  // (The cuts ran out before the wall did: what is left is all open — no wall, no wall deck.)
+  if (!out.some((b) => !b.open)) return null;
+  if (out.length < 2 && (!out.length || Math.abs(out[0].yFt) < 1 / 24)) return null;
+  return out;
+}
+
+/** The narrowest part of a front, ft (as of a back), and the most parts a front is cut in. */
+export const FRONT_LIMITS = { partFt: 2, parts: 8, clipFt: { min: 1, max: 12 }, sideFt: 2 } as const;
+
+/**
+ * A deck's front parts made buildable: in order, end to end over the deck's width, to the inch; none narrower than
+ * 2 ft (a narrower one goes with its neighbour); a cut within 2 ft of a step in the back IS that step (no sliver of
+ * deck to frame between the two); each part stands at least `legFt` in front of the wall behind it and no farther out
+ * than the deck's depth; neighbours at one line are one part. Null when that leaves the front straight.
+ */
+export function normalizeFront(raw: unknown, widthFt: number, depthFt: number, back: readonly BackPart[]): FrontPart[] | null {
+  if (!Array.isArray(raw)) return null;
+  const cuts = raw
+    .map((v) => obj(v))
+    .map((b) => ({ x0: num(b.x0Ft, NaN), x1: num(b.x1Ft, NaN), y: num(b.yFt, depthFt), clipL: num(b.clipLeftFt, 0), clipR: num(b.clipRightFt, 0) }))
+    .filter((b) => Number.isFinite(b.x0) && Number.isFinite(b.x1) && b.x1 > b.x0)
+    .sort((a, b) => a.x0 - b.x0);
+  if (!cuts.length) return null;
+  // The corners asked to be cut, by their place along the deck (a part may be joined to its neighbour below).
+  const asks = cuts.flatMap((c, i) => [
+    ...(c.clipL > 0 ? [{ x: i === 0 ? 0 : c.x0, left: true, c: c.clipL }] : []),
+    ...(c.clipR > 0 ? [{ x: i === cuts.length - 1 ? widthFt : c.x1, left: false, c: c.clipR }] : []),
+  ]);
+  const steps = back.slice(1).map((b) => b.x0Ft);
+  // (The NEAREST step: a cut that is on one stays on it, however near the next step is.)
+  const snap = (x: number) => {
+    let best = x;
+    let gap: number = FRONT_LIMITS.partFt;
+    for (const sx of steps) {
+      const g = Math.abs(sx - x);
+      if (g < gap) {
+        best = sx;
+        gap = g;
+      }
+    }
+    return best;
+  };
+  const out: FrontPart[] = [];
+  let x = 0;
+  for (let i = 0; i < cuts.length; i++) {
+    let x1 = i === cuts.length - 1 ? widthFt : toInch(clamp(snap(cuts[i].x1), x, widthFt));
+    if (widthFt - x1 < FRONT_LIMITS.partFt) x1 = widthFt;
+    if (x1 - x < 1 / 12) continue;
+    // Too narrow to be a part of its own: it goes with the one before it.
+    if (x1 - x < FRONT_LIMITS.partFt && out.length) {
+      out[out.length - 1].x1Ft = x1;
+      x = x1;
+      continue;
+    }
+    const behind = back.filter((b) => b.x1Ft > x + 1 / 24 && b.x0Ft < x1 - 1 / 24).reduce((m, b) => Math.max(m, b.yFt), -Infinity);
+    const lo = Math.min(depthFt, (Number.isFinite(behind) ? behind : 0) + DECK_LIMITS.legFt.min);
+    const y = toInch(clamp(cuts[i].y, lo, depthFt));
     const last = out[out.length - 1];
     if (last && Math.abs(last.yFt - y) < 1 / 24) last.x1Ft = x1;
     else out.push({ x0Ft: x, x1Ft: x1, yFt: y });
     x = x1;
   }
   if (out.length && out[out.length - 1].x1Ft < widthFt) out[out.length - 1].x1Ft = widthFt;
-  if (out.length < 2 && (!out.length || Math.abs(out[0].yFt) < 1 / 24)) return null;
-  return out;
+  // (The first part had none before it to go with: too narrow, it goes with the next.)
+  if (out.length > 1 && out[0].x1Ft - out[0].x0Ft < FRONT_LIMITS.partFt) {
+    out[1].x0Ft = 0;
+    out.shift();
+  }
+  // More parts than a front is cut in: the last ones are one, at the line of the first of them.
+  while (out.length > FRONT_LIMITS.parts) {
+    const gone = out.pop() as FrontPart;
+    out[out.length - 1].x1Ft = gone.x1Ft;
+  }
+  // A part that took in a neighbour stands in front of more wall than it did: held clear of all of it — and two
+  // parts brought to one line by that are one.
+  const settled: FrontPart[] = [];
+  for (const q of out) {
+    const wall = back.filter((b) => b.x1Ft > q.x0Ft + 1 / 24 && b.x0Ft < q.x1Ft - 1 / 24).reduce((m, b) => Math.max(m, b.yFt), -Infinity);
+    const y = toInch(clamp(q.yFt, Math.min(depthFt, (Number.isFinite(wall) ? wall : 0) + DECK_LIMITS.legFt.min), depthFt));
+    const last = settled[settled.length - 1];
+    if (last && Math.abs(last.yFt - y) < 1 / 24) last.x1Ft = q.x1Ft;
+    else settled.push({ x0Ft: q.x0Ft, x1Ft: q.x1Ft, yFt: y });
+  }
+  // THE CORNERS CUT AT AN ANGLE: each kept only where the corner stands out — no longer along the front than the part
+  // has (two cuts share it), no farther back than the face beside it (at the deck's end, 2 ft of side stay square).
+  if (asks.length) {
+    const C = FRONT_LIMITS.clipFt;
+    const backAt = (x: number) => (back.find((b) => x >= b.x0Ft - 1 / 24 && x <= b.x1Ft + 1 / 24) ?? back[back.length - 1]).yFt;
+    settled.forEach((q, i) => {
+      const prev = settled[i - 1];
+      const next = settled[i + 1];
+      const wide = q.x1Ft - q.x0Ft;
+      const roomL = prev ? q.yFt - prev.yFt : q.yFt - backAt(0) - FRONT_LIMITS.sideFt;
+      const roomR = next ? q.yFt - next.yFt : q.yFt - backAt(widthFt) - FRONT_LIMITS.sideFt;
+      const want = (left: boolean, at: number) => asks.find((a) => a.left === left && Math.abs(a.x - at) < FRONT_LIMITS.partFt)?.c ?? 0;
+      const fit = (asked: number, room: number, along: number) => {
+        const c = toInch(Math.min(asked, C.max, room, along));
+        return asked > 0 && c >= C.min - 1 / 24 ? c : 0;
+      };
+      const cl = fit(want(true, q.x0Ft), roomL, wide);
+      const cr = fit(want(false, q.x1Ft), roomR, wide - cl);
+      if (cl > 0) q.clipLeftFt = cl;
+      if (cr > 0) q.clipRightFt = cr;
+    });
+  }
+  if (settled.length < 2 && !settled.some((q) => q.clipLeftFt || q.clipRightFt)) return null;
+  return settled;
+}
+
+/** One corner of the front cut at 45°, inches: the square corner it replaces at (`x`, `y`), which way the deck lies from it along the front, and the cut's size (along the front, and back). */
+export interface FrontClip {
+  x: number;
+  y: number;
+  dir: 1 | -1;
+  c: number;
+}
+/** Every corner of the front that is cut at an angle — a rectangle's two clipped corners, or each part's own. */
+export function frontClips(shape: DeckShape): FrontClip[] {
+  if (shape.kind === "rect") {
+    if (shape.front?.kind !== "clipped") return [];
+    const D = Math.round(shape.depthFt * 12);
+    const c = shape.front.clipFt * 12;
+    return [{ x: 0, y: D, dir: 1, c }, { x: Math.round(shape.widthFt * 12), y: D, dir: -1, c }];
+  }
+  if (shape.kind !== "wall" || !shape.front) return [];
+  return shape.front.flatMap((q): FrontClip[] => [
+    ...(q.clipLeftFt ? [{ x: Math.round(q.x0Ft * 12), y: Math.round(q.yFt * 12), dir: 1 as const, c: q.clipLeftFt * 12 }] : []),
+    ...(q.clipRightFt ? [{ x: Math.round(q.x1Ft * 12), y: Math.round(q.yFt * 12), dir: -1 as const, c: q.clipRightFt * 12 }] : []),
+  ]);
+}
+
+/**
+ * A deck in parts, settled: its front held against its back, the deck as deep as its deepest part and its back held
+ * against THAT — round again until nothing moves (a part dropped for being a sliver may have been the deepest). A
+ * straight back with a straight front is a rectangle.
+ */
+export function partsShape(widthFt: number, depthFt: number, rawBack: unknown, rawFront0: unknown): DeckShape {
+  let rawFront = rawFront0;
+  const straight: BackPart[] = [{ x0Ft: 0, x1Ft: widthFt, yFt: 0 }];
+  let depth = depthFt;
+  for (let round = 0; ; round++) {
+    const back = normalizeBack(rawBack, widthFt, depth);
+    const front = normalizeFront(rawFront, widthFt, depth, back ?? straight);
+    const deep = front ? Math.max(...front.map((q) => q.yFt)) : depth;
+    // (No deck is shallower than the least a deck is: its deepest part stands at least that far out.)
+    if (front && deep < DECK_LIMITS.depthFt.min - 1 / 24 && round < 6) {
+      rawFront = front.map((q) => (Math.abs(q.yFt - deep) < 1 / 24 ? { ...q, yFt: DECK_LIMITS.depthFt.min } : q));
+      depth = DECK_LIMITS.depthFt.min;
+      continue;
+    }
+    if (deep >= depth - 1 / 24 || round >= 6) {
+      if (!back && !front) return { kind: "rect", widthFt, depthFt: depth };
+      return { kind: "wall", widthFt, depthFt: depth, back: back ?? straight, ...(front ? { front } : {}) };
+    }
+    depth = deep;
+  }
+}
+
+/** The front as parts whatever the shape: a straight front is one part the deck's width (the bow or the clips of a rectangle's front are not parts). */
+export function frontParts(shape: DeckShape): FrontPart[] {
+  if (shape.kind === "wall" && shape.front) return shape.front;
+  if (shape.kind === "L" && shape.notch.corner.startsWith("front")) {
+    const cut = shape.notch.corner === "front-left" ? shape.notch.widthFt : shape.widthFt - shape.notch.widthFt;
+    const shallow = shape.depthFt - shape.notch.depthFt;
+    return shape.notch.corner === "front-left" ? [{ x0Ft: 0, x1Ft: cut, yFt: shallow }, { x0Ft: cut, x1Ft: shape.widthFt, yFt: shape.depthFt }] : [{ x0Ft: 0, x1Ft: cut, yFt: shape.depthFt }, { x0Ft: cut, x1Ft: shape.widthFt, yFt: shallow }];
+  }
+  return [{ x0Ft: 0, x1Ft: shape.widthFt, yFt: shape.depthFt }];
+}
+
+/**
+ * A deck with its front set part by part — each part `widthFt` wide, its front `yFt` out from the house line, left to
+ * right. The deck is as wide as the parts together and as deep as the deepest; its back stays as the wall has it.
+ */
+export function shapeWithFront(shape: DeckShape, parts: ReadonlyArray<{ widthFt: number; yFt: number; clipLeftFt?: number; clipRightFt?: number }>): DeckShape {
+  const list = parts.filter((q) => q.widthFt > 0);
+  if (!list.length) return shape;
+  let x = 0;
+  const front: FrontPart[] = list.map((q) => {
+    const part: FrontPart = { x0Ft: x, x1Ft: x + q.widthFt, yFt: q.yFt, ...(q.clipLeftFt ? { clipLeftFt: q.clipLeftFt } : {}), ...(q.clipRightFt ? { clipRightFt: q.clipRightFt } : {}) };
+    x += q.widthFt;
+    return part;
+  });
+  const widthFt = clamp(x, DECK_LIMITS.widthFt.min, DECK_LIMITS.widthFt.max);
+  const depthFt = clamp(Math.max(...front.map((q) => q.yFt)), DECK_LIMITS.depthFt.min, DECK_LIMITS.depthFt.max);
+  // (A back that follows the wall is kept; an L's corner cut or a bowed front is what the parts replace.)
+  const back = shape.kind === "wall" ? shape.back : [{ x0Ft: 0, x1Ft: widthFt, yFt: 0 }];
+  return { kind: "wall", widthFt, depthFt, back, front };
 }
 
 /**
@@ -888,7 +1207,11 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
   // A deck and a covered deck stand on the deck; a gazebo or a pergola on whatever was chosen.
   const floor: Floor = structure === "deck" || structure === "covered-deck" ? "deck" : oneOf(r.floor, FLOORS, d.floor);
   // The deck's own shape first: the roof follows it, or carries its size off the deck.
-  const shape = normalizeShape(r.shape, d.shape);
+  // (…and the house with it: a deck whose end runs past a corner of the house has no wall behind it there — the shape
+  // says so whichever of the two changed last, so nothing downstream hangs a ledger in the air. 2026-11-14.)
+  const shape0 = normalizeShape(r.shape, d.shape);
+  const house = normalizeHouse(r.house, shape0);
+  const shape = fitDeckEnds(shape0, house);
   const roof = normalizeRoof(r.roof, structure, floor, placement, shape);
   const photo = normalizePhoto(r.photo);
 
@@ -902,6 +1225,8 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
   const beamRaw = typeof f.beam === "string" ? f.beam : "auto";
   const beam: BeamSize | "auto" = beamsBuilt === "solid" ? (isSolidBeam(beamRaw) ? beamRaw : "auto") : (BUILT_UP_CHOICES as readonly string[]).includes(beamRaw) ? (beamRaw as BuiltUpBeam) : "auto";
   const overhangFt = f.overhangFt === "auto" || f.overhangFt === undefined ? "auto" : toInch(clamp(num(f.overhangFt, 0), DECK_LIMITS.overhangFt.min, DECK_LIMITS.overhangFt.max));
+  // Built-in benches and planters (lib/deck/builtins): kept only where there is a deck to stand them on.
+  const builtIns = structure === "deck" || structure === "covered-deck" || floor === "deck" ? normalizeBuiltIns(ex.builtIns, shape.widthFt, shape.depthFt) : [];
   const railFt = ex.railFt === "auto" || ex.railFt === undefined ? "auto" : Math.round(clamp(num(ex.railFt, 0), DECK_LIMITS.railFt.min, DECK_LIMITS.railFt.max) * 10) / 10;
   const heightIn = Math.round(clamp(num(r.heightIn, d.heightIn), DECK_LIMITS.heightIn.min, DECK_LIMITS.heightIn.max) * 4) / 4;
   const lower = normalizeLower(r.lower, shape, heightIn);
@@ -939,9 +1264,12 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
       joistTape: typeof f.joistTape === "boolean" ? f.joistTape : d.framing.joistTape,
       blocking: oneOf(f.blocking, ["auto", "mid-span"] as const, d.framing.blocking),
       braces: typeof f.braces === "boolean" ? f.braces : d.framing.braces,
+      braceSize: oneOf(f.braceSize, ["auto", ...BRACE_SIZES] as const, "auto"),
       bracesOff: keyList(f.bracesOff),
       pins: deckPins(f.pins),
       postSpacingFt: typeof f.postSpacingFt === "number" && Number.isFinite(f.postSpacingFt) ? Math.round(clamp(f.postSpacingFt, DECK_POST_LIMITS.spacingFt.min, DECK_POST_LIMITS.spacingFt.max)) : "auto",
+      beamLines: deckBeamLines(f.beamLines),
+      backOverhangFt: typeof f.backOverhangFt === "number" && Number.isFinite(f.backOverhangFt) ? toInch(clamp(f.backOverhangFt, DECK_LIMITS.overhangFt.min, DECK_LIMITS.overhangFt.max)) : "auto",
     },
     ledger: { fastener, lateral: oneOf(l.lateral, ["two", "four"] as const, d.ledger.lateral) },
     footing: {
@@ -954,6 +1282,7 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
       diagonal: pattern !== "straight",
       pattern,
       border: (oneOf(num(dk.border, 0), [0, 1, 2] as const, 0) as 0 | 1 | 2),
+      ...(pattern === "straight" && (dk.breakers === 1 || dk.breakers === 2) ? { breakers: dk.breakers } : {}),
       fastening: oneOf(dk.fastening, ["auto", "screws", "hidden"] as const, d.decking.fastening),
       fascia: oneOf(dk.fascia, ["auto", "none", "match"] as const, d.decking.fascia),
       wastePct: Math.round(clamp(num(dk.wastePct, d.decking.wastePct), DECK_LIMITS.wastePct.min, DECK_LIMITS.wastePct.max)),
@@ -968,6 +1297,8 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
       stainless: ex.stainless === true,
       underDeckDrain: ex.underDeckDrain === true && heightIn >= 84,
       items: normalizeOwnItems(ex.items),
+      ...(ex.skirt === "lattice" || ex.skirt === "boards" ? { skirt: ex.skirt } : {}),
+      ...(builtIns.length ? { builtIns } : {}),
     },
     rail,
     stairs,
@@ -979,7 +1310,7 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
     floor,
     roof,
     photo,
-    house: normalizeHouse(r.house, shape),
+    house,
     custom: normalizeCustom(r.custom),
   };
 }
@@ -1146,6 +1477,7 @@ export function normalizeRoof(raw: unknown, structure: Structure, floor: Floor, 
     soffit: kind !== "pergola" && r.soffit === true,
     gutters: { kind: kind === "pergola" ? "none" : oneOf(gu.kind, GUTTER_KINDS, d.gutters.kind), guards: gu.guards === true },
     braces: typeof r.braces === "boolean" ? r.braces : d.braces,
+    braceSize: oneOf(r.braceSize, ["auto", "4x4", "6x6", "8x8"] as const, "auto"),
     bracesOff: keyList(r.bracesOff),
     headersOff: keyList(r.headersOff),
     slats: { size: oneOf(sl.size, ["2x2", "2x4", "2x6"] as const, d.slats.size), spacingIn: Math.round(clamp(num(sl.spacingIn, d.slats.spacingIn), ROOF_LIMITS.slatSpacingIn.min, ROOF_LIMITS.slatSpacingIn.max)) },
@@ -1158,6 +1490,39 @@ export function normalizeRoof(raw: unknown, structure: Structure, floor: Floor, 
   };
 }
 
+/** A knee brace's timber. */
+export type BraceSize = "2x4" | "4x4" | "6x6" | "8x8";
+export const BRACE_SIZES: readonly BraceSize[] = ["2x4", "4x4", "6x6", "8x8"];
+/** A brace's two faces, inches. */
+export const BRACE_ACTUAL_IN: Record<BraceSize, readonly [number, number]> = { "2x4": [1.5, 3.5], "4x4": [3.5, 3.5], "6x6": [5.5, 5.5], "8x8": [7.5, 7.5] };
+/** The brace sizes a post takes: none larger than the post (a 4x6 takes a 4x4; a built-up OC post the 2x4 it always had). */
+export function braceSizesFor(post: string, least: BraceSize = "2x4"): BraceSize[] {
+  const most = post === "8x8" ? 3 : post === "6x6" ? 2 : post === "4x4" || post === "4x6" ? 1 : 0;
+  return BRACE_SIZES.filter((_, k) => k <= most && k >= BRACE_SIZES.indexOf(least));
+}
+/** The brace a post gets: the size asked for where the post takes it, else the largest it does; "auto" is `usual`. */
+export function braceSizeFor(asked: BraceSize | "auto", post: string, usual: BraceSize): BraceSize {
+  const ok = braceSizesFor(post, usual);
+  if (asked === "auto" || !ok.length) return usual;
+  return ok.includes(asked) ? asked : BRACE_SIZES.indexOf(asked) < BRACE_SIZES.indexOf(usual) ? usual : ok[ok.length - 1];
+}
+
+/** A stair's landings: each with an id of its own, a height to the inch and a turn; highest first; junk, doubles and two within two risers of each other dropped. (Which of them the stair can really take is the build's to say: stairs.ts.) */
+function stairTurns(raw: unknown): StairTurn[] {
+  const out: StairTurn[] = [];
+  for (const [i, item] of (Array.isArray(raw) ? raw : []).entries()) {
+    if (out.length >= STAIR_LIMITS.landings) break;
+    if (!item || typeof item !== "object") continue;
+    const v = item as Record<string, unknown>;
+    if (typeof v.heightIn !== "number" || !Number.isFinite(v.heightIn)) continue;
+    const id = typeof v.id === "string" && /^[a-z0-9-]{1,12}$/.test(v.id) ? v.id : `t${i + 1}`;
+    const heightIn = Math.round(clamp(v.heightIn, STAIR_LIMITS.landingHeightIn.min, STAIR_LIMITS.landingHeightIn.max));
+    if (out.some((o) => o.id === id || Math.abs(o.heightIn - heightIn) < STAIR_LIMITS.landingApartIn)) continue;
+    out.push({ id, heightIn, turn: oneOf(v.turn, STAIR_TURNS, "straight") });
+  }
+  return out.sort((a, b) => b.heightIn - a.heightIn);
+}
+
 /** The deck's posts set by hand: each with an id of its own, a beam and a place along it to the inch; junk and doubles dropped. */
 function deckPins(raw: unknown): DeckPostPin[] {
   const out: DeckPostPin[] = [];
@@ -1168,9 +1533,29 @@ function deckPins(raw: unknown): DeckPostPin[] {
     if (typeof v.atFt !== "number" || !Number.isFinite(v.atFt)) continue;
     const id = typeof v.id === "string" && /^[a-z0-9-]{1,12}$/.test(v.id) ? v.id : `k${i + 1}`;
     if (out.some((o) => o.id === id)) continue;
-    out.push({ id, beam: oneOf(v.beam, ["front", "middle", "back"] as const, "front"), atFt: toInch(clamp(v.atFt, DECK_POST_LIMITS.atFt.min, DECK_POST_LIMITS.atFt.max)) });
+    const line = typeof v.line === "string" && /^[a-z0-9-]{1,12}$/.test(v.line) ? v.line : "";
+    out.push({ id, beam: line ? "middle" : oneOf(v.beam, ["front", "middle", "back"] as const, "front"), atFt: toInch(clamp(v.atFt, DECK_POST_LIMITS.atFt.min, DECK_POST_LIMITS.atFt.max)), ...(line ? { line } : {}) });
   }
   return out;
+}
+
+/** The middle beams set by hand: each with an id of its own and a place to the inch, in order from the house; junk, doubles and two within a foot of each other under one part of the deck dropped. */
+function deckBeamLines(raw: unknown): DeckBeamLine[] {
+  const out: DeckBeamLine[] = [];
+  for (const [i, item] of (Array.isArray(raw) ? raw : []).entries()) {
+    if (out.length >= DECK_BEAM_LIMITS.lines) break;
+    if (!item || typeof item !== "object") continue;
+    const v = item as Record<string, unknown>;
+    if (typeof v.atFt !== "number" || !Number.isFinite(v.atFt)) continue;
+    const id = typeof v.id === "string" && /^[a-z0-9-]{1,12}$/.test(v.id) ? v.id : `l${i + 1}`;
+    if (out.some((o) => o.id === id)) continue;
+    const zones = [...new Set((Array.isArray(v.zones) ? v.zones : []).filter((z): z is string => typeof z === "string" && /^[a-z]$/.test(z)))].sort();
+    const atFt = toInch(clamp(v.atFt, DECK_BEAM_LIMITS.atFt.min, DECK_BEAM_LIMITS.atFt.max));
+    const shares = (o: DeckBeamLine) => o.zones.length === 0 || zones.length === 0 || o.zones.some((z) => zones.includes(z));
+    if (out.some((o) => shares(o) && Math.abs(o.atFt - atFt) * 12 < DECK_BEAM_LIMITS.gapIn - 0.01)) continue;
+    out.push({ id, atFt, zones });
+  }
+  return out.sort((a, b) => a.atFt - b.atFt);
 }
 
 /** A list of things set by hand on the roof's sides: each with an id of its own, a side and a place along it, to the inch; junk and doubles dropped. */
@@ -1219,16 +1604,30 @@ function normalizeRail(raw: unknown, legacyExtras: Record<string, unknown>): Rai
 function normalizeStairs(raw: unknown, legacyExtras: Record<string, unknown>, shape: DeckShape, placement: Placement, lower: LowerLevel): StairDesign[] {
   const list = Array.isArray(raw) ? raw : null;
   const out: StairDesign[] = [];
-  const sideLength = (side: StairSide, level: "upper" | "lower") => (level === "lower" ? (side === "front" ? lower.widthFt : lower.depthFt) : side === "front" ? shape.widthFt : shape.depthFt);
+  // (A front set part by part, 2026-11-14: a side is as long as the END part stands out, and a front stair stays on one part.)
+  const ends = shape.kind === "wall" && shape.front ? shape.front : null;
+  // (A double deck's lower floor, 2026-11-15: its OWN outline — shaped on its own, or the upper deck's — so a stair on
+  // it stays on one part of ITS front, and a side stair on its end part's own length.)
+  const lowerOutline = lower.place === "under" ? (lower.shape ?? shape) : null;
+  const lowerEnds = lowerOutline && lowerOutline.kind === "wall" && lowerOutline.front ? lowerOutline.front : null;
+  const sideLength = (side: StairSide, level: "upper" | "lower") =>
+    level === "lower" ? (side === "front" ? lower.widthFt : lowerEnds ? (side === "left" ? lowerEnds[0].yFt : lowerEnds[lowerEnds.length - 1].yFt) : lower.depthFt) : side === "front" ? shape.widthFt : ends ? (side === "left" ? ends[0].yFt : ends[ends.length - 1].yFt) : shape.depthFt;
   const one = (v: unknown, i: number): StairDesign | null => {
     const s = obj(v);
     const side = oneOf(s.side, ["front", "left", "right"] as const, "front");
     const level: "upper" | "lower" = lower.on && s.level === "lower" ? "lower" : "upper";
     const widthFt = Math.round(clamp(num(s.widthFt, 4), STAIR_LIMITS.widthFt.min, STAIR_LIMITS.widthFt.max) * 2) / 2;
     const L = sideLength(side, level);
-    const atFt = toInch(clamp(num(s.atFt, L / 2), widthFt / 2, Math.max(widthFt / 2, L - widthFt / 2)));
+    let atFt = toInch(clamp(num(s.atFt, L / 2), widthFt / 2, Math.max(widthFt / 2, L - widthFt / 2)));
+    const frontParts = level === "upper" ? ends : lowerEnds;
+    if (frontParts && side === "front") {
+      const part = frontParts.find((q) => atFt >= q.x0Ft && atFt <= q.x1Ft) ?? frontParts[frontParts.length - 1];
+      atFt = part.x1Ft - part.x0Ft >= widthFt ? toInch(clamp(atFt, part.x0Ft + widthFt / 2, part.x1Ft - widthFt / 2)) : toInch((part.x0Ft + part.x1Ft) / 2);
+    }
     const wrap = s.wrap === true && side === "front";
-    const wrapSides = (oneOf(num(s.wrapSides, 1), placement === "detached" ? ([1, 3, 4] as const) : ([1, 3] as const), 1) as 1 | 3 | 4);
+    // (All the way round: a deck that stands free — or, 2026-11-14, one with an open back edge past the house's corner.)
+    const allRound = placement === "detached" || (shape.kind === "wall" && shape.back.some((b) => b.open));
+    const wrapSides = (oneOf(num(s.wrapSides, 1), allRound ? ([1, 3, 4] as const) : ([1, 3] as const), 1) as 1 | 3 | 4);
     return {
       id: typeof s.id === "string" && /^[a-z0-9-]{1,12}$/.test(s.id) ? s.id : `s${i + 1}`,
       side,
@@ -1239,6 +1638,8 @@ function normalizeStairs(raw: unknown, legacyExtras: Record<string, unknown>, sh
       wrapSides,
       landing: oneOf(s.landing, ["pad", "patio", "grade"] as const, "pad"),
       handrail: oneOf(s.handrail, ["auto", "both", "one", "none"] as const, "auto"),
+      landings: wrap ? [] : stairTurns(s.landings),
+      ...(finishOf(s.finish) ? { finish: finishOf(s.finish)! } : {}),
     };
   };
   if (list) {
@@ -1269,6 +1670,18 @@ function normalizeStairs(raw: unknown, legacyExtras: Record<string, unknown>, sh
 function normalizeLower(raw: unknown, shape: DeckShape, heightIn: number): LowerLevel {
   const d = defaultLowerLevel();
   const r = obj(raw);
+  const lowerHeightIn = Math.round(clamp(num(r.heightIn, d.heightIn), LOWER_LIMITS.heightIn.min, LOWER_LIMITS.heightIn.max));
+  // A DOUBLE DECK: the main deck's own outline, under it. It is kept as asked even where the two heights leave no
+  // storey between them — hasLowerLevel then says no and the checks say why, with the way to make room.
+  if (r.place === "under") {
+    // Its own outline, when it was shaped on its own (and is not the main deck's after all); where it stands along the
+    // house, overlapping the main deck by four feet at least — it is the floor under it.
+    const own = r.shape && typeof r.shape === "object" ? normalizeShape(r.shape, shape) : null;
+    const offsetFt = own ? Math.round(clamp(num(r.offsetFt, 0), -(own.widthFt - 4), shape.widthFt - 4) * 2) / 2 : 0;
+    const same = !own || (offsetFt === 0 && JSON.stringify(own) === JSON.stringify(shape));
+    const outline = same ? shape : own;
+    return { on: r.on === true, place: "under", widthFt: outline.widthFt, depthFt: outline.depthFt, dropIn: Math.max(0, heightIn - lowerHeightIn), align: "left", heightIn: lowerHeightIn, ...(same ? {} : { shape: own, offsetFt }) };
+  }
   const front = shape.kind === "rect" ? shape.front : undefined;
   const on = r.on === true && shape.kind !== "L" && heightIn > LOWER_LIMITS.dropIn.min + 4 && front?.kind !== "curve";
   const maxDrop = Math.max(LOWER_LIMITS.dropIn.min, Math.min(LOWER_LIMITS.dropIn.max, heightIn - 4));
@@ -1276,10 +1689,12 @@ function normalizeLower(raw: unknown, shape: DeckShape, heightIn: number): Lower
   const maxWidth = Math.max(LOWER_LIMITS.widthFt.min, Math.min(LOWER_LIMITS.widthFt.max, shape.widthFt - (front?.kind === "clipped" ? 2 * front.clipFt : 0)));
   return {
     on,
+    place: "front",
     widthFt: toInch(clamp(num(r.widthFt, Math.min(d.widthFt, maxWidth)), LOWER_LIMITS.widthFt.min, maxWidth)),
     depthFt: toInch(clamp(num(r.depthFt, d.depthFt), LOWER_LIMITS.depthFt.min, LOWER_LIMITS.depthFt.max)),
     dropIn: Math.round(clamp(num(r.dropIn, d.dropIn), LOWER_LIMITS.dropIn.min, maxDrop) * 4) / 4,
     align: oneOf(r.align, ["left", "centre", "right"] as const, d.align),
+    heightIn: lowerHeightIn,
   };
 }
 
@@ -1315,9 +1730,15 @@ function normalizeSite(raw: unknown, loadPsf: number, fallbackState?: string | n
   };
 }
 
-/** True when the design has a lower level in front of the main deck. */
+/** True when the design has a second deck: a lower level in front of the main deck, or — a double deck — one under it with a storey between the two. */
 export function hasLowerLevel(design: DeckDesign): boolean {
-  return hasDeck(design) && design.lower.on && design.shape.kind !== "L";
+  if (!hasDeck(design) || !design.lower.on) return false;
+  // (A lower level in front steps down from ONE straight front: not from an L's two, nor from a front set part by part.)
+  return design.lower.place === "under" ? design.heightIn - design.lower.heightIn >= LOWER_LIMITS.storeyIn : design.shape.kind !== "L" && !(design.shape.kind === "wall" && design.shape.front);
+}
+/** A DOUBLE DECK (2026-11-13): a deck of the same outline under the main one — a first-floor deck under a second-floor one. */
+export function isDoubleDeck(design: DeckDesign): boolean {
+  return design.lower.place === "under" && hasLowerLevel(design);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1332,6 +1753,19 @@ export function hasLowerLevel(design: DeckDesign): boolean {
  */
 export function frontEdgeAt(shape: DeckShape, xIn: number): number {
   const D = Math.round(shape.depthFt * 12);
+  // A front set part by part (2026-11-14): the part that x is over.
+  if (shape.kind === "wall" && shape.front) {
+    const at = shape.front.find((q) => xIn >= q.x0Ft * 12 - 0.01 && xIn <= q.x1Ft * 12 + 0.01) ?? shape.front[shape.front.length - 1];
+    const y = Math.round(at.yFt * 12);
+    // …cut back along a corner cut at an angle.
+    const cl = (at.clipLeftFt ?? 0) * 12;
+    const cr = (at.clipRightFt ?? 0) * 12;
+    const x0 = Math.round(at.x0Ft * 12);
+    const x1 = Math.round(at.x1Ft * 12);
+    if (cl && xIn < x0 + cl) return y - (x0 + cl - Math.max(x0, xIn));
+    if (cr && xIn > x1 - cr) return y - (Math.min(x1, xIn) - (x1 - cr));
+    return y;
+  }
   if (shape.kind !== "rect" || !shape.front || shape.front.kind === "straight") return D;
   const W = Math.round(shape.widthFt * 12);
   if (shape.front.kind === "clipped") {
@@ -1442,6 +1876,8 @@ export interface Zone {
   x1: number;
   y0: number;
   y1: number;
+  /** No house wall behind it (2026-11-14): the deck past the house's corner — its back on a beam, an open edge. */
+  open?: true;
 }
 
 /**
@@ -1454,7 +1890,22 @@ export function shapeZones(shape: DeckShape): Zone[] {
   const D = Math.round(shape.depthFt * 12);
   if (shape.kind === "rect") return [{ id: "a", x0: 0, x1: W, y0: 0, y1: D }];
   // A deck that follows the wall: one zone per part of its back, each framed off the wall behind it.
-  if (shape.kind === "wall") return shape.back.map((b, i) => ({ id: String.fromCharCode(97 + i), x0: Math.round(b.x0Ft * 12), x1: Math.round(b.x1Ft * 12), y0: Math.round(b.yFt * 12), y1: D }));
+  // (A part past the house's corner is framed off a beam of its own — `open`.)
+  if (shape.kind === "wall" && !shape.front) return shape.back.map((b, i) => ({ id: String.fromCharCode(97 + i), x0: Math.round(b.x0Ft * 12), x1: Math.round(b.x1Ft * 12), y0: Math.round(b.yFt * 12), y1: D, ...(b.open ? { open: true as const } : {}) }));
+  // …and with a front set part by part (2026-11-14): cut wherever the back or the front steps, each stretch between two
+  // cuts a rectangle from its own back to its own front.
+  if (shape.kind === "wall") {
+    const front = shape.front as FrontPart[];
+    const cuts = [...new Set([0, W, ...shape.back.map((b) => Math.round(b.x1Ft * 12)), ...front.map((q) => Math.round(q.x1Ft * 12))])].filter((x) => x >= 0 && x <= W).sort((a, b) => a - b);
+    const zones: Zone[] = [];
+    for (let i = 0; i + 1 < cuts.length; i++) {
+      const mid = (cuts[i] + cuts[i + 1]) / 24;
+      const b = shape.back.find((q) => mid >= q.x0Ft && mid <= q.x1Ft) ?? shape.back[shape.back.length - 1];
+      const f = front.find((q) => mid >= q.x0Ft && mid <= q.x1Ft) ?? front[front.length - 1];
+      zones.push({ id: String.fromCharCode(97 + zones.length), x0: cuts[i], x1: cuts[i + 1], y0: Math.round(b.yFt * 12), y1: Math.round(f.yFt * 12), ...(b.open ? { open: true as const } : {}) });
+    }
+    return zones;
+  }
   const nw = Math.round(shape.notch.widthFt * 12);
   const nd = Math.round(shape.notch.depthFt * 12);
   const left = shape.notch.corner.endsWith("left");
@@ -1493,15 +1944,36 @@ export function shapeEdges(shape: DeckShape, placement: Placement): DeckEdge[] {
   if (shape.kind === "wall") {
     // Every part's back lies on the wall, and so does each face where the wall steps between two parts — the side of
     // a bump-out, or of the set-back the deck reaches into.
+    // PAST THE HOUSE'S CORNER (2026-11-14): an open part's back is an open edge. The face between two parts is the
+    // house's wherever a wall stands on its far side — the part that starts farther out is walled (a bump-out's side,
+    // a set-back's, or the house's own SIDE wall where the deck runs back beside it); it is open air where that part
+    // is past the corner.
     const out: DeckEdge[] = [];
     zones.forEach((z, i) => {
-      out.push(edge(z.x0, z.y0, z.x1, z.y0, "back", true));
+      // (Where only the FRONT steps between two parts, their backs are one edge.)
+      const p = zones[i - 1];
+      if (!(p && p.y0 === z.y0 && !!p.open === !!z.open)) {
+        let j = i;
+        while (j + 1 < zones.length && zones[j + 1].y0 === z.y0 && !!zones[j + 1].open === !!z.open) j++;
+        out.push(edge(z.x0, z.y0, zones[j].x1, z.y0, "back", !z.open));
+      }
       const n = zones[i + 1];
-      if (n && n.y0 !== z.y0) out.push(edge(z.x1, Math.min(z.y0, n.y0), z.x1, Math.max(z.y0, n.y0), n.y0 > z.y0 ? "right" : "left", true));
+      if (n && n.y0 !== z.y0) out.push(edge(z.x1, Math.min(z.y0, n.y0), z.x1, Math.max(z.y0, n.y0), n.y0 > z.y0 ? "right" : "left", !(n.y0 > z.y0 ? n : z).open));
     });
-    out.push(edge(0, D, W, D, "front", false));
-    out.push(edge(0, zones[0].y0, 0, D, "left", false));
-    out.push(edge(W, zones[zones.length - 1].y0, W, D, "right", false));
+    // The front: one edge along each run of parts on one line, and the open face where the front steps between two —
+    // the side of the part that stands farther out (2026-11-14; a straight front is the one edge it always was).
+    // (Each part's own, where the front is set part by part: a corner cut at an angle takes its size off the front and
+    // off the side beside it, and its own length goes with the front's.)
+    const fr = (shape.front ?? [{ x0Ft: 0, x1Ft: shape.widthFt, yFt: shape.depthFt }]).map((q: FrontPart) => ({ x0: Math.round(q.x0Ft * 12), x1: Math.round(q.x1Ft * 12), y: Math.round(q.yFt * 12), cl: (q.clipLeftFt ?? 0) * 12, cr: (q.clipRightFt ?? 0) * 12 }));
+    for (const q of fr) out.push(edge(q.x0, q.y, q.x1, q.y, "front", false, q.cl || q.cr ? q.x1 - q.x0 - q.cl - q.cr + (q.cl + q.cr) * Math.SQRT2 : undefined));
+    fr.forEach((q, i) => {
+      const n = fr[i + 1];
+      if (!n || n.y === q.y) return;
+      const top = Math.max(q.y, n.y) - (n.y > q.y ? n.cl : q.cr);
+      if (top - Math.min(q.y, n.y) > 0.5) out.push(edge(q.x1, Math.min(q.y, n.y), q.x1, top, n.y > q.y ? "left" : "right", false));
+    });
+    out.push(edge(0, zones[0].y0, 0, fr[0].y - fr[0].cl, "left", false));
+    out.push(edge(W, zones[zones.length - 1].y0, W, fr[fr.length - 1].y - fr[fr.length - 1].cr, "right", false));
     return out;
   }
   const [a, b] = zones;
@@ -1554,9 +2026,29 @@ export function shapeOutline(shape: DeckShape): Array<{ x: number; y: number }> 
     // Along the back, left to right, stepping with the wall; then the right side, the front and the left side.
     const pts: Array<{ x: number; y: number }> = [];
     for (const z of shapeZones(shape)) {
-      pts.push({ x: z.x0, y: z.y0 }, { x: z.x1, y: z.y0 });
+      // (Two parts whose backs are on one line — only the front steps between them: the point between is no corner.)
+      const last = pts[pts.length - 1];
+      if (last && Math.abs(last.y - z.y0) < 0.01 && Math.abs(last.x - z.x0) < 0.01) pts.pop();
+      else pts.push({ x: z.x0, y: z.y0 });
+      pts.push({ x: z.x1, y: z.y0 });
     }
-    pts.push({ x: W, y: D }, { x: 0, y: D });
+    if (!shape.front) pts.push({ x: W, y: D }, { x: 0, y: D });
+    else {
+      // …and back along the front, right to left, stepping with its parts (2026-11-14) — two points where a corner is
+      // cut at an angle.
+      for (let i = shape.front.length - 1; i >= 0; i--) {
+        const q = shape.front[i];
+        const x0 = Math.round(q.x0Ft * 12);
+        const x1 = Math.round(q.x1Ft * 12);
+        const y = Math.round(q.yFt * 12);
+        const cl = (q.clipLeftFt ?? 0) * 12;
+        const cr = (q.clipRightFt ?? 0) * 12;
+        if (cr) pts.push({ x: x1, y: y - cr }, { x: x1 - cr, y });
+        else pts.push({ x: x1, y });
+        if (cl) pts.push({ x: x0 + cl, y }, { x: x0, y: y - cl });
+        else pts.push({ x: x0, y });
+      }
+    }
     return pts.filter((p, i) => {
       const q = pts[(i + pts.length - 1) % pts.length];
       return Math.abs(p.x - q.x) > 0.01 || Math.abs(p.y - q.y) > 0.01;
@@ -1577,7 +2069,9 @@ export function shapeOutline(shape: DeckShape): Array<{ x: number; y: number }> 
 }
 
 export function shapeAreaSqFt(shape: DeckShape): number {
-  const rect = shapeZones(shape).reduce((a, z) => a + (z.x1 - z.x0) * (z.y1 - z.y0), 0) / 144;
+  const whole = shapeZones(shape).reduce((a, z) => a + (z.x1 - z.x0) * (z.y1 - z.y0), 0) / 144;
+  // (A front set part by part: less the corners cut at an angle.)
+  const rect = shape.kind === "wall" && shape.front ? Math.round((whole - frontClips(shape).reduce((a, k) => a + (k.c * k.c) / 288, 0)) * 100) / 100 : whole;
   if (shape.kind !== "rect" || !shape.front || shape.front.kind === "straight") return rect;
   if (shape.front.kind === "clipped") return rect - shape.front.clipFt * shape.front.clipFt;
   // The circular segment outside the chord: R²·acos((R−s)/R) − (R−s)·√(2Rs − s²).
@@ -1600,9 +2094,17 @@ export function sizeWords(design: DeckDesign): string {
     return p.shape === "square" ? `${ft(p.widthFt)} square` : `${ft(p.widthFt)} × ${ft(p.depthFt)}`;
   }
   const front = s.kind === "rect" && s.front && s.front.kind !== "straight" ? (s.front.kind === "curve" ? " curved front" : " clipped corners") : "";
-  const lower = design.lower.on && s.kind !== "L" ? " two levels" : "";
-  if (s.kind === "wall") return `${ft(s.widthFt)} × ${ft(s.depthFt)} following the house wall${lower}`;
-  return s.kind === "rect" ? `${ft(s.widthFt)} × ${ft(s.depthFt)}${front}${lower}` : `${ft(s.widthFt)} × ${ft(s.depthFt)} L-shaped`;
+  const lower = isDoubleDeck(design) ? " double deck" : design.lower.on && design.lower.place === "front" && s.kind !== "L" ? " two levels" : "";
+  if (s.kind === "wall") {
+    const ends = s.back.filter((b) => b.open);
+    const stepped = s.back.some((b) => !b.open && Math.abs(b.yFt) > 0.01);
+    const how = ends.length ? (ends.some((b) => b.yFt < 0) ? " wrapping round the house" : " running past the house's corner") : stepped ? " following the house wall" : "";
+    const cutN = s.front ? s.front.reduce((a, q) => a + (q.clipLeftFt ? 1 : 0) + (q.clipRightFt ? 1 : 0), 0) : 0;
+    const cuts = cutN ? `${cutN === 1 ? "a corner" : `${cutN} corners`} cut at an angle` : "";
+    const front = !s.front ? "" : s.front.length > 1 ? `${how ? "," : ""} its front in ${s.front.length} parts${cuts ? `, ${cuts}` : ""}` : `${how ? "," : ""} ${cuts}`;
+    return `${ft(s.widthFt)} × ${ft(s.depthFt)}${how}${front}${lower}`;
+  }
+  return s.kind === "rect" ? `${ft(s.widthFt)} × ${ft(s.depthFt)}${front}${lower}` : `${ft(s.widthFt)} × ${ft(s.depthFt)} L-shaped${isDoubleDeck(design) ? lower : ""}`;
 }
 
 /** What is being built, as a title: "16 ft × 12 ft covered deck", "12 ft octagon gazebo". */
