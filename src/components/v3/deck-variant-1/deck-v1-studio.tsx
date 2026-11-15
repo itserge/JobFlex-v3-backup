@@ -20,7 +20,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Route } from "next";
 import { createWheelMotion, wheelPixels } from "@/lib/smooth-wheel";
-import { AlertTriangle, Check, ChevronDown, ChevronRight, ExternalLink, FileText, Lock, Maximize2, Mic, Minimize2, Plus, RotateCcw, Send, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronRight, ExternalLink, FileText, Lock, LockOpen, Maximize2, Mic, Minimize2, Plus, RotateCcw, Send, X } from "lucide-react";
 import { resolveMarket, parseStateZip, type MarketSnapshot } from "@/lib/fence/market";
 import { leftEndPatch } from "@/lib/deck/frontByHand";
 import { DECKING, DECKING_BRAND_LABEL, DECKING_BRAND_ORDER, DECKING_FAMILY_LABEL, DECKING_FAMILY_ORDER, FRAMING_SPECIES, OC_LUMBER_ID, RAIL_TYPES, WALL_TYPES, WOOD_FRAMING_SPECIES, defaultDecking, defaultFramingSpecies, deckingProduct, isCompositeFraming, treatedDecking, wallType, type DeckingFamily, type DeckingProduct } from "@/lib/deck/catalog";
@@ -131,7 +131,8 @@ import { addBeam, deckGrips, gripAtFor, gripShownIn, moveGrip, partOfGrip, remov
 import type { Flash } from "@/lib/deck/voice/run";
 import type { DeckVoiceHost } from "@/components/v3/deck-voice/deck-voice";
 import { fieldLight, type FieldFocus } from "@/lib/deck/fieldParts";
-import { HouseWallPlan } from "@/components/v3/deck-estimator-blueprint/house-wall-plan";
+import { HouseWallPlan, type WallChange } from "@/components/v3/deck-estimator-blueprint/house-wall-plan";
+import { houseForLower, lowerFloor, lowerWallChange, upperWallChange } from "@/lib/deck/doubleDeck";
 import { DeckKindPicker } from "@/components/v3/deck-estimator-blueprint/deck-kind-picker";
 import { DeckPlan, type PlanEdgeHit, nearestStairEdge } from "@/components/v3/deck-estimator-blueprint/deck-plan";
 import { SKIRT_KINDS, SKIRT_LABEL } from "@/lib/deck/skirt";
@@ -352,6 +353,9 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
     [settle],
   );
   const setHouse = React.useCallback((p: Partial<HouseDesign>) => patch({ house: p }), [patch]);
+  // THE WALL LOCKED (2026-11-14; lib/deck/house HouseDesign.locked): the 3D's button, the drawing's, the House step's.
+  const wallLocked = !!design.house.locked;
+  const toggleWallLock = () => setHouse({ locked: !design.house.locked });
   const rp = React.useCallback(
     (p: Partial<RoofDesign>) => {
       dirty.current = true;
@@ -597,6 +601,33 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
   const ph = useDeckPhoto({ design, patch, scene, view, setView });
   /* ── the house built from its photo (2026-10-23): the wall, its windows and doors ── */
   const hp = useHousePhoto({ design, patch, clientId, onBuilt: () => setView("3d") });
+  /* ── a double deck shaped level by level (2026-11-14; lib/deck/doubleDeck): which deck the wall drawing shapes ── */
+  const double = design.lower.on && design.lower.place === "under";
+  const [wallLevelPicked, setWallLevel] = React.useState<"upper" | "lower">("upper");
+  const wallLevel = double ? wallLevelPicked : "upper";
+  const lowerNow = lowerFloor(design);
+  const wallShape = wallLevel === "lower" ? lowerNow.shape : design.shape;
+  const wallHouse = wallLevel === "lower" ? houseForLower(design.house, design.shape.widthFt, lowerNow) : design.house;
+  const onWall = (n2: WallChange) => patch(wallLevel === "lower" ? lowerWallChange(design, n2) : upperWallChange(design, n2));
+  const wallLevelSwitch = double ? (
+    <div className="v1-wall-level" data-deck-wall-level={wallLevel}>
+      <Seg label="Which deck the drawing shapes" value={wallLevel} onChange={setWallLevel} options={[{ value: "upper", label: "Upper deck" }, { value: "lower", label: "Lower deck" }]} />
+      <span className="v1-meta">
+        {wallLevel === "upper"
+          ? lowerNow.own
+            ? "The upper deck. The lower one keeps its own shape."
+            : "The upper deck — the lower one follows it until you shape it."
+          : lowerNow.own
+            ? "The lower deck, shaped on its own."
+            : "The lower deck — drag it to give it its own shape."}
+      </span>
+      {wallLevel === "lower" && lowerNow.own ? (
+        <button type="button" className="v1-btn v1-btn-sm v1-btn-quiet" onClick={() => patch({ lower: { ...design.lower, shape: undefined, offsetFt: undefined } })} data-deck-wall-lower-same>
+          Same as the upper
+        </button>
+      ) : null}
+    </div>
+  ) : null;
   const openWallLarge = () => {
     setView("wall");
     if (typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches) viewerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1754,8 +1785,10 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                 </Field>
               </div>
               <p className="v1-hint">
-                {structure.lower?.place === "under"
-                  ? `The same outline as the deck above, framed on the same lines: ${structure.lower.frame.joistSize} joists, ${[...new Set(structure.lower.frame.beams.map((b) => b.spec.size))].join(" and ")} ${structure.lower.frame.beams.length === 1 ? "beam" : "beams"} let into the same posts — no posts or footings of its own. The posts and footings are sized for both decks. A stair can leave either deck: pick “The lower deck” on the stair.`
+                {structure.lower?.place === "under" && design.lower.shape
+                  ? `Shaped on its own (${design.lower.shape.widthFt} × ${design.lower.shape.depthFt} ft, on the drawing above: Lower deck): ${structure.lower.frame.joistSize} joists, ${[...new Set(structure.lower.frame.beams.map((b) => b.spec.size))].join(" and ")} ${structure.lower.frame.beams.length === 1 ? "beam" : "beams"} — let into the upper deck's posts where they meet (${structure.lower.frame.seats.length}), on ${structure.lower.frame.posts.length} ${structure.lower.frame.posts.length === 1 ? "post" : "posts"} of its own elsewhere. A stair can leave either deck: pick “The lower deck” on the stair.`
+                  : structure.lower?.place === "under"
+                  ? `The same outline as the deck above — shape it on its own on the drawing (Lower deck) — framed on the same lines: ${structure.lower.frame.joistSize} joists, ${[...new Set(structure.lower.frame.beams.map((b) => b.spec.size))].join(" and ")} ${structure.lower.frame.beams.length === 1 ? "beam" : "beams"} let into the same posts — no posts or footings of its own. The posts and footings are sized for both decks. A stair can leave either deck: pick “The lower deck” on the stair.`
                   : `The two decks need at least ${ftIn(LOWER_LIMITS.storeyIn)} between them, floor to floor: raise the upper deck or bring the lower one down — the checks offer both.`}
               </p>
             </Scope>
@@ -1898,15 +1931,17 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
   const houseBlock = () => scene.house ? (
     <>
       <HousePhotoCard hp={hp} design={design} />
-      <Field label="The back wall and the deck, seen from above — drag anything" wide lights={null}>
+      {/* (Above the field, not in it: the field is a label, and a click anywhere in the drawing would press its first button.) */}
+      {wallLevelSwitch}
+      <Field label={double ? `The back wall and the ${wallLevel} deck, seen from above — drag anything` : "The back wall and the deck, seen from above — drag anything"} wide lights={null}>
         <div className="v1-wall-small" onPointerDownCapture={quiet} data-deck-wall-quiet>
-          <HouseWallPlan shape={design.shape} house={design.house} onChange={(n2) => patch({ ...(n2.shape ? { shape: n2.shape } : {}), ...(n2.house ? { house: n2.house } : {}) })} onOpenLarge={openWallLarge} doorFloor={doorFloor} />
+          <HouseWallPlan key={wallLevel} shape={wallShape} house={wallHouse} onChange={onWall} onOpenLarge={openWallLarge} doorFloor={doorFloor} deckName={double ? `the ${wallLevel} deck` : undefined} />
         </div>
       </Field>
       <p className={houseNotes(design.shape, design.house).length ? "v1-call v1-call-bad" : "v1-hint"} data-deck-wall-words>
         {wallWords(design.shape, design.house)}
       </p>
-      <More title="The house and its wall" now={houseWords(design.house)} id="house-more">
+      <More title="The house and its wall" now={`${houseWords(design.house)}${wallLocked ? " · 🔒 wall locked" : ""}`} id="house-more">
         <div className="v1-grid2">
           <Field label="Storeys">
             <Seg label="Storeys" value={String(design.house.storeys)} onChange={(v) => setHouse({ storeys: v === "2" ? 2 : 1 })} options={[{ value: "1", label: "One" }, { value: "2", label: "Two" }]} />
@@ -1991,54 +2026,64 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
             </button>
           </div>
         ) : null}
-        <Field label="The wall's shape" wide>
-          <div className="v1-chips" role="group" aria-label="The wall's shape">
-            {QUICK_WALLS.map((k) => (
-              <button key={k} type="button" className={cx("v1-chip", quickWallOf(design.shape, design.house) === k && "is-on")} aria-pressed={quickWallOf(design.shape, design.house) === k} onClick={() => setHouse(quickWall(k, design.shape, design.house))} data-deck-wall-quick={k}>
-                {QUICK_WALL_LABEL[k]}
-              </button>
-            ))}
-          </div>
-        </Field>
-        <div className="v1-grid2">
-          <Field label="Wall past the left end" aside="ft" lights={lightsFor({ kind: "left" })}>
-            <NumberInput label="Wall past the left end, feet" value={Math.max(0, design.house.leftFt)} parse={parseFeet} format={feetText} min={HOUSE_LIMITS.extendFt.min} max={HOUSE_LIMITS.extendFt.max} onCommit={(n2) => setHouse({ leftFt: n2 })} />
-          </Field>
-          <Field label="Wall past the right end" aside="ft" lights={lightsFor({ kind: "right" })}>
-            <NumberInput label="Wall past the right end, feet" value={Math.max(0, design.house.rightFt)} parse={parseFeet} format={feetText} min={HOUSE_LIMITS.extendFt.min} max={HOUSE_LIMITS.extendFt.max} onCommit={(n2) => setHouse({ rightFt: n2 })} />
-          </Field>
-        </div>
-        <div className="v1-rows" data-deck-house-jogs>
-          {design.house.jogs.map((j, i) => (
-            <div key={j.id} className="v1-item" data-deck-house-jog={j.id}>
-              <div className="v1-item-head">
-                <span className="v1-item-title">Step {i + 1} — {stepWords(j, design.shape)}</span>
-                <button type="button" className="v1-btn v1-btn-sm v1-btn-danger" onClick={() => setHouse({ jogs: design.house.jogs.filter((x) => x.id !== j.id) })} data-deck-house-jog-remove>
-                  Remove
-                </button>
-              </div>
-              <div className="v1-grid3">
-                <Field label="From the left end" aside="ft" lights={lightsFor({ kind: "step", id: j.id })}>
-                  <NumberInput label="Step at, feet from the deck's left end" value={j.atFt} parse={parseFeet} format={feetText} min={-design.house.leftFt + 1} max={design.shape.widthFt + design.house.rightFt - 1} onCommit={(n2) => setHouse({ jogs: design.house.jogs.map((x) => (x.id === j.id ? { ...x, atFt: n2 } : x)) })} />
-                </Field>
-                <Field label="The wall to its right" lights={lightsFor({ kind: "part", id: j.id })}>
-                  <select className="v1-sel" value={j.dir} onChange={(e) => setHouse({ jogs: design.house.jogs.map((x) => (x.id === j.id ? { ...x, dir: e.target.value as HouseJog["dir"] } : x)) })}>
-                    <option value="toward">Comes out</option>
-                    <option value="away">Steps back</option>
-                  </select>
-                </Field>
-                <Field label="By" aside="ft" lights={lightsFor({ kind: "part", id: j.id })}>
-                  <NumberInput label="By, feet" value={j.depthFt} parse={parseFeet} format={feetText} min={HOUSE_LIMITS.depthFt.min} max={HOUSE_LIMITS.depthFt.max} onCommit={(n2) => setHouse({ jogs: design.house.jogs.map((x) => (x.id === j.id ? { ...x, depthFt: n2 } : x)) })} />
-                </Field>
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="v1-row-acts">
-          <button type="button" className="v1-btn v1-btn-sm" disabled={design.house.jogs.length >= HOUSE_LIMITS.jogs} onClick={() => setHouse({ jogs: [...design.house.jogs, { id: nextJogId(design.house.jogs), atFt: Math.max(2, design.shape.widthFt - 4), dir: "toward", depthFt: 3 }] })} data-deck-house-add-jog>
-            <Plus size={15} strokeWidth={2.5} aria-hidden="true" /> Add a step in the wall
+        {/* THE WALL'S LOCK (2026-11-14): locked, the wall's shape below is held — only the deck moves around it. */}
+        <div className={cx("v1-lockbar", wallLocked && "is-locked")} data-deck-wall-lockbar={wallLocked ? "locked" : "open"}>
+          {wallLocked ? <Lock size={16} strokeWidth={2.5} aria-hidden="true" /> : <LockOpen size={16} strokeWidth={2.5} aria-hidden="true" />}
+          <span>{wallLocked ? (design.house.photo ? "The wall is locked as the photo showed it. The deck moves and grows around it — past the house's corner when you pull it past." : "The wall is locked: the deck moves and grows around it — past the house's corner when you pull it past.") : "Shape the wall, then lock it so nothing dragged by accident moves it."}</span>
+          <button type="button" className={cx("v1-btn", "v1-btn-sm", !wallLocked && "v1-btn-primary")} onClick={toggleWallLock} data-deck-wall-lock-step>
+            {wallLocked ? "Unlock the wall" : "Lock the wall"}
           </button>
         </div>
+        <fieldset className="v1-lockset" disabled={wallLocked} data-deck-wall-fields={wallLocked ? "locked" : "open"}>
+          <Field label="The wall's shape" wide>
+            <div className="v1-chips" role="group" aria-label="The wall's shape">
+              {QUICK_WALLS.map((k) => (
+                <button key={k} type="button" className={cx("v1-chip", quickWallOf(design.shape, design.house) === k && "is-on")} aria-pressed={quickWallOf(design.shape, design.house) === k} onClick={() => setHouse(quickWall(k, design.shape, design.house))} data-deck-wall-quick={k}>
+                  {QUICK_WALL_LABEL[k]}
+                </button>
+              ))}
+            </div>
+          </Field>
+          <div className="v1-grid2">
+            <Field label="Wall past the left end" aside="ft" lights={lightsFor({ kind: "left" })}>
+              <NumberInput label="Wall past the left end, feet" value={Math.max(0, design.house.leftFt)} parse={parseFeet} format={feetText} min={HOUSE_LIMITS.extendFt.min} max={HOUSE_LIMITS.extendFt.max} onCommit={(n2) => setHouse({ leftFt: n2 })} />
+            </Field>
+            <Field label="Wall past the right end" aside="ft" lights={lightsFor({ kind: "right" })}>
+              <NumberInput label="Wall past the right end, feet" value={Math.max(0, design.house.rightFt)} parse={parseFeet} format={feetText} min={HOUSE_LIMITS.extendFt.min} max={HOUSE_LIMITS.extendFt.max} onCommit={(n2) => setHouse({ rightFt: n2 })} />
+            </Field>
+          </div>
+          <div className="v1-rows" data-deck-house-jogs>
+            {design.house.jogs.map((j, i) => (
+              <div key={j.id} className="v1-item" data-deck-house-jog={j.id}>
+                <div className="v1-item-head">
+                  <span className="v1-item-title">Step {i + 1} — {stepWords(j, design.shape)}</span>
+                  <button type="button" className="v1-btn v1-btn-sm v1-btn-danger" onClick={() => setHouse({ jogs: design.house.jogs.filter((x) => x.id !== j.id) })} data-deck-house-jog-remove>
+                    Remove
+                  </button>
+                </div>
+                <div className="v1-grid3">
+                  <Field label="From the left end" aside="ft" lights={lightsFor({ kind: "step", id: j.id })}>
+                    <NumberInput label="Step at, feet from the deck's left end" value={j.atFt} parse={parseFeet} format={feetText} min={-design.house.leftFt + 1} max={design.shape.widthFt + design.house.rightFt - 1} onCommit={(n2) => setHouse({ jogs: design.house.jogs.map((x) => (x.id === j.id ? { ...x, atFt: n2 } : x)) })} />
+                  </Field>
+                  <Field label="The wall to its right" lights={lightsFor({ kind: "part", id: j.id })}>
+                    <select className="v1-sel" value={j.dir} onChange={(e) => setHouse({ jogs: design.house.jogs.map((x) => (x.id === j.id ? { ...x, dir: e.target.value as HouseJog["dir"] } : x)) })}>
+                      <option value="toward">Comes out</option>
+                      <option value="away">Steps back</option>
+                    </select>
+                  </Field>
+                  <Field label="By" aside="ft" lights={lightsFor({ kind: "part", id: j.id })}>
+                    <NumberInput label="By, feet" value={j.depthFt} parse={parseFeet} format={feetText} min={HOUSE_LIMITS.depthFt.min} max={HOUSE_LIMITS.depthFt.max} onCommit={(n2) => setHouse({ jogs: design.house.jogs.map((x) => (x.id === j.id ? { ...x, depthFt: n2 } : x)) })} />
+                  </Field>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="v1-row-acts">
+            <button type="button" className="v1-btn v1-btn-sm" disabled={design.house.jogs.length >= HOUSE_LIMITS.jogs} onClick={() => setHouse({ jogs: [...design.house.jogs, { id: nextJogId(design.house.jogs), atFt: Math.max(2, design.shape.widthFt - 4), dir: "toward", depthFt: 3 }] })} data-deck-house-add-jog>
+              <Plus size={15} strokeWidth={2.5} aria-hidden="true" /> Add a step in the wall
+            </button>
+          </div>
+        </fieldset>
       </More>
     </>
   ) : null;
@@ -3975,7 +4020,8 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
             <div className={cx("v1-view-box", view === "wall" && "is-wall")}>
               {view === "wall" ? (
                 <div className="v1-wall-large" onPointerDownCapture={quiet} data-deck-wall-large-view>
-                  <HouseWallPlan size="large" shape={design.shape} house={design.house} onChange={(n2) => patch({ ...(n2.shape ? { shape: n2.shape } : {}), ...(n2.house ? { house: n2.house } : {}) })} doorFloor={doorFloor} />
+                  {wallLevelSwitch}
+                  <HouseWallPlan key={wallLevel} size="large" shape={wallShape} house={wallHouse} onChange={onWall} doorFloor={doorFloor} deckName={double ? `the ${wallLevel} deck` : undefined} />
                 </div>
               ) : view === "3d" ? (
                 <>
@@ -4011,8 +4057,10 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                 <PhotoViewBox ph={ph} design={design} patch={patch} what={what} />
               ) : (
                 <div className="v1-plan-wrap">
+                  {double && lowerNow.own ? wallLevelSwitch : null}
                   <DeckPlan
                     structure={structure}
+                    level={wallLevel}
                     placing={placing?.kind === "stair" ? "stair" : null}
                     onPlaceStair={placeStair}
                     grips={viewOnly ? undefined : grips}
@@ -4058,6 +4106,13 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                   <button type="button" className={cx("v1-btn", "v1-btn-primary", "v1-edit3d", editing && "is-on")} aria-pressed={editing} onClick={() => { setEditing((x) => !x); setHoverPick(null); }} data-deck-edit>
                     {editing ? <><Check size={16} strokeWidth={2.5} aria-hidden="true" /> Done</> : "Edit in 3D"}
                   </button>
+                  {/* THE WALL'S LOCK (2026-11-14): in sight on the 3D, beside Edit in 3D — locked, the wall has no knobs. */}
+                  {structure.frame && design.placement !== "detached" && !viewOnly ? (
+                    <button type="button" className={cx("v1-btn", "v1-wall-lock", wallLocked && "is-locked")} aria-pressed={wallLocked} onClick={toggleWallLock} title={wallLocked ? "The house wall is locked: only the deck moves. Tap to unlock it and move the wall." : "Lock the house wall so nothing dragged can move it."} data-deck-wall-lock={wallLocked ? "locked" : "open"}>
+                      {wallLocked ? <Lock size={16} strokeWidth={2.5} aria-hidden="true" /> : <LockOpen size={16} strokeWidth={2.5} aria-hidden="true" />}
+                      {wallLocked ? "Wall locked" : "Lock the wall"}
+                    </button>
+                  ) : null}
                   {structure.frame && !editing ? (
                     <button type="button" className={cx("v1-btn", placing?.kind === "stair" && "is-on")} aria-pressed={placing?.kind === "stair"} disabled={design.stairs.length >= STAIR_LIMITS.count} onClick={() => setPlacing(placing?.kind === "stair" ? null : { kind: "stair" })} data-deck-3d-add-stair>
                       {placing?.kind === "stair" ? "Click the deck…" : "Add stairs"}
@@ -4068,7 +4123,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                 {editing && !placing ? (
                   <p className="v1-edit-hint" data-deck-editing>
                     <span className="v1-edit-hint-knob" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 12h16M8 7.5 3.5 12 8 16.5M16 7.5l4.5 4.5-4.5 4.5" /></svg></span>
-                    <span>Drag a knob the way its arrow points — or take hold of a post or a beam itself and pull it, an inch at a time. The price follows.</span>
+                    <span>Drag a knob the way its arrow points — or take hold of a post or a beam itself and pull it, an inch at a time. The price follows.{wallLocked && design.placement !== "detached" ? " The house wall is locked, so it has no knobs: pull the deck past its corner and the deck runs on beyond it." : ""}</span>
                   </p>
                 ) : null}
                 <div className="v1-playback" hidden={editing && !placing}>

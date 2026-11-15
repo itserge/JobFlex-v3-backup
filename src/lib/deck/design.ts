@@ -439,10 +439,13 @@ export interface SiteDesign {
 
 /**
  * A second, lower deck. "front": in front of the main one, a step or a short stair down. "under" (2026-11-13 — the
- * owner: "a double deck, like first floor and second floor"): a DOUBLE DECK — a deck of the same outline under the main
- * one, a first-floor deck under a second-floor one, its beams let into the same posts. Under the main deck its width
- * and depth are the main deck's and its drop is the difference between the two heights (kept so by the normaliser), so
- * everything that reads a lower level reads this one too.
+ * owner: "a double deck, like first floor and second floor"): a DOUBLE DECK — a deck under the main one, a first-floor
+ * deck under a second-floor one, its beams let into the same posts. Its drop is the difference between the two heights
+ * (kept so by the normaliser), so everything that reads a lower level reads this one too.
+ * ITS OWN OUTLINE (2026-11-14 — the owner: "when it's a double deck and I need to reshape the upper deck, show lower /
+ * upper on the drawing to reshape and adjust it"): `shape` is the lower floor's own outline and `offsetFt` where its
+ * left end stands along the house from the main deck's left end — absent, it is the main deck's outline, under it
+ * (and follows every change to it). Its width and depth are its own outline's.
  */
 export interface LowerLevel {
   on: boolean;
@@ -454,6 +457,10 @@ export interface LowerLevel {
   align: "left" | "centre" | "right";
   /** A double deck's lower floor: how high its boards stand above the ground, inches (its own door's threshold). */
   heightIn: number;
+  /** A double deck's lower floor shaped on its own (lib/deck/doubleDeck): its outline, in its own feet. */
+  shape?: DeckShape;
+  /** …and where its left end stands along the house, ft from the main deck's left end (− = farther left). */
+  offsetFt?: number;
 }
 /** `storeyIn`: the least from one deck's boards up to the other's for a double deck to be one — room to stand under the upper deck's frame. */
 export const LOWER_LIMITS = { widthFt: { min: 4, max: 60 }, depthFt: { min: 4, max: 30 }, dropIn: { min: 4, max: 96 }, heightIn: { min: 6, max: 144 }, storeyIn: 90 } as const;
@@ -1661,7 +1668,13 @@ function normalizeLower(raw: unknown, shape: DeckShape, heightIn: number): Lower
   // A DOUBLE DECK: the main deck's own outline, under it. It is kept as asked even where the two heights leave no
   // storey between them — hasLowerLevel then says no and the checks say why, with the way to make room.
   if (r.place === "under") {
-    return { on: r.on === true, place: "under", widthFt: shape.widthFt, depthFt: shape.depthFt, dropIn: Math.max(0, heightIn - lowerHeightIn), align: "left", heightIn: lowerHeightIn };
+    // Its own outline, when it was shaped on its own (and is not the main deck's after all); where it stands along the
+    // house, overlapping the main deck by four feet at least — it is the floor under it.
+    const own = r.shape && typeof r.shape === "object" ? normalizeShape(r.shape, shape) : null;
+    const offsetFt = own ? Math.round(clamp(num(r.offsetFt, 0), -(own.widthFt - 4), shape.widthFt - 4) * 2) / 2 : 0;
+    const same = !own || (offsetFt === 0 && JSON.stringify(own) === JSON.stringify(shape));
+    const outline = same ? shape : own;
+    return { on: r.on === true, place: "under", widthFt: outline.widthFt, depthFt: outline.depthFt, dropIn: Math.max(0, heightIn - lowerHeightIn), align: "left", heightIn: lowerHeightIn, ...(same ? {} : { shape: own, offsetFt }) };
   }
   const front = shape.kind === "rect" ? shape.front : undefined;
   const on = r.on === true && shape.kind !== "L" && heightIn > LOWER_LIMITS.dropIn.min + 4 && front?.kind !== "curve";

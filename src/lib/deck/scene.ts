@@ -1231,7 +1231,8 @@ export function deckScene(s: DeckStructure): DeckScene {
     const c = st.footprint[2];
     if (st.kind === "flight" && c) handles.push({ kind: "stair-width", id: st.design.id, x: r3((b.x + c.x) / 2), y: r3((b.y + c.y) / 2), z: r3(top - st.riseIn / 2), axis: st.design.side === "front" ? "x" : "y", value: st.design.widthFt, perUnit: 1, follow: 0.5, label: "Stair width" });
   }
-  if (house && frame) for (const h of houseHandles(design.shape, design.house, (frame.surfaceIn + 2) / 12)) handles.push(h);
+  // (A LOCKED wall — 2026-11-14 — has no knobs: nothing dragged by accident moves it. Unlocked, its steps and corners are offered.)
+  if (house && frame && !design.house.locked) for (const h of houseHandles(design.shape, design.house, (frame.surfaceIn + 2) / 12)) handles.push(h);
   // BY HAND (2026-11-13; lib/deck/byHand): every post and beam that can be moved is a handle of its own, taken hold of
   // by the part itself and slid along its beam, its side or the joists an inch at a time. Last in the list: they have
   // no knob, and the knobs' lists run beside the handles' from the start.

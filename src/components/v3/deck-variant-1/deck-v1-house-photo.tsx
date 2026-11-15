@@ -620,7 +620,8 @@ export function useHousePhoto({
       deckAtFt: built.deckAtFt,
       at: new Date().toISOString(),
     };
-    const p: DeckPatch = { house: { ...built.house, photo: review.url ? kept : null } };
+    // Built from the photo, the wall is the real one: it is LOCKED (2026-11-14) — the deck moves round it; Unlock to change it.
+    const p: DeckPatch = { house: { ...built.house, photo: review.url ? kept : null, locked: true } };
     if (review.useHeight && built.heightIn) p.heightIn = built.heightIn;
     if (roofFit) p.roof = roofFit.roof;
     const veneer = built.house.material === "brick" || built.house.material === "stone";

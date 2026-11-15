@@ -107,6 +107,14 @@ export interface HouseDesign {
   openings?: HouseOpening[] | null;
   /** The photo the house was built from. */
   photo?: HousePhoto | null;
+  /**
+   * THE WALL LOCKED (2026-11-14 — the owner: "when the house wall is set, or built from a picture, lock it: only the deck
+   * works around it, the wall does not move… when the deck goes past the locked wall, you don't expand the house, you
+   * expand the deck beyond the wall… if you need to adjust the back wall, unlock it"). Locked, nothing the deck does
+   * moves the wall: a wider deck runs past the house's corner instead of stretching the house, and the wall's own
+   * handles (its parts, steps and ends) are not offered. Built from a photo, a wall is locked. Absent = unlocked.
+   */
+  locked?: boolean;
   /** A porch roof on posts that stays (2026-11-13, kept from the photo): drawn as an existing cover. Absent or null = none. */
   covers?: HouseCover[] | null;
 }
@@ -247,6 +255,7 @@ export function normalizeHouse(raw: unknown, shape: DeckShape): HouseDesign {
   // The steps are kept exactly as given: the read-back never adds one for a back notch (the studio does that once, when
   // a design opens) and never drops one (a step just removed must stay removed, so the deck can go back to a rectangle).
   const out: HouseDesign = { storeys, roof, leftFt, rightFt, jogs: spaced, siding, roofColour };
+  if (r.locked === true) out.locked = true;
   // What a photo brought (2026-10-23) — only when it is there, so a house without it reads back exactly as before.
   if (HOUSE_MATERIALS.includes(r.material as HouseMaterial) && r.material !== "lap") out.material = r.material as HouseMaterial;
   if (typeof r.pitch === "number" && Number.isFinite(r.pitch)) out.pitch = half(clamp(r.pitch, HOUSE_PITCH_LIMITS.min, HOUSE_PITCH_LIMITS.max));
@@ -543,8 +552,9 @@ function endNotch(shape: DeckShape, t: WallPart, atRight: boolean, rect: () => D
  * deck set back to a rectangle loses the step that notched it.
  */
 export function houseForShape(house: HouseDesign, shape: DeckShape, opts: { drop?: boolean } = {}): HouseDesign {
-  // (A deck in parts follows the wall as it is: its shape asks nothing of the house.)
-  if (shape.kind === "wall") return house;
+  // (A deck in parts follows the wall as it is: its shape asks nothing of the house. Nor of a locked wall: the deck
+  // follows it as it stands — 2026-11-14.)
+  if (shape.kind === "wall" || house.locked) return house;
   const W = shape.widthFt;
   const want = shape.kind === "L" && shape.notch.corner.startsWith("back") ? shape.notch : null;
   const underBefore = partsUnderDeck(wallParts(house, shape), W).filter((p) => p.depthFt > 0.5);
@@ -1271,10 +1281,42 @@ export function slideDeck(house: HouseDesign, deltaFt: number): HouseDesign {
 }
 
 /**
+ * THE DECK'S END MOVED AGAINST A LOCKED WALL (2026-11-14): the house stays exactly where it is and the deck's end goes
+ * where it was taken — past the house's corner when it is taken past it (the deck runs on beyond the wall on its own
+ * beam, lib/deck/house deckPast), back onto the wall when it is brought back. Never a sliver past the corner: an end
+ * less than 2 ft past it stops AT the corner until it is taken 2 ft past (the least part of a deck to frame), and it
+ * goes 30 ft past at most; the wall keeps 4 ft of the deck. `side` is the end that moves; `widthFt` the width asked.
+ * Returns the width the deck can have and the wall's reach past that end (negative = the deck past the corner).
+ */
+export function lockedEnd(house: HouseDesign, shape: DeckShape, side: "left" | "right", widthFt: number): { widthFt: number; reachFt: number } {
+  const P = HOUSE_LIMITS.pastFt;
+  const W = shape.widthFt;
+  const reach0 = side === "left" ? house.leftFt : house.rightFt;
+  const otherPast = Math.max(0, -(side === "left" ? house.rightFt : house.leftFt));
+  // No narrower than the wall needs: 4 ft of the deck on the wall beside a deck past the other corner.
+  const w = Math.max(widthFt, otherPast + P.keepFt);
+  let reach = clamp(half(reach0 - (w - W)), -P.max, HOUSE_LIMITS.extendFt.max);
+  // No sliver past the corner: nearer the corner stops at it, nearer 2 ft past goes 2 ft past.
+  if (reach < 0 && reach > -P.min) reach = reach > -P.min / 2 ? 0 : -P.min;
+  return { widthFt: half(W + reach0 - reach), reachFt: reach };
+}
+
+/**
  * The deck's LEFT end moved to a new width while its right end stays put: the house stays too, so the wall's left
- * reach and every step shift by the change. Returns the shape and the house together.
+ * reach and every step shift by the change. Returns the shape and the house together. Against a LOCKED wall the end
+ * may go past the house's corner (lockedEnd).
  */
 export function resizeDeckLeft(house: HouseDesign, shape: DeckShape, newWidthFt: number, minWidthFt: number, maxWidthFt: number): { house: HouseDesign; shape: DeckShape } {
+  if (house.locked) {
+    const want = half(clamp(newWidthFt, minWidthFt, maxWidthFt));
+    const end = lockedEnd(house, shape, "left", want);
+    const w2 = clamp(end.widthFt, minWidthFt, maxWidthFt);
+    const d = shape.widthFt - w2;
+    if (d === 0) return { house, shape };
+    const moved = { ...house, leftFt: half(house.leftFt + d), jogs: house.jogs.map((j) => ({ ...j, atFt: half(j.atFt - d) })), ...shiftHouseThings(house, -d) };
+    if (moved.leftFt >= 0) delete moved.wrapLeftFt;
+    return { house: moved, shape: { ...shape, widthFt: w2 } };
+  }
   const W = shape.widthFt;
   const w2 = half(clamp(newWidthFt, minWidthFt, maxWidthFt));
   const d = W - w2; // the left end moves right by this much
