@@ -791,12 +791,12 @@
    edge and a hard blueprint shadow. #2d6ed7 rather than the ad's lighter fill:
    white type on it reads 4.9:1. */
 .jf-lp .lp-hero .lp-cta--blue {
-  background: #2d6ed7;
+  background: var(--accent-bright);
   color: #fff;
   border: 2px solid #fff;
-  box-shadow: 5px 5px 0 #1854a0;
+  box-shadow: 5px 5px 0 var(--accent);
 }
-.jf-lp .lp-hero .lp-cta--blue:hover { background: #255fbd; }
+.jf-lp .lp-hero .lp-cta--blue:hover { background: var(--accent-bright-hover); }
 .jf-lp .lp-hero .lp-cta--ghost {
   background: transparent;
   border-color: rgba(255, 255, 255, 0.35);
