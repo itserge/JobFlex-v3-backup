@@ -37,6 +37,7 @@ import { BASE_PLATE_IN, BASE_PLATE_THICK_IN, railMountCallout, railPostWords, ra
 import { electricalWords } from "./electrical";
 import { SKIRT_BOARD_IN, SKIRT_BORDER_IN, SKIRT_CLEAR_IN, SKIRT_GAP_IN, SKIRT_THICK_IN } from "./skirt";
 import { BENCH_BACK_IN, BENCH_SEAT_IN, SCREEN_GAP_IN, type BuiltInMember } from "./builtins";
+import { finishProduct, type PartFinish } from "./finish";
 import { HOUSE_MATERIALS, HOUSE_ROOFS, houseHandles, houseScene, settleSceneOpenings, type HouseMaterial, type HouseRoof } from "./house";
 import { railColorOf, speciesWords } from "./catalog";
 
@@ -214,6 +215,20 @@ export interface DeckScene {
   colors: { frame: string; decking: string; fascia: string; roofing: string; rail: string; decking2?: string; railInfill?: string; border?: string; border2?: string; railCap?: string; roofFrame?: string };
   /** What the client reads under the picture. */
   facts: string;
+  /**
+   * BOARDS OF THEIR OWN (2026-11-14; lib/deck/finish): a stair's treads and risers, a built-in's boards in a line and
+   * colour of their own — each paint its colour (and a streaked board's second tone) and the boxes and cut rings that
+   * wear it. Absent = every board is the deck's.
+   */
+  paints?: ScenePaint[];
+}
+/** A board of its own in the 3D: its colour, its second tone, which boxes (`boxes`) and cut rings (`rings`, of `diagonal`) it is, and whose (a stair's or a built-in's id). */
+export interface ScenePaint {
+  hex: string;
+  hex2?: string;
+  boxes: number[];
+  rings: number[];
+  of: string;
 }
 
 const r3 = (inches: number) => Math.round((inches / 12) * 1000) / 1000;
@@ -355,6 +370,9 @@ export const ROOF_MEMBER_LAYER: Record<RoofMember["role"], SceneLayer> = {
 };
 const ROOF_PLANE_LAYER: Record<RoofPlane["kind"], SceneLayer> = { sheathing: "sheathing", roofing: "roofing", ceiling: "ceiling", soffit: "trim", slab: "slab", wall: "wall", screen: "screen", louver: "roofing", fixture: "light" };
 const STAIR_LAYER: Record<StairMember["role"], SceneLayer> = { stringer: "stair", tread: "stair", riser: "stair", kicker: "stair", "stair-post": "stair", "stair-beam": "stair", "landing-frame": "stair", "landing-tread": "stair", "box-frame": "stair", "box-tread": "stair", "stair-rail": "rail", "stair-rail-post": "rail", "stair-baluster": "rail", pad: "slab" };
+/** The members of a stair and of a built-in that are BOARDS — what a board of its own changes (lib/deck/finish); the frames stay treated lumber. */
+const STAIR_BOARDS: ReadonlySet<StairMember["role"]> = new Set<StairMember["role"]>(["tread", "riser", "landing-tread", "box-tread"]);
+const BUILT_IN_BOARDS: ReadonlySet<BuiltInMember["role"]> = new Set<BuiltInMember["role"]>(["bench seat", "bench back", "bench cap", "bench apron", "planter board", "planter cap", "screen board", "screen cap"]);
 /** Built-ins: boards as the deck's, aprons as its fascia, legs and cleats as its frame, a planter's soil dark. */
 const BUILT_IN_LAYER: Record<BuiltInMember["role"], SceneLayer> = { "bench seat": "decking", "bench back": "decking", "bench cap": "decking", "bench apron": "fascia", "bench leg": "post", "bench back post": "post", "bench cleat": "joist", "planter board": "decking", "planter cap": "fascia", "planter soil": "spa", "screen post": "post", "screen board": "decking", "screen cap": "fascia" };
 const RAIL_LAYER: Record<RailMember["role"], SceneLayer> = { "rail-post": "rail", "rail-top": "rail", "rail-bottom": "rail", "rail-cap": "rail", baluster: "rail", cable: "rail", "rail-panel": "glass", mesh: "rail" };
@@ -439,6 +457,22 @@ export function deckScene(s: DeckStructure): DeckScene {
   let heightIn = 0;
   const shapedBoards: number[][] = [];
   const shapedZs: number[] = [];
+  // Boards of their own (lib/deck/finish): one paint per stair or built-in that has them.
+  const paints: ScenePaint[] = [];
+  const deckBoard = s.surface?.product ?? s.frame?.decking ?? null;
+  const paintOf = (of: string, f: PartFinish | undefined): ScenePaint | null => {
+    if (!f || !deckBoard) return null;
+    const p = finishProduct(deckBoard, f);
+    const paint: ScenePaint = { hex: p.color, ...(p.color2 ? { hex2: p.color2 } : {}), boxes: [], rings: [], of };
+    paints.push(paint);
+    return paint;
+  };
+  /** A box laid, and — when it is a board of its own — told to its paint. */
+  const boxIn = (paint: ScenePaint | null, ...args: Parameters<typeof box>) => {
+    const at = boxes.length;
+    box(...args);
+    if (paint && boxes.length > at) paint.boxes.push(at);
+  };
   const borderRings: number[] = [];
 
   /* ── The deck, level by level ──────────────────────────────────────── */
@@ -698,7 +732,8 @@ export function deckScene(s: DeckStructure): DeckScene {
           return "Planting soil in a liner with drain holes. Wet soil is heavy: see the checks for what this box weighs.";
       }
     };
-    for (const m of bi.members) box(BUILT_IN_LAYER[m.role], m.cx, m.cy, m.cz, m.sx, m.sy, m.sz, tagFor(m.role, m.nominal, m.lengthIn, noteFor(m.role)), 0, m.yaw, 0);
+    const paint = paintOf(bi.design.id, bi.design.finish);
+    for (const m of bi.members) boxIn(BUILT_IN_BOARDS.has(m.role) ? paint : null, BUILT_IN_LAYER[m.role], m.cx, m.cy, m.cz, m.sx, m.sy, m.sz, tagFor(m.role, m.nominal, m.lengthIn, noteFor(m.role)), 0, m.yaw, 0);
   }
 
   /* ── The stairs ───────────────────────────────────────────────────── */
@@ -739,10 +774,12 @@ export function deckScene(s: DeckStructure): DeckScene {
           return m.role;
       }
     };
-    for (const m of st.members) box(STAIR_LAYER[m.role], m.cx, m.cy, m.cz, m.sx, m.sy, m.sz, tagFor(m.role.replace(/-/g, " "), m.nominal, m.lengthIn, noteFor(m)), 0, m.yaw, m.tilt);
+    const stairPaint = paintOf(st.design.id, st.design.finish);
+    for (const m of st.members) boxIn(STAIR_BOARDS.has(m.role) ? stairPaint : null, STAIR_LAYER[m.role], m.cx, m.cy, m.cz, m.sx, m.sy, m.sz, tagFor(m.role.replace(/-/g, " "), m.nominal, m.lengthIn, noteFor(m)), 0, m.yaw, m.tilt);
     // Steps that follow the deck's outline (2026-11-14): their tread boards, each a flat ring at its own height, mitred
     // where two edges meet — drawn as the deck's cut boards are.
     for (const t of st.treadRings ?? []) {
+      if (stairPaint) stairPaint.rings.push(shapedBoards.length);
       shapedBoards.push(t.ring.map((v) => r3(v)));
       shapedZs.push(r3(t.z));
     }
@@ -1212,6 +1249,7 @@ export function deckScene(s: DeckStructure): DeckScene {
     handles,
     colors,
     facts: factParts.join(" · "),
+    ...(paints.some((pt) => pt.boxes.length || pt.rings.length) ? { paints: paints.filter((pt) => pt.boxes.length || pt.rings.length).map((pt) => ({ ...pt, rings: pt.rings.filter((i) => i < SCENE_MAX_DIAGONALS) })) } : {}),
   };
 }
 
@@ -1388,6 +1426,18 @@ export function parseDeckScene(raw: unknown): DeckScene | null {
   }
   const c = (r.colors && typeof r.colors === "object" ? r.colors : {}) as Record<string, unknown>;
   const color = (x: unknown, fallback: string) => (typeof x === "string" && HEX.test(x) ? x : fallback);
+  // Boards of their own: a colour, and whole numbers inside the boxes and the rings — malformed ones dropped.
+  const paints: ScenePaint[] = [];
+  if (Array.isArray(r.paints)) {
+    for (const raw of r.paints.slice(0, 32)) {
+      const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+      if (typeof o.hex !== "string" || !HEX.test(o.hex)) continue;
+      const ints = (x: unknown, n: number) => (Array.isArray(x) ? [...new Set(x.filter((i): i is number => Number.isInteger(i) && (i as number) >= 0 && (i as number) < n))] : []);
+      const pBoxes = ints(o.boxes, boxes.length);
+      const pRings = ints(o.rings, diagonal?.boards.length ?? 0);
+      if (pBoxes.length || pRings.length) paints.push({ hex: o.hex, ...(typeof o.hex2 === "string" && HEX.test(o.hex2) ? { hex2: o.hex2 } : {}), boxes: pBoxes, rings: pRings, of: typeof o.of === "string" ? o.of.slice(0, 20) : "" });
+    }
+  }
   return {
     v: DECK_SCENE_VERSION,
     widthFt: r.widthFt,
@@ -1409,6 +1459,7 @@ export function parseDeckScene(raw: unknown): DeckScene | null {
     handles,
     colors: { frame: color(c.frame, "#9d8c62"), decking: color(c.decking, "#a58a5c"), fascia: color(c.fascia, "#a58a5c"), roofing: color(c.roofing, "#565250"), rail: color(c.rail, "#9d8c62"), ...(typeof c.decking2 === "string" && HEX.test(c.decking2) ? { decking2: c.decking2 } : {}), ...(typeof c.railInfill === "string" && HEX.test(c.railInfill) ? { railInfill: c.railInfill } : {}), ...(typeof c.border === "string" && HEX.test(c.border) ? { border: c.border } : {}), ...(typeof c.border2 === "string" && HEX.test(c.border2) ? { border2: c.border2 } : {}), ...(typeof c.railCap === "string" && HEX.test(c.railCap) ? { railCap: c.railCap } : {}), ...(typeof c.roofFrame === "string" && HEX.test(c.roofFrame) ? { roofFrame: c.roofFrame } : {}) },
     facts: typeof r.facts === "string" ? r.facts.slice(0, 200) : "",
+    ...(paints.length ? { paints } : {}),
   };
 }
 

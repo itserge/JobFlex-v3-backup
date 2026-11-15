@@ -30,6 +30,7 @@ import { defaultHouse, fitDeckEnds, normalizeHouse, type HouseDesign } from "./h
  */
 import { deckCodeFor } from "./stateCodes";
 import { normalizeBuiltIns, type BuiltIn } from "./builtins";
+import { normalizeFinish as finishOf, type PartFinish } from "./finish";
 
 export const DECK_DESIGN_VERSION = 3;
 
@@ -341,6 +342,11 @@ export interface StairDesign {
    * flight past the code's 12 ft 3 in. still gets a straight landing by itself.
    */
   landings: StairTurn[];
+  /**
+   * BOARDS OF ITS OWN (2026-11-14 — the owner: "click the steps around in the 3D and replace the material or the colour";
+   * lib/deck/finish): its treads, landings and risers in a line and colour of their own. Absent = the deck's own.
+   */
+  finish?: PartFinish;
 }
 /**
  * Which way the stairs go on from a landing, as you walk DOWN them: straight on, a quarter turn to the left or the
@@ -1620,6 +1626,7 @@ function normalizeStairs(raw: unknown, legacyExtras: Record<string, unknown>, sh
       landing: oneOf(s.landing, ["pad", "patio", "grade"] as const, "pad"),
       handrail: oneOf(s.handrail, ["auto", "both", "one", "none"] as const, "auto"),
       landings: wrap ? [] : stairTurns(s.landings),
+      ...(finishOf(s.finish) ? { finish: finishOf(s.finish)! } : {}),
     };
   };
   if (list) {

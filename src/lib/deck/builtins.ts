@@ -20,6 +20,7 @@
 //     weighs full of wet soil is worked out and said: far more per square foot than a deck is framed for, so where it
 //     stands matters (over a beam line, or on doubled joists).
 import { ringEdges } from "./ringEdges";
+import { normalizeFinish, type PartFinish } from "./finish";
 
 export type BuiltInKind = "bench" | "bench-back" | "planter" | "screen";
 export const BUILT_IN_KINDS: readonly BuiltInKind[] = ["bench", "bench-back", "planter", "screen"];
@@ -37,6 +38,8 @@ export interface BuiltIn {
   lengthFt: number;
   /** A privacy screen's height above the boards, ft (screens only). */
   heightFt?: number;
+  /** BOARDS OF ITS OWN (2026-11-14; lib/deck/finish): its seat, back, sides, caps and apron in a line and colour of their own. Absent = the deck's own. */
+  finish?: PartFinish;
 }
 
 export const BUILT_IN_LIMITS = { count: 8, lengthFt: { min: 2, max: 30 }, planterFt: { min: 2, max: 10 }, screenFt: { min: 3, max: 8 } } as const;
@@ -93,7 +96,7 @@ export function normalizeBuiltIns(raw: unknown, widthFt: number, depthFt: number
     seen.add(id);
     const along = side === "front" ? widthFt : depthFt;
     const max = kind === "planter" ? BUILT_IN_LIMITS.planterFt.max : BUILT_IN_LIMITS.lengthFt.max;
-    out.push({ id, kind, side, atFt: half(clamp(num(o.atFt, along / 2), 0, along)), lengthFt: half(clamp(num(o.lengthFt, kind === "planter" ? 4 : 8), BUILT_IN_LIMITS.lengthFt.min, max)), ...(kind === "screen" ? { heightFt: half(clamp(num(o.heightFt, SCREEN_DEFAULT_FT), BUILT_IN_LIMITS.screenFt.min, BUILT_IN_LIMITS.screenFt.max)) } : {}) });
+    out.push({ id, kind, side, atFt: half(clamp(num(o.atFt, along / 2), 0, along)), lengthFt: half(clamp(num(o.lengthFt, kind === "planter" ? 4 : 8), BUILT_IN_LIMITS.lengthFt.min, max)), ...(kind === "screen" ? { heightFt: half(clamp(num(o.heightFt, SCREEN_DEFAULT_FT), BUILT_IN_LIMITS.screenFt.min, BUILT_IN_LIMITS.screenFt.max)) } : {}) , ...(normalizeFinish(o.finish) ? { finish: normalizeFinish(o.finish)! } : {}) });
   });
   return out;
 }
