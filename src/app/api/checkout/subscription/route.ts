@@ -150,6 +150,7 @@ export async function POST(req: Request) {
         code: true,
         active: true,
         customerPercentOff: true,
+        customerDiscountMonths: true,
         stripeCouponId: true,
         stripePromotionCodeId: true,
         influencer: { select: { status: true } },
@@ -162,6 +163,7 @@ export async function POST(req: Request) {
         stripeCouponId: stamped.stripeCouponId,
         stripePromotionCodeId: stamped.stripePromotionCodeId,
         customerPercentOff: stamped.customerPercentOff,
+        customerDiscountMonths: stamped.customerDiscountMonths,
       };
     }
   }
@@ -176,6 +178,7 @@ export async function POST(req: Request) {
           stripeCouponId: validated.stripeCouponId,
           stripePromotionCodeId: validated.stripePromotionCodeId,
           customerPercentOff: validated.percentOff,
+          customerDiscountMonths: validated.discountMonths,
         };
       }
     }
@@ -323,7 +326,7 @@ export async function POST(req: Request) {
     try {
       if (autoApplyPromotionCode && promoForCheckout) {
         const pct = await promoPercentOff(stripe, autoApplyPromotionCode, promoForCheckout.customerPercentOff);
-        if (pct) yearCoupon = await ensureYearFirstMonthCoupon(stripe, mode, { kind: "promo", pct, monthlyCents, months: referralCouponMonths(trialDays), promoCodeId: promoForCheckout.id, code: promoForCheckout.code });
+        if (pct) yearCoupon = await ensureYearFirstMonthCoupon(stripe, mode, { kind: "promo", pct, monthlyCents, months: referralCouponMonths(trialDays), periodMonths: promoForCheckout.customerDiscountMonths, promoCodeId: promoForCheckout.id, code: promoForCheckout.code });
       } else if (referralCoupon) {
         yearCoupon = await ensureYearFirstMonthCoupon(stripe, mode, { kind: "referral", pct: REFERRAL_DISCOUNT_PCT, monthlyCents, months: referralCouponMonths(trialDays) });
       }

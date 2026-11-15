@@ -48,10 +48,12 @@ export interface PromoCodeDTO {
   id: string;
   code: string;
   active: boolean;
-  /** "20% · 6 months", from lib/commission's describeCommission. */
+  /** The partner's own commission: "20% · 6 months", from lib/commission's describeCommission. */
   terms: string;
-  /** What the buyer saves, for the partner's own pitch. */
-  customerPercentOff: number | null;
+  /** What a subscriber saves, for the partner's own pitch — "20% off for 3 months" (lib/promoDiscount); null: none. */
+  discount: string | null;
+  /** The terms this code had before its discount was replaced (shown under the code, without its "~n"). */
+  replaced: boolean;
   clicks: number;
   /** The full share link, assembled server-side from the app's base URL. */
   shareUrl: string;

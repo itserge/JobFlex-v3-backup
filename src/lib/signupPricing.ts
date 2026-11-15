@@ -196,11 +196,13 @@ export async function resolveSignupDiscount(opts: {
         stripeCouponId: v.stripeCouponId,
         stripePromotionCodeId: v.stripePromotionCodeId,
         customerPercentOff: v.percentOff,
+        customerDiscountMonths: v.discountMonths,
       });
       if (promotionCode && year) {
         const pct = await promoPercentOff(stripe, promotionCode, v.percentOff);
+        // N months' worth on the one yearly bill, N up to 12 (lib/firstMonthDiscount).
         const coupon = pct
-          ? await ensureYearFirstMonthCoupon(stripe, mode, { kind: "promo", pct, monthlyCents: opts.monthlyCents!, months, promoCodeId: v.promoId, code: v.code }).catch((err) => {
+          ? await ensureYearFirstMonthCoupon(stripe, mode, { kind: "promo", pct, monthlyCents: opts.monthlyCents!, months, periodMonths: v.discountMonths, promoCodeId: v.promoId, code: v.code }).catch((err) => {
               console.warn(`[${opts.where}] yearly first-month coupon unavailable:`, err);
               return null;
             })

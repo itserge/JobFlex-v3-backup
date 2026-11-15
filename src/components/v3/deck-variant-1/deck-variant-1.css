@@ -1059,3 +1059,42 @@
 }
 .jf-deck-v1 .v1-plank-chip.v1-plank-same { background: repeating-linear-gradient(135deg, var(--paper-deep) 0 6px, color-mix(in srgb, var(--ink) 10%, var(--paper-deep)) 6px 12px); color: var(--ink); }
 .jf-deck-v1 .v1-plank-chip.v1-plank-same svg { filter: none; }
+
+/* ── Stage colours (owner, 2026-11-14) ──────────────────────────────────────
+   Each numbered stage wears one of the three Projects workspace colours, in turn by its place in the form
+   (deck-v1-studio STAGE_TONES → data-stage-tone): 1 teal, 2 violet, 3 blue, 4 teal… The values are the globals.css
+   tokens the chooser cards on /dashboard/projects read (--space-build / -remodel / -jobs and their -wash), never
+   picked here. Coloured: the stage's frame and number, the option cards' frames (same widths as before), and the
+   chosen card — its frame doubled inside and a light wash of the colour in place of the ink fill; text stays ink.
+   The ticks and checkboxes fill with the colour (white mark). Not coloured: fields, selects, steppers, buttons, the
+   code-check calls (their own amber / rose / green), anything outside the form (the viewer, the price footer).
+   No rounding, no plate behind the cards. Every rule has three classes or more plus the attribute, so the shell's
+   `.bp :global(*)` reset (stepped around by the root's data-nest) and the base rules above never outrank it. */
+.jf-deck-v1 .v1-form-section[data-stage-tone="build"] { --stage: var(--space-build); --stage-wash: var(--space-build-wash); }
+.jf-deck-v1 .v1-form-section[data-stage-tone="remodel"] { --stage: var(--space-remodel); --stage-wash: var(--space-remodel-wash); }
+.jf-deck-v1 .v1-form-section[data-stage-tone="jobs"] { --stage: var(--space-jobs); --stage-wash: var(--space-jobs-wash); }
+/* The shared kind picker's tint (--step-c) is the stage's colour too. */
+.jf-deck-v1 .v1-form-section[data-stage-tone] { --step-c: var(--stage); border-color: var(--stage); }
+.jf-deck-v1 .v1-form-section[data-stage-tone] .v1-section-number { border-color: var(--stage); background: var(--stage); color: #fff; }
+
+/* The cards in a stage: their frames. */
+.jf-deck-v1 .v1-form-section[data-stage-tone] :is(.v1-answer, .v1-chip, .v1-seg-btn, .v1-add, .v1-choice, .v1-plank):not(:disabled, .is-refused, .is-remove),
+.jf-deck-v1 .v1-form-section[data-stage-tone] :is(.v1-item, .v1-more, .v1-custom, .v1-hp-card, .v1-total, .v1-send, .v1-table-wrap),
+.jf-deck-v1 .v1-form-section[data-stage-tone] [data-deck-kinds] :is([role="radio"], [data-deck-sample]) { border-color: var(--stage); }
+.jf-deck-v1 .v1-form-section[data-stage-tone] .v1-more-body { border-top-color: var(--stage); }
+/* Hover: the faintest wash, so the chosen card (wash + doubled frame) still reads as the one. */
+.jf-deck-v1 .v1-form-section[data-stage-tone] :is(.v1-answer, .v1-chip, .v1-seg-btn, .v1-add, .v1-choice, .v1-plank):not(:disabled, .is-refused, .is-remove, .is-on):hover,
+.jf-deck-v1 .v1-form-section[data-stage-tone] .v1-more > summary:hover { background: color-mix(in srgb, var(--stage) 4%, #fff); }
+/* Chosen: the frame doubled inside, a light wash, ink text. */
+.jf-deck-v1 .v1-form-section[data-stage-tone] :is(.v1-answer, .v1-chip, .v1-seg-btn, .v1-add, .v1-plank).is-on,
+.jf-deck-v1 .v1-form-section[data-stage-tone] :is(.v1-answer, .v1-chip, .v1-seg-btn, .v1-add, .v1-plank).is-on:hover {
+  border-color: var(--stage);
+  background: var(--stage-wash);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1.5px var(--stage);
+}
+/* The ticks and the checkboxes. */
+.jf-deck-v1 .v1-form-section[data-stage-tone] .v1-answer:not(:disabled) .v1-answer-tick,
+.jf-deck-v1 .v1-form-section[data-stage-tone] .v1-toggle .v1-toggle-box { border-color: var(--stage); }
+.jf-deck-v1 .v1-form-section[data-stage-tone] .v1-answer.is-on .v1-answer-tick,
+.jf-deck-v1 .v1-form-section[data-stage-tone] .v1-toggle input:checked + .v1-toggle-box { border-color: var(--stage); background: var(--stage); color: #fff; }

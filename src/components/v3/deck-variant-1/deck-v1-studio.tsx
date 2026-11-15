@@ -191,6 +191,9 @@ function hoverStore(): HoverStore {
   };
 }
 const nothingLit = () => null;
+/** The numbered stages wear the three Projects workspace colours in turn, by their place in the form (owner,
+ *  2026-11-14): 1 teal (build), 2 violet (remodel), 3 blue (jobs), 4 teal… The CSS reads globals.css --space-<tone>. */
+const STAGE_TONES = ["build", "remodel", "jobs"] as const;
 type Model3DProps = React.ComponentProps<typeof DeckModel3DView>;
 /** The 3D with its highlight: the wall being drawn, else the focused field, else the field under the pointer. */
 const Lit3D = React.memo(function Lit3D({ hover, structure, focusLit, wallLit, voiceLit, ...rest }: Omit<Model3DProps, "highlight"> & { hover: HoverStore; structure: Parameters<typeof fieldLight>[1]; focusLit: SceneHighlight | null; wallLit: SceneHighlight | null; voiceLit: SceneHighlight | null }) {
@@ -4019,7 +4022,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
           <div className="v1-q" role="region" aria-label="Design the deck">
             <div className="v1-q-scroll" ref={qScrollRef}>
               {stepList.map((section, index) => (
-                <section className="v1-form-section" key={section.id} data-deck-section={section.id} data-tour={`deck-${section.id}`} aria-labelledby={`v1-section-${section.id}`}>
+                <section className="v1-form-section" key={section.id} data-deck-section={section.id} data-stage-tone={STAGE_TONES[index % STAGE_TONES.length]} data-tour={`deck-${section.id}`} aria-labelledby={`v1-section-${section.id}`}>
                   <div className="v1-form-heading"><span className="v1-section-number" aria-hidden="true">{index + 1}</span><h2 className="v1-question" id={`v1-section-${section.id}`} tabIndex={-1}>{section.question}</h2></div>
                   <Scope step={scopeOf(section.id)}>
                     {/* A saved deck in the preview: shown as answered, not to be changed; its print links are in the band above. */}

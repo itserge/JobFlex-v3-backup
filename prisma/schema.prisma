@@ -3787,7 +3787,12 @@ model PromoCode {
   durationType          String   @default("REPEATING") // PromoDurationType
   durationMonths        Int? // required when REPEATING
   customerPercentOff    Int? // display mirror of the Stripe coupon percent_off
-  clicks                Int      @default(0) // promo-link landing visits (lightweight, no PII)
+  // How many PAID months the customer discount lasts (owner, 2026-11-14) — the
+  // Stripe coupon's duration_in_months is minted from it (lib/promoCoupon). Null
+  // = 1, every code minted before the field. Immutable like the coupon: a new
+  // discount is a replacement row (actions/influencers replacePromoDiscount).
+  customerDiscountMonths Int?
+  clicks               Int      @default(0) // promo-link landing visits (lightweight, no PII)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 

@@ -155,8 +155,8 @@ async function main() {
     ok("the twin keeps the SAME redeemable string as live",
       !!promoCall?.includes('"code":"QAPROMO20"'), promoCall);
 
-    const cachedPromo = await db.syncState.findUnique({ where: { key: `stripePromo:test:${PROMO_ID}:promo` } });
-    const cachedCoupon = await db.syncState.findUnique({ where: { key: `stripePromo:test:${PROMO_ID}:coupon` } });
+    const cachedPromo = await db.syncState.findUnique({ where: { key: `stripePromo:test:${PROMO_ID}:m1:promo` } });
+    const cachedCoupon = await db.syncState.findUnique({ where: { key: `stripePromo:test:${PROMO_ID}:m1:coupon` } });
     ok("both twin ids are cached in SyncState, not in the schema",
       cachedPromo?.cursor === "promo_test_twin" && cachedCoupon?.cursor === "coupon_test_twin",
       `${cachedPromo?.cursor} / ${cachedCoupon?.cursor}`);
@@ -183,7 +183,7 @@ async function main() {
     ok("a wiped sandbox re-mints rather than failing the checkout",
       id === "promo_test_twin2", String(id));
     ok("the cache now points at the new twin",
-      (await db.syncState.findUnique({ where: { key: `stripePromo:test:${PROMO_ID}:promo` } }))?.cursor ===
+      (await db.syncState.findUnique({ where: { key: `stripePromo:test:${PROMO_ID}:m1:promo` } }))?.cursor ===
         "promo_test_twin2");
     ok("the re-mint was attempted, not silently skipped",
       calls.some((c) => c.startsWith("coupons.create")));
@@ -200,6 +200,40 @@ async function main() {
     const id = await promotionCodeIdForMode(stripe, "test", LIVE_PROMO);
     ok("a code string already taken on the test account is adopted, not fatal",
       id === "promo_existing_twin", String(id));
+  }
+
+  // ── TEST, a code for N months (owner, 2026-11-14): the twin lasts N paid months, cached under its months. ──
+  {
+    await cleanup();
+    const { stripe, calls } = stubStripe({
+      createCoupon: () => ({ id: "coupon_test_m3", valid: true, deleted: false }),
+      createPromo: () => ({ id: "promo_test_m3", active: true }),
+    });
+    const id = await promotionCodeIdForMode(stripe, "test", { ...LIVE_PROMO, customerDiscountMonths: 3 });
+    const couponCall = calls.find((c) => c.startsWith("coupons.create"));
+    ok("a 3-month code mints a twin repeating for 3 months (7-day trial: no extra month)",
+      id === "promo_test_m3" && !!couponCall?.includes('"duration_in_months":3'), couponCall);
+    ok("…cached under its months, apart from a 1-month twin",
+      (await db.syncState.findUnique({ where: { key: `stripePromo:test:${PROMO_ID}:m3:promo` } }))?.cursor === "promo_test_m3" &&
+        (await db.syncState.count({ where: { key: `stripePromo:test:${PROMO_ID}:m1:promo` } })) === 0);
+  }
+
+  // ── TEST, the string is held by ANOTHER row's twin (a replaced discount): switch it off, mint this row's. ──
+  {
+    await cleanup();
+    let creates = 0;
+    const { stripe, calls } = stubStripe({
+      createCoupon: () => ({ id: "coupon_test_new", valid: true, deleted: false }),
+      createPromo: () => {
+        if (creates++ === 0) throw new Error("code already exists");
+        return { id: "promo_test_new", active: true };
+      },
+      listPromo: () => ({ data: [{ id: "promo_replaced_twin", active: true, metadata: { jfPromoCodeId: "qa-promo-replaced" } }] }),
+    });
+    const id = await promotionCodeIdForMode(stripe, "test", LIVE_PROMO);
+    ok("a replaced row's twin holding the string is switched off",
+      calls.some((c) => c.startsWith("promotionCodes.update(promo_replaced_twin") && c.includes('"active":false')), calls.join(" | "));
+    ok("…and this row gets its own twin, not the old terms", id === "promo_test_new", String(id));
   }
 
   // ── TEST with no percent to copy: refuse rather than invent a discount. ──

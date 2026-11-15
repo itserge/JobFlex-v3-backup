@@ -131,7 +131,14 @@
   min-width: 0;
 }
 :global(.jf-blueprint .content) .codeTag { font-size: 12.5px; padding: 5px 9px; }
-:global(.jf-blueprint .content) .codeTerms { margin-top: 9px; }
+:global(.jf-blueprint .content) .codeTerms { margin: 10px 0 0; display: flex; flex-direction: column; gap: 6px; }
+:global(.jf-blueprint .content) .codeTerms > div { display: grid; grid-template-columns: 132px minmax(0, 1fr); align-items: baseline; gap: 10px; min-width: 0; }
+:global(.jf-blueprint .content) .codeTerms dt {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--muted-light);
+}
+:global(.jf-blueprint .content) .codeTerms dd { margin: 0; font-size: 13.5px; font-weight: 800; color: var(--ink); overflow-wrap: anywhere; min-width: 0; }
+:global(.jf-blueprint .content) .codeClicks { margin-top: 8px; }
 :global(.jf-blueprint .content) .codeCopies { margin-top: 12px; }
 :global(.jf-blueprint .content) .codeOff {
   margin: 12px 0 0;

@@ -44,6 +44,15 @@
   --tool-design: #66702a;
   /* The Remodeling bay's Projects hub (2026-11-04) — a colour no tool wears. */
   --tool-project: #c9961a;
+  /* The three Projects workspaces (lib/projectSpaces SPACES[id].color / .wash read these by var()): the chooser
+     cards on /dashboard/projects — chip frames, the Open button, the offset plate — and each workspace's head.
+     Deck Studio's numbered stage cards wear them in turn (owner, 2026-11-14): 1 build, 2 remodel, 3 jobs, 4 build… */
+  --space-build: #0e6b67;
+  --space-build-wash: rgba(14, 107, 103, 0.08);
+  --space-remodel: #5a3fa8;
+  --space-remodel-wash: rgba(90, 63, 168, 0.08);
+  --space-jobs: #1854a0;
+  --space-jobs-wash: rgba(24, 84, 160, 0.08);
   /* A project's colour on the calendar (2026-11-04): six of the categorical palette's hues, red and green left out
      (they read as canceled / done). Slots 0–2 tell apart in every pairing; past them the project's name is always on
      the chip. Text never wears these — a swatch beside the name does. */

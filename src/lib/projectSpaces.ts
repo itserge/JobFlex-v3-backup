@@ -33,9 +33,10 @@ export interface Space {
   adds: readonly string[];
   /** The empty workspace's line. */
   empty: string;
-  /** Its colour (a hex the CSS reads as --space). Chosen to never mean good or bad: teal, violet, the JobFlex blue. */
+  /** Its colour, the CSS token globals.css --space-<id> (the CSS reads it as --space). Chosen to never mean good or bad:
+   *  teal, violet, the JobFlex blue. Deck Studio's stage cards wear the same tokens. */
   color: string;
-  /** A light wash of it for bands. */
+  /** A light wash of it for bands: the token --space-<id>-wash. */
   wash: string;
 }
 
@@ -50,8 +51,8 @@ export const SPACES: Record<SpaceId, Space> = {
     tagline: "From the lot to the keys.",
     adds: ["Lot, permits and utilities", "Phases with inspections", "Lender draws"],
     empty: "No builds yet. Start one with the lot and the answers you know; the phases are laid out for you.",
-    color: "#0e6b67",
-    wash: "rgba(14, 107, 103, 0.08)",
+    color: "var(--space-build)",
+    wash: "var(--space-build-wash)",
   },
   remodel: {
     id: "remodel",
@@ -63,8 +64,8 @@ export const SPACES: Record<SpaceId, Space> = {
     tagline: "The house stands, and the family often lives in it.",
     adds: ["Client picks and allowances", "Change orders", "Living-in-place tasks"],
     empty: "No remodels yet. Start one from a kitchen, bath, addition or whole-house template.",
-    color: "#5a3fa8",
-    wash: "rgba(90, 63, 168, 0.08)",
+    color: "var(--space-remodel)",
+    wash: "var(--space-remodel-wash)",
   },
   jobs: {
     id: "jobs",
@@ -76,8 +77,8 @@ export const SPACES: Record<SpaceId, Space> = {
     tagline: "One trade, bigger than a visit: a deck, a roof, a fence, a new system.",
     adds: ["Stages from the trade's template", "Materials and crew", "Payment when it's done"],
     empty: "No job projects yet. A sold deck, roof or fence proposal becomes one by itself, or start one here.",
-    color: "#1854a0",
-    wash: "rgba(24, 84, 160, 0.08)",
+    color: "var(--space-jobs)",
+    wash: "var(--space-jobs-wash)",
   },
 };
 

@@ -30,6 +30,7 @@
 import * as React from "react";
 import { validateAttributionCode } from "@/actions/attribution";
 import { CODE_RE, readClientAttr } from "@/lib/attributionShared";
+import { discountPhrase } from "@/lib/promoDiscount";
 
 export type RegisterAttribution = { kind: "promo" | "ref"; code: string };
 
@@ -38,6 +39,7 @@ export type ResolvedAttribution = {
   code: string;
   displayName: string;
   percentOff: number | null;
+  discountMonths: number | null;
 };
 
 export function MobileReferralPanel({
@@ -65,6 +67,7 @@ export function MobileReferralPanel({
       code: res.code,
       displayName: res.displayName,
       percentOff: res.percentOff,
+      discountMonths: res.discountMonths,
     });
     return true;
   }, []);
@@ -180,7 +183,7 @@ export function MobileReferralPill({ pill }: { pill: ResolvedAttribution }) {
         </span>
         <span className="mr-ref-c">
           Code {pill.code} applied
-          {pill.percentOff ? ` · ${pill.percentOff}% off your first month` : ""}
+          {pill.percentOff ? ` · ${discountPhrase(pill.percentOff, pill.discountMonths)}` : ""}
         </span>
       </span>
     </div>

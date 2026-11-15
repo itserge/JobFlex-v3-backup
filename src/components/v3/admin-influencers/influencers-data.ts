@@ -3,6 +3,7 @@
 
 import type { LedgerBalances } from "@/lib/commission";
 import type { InfluencerRollup } from "@/actions/influencers";
+import { discountMonths, discountShort, discountSummary, foreverPhrase } from "@/lib/promoDiscount";
 
 export type { InfluencerRollup };
 
@@ -17,6 +18,12 @@ export interface PromoDTO {
   durationType: string;
   durationMonths: number | null;
   customerPercentOff: number | null;
+  /** Paid months the discount lasts (null = 1, lib/promoDiscount). */
+  customerDiscountMonths: number | null;
+  /** A replaced code's history row (actions/influencers replacePromoDiscount): code is "<CODE>~<n>". */
+  replaced: boolean;
+  /** Its Stripe coupon is `forever` — minted before 2026-09-03 (lib/promoCouponDuration). */
+  couponForever: boolean;
   clicks: number;
   conversions: number;
   /** Written before the limit (lib/commissionLimits), or the plans got cheaper. */
@@ -57,6 +64,9 @@ export type DurationType = "ONCE" | "REPEATING" | "FOREVER";
 export interface EarningModel {
   /** What the CUSTOMER saves at checkout (the Stripe coupon). */
   customerPercentOff: number;
+  /** For how many paid months — AS TYPED, so the form can say what is wrong
+   *  with "", "0" or "2.5" before anything is sent (lib/promoDiscount). */
+  customerDiscountMonths: string;
   commissionType: CommissionType;
   /** Percent points when PERCENT, dollars when FLAT. */
   commissionValue: number;
@@ -67,6 +77,7 @@ export interface EarningModel {
 
 export const DEFAULT_MODEL: EarningModel = {
   customerPercentOff: 10,
+  customerDiscountMonths: "1",
   commissionType: "PERCENT",
   commissionValue: 20,
   commissionBasis: "NET",
@@ -77,6 +88,7 @@ export const DEFAULT_MODEL: EarningModel = {
 export function promoToModel(p: PromoDTO): EarningModel {
   return {
     customerPercentOff: p.customerPercentOff ?? 0,
+    customerDiscountMonths: String(discountMonths(p.customerDiscountMonths)),
     commissionType: p.commissionType === "FLAT" ? "FLAT" : "PERCENT",
     commissionValue:
       p.commissionType === "FLAT" ? (p.commissionFlatCents ?? 0) / 100 : (p.commissionRateBps ?? 0) / 100,
@@ -91,6 +103,7 @@ export function promoToModel(p: PromoDTO): EarningModel {
 export function modelToInput(m: EarningModel) {
   return {
     customerPercentOff: m.customerPercentOff,
+    customerDiscountMonths: Number(m.customerDiscountMonths),
     commissionType: m.commissionType,
     commissionValue: m.commissionValue,
     commissionBasis: m.commissionBasis,
@@ -137,15 +150,23 @@ export function describeEarning(m: EarningModel): string {
   }
 }
 
-/** The customer's side: "Customer gets 10% off at checkout." */
-export function describeDiscount(pct: number | null | undefined): string {
-  const n = pct ?? 0;
-  return n > 0 ? `Customer gets ${fmtPct(n)} off at checkout.` : "No customer discount.";
+/** The subscriber's side of a stored code: "Subscribers get 20% off for 3 months." */
+export function describeDiscount(p: Pick<PromoDTO, "customerPercentOff" | "customerDiscountMonths" | "couponForever">): string {
+  const pct = p.customerPercentOff ?? 0;
+  if (p.couponForever && pct > 0) return `Subscribers get ${foreverPhrase(pct)} — the code's coupon is from before the first-month rule.`;
+  return discountSummary(pct, p.customerDiscountMonths);
 }
 
-/** The full plain-English preview line under the model fields. */
+/** The code row's discount annotation: "20% · 3 mo" · "20% · forever". */
+export function shortDiscount(p: Pick<PromoDTO, "customerPercentOff" | "customerDiscountMonths" | "couponForever">): string {
+  const pct = p.customerPercentOff ?? 0;
+  if (!(pct > 0)) return "none";
+  return p.couponForever ? `${fmtPct(pct)} · forever` : discountShort(pct, p.customerDiscountMonths);
+}
+
+/** The partner's side, as the preview line under the commission fields. */
 export function describeModel(m: EarningModel): string {
-  return `${describeDiscount(m.customerPercentOff)} Partner ${describeEarning(m)}.`;
+  return `Partner ${describeEarning(m)}.`;
 }
 
 /** Short annotation for the table / code row: "20% · 12 mo · net". */

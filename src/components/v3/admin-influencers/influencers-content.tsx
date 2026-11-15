@@ -19,10 +19,12 @@ import Link from "next/link";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { toast } from "@/components/ui/Toast";
+import { underField } from "@/lib/actionResult";
 import { money, relative, shortDate } from "@/lib/format";
 import {
   createInfluencer,
   createPromoCode,
+  replacePromoDiscount,
   setInfluencerStatus,
   setPromoActive,
   updateInfluencerProfile,
@@ -44,6 +46,16 @@ import {
   useMdl,
   useReveal,
 } from "./admin-ui";
+import {
+  DISCOUNT_MONTHS_MAX,
+  DISCOUNT_MONTHS_MIN,
+  DISCOUNT_MONTHS_PICKS,
+  YEAR_DISCOUNT_MONTHS_CAP,
+  baseCode,
+  discountMonthsProblem,
+  discountPhrase,
+  discountSummary,
+} from "@/lib/promoDiscount";
 import ui from "./admin-ui.module.css";
 import styles from "./influencers.module.css";
 import {
@@ -54,6 +66,7 @@ import {
   describeModel,
   modelToInput,
   promoToModel,
+  shortDiscount,
   shortModel,
   type CommissionBasis,
   type CommissionType,
@@ -90,7 +103,8 @@ type CreateHandle = { open: () => void };
 type DetailHandle = { open: () => void };
 type CodeTarget =
   | { mode: "add"; influencerId: string; name: string }
-  | { mode: "edit"; promo: PromoDTO; name: string };
+  | { mode: "edit"; promo: PromoDTO; name: string }
+  | { mode: "replace"; promo: PromoDTO; name: string; model: EarningModel };
 type CodeHandle = { open: (target: CodeTarget) => void };
 
 /* ============================================================
@@ -138,6 +152,9 @@ export function AdminInfluencersContent({
   }, []);
   const openEditCode = useCallback((inf: InfluencerDTO, promo: PromoDTO) => {
     codeRef.current?.open({ mode: "edit", promo, name: inf.displayName });
+  }, []);
+  const openReplaceCode = useCallback((inf: InfluencerDTO, promo: PromoDTO) => {
+    codeRef.current?.open({ mode: "replace", promo, name: inf.displayName, model: promoToModel(promo) });
   }, []);
 
   return (
@@ -242,9 +259,9 @@ export function AdminInfluencersContent({
                           <span
                             key={p.id}
                             className={cx(ui.tag, !p.active && ui.tagOff, p.aboveLimit && styles.tagOver)}
-                            title={p.aboveLimit ? `${p.code} — above the commission limit` : p.active ? p.code : `${p.code} (off)`}
+                            title={`${baseCode(p.code)} · subscriber discount ${shortDiscount(p)}${p.replaced ? " (replaced)" : p.aboveLimit ? " — above the commission limit" : p.active ? "" : " (off)"}`}
                           >
-                            {p.code}
+                            {baseCode(p.code)}
                             {p.aboveLimit ? <span className={styles.tagOverMark} aria-label="above the limit">!</span> : null}
                           </span>
                         ))
@@ -290,7 +307,7 @@ export function AdminInfluencersContent({
                 <li key={c.promoId} className={styles.rankRow}>
                   <span className={styles.rankN}>{String(i + 1).padStart(2, "0")}</span>
                   <button type="button" className={styles.rankWho} onClick={() => openDetail(c.influencerId)}>
-                    <span className={cx(ui.tag, !c.active && ui.tagOff)}>{c.code}</span>
+                    <span className={cx(ui.tag, !c.active && ui.tagOff)}>{baseCode(c.code)}</span>
                     <span className={ui.tdSub} title={c.influencerName}>
                       {c.influencerName}
                     </span>
@@ -307,7 +324,13 @@ export function AdminInfluencersContent({
       </div>
 
       <CreateSheet handleRef={createRef} />
-      <DetailSheet handleRef={detailRef} influencer={selected} onAddCode={openAddCode} onEditCode={openEditCode} />
+      <DetailSheet
+        handleRef={detailRef}
+        influencer={selected}
+        onAddCode={openAddCode}
+        onEditCode={openEditCode}
+        onReplaceCode={openReplaceCode}
+      />
       <CodeSheet handleRef={codeRef} />
     </div>
   );
@@ -317,134 +340,207 @@ export function AdminInfluencersContent({
    EARNING MODEL FIELDS — shared by the create and code sheets
    ============================================================ */
 
+/** Which half of the terms a sheet edits: a new code sets both; "Edit
+ *  commission" the partner's half; "Replace discount" the subscriber's. */
+type ModelPart = "all" | "commission" | "discount";
+
+/** The months field's complaint: what is wrong with the typed value, else what the server said. */
+function monthsComplaint(model: EarningModel, serverSaid: string | null): string | null {
+  return discountMonthsProblem(model.customerDiscountMonths) ?? serverSaid;
+}
+
 function ModelFields({
   model,
   onChange,
-  showDiscount,
-  fixedDiscount,
+  part,
+  fixed,
   idp,
+  monthsError,
+  monthsRef,
 }: {
   model: EarningModel;
   onChange: (m: EarningModel) => void;
-  /** Creating a code: the discount is written to the Stripe coupon. */
-  showDiscount: boolean;
-  /** Editing a code: the coupon is immutable, so the discount is a readout. */
-  fixedDiscount?: number | null;
+  part: ModelPart;
+  /** Editing the commission: the code whose (immutable) discount is read out. */
+  fixed?: PromoDTO;
   idp: string;
+  /** The server's word on the months, when it refused them. */
+  monthsError?: string | null;
+  monthsRef?: React.RefObject<HTMLInputElement | null>;
 }) {
   const set = (patch: Partial<EarningModel>) => onChange({ ...model, ...patch });
   const num = (v: string) => (v === "" ? 0 : Number(v));
+  const showDiscount = part !== "commission";
+  const showCommission = part !== "discount";
+  const monthsErr = showDiscount ? monthsComplaint(model, monthsError ?? null) : null;
+  const months = monthsErr ? null : Number(model.customerDiscountMonths);
   return (
     <>
+      <div className={ui.secL}>Subscriber discount</div>
       {showDiscount ? (
         <>
-          <div className="mf">
-            <label className="mf-lbl" htmlFor={`${idp}Disc`}>
-              Customer discount (%)
-            </label>
-            <input
-              className="mf-in"
-              id={`${idp}Disc`}
-              type="number"
-              inputMode="numeric"
-              min={0}
-              max={100}
-              value={model.customerPercentOff}
-              onChange={(e) => set({ customerPercentOff: num(e.target.value) })}
-            />
+          <div className={ui.row2}>
+            <div className="mf">
+              <label className="mf-lbl" htmlFor={`${idp}Disc`}>
+                Customer discount (%)
+              </label>
+              <input
+                className="mf-in"
+                id={`${idp}Disc`}
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={100}
+                value={model.customerPercentOff}
+                onChange={(e) => set({ customerPercentOff: num(e.target.value) })}
+              />
+            </div>
+            <div className="mf">
+              <label className="mf-lbl" htmlFor={`${idp}DiscMo`}>
+                Discount lasts (months)
+              </label>
+              <input
+                className={cx("mf-in", styles.monthsIn)}
+                id={`${idp}DiscMo`}
+                ref={monthsRef}
+                type="number"
+                inputMode="numeric"
+                min={DISCOUNT_MONTHS_MIN}
+                max={DISCOUNT_MONTHS_MAX}
+                step={1}
+                value={model.customerDiscountMonths}
+                aria-invalid={monthsErr ? true : undefined}
+                aria-describedby={monthsErr ? `${idp}DiscMoErr` : undefined}
+                onChange={(e) => set({ customerDiscountMonths: e.target.value })}
+              />
+              {monthsErr ? (
+                <div className={cx("mf-err", styles.fieldErr)} id={`${idp}DiscMoErr`} role="alert">
+                  {monthsErr}
+                </div>
+              ) : null}
+              <div className={styles.picks}>
+                <Seg<string>
+                  label="Quick pick: months"
+                  value={model.customerDiscountMonths.trim()}
+                  onChange={(v) => set({ customerDiscountMonths: v })}
+                  options={DISCOUNT_MONTHS_PICKS.map((n) => ({ value: String(n), label: String(n) }))}
+                />
+              </div>
+            </div>
           </div>
-          <div className={ui.hint}>
-            What the buyer saves at checkout. Written to the Stripe coupon and fixed for the life of the code.
+          <div className={styles.preview} aria-live="polite" data-discount-summary>
+            <Ic name="bulb" />
+            <span>
+              {months === null
+                ? "Set how many months the discount lasts — 1 to 24."
+                : discountSummary(model.customerPercentOff, months)}
+            </span>
+          </div>
+          {months !== null && months > YEAR_DISCOUNT_MONTHS_CAP ? (
+            <div className={cx(ui.hint, styles.hintTop)} data-year-hint>
+              On a yearly plan the discount is one amount off the single yearly bill, so {months} months count as{" "}
+              {YEAR_DISCOUNT_MONTHS_CAP} — a whole year&apos;s worth of the percent.
+            </div>
+          ) : null}
+          <div className={cx(ui.hint, styles.hintTop)}>
+            Written to the Stripe coupon and fixed for the life of the code. Replace discount changes it for new
+            subscribers only.
           </div>
         </>
       ) : (
-        <div className={ui.hint}>
-          {describeDiscount(fixedDiscount)} The discount lives on the Stripe coupon and cannot change — issue a new code
-          to change what customers save.
+        <div className={cx(ui.hint, styles.hintTop)}>
+          {fixed ? describeDiscount(fixed) : null} The discount lives on the Stripe coupon and cannot change here — use
+          Replace discount on the code to change it for new subscribers.
         </div>
       )}
 
-      <div className={ui.mfSeg}>
-        <span className="mf-lbl">Commission</span>
-        <Seg<CommissionType>
-          label="Commission type"
-          value={model.commissionType}
-          onChange={(v) => set({ commissionType: v, commissionValue: v === "FLAT" ? 15 : 20 })}
-          options={[
-            { value: "PERCENT", label: "% of subscription" },
-            { value: "FLAT", label: "Flat dollars" },
-          ]}
-        />
-      </div>
+      {showCommission ? (
+        <>
+          <div className={ui.secL}>Partner commission</div>
+          <div className={ui.mfSeg}>
+            <span className="mf-lbl">Commission</span>
+            <Seg<CommissionType>
+              label="Commission type"
+              value={model.commissionType}
+              onChange={(v) => set({ commissionType: v, commissionValue: v === "FLAT" ? 15 : 20 })}
+              options={[
+                { value: "PERCENT", label: "% of subscription" },
+                { value: "FLAT", label: "Flat dollars" },
+              ]}
+            />
+          </div>
 
-      <div className={ui.row2}>
-        <div className="mf">
-          <label className="mf-lbl" htmlFor={`${idp}Val`}>
-            {model.commissionType === "PERCENT" ? "Rate (%)" : "Amount ($)"}
-          </label>
-          <input
-            className="mf-in"
-            id={`${idp}Val`}
-            type="number"
-            inputMode="decimal"
-            min={0}
-            step={model.commissionType === "PERCENT" ? 0.5 : 1}
-            value={model.commissionValue}
-            onChange={(e) => set({ commissionValue: num(e.target.value) })}
-          />
-        </div>
-        <div className="mf">
-          <span className="mf-lbl">Basis</span>
-          <Seg<CommissionBasis>
-            label="Commission basis"
-            value={model.commissionBasis}
-            onChange={(v) => set({ commissionBasis: v })}
-            options={[
-              { value: "NET", label: "Net" },
-              { value: "GROSS", label: "Gross" },
-            ]}
-          />
-        </div>
-      </div>
-      <div className={ui.hint}>
-        Net pays on what Stripe actually collected after the discount; gross pays on the plan price.
-      </div>
+          <div className={ui.row2}>
+            <div className="mf">
+              <label className="mf-lbl" htmlFor={`${idp}Val`}>
+                {model.commissionType === "PERCENT" ? "Rate (%)" : "Amount ($)"}
+              </label>
+              <input
+                className="mf-in"
+                id={`${idp}Val`}
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step={model.commissionType === "PERCENT" ? 0.5 : 1}
+                value={model.commissionValue}
+                onChange={(e) => set({ commissionValue: num(e.target.value) })}
+              />
+            </div>
+            <div className="mf">
+              <span className="mf-lbl">Basis</span>
+              <Seg<CommissionBasis>
+                label="Commission basis"
+                value={model.commissionBasis}
+                onChange={(v) => set({ commissionBasis: v })}
+                options={[
+                  { value: "NET", label: "Net" },
+                  { value: "GROSS", label: "Gross" },
+                ]}
+              />
+            </div>
+          </div>
+          <div className={ui.hint}>
+            Net pays on what Stripe actually collected after the discount; gross pays on the plan price.
+          </div>
 
-      <div className={ui.mfSeg}>
-        <span className="mf-lbl">Duration</span>
-        <Seg<DurationType>
-          label="Commission duration"
-          value={model.durationType}
-          onChange={(v) => set({ durationType: v })}
-          options={[
-            { value: "ONCE", label: "Once" },
-            { value: "REPEATING", label: "N months" },
-            { value: "FOREVER", label: "Forever" },
-          ]}
-        />
-      </div>
-      {model.durationType === "REPEATING" ? (
-        <div className="mf">
-          <label className="mf-lbl" htmlFor={`${idp}Mo`}>
-            Months
-          </label>
-          <input
-            className="mf-in"
-            id={`${idp}Mo`}
-            type="number"
-            inputMode="numeric"
-            min={1}
-            max={120}
-            value={model.durationMonths}
-            onChange={(e) => set({ durationMonths: Math.max(1, Math.round(num(e.target.value))) })}
-          />
-        </div>
+          <div className={ui.mfSeg}>
+            <span className="mf-lbl">Commission duration</span>
+            <Seg<DurationType>
+              label="Commission duration"
+              value={model.durationType}
+              onChange={(v) => set({ durationType: v })}
+              options={[
+                { value: "ONCE", label: "Once" },
+                { value: "REPEATING", label: "N months" },
+                { value: "FOREVER", label: "Forever" },
+              ]}
+            />
+          </div>
+          {model.durationType === "REPEATING" ? (
+            <div className="mf">
+              <label className="mf-lbl" htmlFor={`${idp}Mo`}>
+                Commission months
+              </label>
+              <input
+                className="mf-in"
+                id={`${idp}Mo`}
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={120}
+                value={model.durationMonths}
+                onChange={(e) => set({ durationMonths: Math.max(1, Math.round(num(e.target.value))) })}
+              />
+            </div>
+          ) : null}
+          <div className={ui.hint}>How long the partner earns on each subscriber — separate from the discount.</div>
+
+          <div className={styles.preview} aria-live="polite">
+            <Ic name="bulb" />
+            <span>{describeModel(model)}</span>
+          </div>
+        </>
       ) : null}
-
-      <div className={styles.preview} aria-live="polite">
-        <Ic name="bulb" />
-        <span>{describeModel(model)}</span>
-      </div>
     </>
   );
 }
@@ -463,13 +559,16 @@ function CreateSheet({ handleRef }: { handleRef: React.RefObject<CreateHandle | 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ code: string; inviteUrl: string | null; email: string } | null>(null);
+  const [monthsError, setMonthsError] = useState<string | null>(null);
   const firstRef = useRef<HTMLInputElement>(null);
+  const monthsRef = useRef<HTMLInputElement>(null);
 
   // Seeded on open rather than reset on close, so the fields never blank while
   // the box is still on screen playing its exit.
   const seed = useCallback(() => {
     setValues(BLANK_CREATE);
     setModel(DEFAULT_MODEL);
+    setMonthsError(null);
     setError(null);
     setResult(null);
     setBusy(false);
@@ -494,8 +593,15 @@ function CreateSheet({ handleRef }: { handleRef: React.RefObject<CreateHandle | 
       setError("Password must be at least 8 characters — or leave it blank to send an invite.");
       return;
     }
+    // The months field says what is wrong under itself; the form does not go.
+    if (discountMonthsProblem(model.customerDiscountMonths)) {
+      setError(null);
+      monthsRef.current?.focus();
+      return;
+    }
     setBusy(true);
     setError(null);
+    setMonthsError(null);
     try {
       const res = await createInfluencer({
         email: values.email.trim(),
@@ -505,7 +611,8 @@ function CreateSheet({ handleRef }: { handleRef: React.RefObject<CreateHandle | 
         ...modelToInput(model),
       });
       if (!res.ok) {
-        setError(res.error);
+        if (res.field === "customerDiscountMonths") setMonthsError(underField(res));
+        else setError(res.error);
         return;
       }
       setResult({ code: res.code, inviteUrl: res.inviteUrl, email: values.email.trim() });
@@ -631,8 +738,17 @@ function CreateSheet({ handleRef }: { handleRef: React.RefObject<CreateHandle | 
             set their own.
           </div>
 
-          <div className={ui.secL}>Earning model</div>
-          <ModelFields model={model} onChange={setModel} showDiscount idp="infC" />
+          <ModelFields
+            model={model}
+            onChange={(m) => {
+              setModel(m);
+              setMonthsError(null);
+            }}
+            part="all"
+            idp="infC"
+            monthsError={monthsError}
+            monthsRef={monthsRef}
+          />
         </form>
       )}
     </Sheet>
@@ -648,11 +764,13 @@ function DetailSheet({
   influencer,
   onAddCode,
   onEditCode,
+  onReplaceCode,
 }: {
   handleRef: React.RefObject<DetailHandle | null>;
   influencer: InfluencerDTO | null;
   onAddCode: (inf: InfluencerDTO) => void;
   onEditCode: (inf: InfluencerDTO, promo: PromoDTO) => void;
+  onReplaceCode: (inf: InfluencerDTO, promo: PromoDTO) => void;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -925,23 +1043,49 @@ function DetailSheet({
               {inf.promoCodes.map((p) => {
                 const m = promoToModel(p);
                 return (
-                  <li key={p.id} className={cx(styles.code, !p.active && styles.codeOff)}>
+                  <li key={p.id} className={cx(styles.code, !p.active && styles.codeOff)} data-code={p.code}>
                     <div className={styles.codeHead}>
-                      <span className={cx(ui.tag, styles.codeTag, !p.active && ui.tagOff)}>{p.code}</span>
-                      <Chip tone={p.active ? "ok" : "mute"}>{p.active ? "Active" : "Off"}</Chip>
+                      <span className={cx(ui.tag, styles.codeTag, !p.active && ui.tagOff)}>{baseCode(p.code)}</span>
+                      <Chip tone={p.replaced ? "mute" : p.active ? "ok" : "mute"}>
+                        {p.replaced ? "Replaced" : p.active ? "Active" : "Off"}
+                      </Chip>
                       {p.aboveLimit ? <Chip tone="bad">Above limit</Chip> : null}
-                      <Meta className={styles.codeShort}>{shortModel(m)}</Meta>
+                      {p.couponForever ? <Chip tone="wait">Discount: forever (legacy)</Chip> : null}
                     </div>
+                    <dl className={styles.codeTerms}>
+                      <div>
+                        <dt>Subscriber discount</dt>
+                        <dd data-discount-short>{shortDiscount(p)}</dd>
+                      </div>
+                      <div>
+                        <dt>Commission</dt>
+                        <dd>{shortModel(m)}</dd>
+                      </div>
+                    </dl>
                     <div className={styles.codeDesc}>
-                      <span>{describeDiscount(p.customerPercentOff)}</span> <span>Partner {describeEarning(m)}.</span>
+                      <span>{describeDiscount(p)}</span> <span>Partner {describeEarning(m)}.</span>
                     </div>
                     <Meta>
                       {plural(p.clicks, "click")} · {plural(p.conversions, "conversion")}
                     </Meta>
+                    {p.replaced ? (
+                      <p className={styles.codeNote}>
+                        The terms this code had before its discount was replaced.{" "}
+                        {p.conversions > 0
+                          ? `Kept for the ${plural(p.conversions, "subscriber")} who joined with them: their discount stays as it was, and the partner keeps earning on them.`
+                          : "Nobody joined with them; kept as the code's history."}
+                      </p>
+                    ) : p.couponForever ? (
+                      <p className={styles.codeNote}>
+                        Its Stripe coupon was minted before the first-month rule and takes the percent off every
+                        payment, for good. Replace discount to give new subscribers a set number of months — those who
+                        already joined keep theirs.
+                      </p>
+                    ) : null}
                     {p.aboveLimit ? (
                       <p className={styles.codeOver}>
                         Above the limit — at most 50% for a percentage code, the cheapest plan&apos;s price for a
-                        flat one. Written before the rule; editing the terms has to bring it under.
+                        flat one. Written before the rule; editing the commission has to bring it under.
                       </p>
                     ) : null}
                     <div className={styles.codeAct}>
@@ -952,28 +1096,41 @@ function DetailSheet({
                         onClick={() => onEditCode(inf, p)}
                       >
                         <Ic name="pen" />
-                        Edit terms
+                        Edit commission
                       </button>
-                      <button
-                        className={cx(
-                          "btn",
-                          p.active ? ui.btnBad : ui.btnOk,
-                          ui.btnSm,
-                          busy === `code:${p.id}` && ui.btnBusy,
-                        )}
-                        type="button"
-                        disabled={busy !== null}
-                        onClick={() =>
-                          run(
-                            `code:${p.id}`,
-                            () => setPromoActive(p.id, !p.active),
-                            p.active ? "Code disabled" : "Code enabled",
-                          )
-                        }
-                      >
-                        <Ic name={p.active ? "ban" : "check"} />
-                        {p.active ? "Disable" : "Enable"}
-                      </button>
+                      {p.replaced ? null : (
+                        <>
+                          <button
+                            className={cx("btn", ui.btnGhost, ui.btnSm)}
+                            type="button"
+                            disabled={busy !== null}
+                            onClick={() => onReplaceCode(inf, p)}
+                          >
+                            <Ic name="undo" />
+                            Replace discount
+                          </button>
+                          <button
+                            className={cx(
+                              "btn",
+                              p.active ? ui.btnBad : ui.btnOk,
+                              ui.btnSm,
+                              busy === `code:${p.id}` && ui.btnBusy,
+                            )}
+                            type="button"
+                            disabled={busy !== null}
+                            onClick={() =>
+                              run(
+                                `code:${p.id}`,
+                                () => setPromoActive(p.id, !p.active),
+                                p.active ? "Code disabled" : "Code enabled",
+                              )
+                            }
+                          >
+                            <Ic name={p.active ? "ban" : "check"} />
+                            {p.active ? "Disable" : "Enable"}
+                          </button>
+                        </>
+                      )}
                     </div>
                   </li>
                 );
@@ -1028,14 +1185,20 @@ function CodeSheet({ handleRef }: { handleRef: React.RefObject<CodeHandle | null
   const [model, setModel] = useState<EarningModel>(DEFAULT_MODEL);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [monthsError, setMonthsError] = useState<string | null>(null);
+  /** Replace discount asks before it writes: what changes, and for whom. */
+  const [confirming, setConfirming] = useState(false);
+  const monthsRef = useRef<HTMLInputElement>(null);
 
   const { ref: mdlRef, open: openMdlDialog, close } = useMdl();
   const open = useCallback(
     (t: CodeTarget) => {
       setTarget(t);
-      setModel(t.mode === "edit" ? promoToModel(t.promo) : DEFAULT_MODEL);
+      setModel(t.mode === "edit" ? promoToModel(t.promo) : t.mode === "replace" ? t.model : DEFAULT_MODEL);
       setCodeValue("");
       setError(null);
+      setMonthsError(null);
+      setConfirming(false);
       setBusy(false);
       openMdlDialog();
     },
@@ -1045,27 +1208,64 @@ function CodeSheet({ handleRef }: { handleRef: React.RefObject<CodeHandle | null
     handleRef.current = { open };
   }, [handleRef, open]);
 
+  /** The discount fields are sound — else the months field says why and takes the focus. */
+  function discountReady(): boolean {
+    if (discountMonthsProblem(model.customerDiscountMonths)) {
+      monthsRef.current?.focus();
+      return false;
+    }
+    return true;
+  }
+
   async function submit(e?: React.FormEvent) {
     e?.preventDefault();
     if (busy || !target) return;
+    if (target.mode !== "edit" && !discountReady()) return;
+    if (target.mode === "replace" && !confirming) {
+      if (!(model.customerPercentOff > 0)) {
+        setError("A discount is a percent above 0.");
+        return;
+      }
+      setError(null);
+      setConfirming(true);
+      return;
+    }
     setBusy(true);
     setError(null);
+    setMonthsError(null);
     try {
       if (target.mode === "add") {
         if (!codeValue.trim()) throw new Error("A promo code is required.");
         const res = await createPromoCode({ influencerId: target.influencerId, code: codeValue.trim(), ...modelToInput(model) });
         if (!res.ok) {
-          setError(res.error);
+          if (res.field === "customerDiscountMonths") setMonthsError(underField(res));
+          else setError(res.error);
           return;
         }
         toast.success("Code added", `${codeValue.trim().toUpperCase()} is live for ${target.name}.`);
+      } else if (target.mode === "replace") {
+        const res = await replacePromoDiscount({
+          promoId: target.promo.id,
+          customerPercentOff: model.customerPercentOff,
+          customerDiscountMonths: Number(model.customerDiscountMonths),
+        });
+        if (!res.ok) {
+          setConfirming(false);
+          if (res.field === "customerDiscountMonths") setMonthsError(underField(res));
+          else setError(res.error);
+          return;
+        }
+        toast.success(
+          "Discount replaced",
+          `New subscribers on ${res.code} get ${discountPhrase(model.customerPercentOff, Number(model.customerDiscountMonths))}.`,
+        );
       } else {
         const res = await updatePromoCommission({ promoId: target.promo.id, ...modelToInput(model) });
         if (!res.ok) {
           setError(res.error);
           return;
         }
-        toast.success("Terms updated");
+        toast.success("Commission updated");
       }
       close();
       router.refresh();
@@ -1080,7 +1280,24 @@ function CodeSheet({ handleRef }: { handleRef: React.RefObject<CodeHandle | null
     ? "Promo code"
     : target.mode === "add"
       ? `New code · ${target.name}`
-      : `${target.promo.code} · terms`;
+      : target.mode === "replace"
+        ? `${baseCode(target.promo.code)} · replace discount`
+        : `${baseCode(target.promo.code)} · commission`;
+
+  const primary =
+    target?.mode === "add"
+      ? busy
+        ? "Saving…"
+        : "Add code"
+      : target?.mode === "replace"
+        ? busy
+          ? "Replacing…"
+          : confirming
+            ? "Yes, replace"
+            : "Replace discount…"
+        : busy
+          ? "Saving…"
+          : "Save commission";
 
   return (
     <Sheet
@@ -1092,22 +1309,30 @@ function CodeSheet({ handleRef }: { handleRef: React.RefObject<CodeHandle | null
       error={error}
       foot={
         <>
-          <button className="btn btn-ghost" type="button" onClick={close} disabled={busy}>
-            Cancel
+          <button
+            className="btn btn-ghost"
+            type="button"
+            onClick={confirming ? () => setConfirming(false) : close}
+            disabled={busy}
+          >
+            {confirming ? "Back" : "Cancel"}
           </button>
           <button
             className={cx("btn btn-primary", busy && ui.btnBusy)}
             type="button"
             onClick={() => submit()}
             disabled={busy || !target}
+            data-primary
           >
-            <Ic name="check" />
-            {busy ? "Saving…" : target?.mode === "add" ? "Add code" : "Save terms"}
+            <Ic name={target?.mode === "replace" ? "undo" : "check"} />
+            {primary}
           </button>
         </>
       }
     >
-      {!target ? null : (
+      {!target ? null : target.mode === "replace" && confirming ? (
+        <ReplaceConfirm promo={target.promo} name={target.name} model={model} />
+      ) : (
         <form onSubmit={submit} noValidate>
           {target.mode === "add" ? (
             <div className="mf">
@@ -1125,15 +1350,61 @@ function CodeSheet({ handleRef }: { handleRef: React.RefObject<CodeHandle | null
               />
             </div>
           ) : null}
+          {target.mode === "replace" ? (
+            <div className={cx(ui.hint, styles.hintTop)}>
+              Now: {describeDiscount(target.promo)} The new discount goes on a new Stripe coupon under the same code,
+              for people who subscribe from now on.
+            </div>
+          ) : null}
           <ModelFields
             model={model}
-            onChange={setModel}
-            showDiscount={target.mode === "add"}
-            fixedDiscount={target.mode === "edit" ? target.promo.customerPercentOff : undefined}
-            idp={target.mode === "add" ? "infA" : "infE"}
+            onChange={(m) => {
+              setModel(m);
+              setMonthsError(null);
+            }}
+            part={target.mode === "add" ? "all" : target.mode === "replace" ? "discount" : "commission"}
+            fixed={target.mode === "edit" ? target.promo : undefined}
+            idp={target.mode === "add" ? "infA" : target.mode === "replace" ? "infR" : "infE"}
+            monthsError={monthsError}
+            monthsRef={monthsRef}
           />
         </form>
       )}
     </Sheet>
+  );
+}
+
+/** What Replace discount will do, said before it does it. */
+function ReplaceConfirm({ promo, name, model }: { promo: PromoDTO; name: string; model: EarningModel }) {
+  const code = baseCode(promo.code);
+  const months = Number(model.customerDiscountMonths);
+  const was = (promo.customerPercentOff ?? 0) > 0 ? shortDiscount(promo) : "no discount";
+  return (
+    <div className={styles.confirm} data-replace-confirm>
+      <div className={styles.confirmTitle}>Replace the discount on {code}?</div>
+      <ul className={styles.confirmList}>
+        <li>
+          <b>New subscribers</b> who use {code} from now on get{" "}
+          <b>{discountPhrase(model.customerPercentOff, months)}</b>.
+          {months > YEAR_DISCOUNT_MONTHS_CAP
+            ? ` On a yearly plan that counts as ${YEAR_DISCOUNT_MONTHS_CAP} months.`
+            : ""}
+        </li>
+        <li>
+          {promo.conversions > 0 ? (
+            <>
+              <b>The {plural(promo.conversions, "subscriber")}</b> who already joined {promo.conversions === 1 ? "keeps" : "keep"} what they signed up with (
+              {was}). Stripe leaves their discount exactly as it is.
+            </>
+          ) : (
+            <>Nobody has subscribed with {code} yet, so no one is on the old terms ({was}).</>
+          )}
+        </li>
+        <li>
+          <b>Commission</b> stays as it is and keeps going to {name}: partner {describeEarning(promoToModel(promo))}.
+        </li>
+        <li>The old terms stay on the record, switched off, so every subscriber still finds their partner.</li>
+      </ul>
+    </div>
   );
 }
