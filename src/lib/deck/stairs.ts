@@ -30,6 +30,7 @@ import { IRC_CODE, cite, inFrac, type DeckStateCode } from "./stateCodes";
 import { BAG_CUFT, footingFor, type Footing } from "./frame";
 import type { DeckingProduct } from "./catalog";
 import { ringEdges } from "./ringEdges";
+import { SEAT_GAP_MIN_IN, seatOnEdge, type EdgeSeat, type SeatPoint } from "./edgeSeat";
 import { STAIR_LIMITS, railMountOf, type DeckDesign, type RailDesign, type RailMount, type StairDesign, type StairTurn, type StairTurnKind } from "./design";
 
 /* ------------------------------------------------------------------ */
@@ -149,6 +150,12 @@ export interface StairLevel {
   sides?: Array<{ x0: number; y0: number; x1: number; y1: number; house: boolean; side: "front" | "back" | "left" | "right" }>;
   /** A plain rectangle: its box steps (three risers at most) keep the rectangle's own code. */
   plain?: boolean;
+  /**
+   * THE EDGES A STAIR CAN LEAVE BY, AS THE DECK IS DRAWN (2026-11-15; lib/deck/edgeSeat): each side's edge as the
+   * outline's own run of points, plan inches. A flight is seated on these — turned to a bow or to a corner cut at an
+   * angle, its head against the edge — where the side is not one straight line. Absent: the old set-out.
+   */
+  chains?: Partial<Record<"front" | "left" | "right", SeatPoint[]>>;
 }
 
 export interface StairBuild {
@@ -195,6 +202,12 @@ export interface StairBuild {
   wrapped?: Array<{ x0: number; y0: number; x1: number; y1: number }>;
   /** Wide steps on stringers (more than three risers): the run of edge they follow, in.; the treated sleeper under their feet, ft; and whether the run has open ENDS (it stops at a corner of the deck, not at the house or on itself). */
   wide?: { lengthIn: number; sleeperLf: number; openEnds: boolean; hips: number };
+  /**
+   * ITS HEAD ON AN EDGE THAT IS NOT STRAIGHT (2026-11-15; lib/deck/edgeSeat): how far the flight is turned from square
+   * to the side it leaves (degrees), the most the deck's edge bends away behind its head (in.) — the deck's boards run
+   * straight across the head there, on a straight header blocked off the rim — and that header's length, in.
+   */
+  seat?: { turnDeg: number; gapIn: number; headerIn: number };
   /** Feet of deck boards for the treads and of riser boards. */
   treadBoardLf: number;
   riserBoardLf: number;
@@ -361,17 +374,28 @@ export interface StairInput {
 /** How far into the rim's outer face a stringer's head is drawn, in. (its plumb cut bears on the rim; a quarter inch in keeps the cut face out of the rim's and the fascia's own planes in the 3D). */
 const STRINGER_HEAD_IN = 0.25;
 
+type SetOutLevel = Pick<StairLevel, "x0" | "y0" | "widthIn" | "frontAt" | "chains">;
+
 /** Where a stair leaves its deck: O at its top-left looking down it, u along its width, nrm the way it runs out. */
-function stairSetOut(stair: StairDesign, level: Pick<StairLevel, "x0" | "y0" | "widthIn" | "frontAt">): { O: V2; u: V2; nrm: V2 } {
+function stairSetOut(stair: StairDesign, level: SetOutLevel): { O: V2; u: V2; nrm: V2; seat: EdgeSeat | null } {
   const w = Math.round(stair.widthFt * 12);
   const at = Math.round(stair.atFt * 12);
-  if (stair.side === "front") return { O: { x: level.x0 + at - w / 2, y: level.y0 + level.frontAt(at) }, u: { x: 1, y: 0 }, nrm: { x: 0, y: 1 } };
-  if (stair.side === "left") return { O: { x: level.x0, y: level.y0 + at + w / 2 }, u: { x: 0, y: -1 }, nrm: { x: -1, y: 0 } };
-  return { O: { x: level.x0 + level.widthIn, y: level.y0 + at - w / 2 }, u: { x: 0, y: 1 }, nrm: { x: 1, y: 0 } };
+  // The side's own line, as it always was…
+  const flat: { O: V2; u: V2; nrm: V2 } =
+    stair.side === "front"
+      ? { O: { x: level.x0 + at - w / 2, y: level.y0 + level.frontAt(at) }, u: { x: 1, y: 0 }, nrm: { x: 0, y: 1 } }
+      : stair.side === "left"
+        ? { O: { x: level.x0, y: level.y0 + at + w / 2 }, u: { x: 0, y: -1 }, nrm: { x: -1, y: 0 } }
+        : { O: { x: level.x0 + level.widthIn, y: level.y0 + at - w / 2 }, u: { x: 0, y: 1 }, nrm: { x: 1, y: 0 } };
+  // …and, where the edge there is a bow or a corner cut at an angle, seated on the edge itself (2026-11-15). Box steps
+  // that wrap the deck follow its outline their own way.
+  const chain = stair.wrap ? undefined : level.chains?.[stair.side];
+  const seat = chain ? seatOnEdge(chain, (stair.side === "front" ? level.x0 : level.y0) + at, w, stair.side === "front" ? { x: 1, y: 0 } : { x: 0, y: 1 }, flat.u, flat.nrm) : null;
+  return seat ? { O: seat.O, u: seat.u, nrm: seat.nrm, seat } : { ...flat, seat: null };
 }
 
 /** The stretch of the deck's edge a stair's top stands on, plan in. (lib/deck/skirt leaves it open). */
-export function stairTopEdge(stair: StairDesign, level: Pick<StairLevel, "x0" | "y0" | "widthIn" | "frontAt">): { x0: number; y0: number; x1: number; y1: number } {
+export function stairTopEdge(stair: StairDesign, level: SetOutLevel): { x0: number; y0: number; x1: number; y1: number } {
   const { O, u } = stairSetOut(stair, level);
   const w = Math.round(stair.widthFt * 12);
   return { x0: O.x, y0: O.y, x1: O.x + u.x * w, y1: O.y + u.y * w };
@@ -389,7 +413,7 @@ export function buildStair(input: StairInput): StairBuild {
   const boardPitch = product.widthIn + product.gapIn;
 
   // The stair's own frame: O at its top-left looking down it, u along the width, n outward.
-  const { O, u, nrm } = stairSetOut(stair, level);
+  const { O, u, nrm, seat } = stairSetOut(stair, level);
   const P = (a: number, b: number): V2 => ({ x: O.x + u.x * a + nrm.x * b, y: O.y + u.y * a + nrm.y * b });
   const narrow = w < 36;
   const id = stair.id;
@@ -437,6 +461,7 @@ export function buildStair(input: StairInput): StairBuild {
   let balusters = 0;
   let footprint: V2[] = [];
   let treadRingsOut: StairBuild["treadRings"];
+  let seatOut: StairBuild["seat"];
   let wideOut: StairBuild["wide"];
   const e0x = (e: { A: V2 }) => e.A.x;
   const e1x = (e: { B: V2 }) => e.B.x;
@@ -595,7 +620,10 @@ export function buildStair(input: StairInput): StairBuild {
       }
       // The top riser board hangs off the deck's rim (or the landing's); the bottom one meets the pad (or the landing).
       riserBoardLf += w / 12;
-      member("riser", "1x8", w, P2(w / 2, 0.375), zTop - treadThick - rIn / 2, w - RISER_SHORT_IN, 0.75, rIn - treadThick, yawA);
+      // (Seated on a bow or a cut corner — lib/deck/edgeSeat — the top riser stands an eighth of an inch off the edge:
+      // turned, its faces fell within a hair of the fascia's face and of the first tread's back, and the 3D flickered.)
+      const headOff = seat && !fromLanding ? 0.125 : 0;
+      member("riser", "1x8", w, P2(w / 2, 0.375 + headOff), zTop - treadThick - rIn / 2, w - RISER_SHORT_IN, 0.75, rIn - treadThick, yawA);
       hardware.treadScrewsSqFt += Math.round(((t + 1) * w * (runIn + TREAD_NOSING_IN)) / 144);
       // A mid-flight support when the cut stringers would span past 6 ft.
       if (runF > STRINGER_MAX_SPAN_IN) {
@@ -800,6 +828,29 @@ export function buildStair(input: StairInput): StairBuild {
     }
     member("kicker", "2x4", w, PF(w / 2, bFoot - 1.75 - KICKER_BACK_IN), landingTopIn + 0.75, w, 3.5, 1.5, yawF);
     members.push(...railMembers);
+
+    // ITS HEAD ON A BOW (2026-11-15; lib/deck/edgeSeat). The flight is turned to the edge and its head touches it;
+    // where the edge bends away behind the head, the deck's boards run straight across the head of the stair — flat
+    // rings at the deck's own height, drawn and counted with the treads — on a straight header blocked off the bent
+    // rim, and a riser board closes each open end of the gap, from the deck's fascia out to the head's line.
+    if (seat) {
+      const gap = seat.gapIn >= SEAT_GAP_MIN_IN;
+      seatOut = { turnDeg: seat.turnDeg, gapIn: gap ? seat.gapIn : 0, headerIn: gap ? w : 0 };
+      if (gap) {
+        treadRingsOut = seat.fills.map((ring) => ({ ring, z: level.surfaceIn }));
+        treadBoardLf += seat.fillSqIn / boardPitch / 12;
+        const rIn0 = chain[0].leg.riserIn;
+        const yawN = Math.atan2(nrm.y, nrm.x);
+        seat.endGapIn.forEach((d, k) => {
+          // (From the fascia's face — three quarters of an inch outside the edge — to a hair short of the top riser's back.)
+          const len = d - 0.75 - 0.1;
+          if (len < 0.5) return;
+          const a2 = k === 0 ? 0.5 : w - 0.5;
+          member("riser", "1x8", len, P(a2, -0.05 - len / 2), level.surfaceIn - treadThick - rIn0 / 2, len, 0.75, rIn0 - treadThick, yawN);
+          riserBoardLf += len / 12;
+        });
+      }
+    }
 
     // Its outline in plan: every flight, every landing and the foot as one ring, from the edge of the deck it leaves.
     const local = (p: V2): [number, number] => [(p.x - O.x) * u.x + (p.y - O.y) * u.y, (p.x - O.x) * nrm.x + (p.y - O.y) * nrm.y];
@@ -1143,6 +1194,7 @@ export function buildStair(input: StairInput): StairBuild {
     footings,
     footprint,
     ...(treadRingsOut ? { treadRings: treadRingsOut } : {}),
+    ...(seatOut ? { seat: seatOut } : {}),
     ...(wrappedOut ? { wrapped: wrappedOut } : {}),
     ...(wideOut ? { wide: wideOut } : {}),
     treadBoardLf: Math.round(treadBoardLf * 10) / 10,

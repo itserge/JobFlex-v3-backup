@@ -40,11 +40,13 @@ import {
 } from "./codeTables";
 import { OC_BLOCKING_MAX_FT, OC_GUIDE_MAX_POSTS, OC_POST_MAX_HEIGHT_IN, OC_RULE, OC_SOURCES, ocPostCapacityLb } from "./ocLumber";
 import { GROUND_CONTACT_WITHIN_IN, MIN_FRAME_CLEAR_IN, PIER_BLOCK, footingDepthIn, type DeckFrame } from "./frame";
-import { DOUBLE_DECK_HEADROOM_IN, DOUBLE_DECK_STOREY_IN, FIXTURE_LABEL, GUTTER_LABEL, LOWER_LIMITS, ROOFING_LABEL, STAIR_LIMITS, WALL_FILL_LABEL, defaultStair, frontRadiusFt, normalizeDeckDesign, type DeckDesign, spaRectIn } from "./design";
+import { DOUBLE_DECK_HEADROOM_IN, DOUBLE_DECK_STOREY_IN, FIXTURE_LABEL, GUTTER_LABEL, LOWER_LIMITS, ROOFING_LABEL, STAIR_LIMITS, WALL_FILL_LABEL, defaultStair, bowSideRadiusFt, normalizeDeckDesign, type DeckDesign, spaRectIn } from "./design";
 import { STAIR_POST_CLEAR_IN, type RoofFrame } from "./roof";
 import { RULE_HIP, RULE_RAFTER, RULE_RIDGE, RULE_ROOF_LOAD, RULE_TIES } from "./roofTables";
 import { BETWEEN_LEVELS_STAIR_ID, betweenLevelsStair, type DeckStructure } from "./structure";
 import { FLIGHT_MAX_RISE_IN, LANDING_DEPTH_IN, STAIR_HEADROOM_IN, WRAP_STEP_MAX_RISERS, stairRules, stairTurnWords } from "./stairs";
+import { SEAT_GAP_MAX_IN } from "./edgeSeat";
+import { BOW_SIDE_LABEL, BOW_SIDE_WORDS, bowedSides, withBow } from "./curve";
 import { SNOW_TABLE_MAX_PSF, TERMITE_LABEL, deckLoadForSnow, roofLoadForSnow } from "./site";
 import { POST_ACTUAL_IN, STAIR_MIN_WIDTH_IN } from "./codeTables";
 import { FRAMING_SPECIES, defaultFramingSpecies, speciesWords } from "./catalog";
@@ -462,10 +464,36 @@ function deckFrameChecks(frame: DeckFrame, addRaw: (c: DeckCheck) => void, roof:
     if (z.back === "beam") checkCant(z.backCantIn, z.spansIn[0], "house-side", `joist-overhang-back-${z.zone.id}`);
   }
   if (front?.kind === "curve") {
-    const R = frontRadiusFt(design.shape);
-    const bendable = decking.family === "pvc" ? 4 : decking.family === "composite" ? 13 : decking.family === "mineral" ? 15 : Infinity;
-    if (R < bendable) add({ id: "front-curve", level: "pass", part: "Front", text: `The bow is a ${R}-ft radius: the rim is laminated from three plies of treated plywood, the joists cut to the arc and blocked, ${decking.family === "pvc" || decking.family === "composite" || decking.family === "mineral" ? "the border heat-bent to the curve" : "the boards' ends cut to the curve"}.`, rule: "Professional Deck Builder / Fine Homebuilding, curved decks" });
-    else add({ id: "front-curve", level: "info", part: "Front", text: `The bow is a ${R}-ft radius. ${decking.label} will not bend that tight${decking.family === "composite" ? " (capped composite bends to about 13 ft with heat)" : decking.family === "pvc" ? "" : ""}: the border is left out and the boards' ends are cut to the arc instead.`, rule: "The maker's bending guide" });
+    // EVERY BOWED SIDE (2026-11-15): its radius, what carries it, and whether the board's border bends that tight.
+    // (The tightest radius a border bends to with heat; wood is not bent — its boards' ends are cut to the curve. The
+    // comparison read the wrong way round until 2026-11-15: a gentle 17-ft bow was told composite "will not bend that
+    // tight", a tight one that its border is heat-bent.)
+    const bendMinFt = decking.family === "pvc" ? 4 : decking.family === "composite" ? 13 : decking.family === "mineral" ? 15 : 0;
+    for (const side of bowedSides(design.shape)) {
+      const R = bowSideRadiusFt(design.shape, side);
+      const id = side === "front" ? "front-curve" : `${side}-curve`;
+      const part = BOW_SIDE_LABEL[side];
+      const what = side === "front" ? "The bow" : `The bow of ${BOW_SIDE_WORDS[side]}`;
+      const sb = frame.sideBows.find((q) => q.side === side);
+      const carried =
+        side === "front"
+          ? "the joists cut to the arc and blocked"
+          : side === "back"
+            ? "the joists run on past the back beam and cut to the arc"
+            : sb?.beam
+              ? `${sb.outriggers} short joists square to the side, hung on the deck's doubled outside joist and cut to the arc, on a ${sb.beam.size} beam and two posts under the bow`
+              : `${sb?.outriggers ?? 0} short joists square to the side (${ftIn(sb?.longestIn ?? 0)} at the longest), hung on the deck's doubled outside joist and cut to the arc`;
+      if (R >= bendMinFt) add({ id, level: "pass", part, text: `${what} is a ${R}-ft radius: the rim is laminated from three plies of treated plywood, ${carried}, ${bendMinFt > 0 ? "the border heat-bent to the curve" : "the boards' ends cut to the curve"}.`, rule: "Professional Deck Builder / Fine Homebuilding, curved decks" });
+      else add({ id, level: "info", part, text: `${what} is a ${R}-ft radius: the rim is laminated from three plies of treated plywood, ${carried}. ${decking.label} will not bend that tight (it bends to about ${bendMinFt} ft with heat): the border is left out there and the boards' ends are cut to the arc instead.`, rule: "The maker's bending guide" });
+      // A side bowed past 2 ft stands on a beam of its own: outside the tables' own layouts — said, not hidden.
+      if (sb && side !== "back" && sb.bowIn > 24) add({ id: `${side}-bow-frame`, level: "info", part, text: `${BOW_SIDE_LABEL[side]} bowed ${ftIn(sb.bowIn)}: more than the short joists carry by themselves (2 ft)${sb.beam ? `, so a ${sb.beam.size} beam on two posts stands under them, ${ftIn(Math.round(sb.beam.y1 - sb.beam.y0))} long, the joists hanging ${sb.beam.cantIn} in. past it at the middle` : ""}. The span tables have no layout for a bowed side: have the plan reviewer or an engineer confirm the short joists and the beam.`, rule: "AWC DCA 6 — outside the prescriptive layouts" });
+      // A free deck's back: the joists hang past the back beam by its overhang and the bow.
+      if (sb && side === "back" && sb.cantIn !== undefined && sb.cantMaxIn !== undefined && sb.cantIn > sb.cantMaxIn) {
+        const fitsIn = Math.floor((sb.cantMaxIn - (sb.cantIn - sb.bowIn)) / 3) * 3;
+        const next = withBow(design.shape, "back", fitsIn >= 6 ? fitsIn / 12 : 0);
+        add({ id: "back-bow-overhang", level: "warn", part, text: `At the middle of the back's bow the joists hang ${ftIn(sb.cantIn)} past the back beam; their span allows ${ftIn(sb.cantMaxIn)}. ${fitsIn >= 6 ? `A bow of ${ftIn(fitsIn)} stays inside it.` : "A straight back stays inside it."}`, rule: "AWC DCA 6 — a joist's overhang, a quarter of its span", ...(next ? { fix: { label: fitsIn >= 6 ? `Bow the back ${ftIn(fitsIn)}` : "Make the back straight", patch: { shape: next } } } : {}) });
+      }
+    }
   }
   if (front?.kind === "clipped") add({ id: "front-clip", level: "info", part: "Front", text: `Both front corners clipped ${front.clipFt} ft at 45°: the rim turns twice on each side, the joists there are cut short, the rail follows.` });
   if (frame.spacingIn > frame.deckingMaxSpacingIn) {
@@ -1016,6 +1044,29 @@ function guardAndStairChecks(s: DeckStructure, add: (c: DeckCheck) => void): voi
         add({ id: `${tag}-landing-out-${k + 1}`, level: "info", part: where, text: `A landing asked for ${asked ? ftIn(asked.heightIn) : "there"} above the ground has no room on this stair: a landing stands a foot at least from the deck, the ground and the next landing.`, rule: SR.landing, fix: { label: "Take that landing off", patch: { stairs: design.stairs.map((d) => (d.id === st.design.id ? { ...d, landings: d.landings.filter((l) => l.id !== lid) } : d)) } } });
       });
       if (st.flags.hitsHouse) add({ id: `${tag}-house`, level: "fail", part: where, text: "The stair turns into the house's wall. Turn it the other way at its landing, or move the stair along the deck.", rule: SR.width });
+      // ITS HEAD ON A BOW OR A CORNER CUT AT AN ANGLE (2026-11-15; lib/deck/edgeSeat — the owner: "if the stairs attach to
+      // the radius deck, make sure they attach right… make it a smart check"): the flight is turned to the edge and its
+      // head touches it. Where the edge bends away behind the head by more than a header on blocking makes up, it says so.
+      if (st.seat) {
+        const deg = Math.round(Math.abs(st.seat.turnDeg));
+        const turned = deg >= 1 ? `turned ${deg}° to stand square to the deck's edge where it leaves` : "square to the deck's edge where it leaves";
+        const gap = Math.round(st.seat.gapIn * 10) / 10;
+        const seatRule = "Professional Deck Builder — stairs off a curved rim: a straight header blocked to the rim";
+        if (st.seat.gapIn > SEAT_GAP_MAX_IN) {
+          const wide = st.design.widthFt > 4;
+          const sideFt = st.design.side === "front" ? design.shape.widthFt : design.shape.depthFt;
+          const fix = wide
+            ? { label: "Make the stair 4 ft wide", patch: { stairs: design.stairs.map((d) => (d.id === st.design.id ? { ...d, widthFt: 4 } : d)) } }
+            : Math.abs(st.design.atFt - sideFt / 2) > 0.5
+              ? { label: `Move it to the middle of the ${st.design.side}`, patch: { stairs: design.stairs.map((d) => (d.id === st.design.id ? { ...d, atFt: Math.round(sideFt) / 2 } : d)) } }
+              : undefined;
+          add({ id: `${tag}-seat`, level: "warn", part: where, text: `The deck's edge bends ${gap} in. away behind the head of this stair — more than the ${SEAT_GAP_MAX_IN} in. a straight header on blocking makes up. Make the stair narrower, slide it to a straighter stretch of the edge, or use steps that wrap the deck: they follow its edge.`, rule: seatRule, ...(fix ? { fix } : {}) });
+        } else if (st.seat.gapIn > 0) {
+          add({ id: `${tag}-seat`, level: "pass", part: where, text: `The stair is ${turned}, its head against the edge. The edge bends ${gap} in. away behind the head at the most: the deck's boards run straight across the head there, on a straight header blocked off the bent rim; the stringers hang on the header.`, rule: seatRule });
+        } else {
+          add({ id: `${tag}-seat`, level: "pass", part: where, text: `The stair is ${turned}: its head lies flat on the edge, the stringers on the rim.`, rule: seatRule });
+        }
+      }
       if (st.flags.underDeckClearIn !== null) {
         if (st.flags.underDeckClearIn < STAIR_HEADROOM_IN) add({ id: `${tag}-headroom`, level: "warn", part: where, text: `The stair runs back under the deck with ${ftIn(st.flags.underDeckClearIn)} over its treads to the deck's joists: ${ftIn(STAIR_HEADROOM_IN)} is wanted to walk there. Turn it the other way, or put the landing lower.`, rule: cite(code, "R311.7.2", "6 ft 8 in. of headroom over a stair") });
         else add({ id: `${tag}-headroom`, level: "pass", part: where, text: `The stair runs back under the deck with ${ftIn(st.flags.underDeckClearIn)} over its treads to the deck's joists (${ftIn(STAIR_HEADROOM_IN)} at least).`, rule: cite(code, "R311.7.2", "6 ft 8 in. of headroom over a stair") });
