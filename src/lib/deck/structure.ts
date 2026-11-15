@@ -263,7 +263,26 @@ export function buildStructure(raw: DeckDesign, opts: StructureOptions = {}): De
     // (Steps that wrap the deck follow its own outline wherever it is not a plain rectangle — 2026-11-14.)
     const plain = design.shape.kind === "rect" && (!design.shape.front || design.shape.front.kind === "straight");
     const upper: StairLevel = { id: "upper", surfaceIn: frame.surfaceIn, joistBottomIn: frame.joistBottomIn, x0: 0, y0: 0, widthIn: W, depthIn: D, frontAt: (x) => frontEdgeAt(design.shape, x), sides: railLevelOf("upper", frame, 0, 0, groundAt, null, false).sides, plain };
-    const lowerLevel: StairLevel | null = lower ? { id: "lower", surfaceIn: lower.frame.surfaceIn, joistBottomIn: lower.frame.joistBottomIn, x0: lower.offsetXIn, y0: lower.offsetYIn, widthIn: Math.round(design.lower.widthFt * 12), depthIn: Math.round(design.lower.depthFt * 12), frontAt: lower.place === "under" ? (x) => frontEdgeAt(design.shape, x) : () => Math.round(design.lower.depthFt * 12) } : null;
+    // A DOUBLE DECK'S LOWER FLOOR IS ITS OWN OUTLINE (owner, 2026-11-15, a lower deck shaped on its own under a deeper
+    // upper deck: "check why the steps are separated"). Its stairs took the UPPER deck's front line — on a lower deck
+    // 10½ ft deep under one 15 ft deep they stood 4½ ft out in the yard. They leave from the lower floor's own front
+    // (its own shape, lib/deck/doubleDeck), and steps that wrap it follow its own outline where it is not a plain
+    // rectangle, as the upper deck's do.
+    const lowerShape = lower?.place === "under" ? lower.design.shape : null;
+    const lowerPlain = !lowerShape || (lowerShape.kind === "rect" && (!lowerShape.front || lowerShape.front.kind === "straight"));
+    const lowerLevel: StairLevel | null = lower
+      ? {
+          id: "lower",
+          surfaceIn: lower.frame.surfaceIn,
+          joistBottomIn: lower.frame.joistBottomIn,
+          x0: lower.offsetXIn,
+          y0: lower.offsetYIn,
+          widthIn: Math.round(design.lower.widthFt * 12),
+          depthIn: Math.round(design.lower.depthFt * 12),
+          frontAt: lowerShape ? (x) => frontEdgeAt(lowerShape, x) : () => Math.round(design.lower.depthFt * 12),
+          ...(lowerShape && !lowerPlain ? { sides: railLevelOf("lower", lower.frame, lower.offsetXIn, lower.offsetYIn, groundAt, null, false).sides, plain: false } : {}),
+        }
+      : null;
     const build = (st: StairDesign, level: StairLevel) =>
       buildStair({ design, stair: st, level, lowerLevel: level.id === "upper" ? lowerLevel : null, product: frame.decking, rail: design.rail, groundAt, riserMaxIn: code.riserMaxIn, postSize: design.framing.post === "8x8" ? "6x6" : design.framing.post === "4x6" ? "4x4" : design.framing.post });
     const put = (st: StairDesign, level: StairLevel) => {
