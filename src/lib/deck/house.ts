@@ -1485,6 +1485,32 @@ export function resizeDeckLeft(house: HouseDesign, shape: DeckShape, newWidthFt:
   return { house: moved, shape: { ...shape, widthFt: w2 } };
 }
 
+/**
+ * The deck's RIGHT end moved to a new width while its left end stays put (2026-11-15 — pulling the deck's right SIDE on
+ * the drawing stretched a locked house: the drag sent the house as it was at its start with every move, which undid
+ * the lock's own answer). Worked out from where the drag STARTED, so many small moves come to the same place as one.
+ * Against a LOCKED wall the house stays where it is and the end may go past the house's corner (lockedEnd). A house
+ * built from its photo is the real wall: the wall past the deck's right end gives up, or takes back, what the deck
+ * took. Any other house is returned as it was (a house drawn by rule keeps its reach past the deck's end).
+ */
+export function resizeDeckRight(house: HouseDesign, shape: DeckShape, newWidthFt: number, minWidthFt: number, maxWidthFt: number): { house: HouseDesign; shape: DeckShape } {
+  const W = shape.widthFt;
+  const want = half(clamp(newWidthFt, minWidthFt, maxWidthFt));
+  if (house.locked) {
+    const w2 = clamp(lockedEnd(house, shape, "right", want).widthFt, minWidthFt, maxWidthFt);
+    if (w2 === W) return { house, shape };
+    const moved = { ...house, rightFt: half(house.rightFt - (w2 - W)) };
+    if (moved.rightFt >= 0) delete moved.wrapRightFt;
+    return { house: moved, shape: { ...shape, widthFt: w2 } };
+  }
+  if (want === W) return { house, shape };
+  if (house.photo) {
+    const rightFt = Math.min(HOUSE_LIMITS.extendFt.max, Math.max(house.rightFt < 0 ? -HOUSE_LIMITS.pastFt.max : HOUSE_LIMITS.extendFt.min, house.rightFt - (want - W)));
+    return { house: rightFt === house.rightFt ? house : { ...house, rightFt }, shape: { ...shape, widthFt: want } };
+  }
+  return { house, shape: { ...shape, widthFt: want } };
+}
+
 
 /* ------------------------------------------------------------------ */
 /*  Shifting a part sideways, levelling it, and the one-tap fixes       */
