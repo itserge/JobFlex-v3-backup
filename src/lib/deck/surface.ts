@@ -8,10 +8,11 @@
 // board — or half of one, when two rows come out of a single board. A row
 // longer than stock is spliced: full boards and one cut piece, the splice
 // landing on a joist (12, 16 and 20 ft all fall on a 12-, 16- or 24-in.
-// layout), every second row turned end for end so the joints stagger. Of
-// the ways to buy a row the one with the least lumber bought wins; fewer
-// joints breaks a tie. The waste allowance is added in the stock length the
-// job uses most.
+// layout). Of the ways to buy a row the one with the least lumber bought
+// wins; fewer joints breaks a tie — and the rows take EVERY way that costs no
+// more in turn, so their joints stagger and no line of them runs across the
+// floor (staggerRows, 2026-11-15). The waste allowance is added in the stock
+// length the job uses most.
 //
 // PATTERNS. Boards on the diagonal are bought by the foot of board the deck
 // swallows, in the longest stock, with 5 points more waste than the
@@ -117,6 +118,12 @@ interface RowPlan {
 
 /** The cheapest way to buy `rows` rows `lengthIn` long from `stocksFt`. */
 export function planRow(lengthIn: number, rows: number, stocksFt: readonly number[]): RowPlan {
+  const plans = rowPlans(lengthIn, rows, stocksFt);
+  return plans.reduce((m, p) => (p.boughtIn < m.boughtIn - 1e-6 || (Math.abs(p.boughtIn - m.boughtIn) <= 1e-6 && p.joints < m.joints) ? p : m));
+}
+
+/** Every way to buy `rows` rows `lengthIn` long from `stocksFt`: one board, or whole boards of one stock length and the piece that is left. */
+function rowPlans(lengthIn: number, rows: number, stocksFt: readonly number[]): RowPlan[] {
   const stocks = [...stocksFt].sort((a, b) => a - b);
   const longest = stocks[stocks.length - 1] * 12;
   const plans: RowPlan[] = [];
@@ -159,9 +166,91 @@ export function planRow(lengthIn: number, rows: number, stocksFt: readonly numbe
     add(buy, stocks[stocks.length - 1], n * rows);
     const cuts = new Array<number>(n - 1).fill(longest);
     cuts.push(lengthIn - (n - 1) * longest);
-    return { cuts, buy, boughtIn: n * rows * longest, joints: n - 1 };
+    return [{ cuts, buy, boughtIn: n * rows * longest, joints: n - 1 }];
   }
-  return plans.reduce((m, p) => (p.boughtIn < m.boughtIn - 1e-6 || (Math.abs(p.boughtIn - m.boughtIn) <= 1e-6 && p.joints < m.joints) ? p : m));
+  return plans;
+}
+
+/** How far apart the joints of two rows side by side are kept where the row can be bought that way, in. (two joist bays at 16 in.). */
+export const JOINT_STAGGER_IN = 32;
+/** How much more lumber than the cheapest way a way to lay a row may take and still be one of the ways the rows take in turn. */
+const STAGGER_COST = 1.03;
+
+/**
+ * THE JOINTS OF SPLICED ROWS, STAGGERED (2026-11-15 — the owner, of a 24-ft deck in the 3D: "there is a line on the
+ * floor… ten rows in a straight line, which is wrong, should be staggered"). A row longer than the longest board is
+ * spliced, and every second row was turned end for end "so the joints stagger" — but the cheapest way to buy a 24-ft
+ * row is two 12s, and two 12s turned end for end are two 12s: every row broke on one line down the middle of the deck.
+ *
+ * Now the rows take, in turn, EVERY way of buying the row that costs no more lumber than the cheapest (within 3%) —
+ * a 24-ft row is 12 + 12, 16 + 8 or 20 + 4, each also turned end for end — in an order that keeps a row's joints as
+ * far as it can from the joints of the row before (32 in. or more where the stock allows). The same feet of board are
+ * bought; which lengths changes (some 16s and 20s among the 12s). A row that needs no splice is one board, as before.
+ * Ways with more joints than the fewest are used only when the fewest give under three patterns to turn through.
+ */
+export function staggerRows(lengthIn: number, rows: number, stocksFt: readonly number[]): { cuts: number[][]; buy: Map<number, number>; lines: number } {
+  const best = planRow(lengthIn, rows, stocksFt);
+  if (best.joints === 0 || rows <= 1) return { cuts: new Array<number[]>(rows).fill(best.cuts), buy: best.buy, lines: best.joints ? 1 : 0 };
+  const key = (cuts: readonly number[]) => [...cuts].sort((a, b) => a - b).map((c) => Math.round(c * 10)).join(",");
+  const jointsOf = (cuts: readonly number[]) => {
+    const at: number[] = [];
+    let x = 0;
+    for (const c of cuts.slice(0, -1)) at.push((x += c));
+    return at;
+  };
+  const near = rowPlans(lengthIn, rows, stocksFt).filter((p) => p.boughtIn <= best.boughtIn * STAGGER_COST + 1e-6);
+  const patternsOf = (plans: RowPlan[]) => {
+    const seen = new Set<string>();
+    const out: Array<{ plan: string; cuts: number[]; joints: number[] }> = [];
+    for (const p of plans) {
+      // Its pieces in the order bought, turned end for end, and — three pieces or more — begun with each piece in turn.
+      const orders = [p.cuts, [...p.cuts].reverse(), ...p.cuts.slice(1).map((_, i) => [...p.cuts.slice(i + 1), ...p.cuts.slice(0, i + 1)])];
+      for (const cuts of orders) {
+        const joints = jointsOf(cuts);
+        const id = joints.map((j) => Math.round(j)).join(",");
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push({ plan: key(p.cuts), cuts, joints });
+      }
+    }
+    return out;
+  };
+  let patterns = patternsOf(near.filter((p) => p.joints === best.joints));
+  if (patterns.length < 3) patterns = patternsOf(near.filter((p) => p.joints <= best.joints + 1));
+  // ONE WAY ONLY (a line sold in one length: a 40-ft row of 20-footers is 20 + 20 and nothing else): every second row
+  // has one of its whole boards cut in two and a part laid at each end — the same boards bought, one more joint in
+  // that row, and its joints 4 ft or more from the row beside it.
+  if (patterns.length < 2) {
+    const whole = best.cuts.findIndex((c) => c >= 96 && Math.abs(c / 48 - Math.round(c / 48)) < 1e-6);
+    if (whole >= 0) {
+      const c = best.cuts[whole];
+      const first = Math.max(48, Math.round(c / 2 / 48 - 0.25) * 48);
+      const rest = best.cuts.filter((_, i) => i !== whole);
+      const split = [first, ...rest, c - first];
+      patterns.push({ plan: key(best.cuts), cuts: split, joints: jointsOf(split) });
+    }
+  }
+  // The order they are taken in: each as far from the one before as any still to come, the cheapest plan's own first.
+  const apart = (a: readonly number[], b: readonly number[]) => Math.min(...a.flatMap((x) => b.map((y) => Math.abs(x - y))));
+  const order = [patterns.find((q) => q.plan === key(best.cuts)) ?? patterns[0]];
+  const left = patterns.filter((q) => q !== order[0]);
+  while (left.length && order.length < 6) {
+    const prev = order[order.length - 1];
+    left.sort((a, b) => apart(b.joints, prev.joints) - apart(a.joints, prev.joints) || a.joints.length - b.joints.length);
+    order.push(left.shift()!);
+  }
+  // (Round the turn too: the last of the cycle beside the first. One that would sit on the first's line is left out.)
+  while (order.length > 2 && apart(order[order.length - 1].joints, order[0].joints) < JOINT_STAGGER_IN && apart(order[order.length - 2].joints, order[0].joints) >= JOINT_STAGGER_IN) order.pop();
+  const cuts = Array.from({ length: rows }, (_, i) => order[i % order.length].cuts);
+  // Bought plan by plan, for the rows each lays.
+  const count = new Map<string, number>();
+  for (let i = 0; i < rows; i++) count.set(order[i % order.length].plan, (count.get(order[i % order.length].plan) ?? 0) + 1);
+  const buy = new Map<number, number>();
+  for (const [plan, n] of count) {
+    const bought = rowPlans(lengthIn, n, stocksFt).find((p) => key(p.cuts) === plan) ?? planRow(lengthIn, n, stocksFt);
+    for (const [stock, k] of bought.buy) buy.set(stock, (buy.get(stock) ?? 0) + k);
+  }
+  return { cuts, buy, lines: new Set(order.flatMap((q) => q.joints.map((j) => Math.round(j)))).size };
 }
 
 /** A convex ring clipped to a half-plane: keep the side where ax + by ≤ c. */
@@ -507,13 +596,13 @@ export function deckSurface(frame: DeckFrame): DeckSurface {
     for (const g of groups.values()) {
       const length = g.x1 - g.x0;
       longestRowIn = Math.max(longestRowIn, length);
-      const plan = planRow(length, g.ys.length, product.lengthsFt);
-      for (const [stock, n] of plan.buy) buy.set(stock, (buy.get(stock) ?? 0) + n);
+      // (A spliced row's joints are staggered: the rows take every cheapest way to buy the row in turn — staggerRows.)
+      const lay = staggerRows(length, g.ys.length, product.lengthsFt);
+      for (const [stock, n] of lay.buy) buy.set(stock, (buy.get(stock) ?? 0) + n);
       netIn += length * g.ys.length;
       crossings += g.ys.length * joistXs.filter((x) => x > g.x0 && x < g.x1).length;
       g.ys.forEach((row, i) => {
-        // Every second row runs the other way, so the joints stagger.
-        const cuts = i % 2 === 0 ? plan.cuts : [...plan.cuts].reverse();
+        const cuts = lay.cuts[i];
         let at = g.x0;
         for (const c of cuts) {
           if (row.cut) {
