@@ -4,6 +4,8 @@ import { ledgerBalances } from "@/lib/commission";
 import { PayoutRequestStatus, PayoutTransferStatus } from "@/lib/prismaEnums";
 import { getInfluencerRollup } from "@/actions/influencers";
 import { cheapestPaidPlanCents, promoAboveLimit } from "@/lib/commissionLimits";
+import { couponDurations } from "@/lib/promoCouponDuration";
+import { isReplacedCode } from "@/lib/promoDiscount";
 import { AdminInfluencersContent } from "@/components/v3/admin-influencers/influencers-content";
 import type { InfluencerDTO } from "@/components/v3/admin-influencers/influencers-data";
 
@@ -32,6 +34,12 @@ export default async function AdminInfluencersPage() {
     getInfluencerRollup(),
     cheapestPaidPlanCents(),
   ]);
+  // What each code's Stripe coupon really gives: a legacy `forever` coupon is
+  // marked so it can be replaced (lib/promoCouponDuration — one read, then cached).
+  const durations = await couponDurations(
+    influencers.flatMap((i) => i.promoCodes.map((p) => p.stripeCouponId)),
+    { read: true },
+  );
 
   const dto: InfluencerDTO[] = influencers.map((inf) => {
     const last = inf.transfers[0];
@@ -47,7 +55,8 @@ export default async function AdminInfluencersPage() {
       notes: inf.notes,
       hasPassword: Boolean(inf.hashedPassword),
       createdAt: inf.createdAt.toISOString(),
-      promoCodes: inf.promoCodes.map((p) => ({
+      // The current codes first; a replaced code's history row after them.
+      promoCodes: [...inf.promoCodes].sort((a, b) => Number(isReplacedCode(a.code)) - Number(isReplacedCode(b.code))).map((p) => ({
         id: p.id,
         code: p.code,
         active: p.active,
@@ -58,6 +67,9 @@ export default async function AdminInfluencersPage() {
         durationType: p.durationType,
         durationMonths: p.durationMonths,
         customerPercentOff: p.customerPercentOff,
+        customerDiscountMonths: p.customerDiscountMonths,
+        replaced: isReplacedCode(p.code),
+        couponForever: durations.get(p.stripeCouponId)?.duration === "forever",
         clicks: p.clicks,
         conversions: p._count.attributions,
         aboveLimit: promoAboveLimit(p, cheapestPlanCents),

@@ -2,6 +2,7 @@
 import * as React from "react";
 import { validateAttributionCode } from "@/actions/attribution";
 import { CODE_RE, readClientAttr } from "@/lib/attributionShared";
+import { discountPhrase } from "@/lib/promoDiscount";
 
 export type RegisterAttribution = { kind: "promo" | "ref"; code: string };
 
@@ -19,6 +20,8 @@ export interface ResolvedReferral {
   code: string;
   displayName: string;
   percentOff: number | null;
+  /** Paid months the percent lasts (null = 1, lib/promoDiscount). */
+  discountMonths: number | null;
 }
 
 export function ReferralBanner({
@@ -44,7 +47,7 @@ export function ReferralBanner({
   const apply = React.useCallback(async (kind: "promo" | "ref", code: string): Promise<boolean> => {
     const res = await validateAttributionCode({ kind, code });
     if (!res.ok) return false;
-    const resolved = { kind: res.kind, code: res.code, displayName: res.displayName, percentOff: res.percentOff };
+    const resolved = { kind: res.kind, code: res.code, displayName: res.displayName, percentOff: res.percentOff, discountMonths: res.discountMonths };
     setPill(resolved);
     onChangeRef.current({ kind: res.kind, code: res.code });
     onResolvedRef.current?.(resolved);
@@ -80,7 +83,7 @@ export function ReferralBanner({
         <div className="ref-t">Referred by {pill.displayName} ✓</div>
         <div className="ref-c">
           Code {pill.code} applied
-          {pill.percentOff ? ` · ${pill.percentOff}% off your first month` : ""}
+          {pill.percentOff ? ` · ${discountPhrase(pill.percentOff, pill.discountMonths)}` : ""}
         </div>
       </div>
     </div>

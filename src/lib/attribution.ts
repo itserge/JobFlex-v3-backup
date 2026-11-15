@@ -31,6 +31,8 @@ export type ValidatedAttribution =
       stripePromotionCodeId: string;
       displayName: string;
       percentOff: number | null;
+      /** PAID months the discount lasts (PromoCode.customerDiscountMonths, null = 1 — lib/promoDiscount). */
+      discountMonths: number | null;
     }
   | { kind: "ref"; code: string; refCodeId: string; displayName: string; referrerEmail: string | null };
 
@@ -66,6 +68,7 @@ export async function validateAttribution(
         code: true,
         active: true,
         customerPercentOff: true,
+        customerDiscountMonths: true,
         stripeCouponId: true,
         stripePromotionCodeId: true,
         influencer: { select: { displayName: true, status: true } },
@@ -82,6 +85,7 @@ export async function validateAttribution(
       stripePromotionCodeId: promo.stripePromotionCodeId,
       displayName: promo.influencer.displayName,
       percentOff: promo.customerPercentOff ?? null,
+      discountMonths: promo.customerDiscountMonths ?? null,
     };
   }
 

@@ -122,14 +122,27 @@ export function InfluencerOverviewContent({
               <div key={c.id} className={styles.code}>
                 <div className={styles.codeTop}>
                   <span className={cx(ui.tag, !c.active && ui.tagOff, styles.codeTag)}>{c.code}</span>
-                  <Chip tone={c.active ? "ok" : "mute"}>{c.active ? "Active" : "Off"}</Chip>
+                  <Chip tone={c.active ? "ok" : "mute"}>{c.replaced ? "Earlier terms" : c.active ? "Active" : "Off"}</Chip>
                 </div>
-                <Meta className={styles.codeTerms}>
-                  {c.terms}
-                  {c.customerPercentOff ? ` · buyer saves ${c.customerPercentOff}%` : ""}
-                  {` · ${c.clicks} ${c.clicks === 1 ? "click" : "clicks"}`}
-                </Meta>
-                {c.active ? (
+                {/* Two lines, never one: what the subscriber gets is not what the partner earns, and
+                    "20% · 12 months" beside "saves 20%" read as one deal (owner, 2026-11-14). */}
+                <dl className={styles.codeTerms}>
+                  <div>
+                    <dt>Subscribers get</dt>
+                    <dd data-sub-discount>{c.discount ?? "No discount"}</dd>
+                  </div>
+                  <div>
+                    <dt>Your commission</dt>
+                    <dd>{c.terms}</dd>
+                  </div>
+                </dl>
+                <Meta className={styles.codeClicks}>{`${c.clicks} ${c.clicks === 1 ? "click" : "clicks"}`}</Meta>
+                {c.replaced ? (
+                  <p className={styles.codeOff}>
+                    The terms this code had before its discount changed. Subscribers who joined with them keep their
+                    discount and keep earning you commission.
+                  </p>
+                ) : c.active ? (
                   <div className={styles.codeCopies}>
                     <CopyRow label="Share link" value={c.shareUrl} />
                     <CopyRow label="Code" value={c.code} />

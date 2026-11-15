@@ -29,6 +29,7 @@ scripts:
   - { file: editions.check.ts, suite: billing, kind: check, status: live }
   - { file: free-plan.check.ts, suite: billing, kind: prod, status: live, minutes: 25 }
   - { file: influencer-commission.check.ts, suite: billing, kind: check, status: live }
+  - { file: influencer-discount-months.check.ts, suite: billing, kind: check, status: live }
   - { file: influencer-dispute.check.ts, suite: billing, kind: check, status: live }
   - { file: influencer-limits.check.ts, suite: billing, kind: check, status: live }
   - { file: influencer-mail.check.ts, suite: billing, kind: check, status: live }

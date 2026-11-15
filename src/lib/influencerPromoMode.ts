@@ -41,6 +41,8 @@ import type Stripe from "stripe";
 import { db } from "@/lib/db";
 import { stripeClientForMode } from "@/lib/sdk/stripe";
 import type { StripeMode } from "@/lib/stripeMode";
+import { promoCouponParams } from "@/lib/promoCoupon";
+import { discountMonths } from "@/lib/promoDiscount";
 
 export interface PromoForCheckout {
   /** PromoCode.id — our row, the cache key and the metadata back-reference. */
@@ -51,10 +53,17 @@ export interface PromoForCheckout {
   stripePromotionCodeId: string;
   /** Mirror of the live coupon's percent_off. */
   customerPercentOff: number | null;
+  /** PAID months the discount lasts (PromoCode.customerDiscountMonths; null = 1). */
+  customerDiscountMonths?: number | null;
 }
 
-const cacheKey = (promoId: string, what: "coupon" | "promo") =>
-  `stripePromo:test:${promoId}:${what}`;
+/* THE MONTHS ARE IN THE KEY (owner, 2026-11-14): a twin is the live coupon's
+   shape, months included, so a twin cached for other months is not this code's.
+   A twin cached before the field (`stripePromo:test:<id>:promo`, one month) is
+   not read: the first checkout finds its string taken and adopts it below. */
+const cacheKey = (promo: Pick<PromoForCheckout, "id" | "customerDiscountMonths">, what: "coupon" | "promo") =>
+  `stripePromo:test:${promo.id}:m${discountMonths(promo.customerDiscountMonths)}:${what}`;
+const legacyKey = (promoId: string, what: "coupon" | "promo") => `stripePromo:test:${promoId}:${what}`;
 
 async function readKey(key: string): Promise<string | null> {
   const row = await db.syncState.findUnique({ where: { key } }).catch(() => null);
@@ -93,7 +102,7 @@ export async function promotionCodeIdForMode(
     if (own) return own;
   }
 
-  const cached = await readKey(cacheKey(promo.id, "promo"));
+  const cached = await readKey(cacheKey(promo, "promo"));
   if (cached) {
     const still = await retrieveActive(stripe, cached);
     if (still) return still;
@@ -117,15 +126,31 @@ export async function promotionCodeIdForMode(
     });
   } catch {
     // The string is already taken on this account — an earlier twin whose cache
-    // row was lost. Adopt it rather than fail the checkout.
+    // row was lost. Adopt it rather than fail the checkout. A twin that names
+    // ANOTHER row is the code's replaced terms (actions/influencers
+    // replacePromoDiscount), left on in a sandbox where the twin was never
+    // switched off: switch it off and mint this row's once.
     const found = await stripe.promotionCodes
-      .list({ code: promo.code, limit: 1 })
+      .list({ code: promo.code, active: true, limit: 1 })
       .catch(() => null);
-    created = found?.data[0] ?? null;
+    const other = found?.data[0] ?? null;
+    const owner = other?.metadata?.jfPromoCodeId;
+    if (other && owner && owner !== promo.id) {
+      await stripe.promotionCodes.update(other.id, { active: false }).catch(() => null);
+      created = await stripe.promotionCodes
+        .create({
+          promotion: { type: "coupon", coupon: couponId },
+          code: promo.code,
+          metadata: { jfKind: "influencerPromo", jfPromoCodeId: promo.id, jfCode: promo.code },
+        })
+        .catch(() => null);
+    } else {
+      created = other;
+    }
   }
   if (!created || !created.active) return null;
 
-  await writeKey(cacheKey(promo.id, "promo"), created.id);
+  await writeKey(cacheKey(promo, "promo"), created.id);
   return created.id;
 }
 
@@ -143,7 +168,7 @@ async function ensureTestCoupon(
   promo: PromoForCheckout,
   percentOff: number,
 ): Promise<string | null> {
-  const key = cacheKey(promo.id, "coupon");
+  const key = cacheKey(promo, "coupon");
   const cached = await readKey(key);
   if (cached) {
     try {
@@ -154,17 +179,18 @@ async function ensureTestCoupon(
     }
   }
   try {
-    // THE SAME SHAPE AS LIVE (actions/influencers.ts): percent_off, repeating,
-    // one month. `repeating` rather than `once` because a trial's $0 first
-    // invoice spends a once-coupon — the arithmetic is in lib/referralDiscount.
-    // A twin that discounted differently would make the rehearsal a lie.
-    const coupon = await stripe.coupons.create({
-      percent_off: percentOff,
-      duration: "repeating",
-      duration_in_months: 1,
-      name: `TEST ${promo.code}`,
-      metadata: { jfKind: "influencerPromo", jfPromoCodeId: promo.id, jfCode: promo.code },
-    });
+    // THE SAME SHAPE AS LIVE (actions/influencers.ts, lib/promoCoupon): the
+    // percent, repeating for the code's N paid months. `repeating` rather than
+    // `once` because a trial's $0 first invoice spends a once-coupon. A twin
+    // that discounted differently would make the rehearsal a lie.
+    const coupon = await stripe.coupons.create(
+      promoCouponParams({
+        percentOff,
+        months: promo.customerDiscountMonths,
+        name: `TEST ${promo.code}`,
+        metadata: { jfKind: "influencerPromo", jfPromoCodeId: promo.id, jfCode: promo.code },
+      }),
+    );
     await writeKey(key, coupon.id);
     return coupon.id;
   } catch (err) {
@@ -200,13 +226,18 @@ async function percentOffFor(promo: PromoForCheckout): Promise<number | null> {
  * difference that makes a rehearsal worthless.
  */
 export async function setTestTwinActive(promoId: string, active: boolean): Promise<void> {
-  const twin = await readKey(cacheKey(promoId, "promo"));
-  if (!twin) return;
+  // The row's months pick its key; read them rather than guess.
+  const row = await db.promoCode.findUnique({ where: { id: promoId }, select: { customerDiscountMonths: true } }).catch(() => null);
+  const keys = [cacheKey({ id: promoId, customerDiscountMonths: row?.customerDiscountMonths }, "promo"), legacyKey(promoId, "promo")];
   const test = stripeClientForMode("test");
   if (!test) return;
-  try {
-    await test.promotionCodes.update(twin, { active });
-  } catch {
-    /* best effort */
+  for (const key of keys) {
+    const twin = await readKey(key);
+    if (!twin) continue;
+    try {
+      await test.promotionCodes.update(twin, { active });
+    } catch {
+      /* best effort */
+    }
   }
 }

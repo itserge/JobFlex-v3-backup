@@ -14,7 +14,7 @@ const schema = z.object({
 
 export type AttributionCheck =
   | { ok: false }
-  | { ok: true; kind: "promo" | "ref"; code: string; displayName: string; percentOff: number | null };
+  | { ok: true; kind: "promo" | "ref"; code: string; displayName: string; percentOff: number | null; discountMonths: number | null };
 
 export async function validateAttributionCode(raw: unknown): Promise<AttributionCheck> {
   const parsed = schema.safeParse(raw);
@@ -28,6 +28,8 @@ export async function validateAttributionCode(raw: unknown): Promise<Attribution
       code: valid.code,
       displayName: valid.displayName,
       percentOff: valid.kind === "promo" ? valid.percentOff : null,
+      // How many paid months the percent lasts (lib/promoDiscount); a referral is one.
+      discountMonths: valid.kind === "promo" ? valid.discountMonths : null,
     };
   } catch {
     return { ok: false };

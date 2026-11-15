@@ -17,6 +17,8 @@ import { ledgerBalances, describeCommission } from "@/lib/commission";
 import { payoutRequestRefusal } from "@/lib/payouts";
 import { PayoutRequestStatus } from "@/lib/prismaEnums";
 import { moneyNotes } from "@/lib/influencerNotes";
+import { couponDurations } from "@/lib/promoCouponDuration";
+import { baseCode, discountPhrase, foreverPhrase, isReplacedCode } from "@/lib/promoDiscount";
 import { InfluencerOverviewContent } from "@/components/v3/influencer-portal/overview-content";
 import type {
   PartnerDTO,
@@ -78,19 +80,33 @@ export default async function InfluencerOverviewPage() {
     : [];
   const planByExt = new Map(subs.map((s) => [s.externalSubId, s.plan]));
 
-  const codeDto: PromoCodeDTO[] = codes.map((c) => ({
-    id: c.id,
-    code: c.code,
-    active: c.active,
-    terms: describeCommission(c),
-    customerPercentOff: c.customerPercentOff,
-    clicks: c.clicks,
-    shareUrl: `${appUrl}/?promo=${c.code}`,
-  }));
+  // A legacy `forever` coupon is said as such — from the admin page's cached read
+  // only (lib/promoCouponDuration): the partner's page never waits on Stripe.
+  const durations = await couponDurations(codes.map((c) => c.stripeCouponId), { read: false });
+  const codeDto: PromoCodeDTO[] = [...codes]
+    .sort((a, b) => Number(isReplacedCode(a.code)) - Number(isReplacedCode(b.code)))
+    .map((c) => {
+      const pct = c.customerPercentOff ?? 0;
+      return {
+        id: c.id,
+        code: baseCode(c.code),
+        active: c.active,
+        terms: describeCommission(c),
+        discount:
+          pct > 0
+            ? durations.get(c.stripeCouponId)?.duration === "forever"
+              ? foreverPhrase(pct)
+              : discountPhrase(pct, c.customerDiscountMonths)
+            : null,
+        replaced: isReplacedCode(c.code),
+        clicks: c.clicks,
+        shareUrl: `${appUrl}/?promo=${baseCode(c.code)}`,
+      };
+    });
 
   const clientDto: ReferredClientDTO[] = attributions.map((a) => ({
     id: a.id,
-    code: a.promoCode.code,
+    code: baseCode(a.promoCode.code),
     since: a.firstPaidInvoiceAt ? monthLabel(a.firstPaidInvoiceAt) : null,
     plan: planByExt.get(a.stripeSubscriptionId)?.toLowerCase() ?? null,
     status: a.status,

@@ -15,6 +15,8 @@ import {
   writeOffReversedPayout,
 } from "@/lib/payouts";
 import { setTestTwinActive } from "@/lib/influencerPromoMode";
+import { promoCouponParams } from "@/lib/promoCoupon";
+import { DISCOUNT_MONTHS_MAX, DISCOUNT_MONTHS_MIN, REPLACED_MARK, discountMonths, discountPhrase } from "@/lib/promoDiscount";
 import { refusal, refused, type ActionResult } from "@/lib/actionResult";
 import { cheapestPaidPlanCents, commissionRefusal } from "@/lib/commissionLimits";
 import { mailPayoutApproved, mailPayoutDeclined } from "@/lib/influencerMail";
@@ -29,6 +31,14 @@ import {
 // ── shared promo validation ───────────────────────────
 const commissionShape = z.object({
   customerPercentOff: z.number().min(0).max(100).default(10),
+  // How many PAID months the discount lasts (owner, 2026-11-14; lib/promoDiscount).
+  // Bounded here as well as in the form: both sheets are noValidate.
+  customerDiscountMonths: z
+    .number({ invalid_type_error: "Discount months must be a whole number from 1 to 24." })
+    .int("Discount months must be a whole number from 1 to 24.")
+    .min(DISCOUNT_MONTHS_MIN, "Discount months must be a whole number from 1 to 24.")
+    .max(DISCOUNT_MONTHS_MAX, "Discount months must be a whole number from 1 to 24.")
+    .default(1),
   commissionType: z.enum([CommissionType.PERCENT, CommissionType.FLAT]),
   // For PERCENT: percentage points (e.g. 20). For FLAT: dollars (e.g. 15).
   commissionValue: z.number().min(0),
@@ -78,27 +88,41 @@ function commissionColumns(c: z.infer<typeof commissionShape>) {
 async function provisionStripePromo(opts: {
   code: string;
   customerPercentOff: number;
+  /** PAID months the discount lasts (PromoCode.customerDiscountMonths). */
+  months: number;
   label: string;
+  /** A replacement of a code that is switched off is minted off too. */
+  active?: boolean;
 }): Promise<{ stripeCouponId: string; stripePromotionCodeId: string }> {
   if (isStripeEnabled()) {
     assertStripeWriteAllowed("create a Stripe promo code");
     const stripe = getStripe();
-    // FIRST MONTH ONLY (owner, 2026-09-02). `repeating` for one month rather
-    // than `once`, because a trial's $0 first invoice spends a once-coupon —
-    // see lib/referralDiscount for the arithmetic. Coupons already minted
-    // stay as they were: Stripe coupons are immutable.
-    const coupon = await stripe.coupons.create({
-      percent_off: opts.customerPercentOff,
-      duration: "repeating",
-      duration_in_months: 1,
-      name: opts.label,
-    });
-    const promo = await stripe.promotionCodes.create({
-      // Clover: a promotion code names its coupon under `promotion`.
-      promotion: { type: "coupon", coupon: coupon.id },
-      code: opts.code,
-    });
-    return { stripeCouponId: coupon.id, stripePromotionCodeId: promo.id };
+    // N PAID MONTHS (owner, 2026-11-14; was the first month only since
+    // 2026-09-02, and `forever` before that). `repeating` rather than `once`,
+    // because a trial's $0 first invoice spends a once-coupon; the months and
+    // their trial correction are lib/promoCoupon's. Coupons already minted stay
+    // as they were: Stripe coupons are immutable.
+    const coupon = await stripe.coupons.create(
+      promoCouponParams({
+        percentOff: opts.customerPercentOff,
+        months: opts.months,
+        name: opts.label,
+        metadata: { jfKind: "influencerPromo", jfCode: opts.code },
+      }),
+    );
+    try {
+      const promo = await stripe.promotionCodes.create({
+        // Clover: a promotion code names its coupon under `promotion`.
+        promotion: { type: "coupon", coupon: coupon.id },
+        code: opts.code,
+        ...(opts.active === false ? { active: false } : {}),
+      });
+      return { stripeCouponId: coupon.id, stripePromotionCodeId: promo.id };
+    } catch (err) {
+      // A coupon no code points at is litter on the dashboard.
+      await stripe.coupons.del(coupon.id).catch(() => {});
+      throw err;
+    }
   }
   // Local-only: unique synthetic ids so uniqueness constraints still hold.
   return {
@@ -150,6 +174,7 @@ export async function createInfluencer(
     stripeIds = await provisionStripePromo({
       code,
       customerPercentOff: data.customerPercentOff,
+      months: data.customerDiscountMonths,
       label: `${data.displayName} (${code})`,
     });
   } catch (err) {
@@ -170,6 +195,7 @@ export async function createInfluencer(
           // Local mirror of the (immutable) Stripe coupon percent — drives the
           // "· 20% off" phrase on the signup pill without a Stripe call.
           customerPercentOff: data.customerPercentOff,
+          customerDiscountMonths: data.customerDiscountMonths,
           ...commissionColumns(data),
         },
       },
@@ -258,6 +284,7 @@ export async function createPromoCode(raw: unknown): Promise<ActionResult> {
     stripeIds = await provisionStripePromo({
       code,
       customerPercentOff: data.customerPercentOff,
+      months: data.customerDiscountMonths,
       label: `${influencer.displayName} (${code})`,
     });
   } catch (err) {
@@ -271,6 +298,7 @@ export async function createPromoCode(raw: unknown): Promise<ActionResult> {
       stripeCouponId: stripeIds.stripeCouponId,
       stripePromotionCodeId: stripeIds.stripePromotionCodeId,
       customerPercentOff: data.customerPercentOff,
+      customerDiscountMonths: data.customerDiscountMonths,
       ...commissionColumns(data),
     },
   });
@@ -282,6 +310,8 @@ export async function setPromoActive(promoId: string, active: boolean): Promise<
   await requirePlatformAdmin();
   // Best-effort mirror to Stripe; never blocks the local state change.
   const promo = await db.promoCode.findUnique({ where: { id: promoId } });
+  // A replaced code's history row (replacePromoDiscount) stays off: its string belongs to the replacement now.
+  if (active && promo?.code.includes(REPLACED_MARK)) return refused("A replaced code stays off — its subscribers keep earning on it.");
   if (promo && isStripeEnabled() && isStripeWriteAllowed() && !promo.stripePromotionCodeId.startsWith("local_")) {
     try {
       await getStripe().promotionCodes.update(promo.stripePromotionCodeId, { active });
@@ -296,6 +326,118 @@ export async function setPromoActive(promoId: string, active: boolean): Promise<
   await db.promoCode.update({ where: { id: promoId }, data: { active } });
   revalidatePath("/admin/influencers");
   return { ok: true };
+}
+
+/* ── admin: replace a code's discount (owner, 2026-11-14) ──────────────────
+   A Stripe coupon is immutable, and so is the promotion code that names it, so
+   "change the discount" is a NEW coupon and a NEW promotion code under the SAME
+   redeemable string. Only new subscribers meet it: a subscriber who already
+   joined carries the old coupon on their Stripe subscription, untouched.
+
+   THE OLD ROW STAYS, switched off and renamed "<CODE>~<n>" (lib/promoDiscount —
+   outside CODE_RE, so nobody can type or link it, and the string is free for
+   the new row). It keeps its Stripe ids, so lib/stripeSync resolvePromoCode
+   still finds the partner from an existing subscriber's discount, and its
+   attributions keep accruing on its commission terms: the accrual does not
+   read PromoCode.active (lib/stripeSync accrueForInvoice). The new row starts
+   with the SAME commission terms; Edit commission changes them as before.
+
+   ORDER: the old promotion code is switched off at Stripe first (Stripe keeps
+   an active code's string unique), the new pair minted, then both rows written
+   in one transaction. Any step that fails puts Stripe back as it was. */
+const replaceDiscountInput = z.object({
+  promoId: z.string(),
+  customerPercentOff: z.number().gt(0, "A discount is a percent above 0.").max(100),
+  customerDiscountMonths: commissionShape.shape.customerDiscountMonths.removeDefault(),
+});
+
+export async function replacePromoDiscount(raw: unknown): Promise<ActionResult<{ code: string }>> {
+  await requirePlatformAdmin();
+  const parsed = replaceDiscountInput.safeParse(raw);
+  if (!parsed.success) return refusal(parsed.error);
+  const data = parsed.data;
+
+  const old = await db.promoCode.findUnique({
+    where: { id: data.promoId },
+    include: { influencer: { select: { displayName: true } } },
+  });
+  if (!old) return refused("Code not found");
+  if (old.code.includes(REPLACED_MARK)) {
+    return refused("This is a replaced code's history — replace the current code instead.");
+  }
+
+  let retiredCode = "";
+  for (let n = 1; ; n++) {
+    retiredCode = `${old.code}${REPLACED_MARK}${n}`;
+    if (!(await db.promoCode.findUnique({ where: { code: retiredCode }, select: { id: true } }))) break;
+  }
+
+  const stripeLive = isStripeEnabled() && old.stripePromotionCodeId.startsWith("promo_");
+  if (stripeLive) {
+    try {
+      assertStripeWriteAllowed("replace a Stripe promo code");
+      await getStripe().promotionCodes.update(old.stripePromotionCodeId, { active: false });
+    } catch (err) {
+      return refusal(err);
+    }
+  }
+  const restoreOld = async () => {
+    if (stripeLive && old.active) {
+      await getStripe().promotionCodes.update(old.stripePromotionCodeId, { active: true }).catch(() => {});
+    }
+  };
+
+  let ids: { stripeCouponId: string; stripePromotionCodeId: string };
+  try {
+    ids = await provisionStripePromo({
+      code: old.code,
+      customerPercentOff: data.customerPercentOff,
+      months: data.customerDiscountMonths,
+      label: `${old.influencer.displayName} (${old.code})`,
+      active: old.active,
+    });
+  } catch (err) {
+    await restoreOld();
+    return refusal(err);
+  }
+
+  try {
+    await db.$transaction([
+      db.promoCode.update({ where: { id: old.id }, data: { code: retiredCode, active: false } }),
+      db.promoCode.create({
+        data: {
+          influencerId: old.influencerId,
+          code: old.code,
+          active: old.active,
+          stripeCouponId: ids.stripeCouponId,
+          stripePromotionCodeId: ids.stripePromotionCodeId,
+          customerPercentOff: data.customerPercentOff,
+          customerDiscountMonths: data.customerDiscountMonths,
+          commissionType: old.commissionType,
+          commissionRateBps: old.commissionRateBps,
+          commissionFlatCents: old.commissionFlatCents,
+          commissionBasis: old.commissionBasis,
+          durationType: old.durationType,
+          durationMonths: old.durationMonths,
+        },
+      }),
+    ]);
+  } catch (err) {
+    if (isStripeEnabled() && ids.stripePromotionCodeId.startsWith("promo_")) {
+      await getStripe().promotionCodes.update(ids.stripePromotionCodeId, { active: false }).catch(() => {});
+    }
+    await restoreOld();
+    throw err;
+  }
+
+  // The old row's sandbox twin, if one was ever minted, frees the string on the test account too.
+  await setTestTwinActive(old.id, false);
+  console.log(
+    `[influencers] ${old.code} discount replaced: ${discountPhrase(data.customerPercentOff, data.customerDiscountMonths)} for new subscribers; ` +
+      `the old terms (${old.customerPercentOff ?? 0}% · ${discountMonths(old.customerDiscountMonths)} mo) kept as ${retiredCode}`,
+  );
+  revalidatePath("/admin/influencers");
+  return { ok: true, code: old.code };
 }
 
 const commissionEditInput = z

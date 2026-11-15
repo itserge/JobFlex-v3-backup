@@ -29,6 +29,7 @@ import { planLine } from "@/lib/deckAddon";
 import { isToolsSlug, parseToolsRecord, planIdOfKind } from "@/lib/toolPlans/shared";
 import { catalogToolsLines, lineMonthlyCents, toolsRowLabel, type ToolsLine } from "@/lib/toolPlans/numbers";
 import { readToolCatalog } from "@/lib/toolPlans/prices";
+import { baseCode } from "@/lib/promoDiscount";
 
 // The MRR rule itself lives in that module — see its header. This file only
 // establishes the FACTS each rule reads: which organization a subscription
@@ -593,7 +594,7 @@ async function fromStripe(withCards: boolean): Promise<SubscribersData> {
       stripeCustomerId: customerIdOf(sub),
       amountCents,
       currency,
-      promoCode: attr?.promoCode.code ?? null,
+      promoCode: attr ? baseCode(attr.promoCode.code) : null,
       influencerName: attr?.influencer.displayName ?? null,
       currentPeriodEnd: subscriptionPeriodEndDate(sub),
       createdAt: new Date(sub.created * 1000),
@@ -661,7 +662,7 @@ async function fromStripe(withCards: boolean): Promise<SubscribersData> {
       stripeCustomerId: r.externalCustomerId,
       amountCents: 0,
       currency: primaryCurrency,
-      promoCode: attr?.promoCode.code ?? null,
+      promoCode: attr ? baseCode(attr.promoCode.code) : null,
       influencerName: attr?.influencer.displayName ?? null,
       currentPeriodEnd: r.currentPeriodEnd,
       createdAt: r.createdAt,
@@ -836,7 +837,7 @@ async function fromRecord(
       stripeCustomerId: r.externalCustomerId,
       amountCents,
       currency,
-      promoCode: attr?.promoCode.code ?? null,
+      promoCode: attr ? baseCode(attr.promoCode.code) : null,
       influencerName: attr?.influencer.displayName ?? null,
       currentPeriodEnd: r.currentPeriodEnd,
       createdAt: r.createdAt,

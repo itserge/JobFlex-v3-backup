@@ -47,6 +47,8 @@ export interface SignupPromo {
   displayName: string;
   /** Percent off for the customer, when the promo carries one. */
   percentOff: number | null;
+  /** Paid months the percent lasts (lib/promoDiscount; null = 1). A referral is one month. */
+  discountMonths: number | null;
   kind: "promo" | "ref";
 }
 
@@ -169,6 +171,7 @@ export async function applySignupPromo(
       // applies the same number as a coupon, so the price the step shows is
       // the price Stripe charges.
       percentOff: hit.kind === "promo" ? hit.percentOff : REFERRAL_DISCOUNT_PCT,
+      discountMonths: hit.kind === "promo" ? hit.discountMonths : null,
       kind: hit.kind,
     },
   };

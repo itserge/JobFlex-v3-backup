@@ -49,6 +49,7 @@ import { TRADE_TYPES, type TradeType } from "@/lib/tradeTypes";
 import type { EditionId } from "@/lib/editions";
 import { annualDeal, dealDollars, offersYearly, planTerm, sharedDealWords, termFromParam, BILLING_PARAM, type BillingTerm } from "@/lib/planDeal";
 import { firstBillCents } from "@/lib/firstMonthDiscount";
+import { discountPhrase, termDiscountPhrase } from "@/lib/promoDiscount";
 import { PlanCardHead, PlanDealSlot, PlanPrice, PlanTermSwitch, recalledBillingTerm, rememberBillingTerm } from "@/components/billing/PlanTermSwitch";
 import type { UtmParams } from "@/components/v3/landing-e/landing-variants";
 import { GoogleOneTap } from "@/components/auth/google-one-tap";
@@ -504,8 +505,8 @@ export function RegisterContent({
   const freeUntilLine = (cents: number, per: string, monthlyCents: number) => {
     if (!freeUntil) return null;
     if (!requiresCard) return `Free until ${freeUntil}. No card needed.`;
-    // A first-month code takes one month's worth off a yearly bill (lib/firstMonthDiscount).
-    const v = firstBillCents(per === "/yr" ? "YEAR" : "MONTH", cents, monthlyCents, promo?.percentOff ?? 0) / 100;
+    // A code for N months takes N months' worth (up to 12) off a yearly bill (lib/firstMonthDiscount).
+    const v = firstBillCents(per === "/yr" ? "YEAR" : "MONTH", cents, monthlyCents, promo?.percentOff ?? 0, promo?.discountMonths) / 100;
     return `Free until ${freeUntil}, then $${Number.isInteger(v) ? v.toFixed(0) : v.toFixed(2)}${per}`;
   };
   /** The card's "Free until Oct 19, then $405/yr" — the date and the price only (the
@@ -2423,10 +2424,10 @@ export function RegisterContent({
                   promo?.percentOff
                     ? (monthly, yearly) => {
                         const cents = interval === "YEAR" ? yearly : monthly;
-                        const v = firstBillCents(interval, cents, monthly, promo.percentOff ?? 0) / 100;
+                        const v = firstBillCents(interval, cents, monthly, promo.percentOff ?? 0, promo.discountMonths) / 100;
                         return (
                           <span className="pw-save pw-save--code">
-                            <s>{dealDollars(cents)}</s> {promo.percentOff}% off{interval === "YEAR" ? " your first month" : ""} · ${Number.isInteger(v) ? v.toFixed(0) : v.toFixed(2)}
+                            <s>{dealDollars(cents)}</s> {termDiscountPhrase(promo.percentOff ?? 0, promo.discountMonths, interval)} · ${Number.isInteger(v) ? v.toFixed(0) : v.toFixed(2)}
                             {interval === "YEAR" ? "/yr" : "/mo"}
                           </span>
                         );
@@ -2489,11 +2490,11 @@ export function RegisterContent({
                         shown here, against the price it applies to. */}
                     {promo?.percentOff ? (
                       <span className="pw-save pw-save--code">
-                        <s>{dealDollars(cents)}</s> {promo.percentOff}% off{term === "YEAR" ? " your first month" : ""} · $
+                        <s>{dealDollars(cents)}</s> {termDiscountPhrase(promo.percentOff, promo.discountMonths, term)} · $
                         {(() => {
                           // Stripe's own number, to the cent: $22.50, not $23. On a year,
-                          // one month's percent off the year (lib/firstMonthDiscount).
-                          const v = firstBillCents(term, cents, p.priceCents, promo.percentOff) / 100;
+                          // N months' percent off the year (lib/firstMonthDiscount).
+                          const v = firstBillCents(term, cents, p.priceCents, promo.percentOff, promo.discountMonths) / 100;
                           return Number.isInteger(v) ? v.toFixed(0) : v.toFixed(2);
                         })()}
                         {per}
@@ -2736,7 +2737,7 @@ export function RegisterContent({
             {promo ? (
               <p className="pw-promo-ok" role="status">
                 <b>{promo.code}</b>
-                {promo.percentOff ? ` · ${promo.percentOff}% off` : ""} · {promo.displayName}
+                {promo.percentOff ? ` · ${discountPhrase(promo.percentOff, promo.discountMonths)}` : ""} · {promo.displayName}
               </p>
             ) : promoErr ? (
               <p className="err" role="alert">
