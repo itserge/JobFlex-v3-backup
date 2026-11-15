@@ -7,7 +7,7 @@
 //   NODE_PATH="" npx tsx --tsconfig tsconfig.json qa/tests/logic/deck-wall-lock.check.ts
 import { defaultDeckDesign, normalizeDeckDesign, type DeckDesign, type DeckShape } from "@/lib/deck/design";
 import { patchDesign } from "@/lib/deck/edit";
-import { houseForShape, lockedEnd, normalizeHouse, resizeDeckLeft } from "@/lib/deck/house";
+import { houseForShape, lockedEnd, normalizeHouse, resizeDeckLeft, resizeDeckRight } from "@/lib/deck/house";
 import { buildStructure } from "@/lib/deck/structure";
 import { deckScene } from "@/lib/deck/scene";
 import { runCommand } from "@/lib/deck/voice/run";
@@ -107,6 +107,53 @@ console.log("— the 3D and voice —");
   const wider = runCommand(make(true), { do: "size", width: { to: 24 } });
   check("…and 'make it 24 wide' widens the deck past the corner, the house where it was", wider.design.shape.widthFt === 24 && wider.design.house.rightFt === -5, { w: wider.design.shape.widthFt, r: wider.design.house.rightFt });
   check("unlocked, voice reshapes the wall as before", !runCommand(make(false, { jogs: [{ id: "j1", atFt: 8, dir: "away", depthFt: 2 }] }), { do: "house", wall: "straight" }).refused);
+}
+
+// THE RIGHT SIDE PULLED ON THE DRAWING (2026-11-15): the drawing drags the deck's right side in many small moves, each
+// worked out from where the drag started and applied on top of the last. It sent the house as it was at the START with
+// every move, so on a locked wall the second move undid the lock's answer and the house grew with the deck (16 ft of
+// deck pulled to 24: the house went from 24 to 32 ft). Now the right end, like the left, is worked out with its house.
+console.log("— the deck's right side dragged on the drawing —");
+{
+  const L = make(true, { rightFt: 4 });
+  const W = [8, 40] as const;
+  /** The drawing's own way: every move from the drag's start, sent as the drawing sends it, patched onto the last. */
+  const dragRight = (start: DeckDesign, widths: number[]): DeckDesign => {
+    let now = start;
+    for (const w of widths) {
+      const ended = resizeDeckRight(start.house, start.shape, w, W[0], W[1]);
+      const houseMoved = JSON.stringify(ended.house) !== JSON.stringify(now.house);
+      const shapeMoved = JSON.stringify(ended.shape) !== JSON.stringify(now.shape);
+      if (houseMoved || shapeMoved) now = patchDesign(now, { ...(houseMoved ? { house: ended.house } : {}), shape: ended.shape });
+    }
+    return now;
+  };
+  const one = resizeDeckRight(L.house, L.shape, 24, W[0], W[1]);
+  check("locked, the right end taken 8 ft out: the deck is 24 ft, 4 ft past the corner", one.shape.widthFt === 24 && one.house.rightFt === -4 && one.house.locked === true, { w: one.shape.widthFt, r: one.house.rightFt });
+  const dragged = dragRight(L, [16.5, 17, 18, 19, 20, 20.5, 21, 22, 23, 24]);
+  check("…dragged there in ten small moves: the same deck, and the house exactly where it was", dragged.shape.widthFt === 24 && dragged.house.rightFt === -4 && same(houseFromLeft(dragged), houseFromLeft(L)), { w: dragged.shape.widthFt, r: dragged.house.rightFt, house: houseFromLeft(dragged) });
+  const sliver = resizeDeckRight(L.house, L.shape, 20.5, W[0], W[1]);
+  check("…half a foot past the corner stops AT the corner", sliver.shape.widthFt === 20 && sliver.house.rightFt === 0, { w: sliver.shape.widthFt, r: sliver.house.rightFt });
+  const two = resizeDeckRight(L.house, L.shape, 21.5, W[0], W[1]);
+  check("…a foot and a half past goes the least 2 ft past", two.shape.widthFt === 22 && two.house.rightFt === -2, { w: two.shape.widthFt, r: two.house.rightFt });
+  const back = dragRight(L, [20, 24, 20, 16]);
+  check("…dragged out and back to where it started: the deck and the house as they were", back.shape.widthFt === 16 && back.house.rightFt === 4 && same(houseFromLeft(back), houseFromLeft(L)), { w: back.shape.widthFt, r: back.house.rightFt });
+  const narrower = dragRight(L, [15, 14, 12]);
+  check("…pushed in 4 ft: the wall takes it back, the house where it was", narrower.shape.widthFt === 12 && narrower.house.rightFt === 8 && same(houseFromLeft(narrower), houseFromLeft(L)), { w: narrower.shape.widthFt, r: narrower.house.rightFt });
+  const still = resizeDeckRight(L.house, L.shape, 16, W[0], W[1]);
+  check("…not moved: the same house and shape handed back", still.house === L.house && still.shape === L.shape);
+  // A front in parts with a cut corner (the deck the bug was seen on): the lock holds the same.
+  const shaped = normalizeDeckDesign({ ...L, shape: { kind: "wall", widthFt: 16, depthFt: 12, back: [{ x0Ft: 0, x1Ft: 16, yFt: 0 }], front: [{ x0Ft: 0, x1Ft: 3, yFt: 7 }, { x0Ft: 3, x1Ft: 16, yFt: 12, clipRightFt: 3 }] } });
+  const shapedOut = dragRight(shaped, [17, 18.5, 20, 22, 24]);
+  check("a shaped deck against a locked wall, its right side dragged out: 24 ft wide, the house where it was", shapedOut.shape.widthFt === 24 && shapedOut.house.rightFt === -4 && same(houseFromLeft(shapedOut), houseFromLeft(shaped)), { w: shapedOut.shape.widthFt, r: shapedOut.house.rightFt });
+  // A house from its photo, not locked: the wall gives up what the deck took, from the drag's start.
+  const photo = make(false, { rightFt: 6, photo: { url: "data:image/png;base64,x", w: 1200, h: 800, read: null, wallFt: 26, by: "width", deckAtFt: 4, at: "2026-11-15" } });
+  const photoOut = dragRight(photo, [17, 18, 19, 20]);
+  check("a photo's wall, not locked: 4 ft wider takes 4 ft of the wall past the end — the house where it was", photoOut.shape.widthFt === 20 && photoOut.house.rightFt === 2 && same(houseFromLeft(photoOut), houseFromLeft(photo)), { w: photoOut.shape.widthFt, r: photoOut.house.rightFt, photo: !!photo.house.photo });
+  // A house drawn by rule, unlocked: as it was — the house keeps its reach past the deck's end.
+  const rule = make(false, { rightFt: 4 });
+  const ruleOut = resizeDeckRight(rule.house, rule.shape, 20, W[0], W[1]);
+  check("a house by rule, unlocked: the house handed back untouched (it follows the deck's end, as before)", ruleOut.house === rule.house && ruleOut.shape.widthFt === 20);
 }
 
 console.log(bad ? `\n${bad} FAILED` : "\nALL PASS");
