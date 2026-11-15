@@ -31,8 +31,12 @@ export type DemoFilm = {
   body: string;
   /** What the film shows, for a screen reader. */
   label: string;
-  /** The line over it, when not DEMO_CAPTION. */
-  caption?: string;
+  /** The line over it, when not DEMO_CAPTION; null: no line. */
+  caption?: string | null;
+  /** false: the app frame without its address bar. */
+  bar?: false;
+  /** Plays even for a visitor who asked for reduced motion (no ▶ for them). */
+  playAlways?: true;
 };
 
 /* The codecs as the files carry them (render-demo.js: x264 High, libvpx-vp9),
@@ -74,8 +78,10 @@ export const DEMO_FILMS: Record<DemoFilmKey, DemoFilm> = {
     path: "www.jobflex.app/dashboard/deck-estimator",
     body: "#efeee9",
     label: "JobFlex Deck Studio: a deck laid out, sized, framed to code in 3D, railed, roofed, priced and sent as a proposal",
-    // The film's own opening card: "From the first click to the client's signature, in ninety seconds."
-    caption: "Real product demo · first click to signature in 90 seconds",
+    // Owner, 2026-11-15: no line over it, no address bar, and it plays by itself for everyone.
+    caption: null,
+    bar: false,
+    playAlways: true,
   },
 };
 

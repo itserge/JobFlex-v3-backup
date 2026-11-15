@@ -125,6 +125,11 @@ export function Hero({
             )}
           </h1>
           </HeroExperiment>
+          {variant.titleLine ? (
+            <p className="lp-enter lp-fold-sub" data-entrance="sub">
+              {variant.titleLine}
+            </p>
+          ) : null}
           <div className="lp-fold-gap" aria-hidden />
           {/* Two builds of the same screen, not one build clipped: the desktop
               plate's 208px sidebar and four-across KPI row cannot survive a
@@ -151,7 +156,7 @@ export function Hero({
           <div className="lp-fold-gap" aria-hidden />
           {/* The one button, a thumb wide on a phone. */}
           <div className="lp-enter lp-fold-cta" data-entrance="cta">
-            <a href={registerHref} className={`lp-btn-dark lp-cta lp-cta--solid lp-trial-cta${words.length > 30 ? " lp-cta--long" : ""}`} data-cta="hero">
+            <a href={registerHref} className={`lp-btn-dark lp-cta lp-cta--solid lp-trial-cta${variant.ctaBlue ? " lp-cta--blue" : ""}${words.length > 30 ? " lp-cta--long" : ""}`} data-cta="hero">
               {words}
             </a>
           </div>
