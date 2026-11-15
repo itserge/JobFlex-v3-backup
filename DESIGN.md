@@ -425,7 +425,10 @@ monthly" is one 12px line (weight 600) under the price.
   Builder, Remodeler, Job Projects — and each workspace, and every project in
   it, wears its own colour as `--space` (lib/projectSpaces): teal `#0e6b67`,
   violet `#5a3fa8`, the blueprint blue `#1854a0`, with an 8% wash of each for
-  bands. Approved additions to the palette for this use only: they mark which
+  bands — the globals.css tokens `--space-build`, `--space-remodel`,
+  `--space-jobs` and their `-wash` (since 2026-11-14; SPACES reads them by
+  `var()`). Approved additions to the palette for this use, and for the Deck
+  Studio's stage cards (below): they mark which
   workspace a surface belongs to and never mean good or bad — the status
   colours (success, warning, danger) keep those meanings. A workspace's card
   and header carry a line drawing in ink with its colour where the eye should
@@ -490,7 +493,13 @@ shell keeps the switch. The same exception covers the homeowner portal `/home/*`
 Deck estimator (owner refinements, 2026-10-18): use one continuous scrolling
 form in the left column, with all sections available together. No clickable
 step strip, Back/Next wizard, or returning-user summary screen. Give each
-section its own numbered white card. First choose the structure; second set
+section its own numbered white card. The cards wear the three workspace
+tokens in turn by position (owner, 2026-11-14: 1 teal, 2 violet, 3 blue, 4
+teal…): the card's frame and number, its option cards' frames (widths
+unchanged), and the chosen card — frame doubled inside, a light `-wash` fill,
+ink text; ticks and checkboxes fill with the colour. Fields, selects,
+steppers, buttons and the code-check calls keep their own colours; no plate
+behind the cards. First choose the structure; second set
 its size and house placement, with House & ground inside that same card.
 Retain disclosures for optional detail. The compact form
 scale lives under `.jf-deck-v1 .v1-q` in `globals.css`: 20px questions, 16px
