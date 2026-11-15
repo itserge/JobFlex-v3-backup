@@ -45,6 +45,7 @@ import { STAIR_POST_CLEAR_IN, type RoofFrame } from "./roof";
 import { RULE_HIP, RULE_RAFTER, RULE_RIDGE, RULE_ROOF_LOAD, RULE_TIES } from "./roofTables";
 import { BETWEEN_LEVELS_STAIR_ID, betweenLevelsStair, type DeckStructure } from "./structure";
 import { FLIGHT_MAX_RISE_IN, LANDING_DEPTH_IN, STAIR_HEADROOM_IN, WRAP_STEP_MAX_RISERS, stairRules, stairTurnWords } from "./stairs";
+import { SEAT_GAP_MAX_IN } from "./edgeSeat";
 import { SNOW_TABLE_MAX_PSF, TERMITE_LABEL, deckLoadForSnow, roofLoadForSnow } from "./site";
 import { POST_ACTUAL_IN, STAIR_MIN_WIDTH_IN } from "./codeTables";
 import { FRAMING_SPECIES, defaultFramingSpecies, speciesWords } from "./catalog";
@@ -1009,6 +1010,29 @@ function guardAndStairChecks(s: DeckStructure, add: (c: DeckCheck) => void): voi
         add({ id: `${tag}-landing-out-${k + 1}`, level: "info", part: where, text: `A landing asked for ${asked ? ftIn(asked.heightIn) : "there"} above the ground has no room on this stair: a landing stands a foot at least from the deck, the ground and the next landing.`, rule: SR.landing, fix: { label: "Take that landing off", patch: { stairs: design.stairs.map((d) => (d.id === st.design.id ? { ...d, landings: d.landings.filter((l) => l.id !== lid) } : d)) } } });
       });
       if (st.flags.hitsHouse) add({ id: `${tag}-house`, level: "fail", part: where, text: "The stair turns into the house's wall. Turn it the other way at its landing, or move the stair along the deck.", rule: SR.width });
+      // ITS HEAD ON A BOW OR A CORNER CUT AT AN ANGLE (2026-11-15; lib/deck/edgeSeat — the owner: "if the stairs attach to
+      // the radius deck, make sure they attach right… make it a smart check"): the flight is turned to the edge and its
+      // head touches it. Where the edge bends away behind the head by more than a header on blocking makes up, it says so.
+      if (st.seat) {
+        const deg = Math.round(Math.abs(st.seat.turnDeg));
+        const turned = deg >= 1 ? `turned ${deg}° to stand square to the deck's edge where it leaves` : "square to the deck's edge where it leaves";
+        const gap = Math.round(st.seat.gapIn * 10) / 10;
+        const seatRule = "Professional Deck Builder — stairs off a curved rim: a straight header blocked to the rim";
+        if (st.seat.gapIn > SEAT_GAP_MAX_IN) {
+          const wide = st.design.widthFt > 4;
+          const sideFt = st.design.side === "front" ? design.shape.widthFt : design.shape.depthFt;
+          const fix = wide
+            ? { label: "Make the stair 4 ft wide", patch: { stairs: design.stairs.map((d) => (d.id === st.design.id ? { ...d, widthFt: 4 } : d)) } }
+            : Math.abs(st.design.atFt - sideFt / 2) > 0.5
+              ? { label: `Move it to the middle of the ${st.design.side}`, patch: { stairs: design.stairs.map((d) => (d.id === st.design.id ? { ...d, atFt: Math.round(sideFt) / 2 } : d)) } }
+              : undefined;
+          add({ id: `${tag}-seat`, level: "warn", part: where, text: `The deck's edge bends ${gap} in. away behind the head of this stair — more than the ${SEAT_GAP_MAX_IN} in. a straight header on blocking makes up. Make the stair narrower, slide it to a straighter stretch of the edge, or use steps that wrap the deck: they follow its edge.`, rule: seatRule, ...(fix ? { fix } : {}) });
+        } else if (st.seat.gapIn > 0) {
+          add({ id: `${tag}-seat`, level: "pass", part: where, text: `The stair is ${turned}, its head against the edge. The edge bends ${gap} in. away behind the head at the most: the deck's boards run straight across the head there, on a straight header blocked off the bent rim; the stringers hang on the header.`, rule: seatRule });
+        } else {
+          add({ id: `${tag}-seat`, level: "pass", part: where, text: `The stair is ${turned}: its head lies flat on the edge, the stringers on the rim.`, rule: seatRule });
+        }
+      }
       if (st.flags.underDeckClearIn !== null) {
         if (st.flags.underDeckClearIn < STAIR_HEADROOM_IN) add({ id: `${tag}-headroom`, level: "warn", part: where, text: `The stair runs back under the deck with ${ftIn(st.flags.underDeckClearIn)} over its treads to the deck's joists: ${ftIn(STAIR_HEADROOM_IN)} is wanted to walk there. Turn it the other way, or put the landing lower.`, rule: cite(code, "R311.7.2", "6 ft 8 in. of headroom over a stair") });
         else add({ id: `${tag}-headroom`, level: "pass", part: where, text: `The stair runs back under the deck with ${ftIn(st.flags.underDeckClearIn)} over its treads to the deck's joists (${ftIn(STAIR_HEADROOM_IN)} at least).`, rule: cite(code, "R311.7.2", "6 ft 8 in. of headroom over a stair") });

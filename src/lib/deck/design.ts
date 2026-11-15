@@ -736,7 +736,8 @@ export const DECK_LIMITS = {
   railFt: { min: 0, max: 400 },
   demoSqFt: { min: 0, max: 4000 },
   railCustomPerFt: { min: 0, max: 1000 },
-  bulgeFt: { min: 1, max: 8 },
+  // (Half a foot — 2026-11-15: a bow pulled in by hand goes down to a gentle 6 in.)
+  bulgeFt: { min: 0.5, max: 8 },
   clipFt: { min: 1, max: 6 },
   groundSnowPsf: { min: 0, max: 300 },
 } as const;

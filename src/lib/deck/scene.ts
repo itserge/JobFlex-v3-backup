@@ -27,6 +27,7 @@ import type { DeckSurface } from "./surface";
 import { FLASH_LEG_IN, type RoofMember, type RoofPlane } from "./roof";
 import { POST_ACTUAL_IN, ftIn } from "./codeTables";
 import { deckGrips } from "./byHand";
+import { BOW_SIDES, bowOf, bowRadiusWords } from "./curve";
 import { ROOFING_LABEL, hasDeck, shapeOutline, sizeWords, structureWords, type DeckDesign, spaRectIn } from "./design";
 import { outsideRunOn, ringEdges } from "./ringEdges";
 import type { DeckStructure } from "./structure";
@@ -132,7 +133,7 @@ export const SCENE_MAX_GLOWS = 120;
 
 /** A handle: dragging it along `axis` (scene feet) changes `kind` from `value` by the distance dragged. */
 export interface SceneHandle {
-  kind: "width" | "width-left" | "depth" | "height" | "eave" | "stair" | "stair-width" | "lower-depth" | "roof-width" | "roof-depth" | "pitch" | "jog" | "house-left" | "house-right" | "post" | "beam" | "roof-post" | "builtin";
+  kind: "width" | "width-left" | "depth" | "bow" | "height" | "eave" | "stair" | "stair-width" | "lower-depth" | "roof-width" | "roof-depth" | "pitch" | "jog" | "house-left" | "house-right" | "post" | "beam" | "roof-post" | "builtin";
   id: string;
   x: number;
   y: number;
@@ -1190,6 +1191,13 @@ export function deckScene(s: DeckStructure): DeckScene {
       handles.push({ kind: "width-left", id: "width-left", x: r3(X0), y: r3(sideD / 2), z: r3(frame.surfaceIn + 1), axis: "x", value: design.shape.widthFt, perUnit: 1, follow: -1, label: "Width — the deck's left end" });
     }
     handles.push({ kind: "depth", id: "depth", x: r3(Wd / 2), y: r3(Dd), z: r3(frame.surfaceIn + 1), axis: "y", value: design.shape.depthFt, perUnit: 1, label: "Depth out from the house" });
+    // THE BOW (2026-11-15 — the owner: "I click on the radius — make me a toggle to move out and move in, to make a
+    // bigger radius or a smaller radius"): a knob on the arc's own middle. Pulled out the side bows more, pushed in
+    // less — a foot of travel a foot of bow (lib/deck/curve bowPatch).
+    for (const side of BOW_SIDES) {
+      const bow = bowOf(design.shape, side);
+      if (bow > 0) handles.push({ kind: "bow", id: side, x: r3(Wd / 2), y: r3(Dd + bow * 12), z: r3(frame.surfaceIn + 1), axis: "y", value: bow, perUnit: 1, label: `Bow of the ${side} — ${bowRadiusWords(design.shape, side)}` });
+    }
     handles.push({ kind: "height", id: "height", x: r3(Wd), y: r3(Dd), z: r3(frame.surfaceIn), axis: "z", value: design.heightIn, perUnit: 1 / 12, label: "Deck height" });
     if (s.lower && s.lower.place === "front") handles.push({ kind: "lower-depth", id: "lower-depth", x: r3(s.lower.offsetXIn + (design.lower.widthFt * 12) / 2), y: r3(s.lower.offsetYIn + design.lower.depthFt * 12), z: r3(s.lower.frame.surfaceIn + 1), axis: "y", value: design.lower.depthFt, perUnit: 1, label: "Lower level depth" });
   }

@@ -36,6 +36,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { DECK_LIMITS, shapeOutline, type DeckShape } from "@/lib/deck/design";
+import { BOW_STEP_FT, bowOf, bowPatch, bowRadiusWords } from "@/lib/deck/curve";
 import {
   FRONT_HAND,
   clipFrontCorner,
@@ -106,7 +107,7 @@ function samePick(a: WallPick | null, b: WallPick | null): boolean {
   return a.kind === "deck";
 }
 
-type DragKind = "jog" | "left" | "right" | "part" | "deck-right" | "deck-left" | "deck-front" | "deck-slide" | "pan" | "front-part" | "front-pull" | "front-step" | "side-left" | "side-right" | "corner";
+type DragKind = "jog" | "left" | "right" | "part" | "deck-right" | "deck-left" | "deck-front" | "bow" | "deck-slide" | "pan" | "front-part" | "front-pull" | "front-step" | "side-left" | "side-right" | "corner";
 const sameShape = (a: DeckShape, b: DeckShape) => a === b || JSON.stringify(a) === JSON.stringify(b);
 interface Drag {
   kind: DragKind;
@@ -634,6 +635,10 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
     } else if (d.kind === "deck-front") {
       const depthFt = clamp(half(p.y), DECK_LIMITS.depthFt.min, DECK_LIMITS.depthFt.max);
       if (depthFt !== D) onChange({ shape: { ...shape, depthFt } });
+    } else if (d.kind === "bow") {
+      // THE BOW BY HAND (2026-11-15): the round handle rides the arc's middle — out, the front bows more; in, less.
+      const next = bowPatch({ shape }, "front", p.y - D);
+      if (next) onChange({ shape: next.shape });
     } else if (d.kind === "deck-left") {
       // The deck's left end is the drawing's origin: as it moves, the house (and the pointer's frame, held from the
       // start) shifts under it — so the width is taken from where the drag began, not from the width of the moment
@@ -1102,6 +1107,34 @@ export function HouseWallPlan({ shape, house, onChange, size = "small", onOpenLa
           <title>The deck&apos;s front edge: deeper or shallower</title>
         </rect>
       )}
+      {/* THE BOW BY HAND (2026-11-15 — the owner: "I click on the radius — make me a toggle to move out and move in"):
+          a round handle on the arc's own middle. Out, the front bows more (a tighter radius); in, less. */}
+      {bowed ? (
+        <circle
+          cx={W / 2}
+          cy={D + bowOf(shape, "front")}
+          r={handleR}
+          className={cx(s.wallDeckHandle, s.wallDeckHandleNS)}
+          onPointerDown={(e) => start(e, "bow", { kind: "deck" })}
+          onKeyDown={(e) => {
+            const by = e.key === "ArrowDown" || e.key === "+" || e.key === "=" ? BOW_STEP_FT : e.key === "ArrowUp" || e.key === "-" ? -BOW_STEP_FT : 0;
+            const next = by ? bowPatch({ shape }, "front", bowOf(shape, "front") + by) : null;
+            if (!next) return;
+            e.preventDefault();
+            remember(house, shape);
+            onChange({ shape: next.shape });
+          }}
+          onFocus={() => setPick({ kind: "deck" })}
+          data-deck-wall-handle="bow"
+          data-deck-bow-ft={bowOf(shape, "front")}
+          tabIndex={0}
+          role="slider"
+          aria-label={`The bow of the front: ${ft(bowOf(shape, "front"))} at the middle, ${bowRadiusWords(shape, "front")}`}
+          aria-valuenow={bowOf(shape, "front")}
+        >
+          <title>The bow: pull out for more, push in for less</title>
+        </circle>
+      ) : null}
       {fparts.slice(0, -1).map((q, i) => {
         const nx = fparts[i + 1];
         const a = stepPick(i);

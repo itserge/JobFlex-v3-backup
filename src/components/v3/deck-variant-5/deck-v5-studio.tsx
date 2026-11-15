@@ -21,6 +21,7 @@ import { useRouter } from "next/navigation";
 import type { Route } from "next";
 import { resolveMarket, parseStateZip, type MarketSnapshot } from "@/lib/fence/market";
 import { leftEndPatch } from "@/lib/deck/frontByHand";
+import { bowPatch } from "@/lib/deck/curve";
 import { DECKING, DECKING_BRAND_LABEL, DECKING_BRAND_ORDER, DECKING_FAMILY_LABEL, DECKING_FAMILY_ORDER, FRAMING_SPECIES, RAIL_TYPES, WALL_TYPES, defaultDecking, defaultFramingSpecies, treatedDecking, wallType, type DeckingFamily, type DeckingProduct } from "@/lib/deck/catalog";
 import { regionalPicks, regionalWords } from "@/lib/deck/regional";
 import { LEDGER_FASTENER_LABEL, LOADS, POST_SIZES, SOLID_BEAMS, ftIn, solidBeamTabulated, type LoadPsf, type SoilPsf } from "@/lib/deck/codeTables";
@@ -493,6 +494,12 @@ export function DeckV5Studio({ initialBook, homeState, initialAddress, clientId,
           // (2026-11-14) The deck's LEFT end: the house stays put, the left part of a front in parts takes the change.
           const moved = leftEndPatch(design, e.value);
           if (moved) patch(moved);
+          break;
+        }
+        case "bow": {
+          // (2026-11-15) The knob on the arc: the side bows out as far as it is pulled, to 3 in.
+          const bowed = bowPatch(design, e.id, e.value);
+          if (bowed) patch(bowed);
           break;
         }
         case "depth":

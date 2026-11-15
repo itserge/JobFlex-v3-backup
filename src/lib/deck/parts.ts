@@ -30,6 +30,7 @@
 
 import { BRACE_ABOVE_IN, JOIST_SIZES, POST_ACTUAL_IN, POST_SIZES, SOLID_BEAMS, SPACINGS, ftIn } from "./codeTables";
 import { wallType } from "./catalog";
+import { BOW_SIDES, bowLimits, bowOf, bowRadiusWords, withBow } from "./curve";
 import { addBeam, addPostUnder, addRoofPost, deckGrips, gripOfPart, removeBeamLine, removePost, roofCornerSides, roofSideOf, type DeckGrip } from "./byHand";
 import { applyDeckPatch, deckChecks, type DeckPatch } from "./checks";
 import { BUILT_UP_CHOICES, braceSizesFor, RAIL_MOUNT_LABEL, RAIL_MOUNT_WORDS, RAIL_SECTION_LABEL, ROOF_POST_LIMITS, ROOF_SIDE_LABEL, defaultRoofOpening, type DeckDesign, type RailSectionKey, type RoofDesign } from "./design";
@@ -479,6 +480,20 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
 
     case "rim": {
       const choices: PartChoice[] = !lower && d.framing.doubleRim ? [{ id: "single-rim", tone: "remove", label: "Single rim and outside joists", note: "One board instead of two around the outside: less lumber; rail posts then need blocking behind them.", patch: { framing: { doubleRim: false } } }] : !lower ? [{ id: "double-rim", tone: "add", label: "Double the rim and the outside joists", patch: { framing: { doubleRim: true } } }] : [];
+      // THE BOW, FROM THE RIM ITSELF (2026-11-15 — the owner: "I click on the radius — make me a toggle to move out and
+      // move in, to make a bigger radius or a smaller radius"): a row of bows either side of the one it has, half a
+      // foot apart; the radius each makes is said with it. (Both floors of a double deck share the one outline.)
+      for (const side of BOW_SIDES) {
+        const now = bowOf(d.shape, side);
+        if (!(now > 0)) continue;
+        const { min, max } = bowLimits(d.shape, side);
+        const offers = [...new Set([now - 1, now - 0.5, now, now + 0.5, now + 1].map((v) => Math.round(Math.max(min, Math.min(max, v)) * 12) / 12))];
+        for (const v of offers) {
+          const next = withBow(d.shape, side, v);
+          if (!next) continue;
+          choices.push({ id: `bow-${side}-${Math.round(v * 12)}`, tone: "size", row: `Bow of the ${side} — out for a tighter curve, in for a gentler one`, label: ftIn(Math.round(v * 12)), note: `The ${side} bows out ${ftIn(Math.round(v * 12))} at its middle: ${bowRadiusWords(next, side)}.`, patch: { shape: next }, current: v === now });
+        }
+      }
       return card("Rim", "The rim closes the joists' ends and takes the rail posts' bolts.", choices, "The joists' ends are fastened to it: it stays.");
     }
 
