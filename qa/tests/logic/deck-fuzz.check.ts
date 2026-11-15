@@ -19,7 +19,7 @@ import { deckElevation, elevationOverlay, defaultPlacement } from "../../../src/
 import { deckConvertSchema } from "../../../src/lib/deck/convertSchema";
 import { DECK_RATES } from "../../../src/lib/deck/rates";
 import { FRAMING_SPECIES, DECKING, WALL_TYPES, RAIL_TYPES } from "../../../src/lib/deck/catalog";
-import { addOpening, editOpening, wallOpenings } from "../../../src/lib/deck/wallOpenings";
+import { addOpening, addOpeningAt, editOpening, wallOpenings } from "../../../src/lib/deck/wallOpenings";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const nA = Number(process.argv[2] ?? 3000), nB = Number(process.argv[3] ?? 3000);
@@ -340,6 +340,7 @@ function exercise(d: DeckDesign, tag: string, out: string[]) {
           ["swapped", editOpening(s0, pickAt.id, { choice: pickAt.kind === "window" ? "window3" : "slider4" })],
           ["sized", editOpening(s0, pickAt.id, { widthFt: pickAt.w + 3.5, heightFt: pickAt.h - 0.75 })],
           ["added", addOpening(s0, "door2")?.patch ?? null],
+          ["put by a click", addOpeningAt(s0, pickAt.kind === "window" ? "window" : "door", pickAt.x + 4.3, pickAt.sill + 1.1)?.patch ?? null],
         ];
         for (const [what, p] of tries) {
           if (!p) continue;
@@ -349,7 +350,7 @@ function exercise(d: DeckDesign, tag: string, out: string[]) {
           if (new Set(after.drawn.map((o) => o.id)).size !== after.drawn.length) { out.push(`a window or door ${what} by hand: two of one name  [${tag}]`); break; }
           const hit = after.drawn.some((a, i) => after.drawn.some((b, j) => j > i && Math.abs(a.face - b.face) < 0.05 && Math.min(a.x + a.w / 2, b.x + b.w / 2) - Math.max(a.x - a.w / 2, b.x - b.w / 2) > 0.02 && Math.min(a.sill + a.h, b.sill + b.h) - Math.max(a.sill, b.sill) > 0.02));
           if (hit) { out.push(`a window or door ${what} by hand: two drawn on one spot  [${tag}]`); break; }
-          if (what !== "added" && pickAt.kind !== "garage" && wall.byRule && !after.drawn.some((o) => o.id === pickAt.id) && after.list.some((o) => o.id === pickAt.id) && what === "moved") { out.push(`a window or door moved by hand is gone from the picture  [${tag}]`); break; }
+          if (what !== "added" && what !== "put by a click" && pickAt.kind !== "garage" && wall.byRule && !after.drawn.some((o) => o.id === pickAt.id) && after.list.some((o) => o.id === pickAt.id) && what === "moved") { out.push(`a window or door moved by hand is gone from the picture  [${tag}]`); break; }
         }
       }
     }

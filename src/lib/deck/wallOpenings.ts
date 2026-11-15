@@ -143,6 +143,26 @@ function doorFloor(o: HouseOpening, sillFt: number, floors: OpeningFloors): Hous
   return { ...o, floor, upFt: 0, sillFt: toInchFt(floor === "deck" ? floors.deckFt : low) };
 }
 
+/**
+ * WHERE IT LANDS: where it was put when that is clear — else the nearest clear place along the wall, an inch at a time
+ * up to 12 ft either way, looked for first on the `from` side. A door gives way only to another door (a window in a
+ * door's way is the one cut back in the picture), a window to everything. `keep` holds it to a stretch of the wall.
+ */
+function beside(s: DeckStructure, d: { shape: DeckShape; ctx: HouseSceneCtx }, list: readonly HouseOpening[], o: HouseOpening, top: number, floors: OpeningFloors, from: 1 | -1, keep?: (c: HouseOpening) => boolean, reachIn = 144): HouseOpening | null {
+  const inWay = o.kind === "window" ? undefined : (k: HouseOpening) => k.kind !== "window";
+  if (clear(list, o, inWay) && (!keep || keep(o))) return o;
+  for (let i = 1; i <= reachIn; i++) {
+    for (const side of [from, -from]) {
+      const x = o.xFt + (side * i) / 12;
+      const cand = anchored(onWall(s, d, { ...o, xFt: x }, top), floors);
+      // (Held back by the wall's end: no place there.)
+      if (Math.abs(cand.xFt - x) > 0.011 || (keep && !keep(cand))) continue;
+      if (clear(list, cand, inWay)) return cand;
+    }
+  }
+  return null;
+}
+
 export interface OpeningChange {
   /** Its middle along the house, ft from the deck's left end. */
   xFt?: number;
@@ -199,25 +219,9 @@ export function editOpening(s: DeckStructure, id: string, change: OpeningChange)
     }
     next = at(lo);
   } else if (!pick && moved && !sized) {
-    const inWay = next.kind === "window" ? undefined : (k: HouseOpening) => k.kind !== "window";
-    if (!clear(now.list, next, inWay)) {
-      const from = o.xFt >= next.xFt ? 1 : -1;
-      let found: HouseOpening | null = null;
-      for (let i = 1; i <= 144 && !found; i++) {
-        for (const side of [from, -from]) {
-          const x = next.xFt + (side * i) / 12;
-          const cand = anchored(onWall(s, d, { ...next, xFt: x }, top), floors);
-          // (Held back by the wall's end: no place there.)
-          if (Math.abs(cand.xFt - x) > 0.011) continue;
-          if (clear(now.list, cand, inWay)) {
-            found = cand;
-            break;
-          }
-        }
-      }
-      if (!found) return null;
-      next = found;
-    }
+    const found = beside(s, d, now.list, next, top, floors, o.xFt >= next.xFt ? 1 : -1);
+    if (!found) return null;
+    next = found;
   }
   if (next.xFt === o.xFt && next.sillFt === o.sillFt && next.widthFt === o.widthFt && next.heightFt === o.heightFt && next.kind === o.kind && next.panels === o.panels && next.floor === o.floor && !now.byRule) return null;
   return write(s, now.list.map((q) => (q.id === id ? next : q)), now.sketch);
@@ -252,6 +256,86 @@ export function addOpening(s: DeckStructure, choiceKey: string, xFt?: number): {
     if (clear(now.list, made)) return { patch: write(s, [...now.list, made], now.sketch), id: made.id };
   }
   return null;
+}
+
+/** How near a middle or a column must be for a new one to go to it, ft (9 in.). */
+const MAGNET_FT = 0.75;
+/** How far above or below a row of windows a click still means that row, ft. */
+const ROW_REACH_FT = 2.5;
+/** How far from the click a new one may land when its place is taken, in. */
+const CLICK_REACH_IN = 60;
+
+/**
+ * PUT WHERE THE WALL WAS CLICKED (2026-11-15 — the owner: "when I want to add a door or a window, I just select door or
+ * window and click on the wall where it's supposed to be, and you find the right spot — in line with the deck if it's
+ * a door, or in line with the window — and then I can move it or adjust the size. Make it smart."). `xFt` along the
+ * house, `zFt` up the wall: where the click landed.
+ *   · A DOOR stands on a floor: the deck's where the click is over the deck's stretch of the wall, a double deck's
+ *     lower floor where it is over that one's — over both, the floor whose doorway the click's height is in — and the
+ *     ground beside them. It is kept wholly on that floor's stretch (a door by the deck's end opens onto the deck, not
+ *     past it) and goes to the stretch's middle when put within 9 in. of it.
+ *   · A WINDOW lines up with the row it was clicked in: the sill and the height of the nearest window whose height the
+ *     click is at — or, clicked between rows, of the nearer row within 2½ ft. With no row near, its middle goes under
+ *     the pointer — its sill 3 ft above a floor when that is within a foot. Within 9 in. of the middle of a window of another row, it goes over or under that one.
+ *   · Put onto another opening, it lands beside it, as a move does — within 5 ft of the click; with no room there,
+ *     nothing is added (null).
+ */
+export function addOpeningAt(s: DeckStructure, choiceKey: string, xFt: number, zFt: number): { patch: DeckPatch; id: string } | null {
+  const d = houseDrawn(s);
+  const now = wallOpenings(s);
+  const pick = [...DOOR_CHOICES, ...WINDOW_CHOICES].find((c) => c.key === choiceKey);
+  if (!d || !now || !pick || now.list.length >= OPENING_LIMITS.count || !Number.isFinite(xFt) || !Number.isFinite(zFt)) return null;
+  const floors = openingFloors(s.design);
+  const top = houseScene(d.shape, s.design.house, d.ctx).heightFt;
+  let n = now.list.length + 1;
+  while (now.list.some((q) => q.id === `h${n}`)) n++;
+  const id = `h${n}`;
+  let base: HouseOpening;
+  let keep: ((c: HouseOpening) => boolean) | undefined;
+  if (pick.kind === "window") {
+    // The row it was clicked in — or, clicked between two rows (within 2½ ft of one), the nearer row: a window between
+    // the rows of a wall would line up with nothing.
+    const off = (o: DrawnOpening) => (zFt < o.sill - 0.5 ? o.sill - 0.5 - zFt : zFt > o.sill + o.h + 0.5 ? zFt - (o.sill + o.h + 0.5) : 0);
+    const row = now.drawn.filter((o) => o.kind === "window" && off(o) <= ROW_REACH_FT).sort((a, b) => off(a) - off(b) || Math.abs(a.x - xFt) - Math.abs(b.x - xFt))[0];
+    if (row) {
+      const of = now.list.find((q) => q.id === row.id);
+      base = { id, kind: "window", xFt, widthFt: pick.widthFt, heightFt: row.h, sillFt: row.sill, panels: pick.panels, ...(of?.floor ? { floor: of.floor, upFt: of.upFt ?? 0 } : {}) };
+    } else {
+      let sillFt = Math.max(0.5, zFt - WINDOW_HEIGHT_FT / 2);
+      let stands: { floor: "deck" | "lower"; upFt: number } | null = null;
+      for (const [floor, at] of [["deck", floors.deckFt], ["lower", floors.lowerFt ?? 0]] as const) {
+        if (Math.abs(sillFt - (at + WINDOW_UP_FT)) <= 1) {
+          sillFt = at + WINDOW_UP_FT;
+          stands = { floor, upFt: WINDOW_UP_FT };
+          break;
+        }
+      }
+      base = { id, kind: "window", xFt, widthFt: pick.widthFt, heightFt: WINDOW_HEIGHT_FT, sillFt, panels: pick.panels, ...(stands ?? {}) };
+    }
+    const column = now.drawn.filter((o) => o.kind === "window" && Math.abs(o.x - xFt) <= MAGNET_FT && (o.sill + o.h <= base.sillFt + 0.01 || o.sill >= base.sillFt + base.heightFt - 0.01)).sort((a, b) => Math.abs(a.x - xFt) - Math.abs(b.x - xFt))[0];
+    if (column) base.xFt = column.x;
+  } else {
+    const half = pick.widthFt / 2;
+    const stretches: Array<{ floor: "deck" | "lower"; at: number; x0: number; x1: number }> = [
+      ...(d.ctx.mainEdge ? [{ floor: "deck" as const, at: floors.deckFt, x0: d.ctx.mainEdge.x0, x1: d.ctx.mainEdge.x1 }] : []),
+      ...(d.ctx.lower ? [{ floor: "lower" as const, at: d.ctx.lower.floorFt, x0: d.ctx.lower.x0, x1: d.ctx.lower.x1 }] : []),
+    ].filter((f) => f.x1 - f.x0 >= pick.widthFt + 0.5 && xFt >= f.x0 - half && xFt <= f.x1 + half);
+    const on = stretches.find((f) => zFt >= f.at - 0.5 && zFt <= f.at + DOOR_HEIGHT_FT + 0.5) ?? stretches.filter((f) => f.at <= zFt + 0.5).sort((a, b) => b.at - a.at)[0] ?? stretches.sort((a, b) => Math.abs(a.at - zFt) - Math.abs(b.at - zFt))[0];
+    if (on) {
+      const mid = (on.x0 + on.x1) / 2;
+      const x = Math.abs(xFt - mid) <= MAGNET_FT ? mid : clamp(xFt, on.x0 + 0.25 + half, on.x1 - 0.25 - half);
+      base = { id, kind: pick.kind, xFt: x, widthFt: pick.widthFt, heightFt: DOOR_HEIGHT_FT, sillFt: on.at, panels: pick.panels, floor: on.floor, upFt: 0 };
+      keep = (c) => c.xFt - c.widthFt / 2 >= on.x0 + 0.2 && c.xFt + c.widthFt / 2 <= on.x1 - 0.2;
+    } else {
+      // Beside the deck: a door at the ground (on the wall by its own height: no floor of the deck's to follow).
+      base = { id, kind: pick.kind, xFt, widthFt: pick.widthFt, heightFt: DOOR_HEIGHT_FT, sillFt: 0, panels: pick.panels };
+    }
+  }
+  const put = anchored(onWall(s, d, base, top), floors);
+  // (Within 5 ft of the click: a place farther off is not where it was put — nothing is added, and the studio says so.)
+  const made = beside(s, d, now.list, put, top, floors, -1, keep, CLICK_REACH_IN) ?? (keep ? beside(s, d, now.list, put, top, floors, -1, undefined, CLICK_REACH_IN) : null);
+  if (!made) return null;
+  return { patch: write(s, [...now.list, made], now.sketch), id };
 }
 
 /** "These are the real doors and windows" (the deck is checked against them) — or a picture again. */
