@@ -70,6 +70,7 @@ export function DeckPlan({
   grips,
   onMoveGrip,
   onPickGrip,
+  level = "upper",
 }: {
   structure: DeckStructure;
   placing?: "stair" | null;
@@ -85,20 +86,27 @@ export function DeckPlan({
   grips?: readonly DeckGrip[];
   onMoveGrip?: (grip: DeckGrip, at: number, done: boolean) => void;
   onPickGrip?: (grip: DeckGrip) => void;
+  /** A double deck whose lower floor is shaped on its own (2026-11-14; lib/deck/doubleDeck): which deck's frame is drawn. */
+  level?: "upper" | "lower";
 }) {
   const { frame: frameIn, roof: roofIn } = structure;
   const frame = show === "roof" ? null : frameIn;
-  const roof = show === "floor" ? null : roofIn;
+  // (The lower deck's own plan has no roof over it: the roof is the upper deck's.)
+  const lowerPlan = level === "lower" && structure.lower?.place === "under" && !!structure.design.lower.shape;
+  const roof = show === "floor" || lowerPlan ? null : roofIn;
   const outlineOnly = show === "roof" ? frameIn : null;
   // A DOUBLE DECK (2026-11-13): the lower deck is framed on the upper deck's own lines, so one plan is both — drawn
   // once, with a word saying so (two frames laid on one another were unreadable).
   const under = structure.lower?.place === "under" ? structure.lower : null;
-  const levels = structureLevels(structure).filter((l) => !(under && l.id === "lower"));
-  const underNote = under ? `double deck · the lower deck ${ftIn(under.frame.surfaceIn)} high, framed on the same lines: ${under.frame.joistSize} @ ${under.frame.spacingIn}", ${[...new Set(under.frame.beams.map((b) => b.spec.size))].join(" and ")} ${under.frame.beams.length === 1 ? "beam" : "beams"} let into the posts` : "";
+  // …unless it was shaped on its own (2026-11-14): then each deck has a plan of its own, picked by `level`.
+  const ownLower = !!under && !!structure.design.lower.shape;
+  const lowerOnly = ownLower && level === "lower";
+  const levels = structureLevels(structure).filter((l) => (lowerOnly ? l.id === "lower" : !(under && l.id === "lower")));
+  const underNote = !under || lowerOnly ? "" : ownLower ? `double deck · lower deck shaped on its own: its own plan` : `double deck · the lower deck ${ftIn(under.frame.surfaceIn)} high, framed on the same lines: ${under.frame.joistSize} @ ${under.frame.spacingIn}", ${[...new Set(under.frame.beams.map((b) => b.spec.size))].join(" and ")} ${under.frame.beams.length === 1 ? "beam" : "beams"} let into the posts`;
   const svgRef = React.useRef<SVGSVGElement>(null);
   const eave = roof?.eaveRing ?? [];
   // The roof's framing plan draws no stairs (2026-11-13): their footprints made its frame larger and the roof smaller.
-  const drawnStairs = show === "roof" ? [] : structure.stairs;
+  const drawnStairs = show === "roof" ? [] : lowerPlan ? structure.stairs.filter((st) => st.level === "lower") : structure.stairs;
   const xs = [...levels.flatMap((l) => l.frame.zones.flatMap((z) => [z.zone.x0 + l.offsetXIn, z.zone.x1 + l.offsetXIn])), ...eave.map((p) => p.x), ...(roof ? [0] : []), ...drawnStairs.flatMap((st) => st.footprint.map((p) => p.x))];
   const ys = [...levels.flatMap((l) => l.frame.zones.flatMap((z) => [z.zone.y0 + l.offsetYIn, z.zone.y1 + l.offsetYIn])), ...eave.map((p) => p.y), ...(roof ? [0] : []), ...drawnStairs.flatMap((st) => st.footprint.map((p) => p.y))];
   const minX = Math.min(...xs, 0);
@@ -165,7 +173,7 @@ export function DeckPlan({
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", up);
   };
-  const liveGrips = onMoveGrip && grips && show === "all" ? grips.filter((g) => !g.fixed) : [];
+  const liveGrips = onMoveGrip && grips && show === "all" && !lowerPlan ? grips.filter((g) => !g.fixed) : [];
   const heldGrip = held ? liveGrips.find((g) => g.kind === held.kind && g.id === held.id) : undefined;
 
   /** A click in placing mode: the nearest open edge of a level, and where along it. */
@@ -316,7 +324,7 @@ export function DeckPlan({
       {outlineOnly ? <polygon points={shapeOutline(outlineOnly.design.shape).map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke="var(--muted-light)" strokeWidth={lw * 1.4} strokeDasharray={`${lw * 6} ${lw * 4}`} /> : null}
       {frame ? levels.map((l) => levelDrawing(l.frame, l.offsetXIn, l.offsetYIn, l.id === "lower", l.surface)) : null}
       {/* The stairs: the footprint and every tread line. */}
-      {(show === "roof" ? [] : structure.stairs).map((st) => {
+      {drawnStairs.map((st) => {
         const pts = st.footprint.map((p) => `${p.x},${p.y}`).join(" ");
         const treads = st.members.filter((m) => m.role === "tread" || m.role === "box-tread" || m.role === "landing-tread");
         return (
