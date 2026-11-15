@@ -662,6 +662,9 @@ export function runCommand(d0: DeckDesign, cmd: DeckCommand, env: RunEnv = {}): 
       return out(patchDesign(d, { electrical: p }, settle), said, { flash: [{ label: "Panel to the structure" }], light: { label: "Panel to the structure", step: "step-electrical" } });
     }
     case "house": {
+      // A LOCKED WALL (2026-11-14) is not reshaped by voice either: its look still changes, its shape and its reach do
+      // not until it is unlocked. (The deck past its corner is the deck's move: the house stays — that one goes on.)
+      if (d.house.locked && (cmd.wall || cmd.widthFt || cmd.leftFt || cmd.rightFt)) return no("The house wall is locked, so it stays as it is. Tap \"Unlock the wall\" — on the drawing from above, under the 3D, or in the House step — then say it again.");
       let house = { ...d.house };
       const said: string[] = [];
       if (cmd.storeys) {

@@ -25,6 +25,7 @@ import { SCREEN_RAIL_CLEAR_IN, buildBuiltIns, type BuiltInBuild, type BuiltInsIn
 import { buildElectrical, type ElectricalBuild } from "./electrical";
 import { defaultFramingSpecies, framingSpecies } from "./catalog";
 import { groundAt as slopeGroundAt, slopeGradePct } from "./site";
+import { houseForLower, lowerFloor, lowerSharing } from "./doubleDeck";
 import { defaultStair, frontEdgeAt, hasDeck, hasLowerLevel, hasRoof, isDoubleDeck, normalizeDeckDesign, shapeOutline, shapeZones, type DeckDesign, type DeckEdge, type StairDesign } from "./design";
 import { deckCodeFor, type DeckStateCode } from "./stateCodes";
 
@@ -196,26 +197,37 @@ export function buildStructure(raw: DeckDesign, opts: StructureOptions = {}): De
     // …or the lower floor of a double deck: the same outline at its own height, hanging on the house as the main deck
     // does, its joists on the main deck's own beam lines and its beams let into the main deck's posts where they pass —
     // no posts or footings of its own. Its joists and beams are read from the tables for the spans those lines make.
+    // SHAPED ON ITS OWN (2026-11-14; lib/deck/doubleDeck — the owner: "show lower / upper to reshape it"): its own
+    // outline and place along the house; its beams on the upper deck's lines where they pass over it, seated in the
+    // upper's posts where those stand inside it, and on beams and posts of its own beyond.
+    const lf = lowerFloor(design);
     const lowerDesign = normalizeDeckDesign({
       ...design,
+      ...(lf.own ? { shape: lf.shape, house: houseForLower(design.house, design.shape.widthFt, lf) } : {}),
       heightIn: design.lower.heightIn,
       structure: "deck",
       floor: "deck",
-      lower: { ...design.lower, on: false },
+      lower: { ...design.lower, on: false, shape: undefined, offsetFt: undefined },
       stairs: [],
       photo: null,
       spa: { ...design.spa, on: false },
       framing: { ...design.framing, bracesOff: [], pins: [], beamLines: [], backOverhangFt: "auto", postSpacingFt: "auto" },
     });
     const lowerOpts = { ...opts, groundAt };
-    let lowerFrame = buildDeckFrame(lowerDesign, { ...lowerOpts, follow: frame });
+    const build = (upper: DeckFrame) => {
+      if (!lf.own) return buildDeckFrame(lowerDesign, { ...lowerOpts, follow: upper });
+      const share = lowerSharing(upper, lf);
+      const shared = normalizeDeckDesign({ ...lowerDesign, framing: { ...lowerDesign.framing, beamLines: share.beamLines, pins: share.pins } });
+      return buildDeckFrame(shared, { ...lowerOpts, seatOn: share.seatOn });
+    };
+    let lowerFrame = build(frame);
     // Too near the ground for a beam under its joists: both decks take flush beams — the posts are the same posts.
     const front = design.shape.kind === "rect" ? design.shape.front : undefined;
     if (lowerFrame.flags.droppedDoesNotFit && frame.beamStyle === "dropped" && design.framing.beamStyle === "auto" && (!front || front.kind === "straight")) {
       frame = buildDeckFrame({ ...design, framing: { ...design.framing, beamStyle: "flush" } }, deckOpts);
-      lowerFrame = buildDeckFrame(lowerDesign, { ...lowerOpts, follow: frame });
+      lowerFrame = build(frame);
     }
-    lower = { design: lowerDesign, frame: lowerFrame, surface: deckSurface(lowerFrame), offsetXIn: 0, offsetYIn: 0, dropIn: design.heightIn - design.lower.heightIn, place: "under" };
+    lower = { design: lowerDesign, frame: lowerFrame, surface: deckSurface(lowerFrame), offsetXIn: Math.round(lf.offsetFt * 12), offsetYIn: 0, dropIn: design.heightIn - design.lower.heightIn, place: "under" };
   } else if (frame && hasLowerLevel(design)) {
     const lw = Math.round(design.lower.widthFt * 12);
     const offsetXIn = design.lower.align === "left" ? 0 : design.lower.align === "right" ? W - lw : Math.round((W - lw) / 2);

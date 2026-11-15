@@ -757,6 +757,10 @@
 .quiet { display: contents; }
 
 /* The doors and windows on the wall, from a photo of the house (2026-10-23). */
+/* The wall's lock (2026-11-14): the pad's toggle, dark while the wall is locked. */
+.wallLockBtn { font-weight: 800; }
+.wallLockOn, :global(.jf-blueprint .content) .wallLockOn { background: var(--ink); border-color: var(--ink); color: #fff; }
+.wallLockOn:hover, :global(.jf-blueprint .content) .wallLockOn:hover { color: #fff; background: color-mix(in srgb, var(--ink) 85%, #fff); }
 /* The deck's own edges, shaped by hand (2026-11-14): a wide strip over each edge takes the hand; it shows under the pointer. */
 .wallEdge { fill: none; stroke: transparent; stroke-linecap: butt; cursor: ns-resize; pointer-events: stroke; }
 .wallEdgeSide { fill: none; stroke: transparent; stroke-linecap: butt; cursor: ew-resize; pointer-events: stroke; }

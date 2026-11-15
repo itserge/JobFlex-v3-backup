@@ -218,7 +218,7 @@ export function buildSequence(m: PlanModel, list: MaterialList): BuildPhase[] {
       // A DOUBLE DECK (2026-11-13): the lower deck's beams go into the posts before the upper frame goes on.
       ...(s.lower?.place === "under"
         ? [
-            `Double deck — the posts run in ONE piece from the footings to the upper beams. From one level line, mark the lower beams' underside on every post (${ftInFrac(Math.max(0, Math.min(...s.lower.frame.beams.map((b) => b.bottomIn))), 8)} above grade); cut a seat 1 1/2" deep per ply; set each lower beam in its seats and bolt it with two 1/2" through bolts and washers at every post (${s.lower.frame.seats.length} seats).`,
+            `Double deck — the posts run in ONE piece from the footings to the upper beams. From one level line, mark the lower beams' underside on every post (${ftInFrac(Math.max(0, Math.min(...s.lower.frame.beams.map((b) => b.bottomIn))), 8)} above grade); cut a seat 1 1/2" deep per ply; set each lower beam in its seats and bolt it with two 1/2" through bolts and washers at every post (${s.lower.frame.seats.length} seats).${s.lower.frame.posts.length ? ` The lower deck is shaped on its own: its other ${s.lower.frame.posts.length} ${s.lower.frame.posts.length === 1 ? "post stands" : "posts stand"} on footings of ${s.lower.frame.posts.length === 1 ? "its" : "their"} own, cut to the lower beams' underside.` : ""}`,
             "Frame the lower deck first — ledger, beams in their seats, joists — and work off it to frame the upper deck.",
           ]
         : []),
