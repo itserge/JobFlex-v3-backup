@@ -54,6 +54,7 @@ import { deckPast, pastWords } from "./house";
 import { railHeldWords, railMountLine } from "./rails";
 import { borderWords, breakerWords } from "./surface";
 import { SKIRT_GAP_IN, SKIRT_GROUND_CLEAR_IN, SKIRT_MIN_IN } from "./skirt";
+import { ACCESSORY_GROUP_LABEL, STAIR_LANDING_IN, accessoryGroupOf } from "./builtins";
 import { BENCH_BACK_IN, BENCH_SEAT_IN, BUILT_IN_LABEL, FIRE_HEIGHT_IN, HOT_CLEAR_IN, HOT_OVERHEAD_IN, KITCHEN_DEPTH_IN, KITCHEN_HEIGHT_IN, SCREEN_GAP_IN, SCREEN_WIND_PSF, builtInWords, planGap } from "./builtins";
 
 /** A change to a design, part by part; anything left out stays as it is. */
@@ -201,7 +202,11 @@ export function deckChecks(s: DeckStructure): DeckCheck[] {
   if (frame) {
     const guarded = s.rails.required;
     for (const b of s.builtIns) {
-      const PART = "Benches and planters";
+      // (Each kind under its own heading, as the studio's Accessories step groups them — 2026-11-14.)
+      const PART = ACCESSORY_GROUP_LABEL[accessoryGroupOf(b.kind)];
+      const byHand = !!b.design.spot;
+      // A seat placed by hand away from every open edge is not beside a guard.
+      const besideGuard = !byHand || frame.edges.some((e) => !e.house && planGap(b.footprint, [{ x: e.x0, y: e.y0 }, { x: e.x1, y: e.y1 }]) < 24);
       const name = builtInWords(b).replace(/^a /, "A ").replace(/^an /, "An ");
       const others = (design.extras.builtIns ?? []).filter((x) => x.id !== b.design.id);
       if (!b.built) {
@@ -284,16 +289,17 @@ export function deckChecks(s: DeckStructure): DeckCheck[] {
         });
       } else {
         const seat = `the seat ${BENCH_SEAT_IN} in. above the deck, three boards deep, on ${b.supports} supports (4x4 legs under a 2x4 cleat, no more than 4 ft apart) with solid blocking between the joists under each`;
-        const guardNote = guarded
+        const guardNote = guarded && besideGuard
           ? b.kind === "bench-back"
             ? " Its back is not a guard: the railing behind it still does that work, and a seat beside a guard is a step up for a child — some building offices want the guard 36 in. above the seat there (the code measured it so until 2012). Ask before you build."
             : " A seat beside a guard is a step up for a child: the code measures the guard from the deck, but some building offices want it 36 in. above the seat there (the code measured it so until 2012). Ask before you build, or set the bench away from the edge."
           : "";
         add({ id: `builtin-${b.design.id}`, level: "pass", part: PART, text: `${name}: ${seat}${b.kind === "bench-back" ? `; a back of two boards and a cap on 4x4 posts ${BENCH_BACK_IN} in. tall, each bolted to the frame` : ""}.${fitted}${guardNote}` });
       }
-      if (b.flags.onStair) add({ id: `builtin-${b.design.id}-stair`, level: "fail", part: PART, text: `${name} stands across the top of a stair: nobody can get down it. Move one of them along the edge, or shorten the ${b.kind === "planter" ? "planter" : b.kind === "screen" ? "screen" : b.kind === "kitchen" ? "island" : b.kind === "fire" ? "table" : "bench"}.`, fix: { label: "Take it off", patch: { extras: { builtIns: others } } } });
-      if (b.flags.onSteps) add({ id: `builtin-${b.design.id}-steps`, level: "warn", part: PART, text: `${name} stands along an edge the wide steps run on: the steps behind it lead nowhere. Wrap the steps round fewer sides, or move it to an edge without steps.` });
-      if (b.flags.overlaps.length && b.flags.overlaps.some((id) => id > b.design.id)) add({ id: `builtin-${b.design.id}-overlap`, level: "warn", part: PART, text: `${name} and another built-in stand on the same boards. Shorten one, or move it along its edge, so the two meet without crossing.` });
+      if (b.flags.onStair && byHand) add({ id: `builtin-${b.design.id}-stair`, level: "fail", part: PART, text: `${name} stands within ${STAIR_LANDING_IN} in. of the top of a stair: the code wants a clear landing there, as wide as the stair and ${STAIR_LANDING_IN} in. deep. Drag it farther from the stair in the 3D.`, fix: { label: "Take it off", patch: { extras: { builtIns: others } } } });
+      else if (b.flags.onStair) add({ id: `builtin-${b.design.id}-stair`, level: "fail", part: PART, text: `${name} stands across the top of a stair: nobody can get down it. Move one of them along the edge, or shorten the ${b.kind === "planter" ? "planter" : b.kind === "screen" ? "screen" : b.kind === "kitchen" ? "island" : b.kind === "fire" ? "table" : "bench"}.`, fix: { label: "Take it off", patch: { extras: { builtIns: others } } } });
+      if (b.flags.onSteps) add({ id: `builtin-${b.design.id}-steps`, level: "warn", part: PART, text: byHand ? `${name} stands at an edge the wide steps run on: it blocks the way down there. Drag it in from that edge.` : `${name} stands along an edge the wide steps run on: the steps behind it lead nowhere. Wrap the steps round fewer sides, or move it to an edge without steps.` });
+      if (b.flags.overlaps.length && b.flags.overlaps.some((id) => id > b.design.id)) add({ id: `builtin-${b.design.id}-overlap`, level: "warn", part: PART, text: `${name} and another accessory stand on the same boards. ${byHand || s.builtIns.some((o) => b.flags.overlaps.includes(o.design.id) && o.design.spot) ? "Drag one of them clear in the 3D" : "Shorten one, or move it along its edge"}, so the two do not cross.` });
     }
   }
   // SKIRTING (2026-11-14; lib/deck/skirt): what hangs under the deck, said where the builder looks — and where none

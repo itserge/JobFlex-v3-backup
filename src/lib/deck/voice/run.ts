@@ -77,7 +77,7 @@ function carryRoof(next: DeckDesign, old: RoofDesign | null, fromStructure: stri
 }
 
 export type ViewChange = Partial<{ tab: "3d" | "plan" | "wall"; xray: boolean; night: boolean; connections: boolean; build: "play" | "stop" | "done"; full: boolean; reset: boolean; look: Look; edit: boolean }>;
-export type GoStep = "kind" | "size" | "house" | "materials" | "stairs" | "roof" | "extras" | "checks" | "package";
+export type GoStep = "kind" | "size" | "house" | "materials" | "stairs" | "accessories" | "roof" | "extras" | "checks" | "package";
 
 /** A field of the form to flash where it was changed, inside its section when the label is not unique. */
 export interface Flash {
@@ -766,7 +766,7 @@ export function runCommand(d0: DeckDesign, cmd: DeckCommand, env: RunEnv = {}): 
         const left = list.filter((b) => !(benchLike(b.kind) && (!cmd.side || b.side === cmd.side)));
         if (left.length === list.length) return no(`There's no ${one}${cmd.side ? ` along the ${cmd.side === "front" ? "front" : `${cmd.side} end`}` : ""} on this deck.`);
         const gone = list.length - left.length;
-        return out(patchDesign(d, { extras: { builtIns: left } }, settle), [`Took ${gone === 1 ? `the ${one}` : `${gone} ${many}`} off.`], { flash: [{ label: "Built-in benches and planters" }] });
+        return out(patchDesign(d, { extras: { builtIns: left } }, settle), [`Took ${gone === 1 ? `the ${one}` : `${gone} ${many}`} off.`]);
       }
       if (!hasDeck(d)) return no(`A ${label} is built into a deck's boards — this design has no deck under it.`);
       if (list.length >= BUILT_IN_LIMITS.count) return no(`That's ${BUILT_IN_LIMITS.count} built-ins already — the most the studio draws. Take one off first.`);
@@ -787,7 +787,7 @@ export function runCommand(d0: DeckDesign, cmd: DeckCommand, env: RunEnv = {}): 
       // (A kitchen or a fire table: whether the checks have a warning for it — what stands too near, what is over it.)
       const flagged = (built.kind === "kitchen" || built.kind === "fire") && deckChecks(buildStructure(next)).some((c) => c.id === `builtin-${id}` && c.level === "warn");
       const more = built.kind === "kitchen" ? `: 30 in. deep and 36 in. high, in the deck's own boards — about ${Math.round(built.weightLb / 10) * 10} lb with a stone top and a grill, so the ${built.sisters} joists under it are doubled. The top, the grill, gas and power are by others${flagged ? ". The checks have a warning for where it stands" : ""}` : built.kind === "fire" ? ` — the table itself is by others, and nothing is built for it. Keep 36 in. clear of anything that burns${flagged ? "; the checks name what stands nearer" : ""}. Gas only on a deck` : built.kind === "screen" ? `: the deck's own boards across ${built.posts} ${built.postSize} posts, in the railing's place there. It catches wind like a fence — about ${Math.round(built.windLb / 10) * 10} lb on each post — so every post runs down and bolts to the frame${(cmd.heightFt ?? SCREEN_DEFAULT_FT) > 6 ? "; over 6 ft, have an engineer size them" : ""}` : built.kind === "planter" ? ` in the deck's own boards, ${Math.round(built.heightIn)} in. high — about ${Math.round(built.weightLb / 10) * 10} lb full of wet soil${built.overBeam ? ", over a beam line" : "; no beam runs under it, so see the checks"}` : `: the seat 18 in. up, three boards deep, on ${built.supports} supports${built.kind === "bench-back" ? ", with a capped back 36 in. tall" : ""}`;
-      return out(next, [`${words}${more}.${built.flags.shortened && cmd.lengthFt !== undefined ? ` ${built.flags.beside ? "Beside the other built-in there is room for" : "That edge has room for"} ${Math.round((built.lengthIn / 12) * 10) / 10} ft.` : ""}${built.flags.onStair ? " It stands across a stair's top — move one of them." : ""}`], { flash: [{ label: "Built-in benches and planters" }], view: { look: "yard" as const } });
+      return out(next, [`${words}${more}.${built.flags.shortened && cmd.lengthFt !== undefined ? ` ${built.flags.beside ? "Beside the other built-in there is room for" : "That edge has room for"} ${Math.round((built.lengthIn / 12) * 10) / 10} ft.` : ""}${built.flags.onStair ? " It stands across a stair's top — move one of them." : ""}`], { view: { look: "yard" as const } });
     }
     case "item": {
       const items = [...d.extras.items];

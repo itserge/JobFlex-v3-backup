@@ -108,7 +108,7 @@ import { fieldLight, type FieldFocus } from "@/lib/deck/fieldParts";
 import type { PlanEdgeHit } from "@/components/v3/deck-estimator-blueprint/deck-plan";
 import { nearestStairEdge } from "@/components/v3/deck-estimator-blueprint/deck-plan";
 import { SKIRT_KINDS, SKIRT_LABEL } from "@/lib/deck/skirt";
-import { BUILT_IN_KINDS, BUILT_IN_LABEL, BUILT_IN_LIMITS, BUILT_IN_SIDES, BUILT_IN_SIDE_LABEL, SCREEN_DEFAULT_FT, defaultBuiltIn, type BuiltIn } from "@/lib/deck/builtins";
+import { ACCESSORY_GROUPS, ACCESSORY_GROUP_KINDS, ACCESSORY_GROUP_LABEL, BUILT_IN_LABEL, BUILT_IN_LIMITS, BUILT_IN_SIDES, BUILT_IN_SIDE_LABEL, SCREEN_DEFAULT_FT, accessoryGroupOf, defaultBuiltIn, type BuiltIn } from "@/lib/deck/builtins";
 import { CUSTOM, CUSTOM_LABEL, CustomBox, Field, FieldScope, Fold, NameInput, NumberInput, Scope, Seg, Toggle, ago, cx, feetText, intText, money, parseFeet, parseInches, priceShow, priceText, type FieldScopeValue } from "./deck-v2-controls";
 import { DeckV2Plan, type Part, type PartHit } from "./deck-v2-plan";
 import { DeckV2ClientLinks } from "./deck-v2-client";
@@ -1266,56 +1266,70 @@ export function DeckV2Studio({ initialBook, homeState, initialAddress, clientId,
         {siteNote ? <p className="v2-hint">{siteNote}</p> : null}
       </div>
       {!withDeck && design.floor === "ground" && r.attach !== "wall" ? <Toggle checked={design.footing.frostAlways} onChange={(v) => patch({ footing: { frostAlways: v } })}>Dig to the frost line anyway</Toggle> : null}
-      {/* BUILT-IN BENCHES AND PLANTERS (2026-11-14; lib/deck/builtins): each along one edge, in the deck's own boards. */}
+      {/* THE ACCESSORIES (2026-11-14; lib/deck/builtins): each kind under its own heading, with its own buttons. (Moved by
+          hand — dragged, turned, placed — in the main studio's 3D; here an accessory placed by hand is said so.) */}
       {withDeck ? (
         <div data-deck-builtins>
-          <p className="v2-hint">Built-in benches and planters: in the deck&apos;s own boards, each along one edge, just inside the railing where there is one.</p>
-          <div className="v2-rows">
-            {(design.extras.builtIns ?? []).map((b, i) => {
-              const list = design.extras.builtIns ?? [];
-              const built = structure.builtIns.find((x) => x.design.id === b.id);
-              const setB = (p: Partial<BuiltIn>) => patch({ extras: { builtIns: list.map((x) => (x.id === b.id ? { ...x, ...p } : x)) } });
-              const name = `${BUILT_IN_LABEL[b.kind]} ${i + 1}`;
-              return (
-                <div key={b.id} className="v2-row v2-row-card" data-deck-builtin={b.id}>
-                  <div className="v2-row-head">
-                    <span className="v2-row-title">{BUILT_IN_LABEL[b.kind]} — {built?.built ? `${feetText(Math.round((built.lengthIn / 12) * 2) / 2).replace(/^(\d+(?:\.\d+)?)$/, "$1 ft")} along the ${BUILT_IN_SIDE_LABEL[b.side].toLowerCase()}` : `not built: ${built?.why ?? "no room"}`}</span>
-                    <button type="button" className="v2-btn v2-btn-sm v2-btn-quiet" onClick={() => patch({ extras: { builtIns: list.filter((x) => x.id !== b.id) } })} data-deck-builtin-remove>Remove</button>
-                  </div>
-                  <div className="v2-grid2">
-                    <Field label="Along the">
-                      <select className="v2-sel" value={b.side} aria-label={`${name}: which edge`} onChange={(e) => setB({ side: e.target.value as BuiltIn["side"], atFt: (e.target.value === "front" ? design.shape.widthFt : design.shape.depthFt) / 2 })}>
-                        {BUILT_IN_SIDES.map((sd) => (
-                          <option key={sd} value={sd}>{BUILT_IN_SIDE_LABEL[sd]}</option>
-                        ))}
-                      </select>
-                    </Field>
-                    <Field label="Its middle" aside={b.side === "front" ? "ft from the left end" : "ft out from the house"}>
-                      <NumberInput label={`${name}: its middle, feet ${b.side === "front" ? "from the deck's left end" : "out from the house"}`} value={b.atFt} parse={parseFeet} format={feetText} min={0} max={b.side === "front" ? design.shape.widthFt : design.shape.depthFt} onCommit={(n2) => setB({ atFt: n2 })} />
-                    </Field>
-                    <Field label="How long" aside="ft">
-                      <NumberInput label={`${name}: how long, feet`} value={b.lengthFt} parse={parseFeet} format={feetText} min={b.kind === "kitchen" ? BUILT_IN_LIMITS.kitchenFt.min : b.kind === "fire" ? BUILT_IN_LIMITS.fireFt.min : BUILT_IN_LIMITS.lengthFt.min} max={b.kind === "planter" ? BUILT_IN_LIMITS.planterFt.max : b.kind === "kitchen" ? BUILT_IN_LIMITS.kitchenFt.max : b.kind === "fire" ? BUILT_IN_LIMITS.fireFt.max : BUILT_IN_LIMITS.lengthFt.max} onCommit={(n2) => setB({ lengthFt: n2 })} />
-                    </Field>
-                    {b.kind === "fire" ? (
-                      <Field label="How far in" aside="ft from that edge to its middle">
-                        <NumberInput label={`${name}: how far in from the edge, feet`} value={b.inFt ?? 6} parse={parseFeet} format={feetText} min={BUILT_IN_LIMITS.inFt.min} max={BUILT_IN_LIMITS.inFt.max} onCommit={(n2) => setB({ inFt: n2 })} />
-                      </Field>
-                    ) : null}
-                    {b.kind === "screen" ? (
-                      <Field label="How high" aside="ft above the deck">
-                        <NumberInput label={`${name}: how high, feet above the deck`} value={b.heightFt ?? SCREEN_DEFAULT_FT} parse={parseFeet} format={feetText} min={BUILT_IN_LIMITS.screenFt.min} max={BUILT_IN_LIMITS.screenFt.max} onCommit={(n2) => setB({ heightFt: n2 })} />
-                      </Field>
-                    ) : null}
-                  </div>
+          {ACCESSORY_GROUPS.map((g) => {
+            const list = design.extras.builtIns ?? [];
+            const mine = list.map((b, i) => ({ b, i })).filter(({ b }) => accessoryGroupOf(b.kind) === g);
+            return (
+              <div key={g} data-deck-accessory-group={g}>
+                <p className="v2-hint">
+                  <b>{ACCESSORY_GROUP_LABEL[g]}</b> — in the deck&apos;s own boards, along an edge.
+                </p>
+                <div className="v2-rows">
+                  {mine.map(({ b, i }) => {
+                    const built = structure.builtIns.find((x) => x.design.id === b.id);
+                    const setB = (p: Partial<BuiltIn>) => patch({ extras: { builtIns: list.map((x) => (x.id === b.id ? { ...x, ...p } : x)) } });
+                    const name = `${BUILT_IN_LABEL[b.kind]} ${i + 1}`;
+                    return (
+                      <div key={b.id} className="v2-row v2-row-card" data-deck-builtin={b.id}>
+                        <div className="v2-row-head">
+                          <span className="v2-row-title">{BUILT_IN_LABEL[b.kind]} — {built?.built ? `${feetText(Math.round((built.lengthIn / 12) * 2) / 2).replace(/^(\d+(?:\.\d+)?)$/, "$1 ft")} ${b.spot ? "placed on the deck by hand" : `along the ${BUILT_IN_SIDE_LABEL[b.side].toLowerCase()}`}` : `not built: ${built?.why ?? "no room"}`}</span>
+                          <button type="button" className="v2-btn v2-btn-sm v2-btn-quiet" onClick={() => patch({ extras: { builtIns: list.filter((x) => x.id !== b.id) } })} data-deck-builtin-remove>Remove</button>
+                        </div>
+                        <div className="v2-grid2">
+                          {!b.spot ? (
+                            <Field label="Along the">
+                              <select className="v2-sel" value={b.side} aria-label={`${name}: which edge`} onChange={(e) => setB({ side: e.target.value as BuiltIn["side"], atFt: (e.target.value === "front" ? design.shape.widthFt : design.shape.depthFt) / 2 })}>
+                                {BUILT_IN_SIDES.map((sd) => (
+                                  <option key={sd} value={sd}>{BUILT_IN_SIDE_LABEL[sd]}</option>
+                                ))}
+                              </select>
+                            </Field>
+                          ) : null}
+                          {!b.spot ? (
+                            <Field label="Its middle" aside={b.side === "front" ? "ft from the left end" : "ft out from the house"}>
+                              <NumberInput label={`${name}: its middle, feet ${b.side === "front" ? "from the deck's left end" : "out from the house"}`} value={b.atFt} parse={parseFeet} format={feetText} min={0} max={b.side === "front" ? design.shape.widthFt : design.shape.depthFt} onCommit={(n2) => setB({ atFt: n2 })} />
+                            </Field>
+                          ) : null}
+                          <Field label="How long" aside="ft">
+                            <NumberInput label={`${name}: how long, feet`} value={b.lengthFt} parse={parseFeet} format={feetText} min={b.kind === "kitchen" ? BUILT_IN_LIMITS.kitchenFt.min : b.kind === "fire" ? BUILT_IN_LIMITS.fireFt.min : BUILT_IN_LIMITS.lengthFt.min} max={b.kind === "planter" ? BUILT_IN_LIMITS.planterFt.max : b.kind === "kitchen" ? BUILT_IN_LIMITS.kitchenFt.max : b.kind === "fire" ? BUILT_IN_LIMITS.fireFt.max : BUILT_IN_LIMITS.lengthFt.max} onCommit={(n2) => setB({ lengthFt: n2 })} />
+                          </Field>
+                          {b.kind === "fire" && !b.spot ? (
+                            <Field label="How far in" aside="ft from that edge to its middle">
+                              <NumberInput label={`${name}: how far in from the edge, feet`} value={b.inFt ?? 6} parse={parseFeet} format={feetText} min={BUILT_IN_LIMITS.inFt.min} max={BUILT_IN_LIMITS.inFt.max} onCommit={(n2) => setB({ inFt: n2 })} />
+                            </Field>
+                          ) : null}
+                          {b.kind === "screen" ? (
+                            <Field label="How high" aside="ft above the deck">
+                              <NumberInput label={`${name}: how high, feet above the deck`} value={b.heightFt ?? SCREEN_DEFAULT_FT} parse={parseFeet} format={feetText} min={BUILT_IN_LIMITS.screenFt.min} max={BUILT_IN_LIMITS.screenFt.max} onCommit={(n2) => setB({ heightFt: n2 })} />
+                            </Field>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </div>
-          {BUILT_IN_KINDS.map((k) => (
-            <button key={k} type="button" className="v2-btn v2-btn-sm" disabled={(design.extras.builtIns ?? []).length >= BUILT_IN_LIMITS.count} onClick={() => patch({ extras: { builtIns: [...(design.extras.builtIns ?? []), defaultBuiltIn(`b${(design.extras.builtIns ?? []).length + 1}-${Date.now().toString(36).slice(-3)}`, k, design.shape.widthFt)] } })} data-deck-builtin-add={k}>
-              + {BUILT_IN_LABEL[k]}
-            </button>
-          ))}
+                {ACCESSORY_GROUP_KINDS[g].map((k) => (
+                  <button key={k} type="button" className="v2-btn v2-btn-sm" disabled={list.length >= BUILT_IN_LIMITS.count} onClick={() => patch({ extras: { builtIns: [...list, defaultBuiltIn(`b${list.length + 1}-${Date.now().toString(36).slice(-3)}`, k, design.shape.widthFt)] } })} data-deck-builtin-add={k}>
+                    + {BUILT_IN_LABEL[k]}
+                  </button>
+                ))}
+              </div>
+            );
+          })}
         </div>
       ) : null}
       {withDeck ? (

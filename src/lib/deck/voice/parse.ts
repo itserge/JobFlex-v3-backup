@@ -466,10 +466,10 @@ function readPlaces(c: string): Read {
   if (/\b(?:save (?:it |this )?(?:as )?(?:a )?proposal|make (?:a |the )?proposal|create (?:a |the )?proposal|turn (?:it|this) into a proposal|convert (?:it |this )?(?:to|into) (?:a )?proposal|write (?:up )?(?:a |the )?proposal)\b/.test(c)) return read([{ do: "save" }], null);
   if (/\b(?:price breakdown|the package|line items|the price list|package (?:and|&) price|break ?down the price|itemi[sz]ed|send (?:it )?to (?:the )?(?:client|customer|homeowner))\b/.test(c)) return read([{ do: "open", what: "package" }], null);
   if (/\b(?:code checks|the checks|check ?list|show (?:me )?the (?:problems|issues|fails))\b/.test(c)) return read([{ do: "open", what: "checks" }], null);
-  const go = /^(?:go to|scroll to|jump to|take me to|open) (?:the )?(size|type|kind|house|materials?|stairs?(?: and rails?)?|rails?|roof|lights|extras|electrical|checks?|package|price) ?(?:section|step|part|page|tab)?$/.exec(c);
+  const go = /^(?:go to|scroll to|jump to|take me to|open) (?:the )?(size|type|kind|house|materials?|stairs?(?: and rails?)?|rails?|accessor(?:y|ies)|roof|lights|extras|electrical|checks?|package|price) ?(?:section|step|part|page|tab)?$/.exec(c);
   if (go) {
     const w = go[1];
-    const to = /size/.test(w) ? "size" : /type|kind/.test(w) ? "kind" : /house/.test(w) ? "house" : /material/.test(w) ? "materials" : /stair|rail/.test(w) ? "stairs" : /roof/.test(w) ? "roof" : /light|extra|electric/.test(w) ? "extras" : /check/.test(w) ? "checks" : "package";
+    const to = /size/.test(w) ? "size" : /type|kind/.test(w) ? "kind" : /house/.test(w) ? "house" : /material/.test(w) ? "materials" : /stair|rail/.test(w) ? "stairs" : /accessor/.test(w) ? "accessories" : /roof/.test(w) ? "roof" : /light|extra|electric/.test(w) ? "extras" : /check/.test(w) ? "checks" : "package";
     return read([{ do: "go", to }], null);
   }
   if (/^(?:start (?:over|fresh|again|from scratch|a new (?:one|deck))|new (?:deck|design)|clear (?:it|everything|the design|all)|reset (?:it|everything|the (?:design|deck)|all)|from scratch|blank (?:slate|deck)|wipe it(?: out)?|begin again|start a new deck)$/.test(c)) return read([{ do: "reset" }], null);

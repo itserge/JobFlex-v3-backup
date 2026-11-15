@@ -183,7 +183,7 @@ export type DeckCommand =
   | { do: "whatif"; then: DeckCommand[]; words: string }
   | { do: "compare"; options: Array<{ words: string; then: DeckCommand[] }> }
   | { do: "open"; what: "permit" | "yard" | "installer" | "package" | "checks" }
-  | { do: "go"; to: "kind" | "size" | "house" | "materials" | "stairs" | "roof" | "extras" | "checks" | "package" }
+  | { do: "go"; to: "kind" | "size" | "house" | "materials" | "stairs" | "accessories" | "roof" | "extras" | "checks" | "package" }
   | { do: "name"; title: string }
   | { do: "address"; text: string }
   | { do: "save" }

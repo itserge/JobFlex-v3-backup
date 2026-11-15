@@ -40,13 +40,15 @@ export interface DeckEdit {
   kind: SceneHandle["kind"];
   id: string;
   value: number;
+  /** An "xy" handle's second number (an accessory dragged across the deck: out from the house, inches). */
+  value2?: number;
   /** The pointer came up: the last value of this drag. */
   done: boolean;
 }
 
 /** The short name beside each edit knob, and which names win a crowded spot (the deck's own size first, the house last). */
-const KNOB_NAME: Record<SceneHandle["kind"], string> = { width: "Width", "width-left": "Width", depth: "Depth", height: "Height", eave: "Post height", pitch: "Pitch", "roof-width": "Roof width", "roof-depth": "Roof depth", "lower-depth": "Lower level", stair: "Move stairs", "stair-width": "Stair width", jog: "Wall step", "house-left": "House corner", "house-right": "House corner", post: "Move post", beam: "Move beam", "roof-post": "Move roof post" };
-const KNOB_RANK: Record<SceneHandle["kind"], number> = { width: 0, "width-left": 0.5, depth: 1, height: 2, eave: 3, pitch: 4, "roof-width": 5, "roof-depth": 6, "lower-depth": 7, "stair-width": 8, stair: 9, "house-left": 10, "house-right": 11, jog: 12, post: 13, beam: 14, "roof-post": 15 };
+const KNOB_NAME: Record<SceneHandle["kind"], string> = { width: "Width", "width-left": "Width", depth: "Depth", height: "Height", eave: "Post height", pitch: "Pitch", "roof-width": "Roof width", "roof-depth": "Roof depth", "lower-depth": "Lower level", stair: "Move stairs", "stair-width": "Stair width", jog: "Wall step", "house-left": "House corner", "house-right": "House corner", post: "Move post", beam: "Move beam", "roof-post": "Move roof post" , builtin: "Accessory" };
+const KNOB_RANK: Record<SceneHandle["kind"], number> = { width: 0, "width-left": 0.5, depth: 1, height: 2, eave: 3, pitch: 4, "roof-width": 5, "roof-depth": 6, "lower-depth": 7, "stair-width": 8, stair: 9, "house-left": 10, "house-right": 11, jog: 12, post: 13, beam: 14, "roof-post": 15 , builtin: 20 };
 
 /** What a touch landed on, for the studio's label and the fixture placer. */
 export interface DeckPick {
@@ -1099,7 +1101,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
     const invalidate = () => { dirty = true; requestFrame(); };
     let content: Built | null = null;
     // A handle drag: the pointer's movement along the handle's axis, read on a plane through the handle; `last` is the value last sent.
-    let drag: { handle: SceneHandle; plane: THREE.Plane; start: THREE.Vector3; last: number } | null = null;
+    let drag: { handle: SceneHandle; plane: THREE.Plane; start: THREE.Vector3; last: number; last2?: number } | null = null;
     // A post or a beam the pointer went down on (SceneHandle.grab), not yet pulled: a pull moves it, letting go is a click.
     let grabDown: { mesh: THREE.Mesh; x: number; y: number } | null = null;
     // THE GRABBED EDGE STAYS UNDER THE POINTER (owner, 2026-10-18). The scene stands on the deck's centre, so a wider
@@ -2705,7 +2707,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       const plane = h.axis === "z" ? new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3(camera.position.x - at.x, 0, camera.position.z - at.z).normalize(), at) : new THREE.Plane(new THREE.Vector3(0, 1, 0), -at.y);
       const start = planePoint(clientX, clientY, plane);
       if (!start) return;
-      drag = { handle: h, plane, start, last: h.value };
+      drag = { handle: h, plane, start, last: h.value, ...(h.axis === "xy" ? { last2: h.value2 ?? 0 } : {}) };
       setDragging(`${h.kind}:${h.id}`);
       pinned = origin(sceneRef.current);
       orbit.enabled = false;
@@ -2716,6 +2718,23 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       const p = planePoint(clientX, clientY, drag.plane);
       if (!p) return;
       const h = drag.handle;
+      // ACROSS THE DECK (2026-11-14: an accessory): both ways at once — along the house and out from it.
+      if (h.axis === "xy") {
+        const vx = h.value + (p.x - drag.start.x) / h.perUnit;
+        const vy = (h.value2 ?? 0) + (p.z - drag.start.z) / h.perUnit;
+        if (!done && Math.hypot(vx - drag.last, vy - (drag.last2 ?? h.value2 ?? 0)) < 2) return;
+        drag.last = vx;
+        drag.last2 = vy;
+        editCbRef.current?.({ kind: h.kind, id: h.id, value: vx, value2: vy, done });
+        if (done) {
+          drag = null;
+          setDragging(null);
+          pinned = null;
+          orbit.enabled = true;
+          renderer.domElement.style.cursor = "";
+        }
+        return;
+      }
       const d = h.axis === "x" ? p.x - drag.start.x : h.axis === "y" ? p.z - drag.start.z : p.y - drag.start.y;
       // `follow`: a handle on something that grows both ways about its centre (a stair's width) travels half the
       // change, so the change is twice the drag to keep it under the pointer.
@@ -2750,8 +2769,8 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
     };
     const hoverHandle = (h: SceneHandle) => {
       clearHover();
-      const now = h.shown ? `${feetInches(Math.max(0, h.shown.sign * (h.value - h.shown.origin)) / 12)} ${h.shown.from}` : h.kind === "pitch" ? `${Math.round(h.value)}:12` : h.perUnit === 1 ? `${Math.round(h.value * 2) / 2} ft` : `${Math.round(h.value)} in.`;
-      pickRef.current?.({ legend: { role: h.label, nominal: now, lengthFt: 0, count: 1, note: h.grab ? "Drag it to move it, an inch at a time — or click it to type its place." : "Drag the knob, or press the arrow keys." }, layer: null, point: [h.x, h.y, h.z], mount: "deck" }, "hover");
+      const now = h.axis === "xy" ? "drag it across the deck" : h.shown ? `${feetInches(Math.max(0, h.shown.sign * (h.value - h.shown.origin)) / 12)} ${h.shown.from}` : h.kind === "pitch" ? `${Math.round(h.value)}:12` : h.perUnit === 1 ? `${Math.round(h.value * 2) / 2} ft` : `${Math.round(h.value)} in.`;
+      pickRef.current?.({ legend: { role: h.label, nominal: now, lengthFt: 0, count: 1, note: h.axis === "xy" ? "Drag it anywhere on the deck — let go by the railing and it lines up there. Click it to turn it." : h.grab ? "Drag it to move it, an inch at a time — or click it to type its place." : "Drag the knob, or press the arrow keys." }, layer: null, point: [h.x, h.y, h.z], mount: "deck" }, "hover");
     };
     const knobKey = (e: KeyboardEvent, h: SceneHandle) => {
       const dir = e.key === "ArrowRight" || e.key === "ArrowUp" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowDown" ? -1 : 0;
@@ -2906,7 +2925,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         if (!k) return;
         const h = m.userData.handle as SceneHandle;
         m.getWorldPosition(knobV);
-        knobT.copy(knobV).add(KNOB_AXIS[h.axis]);
+        knobT.copy(knobV).add(KNOB_AXIS[h.axis === "xy" ? "x" : h.axis]);
         knobV.project(camera);
         knobT.project(camera);
         const off = knobV.z > 1 || Math.abs(knobV.x) > 1.05 || Math.abs(knobV.y) > 1.05;

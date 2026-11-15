@@ -157,7 +157,7 @@ const COMMAND = z.discriminatedUnion("do", [
   z.object({ do: z.literal("show"), part: z.enum(["deck", "size", "height", "joists", "beams", "posts", "footings", "ledger", "decking", "border", "fascia", "frame", "blocking", "braces", "hardware", "rails", "stairs", "roof", "rafters", "headers", "gutters", "ceiling", "walls", "slats", "cupola", "roof-posts", "slab", "lights", "spa", "lower", "house", "electrical"]), fixture: fixtureKind.optional() }),
   z.object({ do: z.literal("ask"), q: z.enum(["compare", "concrete", "footings", "boards", "screws", "lumber", "joists", "beams", "posts", "ledger", "price", "perSqFt", "labor", "area", "height", "stairs", "rail", "permit", "code", "checks", "layout", "frame", "frost", "snow", "load", "roof", "electrical", "spa", "time", "colors", "options", "what", "help", "weight", "lower", "hardware", "wind"]), about: z.string().max(300).optional() }),
   z.object({ do: z.literal("open"), what: z.enum(["permit", "yard", "installer", "package", "checks"]) }),
-  z.object({ do: z.literal("go"), to: z.enum(["kind", "size", "house", "materials", "stairs", "roof", "extras", "checks", "package"]) }),
+  z.object({ do: z.literal("go"), to: z.enum(["kind", "size", "house", "materials", "stairs", "accessories", "roof", "extras", "checks", "package"]) }),
   z.object({ do: z.literal("wish"), text: z.string().max(300), item: z.string().max(80).optional() }),
 ]);
 

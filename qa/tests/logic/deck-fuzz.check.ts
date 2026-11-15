@@ -11,6 +11,8 @@ import { applyDeckPatch, deckChecks } from "../../../src/lib/deck/checks";
 import { deckGrips, moveGrip } from "../../../src/lib/deck/byHand";
 import { buildStructure, structureLevels } from "../../../src/lib/deck/structure";
 import { POST_ACTUAL_IN } from "../../../src/lib/deck/codeTables";
+import { BUILT_IN_INSET_IN, planGap } from "../../../src/lib/deck/builtins";
+import { moveAccessory, placeAccessory, turnAccessory } from "../../../src/lib/deck/accessories";
 import { SKIRT_BAY_MAX_IN, SKIRT_CLEAR_IN, SKIRT_GROUND_CLEAR_IN, SKIRT_MIN_IN, SKIRT_THICK_IN, type SkirtPanel } from "../../../src/lib/deck/skirt";
 import { deckScene, parseDeckScene, sceneBuildLayers, SCENE_LAYERS, SCENE_MAX_BOXES, SCENE_MAX_FOOTINGS, SCENE_MAX_DIAGONALS, SCENE_MAX_POLYS } from "../../../src/lib/deck/scene";
 import { deckElevation, elevationOverlay, defaultPlacement } from "../../../src/lib/deck/elevation";
@@ -188,7 +190,7 @@ function builtInsFor(tag: string, raw: unknown): unknown {
   if (o.extras !== undefined && (typeof o.extras !== "object" || o.extras === null)) return raw;
   const kinds = ["bench", "bench-back", "planter", "screen", "kitchen", "fire"];
   const sides = ["front", "left", "right"];
-  const list: unknown[] = i % 86 === 2 ? [null, "x", { kind: "sofa" }, { kind: "bench", side: 7, atFt: "a", lengthFt: -3 }, { id: "BAD ID", kind: "planter", atFt: 1e9, lengthFt: 1e9 }] : Array.from({ length: 1 + (i % 5) }, (_, k) => ({ id: `q${k}`, kind: kinds[(i + k) % 6], side: sides[(Math.floor(i / 3) + k) % 3], atFt: ((i * 7 + k * 5) % 41) / 2, lengthFt: 2 + ((i + k * 3) % 17) * 1.5, heightFt: 2 + ((i + k) % 8), inFt: 1 + ((i * 3 + k) % 14) }));
+  const list: unknown[] = i % 86 === 2 ? [null, "x", { kind: "sofa" }, { kind: "bench", side: 7, atFt: "a", lengthFt: -3 }, { id: "BAD ID", kind: "planter", atFt: 1e9, lengthFt: 1e9 }] : Array.from({ length: 1 + (i % 5) }, (_, k) => ({ id: `q${k}`, kind: kinds[(i + k) % 6], side: sides[(Math.floor(i / 3) + k) % 3], atFt: ((i * 7 + k * 5) % 41) / 2, lengthFt: 2 + ((i + k * 3) % 17) * 1.5, heightFt: 2 + ((i + k) % 8), inFt: 1 + ((i * 3 + k) % 14), ...((i + k) % 3 === 0 ? { spot: { x: ((i * 37 + k * 53) % 600) - 60, y: ((i * 29 + k * 41) % 480) - 60, turnDeg: ((i + k) * 15) % 360 } } : {}) }));
   return { ...o, extras: { ...((o.extras as object) ?? {}), builtIns: list } };
 }
 type Pt = { x: number; y: number };
@@ -281,13 +283,32 @@ function exercise(d: DeckDesign, tag: string, out: string[]) {
         const mid = (p: Pt, q: Pt) => ({ x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 });
         const c = mid(b.footprint[0], b.footprint[2]);
         if (!tangled && ![c, mid(mid(b.footprint[0], b.footprint[3]), c), mid(mid(b.footprint[1], b.footprint[2]), c)].every((p) => inside(p.x, p.y))) { out.push(`a built-in off the deck  [${tag}]`); break; }
-        if (b.flags.overlaps.length) { out.push(`two built-ins on the same boards  [${tag}]`); break; }
+        if (b.flags.overlaps.length && !b.design.spot && s0.builtIns.some((o) => b.flags.overlaps.includes(o.design.id) && !o.design.spot)) { out.push(`two built-ins along edges on the same boards  [${tag}]`); break; }
+        // One placed by hand: all of it on the deck and clear of every open edge by what stands there.
+        // (The outline's own sides — a bowed front's chords, not the frame's one straight front.)
+        if (b.design.spot && s0.accessoryInput && s0.accessoryInput.sides.some((e) => !e.house && planGap(b.footprint, [{ x: e.x0, y: e.y0 }, { x: e.x1, y: e.y1 }]) < BUILT_IN_INSET_IN.none - 0.02)) { out.push(`an accessory placed by hand over an edge  [${tag}]`); break; }
         if (b.kind === "planter" && !(b.weightLb > 0 && b.psf > 0 && b.soilCuFt > 0)) { out.push(`a planter with no weight  [${tag}]`); break; }
         if (b.kind === "kitchen" && !(b.weightLb > 0 && b.hot.length === 4 && b.sisterLf >= 0 && pkg.lines.some((l) => l.id === "deck-kitchen"))) { out.push(`a kitchen with no weight, no grill or no price  [${tag}]`); break; }
         if (b.kind === "fire" && !(b.weightLb > 0 && b.hot.length === 4)) { out.push(`a fire table with no weight or no flame  [${tag}]`); break; }
         if (b.kind === "screen" && !(b.posts >= 2 && b.sqFt > 0 && b.windLb > 0 && (b.postSize === "4x4" || b.postSize === "6x6"))) { out.push(`a screen with no posts or no wind  [${tag}]`); break; }
       }
       const built = s0.builtIns.filter((b) => b.built);
+      // MOVED BY HAND (lib/deck/accessories): a drag, a turn or a click that answers with a change leaves it built.
+      if (Number(tag.slice(1)) % 6 === 2) {
+        const first = built[0];
+        if (first) {
+          const tries: Array<[string, ReturnType<typeof moveAccessory>]> = [
+            ["drag", moveAccessory(s0, first.design.id, first.footprint[0].x + 37, first.footprint[0].y - 29)],
+            ["turn", turnAccessory(s0, first.design.id, 45)],
+            ["place", placeAccessory(s0, first.design.id, 96, 60)],
+          ];
+          for (const [what, p] of tries) {
+            if (!p) continue;
+            const after = buildStructure(applyDeckPatch(d, p)).builtIns.find((q) => q.design.id === first.design.id);
+            if (!after?.built) { out.push(`an accessory ${what} by hand left it unbuilt: ${after?.why}  [${tag}]`); break; }
+          }
+        }
+      }
       if (built.some((b) => b.kind === "bench" || b.kind === "bench-back") !== pkg.lines.some((l) => l.id === "deck-benches")) out.push(`benches built and priced do not agree  [${tag}]`);
       if (built.some((b) => b.kind === "screen") !== pkg.lines.some((l) => l.id === "deck-screens")) out.push(`screens built and priced do not agree  [${tag}]`);
       // A screen stands in the rail's place: no rail post of the main deck within its stretch.
