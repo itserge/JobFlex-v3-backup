@@ -27,11 +27,59 @@ export function isOutsideScriptError(message: string | null | undefined, filenam
 // (Facebook's and Instagram's in-app browsers — "Error invoking postMessage: Java object is gone"), a cross-origin
 // "Script error." with no stack, the browser's ResizeObserver loop notice. Lower case, one source for the browser's
 // RegExp and the PostHog query's match(lower(message), …) — re2 and JS read it the same.
-export const BROWSER_NOISE_PATTERN = "java object is gone|error invoking postmessage|resizeobserver loop|^\\s*(uncaught\\s+)?script error\\.?\\s*$";
+const WEBVIEW_NOISE_PATTERN = "java object is gone|error invoking postmessage|resizeobserver loop|^\\s*(uncaught\\s+)?script error\\.?\\s*$";
+// A crypto wallet or an extension injected into our page (2026-11-15: an iPad's Brave threw "TypeError: undefined is
+// not an object (evaluating 'window.ethereum.selectedAddress = undefined')" — Brave's built-in wallet, read as
+// "page_error · ours"). Nothing of ours or of our dependencies touches these globals, so their names in the words, or
+// an extension's file in the stack, are the browser's. Lower case; RE2 and JS read it the same.
+export const INJECTED_PATTERN =
+  "\\b(ethereum|solana|tronweb|tronlink|web3|metamask|coinbasewallet|okxwallet|bitkeep|trustwallet)\\b|inpage\\.js|contentscript|[a-z]+(-[a-z]+)*-extension://|webkit-masked-url:";
+export const BROWSER_NOISE_PATTERN = `${WEBVIEW_NOISE_PATTERN}|${INJECTED_PATTERN}`;
+const WEBVIEW_NOISE = new RegExp(WEBVIEW_NOISE_PATTERN, "i");
+const INJECTED = new RegExp(INJECTED_PATTERN, "i");
 const BROWSER_NOISE = new RegExp(BROWSER_NOISE_PATTERN, "i");
-/** True when the words are the browser's (or the in-app webview's) own failure, never our code's. */
+/** The end of a message the watcher kept as ours although it names a wallet or an extension: one of our own files was
+ *  in its stack. Read back, such a message is never folded into the browser's (problemOf, the alert query). */
+export const OUR_CODE_MARK = " · our code";
+/** True when the words are the browser's (or the in-app webview's, or an injected wallet's) own failure, never our
+ *  code's — read from the words alone, as stored. */
 export function isBrowserNoise(message: string | null | undefined): boolean {
-  return BROWSER_NOISE.test(message ?? "");
+  const m = message ?? "";
+  return !m.endsWith(OUR_CODE_MARK) && BROWSER_NOISE.test(m);
+}
+/** True when one of our own bundle files (/_next/ on our host, or a relative /_next/ path) is in the stack or is the
+ *  failing file. Our page's own address is not enough: an injected script can report the page as its source. */
+export function stackHasOurFile(stack: string | null | undefined, ourHost: string): boolean {
+  const s = stack ?? "";
+  if (/(^|[\s(@])\/_next\//.test(s)) return true;
+  for (const u of s.match(/https?:\/\/[^\s)'"]+/gi) ?? []) {
+    try {
+      const url = new URL(u);
+      if (url.host.toLowerCase() === ourHost.toLowerCase() && url.pathname.startsWith("/_next/")) return true;
+    } catch {
+      /* not a URL */
+    }
+  }
+  return false;
+}
+/**
+ * The browser's failure, not ours, as the browser reports it (the watcher's onerror and unhandled rejections, a crash
+ * on the form): the in-app webview's own words; or a wallet's or an extension's — by its words, its file or a frame in
+ * its stack — unless one of our own files is in the stack, which keeps it ours.
+ */
+export function isBrowserFailure(e: { message?: string | null; filename?: string | null; stack?: string | null }, ourHost: string): boolean {
+  const message = e.message ?? "";
+  if (message.endsWith(OUR_CODE_MARK)) return false;
+  if (WEBVIEW_NOISE.test(message)) return true;
+  const source = `${e.filename ?? ""}\n${e.stack ?? ""}`;
+  if (stackHasOurFile(source, ourHost)) return false;
+  return INJECTED.test(message) || INJECTED.test(source);
+}
+/** A message kept as ours (isBrowserFailure false) that still names a wallet or an extension: marked, scrubbed, so it
+ *  reads back as ours. Any other message as it was. */
+export function ourWords(message: string): string {
+  if (!INJECTED.test(message)) return message;
+  return `${scrubWords(message).slice(0, 140 - OUR_CODE_MARK.length).trimEnd()}${OUR_CODE_MARK}`;
 }
 /** True when the failing script's file is on another site (a pixel, Google sign-in, the in-app browser's injected
  *  code). No file at all is not "another site": that is the words' call. */

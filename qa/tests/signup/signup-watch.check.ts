@@ -2,8 +2,8 @@
 // story from a visit's events (lib/traffic-live formWatchOf / formSentence) — where they are, which box, every
 // problem and whose side, away and back, the leave and its verdict.
 //   NODE_PATH="" npx --no-install tsx --tsconfig tsconfig.json qa/tests/signup/signup-watch.check.ts
-import { fieldName, isOutsideScriptError, reasonOfMessage, reasonSide, reasonWords, scrubWords, sideOf } from "../../../src/lib/signup-watch-shared";
-import { signupAlertsOf } from "../../../src/lib/signup-dropoff";
+import { OUR_CODE_MARK, fieldName, isBrowserFailure, isBrowserNoise, isOutsideScriptError, ourWords, problemOf, reasonOfMessage, reasonSide, reasonWords, scrubWords, sideOf, stackHasOurFile } from "../../../src/lib/signup-watch-shared";
+import { buildAlertQuery, signupAlertsOf } from "../../../src/lib/signup-dropoff";
 import { formSentence, formWatchOf, type LiveEvent } from "../../../src/lib/traffic-live";
 import { setSignupPosition, signupLeaveKind, signupLeavingTo } from "../../../src/lib/signup-watch";
 import { TRAFFIC_EVENTS as E } from "../../../src/lib/traffic-contract";
@@ -90,13 +90,54 @@ check("a visit that never reached the form has no watch", formWatchOf([ev("$page
 
 // ── an outside script's failure (2026-10-16): seen, never ours, never the verdict ──
 check("a bare cross-origin \"Script error.\" is an outside script's", isOutsideScriptError("Script error.") && isOutsideScriptError("Script error") && !isOutsideScriptError("Script error.", "https://www.jobflex.app/_next/x.js") && !isOutsideScriptError("Cannot read properties of undefined (reading 'x')") && !isOutsideScriptError("Script error.", "", 12));
-check("its side is outside — neither ours nor theirs", reasonSide("outside_script") === "outside" && sideOf("outside", "page_error") === "outside" && sideOf("bogus", "page_error") === "ours" && reasonWords("outside_script") === "An outside script failed — no details");
+check("its side is outside — neither ours nor theirs", reasonSide("outside_script") === "outside" && sideOf("outside", "page_error") === "outside" && sideOf("bogus", "page_error") === "ours" && reasonWords("outside_script") === "Browser error, not ours");
 const outside = [...typing, ev(E.signupProblem, 20, { reason: "outside_script", side: "outside", message: "Script error.", screen: "account" }), ev(E.signupLeave, 31, { kind: "closed", screen: "account", field: "Email", ms: "30000" })];
 f = formWatchOf(outside, t0 + 60_000)!;
 check("a visitor who left after only an outside failure: their choice, not ours to fix", f.verdict === "choice" && f.problems[0]?.side === "outside" && !/ours to fix|failure of ours/.test(formSentence(f, false, t0 + 60_000)), `${f.verdict} · ${formSentence(f, false, t0 + 60_000)}`);
 const both = [...typing, ev(E.signupProblem, 18, { reason: "server_error", side: "ours", message: "Something went wrong on our side.", screen: "account" }), ev(E.signupProblem, 20, { reason: "outside_script", side: "outside", message: "Script error.", screen: "account" }), ev(E.signupLeave, 31, { kind: "closed", screen: "account", field: "Email", ms: "30000" })];
 check("…a real failure of ours beside it still makes it ours", formWatchOf(both, t0 + 60_000)!.verdict === "ours");
 check("an outside failure never raises the alarm, however many visitors met it", signupAlertsOf([{ reason: "outside_script", side: "outside", visits: 9, times: 12, message: "Script error.", screen: "account" }]).length === 0 && signupAlertsOf([{ reason: "server_error", side: "ours", visits: 3, times: 3, message: "", screen: "account" }]).length === 1);
+
+// ── a wallet or an extension injected into the page (2026-11-15: an iPad's Brave, "window.ethereum.selectedAddress"
+// read as "page_error · ours"): the browser's, by its words or by an extension's file in the stack — unless one of our
+// own files is in the stack.
+const HOST = "www.jobflex.app";
+const brave = "TypeError: undefined is not an object (evaluating 'window.ethereum.selectedAddress = undefined')";
+const walletWords = [
+  brave,
+  "TypeError: Cannot redefine property: ethereum",
+  "Cannot set property ethereum of #<Window> which has only a getter",
+  "TypeError: Cannot read properties of undefined (reading 'solana')",
+  "window.solana is not defined",
+  "ReferenceError: tronWeb is not defined",
+  "TronLink: tronWeb is not ready",
+  "web3 is not defined",
+  "MetaMask - RPC Error: Internal JSON-RPC error.",
+  "Failed to connect to MetaMask",
+  "Error: Error in inpage.js",
+  "Error at chrome-extension://nkbihfbeogaeaoehlefnkodbefgpgknn/inpage.js:1:1",
+  "Error at moz-extension://1b2c3d4e/content.js:4:2",
+  "Error at safari-web-extension://ABCD-1234/script.js:9:3",
+];
+check("a wallet's or an extension's words: the browser's (read back too)", walletWords.every((m) => isBrowserFailure({ message: m }, HOST) && isBrowserNoise(m) && problemOf("page_error", "ours", m).side === "outside"), walletWords.filter((m) => !isBrowserFailure({ message: m }, HOST) || !isBrowserNoise(m)).join(" | "));
+check("…the Brave iPad's stored event (page_error · ours) reads back as the browser's", problemOf("page_error", "ours", brave).reason === "browser_error" && problemOf("page_error", "ours", brave).side === "outside");
+const extStacks = [
+  "TypeError: x is undefined\n    at e.request (chrome-extension://nkbihfbeogaeaoehlefnkodbefgpgknn/scripts/inpage.js:1:22)",
+  "Error: boom\n    at r (moz-extension://0f9a1b2c-aaaa/contentscript.js:5:9)",
+  "@safari-web-extension://8B1F2C3D/content.js:12:40",
+  "TypeError: null is not an object\n@webkit-masked-url://hidden/:12:345",
+];
+check("…a plain message with an extension's file in the stack, or as the failing file: the browser's", extStacks.every((st) => isBrowserFailure({ message: "TypeError: x is undefined", stack: st }, HOST)) && isBrowserFailure({ message: "Error: boom", filename: "chrome-extension://abc/inpage.js" }, HOST) && isBrowserFailure({ message: "Error: boom", filename: "safari-extension://abc/x.js" }, HOST));
+const ourStack = "TypeError: Cannot read properties of undefined (reading 'ethereum')\n    at h (https://www.jobflex.app/_next/static/chunks/0b3e1f.js:1:2345)\n    at chrome-extension://abc/inpage.js:1:1";
+check("our own file in the stack keeps it ours, whatever it names", !isBrowserFailure({ message: "TypeError: Cannot read properties of undefined (reading 'ethereum')", stack: ourStack }, HOST) && !isBrowserFailure({ message: brave, filename: "https://www.jobflex.app/_next/static/chunks/app/page-1a2b.js" }, HOST) && !isBrowserFailure({ message: brave, stack: "at x (/_next/static/chunks/abc.js:1:1)" }, HOST) && stackHasOurFile(ourStack, HOST) && !stackHasOurFile("at x (https://evil.example/_next/static/chunks/abc.js:1:1)", HOST));
+check("…the page's own address in the stack is not one of our files (an injected script can report it)", isBrowserFailure({ message: brave, stack: "@https://www.jobflex.app/auth/register:1:200" }, HOST));
+const kept = ourWords("TypeError: Cannot read properties of undefined (reading 'ethereum')");
+check("…kept as ours, it is marked so and reads back as ours", kept.endsWith(OUR_CODE_MARK) && kept.length <= 140 && scrubWords(kept) === kept && !isBrowserNoise(kept) && !isBrowserFailure({ message: kept }, HOST) && problemOf("page_error", "ours", kept).side === "ours" && ourWords("TypeError: x is not a function") === "TypeError: x is not a function", kept);
+check("…and the alert query folds by the same words but never a marked message", buildAlertQuery().includes("ethereum") && buildAlertQuery().includes(`NOT endsWith(ifNull(toString(properties.message), ''), '${OUR_CODE_MARK}')`));
+const ours = ["TypeError: Cannot read properties of undefined (reading 'map')", "ReferenceError: setStep is not defined", "TypeError: Load failed", "Error: Minified React error #418", "TypeError: undefined is not an object (evaluating 'e.selectedPlan')", "Error: web3forms rejected the request"];
+check("our own failures stay ours — no wallet, no extension in them", ours.filter((m) => m !== "Error: web3forms rejected the request").every((m) => !isBrowserFailure({ message: m, stack: "at f (https://www.jobflex.app/_next/static/chunks/a.js:1:1)" }, HOST) && !isBrowserNoise(m) && problemOf("page_error", "ours", m).side === "ours") && !isBrowserFailure({ message: "Something went wrong on our side." }, HOST));
+check("…a word that only starts with a wallet's name is not one (whole words only)", !isBrowserNoise("Error: web3forms rejected the request") && !isBrowserNoise("ethereumish") && !isBrowserNoise("solanas"));
+check("the in-app webview's own words stay the browser's even with our file in the stack (unchanged)", isBrowserFailure({ message: "Error invoking postMessage: Java object is gone", stack: "at x (https://www.jobflex.app/_next/static/chunks/a.js:1:1)" }, HOST));
 
 // ── off to Stripe's card page is not a finish (owner, 2026-10-28: PostHog showed the visitor go to Stripe while the
 // card said "Finished" — "how do I understand if they signed up or not?"). The form is finished only when the server's

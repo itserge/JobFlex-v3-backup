@@ -4,7 +4,7 @@ import type { PostHog } from "posthog-js";
 import { TRAFFIC_EVENTS } from "./traffic-contract";
 import { effectiveConsent } from "./consent";
 import { isQaVisitor } from "./qaEmail";
-import { isBrowserNoise } from "./signup-watch-shared";
+import { isBrowserFailure, ourWords } from "./signup-watch-shared";
 
 /* posthog-js is NOT imported here (landing-e pass C, 2026-09-11): it is a
    259 KB script, and a static import from this module put it in every page
@@ -202,9 +202,10 @@ export function trackException(error: Error & { digest?: string }, boundary: "ro
   });
   // On the sign-up form a crash is the visitor's last sight of us: the form's watcher reads it as ours (2026-10-14).
   if (window.location.pathname.startsWith("/auth/register")) {
-    // …unless the words are the browser's own (an in-app webview's bridge gone): not ours (2026-10-30).
-    const outside = isBrowserNoise(message);
-    deliver({ event: TRAFFIC_EVENTS.signupProblem, properties: { reason: outside ? "browser_error" : "page_crash", side: outside ? "outside" : "ours", message, screen: "", step: "" } });
+    // …unless the words are the browser's own (an in-app webview's bridge gone, 2026-10-30; a wallet or an extension
+    // injected into the page with none of our files in the stack, 2026-11-15): not ours.
+    const outside = isBrowserFailure({ message, stack: error.stack }, window.location.host);
+    deliver({ event: TRAFFIC_EVENTS.signupProblem, properties: { reason: outside ? "browser_error" : "page_crash", side: outside ? "outside" : "ours", message: outside ? message : ourWords(message), screen: "", step: "" } });
   }
   if (boundary === "global") flushByBeacon();
 }

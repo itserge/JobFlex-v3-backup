@@ -14,7 +14,7 @@
 // The alert rule is here too: the last hour's problems by reason, and which of them is worth an email.
 import { TRAFFIC_EVENTS as E } from "./traffic-contract";
 import { BROWSER_TYPE_SQL, HOST_SQL, IN_APP_SQL, UA_SQL, visitorRuleSql, type VisitorScope } from "./traffic-visitor";
-import { BROWSER_NOISE_PATTERN, SIGNUP_REASONS, durationWords, problemOf, reasonWords, screenName, type SignupSide } from "./signup-watch-shared";
+import { BROWSER_NOISE_PATTERN, OUR_CODE_MARK, SIGNUP_REASONS, durationWords, problemOf, reasonWords, screenName, type SignupSide } from "./signup-watch-shared";
 
 export const DROPOFF_DAYS = [7, 30] as const;
 export type DropoffDays = (typeof DROPOFF_DAYS)[number];
@@ -67,7 +67,8 @@ export function buildDropoffQuery(days: number, scope: VisitorScope = "productio
 export function buildAlertQuery(minutes = 60, scope: VisitorScope = "production"): string {
   const m = Math.max(5, Math.min(240, Math.round(minutes)));
   // The browser's own failures (problemOf) are one reason of their own here too, never a page_error of ours.
-  const reason = `if(${prop("reason")} IN ('browser_error', 'outside_script') OR match(lower(${prop("message")}), '${BROWSER_NOISE_PATTERN.replace(/\\/g, "\\\\")}'), 'browser_error', ${prop("reason")})`;
+  // A message the watcher marked as from our code (OUR_CODE_MARK) is never folded, whatever it names (isBrowserNoise).
+  const reason = `if(${prop("reason")} IN ('browser_error', 'outside_script') OR (match(lower(${prop("message")}), '${BROWSER_NOISE_PATTERN.replace(/\\/g, "\\\\")}') AND NOT endsWith(${prop("message")}, '${OUR_CODE_MARK}')), 'browser_error', ${prop("reason")})`;
   return `SELECT ${reason} AS reason, if(reason = 'browser_error', 'outside', any(${prop("side")})), uniq(${VISIT_KEY}), count(),
     anyIf(${prop("message")}, ${prop("message")} != ''), any(${prop("screen")})
     FROM events
