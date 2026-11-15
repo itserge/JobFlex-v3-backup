@@ -466,10 +466,10 @@ function readPlaces(c: string): Read {
   if (/\b(?:save (?:it |this )?(?:as )?(?:a )?proposal|make (?:a |the )?proposal|create (?:a |the )?proposal|turn (?:it|this) into a proposal|convert (?:it |this )?(?:to|into) (?:a )?proposal|write (?:up )?(?:a |the )?proposal)\b/.test(c)) return read([{ do: "save" }], null);
   if (/\b(?:price breakdown|the package|line items|the price list|package (?:and|&) price|break ?down the price|itemi[sz]ed|send (?:it )?to (?:the )?(?:client|customer|homeowner))\b/.test(c)) return read([{ do: "open", what: "package" }], null);
   if (/\b(?:code checks|the checks|check ?list|show (?:me )?the (?:problems|issues|fails))\b/.test(c)) return read([{ do: "open", what: "checks" }], null);
-  const go = /^(?:go to|scroll to|jump to|take me to|open) (?:the )?(size|type|kind|house|materials?|stairs?(?: and rails?)?|rails?|roof|lights|extras|electrical|checks?|package|price) ?(?:section|step|part|page|tab)?$/.exec(c);
+  const go = /^(?:go to|scroll to|jump to|take me to|open) (?:the )?(size|type|kind|house|materials?|stairs?(?: and rails?)?|rails?|accessor(?:y|ies)|roof|lights|extras|electrical|checks?|package|price) ?(?:section|step|part|page|tab)?$/.exec(c);
   if (go) {
     const w = go[1];
-    const to = /size/.test(w) ? "size" : /type|kind/.test(w) ? "kind" : /house/.test(w) ? "house" : /material/.test(w) ? "materials" : /stair|rail/.test(w) ? "stairs" : /roof/.test(w) ? "roof" : /light|extra|electric/.test(w) ? "extras" : /check/.test(w) ? "checks" : "package";
+    const to = /size/.test(w) ? "size" : /type|kind/.test(w) ? "kind" : /house/.test(w) ? "house" : /material/.test(w) ? "materials" : /stair|rail/.test(w) ? "stairs" : /accessor/.test(w) ? "accessories" : /roof/.test(w) ? "roof" : /light|extra|electric/.test(w) ? "extras" : /check/.test(w) ? "checks" : "package";
     return read([{ do: "go", to }], null);
   }
   if (/^(?:start (?:over|fresh|again|from scratch|a new (?:one|deck))|new (?:deck|design)|clear (?:it|everything|the design|all)|reset (?:it|everything|the (?:design|deck)|all)|from scratch|blank (?:slate|deck)|wipe it(?: out)?|begin again|start a new deck)$/.test(c)) return read([{ do: "reset" }], null);
@@ -1332,11 +1332,28 @@ const BENCH_WORDS = /\bbench(?:es)?\b|\bbuilt[- ]in seat(?:s|ing)?\b|\bseating\b
 const PLANTER_WORDS = /\bplanters?\b|\bplanter box(?:es)?\b|\bflower box(?:es)?\b/;
 /** A privacy screen on an OPEN deck's edge. (Under a roof, "privacy walls / screens" are the roof's walls: its own rule.) */
 const SCREEN_WORDS = /\bprivacy (?:screens?|fences?|walls?|panels?|slats)\b|\bscreen wall\b|\bslat(?:ted)? (?:screen|wall)s?\b/;
+/** An outdoor kitchen / grill island, and a gas fire table (2026-11-14). (The house's own kitchen — "at the kitchen door" — is not one.) */
+const KITCHEN_WORDS = /\boutdoor kitchens?\b|\bkitchen island\b|\b(?:grill|bbq|barbecue|barbeque) (?:island|station|area|spot)\b|\bbuilt[- ]in (?:grill|bbq)\b|\b(?:grill|bbq|barbecue|barbeque)\b/;
+const FIRE_WORDS = /\bfire ?(?:tables?|pits?|bowls?|features?)\b|\bgas fire\b/;
 function readBuiltIn(c: string, ctx: ParseContext): Read {
   const planter = PLANTER_WORDS.test(c);
   const screen = !planter && ctx.design.structure === "deck" && SCREEN_WORDS.test(c);
-  if ((!planter && !screen && !BENCH_WORDS.test(c)) || money(c) !== null) return null;
+  const fireT = !planter && !screen && FIRE_WORDS.test(c);
+  const kitchen = !planter && !screen && !fireT && KITCHEN_WORDS.test(c);
+  if ((!planter && !screen && !fireT && !kitchen && !BENCH_WORDS.test(c)) || money(c) !== null) return null;
+  // A thing the shop has its own remembered item and price for ("fire pit" at $1,200) stays the shop's item.
+  if (ctx.items && Object.keys(ctx.items).some((k) => k.length >= 3 && c.includes(k))) return null;
   type B = Extract<DeckCommand, { do: "builtin" }>;
+  if (kitchen || fireT) {
+    const kind: B["kind"] = kitchen ? "kitchen" : "fire";
+    const lr = (/\bleft\b/.test(c) ? 1 : 0) + (/\bright\b/.test(c) ? 2 : 0);
+    const side = lr === 1 ? "left" : lr === 2 ? "right" : /\bfront\b/.test(c) ? "front" : undefined;
+    if (isRemove(c) || /^no /.test(c)) return read([{ do: "builtin", op: "remove", kind, ...(side ? { side } : {}) }], "deck");
+    // "6 ft in" / "6 ft from the edge" is how far in a fire table stands; another length said is its own.
+    const inM = fireT ? /(\d+(?:\.\d+)?) ft (?:in\b|from the (?:edge|rail|railing|front|side|end))/.exec(c) : null;
+    const lenM = /(\d+(?:\.\d+)?) ft (?:long|wide)\b/.exec(c) ?? (inM ? null : /(\d+(?:\.\d+)?) ft\b/.exec(c));
+    return read([{ do: "builtin", op: "add", kind, ...(side ? { side } : {}), ...(lenM ? { lengthFt: Math.round(Number(lenM[1]) * 2) / 2 } : !/\bkitchen\b/.test(c) && kitchen ? { lengthFt: 5 } : {}), ...(inM ? { inFt: Math.round(Number(inM[1]) * 2) / 2 } : {}), ...(/\b(?:middle|cent(?:er|re))\b/.test(c) ? { at: "centre" as const } : {}) }], "deck");
+  }
   if (screen) {
     const lr = (/\bleft\b/.test(c) ? 1 : 0) + (/\bright\b/.test(c) ? 2 : 0);
     if (isRemove(c) || /^no /.test(c)) return read([{ do: "builtin", op: "remove", kind: "screen", ...(lr === 1 ? { side: "left" } : lr === 2 ? { side: "right" } : /\bfront\b/.test(c) ? { side: "front" } : {}) }], "deck");

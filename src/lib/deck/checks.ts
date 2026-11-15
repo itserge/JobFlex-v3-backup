@@ -54,7 +54,8 @@ import { deckPast, pastWords } from "./house";
 import { railHeldWords, railMountLine } from "./rails";
 import { borderWords, breakerWords } from "./surface";
 import { SKIRT_GAP_IN, SKIRT_GROUND_CLEAR_IN, SKIRT_MIN_IN } from "./skirt";
-import { BENCH_BACK_IN, BENCH_SEAT_IN, BUILT_IN_LABEL, SCREEN_GAP_IN, SCREEN_WIND_PSF, builtInWords } from "./builtins";
+import { ACCESSORY_GROUP_LABEL, STAIR_LANDING_IN, accessoryGroupOf } from "./builtins";
+import { BENCH_BACK_IN, BENCH_SEAT_IN, BUILT_IN_LABEL, FIRE_HEIGHT_IN, HOT_CLEAR_IN, HOT_OVERHEAD_IN, KITCHEN_DEPTH_IN, KITCHEN_HEIGHT_IN, SCREEN_GAP_IN, SCREEN_WIND_PSF, builtInWords, planGap } from "./builtins";
 
 /** A change to a design, part by part; anything left out stays as it is. */
 export type DeckPatch = {
@@ -201,7 +202,11 @@ export function deckChecks(s: DeckStructure): DeckCheck[] {
   if (frame) {
     const guarded = s.rails.required;
     for (const b of s.builtIns) {
-      const PART = "Benches and planters";
+      // (Each kind under its own heading, as the studio's Accessories step groups them — 2026-11-14.)
+      const PART = ACCESSORY_GROUP_LABEL[accessoryGroupOf(b.kind)];
+      const byHand = !!b.design.spot;
+      // A seat placed by hand away from every open edge is not beside a guard.
+      const besideGuard = !byHand || frame.edges.some((e) => !e.house && planGap(b.footprint, [{ x: e.x0, y: e.y0 }, { x: e.x1, y: e.y1 }]) < 24);
       const name = builtInWords(b).replace(/^a /, "A ").replace(/^an /, "An ");
       const others = (design.extras.builtIns ?? []).filter((x) => x.id !== b.design.id);
       if (!b.built) {
@@ -209,7 +214,62 @@ export function deckChecks(s: DeckStructure): DeckCheck[] {
         continue;
       }
       const fitted = b.flags.shortened ? ` It was asked for ${b.design.lengthFt} ft long; ${b.flags.beside ? "beside the other built-in there is room for" : "that edge has room for"} ${Math.round((b.lengthIn / 12) * 10) / 10} ft.` : "";
-      if (b.kind === "screen") {
+      if (b.kind === "kitchen" || b.kind === "fire") {
+        // WHAT BURNS NEAR IT (the grill; the whole fire table): the house wall, a railing that burns, the other
+        // built-ins, the roof over it. Measured, not guessed.
+        const segOf = (e: { x0: number; y0: number; x1: number; y1: number }) => [{ x: e.x0, y: e.y0 }, { x: e.x1, y: e.y1 }];
+        const houseIn = Math.min(Infinity, ...frame.edges.filter((e) => e.house).map((e) => planGap(b.hot, segOf(e))));
+        const railBurns = s.rails.on && ["treated", "cedar", "composite", "vinyl"].includes(design.rail.type);
+        const railIn = railBurns ? Math.min(Infinity, ...frame.edges.filter((e) => !e.house).map((e) => planGap(b.hot, segOf(e)))) : Infinity;
+        const nearOnes = s.builtIns.filter((o) => o.built && o.design.id !== b.design.id && o.kind !== "fire").map((o) => ({ o, gap: planGap(b.hot, o.footprint) }));
+        const cx = b.hot.reduce((a, q) => a + q.x, 0) / (b.hot.length || 1);
+        const cy = b.hot.reduce((a, q) => a + q.y, 0) / (b.hot.length || 1);
+        const ring = roof?.eaveRing ?? [];
+        let roofed = false;
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) if (ring[i].y > cy !== ring[j].y > cy && cx < ((ring[j].x - ring[i].x) * (cy - ring[i].y)) / (ring[j].y - ring[i].y) + ring[i].x) roofed = !roofed;
+        const overheadIn = roofed && roof ? roof.headerBottomIn - (frame.surfaceIn + b.heightIn) : Infinity;
+        const inches = (v: number) => `${Math.round(v)} in.`;
+        const what = (k: string) => (k === "screen" ? "privacy screen" : k === "planter" ? "planter box" : k === "kitchen" ? "kitchen island" : "bench");
+        if (b.kind === "kitchen") {
+          const tooNear = nearOnes.filter((q) => q.gap < 24);
+          const warn = houseIn < HOT_CLEAR_IN || roofed || tooNear.some((q) => q.o.kind === "screen") || railIn < 12;
+          add({
+            id: `builtin-${b.design.id}`,
+            level: warn ? "warn" : "pass",
+            part: PART,
+            text:
+              `${name}: an island ${KITCHEN_DEPTH_IN} in. deep and ${KITCHEN_HEIGHT_IN} in. high, framed in treated 2x4 and clad in the deck's boards, with a top for stone and a place for a built-in grill (the top, the grill, gas and power are by others).${fitted}` +
+              ` With a stone top and a grill it weighs about ${Math.round(b.weightLb / 10) * 10} lb — ${b.psf} psf where it stands, on a deck framed for a ${frame.load} psf live load: ${b.sisters ? `the ${b.sisters} joists under it are doubled their whole length (in the material list)` : "double the joists under it"}.` +
+              ` The island is framed in wood, so the grill goes in its maker's insulated jacket, and the maker's clearances to anything that burns hold — commonly 24 in. behind and beside the grill.` +
+              (houseIn < HOT_CLEAR_IN ? ` The grill stands ${inches(houseIn)} from the house wall: siding scorches and vinyl melts — keep it 3 ft away at the least (fire officials say 10 ft). Move the island along its edge, or shorten it.` : "") +
+              (railIn < 24 ? ` The ${design.rail.type === "treated" ? "wood" : design.rail.type} railing is ${inches(railIn)} behind the grill: most makers ask 24 in. to a railing that burns, or a non-combustible back on the island.` : "") +
+              tooNear.map((q) => ` A ${what(q.o.kind)} stands ${inches(q.gap)} from the grill.`).join("") +
+              (roofed ? ` It stands under the roof: a grill there needs a vent hood listed for it and the maker's clearance to the ceiling (${ftIn(Math.round(overheadIn))} above the island's top here).` : "") +
+              ` Gas line and outlet by licensed trades, under their own permits.`,
+            rule: "The grill maker's installation manual · IRC R507.2",
+          });
+        } else {
+          const nearBurn = [
+            ...(houseIn < HOT_CLEAR_IN ? [`the house wall ${inches(houseIn)}`] : []),
+            ...(railIn < HOT_CLEAR_IN ? [`the ${design.rail.type === "treated" ? "wood" : design.rail.type} railing ${inches(railIn)}`] : []),
+            ...nearOnes.filter((q) => q.gap < HOT_CLEAR_IN).map((q) => `a ${what(q.o.kind)} ${inches(q.gap)}`),
+          ];
+          const warn = houseIn < HOT_CLEAR_IN || railIn < 24 || nearOnes.some((q) => q.gap < (q.o.kind === "screen" || q.o.kind === "kitchen" ? HOT_CLEAR_IN : 24)) || roofed;
+          const soft = frame.decking.family === "composite" || frame.decking.family === "pvc";
+          add({
+            id: `builtin-${b.design.id}`,
+            level: warn ? "warn" : "pass",
+            part: PART,
+            text:
+              `${name.replace(/^A /, "A place for a ").replace(/^An /, "A place for an ")} (the table is by others): a listed gas appliance ${Math.round(b.lengthIn)} × ${Math.round(b.depthIn)} in. and ${FIRE_HEIGHT_IN} in. high, about ${Math.round(b.weightLb / 10) * 10} lb — no framing is added for it.${fitted}` +
+              ` Stand it on the pad or heat shield the decking's maker accepts${soft ? " — composite and PVC boards soften and stain with heat" : ""}.` +
+              ` Most makers ask ${HOT_CLEAR_IN} in. between the table and anything that burns${nearBurn.length ? `; nearer than that here: ${nearBurn.join(", ")}` : " — nothing stands nearer here."}` +
+              (roofed ? ` It stands under the roof: only a unit listed for use under a cover, with the maker's clearance above it — ${ftIn(Math.round(overheadIn))} here${overheadIn < HOT_OVERHEAD_IN ? `, less than the ${HOT_OVERHEAD_IN / 12} ft most ask` : ""}.` : "") +
+              ` Gas only: a wood fire does not belong on a deck — embers, and most building offices keep open fires 15 to 25 ft from a structure. Gas line by a licensed trade.`,
+            rule: "The appliance's listing and manual (ANSI Z21.97) · the decking maker's guide",
+          });
+        }
+      } else if (b.kind === "screen") {
         const hFt = Math.round(((b.heightIn - 1) / 12) * 2) / 2;
         const tall = hFt > 6;
         add({
@@ -229,16 +289,17 @@ export function deckChecks(s: DeckStructure): DeckCheck[] {
         });
       } else {
         const seat = `the seat ${BENCH_SEAT_IN} in. above the deck, three boards deep, on ${b.supports} supports (4x4 legs under a 2x4 cleat, no more than 4 ft apart) with solid blocking between the joists under each`;
-        const guardNote = guarded
+        const guardNote = guarded && besideGuard
           ? b.kind === "bench-back"
             ? " Its back is not a guard: the railing behind it still does that work, and a seat beside a guard is a step up for a child — some building offices want the guard 36 in. above the seat there (the code measured it so until 2012). Ask before you build."
             : " A seat beside a guard is a step up for a child: the code measures the guard from the deck, but some building offices want it 36 in. above the seat there (the code measured it so until 2012). Ask before you build, or set the bench away from the edge."
           : "";
         add({ id: `builtin-${b.design.id}`, level: "pass", part: PART, text: `${name}: ${seat}${b.kind === "bench-back" ? `; a back of two boards and a cap on 4x4 posts ${BENCH_BACK_IN} in. tall, each bolted to the frame` : ""}.${fitted}${guardNote}` });
       }
-      if (b.flags.onStair) add({ id: `builtin-${b.design.id}-stair`, level: "fail", part: PART, text: `${name} stands across the top of a stair: nobody can get down it. Move one of them along the edge, or shorten the ${b.kind === "planter" ? "planter" : b.kind === "screen" ? "screen" : "bench"}.`, fix: { label: "Take it off", patch: { extras: { builtIns: others } } } });
-      if (b.flags.onSteps) add({ id: `builtin-${b.design.id}-steps`, level: "warn", part: PART, text: `${name} stands along an edge the wide steps run on: the steps behind it lead nowhere. Wrap the steps round fewer sides, or move it to an edge without steps.` });
-      if (b.flags.overlaps.length && b.flags.overlaps.some((id) => id > b.design.id)) add({ id: `builtin-${b.design.id}-overlap`, level: "warn", part: PART, text: `${name} and another built-in stand on the same boards. Shorten one, or move it along its edge, so the two meet without crossing.` });
+      if (b.flags.onStair && byHand) add({ id: `builtin-${b.design.id}-stair`, level: "fail", part: PART, text: `${name} stands within ${STAIR_LANDING_IN} in. of the top of a stair: the code wants a clear landing there, as wide as the stair and ${STAIR_LANDING_IN} in. deep. Drag it farther from the stair in the 3D.`, fix: { label: "Take it off", patch: { extras: { builtIns: others } } } });
+      else if (b.flags.onStair) add({ id: `builtin-${b.design.id}-stair`, level: "fail", part: PART, text: `${name} stands across the top of a stair: nobody can get down it. Move one of them along the edge, or shorten the ${b.kind === "planter" ? "planter" : b.kind === "screen" ? "screen" : b.kind === "kitchen" ? "island" : b.kind === "fire" ? "table" : "bench"}.`, fix: { label: "Take it off", patch: { extras: { builtIns: others } } } });
+      if (b.flags.onSteps) add({ id: `builtin-${b.design.id}-steps`, level: "warn", part: PART, text: byHand ? `${name} stands at an edge the wide steps run on: it blocks the way down there. Drag it in from that edge.` : `${name} stands along an edge the wide steps run on: the steps behind it lead nowhere. Wrap the steps round fewer sides, or move it to an edge without steps.` });
+      if (b.flags.overlaps.length && b.flags.overlaps.some((id) => id > b.design.id)) add({ id: `builtin-${b.design.id}-overlap`, level: "warn", part: PART, text: `${name} and another accessory stand on the same boards. ${byHand || s.builtIns.some((o) => b.flags.overlaps.includes(o.design.id) && o.design.spot) ? "Drag one of them clear in the 3D" : "Shorten one, or move it along its edge"}, so the two do not cross.` });
     }
   }
   // SKIRTING (2026-11-14; lib/deck/skirt): what hangs under the deck, said where the builder looks — and where none

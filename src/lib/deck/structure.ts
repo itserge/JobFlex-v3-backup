@@ -20,7 +20,7 @@ import { buildStair, stairTopEdge, type StairBuild, type StairLevel } from "./st
 import { POST_ACTUAL_IN } from "./codeTables";
 import { buildRails, type RailBuild, type RailLevel } from "./rails";
 import { buildSkirt, type SkirtBuild, type SkirtLevelInput } from "./skirt";
-import { SCREEN_RAIL_CLEAR_IN, buildBuiltIns, type BuiltInBuild } from "./builtins";
+import { SCREEN_RAIL_CLEAR_IN, buildBuiltIns, type BuiltInBuild, type BuiltInsInput } from "./builtins";
 import { buildElectrical, type ElectricalBuild } from "./electrical";
 import { defaultFramingSpecies, framingSpecies } from "./catalog";
 import { groundAt as slopeGroundAt, slopeGradePct } from "./site";
@@ -53,6 +53,8 @@ export interface DeckStructure {
   skirt: SkirtBuild | null;
   /** Built-in benches and planter boxes on the main deck (lib/deck/builtins); empty when there are none. */
   builtIns: BuiltInBuild[];
+  /** What the main deck's accessories are built with (its outline, what stands at each edge, the stairs' tops): lib/deck/accessories tries one somewhere else on it. Null when the deck has none. */
+  accessoryInput: BuiltInsInput | null;
   electrical: ElectricalBuild;
   /** The ground under any point of the plan, inches against the house line's ground. */
   groundAt: (x: number, y: number) => number;
@@ -313,6 +315,10 @@ export function buildStructure(raw: DeckDesign, opts: StructureOptions = {}): De
           stairTops: stairTops.filter((t) => t.level === "upper"),
           beams: [...frame.beams.map((b) => ({ x0: b.x0, y0: b.y, x1: b.x1, y1: b.y })), ...frame.cornerBeams.map((b) => ({ x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 }))],
           joistDepthIn: frame.joistTopIn - frame.joistBottomIn,
+          joists: frame.joists.filter((j) => !j.sister).flatMap((j) => {
+            const z = frame.zones.find((q) => q.zone.id === j.zoneId)?.zone;
+            return z ? [{ x: j.x, y0: z.y0, y1: z.y1 }] : [];
+          }),
         }
       : null;
   const screens: BuiltInBuild[] = builtInInput ? buildBuiltIns({ ...builtInInput, only: "screens", railAt: () => "none", wrapped: wrappedEdges }) : [];
@@ -347,12 +353,7 @@ export function buildStructure(raw: DeckDesign, opts: StructureOptions = {}): De
 
   // BUILT-IN BENCHES AND PLANTERS (2026-11-14; lib/deck/builtins): on the main deck's boards, each along one of its
   // edges — inside the rail where one stands there (or the privacy screen in its place), clear of nothing where none does.
-  const rest: BuiltInBuild[] = builtInInput
-    ? buildBuiltIns({
-        ...builtInInput,
-        only: "rest",
-        wrapped: wrappedEdges,
-        railAt: (x0, y0, x1, y1) => {
+  const restRailAt: BuiltInsInput["railAt"] = (x0, y0, x1, y1) => {
           const L = Math.hypot(x1 - x0, y1 - y0) || 1;
           const ux = (x1 - x0) / L;
           const uy = (y1 - y0) / L;
@@ -360,9 +361,9 @@ export function buildStructure(raw: DeckDesign, opts: StructureOptions = {}): De
           if (screens.some((b) => b.built && lies(railEdge(b), 4))) return "screen";
           const on = rails.segments.find((g) => g.level === "upper" && lies(g, 4));
           return on ? on.mount : "none";
-        },
-      })
-    : [];
+  };
+  const accessoryInput: BuiltInsInput | null = builtInInput ? { ...builtInInput, only: "rest", wrapped: wrappedEdges, railAt: restRailAt } : null;
+  const rest: BuiltInBuild[] = accessoryInput ? buildBuiltIns(accessoryInput) : [];
   // (In the list's own order.)
   const builtIns: BuiltInBuild[] = (design.extras.builtIns ?? []).flatMap((it) => [...screens, ...rest].filter((b) => b.design.id === it.id));
 
@@ -371,7 +372,7 @@ export function buildStructure(raw: DeckDesign, opts: StructureOptions = {}): De
   const ringD = roof && !frame ? roof.depthIn : D;
   const electrical = buildElectrical({ design, frame, roof, stairs, rails, widthIn: ringW, depthIn: ringD, onHouse: frame ? design.placement !== "detached" : roof?.attach === "wall", floorIn: frame ? frame.surfaceIn : roof ? roof.floorIn : 0 });
 
-  return { design, frame, surface, roof, lower, stairs, rails, skirt, builtIns, electrical, groundAt, gradePct, stepDown, code };
+  return { design, frame, surface, roof, lower, stairs, rails, skirt, builtIns, accessoryInput, electrical, groundAt, gradePct, stepDown, code };
 }
 
 /** The structure's deck levels, main first, each with where it sits. */

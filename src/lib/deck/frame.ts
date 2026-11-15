@@ -1407,6 +1407,9 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
           // under a corner cut at 45°, where it crosses that.
           const n: 1 | 2 = doubled ? 2 : 1;
           const tie = (y: number) => {
+            // (Where a front beam ends and the angled beam under the cut starts — the two share a post — a joist there
+            // sits on both at one spot: one tie, drawn and counted once.)
+            if (tieAt.some((t) => Math.abs(t.x - j.x) < 0.01 && Math.abs(t.y - y) < 4)) return;
             hardware.ties += n;
             tieAt.push({ x: j.x, y, n });
           };

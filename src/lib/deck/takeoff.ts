@@ -432,6 +432,20 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
       const posts = sumOf(screens, (b) => b.posts);
       lumber("builtins", "blocking behind the screen posts", s.frame.joistSize, frameStocks[0], tenth((posts * 2 * s.frame.spacingIn) / 12, frameStocks[0]), false, `two blocks at each of the ${posts} posts`, "screen-blocking", oc);
     }
+    // (A kitchen island is clad in the deck's own boards: it is counted once, with them.)
+    const kitchens = inBoard.filter((b) => b.built && b.kind === "kitchen");
+    if (kitchens.length) {
+      const boards = tenth(sumOf(kitchens, (b) => b.boardLf), 12);
+      push({ id: "kitchen-boards", step: "builtins", kind: "boards", label: `${product.label} × 12 ft — outdoor kitchen island`, qty: boards, unit: "pcs", note: `${Math.round(sumOf(kitchens, (b) => b.lengthIn) / 12)} ft of island, clad on all four sides`, rateKey: `deck.${product.id}`, rateQty: boards * 12, factor: 1 });
+      lumber("builtins", "outdoor kitchen frame", "2x4", 8, tenth(sumOf(kitchens, (b) => b.frameLf), 8), false, "plates top and bottom, an upright every 16 in.", "kitchen-frame");
+      // The joists under it, doubled their whole length — one more of each, in the stock that covers it.
+      const sisters = sumOf(kitchens, (b) => b.sisters);
+      if (sisters) {
+        const each = sumOf(kitchens, (b) => b.sisterLf) / sisters;
+        const stockFt = frameStocks.find((v) => v >= each) ?? frameStocks[frameStocks.length - 1];
+        lumber("builtins", "joists doubled under the outdoor kitchen", s.frame.joistSize, stockFt, Math.ceil((sisters * each) / stockFt - 1e-9), false, `${sisters} joists under the island, each with a sister its whole length`, "kitchen-sisters", oc);
+      }
+    }
     if (planters.length) {
       const boards = tenth(sumOf(planters, (b) => b.boardLf), 12);
       push({ id: `planter-boards${own}`, step: "builtins", kind: "boards", label: `${product.label} × 12 ft — planter boxes`, qty: boards, unit: "pcs", note: `${planters.length === 1 ? "one box" : `${planters.length} boxes`}: three boards high, a cap board round the rim`, rateKey: `deck.${product.id}`, rateQty: boards * 12, factor: 1 });

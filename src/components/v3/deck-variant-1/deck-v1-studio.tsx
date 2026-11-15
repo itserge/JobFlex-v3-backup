@@ -20,7 +20,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Route } from "next";
 import { createWheelMotion, wheelPixels } from "@/lib/smooth-wheel";
-import { AlertTriangle, Check, ChevronDown, ChevronRight, ExternalLink, FileText, Lock, Maximize2, Mic, Minimize2, Plus, RotateCcw, Send, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronRight, ExternalLink, FileText, Lock, Maximize2, Mic, Minimize2, Plus, RotateCcw, RotateCw, Send, X } from "lucide-react";
 import { resolveMarket, parseStateZip, type MarketSnapshot } from "@/lib/fence/market";
 import { leftEndPatch } from "@/lib/deck/frontByHand";
 import { DECKING, DECKING_BRAND_LABEL, DECKING_BRAND_ORDER, DECKING_FAMILY_LABEL, DECKING_FAMILY_ORDER, FRAMING_SPECIES, OC_LUMBER_ID, RAIL_TYPES, WALL_TYPES, WOOD_FRAMING_SPECIES, defaultDecking, defaultFramingSpecies, deckingProduct, isCompositeFraming, treatedDecking, wallType, type DeckingFamily, type DeckingProduct } from "@/lib/deck/catalog";
@@ -135,7 +135,15 @@ import { HouseWallPlan } from "@/components/v3/deck-estimator-blueprint/house-wa
 import { DeckKindPicker } from "@/components/v3/deck-estimator-blueprint/deck-kind-picker";
 import { DeckPlan, type PlanEdgeHit, nearestStairEdge } from "@/components/v3/deck-estimator-blueprint/deck-plan";
 import { SKIRT_KINDS, SKIRT_LABEL } from "@/lib/deck/skirt";
-import { BUILT_IN_KINDS, BUILT_IN_LABEL, BUILT_IN_LIMITS, BUILT_IN_SIDES, BUILT_IN_SIDE_LABEL, SCREEN_DEFAULT_FT, defaultBuiltIn, type BuiltIn } from "@/lib/deck/builtins";
+import { ACCESSORY_GROUPS, ACCESSORY_GROUP_KINDS, ACCESSORY_GROUP_LABEL, BUILT_IN_LABEL, BUILT_IN_LIMITS, BUILT_IN_SIDES, BUILT_IN_SIDE_LABEL, SCREEN_DEFAULT_FT, accessoryGroupOf, defaultBuiltIn, type BuiltIn } from "@/lib/deck/builtins";
+import { ACCESSORY_TURN_DEG, edgeAccessory, moveAccessory, placeAccessory, turnAccessory, turnWords } from "@/lib/deck/accessories";
+
+/** What each group of accessories is, in a line (the Accessories step). */
+const ACCESSORY_GROUP_HINT: Record<(typeof ACCESSORY_GROUPS)[number], string> = {
+  seating: "A bench, a bench with a back, or a planter box — the checks give a planter's weight full of wet soil.",
+  privacy: "The deck's own boards on posts, standing in the railing's place along an edge. It slides along the edges; it does not turn.",
+  kitchen: "A grill island (the top, the grill, gas and power are by others), and a place for a gas fire table the client buys — the checks keep what burns clear of both.",
+};
 import { Answers, CUSTOM, CUSTOM_LABEL, CustomBox, Field, FieldScope, More, NameInput, NumberInput, Scope, Seg, Stepper, Toggle, ago, cx, feetText, intText, money, parseFeet, parseInches, priceShow, priceText, type FieldScopeValue } from "./deck-v1-parts";
 import { DeckV1Send, type SendPrefill } from "./deck-v1-send";
 import { PartCardView, PartDoneLine, TakenOutLine, usePartLight, type PartDone, type PickedPart } from "./deck-v1-pick";
@@ -226,10 +234,10 @@ const TIERS: ReadonlyArray<{ id: "good" | "better" | "best"; name: string; decki
 ];
 const LEVEL_LABEL: Record<DeckCheck["level"], string> = { fail: "Fix", warn: "Check", info: "Note", pass: "Pass" };
 
-type Placing = null | { kind: "stair" } | { kind: "fixture"; id: string };
+type Placing = null | { kind: "stair" } | { kind: "fixture"; id: string } | { kind: "accessory"; id: string };
 
 /* ── The steps ───────────────────────────────────────────────────────────────────────────────────────────────── */
-type StepId = "size" | "kind" | "house" | "materials" | "stairs" | "roof" | "extras" | "checks" | "package";
+type StepId = "size" | "kind" | "house" | "materials" | "stairs" | "accessories" | "roof" | "extras" | "checks" | "package";
 /** Where each code check belongs: its part, as the engine heads it (lib/deck/checks). */
 const PART_STEP: Record<string, StepId> = {
   Front: "size",
@@ -251,6 +259,10 @@ const PART_STEP: Record<string, StepId> = {
   Lumber: "materials",
   Trim: "materials",
   "Guard and stairs": "stairs",
+  "Seating and planters": "accessories",
+  "Privacy screen": "accessories",
+  "Outdoor kitchen and fire": "accessories",
+  Skirting: "materials",
   Headers: "roof",
   Rafters: "roof",
   Ridge: "roof",
@@ -698,6 +710,13 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
           if (p) patch(p, ["by-hand"]);
           break;
         }
+        // AN ACCESSORY DRAGGED ACROSS THE DECK (2026-11-14; lib/deck/accessories): as far as it fits, lined up against
+        // an edge when let go by one.
+        case "builtin": {
+          const p = moveAccessory(structure, e.id, e.value, e.value2 ?? 0);
+          if (p) patch(p);
+          break;
+        }
       }
     },
     [design, structure, patch, rp, setStairs, setHouse, polygon],
@@ -748,6 +767,13 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
         const hit = nearestStairEdge(structure, pick.point[0] * 12, pick.point[1] * 12, Number.POSITIVE_INFINITY);
         if (!hit) return;
         setStairs((list) => [...list, { ...defaultStair(`s${list.length + 1}-${Date.now().toString(36).slice(-3)}`, hit.side, hit.atFt), level: hit.level }]);
+        setPlacing(null);
+        return;
+      }
+      if (placing?.kind === "accessory") {
+        if (!pick) return;
+        const p = placeAccessory(structure, placing.id, pick.point[0] * 12, pick.point[1] * 12);
+        if (p) patch(p);
         setPlacing(null);
         return;
       }
@@ -1280,6 +1306,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
     ];
     if (withDeck && frame) list.push({ id: "materials", name: "Materials", question: "What is it built with?" });
     if (withDeck) list.push({ id: "stairs", name: "Stairs & rails", question: "Stairs and railing" });
+    if (withDeck && frame) list.push({ id: "accessories", name: "Accessories", question: "Accessories" });
     if (withRoof && roof) list.push({ id: "roof", name: design.structure === "pergola" ? "Pergola top" : "Roof", question: design.structure === "pergola" ? "The pergola's top" : "The roof over it" });
     list.push({ id: "extras", name: "Lights & extras", question: "Lights, outlets and extras" });
     list.push({ id: "checks", name: "Code checks", question: "Does it pass the code?" });
@@ -1304,6 +1331,8 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
         return "step-roof";
       case "extras":
         return "step-electrical";
+      case "accessories":
+        return "step-accessories";
       default:
         return id;
     }
@@ -3021,6 +3050,124 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
 
   const builtIns = design.extras.builtIns ?? [];
   const setBuiltIns = (list: BuiltIn[]) => patch({ extras: { builtIns: list } });
+  /** A move of the accessories by hand (lib/deck/accessories), when it has somewhere to go. */
+  const moveBy = (p: DeckPatch | null) => {
+    if (p) patch(p);
+  };
+  /**
+   * THE ACCESSORIES (2026-11-14 — the owner: "make separate accessories, that way it will be understandable" and "make
+   * it movable on 3D: drag and turn and place"). A step of its own, each kind of accessory under its own heading with
+   * its own buttons; each card can turn its accessory, put it where a click in the 3D lands, or put it back along an
+   * edge — and with Edit in 3D any of them is dragged across the deck.
+   */
+  const accessoryCard = (b: BuiltIn, i: number) => {
+    const built = structure.builtIns.find((x) => x.design.id === b.id);
+    const setB = (p: Partial<BuiltIn>) => setBuiltIns(builtIns.map((x) => (x.id === b.id ? { ...x, ...p } : x)));
+    const name = `${BUILT_IN_LABEL[b.kind]} ${i + 1}`;
+    const along = b.side === "front" ? design.shape.widthFt : design.shape.depthFt;
+    const placingThis = placing?.kind === "accessory" && placing.id === b.id;
+    const lenText = built?.built ? feetText(Math.round((built.lengthIn / 12) * 2) / 2).replace(/^(\d+(?:\.\d+)?)$/, "$1 ft") : "";
+    const turned = built ? turnWords(built) : "";
+    const where = b.spot ? `placed on the deck by hand${turned ? `, ${turned}` : ""}` : `along the ${BUILT_IN_SIDE_LABEL[b.side].toLowerCase()}${built?.flags.shortened ? " — as long as that edge allows" : ""}`;
+    const facts = !built?.built ? "" : built.kind === "planter" ? ` · about ${Math.round(built.weightLb / 10) * 10} lb full` : built.kind === "screen" ? ` · ${built.posts} ${built.postSize} posts, in the railing's place` : built.kind === "kitchen" ? ` · about ${Math.round(built.weightLb / 10) * 10} lb with a stone top and a grill, ${built.sisters} joists doubled under it` : built.kind === "fire" ? `${b.spot ? "" : ` · ${feetText(b.inFt ?? 6)} ft in`} · the table is by others` : "";
+    const left = b.kind === "screen" ? null : turnAccessory(structure, b.id, -ACCESSORY_TURN_DEG);
+    const right = b.kind === "screen" ? null : turnAccessory(structure, b.id, ACCESSORY_TURN_DEG);
+    return (
+      <div key={b.id} className="v1-item" data-deck-builtin={b.id}>
+        <div className="v1-item-head">
+          <span className="v1-item-title">
+            {BUILT_IN_LABEL[b.kind]}
+            <span className="v1-item-sub">{built?.built ? `${lenText} ${where}${facts}` : `not built: ${built?.why ?? "no room"}`}</span>
+          </span>
+          <button type="button" className="v1-btn v1-btn-sm v1-btn-danger" onClick={() => setBuiltIns(builtIns.filter((x) => x.id !== b.id))} data-deck-builtin-remove>
+            Remove
+          </button>
+        </div>
+        <div className="v1-grid3">
+          {!b.spot ? (
+            <Field label="Along the">
+              <select className="v1-sel" value={b.side} aria-label={`${name}: which edge`} onChange={(e) => setB({ side: e.target.value as BuiltIn["side"], atFt: (e.target.value === "front" ? design.shape.widthFt : design.shape.depthFt) / 2 })}>
+                {BUILT_IN_SIDES.map((sd) => (
+                  <option key={sd} value={sd}>{BUILT_IN_SIDE_LABEL[sd]}</option>
+                ))}
+              </select>
+            </Field>
+          ) : null}
+          {!b.spot ? (
+            <Field label="Its middle" aside={b.side === "front" ? "ft from the left end" : "ft out from the house"}>
+              <NumberInput label={`${name}: its middle, feet ${b.side === "front" ? "from the deck's left end" : "out from the house"}`} value={b.atFt} parse={parseFeet} format={feetText} min={0} max={along} onCommit={(n2) => setB({ atFt: n2 })} />
+            </Field>
+          ) : null}
+          <Field label="How long" aside="ft">
+            <NumberInput label={`${name}: how long, feet`} value={b.lengthFt} parse={parseFeet} format={feetText} min={b.kind === "kitchen" ? BUILT_IN_LIMITS.kitchenFt.min : b.kind === "fire" ? BUILT_IN_LIMITS.fireFt.min : BUILT_IN_LIMITS.lengthFt.min} max={b.kind === "planter" ? BUILT_IN_LIMITS.planterFt.max : b.kind === "kitchen" ? BUILT_IN_LIMITS.kitchenFt.max : b.kind === "fire" ? BUILT_IN_LIMITS.fireFt.max : BUILT_IN_LIMITS.lengthFt.max} onCommit={(n2) => setB({ lengthFt: n2 })} />
+          </Field>
+          {b.kind === "fire" && !b.spot ? (
+            <Field label="How far in" aside="ft from that edge to its middle">
+              <NumberInput label={`${name}: how far in from the edge, feet`} value={b.inFt ?? 6} parse={parseFeet} format={feetText} min={BUILT_IN_LIMITS.inFt.min} max={BUILT_IN_LIMITS.inFt.max} onCommit={(n2) => setB({ inFt: n2 })} />
+            </Field>
+          ) : null}
+          {b.kind === "screen" ? (
+            <Field label="How high" aside="ft above the deck">
+              <NumberInput label={`${name}: how high, feet above the deck`} value={b.heightFt ?? SCREEN_DEFAULT_FT} parse={parseFeet} format={feetText} min={BUILT_IN_LIMITS.screenFt.min} max={BUILT_IN_LIMITS.screenFt.max} onCommit={(n2) => setB({ heightFt: n2 })} />
+            </Field>
+          ) : null}
+        </div>
+        <div className="v1-row-acts" data-deck-accessory-acts={b.id}>
+          {b.kind !== "screen" ? (
+            <>
+              <button type="button" className="v1-btn v1-btn-sm" disabled={!left} onClick={() => moveBy(left)} aria-label={`${name}: turn ${ACCESSORY_TURN_DEG}° to the left`} data-deck-accessory-turn="left">
+                <RotateCcw size={15} strokeWidth={2.5} aria-hidden="true" /> Turn left
+              </button>
+              <button type="button" className="v1-btn v1-btn-sm" disabled={!right} onClick={() => moveBy(right)} aria-label={`${name}: turn ${ACCESSORY_TURN_DEG}° to the right`} data-deck-accessory-turn="right">
+                <RotateCw size={15} strokeWidth={2.5} aria-hidden="true" /> Turn right
+              </button>
+            </>
+          ) : null}
+          <button
+            type="button"
+            className={cx("v1-btn", "v1-btn-sm", placingThis && "is-on")}
+            aria-pressed={placingThis}
+            onClick={() => {
+              setPlacing(placingThis ? null : { kind: "accessory", id: b.id });
+              setView("3d");
+            }}
+            data-deck-accessory-place={b.id}
+          >
+            {placingThis ? "Click the deck in the 3D…" : "Place in 3D"}
+          </button>
+          {b.spot ? (
+            <button type="button" className="v1-btn v1-btn-sm v1-btn-quiet" onClick={() => moveBy(edgeAccessory(structure, b.id))} data-deck-accessory-edge={b.id}>
+              Back along an edge
+            </button>
+          ) : null}
+        </div>
+      </div>
+    );
+  };
+  const accessoriesStep = () => (
+    <div data-deck-builtins>
+      <p className="v1-lead">Built into the deck in its own boards. Each one starts along an edge; to move one, tap <b>Edit in 3D</b> under the picture and drag it anywhere on the deck — or use Turn and Place in 3D on its card. The checks say what each weighs and what must stay clear of a stair, a grill or a flame.</p>
+      {ACCESSORY_GROUPS.map((g) => {
+        const mine = builtIns.map((b, i) => ({ b, i })).filter(({ b }) => accessoryGroupOf(b.kind) === g);
+        return (
+          <section key={g} className="v1-accessory-group" data-deck-accessory-group={g}>
+            <h3 className="v1-h3">{ACCESSORY_GROUP_LABEL[g]}</h3>
+            <p className="v1-hint">{ACCESSORY_GROUP_HINT[g]}</p>
+            <div className="v1-fix-grid">
+              {ACCESSORY_GROUP_KINDS[g].map((k) => (
+                <button key={k} type="button" className="v1-add v1-add-small" disabled={builtIns.length >= BUILT_IN_LIMITS.count} onClick={() => setBuiltIns([...builtIns, defaultBuiltIn(`b${builtIns.length + 1}-${Date.now().toString(36).slice(-3)}`, k, design.shape.widthFt)])} data-deck-builtin-add={k}>
+                  <Plus size={16} strokeWidth={2.5} aria-hidden="true" />
+                  <span>{BUILT_IN_LABEL[k]}</span>
+                </button>
+              ))}
+            </div>
+            {mine.length ? <div className="v1-rows">{mine.map(({ b, i }) => accessoryCard(b, i))}</div> : null}
+          </section>
+        );
+      })}
+      {builtIns.length >= BUILT_IN_LIMITS.count ? <p className="v1-hint">That is {BUILT_IN_LIMITS.count} accessories — the most one deck takes. Remove one to add another.</p> : null}
+    </div>
+  );
   const extrasStep = () => (
     <>
       <p className="v1-lead">Tap what it gets. Each goes where it usually does — or place it in the 3D.</p>
@@ -3132,62 +3279,6 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
             {structure.electrical.lv ? ` · ${structure.electrical.lv.transformers} transformer${structure.electrical.lv.transformers > 1 ? "s" : ""}` : ""}
             {structure.electrical.trenchFt ? ` · ${structure.electrical.trenchFt} ft of trench` : ""}. Turn on Night under the 3D to see them lit.
           </p>
-        </div>
-      ) : null}
-      {/* BUILT-IN BENCHES AND PLANTERS (2026-11-14; lib/deck/builtins): each along one edge, in the deck's own boards. */}
-      {withDeck ? (
-        <div data-deck-builtins>
-          <h3 className="v1-h3">Built-in benches and planters</h3>
-          <p className="v1-hint">Built into the deck in its own boards, each along one edge: benches and planters just inside the railing, a privacy screen in the railing&apos;s place. Add one, then say which edge, where along it and how long.</p>
-          <div className="v1-fix-grid">
-            {BUILT_IN_KINDS.map((k) => (
-              <button key={k} type="button" className="v1-add v1-add-small" disabled={builtIns.length >= BUILT_IN_LIMITS.count} onClick={() => setBuiltIns([...builtIns, defaultBuiltIn(`b${builtIns.length + 1}-${Date.now().toString(36).slice(-3)}`, k, design.shape.widthFt)])} data-deck-builtin-add={k}>
-                <Plus size={16} strokeWidth={2.5} aria-hidden="true" />
-                <span>{BUILT_IN_LABEL[k]}</span>
-              </button>
-            ))}
-          </div>
-          <div className="v1-rows">
-            {builtIns.map((b, i) => {
-              const built = structure.builtIns.find((x) => x.design.id === b.id);
-              const setB = (p: Partial<BuiltIn>) => setBuiltIns(builtIns.map((x) => (x.id === b.id ? { ...x, ...p } : x)));
-              const name = `${BUILT_IN_LABEL[b.kind]} ${i + 1}`;
-              const along = b.side === "front" ? design.shape.widthFt : design.shape.depthFt;
-              return (
-                <div key={b.id} className="v1-item" data-deck-builtin={b.id}>
-                  <div className="v1-item-head">
-                    <span className="v1-item-title">
-                      {BUILT_IN_LABEL[b.kind]}
-                      <span className="v1-item-sub">{built?.built ? `${feetText(Math.round((built.lengthIn / 12) * 2) / 2).replace(/^(\d+(?:\.\d+)?)$/, "$1 ft")} along the ${BUILT_IN_SIDE_LABEL[b.side].toLowerCase()}${built.flags.shortened ? " — as long as that edge allows" : ""}${built.kind === "planter" ? ` · about ${Math.round(built.weightLb / 10) * 10} lb full` : built.kind === "screen" ? ` · ${built.posts} ${built.postSize} posts, in the railing's place` : ""}` : `not built: ${built?.why ?? "no room"}`}</span>
-                    </span>
-                    <button type="button" className="v1-btn v1-btn-sm v1-btn-danger" onClick={() => setBuiltIns(builtIns.filter((x) => x.id !== b.id))} data-deck-builtin-remove>
-                      Remove
-                    </button>
-                  </div>
-                  <div className="v1-grid3">
-                    <Field label="Along the">
-                      <select className="v1-sel" value={b.side} aria-label={`${name}: which edge`} onChange={(e) => setB({ side: e.target.value as BuiltIn["side"], atFt: (e.target.value === "front" ? design.shape.widthFt : design.shape.depthFt) / 2 })}>
-                        {BUILT_IN_SIDES.map((sd) => (
-                          <option key={sd} value={sd}>{BUILT_IN_SIDE_LABEL[sd]}</option>
-                        ))}
-                      </select>
-                    </Field>
-                    <Field label="Its middle" aside={b.side === "front" ? "ft from the left end" : "ft out from the house"}>
-                      <NumberInput label={`${name}: its middle, feet ${b.side === "front" ? "from the deck's left end" : "out from the house"}`} value={b.atFt} parse={parseFeet} format={feetText} min={0} max={along} onCommit={(n2) => setB({ atFt: n2 })} />
-                    </Field>
-                    <Field label="How long" aside="ft">
-                      <NumberInput label={`${name}: how long, feet`} value={b.lengthFt} parse={parseFeet} format={feetText} min={BUILT_IN_LIMITS.lengthFt.min} max={b.kind === "planter" ? BUILT_IN_LIMITS.planterFt.max : BUILT_IN_LIMITS.lengthFt.max} onCommit={(n2) => setB({ lengthFt: n2 })} />
-                    </Field>
-                    {b.kind === "screen" ? (
-                      <Field label="How high" aside="ft above the deck">
-                        <NumberInput label={`${name}: how high, feet above the deck`} value={b.heightFt ?? SCREEN_DEFAULT_FT} parse={parseFeet} format={feetText} min={BUILT_IN_LIMITS.screenFt.min} max={BUILT_IN_LIMITS.screenFt.max} onCommit={(n2) => setB({ heightFt: n2 })} />
-                      </Field>
-                    ) : null}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
         </div>
       ) : null}
       {withDeck ? (
@@ -3565,7 +3656,7 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
     </>
   );
 
-  const stepBody: Record<StepId, () => React.ReactNode> = { size: sizeStep, kind: kindStep, house: houseStep, materials: materialsStep, stairs: stairsStep, roof: roofStep, extras: extrasStep, checks: checksStep, package: packageStep };
+  const stepBody: Record<StepId, () => React.ReactNode> = { size: sizeStep, kind: kindStep, house: houseStep, materials: materialsStep, stairs: stairsStep, accessories: accessoriesStep, roof: roofStep, extras: extrasStep, checks: checksStep, package: packageStep };
 
   /* ── Talk to Deck Studio: what the panel may do, through the studio's own doors ── */
   const voiceEnv = React.useMemo(() => ({ rates: book, market, homeState }), [book, market, homeState]);
@@ -3945,6 +4036,14 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
                   {placing?.kind === "stair" ? (
                     <div className="v1-banner" data-deck-placing="stair-3d">
                       <span>Click the deck where the stairs go — they take the nearest open edge.</span>
+                      <button type="button" className="v1-btn v1-btn-sm" onClick={() => setPlacing(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  ) : null}
+                  {placing?.kind === "accessory" ? (
+                    <div className="v1-banner" data-deck-placing="accessory">
+                      <span>Click the deck where the {BUILT_IN_LABEL[builtIns.find((b) => b.id === placing.id)?.kind ?? "bench"].toLowerCase()} goes — it is moved in from the railing if it does not fit there.</span>
                       <button type="button" className="v1-btn v1-btn-sm" onClick={() => setPlacing(null)}>
                         Cancel
                       </button>

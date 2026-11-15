@@ -36,7 +36,7 @@ import type { RailMember } from "./rails";
 import { BASE_PLATE_IN, BASE_PLATE_THICK_IN, railMountCallout, railPostWords, railWords } from "./rails";
 import { electricalWords } from "./electrical";
 import { SKIRT_BOARD_IN, SKIRT_BORDER_IN, SKIRT_CLEAR_IN, SKIRT_GAP_IN, SKIRT_THICK_IN } from "./skirt";
-import { BENCH_BACK_IN, BENCH_SEAT_IN, SCREEN_GAP_IN, type BuiltInMember } from "./builtins";
+import { BENCH_BACK_IN, BENCH_SEAT_IN, BUILT_IN_LABEL, SCREEN_GAP_IN, type BuiltInMember } from "./builtins";
 import { finishProduct, type PartFinish } from "./finish";
 import { HOUSE_MATERIALS, HOUSE_ROOFS, houseHandles, houseScene, settleSceneOpenings, type HouseMaterial, type HouseRoof } from "./house";
 import { railColorOf, speciesWords } from "./catalog";
@@ -132,14 +132,17 @@ export const SCENE_MAX_GLOWS = 120;
 
 /** A handle: dragging it along `axis` (scene feet) changes `kind` from `value` by the distance dragged. */
 export interface SceneHandle {
-  kind: "width" | "width-left" | "depth" | "height" | "eave" | "stair" | "stair-width" | "lower-depth" | "roof-width" | "roof-depth" | "pitch" | "jog" | "house-left" | "house-right" | "post" | "beam" | "roof-post";
+  kind: "width" | "width-left" | "depth" | "height" | "eave" | "stair" | "stair-width" | "lower-depth" | "roof-width" | "roof-depth" | "pitch" | "jog" | "house-left" | "house-right" | "post" | "beam" | "roof-post" | "builtin";
   id: string;
   x: number;
   y: number;
   z: number;
-  axis: "x" | "y" | "z";
+  /** "xy": dragged across the deck, both ways (2026-11-14: an accessory) — `value` along the house, `value2` out from it. */
+  axis: "x" | "y" | "z" | "xy";
   /** The design's number the handle moves: feet for sizes, inches for heights. */
   value: number;
+  /** An "xy" handle's second number: out from the house, inches. */
+  value2?: number;
   /** Feet of drag per unit of value (12 for an inches value). */
   perUnit: number;
   /** The handle's own travel per unit of value where a change grows both ways about a centre (0.5 for a stair's
@@ -374,7 +377,7 @@ const STAIR_LAYER: Record<StairMember["role"], SceneLayer> = { stringer: "stair"
 const STAIR_BOARDS: ReadonlySet<StairMember["role"]> = new Set<StairMember["role"]>(["tread", "riser", "landing-tread", "box-tread"]);
 const BUILT_IN_BOARDS: ReadonlySet<BuiltInMember["role"]> = new Set<BuiltInMember["role"]>(["bench seat", "bench back", "bench cap", "bench apron", "planter board", "planter cap", "screen board", "screen cap"]);
 /** Built-ins: boards as the deck's, aprons as its fascia, legs and cleats as its frame, a planter's soil dark. */
-const BUILT_IN_LAYER: Record<BuiltInMember["role"], SceneLayer> = { "bench seat": "decking", "bench back": "decking", "bench cap": "decking", "bench apron": "fascia", "bench leg": "post", "bench back post": "post", "bench cleat": "joist", "planter board": "decking", "planter cap": "fascia", "planter soil": "spa", "screen post": "post", "screen board": "decking", "screen cap": "fascia" };
+const BUILT_IN_LAYER: Record<BuiltInMember["role"], SceneLayer> = { "bench seat": "decking", "bench back": "decking", "bench cap": "decking", "bench apron": "fascia", "bench leg": "post", "bench back post": "post", "bench cleat": "joist", "planter board": "decking", "planter cap": "fascia", "planter soil": "spa", "screen post": "post", "screen board": "decking", "screen cap": "fascia", "kitchen board": "decking", "kitchen top": "slab", "kitchen grill": "hardware", "fire base": "slab", "fire top": "slab", "fire burner": "spa" };
 const RAIL_LAYER: Record<RailMember["role"], SceneLayer> = { "rail-post": "rail", "rail-top": "rail", "rail-bottom": "rail", "rail-cap": "rail", baluster: "rail", cable: "rail", "rail-panel": "glass", mesh: "rail" };
 /** The rail parts a scene's `railInfill` colour is for: the infill, not the frame. */
 export const RAIL_INFILL_ROLE = /^(?:lower level )?(?:baluster|stair baluster|cable|mesh)$/;
@@ -728,6 +731,17 @@ export function deckScene(s: DeckStructure): DeckScene {
           return `Privacy screen: the deck's boards across the posts' inner faces, ${SCREEN_GAP_IN} in. apart, two screws at every post.`;
         case "screen cap":
           return "Cap board on the screen's posts.";
+        case "kitchen board":
+          return "Outdoor kitchen island: the deck's boards round a treated 2x4 frame. The island is framed in wood, so a built-in grill sits in its maker's insulated jacket.";
+        case "kitchen top":
+          return "The island's top — stone or concrete, by others. Its weight is in the checks, and the joists under the island are doubled for it.";
+        case "kitchen grill":
+          return "A built-in grill (by others), shown so what stands near it can be measured: keep the maker's clearance to anything that burns. Gas and power by licensed trades.";
+        case "fire base":
+        case "fire top":
+          return "A gas fire table (by others), shown where it will stand: a listed gas appliance on the pad or heat shield the decking's maker accepts. Never a wood fire on a deck.";
+        case "fire burner":
+          return "The burner: nothing that burns within 36 in. of it, and 8 ft clear above it where there is a roof.";
         default:
           return "Planting soil in a liner with drain holes. Wet soil is heavy: see the checks for what this box weighs.";
       }
@@ -1228,6 +1242,21 @@ export function deckScene(s: DeckStructure): DeckScene {
     if (!b) continue;
     handles.push({ kind: g.kind, id: g.id, x: r3((b[0] + b[3]) / 2), y: r3((b[1] + b[4]) / 2), z: r3((b[2] + b[5]) / 2), axis: g.axis, value: g.at, perUnit: 1 / 12, label: g.label, grab: [r3(b[0]), r3(b[1]), r3(b[2]), r3(b[3]), r3(b[4]), r3(b[5])], shown: { origin: g.origin, sign: g.sign, from: g.from } });
   }
+  // ACCESSORIES BY HAND (2026-11-14; lib/deck/accessories): each built one is its own handle — taken hold of by the
+  // thing itself and dragged across the deck, both ways at once (its middle, inches).
+  if (s.frame) {
+    for (const b of s.builtIns) {
+      if (!b.built || b.footprint.length !== 4) continue;
+      const xs = b.footprint.map((q) => q.x);
+      const ys = b.footprint.map((q) => q.y);
+      const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+      const z0 = s.frame.surfaceIn;
+      const z1 = z0 + Math.max(4, b.heightIn);
+      const cx = (b.footprint[0].x + b.footprint[2].x) / 2;
+      const cy = (b.footprint[0].y + b.footprint[2].y) / 2;
+      handles.push({ kind: "builtin", id: b.design.id, x: r3(cx), y: r3(cy), z: r3((z0 + z1) / 2), axis: "xy", value: Math.round(cx * 2) / 2, value2: Math.round(cy * 2) / 2, perUnit: 1 / 12, label: BUILT_IN_LABEL[b.kind], grab: [r3(x0), r3(y0), r3(z0), r3(x1), r3(y1), r3(z1)] });
+    }
+  }
   return {
     v: DECK_SCENE_VERSION,
     widthFt: r3(Math.max(width, 48)),
@@ -1419,8 +1448,8 @@ export function parseDeckScene(raw: unknown): DeckScene | null {
     if (Array.isArray(r.handles) && r.handles.length <= 240) {
       for (const h of r.handles) {
         const o = (h && typeof h === "object" ? h : null) as Record<string, unknown> | null;
-        if (!o || typeof o.kind !== "string" || typeof o.id !== "string" || !fin(o.x) || !fin(o.y) || !fin(o.z) || !fin(o.value) || !fin(o.perUnit) || (o.axis !== "x" && o.axis !== "y" && o.axis !== "z")) continue;
-        handles.push({ kind: o.kind as SceneHandle["kind"], id: o.id.slice(0, 20), x: o.x, y: o.y, z: o.z, axis: o.axis, value: o.value, perUnit: o.perUnit, ...(fin(o.follow) && ((o.follow > 0 && o.follow <= 1) || o.follow === -1) ? { follow: o.follow } : {}), label: typeof o.label === "string" ? o.label.slice(0, 60) : "", ...handleGrab(o) });
+        if (!o || typeof o.kind !== "string" || typeof o.id !== "string" || !fin(o.x) || !fin(o.y) || !fin(o.z) || !fin(o.value) || !fin(o.perUnit) || (o.axis !== "x" && o.axis !== "y" && o.axis !== "z" && o.axis !== "xy")) continue;
+        handles.push({ kind: o.kind as SceneHandle["kind"], id: o.id.slice(0, 20), x: o.x, y: o.y, z: o.z, axis: o.axis, value: o.value, ...(fin(o.value2) ? { value2: o.value2 } : {}), perUnit: o.perUnit, ...(fin(o.follow) && ((o.follow > 0 && o.follow <= 1) || o.follow === -1) ? { follow: o.follow } : {}), label: typeof o.label === "string" ? o.label.slice(0, 60) : "", ...handleGrab(o) });
       }
     }
   }

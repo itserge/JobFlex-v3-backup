@@ -169,7 +169,7 @@ export type DeckCommand =
   | { do: "extras"; demoSqFt?: number | "deck"; stainless?: boolean; drain?: boolean; skirt?: "lattice" | "boards" | "none" }
   | { do: "item"; op: "add" | "remove"; name: string; qty?: number; unit?: OwnUnit; price?: number }
   /** A built-in bench or planter box along one edge (2026-11-14; lib/deck/builtins). `at`: which end of that edge it stands toward. */
-  | { do: "builtin"; op: "add" | "remove"; kind: "bench" | "bench-back" | "planter" | "screen"; side?: "front" | "left" | "right"; lengthFt?: number; at?: "left" | "centre" | "right"; /** A privacy screen's height, ft. */ heightFt?: number }
+  | { do: "builtin"; op: "add" | "remove"; kind: "bench" | "bench-back" | "planter" | "screen" | "kitchen" | "fire"; side?: "front" | "left" | "right"; lengthFt?: number; at?: "left" | "centre" | "right"; /** A privacy screen's height, ft. */ heightFt?: number; /** A fire table: how far in from the edge, ft. */ inFt?: number }
   /** A product of the shop's own in one of the studio's lists ("our own boards, Azek Timbertech, at 9 dollars a foot"). */
   | { do: "custom"; slot: CustomSlot; name: string; price: number }
   | { do: "sample"; id: string }
@@ -183,7 +183,7 @@ export type DeckCommand =
   | { do: "whatif"; then: DeckCommand[]; words: string }
   | { do: "compare"; options: Array<{ words: string; then: DeckCommand[] }> }
   | { do: "open"; what: "permit" | "yard" | "installer" | "package" | "checks" }
-  | { do: "go"; to: "kind" | "size" | "house" | "materials" | "stairs" | "roof" | "extras" | "checks" | "package" }
+  | { do: "go"; to: "kind" | "size" | "house" | "materials" | "stairs" | "accessories" | "roof" | "extras" | "checks" | "package" }
   | { do: "name"; title: string }
   | { do: "address"; text: string }
   | { do: "save" }
@@ -337,11 +337,10 @@ export const FIXTURE_SAY: Record<FixtureKind, [string, string]> = {
 
 /** Things people ask for that the studio has no drawing of (yet): said back by name, priced as the contractor's own item. */
 export const NOT_DRAWN: ReadonlyArray<[RegExp, string]> = [
-  [/\bfire ?pits?\b|\bfire ?bowls?\b|\bfire ?table\b/, "Fire pit"],
   [/\bfire ?place\b|\bchimney\b/, "Outdoor fireplace"],
   [/\bpool\b|\bswimming pool\b/, "Pool"],
-  [/\bgrill\b|\bbbq\b|\bbarbecue\b|\bgrill station\b/, "Grill station"],
-  [/\boutdoor kitchen\b|\bkitchen\b|\bsink\b|\bcountertops?\b/, "Outdoor kitchen"],
+  // (An outdoor kitchen island and a gas fire table are drawn — lib/deck/builtins, read before this list.)
+  [/\bsink\b|\bcountertops?\b/, "Sink and countertop"],
   [/\bbar\b|\bbar top\b|\bbar counter\b/, "Bar counter"],
   [/\btv\b|\btelevision\b/, "TV mount"],
   [/\bspeakers?\b|\bsound system\b|\baudio\b/, "Outdoor speakers"],

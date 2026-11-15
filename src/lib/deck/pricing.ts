@@ -30,7 +30,7 @@ import { roofByHandWords, roofWords, type RoofFrame } from "./roof";
 import { buildStructure, structureLevels, type DeckStructure } from "./structure";
 import { deckTakeoff, type BomLine, type BomStep, type DeckTakeoff } from "./takeoff";
 import { SKIRT_GAP_IN } from "./skirt";
-import { BENCH_SEAT_IN, PLANTER_DEPTH_IN, SCREEN_GAP_IN, builtInWords } from "./builtins";
+import { BENCH_SEAT_IN, KITCHEN_DEPTH_IN, KITCHEN_HEIGHT_IN, PLANTER_DEPTH_IN, SCREEN_GAP_IN, builtInWords } from "./builtins";
 import { isExampleSource, deckRate, type ResolvedRate } from "./rates";
 import { railType, speciesWords } from "./catalog";
 import { OC_POST } from "./ocLumber";
@@ -266,6 +266,23 @@ export function priceStructure(s: DeckStructure, opts: DeckPriceOptions = {}): D
           material: stepMaterial("builtins", isScreen),
           labor: w.amount,
           exampleMaterial: stepExample("builtins", isScreen),
+          exampleLabor: w.example,
+        });
+      }
+      const kitchens = s.builtIns.filter((b) => b.built && b.kind === "kitchen");
+      if (kitchens.length) {
+        const isKitchen = (l: PricedBomLine) => l.id.includes("kitchen");
+        const ft = Math.round((kitchens.reduce((a, b) => a + b.lengthIn, 0) / 12) * 2) / 2;
+        const w = work("labor.kitchen", ft);
+        line({
+          id: "deck-kitchen",
+          name: kitchens.length === 1 ? "Outdoor kitchen island" : `${kitchens.length} outdoor kitchen islands`,
+          description: `${kitchens.map((b) => builtInWords(b).replace(/^an? /, "")).join("; ")} — ${KITCHEN_DEPTH_IN} in. deep and ${KITCHEN_HEIGHT_IN} in. high, framed in treated 2x4 and clad in the deck's own boards, the joists under it doubled; the top, the grill, gas and power are not included`,
+          quantity: ft,
+          unit: "ln ft",
+          material: stepMaterial("builtins", isKitchen),
+          labor: w.amount,
+          exampleMaterial: stepExample("builtins", isKitchen),
           exampleLabor: w.example,
         });
       }
@@ -552,7 +569,7 @@ export function deckScope(pkg: DeckPackage, where?: string | null): string[] {
     out.push(`Electrical: ${electricalWords(el).toLowerCase()} — ${[...new Set(el.fixtures.map((f) => FIXTURE_LABEL[f.kind].toLowerCase()))].join(", ")}, on ${plural(el.circuits.length, "new circuit")} from the panel, weatherproof boxes and GFCI protection, by a licensed electrician.`);
     if (el.byClient.length) out.push(`${el.byClient.length === 1 ? "One fixture" : `${el.byClient.length} fixtures`} (${[...new Set(el.byClient.map((f) => FIXTURE_LABEL[f.kind].toLowerCase()))].join(", ")}) to be chosen and bought by you; we wire the boxes and hang them.`);
   }
-  for (const b of s.builtIns) if (b.built) out.push(b.kind === "screen" ? `${builtInWords(b).replace(/^a /, "A ").replace(/^an /, "An ")}: the deck's own boards across ${b.postSize} posts, with a cap board; the posts bolted through the deck's frame.` : b.kind === "planter" ? `${builtInWords(b).replace(/^a /, "A ").replace(/^an /, "An ")}, in the deck's own boards with a cap round the rim, lined and drained. Soil and plants are not included.` : `${builtInWords(b).replace(/^a /, "A ").replace(/^an /, "An ")}, built in: the seat in the deck's own boards on treated legs, a fascia apron under its edge${b.kind === "bench-back" ? ", a capped back behind it" : ""}.`);
+  for (const b of s.builtIns) if (b.built) out.push(b.kind === "kitchen" ? `${builtInWords(b).replace(/^a /, "A ").replace(/^an /, "An ")}, framed and clad in the deck's own boards, the joists under it doubled for a stone top and a grill. The top, the grill, gas and power are not included.` : b.kind === "fire" ? `A place for ${builtInWords(b)} is shown on the drawing. The table, its pad and the gas line are not included.` : b.kind === "screen" ? `${builtInWords(b).replace(/^a /, "A ").replace(/^an /, "An ")}: the deck's own boards across ${b.postSize} posts, with a cap board; the posts bolted through the deck's frame.` : b.kind === "planter" ? `${builtInWords(b).replace(/^a /, "A ").replace(/^an /, "An ")}, in the deck's own boards with a cap round the rim, lined and drained. Soil and plants are not included.` : `${builtInWords(b).replace(/^a /, "A ").replace(/^an /, "An ")}, built in: the seat in the deck's own boards on treated legs, a fascia apron under its edge${b.kind === "bench-back" ? ", a capped back behind it" : ""}.`);
   if (s.skirt) out.push(`Skirting under the deck on its open sides (${Math.round(s.skirt.lf)} ft): ${s.skirt.kind === "lattice" ? "lattice in a border" : "the deck's own boards laid level, with gaps for air"}, on a treated frame, stopped a hand above the ground, with one hinged panel to get under the deck.`);
   if (design.extras.underDeckDrain) out.push("An under-deck drainage system keeps the space below the deck dry.");
   if (design.extras.demoSqFt > 0) out.push(`Tear-out and haul-away of the existing deck, ${design.extras.demoSqFt} sq ft.`);

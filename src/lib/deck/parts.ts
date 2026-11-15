@@ -38,8 +38,12 @@ import { railMountLine } from "./rails";
 import type { RoofMember } from "./roof";
 import { ROOF_MEMBER_LAYER, SCENE_LAYERS, type DeckScene, type SceneLayer } from "./scene";
 import { settleDesign } from "./settle";
-import { BUILT_IN_LABEL, builtInWords } from "./builtins";
+import { ACCESSORY_TURN_DEG, edgeAccessory, turnAccessory } from "./accessories";
+import { BUILT_IN_LABEL, builtInWords, planGap } from "./builtins";
 import type { FinishTarget, PartFinish } from "./finish";
+
+/** The scene roles that are an accessory's own parts (lib/deck/scene). */
+const ACCESSORY_ROLE = /^(?:bench (?:seat|back|cap|apron|leg|cleat|back post)|planter (?:board|cap|soil)|screen (?:post|board|cap)|kitchen (?:board|top|grill)|fire (?:base|top|burner))$/;
 import { BETWEEN_LEVELS_STAIR_ID, LOWER_KEY, buildStructure, structureLevels, type DeckStructure } from "./structure";
 
 /* ------------------------------------------------------------------ */
@@ -69,7 +73,7 @@ export type PartKind =
   | "gutter"
   | "ceiling"
   | "walls"
-  /** A bench, a bench with a back, a planter box or a privacy screen built into the deck (lib/deck/builtins). */
+  /** An accessory built into the deck — a bench, a planter box, a privacy screen, a kitchen island, a fire table (lib/deck/builtins). */
   | "built-in";
 
 export interface PartRef {
@@ -144,9 +148,13 @@ export function partAt(s: DeckStructure, scene: DeckScene, boxIdx: number | null
   }
   const [x, y, z] = [b[1] * 12, b[2] * 12, b[3] * 12];
 
-  // A BUILT-IN (2026-11-14): its seat, legs, posts and boards are drawn on the deck's own layers — named by its role.
+  // AN ACCESSORY (2026-11-14; lib/deck/builtins): a bench's, a planter's, a screen's, a kitchen's or a fire table's own
+  // part, drawn on the deck's own layers — named by its role: the one whose footprint holds the box's middle (else the
+  // nearest of its parts).
   const role = typeof boxIdx === "number" && scene.tags.length === scene.boxes.length && scene.tags[boxIdx] >= 0 ? scene.legend[scene.tags[boxIdx]]?.role ?? "" : "";
-  if (/^(bench|planter|screen) /.test(role)) {
+  if (ACCESSORY_ROLE.test(role)) {
+    const hit = s.builtIns.find((q) => q.built && planGap(q.footprint, [{ x, y }]) < 1);
+    if (hit) return { kind: "built-in", id: hit.design.id };
     let best: { id: string; d: number } | null = null;
     for (const bi of s.builtIns) {
       for (const m of bi.members) {
@@ -155,7 +163,7 @@ export function partAt(s: DeckStructure, scene: DeckScene, boxIdx: number | null
         best = { id: bi.design.id, d };
       }
     }
-    if (best) return { kind: "built-in", id: best.id };
+    return best ? { kind: "built-in", id: best.id } : null;
   }
 
   if (DECK_LAYERS.includes(name)) {
@@ -620,11 +628,36 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
 
     case "built-in": {
       const bi = s.builtIns.find((x) => x.design.id === ref.id);
-      if (!bi) return card("Built-in", "Built into the deck.", []);
+      if (!bi) return card("Accessory", "Built into the deck.", []);
       const title = BUILT_IN_LABEL[bi.kind];
-      const does = bi.kind === "screen" ? "A privacy screen of deck boards across posts carried down into the frame." : bi.kind === "planter" ? "A planter box of deck boards on a treated frame, standing on the boards." : "A bench of deck boards on treated legs, standing on the boards over blocking.";
-      const c = card(title, `${does} ${builtInWords(bi).replace(/^./, (ch) => ch.toUpperCase())}.`, [{ id: "remove", tone: "remove", label: `Remove this ${title.toLowerCase()}`, patch: { extras: { builtIns: (d.extras.builtIns ?? []).filter((x) => x.id !== ref.id) } } }]);
-      return { ...c, finish: { target: { kind: "built-in", id: ref.id }, now: bi.design.finish ?? null, ...deckBoardNow(s) } };
+      const does =
+        bi.kind === "screen"
+          ? "A privacy screen of deck boards across posts carried down into the frame."
+          : bi.kind === "planter"
+            ? "A planter box of deck boards on a treated frame, standing on the boards."
+            : bi.kind === "kitchen"
+              ? "An outdoor kitchen island of deck boards round a treated frame, with a top and a grill by others; the joists under it are doubled."
+              : bi.kind === "fire"
+                ? "A place for a gas fire table the client buys: the checks keep what burns clear of it."
+                : "A bench of deck boards on treated legs.";
+      // MOVED BY HAND (2026-11-14; lib/deck/accessories): turned here, put back along its edge — dragged in the 3D itself
+      // with Edit in 3D. A privacy screen stands in the railing's place: it slides along the edges and does not turn.
+      const choices: PartChoice[] = [];
+      if (bi.kind !== "screen") {
+        for (const [by, label] of [[-ACCESSORY_TURN_DEG, `Turn it ${ACCESSORY_TURN_DEG}° to the left`], [ACCESSORY_TURN_DEG, `Turn it ${ACCESSORY_TURN_DEG}° to the right`], [90, "Turn it a quarter turn"]] as const) {
+          const p = turnAccessory(s, ref.id, by);
+          if (p) choices.push({ id: `turn${by}`, tone: "swap", label, patch: p });
+        }
+        if (bi.design.spot) {
+          const p = edgeAccessory(s, ref.id);
+          if (p) choices.push({ id: "edge", tone: "swap", label: "Put it back along the nearest edge", patch: p });
+        }
+      }
+      choices.push({ id: "remove", tone: "remove", label: `Remove this ${title.toLowerCase()}`, patch: { extras: { builtIns: (d.extras.builtIns ?? []).filter((x) => x.id !== ref.id) } } });
+      const move = bi.kind === "screen" ? " With Edit in 3D, drag it to another edge." : " With Edit in 3D, drag it anywhere on the deck — let go by the railing and it lines up there.";
+      const c = card(title, `${does} ${builtInWords(bi).replace(/^./, (ch) => ch.toUpperCase())}.${move}`, choices);
+      // (Boards of its own — lib/deck/finish — on a bench, a planter or a screen.)
+      return bi.kind === "kitchen" || bi.kind === "fire" ? c : { ...c, finish: { target: { kind: "built-in", id: ref.id }, now: bi.design.finish ?? null, ...deckBoardNow(s) } };
     }
 
     case "rail": {
