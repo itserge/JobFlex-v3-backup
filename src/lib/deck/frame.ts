@@ -69,7 +69,7 @@ import {
 } from "./codeTables";
 import { deckingProduct, framingSpecies, isCompositeFraming, wallType, type DeckingProduct, type FramingSpecies, type WallType } from "./catalog";
 import { OC_BEAM_LAST_FT, OC_BLOCKING_MAX_FT, OC_POST, ocBeamMaxSpanIn, ocPostMaxAreaSqFt } from "./ocLumber";
-import { BRACE_ACTUAL_IN, BUILT_UP_CHOICES, DECK_BEAM_LIMITS, braceSizeFor, frontClips, frontEdgeAt, isSolidBeam, normalizeDeckDesign, shapeAreaSqFt, shapeEdges, shapeOutline, shapeZones, type BeamKind, type BeamSize, type BeamStyle, type DeckDesign, type DeckEdge, type FrontClip, type Zone, spaRectIn } from "./design";
+import { BRACE_ACTUAL_IN, BUILT_UP_CHOICES, DECK_BEAM_LIMITS, braceSizeFor, frontClips, frontEdgeAt, shapeBows, sideBowAt, isSolidBeam, normalizeDeckDesign, shapeAreaSqFt, shapeEdges, shapeOutline, shapeZones, type BeamKind, type BeamSize, type BeamStyle, type DeckDesign, type DeckEdge, type FrontClip, type Zone, spaRectIn } from "./design";
 import { ringEdges } from "./ringEdges";
 import { deckingColor, deckingLook, deckingNamed } from "./deckingColors";
 import { deckRate, lumberKey, type DeckRateBook } from "./rates";
@@ -370,6 +370,15 @@ export interface DeckFrame {
   blockingRows: Array<{ y: number; zoneId: Zone["id"]; pieces: number; why: "beam" | "mid-span" | "maker" | "curve" }>;
   /** The front's shape (M3): the extra the bow hangs past the straight overhang at its middle, inches; the ground's fall under the deck. */
   frontExtraCantIn: number;
+  /**
+   * THE SIDES AND THE BACK, BOWED (2026-11-15 — the owner: "choose which side I want the radius on"). What carries each:
+   *   · a SIDE — the deck's outside joist doubled (a sister on its yard side), short joists ("outriggers") hung on it
+   *     at the joists' spacing and cut to the arc, the bent rim across their ends; where the bow is deeper than 2 ft,
+   *     a beam on two posts under them, parallel to the side;
+   *   · the BACK of a deck that stands free — the joists run on past the back beam to the arc (`cantIn`: how far the
+   *     longest hangs past it; `cantMaxIn`: what its span allows).
+   */
+  sideBows: Array<{ side: "left" | "right" | "back"; bowIn: number; outriggers: number; longestIn: number; beam: { x: number; y0: number; y1: number; size: string; cantIn: number } | null; cantIn?: number; cantMaxIn?: number }>;
   groundHighIn: number;
   groundLowIn: number;
   /** What the layout could not do inside the tables — read by checks.ts. */
@@ -894,6 +903,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
   const clips = frontClips(design.shape);
   const shaped = (!!front && front.kind !== "straight") || (design.shape.kind === "wall" && clips.length > 0);
   const bulgeIn = front?.kind === "curve" ? Math.round(front.bulgeFt * 12) : 0;
+  const backBowIn = design.placement === "detached" ? Math.round(shapeBows(design.shape).back * 12) : 0;
   const frontAt = (x: number, y1: number) => (shaped ? frontEdgeAt(design.shape, x) : y1);
   const groundAt = opts.groundAt ?? (() => 0);
   const W0 = Math.max(...zones.map((z) => z.x1));
@@ -1390,13 +1400,16 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       const backExposed = design.placement === "detached" || !!z.open;
       const frontRim = style === "dropped" ? rimPlies(frontExposed) * THICK_2X_IN : 0;
       const backRim = style === "dropped" && zf.back === "beam" ? rimPlies(backExposed) * THICK_2X_IN : 0;
-      const start = zf.back === "ledger" ? z.y0 + THICK_2X_IN : style === "flush" && backBeam ? z.y0 + backBeam.spec.thickIn : z.y0 + backRim;
+      const start0 = zf.back === "ledger" ? z.y0 + THICK_2X_IN : style === "flush" && backBeam ? z.y0 + backBeam.spec.thickIn : z.y0 + backRim;
       const endStraight = style === "flush" && frontBeam ? z.y1 - frontBeam.spec.thickIn : z.y1 - frontRim;
       const mine = joists.filter((j) => j.zoneId === z.id);
 
+      // (A free deck's bowed back — 2026-11-15: each joist runs on past the back beam to the arc.)
+      const backBowed = backBowIn > 0 && zf.back === "beam" && style === "dropped";
       for (const j of mine) {
         // A shaped front cuts each joist to the arc or the clip (a rim's thickness back from it).
         const end = shaped && style === "dropped" ? frontAt(j.x, z.y1) - frontRim : endStraight;
+        const start = backBowed ? start0 - sideBowAt(design.shape, "back", j.x) : start0;
         // Where this joist is cut: at every flush middle beam; over a dropped one only when it is longer than stock.
         let cuts: Array<[number, number]>;
         if (style === "flush") {
@@ -1466,18 +1479,28 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
               const mx = (e.A.x + e.B.x) / 2;
               if (!(mx > z.x0 - 0.01 && mx <= z.x1 - 0.01)) continue;
               if (Math.abs(e.A.y - z.y0) < 0.5 && Math.abs(e.B.y - z.y0) < 0.5) continue;
-            } else if (e.A.y < 0.5 && e.B.y < 0.5) continue;
+            } else if (e.A.y < 0.5 && e.B.y < 0.5 && !(backBowed && (e.A.y < -0.5 || e.B.y < -0.5))) continue;
             if (Math.abs(e.ux) < 1e-6) continue;
             if (e.length < 1) continue;
             const curved = front?.kind === "curve" && !(Math.abs(e.A.y - z.y1) < 0.01 && Math.abs(e.B.y - z.y1) < 0.01 && Math.abs(e.uy) < 1e-6);
+            // A BOWED SIDE (2026-11-15) leaves the deck's own side line at an angle: its first and last pieces stop
+            // where they clear the outside joist (and its sister) — laid to the corner they lay across the joist's top.
+            const onSide = (q: { x: number; y: number }) => (q.x < z.x0 + 0.01 ? -1 : q.x > z.x1 - 0.01 ? 1 : 0);
+            const sideOf = onSide(e.A) !== 0 && onSide(e.A) === onSide(e.B) && design.shape.kind === "rect" ? onSide(e.A) : 0;
+            const clear = sideOf !== 0 ? (plies * THICK_2X_IN * Math.abs(e.outX) + (design.framing.doubleRim ? 0 : THICK_2X_IN)) / Math.max(0.05, Math.abs(e.ux)) + 0.25 : 0;
+            const edgeX = sideOf < 0 ? z.x0 : z.x1;
+            const from = sideOf !== 0 && Math.abs(e.A.x - edgeX) < 0.01 ? Math.min(clear, e.length) : 0;
+            const to = e.length - (sideOf !== 0 && Math.abs(e.B.x - edgeX) < 0.01 ? Math.min(clear, e.length) : 0);
+            if (to - from < 1) continue;
+            const mid = (from + to) / 2;
             for (let p = 0; p < plies; p++) {
               const off = (p + 0.5) * THICK_2X_IN;
-              sticks.push({ role: "rim", nominal: joistSize, lengthIn: e.length, cx: (e.A.x + e.B.x) / 2 - e.outX * off, cy: (e.A.y + e.B.y) / 2 - e.outY * off, cz: joistBottomIn + joistDepth / 2, sx: e.length, sy: THICK_2X_IN, sz: joistDepth, ground: joistGround, of: z.id, yaw: e.yaw, curved });
+              sticks.push({ role: "rim", nominal: joistSize, lengthIn: to - from, cx: e.A.x + e.ux * mid - e.outX * off, cy: e.A.y + e.uy * mid - e.outY * off, cz: joistBottomIn + joistDepth / 2, sx: to - from, sy: THICK_2X_IN, sz: joistDepth, ground: joistGround, of: z.id, yaw: e.yaw, curved });
             }
           }
           hardware.rimScrews += 3 * mine.length;
         } else rim(z.y1, rimPlies(frontExposed), -1);
-        if (zf.back === "beam") rim(z.y0, rimPlies(backExposed), 1);
+        if (zf.back === "beam" && !backBowed) rim(z.y0, rimPlies(backExposed), 1);
       }
     }
 
@@ -1566,7 +1589,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
         });
       }
       // Under a bowed front every bay is blocked midway out to the arc (the border's bearing).
-      if (front?.kind === "curve" && style === "dropped") rows.push({ y: zf.beamYs[zf.beamYs.length - 1] + (z.y1 + bulgeIn - zf.beamYs[zf.beamYs.length - 1]) / 2, why: "curve" });
+      if (front?.kind === "curve" && bulgeIn > 0 && style === "dropped") rows.push({ y: zf.beamYs[zf.beamYs.length - 1] + (z.y1 + bulgeIn - zf.beamYs[zf.beamYs.length - 1]) / 2, why: "curve" });
       const supports = [zf.back === "ledger" ? z.y0 + THICK_2X_IN : zf.beamYs[0], ...(zf.back === "ledger" ? zf.beamYs : zf.beamYs.slice(1))];
       for (let i = 0; i + 1 < supports.length; i++) {
         const span = supports[i + 1] - supports[i];
@@ -1632,6 +1655,93 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       }
     }
 
+    // THE SIDES AND THE BACK, BOWED (2026-11-15; see DeckFrame.sideBows). A side's bulge is framed the way a bowed front
+    // is, turned a quarter: short joists square to the side — hung on the deck's outside joist, which is doubled for
+    // them — cut to the arc, the bent rim across their ends (laid with the front's, above). A bow of 2 ft or less they
+    // carry as lookouts; under a deeper one a beam on two posts runs parallel to the side, a third of the bow (8 to
+    // 18 in.) back from its middle, as long as the bow reaches a hand past it.
+    const sideBows: DeckFrame["sideBows"] = [];
+    if (design.shape.kind === "rect" && style === "dropped") {
+      const bows = shapeBows(design.shape);
+      const Wd = Math.round(design.shape.widthFt * 12);
+      const Dd = Math.round(design.shape.depthFt * 12);
+      const zc = joistBottomIn + joistDepth / 2;
+      for (const side of ["left", "right"] as const) {
+        const bow = Math.round(bows[side] * 12);
+        if (!(bow > 0)) continue;
+        const out = side === "left" ? -1 : 1;
+        const edgeX = side === "left" ? 0 : Wd;
+        const rimT = rimPlies(true) * THICK_2X_IN;
+        // The outside joist doubled: where the rim is not doubled already, a sister on its yard side.
+        const sistered = !design.framing.doubleRim;
+        if (sistered) {
+          // (A quarter inch short at each end: its end faces lie in no face of the outside joist's hanger or of the rim.)
+          for (const st of sticks.filter((q) => q.role === "joist" && Math.abs(q.cx - (edgeX - out * (THICK_2X_IN / 2))) < 0.01)) sticks.push({ ...st, cx: edgeX + out * (THICK_2X_IN / 2), sy: st.sy - 0.5, lengthIn: st.lengthIn - 0.5 });
+        }
+        const face = edgeX + (sistered ? out * THICK_2X_IN : 0);
+        const inset = sistered ? THICK_2X_IN : 0;
+        // The beam under a deep bow.
+        let beam: DeckFrame["sideBows"][number]["beam"] = null;
+        if (bow > 24) {
+          const cant = Math.min(18, Math.max(8, Math.round(bow / 3)));
+          const xb = bow - cant;
+          const R = (Dd / 2) ** 2 / (2 * bow) + bow / 2;
+          const halfLen = Math.sqrt(Math.max(0, R * R - (R - bow + xb + 6) ** 2));
+          const spec = [...beams].sort((a, b) => b.y - a.y)[0]?.spec ?? beamSpec(beamChoices[Math.min(1, beamChoices.length - 1)]);
+          if (halfLen >= 12) {
+            const bx = edgeX + out * xb;
+            const y0 = Dd / 2 - halfLen;
+            const y1 = Dd / 2 + halfLen;
+            const id = `bow-${side}`;
+            const ply = spec.kind === "solid" ? THICK_4X_IN : THICK_2X_IN;
+            for (let p = 0; p < spec.plies; p++) sticks.push({ role: "beam", nominal: spec.stock, lengthIn: y1 - y0, cx: bx - spec.thickIn / 2 + (p + 0.5) * ply, cy: Dd / 2, cz: joistBottomIn - spec.depthIn / 2, sx: ply, sy: y1 - y0, sz: spec.depthIn, ground: true, of: id });
+            // Half the bulge's floor rests on the beam: a quarter on each post.
+            const tributarySqFt = Math.round((((2 / 3) * bow * Dd) / 144 / 4) * carries * 10) / 10;
+            const bottomIn = joistBottomIn - spec.depthIn;
+            [y0 + 6, y1 - 6].forEach((y, k) => {
+              if (follow) {
+                seats.push({ beamId: id, x: bx, y });
+                return;
+              }
+              const topIn = Math.min(footingTopIn, Math.max(0, bottomIn));
+              const zg = groundAt(bx, y);
+              const footing = footingFor(design, bx, y, tributarySqFt, design.framing.post, topIn);
+              footing.groundIn = zg;
+              const heightIn = Math.max(0, bottomIn - (topIn + zg));
+              posts.push({ id: `${id}p${k + 1}`, beamId: id, x: bx, y, size: design.framing.post, heightIn, tributarySqFt, maxHeightIn: postMaxHeightIn(load, group, design.framing.post, tributarySqFt, spec.plies), corner: false, footing });
+              const [pw, pd] = POST_ACTUAL_IN[design.framing.post];
+              hardware.postBases += 1;
+              if (heightIn >= 1) {
+                hardware.postCaps += 1;
+                sticks.push({ role: "post", nominal: design.framing.post, lengthIn: heightIn, cx: bx, cy: y, cz: zg + topIn + heightIn / 2, sx: pw, sy: pd, sz: heightIn, ground: true, of: id });
+              }
+            });
+            beam = { x: bx, y0, y1, size: String(spec.size), cantIn: cant };
+          }
+        }
+        // The outriggers: at the joists' own spacing out from the house, each from the doubled joist's face to a
+        // rim's thickness short of the arc.
+        let count = 0;
+        let longest = 0;
+        for (let y = spacingIn; y < Dd - 1; y += spacingIn) {
+          const len = sideBowAt(design.shape, side, y) - rimT - inset;
+          if (len < 3) continue;
+          sticks.push({ role: "joist", nominal: joistSize, lengthIn: len, cx: face + (out * len) / 2, cy: y, cz: zc, sx: len, sy: THICK_2X_IN, sz: joistDepth, ground: joistGround, of: zones[0]?.id ?? "a" });
+          hardware.hangers += 1;
+          if (beam && y >= beam.y0 && y <= beam.y1) hardware.ties += 1;
+          count += 1;
+          longest = Math.max(longest, len);
+        }
+        hardware.rimScrews += 3 * count;
+        sideBows.push({ side, bowIn: bow, outriggers: count, longestIn: Math.round(longest), beam });
+      }
+      if (backBowIn > 0) {
+        const zf = plan.zones[0];
+        const firstFt = (zf?.spansIn[0] ?? 0) / 12;
+        sideBows.push({ side: "back", bowIn: backBowIn, outriggers: 0, longestIn: 0, beam: null, cantIn: Math.round((zf?.backCantIn ?? 0) + backBowIn), cantMaxIn: Math.round(joistMaxCantileverIn(load, group, joistSize, firstFt)) });
+      }
+    }
+
     return {
       design,
       species,
@@ -1671,6 +1781,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       hardware,
       blockingRows,
       frontExtraCantIn: bulgeIn,
+      sideBows,
       groundHighIn,
       groundLowIn,
       flags: { tooLow, droppedDoesNotFit, joistBeyondTable: !plan.inside, beamBeyondTable: beyond },

@@ -464,6 +464,9 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
       lumber("stairs", "stair stringers", STRINGER_NOMINAL, stringers.stockFt, stringers.boards, true, `${st.stringers.count} cut, ${ftIn(st.stringers.lengthIn)} each, ${st.stringers.spacingIn} in. apart`, "stringer");
       hw("stringer-connectors", "stairs", "Stair stringer connectors", st.hardware.stringerConnectors, "hw.stringerConnector");
       lumber("stairs", "stair kicker", "2x4", stockFor(st.widthIn), 1, true, undefined, "kicker");
+      // On a bowed edge (2026-11-15; lib/deck/edgeSeat): a straight header across the head of the stair, blocked off
+      // the bent rim — the stringers hang on it, the deck's boards run out over it.
+      if (st.seat?.headerIn) lumber("stairs", "straight header at the head of the stairs", "2x8", stockFor(st.seat.headerIn), 1, true, `blocked off the bent rim, ${Math.round(st.seat.gapIn * 10) / 10} in. at the most; the stringers hang on it`, "stair-header");
       if (st.pad) {
         push({ id: "stair-pad-concrete", step: "stairs", kind: "concrete", label: "Concrete mix for the stair pad, 80-lb bags", qty: st.pad.bags, unit: "bags", note: `${st.pad.widthIn} × ${st.pad.lengthIn} in., ${st.pad.thickIn} in. thick`, rateKey: "conc.bag", rateQty: st.pad.bags, factor: 1 });
         hw("stair-pad-anchors", "stairs", "Concrete anchors for the kicker", st.hardware.anchors, "hw.anchor");

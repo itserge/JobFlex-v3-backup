@@ -32,7 +32,7 @@
 
 import type { DeckFrame } from "./frame";
 import type { DeckingProduct } from "./catalog";
-import { frontClips, frontEdgeAt, shapeOutline } from "./design";
+import { frontClips, frontEdgeAt, shapeBows, shapeOutline, sideBowAt } from "./design";
 import { ringEdges, type RingEdge } from "./ringEdges";
 
 /** One board, or one piece of a spliced row, inches. */
@@ -233,6 +233,11 @@ export function deckSurface(frame: DeckFrame): DeckSurface {
   // set-back, behind the house line.
   const back0 = Math.min(0, ...zones.map((z) => z.y0));
   const first = back0 + (againstHouse ? 0.25 : borderIn);
+  // THE SIDES AND THE BACK, BOWED (2026-11-15): the rows run on into a side's bulge, each cut to the arc; behind a free
+  // deck's bowed back, more rows — on the same pitch — fill the bulge there.
+  const bowIn = { left: Math.round(shapeBows(design.shape).left * 12), right: Math.round(shapeBows(design.shape).right * 12), back: againstHouse ? 0 : Math.round(shapeBows(design.shape).back * 12) };
+  const bowedAside = bowIn.left > 0 || bowIn.right > 0 || bowIn.back > 0;
+  const backRows = bowIn.back > 0 ? Math.ceil(bowIn.back / pitch) : 0;
   const rows = Math.max(1, Math.ceil((farthest - first + product.gapIn) / pitch - 1e-9));
   const wastePct = design.decking.wastePct + (diagonal ? 5 : 0) + (pattern === "herringbone" ? 5 : 0) + (borderBoards ? 3 : 0);
   const joistXs = frame.joists.filter((j) => !j.sister).map((j) => j.x);
@@ -276,7 +281,21 @@ export function deckSurface(frame: DeckFrame): DeckSurface {
   const fieldFront = (x: number) => frontAt(x) - borderIn;
   // What a cut row of the field is clipped to: the outline with its front let down by the border's depth (the border
   // fills the rest; 2026-10-11 — clipped to the outline itself, a cut row ran on under the border's boards).
-  const fieldOutline = borderIn > 0 ? outline.map((p) => (p.y < 0.5 ? p : { x: p.x, y: p.y - borderIn })) : outline;
+  // (Bowed sides or back: the outline let in by the border's depth along every open edge — it is convex, so each
+  // edge's own line, moved in, cuts it.)
+  const insetOutline = (): Array<{ x: number; y: number }> => {
+    let ring: Array<[number, number]> = outline.map((p) => [p.x, p.y]);
+    // (Clockwise or not, the clip keeps one side of a line: start from the ring as it runs.)
+    for (const e of ringEdges(outline)) {
+      if (e.length < 0.5) continue;
+      const house = e.A.y < 0.5 && e.B.y < 0.5 && e.A.y > -0.5 && e.B.y > -0.5 && againstHouse;
+      if (house) continue;
+      ring = clipHalf(ring, e.outX, e.outY, e.outX * e.A.x + e.outY * e.A.y - borderIn);
+      if (ring.length < 3) break;
+    }
+    return ring.length >= 3 ? ring.map(([x, y]) => ({ x, y })) : outline;
+  };
+  const fieldOutline = borderIn > 0 ? (bowedAside ? insetOutline() : outline.map((p) => (p.y < 0.5 ? p : { x: p.x, y: p.y - borderIn }))) : outline;
 
   // The border's edges, read once: which carry it, how they meet at the corners, and the bands of deck they cover.
   const bEdges = borderBoards > 0 ? ringEdges(outline) : [];
@@ -432,7 +451,7 @@ export function deckSurface(frame: DeckFrame): DeckSurface {
   if (!diagonal) {
     // Rows by the length of deck under them; an L has two lengths, a shaped front its own at every row.
     const groups = new Map<string, { x0: number; x1: number; ys: Array<{ y: number; w: number; cut: boolean }> }>();
-    for (let r = 0; r < rows; r++) {
+    for (let r = -backRows; r < rows; r++) {
       const y0 = first + r * pitch;
       const far = shaped ? farthest - borderIn : depth - (open("front") ? borderIn : 0);
       const w = Math.min(product.widthIn, far - y0);
@@ -447,6 +466,14 @@ export function deckSurface(frame: DeckFrame): DeckSurface {
         [x0, x1] = range;
         // The row is cut to the line when its far edge is past the front anywhere along it.
         cut = fieldFront(x0 + 0.01) < y0 + w + 0.5 || fieldFront(x1 - 0.01) < y0 + w + 0.5;
+        // …and where a side bows (2026-11-15) it runs on into the bulge, cut to the arc; behind the deck's own back
+        // line (a free deck's bowed back) it is cut to that arc.
+        const reach = (side: "left" | "right") => (bowIn[side] > 0 ? Math.max(sideBowAt(design.shape, side, y0), sideBowAt(design.shape, side, y0 + w), sideBowAt(design.shape, side, y0 + w / 2)) : 0);
+        const rl = reach("left");
+        const rr = reach("right");
+        if (rl > 0.5) x0 = Math.min(x0, -rl);
+        if (rr > 0.5) x1 = Math.max(x1, W + rr);
+        if (rl > 0.5 || rr > 0.5 || y0 < first - 0.01 || (bowIn.back > 0 && borderIn > 0)) cut = true;
       } else {
         // The zones under the row, side by side; a gap between them (a bump-out in the middle of a deck that follows
         // the wall) breaks the row in two — no board runs through the house.

@@ -60,8 +60,8 @@ export interface DeckEdit {
 }
 
 /** The short name beside each edit knob, and which names win a crowded spot (the deck's own size first, the house last). */
-const KNOB_NAME: Record<SceneHandle["kind"], string> = { width: "Width", "width-left": "Width", depth: "Depth", height: "Height", eave: "Post height", pitch: "Pitch", "roof-width": "Roof width", "roof-depth": "Roof depth", "lower-depth": "Lower level", stair: "Move stairs", "stair-width": "Stair width", jog: "Wall step", "house-left": "House corner", "house-right": "House corner", post: "Move post", beam: "Move beam", "roof-post": "Move roof post" , builtin: "Accessory", opening: "Window or door" };
-const KNOB_RANK: Record<SceneHandle["kind"], number> = { width: 0, "width-left": 0.5, depth: 1, height: 2, eave: 3, pitch: 4, "roof-width": 5, "roof-depth": 6, "lower-depth": 7, "stair-width": 8, stair: 9, "house-left": 10, "house-right": 11, jog: 12, post: 13, beam: 14, "roof-post": 15 , builtin: 20, opening: 21 };
+const KNOB_NAME: Record<SceneHandle["kind"], string> = { width: "Width", "width-left": "Width", depth: "Depth", bow: "Bow", height: "Height", eave: "Post height", pitch: "Pitch", "roof-width": "Roof width", "roof-depth": "Roof depth", "lower-depth": "Lower level", stair: "Move stairs", "stair-width": "Stair width", jog: "Wall step", "house-left": "House corner", "house-right": "House corner", post: "Move post", beam: "Move beam", "roof-post": "Move roof post" , builtin: "Accessory", opening: "Window or door" };
+const KNOB_RANK: Record<SceneHandle["kind"], number> = { width: 0, "width-left": 0.5, depth: 1, bow: 1.5, height: 2, eave: 3, pitch: 4, "roof-width": 5, "roof-depth": 6, "lower-depth": 7, "stair-width": 8, stair: 9, "house-left": 10, "house-right": 11, jog: 12, post: 13, beam: 14, "roof-post": 15 , builtin: 20, opening: 21 };
 
 /** What a touch landed on, for the studio's label and the fixture placer. */
 export interface DeckPick {
@@ -1224,8 +1224,8 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
     let hotKnob: string | null = null;
     const textRuler = document.createElement("canvas").getContext("2d");
     const setKnobLabel = (tag: HTMLSpanElement, h: SceneHandle, hot: boolean) => {
-      const sized = h.kind === "width" || h.kind === "width-left" || h.kind === "depth" || h.kind === "height" || h.kind === "eave" || h.kind === "pitch" || h.kind === "roof-width" || h.kind === "roof-depth" || h.kind === "lower-depth" || h.kind === "stair-width";
-      const now = h.kind === "pitch" ? `${Math.round(h.value)}:12` : h.perUnit === 1 ? `${Math.round(h.value * 2) / 2} ft` : `${Math.round(h.value)} in`;
+      const sized = h.kind === "width" || h.kind === "width-left" || h.kind === "depth" || h.kind === "bow" || h.kind === "height" || h.kind === "eave" || h.kind === "pitch" || h.kind === "roof-width" || h.kind === "roof-depth" || h.kind === "lower-depth" || h.kind === "stair-width";
+      const now = h.kind === "pitch" ? `${Math.round(h.value)}:12` : h.kind === "bow" ? `${Math.round(h.value * 4) / 4} ft` : h.perUnit === 1 ? `${Math.round(h.value * 2) / 2} ft` : `${Math.round(h.value)} in`;
       tag.textContent = hot && sized ? `${KNOB_NAME[h.kind]} · ${now}` : KNOB_NAME[h.kind];
       if (hot) tag.dataset.hot = "";
       else delete tag.dataset.hot;

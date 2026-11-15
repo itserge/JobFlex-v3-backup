@@ -37,6 +37,7 @@ import { OC_POST } from "./ocLumber";
 import { GUARD_REQUIRED_ABOVE_IN, LEDGER_FASTENER_LABEL, RISER_MAX_IN, ftIn } from "./codeTables";
 import { codeWords } from "./stateCodes";
 import { type CustomSlot, CEILING_LABEL, FASCIA_FINISH_LABEL, FIXTURE_LABEL, GUTTER_LABEL, PLACEMENT_LABEL, ROOFING_LABEL, ROOF_KIND_LABEL, WALL_FILL_LABEL, sizeWords, structureWords, type DeckDesign } from "./design";
+import { bowsLine } from "./curve";
 import { RULE_RAFTER } from "./roofTables";
 import { TERMITE_LABEL } from "./site";
 import { railHeldWords, railNamed, railWords } from "./rails";
@@ -211,7 +212,7 @@ export function priceStructure(s: DeckStructure, opts: DeckPriceOptions = {}): D
       line({
         id: "deck-framing",
         name: `Framing — ${speciesWords(frame.species)}${s.lower?.place === "under" ? ", a double deck" : twoLevels ? ", two levels" : ""}`,
-        description: `${frame.joistSize} joists ${frame.spacingIn} in. on center; ${beamSizes.join(" and ")} ${frame.beamStyle === "flush" ? "flush " : ""}${beamSizes.length === 1 && levels.length === 1 && frame.beams.length === 1 ? "beam" : "beams"}${design.framing.doubleRim ? "; doubled rim and outside joists" : ""}${design.framing.joistTape ? "; joist tape" : ""}${front?.kind === "curve" ? `; the front bowed out ${front.bulgeFt} ft on a laminated rim, joists cut to the arc` : front?.kind === "clipped" ? `; corners clipped ${front.clipFt} ft` : ""}${twoLevels ? `; the lower level ${design.lower.widthFt} × ${design.lower.depthFt} ft, ${ftIn(design.lower.dropIn)} down` : ""}; hangers, ties and blocking`,
+        description: `${frame.joistSize} joists ${frame.spacingIn} in. on center; ${beamSizes.join(" and ")} ${frame.beamStyle === "flush" ? "flush " : ""}${beamSizes.length === 1 && levels.length === 1 && frame.beams.length === 1 ? "beam" : "beams"}${design.framing.doubleRim ? "; doubled rim and outside joists" : ""}${design.framing.joistTape ? "; joist tape" : ""}${front?.kind === "curve" ? `; ${bowsLine(design.shape)} on a laminated rim, joists cut to the arc` : front?.kind === "clipped" ? `; corners clipped ${front.clipFt} ft` : ""}${twoLevels ? `; the lower level ${design.lower.widthFt} × ${design.lower.depthFt} ft, ${ftIn(design.lower.dropIn)} down` : ""}; hangers, ties and blocking`,
         quantity: deckArea,
         unit: "sqft",
         material: stepMaterial("framing"),

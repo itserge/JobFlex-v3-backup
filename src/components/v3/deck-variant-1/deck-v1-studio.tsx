@@ -23,6 +23,7 @@ import { createWheelMotion, wheelPixels } from "@/lib/smooth-wheel";
 import { AlertTriangle, Check, ChevronDown, ChevronRight, ExternalLink, FileText, Lock, LockOpen, Maximize2, Mic, Minimize2, Plus, RotateCcw, Send, X } from "lucide-react";
 import { resolveMarket, parseStateZip, type MarketSnapshot } from "@/lib/fence/market";
 import { leftEndPatch } from "@/lib/deck/frontByHand";
+import { BOW_SIDE_LABEL, BOW_SIDE_WORDS, bowLimits, bowOf, bowPatch, bowRadiusWords, bowSidesFor, bowedSides, toggleBow, withBow } from "@/lib/deck/curve";
 import { DECKING, DECKING_BRAND_LABEL, DECKING_BRAND_ORDER, DECKING_FAMILY_LABEL, DECKING_FAMILY_ORDER, FRAMING_SPECIES, OC_LUMBER_ID, RAIL_TYPES, WALL_TYPES, WOOD_FRAMING_SPECIES, defaultDecking, defaultFramingSpecies, deckingProduct, isCompositeFraming, treatedDecking, wallType, type DeckingFamily, type DeckingProduct } from "@/lib/deck/catalog";
 import { OC_POST, OC_SOURCES } from "@/lib/deck/ocLumber";
 import { regionalPicks, regionalWords } from "@/lib/deck/regional";
@@ -692,6 +693,12 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
           // (2026-11-14) The deck's LEFT end: the house stays put, the left part of a front in parts takes the change.
           const moved = leftEndPatch(design, e.value);
           if (moved) patch(moved);
+          break;
+        }
+        case "bow": {
+          // (2026-11-15) The knob on the arc: the side bows out as far as it is pulled, to 3 in.
+          const bowed = bowPatch(design, e.id, e.value);
+          if (bowed) patch(bowed);
           break;
         }
         case "depth":
@@ -1770,13 +1777,56 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
         <More title={design.shape.kind === "wall" ? "Double deck, lower level, hot tub" : "Front edge, double deck, lower level, hot tub"} now={[front ? FRONT_LABEL[front.kind] : "", design.lower.on ? (design.lower.place === "under" ? "double deck" : "lower level") : "", design.spa.on ? "hot tub" : ""].filter(Boolean).join(" · ") || "Straight front, one level"} open={!!front || design.lower.on || design.spa.on} id="size-more">
           {design.shape.kind === "rect" ? (
           <Field label="The front edge" wide>
-            <Seg label="The front edge" value={front?.kind ?? "straight"} onChange={(k: FrontKind) => patch({ shape: { kind: "rect", widthFt: design.shape.widthFt, depthFt: design.shape.depthFt, front: k === "straight" ? undefined : { kind: k, bulgeFt: front?.bulgeFt ?? 2, clipFt: front?.clipFt ?? 2 } } })} options={(["straight", "curve", "clipped"] as const).map((k) => ({ value: k, label: FRONT_LABEL[k] }))} />
+            <Seg label="The front edge" value={front?.kind ?? "straight"} onChange={(k: FrontKind) => k !== (front?.kind ?? "straight") && patch({ shape: { kind: "rect", widthFt: design.shape.widthFt, depthFt: design.shape.depthFt, front: k === "straight" ? undefined : { kind: k, bulgeFt: front?.bulgeFt ?? 2, clipFt: front?.clipFt ?? 2 } } })} options={(["straight", "curve", "clipped"] as const).map((k) => ({ value: k, label: FRONT_LABEL[k] }))} />
           </Field>
           ) : null}
           {front?.kind === "curve" ? (
-            <Field label="The bow at the middle" aside="ft · laminated rim" wide>
-              <NumberInput label="How far the front bows out at the middle, feet" value={front.bulgeFt} parse={parseFeet} format={feetText} min={DECK_LIMITS.bulgeFt.min} max={Math.min(DECK_LIMITS.bulgeFt.max, design.shape.widthFt / 3)} onCommit={(n2) => patch({ shape: { kind: "rect", widthFt: design.shape.widthFt, depthFt: design.shape.depthFt, front: { ...front, bulgeFt: n2 } } })} />
-            </Field>
+            // THE BOW, STEPPED OUT AND IN (2026-11-15 — the owner: "make me a toggle to move out and move in, to make a
+            // bigger radius or a smaller radius… and choose which side I want the radius on — four sides, three sides,
+            // or side one, two, three, four"). A switch for each side that can bow — the front, the left side, the
+            // right side, and the back of a deck that stands free of the house — and, for each one that does, its bow
+            // with − and + beside the number (half a foot a press) and the radius it makes. The same bows are pulled by
+            // hand on the arcs themselves: Edit in 3D, and the top view.
+            <div data-deck-bows>
+              <span className="v1-lbl">
+                <span>Which sides are curved</span>
+                <span className="v1-lbl-aside">{design.placement === "detached" ? "any of the four" : "the back is the house"}</span>
+              </span>
+              <div className="v1-grid2" data-deck-bow-sides={bowedSides(design.shape).join(" ")}>
+                {bowSidesFor(design).map((side) => (
+                  <Toggle
+                    key={side}
+                    checked={bowOf(design.shape, side) > 0}
+                    onChange={(v) => {
+                      const next = toggleBow(design.shape, side, v);
+                      if (next) patch({ shape: next });
+                    }}
+                  >
+                    {BOW_SIDE_LABEL[side]}
+                  </Toggle>
+                ))}
+              </div>
+              {bowedSides(design.shape).map((side) => (
+                <div key={side} data-deck-bow={side} data-deck-bow-ft={bowOf(design.shape, side)}>
+                  <Stepper
+                    label={side === "front" ? "The bow at the middle" : `The bow of ${BOW_SIDE_WORDS[side]}`}
+                    unit="ft"
+                    aside={`${bowRadiusWords(design.shape, side)} · laminated rim`}
+                    value={bowOf(design.shape, side)}
+                    step={0.5}
+                    parse={parseFeet}
+                    format={feetText}
+                    min={bowLimits(design.shape, side).min}
+                    max={bowLimits(design.shape, side).max}
+                    onCommit={(n2) => {
+                      const next = withBow(design.shape, side, Math.max(bowLimits(design.shape, side).min, n2));
+                      if (next) patch({ shape: next });
+                    }}
+                  />
+                </div>
+              ))}
+              <p className="v1-hint">Out more = a tighter curve; in = a gentler one. Or take hold of a curve itself: Edit in 3D → its Bow knob, or the round handle on the top view.</p>
+            </div>
           ) : front?.kind === "clipped" ? (
             <Field label="Each corner clipped" aside="ft at 45°" wide>
               <NumberInput label="How much each front corner is clipped, feet" value={front.clipFt} parse={parseFeet} format={feetText} min={DECK_LIMITS.clipFt.min} max={Math.min(DECK_LIMITS.clipFt.max, (design.shape.widthFt - 2) / 2, design.shape.depthFt - 2)} onCommit={(n2) => patch({ shape: { kind: "rect", widthFt: design.shape.widthFt, depthFt: design.shape.depthFt, front: { ...front, clipFt: n2 } } })} />

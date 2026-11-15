@@ -9,6 +9,7 @@
 // (lib/deck/house wallHighlight).
 
 import { FIXTURE_LABEL, PATTERN_LABEL, ROOFING_LABEL, ROOF_KIND_LABEL, type DeckDesign } from "./design";
+import { bowsLine } from "./curve";
 import { SCENE_LAYERS, type DeckScene } from "./scene";
 import type { DeckStructure } from "./structure";
 
@@ -219,7 +220,7 @@ const RULES: Rule[] = [
       const D = sh.depthFt;
       const front = partsOf(c.sc, ["rim", "fascia"]).filter((i) => c.sc.boxes[i][2] > D - 2.5);
       const fr = sh.kind === "rect" ? sh.front : undefined;
-      const text = !fr || fr.kind === "straight" ? "A straight front edge" : fr.kind === "curve" ? `The front bowed out ${feetWords(fr.bulgeFt * 12)} at the middle` : `Each front corner clipped ${feetWords(fr.clipFt * 12)}`;
+      const text = !fr || fr.kind === "straight" ? "A straight front edge" : fr.kind === "curve" ? (fr.leftFt || fr.rightFt || fr.backFt ? `Curved: ${bowsLine(sh)}` : `The front bowed out ${feetWords(fr.bulgeFt * 12)} at the middle`) : `Each front corner clipped ${feetWords(fr.clipFt * 12)}`;
       return light(c, { boxIdx: front }, text);
     },
   },
