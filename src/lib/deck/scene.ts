@@ -40,7 +40,8 @@ import { SKIRT_BOARD_IN, SKIRT_BORDER_IN, SKIRT_CLEAR_IN, SKIRT_GAP_IN, SKIRT_TH
 import { BENCH_BACK_IN, BENCH_SEAT_IN, BUILT_IN_LABEL, SCREEN_GAP_IN, type BuiltInMember } from "./builtins";
 import { accessoryPose } from "./accessories";
 import { finishProduct, type PartFinish } from "./finish";
-import { HOUSE_MATERIALS, HOUSE_ROOFS, houseHandles, houseScene, settleSceneOpenings, type HouseMaterial, type HouseRoof } from "./house";
+import { HOUSE_MATERIALS, HOUSE_ROOFS, OPENING_LABEL, houseHandles, houseScene, openingPanels, settleSceneOpenings, type DrawnOpening, type HouseMaterial, type HouseRoof } from "./house";
+import { houseDrawn } from "./wallOpenings";
 import { railColorOf, speciesWords } from "./catalog";
 
 export const DECK_SCENE_VERSION = 3;
@@ -134,13 +135,13 @@ export const SCENE_MAX_GLOWS = 120;
 
 /** A handle: dragging it along `axis` (scene feet) changes `kind` from `value` by the distance dragged. */
 export interface SceneHandle {
-  kind: "width" | "width-left" | "depth" | "bow" | "height" | "eave" | "stair" | "stair-width" | "lower-depth" | "roof-width" | "roof-depth" | "pitch" | "jog" | "house-left" | "house-right" | "post" | "beam" | "roof-post" | "builtin";
+  kind: "width" | "width-left" | "depth" | "bow" | "height" | "eave" | "stair" | "stair-width" | "lower-depth" | "roof-width" | "roof-depth" | "pitch" | "jog" | "house-left" | "house-right" | "post" | "beam" | "roof-post" | "builtin" | "opening";
   id: string;
   x: number;
   y: number;
   z: number;
-  /** "xy": dragged across the deck, both ways (2026-11-14: an accessory) — `value` along the house, `value2` out from it. */
-  axis: "x" | "y" | "z" | "xy";
+  /** "xy": dragged across the deck, both ways (2026-11-14: an accessory) — `value` along the house, `value2` out from it. "xz" (2026-11-15: a window or a door): along the wall and up it — `value` its middle along the house, `value2` its sill, ft. */
+  axis: "x" | "y" | "z" | "xy" | "xz";
   /** The design's number the handle moves: feet for sizes, inches for heights. */
   value: number;
   /** An "xy" handle's second number: out from the house, inches. */
@@ -158,6 +159,8 @@ export interface SceneHandle {
   grab?: [number, number, number, number, number, number];
   /** How a builder reads that value: `sign × (value − origin)` inches `from` ("from the deck's left end"). */
   shown?: { origin: number; sign: 1 | -1; from: string };
+  /** A WINDOW OR A DOOR IN THE HAND (2026-11-15; lib/deck/wallOpenings): what it is, its size (ft) and how many panels it shows. */
+  open?: { kind: "window" | "door" | "slider" | "garage"; w: number; h: number; panels: number };
   /**
    * AN ACCESSORY IN THE HAND (2026-11-15): its footprint's four corners on the plan in order round it [x0, y0, … x3,
    * y3], ft (0→1 its length, 0→3 its depth) — and its turn, degrees (its length runs that way; its front a quarter turn
@@ -252,9 +255,11 @@ function handleGrab(o: Record<string, unknown>): Pick<SceneHandle, "grab" | "sho
   if (!Array.isArray(g) || g.length !== 6 || !g.every((v) => typeof v === "number" && Number.isFinite(v) && Math.abs(v) < 500)) return {};
   const sh = (o.shown && typeof o.shown === "object" ? o.shown : null) as Record<string, unknown> | null;
   const shown = sh && typeof sh.origin === "number" && Number.isFinite(sh.origin) && (sh.sign === 1 || sh.sign === -1) && typeof sh.from === "string" ? { origin: sh.origin, sign: sh.sign as 1 | -1, from: sh.from.slice(0, 60) } : undefined;
+  const op = (o.open && typeof o.open === "object" ? o.open : null) as Record<string, unknown> | null;
+  const open = op && (op.kind === "window" || op.kind === "door" || op.kind === "slider" || op.kind === "garage") && typeof op.w === "number" && typeof op.h === "number" && typeof op.panels === "number" && [op.w, op.h, op.panels].every((v) => Number.isFinite(v) && (v as number) > 0 && (v as number) < 60) ? { kind: op.kind, w: op.w, h: op.h, panels: Math.round(op.panels) } : undefined;
   const foot = Array.isArray(o.foot) && o.foot.length === 8 && o.foot.every((v) => typeof v === "number" && Number.isFinite(v) && Math.abs(v) < 500) ? (o.foot as number[]) : undefined;
   const turn = typeof o.turn === "number" && Number.isFinite(o.turn) && Math.abs(o.turn) <= 720 ? o.turn : undefined;
-  return { grab: g as [number, number, number, number, number, number], ...(shown ? { shown } : {}), ...(foot ? { foot } : {}), ...(turn !== undefined ? { turn } : {}) };
+  return { grab: g as [number, number, number, number, number, number], ...(shown ? { shown } : {}), ...(open ? { open } : {}), ...(foot ? { foot } : {}), ...(turn !== undefined ? { turn } : {}) };
 }
 const r4 = (rad: number) => Math.round(rad * 10000) / 10000;
 const LEAN: Record<string, number> = { "x:1": 1, "x:-1": 2, "y:1": 3, "y:-1": 4 };
@@ -1130,13 +1135,18 @@ export function deckScene(s: DeckStructure): DeckScene {
 
   /* ── The house ────────────────────────────────────────────────────── */
   let house: DeckScene["house"] = null;
+  /** Its windows and doors as drawn, each with its name — a handle each, further down. */
+  let openingsAt: DrawnOpening[] = [];
   const onWall = frame ? design.placement !== "detached" : roof?.attach === "wall";
   if (onWall) {
     // Drawn from the design's house (lib/deck/house): its back wall's parts, the door on the deck's main back edge,
     // windows per storey — the shape of a gazebo on its own floor stands in for a deck's.
     const main = frame ? frame.edges.filter((e) => e.house && e.side === "back" && Math.abs(e.y0) < 0.01).sort((a, b) => b.lengthIn - a.lengthIn)[0] : null;
     const hShape = frame ? design.shape : { kind: "rect" as const, widthFt: Math.max(4, width / 12), depthFt: Math.max(4, depth / 12) };
-    const hs = houseScene(hShape, design.house, { deckHeightFt: heightIn / 12, peakFt: peakIn / 12, mainEdge: main ? { x0: main.x0 / 12, x1: main.x1 / 12 } : null });
+    // (A deck's own house, with a double deck's lower floor: lib/deck/wallOpenings houseDrawn — the same the windows and doors are edited against.)
+    const drawn = frame ? houseDrawn(s) : null;
+    const hs = houseScene(hShape, design.house, drawn?.ctx ?? { deckHeightFt: heightIn / 12, peakFt: peakIn / 12, mainEdge: main ? { x0: main.x0 / 12, x1: main.x1 / 12 } : null });
+    if (drawn) openingsAt = hs.openingsAt ?? [];
     house = { blocks: hs.blocks, heightFt: hs.heightFt, door: hs.door, storeys: hs.storeys, roof: hs.roof, windows: hs.windows, siding: hs.siding, roofColour: hs.roofColour };
     // A house built from its photo (2026-10-23): its doors where they are, what it is clad in.
     if (hs.doors) house.doors = hs.doors;
@@ -1283,6 +1293,12 @@ export function deckScene(s: DeckStructure): DeckScene {
       handles.push({ kind: "builtin", id: b.design.id, x: r3(cx), y: r3(cy), z: r3((z0 + z1) / 2), axis: "xy", value: Math.round(cx * 2) / 2, value2: Math.round(cy * 2) / 2, perUnit: 1 / 12, label: BUILT_IN_LABEL[b.kind], grab: [r3(x0), r3(y0), r3(z0), r3(x1), r3(y1), r3(z1)], foot: b.footprint.flatMap((q) => [r3(q.x), r3(q.y)]), ...(b.kind === "screen" ? {} : { turn: pose?.turnDeg ?? 0 }) });
     }
   }
+  // EACH WINDOW AND DOOR IS ITS OWN HANDLE (2026-11-15; lib/deck/wallOpenings): taken hold of in the 3D, moved along
+  // the wall and up it — its middle along the house and its sill, ft. (Last in the list: the knobs come first.)
+  const r3f = (ft: number) => Math.round(ft * 1000) / 1000;
+  for (const o of openingsAt.slice(0, 70)) {
+    handles.push({ kind: "opening", id: o.id, x: o.x, y: o.face, z: r3f(o.sill + o.h / 2), axis: "xz", value: o.x, value2: o.sill, perUnit: 1, label: OPENING_LABEL[o.kind], grab: [r3f(o.x - o.w / 2), r3f(o.face - 0.15), o.sill, r3f(o.x + o.w / 2), r3f(o.face + 0.4), r3f(o.sill + o.h)], open: { kind: o.kind, w: o.w, h: o.h, panels: openingPanels(o) } });
+  }
   return {
     v: DECK_SCENE_VERSION,
     widthFt: r3(Math.max(width, 48)),
@@ -1410,11 +1426,11 @@ export function parseDeckScene(raw: unknown): DeckScene | null {
     // The drawn house's look (2026-10-11): storeys, the roof, the windows — malformed ones are dropped, not fatal.
     if (h.storeys === 1 || h.storeys === 2) house.storeys = h.storeys;
     if ((HOUSE_ROOFS as readonly unknown[]).includes(h.roof)) house.roof = h.roof as HouseRoof;
-    if (Array.isArray(h.windows)) house.windows = h.windows.map((w) => numbers(w, 5)).filter((w): w is number[] => !!w).slice(0, 60);
+    if (Array.isArray(h.windows)) house.windows = h.windows.map((w) => numbers(w, 5) ?? numbers(w, 6)).filter((w): w is number[] => !!w).slice(0, 60);
     if (typeof h.siding === "string" && /^#[0-9a-f]{6}$/i.test(h.siding)) house.siding = h.siding;
     if (typeof h.roofColour === "string" && /^#[0-9a-f]{6}$/i.test(h.roofColour)) house.roofColour = h.roofColour;
     // Built from a photo (2026-10-23): the doors and the cladding — malformed ones dropped.
-    if (Array.isArray(h.doors)) house.doors = h.doors.map((d) => numbers(d, 6)).filter((d): d is number[] => !!d).slice(0, 8);
+    if (Array.isArray(h.doors)) house.doors = h.doors.map((d) => numbers(d, 6) ?? numbers(d, 7)).filter((d): d is number[] => !!d).slice(0, 8);
     if (typeof h.material === "string" && (HOUSE_MATERIALS as readonly string[]).includes(h.material)) house.material = h.material as HouseMaterial;
     // A scene saved before 2026-11-13 can hold a window inside a door: none on another's spot (lib/deck/house).
     if (house.windows || house.doors) {
@@ -1474,7 +1490,7 @@ export function parseDeckScene(raw: unknown): DeckScene | null {
     if (Array.isArray(r.handles) && r.handles.length <= 240) {
       for (const h of r.handles) {
         const o = (h && typeof h === "object" ? h : null) as Record<string, unknown> | null;
-        if (!o || typeof o.kind !== "string" || typeof o.id !== "string" || !fin(o.x) || !fin(o.y) || !fin(o.z) || !fin(o.value) || !fin(o.perUnit) || (o.axis !== "x" && o.axis !== "y" && o.axis !== "z" && o.axis !== "xy")) continue;
+        if (!o || typeof o.kind !== "string" || typeof o.id !== "string" || !fin(o.x) || !fin(o.y) || !fin(o.z) || !fin(o.value) || !fin(o.perUnit) || (o.axis !== "x" && o.axis !== "y" && o.axis !== "z" && o.axis !== "xy" && o.axis !== "xz")) continue;
         handles.push({ kind: o.kind as SceneHandle["kind"], id: o.id.slice(0, 20), x: o.x, y: o.y, z: o.z, axis: o.axis, value: o.value, ...(fin(o.value2) ? { value2: o.value2 } : {}), perUnit: o.perUnit, ...(fin(o.follow) && ((o.follow > 0 && o.follow <= 1) || o.follow === -1) ? { follow: o.follow } : {}), label: typeof o.label === "string" ? o.label.slice(0, 60) : "", ...handleGrab(o) });
       }
     }

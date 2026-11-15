@@ -168,7 +168,8 @@ check("an opening's post takes the opening with it: both posts, the same clear w
 
 console.log("── in the 3D: the part itself is the handle");
 const sc = deckScene(buildStructure(big));
-const grabs = sc.handles.filter((h) => h.grab);
+// (A window or a door is a handle with a box too, since 2026-11-15 — lib/deck/wallOpenings: not one of these.)
+const grabs = sc.handles.filter((h) => h.grab && h.kind !== "opening");
 const all = deckGrips(buildStructure(big));
 check("every post and beam that can be moved is a handle of its own, taken hold of by the part itself (its box), read in inches along its line", grabs.length === all.length && all.every((g) => grabs.some((h) => h.kind === g.kind && h.id === g.id && h.value === g.at && h.axis === g.axis && Math.abs(h.perUnit - 1 / 12) < 1e-9 && h.shown?.from === g.from)), `${grabs.length} of ${all.length}`);
 const firstGrab = sc.handles.findIndex((h) => h.grab);

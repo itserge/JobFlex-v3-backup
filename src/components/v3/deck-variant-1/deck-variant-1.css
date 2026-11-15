@@ -61,6 +61,7 @@
 .jf-deck-v1 .v1-lead { font-size: 15px; color: var(--ink-soft); }
 .jf-deck-v1 .v1-hint { font-size: var(--deck-meta); line-height: 1.45; color: var(--ink-soft); }
 /* The Accessories step (2026-11-14): each group its own block, a rule between them. */
+.jf-deck-v1 .v1-openings { display: grid; gap: var(--deck-space-sm); padding-top: var(--deck-space-sm); }
 .jf-deck-v1 .v1-accessory-group { display: grid; gap: 10px; margin-top: 18px; }
 .jf-deck-v1 .v1-accessory-group + .v1-accessory-group { padding-top: 16px; border-top: 1px solid var(--ink-line); }
 .jf-deck-v1 .v1-meta { font-size: var(--deck-meta); color: var(--ink-muted); }

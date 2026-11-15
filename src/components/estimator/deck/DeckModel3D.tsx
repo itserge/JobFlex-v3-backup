@@ -29,6 +29,7 @@
 import * as React from "react";
 import * as THREE from "three";
 import { boxPlace, placeSeeds, ringPlace } from "@/lib/deck/boardTone";
+import { DOOR_CHOICES, WINDOW_CHOICES, openingChoiceOf } from "@/lib/deck/house";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import { BORDER_BOARD_ROLE, RAIL_CAP_ROLE, RAIL_INFILL_ROLE, SCENE_LAYERS, sceneBuildLayers, memberBoxCorners, memberIsSawn, MEMBER_BOX_FACES, type DeckScene, type SceneHandle, type SceneLayer, type SceneLegend } from "@/lib/deck/scene";
@@ -45,13 +46,22 @@ export interface DeckEdit {
   value2?: number;
   /** An accessory turned by its round handle (2026-11-15): its new turn, degrees — `value`/`value2` are then its middle as it was. */
   turn?: number;
+  /**
+   * A WINDOW OR A DOOR (kind "opening", 2026-11-15): `value` its middle along the house and `value2` its sill, ft. With
+   * `w` or `h` it was sized by an edge (ft); with `choice` it is swapped for that kind (an OpeningChoice's key); with
+   * `remove` it is taken off the wall.
+   */
+  w?: number;
+  h?: number;
+  choice?: string;
+  remove?: boolean;
   /** The pointer came up: the last value of this drag. */
   done: boolean;
 }
 
 /** The short name beside each edit knob, and which names win a crowded spot (the deck's own size first, the house last). */
-const KNOB_NAME: Record<SceneHandle["kind"], string> = { width: "Width", "width-left": "Width", depth: "Depth", bow: "Bow", height: "Height", eave: "Post height", pitch: "Pitch", "roof-width": "Roof width", "roof-depth": "Roof depth", "lower-depth": "Lower level", stair: "Move stairs", "stair-width": "Stair width", jog: "Wall step", "house-left": "House corner", "house-right": "House corner", post: "Move post", beam: "Move beam", "roof-post": "Move roof post" , builtin: "Accessory" };
-const KNOB_RANK: Record<SceneHandle["kind"], number> = { width: 0, "width-left": 0.5, depth: 1, bow: 1.5, height: 2, eave: 3, pitch: 4, "roof-width": 5, "roof-depth": 6, "lower-depth": 7, "stair-width": 8, stair: 9, "house-left": 10, "house-right": 11, jog: 12, post: 13, beam: 14, "roof-post": 15 , builtin: 20 };
+const KNOB_NAME: Record<SceneHandle["kind"], string> = { width: "Width", "width-left": "Width", depth: "Depth", bow: "Bow", height: "Height", eave: "Post height", pitch: "Pitch", "roof-width": "Roof width", "roof-depth": "Roof depth", "lower-depth": "Lower level", stair: "Move stairs", "stair-width": "Stair width", jog: "Wall step", "house-left": "House corner", "house-right": "House corner", post: "Move post", beam: "Move beam", "roof-post": "Move roof post" , builtin: "Accessory", opening: "Window or door" };
+const KNOB_RANK: Record<SceneHandle["kind"], number> = { width: 0, "width-left": 0.5, depth: 1, bow: 1.5, height: 2, eave: 3, pitch: 4, "roof-width": 5, "roof-depth": 6, "lower-depth": 7, "stair-width": 8, stair: 9, "house-left": 10, "house-right": 11, jog: 12, post: 13, beam: 14, "roof-post": 15 , builtin: 20, opening: 21 };
 
 /** What a touch landed on, for the studio's label and the fixture placer. */
 export interface DeckPick {
@@ -919,6 +929,18 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
 [data-deck-knobs] .dk-live span{min-width:0}
 [data-deck-knobs] .dk-live b{font-weight:800}
 [data-deck-knobs] .dk-live button{flex:none;height:32px;padding:0 14px;border:0;border-radius:2px;background:#fff;color:#0f2747;font:800 12px/1 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
+[data-deck-knobs] .dk-live{flex-wrap:wrap}
+[data-deck-knobs] .dk-choices{display:none;flex-wrap:wrap;gap:4px;flex:1 1 100%}
+[data-deck-knobs] .dk-live .dk-choices button{height:28px;padding:0 9px;background:transparent;color:#fff;box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.55);text-transform:none;letter-spacing:0;font-weight:700}
+[data-deck-knobs] .dk-live .dk-choices button[aria-pressed="true"]{background:#f5a623;color:#0f2747;box-shadow:none}
+[data-deck-knobs] .dk-live button[data-deck-live-remove]{background:transparent;color:#ffd0c8;box-shadow:inset 0 0 0 1.5px rgba(255,160,140,.8);padding:0 10px}
+[data-deck-knobs] .dk-size{position:absolute;left:0;top:0;width:var(--dk);height:var(--dk);margin:calc(var(--dk) / -2) 0 0 calc(var(--dk) / -2);box-sizing:border-box;border-radius:50%;border:2px solid #fff;background:#f5a623;color:#0f2747;display:none;place-items:center;padding:0;box-shadow:0 0 0 1px rgba(10,34,70,.45),0 2px 6px rgba(0,0,0,.32);pointer-events:auto;touch-action:none}
+[data-deck-knobs] .dk-size[data-deck-size="w"]{cursor:ew-resize}
+[data-deck-knobs] .dk-size[data-deck-size="h"]{cursor:ns-resize}
+[data-deck-knobs] .dk-size svg{width:62%;height:62%;display:block;pointer-events:none}
+[data-deck-knobs] .dk-size:hover,[data-deck-knobs] .dk-size[data-active]{background:#ffbf47;box-shadow:0 0 0 4px rgba(245,166,35,.35),0 2px 8px rgba(0,0,0,.38)}
+[data-deck-knobs] .dk-size:focus-visible{outline:2px solid #1854a0;outline-offset:3px}
+@media (pointer:coarse){[data-deck-knobs] .dk-live .dk-choices button{height:38px}}
 [data-deck-knobs] .dk-live button[data-deck-live-more]{background:transparent;color:#fff;box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.7);padding:0 10px}
 [data-deck-knobs] .dk-live button:focus-visible{outline:2px solid #f5a623;outline-offset:2px}
 @media (pointer:coarse){[data-deck-knobs] .dk-live button{height:44px}}
@@ -947,8 +969,31 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
     liveDone.type = "button";
     liveDone.textContent = "Done";
     liveDone.dataset.deckLiveDone = "";
-    liveBar.append(liveText, liveMore, liveDone);
+    // A window or a door in the hand (2026-11-15): what it can be swapped for, Remove — and a handle on its side and
+    // one on its top that size it.
+    const liveChoices = document.createElement("div");
+    liveChoices.className = "dk-choices";
+    liveChoices.dataset.deckLiveChoices = "";
+    const liveRemove = document.createElement("button");
+    liveRemove.type = "button";
+    liveRemove.textContent = "Remove";
+    liveRemove.dataset.deckLiveRemove = "";
+    liveRemove.style.display = "none";
+    liveBar.append(liveText, liveMore, liveRemove, liveDone, liveChoices);
     knobLayer.appendChild(liveBar);
+    const sizeKnob = (which: "w" | "h") => {
+      const k = document.createElement("button");
+      k.type = "button";
+      k.className = "dk-size";
+      k.dataset.deckSize = which;
+      k.setAttribute("aria-label", which === "w" ? "Its width — drag, or press the left and right arrow keys" : "Its height — drag, or press the up and down arrow keys");
+      k.title = which === "w" ? "Drag to make it wider or narrower" : "Drag to make it taller or shorter";
+      k.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true" style="transform:rotate(${which === "w" ? 0 : 90}deg)"><path d="M4 12h16M8 7.5 3.5 12 8 16.5M16 7.5l4.5 4.5-4.5 4.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+      knobLayer.appendChild(k);
+      return k;
+    };
+    const sizeW = sizeKnob("w");
+    const sizeH = sizeKnob("h");
     mount.appendChild(knobLayer);
     // The canvas is the picture; with a view bar beside it the box is a group, so the buttons are read too.
     if (viewControlsRef.current) {
@@ -1152,7 +1197,11 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
     // drag it on the deck wherever I want it… when I unclick, everything starts working again"; no Turn buttons): its id
     // while it is held. The camera stands still; it is outlined, with a round turn handle on a ring round it; a press on
     // the deck moves it there and it follows the pointer; a click off the deck, Done or Esc lets it go.
+    // (A WINDOW OR A DOOR too, 2026-11-15 — "double click on the window and move it anywhere I want it": named by its
+    // kind and id, "builtin:b1" or "opening:w3". It is dragged along the wall and up it, sized by a handle on its side
+    // and one on its top, swapped from the bar; a press on the wall sends it there.)
     let live: string | null = null;
+    let sizing: { which: "w" | "h"; last: number } | null = null;
     // Pressed on an accessory, not yet pulled: a pull drags it at once; letting go leaves it in the hand. (No card opens
     // on that click: a card under the picture would re-size it, and the accessory would slip from under the pointer —
     // its card, with its boards and Remove, opens from Options on the bar.)
@@ -1933,11 +1982,12 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
          * over another opening (a transom): a plain board under it, no sill and apron across that opening's head;
          * `under` = another stands right over it: no head cap.
          */
-        const windowAt = (x: number, w: number, h: number, y: number, face: number, over = false, under = false) => {
+        const windowAt = (x: number, w: number, h: number, y: number, face: number, over = false, under = false, panels?: number) => {
           const z0 = face - oz;
           onWall(glassMat, x, y + h / 2, w, h, z0, -0.02, 0.06);
           const bar = (bx: number, by: number, bw: number, bh: number) => onWall(trimMat, bx, by, bw, bh, z0, 0.03, 0.1);
-          const sashes = Math.max(1, Math.round(w / 3.2));
+          // (Set by hand, 2026-11-15: a single, double or triple window shows that many sashes whatever its width.)
+          const sashes = panels && panels >= 1 ? Math.min(4, Math.round(panels)) : Math.max(1, Math.round(w / 3.2));
           if (h >= 2.5) bar(x, y + h / 2, w, 0.08);
           if (sashes > 1) for (let i = 1; i < sashes; i++) bar(x - w / 2 + (w * i) / sashes, y + h / 2, 0.08, h);
           else if (w >= 2 && h >= 1.5) bar(x, y + h / 2, 0.08, h);
@@ -1953,10 +2003,11 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           if (!under) onWall(trimMat, x, y + h + 0.3, w + 0.62, 0.22, z0, -0.02, 0.2);
         };
         /** A sliding door: glass in leaves, each in its frame — a stile at both ends, a meeting stile between leaves, the top rail, the taller bottom rail — and the pull on the stile it closes on. */
-        const sliderAt = (x: number, w: number, h: number, y: number, face: number) => {
+        const sliderAt = (x: number, w: number, h: number, y: number, face: number, panels?: number) => {
           const z0 = face - oz;
           onWall(glassMat, x, y + h / 2, w, h, z0, -0.02, 0.06);
-          const leaves = Math.min(4, Math.max(2, Math.round(w / 3.5)));
+          // (Set by hand, 2026-11-15: a sliding door of 2, 3 or 4 panels shows that many leaves whatever its width.)
+          const leaves = panels && panels >= 2 ? Math.min(4, Math.round(panels)) : Math.min(4, Math.max(2, Math.round(w / 3.5)));
           const stile = Math.min(0.2, w / 8);
           const frame = (bx: number, by: number, bw: number, bh: number) => onWall(trimMat, bx, by, bw, bh, z0, 0.03, 0.1);
           for (const side of [-1, 1]) frame(x + side * (w / 2 - stile / 2), y + h / 2, stile, h);
@@ -1968,15 +2019,23 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           threshold(x, w, y, z0);
         };
         /** A door: a painted slab, a glass lite in its top half in a frame of its own, a panel under it, the knob on the latch side. */
-        const doorAt = (x: number, w: number, h: number, y: number, face: number) => {
+        const doorAt = (x: number, w: number, h: number, y: number, face: number, panels?: number) => {
           const z0 = face - oz;
           onWall(doorMat, x, y + h / 2, w, h, z0, -0.02, 0.07);
-          if (h >= 4.5) {
-            onWall(trimMat, x, y + h * 0.7, w * 0.56 + 0.14, h * 0.36 + 0.14, z0, 0.03, 0.1);
-            onWall(glassMat, x, y + h * 0.7, w * 0.56, h * 0.36, z0, 0.05, 0.13);
-            onWall(railMat, x, y + h * 0.26, w * 0.62, h * 0.3, z0, 0.03, 0.1);
-            onWall(handleMat, x + w * 0.39, y + 3, 0.1, 0.1, z0, 0.05, 0.19);
+          // A DOUBLE DOOR (2026-11-15, set by hand): two leaves, each with its lite and panel, their knobs where they
+          // meet, a thin astragal between them.
+          const leaves = panels === 2 && w >= 3.5 ? 2 : 1;
+          const lw = w / leaves;
+          for (let i = 0; i < leaves; i++) {
+            const lx = x - w / 2 + lw * (i + 0.5);
+            if (h >= 4.5) {
+              onWall(trimMat, lx, y + h * 0.7, lw * 0.56 + 0.14, h * 0.36 + 0.14, z0, 0.03, 0.1);
+              onWall(glassMat, lx, y + h * 0.7, lw * 0.56, h * 0.36, z0, 0.05, 0.13);
+              onWall(railMat, lx, y + h * 0.26, lw * 0.62, h * 0.3, z0, 0.03, 0.1);
+              onWall(handleMat, lx + (leaves === 2 ? (i === 0 ? 1 : -1) : 1) * lw * 0.39, y + 3, 0.1, 0.1, z0, 0.05, 0.19);
+            }
           }
+          if (leaves === 2) onWall(trimMat, x, y + h / 2, 0.06, h, z0, 0.07, 0.11);
           casing(x, w, y, y + h, z0);
           threshold(x, w, y, z0);
         };
@@ -1990,8 +2049,8 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         };
         // What stands in the wall: the doors where the photo showed them, on their own thresholds — or the one door onto
         // the deck, drawn by rule (a wide one slides, a narrow one swings) — and the windows.
-        const openings: Array<{ kind: "window" | "door" | "slider" | "garage"; x: number; w: number; h: number; y: number; face: number }> = [];
-        if (H.doors) for (const [dx, face, dw, dh, sill, kind] of H.doors) openings.push({ kind: kind === 1 ? "slider" : kind === 2 ? "garage" : "door", x: dx, w: dw, h: dh, y: sill, face });
+        const openings: Array<{ kind: "window" | "door" | "slider" | "garage"; x: number; w: number; h: number; y: number; face: number; panels?: number }> = [];
+        if (H.doors) for (const [dx, face, dw, dh, sill, kind, panels] of H.doors) openings.push({ kind: kind === 1 ? "slider" : kind === 2 ? "garage" : "door", x: dx, w: dw, h: dh, y: sill, face, panels });
         else if (H.door) {
           const [dx, dw, dh, face = 0] = H.door;
           openings.push({ kind: dw >= 5 ? "slider" : "door", x: dx, w: dw, h: dh, y: s.heightFt, face });
@@ -2004,17 +2063,17 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
             }
           }
         }
-        for (const [wx, face, ww, wh, sill] of H.windows ?? []) openings.push({ kind: "window", x: wx, w: ww, h: wh, y: sill, face });
+        for (const [wx, face, ww, wh, sill, panels] of H.windows ?? []) openings.push({ kind: "window", x: wx, w: ww, h: wh, y: sill, face, panels });
         /** Two openings in one column of the same face, the first right under the second. */
         const stacked = (lower: (typeof openings)[number], upper: (typeof openings)[number]) =>
           lower !== upper && Math.abs(lower.face - upper.face) < 0.05 && Math.min(lower.x + lower.w / 2, upper.x + upper.w / 2) - Math.max(lower.x - lower.w / 2, upper.x - upper.w / 2) > -CASING && upper.y >= lower.y + lower.h - 0.01 && upper.y - (lower.y + lower.h) < 0.6;
         for (const o of openings) {
-          if (o.kind === "window") windowAt(o.x, o.w, o.h, o.y, o.face, openings.some((l) => stacked(l, o)), openings.some((u) => stacked(o, u)));
-          else if (o.kind === "slider") sliderAt(o.x, o.w, o.h, o.y, o.face);
+          if (o.kind === "window") windowAt(o.x, o.w, o.h, o.y, o.face, openings.some((l) => stacked(l, o)), openings.some((u) => stacked(o, u)), o.panels);
+          else if (o.kind === "slider") sliderAt(o.x, o.w, o.h, o.y, o.face, o.panels);
           else if (o.kind === "garage") garageAt(o.x, o.w, o.h, o.y, o.face);
-          else doorAt(o.x, o.w, o.h, o.y, o.face);
+          else doorAt(o.x, o.w, o.h, o.y, o.face, o.panels);
         }
-        mount.dataset.deck3dOpenings = openings.map((o) => `${o.kind}@${o.x}`).join(" ");
+        mount.dataset.deck3dOpenings = openings.map((o) => `${o.kind}${o.panels ? o.panels : ""}@${o.x}`).join(" ");
       }
 
       // The fixtures' light at night: a few real lights, the rest glow.
@@ -2077,7 +2136,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       owned.push(grabMat);
       const pad = coarse ? 0.3 : 0.06;
       for (const h of s.handles) {
-        if (h.kind === "builtin") continue;
+        if (h.kind === "builtin" || h.kind === "opening") continue;
         let m: THREE.Mesh;
         if (h.grab) {
           const [x0, y0, z0, x1, y1, z1] = h.grab;
@@ -2118,11 +2177,26 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         group.add(m);
         liveBoxes.push(m);
       }
+      // A WINDOW OR A DOOR likewise (2026-11-15): its box on the wall, from a little behind the wall's face to in front of its trim.
+      for (const h of s.handles) {
+        if (h.kind !== "opening" || !h.grab || !h.open) continue;
+        const [gx0, gy0, z0, gx1, gy1, z1] = h.grab;
+        const geo = new THREE.BoxGeometry(Math.max(0.2, gx1 - gx0) + 2 * pad, Math.max(0.2, z1 - z0) + 2 * pad, Math.max(0.2, gy1 - gy0));
+        owned.push(geo);
+        const m = new THREE.Mesh(geo, grabMat);
+        m.position.set((gx0 + gx1) / 2 - ox, (z0 + z1) / 2, (gy0 + gy1) / 2 - oz);
+        m.userData.live = true;
+        m.userData.handle = h;
+        m.userData.layer = -3;
+        m.userData.size = [gx1 - gx0, gy1 - gy0, z0];
+        group.add(m);
+        liveBoxes.push(m);
+      }
       const knobs: HTMLButtonElement[] = [];
       const knobLabels: HTMLSpanElement[] = [];
       const leaders: SVGGElement[] = [];
       // The post or beam in the hand, read again where it stands now: its place shows as it moves.
-      const held = drag?.handle.grab && drag.handle.kind !== "builtin" ? s.handles.find((q) => q.kind === drag?.handle.kind && q.id === drag?.handle.id) : undefined;
+      const held = drag?.handle.grab && drag.handle.kind !== "builtin" && drag.handle.kind !== "opening" ? s.handles.find((q) => q.kind === drag?.handle.kind && q.id === drag?.handle.id) : undefined;
       if (held) queueMicrotask(() => hoverHandle(held));
       handles.forEach((m) => {
         const h = m.userData.handle as SceneHandle;
@@ -2409,7 +2483,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         for (const t of content.knobLabels) t.style.display = "none";
         for (const l of content.leaders) l.style.display = "none";
       }
-      if (!editRef.current && drag && drag.handle.kind !== "builtin") {
+      if (!editRef.current && drag && drag.handle.kind !== "builtin" && drag.handle.kind !== "opening") {
         setDragging(null);
         drag = null;
         orbit.enabled = !live;
@@ -2838,7 +2912,8 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
     const liveLine = new THREE.LineBasicMaterial({ color: 0x2f7bff, depthTest: false, transparent: true, opacity: 0.95 });
     const liveRing = new THREE.LineDashedMaterial({ color: 0xf5a623, depthTest: false, transparent: true, opacity: 0.95, dashSize: 0.32, gapSize: 0.2 });
     let liveViz: { group: THREE.Group; geos: THREE.BufferGeometry[]; radius: number; surface: number } | null = null;
-    const liveBox = (): THREE.Mesh | null => (live && content ? (content.liveBoxes.find((m) => (m.userData.handle as SceneHandle).id === live) ?? null) : null);
+    const liveKey = (h: SceneHandle) => `${h.kind}:${h.id}`;
+    const liveBox = (): THREE.Mesh | null => (live && content ? (content.liveBoxes.find((m) => liveKey(m.userData.handle as SceneHandle) === live) ?? null) : null);
     const clearLiveViz = () => {
       if (!liveViz) return;
       liveViz.group.removeFromParent();
@@ -2851,11 +2926,15 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       live = null;
       liveDown = null;
       turning = null;
+      sizing = null;
       clearLiveViz();
       liveBar.style.display = "none";
       turnKnob.style.display = "none";
+      sizeW.style.display = "none";
+      sizeH.style.display = "none";
       delete turnKnob.dataset.active;
       delete mount.dataset.deckLive;
+      delete mount.dataset.deckLiveKind;
       if (!drag) orbit.enabled = true;
       renderer.domElement.style.cursor = "";
       invalidate();
@@ -2883,7 +2962,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       wire.renderOrder = 20;
       g.add(wire);
       const radius = Math.hypot(len, dep) / 2 + 0.7;
-      const turns = typeof h.turn === "number";
+      const turns = h.kind === "builtin" && typeof h.turn === "number";
       if (turns) {
         const pts: THREE.Vector3[] = [];
         for (let k = 0; k < 72; k++) {
@@ -2902,17 +2981,48 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       const off = turns ? Math.round(h.turn as number) % 90 : 0;
       liveText.textContent = "";
       const name = document.createElement("b");
-      name.textContent = `${h.label}${off ? ` · turned ${off}°` : ""}`;
-      liveText.append(name, turns ? " — drag it anywhere on the deck. The round handle turns it." : " — drag it to any open edge of the deck.");
+      const opening = h.kind === "opening" && h.open ? h.open : null;
+      if (opening) {
+        // A window or a door: what it is and its size; what it can become; Remove.
+        const now = openingChoiceOf(opening);
+        name.textContent = `${now ? now.label : h.label} · ${feetInches(opening.w)} × ${feetInches(opening.h)}`;
+        liveText.append(name, opening.kind === "window" ? " — drag it along the wall or up it; pull the handles on its side and top to size it." : " — drag it along the wall, or to the other floor; pull the handles on its side and top to size it.");
+        liveChoices.textContent = "";
+        for (const c of opening.kind === "window" ? WINDOW_CHOICES : opening.kind === "garage" ? [] : DOOR_CHOICES) {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.textContent = c.short;
+          b.title = c.label;
+          b.dataset.deckOpeningChoice = c.key;
+          b.setAttribute("aria-pressed", String(now?.key === c.key));
+          b.addEventListener("click", () => {
+            const hh = liveBox()?.userData.handle as SceneHandle | undefined;
+            if (hh) editCbRef.current?.({ kind: hh.kind, id: hh.id, value: hh.value, value2: hh.value2 ?? 0, choice: c.key, done: true });
+          });
+          liveChoices.appendChild(b);
+        }
+      } else {
+        name.textContent = `${h.label}${off ? ` · turned ${off}°` : ""}`;
+        liveText.append(name, turns ? " — drag it anywhere on the deck. The round handle turns it." : " — drag it to any open edge of the deck.");
+      }
+      liveChoices.style.display = opening && liveChoices.childElementCount ? "flex" : "none";
+      liveRemove.style.display = opening ? "" : "none";
+      liveMore.style.display = opening ? "none" : "";
       liveBar.style.display = "flex";
       if (!turns) turnKnob.style.display = "none";
+      if (!opening) {
+        sizeW.style.display = "none";
+        sizeH.style.display = "none";
+      }
       mount.dataset.deckLive = h.id;
+      mount.dataset.deckLiveKind = h.kind;
       invalidate();
     };
     /** Taken in the hand: the camera stands still until it is let go. */
-    const takeLive = (id: string) => {
-      live = id;
+    const takeLive = (key: string) => {
+      live = key;
       turning = null;
+      sizing = null;
       orbit.enabled = false;
       stopSpin();
       clearHover();
@@ -2936,12 +3046,14 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         for (const m of content.liveBoxes) {
           const prm = (m.geometry as THREE.BoxGeometry).parameters;
           m.worldToLocal(local.copy(solid.point));
-          if (Math.abs(local.x) <= prm.width / 2 + 0.01 && local.y >= -prm.height / 2 - 0.01 && local.y <= prm.height / 2 + 3 && Math.abs(local.z) <= prm.depth / 2 + 0.01) return m;
+          // (A window or a door: its glass and its trim on the wall — its sill and apron under it, its head cap over it.)
+          const wall = (m.userData.handle as SceneHandle).kind === "opening";
+          if (Math.abs(local.x) <= prm.width / 2 + (wall ? 0.3 : 0.01) && local.y >= -prm.height / 2 - (wall ? 0.5 : 0.01) && local.y <= prm.height / 2 + (wall ? 0.45 : 3) && Math.abs(local.z) <= prm.depth / 2 + 0.01) return m;
         }
       }
       const boxes = ray.intersectObjects(content.liveBoxes, false);
       if (!solid) return boxes.length ? (boxes[0].object as THREE.Mesh) : null;
-      const held = live ? boxes.find((g) => (g.object.userData.handle as SceneHandle).id === live) : undefined;
+      const held = live ? boxes.find((g) => liveKey(g.object.userData.handle as SceneHandle) === live) : undefined;
       return held ? (held.object as THREE.Mesh) : null;
     };
     /** Where the pointer meets the deck's walking surface (scene feet), and that point in the picture — null off the deck's outline. */
@@ -2960,10 +3072,37 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       return inside ? { x, y, at } : null;
     };
     /** In the hand, a press on the deck itself: it goes there, and follows the pointer from there. */
+    /** The wall's own plane through a window or a door in the hand. */
+    const wallPlane = (box: THREE.Mesh) => new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 0, 1), box.position);
+    /** In the hand, a window or a door: a press on the house's wall sends it there (its middle under the pointer), and it follows from there. */
+    const wallJump = (e: PointerEvent): boolean => {
+      const box = liveBox();
+      const h = box?.userData.handle as SceneHandle | undefined;
+      if (!box || !h || h.kind !== "opening" || !h.open || !content) return false;
+      if (pickAt(e.clientX, e.clientY)?.pick.layer !== "house") return false;
+      const plane = wallPlane(box);
+      const at = planePoint(e.clientX, e.clientY, plane);
+      if (!at) return false;
+      const vx = Math.round((at.x + origin(content.scene).ox) * 12) / 12;
+      const vy = Math.max(0, Math.round((at.y - h.open.h / 2) * 12) / 12);
+      drag = { handle: { ...h, value: vx, value2: vy }, plane, start: at, last: vx, last2: vy };
+      setDragging(`${h.kind}:${h.id}`);
+      pinned = origin(sceneRef.current);
+      orbit.enabled = false;
+      renderer.domElement.style.cursor = "grabbing";
+      try {
+        renderer.domElement.setPointerCapture(e.pointerId);
+      } catch {
+        /* the drag still works while the pointer stays over the canvas */
+      }
+      editCbRef.current?.({ kind: h.kind, id: h.id, value: vx, value2: vy, done: false });
+      return true;
+    };
     const liveJump = (e: PointerEvent): boolean => {
       const box = liveBox();
       if (!box) return false;
       const h = box.userData.handle as SceneHandle;
+      if (h.kind === "opening") return wallJump(e);
       const surface = (box.userData.size as number[])[2];
       const p = deckPoint(e.clientX, e.clientY, surface);
       if (!p) return false;
@@ -3048,6 +3187,64 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       dropLive();
       pickRef.current?.(null, "click");
     };
+    // A WINDOW'S OR A DOOR'S SIZE (2026-11-15): the handle on its side makes it wider or narrower (its other side
+    // stays where it is), the one on its top taller or shorter — an inch at a time; the arrow keys too.
+    const sendSize = (which: "w" | "h", to: number, done: boolean) => {
+      const h = liveBox()?.userData.handle as SceneHandle | undefined;
+      if (!h || !h.open) return;
+      const v = Math.max(1, Math.round(to * 12) / 12);
+      if (which === "w") editCbRef.current?.({ kind: h.kind, id: h.id, value: Math.round((h.value - h.open.w / 2 + v / 2) * 12) / 12, value2: h.value2 ?? 0, w: v, done });
+      else editCbRef.current?.({ kind: h.kind, id: h.id, value: h.value, value2: h.value2 ?? 0, h: v, done });
+    };
+    const sizeFromPointer = (which: "w" | "h", clientX: number, clientY: number): number | null => {
+      const box = liveBox();
+      const h = box?.userData.handle as SceneHandle | undefined;
+      if (!box || !h || !h.open || !content) return null;
+      const p = planePoint(clientX, clientY, wallPlane(box));
+      if (!p) return null;
+      return which === "w" ? p.x + origin(content.scene).ox - (h.value - h.open.w / 2) : p.y - (h.value2 ?? 0);
+    };
+    for (const [which, knob] of [["w", sizeW], ["h", sizeH]] as const) {
+      knob.addEventListener("pointerdown", (e) => {
+        const h = liveBox()?.userData.handle as SceneHandle | undefined;
+        if (!h || !h.open) return;
+        e.preventDefault();
+        sizing = { which, last: which === "w" ? h.open.w : h.open.h };
+        knob.dataset.active = "";
+        try {
+          knob.setPointerCapture(e.pointerId);
+        } catch {
+          /* it still sizes while the pointer stays over the handle */
+        }
+      });
+      knob.addEventListener("pointermove", (e) => {
+        if (!sizing) return;
+        const v = sizeFromPointer(which, e.clientX, e.clientY);
+        if (v === null || Math.abs(v - sizing.last) < 1 / 12 - 1e-6) return;
+        sizing.last = v;
+        sendSize(which, v, false);
+      });
+      const end = (send: boolean) => {
+        if (!sizing) return;
+        const v = sizing.last;
+        sizing = null;
+        delete knob.dataset.active;
+        if (send) sendSize(which, v, true);
+      };
+      knob.addEventListener("pointerup", () => end(true));
+      knob.addEventListener("pointercancel", () => end(false));
+      knob.addEventListener("keydown", (e) => {
+        const dir = which === "w" ? (e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0) : e.key === "ArrowUp" ? 1 : e.key === "ArrowDown" ? -1 : 0;
+        const h = liveBox()?.userData.handle as SceneHandle | undefined;
+        if (!dir || !h || !h.open) return;
+        e.preventDefault();
+        sendSize(which, (which === "w" ? h.open.w : h.open.h) + (dir * (e.shiftKey ? 6 : 1)) / 12, true);
+      });
+    }
+    liveRemove.addEventListener("click", () => {
+      const h = liveBox()?.userData.handle as SceneHandle | undefined;
+      if (h && h.kind === "opening") editCbRef.current?.({ kind: h.kind, id: h.id, value: h.value, value2: h.value2 ?? 0, remove: true, done: true });
+    });
     liveDone.addEventListener("click", liveLetGo);
     /** The accessory in the hand as a part to open a card on: one of its own boxes, where it stands now (the host names the accessory from it). */
     const livePick = (): DeckPick | null => {
@@ -3079,6 +3276,33 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
     const placeLive = () => {
       const box = liveBox();
       const h = box?.userData.handle as SceneHandle | undefined;
+      if (box && h && h.kind === "opening" && h.open) {
+        // A window's or a door's size handles: beside the middle of its right side and over the middle of its top —
+        // OUTSIDE it by a handle's width on the screen, so a small window far off is still taken by its own glass
+        // (on the stand the handles covered a 3-ft window, and a press on its middle pulled its width).
+        turnKnob.style.display = "none";
+        const depth = ((box.geometry as THREE.BoxGeometry).parameters.depth ?? 0.5) / 2;
+        const cw = renderer.domElement.clientWidth;
+        const ch = renderer.domElement.clientHeight;
+        liveV.set(box.position.x, box.position.y, box.position.z + depth).project(camera);
+        const mid = { x: ((liveV.x + 1) / 2) * cw, y: ((1 - liveV.y) / 2) * ch };
+        for (const [knob, dx, dy, fx, fy] of [[sizeW, h.open.w / 2, 0, 1, 0], [sizeH, 0, h.open.h / 2, 0, -1]] as const) {
+          liveV.set(box.position.x + dx, box.position.y + dy, box.position.z + depth).project(camera);
+          if (liveV.z > 1 || Math.abs(liveV.x) > 1.05 || Math.abs(liveV.y) > 1.05) {
+            knob.style.display = "none";
+            continue;
+          }
+          const ex = ((liveV.x + 1) / 2) * cw;
+          const ey = ((1 - liveV.y) / 2) * ch;
+          const len = Math.hypot(ex - mid.x, ey - mid.y);
+          const ux = len > 1 ? (ex - mid.x) / len : fx;
+          const uy = len > 1 ? (ey - mid.y) / len : fy;
+          const out = knobSize / 2 + 8;
+          knob.style.display = "grid";
+          knob.style.transform = `translate(${Math.min(cw - 6, Math.max(6, ex + ux * out)).toFixed(1)}px, ${Math.min(ch - 6, Math.max(6, ey + uy * out)).toFixed(1)}px)`;
+        }
+        return;
+      }
       if (!box || !h || !liveViz || typeof h.turn !== "number") {
         turnKnob.style.display = "none";
         return;
@@ -3097,10 +3321,11 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       const h = mesh.userData.handle as SceneHandle;
       const at = mesh.getWorldPosition(new THREE.Vector3());
       // Horizontal axes drag on the horizontal plane through the handle; a height drags on a vertical plane facing the camera.
-      const plane = h.axis === "z" ? new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3(camera.position.x - at.x, 0, camera.position.z - at.z).normalize(), at) : new THREE.Plane(new THREE.Vector3(0, 1, 0), -at.y);
+      // (A window or a door, "xz": on the wall's own plane — along the house and up it.)
+      const plane = h.axis === "xz" ? new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 0, 1), at) : h.axis === "z" ? new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3(camera.position.x - at.x, 0, camera.position.z - at.z).normalize(), at) : new THREE.Plane(new THREE.Vector3(0, 1, 0), -at.y);
       const start = planePoint(clientX, clientY, plane);
       if (!start) return;
-      drag = { handle: h, plane, start, last: h.value, ...(h.axis === "xy" ? { last2: h.value2 ?? 0 } : {}) };
+      drag = { handle: h, plane, start, last: h.value, ...(h.axis === "xy" || h.axis === "xz" ? { last2: h.value2 ?? 0 } : {}) };
       setDragging(`${h.kind}:${h.id}`);
       pinned = origin(sceneRef.current);
       orbit.enabled = false;
@@ -3111,6 +3336,23 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       const p = planePoint(clientX, clientY, drag.plane);
       if (!p) return;
       const h = drag.handle;
+      // ALONG THE WALL AND UP IT (2026-11-15: a window or a door): its middle and its sill, an inch at a time.
+      if (h.axis === "xz") {
+        const vx = Math.round((h.value + (p.x - drag.start.x) / h.perUnit) * 12) / 12;
+        const vy = Math.max(0, Math.round(((h.value2 ?? 0) + (p.y - drag.start.y) / h.perUnit) * 12) / 12);
+        if (!done && Math.abs(vx - drag.last) < 1 / 12 - 1e-6 && Math.abs(vy - (drag.last2 ?? 0)) < 1 / 12 - 1e-6) return;
+        drag.last = vx;
+        drag.last2 = vy;
+        editCbRef.current?.({ kind: h.kind, id: h.id, value: vx, value2: vy, done });
+        if (done) {
+          drag = null;
+          setDragging(null);
+          pinned = null;
+          orbit.enabled = !live;
+          renderer.domElement.style.cursor = "";
+        }
+        return;
+      }
       // ACROSS THE DECK (2026-11-14: an accessory): both ways at once — along the house and out from it.
       if (h.axis === "xy") {
         const vx = h.value + (p.x - drag.start.x) / h.perUnit;
@@ -3199,7 +3441,8 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       if (live) {
         if (!coarse && !downAt) {
           const box = liveBox();
-          renderer.domElement.style.cursor = liveAt(e.clientX, e.clientY) ? "grab" : box && deckPoint(e.clientX, e.clientY, (box.userData.size as number[])[2]) ? "move" : "default";
+          const wall = box && (box.userData.handle as SceneHandle).kind === "opening";
+          renderer.domElement.style.cursor = liveAt(e.clientX, e.clientY) ? "grab" : box && (wall ? pickAt(e.clientX, e.clientY)?.pick.layer === "house" : deckPoint(e.clientX, e.clientY, (box.userData.size as number[])[2])) ? "move" : "default";
         }
         return;
       }
@@ -3256,8 +3499,8 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       if (!placingRef.current) {
         const acc = liveAt(e.clientX, e.clientY);
         if (acc) {
-          const id = (acc.userData.handle as SceneHandle).id;
-          if (live !== id) takeLive(id);
+          const key = liveKey(acc.userData.handle as SceneHandle);
+          if (live !== key) takeLive(key);
           liveDown = { mesh: acc, x: e.clientX, y: e.clientY };
           orbit.enabled = false;
           downAt = { x: e.clientX, y: e.clientY, t: performance.now() };
@@ -3374,7 +3617,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         if (!k) return;
         const h = m.userData.handle as SceneHandle;
         m.getWorldPosition(knobV);
-        knobT.copy(knobV).add(KNOB_AXIS[h.axis === "xy" ? "x" : h.axis]);
+        knobT.copy(knobV).add(KNOB_AXIS[h.axis === "xy" || h.axis === "xz" ? "x" : h.axis]);
         knobV.project(camera);
         knobT.project(camera);
         const off = knobV.z > 1 || Math.abs(knobV.x) > 1.05 || Math.abs(knobV.y) > 1.05;

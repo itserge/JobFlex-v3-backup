@@ -105,6 +105,13 @@ export interface HouseDesign {
   parts?: Array<HousePart | null> | null;
   /** The windows and doors where they really are (2026-10-23, built from a photo). Absent or null = drawn by rule: a door on the deck's main back edge, windows every 5 ft. */
   openings?: HouseOpening[] | null;
+  /**
+   * SET BY HAND AS A PICTURE (2026-11-15 — the owner: "if I'm just showing the client on an example how their deck is
+   * going to look, and I'm just trying to make the back wall look nice, then I can play around with this"): the
+   * windows and doors were moved, sized or swapped in the 3D on a wall drawn by rule. They are drawn as set, but the
+   * deck is NOT checked against them (lib/deck/openingChecks) until the contractor says they are the real ones.
+   */
+  openingsSketch?: boolean;
   /** The photo the house was built from. */
   photo?: HousePhoto | null;
   /**
@@ -154,8 +161,70 @@ export interface HouseOpening {
   widthFt: number;
   heightFt: number;
   sillFt: number;
+  /**
+   * How many leaves or sashes stand side by side (2026-11-15 — the owner: "change the sliding door for a triple sliding
+   * door, 4 doors, or a single regular door; same thing for the windows"): a sliding door's 2 to 4 panels, a double
+   * door's 2, a window's 1 to 3. Absent = by its width, as before.
+   */
+  panels?: 1 | 2 | 3 | 4;
+  /**
+   * The floor it stands on (2026-11-15; set on a wall arranged by hand): "deck" = the deck's own floor, "lower" = a
+   * double deck's lower floor (the ground where there is none). Its sill is then `upFt` above that floor and FOLLOWS
+   * it when the deck's height changes (resolveOpenings) — a door stays on its threshold. Absent = `sillFt` is its
+   * height above the ground, as a photo gave it.
+   */
+  floor?: "deck" | "lower";
+  upFt?: number;
 }
-export const OPENING_LIMITS = { count: 40, widthFt: { min: 1, max: 20 }, heightFt: { min: 1, max: 12 }, sillFt: { min: 0, max: 30 } } as const;
+/** (68 = every window and door a wall drawn by rule can show: 60 windows and 8 doors.) */
+export const OPENING_LIMITS = { count: 68, widthFt: { min: 1, max: 20 }, heightFt: { min: 1, max: 12 }, sillFt: { min: 0, max: 30 } } as const;
+
+/** What a door or a window can be swapped for in the 3D (2026-11-15): its kind, how many panels, and the width it starts at, ft. */
+export interface OpeningChoice {
+  key: string;
+  label: string;
+  /** The few words on the 3D's bar. */
+  short: string;
+  kind: OpeningKind;
+  panels: 1 | 2 | 3 | 4;
+  widthFt: number;
+}
+export const DOOR_CHOICES: readonly OpeningChoice[] = [
+  { key: "door", label: "Single door", short: "Door", kind: "door", panels: 1, widthFt: 3 },
+  { key: "door2", label: "Double door", short: "Double door", kind: "door", panels: 2, widthFt: 6 },
+  { key: "slider2", label: "Sliding door, 2 panels", short: "Slider 2", kind: "slider", panels: 2, widthFt: 6 },
+  { key: "slider3", label: "Sliding door, 3 panels", short: "Slider 3", kind: "slider", panels: 3, widthFt: 9 },
+  { key: "slider4", label: "Sliding door, 4 panels", short: "Slider 4", kind: "slider", panels: 4, widthFt: 12 },
+];
+export const WINDOW_CHOICES: readonly OpeningChoice[] = [
+  { key: "window", label: "Single window", short: "Window", kind: "window", panels: 1, widthFt: 3 },
+  { key: "window2", label: "Double window", short: "Double", kind: "window", panels: 2, widthFt: 6 },
+  { key: "window3", label: "Triple window", short: "Triple", kind: "window", panels: 3, widthFt: 9 },
+];
+/** How many leaves a door or a window shows: as set, or by its width (a slider a leaf every 3½ ft, 2 to 4; a window a sash every 3.2 ft). */
+export function openingPanels(o: { kind: OpeningKind; w: number; panels?: number }): number {
+  if (o.panels && o.panels >= 1 && o.panels <= 4) return Math.round(o.panels);
+  if (o.kind === "slider") return Math.min(4, Math.max(2, Math.round(o.w / 3.5)));
+  if (o.kind === "window") return Math.max(1, Math.round(o.w / 3.2));
+  return 1;
+}
+/** Which choice an opening is now (a garage door is none). */
+export function openingChoiceOf(o: { kind: OpeningKind; w: number; panels?: number }): OpeningChoice | null {
+  if (o.kind === "garage") return null;
+  const n = openingPanels(o);
+  const list = o.kind === "window" ? WINDOW_CHOICES : DOOR_CHOICES;
+  return list.find((c) => c.kind === o.kind && c.panels === Math.min(n, o.kind === "door" ? 2 : o.kind === "window" ? 3 : 4)) ?? list[0];
+}
+
+/** The floors an opening can stand on, ft above the ground: the deck's, and a double deck's lower floor (null = none: the ground). */
+export interface OpeningFloors {
+  deckFt: number;
+  lowerFt: number | null;
+}
+/** Each opening with its sill where it stands NOW: one that stands on a floor follows that floor (see HouseOpening.floor). */
+export function resolveOpenings(openings: readonly HouseOpening[], floors: OpeningFloors): HouseOpening[] {
+  return openings.map((o) => (o.floor ? { ...o, sillFt: toInchFt(clamp((o.floor === "deck" ? floors.deckFt : (floors.lowerFt ?? 0)) + (o.upFt ?? 0), OPENING_LIMITS.sillFt.min, OPENING_LIMITS.sillFt.max)) } : o));
+}
 /** A sill or a threshold is kept to the inch (2026-10-23): the deck's surface is checked against a door's threshold in
  *  inches (lib/deck/openingChecks) — a quarter foot was 3 in. Older designs' quarter feet read back the same. */
 export const toInchFt = (ft: number) => Math.round(ft * 12) / 12;
@@ -274,6 +343,7 @@ export function normalizeHouse(raw: unknown, shape: DeckShape): HouseDesign {
   }
   if (typeof r.eaveHeightFt === "number" && Number.isFinite(r.eaveHeightFt) && r.eaveHeightFt >= 4 && r.eaveHeightFt <= 60) out.eaveHeightFt = toInchFt(r.eaveHeightFt);
   if (Array.isArray(r.openings)) out.openings = normalizeOpenings(r.openings, -leftFt, W + rightFt);
+  if (r.openingsSketch === true && out.openings) out.openingsSketch = true;
   // How far back along the house's side — only where the deck is past that corner, and no deeper than a deck goes.
   const wrap = (v: unknown) => half(clamp(num(v, 0), HOUSE_LIMITS.wrapFt.min, Math.max(0, Math.min(HOUSE_LIMITS.wrapFt.max, Math.floor((DECK_LIMITS.depthFt.max - shape.depthFt) * 2) / 2))));
   if (leftFt < 0 && wrap(r.wrapLeftFt) > 0) out.wrapLeftFt = wrap(r.wrapLeftFt);
@@ -306,7 +376,14 @@ export function normalizeOpenings(raw: unknown[], fromFt: number, toFt: number):
       const id = typeof v.id === "string" && v.id && !seen.has(v.id) ? v.id : `o${i + 1}`;
       seen.add(id);
       const L = OPENING_LIMITS;
-      return { id, kind, xFt: toInchFt(num(v.xFt, NaN)), widthFt: toInchFt(clamp(num(v.widthFt, 3), L.widthFt.min, L.widthFt.max)), heightFt: toInchFt(clamp(num(v.heightFt, 4), L.heightFt.min, L.heightFt.max)), sillFt: toInchFt(clamp(num(v.sillFt, 3), L.sillFt.min, L.sillFt.max)) };
+      const made: HouseOpening = { id, kind, xFt: toInchFt(num(v.xFt, NaN)), widthFt: toInchFt(clamp(num(v.widthFt, 3), L.widthFt.min, L.widthFt.max)), heightFt: toInchFt(clamp(num(v.heightFt, 4), L.heightFt.min, L.heightFt.max)), sillFt: toInchFt(clamp(num(v.sillFt, 3), L.sillFt.min, L.sillFt.max)) };
+      // Set by hand (2026-11-15) — only when it is there, so a photo's openings read back exactly as before.
+      if (kind !== "garage" && (v.panels === 1 || v.panels === 2 || v.panels === 3 || v.panels === 4)) made.panels = kind === "door" ? (Math.min(2, v.panels) as 1 | 2) : kind === "window" ? (Math.min(3, v.panels) as 1 | 2 | 3) : (Math.max(2, v.panels) as 2 | 3 | 4);
+      if (v.floor === "deck" || v.floor === "lower") {
+        made.floor = v.floor;
+        made.upFt = toInchFt(clamp(num(v.upFt, 0), 0, L.sillFt.max));
+      }
+      return made;
     })
     .filter((o) => Number.isFinite(o.xFt) && o.xFt - o.widthFt / 2 >= fromFt - 0.5 && o.xFt + o.widthFt / 2 <= toFt + 0.5)
     .sort((a, b) => a.xFt - b.xFt || a.sillFt - b.sillFt)
@@ -622,6 +699,22 @@ export interface HouseScene {
   material?: HouseMaterial;
   /** The roofs (2026-10-23): ONE over the house's body, one over each bump-out standing out in front of it — [kind (ROOF_PIECE), x0, y0, x1, y1, the eave's height, pitch in inches per foot], ft. Absent (an older scene): a roof per block. */
   roofs?: number[][];
+  /** Every window and door as it stands in the picture, each with its name (2026-11-15): the 3D takes hold of one by it. */
+  openingsAt?: DrawnOpening[];
+}
+/** A window or a door as it stands on the wall in the picture: which one (its id in the design's list, or the rule's own), where, how big. Ft. */
+export interface DrawnOpening {
+  id: string;
+  kind: OpeningKind;
+  x: number;
+  face: number;
+  w: number;
+  h: number;
+  sill: number;
+  panels?: number;
+  /** The floor it stands on and how far above it (see HouseOpening.floor). */
+  floor?: "deck" | "lower";
+  upFt?: number;
 }
 
 /** A roof's piece in the scene: 0 hip, 1 gable (ridge along the wall), 2 gable to the yard, 3 shed (down toward the
@@ -674,7 +767,26 @@ export function upperWindowsOver(openings: ReadonlyArray<Pick<HouseOpening, "kin
   return (openings ?? []).filter((o) => o.xFt > x0 && o.xFt < x1 && isUpperWindow(o, eaveHeightFt)).length;
 }
 
-export function houseScene(shape: DeckShape, house: HouseDesign, ctx: { deckHeightFt: number; peakFt: number; mainEdge: { x0: number; x1: number } | null }): HouseScene {
+/** What the house is drawn against: the deck's floor, the roof's peak, the deck's main back edge — and a double deck's lower floor with its own back edge (2026-11-15). Ft. */
+export interface HouseSceneCtx {
+  deckHeightFt: number;
+  peakFt: number;
+  mainEdge: { x0: number; x1: number } | null;
+  lower?: { floorFt: number; x0: number; x1: number } | null;
+}
+
+/**
+ * A wall drawn by rule, as a list (2026-11-15): the very windows and doors the rule draws, each with the floor it
+ * stands on — what the first move by hand in the 3D turns the wall into (lib/deck/wallOpenings).
+ */
+export function ruleOpenings(shape: DeckShape, house: HouseDesign, ctx: HouseSceneCtx): HouseOpening[] {
+  const { openings: _list, openingsSketch: _sketch, ...bare } = house;
+  void _list;
+  void _sketch;
+  return (houseScene(shape, bare, ctx).openingsAt ?? []).map((o) => ({ id: o.id, kind: o.kind, xFt: toInchFt(o.x), widthFt: toInchFt(o.w), heightFt: toInchFt(o.h), sillFt: toInchFt(o.sill), ...(o.floor ? { floor: o.floor, upFt: toInchFt(o.upFt ?? 0) } : {}) }));
+}
+
+export function houseScene(shape: DeckShape, house: HouseDesign, ctx: HouseSceneCtx): HouseScene {
   const parts = impliedParts(wallParts(house, shape), shape, house);
   const storeyTop = (n: number) => n * STOREY_FT + 0.5;
   const mainH = r2(house.eaveHeightFt ?? Math.max(storeyTop(house.storeys), ctx.deckHeightFt + 9, ctx.peakFt + 2.5));
@@ -758,10 +870,11 @@ export function houseScene(shape: DeckShape, house: HouseDesign, ctx: { deckHeig
   }
   const look = { storeys: house.storeys, roof: house.roof, siding: sidingHex(house.siding), roofColour: roofHex(house.roofColour), roofs, ...(house.material && house.material !== "lap" ? { material: house.material } : {}) };
   if (house.openings) {
-    const placed = placeOpenings(house.openings, parts, partH, house.eaveHeightFt !== undefined, above);
+    // (One that stands on a floor follows it: a door set by hand stays on the deck's boards when the deck goes up.)
+    const placed = placeOpenings(resolveOpenings(house.openings, { deckFt: ctx.deckHeightFt, lowerFt: ctx.lower?.floorFt ?? null }), parts, partH, house.eaveHeightFt !== undefined, above);
     const ref = ctx.mainEdge ? (ctx.mainEdge.x0 + ctx.mainEdge.x1) / 2 : referenceX(shape);
     const main = placed.doors.slice().sort((a, b) => Math.abs(a[0] - ref) - Math.abs(b[0] - ref))[0];
-    return { blocks, heightFt: mainH, door: main ? [main[0], main[2], main[3], main[1]] : null, windows: placed.windows, doors: placed.doors, ...look };
+    return { blocks, heightFt: mainH, door: main ? [main[0], main[2], main[3], main[1]] : null, windows: placed.windows, doors: placed.doors, openingsAt: placed.at, ...look };
   }
   // The door: on the house line, centred on the deck's main back edge.
   const underRef = referencePart(parts, shape);
@@ -798,21 +911,61 @@ export function houseScene(shape: DeckShape, house: HouseDesign, ctx: { deckHeig
       }
     }
   });
-  // And none of them on the door's spot or on another's, whatever the rows above did (settleOpeningRects): the door
-  // stands, a window in its way is cut back or left out.
-  const rects: OpeningRect[] = [
-    ...(door && doorY ? [{ kind: (door[1] >= 5 ? "slider" : "door") as OpeningKind, x0: door[0] - door[1] / 2, x1: door[0] + door[1] / 2, y0: doorY.y0, y1: doorY.y1, face: door[3] }] : []),
-    ...windows.map((w) => ({ kind: "window" as OpeningKind, x0: w[0] - w[2] / 2, x1: w[0] + w[2] / 2, y0: w[4], y1: w[4] + w[3], face: w[1] })),
+  // THE FLOOR UNDER A DECK A STOREY UP (2026-11-15 — the owner, of a double deck: "the first floor should be with the
+  // doors, sliding door and windows on the 3D model"). The first row's sills are set above the deck's floor, so under
+  // a second-storey deck the wall below was blank. Where a window fits under the deck's frame, the ground floor gets
+  // its own row — and, under a double deck, the door onto the lower floor, on that floor, centred on its back edge.
+  const meta = new Map<number, { floor: "deck" | "lower"; upFt: number }>();
+  if (ctx.deckHeightFt + 1.2 >= 3) windows.forEach((w, i) => { if (Math.abs(w[4] - r2(ctx.deckHeightFt + 1.2)) < 0.006) meta.set(i, { floor: "deck", upFt: 1.2 }); });
+  const underFrame = ctx.deckHeightFt - 1.6;
+  const lowFloor = ctx.lower ? ctx.lower.floorFt : 0;
+  const lowSill = lowFloor + 3;
+  const lowWinH = Math.min(4, underFrame - lowSill);
+  let lowDoor: number[] | null = null;
+  if (lowWinH >= 2.5) {
+    if (ctx.lower) {
+      const lspan = ctx.lower.x1 - ctx.lower.x0;
+      const lw = lspan >= 10 ? 6 : 3;
+      const lx = r2((ctx.lower.x0 + ctx.lower.x1) / 2);
+      const lh = r2(Math.min(6.67, underFrame + 0.3 - lowFloor));
+      const lp = parts[Math.max(0, partAt(parts, lx))];
+      if (lh >= 6 && lspan >= lw + 2) lowDoor = [lx, lw, lh, lp.depthFt, r2(lowFloor)];
+    }
+    parts.forEach((p) => {
+      const runs: Array<{ x0: number; x1: number }> = [];
+      if (lowDoor && lowDoor[0] >= p.x0 - 1e-6 && lowDoor[0] <= p.x1 + 1e-6) runs.push({ x0: p.x0, x1: Math.min(p.x1, lowDoor[0] - lowDoor[1] / 2 - 1.5) }, { x0: Math.max(p.x0, lowDoor[0] + lowDoor[1] / 2 + 1.5), x1: p.x1 });
+      else runs.push({ x0: p.x0, x1: p.x1 });
+      for (const run of runs) {
+        for (let x = run.x0 + EDGE + WIN_W / 2; x + WIN_W / 2 <= run.x1 - EDGE + 1e-9; x += PITCH) {
+          if (ctx.lower) meta.set(windows.length, { floor: "lower", upFt: 3 });
+          windows.push([r2(x), p.depthFt, WIN_W, r2(lowWinH), r2(lowSill)]);
+        }
+      }
+    });
+  }
+  // And none of them on a door's spot or on another's, whatever the rows above did (settleOpeningRects): the doors
+  // stand, a window in the way is cut back or left out.
+  const doorRects: Array<OpeningRect & { id: string }> = [
+    ...(door && doorY ? [{ id: "d1", kind: (door[1] >= 5 ? "slider" : "door") as OpeningKind, x0: door[0] - door[1] / 2, x1: door[0] + door[1] / 2, y0: doorY.y0, y1: doorY.y1, face: door[3] }] : []),
+    ...(lowDoor ? [{ id: "d2", kind: (lowDoor[1] >= 5 ? "slider" : "door") as OpeningKind, x0: lowDoor[0] - lowDoor[1] / 2, x1: lowDoor[0] + lowDoor[1] / 2, y0: lowDoor[4], y1: lowDoor[4] + lowDoor[2], face: lowDoor[3] }] : []),
   ];
-  const stood = settleOpeningRects(rects).slice(door ? 1 : 0);
-  const clear = windows.flatMap((w, i) => {
+  const rects: OpeningRect[] = [...doorRects, ...windows.map((w) => ({ kind: "window" as OpeningKind, x0: w[0] - w[2] / 2, x1: w[0] + w[2] / 2, y0: w[4], y1: w[4] + w[3], face: w[1] }))];
+  const stood = settleOpeningRects(rects).slice(doorRects.length);
+  const at: DrawnOpening[] = doorRects.map((d) => ({ id: d.id, kind: d.kind, x: r2((d.x0 + d.x1) / 2), face: d.face ?? 0, w: r2(d.x1 - d.x0), h: r2(d.y1 - d.y0), sill: r2(d.y0), floor: d.id === "d1" ? ("deck" as const) : ("lower" as const), upFt: 0 }));
+  const clear: number[][] = [];
+  windows.forEach((w, i) => {
     const r = stood[i];
-    if (!r) return [];
-    const j = i + (door ? 1 : 0);
+    if (!r || clear.length >= 60) return;
+    const j = i + doorRects.length;
     const same = r.x0 === rects[j].x0 && r.x1 === rects[j].x1 && r.y0 === rects[j].y0 && r.y1 === rects[j].y1;
-    return [same ? w : [r2((r.x0 + r.x1) / 2), w[1], r2(r.x1 - r.x0), r2(r.y1 - r.y0), r2(r.y0)]];
+    const row = same ? w : [r2((r.x0 + r.x1) / 2), w[1], r2(r.x1 - r.x0), r2(r.y1 - r.y0), r2(r.y0)];
+    clear.push(row);
+    const m = same ? meta.get(i) : undefined;
+    at.push({ id: `w${i + 1}`, kind: "window", x: row[0], face: row[1], w: row[2], h: row[3], sill: row[4], ...(m ? m : {}) });
   });
-  return { blocks, heightFt: mainH, door, windows: clear.slice(0, 60), ...look };
+  // (The door onto the deck is `door`, as ever; with a door on the floor below there are two, each on its own threshold.)
+  const doors = lowDoor ? [...(door ? [[door[0], door[3], door[1], door[2], r2(ctx.deckHeightFt), door[1] >= 5 ? 1 : 0]] : []), [lowDoor[0], lowDoor[3], lowDoor[1], lowDoor[2], lowDoor[4], lowDoor[1] >= 5 ? 1 : 0]] : null;
+  return { blocks, heightFt: mainH, door, windows: clear, ...(doors ? { doors } : {}), openingsAt: at, ...look };
 }
 
 /** The wall part an opening stands in: the one its middle is over. */
@@ -916,8 +1069,9 @@ export function settleSceneOpenings(windows: number[][] | undefined, doors: numb
   settled.forEach((r, i) => {
     if (!r) return;
     const row = [r2((r.x0 + r.x1) / 2), rows[i].row[1], r2(r.x1 - r.x0), r2(r.y1 - r.y0), r2(r.y0)];
-    if (rows[i].door) out.doors.push([...row, rows[i].row[5]]);
-    else out.windows.push(row);
+    // (A row's panels, set by hand, ride at its end: kept.)
+    if (rows[i].door) out.doors.push([...row, rows[i].row[5], ...rows[i].row.slice(6, 7)]);
+    else out.windows.push([...row, ...rows[i].row.slice(5, 6)]);
   });
   return { windows: windows ? out.windows : undefined, doors: doors ? out.doors : undefined };
 }
@@ -927,8 +1081,8 @@ export function settleSceneOpenings(windows: number[][] | undefined, doors: numb
  * that part, dropped when it would stand above that part's wall (an upper-storey window over a one-storey bump-out)
  * or when nothing of it is left — and none of them on another's spot (settleOpeningRects).
  */
-function placeOpenings(openings: HouseOpening[], parts: WallPart[], partH: number[], fromPhoto = false, above: ReadonlyArray<{ face: number; top: number; from: number } | null> = []): { windows: number[][]; doors: number[][] } {
-  const placed: OpeningRect[] = [];
+function placeOpenings(openings: HouseOpening[], parts: WallPart[], partH: number[], fromPhoto = false, above: ReadonlyArray<{ face: number; top: number; from: number } | null> = []): { windows: number[][]; doors: number[][]; at: DrawnOpening[] } {
+  const placed: Array<OpeningRect & { of: HouseOpening }> = [];
   for (const o of openings) {
     const i = partAt(parts, o.xFt);
     if (i < 0) continue;
@@ -946,24 +1100,29 @@ function placeOpenings(openings: HouseOpening[], parts: WallPart[], partH: numbe
       const up = above[i];
       if (!up || o.kind !== "window") continue;
       const y0 = Math.max(o.sillFt, up.from), y1 = Math.min(o.sillFt + o.heightFt, up.top - (fromPhoto ? 0 : 0.6));
-      if (y1 - y0 >= 0.75) placed.push({ kind: o.kind, x0, x1, y0, y1, face: up.face });
+      if (y1 - y0 >= 0.75) placed.push({ kind: o.kind, x0, x1, y0, y1, face: up.face, of: o });
       continue;
     }
     const sill = !fromPhoto && o.sillFt + o.heightFt > top ? Math.max(0, top - o.heightFt) : o.sillFt;
     const h = Math.min(o.heightFt, top - sill);
     if (h < 0.75) continue;
-    placed.push({ kind: o.kind, x0, x1, y0: sill, y1: sill + h, face: p.depthFt });
+    placed.push({ kind: o.kind, x0, x1, y0: sill, y1: sill + h, face: p.depthFt, of: o });
   }
   const windows: number[][] = [];
   const doors: number[][] = [];
+  const at: DrawnOpening[] = [];
   for (const r of settleOpeningRects(placed)) {
     if (!r) continue;
     const row = [r2((r.x0 + r.x1) / 2), r.face ?? 0, r2(r.x1 - r.x0), r2(r.y1 - r.y0), r2(r.y0)];
-    if (r.kind === "window") windows.push(row);
+    // (Its panels ride at the row's end when they were set by hand — a row without them reads as before.)
+    const panels = r.of.panels ? [r.of.panels] : [];
+    if (r.kind === "window" ? windows.length >= 60 : doors.length >= 8) continue;
+    if (r.kind === "window") windows.push([...row, ...panels]);
     // The door's kind for the 3D: 0 a door, 1 a sliding door, 2 a garage door (2026-10-26).
-    else doors.push([...row, r.kind === "slider" ? 1 : r.kind === "garage" ? 2 : 0]);
+    else doors.push([...row, r.kind === "slider" ? 1 : r.kind === "garage" ? 2 : 0, ...panels]);
+    at.push({ id: r.of.id, kind: r.kind, x: row[0], face: row[1], w: row[2], h: row[3], sill: row[4], ...(r.of.panels ? { panels: r.of.panels } : {}), ...(r.of.floor ? { floor: r.of.floor, upFt: r.of.upFt ?? 0 } : {}) });
   }
-  return { windows: windows.slice(0, 60), doors: doors.slice(0, 8) };
+  return { windows, doors, at };
 }
 
 /* ── A field of the House step, shown in the 3D ─────────────────────── */

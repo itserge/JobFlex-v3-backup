@@ -26,7 +26,7 @@ export interface RoofFit {
 
 /** The roof brought clear of the house's windows and doors, or null when it is clear already — or cannot be. */
 export function roofClearOfWindows(design: DeckDesign): RoofFit | null {
-  if (design.structure === "deck" || design.placement === "detached" || !design.house.openings?.length) return null;
+  if (design.structure === "deck" || design.placement === "detached" || !design.house.openings?.length || design.house.openingsSketch) return null;
   if (!crosses(design)) return null;
   const r = design.roof;
   // Every lower pitch and lower post height there is, the gentlest change first: an inch of lower posts costs an inch,

@@ -11,7 +11,9 @@
 // at its boards, or well above them (the floor above). Only a door at the boards has its threshold checked; a door
 // under the deck is checked for what can really be in its way down there — a post in front of it, a beam under its
 // head; a window under the deck's surface is not glass beside the tub.
-// Houses drawn by rule (no openings) are not checked: their doors and windows are a picture, not a measurement.
+// Houses drawn by rule (no openings) are not checked: their doors and windows are a picture, not a measurement. Nor is
+// a wall arranged by hand in the 3D as a picture (2026-11-15, house.openingsSketch) — until the contractor says its
+// doors and windows are the real ones (lib/deck/wallOpenings realOpenings).
 // Estimating grade — the building department decides.
 
 import { DECK_LIMITS, LOWER_LIMITS, ROOF_LIMITS, spaRectIn, type DeckDesign } from "./design";
@@ -20,6 +22,7 @@ import { settleOpenings, type HouseOpening } from "./house";
 import type { DeckStructure } from "./structure";
 import type { RoofFrame } from "./roof";
 import type { DeckCheck } from "./checks";
+import { realOpenings } from "./wallOpenings";
 
 const PART = "Doors and windows";
 /** The usual mark: the boards an inch under the threshold — under it for the water, close for the foot. */
@@ -88,7 +91,8 @@ export function roofAtWall(roof: RoofFrame, design: DeckDesign): { x0: number; x
 export function openingChecks(s: DeckStructure, add: (c: DeckCheck) => void): void {
   const { design, frame, roof } = s;
   // The openings as they stand on the wall: a window read inside a door, or twice, is no window of its own (2026-11-13).
-  const all = design.house.openings ? settleOpenings(design.house.openings) : null;
+  const real = realOpenings(design);
+  const all = real ? settleOpenings(real) : null;
   if (!all?.length || design.placement === "detached" || !frame) return;
   const W = design.shape.widthFt * 12;
   const deck = { x0: 0, x1: W };
