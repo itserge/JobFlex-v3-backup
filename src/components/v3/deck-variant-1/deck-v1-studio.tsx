@@ -112,7 +112,7 @@ import { railWords } from "@/lib/deck/rails";
 import { electricalWords } from "@/lib/deck/electrical";
 import { siteFromAddress, SLOPE_LIMITS, TERMITE_LABEL } from "@/lib/deck/site";
 import { applyDeckPatch, checkSummary, deckChecks, type DeckCheck, type DeckPatch } from "@/lib/deck/checks";
-import { addOpening, openingsReal } from "@/lib/deck/wallOpenings";
+import { addOpening, editOpening, openingsReal, removeOpening } from "@/lib/deck/wallOpenings";
 import { deckScene, sceneBuildLayers, SCENE_LAYER_LABEL, type DeckScene, type SceneLegend } from "@/lib/deck/scene";
 import { BOM_STEP_LABEL, FIXTURE_RATE, type BomStep } from "@/lib/deck/takeoff";
 import { STORE_SURVEY, storePrice } from "@/lib/deck/storePrices";
@@ -746,6 +746,21 @@ export function DeckV1Studio({ initialBook, homeState, initialAddress, clientId,
         // fits — brought to the railing, turned to face it and lined up there — or turned by its round handle.
         case "builtin": {
           const p = typeof e.turn === "number" ? turnAccessoryTo(structure, e.id, e.turn) : moveAccessory(structure, e.id, e.value, e.value2 ?? 0);
+          if (p) patch(p);
+          break;
+        }
+        // A WINDOW OR A DOOR IN THE HAND (2026-11-15; lib/deck/wallOpenings): moved along the wall and up it, sized by
+        // an edge, swapped for another kind, or taken off. The first of these turns a wall drawn by rule into a list.
+        case "opening": {
+          const p = e.remove
+            ? removeOpening(structure, e.id)
+            : e.choice
+              ? editOpening(structure, e.id, { choice: e.choice })
+              : typeof e.w === "number"
+                ? editOpening(structure, e.id, { xFt: e.value, widthFt: e.w })
+                : typeof e.h === "number"
+                  ? editOpening(structure, e.id, { heightFt: e.h })
+                  : editOpening(structure, e.id, { xFt: e.value, sillFt: e.value2 ?? 0 });
           if (p) patch(p);
           break;
         }
