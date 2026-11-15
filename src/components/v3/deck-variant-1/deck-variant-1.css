@@ -981,6 +981,14 @@
 .jf-deck-v1 .v1-place-num input { width: 64px; min-width: 0; text-align: right; }
 .jf-deck-v1 .v1-place-from { font-size: 13.5px; color: var(--ink-muted); flex: 1 1 140px; min-width: 0; }
 .jf-deck-v1 .v1-place-hint { margin: 0; font-size: 13px; line-height: 1.45; color: var(--ink-muted); }
+/* The wall's lock (2026-11-14): the House step's bar, the fields it holds, the 3D's button. */
+.jf-deck-v1 .v1-lockbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border: 1.5px dashed var(--ink-line); border-radius: var(--r-sm); background: var(--paper-deep); font-size: 13.5px; line-height: 1.45; }
+.jf-deck-v1 .v1-lockbar > span { flex: 1 1 220px; min-width: 0; }
+.jf-deck-v1 .v1-lockbar.is-locked { border-style: solid; border-color: var(--ink); }
+.jf-deck-v1 .v1-lockset { border: 0; margin: 0; padding: 0; min-width: 0; display: contents; }
+.jf-deck-v1 .v1-lockset:disabled { display: block; opacity: 0.55; }
+.jf-deck-v1 .v1-wall-lock { gap: 6px; }
+.jf-deck-v1 .v1-wall-lock.is-locked { background: var(--ink); color: #fff; border-color: var(--ink); }
 /* Its boards (2026-11-14): a stair's or a built-in's own line and colour. */
 .jf-deck-v1 .v1-finish { display: grid; gap: 8px; padding: 10px 12px; background: var(--paper-deep); border: 1.5px solid var(--ink-line); border-radius: var(--r-sm); }
 .jf-deck-v1 .v1-finish-now { margin: 0; font-size: 14px; font-weight: 700; }
