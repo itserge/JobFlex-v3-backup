@@ -20,6 +20,7 @@
 //     weighs full of wet soil is worked out and said: far more per square foot than a deck is framed for, so where it
 //     stands matters (over a beam line, or on doubled joists).
 import { ringEdges } from "./ringEdges";
+import { normalizeFinish, type PartFinish } from "./finish";
 
 export type BuiltInKind = "bench" | "bench-back" | "planter" | "screen" | "kitchen" | "fire";
 export const BUILT_IN_KINDS: readonly BuiltInKind[] = ["bench", "bench-back", "planter", "screen", "kitchen", "fire"];
@@ -57,6 +58,8 @@ export interface BuiltIn {
    * there instead of along `side`. Never on a privacy screen — that stands in the railing's place.
    */
   spot?: { x: number; y: number; turnDeg: number };
+  /** BOARDS OF ITS OWN (2026-11-14; lib/deck/finish): its seat, back, sides, caps and apron in a line and colour of their own. Absent = the deck's own. */
+  finish?: PartFinish;
 }
 
 export const BUILT_IN_LIMITS = { count: 8, lengthFt: { min: 2, max: 30 }, planterFt: { min: 2, max: 10 }, screenFt: { min: 3, max: 8 }, kitchenFt: { min: 4, max: 16 }, fireFt: { min: 2.5, max: 6 }, inFt: { min: 2, max: 30 } } as const;
@@ -160,6 +163,9 @@ export function normalizeBuiltIns(raw: unknown, widthFt: number, depthFt: number
       ...(kind === "screen" ? { heightFt: half(clamp(num(o.heightFt, SCREEN_DEFAULT_FT), BUILT_IN_LIMITS.screenFt.min, BUILT_IN_LIMITS.screenFt.max)) } : {}),
       ...(kind === "fire" ? { inFt: half(clamp(num(o.inFt, 6), BUILT_IN_LIMITS.inFt.min, BUILT_IN_LIMITS.inFt.max)) } : {}),
       ...(spotOf(o.spot, kind) ?? {}),
+      // (Boards of its own — lib/deck/finish — on a bench, a planter or a screen: a kitchen island is clad in the deck's
+      // own boards, and a fire table has none.)
+      ...(kind !== "kitchen" && kind !== "fire" && normalizeFinish(o.finish) ? { finish: normalizeFinish(o.finish)! } : {}),
     });
   });
   return out;

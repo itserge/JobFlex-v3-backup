@@ -40,6 +40,7 @@ import { ROOF_MEMBER_LAYER, SCENE_LAYERS, type DeckScene, type SceneLayer } from
 import { settleDesign } from "./settle";
 import { ACCESSORY_TURN_DEG, edgeAccessory, turnAccessory } from "./accessories";
 import { BUILT_IN_LABEL, builtInWords, planGap } from "./builtins";
+import type { FinishTarget, PartFinish } from "./finish";
 
 /** The scene roles that are an accessory's own parts (lib/deck/scene). */
 const ACCESSORY_ROLE = /^(?:bench (?:seat|back|cap|apron|leg|cleat|back post)|planter (?:board|cap|soil)|screen (?:post|board|cap)|kitchen (?:board|top|grill)|fire (?:base|top|burner))$/;
@@ -72,7 +73,8 @@ export type PartKind =
   | "gutter"
   | "ceiling"
   | "walls"
-  | "accessory";
+  /** An accessory built into the deck — a bench, a planter box, a privacy screen, a kitchen island, a fire table (lib/deck/builtins). */
+  | "built-in";
 
 export interface PartRef {
   kind: PartKind;
@@ -127,7 +129,14 @@ function roofPart(s: DeckStructure, m: RoofMember): PartRef | null {
  * layer alone (the ceiling, a wall panel, a glass rail panel). Null for a part with nothing to choose (a board, a
  * shingle, a bolt).
  */
-export function partAt(s: DeckStructure, scene: DeckScene, boxIdx: number | null | undefined, layer?: SceneLayer | string | null): PartRef | null {
+export function partAt(s: DeckStructure, scene: DeckScene, boxIdx: number | null | undefined, layer?: SceneLayer | string | null, ringIdx?: number | null): PartRef | null {
+  // A board cut to a shape (2026-11-14): a step round a shaped deck is a stair's — the scene says whose it is.
+  if (typeof ringIdx === "number" && ringIdx >= 0) {
+    const of = scene.paints?.find((pt) => pt.rings.includes(ringIdx))?.of;
+    if (of && s.stairs.some((st) => st.design.id === of)) return { kind: "stair", id: of };
+    const ringOf = stairOfRing(s, scene, ringIdx);
+    return ringOf ? { kind: "stair", id: ringOf } : null;
+  }
   const b = typeof boxIdx === "number" ? scene.boxes[boxIdx] : undefined;
   const name: SceneLayer | undefined = b ? SCENE_LAYERS[b[0]] : (SCENE_LAYERS as readonly string[]).includes(layer ?? "") ? (layer as SceneLayer) : undefined;
   if (!name) return null;
@@ -140,11 +149,21 @@ export function partAt(s: DeckStructure, scene: DeckScene, boxIdx: number | null
   const [x, y, z] = [b[1] * 12, b[2] * 12, b[3] * 12];
 
   // AN ACCESSORY (2026-11-14; lib/deck/builtins): a bench's, a planter's, a screen's, a kitchen's or a fire table's own
-  // part — the one whose footprint holds the box's middle.
-  const role = typeof boxIdx === "number" ? scene.legend[scene.tags[boxIdx]]?.role ?? "" : "";
+  // part, drawn on the deck's own layers — named by its role: the one whose footprint holds the box's middle (else the
+  // nearest of its parts).
+  const role = typeof boxIdx === "number" && scene.tags.length === scene.boxes.length && scene.tags[boxIdx] >= 0 ? scene.legend[scene.tags[boxIdx]]?.role ?? "" : "";
   if (ACCESSORY_ROLE.test(role)) {
     const hit = s.builtIns.find((q) => q.built && planGap(q.footprint, [{ x, y }]) < 1);
-    return hit ? { kind: "accessory", id: hit.design.id } : null;
+    if (hit) return { kind: "built-in", id: hit.design.id };
+    let best: { id: string; d: number } | null = null;
+    for (const bi of s.builtIns) {
+      for (const m of bi.members) {
+        const d = near(m.cx, m.cy, m.cz, x, y, z);
+        if (d > 1.5 || (best && best.d <= d)) continue;
+        best = { id: bi.design.id, d };
+      }
+    }
+    return best ? { kind: "built-in", id: best.id } : null;
   }
 
   if (DECK_LAYERS.includes(name)) {
@@ -200,6 +219,19 @@ export function partAt(s: DeckStructure, scene: DeckScene, boxIdx: number | null
   }
   if (name === "rail") return s.rails.on ? railPart(s, x, y, z) : null;
   if (name === "fascia") return { kind: "fascia", id: "" };
+  return null;
+}
+
+/** The stair whose step a board cut to a shape is (a step round a shaped deck), by its ring's place against the stairs' own rings. */
+function stairOfRing(s: DeckStructure, scene: DeckScene, ringIdx: number): string | null {
+  const ring = scene.diagonal?.boards[ringIdx];
+  if (!ring) return null;
+  for (const st of s.stairs) {
+    for (const t of st.treadRings ?? []) {
+      // (The stair's rings are inches; the scene's, feet.)
+      if (t.ring.length === ring.length && t.ring.every((v, i) => Math.abs(v / 12 - ring[i]) < 0.01)) return st.design.id;
+    }
+  }
   return null;
 }
 
@@ -260,6 +292,24 @@ export interface PartCard {
   choices: PartChoice[];
   /** MOVED BY HAND (2026-11-13; lib/deck/byHand): a post or a beam that can be slid — where it stands, to type or nudge by the inch. */
   place?: DeckGrip;
+  /** BOARDS OF ITS OWN (2026-11-14; lib/deck/finish): a stair or a built-in whose boards can be another line or colour — which, and the board now (null = the deck's own). */
+  finish?: { target: FinishTarget; now: PartFinish | null; deck: string; deckProduct: string; deckColor: string };
+}
+
+/** The deck's own board, as a card offers it beside a board of its own: its name with its colour, its line, its colour. */
+const deckBoardNow = (s: DeckStructure) => ({ deck: s.surface?.product.label ?? s.frame?.decking.label ?? "the deck's boards", deckProduct: s.design.decking.product, deckColor: s.design.decking.color });
+
+/** A stair's or a built-in's boards set to a board of their own (`f`), or back to the deck's (null): the patch. */
+export function finishPatch(d: DeckDesign, target: FinishTarget, f: PartFinish | null): DeckPatch {
+  const set = <T extends { id: string; finish?: PartFinish }>(list: readonly T[]): T[] =>
+    list.map((x) => {
+      if (x.id !== target.id) return x;
+      const { finish: _old, ...rest } = x;
+      void _old;
+      return (f ? { ...rest, finish: f } : rest) as T;
+    });
+  if (target.kind === "stair") return { stairs: set(d.stairs) };
+  return { extras: { builtIns: set(d.extras.builtIns ?? []) } };
 }
 
 const plural = (n: number, w: string, many = `${w}s`) => `${n} ${n === 1 ? w : many}`;
@@ -570,7 +620,44 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
 
     case "stair": {
       if (ref.id === BETWEEN_LEVELS_STAIR_ID) return card("Steps between the levels", "The steps from the main deck down to the lower level.", [], "The lower level is more than one step down: it needs these steps. Put a stair of your own there to replace them.");
-      return card("Stairs", "A flight of stairs with its stringers, treads and landing.", [{ id: "remove", tone: "remove", label: "Remove this stair", patch: { stairs: d.stairs.filter((x) => x.id !== ref.id) } }]);
+      const st = s.stairs.find((x) => x.design.id === ref.id);
+      const wrap = st?.design.wrap;
+      const c = card(wrap ? "Steps round the deck" : "Stairs", wrap ? "Box steps wrapping the deck's open sides: a frame of treated lumber under treads of deck boards." : "A flight of stairs with its stringers, treads and landing.", [{ id: "remove", tone: "remove", label: wrap ? "Remove these steps" : "Remove this stair", patch: { stairs: d.stairs.filter((x) => x.id !== ref.id) } }]);
+      return st ? { ...c, finish: { target: { kind: "stair", id: ref.id }, now: st.design.finish ?? null, ...deckBoardNow(s) } } : c;
+    }
+
+    case "built-in": {
+      const bi = s.builtIns.find((x) => x.design.id === ref.id);
+      if (!bi) return card("Accessory", "Built into the deck.", []);
+      const title = BUILT_IN_LABEL[bi.kind];
+      const does =
+        bi.kind === "screen"
+          ? "A privacy screen of deck boards across posts carried down into the frame."
+          : bi.kind === "planter"
+            ? "A planter box of deck boards on a treated frame, standing on the boards."
+            : bi.kind === "kitchen"
+              ? "An outdoor kitchen island of deck boards round a treated frame, with a top and a grill by others; the joists under it are doubled."
+              : bi.kind === "fire"
+                ? "A place for a gas fire table the client buys: the checks keep what burns clear of it."
+                : "A bench of deck boards on treated legs.";
+      // MOVED BY HAND (2026-11-14; lib/deck/accessories): turned here, put back along its edge — dragged in the 3D itself
+      // with Edit in 3D. A privacy screen stands in the railing's place: it slides along the edges and does not turn.
+      const choices: PartChoice[] = [];
+      if (bi.kind !== "screen") {
+        for (const [by, label] of [[-ACCESSORY_TURN_DEG, `Turn it ${ACCESSORY_TURN_DEG}° to the left`], [ACCESSORY_TURN_DEG, `Turn it ${ACCESSORY_TURN_DEG}° to the right`], [90, "Turn it a quarter turn"]] as const) {
+          const p = turnAccessory(s, ref.id, by);
+          if (p) choices.push({ id: `turn${by}`, tone: "swap", label, patch: p });
+        }
+        if (bi.design.spot) {
+          const p = edgeAccessory(s, ref.id);
+          if (p) choices.push({ id: "edge", tone: "swap", label: "Put it back along the nearest edge", patch: p });
+        }
+      }
+      choices.push({ id: "remove", tone: "remove", label: `Remove this ${title.toLowerCase()}`, patch: { extras: { builtIns: (d.extras.builtIns ?? []).filter((x) => x.id !== ref.id) } } });
+      const move = bi.kind === "screen" ? " With Edit in 3D, drag it to another edge." : " With Edit in 3D, drag it anywhere on the deck — let go by the railing and it lines up there.";
+      const c = card(title, `${does} ${builtInWords(bi).replace(/^./, (ch) => ch.toUpperCase())}.${move}`, choices);
+      // (Boards of its own — lib/deck/finish — on a bench, a planter or a screen.)
+      return bi.kind === "kitchen" || bi.kind === "fire" ? c : { ...c, finish: { target: { kind: "built-in", id: ref.id }, now: bi.design.finish ?? null, ...deckBoardNow(s) } };
     }
 
     case "rail": {
@@ -601,29 +688,6 @@ export function partCard(s: DeckStructure, ref: PartRef, opts: DeckPriceOptions 
 
     case "ceiling":
       return card("Ceiling", "Boards closing the underside of the rafters.", [{ id: "remove", tone: "remove", label: "Remove the ceiling — rafters showing", patch: roofPatch({ ceiling: "none" }) }]);
-
-    case "accessory": {
-      // MOVED BY HAND (2026-11-14; lib/deck/accessories): turned here, put back along its edge, or taken off. (It is
-      // dragged in the 3D itself, with Edit in 3D.)
-      const b = s.builtIns.find((q) => q.design.id === ref.id);
-      const list = d.extras.builtIns ?? [];
-      if (!b) return card("Accessory", "An accessory on the deck.", []);
-      const name = BUILT_IN_LABEL[b.kind];
-      const choices: PartChoice[] = [];
-      if (b.kind !== "screen") {
-        for (const [by, label] of [[-ACCESSORY_TURN_DEG, `Turn it ${ACCESSORY_TURN_DEG}° to the left`], [ACCESSORY_TURN_DEG, `Turn it ${ACCESSORY_TURN_DEG}° to the right`], [90, "Turn it a quarter turn"]] as const) {
-          const p = turnAccessory(s, ref.id, by);
-          if (p) choices.push({ id: `turn${by}`, tone: "swap", label, patch: p });
-        }
-        if (b.design.spot) {
-          const p = edgeAccessory(s, ref.id);
-          if (p) choices.push({ id: "edge", tone: "swap", label: "Put it back along the nearest edge", patch: p });
-        }
-      }
-      choices.push({ id: "remove", tone: "remove", label: `Remove the ${name.toLowerCase()}`, patch: { extras: { builtIns: list.filter((q) => q.id !== ref.id) } } });
-      const where = b.design.spot ? "placed on the deck by hand" : `along the ${b.design.side === "front" ? "front" : `${b.design.side} end`}`;
-      return card(name, `${builtInWords(b).replace(/^an? /, "").replace(/^./, (c) => c.toUpperCase())}: ${where}. With Edit in 3D, drag it anywhere on the deck — let go by the railing and it lines up there.${b.kind === "screen" ? " A privacy screen stands in the railing's place, so it slides along the edges and does not turn." : ""}`, choices);
-    }
 
     case "walls":
       return card("Walls between the posts", "Screens or panels filling the sides between the posts.", [{ id: "remove", tone: "remove", label: "Remove them — open between the posts", patch: roofPatch({ walls: { fill: "none", sides: d.roof.walls.sides } }) }]);

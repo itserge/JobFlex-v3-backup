@@ -15,6 +15,7 @@ import { partAt, partCard } from "../../../src/lib/deck/parts";
 import { ACCESSORY_GROUPS, ACCESSORY_GROUP_KINDS, ACCESSORY_GROUP_LABEL, BUILT_IN_INSET_IN, BUILT_IN_KINDS, STAIR_LANDING_IN, accessoryGroupOf, planGap, type BuiltIn, type BuiltInBuild } from "../../../src/lib/deck/builtins";
 import { ACCESSORY_TURN_DEG, accessoryPose, edgeAccessory, moveAccessory, placeAccessory, turnAccessory } from "../../../src/lib/deck/accessories";
 import { parseUtterance } from "../../../src/lib/deck/voice/parse";
+import { deckingColors } from "../../../src/lib/deck/deckingColors";
 
 let bad = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -137,15 +138,23 @@ check("a deck with no accessories has no such handle", !deckScene(buildStructure
 const st = buildStructure(freeD);
 const seatIdx = sc.boxes.findIndex((_, i) => sc.legend[sc.tags[i]]?.role === "bench seat");
 const ref = partAt(st, sc, seatIdx);
-check("clicking the bench in the 3D names it", ref?.kind === "accessory" && ref.id === "b1", JSON.stringify(ref));
+check("clicking the bench in the 3D names it", ref?.kind === "built-in" && ref.id === "b1", JSON.stringify(ref));
 const card = partCard(st, ref!);
 const labels = card.choices.map((c) => c.label);
-check("its card: turn it left, right, a quarter turn; back along an edge; remove it", card.title === "Bench" && labels.some((l) => /45° to the left/.test(l)) && labels.some((l) => /45° to the right/.test(l)) && labels.some((l) => /quarter turn/.test(l)) && labels.some((l) => /back along the nearest edge/.test(l)) && labels.some((l) => /Remove the bench/.test(l)), labels.join(" | "));
+check("its card: turn it left, right, a quarter turn; back along an edge; remove it — and its boards (a line and colour of its own)", card.title === "Bench" && labels.some((l) => /45° to the left/.test(l)) && labels.some((l) => /45° to the right/.test(l)) && labels.some((l) => /quarter turn/.test(l)) && labels.some((l) => /back along the nearest edge/.test(l)) && labels.some((l) => /Remove this bench/.test(l)) && !!card.finish, labels.join(" | "));
 const right = card.choices.find((c) => /45° to the right/.test(c.label))!;
 check("…its turn does what it says", accessoryPose(one(applyDeckPatch(freeD, right.patch), "b1"))!.turnDeg === 90);
 const scSc = deckScene(all);
 const screenRef = partAt(all, scSc, scSc.boxes.findIndex((_, i) => scSc.legend[scSc.tags[i]]?.role === "screen board"));
-check("a privacy screen's card has no turn", screenRef?.kind === "accessory" && !partCard(all, screenRef).choices.some((c) => /Turn/.test(c.label)));
+check("a privacy screen's card has no turn", screenRef?.kind === "built-in" && !partCard(all, screenRef).choices.some((c) => /Turn/.test(c.label)));
+const kitRef = partAt(all, scSc, scSc.boxes.findIndex((_, i) => scSc.legend[scSc.tags[i]]?.role === "kitchen top"));
+check("a kitchen island's card turns it, and offers no boards of its own (it is clad in the deck's)", kitRef?.kind === "built-in" && partCard(all, kitRef).choices.some((c) => /Turn/.test(c.label)) && !partCard(all, kitRef).finish);
+
+/* ── 7b. With a bench in boards of its own (lib/deck/finish) ──────────── */
+const lineup = (finish: unknown) => priceDeck(mk([{ id: "b1", kind: "bench", side: "front", atFt: 6, lengthFt: 6, ...(finish ? { finish } : {}) }, { id: "k1", kind: "kitchen", side: "right", atFt: 6, lengthFt: 6 }])).takeoff.lines.filter((l) => /^kitchen-/.test(l.id) || /kitchen/.test(l.id)).map((l) => `${l.id}:${l.qty}`).join();
+const colours = deckingColors("trex-transcend-lineage");
+check("a kitchen island is counted once, also beside a bench in boards of its own", lineup({ product: "trex-transcend-lineage", color: colours[1]?.id }) === lineup(null) && lineup(null).includes("kitchen-boards"), `${lineup({ product: "trex-transcend-lineage", color: colours[1]?.id })} vs ${lineup(null)}`);
+check("…and a kitchen island takes no boards of its own (it is clad in the deck's)", mk([{ id: "k1", kind: "kitchen", side: "right", atFt: 6, lengthFt: 6, finish: { product: "trex-transcend-lineage", color: colours[1]?.id } }]).extras.builtIns![0].finish === undefined);
 
 /* ── 8. By voice ─────────────────────────────────────────────────────── */
 const go = parseUtterance("go to accessories", { design: mk([]) } as never).clauses.flatMap((c) => c.cmds)[0];

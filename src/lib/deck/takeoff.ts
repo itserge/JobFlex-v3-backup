@@ -22,6 +22,7 @@ import { PIER_BLOCK, STOCK_LENGTHS_FT, type DeckFrame, type Stick, type StickRol
 import type { DeckSurface } from "./surface";
 import { SKIRT_GAP_IN } from "./skirt";
 import { SCREEN_GAP_IN } from "./builtins";
+import { finishFasciaKey, finishKey, finishProduct } from "./finish";
 import { LEDGER_FASTENER_LABEL, ftIn, type LedgerFastener } from "./codeTables";
 import { POST_HARDWARE_FACTOR, STAINLESS_FACTOR, lumberKey, tubeFactor } from "./rates";
 import { isCompositeFraming } from "./catalog";
@@ -387,21 +388,29 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
 
   /* ── Built-in benches and planter boxes (2026-11-14; lib/deck/builtins) ── */
   // The deck's own boards and fascia, treated legs and frames; every id says "bench" or "planter" (the price's two lines).
-  if (s.surface && s.frame) {
-    const product = s.surface.product;
-    const fasciaKey = product.family === "composite" || product.family === "pvc" ? "fascia.composite" : "fascia.wood";
-    const benches = s.builtIns.filter((b) => b.built && (b.kind === "bench" || b.kind === "bench-back"));
-    const screens = s.builtIns.filter((b) => b.built && b.kind === "screen");
-    const planters = s.builtIns.filter((b) => b.built && b.kind === "planter");
+  // BOARDS OF THEIR OWN (2026-11-14; lib/deck/finish): the built-ins in each board are bought as a line of their own —
+  // the deck's boards first under the ids they always had, then each other board, its id keyed by line and colour.
+  const ownBoards = new Map<string, typeof s.builtIns>();
+  for (const b of s.builtIns) {
+    const k = b.design.finish ? finishKey(b.design.finish) : "";
+    ownBoards.set(k, [...(ownBoards.get(k) ?? []), b]);
+  }
+  if (s.surface && s.frame) for (const [boardKey, inBoard] of [...ownBoards].sort((x, y) => (x[0] === "" ? -1 : y[0] === "" ? 1 : x[0].localeCompare(y[0])))) {
+    const product = finishProduct(s.surface.product, inBoard[0].design.finish);
+    const fasciaKey = finishFasciaKey(product);
+    const own = boardKey ? `-${boardKey}` : "";
+    const benches = inBoard.filter((b) => b.built && (b.kind === "bench" || b.kind === "bench-back"));
+    const screens = inBoard.filter((b) => b.built && b.kind === "screen");
+    const planters = inBoard.filter((b) => b.built && b.kind === "planter");
     const tenth = (lf: number, stockFt: number) => Math.ceil((lf * 1.1) / stockFt - 1e-9);
     const sumOf = (list: typeof benches, f: (b: (typeof benches)[number]) => number) => list.reduce((a, b) => a + f(b), 0);
     if (benches.length) {
       const backs = benches.filter((b) => b.kind === "bench-back").length;
       const ft = Math.round(sumOf(benches, (b) => b.lengthIn) / 12);
       const boards = tenth(sumOf(benches, (b) => b.boardLf), 12);
-      push({ id: "bench-boards", step: "builtins", kind: "boards", label: `${product.label} × 12 ft — bench seats${backs ? " and backs" : ""}`, qty: boards, unit: "pcs", note: `${benches.length === 1 ? "one bench" : `${benches.length} benches`}, ${ft} ft in all`, rateKey: `deck.${product.id}`, rateQty: boards * 12, factor: 1 });
+      push({ id: `bench-boards${own}`, step: "builtins", kind: "boards", label: `${product.label} × 12 ft — bench seats${backs ? " and backs" : ""}`, qty: boards, unit: "pcs", note: `${benches.length === 1 ? "one bench" : `${benches.length} benches`}, ${ft} ft in all`, rateKey: `deck.${product.id}`, rateQty: boards * 12, factor: 1 });
       const aprons = tenth(sumOf(benches, (b) => b.apronLf), 12);
-      push({ id: "bench-apron", step: "builtins", kind: "boards", label: `Fascia, ${fasciaKey === "fascia.composite" ? "composite" : "wood"} 1x6 × 12 ft — bench aprons`, qty: aprons, unit: "pcs", note: "under the seat's edge all round", rateKey: fasciaKey, rateQty: aprons * 12, factor: 0.6 });
+      push({ id: `bench-apron${own}`, step: "builtins", kind: "boards", label: `Fascia, ${fasciaKey === "fascia.composite" ? "composite" : "wood"} 1x6 × 12 ft — bench aprons`, qty: aprons, unit: "pcs", note: "under the seat's edge all round", rateKey: fasciaKey, rateQty: aprons * 12, factor: 0.6 });
       lumber("builtins", "bench legs and back posts", "4x4", 8, tenth(sumOf(benches, (b) => b.postLf), 8), false, "two legs to a support, a support every 4 ft", "bench-posts");
       lumber("builtins", "bench cleats", "2x4", 8, tenth(sumOf(benches, (b) => b.frameLf), 8), false, "one across each pair of legs", "bench-cleats");
       const supports = sumOf(benches, (b) => b.supports);
@@ -409,7 +418,7 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
     }
     if (screens.length) {
       const boards = tenth(sumOf(screens, (b) => b.boardLf), 12);
-      push({ id: "screen-boards", step: "builtins", kind: "boards", label: `${product.label} × 12 ft — privacy screen`, qty: boards, unit: "pcs", note: `${Math.round(sumOf(screens, (b) => b.sqFt))} sq ft of screen: boards across the posts ${SCREEN_GAP_IN} in. apart, a cap board on top`, rateKey: `deck.${product.id}`, rateQty: boards * 12, factor: 1 });
+      push({ id: `screen-boards${own}`, step: "builtins", kind: "boards", label: `${product.label} × 12 ft — privacy screen`, qty: boards, unit: "pcs", note: `${Math.round(sumOf(screens, (b) => b.sqFt))} sq ft of screen: boards across the posts ${SCREEN_GAP_IN} in. apart, a cap board on top`, rateKey: `deck.${product.id}`, rateQty: boards * 12, factor: 1 });
       // Posts in one piece from under the deck to the cap, each in the stock length that covers it.
       for (const size of ["4x4", "6x6"] as const) {
         const of = screens.filter((b) => b.postSize === size);
@@ -423,7 +432,8 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
       const posts = sumOf(screens, (b) => b.posts);
       lumber("builtins", "blocking behind the screen posts", s.frame.joistSize, frameStocks[0], tenth((posts * 2 * s.frame.spacingIn) / 12, frameStocks[0]), false, `two blocks at each of the ${posts} posts`, "screen-blocking", oc);
     }
-    const kitchens = s.builtIns.filter((b) => b.built && b.kind === "kitchen");
+    // (A kitchen island is clad in the deck's own boards: it is counted once, with them.)
+    const kitchens = inBoard.filter((b) => b.built && b.kind === "kitchen");
     if (kitchens.length) {
       const boards = tenth(sumOf(kitchens, (b) => b.boardLf), 12);
       push({ id: "kitchen-boards", step: "builtins", kind: "boards", label: `${product.label} × 12 ft — outdoor kitchen island`, qty: boards, unit: "pcs", note: `${Math.round(sumOf(kitchens, (b) => b.lengthIn) / 12)} ft of island, clad on all four sides`, rateKey: `deck.${product.id}`, rateQty: boards * 12, factor: 1 });
@@ -438,7 +448,7 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
     }
     if (planters.length) {
       const boards = tenth(sumOf(planters, (b) => b.boardLf), 12);
-      push({ id: "planter-boards", step: "builtins", kind: "boards", label: `${product.label} × 12 ft — planter boxes`, qty: boards, unit: "pcs", note: `${planters.length === 1 ? "one box" : `${planters.length} boxes`}: three boards high, a cap board round the rim`, rateKey: `deck.${product.id}`, rateQty: boards * 12, factor: 1 });
+      push({ id: `planter-boards${own}`, step: "builtins", kind: "boards", label: `${product.label} × 12 ft — planter boxes`, qty: boards, unit: "pcs", note: `${planters.length === 1 ? "one box" : `${planters.length} boxes`}: three boards high, a cap board round the rim`, rateKey: `deck.${product.id}`, rateQty: boards * 12, factor: 1 });
       lumber("builtins", "planter frames", "2x4", 8, tenth(sumOf(planters, (b) => b.frameLf), 8), false, "an upright at each corner and every 32 in., two sleepers under the box", "planter-frame");
     }
   }
@@ -492,15 +502,19 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
       push({ id: "box-blocks", step: "stairs", kind: "concrete", label: "Precast blocks under the lowest step", qty: st.boxBlocks, unit: "ea", rateKey: "conc.pierBlock", rateQty: st.boxBlocks, factor: 1 });
       push({ id: "box-gravel", step: "stairs", kind: "concrete", label: "Gravel base under the steps", qty: st.gravelSqFt, unit: "sq ft", rateKey: "conc.gravel", rateQty: st.gravelSqFt, factor: 1 });
     }
-    // Treads of the deck's boards, riser boards of fascia stock.
-    if (product && st.treadBoardLf > 0) {
-      const longest = Math.max(...product.lengthsFt);
+    // Treads of the deck's boards — or of the stair's own (2026-11-14; lib/deck/finish), a line of their own — riser
+    // boards of the fascia stock that goes with them.
+    const stairBoard = product ? finishProduct(product, st.design.finish) : undefined;
+    const own = st.design.finish ? `own-${finishKey(st.design.finish)}-` : "";
+    if (stairBoard && st.treadBoardLf > 0) {
+      const longest = Math.max(...stairBoard.lengthsFt);
       const treadBoards = Math.ceil((st.treadBoardLf * 1.1) / longest - 1e-9);
-      push({ id: `tread-boards-${longest}`, step: "stairs", kind: "boards", label: `${product.label} × ${longest} ft — treads`, qty: treadBoards, unit: "pcs", note: `${st.treads + (st.landing ? 1 : 0)} treads, 10% waste`, rateKey: `deck.${product.id}`, rateQty: treadBoards * longest, factor: 1 });
+      push({ id: `tread-boards-${own}${longest}`, step: "stairs", kind: "boards", label: `${stairBoard.label} × ${longest} ft — treads`, qty: treadBoards, unit: "pcs", note: `${st.treads + (st.landing ? 1 : 0)} treads, 10% waste`, rateKey: `deck.${stairBoard.id}`, rateQty: treadBoards * longest, factor: 1 });
     }
     if (st.riserBoardLf > 0) {
       const riserBoards = Math.ceil((st.riserBoardLf * 1.1) / 12 - 1e-9);
-      push({ id: "riser-boards", step: "stairs", kind: "boards", label: `Riser boards, ${product && (product.family === "composite" || product.family === "pvc") ? "composite" : "wood"} 1x8 × 12 ft`, qty: riserBoards, unit: "pcs", rateKey: product && (product.family === "composite" || product.family === "pvc") ? "fascia.composite" : "fascia.wood", rateQty: riserBoards * 12, factor: 0.8 });
+      const composite = !!stairBoard && finishFasciaKey(stairBoard) === "fascia.composite";
+      push({ id: `riser-boards${own ? `-${own.slice(0, -1)}` : ""}`, step: "stairs", kind: "boards", label: `Riser boards, ${composite ? "composite" : "wood"} 1x8 × 12 ft${own && stairBoard?.colorName ? ` in ${stairBoard.colorName}` : ""}`, qty: riserBoards, unit: "pcs", rateKey: composite ? "fascia.composite" : "fascia.wood", rateQty: riserBoards * 12, factor: 0.8 });
     }
     hw(`stair-screws-${tag}`, "stairs", "Tread and riser screws", Math.max(1, st.hardware.treadScrewsSqFt), "fast.screws", 1, "sq ft");
   }
@@ -804,7 +818,7 @@ export function deckTakeoff(s: DeckStructure): DeckTakeoff {
       l.factor = 1;
       if (label !== undefined) l.label = label;
     };
-    if (cu.decking && ((l.step === "decking" && l.id.startsWith("boards-")) || (l.step === "stairs" && l.id.startsWith("tread-boards-")) || l.id === "rail-drink-boards")) own("decking");
+    if (cu.decking && ((l.step === "decking" && l.id.startsWith("boards-")) || (l.step === "stairs" && l.id.startsWith("tread-boards-") && !l.id.startsWith("tread-boards-own-")) || l.id === "rail-drink-boards")) own("decking");
     else if (cu.fastening && l.id === "deck-fasteners") own("fastening", cu.fastening.name);
     else if (cu.fascia && (l.id === "fascia" || l.id === "riser-boards")) own("fascia", `${cu.fascia.name} × 12 ft${l.id === "riser-boards" ? " — risers" : ""}`);
     else if (cu.roofing && roof && (l.id === "shingles" || l.id === "shakes" || l.id === "metal-panels")) {
