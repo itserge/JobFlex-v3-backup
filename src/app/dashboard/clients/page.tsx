@@ -15,7 +15,7 @@
 
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
-import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
+import { requireOrg, isLimitedRole, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { ClientsContent } from "@/components/v3/clients-blueprint/clients-content";
 import type { Client } from "@/components/v3/clients-blueprint/clients-data";
@@ -34,9 +34,12 @@ function updatedLabel(d: Date): string {
 
 export default async function ClientsPage() {
   let organizationId: string;
+  let canImport = false;
   try {
     const ctx = await requireOrg();
     organizationId = ctx.organizationId;
+    // Bringing a book over from another program (/dashboard/clients/import) is the owner's, an admin's or a manager's.
+    canImport = !isLimitedRole(ctx.role);
   } catch (err) {
     if (err instanceof UnauthorizedError) redirect("/auth/login?next=%2Fdashboard%2Fclients");
     if (err instanceof NoOrgError) redirect("/dashboard?error=forbidden");
@@ -76,5 +79,5 @@ export default async function ClientsPage() {
     notes: c.notes,
   }));
 
-  return <ClientsContent entries={entries} />;
+  return <ClientsContent entries={entries} canImport={canImport} />;
 }

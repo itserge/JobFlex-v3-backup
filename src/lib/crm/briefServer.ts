@@ -86,7 +86,7 @@ export async function readCrmBrief(input: { organizationId: string; userId: stri
     }),
     db.invoice.findMany({
       where: { organizationId, status: { notIn: ["PAID", "VOID", "CANCELED"] } },
-      select: { id: true, number: true, amount: true, status: true, dueDate: true, proposalId: true, proposal: { select: { client: { select: { name: true } } } } },
+      select: { id: true, number: true, amount: true, status: true, dueDate: true, proposalId: true, clientId: true, proposal: { select: { client: { select: { name: true } } } } },
       take: 300,
     }),
     db.lead.findMany({
@@ -162,6 +162,7 @@ export async function readCrmBrief(input: { organizationId: string; userId: stri
     return s.result ? "reached" : "missed";
   };
 
+  const invoiceClientNames = new Map(clients.map((c) => [c.id, c.name]));
   const briefInput: BriefInput = {
     now,
     tz,
@@ -187,7 +188,8 @@ export async function readCrmBrief(input: { organizationId: string; userId: stri
     })),
     installments: proposals.flatMap((p) => p.installments.map((i) => ({ ...i, proposalId: p.id }))),
     payments: payments.map((x) => ({ id: x.id, amount: x.amount, paidAt: x.paidAt, clientId: x.clientId, clientName: x.client?.name ?? null, proposalId: x.proposalId, method: x.method })),
-    invoices: invoices.map((i) => ({ id: i.id, number: i.number, amount: i.amount, status: i.status, dueDate: i.dueDate, clientName: i.proposal?.client?.name ?? null, proposalId: i.proposalId })),
+    // (An invoice with no proposal — one brought over from another program, 2026-11-16 — names its client by clientId.)
+    invoices: invoices.map((i) => ({ id: i.id, number: i.number, amount: i.amount, status: i.status, dueDate: i.dueDate, clientName: i.proposal?.client?.name ?? (i.clientId ? (invoiceClientNames.get(i.clientId) ?? null) : null), proposalId: i.proposalId })),
     leads: leads.map((l) => ({ id: l.id, name: l.name, status: l.status, projectType: l.projectType, createdAt: l.createdAt, contactedAt: l.contactedAt, assignedToId: l.assignedToId, claimedById: l.claimedById, assigneeName: l.assignedTo?.name ?? l.assignedTo?.email ?? null })),
     followUps: followUps.map((f) => {
       const p = f.proposalId ? (proposalById.get(f.proposalId) ?? extraById.get(f.proposalId)) : undefined;

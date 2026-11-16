@@ -57,6 +57,7 @@ import { clientChannels, messageClient, type ClientChannel } from "@/actions/cli
 import { isPlanLimitFailure } from "@/lib/planLimits";
 import { reportPlanLimitResult } from "@/stores/usePlanLimitStore";
 import { loadClientBook } from "./client-book";
+import { canImportClients } from "@/actions/dataImport";
 import { AddToProjectSheet } from "@/components/v3/project-links/add-to-project-sheet";
 import { openAddToProject } from "@/components/v3/project-links/open-add-to-project";
 import { ensureCompanyName } from "@/components/company-name/company-name-gate";
@@ -238,6 +239,21 @@ export function MobileClients() {
   }, [newOpen, saving]);
 
   const filterRef = useRef<HTMLDivElement>(null);
+
+  // The Import button (bring a book over from another program) is the owner's, an admin's or a manager's; the
+  // component is mounted without props on the live URL, so it asks.
+  const [canImport, setCanImport] = useState(false);
+  useEffect(() => {
+    let live = true;
+    canImportClients()
+      .then((ok) => {
+        if (live) setCanImport(ok);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
 
   /* ---- message sheet ---------------------------------------------------
      The desktop record's Message dialog, re-cut as a bottom sheet. Same two
@@ -831,6 +847,12 @@ export function MobileClients() {
           <div className={styles.pageHead}>
             <h1 className={styles.pageTitle}>Clients</h1>
             <div className={styles.pageActions}>
+              {canImport ? (
+                // Moving from Housecall Pro, Jobber, ServiceTitan or a spreadsheet (2026-11-16).
+                <Link className={`${styles.btn} ${styles.btnGhost}`} href={"/dashboard/clients/import" as Route} data-clients-import>
+                  Import
+                </Link>
+              ) : null}
               <button className={`${styles.btn} ${styles.btnPrimary}`} type="button" onClick={openNew}>
                 <Icon id="i-plus" />New client
               </button>

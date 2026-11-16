@@ -1,0 +1,460 @@
+/* ============================================================================
+   BRING YOUR CLIENTS — /dashboard/clients/import, Blueprint (2026-11-16)
+   Component: ./import-page.tsx — one responsive page, desk and phone.
+
+   Steps down the page: where the person is coming from (program tiles), how to
+   get the files out with the drop area under it, then each file's card (what it
+   is, its columns) and what comes in, with "Bring them in". Past imports last.
+
+   PLAIN CSS, NOT A MODULE. Every selector starts with the root class doubled,
+   `.jf-import.jf-import`, so each rule is at least three classes: the Clients
+   section's own resets (`.clients_bp .content button`, 0-2-1, and
+   `.clients_bp .content :not(…)`, 0-2-0, which zero every margin and padding)
+   would otherwise win over a two-class rule — a button lost its frame, the export
+   steps their numbers. Values come from the globals.css tokens. Light mode only,
+   like the shell.
+   ========================================================================= */
+
+.jf-import.jf-import {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-width: 0;
+  max-width: 1040px;
+  color: var(--ink);
+}
+.jf-import.jf-import .page-head {
+  margin-bottom: 0;
+}
+.jf-import.jf-import .imp-lead {
+  margin: -6px 0 0;
+  max-width: 68ch;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+/* ── a step ───────────────────────────────────────────────────────────────── */
+.jf-import.jf-import .imp-step,
+.jf-import.jf-import .imp-done {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.jf-import.jf-import .imp-done {
+  padding: 16px 18px;
+  background: var(--sheet, var(--paper-deep));
+  border: 1.5px solid var(--emerald, var(--ink));
+  border-radius: var(--r-sm);
+}
+.jf-import.jf-import .imp-h {
+  margin: 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.jf-import.jf-import .imp-done .imp-h {
+  border-bottom-color: var(--ink-line);
+}
+.jf-import.jf-import .imp-h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+}
+.jf-import.jf-import .imp-meta {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+.jf-import.jf-import .imp-soft {
+  color: var(--ink-muted);
+}
+.jf-import.jf-import .imp-flag {
+  color: var(--amber, var(--accent));
+  font-weight: 700;
+}
+.jf-import.jf-import .imp-note {
+  margin: 0;
+  padding: 10px 14px;
+  border-left: 3px solid var(--ink);
+  background: var(--paper-deep);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.jf-import.jf-import .imp-error {
+  margin: 0;
+  padding: 10px 14px;
+  border-left: 3px solid var(--rose, #b4232c);
+  background: var(--paper-deep);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+/* ── buttons ──────────────────────────────────────────────────────────────── */
+.jf-import.jf-import .imp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 16px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.jf-import.jf-import .imp-primary {
+  background: var(--ink);
+  color: var(--paper);
+}
+.jf-import.jf-import .imp-primary:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.jf-import.jf-import .imp-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.jf-import.jf-import .imp-ghost {
+  background: transparent;
+  color: var(--ink);
+}
+.jf-import.jf-import .imp-ghost:hover {
+  background: var(--paper-deep);
+}
+.jf-import.jf-import .imp-quiet {
+  border-color: var(--ink-line);
+  background: transparent;
+  color: var(--ink-soft);
+}
+.jf-import.jf-import .imp-danger {
+  border-color: var(--rose, #b4232c);
+  background: var(--rose, #b4232c);
+  color: #fff;
+}
+.jf-import.jf-import .imp-btn:focus-visible,
+.jf-import.jf-import .imp-source:focus-visible,
+.jf-import.jf-import .imp-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.jf-import.jf-import .imp-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.jf-import.jf-import .imp-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+/* ── 1 · program tiles ────────────────────────────────────────────────────── */
+.jf-import.jf-import .imp-sources {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 10px;
+}
+.jf-import.jf-import .imp-source {
+  min-height: 52px;
+  padding: 10px 14px;
+  border: 1.5px solid var(--ink-line);
+  border-radius: var(--r-sm);
+  background: var(--sheet, var(--paper));
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.jf-import.jf-import .imp-source:hover {
+  border-color: var(--ink);
+}
+.jf-import.jf-import .imp-source.is-on {
+  border-color: var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+  background: var(--accent-soft, var(--paper-deep));
+}
+
+/* ── 2 · export steps + drop area ─────────────────────────────────────────── */
+.jf-import.jf-import .imp-howto {
+  margin: 0;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 72ch;
+  font-size: 14.5px;
+  line-height: 1.45;
+}
+.jf-import.jf-import .imp-drop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 22px 20px;
+  border: 2px dashed var(--ink-faint, var(--ink-line));
+  border-radius: var(--r-sm);
+  background: var(--paper);
+}
+.jf-import.jf-import .imp-drop.is-over {
+  border-color: var(--accent);
+  background: var(--accent-soft, var(--paper-deep));
+}
+.jf-import.jf-import .imp-drop p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+.jf-import.jf-import .imp-drop b {
+  color: var(--ink);
+  font-size: 15px;
+}
+.jf-import.jf-import .imp-files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.jf-import.jf-import .imp-files li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 4px 4px 10px;
+  border: 1px solid var(--ink-line);
+  border-radius: var(--r-sm);
+  background: var(--paper-deep);
+  font-size: 13px;
+}
+.jf-import.jf-import .imp-files span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jf-import.jf-import .imp-x {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  background: transparent;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+.jf-import.jf-import .imp-x:hover {
+  color: var(--ink);
+}
+
+/* ── 3 · a file's card ────────────────────────────────────────────────────── */
+.jf-import.jf-import .imp-file {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: var(--sheet, var(--paper-deep));
+}
+.jf-import.jf-import .imp-file-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.jf-import.jf-import .imp-file-name {
+  min-width: 0;
+  font-size: 14.5px;
+  overflow-wrap: anywhere;
+}
+.jf-import.jf-import .imp-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.jf-import.jf-import .imp-kind select,
+.jf-import.jf-import .imp-table select {
+  min-height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--ink-line);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--ink);
+  max-width: 100%;
+}
+.jf-import.jf-import .imp-cols summary,
+.jf-import.jf-import .imp-skipped summary {
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+.jf-import.jf-import .imp-table-wrap {
+  margin-top: 10px;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.jf-import.jf-import .imp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.jf-import.jf-import .imp-table th {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--ink);
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--ink-soft);
+}
+.jf-import.jf-import .imp-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--ink-line);
+  vertical-align: middle;
+}
+.jf-import.jf-import .imp-table .imp-sample {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-muted);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12.5px;
+}
+.jf-import.jf-import .imp-table .is-skip td:first-child {
+  color: var(--ink-muted);
+}
+
+/* ── 3 · what comes in ────────────────────────────────────────────────────── */
+.jf-import.jf-import .imp-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px 18px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.jf-import.jf-import .imp-list {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14.5px;
+  line-height: 1.45;
+}
+.jf-import.jf-import .imp-examples {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+}
+.jf-import.jf-import .imp-examples ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+.jf-import.jf-import .imp-ex-h {
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.jf-import.jf-import .imp-skipped ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  max-height: 240px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+/* ── undo ─────────────────────────────────────────────────────────────────── */
+.jf-import.jf-import .imp-ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--rose, #b4232c);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  font-size: 14px;
+}
+.jf-import.jf-import .imp-ask span {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+/* ── past imports ─────────────────────────────────────────────────────────── */
+.jf-import.jf-import .imp-past {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+.jf-import.jf-import .imp-past li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--ink-line);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.jf-import.jf-import .imp-past li > div {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+@media (max-width: 768px) {
+  .jf-import.jf-import .imp-sources {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .jf-import.jf-import .imp-drop {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+  }
+  .jf-import.jf-import .imp-table .imp-sample {
+    max-width: 120px;
+  }
+}

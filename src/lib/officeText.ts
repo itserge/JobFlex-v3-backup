@@ -72,6 +72,31 @@ const MAX_ROWS = 400;
 
 /** An .xlsx file's sheets as tab-separated lines, each sheet under its name. */
 export function xlsxText(buf: Buffer): string {
+  const sheets = readSheets(buf, MAX_SHEETS, MAX_ROWS);
+  const out: string[] = [];
+  for (const { name, lines } of sheets.list) {
+    if (sheets.total > 1) out.push(name);
+    // Every row as wide as the sheet: an empty cell at the end stays a cell, so a column never shifts.
+    const width = Math.max(...lines.map((r) => r.length));
+    out.push(...lines.map((r) => [...r, ...Array<string>(width - r.length).fill("")].join("\t")), "");
+  }
+  return out.join("\n").trim();
+}
+
+/**
+ * AN .XLSX FILE'S SHEETS AS ROWS OF CELLS (2026-11-16, a contractor's book brought over — lib/import): every visible
+ * sheet with something on it, each row as wide as its sheet. A client list is a ledger, not a budget: up to ten
+ * sheets and 25,000 rows each.
+ */
+export function xlsxSheets(buf: Buffer, maxSheets = 10, maxRows = 25_000): Array<{ name: string; rows: string[][] }> {
+  return readSheets(buf, maxSheets, maxRows).list.map(({ name, lines }) => {
+    const width = Math.max(...lines.map((r) => r.length));
+    return { name, rows: lines.map((r) => [...r, ...Array<string>(width - r.length).fill("")]) };
+  });
+}
+
+/** The visible sheets, in the workbook's order, each as its non-empty rows of cells; `total` = how many sheets were listed. */
+function readSheets(buf: Buffer, maxSheets: number, maxRows: number): { list: Array<{ name: string; lines: string[][] }>; total: number } {
   const zip = zipEntries(buf);
   const read = (name: string) => zip.get(name)?.().toString("utf8") ?? null;
   const shared: string[] = [];
@@ -90,13 +115,13 @@ export function xlsxText(buf: Buffer): string {
     });
   const paths = sheets.length ? sheets : [...zip.keys()].filter((k) => /^xl\/worksheets\/sheet\d+\.xml$/.test(k)).map((path, i) => ({ name: `Sheet${i + 1}`, path }));
 
-  const out: string[] = [];
-  for (const sheet of paths.slice(0, MAX_SHEETS)) {
+  const list: Array<{ name: string; lines: string[][] }> = [];
+  for (const sheet of paths.slice(0, maxSheets)) {
     const xml = read(sheet.path);
     if (!xml) continue;
     const lines: string[][] = [];
     for (const row of xml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)) {
-      if (lines.length >= MAX_ROWS) break;
+      if (lines.length >= maxRows) break;
       const cells: string[] = [];
       for (const c of row[1].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
         const attrs = c[1];
@@ -120,12 +145,9 @@ export function xlsxText(buf: Buffer): string {
       if (cells.some((x) => x)) lines.push(cells);
     }
     if (!lines.length) continue;
-    if (paths.length > 1) out.push(sheet.name);
-    // Every row as wide as the sheet: an empty cell at the end stays a cell, so a column never shifts.
-    const width = Math.max(...lines.map((r) => r.length));
-    out.push(...lines.map((r) => [...r, ...Array<string>(width - r.length).fill("")].join("\t")), "");
+    list.push({ name: sheet.name, lines });
   }
-  return out.join("\n").trim();
+  return { list, total: paths.length };
 }
 
 /** A .docx file's words: paragraphs as lines, a table's rows as tab-separated lines. */

@@ -7,6 +7,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { TRAIL_KINDS } from "@/lib/activityLog";
 import { clip, digits10, mergeTimeline, samePhone, TRAIL_KINDS_COVERED, type TimelineEvent } from "./shared";
+import { sourceInfo, type ImportSource } from "@/lib/import/sources";
 
 const money = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
@@ -24,7 +25,7 @@ export async function readClientTimeline(client: ClientRef, cap = 250): Promise<
   const email = client.email?.trim().toLowerCase() || null;
   const phone = digits10(client.phone);
 
-  const [proposals, payments, invoices, appointments, visitReports, reviews, projects, planVisits, trail, leads, emails, texts, calls] = await Promise.all([
+  const [proposals, payments, invoices, appointments, visitReports, reviews, projects, planVisits, trail, leads, emails, texts, calls, imported] = await Promise.all([
     db.proposal.findMany({
       where: { organizationId, clientId },
       select: { id: true, title: true, status: true, total: true, sentAt: true, viewedAt: true, acceptedAt: true, declinedAt: true, createdAt: true },
@@ -112,9 +113,38 @@ export async function readClientTimeline(client: ClientRef, cap = 250): Promise<
           take: 150,
         })
       : Promise.resolve([]),
+    // From the program they came from (2026-11-16, lib/import): past jobs, invoices and estimates.
+    db.clientHistory.findMany({
+      where: { organizationId, clientId },
+      select: { id: true, kind: true, number: true, title: true, status: true, amount: true, paid: true, due: true, date: true, by: true, source: true, createdAt: true },
+      orderBy: { date: "desc" },
+      take: 150,
+    }),
   ]);
 
   const out: TimelineEvent[][] = [];
+
+  // THE HISTORY BROUGHT OVER (2026-11-16): each as its own kind of line — a past job with the jobs, an invoice with
+  // the money, an estimate with the proposals — saying where it came from.
+  out.push(
+    imported.map((h): TimelineEvent => {
+      const from = sourceInfo(h.source as ImportSource).label;
+      const st = (h.status ?? "").toLowerCase();
+      const bad = /cancel|declin/.test(st);
+      const owed = (h.due ?? 0) > 0.005;
+      const kind = h.kind === "INVOICE" ? "INVOICE" : h.kind === "ESTIMATE" ? "PROPOSAL" : "SERVICE";
+      const amount = h.amount !== null ? ` (${money(h.amount)})` : "";
+      return {
+        id: `HISTORY:${h.id}`,
+        at: h.date ?? h.createdAt,
+        kind,
+        stamp: h.kind === "INVOICE" ? "Invoice" : h.kind === "ESTIMATE" ? "Estimate" : "Past job",
+        tone: bad ? "bad" : owed ? "warn" : /done|paid|approved/.test(st) ? "good" : "ink",
+        title: `${h.title}${h.number ? ` #${h.number}` : ""}${amount}`,
+        detail: [h.status, owed ? `${money(h.due ?? 0)} owed` : null, h.by ? `by ${h.by}` : null, `from ${from}`].filter(Boolean).join(" · "),
+      };
+    }),
+  );
 
   out.push(
     proposals.flatMap((p): TimelineEvent[] => {
@@ -277,10 +307,12 @@ export async function readClientTimeline(client: ClientRef, cap = 250): Promise<
 /** The header's figures: paid for life, open proposals' worth, and what invoices still owe. */
 export async function readClientFigures(client: ClientRef): Promise<{ lifetimePaid: number; pipeline: number; openBalance: number }> {
   const { id: clientId, organizationId } = client;
-  const [paid, open, owed] = await Promise.all([
+  const [paid, open, owed, before] = await Promise.all([
     db.payment.aggregate({ where: { organizationId, clientId, status: "PAID" }, _sum: { amount: true } }),
     db.proposal.aggregate({ where: { organizationId, clientId, status: { in: ["SENT", "VIEWED"] } }, _sum: { total: true } }),
     db.invoice.aggregate({ where: { organizationId, clientId, status: { notIn: ["PAID", "VOID", "CANCELED"] } }, _sum: { amount: true } }),
+    // What they paid in the program they came from (2026-11-16, lib/import).
+    db.clientHistory.aggregate({ where: { organizationId, clientId }, _sum: { paid: true } }),
   ]);
-  return { lifetimePaid: paid._sum.amount ?? 0, pipeline: open._sum.total ?? 0, openBalance: owed._sum.amount ?? 0 };
+  return { lifetimePaid: (paid._sum.amount ?? 0) + (before._sum.paid ?? 0), pipeline: open._sum.total ?? 0, openBalance: owed._sum.amount ?? 0 };
 }
