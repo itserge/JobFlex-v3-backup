@@ -124,6 +124,14 @@ const TOUCH_FT = 0.03;
  * meeting end to end. A cut piece and the piece it meets are the same board — they take the same seed (two SQUARE
  * pieces meeting end to end are two boards at a butt joint).
  */
+/**
+ * A ROW'S OWN NUMBER (2026-11-15): the same for every board of one row — the pieces of a spliced row are one row of
+ * the floor, and wear one tone, so a joint in it is a hairline and not the edge of a patch.
+ */
+export function placeRows(places: readonly BoardPlace[]): number[] {
+  return places.map((p) => p.row * 131 + p.turn * 7919 + p.level * 53);
+}
+
 export function placeSeeds(places: readonly BoardPlace[]): number[] {
   const rows = new Map<string, number[]>();
   places.forEach((p, i) => {

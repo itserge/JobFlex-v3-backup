@@ -28,7 +28,7 @@
 // camera stands in the yard.
 import * as React from "react";
 import * as THREE from "three";
-import { boxPlace, placeSeeds, ringPlace } from "@/lib/deck/boardTone";
+import { boxPlace, placeRows, placeSeeds, ringPlace } from "@/lib/deck/boardTone";
 import { DOOR_CHOICES, WINDOW_CHOICES, openingChoiceOf } from "@/lib/deck/house";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
@@ -293,6 +293,20 @@ function webglSupported(): boolean {
   }
 }
 
+/**
+ * THE LIGHT, SET SO A BOARD IN THE SUN IS THE COLOUR ON THE MAKER'S SWATCH (2026-11-15 — the owner: "get better real
+ * colours to the deck, look more real, as you see the exact deck in real time").
+ * Measured on the stand before: boards came out as bright as the maker's colour but COOLER and GREYER — red 5 to 17
+ * points low, blue 6 to 8 high, a tenth of the saturation gone (Tiki Torch #c76f44 shown #b66e4c; Rainier, a warm
+ * grey, shown a blue grey). Two causes: the filmic tone curve (ACES) pulls colour out of everything bright, and the
+ * fill light was the sky's blue twice over (a blue hemisphere light and the blue sky as the environment).
+ * Now: the Khronos "neutral" tone curve, made for showing a product's own colour; and the sun, the fill and the sky's
+ * share add up to WHITE on a level board — the fill is as warm as the sky is blue, so a board in the sun is its
+ * colour and a board in shadow still leans cool, as it does outdoors.
+ */
+const DAYLIGHT = { exposure: 1, sun: 3, sunColor: 0xfffaf3, fill: 1.1, fillColor: 0xfff1e8, sky: 0.3 } as const;
+const NIGHTLIGHT = { exposure: 1.5, sun: 0.08, sunColor: 0x9fb4ff, fill: 0.2, fillColor: 0x3a4a6a, sky: 0.06 } as const;
+
 /** A little lighter or darker, the same for the same piece every time. */
 function jitter(base: THREE.Color, i: number, amount: number): THREE.Color {
   const n = Math.sin(i * 127.1 + 311.7) * 43758.5453;
@@ -303,16 +317,23 @@ function jitter(base: THREE.Color, i: number, amount: number): THREE.Color {
 }
 
 /**
- * A STREAKED BOARD (2026-11-09): a line sold in a blended colour (Trex Transcend Lineage, TimberTech Legacy…) is laid
- * board by board somewhere between its two tones — most near the main one, a few well into the second — the way a
- * pallet of them looks on a deck. Steady per board, so a redraw never reshuffles the floor.
+ * A DECK BOARD'S TONE (2026-11-15 — the owner: "there is a line on the floor… don't show any connections, just the
+ * plain colours — not solid, but no connections"). Every piece used to get a shade of its own, up to three quarters
+ * of the way to the line's second tone: a row spliced from two boards was two shades, and a floor of them read as
+ * patches with a line where they met. Now a ROW wears one tone — near the maker's own colour, a third of the way to
+ * the second tone at most, a touch lighter or darker than the row beside it — and the pieces of that row differ by a
+ * hair. The streaks of a blended board are in the board's own grain (boardTexture), on every board alike.
  */
-function streaked(base: THREE.Color, second: THREE.Color | null, i: number, amount: number): THREE.Color {
-  if (!second) return jitter(base, i, amount);
-  const n = Math.sin(i * 78.233 + 12.9898) * 43758.5453;
+function boardShade(base: THREE.Color, second: THREE.Color | null, row: number, piece: number): THREE.Color {
+  const n = Math.sin(row * 78.233 + 12.9898) * 43758.5453;
   const t = n - Math.floor(n);
-  return jitter(base.clone().lerp(second, t * t * 0.75), i, amount * 0.6);
+  const c = second ? base.clone().lerp(second, t * t * 0.34) : base.clone();
+  return jitter(jitter(c, row, 0.014), piece + 0.5, 0.004);
 }
+/** How many feet of board one turn of the grain covers: the grain is laid at this scale on every board, long or short. */
+const GRAIN_FT = 6;
+/** The board grain's mean brightness, in linear light (boardTexture). */
+const GRAIN_MEAN = 0.785;
 
 /* ── Procedural textures: lap siding, wood grain, shingles, metal ribs, grass, concrete ── */
 function canvasTexture(w: number, h: number, draw: (g: CanvasRenderingContext2D) => void): THREE.CanvasTexture {
@@ -516,6 +537,74 @@ function grainTexture() {
       g.beginPath();
       g.ellipse(Math.random() * 256, Math.random() * 64, 6 + Math.random() * 10, 2 + Math.random() * 2, 0, 0, Math.PI * 2);
       g.fill();
+    }
+  });
+}
+/**
+ * A DECK BOARD'S GRAIN (2026-11-15): finer and longer than the framing lumber's, laid at one scale along every board
+ * (GRAIN_FT to a turn — it used to be stretched once over the board's length, so a 4-ft piece and a 20-ft board
+ * looked like two materials). `blended`: the soft darker bands of a streaked composite, in every board alike.
+ * It tiles end to end (every line runs the full width at one height).
+ */
+function boardTexture(blended: boolean) {
+  return canvasTexture(512, 64, (g) => {
+    g.fillStyle = "#ffffff";
+    g.fillRect(0, 0, 512, 64);
+    // The board's broad bands: soft, a few to a board.
+    for (let i = 0; i < (blended ? 7 : 3); i++) {
+      const y = Math.random() * 64;
+      const h = 5 + Math.random() * (blended ? 12 : 7);
+      const a = (blended ? 0.07 : 0.035) + Math.random() * (blended ? 0.1 : 0.04);
+      const band = g.createLinearGradient(0, y - h, 0, y + h);
+      band.addColorStop(0, "rgba(58,40,26,0)");
+      band.addColorStop(0.5, `rgba(58,40,26,${a.toFixed(3)})`);
+      band.addColorStop(1, "rgba(58,40,26,0)");
+      g.fillStyle = band;
+      g.fillRect(0, y - h, 512, 2 * h);
+    }
+    // The grain: fine lines the length of the board, each wandering a little (a whole number of waves, so it tiles).
+    for (let i = 0; i < 70; i++) {
+      const y = Math.random() * 64;
+      const waves = 1 + Math.floor(Math.random() * 3);
+      const amp = 0.4 + Math.random() * 1.1;
+      const phase = Math.random() * Math.PI * 2;
+      g.strokeStyle = `rgba(52,36,22,${(0.03 + Math.random() * 0.075).toFixed(3)})`;
+      g.lineWidth = 0.5 + Math.random() * 1.1;
+      g.beginPath();
+      for (let x = 0; x <= 512; x += 16) {
+        const yy = y + Math.sin((x / 512) * Math.PI * 2 * waves + phase) * amp;
+        if (x === 0) g.moveTo(x, yy);
+        else g.lineTo(x, yy);
+      }
+      g.stroke();
+    }
+    // A few lighter lines: the grain's high side.
+    for (let i = 0; i < 14; i++) {
+      g.strokeStyle = `rgba(255,255,255,${(0.05 + Math.random() * 0.06).toFixed(3)})`;
+      g.lineWidth = 0.6 + Math.random();
+      const y = Math.random() * 64;
+      g.beginPath();
+      g.moveTo(0, y);
+      g.lineTo(512, y);
+      g.stroke();
+    }
+    // AS BRIGHT ON EVERY DRAW: the grain is drawn by chance, and a darker draw made a darker deck. Its mean (in linear
+    // light) is brought to GRAIN_MEAN — the light is set so a board under a grain this bright is the maker's colour.
+    try {
+      const img = g.getImageData(0, 0, 512, 64);
+      const px = img.data;
+      let sum = 0;
+      for (let i = 0; i < px.length; i += 4) sum += 0.2126 * Math.pow(px[i] / 255, 2.2) + 0.7152 * Math.pow(px[i + 1] / 255, 2.2) + 0.0722 * Math.pow(px[i + 2] / 255, 2.2);
+      const k = GRAIN_MEAN / Math.max(0.05, sum / (px.length / 4));
+      const lift = Math.pow(k, 1 / 2.2);
+      for (let i = 0; i < px.length; i += 4) {
+        px[i] = Math.min(255, Math.round(px[i] * lift));
+        px[i + 1] = Math.min(255, Math.round(px[i + 1] * lift));
+        px[i + 2] = Math.min(255, Math.round(px[i + 2] * lift));
+      }
+      g.putImageData(img, 0, 0);
+    } catch {
+      /* a canvas that cannot be read back keeps the grain as drawn */
     }
   });
 }
@@ -894,8 +983,8 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
     // refit): it is redrawn then, not on every frame of an orbit or of a lit field's breathing (2026-10-18, perf).
     renderer.shadowMap.autoUpdate = false;
     let shadowsDirty = true;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 0.9;
+    renderer.toneMapping = THREE.NeutralToneMapping;
+    renderer.toneMappingExposure = DAYLIGHT.exposure;
     renderer.domElement.style.display = "block";
     renderer.domElement.style.width = "100%";
     renderer.domElement.style.height = "100%";
@@ -1032,9 +1121,9 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
     sky.scale.setScalar(3000);
     tuneSky(sky, false);
     world.add(sky);
-    const hemi = new THREE.HemisphereLight(0xcfe0ff, 0x8a8468, 0.75);
+    const hemi = new THREE.HemisphereLight(DAYLIGHT.fillColor, 0x8a8468, DAYLIGHT.fill);
     world.add(hemi);
-    const key = new THREE.DirectionalLight(0xfff4e6, 2.3);
+    const key = new THREE.DirectionalLight(DAYLIGHT.sunColor, DAYLIGHT.sun);
     key.castShadow = true;
     key.shadow.mapSize.set(coarse ? 1024 : 2048, coarse ? 1024 : 2048);
     key.shadow.bias = -0.0004;
@@ -1050,7 +1139,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       envScene.add(envSky);
       envTex = pmrem.fromScene(envScene).texture;
       world.environment = envTex;
-      world.environmentIntensity = 0.45;
+      world.environmentIntensity = DAYLIGHT.sky;
       envSky.geometry.dispose();
       (envSky.material as THREE.Material).dispose();
       pmrem.dispose();
@@ -1193,6 +1282,9 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
     const unitHexY = new THREE.CylinderGeometry(0.5, 0.5, 1, 6);
     const siding = sidingTexture();
     const grain = grainTexture();
+    // The deck boards' own grain (2026-11-15): a plain board's, and a blended (streaked) composite's.
+    const boardGrain = boardTexture(false);
+    const boardGrainBlended = boardTexture(true);
     const shingles = shingleTexture();
     const ribs = ribTexture();
     const concrete = concreteTexture("new");
@@ -1411,7 +1503,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       const ownPaint = (bi: number, L: number): THREE.Color | null => {
         const own = paintBox.get(bi);
         if (!own) return null;
-        if (L === DECKING) return streaked(own.c, own.c2, boardSeed.get(bi) ?? bi + L * 97, 0.045);
+        if (L === DECKING) return boardShade(own.c, own.c2, boardRow.get(bi) ?? bi + L * 97, boardSeed.get(bi) ?? bi);
         return jitter(tone(own.c, L === FASCIA ? -0.05 : -0.02), bi + L * 97, 0.03);
       };
       const roofColor = new THREE.Color(s.colors.roofing ?? "#565250");
@@ -1481,7 +1573,9 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           roughness: i === DECKING ? 0.72 : i === GUTTER ? 0.5 : i === HARDWARE ? 0.45 : i === ROOFING ? 0.85 : i === GLASS ? 0.1 : i === LIGHT ? 0.4 : 0.9,
           metalness: i === GUTTER ? 0.4 : i === HARDWARE ? 0.65 : i === GLASS ? 0.2 : 0,
           envMapIntensity: i === HARDWARE ? 1.6 : i === GUTTER ? 1.2 : 1,
-          map: woodLayer(i) ? grain : i === FOOTING || i === SLAB ? concrete : null,
+          map: i === DECKING ? (deckColor2 ? boardGrainBlended : boardGrain) : woodLayer(i) ? grain : i === FOOTING || i === SLAB ? concrete : null,
+          // (A board's grain is pressed into it: the light catches it a little.)
+          ...(i === DECKING ? { bumpMap: deckColor2 ? boardGrainBlended : boardGrain, bumpScale: 0.35 } : {}),
           transparent: i === GLASS || i === SCREEN,
           opacity: i === GLASS ? 0.35 : i === SCREEN ? 0.55 : 1,
           side: i === GLASS || i === SCREEN ? THREE.DoubleSide : THREE.FrontSide,
@@ -1514,6 +1608,28 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       const floorSeeds = placeSeeds([...deckBoxes.map((i) => boxPlace(s.boxes[i][1], s.boxes[i][2], s.boxes[i][4], s.boxes[i][5], s.boxes[i][3])), ...cutBoards.map((c) => c.place)]);
       const boardSeed = new Map<number, number>(deckBoxes.map((i, k) => [i, floorSeeds[k]]));
       const cutSeeds = floorSeeds.slice(deckBoxes.length);
+      // (Its row's own number: the pieces of one row wear one tone — boardShade.)
+      const floorRows = placeRows([...deckBoxes.map((i) => boxPlace(s.boxes[i][1], s.boxes[i][2], s.boxes[i][4], s.boxes[i][5], s.boxes[i][3])), ...cutBoards.map((c) => c.place)]);
+      const boardRow = new Map<number, number>(deckBoxes.map((i, k) => [i, floorRows[k]]));
+      const cutRows = floorRows.slice(deckBoxes.length);
+      // THE GRAIN AT ONE SCALE ON EVERY BOARD (2026-11-15): the boards are one mesh of unit boxes, each stretched to its
+      // board, and the grain was stretched with it. Each board now says how many turns of the grain its length takes
+      // and where it starts (`uvRep`: turns, start along, 1 when the board runs out from the house — its length is then
+      // the box's other side — and start across: no two boards wear the same bands), and the boards' material lays
+      // the grain by that.
+      const deckBoardMat = mats[DECKING].clone();
+      deckBoardMat.userData.base = mats[DECKING].userData.base;
+      deckBoardMat.onBeforeCompile = (shader) => {
+        shader.vertexShader = shader.vertexShader
+          .replace("#include <uv_pars_vertex>", "#include <uv_pars_vertex>\nattribute vec4 uvRep;")
+          .replace(
+            "#include <uv_vertex>",
+            "#include <uv_vertex>\n#ifdef USE_MAP\n{ vec2 along = uvRep.z > 0.5 ? vMapUv.yx : vMapUv; vMapUv = vec2( along.x * uvRep.x + uvRep.y, along.y + uvRep.w ); }\n#endif\n#ifdef USE_BUMPMAP\n{ vec2 along = uvRep.z > 0.5 ? vBumpMapUv.yx : vBumpMapUv; vBumpMapUv = vec2( along.x * uvRep.x + uvRep.y, along.y + uvRep.w ); }\n#endif",
+          );
+      };
+      deckBoardMat.customProgramCacheKey = () => "deck-board-grain";
+      owned.push(deckBoardMat);
+      fade.push(deckBoardMat);
       const layers: Built["layers"] = SCENE_LAYERS.map(() => []);
       const braces: THREE.Mesh[] = [];
       const m4 = new THREE.Matrix4();
@@ -1581,7 +1697,29 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           if (rest.length) groups.push({ idx: rest, mat: mats[L] });
           groups.push({ idx: joints, mat: jointMat });
         } else if (idx.length) groups.push({ idx, mat: mats[L] });
-        for (const { idx, mat, geo } of groups) {
+        for (const { idx, mat: groupMat, geo: groupGeo } of groups) {
+          let mat = groupMat;
+          let geo = groupGeo;
+          if (L === DECKING && mat === mats[DECKING] && !geo) {
+            const own = unitBox.clone();
+            const uvRep = new Float32Array(idx.length * 4);
+            idx.forEach((bi, k) => {
+              const b = s.boxes[bi];
+              const turned = b.length >= 10 && (b[8] !== 0 || b[9] !== 0);
+              const outFromHouse = !turned && b[5] > b[4];
+              const seed = boardSeed.get(bi) ?? bi;
+              const start = Math.sin(seed * 12.9898 + 4.1414) * 43758.5453;
+              const across = Math.sin(seed * 39.3468 + 1.7) * 43758.5453;
+              uvRep[k * 4] = Math.max(0.05, (outFromHouse ? b[5] : b[4]) / GRAIN_FT);
+              uvRep[k * 4 + 1] = start - Math.floor(start);
+              uvRep[k * 4 + 2] = outFromHouse ? 1 : 0;
+              uvRep[k * 4 + 3] = across - Math.floor(across);
+            });
+            own.setAttribute("uvRep", new THREE.InstancedBufferAttribute(uvRep, 4));
+            owned.push(own);
+            geo = own;
+            mat = deckBoardMat;
+          }
           const mesh = new THREE.InstancedMesh(geo ?? unitBox, mat, idx.length);
           mesh.castShadow = L !== HARDWARE && L !== WIRE && L !== LIGHT && L !== GLASS && L !== SCREEN;
           mesh.receiveShadow = true;
@@ -1592,7 +1730,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
             // slid by depth²÷length and the ends stood square, so rafters met at the ridge overlapping, 2026-10-11).
             boxMatrix(b, legendOf(bi)?.role ?? null, ox, oz, m4);
             mesh.setMatrixAt(k, m4);
-            mesh.setColorAt(k, ownPaint(bi, L) ?? (L === LIGHT && s.glows.some((g) => Math.abs(g[0] - b[1]) < 0.05 && Math.abs(g[1] - b[2]) < 0.05 && Math.abs(g[2] - b[3]) < 0.05) ? new THREE.Color(s.glows.find((g) => Math.abs(g[0] - b[1]) < 0.05 && Math.abs(g[1] - b[2]) < 0.05 && Math.abs(g[2] - b[3]) < 0.05)![3]).lerp(new THREE.Color(0xffffff), 0.45) : L === DECKING ? (borderColor && BORDER_BOARD_ROLE.test(legendOf(bi)?.role ?? "") ? streaked(borderColor, borderColor2, boardSeed.get(bi) ?? bi, 0.045) : streaked(base, deckColor2, boardSeed.get(bi) ?? bi, 0.045)) : jitter(base, bi + L * 97, L === TRIM || L === GUTTER || L === HARDWARE ? 0.01 : 0.03)));
+            mesh.setColorAt(k, ownPaint(bi, L) ?? (L === LIGHT && s.glows.some((g) => Math.abs(g[0] - b[1]) < 0.05 && Math.abs(g[1] - b[2]) < 0.05 && Math.abs(g[2] - b[3]) < 0.05) ? new THREE.Color(s.glows.find((g) => Math.abs(g[0] - b[1]) < 0.05 && Math.abs(g[1] - b[2]) < 0.05 && Math.abs(g[2] - b[3]) < 0.05)![3]).lerp(new THREE.Color(0xffffff), 0.45) : L === DECKING ? (borderColor && BORDER_BOARD_ROLE.test(legendOf(bi)?.role ?? "") ? boardShade(borderColor, borderColor2, boardRow.get(bi) ?? bi, boardSeed.get(bi) ?? bi) : boardShade(base, deckColor2, boardRow.get(bi) ?? bi, boardSeed.get(bi) ?? bi)) : jitter(base, bi + L * 97, L === TRIM || L === GUTTER || L === HARDWARE ? 0.01 : 0.03)));
             centres[bi] = [new THREE.Vector3(b[1] - ox, b[3], b[2] - oz), Math.max(b[4], b[5], b[6])];
           });
           mesh.instanceMatrix.needsUpdate = true;
@@ -1741,12 +1879,19 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           const seed = cutSeeds[bi] ?? bi;
           // (A step's own board — lib/deck/finish — before the border's and the deck's colour.)
           const ringOwn = paintRing.get(bi);
-          const c = ringOwn ? streaked(ringOwn.c, ringOwn.c2, seed, 0.045) : borderColor && borderRings.has(bi) ? streaked(borderColor, borderColor2, seed, 0.045) : streaked(deckColor, deckColor2, seed, 0.045);
+          const row = cutRows[bi] ?? bi;
+          const c = ringOwn ? boardShade(ringOwn.c, ringOwn.c2, row, seed) : borderColor && borderRings.has(bi) ? boardShade(borderColor, borderColor2, row, seed) : boardShade(deckColor, deckColor2, row, seed);
+          // (The grain at the boards' own scale: so many turns over this board's length, begun where a board of its place begins.)
+          const turns = Math.max(0.05, Math.abs(place.place.endFt - place.place.startFt) / GRAIN_FT);
+          const begin = Math.sin(seed * 12.9898 + 4.1414) * 43758.5453;
+          const from = begin - Math.floor(begin);
+          const acrossAt = Math.sin(seed * 39.3468 + 1.7) * 43758.5453;
+          const fromAcross = acrossAt - Math.floor(acrossAt);
           for (const y of [top, bottom]) {
             for (let k = 0; k < n; k++) {
               positions.push(ring[k * 2] - ox, y, ring[k * 2 + 1] - oz);
               colors.push(c.r, c.g, c.b);
-              uvs.push(place.uv[k * 2], place.uv[k * 2 + 1]);
+              uvs.push(place.uv[k * 2] * turns + from, place.uv[k * 2 + 1] + fromAcross);
             }
           }
           for (let k = 1; k + 1 < n; k++) {
@@ -2483,12 +2628,13 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       tuneSky(sky, nightTime);
       (sky.material as THREE.ShaderMaterial).uniformsNeedUpdate = true;
       (world.fog as THREE.Fog).color.copy(nightTime ? HAZE_NIGHT : HAZE_DAY);
-      hemi.intensity = nightTime ? 0.2 : 0.75;
-      hemi.color.set(nightTime ? 0x3a4a6a : 0xcfe0ff);
-      key.intensity = nightTime ? 0.08 : 2.3;
-      key.color.set(nightTime ? 0x9fb4ff : 0xfff4e6);
-      world.environmentIntensity = nightTime ? 0.06 : 0.45;
-      renderer.toneMappingExposure = nightTime ? 0.95 : 0.9;
+      const light = nightTime ? NIGHTLIGHT : DAYLIGHT;
+      hemi.intensity = light.fill;
+      hemi.color.set(light.fillColor);
+      key.intensity = light.sun;
+      key.color.set(light.sunColor);
+      world.environmentIntensity = light.sky;
+      renderer.toneMappingExposure = light.exposure;
       if (content.lightMat) content.lightMat.emissiveIntensity = nightTime ? 3.2 : 0.15;
       const lightShare = share(LIGHT);
       for (const pl of content.pointLights) pl.intensity = nightTime && lightShare >= 1 ? 55 : 0;
@@ -3893,6 +4039,8 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       siding.dispose();
       for (const t of textures.values()) t.dispose();
       grain.dispose();
+      boardGrain.dispose();
+      boardGrainBlended.dispose();
       shingles.dispose();
       ribs.dispose();
       grass.dispose();
