@@ -13,6 +13,7 @@ import { db } from "@/lib/db";
 import type { InstantRoofData } from "@/lib/eagleview";
 import { pdfLogoSrc } from "@/lib/orgLogoServer";
 import { roofLabDrawing, roofLabPicture } from "@/lib/roofFacets/server";
+import { loadRoofTrace } from "@/lib/roofTrace/server";
 import { roofReportData, type RoofReportCopy, type RoofReportData } from "./report";
 
 export interface LoadedRoofReport {
@@ -50,8 +51,14 @@ export async function loadRoofReport(measurementId: string, copy: RoofReportCopy
       console.warn("[roof-report] picture failed:", kind, err instanceof Error ? err.message : err);
     }
   }
+  // the hand-traced lines, when an admin saved them (lib/roofTrace); a failed read only means the engine's lines
+  const trace = await loadRoofTrace(measurementId).catch((err) => {
+    console.warn("[roof-report] trace read failed:", err instanceof Error ? err.message : err);
+    return null;
+  });
   const org = row.organization;
   const data = roofReportData({
+    trace: trace ? { points: trace.points, lines: trace.lines } : null,
     copy,
     measurement: { id: row.id, address: row.address, city: row.city, state: row.state, zip: row.zip, measuredAt: row.createdAt, areaSqft: row.areaSqft, predominantPitch: row.predominantPitch },
     instant,
