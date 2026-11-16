@@ -224,8 +224,22 @@ function Cover({ d, pictureSrc }: { d: RoofReportData; pictureSrc: string | null
           {/* eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf Image has no alt prop */}
           <Image src={pictureSrc} style={{ position: "absolute", left: 0, top: 0, width: pw, height: ph }} />
           <Svg width={pw} height={ph} viewBox={`0 0 ${pw} ${ph}`} style={{ position: "absolute", left: 0, top: 0 }}>
-            <Path d={outline} fill="none" stroke="#ffffff" strokeWidth={2.4} strokeLinejoin="round" />
-            <Path d={outline} fill="none" stroke="#f2b705" strokeWidth={1.1} strokeLinejoin="round" />
+            {d.photo.lines ? (
+              // the hand-traced lines (lib/roofTrace): each in its kind's colour on a white edge, as the admin drew them
+              <>
+                {d.photo.lines.map((l, i) => (
+                  <Line key={`u${i}`} x1={l.a.x * k} y1={l.a.y * k} x2={l.b.x * k} y2={l.b.y * k} stroke="#ffffff" strokeWidth={3.2} strokeLinecap="round" />
+                ))}
+                {d.photo.lines.map((l, i) => (
+                  <Line key={`l${i}`} x1={l.a.x * k} y1={l.a.y * k} x2={l.b.x * k} y2={l.b.y * k} stroke={EDGE_COLOR[l.type]} strokeWidth={1.6} strokeLinecap="round" strokeDasharray={EDGE_DASH[l.type]} />
+                ))}
+              </>
+            ) : (
+              <>
+                <Path d={outline} fill="none" stroke="#ffffff" strokeWidth={2.4} strokeLinejoin="round" />
+                <Path d={outline} fill="none" stroke="#f2b705" strokeWidth={1.1} strokeLinejoin="round" />
+              </>
+            )}
           </Svg>
         </View>
       ) : (

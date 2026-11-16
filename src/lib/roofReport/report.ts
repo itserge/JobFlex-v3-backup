@@ -15,6 +15,7 @@
 
 import { FACET_EDGE_TYPES, FACET_EDGE_USE, FACET_EDGE_WORDS, type FacetEdgeType, type FacetModel } from "../roofFacets/model";
 import type { InstantRoofData, InstantStructure } from "../eagleview";
+import { pitchRise, traceLengthsFt, traceTotals, type TraceLine, type TracePoint } from "../roofTrace/trace";
 
 export type RoofReportCopy = "contractor" | "homeowner";
 
@@ -38,6 +39,12 @@ export interface RoofReportInput {
   company: RoofReportCompany;
   /** when the report is made */
   now: Date;
+  /**
+   * The roof's lines traced by hand on the aerial photo (lib/roofTrace, 2026-11-16), when an admin saved one: then the
+   * lines drawing, the photo's overlay, the lines table and the order list follow it instead of the facet engine's
+   * lines. The faces (and the facets page) stay the engine's.
+   */
+  trace?: { points: TracePoint[]; lines: TraceLine[] } | null;
 }
 
 export interface PlanPoint {
@@ -86,7 +93,9 @@ export interface RoofReportData {
   facetsTable: Array<{ letter: string; part: string; pitch: string; facing: string; areaSqft: number }>;
   plan: PlanDrawing;
   /** the aerial picture's frame, and the outline drawn on it, in the picture's own metres (x right, y down) */
-  photo: { widthM: number; heightM: number; outline: PlanPoint[][]; date: string | null };
+  photo: { widthM: number; heightM: number; outline: PlanPoint[][]; date: string | null; lines: Array<{ a: PlanPoint; b: PlanPoint; type: FacetEdgeType }> | null };
+  /** true when the lines are the hand-traced drawing (lib/roofTrace), not the facet engine's */
+  traced: boolean;
   waste: WasteRow[];
   order: OrderLine[];
   facts: Array<{ label: string; value: string }>;
@@ -176,12 +185,26 @@ function labelPoint(rings: PlanPoint[][]): { at: PlanPoint; room: number } {
 }
 
 /** The facets and the lines in plan, feet, north up, cropped to the roof with a margin. */
-export function planDrawing(model: FacetModel): PlanDrawing {
+export function planDrawing(model: FacetModel, trace?: { points: TracePoint[]; lines: TraceLine[]; lengthsFt: number[] } | null): PlanDrawing {
   const raw = model.vertices.map((v) => ({ x: v.e * FT_PER_M, y: -v.n * FT_PER_M }));
+  const rawTrace = trace ? trace.points.map((v) => ({ x: v.e * FT_PER_M, y: -v.n * FT_PER_M })) : [];
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const p of raw) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
+  for (const p of [...raw, ...rawTrace]) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
   const pad = Math.max(maxX - minX, maxY - minY) * 0.06 + 1;
   const pts = raw.map((p) => ({ x: p.x - minX + pad, y: p.y - minY + pad }));
+  const tpts = rawTrace.map((p) => ({ x: p.x - minX + pad, y: p.y - minY + pad }));
+  if (trace) {
+    return {
+      width: maxX - minX + 2 * pad,
+      height: maxY - minY + 2 * pad,
+      facets: model.facets.map((f) => {
+        const rings = [f.outer, ...f.holes].map((ring) => ring.map((i) => pts[i]));
+        const lp = labelPoint(rings);
+        return { letter: f.letter, rings, label: lp.at, roomy: lp.room >= 3.2, areaSqft: f.areaSqft, pitchLabel: f.pitchLabel, pitch12: f.pitch12 };
+      }),
+      edges: trace.lines.map((l, i) => ({ a: tpts[l.a], b: tpts[l.b], type: l.type, lengthFt: trace.lengthsFt[i] })),
+    };
+  }
   return {
     width: maxX - minX + 2 * pad,
     height: maxY - minY + 2 * pad,
@@ -232,12 +255,19 @@ export function roofReportData(input: RoofReportInput): RoofReportData {
   const waste = wasteTable(areaSqft, suggested);
   const orderSquares = waste.find((w) => w.suggested)!.squares;
   const eaveMax = instant?.totals?.maxEaveFt ?? (main?.eaveHeightFt ? Math.max(...Object.values(main.eaveHeightFt)) : null);
-  const feet = model.totals.feet;
-  const lines = FACET_EDGE_TYPES.filter((t) => model.totals.count[t] > 0 && t !== "BREAK").map((t) => ({ type: t, words: FACET_EDGE_WORDS[t], feet: Math.round(feet[t]), count: model.totals.count[t], use: FACET_EDGE_USE[t] }));
-  if (model.totals.count.BREAK > 0) lines.push({ type: "BREAK", words: FACET_EDGE_WORDS.BREAK, feet: Math.round(feet.BREAK), count: model.totals.count.BREAK, use: FACET_EDGE_USE.BREAK });
-  const plan = planDrawing(model);
+  // the hand-traced lines, when an admin saved them, stand in for the engine's: lengths at the roof's main pitch
+  const trace = input.trace && input.trace.lines.length ? input.trace : null;
+  const rise = pitchRise(pitch) ?? pitchRise(model.totals.predominantPitch);
+  const traced = trace ? { ...traceTotals(trace, rise), lengthsFt: traceLengthsFt(trace, rise) } : null;
+  const feet = traced ? traced.feet : model.totals.feet;
+  const counts = traced ? traced.count : model.totals.count;
+  const lines = FACET_EDGE_TYPES.filter((t) => counts[t] > 0 && t !== "BREAK").map((t) => ({ type: t, words: FACET_EDGE_WORDS[t], feet: Math.round(feet[t]), count: counts[t], use: FACET_EDGE_USE[t] }));
+  if (counts.BREAK > 0) lines.push({ type: "BREAK", words: FACET_EDGE_WORDS.BREAK, feet: Math.round(feet.BREAK), count: counts.BREAK, use: FACET_EDGE_USE.BREAK });
+  const plan = planDrawing(model, trace && traced ? { points: trace.points, lines: trace.lines, lengthsFt: traced.lengthsFt } : null);
   const w = input.window;
   const photoOutline = model.facets.map((f) => f.outer.map((i) => ({ x: model.vertices[i].e - w.e0, y: w.n0 - model.vertices[i].n })));
+  const photoLines = trace ? trace.lines.map((l) => ({ a: { x: trace.points[l.a].e - w.e0, y: w.n0 - trace.points[l.a].n }, b: { x: trace.points[l.b].e - w.e0, y: w.n0 - trace.points[l.b].n }, type: l.type })) : null;
+  const stepPieces = traced && trace ? trace.lines.reduce((n, l, i) => (l.type === "STEP" ? n + Math.ceil((traced.lengthsFt[i] * 12) / 5 - 1e-9) + 2 : n), 0) : stepPiecesFor(model);
 
   const facts: Array<{ label: string; value: string }> = [];
   const add = (label: string, value: string | null | undefined) => {
@@ -268,7 +298,10 @@ export function roofReportData(input: RoofReportInput): RoofReportData {
   const howMeasured: string[] = [];
   if (evSqft) howMeasured.push(`Total area and main pitch: EagleView's aerial measurement of the roof${instant?.imagery?.[0]?.shotDate ? ` (imagery of ${instant.imagery[0].shotDate.slice(0, 10)})` : ""}.`);
   else howMeasured.push("Total area and main pitch: read off Google's 3D height map of the roof (no EagleView measurement for this address).");
-  howMeasured.push(`Roof faces and lines: drawn from Google's 3D height map${input.imagery.date ? ` (imagery of ${input.imagery.date})` : ""} inside ${model.outlineFrom === "eagleview" ? "EagleView's outline of the roof" : "the roof's outline read off that height map"}. Lengths are along the slope.`);
+  if (trace) {
+    howMeasured.push("Roof lines: traced by hand on the aerial photo. Their lengths are the drawn lines at the main pitch, along the slope.");
+    howMeasured.push(`Roof faces: drawn from Google's 3D height map${input.imagery.date ? ` (imagery of ${input.imagery.date})` : ""} inside ${model.outlineFrom === "eagleview" ? "EagleView's outline of the roof" : "the roof's outline read off that height map"}.`);
+  } else howMeasured.push(`Roof faces and lines: drawn from Google's 3D height map${input.imagery.date ? ` (imagery of ${input.imagery.date})` : ""} inside ${model.outlineFrom === "eagleview" ? "EagleView's outline of the roof" : "the roof's outline read off that height map"}. Lengths are along the slope.`);
   if (evSqft) {
     const delta = Math.round(((drawingSqft - evSqft) / evSqft) * 1000) / 10;
     howMeasured.push(`The faces add up to ${whole(drawingSqft)} sq ft — ${Math.abs(delta) < 0.1 ? "the same as" : `${Math.abs(delta)}% ${delta > 0 ? "over" : "under"}`} EagleView's ${whole(evSqft)} sq ft. The headline and the order use EagleView's.`);
@@ -291,9 +324,10 @@ export function roofReportData(input: RoofReportInput): RoofReportData {
     confidence: model.confidence,
     facetsTable: model.facets.map((f) => ({ letter: f.letter, part: f.part, pitch: f.pitchLabel, facing: f.round ? "Round" : f.facing ? FACING_WORDS[f.facing] ?? f.facing : "—", areaSqft: Math.round(f.areaSqft) })),
     plan,
-    photo: { widthM: w.widthM, heightM: w.heightM, outline: photoOutline, date: input.imagery.date },
+    photo: { widthM: w.widthM, heightM: w.heightM, outline: photoOutline, date: input.imagery.date, lines: photoLines },
+    traced: trace !== null,
     waste,
-    order: orderList(areaSqft, orderSquares, feet, stepPiecesFor(model)),
+    order: orderList(areaSqft, orderSquares, feet, stepPieces),
     facts,
     eaves,
     checkOnSite,

@@ -16,31 +16,17 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { drawRoofLab, listRoofLab, type RoofLabRow } from "@/actions/adminRoofLab";
-import { FACET_EDGE_TYPES, FACET_EDGE_USE, FACET_EDGE_WORDS, type FacetEdgeType, type FacetModel } from "@/lib/roofFacets/model";
+import { FACET_EDGE_TYPES, FACET_EDGE_USE, FACET_EDGE_WORDS, type FacetModel } from "@/lib/roofFacets/model";
 import type { RoofLabDrawing } from "@/lib/roofFacets/server";
 import { shortDay } from "@/components/v3/admin-overview/admin-ui";
 import { useAdminMotion } from "@/components/v3/admin-overview/admin-motion";
 import s from "@/components/v3/admin-overview/admin-shared.module.css";
+import { EDGE_COLOR, EDGE_DASH } from "./edge-style";
+import { RoofTraceEditor } from "./roof-trace-editor";
 import r from "./roof-lab.module.css";
 
 type Drawn = { ok: true; drawing: RoofLabDrawing } | { ok: false; error: string };
 
-/**
- * The drawing's own colours — a roof report's legend (owner, 2026-11-12, with a sample report: "may be show like
- * this"): eaves blue, rakes green, ridges red, hips gold, valleys purple, step flashing a black dashed line, wall
- * flashing a grey dotted one. The same on the photograph and on the two diagrams; they do not follow the page's theme.
- */
-const EDGE_COLOR: Record<FacetEdgeType, string> = {
-  EAVE: "#2f55a4",
-  RAKE: "#3f7d44",
-  RIDGE: "#b23a3a",
-  HIP: "#b8872b",
-  VALLEY: "#5b3a8c",
-  STEP: "#111111",
-  WALL: "#555555",
-  BREAK: "#0f7f86",
-};
-const EDGE_DASH: Partial<Record<FacetEdgeType, string>> = { STEP: "7 5", WALL: "1.5 5" };
 const FACET_FILL = "#7c3aed";
 const INK = "#14121a";
 const PAPER = "#f6f4ef";
@@ -104,7 +90,7 @@ function ConfidenceChip({ level }: { level: FacetModel["confidence"]["level"] })
   return <span className={`chip ${s.chipDanger}`}>Low confidence</span>;
 }
 
-export type View = "photo" | "relief" | "facets" | "lines";
+export type View = "photo" | "relief" | "facets" | "lines" | "trace";
 
 /** A roof report's north arrow and 20-foot scale bar, in the diagram's own unit (metres). */
 function Furniture({ vb, u }: { vb: { x: number; y: number; w: number; h: number }; u: number }) {
@@ -277,6 +263,9 @@ export function RoofLabStage({ id, drawing, startView }: { id: string; drawing: 
           <button type="button" className={shown === "lines" ? r.segOn : ""} onClick={() => setView("lines")}>
             Lines diagram
           </button>
+          <button type="button" className={shown === "trace" ? r.segOn : ""} onClick={() => setView("trace")} data-roof-lab-view="trace">
+            Traced lines
+          </button>
         </div>
         {picture ? (
           <>
@@ -290,6 +279,8 @@ export function RoofLabStage({ id, drawing, startView }: { id: string; drawing: 
               <input type="checkbox" checked={lengths} onChange={(e) => setLengths(e.target.checked)} /> Lengths
             </label>
           </>
+        ) : shown === "trace" ? (
+          <span className={r.caption}>Drawn by hand on the photo · the roof report uses these lines once saved</span>
         ) : (
           <span className={r.caption}>{shown === "facets" ? "Top view · each facet with its area and pitch" : "True lengths along the slope, feet"}</span>
         )}
@@ -297,7 +288,9 @@ export function RoofLabStage({ id, drawing, startView }: { id: string; drawing: 
       {photoFailed ? <p className={r.note}>Google did not return the aerial photo for this roof, so the height map is shown instead.</p> : null}
       {!drawing.photo ? <p className={r.note}>No aerial photo is on file for this roof (or no Google key is set), so the height map is shown.</p> : null}
 
-      {picture ? (
+      {shown === "trace" ? (
+        <RoofTraceEditor id={id} drawing={drawing} />
+      ) : picture ? (
         <div className={r.stage} style={{ aspectRatio: `${win.widthM} / ${win.heightM}` }} data-roof-lab-stage data-roof-lab-picture={shown}>
           {/* eslint-disable-next-line @next/next/no-img-element -- an admin-only picture cut on the server for this roof */}
           <img
@@ -366,7 +359,7 @@ export function RoofLabStage({ id, drawing, startView }: { id: string; drawing: 
         <Diagram model={model} pts={pts} paths={facets} mode={shown === "facets" ? "facets" : "lines"} hot={hot} setHot={setHot} />
       )}
 
-      {shown === "facets" ? (
+      {shown === "trace" ? null : shown === "facets" ? (
         <ul className={r.legend} aria-label="What the shades mean">
           {pitches.map(([label, rise]) => (
             <li key={label}>
@@ -567,7 +560,7 @@ export function AdminRoofLabContent({ rows: initialRows, openId, first }: { rows
       <div className="card">
         <p className={r.lead}>
           Pick a roof that was already measured. The engine reads the facets off Google&apos;s height map inside EagleView&apos;s outline and draws them on the aerial photo: ridges, hips, valleys, eaves and rakes, each with its
-          length. Nothing is ordered, nothing is saved, and contractors do not see this page.
+          length. Under Traced lines you can draw the roof&apos;s lines by hand on the photo and save them — the roof report then uses yours. Nothing is ordered, and contractors do not see this page.
         </p>
       </div>
 
