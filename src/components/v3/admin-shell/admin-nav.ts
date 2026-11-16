@@ -58,6 +58,9 @@ export const ADMIN_NAV_SECTIONS: NavSection[] = [
       // Added 2026-10-20: owners on a trial asking for more days from the
       // cancel window — approve 7/14 days or deny; the badge is the open ones.
       { label: "Trial requests", icon: "i-hourglass", href: "/admin/trial-requests" },
+      // Added 2026-11-16: "Do it for me" — contractors' exported files to bring in for them (2 business days);
+      // the badge is the ones still waiting.
+      { label: "Imports", icon: "i-file", href: "/admin/imports" },
       // Added 2026-10-20: every cancellation with the reasons the owner ticked.
       { label: "Cancellations", icon: "i-ban", href: "/admin/cancellations" },
       { label: "Plans", icon: "i-file", href: "/admin/plans" },

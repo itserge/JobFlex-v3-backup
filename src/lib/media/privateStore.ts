@@ -287,6 +287,26 @@ export async function readLocal(url: string, rangeHeader: string | null, downloa
   return { status: 200, headers: { ...base, "Content-Length": String(size) }, body: stream };
 }
 
+/** A stored file's bytes, for a server-side reader (a "Do it for me" import read
+ *  in Admin → Imports, 2026-11-16). Null when it is gone, not private, or past `maxBytes`. */
+export async function readStoredBytes(url: string, maxBytes: number): Promise<Buffer | null> {
+  const kind = kindOfUrl(url);
+  if (kind === "local") {
+    const full = localFile(pathnameOf(url)!);
+    const st = await fs.stat(full).catch(() => null);
+    if (!st || st.size > maxBytes) return null;
+    return fs.readFile(full).catch(() => null);
+  }
+  if (kind === "private-blob" && privateToken()) {
+    const { get } = await import("@vercel/blob");
+    const r = await get(url, { access: "private", token: privateToken()! });
+    if (!r || r.statusCode !== 200 || !r.stream) return null;
+    if ((r.blob.size ?? 0) > maxBytes) return null;
+    return Buffer.from(await new Response(r.stream).arrayBuffer());
+  }
+  return null;
+}
+
 /** A stored file's bytes as a data URL, for a server-side reader that cannot
  *  follow a signed link (the photo vision call). Null past `maxBytes`. */
 export async function readStoredAsDataUrl(url: string, maxBytes = 8 * 1024 * 1024): Promise<string | null> {

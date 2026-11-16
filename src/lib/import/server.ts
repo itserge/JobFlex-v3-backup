@@ -52,8 +52,9 @@ function textOf(buf: Buffer): string {
 const MAX_UNPACKED_BYTES = 48 * 1024 * 1024;
 
 /** A dropped file's tables: a CSV is one; a workbook one per sheet with something on it. */
-export async function tablesOf(file: File): Promise<Array<{ name: string; table: Table }>> {
-  if (file.size > MAX_FILE_BYTES) throw new ImportFileError(`${file.name} is over 8 MB. Export it in parts (a year at a time), or as CSV, which is smaller.`);
+export async function tablesOf(file: File, opts: { maxBytes?: number } = {}): Promise<Array<{ name: string; table: Table }>> {
+  const most = opts.maxBytes ?? MAX_FILE_BYTES;
+  if (file.size > most) throw new ImportFileError(`${file.name} is over ${Math.round(most / 1024 / 1024)} MB. Export it in parts (a year at a time), or as CSV, which is smaller.`);
   let name = file.name;
   let buf = Buffer.from(await file.arrayBuffer());
   // The page packs a big CSV (gzip) before it sends it — an upload holds a few MB, and a CSV packs to a tenth.
@@ -143,8 +144,18 @@ export interface ImportDone {
 }
 
 /** Write a plan. On any failure what was written is taken back, the import is marked FAILED, and the error goes on. */
-export async function applyImport(input: { organizationId: string; userId: string; source: ImportSource; plan: ImportPlan; files: Array<{ name: string; kind: FileKind; rows: number }> }): Promise<ImportDone> {
+export async function applyImport(input: {
+  organizationId: string;
+  userId: string;
+  source: ImportSource;
+  plan: ImportPlan;
+  files: Array<{ name: string; kind: FileKind; rows: number }>;
+  /** The JobFlex team brings it in for the company ("Do it for me"): the trail says so and names no member, and the
+   *  calendar events name no creator — the platform admin is not one of the company's people. */
+  onBehalf?: boolean;
+}): Promise<ImportDone> {
   const { organizationId, userId, source, plan } = input;
+  const memberId = input.onBehalf ? null : userId;
   const info = sourceInfo(source);
   const imp = await db.dataImport.create({ data: { organizationId, byUserId: userId, source, status: "RUNNING", filesJson: JSON.stringify(input.files) }, select: { id: true } });
   const importId = imp.id;
@@ -198,7 +209,7 @@ export async function applyImport(input: { organizationId: string; userId: strin
     for (const part of chunks(jobs)) {
       await db.job.createMany({ data: part.map((j) => ({ id: j.id, organizationId, clientId: ids.get(j.client) ?? null, title: j.title, status: "SCHEDULED", notes: j.notes, startsAt: j.startsAt, endsAt: j.endsAt, importId, importKey: j.importKey })) });
       const dated = part.filter((j) => j.startsAt);
-      if (dated.length) await db.jobEvent.createMany({ data: dated.map((j) => ({ organizationId, jobId: j.id, createdById: userId, title: j.title, startsAt: j.startsAt!, endsAt: j.endsAt ?? new Date(j.startsAt!.getTime() + 2 * 3600_000), notes: j.notes })) });
+      if (dated.length) await db.jobEvent.createMany({ data: dated.map((j) => ({ organizationId, jobId: j.id, createdById: memberId, title: j.title, startsAt: j.startsAt!, endsAt: j.endsAt ?? new Date(j.startsAt!.getTime() + 2 * 3600_000), notes: j.notes })) });
     }
     // Money still owed: open invoices under the other program's numbers.
     for (const part of chunks(plan.invoices)) {
@@ -214,9 +225,9 @@ export async function applyImport(input: { organizationId: string; userId: strin
     const n = plan.counts;
     await logActivity({
       organizationId,
-      actorId: userId,
+      actorId: memberId,
       kind: TRAIL_KINDS.CLIENT,
-      summary: `Brought in from ${info.label}: ${n.newClients} new client${n.newClients === 1 ? "" : "s"}${n.joined ? `, ${n.joined} joined to clients already here` : ""}${n.invoices ? `, ${n.invoices} open invoice${n.invoices === 1 ? "" : "s"} ($${n.owed.toLocaleString("en-US")})` : ""}${n.upcoming + n.unscheduled ? `, ${n.upcoming + n.unscheduled} upcoming job${n.upcoming + n.unscheduled === 1 ? "" : "s"}` : ""}${n.history ? `, ${n.history} past record${n.history === 1 ? "" : "s"}` : ""}`,
+      summary: `${input.onBehalf ? `JobFlex brought in your clients from ${info.label}` : `Brought in from ${info.label}`}: ${n.newClients} new client${n.newClients === 1 ? "" : "s"}${n.joined ? `, ${n.joined} joined to clients already here` : ""}${n.invoices ? `, ${n.invoices} open invoice${n.invoices === 1 ? "" : "s"} ($${n.owed.toLocaleString("en-US")})` : ""}${n.upcoming + n.unscheduled ? `, ${n.upcoming + n.unscheduled} upcoming job${n.upcoming + n.unscheduled === 1 ? "" : "s"}` : ""}${n.history ? `, ${n.history} past record${n.history === 1 ? "" : "s"}` : ""}`,
       meta: { importId, source },
     });
     return { importId, counts: plan.counts };

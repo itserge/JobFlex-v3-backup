@@ -14,6 +14,8 @@ import { redirect } from "next/navigation";
 import { isOwnerRole, NoOrgError, requireOrg, UnauthorizedError } from "@/lib/orgContext";
 import { loadToolsModel, markToolsWelcomeShown } from "@/lib/toolPlans/view";
 import { ToolsWelcome } from "@/components/v3/tools-plan/tools-plan";
+import { cookies } from "next/headers";
+import { isImportSource, MOVING_COOKIE } from "@/lib/import/sources";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "JobFlex · Welcome", description: "Your plan, your main tool and the tools you can try free." };
@@ -32,5 +34,7 @@ export default async function WelcomePage() {
   const model = await loadToolsModel(organizationId).catch(() => null);
   if (!model || model.lapsed) redirect("/dashboard" as Route);
   await markToolsWelcomeShown(organizationId);
-  return <ToolsWelcome model={model} />;
+  // Came through a "Switch to JobFlex" page (/switch/<program>): the "Moving from…" card names their program.
+  const raw = (await cookies()).get(MOVING_COOKIE)?.value ?? "";
+  return <ToolsWelcome model={model} movingFrom={isImportSource(raw) ? raw : null} />;
 }

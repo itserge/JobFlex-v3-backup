@@ -173,6 +173,7 @@ model Organization {
   clientEquipment        ClientEquipment[]
   dataImports            DataImport[]
   clientHistory          ClientHistory[]
+  importRequests         ImportRequest[]
   visitReports           VisitReport[]
   bookings               Booking[]
   // Why a plan was cancelled, and asks for more trial days (2026-10-20).
@@ -764,6 +765,33 @@ model ClientHistory {
   @@index([organizationId, clientId, date])
   @@index([importId])
   @@index([organizationId, importKey])
+}
+
+// "DO IT FOR ME" (2026-11-16 — CRM migration plan part 4; the owner: free for everyone, answered within 2 business
+// days, worked by the platform admins). A contractor sends the files their old program exported (into the private
+// store, under imports/<organizationId>/) with a note; a platform admin opens it in Admin → Imports, checks the columns
+// and brings it in for that company (it becomes a DataImport, `importId`, which the company can undo like its own).
+// The files are deleted from the store when it is done or cancelled (`filesDeletedAt`).
+model ImportRequest {
+  id             String    @id @default(cuid())
+  organizationId String
+  byUserId       String? // who asked (the owner, an admin or a manager of the company)
+  source         String // lib/import/sources ImportSource
+  note           String?
+  filesJson      String // [{ url, name, bytes, contentType, addedBy: "company" | "admin" }]
+  status         String    @default("NEW") // NEW | WORKING | DONE | CANCELED
+  workerId       String? // the platform admin who took it
+  importId       String? // the DataImport it became
+  reason         String? // why it was cancelled (the company is told)
+  dueAt          DateTime // 2 business days after it was asked (lib/import/requests dueBy)
+  createdAt      DateTime  @default(now())
+  doneAt         DateTime?
+  filesDeletedAt DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([status, dueAt])
 }
 
 // THE INBOX (Smart CRM part 2, 2026-11-08 — the plan doc "JobFlex Smart CRM — plan"): one thread per client.

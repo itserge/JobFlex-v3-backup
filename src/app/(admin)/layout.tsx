@@ -25,6 +25,7 @@ import { readAdminCookie } from "@/lib/adminAuth";
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { unreadSupportCount } from "@/actions/support";
 import { myOpenTaskCountSafe } from "@/lib/adminTasks/service";
+import { openRequestCount } from "@/lib/import/requestServer";
 import { NavRoleProvider } from "@/components/v3/blueprint-shell/nav-role";
 import { AdminShell } from "@/components/v3/admin-shell/admin-shell";
 import { ContractorMailProvider } from "@/components/v3/admin-mail/contractor-mail";
@@ -53,7 +54,7 @@ export default async function AdminRootLayout({ children }: { children: React.Re
   // Which door the admin came through decides what Sign out clears.
   const viaCookie = (await readAdminCookie()) !== null;
 
-  const [unreadSupport, pendingPayouts, manualQueueLeads, myOpenTasks, pendingTrialAsks] = await Promise.all([
+  const [unreadSupport, pendingPayouts, manualQueueLeads, myOpenTasks, pendingTrialAsks, openImports] = await Promise.all([
     unreadSupportCount(),
     // A reversed transfer waits on an admin's Retry payout / Write off exactly
     // as a new request waits on Approve, so both light the badge.
@@ -65,6 +66,8 @@ export default async function AdminRootLayout({ children }: { children: React.Re
     // Trial-extension asks waiting on a decision (2026-10-20); 0 while the
     // table is not in this database yet.
     db.trialExtensionRequest.count({ where: { status: "PENDING" } }).catch(() => 0),
+    // "Do it for me" imports waiting on the team (2026-11-16); 0 while the table is not in this database yet.
+    openRequestCount().catch(() => 0),
   ]);
 
   const badges: Record<string, number> = {
@@ -73,6 +76,7 @@ export default async function AdminRootLayout({ children }: { children: React.Re
     "/admin/lead-center": manualQueueLeads,
     "/admin/tasks": myOpenTasks,
     "/admin/trial-requests": pendingTrialAsks,
+    "/admin/imports": openImports,
   };
 
   const adminName = admin.name || admin.email;
