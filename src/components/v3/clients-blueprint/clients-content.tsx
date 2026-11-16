@@ -12,6 +12,7 @@
 
 import { useCallback, useRef } from "react";
 import type { Route } from "next";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-blueprint-content";
 import { initClientsContent } from "./clients-behavior";
@@ -23,7 +24,7 @@ import { AddToProjectSheet } from "@/components/v3/project-links/add-to-project-
  *   component. The behavior module takes it as its starting state and then
  *   keeps itself in step with the database through the client server actions.
  */
-export function ClientsContent({ entries }: { entries: Client[] }) {
+export function ClientsContent({ entries, canImport = false }: { entries: Client[]; canImport?: boolean }) {
   // The seed reaches `init` through a ref, NOT through the callback's deps.
   // `useBlueprintContent` re-runs whenever `init` changes identity, and a re-run
   // tears the page down and replays the whole reveal cascade — so the init has
@@ -59,6 +60,12 @@ export function ClientsContent({ entries }: { entries: Client[] }) {
           <h1 className="page-title">Clients</h1>
         </div>
         <div className="page-actions">
+          {canImport ? (
+            // Moving from Housecall Pro, Jobber, ServiceTitan or a spreadsheet (2026-11-16).
+            <Link className="btn btn-ghost" href={"/dashboard/clients/import" as Route} data-clients-import>
+              Bring your clients
+            </Link>
+          ) : null}
           <button className="btn btn-primary" id="newClientBtn">
             <svg className="ic">
               <use href="#i-plus" />

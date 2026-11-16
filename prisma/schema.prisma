@@ -171,6 +171,8 @@ model Organization {
   servicePlans           ServicePlan[]
   servicePlanVisits      ServicePlanVisit[]
   clientEquipment        ClientEquipment[]
+  dataImports            DataImport[]
+  clientHistory          ClientHistory[]
   visitReports           VisitReport[]
   bookings               Booking[]
   // Why a plan was cancelled, and asks for more trial days (2026-10-20).
@@ -493,6 +495,9 @@ model Client {
   // `homeViewedAt`: when the client last opened it — the office sees "opened 2d ago".
   homeToken      String?   @unique
   homeViewedAt   DateTime?
+  // Brought over from another program (2026-11-16, lib/import): the import that made it, and its number there.
+  importId       String?
+  importKey      String?
 
   organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   proposals      Proposal[]
@@ -511,9 +516,12 @@ model Client {
   promises       ClientPromise[]
   brief          ClientBrief?
   threads        ClientThread[]
+  history        ClientHistory[]
 
   @@index([organizationId])
   @@index([organizationId, deletedAt])
+  @@index([importId])
+  @@index([organizationId, importKey])
 }
 
 // THE CLIENT'S MEMORY (Smart CRM part 1, 2026-11-08 — the plan doc: structured, source-linked facts; a
@@ -703,6 +711,59 @@ model ClientMerge {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, keptId])
+}
+
+// A CONTRACTOR'S BOOK BROUGHT OVER FROM ANOTHER PROGRAM (2026-11-16 — the owner: "move contractors' CRM base with clients
+// to JobFlex from other platforms like Housecall Pro"; lib/import). One row per import: where from, which files, what
+// came in. Every client, job and invoice it made carries its id (importId) — "Undo this import" takes exactly those
+// away — and a key from the other program's own number (importKey), so a file brought in twice adds nothing twice.
+// `filledJson`: clients already in JobFlex whose empty fields it filled ([{ id, fields: {email: "…"} }]) — an undo
+// empties them again where they still hold what it brought.
+model DataImport {
+  id             String    @id @default(cuid())
+  organizationId String
+  byUserId       String?
+  source         String // HOUSECALL_PRO | JOBBER | SERVICETITAN | WORKIZ | JOBNIMBUS | QUICKBOOKS | CONTACTS | OTHER
+  status         String    @default("RUNNING") // RUNNING | DONE | FAILED | UNDONE
+  filesJson      String? // [{ name, kind, rows }]
+  countsJson     String? // what came in (lib/import/plan PlanCounts)
+  filledJson     String?
+  createdAt      DateTime  @default(now())
+  undoneAt       DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+}
+
+// A CLIENT'S HISTORY FROM THE PROGRAM THEY CAME FROM (2026-11-16, lib/import): a past job, an invoice or an estimate as
+// the other program kept it — what, when, for how much, paid or not, by whom. Read by the client's own page (the
+// timeline, and the paid figure) only: it starts nothing and is in no other list.
+model ClientHistory {
+  id             String    @id @default(cuid())
+  organizationId String
+  clientId       String
+  importId       String?
+  importKey      String?
+  kind           String // JOB | INVOICE | ESTIMATE
+  number         String?
+  title          String
+  status         String?
+  amount         Float?
+  paid           Float?
+  due            Float?
+  date           DateTime?
+  by             String?
+  notes          String?
+  source         String // the program (DataImport.source)
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, clientId, date])
+  @@index([importId])
+  @@index([organizationId, importKey])
 }
 
 // THE INBOX (Smart CRM part 2, 2026-11-08 — the plan doc "JobFlex Smart CRM — plan"): one thread per client.
@@ -1344,6 +1405,9 @@ model Invoice {
   paidAt         DateTime?
   // The service plan this invoice bills (2026-09-22); null for a proposal invoice.
   servicePlanId  String?
+  // Money still owed when a contractor came over from another program (2026-11-16, lib/import).
+  importId       String?
+  importKey      String?
   createdAt      DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -1353,6 +1417,8 @@ model Invoice {
 
   @@unique([organizationId, number])
   @@index([organizationId, status])
+  @@index([importId])
+  @@index([organizationId, importKey])
 }
 
 model Payment {
@@ -1507,6 +1573,9 @@ model Job {
   repairBillable      Boolean   @default(false)
   repairCharge        Float?
   repairChangeOrderId String?
+  // A job brought over from another program (2026-11-16, lib/import): the import, and its number there.
+  importId            String?
+  importKey           String?
 
   organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   client         Client?         @relation(fields: [clientId], references: [id])
@@ -1531,6 +1600,8 @@ model Job {
   @@index([projectId])
   @@index([repairOfId])
   @@index([organizationId, kind])
+  @@index([importId])
+  @@index([organizationId, importKey])
 }
 
 model JobEvent {

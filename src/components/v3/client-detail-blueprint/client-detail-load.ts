@@ -85,6 +85,9 @@ export type ClientDetailRecord = {
   planTemplates: { id: string; name: string; terms: string }[];
   /** The units at the home (2026-09-23). */
   equipment: EquipmentRow[];
+  /** Brought over from another program (2026-11-16, lib/import): what they paid there, and what they still owe on
+   *  the invoices it brought — the page's Lifetime value and Balance due count both. */
+  imported: { paid: number; due: number };
   /** The 360 (Smart CRM part 1, 2026-11-08): the whole story, the brief, the memory, the promises, the duplicates. */
   story: StoryRow[];
   brief: BriefView;
@@ -280,10 +283,12 @@ export async function loadClientDetail(
   // rebuilt INLINE when the timeline holds something newer — rare (a 5-minute floor in briefCurrent), and the page
   // is per-request anyway; a failed build keeps the old brief and never fails the page.
   const ref: ClientRef = { id: row.id, organizationId, name: row.name, email: row.email, phone: row.phone };
-  const [story, memoryFirst, duplicates] = await Promise.all([
+  const [story, memoryFirst, duplicates, paidBefore, owedBefore] = await Promise.all([
     readClientTimeline(ref),
     readClientMemory(organizationId, row.id),
     duplicatesOf(ref).catch(() => []),
+    db.clientHistory.aggregate({ where: { organizationId, clientId: row.id }, _sum: { paid: true } }),
+    db.invoice.aggregate({ where: { organizationId, clientId: row.id, importId: { not: null }, status: "PENDING" }, _sum: { amount: true } }),
   ]);
   let memory = memoryFirst;
   if (!briefCurrent(memory.brief, story)) {
@@ -336,6 +341,7 @@ export async function loadClientDetail(
   return {
     found: true,
     clientId: row.id,
+    imported: { paid: paidBefore._sum.paid ?? 0, due: owedBefore._sum.amount ?? 0 },
     client,
     projects: row.projects,
     repairJobs,

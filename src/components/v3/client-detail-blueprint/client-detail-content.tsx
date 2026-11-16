@@ -159,8 +159,9 @@ function ClientRecordPage({ view }: { view: ClientDetailRecord }) {
   );
 
   const figures = useMemo(() => {
-    const paid = PAYMENTS.filter((p) => p.status === "PAID").reduce((a, p) => a + p.amount, 0);
-    const due = PAYMENTS.filter((p) => p.status === "PENDING").reduce((a, p) => a + p.amount, 0);
+    // (With what they paid, and still owe, from the program they came from — 2026-11-16, lib/import.)
+    const paid = PAYMENTS.filter((p) => p.status === "PAID").reduce((a, p) => a + p.amount, 0) + (view.imported?.paid ?? 0);
+    const due = PAYMENTS.filter((p) => p.status === "PENDING").reduce((a, p) => a + p.amount, 0) + (view.imported?.due ?? 0);
     const sent = PROPOSALS.filter((p) => p.status !== "DRAFT").length;
     const won = PROPOSALS.filter((p) => p.status === "ACCEPTED").length;
     return {
@@ -171,7 +172,7 @@ function ClientRecordPage({ view }: { view: ClientDetailRecord }) {
       // drafts sitting in a folder.
       rate: sent === 0 ? 0 : Math.round((won / sent) * 100),
     };
-  }, [PAYMENTS, PROPOSALS]);
+  }, [PAYMENTS, PROPOSALS, view.imported]);
 
   // NEW PROPOSAL opens the estimator picker rather than routing straight to an
   // engine, because the record page has no business deciding whether this job

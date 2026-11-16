@@ -140,6 +140,7 @@ scripts:
   - { file: crew-days.check.ts, suite: logic, kind: check, status: live, note: "could text through Twilio if its keys were set — the runner preloads the recording twilio stand-in (_no-sms.js)" }
   - { file: crew-onsite.check.ts, suite: logic, kind: check, status: live }
   - { file: crm-brief.check.ts, suite: logic, kind: check, status: live }
+  - { file: data-import.check.ts, suite: logic, kind: check, status: live, note: "bring your clients (CRM import parts 1–2, 2026-11-16): CSV and Excel tables, the column reading for Housecall Pro / Jobber / QuickBooks / Google, dates, money and addresses, then the plan — new and joined clients, open invoices and what is owed, upcoming jobs in the company's time, history, re-imports left alone, rows left out and why" }
   - { file: deck-autofix.check.ts, suite: logic, kind: check, status: live }
   - { file: deck-border.check.ts, suite: logic, kind: check, status: live }
   - { file: deck-brands-regional.check.ts, suite: logic, kind: check, status: live }
