@@ -1,0 +1,101 @@
+/* ============================================================
+   SMART CRM — the card a closed part shows in its own place
+   (smart-crm-offer.tsx). Drawn inside the desk CRM sheet, the
+   phone CRM and the client page, so every colour is a Blueprint
+   token with the house value as fallback, and selectors sit under
+   `.offer` so the shells' bare `a` / `h3` rules never win.
+   ============================================================ */
+
+.offer {
+  --o-ink: var(--ink, #0a0a0a);
+  --o-paper: var(--paper, #f2f0eb);
+  --o-bp: var(--blueprint, #1854a0);
+  --o-muted: var(--muted, #555);
+  --o-mono: var(--font-mono, var(--font-jbmono), "JetBrains Mono", ui-monospace, monospace);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  max-width: 640px;
+  padding: 16px 18px;
+  border: 2px dashed var(--o-bp);
+  border-radius: 2px;
+  background: rgba(24, 84, 160, 0.05);
+  color: var(--o-ink);
+}
+.offer .kick {
+  font-family: var(--o-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--o-bp);
+}
+.offer .title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 900;
+  line-height: 1.2;
+  letter-spacing: -0.005em;
+  text-wrap: balance;
+}
+.offer .line {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--o-muted);
+  max-width: 62ch;
+}
+.offer .why {
+  margin: 2px 0 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+.offer .price {
+  margin: 2px 0 0;
+  font-family: var(--o-mono);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.offer .note {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--o-muted);
+}
+.offer .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.offer .go {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 2px solid var(--o-ink);
+  border-radius: 2px;
+  background: var(--o-ink);
+  color: var(--o-paper);
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  box-shadow: 2px 2px 0 rgba(10, 10, 10, 0.18);
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+.offer .go:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 rgba(10, 10, 10, 0.22);
+}
+.offer .go:active {
+  transform: translate(1px, 1px);
+  box-shadow: none;
+}
+.offer .go:focus-visible {
+  outline: 2px solid var(--o-bp);
+  outline-offset: 2px;
+}

@@ -41,7 +41,8 @@ import {
   type ProposalRow,
   type ProposalStatus,
 } from "./client-detail-data";
-import { isPageLocked } from "@/lib/customPageAccess";
+import { smartCrmAccess } from "@/lib/crm/smartAccessServer";
+import type { SmartCrmAccess } from "@/lib/crm/smartAccess";
 
 /** The page has nothing to draw, and WHY decides the words on the empty state:
  *  `none` is the bare route with no id in the URL, `missing` is an id that
@@ -74,9 +75,10 @@ export type ClientDetailRecord = {
   projects: { id: string; name: string }[];
   /** The jobs a repair could go back to (2026-11-09) — counted for the office only, 0 for anyone else. */
   repairJobs: number;
-  /** The company is on the Free plan (owner, 2026-11-09): Smart CRM's parts — the client's page among them — are
-   *  not offered (lib/customPlan PAID_FEATURES "smart-crm"). */
-  crmLocked: boolean;
+  /** Smart CRM on this plan (lib/crm/smartAccess; owner 2026-11-09 and 2026-11-16). Without it the 360's paid parts —
+   *  the AI summary, what they told you, promises, the same person twice, their own page — are not drawn; one Smart
+   *  CRM card stands in their place. The timeline, the figures and everything else are every plan's. */
+  smartCrm: SmartCrmAccess;
   proposals: ProposalRow[];
   payments: PaymentRow[];
   activity: ActivityRow[];
@@ -232,7 +234,7 @@ const ACTIVITY_ICON: Record<string, string> = {
 export async function loadClientDetail(
   id: string | undefined,
   organizationId: string,
-  opts: { office?: boolean } = {},
+  opts: { office?: boolean; role?: string } = {},
 ): Promise<ClientDetailView> {
   if (!id) return { found: false, reason: "none" };
 
@@ -282,16 +284,18 @@ export async function loadClientDetail(
   // THE 360 (2026-11-08): the timeline, the memory and the look for duplicates ride the same load. The brief is
   // rebuilt INLINE when the timeline holds something newer — rare (a 5-minute floor in briefCurrent), and the page
   // is per-request anyway; a failed build keeps the old brief and never fails the page.
+  // Without Smart CRM nothing of the paid 360 is looked for or rebuilt: no duplicates, no AI summary.
   const ref: ClientRef = { id: row.id, organizationId, name: row.name, email: row.email, phone: row.phone };
+  const smartCrm = await smartCrmAccess(organizationId, opts.role);
   const [story, memoryFirst, duplicates, paidBefore, owedBefore] = await Promise.all([
     readClientTimeline(ref),
     readClientMemory(organizationId, row.id),
-    duplicatesOf(ref).catch(() => []),
+    smartCrm.open ? duplicatesOf(ref).catch(() => []) : Promise.resolve([]),
     db.clientHistory.aggregate({ where: { organizationId, clientId: row.id }, _sum: { paid: true } }),
     db.invoice.aggregate({ where: { organizationId, clientId: row.id, importId: { not: null }, status: "PENDING" }, _sum: { amount: true } }),
   ]);
   let memory = memoryFirst;
-  if (!briefCurrent(memory.brief, story)) {
+  if (smartCrm.open && !briefCurrent(memory.brief, story)) {
     const fresh = await rebuildClientBrief(ref, story).catch(() => null);
     if (fresh) memory = await readClientMemory(organizationId, row.id);
   }
@@ -345,7 +349,7 @@ export async function loadClientDetail(
     client,
     projects: row.projects,
     repairJobs,
-    crmLocked: await isPageLocked(organizationId, "smart-crm"),
+    smartCrm,
     plans,
     planTemplates,
     equipment,

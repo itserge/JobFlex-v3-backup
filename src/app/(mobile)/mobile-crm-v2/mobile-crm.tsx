@@ -79,6 +79,8 @@ import { OfficePanel, TodayPanel } from "@/components/v3/crm-blueprint/crm-brief
 import { CompanyPulse } from "@/components/v3/crm-blueprint/company-pulse";
 import { AgentDesk } from "@/components/v3/crm-blueprint/crm-agent";
 import { WinBackPanel } from "@/components/v3/crm-blueprint/win-back";
+import { SmartCrmOffer } from "@/components/v3/crm-blueprint/smart-crm-offer";
+import { agentChoicesShown, waitsInQueueNote, type SmartCrmAccess } from "@/lib/crm/smartAccess";
 import { FOLLOW_UP_MODES, FOLLOW_UP_WORDS, modeLabel, type FollowUpMode, type FollowUpWords } from "@/lib/followUps/agent";
 import {
   LEAD_CLS,
@@ -336,6 +338,10 @@ export function MobileCrm() {
      feed the preview card and the rule form's channel picker. */
   const [org, setOrg] = useState<PreviewOrg>(EMPTY_ORG);
   const [smsEnabled, setSmsEnabled] = useState(false);
+  /* Smart CRM on this plan (lib/crm/smartAccess, owner 2026-11-16): null until the snapshot answers. Without it no
+     Today band, no agent choices in the rule form, and Win back / the pulse show the Smart CRM card. */
+  const [smart, setSmart] = useState<SmartCrmAccess | null>(null);
+  const agentChoices = smart ? agentChoicesShown(smart) : false;
   /* The snapshot's server clock — the status line's "next send in 5 h". */
   const [renderedAt, setRenderedAt] = useState(0);
   /* One row at a time: the id currently mid-write, so its controls disable. */
@@ -412,6 +418,7 @@ export function MobileCrm() {
     setRules(res.data.rules);
     setOrg(res.data.org);
     setSmsEnabled(res.data.smsEnabled);
+    setSmart(res.data.smartCrm);
     setRenderedAt(res.data.renderedAt);
     if (!prevSeeded.current && res.data.rules.length) {
       const first = res.data.rules[0];
@@ -1015,8 +1022,9 @@ export function MobileCrm() {
         // A new rule starts live; an edit keeps whatever the switch says.
         enabled: existing ? existing.enabled : true,
         channel: form.channel,
-        mode: form.mode,
-        words: form.words,
+        // Without Smart CRM the form has no agent choices: nothing is sent, and the rule keeps what it has.
+        mode: agentChoices ? form.mode : undefined,
+        words: agentChoices ? form.words : undefined,
       });
       if (!res.ok) throw new Error(res.error);
     });
@@ -1259,7 +1267,7 @@ export function MobileCrm() {
 
           {/* ============ TAB: TODAY — what to check ============ */}
           {ready && tab === "today" && brief && (
-            <TodayPanel key={brief.today.dayKey} today={brief.today} onGoto={(t) => goTab(t === "queue" ? "queue" : t === "workflows" ? "rules" : "book")} extraOpen={deskN} extra={<AgentDesk onFollowUpClosed={followUpClosed} onCount={setDeskN} />} />
+            <TodayPanel key={brief.today.dayKey} today={brief.today} onGoto={(t) => goTab(t === "queue" ? "queue" : t === "workflows" ? "rules" : "book")} extraOpen={deskN} extra={smart?.open ? <AgentDesk onFollowUpClosed={followUpClosed} onCount={setDeskN} /> : null} />
           )}
           {ready && tab === "today" && !brief && (
             <div className={styles.note} role="status">
@@ -1269,10 +1277,10 @@ export function MobileCrm() {
           )}
 
           {/* ============ TAB: OFFICE — how the company is doing ============ */}
-          {ready && tab === "office" && brief?.office && <OfficePanel office={brief.office} company={org.name} extra={<CompanyPulse />} />}
+          {ready && tab === "office" && brief?.office && <OfficePanel office={brief.office} company={org.name} extra={smart?.open ? <CompanyPulse /> : smart ? <SmartCrmOffer access={smart} place="pulse" /> : null} />}
 
-          {/* WIN BACK — bring past clients back (Smart CRM part 6); it reads its own numbers. */}
-          {ready && tab === "back" && brief?.office && <WinBackPanel />}
+          {/* WIN BACK — bring past clients back (Smart CRM part 6); it reads its own numbers. Without Smart CRM: its card. */}
+          {ready && tab === "back" && brief?.office && (smart?.open ? <WinBackPanel /> : smart ? <SmartCrmOffer access={smart} place="winback" /> : null)}
 
           {/* ============ TAB: OVERVIEW ============ */}
           {ready && tab === "overview" && (
@@ -1578,7 +1586,7 @@ export function MobileCrm() {
                     </button>
                     <div className={styles.rmeta}>
                       {triggerLabel(r.triggerStatus)} · {channelLabel(r.channel)} · <span data-rule-mode={r.mode ?? "AUTO"}>{modeLabel(r.mode ?? "AUTO")}</span>
-                      {r.words === "AI" && r.mode !== "SUGGEST" ? " · Written for each client" : ""}
+                      {agentChoices && r.words === "AI" && r.mode !== "SUGGEST" ? " · Written for each client" : ""}
                     </div>
                     <div className={styles.rowFoot}>
                       <span className={styles.rowMeta}>
@@ -1979,41 +1987,50 @@ export function MobileCrm() {
                 : TEXT_NEEDS_TWILIO}
             </span>
           </div>
-          {/* Who sends it, and whose words (lib/followUps/agent). */}
-          <div className={styles.fld}>
-            <label className={styles.fldLbl} htmlFor="mcrMode">
-              Who sends it
-            </label>
-            <span className={styles.pselBox}>
-              <select className={styles.psel} id="mcrMode" name="mode" value={form.mode} onChange={(e) => setForm((f) => ({ ...f, mode: e.target.value as FollowUpMode }))}>
-                {FOLLOW_UP_MODES.map((m) => (
-                  <option value={m.value} key={m.value}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
-              <Icon id="i-chev" className={`${styles.ic} ${styles.pselCaret}`} />
+          {/* Who sends it, and whose words (lib/followUps/agent) — Smart CRM's (owner, 2026-11-16). Without it the rule
+              sends on its own with the standard words, and one set to wait for a person keeps waiting, in Due. */}
+          {agentChoices ? (
+            <>
+              <div className={styles.fld}>
+                <label className={styles.fldLbl} htmlFor="mcrMode">
+                  Who sends it
+                </label>
+                <span className={styles.pselBox}>
+                  <select className={styles.psel} id="mcrMode" name="mode" value={form.mode} onChange={(e) => setForm((f) => ({ ...f, mode: e.target.value as FollowUpMode }))}>
+                    {FOLLOW_UP_MODES.map((m) => (
+                      <option value={m.value} key={m.value}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                  <Icon id="i-chev" className={`${styles.ic} ${styles.pselCaret}`} />
+                </span>
+                <span className={styles.fldHint}>{FOLLOW_UP_MODES.find((m) => m.value === form.mode)?.hint}</span>
+              </div>
+              {form.mode !== "SUGGEST" && (
+                <div className={styles.fld}>
+                  <label className={styles.fldLbl} htmlFor="mcrWords">
+                    Words
+                  </label>
+                  <span className={styles.pselBox}>
+                    <select className={styles.psel} id="mcrWords" name="words" value={form.words} onChange={(e) => setForm((f) => ({ ...f, words: e.target.value as FollowUpWords }))}>
+                      {FOLLOW_UP_WORDS.map((w) => (
+                        <option value={w.value} key={w.value}>
+                          {w.label}
+                        </option>
+                      ))}
+                    </select>
+                    <Icon id="i-chev" className={`${styles.ic} ${styles.pselCaret}`} />
+                  </span>
+                  <span className={styles.fldHint}>{FOLLOW_UP_WORDS.find((w) => w.value === form.words)?.hint}</span>
+                </div>
+              )}
+            </>
+          ) : editingId && form.mode !== "AUTO" ? (
+            <span className={styles.fldHint} data-rf-agent>
+              {waitsInQueueNote("Due")}
             </span>
-            <span className={styles.fldHint}>{FOLLOW_UP_MODES.find((m) => m.value === form.mode)?.hint}</span>
-          </div>
-          {form.mode !== "SUGGEST" && (
-            <div className={styles.fld}>
-              <label className={styles.fldLbl} htmlFor="mcrWords">
-                Words
-              </label>
-              <span className={styles.pselBox}>
-                <select className={styles.psel} id="mcrWords" name="words" value={form.words} onChange={(e) => setForm((f) => ({ ...f, words: e.target.value as FollowUpWords }))}>
-                  {FOLLOW_UP_WORDS.map((w) => (
-                    <option value={w.value} key={w.value}>
-                      {w.label}
-                    </option>
-                  ))}
-                </select>
-                <Icon id="i-chev" className={`${styles.ic} ${styles.pselCaret}`} />
-              </span>
-              <span className={styles.fldHint}>{FOLLOW_UP_WORDS.find((w) => w.value === form.words)?.hint}</span>
-            </div>
-          )}
+          ) : null}
           {/* The write the server refused, where the person is looking — the
               page's own note sits under this sheet. */}
           {ruleOpen && actionErr ? (

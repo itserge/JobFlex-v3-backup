@@ -12,6 +12,7 @@
 //   queue   src/actions/followUps.ts — runFollowUpNow / markFollowUpDone
 //   leads   src/actions/leads.ts     — claimLead / deleteLead
 
+import type { SmartCrmAccess } from "@/lib/crm/smartAccess";
 import type { FollowUpChannel } from "@/lib/followUps/copy";
 import type { FollowUpMode, FollowUpWords } from "@/lib/followUps/agent";
 import type { WhoLike } from "@/lib/team/who";
@@ -102,6 +103,9 @@ export type CrmSnapshot = {
   /** A configured Twilio number. Without one the TEXT channel is offered
    *  disabled, with the same note the client message dialog shows. */
   smsEnabled: boolean;
+  /** Smart CRM on this plan (lib/crm/smartAccess): without it no Today band, no agent choices in the rule editor,
+   *  and Win back / the pulse show the Smart CRM card. */
+  smartCrm: SmartCrmAccess;
   /** The server's clock when the snapshot was read — "next send in 5 h". */
   renderedAt: number;
 };

@@ -64,6 +64,7 @@ import { AddToProjectSheet } from "@/components/v3/project-links/add-to-project-
 import { openAddToProject } from "@/components/v3/project-links/open-add-to-project";
 import { useReveal } from "./use-reveal";
 import { BriefBand, MemoryPanel, MergeBanner, PromisesPanel, StoryPanel } from "./client-360";
+import { SmartCrmOffer } from "@/components/v3/crm-blueprint/smart-crm-offer";
 import { activateServicePlan, cancelServicePlan, enrollClientInPlan, renewServicePlan, sendServicePlan } from "@/actions/servicePlans";
 import { EquipmentPanel } from "./equipment-panel";
 import { openRepairSheet } from "@/components/v3/repairs/repair-sheet";
@@ -239,7 +240,7 @@ function ClientRecordPage({ view }: { view: ClientDetailRecord }) {
               Message
             </Btn>
             {/* Their one lasting page (2026-11-10, Smart CRM part 5): copy, open, text or email it. */}
-            {!view.crmLocked ? (
+            {view.smartCrm.open ? (
               <ClientPageLink clientId={clientId} clientName={view.client.name}>
                 {(open) => (
                   <Btn icon="link" onClick={open}>
@@ -262,8 +263,9 @@ function ClientRecordPage({ view }: { view: ClientDetailRecord }) {
       </div>
 
       <div className={styles.stack}>
-        {/* THE SAME PERSON TWICE (2026-11-08): shown only when another live record shares this one's email or phone. */}
-        <MergeBanner clientId={clientId} duplicates={view.duplicates} />
+        {/* THE SAME PERSON TWICE (2026-11-08): shown only when another live record shares this one's email or phone —
+            and only with Smart CRM (owner, 2026-11-16: the paid parts are never drawn where they can't work). */}
+        {view.smartCrm.open ? <MergeBanner clientId={clientId} duplicates={view.duplicates} /> : null}
 
         {/* PARTICULARS ---------------------------------------------- */}
         <section data-rv="" className={styles.card} aria-label="Client particulars">
@@ -304,8 +306,9 @@ function ClientRecordPage({ view }: { view: ClientDetailRecord }) {
           <ContactStops key={clientId} clientId={clientId} />
         </section>
 
-        {/* WHERE THEY STAND (2026-11-08): the saved AI brief, rebuilt when the timeline moves. */}
-        <BriefBand clientId={clientId} brief={view.brief} />
+        {/* WHERE THEY STAND (2026-11-08): the saved AI brief, rebuilt when the timeline moves. Without Smart CRM, the
+            one card that says what the 360 adds and how to get it (lib/crm/smartAccess). */}
+        {view.smartCrm.open ? <BriefBand clientId={clientId} brief={view.brief} /> : <SmartCrmOffer access={view.smartCrm} place="client" />}
 
         {/* FIGURES --------------------------------------------------- */}
         <div data-rv="" className={styles.kpis}>
@@ -329,11 +332,13 @@ function ClientRecordPage({ view }: { view: ClientDetailRecord }) {
           </div>
         </div>
 
-        {/* MEMORY AND PROMISES (2026-11-08): the source-linked facts, and what either side owes. */}
-        <div className={styles.duo}>
-          <MemoryPanel clientId={clientId} facts={view.facts} />
-          <PromisesPanel clientId={clientId} promises={view.promises} />
-        </div>
+        {/* MEMORY AND PROMISES (2026-11-08): the source-linked facts, and what either side owes — Smart CRM's. */}
+        {view.smartCrm.open ? (
+          <div className={styles.duo}>
+            <MemoryPanel clientId={clientId} facts={view.facts} />
+            <PromisesPanel clientId={clientId} promises={view.promises} />
+          </div>
+        ) : null}
 
         {/* THE PLAN (2026-09-22): the client's membership, or the way in. */}
         <Panel title="Service plan" note={PLAN ? PLAN_LABEL[PLAN.phase] ?? PLAN.status : view.planTemplates.length ? "Not a member" : "No plans set up"}>

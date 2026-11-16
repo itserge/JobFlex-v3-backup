@@ -12,7 +12,7 @@ import { isTwilioEnabled } from "@/lib/sdk/twilio";
 import { encodeChannel, MAX_DELAY_MINUTES, parseChannel, TEXT_NEEDS_TWILIO, type FollowUpChannel } from "@/lib/followUps/copy";
 import { ProposalStatus } from "@/lib/prismaEnums";
 import { refusal, refused, type ActionResult } from "@/lib/actionResult";
-import { withFeature } from "@/lib/customPageAccess";
+import { isPageLocked, withFeature } from "@/lib/customPageAccess";
 
 // A rule fires when a proposal's status becomes `triggerStatus`
 // (lib/followUps/engine scheduleFollowUpsFor), so the proposal statuses are the
@@ -48,6 +48,13 @@ export async function upsertFollowUpRule(raw: unknown): Promise<ActionResult<{ i
   const parsed = ruleInput.safeParse(raw);
   if (!parsed.success) return refusal(parsed.error, RULE_LABELS);
   const data = parsed.data;
+  // "Who sends it" and "Words" are Smart CRM's follow-up agent (owner, 2026-11-16 — lib/crm/smartAccess). Without it
+  // a new rule is the basic timer (on its own, the standard words) and an edit keeps what the rule has: a rule set to
+  // wait for a person never turns into one that sends by itself. Fails closed, as the gate does.
+  if (await isPageLocked(organizationId, "smart-crm").catch(() => true)) {
+    delete data.mode;
+    delete data.words;
+  }
 
   // A rule can only promise what this deployment can actually deliver. Offering
   // TEXT in the editor is gated on the same flag, but the server is the one that

@@ -58,7 +58,7 @@ export default async function ClientDetailPage({
   }
 
   // The office books repairs from a client (2026-11-09): the loader counts the jobs a repair could go back to.
-  const view = await loadClientDetail(id, organizationId, { office: !isLimitedRole(role) });
+  const view = await loadClientDetail(id, organizationId, { office: !isLimitedRole(role), role });
   // The PAGE owns the viewport switch (see the switch component's header): the
   // record is reached from the handheld clients book, so it needs the fleet's
   // mobile nav below 768px, and the loaded view cannot reach a props-less

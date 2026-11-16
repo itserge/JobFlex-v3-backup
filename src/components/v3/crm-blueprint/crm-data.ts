@@ -8,6 +8,7 @@
 
 import type { FollowUpChannel } from "@/lib/followUps/copy";
 import type { FollowUpMode, FollowUpWords } from "@/lib/followUps/agent";
+import type { SmartCrmAccess } from "@/lib/crm/smartAccess";
 import type { WhoLike } from "@/lib/team/who";
 
 export type CrmLead = {
@@ -128,6 +129,9 @@ export type CrmContentData = {
   /** A configured Twilio number. Without one the TEXT channel is offered
    *  disabled, with the same note the client message dialog shows. */
   smsEnabled: boolean;
+  /** Smart CRM on this plan (lib/crm/smartAccess): without it the rule editor offers no agent choices, the Inbox and
+   *  Pipeline tabs leave a new-plan shop's sheet, and Win back / the pulse show the Smart CRM card. */
+  smartCrm: SmartCrmAccess;
   /** The server's clock at render, so "next send in 5 h" hydrates as rendered. */
   renderedAt: number;
 };

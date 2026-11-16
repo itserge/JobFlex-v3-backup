@@ -39,7 +39,7 @@ import type {
 } from "@/components/v3/crm-blueprint/crm-data";
 import { STATUS_ORDER } from "@/components/v3/crm-blueprint/crm-data";
 import { readCrmBrief } from "@/lib/crm/briefServer";
-import { isPageLocked } from "@/lib/customPageAccess";
+import { smartCrmAccess } from "@/lib/crm/smartAccessServer";
 
 export const dynamic = "force-dynamic";
 
@@ -94,9 +94,12 @@ export default async function CrmPage() {
 
   // Today's checks and the office figures, read beside the rest.
   const briefP = readCrmBrief({ organizationId, userId, role, now });
+  // Smart CRM on this plan (lib/crm/smartAccess): the basic CRM below is every plan's; the paid parts are drawn only
+  // where it is open, and a closed part with a place of its own shows one card instead (owner, 2026-11-16).
+  const smartCrm = await smartCrmAccess(organizationId, role);
   // The follow-ups waiting for a yes and the promise tracker (Smart CRM part 4) — the band on the Today tab.
-  // On the Free plan the band is not drawn (owner, 2026-11-09; Smart CRM is a paid feature).
-  const deskP = (await isPageLocked(organizationId, "smart-crm")) ? Promise.resolve(null) : readCrmDesk({ organizationId, userId, role, now }).catch((err) => {
+  // Not drawn without Smart CRM (owner, 2026-11-09; Smart CRM is a paid feature).
+  const deskP = !smartCrm.open ? Promise.resolve(null) : readCrmDesk({ organizationId, userId, role, now }).catch((err) => {
     console.warn("[crm] desk:", err instanceof Error ? err.message : err);
     return null;
   });
@@ -258,6 +261,7 @@ export default async function CrmPage() {
         logoUrl: emailLogoSrc(org?.logoUrl, organizationId, SITE_URL),
     },
     smsEnabled: await isTwilioEnabled(),
+    smartCrm,
     renderedAt: now.getTime(),
   };
 
