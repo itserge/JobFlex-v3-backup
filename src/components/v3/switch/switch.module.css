@@ -1,0 +1,369 @@
+/* "Switch to JobFlex" pages (2026-11-16) — /switch and /switch/<program>. Light, like the app; values from the
+   globals.css tokens with plain fallbacks. Phone first: one column under 760px, no sideways scroll. */
+
+.page {
+  min-height: 100vh;
+  background: var(--paper, #f6f4ef);
+  color: var(--ink, #0a0a0a);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--paper, #f6f4ef);
+  border-bottom: 1.5px solid var(--ink, #0a0a0a);
+}
+.barIn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 10px max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px));
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: inherit;
+  text-decoration: none;
+  font-weight: 900;
+  font-size: 18px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.mark {
+  width: 32px;
+  height: 32px;
+  border-radius: 2px;
+  background: var(--ink, #0a0a0a);
+}
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 14.5px;
+  font-weight: 600;
+}
+.nav a {
+  color: inherit;
+  text-decoration: none;
+}
+.nav a:hover {
+  text-decoration: underline;
+}
+.nav .cta {
+  padding: 9px 14px;
+  border: 1.5px solid var(--ink, #0a0a0a);
+  border-radius: 2px;
+  background: var(--accent, #f26b1d);
+  color: #fff;
+  box-shadow: 3px 3px 0 var(--ink, #0a0a0a);
+  text-decoration: none;
+}
+.nav .cta:hover {
+  text-decoration: none;
+}
+
+.main {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 max(16px, env(safe-area-inset-right, 0px)) 48px max(16px, env(safe-area-inset-left, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 48px;
+}
+
+.hero {
+  padding-top: 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 820px;
+}
+.kicker {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent, #f26b1d);
+}
+.h1 {
+  margin: 0;
+  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  font-size: clamp(32px, 5vw, 52px);
+  line-height: 1.05;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.lead {
+  margin: 0;
+  max-width: 64ch;
+  font-size: 18px;
+  line-height: 1.55;
+  color: var(--ink-soft, #333);
+}
+
+.ctas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+}
+.btnPrimary,
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  padding: 0 18px;
+  border: 1.5px solid var(--ink, #0a0a0a);
+  border-radius: 2px;
+  font-size: 15px;
+  font-weight: 800;
+  text-decoration: none;
+}
+.btnPrimary {
+  background: var(--ink, #0a0a0a);
+  color: var(--paper, #f6f4ef);
+  box-shadow: 3px 3px 0 var(--accent, #f26b1d);
+}
+.btn {
+  background: transparent;
+  color: var(--ink, #0a0a0a);
+}
+.btnPrimary:focus-visible,
+.btn:focus-visible,
+.tile:focus-visible {
+  outline: 2px solid var(--accent, #f26b1d);
+  outline-offset: 3px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.h2 {
+  margin: 0;
+  padding-bottom: 8px;
+  border-bottom: 1.5px solid var(--ink, #0a0a0a);
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.h3 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.25;
+  font-weight: 900;
+  text-wrap: balance;
+}
+
+.grid {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+  border: 1.5px solid var(--ink, #0a0a0a);
+  border-radius: 2px;
+  background: var(--sheet, #fff);
+  font-size: 15px;
+  line-height: 1.5;
+}
+.card b {
+  font-size: 16px;
+}
+.card span {
+  color: var(--ink-soft, #333);
+}
+.note {
+  margin: 0;
+  max-width: 72ch;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--ink-soft, #333);
+}
+
+.ways {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.way {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 20px;
+  border: 1.5px solid var(--ink, #0a0a0a);
+  border-radius: 2px;
+  background: var(--sheet, #fff);
+}
+.wayAlt {
+  background: var(--paper-deep, #ece8df);
+  box-shadow: 4px 4px 0 var(--ink, #0a0a0a);
+}
+.wayTag {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent, #f26b1d);
+}
+.steps {
+  margin: 0;
+  padding-left: 22px;
+  /* The base reset takes list markers away; the order of the steps is the point. */
+  list-style: decimal;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 15px;
+  line-height: 1.5;
+}
+.small {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink-soft, #333);
+}
+
+.faq {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 28px;
+}
+.faq div {
+  min-width: 0;
+}
+.faq dt {
+  font-weight: 800;
+  font-size: 16px;
+}
+.faq dd {
+  margin: 4px 0 0;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--ink-soft, #333);
+}
+
+.tiles {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px;
+  border: 1.5px solid var(--ink, #0a0a0a);
+  border-radius: 2px;
+  background: var(--sheet, #fff);
+  color: inherit;
+  text-decoration: none;
+}
+.tile:hover {
+  box-shadow: 3px 3px 0 var(--ink, #0a0a0a);
+}
+.tile b {
+  font-size: 17px;
+}
+.tile span {
+  font-size: 14px;
+  color: var(--accent, #f26b1d);
+  font-weight: 700;
+}
+
+.chips {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chips a {
+  display: inline-flex;
+  padding: 8px 12px;
+  border: 1px solid var(--ink, #0a0a0a);
+  border-radius: 2px;
+  color: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.foot {
+  border-top: 1.5px solid var(--ink, #0a0a0a);
+  background: var(--paper-deep, #ece8df);
+}
+.footIn {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 20px max(16px, env(safe-area-inset-right, 0px)) 28px max(16px, env(safe-area-inset-left, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.footNav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.footNav a {
+  color: inherit;
+}
+.fine {
+  margin: 0;
+  max-width: 90ch;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-muted, #666);
+}
+
+@media (max-width: 760px) {
+  .hero {
+    padding-top: 28px;
+  }
+  .lead {
+    font-size: 16.5px;
+  }
+  .ways,
+  .faq {
+    grid-template-columns: 1fr;
+  }
+  .nav {
+    gap: 10px;
+    font-size: 13.5px;
+  }
+  .nav a:not(.cta):first-child {
+    display: none;
+  }
+  .ctas a {
+    flex: 1 1 100%;
+  }
+}

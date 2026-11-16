@@ -16,17 +16,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
-import { listImports, previewImport, runImport, undoImport, type ImportPreview, type PreviewFile } from "@/actions/dataImport";
+import { listImports, previewImport, runImport, undoImport } from "@/actions/dataImport";
+import type { ImportPreview, PreviewFile } from "@/lib/import/pipeline";
 import type { ImportRecord } from "@/lib/import/server";
 import { IMPORT_SOURCES, sourceInfo, type ImportSource } from "@/lib/import/sources";
 import { FIELD_LABEL, FIELDS_FOR, FILE_KIND_LABEL, FILE_KINDS, type FileKind, type ImportField } from "@/lib/import/columns";
 import type { PlanCounts } from "@/lib/import/plan";
 import { MAX_TABLE_ROWS } from "@/lib/import/table";
+import { countLines } from "@/lib/import/requests";
+import type { RequestView } from "@/lib/import/requestServer";
+import { DoItForMe, RequestList } from "./do-it-for-me";
 import "./import.css";
 
 type Setup = Record<string, { kind?: FileKind; map?: ImportField[]; leaveOut?: boolean }>;
 
-const money = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 })}`;
 const num = (n: number) => n.toLocaleString("en-US");
 const plural = (n: number, one: string, many = `${one}s`) => `${num(n)} ${n === 1 ? one : many}`;
 
@@ -68,26 +71,16 @@ async function form(files: File[], source: ImportSource, setup: Setup): Promise<
   return f;
 }
 
-/** What came in, in words. */
-function countLines(c: PlanCounts): string[] {
-  return [
-    c.newClients ? plural(c.newClients, "new client") : null,
-    c.joined ? `${plural(c.joined, "client")} joined to ${c.joined === 1 ? "one" : "ones"} already here` : null,
-    c.invoices ? `${plural(c.invoices, "open invoice")} · ${money(c.owed)} owed` : null,
-    c.upcoming ? `${plural(c.upcoming, "upcoming job")} on the calendar` : null,
-    c.unscheduled ? `${plural(c.unscheduled, "job")} not scheduled yet` : null,
-    c.history ? `${plural(c.history, "past job, invoice or estimate", "past jobs, invoices and estimates")} in the clients' history${c.paid ? ` · ${money(c.paid)} paid` : ""}` : null,
-  ].filter((x): x is string => !!x);
-}
-
-export function ClientImportPage({ imports: first }: { imports: ImportRecord[] }) {
-  const [source, setSource] = useState<ImportSource | null>(null);
+export function ClientImportPage({ imports: first, requests, initialSource = null }: { imports: ImportRecord[]; requests: RequestView[]; initialSource?: ImportSource | null }) {
+  // A visitor who came from a "Switch to JobFlex" page (?from=housecall-pro) starts on their program.
+  const [source, setSource] = useState<ImportSource | null>(initialSource);
   const [files, setFiles] = useState<File[]>([]);
   const [setup, setSetup] = useState<Setup>({});
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [busy, setBusy] = useState<"reading" | "importing" | null>(null);
   const [done, setDone] = useState<{ importId: string; counts: PlanCounts } | null>(null);
   const [imports, setImports] = useState<ImportRecord[]>(first);
+  const [reqs, setReqs] = useState<RequestView[]>(requests);
   const [undoAsk, setUndoAsk] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -332,8 +325,11 @@ export function ClientImportPage({ imports: first }: { imports: ImportRecord[] }
               ))}
             </ul>
           ) : null}
+          <DoItForMe source={info.id} onSent={(r) => setReqs((all) => [r, ...all])} />
         </section>
       ) : null}
+
+      <RequestList requests={reqs} onChange={setReqs} />
 
       {info && (busy === "reading" || preview) ? (
         <section className="imp-step" data-import-preview>
@@ -447,7 +443,7 @@ function UndoAsk({ onYes, onNo }: { onYes: () => void; onNo: () => void }) {
   );
 }
 
-function Examples({ preview }: { preview: Extract<ImportPreview, { ok: true }> }) {
+export function Examples({ preview }: { preview: Extract<ImportPreview, { ok: true }> }) {
   const e = preview.examples;
   const groups: Array<[string, string[]]> = [
     ["New clients", e.clients],
@@ -474,7 +470,7 @@ function Examples({ preview }: { preview: Extract<ImportPreview, { ok: true }> }
   );
 }
 
-function FileCard({ f, map, source, onKind, onField }: { f: PreviewFile; map: ImportField[]; source: ImportSource; onKind: (k: FileKind | "out") => void; onField: (col: number, field: ImportField) => void }) {
+export function FileCard({ f, map, source, onKind, onField }: { f: PreviewFile; map: ImportField[]; source: ImportSource; onKind: (k: FileKind | "out") => void; onField: (col: number, field: ImportField) => void }) {
   const fields = FIELDS_FOR[f.kind];
   const open = f.missing.length > 0 || f.byModel;
   return (

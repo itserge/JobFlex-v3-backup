@@ -4,6 +4,7 @@ import { VARIANT_KEYS } from "@/components/v3/landing-e/landing-variants";
 import { SEO_TRADES } from "@/lib/seo/trades";
 import { SEO_CITIES } from "@/lib/seo/cities";
 import { SEO_BUILT } from "@/lib/seo/updated";
+import { SWITCH_SOURCES } from "@/lib/import/sources";
 
 // sitemap.xml (2026-10-01): the public pages and the 20 trade landings. A trade
 // landing is the root with ?industry=<key> (the variant is read from the query
@@ -21,6 +22,9 @@ const UPDATED: Array<[string, Date, number]> = [
   ["/terms", new Date("2026-09-22"), 0.3],
   ["/security", new Date("2026-11-01"), 0.3],
   ["/integrations/ramp", new Date("2026-11-01"), 0.4],
+  // "Switch to JobFlex" (2026-11-16, CRM migration plan part 3): the front page and one per program.
+  ["/switch", new Date("2026-11-16"), 0.7],
+  ...SWITCH_SOURCES.map((s): [string, Date, number] => [`/switch/${s.slug}`, new Date("2026-11-16"), 0.6]),
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {

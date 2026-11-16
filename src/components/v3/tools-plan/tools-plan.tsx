@@ -29,9 +29,32 @@ import {
   type ToolActionResult,
 } from "@/actions/toolPlans";
 import { money, type ToolId, type ToolsModelOffer, type ToolsModelPlan, type ToolsModelTool, type ToolsSubscriptionModel } from "@/lib/toolPlans/shared";
+import { sourceInfo, type ImportSource } from "@/lib/import/sources";
 import s from "./tools-plan.module.css";
 
 export type ToolsView = ToolsSubscriptionModel & { lapsed: boolean };
+
+/** "Moving from another program?" (CRM migration plan part 3, 2026-11-16): day one is when a shop brings its book
+ *  over. A visitor who came through a "Switch to JobFlex" page (/switch/<program>, cookie jf_moving_from) sees their
+ *  program named, and the import page opens on it. */
+function MovingCard({ from }: { from: ImportSource | null }) {
+  const info = from ? sourceInfo(from) : null;
+  const named = info && from !== "OTHER" ? info.label : null;
+  const href = `/dashboard/clients/import${info?.slug ? `?from=${info.slug}` : ""}`;
+  return (
+    <div className={s.block} data-moving-card="">
+      <h2 className={s.h2}>{named ? `Moving from ${named}?` : "Moving from another program?"}</h2>
+      <p className={s.lead}>
+        Bring your clients, their unpaid invoices and upcoming jobs over — yourself in about 10 minutes, or send us the files and we do it for you, free, within 2 business days. Nothing is sent to your clients.
+      </p>
+      <div>
+        <Link className={cx(s.btn, s.btnPrimary)} href={href as Route} data-moving-go="">
+          Bring my clients
+        </Link>
+      </div>
+    </div>
+  );
+}
 
 const cx = (...names: Array<string | false | null | undefined>) => names.filter(Boolean).join(" ");
 const per = (cents: number) => `${money(cents)}/mo`;
@@ -518,7 +541,7 @@ export function ToolsSubscriptionSection({ model, className }: { model: ToolsVie
 }
 
 /** The welcome page's body: the plan, the switch, three tools that work well with the main tool, and the rest. */
-export function ToolsWelcome({ model }: { model: ToolsView }) {
+export function ToolsWelcome({ model, movingFrom = null }: { model: ToolsView; movingFrom?: ImportSource | null }) {
   const act = useAct();
   const pairs = model.offer.filter((o) => o.pair).slice(0, 3);
   const rest = model.offer.filter((o) => !pairs.includes(o));
@@ -536,6 +559,7 @@ export function ToolsWelcome({ model }: { model: ToolsView }) {
       </p>
       <PlanBlock model={model} act={act} />
       <FreeDaysNote model={model} />
+      <MovingCard from={movingFrom} />
       {/* The tools the shop built its plan with (owner, 2026-11-12): each with its Remove, here on day one. */}
       {model.tools.length ? <ToolsBlock model={model} act={act} /> : null}
       {model.inTrial && model.switchTo.length ? <SwitchBox model={model} act={act} /> : null}

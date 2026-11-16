@@ -141,6 +141,7 @@ scripts:
   - { file: crew-onsite.check.ts, suite: logic, kind: check, status: live }
   - { file: crm-brief.check.ts, suite: logic, kind: check, status: live }
   - { file: data-import.check.ts, suite: logic, kind: check, status: live, note: "bring your clients (CRM import parts 1–2, 2026-11-16): CSV and Excel tables, the column reading for Housecall Pro / Jobber / QuickBooks / Google, dates, money and addresses, then the plan — new and joined clients, open invoices and what is owed, upcoming jobs in the company's time, history, re-imports left alone, rows left out and why" }
+  - { file: import-requests.check.ts, suite: logic, kind: check, status: live, note: "\"Do it for me\" + \"Switch to JobFlex\" (CRM migration parts 3–4, 2026-11-16): the due day (2 business days, weekends skipped, Pacific clock, across the spring clock change), late and open, which files are taken and their safe names and folder, a request's checks, the stored files read back, the counts in words, the seven public pages and their checked steps" }
   - { file: deck-autofix.check.ts, suite: logic, kind: check, status: live }
   - { file: deck-border.check.ts, suite: logic, kind: check, status: live }
   - { file: deck-brands-regional.check.ts, suite: logic, kind: check, status: live }
