@@ -54,6 +54,7 @@ import {
   type FollowUpChannel,
 } from "@/lib/followUps/copy";
 import { FOLLOW_UP_MODES, FOLLOW_UP_WORDS, modeLabel, parseMode, parseWords, type FollowUpMode, type FollowUpWords } from "@/lib/followUps/agent";
+import { SMART_CRM_OPEN, agentChoicesShown, waitsInQueueNote } from "@/lib/crm/smartAccess";
 import {
   STATUS_ORDER,
   STATUS_CLS,
@@ -183,6 +184,9 @@ export function initCrmContent(content: HTMLElement, options: CrmContentOptions)
   let queueData: QueueItem[] = live.queue.map((q) => ({ ...q }));
   const orgBrand = { ...live.org };
   const smsEnabled = live.smsEnabled;
+  /** "Who sends it" and "Words" are Smart CRM's (lib/crm/smartAccess): without it a rule is the basic timer, and a
+   *  rule set otherwise before keeps its setting (the server keeps it too). */
+  const agentChoices = agentChoicesShown(live.smartCrm ?? SMART_CRM_OPEN);
   /** The server's clock at render — "next send in 5 h" hydrates as rendered. */
   const renderedAt = live.renderedAt;
 
@@ -586,7 +590,7 @@ export function initCrmContent(content: HTMLElement, options: CrmContentOptions)
             "\">" +
             modeLabel(parseMode(r.mode)) +
             "</b>" +
-            (parseWords(r.words) === "AI" ? " · <b data-rule-words=\"AI\">Written for each client</b>" : "") +
+            (agentChoices && parseWords(r.words) === "AI" ? " · <b data-rule-words=\"AI\">Written for each client</b>" : "") +
             "</div>" +
             '<div class="rule-tpl">' +
             escapeAttr(triggerMoment(r.triggerStatus)) +
@@ -681,21 +685,26 @@ export function initCrmContent(content: HTMLElement, options: CrmContentOptions)
       }).join("") +
       "</select></span></label>" +
       // WHO SENDS IT and WHOSE WORDS (Smart CRM part 4, lib/followUps/agent). Whatever is picked, a follow-up stops
-      // by itself when the client replies, signs or pays.
-      '<label><span class="rf-lbl">Who sends it</span><span class="bp-sel"><select class="bp-sel-in" data-f="mode">' +
-      FOLLOW_UP_MODES.map(function (m) {
-        return '<option value="' + m.value + '"' + (parseMode(r?.mode) === m.value ? " selected" : "") + ">" + m.label + "</option>";
-      }).join("") +
-      "</select></span></label>" +
-      '<label><span class="rf-lbl">Words</span><span class="bp-sel"><select class="bp-sel-in" data-f="words">' +
-      FOLLOW_UP_WORDS.map(function (w) {
-        return '<option value="' + w.value + '"' + (parseWords(r?.words) === w.value ? " selected" : "") + ">" + w.label + "</option>";
-      }).join("") +
-      "</select></span></label>" +
+      // by itself when the client replies, signs or pays. Only with Smart CRM (owner, 2026-11-16): without it the
+      // rule sends on its own with the standard words — and one set to wait for a person keeps waiting, in the queue.
+      (agentChoices
+        ? '<label><span class="rf-lbl">Who sends it</span><span class="bp-sel"><select class="bp-sel-in" data-f="mode">' +
+          FOLLOW_UP_MODES.map(function (m) {
+            return '<option value="' + m.value + '"' + (parseMode(r?.mode) === m.value ? " selected" : "") + ">" + m.label + "</option>";
+          }).join("") +
+          "</select></span></label>" +
+          '<label><span class="rf-lbl">Words</span><span class="bp-sel"><select class="bp-sel-in" data-f="words">' +
+          FOLLOW_UP_WORDS.map(function (w) {
+            return '<option value="' + w.value + '"' + (parseWords(r?.words) === w.value ? " selected" : "") + ">" + w.label + "</option>";
+          }).join("") +
+          "</select></span></label>"
+        : "") +
       "</div>" +
-      '<div class="rf-note" data-rf-agent>' +
-      escapeAttr(agentNote(parseMode(r?.mode), parseWords(r?.words))) +
-      "</div>" +
+      (agentChoices
+        ? '<div class="rf-note" data-rf-agent>' + escapeAttr(agentNote(parseMode(r?.mode), parseWords(r?.words))) + "</div>"
+        : r && parseMode(r.mode) !== "AUTO"
+          ? '<div class="rf-note" data-rf-agent>' + escapeAttr(waitsInQueueNote()) + "</div>"
+          : "") +
       '<div class="rf-note">' +
       (smsEnabled
         ? "The card on the right is the message this rule sends."
@@ -1329,8 +1338,9 @@ export function initCrmContent(content: HTMLElement, options: CrmContentOptions)
       // must not silently re-enable a rule the user switched off.
       enabled: existing ? existing.enabled : true,
       channel: (get("channel") || "EMAIL") as FollowUpChannel,
-      mode: parseMode(get("mode")),
-      words: parseWords(get("words")),
+      // Without Smart CRM the editor has no agent choices: nothing is sent, and the rule keeps what it has.
+      mode: agentChoices ? parseMode(get("mode")) : undefined,
+      words: agentChoices ? parseWords(get("words")) : undefined,
     };
 
     crm.savingRule = true;
@@ -1352,8 +1362,8 @@ export function initCrmContent(content: HTMLElement, options: CrmContentOptions)
           triggerStatus: payload.triggerStatus,
           delayMinutes: payload.delayMinutes,
           channel: payload.channel,
-          mode: payload.mode,
-          words: payload.words,
+          mode: payload.mode ?? existing.mode,
+          words: payload.words ?? existing.words,
         });
         crm.editing = null;
       } else {
@@ -1364,8 +1374,8 @@ export function initCrmContent(content: HTMLElement, options: CrmContentOptions)
           delayMinutes: payload.delayMinutes,
           enabled: payload.enabled,
           channel: payload.channel,
-          mode: payload.mode,
-          words: payload.words,
+          mode: payload.mode ?? "AUTO",
+          words: payload.words ?? "STANDARD",
         });
         crm.creating = false;
       }

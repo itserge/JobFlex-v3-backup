@@ -25,6 +25,8 @@ import { OfficePanel, TodayPanel } from "./crm-brief";
 import { CompanyPulse } from "./company-pulse";
 import { AgentDesk } from "./crm-agent";
 import { WinBackPanel } from "./win-back";
+import { SmartCrmOffer } from "./smart-crm-offer";
+import { smartTabsShown } from "@/lib/crm/smartAccess";
 import { deskOpen, type CrmDesk } from "@/lib/crm/desk";
 
 /**
@@ -43,6 +45,9 @@ import { deskOpen, type CrmDesk } from "@/lib/crm/desk";
  */
 export function CrmContent({ data, brief, desk }: { data: CrmContentData; brief: CrmBrief; desk: CrmDesk | null }) {
   const router = useRouter();
+  // Smart CRM on this plan (lib/crm/smartAccess, owner 2026-11-16): the basic CRM is every plan's; the paid parts are
+  // drawn only where it is open.
+  const smart = data.smartCrm;
   // What the band holds for the person today (waiting follow-ups + promises overdue or due today): it joins the Today
   // tab's count and keeps the "nothing waiting on you" block away.
   const [deskN, setDeskN] = useState(() => deskOpen(desk));
@@ -102,18 +107,24 @@ export function CrmContent({ data, brief, desk }: { data: CrmContentData; brief:
           Today
           {brief.today.score.open + deskN > 0 && <span className="crm-tab-n">{brief.today.score.open + deskN}</span>}
         </button>
-        <button className="crm-tab" type="button" data-crm-nav="inbox" onClick={() => router.push("/dashboard/inbox" as Route)}>
-          <svg className="ic">
-            <use href="#i-msg" />
-          </svg>
-          Inbox
-        </button>
-        <button className="crm-tab" type="button" data-crm-nav="pipeline" onClick={() => router.push("/dashboard/pipeline" as Route)}>
-          <svg className="ic">
-            <use href="#i-target" />
-          </svg>
-          Pipeline
-        </button>
+        {/* Smart CRM's two pages. A new-plan shop without it doesn't see them (no locks — its menu leaves them out
+            too); a Classic shop whose plan ended keeps them, leading to the plan-ended page as its menu rows do. */}
+        {smartTabsShown(smart) && (
+          <>
+            <button className="crm-tab" type="button" data-crm-nav="inbox" onClick={() => router.push("/dashboard/inbox" as Route)}>
+              <svg className="ic">
+                <use href="#i-msg" />
+              </svg>
+              Inbox
+            </button>
+            <button className="crm-tab" type="button" data-crm-nav="pipeline" onClick={() => router.push("/dashboard/pipeline" as Route)}>
+              <svg className="ic">
+                <use href="#i-target" />
+              </svg>
+              Pipeline
+            </button>
+          </>
+        )}
         <button className="crm-tab" type="button" data-tab="customers">
           <svg className="ic">
             <use href="#i-users" />
@@ -168,14 +179,14 @@ export function CrmContent({ data, brief, desk }: { data: CrmContentData; brief:
       {/* ========== OFFICE — how the company is doing, right now ========== */}
       {brief.office && (
         <section className="ppanel is-hidden" data-panel="office">
-          <OfficePanel office={brief.office} company={data.org.name} extra={<CompanyPulse />} />
+          <OfficePanel office={brief.office} company={data.org.name} extra={smart.open ? <CompanyPulse /> : <SmartCrmOffer access={smart} place="pulse" />} />
         </section>
       )}
 
       {/* ========== WIN BACK — bring past clients back ========== */}
       {brief.office && (
         <section className="ppanel is-hidden" data-panel="winback">
-          <WinBackPanel />
+          {smart.open ? <WinBackPanel /> : <SmartCrmOffer access={smart} place="winback" />}
         </section>
       )}
 

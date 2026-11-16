@@ -20,6 +20,7 @@ import { longDate, relative } from "@/lib/format";
 import { isTwilioEnabled } from "@/lib/sdk/twilio";
 import { parseChannel } from "@/lib/followUps/copy";
 import { parseMode, parseWords } from "@/lib/followUps/agent";
+import { smartCrmAccess } from "@/lib/crm/smartAccessServer";
 import { actorsOf, whoOfEvent } from "@/lib/activityLog";
 import type {
   ActivityItem,
@@ -232,6 +233,7 @@ export async function getCrmSnapshot(): Promise<CrmSnapshotResult> {
         logoUrl: emailLogoSrc(org?.logoUrl, organizationId, SITE_URL),
       },
       smsEnabled: await isTwilioEnabled(),
+      smartCrm: await smartCrmAccess(organizationId, role),
       renderedAt: now.getTime(),
     },
   };
