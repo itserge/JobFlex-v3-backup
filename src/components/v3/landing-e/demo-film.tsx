@@ -71,7 +71,6 @@ export function DemoFilm({
     if (!v) return;
     const desk = window.matchMedia(DEMO_DESK_MEDIA);
     const still = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const playAlways = DEMO_FILMS[film].playAlways;
     const lastSource = v.querySelector("source:last-of-type");
     let shown = false;
     let dead = false;
@@ -109,7 +108,7 @@ export function DemoFilm({
         return;
       }
       if (v.error) return fail();
-      if (still.matches && !playAlways) {
+      if (still.matches) {
         v.autoplay = false;
         // Back to the poster if the HTML's autoplay already started it.
         if (!v.paused || v.currentTime > 0) v.load();
@@ -134,7 +133,7 @@ export function DemoFilm({
       desk.removeEventListener("change", sync);
       still.removeEventListener("change", sync);
     };
-  }, [film, slot, landing, hook]);
+  }, [slot, landing, hook]);
 
   const playFromTap = () => {
     const v = videoRef.current;
@@ -159,8 +158,8 @@ export function DemoFilm({
   const media = slot === "desk" ? DEMO_DESK_MEDIA : DEMO_PHONE_MEDIA;
   return (
     <figure className="lp-film-fig">
-      {f.caption === null ? null : <figcaption className="lp-film-cap">{f.caption ?? DEMO_CAPTION}</figcaption>}
-      <AppFrame path={f.path} body={f.body} bar={f.bar !== false}>
+      <figcaption className="lp-film-cap">{f.caption ?? DEMO_CAPTION}</figcaption>
+      <AppFrame path={f.path} body={f.body}>
         {/* data-fit: the box hero-fit measures — the film's frame is as wide
             as lets this box end inside the first screen (hero.tsx). */}
         <div className="lp-film" data-fit="film">

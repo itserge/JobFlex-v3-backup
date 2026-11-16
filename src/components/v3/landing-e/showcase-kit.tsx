@@ -129,12 +129,9 @@ export function useTyped(text: string, active: boolean, speed = 20, instant = fa
 export function AppFrame({
   path,
   body = "#ffffff",
-  bar = true,
   children,
 }: {
   path: string;
-  /** false: the frame alone, no address bar. */
-  bar?: boolean;
   /** Retired (owner, 2026-09-26): the chrome no longer carries a "Send …"
    *  pill. Still accepted so an old caller compiles; nothing renders. */
   action?: string;
@@ -148,14 +145,12 @@ export function AppFrame({
       className="lp-mock-frame overflow-hidden rounded-md shadow-lp-mock ring-1 ring-black/10"
       style={{ background: body, transition: "background .8s ease" }}
     >
-      {bar ? (
-        <div className="flex items-center gap-3 border-b-2 border-ink bg-white px-4 py-2.5">
-          <span className="grid h-5 w-5 place-items-center rounded-[2px] bg-ink text-[10px] font-black text-white">J</span>
-          <span className="min-w-0 flex-1 truncate rounded-[2px] border border-black/10 bg-lp-paper px-2.5 py-1 font-mono text-[10.5px] text-ink-muted">
-            {path}
-          </span>
-        </div>
-      ) : null}
+      <div className="flex items-center gap-3 border-b-2 border-ink bg-white px-4 py-2.5">
+        <span className="grid h-5 w-5 place-items-center rounded-[2px] bg-ink text-[10px] font-black text-white">J</span>
+        <span className="min-w-0 flex-1 truncate rounded-[2px] border border-black/10 bg-lp-paper px-2.5 py-1 font-mono text-[10.5px] text-ink-muted">
+          {path}
+        </span>
+      </div>
       {children}
     </div>
   );

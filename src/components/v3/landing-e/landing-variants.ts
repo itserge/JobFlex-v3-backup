@@ -35,10 +35,6 @@ export type LandingVariant = {
    *  no line under it — "Stop Spending Hours on <Trade> Estimates.". The film
    *  follows it, then the button. A `?hook=` replaces it with the ad's lines. */
   title?: string;
-  /** A line under the title (decking, owner 2026-11-15). Absent: the H1 stands alone. */
-  titleLine?: string;
-  /** The hero's trial button in the Deck Studio ad's blue instead of white (decking, owner 2026-11-15). */
-  ctaBlue?: boolean;
   /** The description under the reviews (hero-proof.tsx): two short
    *  sentences on what the trade gets — never "AI analyzes". */
   pitch?: string;
@@ -357,9 +353,7 @@ export const LANDING_VARIANTS: Record<LandingVariantKey, LandingVariant | null> 
   // No plan is the Deck Studio's: the trial holds it, then the $79/mo add-on (lib/editions).
   decking: {
     h1: ["Deck Studio: the deck in 3D,", "to your state's code, priced."],
-    title: "From Deck Design to Signed Deal. All in Minutes.",
-    titleLine: "Design stunning decks in minutes with pricing that updates as you design. Generate construction drawings and permit-ready packages, send proposals to clients, get approvals, and collect payments.",
-    ctaBlue: true,
+    title: "Stop Spending Hours on Deck Estimates.",
     pitch: "Start with the house. Design the deck in 3D, frame it from the span tables, price it, and create a customer-ready proposal.",
     points: ["Deck design in 3D, framed to code", "Boards, framing & pricing", "Proposals & permit set"],
     proof: DECK_PROOF,
